@@ -158,11 +158,12 @@ class _DeleteGalleryPostDB:
 
 
 class _BanAndTakedownDB:
-    def __init__(self, user, task_rows, post_count, history_count):
+    def __init__(self, user, task_rows, post_count, history_count, report_count=0):
         self.user = user
         self.task_rows = task_rows
         self.post_count = post_count
         self.history_count = history_count
+        self.report_count = report_count
         self.executed_stmts = []
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
@@ -178,6 +179,8 @@ class _BanAndTakedownDB:
             return _ScalarResult(rowcount=self.post_count)
         if "UPDATE history" in sql:
             return _ScalarResult(rowcount=self.history_count)
+        if "UPDATE gallery_reports" in sql:
+            return _ScalarResult(rowcount=self.report_count)
         raise AssertionError(f"unexpected statement: {sql}")
 
 
@@ -242,6 +245,7 @@ async def test_ban_user_submissions_and_takedown_payload_updates_user_and_public
         task_rows=[("task-1",), ("task-1",), ("task-2",)],
         post_count=3,
         history_count=4,
+        report_count=2,
     )
     log_action = AsyncMock()
     monkeypatch.setattr("src.services.log_service.LogService.log_action", log_action)
@@ -257,9 +261,16 @@ async def test_ban_user_submissions_and_takedown_payload_updates_user_and_public
     assert response["submission_ban_reason"] == "违禁被封，请联系管理员解封"
     assert response["affected_posts"] == 3
     assert response["affected_histories"] == 4
+    assert response["resolved_reports"] == 2
     assert user.is_submission_banned is True
     assert user.submission_banned_at is not None
     assert any("UPDATE gallery_posts" in stmt for stmt in db.executed_stmts)
     assert any("UPDATE history" in stmt for stmt in db.executed_stmts)
+    report_stmt = next(
+        stmt for stmt in db.executed_stmts if "UPDATE gallery_reports" in stmt
+    )
+    assert "gallery_reports.post_author_user_id = :post_author_user_id_1" in report_stmt
+    assert "gallery_reports.status = :status_1" in report_stmt
+    assert "resolution_action" in report_stmt
     db.commit.assert_awaited_once()
     log_action.assert_awaited_once()

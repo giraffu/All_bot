@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import {
   EyeOutlined,
+  ExclamationCircleOutlined,
+  PictureOutlined,
+  PlayCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
   StopOutlined,
@@ -10,9 +14,9 @@ import {
 } from '@ant-design/icons-vue'
 import {
   apiBaseUrl,
+  banGalleryUserSubmissionsAndTakedown,
   fetchGalleryReports,
   resolveGalleryReport,
-  takedownGalleryReport,
 } from '../api/api'
 import { formatDate } from '../utils/helpers'
 
@@ -41,9 +45,16 @@ interface PaginationState {
   total: number
 }
 
+interface PreviewMedia {
+  type: 'image' | 'video'
+  url: string
+}
+
 const loading = ref(false)
 const reports = ref<GalleryReportItem[]>([])
 const actionLoading = ref<Record<number, string | undefined>>({})
+const previewVisible = ref(false)
+const previewMedia = ref<PreviewMedia | null>(null)
 const pagination = ref<PaginationState>({
   current: 1,
   pageSize: 20,
@@ -112,7 +123,7 @@ const columns = computed(() => [
   {
     title: '操作',
     key: 'action',
-    width: 190,
+    width: 230,
     fixed: 'right',
   },
 ])
@@ -127,6 +138,7 @@ const getStatusLabel = (status: GalleryReportItem['status']) =>
   status === 'pending' ? '待处理' : '已处理'
 
 const getResolutionLabel = (action: string | null) => {
+  if (action === 'ban_and_takedown') return '封禁并下架'
   if (action === 'takedown') return '已下架'
   if (action === 'already_inactive') return '作品已下架'
   if (action === 'post_missing') return '作品不存在'
@@ -140,6 +152,19 @@ const getMediaUrl = (url: string | null) => {
   if (!url) return ''
   if (url.startsWith('http')) return url
   return `${apiBaseUrl}${url}`
+}
+
+const showPreview = (record: GalleryReportItem) => {
+  if (!record.media_url || !record.media_type) {
+    message.warning('媒体文件不可用或已失效')
+    return
+  }
+
+  previewMedia.value = {
+    type: record.media_type,
+    url: getMediaUrl(record.media_url),
+  }
+  previewVisible.value = true
 }
 
 const normalizePostId = (value: number | null | undefined) => {
@@ -213,17 +238,37 @@ const markResolved = async (record: GalleryReportItem) => {
   }
 }
 
-const takedownPost = async (record: GalleryReportItem) => {
-  try {
-    actionLoading.value[record.id] = 'takedown'
-    const res = await takedownGalleryReport(record.id)
-    message.success(`已下架 ${res.affected_posts || 0} 条作品，处理 ${res.resolved_reports || 0} 条举报`)
-    await loadReports(pagination.value.current)
-  } catch (error: any) {
-    message.error(`下架失败: ${error.response?.data?.detail || error.message}`)
-  } finally {
-    actionLoading.value[record.id] = undefined
+const confirmBanAndTakedown = (record: GalleryReportItem) => {
+  const authorUserId = record.post_author_user_id
+  if (!authorUserId) {
+    message.warning('该作品缺少作者用户 ID，无法执行用户级操作')
+    return
   }
+
+  const targetName = record.post_author_name || `用户 ${authorUserId}`
+  Modal.confirm({
+    title: '确认封禁并下架该用户所有投稿?',
+    icon: h(ExclamationCircleOutlined),
+    content: `将禁止用户 ${targetName} 后续投稿，并下架该用户当前所有广场投稿。此操作不会删除文件或历史记录。`,
+    okText: '封禁并下架',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        actionLoading.value[record.id] = 'ban_and_takedown'
+        const res = await banGalleryUserSubmissionsAndTakedown(authorUserId)
+        message.success(
+          `已封禁用户 ${authorUserId}，下架 ${res.affected_posts || 0} 条投稿，处理 ${res.resolved_reports || 0} 条举报`,
+        )
+        await loadReports(pagination.value.current)
+      } catch (error: any) {
+        message.error(`操作失败: ${error.response?.data?.detail || error.message}`)
+        throw error
+      } finally {
+        actionLoading.value[record.id] = undefined
+      }
+    },
+  })
 }
 
 onMounted(() => {
@@ -296,7 +341,7 @@ onMounted(() => {
         :row-key="getReportRowKey"
         :pagination="pagination"
         :loading="loading"
-        :scroll="{ y: 'calc(100vh - 290px)', x: 1340 }"
+        :scroll="{ y: 'calc(100vh - 290px)', x: 1380 }"
         size="middle"
         class="h-full"
         @change="handleTableChange"
@@ -304,11 +349,17 @@ onMounted(() => {
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'post'">
             <div class="flex items-center gap-3 min-w-[200px]">
-              <div class="w-14 h-14 rounded bg-gray-100 border overflow-hidden flex items-center justify-center shrink-0">
-                <template v-if="record.media_url">
+              <button
+                v-if="record.media_url && record.media_type"
+                type="button"
+                class="w-14 h-14 rounded bg-gray-100 border overflow-hidden flex items-center justify-center shrink-0 cursor-zoom-in hover:border-blue-400 transition-colors relative group"
+                :aria-label="`查看作品 ${record.post_id || record.id} ${record.media_type === 'video' ? '视频' : '图片'}`"
+                @click="showPreview(record)"
+              >
                   <img
                     v-if="record.media_type === 'image'"
                     :src="getMediaUrl(record.media_url)"
+                    :alt="`作品 ${record.post_id || record.id} 缩略图`"
                     class="w-full h-full object-cover"
                   />
                   <video
@@ -316,8 +367,13 @@ onMounted(() => {
                     :src="getMediaUrl(record.media_url)"
                     class="w-full h-full object-cover"
                   />
-                </template>
-                <eye-outlined v-else class="text-gray-300" />
+                <span class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                  <play-circle-outlined v-if="record.media_type === 'video'" class="text-white text-xl" />
+                  <picture-outlined v-else class="text-white text-xl" />
+                </span>
+              </button>
+              <div v-else class="w-14 h-14 rounded bg-gray-100 border overflow-hidden flex items-center justify-center shrink-0">
+                <eye-outlined class="text-gray-300" />
               </div>
               <div class="min-w-0 text-sm leading-6">
                 <div class="font-medium text-gray-900">
@@ -378,7 +434,7 @@ onMounted(() => {
           </template>
 
           <template v-else-if="column.key === 'action'">
-            <div class="flex flex-wrap gap-2 w-[170px]">
+            <div class="flex flex-wrap gap-2 w-[210px]">
               <a-popconfirm
                 title="确认标记这条举报为已处理？"
                 ok-text="确认"
@@ -394,26 +450,46 @@ onMounted(() => {
                 </a-button>
               </a-popconfirm>
 
-              <a-popconfirm
-                title="确认下架该作品并处理同作品举报？"
-                ok-text="下架"
-                cancel-text="取消"
-                @confirm="takedownPost(record)"
+              <a-button
+                size="small"
+                danger
+                :disabled="record.status === 'resolved' || !record.post_author_user_id"
+                :loading="actionLoading[record.id] === 'ban_and_takedown'"
+                @click="confirmBanAndTakedown(record)"
               >
-                <a-button
-                  size="small"
-                  danger
-                  :disabled="record.status === 'resolved' || record.post_is_active === false"
-                  :loading="actionLoading[record.id] === 'takedown'"
-                >
-                  <template #icon><stop-outlined /></template>
-                  下架
-                </a-button>
-              </a-popconfirm>
+                <template #icon><stop-outlined /></template>
+                封禁并下架
+              </a-button>
             </div>
           </template>
         </template>
       </a-table>
     </div>
+
+    <a-modal
+      v-model:open="previewVisible"
+      title="媒体预览"
+      :footer="null"
+      width="min(900px, 92vw)"
+      centered
+      destroy-on-close
+    >
+      <div class="flex justify-center items-center bg-gray-100 rounded-lg p-2 min-h-[300px]">
+        <img
+          v-if="previewMedia?.type === 'image'"
+          :src="previewMedia.url"
+          alt="举报作品大图预览"
+          class="max-w-full max-h-[75vh] object-contain rounded shadow-sm"
+        />
+        <video
+          v-else-if="previewMedia?.type === 'video'"
+          :src="previewMedia.url"
+          controls
+          autoplay
+          loop
+          class="max-w-full max-h-[75vh] rounded shadow-sm"
+        />
+      </div>
+    </a-modal>
   </div>
 </template>

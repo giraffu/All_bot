@@ -13,7 +13,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **广场投稿与原创保护**：基于 `History.allow_contribute` 阻断模板套娃再投稿。
 - **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。
 - **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
-- **举报治理**：Web 详情页可提交 `children/gore/gross/other` 单选举报；`gallery_reports.reporter_user_id + post_id` 唯一拒绝重复举报，Dashboard 举报管理支持筛选、标记处理与联动软下架。
+- **举报治理**：Web 详情页可提交 `children/gore/gross/other` 单选举报；`gallery_reports.reporter_user_id + post_id` 唯一拒绝重复举报，Dashboard 举报管理支持筛选、标记处理、图片/视频弹窗预览与用户级“封禁并下架”。
 - **个人视图**：支持 `my-posts`、`my-favorites` 与 `my-prompt-unlocks`；`my-favorites` 从互动记录反查点赞/应用历史，`my-prompt-unlocks` 从提示词解锁记录反查已解锁模板。
 - **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`GET /api/users/search?q=` 可按 `User.username/full_name` 模糊查找用户并返回关注状态，`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
 - **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
@@ -61,7 +61,8 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **Web 接口**：`POST /api/gallery/posts/{post_id}/reports`
 - **输入**：`reason=children|gore|gross|other`，仅允许登录用户举报仍上架作品。
 - **输出**：`report_id`；同一用户重复举报同一 `post_id` 返回 `409`，不覆盖旧原因。
-- **Dashboard 接口**：`GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`、`POST /api/gallery/reports/{report_id}/resolve`、`POST /api/gallery/reports/{report_id}/takedown`。
+- **Dashboard 接口**：`GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`、`POST /api/gallery/reports/{report_id}/resolve`、兼容单作品入口 `POST /api/gallery/reports/{report_id}/takedown`；举报表治理按钮复用用户级 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`。
+- **媒体预览**：举报列表中的有效图片/视频缩略图必须可点击打开 Dashboard 弹窗；图片按比例放大，视频提供播放控制。
 - **下架语义**：软下架 `GalleryPost.is_active=False`，同步同一 `task_id + user_id` 的 `History.is_public=False`，并把同作品其他 pending 举报一起置为 resolved。
 
 ### 用户搜索与关注
@@ -86,7 +87,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 ### 后台投稿封禁与批量下架
 - **接口**：`POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`
 - **输入**：`reason` 可选；为空时使用默认封禁提示。
-- **输出**：`affected_posts`、`affected_histories`、`is_submission_banned`、封禁原因与时间。
+- **输出**：`affected_posts`、`affected_histories`、`resolved_reports`、`is_submission_banned`、封禁原因与时间；用户级操作会把该作者全部 pending 举报以 `ban_and_takedown` 一并处理。
 
 ## 3. 核心红线
 - 捕获互动类 `IntegrityError` 前必须先 `flush()`。
@@ -101,6 +102,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。硬删除 `GalleryPost` 前必须同步清理 `user_interactions`、`gallery_prompt_unlocks` 与 `gallery_comments`，避免提示词解锁记录外键阻断删除。
 - 用户级批量下架不得只改 `GalleryPost.is_active`；必须同步把该用户投稿关联的 `History.is_public` 置为 `False`，避免旧公开资源入口继续可见。
 - Dashboard 举报下架也必须同步 `GalleryPost.is_active=False` 与同 `task_id + user_id` 的 `History.is_public=False`，不得只把举报标记为 resolved。
+- Dashboard 用户级“封禁并下架”必须在同一数据库事务中处理该作者的 pending 举报，避免作品已全部下架但举报仍停留在待处理状态。
 
 ## 4. 边界条件处理
 - 帖子并发下架时，评论创建必须整体回滚而不是留下脏评论。
@@ -114,7 +116,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖评论限频、并发下架回滚、分页查询。
 - 覆盖用户搜索 username/full_name 模糊匹配、排除自己和当前关注状态。
 - 覆盖提示词解锁首次扣费、重复解锁幂等、唯一约束并发冲突回滚、作者自看免扣费与 `my-prompt-unlocks` 列表。
-- 覆盖举报成功、非法 reason、作品不存在/已下架、重复举报 `409`，以及 Dashboard 举报列表筛选、标记处理、联动下架和同作品 pending 举报批量 resolved。
+- 覆盖举报成功、非法 reason、作品不存在/已下架、重复举报 `409`，以及 Dashboard 举报列表筛选、标记处理、图片/视频弹窗预览、用户级封禁下架和该作者 pending 举报批量 resolved。
 - 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url`、`input_files/input_file_urls` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd`、`0.36 MP - Small -> small` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，LTX 需覆盖首尾帧 tag、两张输入图顺序、`ltx_video_flf2v` alias 与 `_ltx_context` 回填，SCAIL-2 需覆盖只复用 motion video 与缺失 motion video 400，Wan22 stitched 与 Web 关闭的 `i2i_draw` 需覆盖 apply-context 400 与列表禁用字段。
 - 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。
 - 覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback、对象存储慢响应时释放 DB 只读事务后的响应路径。

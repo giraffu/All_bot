@@ -80,7 +80,7 @@ sequenceDiagram
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
 - Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
-- Dashboard 广场内容管理可通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts` 与 `affected_histories` 用于后台反馈。
+- Dashboard 广场内容管理与举报管理统一通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts`、`affected_histories` 与 `resolved_reports`，并在同一事务中处理该作者全部 pending 举报。
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 
 ### 4.2 互动系统
@@ -102,7 +102,8 @@ sequenceDiagram
 - 举报原因是单选枚举：`children` 儿童、`gore` 血腥、`gross` 恶心、`other` 其他；“其他”不要求补充说明。
 - 只有登录用户可举报仍处于 `is_active=True` 的作品；同一用户对同一 `post_id` 只能举报一次，重复提交返回 `409`，不覆盖旧原因。
 - Dashboard 新增举报管理入口，`GET /api/gallery/reports` 支持 `status`、`reason`、`post_id` 筛选，并按 `created_at desc, id desc` 稳定排序。
-- Dashboard 标记处理只更新举报状态；联动下架会软下架 `GalleryPost.is_active=False`，同步同一 `task_id + user_id` 的所有 `History.is_public=False`，并把同作品其他 pending 举报一起置为 resolved。
+- 举报列表中的有效图片/视频缩略图可点击打开媒体预览弹窗；图片按比例放大，视频保留播放控制。
+- Dashboard 标记处理只更新举报状态；举报页“封禁并下架”复用用户级治理接口，设置用户投稿封禁、下架该用户全部 `GalleryPost`、同步关联 `History.is_public=False`，并把该作者全部 pending 举报以 `ban_and_takedown` 置为 resolved。兼容单作品下架入口仍会处理同作品其他 pending 举报。
 - 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
 
 ### 4.5 收藏与个人视图
@@ -221,7 +222,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 重复投稿与 `allow_contribute=False` 拦截
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
-- 举报成功、无效原因、作品不存在/已下架、重复举报 `409`；Dashboard 举报筛选、标记处理、联动下架、同作品 pending 举报批量 resolved
+- 举报成功、无效原因、作品不存在/已下架、重复举报 `409`；Dashboard 举报筛选、标记处理、图片/视频弹窗预览、用户级封禁下架、作者 pending 举报批量 resolved
 - `my-favorites` 过滤 like/apply 的正确性
 - 用户公开主页公开投稿分页的总数、页数和可见性过滤；个人主页详情提示词解锁入口与解锁后状态同步
 - 好友搜索 username/full_name 模糊匹配、排除自己和当前关注状态；我的关注/我的粉丝列表方向正确性，以及粉丝列表的回关状态
@@ -229,7 +230,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` / `input_files` 的返回准确性
 - Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序、LTX 首尾帧标签与 SCAIL-2 展示/复用语义分离
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝；`i2i_draw` Web 一键应用禁用字段与 apply-context 400 拒绝
-- Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
+- Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态、多条 `History.is_public` 和作者 pending 举报状态同步
 - Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback 与对象存储慢响应场景。
 - Telegram file_id 缓存需要覆盖已缓存不下载、file_id 失效后从当前 Gallery R2/S3 URL 刷新、测试 Bot 不写回缓存。
 
