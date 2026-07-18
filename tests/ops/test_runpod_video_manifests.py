@@ -6,9 +6,14 @@ from botocore.exceptions import ClientError
 
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
 )
 from ops.gpu_pool_controller.runpod_video_manifests import (
+    prepare_wan22_lora5_manifests,
     prepare_split_video_manifests,
     split_wan22_aio_manifest,
 )
@@ -30,20 +35,36 @@ class _FakeR2Client:
         self.missing = missing or set()
         self.heads: list[str] = []
         self.puts: list[dict] = []
+        self.objects = {
+            item["key"]: {
+                "ContentLength": item["size_bytes"],
+                "Metadata": {"sha256": item["sha256"]},
+            }
+            for item in source.get("files", [])
+        }
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
         assert Bucket == "allbot-model-cache"
-        return {"Body": _Body(self.source)}
+        source = self.source.get(Key) if "files" not in self.source else self.source
+        if source is None:
+            raise ClientError({"Error": {"Code": "404"}}, "GetObject")
+        return {"Body": _Body(source)}
 
     def head_object(self, *, Bucket: str, Key: str) -> dict:
         assert Bucket == "allbot-model-cache"
         self.heads.append(Key)
         if Key in self.missing:
             raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
-        return {"ContentLength": 1}
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return self.objects[Key]
 
     def put_object(self, **kwargs) -> None:
         self.puts.append(kwargs)
+        self.objects[kwargs["Key"]] = {
+            "ContentLength": len(kwargs["Body"]),
+            "Metadata": kwargs.get("Metadata") or {},
+        }
 
 
 def _source_manifest() -> dict:
@@ -84,6 +105,8 @@ def _source_manifest() -> dict:
                 if name
                 for noise in ("high", "low")
             ],
+            item("loras/PenInsert_high_noise.safetensors", 5),
+            item("loras/PenInsert_low_noise.safetensors", 5),
             *[
                 item(f"loras/{path}", 5)
                 for model in WAN22_EXPLICIT_LORA_MODELS.values()
@@ -126,10 +149,28 @@ def test_split_wan22_aio_manifest_selects_profile_specific_files_and_reuses_keys
     assert len(explicit_paths) == 98
     assert explicit_paths.issubset(image_paths)
     assert explicit_paths.issubset(wan22_paths)
+    assert split["image_to_video"]["version"] == "2026-07-18-lora5"
     assert split["wan22_video_v2"]["version"] == "2026-07-18-lora5"
     assert "vae/wan_2.1_vae.safetensors" in image_paths
     assert "vae/wan_2.1_vae.safetensors" in wan22_paths
     assert split["image_to_video"]["files"][0]["key"].startswith("wan22_aio_video/")
+
+
+def test_wan22_lora5_manifests_use_new_immutable_keys_for_all_profiles():
+    expected_version = "2026-07-18-lora5"
+
+    assert RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX == f"wan22_aio_video/{expected_version}"
+    assert RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY == (
+        f"wan22_aio_video/{expected_version}/manifest.json"
+    )
+    assert RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX == f"image_to_video/{expected_version}"
+    assert RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY == (
+        f"image_to_video/{expected_version}/manifest.json"
+    )
+    assert RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX == f"wan22_video_v2/{expected_version}"
+    assert RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY == (
+        f"wan22_video_v2/{expected_version}/manifest.json"
+    )
 
 
 def test_prepare_split_video_manifests_heads_all_reused_keys_and_uploads_manifest_only():
@@ -149,6 +190,8 @@ def test_prepare_split_video_manifests_heads_all_reused_keys_and_uploads_manifes
         RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     }
     assert all(not put["Key"].endswith(".safetensors") for put in client.puts)
+    assert all(len(put["Metadata"]["sha256"]) == 64 for put in client.puts)
+    assert all(len(item["sha256"]) == 64 for item in payload["uploads"])
     assert any("FASTMOVE" in key for key in client.heads)
     assert any("DasiwaWAN22I2V14B" in key for key in client.heads)
 
@@ -172,6 +215,29 @@ def test_prepare_split_video_manifests_reports_missing_reused_object_before_uplo
     assert client.puts == []
 
 
+def test_prepare_split_video_manifests_rejects_size_or_sha_metadata_mismatch():
+    source = _source_manifest()
+    client = _FakeR2Client(source)
+    target = source["files"][0]
+    client.objects[target["key"]] = {
+        "ContentLength": target["size_bytes"] + 1,
+        "Metadata": {"sha256": "b" * 64},
+    }
+
+    payload = prepare_split_video_manifests(
+        client=client,
+        bucket="allbot-model-cache",
+        execute=True,
+    )
+
+    assert payload["ok"] is False
+    assert payload["missing_count"] == 2
+    assert {item["reason"] for item in payload["missing"]} == {
+        "size_mismatch,sha256_metadata_mismatch"
+    }
+    assert client.puts == []
+
+
 def test_prepare_split_video_manifests_fails_closed_when_lora_object_is_missing():
     missing_key = (
         "wan22_aio_video/2026-06-12-test/models/loras/Insertion_high_noise.safetensors"
@@ -190,3 +256,67 @@ def test_prepare_split_video_manifests_fails_closed_when_lora_object_is_missing(
         "wan22_video_v2",
     }
     assert client.puts == []
+
+
+def test_prepare_wan22_lora5_manifests_reuses_legacy_and_explicit_object_keys():
+    full = _source_manifest()
+    explicit_files = [
+        dict(item, key=item["key"].replace(
+            "wan22_aio_video/2026-06-12-test/models/loras/wan2.2/explicit_top200",
+            "wan22_explicit_lora_library/2026-07-18/models/loras/wan2.2/explicit_top200",
+        ))
+        for item in full["files"]
+        if item["relative_path"].startswith("loras/wan2.2/explicit_top200/")
+    ]
+    base_files = [
+        item
+        for item in full["files"]
+        if not item["relative_path"].startswith("loras/wan2.2/explicit_top200/")
+    ]
+    base = dict(full, files=base_files, file_count=len(base_files))
+    explicit = {
+        "bundle": "wan22_explicit_lora_library",
+        "version": "2026-07-18",
+        "files": explicit_files,
+        "file_count": len(explicit_files),
+    }
+    client = _FakeR2Client(
+        {
+            "wan22_aio_video/2026-06-12-test/manifest.json": base,
+            "wan22_explicit_lora_library/2026-07-18/manifest.json": explicit,
+        }
+    )
+    for item in base_files + explicit_files:
+        client.objects[item["key"]] = {
+            "ContentLength": item["size_bytes"],
+            "Metadata": {"sha256": item["sha256"]},
+        }
+
+    payload = prepare_wan22_lora5_manifests(
+        client=client,
+        bucket="allbot-model-cache",
+        execute=True,
+    )
+
+    assert payload["ok"] is True
+    assert payload["verified_file_counts"] == {
+        "wan22_aio_video": 121,
+        "image_to_video": 119,
+        "wan22_video_v2": 119,
+    }
+    assert {item["key"] for item in payload["uploads"]} == {
+        RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+        RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+        RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    }
+    aio_put = next(
+        item
+        for item in client.puts
+        if item["Key"] == RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY
+    )
+    aio = json.loads(aio_put["Body"])
+    assert aio["file_count"] == 121
+    assert sum(
+        item["key"].startswith("wan22_explicit_lora_library/2026-07-18/")
+        for item in aio["files"]
+    ) == 98

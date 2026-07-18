@@ -71,13 +71,13 @@ RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
     "NVIDIA GeForce RTX 4090",
 )
-RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-06-12-test"
+RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-07-18-lora5"
 RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY = (
-    "wan22_aio_video/2026-06-12-test/manifest.json"
+    "wan22_aio_video/2026-07-18-lora5/manifest.json"
 )
-RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX = "image_to_video/2026-06-13-test"
+RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX = "image_to_video/2026-07-18-lora5"
 RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY = (
-    "image_to_video/2026-06-13-test/manifest.json"
+    "image_to_video/2026-07-18-lora5/manifest.json"
 )
 RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-07-18-lora5"
 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (

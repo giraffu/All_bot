@@ -36,8 +36,8 @@ profiles:
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-    model_prefix: image_to_video/2026-06-13-test
-    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+    model_prefix: image_to_video/2026-07-18-lora5
+    model_manifest_key: image_to_video/2026-07-18-lora5/manifest.json
 
   video_basic:
     runtime_profile: video_basic
@@ -55,8 +55,8 @@ profiles:
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-    model_prefix: image_to_video/2026-06-13-test
-    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+    model_prefix: image_to_video/2026-07-18-lora5
+    model_manifest_key: image_to_video/2026-07-18-lora5/manifest.json
 
   ltx_video:
     runtime_profile: ltx_video
@@ -218,5 +218,5 @@ profiles:
     min_vram_gb: 48
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-    model_prefix: wan22_aio_video/2026-06-12-test
-    model_manifest_key: wan22_aio_video/2026-06-12-test/manifest.json
+    model_prefix: wan22_aio_video/2026-07-18-lora5
+    model_manifest_key: wan22_aio_video/2026-07-18-lora5/manifest.json

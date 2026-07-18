@@ -334,7 +334,7 @@ def test_lan_aio_fleet_render_supports_gpu_177_image_to_video_profile():
     assert "SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video" in rendered
     assert "SUPPORTED_TASK_TYPES: wan22_video_v2" not in rendered
     assert (
-        "RUNPOD_MODEL_MANIFEST_KEY: image_to_video/2026-06-13-test/manifest.json"
+        "RUNPOD_MODEL_MANIFEST_KEY: image_to_video/2026-07-18-lora5/manifest.json"
         in rendered
     )
     assert "--disable-dynamic-vram" in rendered
@@ -1454,7 +1454,7 @@ def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
     )
     assert payload["render_summary"]["model_manifest_key"] == (
-        "image_to_video/2026-06-13-test/manifest.json"
+        "image_to_video/2026-07-18-lora5/manifest.json"
     )
     assert "target_profile_id: image_to_video" in payload["yaml_patch"]
     assert "enabled: false" in payload["yaml_patch"]

@@ -102,6 +102,12 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
     assert catalog["img2img"]["profile"]["model_manifest_key"] == (
         "img2img_lora/2026-06-10/manifest.json"
     )
+    assert catalog["image_to_video"]["profile"]["model_manifest_key"] == (
+        "image_to_video/2026-07-18-lora5/manifest.json"
+    )
+    assert catalog["wan22_video_v2"]["profile"]["model_manifest_key"] == (
+        "wan22_video_v2/2026-07-18-lora5/manifest.json"
+    )
 
 
 def test_catalog_is_json_and_every_artifact_has_one_track():

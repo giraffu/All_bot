@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import Any
@@ -19,6 +20,10 @@ COMMON_RELATIVE_PATHS = {
     "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
     "vae/wan_2.1_vae.safetensors",
 }
+LEGACY_WAN22_AIO_MANIFEST_KEY = "wan22_aio_video/2026-06-12-test/manifest.json"
+WAN22_EXPLICIT_LORA_MANIFEST_KEY = (
+    "wan22_explicit_lora_library/2026-07-18/manifest.json"
+)
 IMAGE_TO_VIDEO_MARKERS = ("FASTMOVE",)
 WAN22_VIDEO_V2_MARKERS = ("DasiwaWAN22I2V14B",)
 
@@ -62,6 +67,135 @@ def split_wan22_aio_manifest(
     }
 
 
+def prepare_wan22_lora5_manifests(
+    *,
+    client: Any,
+    bucket: str,
+    base_source_key: str = LEGACY_WAN22_AIO_MANIFEST_KEY,
+    explicit_source_key: str = WAN22_EXPLICIT_LORA_MANIFEST_KEY,
+    execute: bool = False,
+) -> dict[str, Any]:
+    base_manifest = read_json_object(client, bucket=bucket, key=base_source_key)
+    explicit_manifest = read_json_object(
+        client, bucket=bucket, key=explicit_source_key
+    )
+    files_by_path: dict[str, dict[str, Any]] = {}
+    for manifest in (base_manifest, explicit_manifest):
+        for raw_entry in manifest.get("files") or []:
+            entry = dict(raw_entry)
+            relative_path = str(entry.get("relative_path") or "")
+            if not relative_path or not (entry.get("key") or entry.get("objectKey")):
+                raise ValueError("source manifest entry is missing relative_path or key")
+            existing = files_by_path.get(relative_path)
+            if existing and (
+                str(existing.get("sha256")) != str(entry.get("sha256"))
+                or int(existing.get("size_bytes") or 0)
+                != int(entry.get("size_bytes") or 0)
+            ):
+                raise ValueError(f"conflicting Wan22 manifest entry: {relative_path}")
+            files_by_path[relative_path] = entry
+    aio_files = sorted(files_by_path.values(), key=lambda item: item["relative_path"])
+    aio_manifest = {
+        "bundle": "wan22_aio_video",
+        "profile": "wan22_aio_video",
+        "version": "2026-07-18-lora5",
+        "prefix": RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY.removesuffix(
+            "/manifest.json"
+        ),
+        "source": {
+            "base_manifest_key": base_source_key,
+            "explicit_lora_manifest_key": explicit_source_key,
+        },
+        "file_count": len(aio_files),
+        "total_size_bytes": sum(
+            int(item.get("size_bytes") or item.get("size") or 0)
+            for item in aio_files
+        ),
+        "files": aio_files,
+    }
+    split = split_wan22_aio_manifest(aio_manifest)
+    manifests = {
+        "wan22_aio_video": aio_manifest,
+        "image_to_video": split["image_to_video"],
+        "wan22_video_v2": split["wan22_video_v2"],
+    }
+    targets = {
+        "wan22_aio_video": RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+        "image_to_video": RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+        "wan22_video_v2": RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    }
+    missing = []
+    for profile, manifest in manifests.items():
+        for entry in manifest["files"]:
+            key = str(entry.get("key") or entry.get("objectKey") or "")
+            matches, reason = head_object_matches_manifest_entry(
+                client, bucket=bucket, key=key, entry=entry
+            )
+            if not matches:
+                missing.append(
+                    {
+                        "profile": profile,
+                        "relative_path": entry["relative_path"],
+                        "key": key,
+                        "reason": reason,
+                    }
+                )
+    if missing:
+        return {
+            "ok": False,
+            "dry_run": not execute,
+            "missing_count": len(missing),
+            "missing": missing,
+            "verified_file_counts": {
+                profile: len(manifest["files"])
+                for profile, manifest in manifests.items()
+            },
+        }
+
+    uploads = []
+    if execute:
+        for profile, manifest in manifests.items():
+            target_key = targets[profile]
+            body = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+            checksum = hashlib.sha256(body).hexdigest()
+            client.put_object(
+                Bucket=bucket,
+                Key=target_key,
+                Body=body,
+                ContentType="application/json",
+                Metadata={"sha256": checksum},
+            )
+            head = client.head_object(Bucket=bucket, Key=target_key)
+            if (
+                int(head.get("ContentLength") or 0) != len(body)
+                or _metadata_value(head.get("Metadata"), "sha256") != checksum
+            ):
+                raise RuntimeError(
+                    f"published manifest HEAD verification failed: {target_key}"
+                )
+            uploads.append(
+                {
+                    "profile": profile,
+                    "key": target_key,
+                    "bytes": len(body),
+                    "sha256": checksum,
+                }
+            )
+    return {
+        "ok": True,
+        "dry_run": not execute,
+        "base_source_key": base_source_key,
+        "explicit_source_key": explicit_source_key,
+        "missing_count": 0,
+        "verified_file_counts": {
+            profile: len(manifest["files"])
+            for profile, manifest in manifests.items()
+        },
+        "uploads": uploads,
+        "manifests": _manifest_summaries(manifests, targets),
+    }
+
+
 def prepare_split_video_manifests(
     *,
     client: Any,
@@ -88,12 +222,19 @@ def prepare_split_video_manifests(
                     }
                 )
                 continue
-            if not head_object_exists(client, bucket=bucket, key=str(key)):
+            matches, reason = head_object_matches_manifest_entry(
+                client,
+                bucket=bucket,
+                key=str(key),
+                entry=entry,
+            )
+            if not matches:
                 missing.append(
                     {
                         "profile": profile,
                         "relative_path": entry["relative_path"],
                         "key": key,
+                        "reason": reason,
                     }
                 )
     if missing:
@@ -111,13 +252,31 @@ def prepare_split_video_manifests(
         for profile, manifest in manifests.items():
             target_key = targets[profile]
             body = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+            checksum = hashlib.sha256(body).hexdigest()
             client.put_object(
                 Bucket=bucket,
                 Key=target_key,
                 Body=body,
                 ContentType="application/json",
+                Metadata={"sha256": checksum},
             )
-            uploads.append({"profile": profile, "key": target_key, "bytes": len(body)})
+            head = client.head_object(Bucket=bucket, Key=target_key)
+            metadata_sha = _metadata_value(head.get("Metadata"), "sha256")
+            if (
+                int(head.get("ContentLength") or 0) != len(body)
+                or metadata_sha != checksum
+            ):
+                raise RuntimeError(
+                    f"published manifest HEAD verification failed: {target_key}"
+                )
+            uploads.append(
+                {
+                    "profile": profile,
+                    "key": target_key,
+                    "bytes": len(body),
+                    "sha256": checksum,
+                }
+            )
 
     return {
         "ok": True,
@@ -143,11 +302,13 @@ def create_model_r2_client_from_env() -> Any:
     )
     access_key = (
         os.getenv("RUNPOD_MODEL_ACCESS_KEY")
+        or os.getenv("R2_ACCESS_KEY")
         or os.getenv("R2_ACCESS_KEY_ID")
         or os.getenv("MINIO_ACCESS_KEY")
     )
     secret_key = (
         os.getenv("RUNPOD_MODEL_SECRET_KEY")
+        or os.getenv("R2_SECRET_KEY")
         or os.getenv("R2_SECRET_ACCESS_KEY")
         or os.getenv("MINIO_SECRET_KEY")
     )
@@ -183,17 +344,37 @@ def read_json_object(client: Any, *, bucket: str, key: str) -> dict[str, Any]:
     return json.loads(text)
 
 
-def head_object_exists(client: Any, *, bucket: str, key: str) -> bool:
+def head_object_matches_manifest_entry(
+    client: Any,
+    *,
+    bucket: str,
+    key: str,
+    entry: dict[str, Any],
+) -> tuple[bool, str]:
     try:
-        client.head_object(Bucket=bucket, Key=key)
+        head = client.head_object(Bucket=bucket, Key=key)
     except Exception as exc:
         code = _client_error_code(exc)
         if code in {"404", "NoSuchKey", "NotFound"}:
-            return False
+            return False, "missing"
         raise RuntimeError(
             f"head_object failed for {key}: {_safe_client_error(exc)}"
         ) from exc
-    return True
+    reasons = []
+    expected_size = int(entry.get("size_bytes") or entry.get("size") or 0)
+    if int(head.get("ContentLength") or 0) != expected_size:
+        reasons.append("size_mismatch")
+    expected_sha = str(entry.get("sha256") or "")
+    if _metadata_value(head.get("Metadata"), "sha256") != expected_sha:
+        reasons.append("sha256_metadata_mismatch")
+    return not reasons, ",".join(reasons)
+
+
+def _metadata_value(metadata: dict[str, Any] | None, key: str) -> str:
+    for metadata_key, value in (metadata or {}).items():
+        if str(metadata_key).lower() == key.lower():
+            return str(value)
+    return ""
 
 
 def _selected_files(files: list[dict[str, Any]], predicate) -> list[dict[str, Any]]:
@@ -225,11 +406,7 @@ def _build_split_manifest(
     return {
         "bundle": profile,
         "profile": profile,
-        "version": (
-            "2026-07-18-lora5"
-            if profile == "wan22_video_v2"
-            else "2026-06-13-test"
-        ),
+        "version": "2026-07-18-lora5",
         "prefix": prefix,
         "source": {
             "split_from": source_manifest.get("bundle") or "wan22_aio_video",
