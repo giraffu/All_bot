@@ -54,6 +54,11 @@ main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失
 各 profile 用 `scripts/gpu_profile_release_v2.py` 逐项合并证明；最后一项补齐后可传
 `--publish-ref ghcr.io/giraffu/allbot-gpu-release-manifests:<full-sha>`。helper 只允许
 `completeness=complete`、manifest/artifact 同 SHA、SHA tag 且远端 ref 尚不存在时推送。
+若本地 GitHub token 没有 `write:packages`，不得换临时 tag 或使用参数注入绕过；应把完整
+manifest 的 base64 与文件 SHA256 交给受保护的
+`.github/workflows/publish-gpu-release-manifest.yml`。该 workflow 仅接受 `origin/main`
+可达的完整 SHA，在 Actions `packages:write` 身份下重复执行同一 helper 的完整 catalog、
+同 SHA、内容 checksum 和不可覆盖校验。
 
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 

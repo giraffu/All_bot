@@ -199,3 +199,59 @@ def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(tmp_path):
             source_sha=SHA,
             run_func=lambda *args, **kwargs: None,
         )
+
+
+def test_existing_gpu_manifest_publish_requires_exact_catalog_and_source_sha(monkeypatch):
+    module = _load_module()
+    artifact = module.validate_artifact_attestation(
+        {
+            **_evidence(),
+            "checks": {
+                "actual_image_digest": True,
+                "baked_agent_revision": True,
+                "baked_workflow_revision": True,
+                "model_manifest_checksum": True,
+            },
+        },
+        profile="i2i_pro",
+        source_sha=SHA,
+        image_ref="ghcr.io/giraffu/i2i@" + DIGEST,
+    )
+    expected = {"i2i_pro", "scail2"}
+    monkeypatch.setattr(
+        module,
+        "load_catalog",
+        lambda _path: {name: {"track": "gpu-execution"} for name in expected},
+    )
+    manifest = {
+        "schema_version": 2,
+        "track": "gpu-execution",
+        "source_sha": SHA,
+        "completeness": "complete",
+        "missing_artifacts": [],
+        "artifacts": {name: dict(artifact) for name in expected},
+    }
+
+    module.validate_complete_gpu_manifest(manifest, source_sha=SHA)
+
+    manifest["artifacts"].pop("scail2")
+    with pytest.raises(module.GPUProfileReleaseError, match="catalog profiles"):
+        module.validate_complete_gpu_manifest(manifest, source_sha=SHA)
+
+    manifest["artifacts"]["scail2"] = {**artifact, "source_sha": "b" * 40}
+    with pytest.raises(module.GPUProfileReleaseError, match="same source SHA"):
+        module.validate_complete_gpu_manifest(manifest, source_sha=SHA)
+
+
+def test_gpu_manifest_publisher_workflow_is_digest_verified_and_main_ancestry_gated():
+    workflow = (
+        ROOT / ".github/workflows/publish-gpu-release-manifest.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "packages: write" in workflow
+    assert "git merge-base --is-ancestor" in workflow
+    assert "MANIFEST_SHA256" in workflow
+    assert "sha256sum --check" in workflow
+    assert "base64 --decode" in workflow
+    assert "--publish-existing-manifest" in workflow
+    assert "allbot-gpu-release-manifests" in workflow

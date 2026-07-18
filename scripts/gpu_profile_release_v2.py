@@ -12,8 +12,13 @@ from typing import Any, Mapping
 
 try:
     from scripts.release_artifacts_v2 import load_catalog
+    from scripts.release_manifest_v2 import ManifestV2Error, _validate_manifest
 except ModuleNotFoundError:
     from release_artifacts_v2 import load_catalog  # type: ignore[no-redef]
+    from release_manifest_v2 import (  # type: ignore[no-redef]
+        ManifestV2Error,
+        _validate_manifest,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -160,6 +165,45 @@ def merge_gpu_manifest(
     }
 
 
+def validate_complete_gpu_manifest(
+    manifest: Mapping[str, Any], *, source_sha: str
+) -> None:
+    """Validate a prebuilt complete GPU manifest before registry publication."""
+
+    if manifest.get("source_sha") != source_sha:
+        raise GPUProfileReleaseError("GPU manifest source SHA does not match")
+    if (
+        manifest.get("completeness") != "complete"
+        or manifest.get("missing_artifacts") not in ([], ())
+    ):
+        raise GPUProfileReleaseError("GPU manifest must be complete")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise GPUProfileReleaseError("GPU manifest artifacts are invalid")
+    catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
+    expected = {
+        name
+        for name, metadata in catalog.items()
+        if metadata["track"] == "gpu-execution"
+    }
+    if set(artifacts) != expected:
+        raise GPUProfileReleaseError(
+            "GPU manifest must contain exactly the catalog profiles"
+        )
+    if any(
+        not isinstance(artifact, Mapping)
+        or artifact.get("source_sha") != source_sha
+        for artifact in artifacts.values()
+    ):
+        raise GPUProfileReleaseError(
+            "GPU manifest artifacts must use the same source SHA"
+        )
+    try:
+        _validate_manifest(manifest, track="gpu-execution", expected_sha=source_sha)
+    except ManifestV2Error as exc:
+        raise GPUProfileReleaseError(str(exc)) from exc
+
+
 def publish_gpu_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -228,12 +272,17 @@ def publish_gpu_manifest(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", required=True)
+    parser.add_argument("--profile")
     parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--image-ref", required=True)
-    parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--image-ref")
+    parser.add_argument("--evidence", type=Path)
     parser.add_argument("--previous-manifest", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--publish-existing-manifest",
+        type=Path,
+        help="Validate and publish an already assembled complete GPU manifest.",
+    )
     parser.add_argument(
         "--publish-ref",
         help="Immutable OCI ref ending in :<source-sha>; requires a complete manifest.",
@@ -244,6 +293,32 @@ def main() -> int:
         default="canary-verified",
     )
     args = parser.parse_args()
+    if args.publish_existing_manifest:
+        if not args.publish_ref:
+            parser.error("--publish-existing-manifest requires --publish-ref")
+        manifest = json.loads(
+            args.publish_existing_manifest.read_text(encoding="utf-8")
+        )
+        validate_complete_gpu_manifest(manifest, source_sha=args.source_sha)
+        publish_gpu_manifest(
+            manifest,
+            manifest_path=args.publish_existing_manifest,
+            publish_ref=args.publish_ref,
+            source_sha=args.source_sha,
+        )
+        return 0
+    missing = [
+        option
+        for option, value in (
+            ("--profile", args.profile),
+            ("--image-ref", args.image_ref),
+            ("--evidence", args.evidence),
+            ("--output", args.output),
+        )
+        if not value
+    ]
+    if missing:
+        parser.error("profile assembly requires " + ", ".join(missing))
     evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
     validator = (
         validate_artifact_attestation
