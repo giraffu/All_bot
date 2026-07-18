@@ -109,7 +109,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 ### RunPod 与 LAN AIO
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod 管理和 LAN AIO worker 基础控制只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
-- Dashboard RunPod operation 必须从 profile catalog pin 已验收的 img2img/PornMaster baked 镜像并覆盖 `/app/.env` 历史 ref；目标 tag 未发布或 baked entrypoint/revision smoke 未通过时，禁止先部署引用它的 Dashboard。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
+- 正式 Dashboard RunPod operation 必须消费同一 main release index 的完整 `profile -> image@sha256` pin 集合并覆盖 `/app/.env` 历史 ref；缺 profile、mutable tag 或共用 image env 对应冲突 digest 时一律 fail closed。Dashboard control-plane `release.env` 只记录这组非敏感 pin JSON，不修改真实 prod env，也不重建或替换已经运行的 Pod。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，release index 中二者映射到同一 image env 时必须解析为相同 digest；差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
 - LTX 新 SHA 只允许发布到当前仓库 Actions 可写的 `allbot-comfy-runpod-ltx-video-v2` 包；旧无 `-v2` 包仅可作为 digest-pinned 历史回滚来源，不能登记新的 code/workflow revision。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
 - Dashboard 成功删除 RunPod 后，operation store 的同 agent delete 记录必须在 heartbeat 新鲜窗口内充当删除墓碑；Central 残留的 `disabled + idle|running` heartbeat 不得触发自动 enable，未被删除的其它暂停 RunPod 仍可正常恢复。

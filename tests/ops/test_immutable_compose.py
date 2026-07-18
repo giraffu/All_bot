@@ -71,6 +71,10 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
         "${RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT:?"
         "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT is required}"
     )
+    assert environment["RUNPOD_RELEASE_PROFILE_PINS_JSON"] == (
+        "${RUNPOD_RELEASE_PROFILE_PINS_JSON:?"
+        "RUNPOD_RELEASE_PROFILE_PINS_JSON is required}"
+    )
 
 
 def test_prod_dashboard_backend_uses_required_remote_lan_aio_runner_contract():

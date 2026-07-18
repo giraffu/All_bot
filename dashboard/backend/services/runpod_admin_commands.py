@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,8 +16,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_ADMIN_PROFILE_OPTIONS,
-    RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
-    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE,
+    RUNPOD_TASK_PROFILES,
 )
 from ops.gpu_pool_controller.providers.runpod import (
     normalize_prod_worker_profile,
@@ -24,6 +25,11 @@ from ops.gpu_pool_controller.providers.runpod import (
 )
 
 RUNPOD_PROFILE_OPTIONS: tuple[dict[str, Any], ...] = RUNPOD_ADMIN_PROFILE_OPTIONS
+RUNPOD_RELEASE_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+RUNPOD_RELEASE_PROFILE_IMAGE_ENVS = frozenset(
+    RUNPOD_TASK_PROFILES[str(option["profile"])].image_env_key
+    for option in RUNPOD_ADMIN_PROFILE_OPTIONS
+)
 
 
 @dataclass
@@ -362,12 +368,28 @@ class RunPodAdminCommandBuilder:
         env["RUNPOD_PROD_MAX_MANUAL_SLOTS"] = str(
             prod_max_manual_slots or self.default_prod_max_manual_slots()
         )
-        env["RUNPOD_IMAGE_NAME_IMG2IMG_LORA"] = (
-            RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
-        )
-        env["RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT"] = (
-            RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE
-        )
+        raw_pins = os.getenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", "").strip()
+        try:
+            pins = json.loads(raw_pins)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="RunPod release profile pins are invalid",
+            ) from exc
+        if (
+            not isinstance(pins, dict)
+            or set(pins) != RUNPOD_RELEASE_PROFILE_IMAGE_ENVS
+            or any(
+                not isinstance(image_ref, str)
+                or not RUNPOD_RELEASE_IMAGE_RE.fullmatch(image_ref)
+                for image_ref in pins.values()
+            )
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="RunPod release profile pins are incomplete or not digest-pinned",
+            )
+        env.update(pins)
         return env
 
     def requested_count_or_422(self, item: Any) -> int:

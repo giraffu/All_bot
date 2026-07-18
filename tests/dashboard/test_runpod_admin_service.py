@@ -1,3 +1,4 @@
+import json
 import signal
 
 import pytest
@@ -15,7 +16,25 @@ from dashboard.backend.services import runpod_admin_service
 
 
 @pytest.fixture(autouse=True)
-def _clear_runpod_admin_operations():
+def _clear_runpod_admin_operations(monkeypatch):
+    pins = {
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        for index, image_env in enumerate(
+            sorted(
+                {
+                    "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
+                    "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
+                    "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
+                    "RUNPOD_IMAGE_NAME_I2I_PRO",
+                    "RUNPOD_IMAGE_NAME_SCAIL2",
+                    "RUNPOD_IMAGE_NAME_LTX_VIDEO",
+                    "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+                }
+            ),
+            start=1,
+        )
+    }
+    monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
     runpod_admin_service.set_runpod_operation_store_for_tests(
         InMemoryRunPodOperationStore()
     )
