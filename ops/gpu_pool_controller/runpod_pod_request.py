@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .runpod_profile_catalog import (
@@ -18,6 +19,7 @@ from .runpod_profile_catalog import (
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_CONTAINER_DISK_GB,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
@@ -27,6 +29,19 @@ from .runpod_profile_catalog import (
     prod_slot_from_agent_id,
     prod_worker_profile_for_task_type,
 )
+
+
+_RUNPOD_PUBLIC_WAN22_AIO_VIDEO_DIGEST_RE = re.compile(
+    rf"^{re.escape(RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY)}"
+    r"@sha256:[0-9a-f]{64}$"
+)
+
+
+def is_allowed_cloud_prod_wan22_image(image_name: str) -> bool:
+    return (
+        image_name == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+        or _RUNPOD_PUBLIC_WAN22_AIO_VIDEO_DIGEST_RE.fullmatch(image_name) is not None
+    )
 
 
 def format_seconds_env(value: float) -> str:
@@ -202,11 +217,13 @@ class RunPodPodRequestBuilder:
         if (
             environment == "cloud-prod"
             and profile.task_type in {"image_to_video", "wan22_video_v2"}
-            and image_name != RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+            and not is_allowed_cloud_prod_wan22_image(image_name)
         ):
             raise ValueError(
-                f"{profile.image_env_key} must be "
-                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE} for cloud-prod"
+                f"{profile.image_env_key} must be the legacy image "
+                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE} or a canonical "
+                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY}@sha256:<digest> "
+                "reference for cloud-prod"
             )
         if not template_id and not image_name:
             image_name = self.pending_image_name_for(profile)

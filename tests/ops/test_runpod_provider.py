@@ -1323,15 +1323,46 @@ def test_render_create_cloud_prod_split_video_defaults_to_rife_image():
     assert payload["json"]["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
 
 
-def test_render_create_cloud_prod_split_video_rejects_old_wan22_image():
+@pytest.mark.parametrize("task_type", ["image_to_video", "wan22_video_v2"])
+def test_render_create_cloud_prod_split_video_accepts_canonical_digest(task_type):
+    image_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64
+    )
+    agent_id = prod_agent_id_from_slot("02", profile=task_type)
+    provider = RunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_image_to_video=image_ref,
+            image_name_wan22_video_v2=image_ref,
+            model_bucket="allbot-model-cache",
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type=task_type,
+        environment="cloud-prod",
+        redact=False,
+    )
+
+    assert payload["json"]["imageName"] == image_ref
+
+
+@pytest.mark.parametrize(
+    "image_ref",
+    [
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
+        + "20260613-wan22aio-lanbase-ab9b7ea",
+        "ghcr.io/example/allbot-comfy-runpod-wan22-aio-video@sha256:" + "1" * 64,
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "A" * 64,
+    ],
+)
+def test_render_create_cloud_prod_split_video_rejects_noncanonical_image(image_ref):
     agent_id = prod_agent_id_from_slot("02", profile="wan22_video_v2")
     provider = RunPodProvider(
         _settings(
             prod_agent_id=agent_id,
-            image_name_wan22_video_v2=(
-                RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-                + "20260613-wan22aio-lanbase-ab9b7ea"
-            ),
+            image_name_wan22_video_v2=image_ref,
             model_bucket="allbot-model-cache",
         )
     )
