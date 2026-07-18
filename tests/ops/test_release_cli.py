@@ -4454,6 +4454,142 @@ def test_rollback_material_repair_command_supports_test_without_prod_confirmatio
     assert '"environment": "test"' in capsys.readouterr().out
 
 
+def test_rollback_material_repair_expands_disabled_test_owner_module_to_full_baseline(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    calls = []
+    dashboard_digest = "sha256:" + "1" * 64
+    central_digest = "sha256:" + "2" * 64
+    selected_manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "source_ref": "refs/heads/codex/test-train",
+        "release_channel": "test-candidate",
+        "track": "control-plane",
+        "release_index": "/bundle/release-index.json",
+        "selected_artifacts": ["dashboard-backend", "dashboard-frontend"],
+        "artifacts": {
+            "dashboard-backend": {
+                "kind": "image",
+                "digest": dashboard_digest,
+            }
+        },
+    }
+    full_manifest = {
+        **selected_manifest,
+        "selected_artifacts": ["central-api", "dashboard-backend"],
+        "artifacts": {
+            "central-api": {"kind": "image", "digest": central_digest},
+            "dashboard-backend": {
+                "kind": "image",
+                "digest": dashboard_digest,
+            },
+        },
+    }
+
+    def fake_build_plan(args):
+        args.previous_state = {
+            "git_sha": FULL_SHA,
+            "artifacts": {
+                "central-api": {"digest": central_digest},
+                "dashboard-backend": {"digest": dashboard_digest},
+            },
+        }
+        return (
+            module.ReleaseImpact(
+                services={"dashboard-backend", "dashboard-frontend"},
+                level="rolling",
+            ),
+            selected_manifest,
+            FULL_SHA,
+        )
+
+    monkeypatch.setattr(module, "build_plan", fake_build_plan)
+    monkeypatch.setattr(module, "verify_operator_worktree_clean", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_validate_local_env",
+        lambda _args: (_valid_test_environment(), "config-revision"),
+    )
+    monkeypatch.setattr(module, "verify_release_ci", lambda *_args: None)
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest)
+    monkeypatch.setattr(
+        module,
+        "render_track_release_env",
+        lambda manifest, _revision: calls.append(("render", manifest)) or "release-env",
+    )
+    monkeypatch.setattr(
+        module,
+        "_materialize_cloud_rollback_materials",
+        lambda _args, impact, manifest, *_rest: calls.append(
+            ("materialize", impact, manifest)
+        ),
+    )
+
+    result = module.main(
+        [
+            "recover",
+            "--env",
+            "test",
+            "--sha",
+            FULL_SHA,
+            "--modules",
+            "dashboard",
+            "--repair-rollback-materials",
+            "--execute",
+        ]
+    )
+
+    assert result == 0
+    assert calls[0] == ("render", full_manifest)
+    assert calls[1][0] == "materialize"
+    assert calls[1][1].services == {"central-api"}
+    assert calls[1][2] is full_manifest
+    assert '"running_services_changed": false' in capsys.readouterr().out
+
+
+def test_disabled_test_owner_rollback_repair_rejects_recorded_digest_mismatch(
+    monkeypatch,
+):
+    module = _load_module()
+    recorded_digest = "sha256:" + "1" * 64
+    bundled_digest = "sha256:" + "2" * 64
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "track": "control-plane",
+        "release_index": "/bundle/release-index.json",
+    }
+    full_manifest = {
+        **manifest,
+        "selected_artifacts": ["central-api"],
+        "artifacts": {
+            "central-api": {"kind": "image", "digest": bundled_digest}
+        },
+    }
+    args = SimpleNamespace(
+        env="test",
+        previous_state={
+            "git_sha": FULL_SHA,
+            "artifacts": {"central-api": {"digest": recorded_digest}},
+        },
+    )
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest)
+
+    with pytest.raises(module.ReleaseError, match="does not match"):
+        module._expand_disabled_test_owner_rollback_baseline(
+            args,
+            module.ReleaseImpact(
+                services={"dashboard-backend", "dashboard-frontend"},
+                level="rolling",
+            ),
+            manifest,
+            _valid_test_environment(),
+        )
+
+
 def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
     monkeypatch,
 ):
