@@ -473,7 +473,10 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
 
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
-    image_ref = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+    image_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "2" * 64
+    )
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = FakeRunPodProvider(
         _settings(
