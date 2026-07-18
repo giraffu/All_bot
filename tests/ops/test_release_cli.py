@@ -2814,6 +2814,22 @@ def test_config_update_compares_current_and_candidate_env_with_same_quote_semant
     assert changed == {"DASHBOARD_LAN_AIO_RUNNER_HOST"}
 
 
+def test_prod_environment_rejects_test_sentinels_without_exposing_values():
+    module = _load_module()
+    values = _valid_prod_environment()
+    values["BOT_TOKEN"] = "opaque-test-token"
+    values["R2_BUCKET"] = "user-data-test"
+
+    with pytest.raises(module.ReleaseError) as exc:
+        module.validate_environment(module.load_structured_file(SCHEMA_PATH), "prod", values)
+
+    message = str(exc.value)
+    assert "BOT_TOKEN" in message
+    assert "R2_BUCKET" in message
+    assert "opaque-test-token" not in message
+    assert "user-data-test" not in message
+
+
 def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
     module = _load_module()
     digest = "sha256:" + "1" * 64
@@ -3223,6 +3239,185 @@ def test_production_promotion_rejects_candidate_test_state(monkeypatch):
             ),
             manifest,
         )
+
+
+def test_promoted_main_uses_embedded_exact_approval_without_test_redeploy(
+    monkeypatch,
+):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    artifact = {
+        "kind": "image",
+        "ref": "ghcr.io/giraffu/allbot-web-api@" + digest,
+        "digest": digest,
+        "source_sha": "b" * 40,
+        "oci_revision": "b" * 40,
+        "dependency_closure": [],
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "release_channel": "main",
+        "artifacts": {"web-api": artifact},
+        "selected_artifacts": ["web-api"],
+        "promotion_approval": {
+            "status": "approved",
+            "artifacts": {
+                "web-api": {
+                    "digest": digest,
+                    "source_sha": "b" * 40,
+                    "status": "verified",
+                }
+            },
+        },
+    }
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "promoted main must not query or redeploy the test environment"
+        ),
+    )
+
+    module._promotion_check(
+        SimpleNamespace(env="prod", control_plane_repair_fast_track=False), manifest
+    )
+
+
+def test_generation_entries_elevate_mixed_prod_release_to_maintenance():
+    module = _load_module()
+    generation = module.ReleaseImpact(level="rolling")
+    management = module.ReleaseImpact(level="rolling")
+
+    module.apply_generation_maintenance(
+        "prod", {"web-api", "dashboard-frontend"}, generation
+    )
+    module.apply_generation_maintenance(
+        "prod", {"dashboard-backend", "public-web"}, management
+    )
+
+    assert generation.level == "maintenance"
+    assert "generation-entry-maintenance" in generation.matched_rules
+    assert management.level == "rolling"
+
+
+def test_deploy_module_defaults_to_prod_and_accepts_singular_module_option():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        ["deploy-module", "--module", "web-api", "--confirm-prod", "--execute"]
+    )
+
+    assert args.env == "prod"
+    assert args.modules == ["web-api"]
+    assert args.bundle_repository.endswith("allbot-release-v2")
+
+
+def test_deploy_module_requires_exact_promoted_main_approval():
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "validation": {"mode": "promoted", "tests": "candidate-passed"},
+        "artifacts": {"web-api": {"digest": digest}},
+        "selected_artifacts": ["web-api"],
+        "promotion_approval": {
+            "artifacts": {"web-api": {"digest": digest, "status": "verified"}}
+        },
+    }
+
+    module.validate_deploy_module_approval(manifest)
+    manifest["promotion_approval"]["artifacts"]["web-api"]["digest"] = (
+        "sha256:" + "2" * 64
+    )
+    with pytest.raises(module.ReleaseError, match="web-api"):
+        module.validate_deploy_module_approval(manifest)
+
+
+def test_promoted_release_env_records_main_and_artifact_source_identity():
+    module = _load_module()
+    candidate_sha = "b" * 40
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "selected_artifacts": ["web-api"],
+        "artifacts": {
+            "web-api": {
+                "kind": "image",
+                "ref": "ghcr.io/giraffu/web-api@" + digest,
+                "digest": digest,
+                "source_sha": candidate_sha,
+            }
+        },
+        "promotion": {"candidate_sha": candidate_sha},
+        "runpod_profile_pins": {},
+    }
+
+    rendered = module.render_track_release_env(manifest, "f" * 64)
+
+    assert f"ALLBOT_RELEASE_SHA={FULL_SHA}" in rendered
+    assert f'"web-api":"{candidate_sha}"' in rendered
+    assert f"ALLBOT_PROMOTED_CANDIDATE_SHA={candidate_sha}" in rendered
+
+
+def test_latest_main_resolution_locks_one_full_remote_sha(monkeypatch):
+    module = _load_module()
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        stdout = FULL_SHA + "\n" if command[:2] == ["git", "rev-parse"] else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    assert module.resolve_latest_protected_main_sha() == FULL_SHA
+    assert commands == [
+        ["git", "fetch", "--prune", "origin", "main"],
+        ["git", "rev-parse", "--verify", "origin/main"],
+    ]
+
+
+def test_deploy_module_no_change_requires_digest_health_and_config_revision(
+    monkeypatch,
+):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    ref = "ghcr.io/giraffu/allbot-web-api@" + digest
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "artifacts": {
+            "web-api": {
+                "kind": "image",
+                "ref": ref,
+                "digest": digest,
+            }
+        },
+    }
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        observed["script"] = kwargs["input_text"]
+        return subprocess.CompletedProcess(
+            command, 0, stdout=f"web-api\t{ref}\n", stderr=""
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    result = module.verify_deploy_module_no_change(
+        SimpleNamespace(env="prod", remote_host="prod-host"),
+        module.ReleaseImpact(services={"web-api"}),
+        manifest,
+        _valid_prod_environment(),
+        "f" * 64,
+    )
+
+    assert result["status"] == "no-change"
+    assert result["artifacts"]["web-api"]["digest"] == digest
+    assert "RepoDigests" in observed["script"]
+    assert "ALLBOT_CONFIG_REVISION" in observed["script"]
 
 
 def test_test_candidate_channel_is_test_only_and_not_verifiable():

@@ -9,6 +9,7 @@ remain outside this bundle.
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
@@ -228,9 +229,71 @@ def load_release_index(path: Path, *, expected_sha: str) -> LoadedRelease:
         raise ManifestV2Error("release index validation metadata is invalid")
     validation_mode = str(validation.get("mode", ""))
     validation_tests = str(validation.get("tests", ""))
-    expected_tests = {"full": "passed", "build-only": "skipped"}
+    expected_tests = {
+        "full": "passed",
+        "build-only": "skipped",
+        "promoted": "candidate-passed",
+    }
     if expected_tests.get(validation_mode) != validation_tests:
         raise ManifestV2Error("release index validation metadata is inconsistent")
+    promotion = index.get("promotion")
+    if validation_mode == "promoted":
+        if release_channel != "main" or not isinstance(promotion, Mapping):
+            raise ManifestV2Error("promoted release requires main-channel promotion metadata")
+        candidate_sha = _validate_sha(
+            promotion.get("candidate_sha"), field="promotion candidate_sha"
+        )
+        bundle_digest = str(promotion.get("candidate_bundle_digest", ""))
+        if not DIGEST_RE.fullmatch(bundle_digest):
+            raise ManifestV2Error("promotion candidate bundle digest is invalid")
+        if (
+            promotion.get("mode") != "candidate-digest-reuse"
+            or promotion.get("tree_equivalent") is not True
+        ):
+            raise ManifestV2Error("promotion mode or tree equivalence is invalid")
+        approval_relative = Path(str(promotion.get("approval_path", "")))
+        if (
+            not approval_relative.name
+            or approval_relative.is_absolute()
+            or ".." in approval_relative.parts
+        ):
+            raise ManifestV2Error("promotion approval path is unsafe")
+        approval_path = path.parent / approval_relative
+        try:
+            approval_bytes = approval_path.read_bytes()
+        except OSError as exc:
+            raise ManifestV2Error("promotion approval is unavailable") from exc
+        if hashlib.sha256(approval_bytes).hexdigest() != str(
+            promotion.get("approval_sha256", "")
+        ):
+            raise ManifestV2Error("promotion approval checksum does not match")
+        approval = _read_object(approval_path)
+        if (
+            approval.get("schema_version") != 1
+            or approval.get("status") != "approved"
+            or approval.get("candidate_sha") != candidate_sha
+            or approval.get("candidate_bundle_digest") != bundle_digest
+        ):
+            raise ManifestV2Error("promotion approval identity is invalid")
+        approval_artifacts = approval.get("artifacts")
+        if not isinstance(approval_artifacts, Mapping):
+            raise ManifestV2Error("promotion approval artifacts are invalid")
+        for name, artifact in approval_artifacts.items():
+            if not isinstance(artifact, Mapping):
+                raise ManifestV2Error(f"promotion approval artifact is invalid: {name}")
+            digest = str(artifact.get("digest", ""))
+            if not (DIGEST_RE.fullmatch(digest) or CHECKSUM_RE.fullmatch(digest)):
+                raise ManifestV2Error(f"promotion approval digest is invalid: {name}")
+            _validate_sha(
+                artifact.get("source_sha"),
+                field=f"promotion approval {name} source_sha",
+            )
+            if artifact.get("status") not in {"verified", "approved-direct"}:
+                raise ManifestV2Error(f"promotion approval status is invalid: {name}")
+        index = dict(index)
+        index["promotion_approval"] = approval
+    elif promotion is not None:
+        raise ManifestV2Error("non-promoted release cannot contain promotion metadata")
     index = dict(index)
     index["release_channel"] = release_channel
     index["source_ref"] = source_ref

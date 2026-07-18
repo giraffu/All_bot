@@ -60,7 +60,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 - 当前集成 AI 对非成员只做只读状态与冲突核对，不执行 merge/rebase、切分支、stash/clean、依赖清理、`park` 或 `refresh`。
 - 成员 candidate `accept` 后仍立即释放对应槽位。槽位随后可以被新任务认领；新任务拥有新的成员身份，当前批次收尾不得按旧槽位字母再次刷新或停放它。
 - 每次释放前重新核对槽位当前分支与批次成员身份。身份不匹配时保留现场并跳过该槽位，不影响其它成员继续串行集成。
-- 当前批次只处理冻结成员，依次完成 train candidate 验收，然后推进 train→main、精确 main bundle 测试部署和 main→train 血缘同步。批次关闭后重新盘点，形成下一批成员快照。
+- 当前批次只处理冻结成员，依次完成 train candidate 验收；最终组合候选执行 release freeze/approve 后推进 train→main 和 main→train 血缘同步。main 只发布原 candidate digest 的 promotion bundle，不重新部署测试站。批次关闭后重新盘点，形成下一批成员快照。
 
 这使共享 test-train 继续保持单写入者，同时允许开发槽位在合并、测试和 main 更新期间持续接单；隔离边界是交接单元身份，而不是某一时刻的槽位字母集合。
 
@@ -75,9 +75,9 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 }
 ```
 
-旧 v2 index 缺少这两个字段时只兼容解释为 `main`。candidate 必须同时满足完整 SHA、远端 train ancestry、可信成功 CI 和 digest-pinned artifact；只能部署 `env=test`，不能执行 `verify-test`、prod、Dashboard fast-track 或晋级。
+旧 v2 index 缺少这两个字段时只兼容解释为 `main`。candidate 必须同时满足完整 SHA、远端 train ancestry、可信成功 CI 和 digest-pinned artifact；只能直接部署 `env=test`，不能执行 `verify-test`、prod 或 Dashboard fast-track。只有冻结并生成 OCI 批准记录后，才可由 tree-identical main promotion CI 原样晋级；candidate bundle 本身始终不能作为 prod 输入。
 
-Candidate CI 沿 train first-parent 复用最近候选 bundle；首次没有候选时复用 main v2 bundle。main CI 永远不从 candidate 仓库复用，确保正式候选重新从 main 历史构建。v2 发布只响应受保护 main/train 的 `push` CI 成功事件；PR CI 只做门禁，不发布 bundle，避免 main→train 血缘回灌 PR 重复写入同一不可变 tag。
+Candidate CI 沿 train first-parent 复用最近候选 bundle；首次没有候选时复用 main v2 bundle。最终候选只构建一次。main promotion CI 验证候选祖先关系、整棵 tree 相同和批准记录后，复制原 artifact 引用/Public Web tar，禁止 Docker build、Web 重打包或测试站部署。PR CI 只做门禁，不发布 bundle。
 
 ## 4. 唯一测试站操作
 
@@ -110,17 +110,27 @@ schema v2 的远端事务和发布合约都按 track 隔离：journal/staged sta
 
 Migration 只允许向前兼容。失败后不得自动 Alembic downgrade；通过 forward-fix 或显式恢复发布前测试库备份收口，期间 train 保持 blocked。
 
-## 5. 验收与最终晋级
+## 5. 验收、冻结与最终晋级
 
-Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，只记录本轮 PR/slot、受影响模块、smoke 和真实时间，不要求每个子任务观察 24 小时，也不能生成正式 verified 状态。
+Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，记录每轮 PR/slot、受影响模块、smoke 和真实时间。成员级 `accept` 用于串行推进列车；整批正式批准使用独立 release evidence，逐 artifact 标记 `verified` 或 `approved-direct`，并绑定测试站运行态摘要 digest、组合检查、回滚演练和人工批准。
 
 本批次全部成员 accepted 后：
 
-1. 创建 `codex/test-train` 到 `main` 的唯一集成 PR。
-2. 等待 main CI 生成新的 main v2 bundle。
-3. 把最终 main SHA 重新部署云测试，完成组合回归、回滚演练和人工验收。
-4. 默认观察 24 小时；用户明确授权时才使用现有短观察 evidence/CLI 双重确认。
-5. 执行 `verify-test`，再由用户明确确认正式发布同 SHA/digest。
+1. 对最终 train SHA 执行 `freeze`，冻结候选 bundle descriptor digest 和完整 artifact 集；冻结期间不得合入新候选。
+2. 在当前候选上完成组合回归、回滚演练和人工验收，生成逐 artifact release evidence。
+3. 执行 `approve-release --execute`；命令重新读取测试站真实 digest，生成批准文件并把它发布为不可覆盖 OCI artifact。若本机 token 只因缺少 `write:packages` 无法完成 push，保留冻结与本地批准文件，使用受保护 `modular-release-v2.yml` 的 `publish_approval=true` dispatch 传入文件 base64 与 SHA256；approval-only job 要求 SHA 等于当前 `origin/codex/test-train` 头，并复核 candidate descriptor/完整 artifact 集，不 build、不部署测试站。发布成功后再次执行同一 `approve-release`，由字节一致性核验完成本地状态收口。未批准冻结可 `abort-freeze`，已批准记录不可取消或删除。
+4. 创建 `codex/test-train` 到 `main` 的唯一集成 PR。合并 tree 必须与候选完全相同；任何额外文件变化都要求新 candidate。
+5. main promotion CI 原样复制已批准 digest/checksum，发布以 main SHA 为键的 bundle。此阶段不 build、不部署测试、不执行 `verify-test`。
+6. 用户对本次正式 mutation 明确确认后，用 main bundle 执行单模块或多模块生产事务。
+
+```bash
+python scripts/test_train_release.py freeze --sha <train-sha>
+python scripts/test_train_release.py approve-release \
+  --sha <train-sha> --evidence <release-evidence.json> \
+  --approved-by <name> --execute
+# 仅限尚未 approve 的冻结
+python scripts/test_train_release.py abort-freeze
+```
 
 main 合并会产生一个新的 merge commit。下一轮新的槽位 PR 合入 train 前，集成 AI 必须再通过 PR 把该 main 血缘同步回 `codex/test-train`，确保下一次 train→main PR 满足 strict up-to-date 保护；这不延迟已经 accepted 的槽位立即释放，也不得为此直接 push 或 force-push train。
 

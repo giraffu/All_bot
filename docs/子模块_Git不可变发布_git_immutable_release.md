@@ -27,9 +27,11 @@
 
 ## 3. 构建契约
 
-CI release index 记录 `validation.mode=full|build-only` 和 `validation.tests=passed|skipped`。自动 push 工作流固定为 full；人工 build-only 只省略测试套件和深度 smoke，仍从受保护分支完整 SHA 构建不可变镜像、发布 digest/checksum 并记录成功构建 run。发布执行不能用 `--skip-ci-checks`；消费 build-only 产物必须选择合法的 direct/emergency 策略、显式 `--skip-gate ci-tests` 并填写原因和批准人。
+CI release index 记录 `validation.mode=full|build-only|promoted`。`full` 候选测试通过，`build-only` 明确记录 tests skipped，`promoted` 只允许 main 且表示复用已批准候选字节。人工 build-only 仍必须由成功 CI 构建；执行不能用 `--skip-ci-checks`，消费它必须使用合法 direct/emergency、显式 `--skip-gate ci-tests` 并填写原因和批准人。
 
-并发开发增加独立 `test-candidate` channel。`main` bundle 位于 `ghcr.io/giraffu/allbot-release-v2:<sha>`；精确 `codex/test-train` bundle 位于 `ghcr.io/giraffu/allbot-release-v2-test-candidate:<sha>`。v2 index 显式写 `release_channel` 和 `source_ref`，旧 index 只兼容为 main。Candidate 只能部署 test，禁止 `verify-test`、prod、Dashboard fast-track 与正式晋级；最终合入 main 后必须重新构建并重新测试新的 main SHA。
+并发开发增加独立 `test-candidate` channel。`main` bundle 位于 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；精确 train bundle 位于 `ghcr.io/giraffu/allbot-release-v2-test-candidate:<candidate-sha>`，批准记录位于 `allbot-release-v2-promotions:<candidate-sha>`。Candidate bundle 只能直接部署 test，不能绕过 main 用于 prod。最终候选 `freeze`/`approve-release` 后，main CI 只验证 ancestry、整 tree 相同和证据一致，原样复制 digest/checksum；不重新构建、不重新部署测试、不重打 Public Web。
+
+批准记录必须先由集成机的 `approve-release --execute` 读取真实测试站状态并生成。本机 GitHub token 缺少 `write:packages` 时，受保护 `modular-release-v2.yml` 提供 approval-only dispatch：输入精确 train SHA、批准文件 base64 与文件 SHA256；Actions 要求该 SHA 等于当前受保护 train 头，拉取同 SHA candidate descriptor/bundle，调用 `publish_release_approval_v2.py` 复核 full CI、bundle digest、有 `source_sha` 的可晋级 artifact digest/source/status 和批准人后，以 SHA tag 不可覆盖发布。PostgreSQL、Redis、imgproxy 等无 `source_sha` 的 digest-pinned `external-image` 继续由候选 manifest 自身校验，不伪造人工测试证据，也不进入 promotion approval 集合。该 job 与候选构建 job 隔离，不运行 Buildx、`ci_release_v2.py` 或测试部署。远端已存在时必须且只能找到一份 JSON，其字节与本地批准文件完全一致；OCI layer 文件名不同不影响核验，多文件或任一字节不同仍 fail closed。
 
 受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
 
@@ -65,6 +67,8 @@ manifest 的 base64 与文件 SHA256 交给受保护的
 ## 4. 配置
 
 代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision、镜像 digest，以及正式 Dashboard 所需的同 release index RunPod profile digest pin JSON。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复默认解析同一 track-scoped 目录。Dashboard 被选择进 main control-plane 发布时，发布器必须从 gpu-execution manifest 解析完整 `profile -> image@sha256` 映射；缺项、mutable ref 或共用 env 冲突均在 Compose mutation 前 fail closed。仅当控制面回滚目标早于 track 隔离迁移且该文件缺失时，preflight、失败恢复和恢复验证才可兼容同一 SHA 的 `/var/lib/allbot/releases/<sha>/release.env`，正向发布不得写入该兼容路径。
+
+同一镜像必须可由 test/prod 宿主配置解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。`scripts/validate_release_environment_neutral.py` 在 candidate CI 构建前检查上下文和源码，构建后检查真实 image config 与 Web dist，错误只报告变量名。
 
 若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 candidate 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
 
@@ -122,7 +126,7 @@ v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env
 
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
 
-正式环境的生成维护模式按每次发布单独决定，默认开启。只有用户对当前 SHA 的本次发布明确要求“不进入维护”时，才可请求无维护发布；该请求不持久化，也不适用于 migration、首次/legacy 切换、队列 drain、未知影响或 planner 要求的其它强制 maintenance。正式 `plan`/`preflight` 必须同时报告用户请求/default、计算出的 maintenance level 和最终实际模式。若当前 CLI/事务实现不能表达或证明所选模式，必须在 mutation 前停止并修复发布契约，不能手工操作维护 marker、回退到 legacy 脚本或静默采用另一模式。
+正式维护由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。migration、Compose/发布契约和未知影响始终强制完整维护、数据库备份与单 Alembic head。容器可预拉取，实际替换前必须确认新生成已拒绝；失败自动恢复旧 digest，恢复不完整则保留维护。
 
 ```bash
 scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
@@ -147,6 +151,14 @@ scripts/release.py verify-test \
   --confirm-short-observation \
   --execute
 
+# 推荐正式快捷入口：未传 --sha 时一次锁定最新受保护 origin/main
+python scripts/release.py deploy-module --module web-api --confirm-prod --execute
+# 可重复选择；机器计算的依赖集合只能扩大，不能缩小
+python scripts/release.py deploy-module --sha <main-sha> \
+  --module dashboard-backend --module dashboard-frontend \
+  --confirm-prod --execute
+
+# 完整发布/回滚仍保留分步接口
 scripts/release.py plan --env prod --sha <40-char-sha>
 scripts/release.py preflight --env prod --sha <40-char-sha>
 scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-prod

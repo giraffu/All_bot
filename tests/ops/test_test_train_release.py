@@ -1,6 +1,8 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -130,6 +132,158 @@ class _FakeReleaseRunner:
 
     def rollback(self, sha, track):
         self.events.append(("rollback", track, sha))
+
+
+class _FakePromotionProvider:
+    def __init__(self):
+        self.runtime_state = {
+            "schema_version": 2,
+            "track": "control-plane",
+            "artifacts": {
+                "web-api": {"digest": "sha256:" + "1" * 64},
+            },
+        }
+        runtime_payload = json.dumps(
+            self.runtime_state, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        self.runtime_digest = "sha256:" + hashlib.sha256(runtime_payload).hexdigest()
+        self.snapshot = {
+            "schema_version": 1,
+            "candidate_sha": SHA,
+            "candidate_bundle_digest": "sha256:" + "2" * 64,
+            "artifacts": {
+                "web-api": {
+                    "digest": "sha256:" + "1" * 64,
+                    "source_sha": SHA,
+                },
+                "dashboard-backend": {
+                    "digest": "sha256:" + "3" * 64,
+                    "source_sha": SHA,
+                },
+            },
+        }
+        self.published = []
+
+    def candidate_snapshot(self, sha):
+        assert sha == SHA
+        return self.snapshot
+
+    def test_runtime_state(self):
+        return self.runtime_state
+
+    def publish_approval(self, sha, path):
+        self.published.append((sha, json.loads(path.read_text(encoding="utf-8"))))
+        return f"ghcr.io/giraffu/allbot-release-v2-promotions:{sha}"
+
+
+def _record_accepted(coordinator):
+    coordinator._write_state(
+        {
+            "status": "accepted",
+            "sha": SHA,
+            "pr": 42,
+            "slot": "A",
+            "tracks": ["control-plane"],
+        }
+    )
+
+
+def _release_evidence(provider, tmp_path):
+    evidence = {
+        "schema_version": 1,
+        "candidate_sha": SHA,
+        "candidate_bundle_digest": "sha256:" + "2" * 64,
+        "test_runtime_state_digest": provider.runtime_digest,
+        "started_at": "2026-07-18T00:00:00+00:00",
+        "completed_at": "2026-07-18T01:00:00+00:00",
+        "checks": {
+            "combination_tests": True,
+            "health": True,
+            "rollback_drill": True,
+            "manual_acceptance": True,
+        },
+        "artifacts": {
+            "web-api": {
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": SHA,
+                "status": "verified",
+                "evidence_source": "cloud-test/control-plane/current.json",
+            },
+            "dashboard-backend": {
+                "digest": "sha256:" + "3" * 64,
+                "source_sha": SHA,
+                "status": "approved-direct",
+                "evidence_source": "owner-tools-direct-policy",
+            },
+        },
+    }
+    path = tmp_path / "release-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    return path
+
+
+def test_freeze_locks_the_accepted_candidate_and_abort_restores_it(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    provider = _FakePromotionProvider()
+    _record_accepted(coordinator)
+
+    coordinator.freeze(SHA, provider=provider)
+
+    assert coordinator.status()["status"] == "frozen"
+    assert coordinator.status()["frozen"]["candidate_bundle_digest"].startswith(
+        "sha256:"
+    )
+    assert coordinator.status()["frozen"]["test_runtime_state_digest"] == (
+        provider.runtime_digest
+    )
+    with pytest.raises(module.TestTrainError, match="frozen"):
+        coordinator.deploy_candidate("e" * 40, pr=43, slot="B", runner=_FakeReleaseRunner())
+    with pytest.raises(module.TestTrainError, match="frozen"):
+        coordinator.block(SHA, "must not rewrite frozen state")
+
+    coordinator.abort_freeze()
+    assert coordinator.status()["status"] == "accepted"
+
+
+def test_release_approval_publishes_exact_frozen_artifacts(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    provider = _FakePromotionProvider()
+    _record_accepted(coordinator)
+    coordinator.freeze(SHA, provider=provider)
+
+    coordinator.approve_release(
+        SHA,
+        _release_evidence(provider, tmp_path),
+        approved_by="operator",
+        provider=provider,
+    )
+
+    state = coordinator.status()
+    assert state["status"] == "release-approved"
+    assert state["approval_ref"].endswith(SHA)
+    assert provider.published[0][1]["artifacts"]["web-api"]["status"] == "verified"
+
+
+def test_release_approval_rejects_verified_digest_not_running_in_test(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    provider = _FakePromotionProvider()
+    _record_accepted(coordinator)
+    coordinator.freeze(SHA, provider=provider)
+    evidence_path = _release_evidence(provider, tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["artifacts"]["web-api"]["digest"] = "sha256:" + "f" * 64
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    with pytest.raises(module.TestTrainError, match="web-api"):
+        coordinator.approve_release(
+            SHA,
+            evidence_path,
+            approved_by="operator",
+            provider=provider,
+        )
 
 
 def test_deploy_orders_tracks_and_records_candidate(tmp_path):
@@ -387,3 +541,57 @@ def test_release_runner_does_not_hide_other_plan_failures(tmp_path, monkeypatch)
 
     with pytest.raises(module.TestTrainError, match="provenance"):
         runner.plan(SHA, "gpu-execution")
+
+
+def test_release_runner_publishes_approval_with_a_relative_layer_path(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=tmp_path / "cache")
+    approval_dir = tmp_path / "state" / "approvals"
+    approval_dir.mkdir(parents=True)
+    approval = approval_dir / f"{SHA}.json"
+    approval.write_text("{}\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+        return subprocess.CompletedProcess(
+            args,
+            1 if args[:3] == ["oras", "manifest", "fetch"] else 0,
+            stdout="",
+            stderr="not found" if args[:3] == ["oras", "manifest", "fetch"] else "",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    reference = runner.publish_approval(SHA, approval)
+
+    assert reference.endswith(f":{SHA}")
+    push_args, push_kwargs = calls[-1]
+    assert push_args[:2] == ["oras", "push"]
+    assert push_args[-1] == (
+        f"{approval.name}:application/vnd.allbot.release-approval.v1+json"
+    )
+    assert push_kwargs["cwd"] == approval_dir
+
+
+def test_release_runner_accepts_identical_remote_approval_with_another_layer_name(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=tmp_path / "cache")
+    approval = tmp_path / f"{SHA}.json"
+    approval.write_text("{\"status\":\"approved\"}\n", encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        if args[:2] == ["oras", "pull"]:
+            output = Path(args[-1])
+            (output / "promotion-approval.json").write_bytes(approval.read_bytes())
+        return subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    reference = runner.publish_approval(SHA, approval)
+
+    assert reference.endswith(f":{SHA}")

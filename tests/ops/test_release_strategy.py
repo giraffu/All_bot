@@ -209,3 +209,19 @@ def test_gpu_assurance_accepts_legacy_canary_manifest_for_standard():
     module = _load_module()
 
     module.validate_gpu_artifact_assurance("standard", {"i2i_pro": {}})
+
+
+def test_promoted_candidate_validation_is_equivalent_to_full_ci():
+    module = _load_module()
+
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts={"web-api"},
+        requested="auto",
+        locked=False,
+        validation_mode="promoted",
+    )
+
+    assert decision.strategy == "standard"
+    assert decision.validation_mode == "promoted"
+    assert decision.gates["ci-tests"] == "required"

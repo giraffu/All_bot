@@ -3,7 +3,7 @@ name: Modular immutable release v2
 on:
   workflow_run:
     workflows: ["Immutable control-plane release"]
-    branches: [main, codex/test-train]
+    branches: [codex/test-train]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -14,8 +14,8 @@ on:
         description: Immutable release channel.
         required: true
         type: choice
-        options: [main, test-candidate]
-        default: main
+        options: [test-candidate]
+        default: test-candidate
       gpu_manifest_ref:
         description: Optional OCI ref containing gpu-execution-manifest.json for this SHA.
         required: false
@@ -26,6 +26,19 @@ on:
         type: choice
         options: [build-only]
         default: build-only
+      publish_approval:
+        description: Publish a locally verified approval instead of building artifacts.
+        required: false
+        type: boolean
+        default: false
+      approval_base64:
+        description: Base64 encoded immutable promotion approval JSON.
+        required: false
+        default: ""
+      approval_sha256:
+        description: SHA256 of the decoded approval bytes.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -41,7 +54,7 @@ env:
 jobs:
   release:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_approval == false) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -66,14 +79,12 @@ jobs:
           if [ -n "$branch" ]; then
             validation_mode=full
             case "$branch" in
-              main) channel=main ;;
               codex/test-train) channel=test-candidate ;;
               *) echo "untrusted workflow_run branch: $branch" >&2; exit 2 ;;
             esac
           else
             validation_mode="${INPUT_VALIDATION_MODE:-full}"
             case "$channel" in
-              main) branch=main ;;
               test-candidate) branch=codex/test-train ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
@@ -82,11 +93,7 @@ jobs:
               exit 2
             fi
           fi
-          if [ "$channel" = main ]; then
-            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2"
-          else
-            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
-          fi
+          bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
@@ -126,6 +133,9 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             dashboard/frontend/package-lock.json
+
+      - name: Reject environment-owned build inputs
+        run: python scripts/validate_release_environment_neutral.py
 
       - name: Resolve previous immutable bundle and changed paths
         id: previous
@@ -220,9 +230,6 @@ jobs:
           if [ -n "$gpu_manifest" ]; then
             args+=(--gpu-manifest "$gpu_manifest")
           fi
-          if [ "$RELEASE_CHANNEL" = main ]; then
-            args+=(--require-complete-gpu)
-          fi
           python scripts/ci_release_v2.py "${args[@]}"
           python scripts/release.py plan \
             --env test --track control-plane --sha "$SOURCE_SHA" \
@@ -242,6 +249,16 @@ jobs:
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint python -e MINIO_ENDPOINT=127.0.0.1:1 "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
+
+      - name: Inspect candidate images and Web bytes for environment neutrality
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p neutral-web-dist
+          tar -xzf release-v2/public-web-dist.tgz -C neutral-web-dist
+          python scripts/validate_release_environment_neutral.py \
+            --release-index release-v2/release-index.json \
+            --web-dist neutral-web-dist
 
       - name: Publish immutable v2 bundle
         shell: bash
@@ -268,3 +285,57 @@ jobs:
           path: release-v2
           if-no-files-found: error
           retention-days: 90
+
+  publish-approval:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_approval == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify protected test-train head and approval bytes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          APPROVAL_BASE64: ${{ inputs.approval_base64 }}
+          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVAL_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          git fetch --prune origin codex/test-train
+          test "$(git rev-parse origin/codex/test-train)" = "$SOURCE_SHA"
+          printf '%s' "$APPROVAL_BASE64" | base64 --decode > promotion-approval.json
+          printf '%s  %s\n' "$APPROVAL_SHA256" promotion-approval.json | sha256sum --check -
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Validate against the immutable candidate and publish once
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CANDIDATE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-test-candidate
+          APPROVAL_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-promotions
+        run: |
+          set -euo pipefail
+          descriptor="$(oras manifest fetch --descriptor "${CANDIDATE_REPOSITORY}:${SOURCE_SHA}")"
+          candidate_digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$descriptor")"
+          mkdir -p candidate
+          oras pull "${CANDIDATE_REPOSITORY}:${SOURCE_SHA}" -o candidate
+          candidate_index="$(find candidate -name release-index.json -type f -print -quit)"
+          test -n "$candidate_index"
+          python scripts/publish_release_approval_v2.py \
+            --source-sha "$SOURCE_SHA" \
+            --candidate-index "$candidate_index" \
+            --candidate-bundle-digest "$candidate_digest" \
+            --approval promotion-approval.json \
+            --publish-ref "${APPROVAL_REPOSITORY}:${SOURCE_SHA}"
