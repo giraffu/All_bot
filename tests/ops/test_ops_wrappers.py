@@ -135,6 +135,36 @@ def test_runpod_release_rollout_requires_single_slot_release_contract():
     assert "--slot, --release-index and --sha" in result.stderr
 
 
+def test_runpod_release_rollout_rejects_mutable_rollback_override_before_resolution():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "rollout-release",
+        "--profile",
+        "image_to_video",
+        "--slot",
+        "01",
+        "--release-index",
+        "/missing/release-index.json",
+        "--sha",
+        "a" * 40,
+        "--rollback-ref",
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:legacy-tag",
+        "--dry-run",
+    )
+
+    assert result.returncode == 2
+    assert "--rollback-ref must be an exact digest-pinned image" in result.stderr
+
+
+def test_runpod_release_rollout_help_documents_legacy_digest_migration():
+    result = run_script("bash", "scripts/runpod_prod_ops.sh", "--help")
+
+    assert result.returncode == 0, result.stderr
+    assert "--rollback-ref <repo@sha256:...>" in result.stdout
+    assert "live legacy" in result.stdout
+
+
 def test_runpod_scale_requires_desired():
     result = run_script(
         "bash",
