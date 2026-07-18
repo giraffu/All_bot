@@ -421,6 +421,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `ltx_video` | `runpod_prod_ltx_video_manual_NN` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` | `ltx_video/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090` |
 
 正式 RunPod 更新使用 `scripts/runpod_prod_ops.sh rollout-release --release-index <index> --sha <sha> --profile <profile> --slot <NN> --strategy direct|standard`，镜像名必须是 release index 的 digest ref。每次只处理一个 slot：旧 image 先记录，新 Pod 保持 disabled，通过实际 image/worker/heartbeat 检查后 enable；失败删除目标 Pod、恢复旧 exact image 并停止。镜像默认 CMD 为 baked runtime entrypoint，不以 `bootstrap_from_git` 或 mutable tag 作为新发布入口。
+若迁移前的 legacy Pod 仍只报告历史 tag，执行 rollout 时必须额外传入已独立核验、与 live image 同仓库的 `--rollback-ref <repo@sha256:...>`；wrapper 不自动把 tag 当作回滚证据，也不接受跨仓库或 mutable rollback ref。新建 Pod 仍只使用 release index 中的 digest ref。
 
 ## 6. 真实执行门禁
 

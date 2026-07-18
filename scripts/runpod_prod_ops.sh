@@ -21,6 +21,7 @@ WORKER_TIMEOUT_SECONDS=""
 RELEASE_INDEX=""
 RELEASE_SHA=""
 RELEASE_STRATEGY="direct"
+RELEASE_ROLLBACK_REF=""
 ROLLOUT_RESOLVER="${ROOT_DIR}/scripts/gpu_release_rollout.py"
 
 STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit pornmaster_flux2_edit_bf16)
@@ -67,6 +68,9 @@ Options:
   --sha <full-sha>            Required release SHA for rollout-release.
   --strategy <direct|standard>
                               GPU evidence policy. Default direct.
+  --rollback-ref <repo@sha256:...>
+                              Exact old image used only when the live legacy
+                              Pod still reports a tag. Repository must match.
   --dry-run                   Print guarded mutation plan only. Default.
   --execute                   Execute the selected mutation.
   -h, --help                  Show this help.
@@ -187,6 +191,21 @@ require_rollout_release_options() {
     direct|standard) ;;
     *) echo "--strategy must be direct or standard for rollout-release" >&2; exit 2 ;;
   esac
+  if [ -n "$RELEASE_ROLLBACK_REF" ] \
+    && ! [[ "$RELEASE_ROLLBACK_REF" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+    echo "--rollback-ref must be an exact digest-pinned image" >&2
+    exit 2
+  fi
+}
+
+image_repository() {
+  local ref="$1"
+  ref="${ref%@*}"
+  local final_component="${ref##*/}"
+  if [[ "$final_component" == *:* ]]; then
+    ref="${ref%:*}"
+  fi
+  printf '%s\n' "$ref"
 }
 
 resolve_rollout_field() {
@@ -224,15 +243,28 @@ rollout_release() {
     echo "rollout-release execute requires jq" >&2
     exit 2
   }
-  local before_file after_file old_ref=""
+  local before_file after_file observed_old_ref="" old_ref=""
   before_file="$(mktemp)"
   after_file="$(mktemp)"
   trap 'rm -f "$before_file" "$after_file"' RETURN
   run_controller status >"$before_file"
-  old_ref="$(jq -r '.prod_pods[0].image // empty' "$before_file")"
-  if ! [[ "$old_ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
-    echo "rollout-release requires an exact digest-pinned rollback image" >&2
-    return 1
+  observed_old_ref="$(jq -r '.prod_pods[0].image // empty' "$before_file")"
+  if [[ "$observed_old_ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    old_ref="$observed_old_ref"
+    if [ -n "$RELEASE_ROLLBACK_REF" ] && [ "$RELEASE_ROLLBACK_REF" != "$old_ref" ]; then
+      echo "--rollback-ref does not match the live digest-pinned image" >&2
+      return 1
+    fi
+  else
+    if [ -z "$RELEASE_ROLLBACK_REF" ]; then
+      echo "legacy tagged Pod requires --rollback-ref with its verified exact digest" >&2
+      return 1
+    fi
+    if [ "$(image_repository "$observed_old_ref")" != "$(image_repository "$RELEASE_ROLLBACK_REF")" ]; then
+      echo "--rollback-ref repository does not match the live legacy image" >&2
+      return 1
+    fi
+    old_ref="$RELEASE_ROLLBACK_REF"
   fi
 
   set_profile_image_ref "$image_env" "$target_ref"
@@ -533,6 +565,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --strategy)
       RELEASE_STRATEGY="${2:?missing value for --strategy}"
+      shift 2
+      ;;
+    --rollback-ref)
+      RELEASE_ROLLBACK_REF="${2:?missing value for --rollback-ref}"
       shift 2
       ;;
     --execute)
