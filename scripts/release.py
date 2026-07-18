@@ -1473,9 +1473,17 @@ def render_release_env(manifest: Mapping[str, Any], config_revision: str) -> str
 
 
 def render_track_release_env(
-    manifest: Mapping[str, Any], config_revision: str
+    manifest: Mapping[str, Any],
+    config_revision: str,
+    *,
+    allow_legacy_missing_dashboard_profile_pins: bool = False,
 ) -> str:
-    """Render only image variables owned by one schema-v2 track."""
+    """Render only image variables owned by one schema-v2 track.
+
+    The legacy-pin exception is restricted to rollback-material recovery. It
+    lets an already deployed Dashboard baseline from before the pin contract
+    remain recoverable; normal plan/preflight/deploy rendering stays strict.
+    """
 
     track = str(manifest.get("track", ""))
     artifacts = manifest.get("artifacts", {})
@@ -1500,6 +1508,7 @@ def render_track_release_env(
         if (
             dashboard_selected
             and manifest.get("release_channel") == "main"
+            and not allow_legacy_missing_dashboard_profile_pins
             and (
                 not isinstance(pins, Mapping)
                 or set(pins) != expected_pin_envs
@@ -5739,7 +5748,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args, impact, manifest, environment_values
                 )
                 verify_release_ci(manifest, str(manifest["git_sha"]))
-                release_env = render_track_release_env(manifest, config_revision)
+                release_env = render_track_release_env(
+                    manifest,
+                    config_revision,
+                    allow_legacy_missing_dashboard_profile_pins=True,
+                )
                 _materialize_cloud_rollback_materials(
                     args,
                     impact,
