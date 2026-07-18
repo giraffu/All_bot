@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import math
 from typing import Any, Mapping
 
 from src.constants import (
@@ -9,6 +10,39 @@ from src.constants import (
 
 WAN22_AIO_EXECUTION_IMAGE_TO_VIDEO = "image_to_video"
 WAN22_AIO_EXECUTION_WAN22_VIDEO_V2 = MODE_WAN22_VIDEO_V2
+WAN22_MAX_LORA_ITEMS = 5
+
+
+def normalize_wan22_lora_items(
+    lora_items: Any,
+    *,
+    lora_name: Any = None,
+    lora_strength: Any = None,
+) -> list[dict[str, str | float]]:
+    candidates = lora_items if isinstance(lora_items, list) else []
+    if not candidates and isinstance(lora_name, str) and lora_name.strip():
+        candidates = [{"name": lora_name, "strength": lora_strength}]
+    normalized: list[dict[str, str | float]] = []
+    seen: set[str] = set()
+    for raw_item in candidates:
+        if not isinstance(raw_item, dict):
+            continue
+        raw_name = raw_item.get("name", raw_item.get("path"))
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        try:
+            strength = float(raw_item.get("strength", 1.0))
+        except (TypeError, ValueError):
+            strength = 1.0
+        if not math.isfinite(strength):
+            strength = 1.0
+        strength = float(round(round(min(2.0, max(0.1, strength)) * 20) / 20, 2))
+        normalized.append({"name": name, "strength": strength})
+        if len(normalized) >= WAN22_MAX_LORA_ITEMS:
+            break
+    return normalized
 
 WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
     "preview": {
@@ -284,6 +318,7 @@ def build_wan22_aio_video_result_meta(
     chain_task_ids: Any = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
+    lora_items: Any = None,
 ) -> dict[str, Any]:
     resolved_profile = (
         resolve_wan22_aio_video_profile(profile)
@@ -311,9 +346,14 @@ def build_wan22_aio_video_result_meta(
         meta["wan22_prev_task_id"] = prev_task_id
 
     if resolved_profile.allow_lora:
-        normalized_lora_name = str(lora_name or "").strip()
-        if normalized_lora_name:
-            meta["lora_name"] = normalized_lora_name
-            meta["lora_strength"] = lora_strength
+        normalized_items = normalize_wan22_lora_items(
+            lora_items,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+        )
+        if normalized_items:
+            meta["lora_items"] = normalized_items
+            meta["lora_name"] = normalized_items[0]["name"]
+            meta["lora_strength"] = normalized_items[0]["strength"]
 
     return meta
