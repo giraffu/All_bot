@@ -209,6 +209,15 @@ scripts/release.py rollback --env prod --to <old-sha> --manifest <old-release.js
 # 只允许把未完成事务逆向恢复到旧完整栈，不允许续跑失败阶段
 scripts/release.py recover --env prod --transaction <failed-target-sha> --execute --confirm-prod
 
+# 当前独立模块仍运行旧 digest、但其 rollback checkout/release.env 被误删时：
+# 先用 plan 拉取并验证旧 main bundle，再只物化不可变回滚材料。
+# 此模式校验当前目标容器 digest 与旧 bundle 一致，只执行 Git worktree、
+# 原子写入非敏感 release.env 和 compose config -q；不 pull/up/stop/restart，
+# 不写维护标记，也不修改 deployment current/history。
+scripts/release.py plan --env prod --track control-plane --sha <deployed-old-sha> --modules qqcc-bot
+scripts/release.py recover --env prod --track control-plane --sha <deployed-old-sha> \
+  --modules qqcc-bot --repair-rollback-materials --execute --confirm-prod
+
 # v2 各 track 独立回滚
 scripts/release.py rollback --env test --track control-plane --to <old-sha> --manifest <old-release-index.json> --execute
 scripts/release.py rollback --env test --track test-execution --to <old-sha> --manifest <old-release-index.json> --execute

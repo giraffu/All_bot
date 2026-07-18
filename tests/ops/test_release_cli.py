@@ -4195,6 +4195,206 @@ def test_release_cli_exposes_confirmed_recover_command():
     assert args.execute is True
 
 
+def test_release_cli_exposes_explicit_rollback_material_repair():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        [
+            "recover",
+            "--env",
+            "prod",
+            "--sha",
+            "a" * 40,
+            "--modules",
+            "qqcc-bot",
+            "--repair-rollback-materials",
+            "--execute",
+            "--confirm-prod",
+        ]
+    )
+
+    assert args.command == "recover"
+    assert args.repair_rollback_materials is True
+    assert args.transaction is None
+
+
+def test_rollback_material_repair_never_mutates_running_services(monkeypatch):
+    module = _load_module()
+    calls = []
+    artifact_digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "source_ref": "refs/heads/main",
+        "release_channel": "main",
+        "track": "control-plane",
+        "selected_artifacts": ["qqcc-bot"],
+        "artifacts": {
+            "qqcc-bot": {
+                "kind": "image",
+                "digest": artifact_digest,
+                "ref": "ghcr.io/giraffu/allbot-qqcc-bot@" + artifact_digest,
+            }
+        },
+    }
+    args = SimpleNamespace(
+        env="prod",
+        remote_host="prod-control",
+        remote_checkout_root="/home/deploy/APP/All_bot-release",
+        remote_env_file=None,
+        execute=True,
+    )
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: calls.append(
+            (("remote-shell", host), {"script": script, "execute": execute})
+        )
+        or f"ALLBOT_ROLLBACK_MATERIALS_READY:{FULL_SHA}\n",
+    )
+
+    environment = _valid_prod_environment()
+    environment["QQCC_BOT_TOKEN"] = "prod-qqcc-bot-token"
+
+    module._materialize_cloud_rollback_materials(
+        args,
+        module.ReleaseImpact(services={"qqcc-bot"}, level="rolling"),
+        manifest,
+        "ALLBOT_RELEASE_TRACK=control-plane\n",
+        environment,
+    )
+
+    probe_call = calls[0]
+    assert probe_call[0][0:3] == ["ssh", "-o", "BatchMode=yes"]
+    assert artifact_digest in probe_call[1]["input_text"]
+    write_call = calls[1]
+    assert write_call[0][0:3] == ["ssh", "-o", "BatchMode=yes"]
+    assert "/var/lib/allbot/releases/control-plane/" + FULL_SHA in write_call[0][-1]
+    script = calls[2][1]["script"]
+    assert "worktree add --detach" in script
+    assert "config -q" in script
+    all_scripts = probe_call[1]["input_text"] + script
+    for forbidden in (
+        "compose pull",
+        "compose up",
+        "docker pull",
+        "docker stop",
+        "docker restart",
+        "GENERATION_MAINTENANCE",
+    ):
+        assert forbidden not in all_scripts
+
+
+def test_rollback_material_repair_requires_exact_deployed_module_baseline(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "source_ref": "refs/heads/main",
+    }
+    monkeypatch.setattr(
+        module,
+        "build_plan",
+        lambda _args: (
+            module.ReleaseImpact(services={"qqcc-bot"}, level="rolling"),
+            manifest,
+            "b" * 40,
+        ),
+    )
+
+    result = module.main(
+        [
+            "recover",
+            "--env",
+            "prod",
+            "--sha",
+            FULL_SHA,
+            "--modules",
+            "qqcc-bot",
+            "--repair-rollback-materials",
+            "--execute",
+            "--confirm-prod",
+        ]
+    )
+
+    assert result == 2
+    assert "not the deployed module baseline" in capsys.readouterr().err
+
+
+def test_rollback_material_repair_command_materializes_without_preflight_loop(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    calls = []
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "source_ref": "refs/heads/main",
+        "release_channel": "main",
+        "track": "control-plane",
+        "selected_artifacts": ["qqcc-bot"],
+        "artifacts": {},
+    }
+    impact = module.ReleaseImpact(services={"qqcc-bot"}, level="rolling")
+    monkeypatch.setattr(
+        module, "build_plan", lambda _args: (impact, manifest, FULL_SHA)
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_operator_worktree_clean",
+        lambda **kwargs: calls.append(("operator", kwargs)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_validate_local_env",
+        lambda _args: (_valid_prod_environment(), "config-revision"),
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_release_ci",
+        lambda selected, sha: calls.append(("ci", selected, sha)),
+    )
+    monkeypatch.setattr(
+        module,
+        "render_track_release_env",
+        lambda selected, revision: "ALLBOT_RELEASE_TRACK=control-plane\n",
+    )
+    monkeypatch.setattr(
+        module,
+        "_materialize_cloud_rollback_materials",
+        lambda *args: calls.append(("materialize", args)),
+    )
+
+    result = module.main(
+        [
+            "recover",
+            "--env",
+            "prod",
+            "--sha",
+            FULL_SHA,
+            "--modules",
+            "qqcc-bot",
+            "--repair-rollback-materials",
+            "--execute",
+            "--confirm-prod",
+        ]
+    )
+
+    assert result == 0
+    assert [call[0] for call in calls] == ["operator", "ci", "materialize"]
+    assert '"running_services_changed": false' in capsys.readouterr().out
+
+
 def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
     monkeypatch,
 ):

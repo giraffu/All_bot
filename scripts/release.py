@@ -75,6 +75,7 @@ DEFAULT_SCHEMA = ROOT / "deploy" / "env.schema.yml"
 DEFAULT_WEB_RUNTIME_CONFIG = ROOT / "frontend" / "runtime-config.yml"
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 REQUIRED_IMAGES = {
     "app",
     "central",
@@ -3233,6 +3234,119 @@ test "$heads" = 1
         raise ReleaseError("cloud release completion marker is missing")
 
 
+def _materialize_cloud_rollback_materials(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    release_env: str,
+    environment_values: Mapping[str, str],
+) -> None:
+    """Restore immutable rollback inputs without changing running services."""
+
+    if args.env != "prod" or manifest.get("schema_version") != 2:
+        raise ReleaseError(
+            "rollback material repair requires a schema-v2 production release"
+        )
+    track = str(manifest.get("track", ""))
+    if track != "control-plane":
+        raise ReleaseError(
+            "rollback material repair currently supports only control-plane"
+        )
+    selected_cloud_services, disabled = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    if disabled or not selected_cloud_services:
+        raise ReleaseError("rollback material repair has no enabled cloud services")
+
+    artifact_by_service = {
+        service: artifact
+        for artifact, service in CONTROL_ARTIFACT_SERVICE.items()
+    }
+    expected: dict[str, str] = {}
+    for service in sorted(selected_cloud_services):
+        artifact_name = artifact_by_service.get(service, service)
+        artifact = manifest.get("artifacts", {}).get(artifact_name or "")
+        if (
+            not artifact_name
+            or artifact_name not in manifest.get("selected_artifacts", [])
+            or not isinstance(artifact, Mapping)
+            or not DIGEST_RE.fullmatch(str(artifact.get("digest", "")))
+        ):
+            raise ReleaseError(
+                f"rollback material repair has no selected digest for {service}"
+            )
+        expected[service] = str(artifact["digest"])
+
+    environment = ENVIRONMENT[args.env]
+    host = args.remote_host or environment["host"]
+    sha = str(manifest["git_sha"])
+    checkout_root = args.remote_checkout_root
+    repo = f"{checkout_root}/repo"
+    checkout = f"{checkout_root}/releases/{sha}"
+    release_dir = _cloud_release_dir(sha, track)
+    env_file = args.remote_env_file or environment["env_file"]
+    release_branch = release_remote_branch(
+        str(manifest.get("source_ref", "refs/heads/main"))
+    )
+    compose = (
+        f"docker compose --project-name {shlex.quote(environment['project'])} "
+        f"--env-file {checkout}/deploy/env.defaults "
+        f"--env-file {shlex.quote(env_file)} --env-file {release_dir}/release.env "
+        f"-f {checkout}/deploy/docker-compose-cloud-base.yml "
+        f"-f {checkout}/{environment['overlay']} "
+        "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
+    )
+    running_checks = ""
+    for service, digest in expected.items():
+        running_checks += f"""container_ids="$(docker ps \\
+  --filter label=com.docker.compose.project={shlex.quote(environment['project'])} \\
+  --filter label=com.docker.compose.service={shlex.quote(service)} \\
+  --format '{{{{.ID}}}}')"
+test "$(printf '%s\\n' "$container_ids" | sed '/^$/d' | wc -l)" = 1
+test "$(docker inspect --format '{{{{.Image}}}}' "$container_ids")" = {shlex.quote(digest)}
+"""
+    marker = f"ALLBOT_ROLLBACK_MATERIALS_READY:{sha}"
+    _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text="set -euo pipefail\n" + running_checks,
+    )
+    script = f"""set -euo pipefail
+test -d {shlex.quote(repo)}/.git
+git -C {shlex.quote(repo)} fetch --prune origin {shlex.quote(release_branch)}
+git -C {shlex.quote(repo)} merge-base --is-ancestor {shlex.quote(sha)} origin/{shlex.quote(release_branch)}
+mkdir -p {shlex.quote(checkout_root)}/releases
+if [ ! -d {shlex.quote(checkout)} ]; then
+  git -C {shlex.quote(repo)} worktree add --detach {shlex.quote(checkout)} {shlex.quote(sha)}
+fi
+test "$(git -C {shlex.quote(checkout)} rev-parse HEAD)" = {shlex.quote(sha)}
+test -f {shlex.quote(env_file)}
+test "$(stat -c %a {shlex.quote(env_file)})" = 600
+test -f {shlex.quote(release_dir + '/release.env')}
+{compose} config -q
+printf '%s\n' {shlex.quote(marker)}
+"""
+    _run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
+            (
+                f"set -e; install -d -m 755 {shlex.quote(release_dir)}; "
+                f"umask 022; cat > {shlex.quote(release_dir + '/release.env.tmp')}; "
+                f"mv -f {shlex.quote(release_dir + '/release.env.tmp')} "
+                f"{shlex.quote(release_dir + '/release.env')}"
+            ),
+        ],
+        input_text=release_env,
+    )
+    output = _remote_shell(host, script, execute=args.execute)
+    if marker not in output.splitlines():
+        raise ReleaseError("rollback material repair completion marker is missing")
+
+
 def _verify_web_artifact(path: Path, expected_hash: str) -> None:
     if not path.is_file():
         raise ReleaseError(f"web artifact is unavailable: {path}")
@@ -5290,6 +5404,14 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sha")
     parser.add_argument("--to", help="rollback target SHA (alias for --sha)")
     parser.add_argument("--transaction", help="persisted release transaction SHA")
+    parser.add_argument(
+        "--repair-rollback-materials",
+        action="store_true",
+        help=(
+            "recover a deployed schema-v2 production module's missing immutable "
+            "checkout and release.env without pulling images or restarting services"
+        ),
+    )
     parser.add_argument("--from-sha")
     parser.add_argument("--manifest")
     parser.add_argument(
@@ -5432,6 +5554,78 @@ def main(argv: Sequence[str] | None = None) -> int:
             _mark_test_verified(args)
             return 0
         if args.command == "recover":
+            if args.repair_rollback_materials:
+                if args.transaction:
+                    raise ReleaseError(
+                        "rollback material repair cannot be combined with transaction recovery"
+                    )
+                if args.env != "prod":
+                    raise ReleaseError(
+                        "rollback material repair is only available in production"
+                    )
+                if not args.sha:
+                    raise ReleaseError("rollback material repair requires --sha")
+                if not args.execute or not args.confirm_prod:
+                    raise ReleaseError(
+                        "production rollback material repair requires --execute --confirm-prod"
+                    )
+                if (
+                    args.skip_git_checks
+                    or args.skip_ci_checks
+                    or args.skip_env_checks
+                    or args.skip_gate
+                ):
+                    raise ReleaseError(
+                        "rollback material repair does not allow skipped verification gates"
+                    )
+                if not args.modules or args.services:
+                    raise ReleaseError(
+                        "rollback material repair requires one independent --modules group"
+                    )
+                impact, manifest, previous_sha = build_plan(args)
+                if previous_sha != manifest.get("git_sha"):
+                    raise ReleaseError(
+                        "rollback material repair SHA is not the deployed module baseline"
+                    )
+                if (
+                    impact.level != "rolling"
+                    or impact.requires_db_upgrade
+                    or impact.blockers
+                    or impact.unknown_paths
+                ):
+                    raise ReleaseError(
+                        "rollback material repair requires a clean rolling module boundary"
+                    )
+                verify_operator_worktree_clean(
+                    source_ref=str(
+                        manifest.get("source_ref", "refs/heads/main")
+                    ),
+                    environment=args.env,
+                    command=args.command,
+                )
+                environment_values, config_revision = _validate_local_env(args)
+                verify_release_ci(manifest, str(manifest["git_sha"]))
+                release_env = render_track_release_env(manifest, config_revision)
+                _materialize_cloud_rollback_materials(
+                    args,
+                    impact,
+                    manifest,
+                    release_env,
+                    environment_values,
+                )
+                print(
+                    json.dumps(
+                        {
+                            "environment": args.env,
+                            "git_sha": manifest["git_sha"],
+                            "services": sorted(impact.services),
+                            "status": "rollback-materials-ready",
+                            "running_services_changed": False,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                return 0
             if not args.transaction:
                 raise ReleaseError("recover requires --transaction")
             transaction_id = validate_full_sha(args.transaction)
