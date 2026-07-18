@@ -71,6 +71,7 @@ python scripts/test_train_release.py abort-freeze
 - 不删除 park 后的任务分支；只 detach 到最新 `origin/codex/test-train`。
 - 不因 A-H 能读取 env、SSH key、Pages/GHCR token 或 runtime 信息而扩大外部写权限；秘密值不得出现在对话、diff、commit 或 PR。
 - 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate bundle 只能直接部署 test，禁止 `verify-test`、prod 或 fast-track；只有冻结且逐 artifact 批准后，才可由 tree-identical main promotion CI 原样晋级 digest，不能绕过 main。
+- `approve-release --execute` 必须先在集成机重新读取测试站运行态并生成精确批准文件。本机 GH token 缺少 `write:packages` 时，不得改 tag、扩权或绕过批准；使用受保护 `modular-release-v2.yml` 的 `publish_approval=true` dispatch，把该文件的 base64 与 SHA256 原样交给 Actions。该 job 只接受当前 `origin/codex/test-train` 头，复核 candidate descriptor、artifact 集与批准内容后不可覆盖发布，禁止 build 或部署测试站。
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
 - 默认只部署确实要求测试的 `control-plane`/公共 Web artifact；`test-execution` 不再是默认步骤，只有专项 Worker 诊断才显式传 `--with-test-execution`。状态与 acceptance evidence 只能记录实际部署的 track，不得声称未启用的 Worker 已更新或验收。
