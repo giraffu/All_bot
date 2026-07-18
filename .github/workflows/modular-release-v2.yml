@@ -16,8 +16,8 @@ on:
         type: choice
         options: [main, test-candidate]
         default: main
-      gpu_manifest_path:
-        description: Attested or canary-verified GPU manifest path when GPU inputs changed.
+      gpu_manifest_ref:
+        description: Optional OCI ref containing gpu-execution-manifest.json for this SHA.
         required: false
         default: ""
       validation_mode:
@@ -189,7 +189,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
           PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
-          GPU_MANIFEST: ${{ inputs.gpu_manifest_path }}
+          GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
           RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
           TRUSTED_CI_RUN: ${{ steps.source.outputs.ci_run }}
@@ -206,12 +206,22 @@ jobs:
             --changed-file changed-paths.txt
             --output-dir release-v2
           )
+          gpu_manifest=""
+          manifest_ref="${GPU_MANIFEST_REF:-${IMAGE_PREFIX}/allbot-gpu-release-manifests:${SOURCE_SHA}}"
+          if oras manifest fetch "$manifest_ref" >/dev/null 2>&1; then
+            mkdir -p gpu-manifest-input
+            oras pull "$manifest_ref" -o gpu-manifest-input
+            gpu_manifest="gpu-manifest-input/gpu-execution-manifest.json"
+            test -f "$gpu_manifest"
+          fi
           if [ -n "$PREVIOUS_INDEX" ]; then
             args+=(--previous-index "$PREVIOUS_INDEX" --previous-bundle-dir "$PREVIOUS_BUNDLE")
           fi
-          if [ -n "$GPU_MANIFEST" ]; then
-            test -f "$GPU_MANIFEST"
-            args+=(--gpu-manifest "$GPU_MANIFEST")
+          if [ -n "$gpu_manifest" ]; then
+            args+=(--gpu-manifest "$gpu_manifest")
+          fi
+          if [ "$RELEASE_CHANNEL" = main ]; then
+            args+=(--require-complete-gpu)
           fi
           python scripts/ci_release_v2.py "${args[@]}"
           python scripts/release.py plan \
