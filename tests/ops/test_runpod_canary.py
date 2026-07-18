@@ -58,7 +58,7 @@ PUBLIC_SCAIL2_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-scail2:20260617-scail2-test"
 )
 PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:20260622-ltx-test"
+    "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:20260622-ltx-test"
 )
 
 
