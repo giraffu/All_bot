@@ -3600,6 +3600,21 @@ def test_independent_module_rejects_changed_pinned_contract_snapshot(monkeypatch
         )
 
 
+def test_checked_in_independent_contract_snapshots_match_current_files():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+
+    mismatches = {
+        path: {
+            "expected": expected,
+            "actual": hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
+        }
+        for path, expected in policy["independent_contract_snapshots"].items()
+        if hashlib.sha256((ROOT / path).read_bytes()).hexdigest() != expected
+    }
+
+    assert mismatches == {}
+
+
 @pytest.mark.parametrize(
     "module_name,artifacts",
     [
