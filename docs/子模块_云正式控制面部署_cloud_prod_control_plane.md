@@ -343,6 +343,7 @@ QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`pornmaster_flux2 / 自由P图 v2` 与
 `pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
+正式 Dashboard 不再从镜像内旧 `.env` 或源码常量选择新 Pod 镜像。发布器从同一受保护 main 的 release index 解析上述全部 profile 的 canonical `image@sha256`，写入 control-plane `release.env` 的 `RUNPOD_RELEASE_PROFILE_PINS_JSON`，prod overlay 再只读注入 Dashboard Backend。每次手动新增、autoscaler add、restart/enable/down 操作都会用该集合覆盖历史 `RUNPOD_IMAGE_NAME_*`；任一 profile 缺失、引用不是完整 digest，或 PornMaster 共用 image env 出现冲突 digest，操作在调用 RunPod API 前返回 503。更新 Dashboard 本身不会删除、重启或改写已经运行的 Pod；新 pin 只影响更新后发起的创建/恢复操作。
 不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
 `/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py`、`release_manifest_v2.py`、
 `release_strategy.py` 与 `/app/ops`，否则 Dashboard operation 会在命令执行或 ASGI import smoke 阶段以

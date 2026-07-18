@@ -133,6 +133,7 @@ RUN set -euo pipefail; \
     chmod +x /opt/allbot/lan_scail2_comfyui_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
     python3 -c 'import fastapi, minio, uvicorn, websockets'; \
+    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'; \
     command -v ssh-keygen >/dev/null; \
     if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then \
       echo "sshd must be available for RunPod direct TCP diagnostics" >&2; \

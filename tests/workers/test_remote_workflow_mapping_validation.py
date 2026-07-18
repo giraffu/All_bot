@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -18,6 +21,17 @@ REMOTE_RUNTIME_TYPES_PATH = ROOT / "remote_workers/comfy_agent/agent_runtime_typ
 MAIN_WORKFLOW_DIR = ROOT / "workers/comfy_agent/workflows"
 REMOTE_VALIDATION_PATH = ROOT / "remote_workers/src/workflow_mapping_validation.py"
 REMOTE_WORKFLOW_DIR = ROOT / "remote_workers/comfy_agent/workflows"
+BAKED_PROFILE_DOCKERFILES = tuple(
+    ROOT / "remote_workers/docker/runpod_profiles" / profile / "Dockerfile"
+    for profile in (
+        "img2img_lora",
+        "i2i_pro",
+        "wan22_aio_video",
+        "scail2",
+        "ltx_video",
+        "pornmaster_flux2_edit",
+    )
+)
 I2I_PRO_BASELINE_MODELS = {
     "qwen_3_8b_fp8mixed.safetensors",
     "flux2-vae.safetensors",
@@ -71,6 +85,39 @@ def test_remote_task_execution_context_matches_main_worker_contract():
     assert REMOTE_RUNTIME_TYPES_PATH.read_text(
         encoding="utf-8"
     ) == MAIN_RUNTIME_TYPES_PATH.read_text(encoding="utf-8")
+
+
+def test_baked_remote_worker_imports_task_patchers_from_its_own_bundle(tmp_path):
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "remote_workers")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize("dockerfile_path", BAKED_PROFILE_DOCKERFILES)
+def test_profile_image_build_fails_when_remote_worker_bundle_cannot_import(
+    dockerfile_path,
+):
+    dockerfile = dockerfile_path.read_text(encoding="utf-8")
+
+    assert (
+        "PYTHONPATH=/opt/allbot/runtime/remote_workers "
+        "python3 -c 'from comfy_agent.workflow_task_patchers import "
+        "TASK_SPECIFIC_PATCHERS'"
+    ) in dockerfile
 
 
 def test_remote_workflow_directory_only_has_documented_drift():

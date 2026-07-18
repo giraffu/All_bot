@@ -48,6 +48,7 @@ try:
         decide_release_strategy,
         validate_gpu_artifact_assurance,
     )
+    from scripts.gpu_release_rollout import PROFILE_IMAGE_ENV
 except ModuleNotFoundError:  # direct ``python scripts/release.py`` execution
     from release_artifacts_v2 import (  # type: ignore[no-redef]
         load_catalog,
@@ -67,6 +68,7 @@ except ModuleNotFoundError:  # direct ``python scripts/release.py`` execution
         decide_release_strategy,
         validate_gpu_artifact_assurance,
     )
+    from gpu_release_rollout import PROFILE_IMAGE_ENV  # type: ignore[no-redef]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1490,6 +1492,31 @@ def render_track_release_env(
                 "external-image",
             }:
                 lines.append(f"{variable}={artifact['ref']}")
+        pins = manifest.get("runpod_profile_pins", {})
+        expected_pin_envs = set(PROFILE_IMAGE_ENV.values())
+        dashboard_selected = "dashboard-backend" in manifest.get(
+            "selected_artifacts", []
+        )
+        if (
+            dashboard_selected
+            and manifest.get("release_channel") == "main"
+            and (
+                not isinstance(pins, Mapping)
+                or set(pins) != expected_pin_envs
+                or any(
+                    not isinstance(ref, str) or not DIGEST_IMAGE_RE.fullmatch(ref)
+                    for ref in pins.values()
+                )
+            )
+        ):
+            raise ReleaseError(
+                "main Dashboard release requires complete digest-pinned RunPod profile pins"
+            )
+        if isinstance(pins, Mapping) and pins:
+            lines.append(
+                "RUNPOD_RELEASE_PROFILE_PINS_JSON="
+                + json.dumps(dict(pins), sort_keys=True, separators=(",", ":"))
+            )
     elif track == "test-execution":
         for name, variable in {
             "worker-agent": "ALLBOT_WORKER_AGENT_IMAGE",
@@ -2366,6 +2393,25 @@ def _load_v2_track(
         )
     except ManifestV2Error as exc:
         raise ReleaseError(str(exc)) from exc
+    runpod_profile_pins: dict[str, str] = {}
+    gpu_manifest = release.manifests.get("gpu-execution", {})
+    gpu_artifacts = gpu_manifest.get("artifacts", {})
+    if isinstance(gpu_artifacts, Mapping):
+        for profile, image_env in PROFILE_IMAGE_ENV.items():
+            artifact = gpu_artifacts.get(profile)
+            if not isinstance(artifact, Mapping):
+                continue
+            image_ref = artifact.get("ref")
+            if not isinstance(image_ref, str) or not DIGEST_IMAGE_RE.fullmatch(image_ref):
+                raise ReleaseError(
+                    f"GPU release artifact is not digest-pinned: {profile}"
+                )
+            existing = runpod_profile_pins.get(image_env)
+            if existing is not None and existing != image_ref:
+                raise ReleaseError(
+                    f"GPU release artifacts conflict for RunPod image pin: {image_env}"
+                )
+            runpod_profile_pins[image_env] = image_ref
     return {
         "schema_version": 2,
         "source_sha": sha,
@@ -2380,6 +2426,7 @@ def _load_v2_track(
         "artifacts": release.manifests[track]["artifacts"],
         "selected_artifacts": list(selected),
         "release_index": str(path),
+        "runpod_profile_pins": runpod_profile_pins,
     }
 
 

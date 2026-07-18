@@ -3321,6 +3321,100 @@ def test_v2_incremental_track_with_no_changed_modules_selects_nothing(monkeypatc
     assert manifest["selected_artifacts"] == []
 
 
+def test_v2_control_track_resolves_runpod_profile_pins_from_gpu_manifest(
+    monkeypatch,
+):
+    module = _load_module()
+    refs_by_env = {
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        for index, image_env in enumerate(
+            sorted(set(module.PROFILE_IMAGE_ENV.values())), start=1
+        )
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+        },
+        manifests={
+            "control-plane": {"artifacts": {"dashboard-backend": {}}},
+            "gpu-execution": {
+                "artifacts": {
+                    profile: {"ref": refs_by_env[image_env]}
+                    for profile, image_env in module.PROFILE_IMAGE_ENV.items()
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(
+        module,
+        "select_artifacts",
+        lambda *_args, **_kwargs: {"dashboard-backend": {}},
+    )
+
+    manifest = module._load_v2_track(
+        Path("release-index.json"),
+        sha=FULL_SHA,
+        track="control-plane",
+        modules=["dashboard-backend"],
+    )
+
+    assert manifest["runpod_profile_pins"] == refs_by_env
+
+
+def test_render_main_dashboard_release_env_contains_exact_runpod_profile_pins():
+    module = _load_module()
+    pins = {
+        image_env: f"ghcr.io/giraffu/{profile}@sha256:" + str(index) * 64
+        for index, (profile, image_env) in enumerate(
+            module.PROFILE_IMAGE_ENV.items(), start=1
+        )
+        if profile != "pornmaster_flux2_edit_bf16"
+    }
+    pins["RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT"] = (
+        "ghcr.io/giraffu/pornmaster@sha256:" + "7" * 64
+    )
+    manifest = {
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "selected_artifacts": ["dashboard-backend"],
+        "artifacts": {},
+        "runpod_profile_pins": pins,
+    }
+
+    release_env = module.render_track_release_env(manifest, "config-revision")
+    rendered = dict(
+        line.split("=", 1)
+        for line in release_env.splitlines()
+        if "=" in line
+    )
+
+    assert json.loads(rendered["RUNPOD_RELEASE_PROFILE_PINS_JSON"]) == pins
+
+
+def test_render_main_dashboard_release_env_rejects_incomplete_profile_pins():
+    module = _load_module()
+    manifest = {
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "selected_artifacts": ["dashboard-backend"],
+        "artifacts": {},
+        "runpod_profile_pins": {
+            "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO": (
+                "ghcr.io/giraffu/i2v@sha256:" + "1" * 64
+            )
+        },
+    }
+
+    with pytest.raises(module.ReleaseError, match="RunPod profile pins"):
+        module.render_track_release_env(manifest, "config-revision")
+
+
 def test_independent_dashboard_release_uses_its_own_artifact_baseline():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)

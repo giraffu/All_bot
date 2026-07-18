@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import shlex
 
@@ -8,10 +9,28 @@ from dashboard.backend.schemas import RunPodScaleItem
 from dashboard.backend.services.runpod_admin_commands import (
     RunPodAdminCommandBuilder,
 )
-from ops.gpu_pool_controller.runpod_profile_catalog import (
-    RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
-    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE,
-)
+
+
+@pytest.fixture(autouse=True)
+def _release_profile_pins(monkeypatch):
+    pins = {
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        for index, image_env in enumerate(
+            sorted(
+                {
+                    "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
+                    "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
+                    "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
+                    "RUNPOD_IMAGE_NAME_I2I_PRO",
+                    "RUNPOD_IMAGE_NAME_SCAIL2",
+                    "RUNPOD_IMAGE_NAME_LTX_VIDEO",
+                    "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+                }
+            ),
+            start=1,
+        )
+    }
+    monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
 
 
 def test_base_command_uses_container_env_files_and_slot(monkeypatch, tmp_path):
@@ -293,27 +312,49 @@ def test_operation_env_opens_mutation_gates_and_drops_legacy_limits(monkeypatch)
     assert "RUNPOD_MAX_HOURLY_COST_USD" not in env
 
 
-def test_operation_env_pins_baked_profile_images_over_stale_container_env(
+def test_operation_env_pins_release_profile_images_over_stale_container_env(
+    monkeypatch,
+):
+    builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
+    pins = {
+        "RUNPOD_IMAGE_NAME_IMG2IMG_LORA": "ghcr.io/giraffu/img2img@sha256:" + "1" * 64,
+        "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO": "ghcr.io/giraffu/i2v@sha256:" + "2" * 64,
+        "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2": "ghcr.io/giraffu/wan22@sha256:" + "3" * 64,
+        "RUNPOD_IMAGE_NAME_I2I_PRO": "ghcr.io/giraffu/i2i@sha256:" + "4" * 64,
+        "RUNPOD_IMAGE_NAME_SCAIL2": "ghcr.io/giraffu/scail2@sha256:" + "5" * 64,
+        "RUNPOD_IMAGE_NAME_LTX_VIDEO": "ghcr.io/giraffu/ltx@sha256:" + "6" * 64,
+        "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT": "ghcr.io/giraffu/pornmaster@sha256:"
+        + "7" * 64,
+    }
+    monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
+    for image_env in pins:
+        monkeypatch.setenv(image_env, "ghcr.io/giraffu/legacy:old")
+
+    env = builder.operation_env()
+
+    assert {image_env: env[image_env] for image_env in pins} == pins
+
+
+def test_operation_env_rejects_mutable_or_incomplete_release_profile_pins(
     monkeypatch,
 ):
     builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
     monkeypatch.setenv(
-        "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
-        "ghcr.io/giraffu/allbot-comfy-runpod-img2img:legacy",
-    )
-    monkeypatch.setenv(
-        "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
-        "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:legacy",
+        "RUNPOD_RELEASE_PROFILE_PINS_JSON",
+        json.dumps(
+            {
+                "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO": (
+                    "ghcr.io/giraffu/allbot-gpu-wan22-aio-video:latest"
+                )
+            }
+        ),
     )
 
-    env = builder.operation_env()
+    with pytest.raises(HTTPException) as exc_info:
+        builder.operation_env()
 
-    assert env["RUNPOD_IMAGE_NAME_IMG2IMG_LORA"] == (
-        RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
-    )
-    assert env["RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT"] == (
-        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE
-    )
+    assert exc_info.value.status_code == 503
+    assert "release profile pins" in exc_info.value.detail
 
 
 def test_lan_aio_slot_selection_rejects_unknown_agent():
