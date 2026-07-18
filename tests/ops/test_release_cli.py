@@ -4395,6 +4395,65 @@ def test_rollback_material_repair_command_materializes_without_preflight_loop(
     assert '"running_services_changed": false' in capsys.readouterr().out
 
 
+def test_rollback_material_repair_command_supports_test_without_prod_confirmation(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    calls = []
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "source_ref": "refs/heads/main",
+        "release_channel": "main",
+        "track": "control-plane",
+        "selected_artifacts": ["qqcc-config-backend", "qqcc-config-frontend"],
+        "artifacts": {},
+    }
+    impact = module.ReleaseImpact(
+        services={"qqcc-config-backend", "qqcc-config-frontend"},
+        level="rolling",
+    )
+    monkeypatch.setattr(
+        module, "build_plan", lambda _args: (impact, manifest, FULL_SHA)
+    )
+    monkeypatch.setattr(module, "verify_operator_worktree_clean", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_validate_local_env",
+        lambda _args: (_valid_test_environment(), "config-revision"),
+    )
+    monkeypatch.setattr(module, "verify_release_ci", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "render_track_release_env",
+        lambda *_args: "ALLBOT_RELEASE_TRACK=control-plane\n",
+    )
+    monkeypatch.setattr(
+        module,
+        "_materialize_cloud_rollback_materials",
+        lambda *args: calls.append(args),
+    )
+
+    result = module.main(
+        [
+            "recover",
+            "--env",
+            "test",
+            "--sha",
+            FULL_SHA,
+            "--modules",
+            "qqcc-config",
+            "--repair-rollback-materials",
+            "--execute",
+        ]
+    )
+
+    assert result == 0
+    assert len(calls) == 1
+    assert '"environment": "test"' in capsys.readouterr().out
+
+
 def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
     monkeypatch,
 ):

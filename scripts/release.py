@@ -3243,10 +3243,8 @@ def _materialize_cloud_rollback_materials(
 ) -> None:
     """Restore immutable rollback inputs without changing running services."""
 
-    if args.env != "prod" or manifest.get("schema_version") != 2:
-        raise ReleaseError(
-            "rollback material repair requires a schema-v2 production release"
-        )
+    if args.env not in {"test", "prod"} or manifest.get("schema_version") != 2:
+        raise ReleaseError("rollback material repair requires a schema-v2 release")
     track = str(manifest.get("track", ""))
     if track != "control-plane":
         raise ReleaseError(
@@ -5408,7 +5406,7 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
         "--repair-rollback-materials",
         action="store_true",
         help=(
-            "recover a deployed schema-v2 production module's missing immutable "
+            "recover a deployed schema-v2 module's missing immutable "
             "checkout and release.env without pulling images or restarting services"
         ),
     )
@@ -5559,15 +5557,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise ReleaseError(
                         "rollback material repair cannot be combined with transaction recovery"
                     )
-                if args.env != "prod":
-                    raise ReleaseError(
-                        "rollback material repair is only available in production"
-                    )
                 if not args.sha:
                     raise ReleaseError("rollback material repair requires --sha")
-                if not args.execute or not args.confirm_prod:
+                if not args.execute or (args.env == "prod" and not args.confirm_prod):
                     raise ReleaseError(
-                        "production rollback material repair requires --execute --confirm-prod"
+                        "rollback material repair requires --execute; production also "
+                        "requires --confirm-prod"
                     )
                 if (
                     args.skip_git_checks
