@@ -102,10 +102,10 @@ class ReleaseCLI:
             args.extend(["--env-file", str(self.env_file)])
         return args
 
-    def _run(self, args: Sequence[str]) -> str:
+    def _run(self, args: Sequence[str], *, cwd: Path | None = None) -> str:
         result = subprocess.run(
             list(args),
-            cwd=self.repo,
+            cwd=cwd or self.repo,
             text=True,
             capture_output=True,
             check=False,
@@ -266,8 +266,9 @@ class ReleaseCLI:
                 "oras",
                 "push",
                 reference,
-                f"{path}:application/vnd.allbot.release-approval.v1+json",
-            ]
+                f"{path.name}:application/vnd.allbot.release-approval.v1+json",
+            ],
+            cwd=path.parent,
         )
         return reference
 

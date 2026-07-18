@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -540,3 +541,36 @@ def test_release_runner_does_not_hide_other_plan_failures(tmp_path, monkeypatch)
 
     with pytest.raises(module.TestTrainError, match="provenance"):
         runner.plan(SHA, "gpu-execution")
+
+
+def test_release_runner_publishes_approval_with_a_relative_layer_path(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=tmp_path / "cache")
+    approval_dir = tmp_path / "state" / "approvals"
+    approval_dir.mkdir(parents=True)
+    approval = approval_dir / f"{SHA}.json"
+    approval.write_text("{}\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+        return subprocess.CompletedProcess(
+            args,
+            1 if args[:3] == ["oras", "manifest", "fetch"] else 0,
+            stdout="",
+            stderr="not found" if args[:3] == ["oras", "manifest", "fetch"] else "",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    reference = runner.publish_approval(SHA, approval)
+
+    assert reference.endswith(f":{SHA}")
+    push_args, push_kwargs = calls[-1]
+    assert push_args[:2] == ["oras", "push"]
+    assert push_args[-1] == (
+        f"{approval.name}:application/vnd.allbot.release-approval.v1+json"
+    )
+    assert push_kwargs["cwd"] == approval_dir
