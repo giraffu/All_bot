@@ -31,6 +31,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 ## 2. 当前稳定入口
 
 - schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。已有增量基线时，普通自动发布只从策略影响集合中选择 bundle 内 `source_sha` 等于目标 SHA 的运行时 artifact；全部 artifact 均复用旧 `source_sha` 时选择集必须为空，风险 level/matched rules 只作为审计元数据，不得触发空重建。`--services` 仍只能扩大影响集合；显式 `--modules dashboard|qqcc-bot|qqcc-config` 是三个受控独立模块边界，一次只能选择一个完整组，并从组内每个 artifact 自己的 `source_sha` 分别计算差异。旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，不现场改状态；组内混合版本允许保留各自真实基线。
+- `deploy/release-artifacts-v2.json` 是跨 track 的发布契约；其内容变化必须重建全部自有 artifact，禁止把旧镜像重新标注成新 task type。main 若本轮包含 GPU rebuild，`ci_release_v2.py --require-complete-gpu` 要求 OCI `allbot-gpu-release-manifests:<full-sha>` 中每个受影响 profile 都带同 SHA attestation，否则在不可变 main bundle tag 创建前 fail closed；test-candidate 仍可记录 GPU unavailable 并只推进控制面测试。
 - 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
 - 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。普通混合变更取最高风险。独立模块发布只重建所选服务；migration、未知共享 Compose/env 或未审计跨模块契约仍 fail closed。已审阅并固定内容 SHA256 的 owner-only Compose/env 与向后兼容 schema/config snapshot 可继续独立发布；任一文件内容变化即恢复阻断，不能把 snapshot 当通配 allowlist。
 - `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|observation|gpu-business-canary`，并受策略约束。CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。
@@ -87,7 +88,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，默认只切换确实要求测试的 control-plane/公共 Web，`--with-test-execution` 仅用于专项诊断；显式启用 Worker 时按 control-plane → test-execution 顺序切换。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
-- cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
+- cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。test-1 的当前 i2i_pro 事实源是 `gpu-252` GPU1/8191；GPU0/8192 当前为 `image_to_video`，不得用于图片换脸验收。
 - 对象存储为 R2 `user-data-test`，不得误改正式入口。
 
 ### 云正式

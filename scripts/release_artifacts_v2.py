@@ -73,6 +73,7 @@ def plan_builds(
     *,
     has_previous: bool,
 ) -> BuildPlan:
+    changed_paths = tuple(changed_paths)
     owned = {
         name
         for name, artifact in catalog.items()
@@ -84,6 +85,9 @@ def plan_builds(
         if artifact.get("kind") == "external-image"
     }
     if not has_previous:
+        return BuildPlan(build=owned, reuse=(), resolve=external)
+    normalized_paths = {path.removeprefix("./") for path in changed_paths}
+    if "deploy/release-artifacts-v2.json" in normalized_paths:
         return BuildPlan(build=owned, reuse=(), resolve=external)
     direct = {
         name

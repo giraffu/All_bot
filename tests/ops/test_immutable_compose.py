@@ -345,6 +345,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert '--validation-mode "$VALIDATION_MODE"' in workflow
     assert "if: steps.source.outputs.validation_mode == 'full'" in workflow
     assert "validation_mode=full" in workflow
+    assert "allbot-gpu-release-manifests" in workflow
+    assert "gpu-execution-manifest.json" in workflow
+    assert "--require-complete-gpu" in workflow
+    assert 'if [ "$RELEASE_CHANNEL" = main ]' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

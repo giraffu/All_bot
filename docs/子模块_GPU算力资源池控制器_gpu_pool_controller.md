@@ -1,6 +1,6 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
-> 2026-07-16 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。LAN registry 只允许保 digest 复制，不得现场重建。
+> 2026-07-18 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。main 的 GPU 输入变化必须先发布同 SHA 完整 OCI profile manifest，LAN registry 只允许保 digest 复制，不得现场重建。
 
 ## 1. 目标与范围
 
@@ -422,6 +422,13 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 
 正式 RunPod 更新使用 `scripts/runpod_prod_ops.sh rollout-release --release-index <index> --sha <sha> --profile <profile> --slot <NN> --strategy direct|standard`，镜像名必须是 release index 的 digest ref。每次只处理一个 slot：旧 image 先记录，新 Pod 保持 disabled，通过实际 image/worker/heartbeat 检查后 enable；失败删除目标 Pod、恢复旧 exact image 并停止。镜像默认 CMD 为 baked runtime entrypoint，不以 `bootstrap_from_git` 或 mutable tag 作为新发布入口。
 若迁移前的 legacy Pod 仍只报告历史 tag，执行 rollout 时必须额外传入已独立核验、与 live image 同仓库的 `--rollback-ref <repo@sha256:...>`；wrapper 不自动把 tag 当作回滚证据，也不接受跨仓库或 mutable rollback ref。新建 Pod 仍只使用 release index 中的 digest ref。
+
+同一 main SHA 的 profile 构建完成后，使用 `scripts/gpu_profile_release_v2.py` 逐项校验
+digest、baked revision、模型 manifest checksum 与回滚 digest；最后一个 profile 传
+`--publish-ref ghcr.io/giraffu/allbot-gpu-release-manifests:<full-sha>` 发布完整 OCI manifest。
+main modular release 自动读取该 ref；任一本轮重建 profile 缺失或仍是旧 `source_sha` 都会在
+release bundle 发布前阻断。`i2i_pro` 的 canonical task types 固定为
+`i2i_pro,t2i-pornmaster-turbo,face_swap_v2`，旧 `face_swap` 只留在 V1 worker。
 
 ## 6. 真实执行门禁
 

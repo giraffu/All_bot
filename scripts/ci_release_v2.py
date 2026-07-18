@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from scripts.assemble_release_v2 import assemble
@@ -82,6 +82,46 @@ def _unavailable_gpu_artifacts(
     )
 
 
+def _validated_gpu_evidence(
+    document: Mapping[str, Any],
+    *,
+    catalog: Mapping[str, Mapping[str, Any]],
+    source_sha: str,
+) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    """Validate the profile manifest and identify exact-source attestations."""
+
+    if document.get("track") != "gpu-execution":
+        raise CIReleaseError("GPU evidence manifest has the wrong track")
+    if document.get("source_sha") != source_sha:
+        raise CIReleaseError("GPU evidence manifest source SHA does not match")
+    raw_artifacts = document.get("artifacts")
+    if not isinstance(raw_artifacts, Mapping):
+        raise CIReleaseError("GPU evidence manifest artifacts are invalid")
+    artifacts: dict[str, dict[str, Any]] = {}
+    exact_source: set[str] = set()
+    for raw_name, raw_artifact in raw_artifacts.items():
+        name = str(raw_name)
+        if name not in catalog or catalog[name].get("track") != "gpu-execution":
+            raise CIReleaseError(f"GPU evidence contains an unknown profile: {name}")
+        if not isinstance(raw_artifact, Mapping):
+            raise CIReleaseError(f"GPU evidence profile is invalid: {name}")
+        artifact = dict(raw_artifact)
+        artifacts[name] = artifact
+        if artifact.get("source_sha") == source_sha:
+            exact_source.add(name)
+    return artifacts, exact_source
+
+
+def _require_gpu_release_ready(
+    release_channel: str,
+    unavailable_gpu: set[str],
+) -> None:
+    if release_channel == "main" and unavailable_gpu:
+        raise CIReleaseError(
+            "main GPU release is incomplete: " + ", ".join(sorted(unavailable_gpu))
+        )
+
+
 def _build_image(
     *,
     name: str,
@@ -132,6 +172,7 @@ def main() -> int:
     parser.add_argument("--previous-index", type=Path)
     parser.add_argument("--previous-bundle-dir", type=Path)
     parser.add_argument("--gpu-manifest", type=Path)
+    parser.add_argument("--require-complete-gpu", action="store_true")
     parser.add_argument(
         "--validation-mode",
         choices=("full", "build-only"),
@@ -172,10 +213,14 @@ def main() -> int:
     evidence_results: set[str] = set()
     if args.gpu_manifest:
         gpu_document = json.loads(args.gpu_manifest.read_text(encoding="utf-8"))
-        for name, artifact in gpu_document["artifacts"].items():
+        gpu_artifacts, evidence_results = _validated_gpu_evidence(
+            gpu_document,
+            catalog=catalog,
+            source_sha=args.sha,
+        )
+        for name, artifact in gpu_artifacts.items():
             _write_result(results_dir / f"{name}.json", artifact)
             results[name] = artifact
-            evidence_results.add(name)
 
     unavailable_gpu = _unavailable_gpu_artifacts(
         catalog,
@@ -188,6 +233,8 @@ def main() -> int:
             "GPU profiles omitted pending profile canary evidence: "
             + ", ".join(sorted(unavailable_gpu))
         )
+    if args.require_complete_gpu and gpu_builds:
+        _require_gpu_release_ready(args.release_channel, unavailable_gpu)
 
     for row in build_matrix(catalog, plan):
         name = row["name"]

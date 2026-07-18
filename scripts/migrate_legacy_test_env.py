@@ -21,11 +21,11 @@ DEFAULT_SLOTS = ("01", "02", "03", "04", "06", "07", "08")
 SLOT_DEFAULTS: dict[str, dict[str, str]] = {
     "01": {
         "NODE_ID": "gpu-252",
-        "GPU_INDEX": "0",
+        "GPU_INDEX": "1",
         "RUNTIME_PROFILE": "i2i_pro",
-        "TASK_TYPES": "face_swap,i2i_pro,i2i_draw,t2i-pornmaster-turbo",
-        "COMFY_API_URL": "http://192.168.1.252:8192",
-        "COMFY_WS_URL": "ws://192.168.1.252:8192/ws",
+        "TASK_TYPES": "face_swap_v2,i2i_pro,i2i_draw,t2i-pornmaster-turbo",
+        "COMFY_API_URL": "http://192.168.1.252:8191",
+        "COMFY_WS_URL": "ws://192.168.1.252:8191/ws",
     },
     "02": {
         "NODE_ID": "gpu-177",
@@ -88,6 +88,13 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
     },
 }
 
+STALE_SLOT_01_ASSIGNMENT = {
+    "NODE_ID": "gpu-252",
+    "GPU_INDEX": "0",
+    "COMFY_API_URL": "http://192.168.1.252:8192",
+    "COMFY_WS_URL": "ws://192.168.1.252:8192/ws",
+}
+
 
 class MigrationError(RuntimeError):
     pass
@@ -115,6 +122,33 @@ def parse_legacy(lines: Sequence[str]) -> tuple[dict[str, str], list[str]]:
 def _legacy(values: Mapping[str, str], slot: str, suffix: str) -> str:
     key = f"CLOUD_TEST_WORKER_{slot}_{suffix}"
     return values.get(key, SLOT_DEFAULTS[slot][suffix])
+
+
+def _normalized_task_types(slot: str, value: str) -> str:
+    if slot != "01":
+        return value
+    normalized: list[str] = []
+    for raw_type in value.split(","):
+        task_type = raw_type.strip()
+        if task_type == "face_swap":
+            task_type = "face_swap_v2"
+        if task_type and task_type not in normalized:
+            normalized.append(task_type)
+    return ",".join(normalized)
+
+
+def _slot_values(values: Mapping[str, str], slot: str) -> dict[str, str]:
+    resolved = {
+        suffix: _legacy(values, slot, suffix)
+        for suffix in SLOT_DEFAULTS[slot]
+    }
+    if slot == "01" and all(
+        resolved.get(suffix) == expected
+        for suffix, expected in STALE_SLOT_01_ASSIGNMENT.items()
+    ):
+        for suffix in STALE_SLOT_01_ASSIGNMENT:
+            resolved[suffix] = SLOT_DEFAULTS[slot][suffix]
+    return resolved
 
 
 def migrate_values(
@@ -161,21 +195,18 @@ def migrate_values(
     )
     for slot in slots:
         prefix = f"ALLBOT_WORKER_{slot}_"
+        slot_values = _slot_values(worker_values, slot)
         values.update(
             {
                 prefix + "AGENT_ID": f"cloud_worker_test_{slot}",
-                prefix + "COMFY_API_URL": _legacy(
-                    worker_values, slot, "COMFY_API_URL"
+                prefix + "COMFY_API_URL": slot_values["COMFY_API_URL"],
+                prefix + "COMFY_WS_URL": slot_values["COMFY_WS_URL"],
+                prefix + "TASK_TYPES": _normalized_task_types(
+                    slot, slot_values["TASK_TYPES"]
                 ),
-                prefix + "COMFY_WS_URL": _legacy(
-                    worker_values, slot, "COMFY_WS_URL"
-                ),
-                prefix + "TASK_TYPES": _legacy(worker_values, slot, "TASK_TYPES"),
-                prefix + "NODE_ID": _legacy(worker_values, slot, "NODE_ID"),
-                prefix + "GPU_INDEX": _legacy(worker_values, slot, "GPU_INDEX"),
-                prefix + "RUNTIME_PROFILE": _legacy(
-                    worker_values, slot, "RUNTIME_PROFILE"
-                ),
+                prefix + "NODE_ID": slot_values["NODE_ID"],
+                prefix + "GPU_INDEX": slot_values["GPU_INDEX"],
+                prefix + "RUNTIME_PROFILE": slot_values["RUNTIME_PROFILE"],
                 prefix + "PREFETCH_ENABLED": (
                     worker_values.get("PREFETCH_ENABLED", "true")
                     if slot == "01"

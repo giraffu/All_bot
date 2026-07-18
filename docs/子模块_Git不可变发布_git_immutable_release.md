@@ -41,14 +41,19 @@ manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
 `runpod_*_profile_image.yml`。v2 catalog 的 `task_types` 必须等于运行时真实声明，不能
 用 Dashboard profile 名替代 Central task type。
 
-发布 v2 release bundle 本身不创建 RunPod，也不要求八个 profile 同时完成 canary。
+发布 v2 release bundle 本身不创建 RunPod，也不要求八个 profile 同时完成业务 canary。
 如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA attestation manifest，
-聚合器不得复用旧 digest，而是在 `gpu-execution-manifest.json` 中移除该 profile，并记录
-`completeness=incomplete` 与 `missing_artifacts`。这不会阻断 control-plane 和
-test-execution 的产物发布、部署或晋级；各 track 只校验本次选择的 artifacts。后续选择、
-部署或晋级缺失 GPU profile 必须 fail closed。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
+聚合器不得复用旧 digest。test-candidate 可在 `gpu-execution-manifest.json` 中移除该 profile，
+记录 `completeness=incomplete` 与 `missing_artifacts`，继续推进 control-plane 测试；受保护 main
+只要本轮包含 GPU rebuild，就必须从 OCI `allbot-gpu-release-manifests:<full-sha>` 读取完整证明，
+否则在 main bundle tag 创建前 fail closed。artifact catalog 自身变化会重建全部自有 artifact，
+避免旧镜像被新 metadata 伪装。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
 main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
 不会导致下一次无条件全量重建。
+
+各 profile 用 `scripts/gpu_profile_release_v2.py` 逐项合并证明；最后一项补齐后可传
+`--publish-ref ghcr.io/giraffu/allbot-gpu-release-manifests:<full-sha>`。helper 只允许
+`completeness=complete`、manifest/artifact 同 SHA、SHA tag 且远端 ref 尚不存在时推送。
 
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 
@@ -83,7 +88,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 控制面影响分析只允许扩大依赖集合，但可选 Bot 的运行态还必须服从已校验配置：没有对应环境的 `QQCC_BOT_TOKEN*` 时不启动 `qqcc-bot`，`PRIVATE_QQCC_BOT_ENABLED` 未明确开启时不启动私有 Bot worker，没有 `PAID_GROUP_BOT_TOKEN` 时不启动付费群 Bot。`plan` 同时输出 `cloud_services` 与 `disabled_cloud_services`；该过滤白名单只覆盖这三个可选 runtime，不能借配置缩小 API、数据库、Redis、主 Bot 等核心依赖闭包。
 
-测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 生成候选文件：`--source` 必须是云测试当前 `/etc/allbot/test.env` 的受限本地副本，作为控制面配置事实源；`--worker-source` 可指向本机旧 `.env.cloud.test`，只补 Worker 槽位参数，不能用旧本机配置覆盖云端新增项。脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，补齐测试 admin/owner 非敏感 Host，且只输出计数不输出值。候选必须再经 `scripts/release.py validate-env` 和 cloud/worker Compose `config -q`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
+测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 生成候选文件：`--source` 必须是云测试当前 `/etc/allbot/test.env` 的受限本地副本，作为控制面配置事实源；`--worker-source` 可指向本机旧 `.env.cloud.test`，只补 Worker 槽位参数，不能用旧本机配置覆盖云端新增项。脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，补齐测试 admin/owner 非敏感 Host，且只输出计数不输出值。已知旧 test-1 `gpu-252` GPU0/8192 组合会归一到当前 i2i_pro GPU1/8191；其它显式 endpoint 组合继续保留。候选必须再经 `scripts/release.py validate-env` 和 cloud/worker Compose `config -q`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
 
 ## 5. 标准流程
 

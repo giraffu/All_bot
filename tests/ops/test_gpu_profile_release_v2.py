@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -113,3 +114,88 @@ def test_gpu_manifest_merge_preserves_unselected_profiles_and_replaces_exact_one
     assert merged["completeness"] == "incomplete"
     assert "i2i_pro" not in merged["missing_artifacts"]
     assert "scail2" not in merged["missing_artifacts"]
+
+
+def test_gpu_manifest_publish_requires_complete_sha_tag_and_immutable_target(tmp_path):
+    module = _load_module()
+    manifest_path = tmp_path / "gpu-execution-manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    manifest = {
+        "source_sha": SHA,
+        "completeness": "complete",
+        "missing_artifacts": [],
+        "artifacts": {"i2i_pro": {"source_sha": SHA}},
+    }
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[:3] == ["oras", "manifest", "fetch"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="not found")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    target = f"ghcr.io/giraffu/allbot-gpu-release-manifests:{SHA}"
+    module.publish_gpu_manifest(
+        manifest,
+        manifest_path=manifest_path,
+        publish_ref=target,
+        source_sha=SHA,
+        run_func=fake_run,
+    )
+
+    assert calls[-1][:3] == ["oras", "push", target]
+    with pytest.raises(module.GPUProfileReleaseError, match="source SHA tag"):
+        module.publish_gpu_manifest(
+            manifest,
+            manifest_path=manifest_path,
+            publish_ref="ghcr.io/giraffu/allbot-gpu-release-manifests:latest",
+            source_sha=SHA,
+            run_func=fake_run,
+        )
+
+
+def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(tmp_path):
+    module = _load_module()
+    manifest_path = tmp_path / "gpu-execution-manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    target = f"ghcr.io/giraffu/allbot-gpu-release-manifests:{SHA}"
+
+    with pytest.raises(module.GPUProfileReleaseError, match="must be complete"):
+        module.publish_gpu_manifest(
+            {"source_sha": SHA, "completeness": "incomplete"},
+            manifest_path=manifest_path,
+            publish_ref=target,
+            source_sha=SHA,
+            run_func=lambda *args, **kwargs: None,
+        )
+
+    def existing(command, **kwargs):
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with pytest.raises(module.GPUProfileReleaseError, match="already exists"):
+        module.publish_gpu_manifest(
+            {
+                "source_sha": SHA,
+                "completeness": "complete",
+                "missing_artifacts": [],
+                "artifacts": {"i2i_pro": {"source_sha": SHA}},
+            },
+            manifest_path=manifest_path,
+            publish_ref=target,
+            source_sha=SHA,
+            run_func=existing,
+        )
+
+    with pytest.raises(module.GPUProfileReleaseError, match="same source SHA"):
+        module.publish_gpu_manifest(
+            {
+                "source_sha": SHA,
+                "completeness": "complete",
+                "missing_artifacts": [],
+                "artifacts": {"i2i_pro": {"source_sha": "b" * 40}},
+            },
+            manifest_path=manifest_path,
+            publish_ref=target,
+            source_sha=SHA,
+            run_func=lambda *args, **kwargs: None,
+        )
