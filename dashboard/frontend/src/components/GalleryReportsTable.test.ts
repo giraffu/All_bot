@@ -5,9 +5,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
+  banGalleryUserSubmissionsAndTakedown: vi.fn(),
   fetchGalleryReports: vi.fn(),
   resolveGalleryReport: vi.fn(),
-  takedownGalleryReport: vi.fn(),
+}))
+
+const modalMocks = vi.hoisted(() => ({
+  confirm: vi.fn(),
 }))
 
 const messageMocks = vi.hoisted(() => ({
@@ -17,9 +21,15 @@ const messageMocks = vi.hoisted(() => ({
 
 vi.mock('../api/api', () => ({
   apiBaseUrl: '',
+  banGalleryUserSubmissionsAndTakedown: apiMocks.banGalleryUserSubmissionsAndTakedown,
   fetchGalleryReports: apiMocks.fetchGalleryReports,
   resolveGalleryReport: apiMocks.resolveGalleryReport,
-  takedownGalleryReport: apiMocks.takedownGalleryReport,
+}))
+
+vi.mock('ant-design-vue/es/modal', () => ({
+  default: {
+    confirm: modalMocks.confirm,
+  },
 }))
 
 vi.mock('ant-design-vue/es/message', () => ({
@@ -58,6 +68,13 @@ const PopconfirmStub = defineComponent({
   name: 'PopconfirmStub',
   emits: ['confirm'],
   template: '<div class="popconfirm-stub" @click="$emit(\'confirm\')"><slot /></div>',
+})
+
+const ModalStub = defineComponent({
+  name: 'ModalStub',
+  props: ['open', 'title'],
+  emits: ['update:open'],
+  template: '<section v-if="open" class="modal-stub" :aria-label="title"><slot /></section>',
 })
 
 const SelectStub = defineComponent({
@@ -108,11 +125,15 @@ const mountReportsTable = () =>
         'a-button': ButtonStub,
         'a-table': TableStub,
         'a-popconfirm': PopconfirmStub,
+        'a-modal': ModalStub,
         'a-select': SelectStub,
         'a-input-number': InputNumberStub,
         'a-divider': passthroughStub('DividerStub'),
         'a-tag': passthroughStub('TagStub'),
         EyeOutlined: passthroughStub('EyeOutlinedStub'),
+        ExclamationCircleOutlined: passthroughStub('ExclamationCircleOutlinedStub'),
+        PictureOutlined: passthroughStub('PictureOutlinedStub'),
+        PlayCircleOutlined: passthroughStub('PlayCircleOutlinedStub'),
         ReloadOutlined: passthroughStub('ReloadOutlinedStub'),
         SearchOutlined: passthroughStub('SearchOutlinedStub'),
         StopOutlined: passthroughStub('StopOutlinedStub'),
@@ -131,10 +152,11 @@ describe('GalleryReportsTable', () => {
       page_size: 20,
     })
     apiMocks.resolveGalleryReport.mockResolvedValue({ status: 'ok' })
-    apiMocks.takedownGalleryReport.mockResolvedValue({
+    apiMocks.banGalleryUserSubmissionsAndTakedown.mockResolvedValue({
       status: 'ok',
       affected_posts: 1,
-      resolved_reports: 1,
+      affected_histories: 1,
+      resolved_reports: 2,
     })
   })
 
@@ -152,20 +174,58 @@ describe('GalleryReportsTable', () => {
     })
   })
 
-  it('calls moderation actions from report rows', async () => {
+  it('opens image and video media in a preview modal', async () => {
+    apiMocks.fetchGalleryReports.mockResolvedValue({
+      items: [
+        sampleReport,
+        {
+          ...sampleReport,
+          id: 11,
+          post_id: 8,
+          media_type: 'video',
+          media_url: '/demo.mp4',
+        },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    })
+
+    const wrapper = mountReportsTable()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="查看作品 7 图片"]').trigger('click')
+    expect(wrapper.get('.modal-stub img').attributes('src')).toBe('/demo.png')
+
+    await wrapper.get('button[aria-label="查看作品 8 视频"]').trigger('click')
+    expect(wrapper.get('.modal-stub video').attributes('src')).toBe('/demo.mp4')
+    expect(wrapper.get('.modal-stub video').attributes()).toHaveProperty('controls')
+  })
+
+  it('resolves reports and confirms the author-level ban and takedown action', async () => {
     const wrapper = mountReportsTable()
     await flushPromises()
 
     const buttons = wrapper.findAll('button')
     const resolveButton = buttons.find(button => button.text().includes('标记处理'))
-    const takedownButton = buttons.find(button => button.text().includes('下架'))
+    const banButton = buttons.find(button => button.text().includes('封禁并下架'))
 
     await resolveButton?.trigger('click')
     await flushPromises()
     expect(apiMocks.resolveGalleryReport).toHaveBeenCalledWith(10)
 
-    await takedownButton?.trigger('click')
+    await banButton?.trigger('click')
     await flushPromises()
-    expect(apiMocks.takedownGalleryReport).toHaveBeenCalledWith(10)
+
+    expect(modalMocks.confirm).toHaveBeenCalledOnce()
+    const confirmOptions = modalMocks.confirm.mock.calls[0][0]
+    expect(confirmOptions.title).toBe('确认封禁并下架该用户所有投稿?')
+    expect(confirmOptions.okText).toBe('封禁并下架')
+
+    await confirmOptions.onOk()
+    expect(apiMocks.banGalleryUserSubmissionsAndTakedown).toHaveBeenCalledWith(456)
+    expect(messageMocks.success).toHaveBeenCalledWith(
+      '已封禁用户 456，下架 1 条投稿，处理 2 条举报',
+    )
   })
 })

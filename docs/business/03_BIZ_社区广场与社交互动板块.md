@@ -75,8 +75,8 @@ sequenceDiagram
 - 用户公开主页入口为 `GET /api/users/{user_id}/public-profile?page=&size=`，返回用户摘要和公开投稿分页 `posts`；兼容字段 `recent_posts` 只等于当前页 items。公开主页投稿详情也必须显示可解锁提示词入口。
 - 用户中心关注入口为 `GET /api/users/me/follows`，粉丝入口为 `GET /api/users/me/followers`；粉丝列表中的 `is_following` 表示当前用户是否已回关该粉丝。
 - Dashboard 广场列表入口为 `GET /api/gallery/all`，后台治理筛选可使用 `username`、`prompt_contains`、`prompt_max_length`，其中提示词条件基于 `History.prompt`。
-- Dashboard 批量治理入口为 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`，会设置用户投稿封禁、下架其所有 `GalleryPost`，并同步取消相关历史记录公开状态。
-- Dashboard 举报管理入口为 `GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`，可用 `POST /api/gallery/reports/{report_id}/resolve` 标记处理，或用 `POST /api/gallery/reports/{report_id}/takedown` 软下架作品；下架会同步 `GalleryPost.is_active=false`、同 `task_id + user_id` 的 `History.is_public=false`，并处理同作品其他 pending 举报。
+- Dashboard 批量治理入口为 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`，会设置用户投稿封禁、下架其所有 `GalleryPost`、同步取消相关历史记录公开状态，并处理该作者全部 pending 举报；响应包含 `affected_posts`、`affected_histories` 与 `resolved_reports`。
+- Dashboard 举报管理入口为 `GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`；图片和视频缩略图可打开弹窗预览，可用 `POST /api/gallery/reports/{report_id}/resolve` 标记处理，治理按钮统一复用用户级“封禁并下架”。兼容接口 `POST /api/gallery/reports/{report_id}/takedown` 仍保留单作品软下架和同作品 pending 举报处理语义。
 
 ## 5. 用户操作手册
 

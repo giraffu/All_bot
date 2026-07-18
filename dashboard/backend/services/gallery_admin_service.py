@@ -202,6 +202,7 @@ async def ban_user_submissions_and_takedown_payload(
         old_status = bool(user.is_submission_banned)
         old_reason = user.submission_ban_reason
         ban_reason = build_submission_ban_message(getattr(request, "reason", None))
+        now = datetime.now()
 
         task_id_rows = (
             await db.execute(
@@ -214,7 +215,7 @@ async def ban_user_submissions_and_takedown_payload(
         task_ids = sorted({row[0] for row in task_id_rows if row[0]})
 
         user.is_submission_banned = True
-        user.submission_banned_at = datetime.now()
+        user.submission_banned_at = now
         user.submission_ban_reason = ban_reason
 
         post_result = await db.execute(
@@ -243,6 +244,20 @@ async def ban_user_submissions_and_takedown_payload(
                 0,
             )
 
+        report_result = await db.execute(
+            update(GalleryReport)
+            .where(
+                GalleryReport.post_author_user_id == user_id,
+                GalleryReport.status == "pending",
+            )
+            .values(
+                status="resolved",
+                resolved_at=now,
+                resolution_action="ban_and_takedown",
+            )
+        )
+        resolved_reports = max(getattr(report_result, "rowcount", 0) or 0, 0)
+
         await db.commit()
 
         from src.services.log_service import LogService
@@ -260,6 +275,7 @@ async def ban_user_submissions_and_takedown_payload(
                 "new_reason": user.submission_ban_reason,
                 "affected_posts": affected_posts,
                 "affected_histories": affected_histories,
+                "resolved_reports": resolved_reports,
                 "source": "dashboard_gallery_admin",
             },
         )
@@ -272,6 +288,7 @@ async def ban_user_submissions_and_takedown_payload(
             "submission_ban_reason": user.submission_ban_reason,
             "affected_posts": affected_posts,
             "affected_histories": affected_histories,
+            "resolved_reports": resolved_reports,
         }
     except HTTPException:
         raise
