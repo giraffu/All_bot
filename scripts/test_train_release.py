@@ -255,10 +255,10 @@ class ReleaseCLI:
                     capture_output=True,
                     check=False,
                 )
-                remote = Path(temp) / path.name
-                if pulled.returncode != 0 or not remote.is_file():
+                remote_files = list(Path(temp).rglob("*.json"))
+                if pulled.returncode != 0 or len(remote_files) != 1:
                     raise TestTrainError("existing promotion approval cannot be verified")
-                if remote.read_bytes() != path.read_bytes():
+                if remote_files[0].read_bytes() != path.read_bytes():
                     raise TestTrainError("promotion approval tag already contains different bytes")
             return reference
         self._run(
