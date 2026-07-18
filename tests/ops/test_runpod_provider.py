@@ -495,9 +495,9 @@ def test_render_create_wan22_aio_video_cloud_test_profile_uses_5090_and_test_ref
     assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
     assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
-    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-06-12-test"
+    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-07-18-lora5"
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == (
-        "wan22_aio_video/2026-06-12-test/manifest.json"
+        "wan22_aio_video/2026-07-18-lora5/manifest.json"
     )
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
@@ -551,7 +551,7 @@ def test_render_create_wan22_aio_video_can_use_template_with_bootstrap():
     assert body["gpuTypeIds"] == list(RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
     assert env["RUNPOD_TASK_TYPE"] == "wan22_aio_video"
     assert env["SUPPORTED_TASK_TYPES"] == "image_to_video,wan22_video_v2"
-    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-06-12-test"
+    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-07-18-lora5"
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
 

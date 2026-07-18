@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import sys
@@ -379,12 +380,35 @@ def upload_bundle(
                 Config=transfer_config,
             )
 
+        verification_failures = []
+        for item in r2_manifest["files"]:
+            head = _head_object(client, bucket=bucket, key=str(item["key"]))
+            metadata_sha = _metadata_value(head.get("Metadata"), "sha256") if head else ""
+            if (
+                not head
+                or int(head.get("ContentLength") or 0) != int(item["size_bytes"])
+                or metadata_sha != str(item["sha256"])
+            ):
+                verification_failures.append(str(item["key"]))
+        if verification_failures:
+            raise RuntimeError(
+                "object HEAD verification failed before manifest publish for "
+                f"{len(verification_failures)} object(s)"
+            )
+
     manifest_needs_upload = False
+    manifest_sha256 = ""
     if not skip_manifest:
         manifest_bytes = json.dumps(r2_manifest, ensure_ascii=False, indent=2).encode("utf-8")
+        manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
         manifest_existing = _head_object(client, bucket=bucket, key=manifest_key) if bucket_exists or created_bucket else None
         manifest_needs_upload = True
-        if manifest_existing and int(manifest_existing.get("ContentLength") or 0) == len(manifest_bytes):
+        if (
+            manifest_existing
+            and int(manifest_existing.get("ContentLength") or 0) == len(manifest_bytes)
+            and _metadata_value(manifest_existing.get("Metadata"), "sha256")
+            == manifest_sha256
+        ):
             manifest_needs_upload = False
         if execute and manifest_needs_upload:
             client.put_object(
@@ -392,8 +416,23 @@ def upload_bundle(
                 Key=manifest_key,
                 Body=manifest_bytes,
                 ContentType="application/json",
-                Metadata={"bundle": ",".join(selected_bundles), "version": version},
+                Metadata={
+                    "bundle": ",".join(selected_bundles),
+                    "version": version,
+                    "sha256": manifest_sha256,
+                },
             )
+        if execute:
+            manifest_head = _head_object(client, bucket=bucket, key=manifest_key)
+            if (
+                not manifest_head
+                or int(manifest_head.get("ContentLength") or 0) != len(manifest_bytes)
+                or _metadata_value(manifest_head.get("Metadata"), "sha256")
+                != manifest_sha256
+            ):
+                raise RuntimeError(
+                    f"manifest HEAD verification failed after publish: {manifest_key}"
+                )
 
     return {
         "ok": True,
@@ -412,6 +451,8 @@ def upload_bundle(
         "missing_local_blob_count": len(missing_local_blobs),
         "skip_manifest": skip_manifest,
         "manifest_upload": manifest_needs_upload,
+        "manifest_sha256": manifest_sha256,
+        "verified_object_count": r2_manifest["file_count"] if execute else 0,
         "max_concurrency": max_concurrency,
         "max_bandwidth_mbps": max_bandwidth_mbps,
         "uploads": uploads,

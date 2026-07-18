@@ -45,9 +45,17 @@ class _FakeR2Client:
                 "kwargs": kwargs,
             }
         )
+        self.existing[key] = {
+            "ContentLength": Path(source).stat().st_size,
+            "Metadata": kwargs["ExtraArgs"].get("Metadata") or {},
+        }
 
     def put_object(self, **kwargs) -> None:
         self.puts.append(kwargs)
+        self.existing[kwargs["Key"]] = {
+            "ContentLength": len(kwargs["Body"]),
+            "Metadata": kwargs.get("Metadata") or {},
+        }
 
 
 def _write_bundle_manifest(registry: ModelRegistry, bundle: str, files: list[dict]) -> None:
@@ -212,6 +220,9 @@ def test_union_bundle_execute_uploads_available_blobs_and_manifest(tmp_path):
     assert payload["upload_count"] == 1
     assert client.uploads[0]["key"] == "wan22_aio_video/2026-06-12-test/models/vae/model.safetensors"
     assert client.puts[0]["Key"] == "wan22_aio_video/2026-06-12-test/manifest.json"
+    assert payload["verified_object_count"] == 1
+    assert len(payload["manifest_sha256"]) == 64
+    assert client.puts[0]["Metadata"]["sha256"] == payload["manifest_sha256"]
 
 
 def test_union_bundle_execute_missing_local_blob_fails_before_partial_upload(tmp_path):

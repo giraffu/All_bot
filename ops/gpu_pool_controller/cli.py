@@ -34,6 +34,7 @@ from .runpod_split_video_canary import (
 from .runpod_video_manifests import (
     create_model_r2_client_from_env,
     prepare_split_video_manifests,
+    prepare_wan22_lora5_manifests,
 )
 from .runpod_workers import RunPodWorkersScaler, RunPodWorkersScaleOptions
 from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
@@ -388,6 +389,23 @@ def _cmd_runpod_split_video_manifests(args) -> int:
         client=create_model_r2_client_from_env(),
         bucket=bucket,
         source_key=args.source_key,
+        execute=args.execute,
+    )
+    payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_wan22_lora5_manifests(args) -> int:
+    env_file_info = load_env_file(getattr(args, "env_file", None))
+    bucket = args.bucket or RunPodSettings.from_env().model_bucket
+    if not bucket:
+        raise ValueError("RUNPOD_MODEL_BUCKET or --bucket is required")
+    payload = prepare_wan22_lora5_manifests(
+        client=create_model_r2_client_from_env(),
+        bucket=bucket,
+        base_source_key=args.base_source_key,
+        explicit_source_key=args.explicit_source_key,
         execute=args.execute,
     )
     payload["env_file"] = env_file_info
@@ -780,10 +798,29 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_split_video_manifests.add_argument("--bucket", default=None)
     runpod_split_video_manifests.add_argument(
         "--source-key",
-        default="wan22_aio_video/2026-06-12-test/manifest.json",
+        default="wan22_aio_video/2026-07-18-lora5/manifest.json",
     )
     runpod_split_video_manifests.add_argument("--execute", action="store_true")
     runpod_split_video_manifests.set_defaults(func=_cmd_runpod_split_video_manifests)
+
+    runpod_lora5_manifests = runpod_subparsers.add_parser(
+        "wan22-lora5-manifests",
+        help="compose immutable Wan22 lora5 manifests from legacy AIO and explicit LoRAs",
+    )
+    runpod_lora5_manifests.add_argument(
+        "--env-file", type=Path, default=Path(".env.cloud.prod")
+    )
+    runpod_lora5_manifests.add_argument("--bucket", default=None)
+    runpod_lora5_manifests.add_argument(
+        "--base-source-key",
+        default="wan22_aio_video/2026-06-12-test/manifest.json",
+    )
+    runpod_lora5_manifests.add_argument(
+        "--explicit-source-key",
+        default="wan22_explicit_lora_library/2026-07-18/manifest.json",
+    )
+    runpod_lora5_manifests.add_argument("--execute", action="store_true")
+    runpod_lora5_manifests.set_defaults(func=_cmd_runpod_wan22_lora5_manifests)
 
     runpod_prod_worker = runpod_subparsers.add_parser(
         "prod-worker",
