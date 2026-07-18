@@ -1,8 +1,13 @@
+from pathlib import Path
+
 import pytest
 
 from dashboard.backend.services.runpod_admin_commands import RUNPOD_PROFILE_OPTIONS
 from ops.gpu_pool_controller import runpod_profile_catalog as catalog
 from ops.gpu_pool_controller.providers import runpod as provider
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_dashboard_pinned_images_use_baked_runtime_artifacts():
@@ -19,6 +24,16 @@ def test_dashboard_pinned_images_use_baked_runtime_artifacts():
     assert catalog.RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD == (
         catalog.RUNPOD_BOOTSTRAP_DOCKER_START_CMD
     )
+
+
+def test_ltx_release_workflow_and_runtime_use_repository_owned_v2_package():
+    expected_prefix = "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:"
+    workflow = (
+        ROOT / ".github/workflows/runpod_ltx_video_profile_image.yml"
+    ).read_text(encoding="utf-8")
+
+    assert catalog.RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX == expected_prefix
+    assert "IMAGE_NAME: allbot-comfy-runpod-ltx-video-v2" in workflow
 
 
 def test_provider_reexports_profile_catalog_symbols_for_old_imports():
