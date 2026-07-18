@@ -1,5 +1,7 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
+> 2026-07-19 日常发布入口改为“测试候选原 digest 晋级”。最终 candidate 经 `freeze`/`approve-release` 后，tree-identical main CI 只生成 promotion bundle，不重新 build 或部署测试。正式单模块使用 `python scripts/release.py deploy-module --module <artifact> --confirm-prod --execute`；只有实际容器 RepoDigest、健康与 config revision 一致才报告 `no-change`。生成入口集合自动进入生成维护，Dashboard/QQCC 配置后台/Payment/Paid Group Bot/Public Web 单独发布不维护。下文 legacy rsync/build 脚本仅是历史与故障取证，不再是日常发布方式。
+
 > 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
 2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组每个 artifact 自己的已部署 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失项按成功 history 时间顺序只读恢复，组内混合版本不要求伪造共同基线。提交目标状态时不覆盖非目标版本，目标 SHA 上其它新产物不自动并入。migration、未知共享 Compose/env 和未审计跨模块契约仍 fail closed；只有 policy 中内容 SHA256 固定的 owner-only/向后兼容 snapshot 可作为精确例外，内容变化立即阻断。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。

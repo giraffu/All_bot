@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -157,6 +158,62 @@ def test_release_index_records_build_only_validation_without_claiming_tests_pass
 
     assert release.index["validation"]["mode"] == "build-only"
     assert release.index["validation"]["tests"] == "skipped"
+
+
+def test_main_release_index_loads_candidate_promotion_approval(tmp_path):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    approval = {
+        "schema_version": 1,
+        "status": "approved",
+        "candidate_sha": "b" * 40,
+        "candidate_bundle_digest": "sha256:" + "c" * 64,
+        "artifacts": {
+            "central-api": {
+                "digest": "sha256:" + "2" * 64,
+                "source_sha": SHA,
+                "status": "verified",
+            }
+        },
+    }
+    approval_path = tmp_path / "promotion-approval.json"
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["validation"] = {"mode": "promoted", "tests": "candidate-passed"}
+    index["promotion"] = {
+        "mode": "candidate-digest-reuse",
+        "candidate_sha": "b" * 40,
+        "candidate_bundle_digest": "sha256:" + "c" * 64,
+        "approval_path": approval_path.name,
+        "approval_sha256": hashlib.sha256(approval_path.read_bytes()).hexdigest(),
+        "tree_equivalent": True,
+    }
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    release = module.load_release_index(index_path, expected_sha=SHA)
+
+    assert release.index["promotion_approval"] == approval
+
+
+def test_promoted_release_rejects_tampered_approval(tmp_path):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    approval_path = tmp_path / "promotion-approval.json"
+    approval_path.write_text("{}", encoding="utf-8")
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["validation"] = {"mode": "promoted", "tests": "candidate-passed"}
+    index["promotion"] = {
+        "mode": "candidate-digest-reuse",
+        "candidate_sha": "b" * 40,
+        "candidate_bundle_digest": "sha256:" + "c" * 64,
+        "approval_path": approval_path.name,
+        "approval_sha256": "f" * 64,
+        "tree_equivalent": True,
+    }
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    with pytest.raises(module.ManifestV2Error, match="approval"):
+        module.load_release_index(index_path, expected_sha=SHA)
 
 
 def test_release_index_rejects_validation_metadata_that_claims_skipped_tests_passed(

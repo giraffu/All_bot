@@ -132,7 +132,7 @@ def decide_release_strategy(
 ) -> ReleaseStrategyDecision:
     if requested not in STRATEGIES:
         raise ReleaseStrategyError(f"unknown release strategy: {requested}")
-    if validation_mode not in {"full", "build-only"}:
+    if validation_mode not in {"full", "build-only", "promoted"}:
         raise ReleaseStrategyError(
             f"unknown release validation mode: {validation_mode}"
         )
