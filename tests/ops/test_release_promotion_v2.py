@@ -354,6 +354,41 @@ def test_approval_publisher_rejects_ref_for_another_sha(tmp_path):
         )
 
 
+def test_approval_publisher_accepts_identical_remote_json_with_another_name(
+    tmp_path, monkeypatch
+):
+    promotion = _load_module()
+    publisher = _load_publish_module()
+    candidate_dir = tmp_path / "candidate"
+    candidate_dir.mkdir()
+    candidate_index = _candidate_bundle(candidate_dir)
+    approval = promotion.build_release_approval(
+        frozen=_frozen(), evidence=_evidence(), approved_by="operator"
+    )
+    approval_path = tmp_path / "local-name.json"
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        if command[:2] == ["oras", "pull"]:
+            output = Path(command[-1])
+            (output / "promotion-approval.json").write_bytes(approval_path.read_bytes())
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(publisher.subprocess, "run", fake_run)
+
+    result = publisher.publish_existing_approval(
+        source_sha=CANDIDATE_SHA,
+        candidate_index_path=candidate_index,
+        candidate_bundle_digest=BUNDLE_DIGEST,
+        approval_path=approval_path,
+        publish_ref=(
+            "ghcr.io/giraffu/allbot-release-v2-promotions:" + CANDIDATE_SHA
+        ),
+    )
+
+    assert result == "no-change"
+
+
 def test_promotion_relationship_requires_ancestry_and_identical_tree():
     module = _load_module()
 

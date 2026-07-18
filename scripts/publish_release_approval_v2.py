@@ -65,10 +65,10 @@ def publish_existing_approval(
                 capture_output=True,
                 check=False,
             )
-            remote = Path(temp) / approval_path.name
-            if pulled.returncode != 0 or not remote.is_file():
+            remote_files = list(Path(temp).rglob("*.json"))
+            if pulled.returncode != 0 or len(remote_files) != 1:
                 raise ApprovalPublishError("existing promotion approval cannot be verified")
-            if remote.read_bytes() != approval_path.read_bytes():
+            if remote_files[0].read_bytes() != approval_path.read_bytes():
                 raise ApprovalPublishError(
                     "promotion approval tag already contains different bytes"
                 )
