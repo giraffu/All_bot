@@ -3,7 +3,7 @@ name: Modular immutable release v2
 on:
   workflow_run:
     workflows: ["Immutable control-plane release"]
-    branches: [main, codex/test-train]
+    branches: [codex/test-train]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -14,8 +14,8 @@ on:
         description: Immutable release channel.
         required: true
         type: choice
-        options: [main, test-candidate]
-        default: main
+        options: [test-candidate]
+        default: test-candidate
       gpu_manifest_ref:
         description: Optional OCI ref containing gpu-execution-manifest.json for this SHA.
         required: false
@@ -66,14 +66,12 @@ jobs:
           if [ -n "$branch" ]; then
             validation_mode=full
             case "$branch" in
-              main) channel=main ;;
               codex/test-train) channel=test-candidate ;;
               *) echo "untrusted workflow_run branch: $branch" >&2; exit 2 ;;
             esac
           else
             validation_mode="${INPUT_VALIDATION_MODE:-full}"
             case "$channel" in
-              main) branch=main ;;
               test-candidate) branch=codex/test-train ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
@@ -82,11 +80,7 @@ jobs:
               exit 2
             fi
           fi
-          if [ "$channel" = main ]; then
-            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2"
-          else
-            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
-          fi
+          bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
@@ -126,6 +120,9 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             dashboard/frontend/package-lock.json
+
+      - name: Reject environment-owned build inputs
+        run: python scripts/validate_release_environment_neutral.py
 
       - name: Resolve previous immutable bundle and changed paths
         id: previous
@@ -220,9 +217,6 @@ jobs:
           if [ -n "$gpu_manifest" ]; then
             args+=(--gpu-manifest "$gpu_manifest")
           fi
-          if [ "$RELEASE_CHANNEL" = main ]; then
-            args+=(--require-complete-gpu)
-          fi
           python scripts/ci_release_v2.py "${args[@]}"
           python scripts/release.py plan \
             --env test --track control-plane --sha "$SOURCE_SHA" \
@@ -242,6 +236,16 @@ jobs:
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint python -e MINIO_ENDPOINT=127.0.0.1:1 "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
+
+      - name: Inspect candidate images and Web bytes for environment neutrality
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p neutral-web-dist
+          tar -xzf release-v2/public-web-dist.tgz -C neutral-web-dist
+          python scripts/validate_release_environment_neutral.py \
+            --release-index release-v2/release-index.json \
+            --web-dist neutral-web-dist
 
       - name: Publish immutable v2 bundle
         shell: bash

@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted；仓库侧契约已实现，云主机首次 bootstrap、GHCR 凭据和实际环境切换仍须单独授权执行。
+Accepted，晋级身份语义由 ADR 0007 修订：main SHA 标识发布索引，artifact source SHA/OCI revision 保持已测试候选 SHA。
 
 ## Context
 
@@ -17,7 +17,7 @@ Accepted；仓库侧契约已实现，云主机首次 bootstrap、GHCR 凭据和
 - `release.json` 固定自有及第三方镜像 digest、Web SHA256 与 CI run。运行主机只拉 digest，不 build，也不挂载应用源码。
 - 测试和生产共用公共 Compose/配置 schema；真实 env 分离为 `/etc/allbot/test.env` 和 `/etc/allbot/prod.env`，非敏感 digest 写入独立 `release.env`。
 - `deploy/release-policy.yml` 由 Git diff计算依赖闭包。显式 service 只能扩大范围；未知路径整栈维护；migration 要求显式升级；GPU runtime 变化阻断普通发布。
-- 生产只能晋级测试环境已验收的同一 SHA、同一自有/第三方 digest 与 Web checksum。回滚使用旧 manifest，不重建；数据库只做 expand/contract，不自动 downgrade。
+- 生产只能晋级测试环境已批准的同一 artifact digest 与 Web checksum；tree-identical main bundle 记录独立 main SHA 和候选 SHA。回滚使用旧 manifest，不重建；数据库只做 expand/contract，不自动 downgrade。
 
 ## Alternatives Considered
 

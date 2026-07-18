@@ -34,7 +34,7 @@ description: "管理 AllBot 多 AI 并发开发的 A-H 固定 worktree、主目�
 - 批次冻结后，新认领的任务、新提交的无关 PR，以及未列入批次的既有开发现场都属于后续批次。它们可以继续独立开发，不自动加入当前批次，也不因 dirty、落后 train、草稿 PR 或尚未交接而阻塞当前批次。
 - 当前批次不得对非成员执行 merge/rebase、切分支、stash/clean、依赖清理、`park`、`refresh` 或其它写操作；只允许为判断冲突与容量做只读状态查询。即使某个批次槽位已释放后被新任务复用，后来的任务也不是原批次成员，收尾时不得按槽位字母再次操作。
 - 同一任务为解决 train 冲突、CI 门禁、blocked candidate 或 forward-fix 产生的新 head/修复 PR，可作为原成员的可追溯修订继续留在批次；必须记录从原交接到新 head/PR 的关系。无关功能不得借 forward-fix 扩大批次。
-- 批次按冻结顺序串行完成成员的 train 合入、candidate `accept` 与对应槽位释放，再完成 train→main、精确 main bundle 测试部署和 main→train 血缘同步。批次关闭后重新盘点，后续工作只能进入新的批次。
+- 批次按冻结顺序串行完成成员的 train 合入、candidate `accept` 与对应槽位释放，再冻结/批准最终候选、完成 train→main promotion 和 main→train 血缘同步。main 不重新构建或部署测试站。批次关闭后重新盘点，后续工作只能进入新的批次。
 
 ### 能力开放与操作授权
 
@@ -59,6 +59,9 @@ python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A 
 python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute --with-test-execution
 python scripts/test_train_release.py accept --sha <40位SHA> --evidence <json>
 python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
+python scripts/test_train_release.py freeze --sha <40位SHA>
+python scripts/test_train_release.py approve-release --sha <40位SHA> --evidence <json> --approved-by <人> --execute
+python scripts/test_train_release.py abort-freeze
 ```
 
 ## 4. 红线
@@ -67,7 +70,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 不在 dirty、未完成 merge/rebase、未推送或落后 train 的槽位上重新分配任务。
 - 不删除 park 后的任务分支；只 detach 到最新 `origin/codex/test-train`。
 - 不因 A-H 能读取 env、SSH key、Pages/GHCR token 或 runtime 信息而扩大外部写权限；秘密值不得出现在对话、diff、commit 或 PR。
-- 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate 只能部署 test，禁止 `verify-test`、prod、fast-track 或正式晋级。
+- 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate bundle 只能直接部署 test，禁止 `verify-test`、prod 或 fast-track；只有冻结且逐 artifact 批准后，才可由 tree-identical main promotion CI 原样晋级 digest，不能绕过 main。
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
 - 默认只部署确实要求测试的 `control-plane`/公共 Web artifact；`test-execution` 不再是默认步骤，只有专项 Worker 诊断才显式传 `--with-test-execution`。状态与 acceptance evidence 只能记录实际部署的 track，不得声称未启用的 Worker 已更新或验收。
@@ -83,7 +86,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - PR 写明 slot、train base SHA、head SHA、v2 tracks/modules、测试、migration、风险和云测试步骤。
 - 只有当前 candidate accepted 后才合入下一个无关任务。
 - 当前 candidate accepted 后，集成 AI 必须先对 PR 记录的 slot 执行 `python scripts/manage_ai_workspaces.py park --slot <slot>` 并确认状态为空闲，再合入下一个无关任务。成功部署或 non-runtime `ready-for-acceptance` 但尚未 `accept` 都不算可释放。
-- train 通过后合入 main；新的 main SHA 重新构建。只有 `standard` artifact 继续要求测试部署、按 digest 验收和观察；`direct/emergency` 必须记录 waived/attested 与风险接受，不能伪装成 tested。
+- train 最终组合通过后先 `freeze`，按测试站真实 digest 生成 `verified`/`approved-direct` 批量批准记录，再合入 main。promotion CI 必须证明 ancestry/tree 相同并复用原 digest/checksum，禁止 build、测试站部署或 Web 重打包；任何 tree 差异产生新 candidate。
 - main 合并完成后，在下一轮新的槽位 PR 合入 train 前通过 PR 把 main merge commit 血缘同步回 train，使下一次 train→main 满足 strict up-to-date；该血缘同步不延迟已经 accepted 的槽位释放，且禁止直接 push/force-push。
 
 ## 6. 按需读取

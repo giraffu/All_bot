@@ -351,8 +351,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "validation_mode=full" in workflow
     assert "allbot-gpu-release-manifests" in workflow
     assert "gpu-execution-manifest.json" in workflow
-    assert "--require-complete-gpu" in workflow
-    assert 'if [ "$RELEASE_CHANNEL" = main ]' in workflow
+    # Candidate publication may carry an incomplete GPU manifest; GPU/LAN
+    # promotion remains outside the control-plane/Public Web v1 scope.
+    assert "--require-complete-gpu" not in workflow
+    assert 'if [ "$RELEASE_CHANNEL" = main ]' not in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

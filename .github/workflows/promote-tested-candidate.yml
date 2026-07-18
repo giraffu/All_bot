@@ -1,0 +1,104 @@
+name: Promote tested candidate to main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: promote-tested-candidate-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-test-candidate
+  APPROVAL_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-promotions
+  MAIN_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+
+      - name: Resolve the frozen candidate merge parent
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_sha="$(git rev-parse --verify "${GITHUB_SHA}^2")"
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$candidate_sha" "$GITHUB_SHA"
+          git diff --quiet "$candidate_sha" "$GITHUB_SHA" --
+          descriptor="$(oras manifest fetch --descriptor "${CANDIDATE_REPOSITORY}:${candidate_sha}")"
+          candidate_digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$descriptor")"
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "digest=$candidate_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Pull immutable candidate and approval records
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p candidate approval
+          oras pull "${CANDIDATE_REPOSITORY}:${CANDIDATE_SHA}" -o candidate
+          oras pull "${APPROVAL_REPOSITORY}:${CANDIDATE_SHA}" -o approval
+          candidate_index="$(find candidate -name release-index.json -type f -print -quit)"
+          approval_file="$(find approval -type f -name '*.json' -print -quit)"
+          test -n "$candidate_index"
+          test -n "$approval_file"
+          echo "CANDIDATE_INDEX=$candidate_index" >> "$GITHUB_ENV"
+          echo "APPROVAL_FILE=$approval_file" >> "$GITHUB_ENV"
+
+      - name: Assemble main index by byte-for-byte artifact reuse
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          python scripts/release_promotion_v2.py \
+            --repo . \
+            --main-sha "$GITHUB_SHA" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --candidate-index "$CANDIDATE_INDEX" \
+            --candidate-bundle-digest "$CANDIDATE_DIGEST" \
+            --approval "$APPROVAL_FILE" \
+            --output-dir promoted-release \
+            --ci-run "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Publish immutable main-channel index
+        shell: bash
+        run: |
+          set -euo pipefail
+          if oras manifest fetch "${MAIN_REPOSITORY}:${GITHUB_SHA}" >/dev/null 2>&1; then
+            echo "immutable main bundle already exists" >&2
+            exit 1
+          fi
+          oras push "${MAIN_REPOSITORY}:${GITHUB_SHA}" \
+            --artifact-type application/vnd.allbot.release-index.v2 \
+            promoted-release/release-index.json:application/vnd.allbot.release-index.v2+json \
+            promoted-release/control-plane-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            promoted-release/test-execution-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            promoted-release/gpu-execution-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            promoted-release/public-web-dist.tgz:application/vnd.allbot.public-web.v1+gzip \
+            promoted-release/promotion-approval.json:application/vnd.allbot.release-approval.v1+json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: promoted-main-${{ github.sha }}
+          path: promoted-release
+          if-no-files-found: error
+          retention-days: 90
