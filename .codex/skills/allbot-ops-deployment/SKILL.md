@@ -88,7 +88,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，默认只切换确实要求测试的 control-plane/公共 Web，`--with-test-execution` 仅用于专项诊断；显式启用 Worker 时按 control-plane → test-execution 顺序切换。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
-- cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
+- cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。test-1 的当前 i2i_pro 事实源是 `gpu-252` GPU1/8191；GPU0/8192 当前为 `image_to_video`，不得用于图片换脸验收。
 - 对象存储为 R2 `user-data-test`，不得误改正式入口。
 
 ### 云正式

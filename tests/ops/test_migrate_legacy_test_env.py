@@ -42,6 +42,14 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     assert values["ALLBOT_WORKER_01_TASK_TYPES"] == (
         "face_swap_v2,i2i_pro,i2i_draw,t2i-pornmaster-turbo"
     )
+    assert values["ALLBOT_WORKER_01_NODE_ID"] == "gpu-252"
+    assert values["ALLBOT_WORKER_01_GPU_INDEX"] == "1"
+    assert values["ALLBOT_WORKER_01_COMFY_API_URL"] == (
+        "http://192.168.1.252:8191"
+    )
+    assert values["ALLBOT_WORKER_01_COMFY_WS_URL"] == (
+        "ws://192.168.1.252:8191/ws"
+    )
     assert values["ALLBOT_WORKER_08_NODE_ID"] == "gpu-002"
     assert values["ALLBOT_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         '{"scail2":"x.json"}'
@@ -51,6 +59,50 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     assert values["QQCC_CONFIG_ADMIN_HOST"] == "qqcc-admin-test.aivison.it.com"
     assert values["PRIVATE_QQCC_BOT_OWNER_HOST"] == (
         "private-bot-test.aivison.it.com"
+    )
+
+
+def test_migration_normalizes_known_stale_worker_01_gpu0_assignment():
+    module = _load_module()
+    legacy = {"CLOUD_TEST_CONTROL_HOST": "test-control"}
+    worker_legacy = {
+        "CLOUD_TEST_WORKER_01_NODE_ID": "gpu-252",
+        "CLOUD_TEST_WORKER_01_GPU_INDEX": "0",
+        "CLOUD_TEST_WORKER_01_COMFY_API_URL": "http://192.168.1.252:8192",
+        "CLOUD_TEST_WORKER_01_COMFY_WS_URL": "ws://192.168.1.252:8192/ws",
+    }
+
+    values = module.migrate_values(legacy, worker_legacy=worker_legacy)
+
+    assert values["ALLBOT_WORKER_01_NODE_ID"] == "gpu-252"
+    assert values["ALLBOT_WORKER_01_GPU_INDEX"] == "1"
+    assert values["ALLBOT_WORKER_01_COMFY_API_URL"] == (
+        "http://192.168.1.252:8191"
+    )
+    assert values["ALLBOT_WORKER_01_COMFY_WS_URL"] == (
+        "ws://192.168.1.252:8191/ws"
+    )
+
+
+def test_migration_preserves_other_explicit_worker_01_assignment():
+    module = _load_module()
+    legacy = {"CLOUD_TEST_CONTROL_HOST": "test-control"}
+    worker_legacy = {
+        "CLOUD_TEST_WORKER_01_NODE_ID": "gpu-002",
+        "CLOUD_TEST_WORKER_01_GPU_INDEX": "1",
+        "CLOUD_TEST_WORKER_01_COMFY_API_URL": "http://192.168.1.2:8191",
+        "CLOUD_TEST_WORKER_01_COMFY_WS_URL": "ws://192.168.1.2:8191/ws",
+    }
+
+    values = module.migrate_values(legacy, worker_legacy=worker_legacy)
+
+    assert values["ALLBOT_WORKER_01_NODE_ID"] == "gpu-002"
+    assert values["ALLBOT_WORKER_01_GPU_INDEX"] == "1"
+    assert values["ALLBOT_WORKER_01_COMFY_API_URL"] == (
+        "http://192.168.1.2:8191"
+    )
+    assert values["ALLBOT_WORKER_01_COMFY_WS_URL"] == (
+        "ws://192.168.1.2:8191/ws"
     )
 
 
