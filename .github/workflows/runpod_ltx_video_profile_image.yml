@@ -39,7 +39,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: allbot-comfy-runpod-ltx-video
+  IMAGE_NAME: allbot-comfy-runpod-ltx-video-v2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:

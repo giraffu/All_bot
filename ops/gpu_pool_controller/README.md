@@ -98,7 +98,7 @@ the 10Eros v1.2 workflow override and stay disabled after canary until
 explicitly enabled:
 
 ```bash
-RUNPOD_IMAGE_NAME_LTX_VIDEO=ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<prod-tag> \
+RUNPOD_IMAGE_NAME_LTX_VIDEO=ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<prod-tag> \
 python scripts/gpu_pool_controller.py runpod prod-worker render --profile ltx_video --slot 01
 scripts/runpod_prod_ops.sh up --profile ltx_video --slot 01 --retry-unavailable --execute
 scripts/runpod_prod_ops.sh canary --profile ltx_video --slot 01 --execute
