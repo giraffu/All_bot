@@ -61,6 +61,25 @@ def test_first_v2_release_builds_every_owned_artifact_but_resolves_vendors():
     assert {"imgproxy", "postgres", "redis"} == plan.resolve
 
 
+def test_catalog_contract_change_rebuilds_every_owned_artifact():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/release-artifacts-v2.json"],
+        has_previous=True,
+    )
+
+    owned = {
+        name
+        for name, artifact in catalog.items()
+        if artifact.get("kind") != "external-image"
+    }
+    assert plan.build == owned
+    assert plan.reuse == set()
+
+
 def test_build_matrix_contains_base_before_descendants_and_profile_metadata():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
@@ -75,7 +94,7 @@ def test_build_matrix_contains_base_before_descendants_and_profile_metadata():
     assert catalog["i2i_pro"]["profile"]["task_types"] == [
         "i2i_pro",
         "t2i-pornmaster-turbo",
-        "face_swap",
+        "face_swap_v2",
     ]
 
 

@@ -23,6 +23,9 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
         "CONTROL_SECRET": "cloud-authoritative",
     }
     worker_legacy = {
+        "CLOUD_TEST_WORKER_01_TASK_TYPES": (
+            "face_swap,i2i_pro,i2i_draw,t2i-pornmaster-turbo"
+        ),
         "CLOUD_TEST_WORKER_04_NODE_ID": "gpu-226",
         "CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES": '{"scail2":"x.json"}',
         "CLOUD_TEST_WORKER_08_FACE_SWAP_V10_ENABLED": "true",
@@ -36,6 +39,9 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
         "worker-01,worker-02,worker-03,worker-04,worker-06,worker-07,worker-08"
     )
     assert values["ALLBOT_WORKER_04_NODE_ID"] == "gpu-226"
+    assert values["ALLBOT_WORKER_01_TASK_TYPES"] == (
+        "face_swap_v2,i2i_pro,i2i_draw,t2i-pornmaster-turbo"
+    )
     assert values["ALLBOT_WORKER_08_NODE_ID"] == "gpu-002"
     assert values["ALLBOT_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         '{"scail2":"x.json"}'

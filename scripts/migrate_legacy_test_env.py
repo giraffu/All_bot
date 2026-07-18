@@ -23,7 +23,7 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
         "NODE_ID": "gpu-252",
         "GPU_INDEX": "0",
         "RUNTIME_PROFILE": "i2i_pro",
-        "TASK_TYPES": "face_swap,i2i_pro,i2i_draw,t2i-pornmaster-turbo",
+        "TASK_TYPES": "face_swap_v2,i2i_pro,i2i_draw,t2i-pornmaster-turbo",
         "COMFY_API_URL": "http://192.168.1.252:8192",
         "COMFY_WS_URL": "ws://192.168.1.252:8192/ws",
     },
@@ -117,6 +117,19 @@ def _legacy(values: Mapping[str, str], slot: str, suffix: str) -> str:
     return values.get(key, SLOT_DEFAULTS[slot][suffix])
 
 
+def _normalized_task_types(slot: str, value: str) -> str:
+    if slot != "01":
+        return value
+    normalized: list[str] = []
+    for raw_type in value.split(","):
+        task_type = raw_type.strip()
+        if task_type == "face_swap":
+            task_type = "face_swap_v2"
+        if task_type and task_type not in normalized:
+            normalized.append(task_type)
+    return ",".join(normalized)
+
+
 def migrate_values(
     legacy: Mapping[str, str],
     slots: Sequence[str] = DEFAULT_SLOTS,
@@ -170,7 +183,9 @@ def migrate_values(
                 prefix + "COMFY_WS_URL": _legacy(
                     worker_values, slot, "COMFY_WS_URL"
                 ),
-                prefix + "TASK_TYPES": _legacy(worker_values, slot, "TASK_TYPES"),
+                prefix + "TASK_TYPES": _normalized_task_types(
+                    slot, _legacy(worker_values, slot, "TASK_TYPES")
+                ),
                 prefix + "NODE_ID": _legacy(worker_values, slot, "NODE_ID"),
                 prefix + "GPU_INDEX": _legacy(worker_values, slot, "GPU_INDEX"),
                 prefix + "RUNTIME_PROFILE": _legacy(

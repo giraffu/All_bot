@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import subprocess
 from typing import Any, Mapping
 
 try:
@@ -159,6 +160,72 @@ def merge_gpu_manifest(
     }
 
 
+def publish_gpu_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    manifest_path: Path,
+    publish_ref: str,
+    source_sha: str,
+    run_func: Any = subprocess.run,
+) -> None:
+    """Publish the complete profile manifest to an immutable SHA-tagged OCI ref."""
+
+    if (
+        manifest.get("source_sha") != source_sha
+        or manifest.get("completeness") != "complete"
+        or manifest.get("missing_artifacts") not in ([], ())
+    ):
+        raise GPUProfileReleaseError("GPU manifest must be complete for the source SHA")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping) or not artifacts or any(
+        not isinstance(artifact, Mapping)
+        or artifact.get("source_sha") != source_sha
+        for artifact in artifacts.values()
+    ):
+        raise GPUProfileReleaseError(
+            "GPU manifest artifacts must use the same source SHA"
+        )
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise GPUProfileReleaseError("source_sha must be a full Git SHA")
+    if not publish_ref.endswith(f":{source_sha}"):
+        raise GPUProfileReleaseError("GPU manifest ref must use the source SHA tag")
+    if not manifest_path.is_file():
+        raise GPUProfileReleaseError("GPU manifest output file is missing")
+    existing = run_func(
+        ["oras", "manifest", "fetch", publish_ref],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if existing.returncode == 0:
+        raise GPUProfileReleaseError("GPU manifest OCI target already exists")
+    pushed = run_func(
+        [
+            "oras",
+            "push",
+            publish_ref,
+            "--artifact-type",
+            "application/vnd.allbot.gpu-release-manifest.v2",
+            (
+                f"{manifest_path.name}:"
+                "application/vnd.allbot.release-manifest.v2+json"
+            ),
+        ],
+        cwd=manifest_path.parent,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if pushed.returncode != 0:
+        detail = (
+            pushed.stderr.strip().splitlines()[-1:]
+            or pushed.stdout.strip().splitlines()[-1:]
+        )
+        raise GPUProfileReleaseError(
+            detail[0] if detail else "failed to publish GPU manifest"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", required=True)
@@ -167,6 +234,10 @@ def main() -> int:
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--previous-manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--publish-ref",
+        help="Immutable OCI ref ending in :<source-sha>; requires a complete manifest.",
+    )
     parser.add_argument(
         "--validation-level",
         choices=("attested", "canary-verified"),
@@ -190,8 +261,19 @@ def main() -> int:
         if args.previous_manifest
         else None
     )
-    manifest = merge_gpu_manifest(previous, args.profile, result, source_sha=args.source_sha)
-    args.output.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    manifest = merge_gpu_manifest(
+        previous, args.profile, result, source_sha=args.source_sha
+    )
+    args.output.write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
+    if args.publish_ref:
+        publish_gpu_manifest(
+            manifest,
+            manifest_path=args.output,
+            publish_ref=args.publish_ref,
+            source_sha=args.source_sha,
+        )
     return 0
 
 
