@@ -226,6 +226,8 @@ scripts/release.py recover --env prod --transaction <failed-target-sha> --execut
 # 原子写入非敏感 release.env 和 compose config -q；不 pull/up/stop/restart，
 # 不写维护标记，也不修改 deployment current/history。test/prod 均支持，
 # prod 仍额外要求 --confirm-prod。
+# 若精确已部署 Dashboard 基线早于 RunPod profile pin 契约，只有该恢复模式
+# 允许旧 bundle 不含 pin JSON；普通 main Dashboard 发布仍要求完整 digest pin。
 scripts/release.py plan --env prod --track control-plane --sha <deployed-old-sha> --modules qqcc-bot
 scripts/release.py recover --env prod --track control-plane --sha <deployed-old-sha> \
   --modules qqcc-bot --repair-rollback-materials --execute --confirm-prod

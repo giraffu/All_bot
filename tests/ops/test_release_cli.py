@@ -3415,6 +3415,26 @@ def test_render_main_dashboard_release_env_rejects_incomplete_profile_pins():
         module.render_track_release_env(manifest, "config-revision")
 
 
+def test_render_legacy_dashboard_rollback_materials_allows_missing_profile_pins():
+    module = _load_module()
+    manifest = {
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "selected_artifacts": ["dashboard-backend", "dashboard-frontend"],
+        "artifacts": {},
+        "runpod_profile_pins": {},
+    }
+
+    release_env = module.render_track_release_env(
+        manifest,
+        "config-revision",
+        allow_legacy_missing_dashboard_profile_pins=True,
+    )
+
+    assert "RUNPOD_RELEASE_PROFILE_PINS_JSON=" not in release_env
+
+
 def test_independent_dashboard_release_uses_its_own_artifact_baseline():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -4461,7 +4481,7 @@ def test_rollback_material_repair_command_materializes_without_preflight_loop(
     monkeypatch.setattr(
         module,
         "render_track_release_env",
-        lambda selected, revision: "ALLBOT_RELEASE_TRACK=control-plane\n",
+        lambda selected, revision, **_kwargs: "ALLBOT_RELEASE_TRACK=control-plane\n",
     )
     monkeypatch.setattr(
         module,
@@ -4521,7 +4541,7 @@ def test_rollback_material_repair_command_supports_test_without_prod_confirmatio
     monkeypatch.setattr(
         module,
         "render_track_release_env",
-        lambda *_args: "ALLBOT_RELEASE_TRACK=control-plane\n",
+        lambda *_args, **_kwargs: "ALLBOT_RELEASE_TRACK=control-plane\n",
     )
     monkeypatch.setattr(
         module,
@@ -4612,7 +4632,8 @@ def test_rollback_material_repair_expands_disabled_test_owner_module_to_full_bas
     monkeypatch.setattr(
         module,
         "render_track_release_env",
-        lambda manifest, _revision: calls.append(("render", manifest)) or "release-env",
+        lambda manifest, _revision, **_kwargs: calls.append(("render", manifest))
+        or "release-env",
     )
     monkeypatch.setattr(
         module,
