@@ -64,6 +64,12 @@ def _candidate_bundle(tmp_path: Path) -> Path:
                     "source_sha": CANDIDATE_SHA,
                     "dependency_closure": [],
                 },
+                "postgres": {
+                    "kind": "external-image",
+                    "ref": "postgres@sha256:" + "9" * 64,
+                    "digest": "sha256:" + "9" * 64,
+                    "dependency_closure": [],
+                },
             },
         },
         "test-execution": {

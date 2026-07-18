@@ -218,9 +218,15 @@ def validate_candidate_approval(
         approval_artifacts, Mapping
     ):
         raise PromotionError("promotion approval artifact set is invalid")
-    if set(control_artifacts) != set(approval_artifacts):
-        raise PromotionError("promotion approval does not cover the control-plane artifact set")
-    for name, artifact in control_artifacts.items():
+    promotable_artifacts = {
+        name: artifact
+        for name, artifact in control_artifacts.items()
+        if isinstance(artifact, Mapping)
+        and isinstance(artifact.get("source_sha"), str)
+    }
+    if set(promotable_artifacts) != set(approval_artifacts):
+        raise PromotionError("promotion approval does not cover the promotable artifact set")
+    for name, artifact in promotable_artifacts.items():
         evidence = approval_artifacts.get(name)
         expected_digest = artifact.get("digest") or artifact.get("sha256")
         if (
