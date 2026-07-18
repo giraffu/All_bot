@@ -1,0 +1,66 @@
+name: Publish GPU release manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full main SHA shared by every GPU artifact.
+        required: true
+      manifest_base64:
+        description: Base64 encoded complete gpu-execution-manifest.json.
+        required: true
+      manifest_sha256:
+        description: SHA256 of the decoded manifest bytes.
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-gpu-release-manifest-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify trusted source and manifest bytes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          MANIFEST_BASE64: ${{ inputs.manifest_base64 }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          git fetch --prune origin main
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          printf '%s' "$MANIFEST_BASE64" | base64 --decode > gpu-execution-manifest.json
+          printf '%s  %s\n' "$MANIFEST_SHA256" gpu-execution-manifest.json | sha256sum --check -
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Validate and publish immutable manifest
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python scripts/gpu_profile_release_v2.py \
+            --source-sha "$SOURCE_SHA" \
+            --publish-existing-manifest gpu-execution-manifest.json \
+            --publish-ref "ghcr.io/${GITHUB_REPOSITORY_OWNER}/allbot-gpu-release-manifests:${SOURCE_SHA}"
