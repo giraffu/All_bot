@@ -118,7 +118,7 @@ Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，记录�
 
 1. 对最终 train SHA 执行 `freeze`，冻结候选 bundle descriptor digest 和完整 artifact 集；冻结期间不得合入新候选。
 2. 在当前候选上完成组合回归、回滚演练和人工验收，生成逐 artifact release evidence。
-3. 执行 `approve-release --execute`；命令重新读取测试站真实 digest，把批准记录发布为不可覆盖 OCI artifact。未批准冻结可 `abort-freeze`，已批准记录不可取消或删除。
+3. 执行 `approve-release --execute`；命令重新读取测试站真实 digest，生成批准文件并把它发布为不可覆盖 OCI artifact。若本机 token 只因缺少 `write:packages` 无法完成 push，保留冻结与本地批准文件，使用受保护 `modular-release-v2.yml` 的 `publish_approval=true` dispatch 传入文件 base64 与 SHA256；approval-only job 要求 SHA 等于当前 `origin/codex/test-train` 头，并复核 candidate descriptor/完整 artifact 集，不 build、不部署测试站。发布成功后再次执行同一 `approve-release`，由字节一致性核验完成本地状态收口。未批准冻结可 `abort-freeze`，已批准记录不可取消或删除。
 4. 创建 `codex/test-train` 到 `main` 的唯一集成 PR。合并 tree 必须与候选完全相同；任何额外文件变化都要求新 candidate。
 5. main promotion CI 原样复制已批准 digest/checksum，发布以 main SHA 为键的 bundle。此阶段不 build、不部署测试、不执行 `verify-test`。
 6. 用户对本次正式 mutation 明确确认后，用 main bundle 执行单模块或多模块生产事务。

@@ -179,17 +179,14 @@ def build_release_approval(
     }
 
 
-def assemble_promoted_release(
+def validate_candidate_approval(
     *,
     candidate_index_path: Path,
     approval_path: Path,
-    output_dir: Path,
-    main_sha: str,
     candidate_sha: str,
     candidate_bundle_digest: str,
-    ci_run: str,
-) -> Path:
-    main_sha = _sha(main_sha, "main_sha")
+) -> dict[str, Any]:
+    """Validate that an approval covers the exact immutable candidate bundle."""
     candidate_sha = _sha(candidate_sha, "candidate_sha")
     if not DIGEST_RE.fullmatch(candidate_bundle_digest):
         raise PromotionError("candidate bundle digest is invalid")
@@ -205,6 +202,16 @@ def assemble_promoted_release(
         or approval.get("candidate_bundle_digest") != candidate_bundle_digest
     ):
         raise PromotionError("promotion approval does not match the candidate bundle")
+    runtime_digest = str(approval.get("test_runtime_state_digest", ""))
+    if not DIGEST_RE.fullmatch(runtime_digest):
+        raise PromotionError("promotion approval runtime state digest is invalid")
+    checks = approval.get("checks")
+    if not isinstance(checks, Mapping) or not all(
+        checks.get(name) is True for name in REQUIRED_RELEASE_CHECKS
+    ):
+        raise PromotionError("promotion approval is missing required passed checks")
+    if not str(approval.get("approved_by", "")).strip():
+        raise PromotionError("promotion approval has no approver")
     control_artifacts = release.manifests["control-plane"].get("artifacts")
     approval_artifacts = approval.get("artifacts")
     if not isinstance(control_artifacts, Mapping) or not isinstance(
@@ -220,10 +227,36 @@ def assemble_promoted_release(
             not isinstance(evidence, Mapping)
             or evidence.get("digest") != expected_digest
             or evidence.get("source_sha") != artifact.get("source_sha")
+            or evidence.get("status") not in APPROVAL_STATUSES
+            or not str(evidence.get("evidence_source", "")).strip()
         ):
             raise PromotionError(
                 f"promotion approval does not match candidate artifact: {name}"
             )
+    return approval
+
+
+def assemble_promoted_release(
+    *,
+    candidate_index_path: Path,
+    approval_path: Path,
+    output_dir: Path,
+    main_sha: str,
+    candidate_sha: str,
+    candidate_bundle_digest: str,
+    ci_run: str,
+) -> Path:
+    main_sha = _sha(main_sha, "main_sha")
+    candidate_sha = _sha(candidate_sha, "candidate_sha")
+    if not DIGEST_RE.fullmatch(candidate_bundle_digest):
+        raise PromotionError("candidate bundle digest is invalid")
+    release = load_release_index(candidate_index_path, expected_sha=candidate_sha)
+    approval = validate_candidate_approval(
+        candidate_index_path=candidate_index_path,
+        approval_path=approval_path,
+        candidate_sha=candidate_sha,
+        candidate_bundle_digest=candidate_bundle_digest,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for track in TRACKS:
