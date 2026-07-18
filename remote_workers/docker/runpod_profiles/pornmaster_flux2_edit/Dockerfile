@@ -29,7 +29,8 @@ RUN set -euo pipefail; \
 COPY remote_workers /opt/allbot/runtime/remote_workers
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
-RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh && \
+    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'
 ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
     ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
 CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

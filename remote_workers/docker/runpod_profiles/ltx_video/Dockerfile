@@ -113,6 +113,7 @@ RUN set -euo pipefail; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     python3 -c 'import fastapi, minio, uvicorn, websockets; from sageattention import sageattn; assert callable(sageattn)'; \
+    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'; \
     if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then \
       echo "LTX model files must stay out of the profile image" >&2; \
       exit 1; \
