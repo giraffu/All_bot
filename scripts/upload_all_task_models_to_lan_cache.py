@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -81,14 +82,14 @@ DEFAULT_BASE_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="wan22_aio_video",
-        prefix="wan22_aio_video/2026-06-12-test",
+        prefix="wan22_aio_video/2026-07-18-lora5",
         manifest_key=RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
         bundle_versions=(
             ("video_basic_baseline", "2026-06-10"),
             ("wan22_video_v2_baseline", "2026-06-10"),
             ("wan22_explicit_lora_library", "2026-07-18"),
         ),
-        version="2026-06-12-test",
+        version="2026-07-18-lora5",
     ),
 )
 
@@ -478,16 +479,39 @@ def upload_all_task_models(
                 Config=transfer_config,
             )
 
+        verification_failures = []
+        for entry in unique_entries.values():
+            head = _head_object(client, bucket=bucket, key=str(entry["key"]))
+            metadata_sha = _metadata_value(head.get("Metadata"), "sha256") if head else ""
+            if (
+                not head
+                or int(head.get("ContentLength") or 0) != int(entry["size_bytes"])
+                or metadata_sha != str(entry["sha256"])
+            ):
+                verification_failures.append(str(entry["key"]))
+        if verification_failures:
+            raise RuntimeError(
+                "LAN object HEAD verification failed before manifest publish for "
+                f"{len(verification_failures)} object(s)"
+            )
+
     manifest_uploads: list[dict[str, Any]] = []
     manifest_skips: list[dict[str, Any]] = []
+    manifest_checksums: dict[str, str] = {}
     for manifest_key, manifest in manifests.items():
         body = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+        checksum = hashlib.sha256(body).hexdigest()
+        manifest_checksums[manifest_key] = checksum
         existing = (
             _head_object(client, bucket=bucket, key=manifest_key)
             if bucket_exists or created_bucket
             else None
         )
-        if existing and int(existing.get("ContentLength") or 0) == len(body):
+        if (
+            existing
+            and int(existing.get("ContentLength") or 0) == len(body)
+            and _metadata_value(existing.get("Metadata"), "sha256") == checksum
+        ):
             manifest_skips.append({"key": manifest_key, "bytes": len(body)})
             continue
         manifest_uploads.append({"key": manifest_key, "bytes": len(body)})
@@ -497,8 +521,22 @@ def upload_all_task_models(
                 Key=manifest_key,
                 Body=body,
                 ContentType="application/json",
-                Metadata={"generated-by": "upload_all_task_models_to_lan_cache"},
+                Metadata={
+                    "generated-by": "upload_all_task_models_to_lan_cache",
+                    "sha256": checksum,
+                },
             )
+        if execute:
+            manifest_head = _head_object(client, bucket=bucket, key=manifest_key)
+            if (
+                not manifest_head
+                or int(manifest_head.get("ContentLength") or 0) != len(body)
+                or _metadata_value(manifest_head.get("Metadata"), "sha256")
+                != checksum
+            ):
+                raise RuntimeError(
+                    f"LAN manifest HEAD verification failed: {manifest_key}"
+                )
 
     total_upload_size = sum(int(item["size_bytes"]) for item in uploads)
     unique_model_total = sum(
@@ -522,6 +560,8 @@ def upload_all_task_models(
         "missing_local_blob_count": len(missing_local_blobs),
         "manifest_upload_count": len(manifest_uploads),
         "manifest_skip_count": len(manifest_skips),
+        "manifest_checksums": manifest_checksums,
+        "verified_object_count": len(unique_entries) if execute else 0,
         "target_manifests": {
             key: _manifest_summary(manifest) for key, manifest in manifests.items()
         },

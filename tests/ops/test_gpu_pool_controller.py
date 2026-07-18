@@ -267,7 +267,7 @@ def test_runpod_all_in_one_render_supports_cloud_prod_storage():
     assert "host_port: 8190" in img2img
     assert "img2img_lora/2026-06-10/manifest.json" in img2img
     assert "host_port: 8191" in image_to_video
-    assert "image_to_video/2026-06-13-test/manifest.json" in image_to_video
+    assert "image_to_video/2026-07-18-lora5/manifest.json" in image_to_video
 
 
 def test_runtime_overrides_reject_invalid_environment():

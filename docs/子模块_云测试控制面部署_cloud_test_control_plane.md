@@ -77,7 +77,7 @@ PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | Wan22 split 使用 `image_to_video/2026-06-13-test` 与含视频 LoRA 双文件的 `wan22_video_v2/2026-07-18-lora5`；后者在权重下载完毕并完成对象 HEAD 前不得发布或切换 runtime。其它 profile 版本保持现有配置。 |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | Wan22 AIO、`image_to_video` 与 `wan22_video_v2` 的下一不可变契约统一使用各自独立的 `2026-07-18-lora5` key；权重上传并完成 size/SHA metadata HEAD 前不得发布 manifest 或切换 runtime。其它 profile 版本保持现有配置。 |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 

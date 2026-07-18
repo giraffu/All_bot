@@ -264,17 +264,17 @@ def test_all_task_lan_cache_manifests_use_canonical_video_keys(tmp_path):
 
     manifests = payload["target_manifests"]
     assert "video_basic/2026-06-10/manifest.json" not in manifests
-    assert "image_to_video/2026-06-13-test/manifest.json" in manifests
+    assert "image_to_video/2026-07-18-lora5/manifest.json" in manifests
     assert "wan22_video_v2/2026-07-18-lora5/manifest.json" in manifests
-    assert "wan22_aio_video/2026-06-12-test/manifest.json" in manifests
+    assert "wan22_aio_video/2026-07-18-lora5/manifest.json" in manifests
     assert "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json" in manifests
     assert manifests["pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"][
         "models"
     ] == ["diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"]
-    assert manifests["image_to_video/2026-06-13-test/manifest.json"]["file_count"] == 7
+    assert manifests["image_to_video/2026-07-18-lora5/manifest.json"]["file_count"] == 7
     assert manifests["wan22_video_v2/2026-07-18-lora5/manifest.json"]["file_count"] == 7
     for manifest_key in (
-        "image_to_video/2026-06-13-test/manifest.json",
+        "image_to_video/2026-07-18-lora5/manifest.json",
         "wan22_video_v2/2026-07-18-lora5/manifest.json",
     ):
         assert (
