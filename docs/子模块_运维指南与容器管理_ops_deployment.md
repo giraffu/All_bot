@@ -1,6 +1,6 @@
 # 子模块: 运维指南与容器管理 (Ops & Deployment)
 
-> 2026-07-13 起，代码发布的唯一支持入口为 `scripts/release.py plan|deploy|rollback`，产物为 CI 构建的 digest-pinned 镜像和校验过的 Web tar。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。新 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`；实际云端切换不在本轮授权范围内。
+> 代码发布的唯一支持入口为 `scripts/release.py plan|preflight|deploy|deploy-module|rollback|recover`，产物为 CI 构建的 digest-pinned 镜像和校验过的 Web tar。正式快捷单模块入口 `deploy-module` 自动使用最新 `origin/main`，只执行正式 deploy；standard 读取既有测试 digest 证据，不重新发布测试环境。空选择和已在线 digest 不得推进状态。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。新 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`；实际云端切换不在本轮授权范围内。
 
 ## 1. 目标与范围
 

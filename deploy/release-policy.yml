@@ -18,6 +18,27 @@
   ],
   "level_order": ["none", "rolling", "drain", "maintenance"],
   "independent_modules": {
+    "central-api": {
+      "artifacts": ["central-api"]
+    },
+    "web-api": {
+      "artifacts": ["web-api"]
+    },
+    "payment-api": {
+      "artifacts": ["payment-api"]
+    },
+    "bot": {
+      "artifacts": ["main-bot"]
+    },
+    "qqcc-private-bot-worker": {
+      "artifacts": ["private-bot-worker"]
+    },
+    "paid-group-guard-bot": {
+      "artifacts": ["paid-group-bot"]
+    },
+    "public-web": {
+      "artifacts": ["public-web"]
+    },
     "dashboard": {
       "artifacts": ["dashboard-backend", "dashboard-frontend"]
     },

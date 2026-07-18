@@ -108,7 +108,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 | execution | test Worker、正式 GPU profile | direct | 测试 Worker 按需；GPU 强制 attestation、canary 可跳过 |
 | locked | migration、部署/Compose 契约、未知路径 | standard | 不允许 direct/emergency |
 
-普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从组内每个已部署 artifact 的 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，因此前后端混合版本无需伪造共同 SHA。目标 SHA 上其它新产物不扩入，非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、未知共享 Compose/env 和未审计跨模块契约仍拒绝独立发布；`independent_contract_snapshots` 只识别内容 SHA256 已固定、已证明 owner-only 或向后兼容的精确契约版本，文件内容一变即重新 fail closed。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
+普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。显式独立模块为 `central-api`、`web-api`、`payment-api`、`bot`、`qqcc-private-bot-worker`、`paid-group-guard-bot`、`public-web`、`dashboard`、`qqcc-bot`、`qqcc-config`；其中 Dashboard/QQCC Config 固定选择完整前后端组，其余固定选择单一运行时 artifact，一次只能选择一个完整组。planner 从组内每个已部署 artifact 的 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，因此前后端混合版本无需伪造共同 SHA。目标 SHA 上其它新产物不扩入，非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、未知共享 Compose/env 和未审计跨模块契约仍拒绝独立发布；`independent_contract_snapshots` 只识别内容 SHA256 已固定、已证明 owner-only 或向后兼容的精确契约版本，文件内容一变即重新 fail closed。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
 
 QQCC 后台独占 LTX 目录把 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 作为同一份受审计 snapshot 契约。只有两者都精确匹配 `deploy/release-policy.yml` 的内容 SHA256 时，才允许分别执行 `qqcc-config` 两服务与 `qqcc-bot` 单服务的 target-only rolling 事务；任何内容漂移都会重新触发共享契约 blocker。
 
@@ -175,14 +175,13 @@ scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha
 scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> \
   --control-plane-repair-fast-track --execute --confirm-prod
 
-# 默认正式控制面晋级入口
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules central-api
-scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
+# 最新 main 的快捷单模块正式发布；内部只执行一次 prod deploy，不部署 test
+scripts/release.py deploy-module --module central-api --execute --confirm-prod
 ```
 
-`--services` 只扩大普通自动集合；独立模块只通过上述三个 `--modules` 组表达，传半组、混组或叠加其它 artifact 会拒绝。普通模式下 `src/**`/`shared/**` 仍覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包。
+`deploy-module` 自动刷新并解析精确 `origin/main`，再复用 `deploy` 自带的 plan、全量只读 preflight 与事务；它不会调用测试环境发布。`--services` 只扩大普通自动集合；独立模块只能一次选择上述一个完整组，传半组、混组或叠加其它 artifact 会拒绝。普通模式下 `src/**`/`shared/**` 仍覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包。
 
-standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified；默认观察和短观察授权只适用于 standard。
+standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同，也不会为了正式发布重新部署测试环境；缺证据时只阻断并报告，不产生 test mutation。空 artifact/service 选择或所选目标 digest 已全部在线时，preflight/deploy 明确拒绝，不能推进顶层 `git_sha`、写空 history 或声称容器已更新。低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified；默认观察和短观察授权只适用于 standard。
 
 `dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
 

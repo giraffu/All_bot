@@ -3469,6 +3469,13 @@ def test_independent_release_requires_exactly_one_module_group():
 @pytest.mark.parametrize(
     "alias,artifacts",
     [
+        ("central-api", {"central-api"}),
+        ("web-api", {"web-api"}),
+        ("payment-api", {"payment-api"}),
+        ("bot", {"main-bot"}),
+        ("qqcc-private-bot-worker", {"private-bot-worker"}),
+        ("paid-group-guard-bot", {"paid-group-bot"}),
+        ("public-web", {"public-web"}),
         ("dashboard", {"dashboard-backend", "dashboard-frontend"}),
         ("qqcc-bot", {"qqcc-bot"}),
         ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
@@ -3484,6 +3491,136 @@ def test_independent_module_aliases_expand_to_complete_service_groups(
         alias,
         artifacts,
     )
+
+
+def test_deploy_module_resolves_latest_main_and_delegates_only_to_prod(monkeypatch):
+    module = _load_module()
+    original_main = module.main
+    delegated = []
+    prepared = []
+    monkeypatch.setattr(module, "resolve_latest_main_sha", lambda: FULL_SHA)
+    monkeypatch.setattr(
+        module,
+        "prepare_module_release_bundle",
+        lambda args, sha: prepared.append((args.module, sha)),
+    )
+    monkeypatch.setattr(
+        module,
+        "main",
+        lambda argv=None: delegated.append(list(argv or [])) or 0,
+    )
+
+    result = original_main(
+        [
+            "deploy-module",
+            "--module",
+            "central-api",
+            "--execute",
+            "--confirm-prod",
+        ]
+    )
+
+    assert result == 0
+    assert prepared == [("central-api", FULL_SHA)]
+    assert delegated == [
+        [
+            "deploy",
+            "--env",
+            "prod",
+            "--sha",
+            FULL_SHA,
+            "--modules",
+            "central-api",
+            "--bundle-repository",
+            "ghcr.io/giraffu/allbot-release-v2",
+            "--bundle-cache",
+            "~/.cache/allbot/releases",
+            "--execute",
+            "--confirm-prod",
+        ]
+    ]
+    assert "test" not in delegated[0]
+
+
+def test_real_release_change_rejects_empty_and_already_deployed_v2_scope():
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    empty_manifest = {
+        "schema_version": 2,
+        "selected_artifacts": [],
+        "artifacts": {},
+    }
+    args = SimpleNamespace(previous_state=None)
+
+    with pytest.raises(module.ReleaseError, match="no runtime artifacts"):
+        module.require_real_release_change(
+            args,
+            module.ReleaseImpact(services=set()),
+            empty_manifest,
+        )
+
+    selected_manifest = {
+        "schema_version": 2,
+        "selected_artifacts": ["central-api"],
+        "artifacts": {"central-api": {"digest": digest}},
+    }
+    args.previous_state = {
+        "schema_version": 2,
+        "artifacts": {"central-api": {"digest": digest}},
+    }
+    with pytest.raises(module.ReleaseError, match="already deployed"):
+        module.require_real_release_change(
+            args,
+            module.ReleaseImpact(services={"central-api"}),
+            selected_manifest,
+        )
+
+
+def test_real_release_change_accepts_a_new_selected_digest():
+    module = _load_module()
+    manifest = {
+        "schema_version": 2,
+        "selected_artifacts": ["central-api"],
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "2" * 64},
+        },
+    }
+    args = SimpleNamespace(
+        previous_state={
+            "schema_version": 2,
+            "artifacts": {
+                "central-api": {"digest": "sha256:" + "1" * 64},
+            },
+        }
+    )
+
+    module.require_real_release_change(
+        args,
+        module.ReleaseImpact(services={"central-api"}),
+        manifest,
+    )
+
+
+def test_state_writer_rejects_an_empty_v2_release_before_remote_mutation(
+    monkeypatch,
+):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: pytest.fail("empty release must not write state"),
+    )
+
+    with pytest.raises(module.ReleaseError, match="empty runtime release"):
+        module._write_state(
+            SimpleNamespace(env="prod"),
+            module.ReleaseImpact(services=set()),
+            {
+                "schema_version": 2,
+                "selected_artifacts": [],
+            },
+            "config-revision",
+        )
 
 
 def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(

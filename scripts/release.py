@@ -2540,6 +2540,42 @@ def _resolve_previous_sha(
     return None
 
 
+def require_real_release_change(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Reject schema-v2 mutations that would only advance release metadata."""
+
+    if manifest.get("schema_version") != 2:
+        return
+    selected = list(manifest.get("selected_artifacts", []))
+    if not selected or not impact.services:
+        raise ReleaseError(
+            "release selects no runtime artifacts; deployment state will not be advanced"
+        )
+    previous_state = getattr(args, "previous_state", None)
+    if not isinstance(previous_state, Mapping):
+        return
+    previous_artifacts = previous_state.get("artifacts")
+    if not isinstance(previous_artifacts, Mapping):
+        return
+    unchanged: set[str] = set()
+    for name in selected:
+        target = manifest.get("artifacts", {}).get(name)
+        current = previous_artifacts.get(name)
+        if not isinstance(target, Mapping) or not isinstance(current, Mapping):
+            continue
+        target_digest = target.get("digest") or target.get("sha256")
+        if target_digest and current.get("digest") == target_digest:
+            unchanged.add(name)
+    if unchanged == set(selected):
+        raise ReleaseError(
+            "selected artifact digests are already deployed; deployment state "
+            "will not be advanced"
+        )
+
+
 def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any], str]:
     sha = validate_full_sha(args.sha)
     manifest_path = _resolve_manifest_path(args, allow_fetch=args.command == "plan")
@@ -2639,6 +2675,9 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             requested_modules,
             getattr(args, "previous_state", None),
         )
+        if independent_release and args.from_sha and args.env != "prod":
+            requested_modules = set(independent_release.artifacts)
+            independent_release = None
         if independent_release:
             if args.track != "control-plane":
                 raise ReleaseError(
@@ -2646,7 +2685,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 )
             if args.from_sha:
                 raise ReleaseError(
-                    "independent module release uses its deployed artifact baseline; "
+                    "production independent module release uses its deployed artifact baseline; "
                     "--from-sha is not accepted"
                 )
             requested_modules = set(independent_release.artifacts)
@@ -5393,6 +5432,12 @@ def _write_state(
     transaction: Mapping[str, Any] | None = None,
     stage_only: bool = False,
 ) -> None:
+    if manifest.get("schema_version") == 2 and (
+        not manifest.get("selected_artifacts") or not impact.services
+    ):
+        raise ReleaseError(
+            "refusing to write deployment state for an empty runtime release"
+        )
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     decision = getattr(args, "release_decision", None)
@@ -5648,12 +5693,100 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_deploy_module_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--module", required=True)
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--confirm-prod", action="store_true")
+    parser.add_argument(
+        "--strategy",
+        choices=RELEASE_STRATEGIES,
+        default="auto",
+    )
+    parser.add_argument("--skip-gate", action="append", default=[])
+    parser.add_argument("--reason", default="")
+    parser.add_argument("--approved-by", default="")
+    parser.add_argument("--env-file")
+    parser.add_argument("--state-file")
+    parser.add_argument("--manifest")
+    parser.add_argument(
+        "--bundle-repository",
+        default="ghcr.io/giraffu/allbot-release-v2",
+    )
+    parser.add_argument(
+        "--bundle-cache",
+        default="~/.cache/allbot/releases",
+    )
+    parser.add_argument("--remote-host")
+    parser.add_argument("--test-state-host")
+
+
+def resolve_latest_main_sha() -> str:
+    """Refresh and return the exact current origin/main commit."""
+
+    _run(["git", "fetch", "--quiet", "origin", "main"])
+    result = _run(["git", "rev-parse", "--verify", "origin/main"])
+    return validate_full_sha(result.stdout.strip())
+
+
+def prepare_module_release_bundle(args: argparse.Namespace, sha: str) -> None:
+    """Materialize the latest immutable main bundle before the deploy phase."""
+
+    bundle_args = argparse.Namespace(
+        manifest=args.manifest,
+        bundle_cache=args.bundle_cache,
+        bundle_repository=args.bundle_repository,
+        sha=sha,
+    )
+    _resolve_manifest_path(bundle_args, allow_fetch=True)
+
+
+def _module_deploy_argv(args: argparse.Namespace, sha: str) -> list[str]:
+    argv = [
+        "deploy",
+        "--env",
+        "prod",
+        "--sha",
+        sha,
+        "--modules",
+        args.module,
+        "--bundle-repository",
+        args.bundle_repository,
+        "--bundle-cache",
+        args.bundle_cache,
+    ]
+    if args.execute:
+        argv.append("--execute")
+    if args.confirm_prod:
+        argv.append("--confirm-prod")
+    if args.strategy != "auto":
+        argv.extend(("--strategy", args.strategy))
+    for gate in args.skip_gate:
+        argv.extend(("--skip-gate", gate))
+    for option, value in (
+        ("--reason", args.reason),
+        ("--approved-by", args.approved_by),
+        ("--env-file", args.env_file),
+        ("--state-file", args.state_file),
+        ("--manifest", args.manifest),
+        ("--remote-host", args.remote_host),
+        ("--test-state-host", args.test_state_host),
+    ):
+        if value:
+            argv.extend((option, value))
+    return argv
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("plan", "preflight", "deploy", "rollback", "recover"):
         child = subparsers.add_parser(command)
         _add_release_arguments(child)
+    deploy_module = subparsers.add_parser(
+        "deploy-module",
+        help="deploy one independent control-plane module from latest origin/main",
+    )
+    _add_deploy_module_arguments(deploy_module)
     validate = subparsers.add_parser("validate-env")
     validate.add_argument("--env", choices=("test", "prod"), required=True)
     validate.add_argument("--env-file", required=True)
@@ -5675,6 +5808,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "deploy-module":
+            sha = resolve_latest_main_sha()
+            prepare_module_release_bundle(args, sha)
+            return main(_module_deploy_argv(args, sha))
         if args.command == "validate-env":
             values = parse_env_file(Path(args.env_file))
             revision = validate_environment(
@@ -5807,6 +5944,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.skip_env_checks and args.command != "plan":
             raise ReleaseError("--skip-env-checks is only available for plan")
         impact, manifest, previous_sha = build_plan(args)
+        if args.command in {"preflight", "deploy"}:
+            require_real_release_change(args, impact, manifest)
         if args.execute:
             verify_operator_worktree_clean(
                 source_ref=str(manifest.get("source_ref", "refs/heads/main")),
