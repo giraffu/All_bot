@@ -65,7 +65,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - standard 测试验收只要求本次选择 artifact 对应的检查和精确 digest；公共 Web 校验 tar checksum，核心按选中服务检查，测试 Worker 仅在显式 track 中检查 heartbeat。默认观察至少 24 小时；短观察仍需 evidence 开关、原因、批准人和 `--confirm-short-observation`。
 - 正式 standard 晋级从云测试 retained history 按 artifact + exact digest 查找 main-channel verified 证据；direct artifact 只按明确风险策略豁免，不能伪装 tested。每次 execute 仍必须 `--confirm-prod`。
-- `central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一被选中时，混合事务整体进入生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布 rolling 替换。migration、Compose/发布契约、未知影响始终完整维护、备份和单 Alembic head。`no-change` 只有实际容器 RepoDigest、健康和 config revision 全部一致才能报告。
+- `central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一被选中时，混合事务整体进入生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布 rolling 替换。migration、Compose/发布契约、未知影响始终完整维护、备份和单 Alembic head。`no-change` 只有实际容器 RepoDigest、健康和 config revision 全部一致才能报告；该只读运行态核验必须早于 mutation rollback preflight，同 SHA 已精确运行时不得因本地缺另一份 previous manifest 而误阻断。
 - test/prod 共用 main bundle 镜像；环境身份、DB/Redis、Token、对象存储、bucket、域名、Bot username 和开关只允许来自宿主 env/overlay/Web runtime config。`.dockerignore` 必须同时递归排除根目录与任意子目录的 `.env`/`.env.*`，避免目录级 `COPY` 带入开发示例。main CI 必须执行 `validate_release_environment_neutral.py` 检查 build context、Dockerfile、当前 main SHA 新构建镜像的 Config.Env/文件系统/双环境解析和 Public Web dist，且不得输出秘密值；复用 artifact 保留原构建 SHA 的成功扫描证据，不得用任意 SHA 过滤器绕过当前构建。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - 普通窄更新仍通过影响 planner 和必要的 `--services` 扩大集合表达；两个 fast-track 均禁止同时传 `--services`，也禁止退回单文件同步、rsync 或现场 `--build`。

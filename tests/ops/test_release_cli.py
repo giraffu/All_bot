@@ -5416,6 +5416,86 @@ def test_test_preflight_rejects_owner_only_bundle_without_test_service(
     assert "owner-only admin services are removed" in capsys.readouterr().err
 
 
+def test_deploy_module_returns_verified_no_change_before_rollback_preflight(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend", "dashboard-frontend"},
+        level="rolling",
+        matched_rules=["independent-module:dashboard", "track:control-plane"],
+    )
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "track": "control-plane",
+        "source_ref": "refs/heads/main",
+        "artifacts": {},
+    }
+    no_change = {
+        "status": "no-change",
+        "git_sha": FULL_SHA,
+        "health": "verified",
+    }
+    calls = []
+
+    monkeypatch.setattr(
+        module, "build_plan", lambda _args: (impact, manifest, FULL_SHA)
+    )
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(risk_class="owner-tools"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            {},
+            "environment-revision",
+            {"drift": False, "service_revisions": {}},
+        ),
+    )
+    monkeypatch.setattr(module, "disabled_optional_cloud_services", lambda *_: set())
+    monkeypatch.setattr(
+        module,
+        "filter_inactive_control_artifacts",
+        lambda _env, value, _disabled: (value, set()),
+    )
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {"plan": "ok"})
+    monkeypatch.setattr(
+        module,
+        "verify_deploy_module_no_change",
+        lambda *_args: calls.append("no-change") or no_change,
+    )
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("no-change must not require rollback preflight")
+        ),
+    )
+
+    assert (
+        module.main(
+            [
+                "deploy-module",
+                "--env",
+                "prod",
+                "--module",
+                "dashboard",
+                "--sha",
+                FULL_SHA,
+                "--confirm-prod",
+            ]
+        )
+        == 0
+    )
+
+    assert calls == ["no-change"]
+    assert '"status": "no-change"' in capsys.readouterr().out
+
+
 def test_release_cli_accepts_nested_oras_v2_bundle_layout(tmp_path):
     module = _load_module()
     cache = tmp_path / "cache"
