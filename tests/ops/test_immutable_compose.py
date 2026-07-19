@@ -363,7 +363,8 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "oras repo tags" in workflow
     assert 'git rev-list --first-parent "${SOURCE_SHA}^"' in workflow
     assert "--skip-git-checks --skip-ci-checks --skip-env-checks" in workflow
-    assert "allbot-release-v2-test-candidate" in workflow
+    assert "allbot-release-v2-test-candidate" not in workflow
+    assert "branches: [main]" in workflow
     assert "EVENT_RUN_ID: ${{ github.event.workflow_run.id }}" in workflow
     assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
     assert "previous-release/release-v2/release-index.json" in workflow
@@ -375,10 +376,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "validation_mode=full" in workflow
     assert "allbot-gpu-release-manifests" in workflow
     assert "gpu-execution-manifest.json" in workflow
-    # Candidate publication may carry an incomplete GPU manifest; GPU/LAN
-    # promotion remains outside the control-plane/Public Web v1 scope.
-    assert "--require-complete-gpu" not in workflow
-    assert 'if [ "$RELEASE_CHANNEL" = main ]' not in workflow
+    # A trusted main bundle is complete; GPU mutation still remains outside
+    # release.py and uses the dedicated profile operator.
+    assert "--require-complete-gpu" in workflow
+    assert 'if [ "$RELEASE_CHANNEL" = main ]' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

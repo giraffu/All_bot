@@ -5187,9 +5187,24 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
 
 
 def validate_deploy_module_approval(manifest: Mapping[str, Any]) -> None:
-    """Require an exact promoted-main approval for every selected artifact."""
+    """Accept either a fully tested main build or a legacy promoted approval.
+
+    Main-first release batches are built once after the batch PR merges.  Their
+    standard artifacts obtain exact-digest approval from the cloud-test history
+    during production preflight; direct artifacts keep the strategy-specific
+    approval path.  Older promoted bundles remain deployable for rollback and
+    compatibility.
+    """
 
     validation = manifest.get("validation")
+    if (
+        manifest.get("release_channel") == "main"
+        and manifest.get("source_ref") == "refs/heads/main"
+        and isinstance(validation, Mapping)
+        and validation.get("mode") == "full"
+        and validation.get("tests") == "passed"
+    ):
+        return
     approval = manifest.get("promotion_approval")
     artifacts = approval.get("artifacts") if isinstance(approval, Mapping) else None
     if (
@@ -5197,7 +5212,9 @@ def validate_deploy_module_approval(manifest: Mapping[str, Any]) -> None:
         or validation.get("mode") != "promoted"
         or not isinstance(artifacts, Mapping)
     ):
-        raise ReleaseError("deploy-module requires a promoted main approval record")
+        raise ReleaseError(
+            "deploy-module requires a full main build or promoted main approval record"
+        )
     for name in manifest.get("selected_artifacts", []):
         artifact = manifest.get("artifacts", {}).get(name)
         evidence = artifacts.get(name)
