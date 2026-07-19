@@ -1687,6 +1687,19 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
     assert disabled == set()
 
 
+def test_disabled_optional_cloud_services_are_global_not_release_scoped():
+    module = _load_module()
+    values = dict(
+        _valid_test_environment(),
+        QQCC_BOT_TOKEN="test-qqcc-token",
+        PRIVATE_QQCC_BOT_ENABLED="false",
+    )
+
+    disabled = module.disabled_optional_cloud_services("test", values)
+
+    assert disabled == {"qqcc-private-bot-worker"}
+
+
 def test_inactive_control_artifacts_are_not_selected_as_runtime_deployments():
     module = _load_module()
     names = {

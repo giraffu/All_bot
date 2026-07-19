@@ -1876,6 +1876,24 @@ def filter_enabled_cloud_services(
     return chosen - disabled, disabled
 
 
+def disabled_optional_cloud_services(
+    environment: str, values: Mapping[str, str]
+) -> set[str]:
+    """Return every optional runtime disabled in this environment.
+
+    Runtime state describes the environment, not only the services selected by
+    the current partial release.  Use the complete environment service catalog
+    so a central-api-only deployment still prunes a disabled private worker.
+    """
+
+    _, disabled = filter_enabled_cloud_services(
+        environment,
+        ENVIRONMENT[environment]["available_services"],
+        values,
+    )
+    return disabled
+
+
 def filter_inactive_control_artifacts(
     environment: str,
     manifest: Mapping[str, Any],
@@ -7074,10 +7092,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             and manifest.get("schema_version") == 2
             and manifest.get("track") == "control-plane"
         ):
-            _, disabled_cloud_services = filter_enabled_cloud_services(
-                args.env,
-                cloud_services_for_release(args.env, impact),
-                environment_values,
+            disabled_cloud_services = disabled_optional_cloud_services(
+                args.env, environment_values
             )
             manifest, inactive_artifacts = filter_inactive_control_artifacts(
                 args.env,
