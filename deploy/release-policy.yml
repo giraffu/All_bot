@@ -18,24 +18,45 @@
   ],
   "level_order": ["none", "rolling", "drain", "maintenance"],
   "independent_modules": {
+    "central-api": {
+      "artifacts": ["central-api"]
+    },
+    "web-api": {
+      "artifacts": ["web-api"]
+    },
+    "payment-api": {
+      "artifacts": ["payment-api"]
+    },
     "dashboard": {
       "artifacts": ["dashboard-backend", "dashboard-frontend"]
+    },
+    "main-bot": {
+      "artifacts": ["main-bot"]
     },
     "qqcc-bot": {
       "artifacts": ["qqcc-bot"]
     },
     "qqcc-config": {
       "artifacts": ["qqcc-config-backend", "qqcc-config-frontend"]
+    },
+    "private-bot-worker": {
+      "artifacts": ["private-bot-worker"]
+    },
+    "paid-group-bot": {
+      "artifacts": ["paid-group-bot"]
+    },
+    "public-web": {
+      "artifacts": ["public-web"]
     }
   },
   "independent_contract_snapshots": {
     "dashboard/backend/schemas.py": "faf5d0b244fd291ff8be8740eb89a24595d3e8a79ab8005d1aef699fdf69b741",
-    "deploy/docker-compose-cloud-base.yml": "4f762e4d1b21efc0e3e11cedef3d1c7609031da71946c389e5266cc963551e4b",
-    "deploy/docker-compose-cloud-prod.overlay.yml": "738901d56873c0dc06a51f2bdc8dc9c319258b3c710a1b027459ab99eb783c87",
+    "deploy/docker-compose-cloud-base.yml": "abaeaf1997a8ec7ebd2d565007cee09bcdc3b8de78cbccb5ff807297135330c0",
+    "deploy/docker-compose-cloud-prod.overlay.yml": "8c587c5869c0535acb51dde48bdce7afd3f1ca03e99505591f85ce3c9d4eeb4f",
     "deploy/docker-compose-cloud-prod.yml": "2b950295e5c3757d32d2be17104daf6d568044f7d1a0ae4ef8af1fddcee0e7b0",
-    "deploy/docker-compose-cloud-test.overlay.yml": "2aabca24efedf0742a99a7752c57641c49fdbcd2956c571cb337d4634e2f21fc",
+    "deploy/docker-compose-cloud-test.overlay.yml": "04ec278eb785f67b132fc4d9813ee8f9bc213d1270e1020acee937b76722d2b7",
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
-    "deploy/env.schema.yml": "b0c50b3f41d21b580ae187658b39660470dff1b279ccc957ff76f593613de6e0",
+    "deploy/env.schema.yml": "0706942a7ed19a399fa67b3ebf1b74dfb4981e3e60a7a79812cbc31ff6ad802f",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
     "src/qqcc_video_lora_catalog.py": "d019e33ce2978290f969473d5d43065a2a4ee825213b93c7c8264c94189816ae",
     "src/services/qqcc_config_service.py": "533912ec7030390ed14f4e82d647f2ca0a4fd9fa3a787c385dadfffc7f2fa3c7",
@@ -232,6 +253,7 @@
         "deploy/docker/select-dashboard-spa.sh",
         "deploy/env.defaults",
         "deploy/env.schema.yml",
+        "deploy/service-env-contract.yml",
         "deploy/systemd/**",
         "deploy/test-acceptance.example.json",
         "deploy/test-train-acceptance.example.json",
@@ -243,6 +265,8 @@
         "scripts/gpu_profile_release_v2.py",
         "scripts/bootstrap_release_host.sh",
         "scripts/validate_deploy_env.py",
+        "scripts/runtime_env_contract.py",
+        "scripts/validate_release_environment_neutral.py",
         ".dockerignore"
       ],
       "level": "maintenance",

@@ -1,17 +1,15 @@
 import asyncio
 import logging
-import os
 
 import aiohttp
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
+from config import BOT_TOKEN, TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_bot_token() -> str | None:
-    bot_type = os.getenv("BOT_TYPE", "PROD")
-    return BOT_TOKEN_TEST if bot_type == "TEST" else BOT_TOKEN
+    return BOT_TOKEN
 
 
 def _log_background_task_result(task: asyncio.Task) -> None:

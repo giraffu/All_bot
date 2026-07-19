@@ -137,11 +137,13 @@ async def test_send_current_user_history_record_to_telegram_routes_to_delivery_s
     current_user = SimpleNamespace(id=1, telegram_id=10001)
     db = SimpleNamespace()
 
-    result = await history_delivery_service.send_current_user_history_record_to_telegram(
-        task_id="task-1",
-        current_user=current_user,
-        db=db,
-        service_fn=service_fn,
+    result = (
+        await history_delivery_service.send_current_user_history_record_to_telegram(
+            task_id="task-1",
+            current_user=current_user,
+            db=db,
+            service_fn=service_fn,
+        )
     )
 
     assert result == {"status": "success"}
@@ -152,10 +154,9 @@ async def test_send_current_user_history_record_to_telegram_routes_to_delivery_s
     )
 
 
-def test_build_telegram_upload_request_uses_test_token_in_test_mode(monkeypatch):
+def test_build_telegram_upload_request_uses_canonical_environment_token(monkeypatch):
     monkeypatch.setenv("BOT_TYPE", "TEST")
-    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN_TEST", "test-token")
-    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "prod-token")
+    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "test-token")
     monkeypatch.setattr(
         history_delivery_service,
         "TELEGRAM_API_BASE_URL",

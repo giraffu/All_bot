@@ -143,9 +143,7 @@ def build_official_qqcc_channel_membership_checker(
     redis: Any | None,
     redis_prefix: str = REDIS_PREFIX,
 ) -> OfficialQqccChannelMembershipChecker:
-    bot_type = os.getenv("BOT_TYPE", "TEST").strip().upper()
-    token_env_name = "QQCC_BOT_TOKEN" if bot_type == "PROD" else "QQCC_BOT_TOKEN_TEST"
-    token = (os.getenv(token_env_name) or "").strip()
+    token = (os.getenv("QQCC_BOT_TOKEN") or "").strip()
     if not token:
         raise RuntimeError(
             "Official QQCC Bot credential is required for private Bot membership checks"

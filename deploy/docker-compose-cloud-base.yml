@@ -7,11 +7,8 @@ x-json-logging: &json-logging
 x-app-base: &app-base
   restart: always
   logging: *json-logging
-  env_file:
-    - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
   environment:
     ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-    ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
     PYTHONUNBUFFERED: "1"
     TZ: Asia/Shanghai
 
@@ -27,10 +24,9 @@ services:
     restart: always
     logging: *json-logging
     env_file:
-      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/central-api.env
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
       TZ: Asia/Shanghai
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
     healthcheck:
@@ -40,6 +36,8 @@ services:
   web-api:
     <<: *app-base
     image: ${ALLBOT_WEB_API_IMAGE:?release.env must pin ALLBOT_WEB_API_IMAGE by digest}
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/web-api.env
     command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -51,6 +49,8 @@ services:
   payment-api:
     <<: *app-base
     image: ${ALLBOT_PAYMENT_API_IMAGE:?release.env must pin ALLBOT_PAYMENT_API_IMAGE by digest}
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/payment-api.env
     command: ["python", "src/payment_api_server.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -61,10 +61,9 @@ services:
     restart: always
     logging: *json-logging
     env_file:
-      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/dashboard-backend.env
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
       TZ: Asia/Shanghai
     command: ["gunicorn", "dashboard.backend.main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
     volumes:
@@ -78,9 +77,10 @@ services:
     image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}
     restart: always
     logging: *json-logging
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/dashboard-frontend.env
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
       DASHBOARD_GATEWAY_PORT: "8086"
       DASHBOARD_BACKEND_HOST: dashboard-backend:8043
       DASHBOARD_FRONTEND_MODE: dashboard
@@ -97,10 +97,9 @@ services:
     restart: always
     logging: *json-logging
     env_file:
-      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-config-backend.env
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
       TZ: Asia/Shanghai
     command: ["gunicorn", "dashboard.backend.qqcc_config_main:app", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8045"]
     volumes:
@@ -114,9 +113,10 @@ services:
     image: ${ALLBOT_QQCC_CONFIG_FRONTEND_IMAGE:?release.env must pin QQCC config frontend by digest}
     restart: always
     logging: *json-logging
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-config-frontend.env
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
-      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
       DASHBOARD_GATEWAY_PORT: "8088"
       DASHBOARD_BACKEND_HOST: qqcc-config-backend:8045
       DASHBOARD_FRONTEND_MODE: qqcc
@@ -151,6 +151,8 @@ services:
     <<: *app-base
     image: ${ALLBOT_MAIN_BOT_IMAGE:?release.env must pin ALLBOT_MAIN_BOT_IMAGE by digest}
     profiles: ["bot"]
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/main-bot.env
     command: ["python", "src/bot_main.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -160,6 +162,8 @@ services:
     <<: *app-base
     image: ${ALLBOT_QQCC_BOT_IMAGE:?release.env must pin ALLBOT_QQCC_BOT_IMAGE by digest}
     profiles: ["qqcc-bot"]
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-bot.env
     command: ["python", "-m", "qqcc_bot.main"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -169,6 +173,8 @@ services:
     <<: *app-base
     image: ${ALLBOT_PRIVATE_BOT_WORKER_IMAGE:?release.env must pin ALLBOT_PRIVATE_BOT_WORKER_IMAGE by digest}
     profiles: ["qqcc-private-bots"]
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/private-bot-worker.env
     command: ["python", "-m", "qqcc_private_bot.worker"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -178,6 +184,8 @@ services:
     <<: *app-base
     image: ${ALLBOT_PAID_GROUP_BOT_IMAGE:?release.env must pin ALLBOT_PAID_GROUP_BOT_IMAGE by digest}
     profiles: ["paid-group"]
+    env_file:
+      - ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/paid-group-bot.env
     command: ["python", "-m", "paid_group_guard_bot"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs

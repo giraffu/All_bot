@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.core.media_paths import MINIO_BUCKET
 from src.database.models import History
 from src.web_api.presenters import media_presenter
 from src.web_api.routers import users as users_router
@@ -98,7 +99,7 @@ async def test_resolve_history_media_urls_prefers_r2_thumbnail(monkeypatch):
     assert thumbnail_url == "https://r2.example/thumb.webp"
     get_presigned_url.assert_called_once_with(
         "123/output_images/task-1.png",
-        bucket="bot-data",
+        bucket=MINIO_BUCKET,
     )
 
 
@@ -224,7 +225,7 @@ async def test_resolve_history_media_urls_does_not_use_legacy_storage(monkeypatc
     assert thumbnail_url == ""
     get_presigned_url.assert_called_once_with(
         "123/output_images/task-1.png",
-        bucket="bot-data",
+        bucket=MINIO_BUCKET,
     )
 
 
@@ -256,7 +257,7 @@ async def test_favorite_history_schedules_media_and_thumbnail_background_tasks()
 
     copy_call = background_tasks.add_task.call_args_list[0]
     assert copy_call.args[1:] == (
-        "bot-data",
+        MINIO_BUCKET,
         "123/output_images/task-1.png",
         "history/task-1/original.png",
     )

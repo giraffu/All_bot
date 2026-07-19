@@ -183,7 +183,9 @@ def parse_private_bot_client_type(client_type: str | None) -> int | None:
     if not normalized.startswith(PRIVATE_QQCC_BOT_CLIENT_TYPE_PREFIX):
         return None
     try:
-        private_bot_id = int(normalized.removeprefix(PRIVATE_QQCC_BOT_CLIENT_TYPE_PREFIX))
+        private_bot_id = int(
+            normalized.removeprefix(PRIVATE_QQCC_BOT_CLIENT_TYPE_PREFIX)
+        )
     except ValueError:
         return None
     return private_bot_id if private_bot_id > 0 else None
@@ -208,12 +210,8 @@ def configured_forbidden_telegram_bot_ids() -> set[int]:
         result.add(int(value))
     for name in (
         "BOT_TOKEN",
-        "BOT_TOKEN_TEST",
-        "BOT_TOKEN_test",
         "FILE_BOT_TOKEN",
         "QQCC_BOT_TOKEN",
-        "QQCC_BOT_TOKEN_TEST",
-        "QQCC_BOT_TOKEN_test",
         "PAID_GROUP_BOT_TOKEN",
     ):
         prefix = os.getenv(name, "").strip().partition(":")[0]
@@ -247,8 +245,7 @@ class PrivateQqccBotLifecycleService:
             or parsed_webhook_url.password
             or parsed_webhook_url.query
             or parsed_webhook_url.fragment
-            or parsed_webhook_url.path.rstrip("/")
-            != "/api/private-bots/webhook"
+            or parsed_webhook_url.path.rstrip("/") != "/api/private-bots/webhook"
         ):
             raise PrivateBotValidationError(
                 "webhook_base_url_invalid",
@@ -284,7 +281,12 @@ class PrivateQqccBotLifecycleService:
 
     @staticmethod
     def _config_requires_tenant_media_clone(config: dict) -> bool:
-        for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+        for section in (
+            "video_scenes",
+            "ai_video_scenes",
+            "draw_scenes",
+            "filter_scenes",
+        ):
             for scene in config.get(section, []):
                 for field in ("demo_input_media", "demo_output_media"):
                     media = scene.get(field)
@@ -423,7 +425,9 @@ class PrivateQqccBotLifecycleService:
         normalized_token = token.strip()
         token_match = PRIVATE_QQCC_BOT_TOKEN_PATTERN.fullmatch(normalized_token)
         if token_match is None:
-            raise PrivateBotValidationError("invalid_token", "Telegram Bot token is invalid")
+            raise PrivateBotValidationError(
+                "invalid_token", "Telegram Bot token is invalid"
+            )
 
         try:
             identity = await self.telegram_gateway.inspect_token(normalized_token)
@@ -848,9 +852,8 @@ class PrivateQqccBotLifecycleService:
         bot = await self.repository.get_owner_binding_for_update(owner_user_id)
         if bot is None:
             raise PrivateBotNotFoundError("not_found", "Private Bot was not found")
-        if (
-            expected_private_bot_id is not None
-            and int(bot.id) != int(expected_private_bot_id)
+        if expected_private_bot_id is not None and int(bot.id) != int(
+            expected_private_bot_id
         ):
             raise PrivateBotConflictError(
                 "binding_changed",

@@ -2,29 +2,20 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-load_dotenv()
-
 # JWT Configuration
-SECRET_KEY = os.getenv(
-    "DASHBOARD_SECRET_KEY", "your-super-secret-key-change-in-production"
-)
+SECRET_KEY = os.environ["DASHBOARD_SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 # Admin Credentials (in production, should be in DB or secure env vars)
-ADMIN_USERNAME = os.getenv("DASHBOARD_ADMIN_USERNAME", "admin")
-# Default password is "admin", bcrypt hashed
-ADMIN_PASSWORD_HASH = os.getenv(
-    "DASHBOARD_ADMIN_PASSWORD_HASH",
-    "$2b$12$Kk9WvI6qO8uA5j0M7Nf8q.nB2sA1qQ.xZ1HjD3wUoYv2yQ1.hX1bC",
-)
+ADMIN_USERNAME = os.environ["DASHBOARD_ADMIN_USERNAME"]
+ADMIN_PASSWORD_HASH = os.environ["DASHBOARD_ADMIN_PASSWORD_HASH"]
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

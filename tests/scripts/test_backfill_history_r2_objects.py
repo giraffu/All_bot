@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.backfill_history_r2_objects as backfill_module
+from src.core.media_paths import MINIO_BUCKET
 from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
     build_input_file_candidates,
@@ -79,7 +80,7 @@ def test_build_input_file_candidates_skips_external_urls_and_dedupes():
 
     assert len(candidates) == 2
     assert candidates[0].file_path == "bot-data/uploads/input.png"
-    assert candidates[0].source_bucket == "bot-data"
+    assert candidates[0].source_bucket == MINIO_BUCKET
     assert candidates[0].source_object == "uploads/input.png"
     assert candidates[0].r2_key == "uploads/input.png"
     assert candidates[1].skip_reason == "external"
@@ -303,8 +304,12 @@ async def test_process_history_r2_candidate_applies_copy_and_copy_thumbnail():
     assert result.media_status == "uploaded"
     assert result.thumbnail_status == "copied"
     assert copied == [
-        ("bot-data", "123/output_images/task-4.png", "history/task-4/original.png"),
-        ("bot-data", "123/output_images/task-4_thumb.webp", "history/task-4/thumb.webp"),
+        (MINIO_BUCKET, "123/output_images/task-4.png", "history/task-4/original.png"),
+        (
+            MINIO_BUCKET,
+            "123/output_images/task-4_thumb.webp",
+            "history/task-4/thumb.webp",
+        ),
     ]
 
 

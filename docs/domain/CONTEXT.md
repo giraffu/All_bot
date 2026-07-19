@@ -66,9 +66,11 @@
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。
 - **维护发布**：影响 planner 因 migration、未知路径或跨栈变更提升的发布等级；发布器负责维护/drain、备份、单 Alembic head 与显式 upgrade，不同步代码或 env。
 - **云测试不可变发布**：将受保护 `main` 可达的完整 SHA 对应 release bundle 部署到云测试；服务范围由依赖影响自动计算，应用代码只来自 digest-pinned 镜像。
+- **不可变 handoff**：功能槽位完成本地测试并推送后，用槽位、远端任务分支、完整 head SHA 和 main base SHA 标识的一次交接；交接后槽位可立即复用，批次集成不再依赖槽位当前内容。
+- **发布批次**：集成 AI 从若干不可变 handoff 冻结出的单次交付集合；所有成员只组合成一个 release-batch 分支和一个 main PR，容器构建在 main 合并后统一触发。
 - **发布风险类**：根据选中 artifact 的最高影响划分为 critical、owner-tools、public-web、execution 或 locked；共享代码和混合变更不得通过缩小选择集降低风险。
 - **发布策略**：standard 要求测试部署/验收/观察，direct 用于低风险直发，emergency 用于显式接受核心业务风险的紧急直发；三者都保留不可变产物、配置、健康、回滚和生产确认。
-- **artifact assurance**：逐 artifact digest 的证据状态；tested 表示完成要求的测试，waived 表示策略明确豁免，attested 表示 GPU 不做业务 canary 但不可变产物声明已验证。
+- **artifact assurance**：逐 artifact digest 的证据状态；tested 表示 main bundle 的精确 digest 已完成要求的测试，waived 表示策略明确豁免，attested 表示 GPU 不做业务 canary 但不可变产物声明已验证。
 - **独立模块发布**：schema v2 中一次只选择 Dashboard、官方 QQCC Bot 或 QQCC Config 一个完整组，以组内 artifact 已部署 `source_sha` 作为差异与回滚基线，并在混合版本 `current.json` 中保留非目标 artifact；共享数据库/Compose/env 或明确跨模块契约变化不属于独立发布。
 - **云正式控制面**：生产控制面，任何正式发布、重建或生产 RunPod mutation 都需要用户明确确认。
 - **Cloudflare 自动化令牌**：用于 AllBot Cloudflare 账号自动化的高权限 API token，只允许保存在宿主机受限权限文件中；聊天、文档、Git 和日志只记录路径、用途和权限边界，不记录明文。

@@ -1,12 +1,11 @@
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
 
 import httpx
 from fastapi import HTTPException
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
+from config import BOT_TOKEN, TELEGRAM_API_BASE_URL
 from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
@@ -69,8 +68,7 @@ async def _download_history_bytes(output_file: str) -> tuple[str, bytes]:
 
 
 def _resolve_delivery_bot_token() -> str:
-    bot_type = os.getenv("BOT_TYPE", "PROD").upper()
-    token = BOT_TOKEN_TEST if bot_type == "TEST" else BOT_TOKEN
+    token = BOT_TOKEN
     if not token:
         raise HTTPException(
             status_code=500,
@@ -95,7 +93,9 @@ def _build_telegram_upload_request(
 
     if history_prompt:
         payload["caption"] = (
-            history_prompt[:100] + "..." if len(history_prompt) > 100 else history_prompt
+            history_prompt[:100] + "..."
+            if len(history_prompt) > 100
+            else history_prompt
         )
 
     filename = object_name.split("/")[-1]

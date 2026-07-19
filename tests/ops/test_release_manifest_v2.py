@@ -383,6 +383,22 @@ def test_only_gpu_track_can_be_incomplete(tmp_path):
 
 def test_release_cli_selects_track_modules_and_services_is_control_alias(tmp_path):
     index_path = _write_release(tmp_path)
+    state_path = tmp_path / "current.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "git_sha": SHA,
+                "artifacts": {
+                    "central-api": {
+                        "source_sha": SHA,
+                        "digest": f"sha256:{'2' * 64}",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     command = [
         "python",
         str(ROOT / "scripts/release.py"),
@@ -395,6 +411,8 @@ def test_release_cli_selects_track_modules_and_services_is_control_alias(tmp_pat
         SHA,
         "--manifest",
         str(index_path),
+        "--state-file",
+        str(state_path),
         "--track",
         "control-plane",
         "--modules",
@@ -429,3 +447,40 @@ def test_release_cli_selects_track_modules_and_services_is_control_alias(tmp_pat
     )
     assert invalid.returncode == 2
     assert "only an alias" in invalid.stderr
+
+
+def test_release_cli_rejects_independent_module_without_schema_v2_baseline(tmp_path):
+    index_path = _write_release(tmp_path)
+    state_path = tmp_path / "legacy-current.json"
+    state_path.write_text(json.dumps({"git_sha": SHA}), encoding="utf-8")
+    result = subprocess.run(
+        [
+            "python",
+            str(ROOT / "scripts/release.py"),
+            "plan",
+            "--env",
+            "test",
+            "--sha",
+            SHA,
+            "--from-sha",
+            SHA,
+            "--manifest",
+            str(index_path),
+            "--track",
+            "control-plane",
+            "--modules",
+            "central-api",
+            "--state-file",
+            str(state_path),
+            "--skip-git-checks",
+            "--skip-ci-checks",
+            "--skip-env-checks",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "requires an existing schema-v2 deployment state" in result.stderr
