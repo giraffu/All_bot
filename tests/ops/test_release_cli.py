@@ -1892,13 +1892,16 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     assert "docker exec cloud-central-api-test python -c" in script
     assert "</dev/null" in script
     assert (
-        "exec -T bot python -c 'import config; "
-        'assert config.API_BASE == "http://central-api:8003"\''
+        "exec -T bot python -c 'import config, urllib.request; "
+        'urllib.request.urlopen(config.API_BASE.rstrip("/") + "/health", '
+        "timeout=5).read()'"
     ) in script
     assert (
-        "exec -T web-api python -c 'import config; "
-        'assert config.API_BASE == "http://central-api:8003"\''
+        "exec -T web-api python -c 'import config, urllib.request; "
+        'urllib.request.urlopen(config.API_BASE.rstrip("/") + "/health", '
+        "timeout=5).read()'"
     ) in script
+    assert 'config.API_BASE == "http://central-api:8003"' not in script
     assert "docker inspect --format '{{.Config.Image}}'" in script
     assert 'test "$actual_image" = "$ALLBOT_APP_IMAGE"' in script
     assert "org.opencontainers.image.revision" in script
@@ -4137,6 +4140,45 @@ def test_checked_in_independent_contract_snapshots_match_current_files():
     }
 
     assert mismatches == {}
+
+
+def test_dashboard_module_runtime_snapshot_validates_only_dashboard_services(
+    monkeypatch,
+):
+    module = _load_module()
+    scripts = []
+
+    def fake_run(_command, **kwargs):
+        scripts.append(kwargs["input_text"])
+        return subprocess.CompletedProcess(
+            _command,
+            0,
+            stdout=json.dumps(
+                {
+                    "environment": "prod",
+                    "environment_revision": "1" * 64,
+                    "present_keys": ["ALLBOT_ENV"],
+                    "public_values": {"ALLBOT_ENV": "prod"},
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    args = SimpleNamespace(
+        env="prod",
+        remote_host="cloud-prod",
+        remote_env_file="/etc/allbot/prod.env",
+        command="deploy-module",
+        modules=["dashboard"],
+    )
+
+    module._remote_runtime_env_snapshot(args)
+
+    assert len(scripts) == 1
+    assert "--service dashboard-backend" in scripts[0]
+    assert "--service dashboard-frontend" in scripts[0]
+    assert "--service main-bot" not in scripts[0]
 
 
 @pytest.mark.parametrize(

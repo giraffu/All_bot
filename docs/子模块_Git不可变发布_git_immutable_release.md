@@ -87,6 +87,10 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 
 `config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的键和契约本身变化影响全部服务，强制完整维护、数据库备份与单 Alembic head。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
 
+正式机尚无任何逐服务投影、但用户只授权首次滚动更新 Dashboard 时，可以先执行 `config-plan --env prod --module dashboard`，确认影响集严格只有 `dashboard-backend` / `dashboard-frontend` 后，再以 `config-apply --env prod --module dashboard --confirm-prod --execute` 暂存这两份初始投影。该受限入口只写权限 `600` 的投影和激活指针，状态为 `config-staged`；不得开启维护、备份数据库、调用 Compose 或重启容器。它只接受 `dashboard`，只允许无 active revision 的首次暂存；正式宿主现存且不进入任何 Dashboard 投影的 12 个 legacy 键以代码内精确名称清单兼容并在结果中只输出键名，清单外未知键、目标缺键、闭包逃逸或已有 active revision 全部拒绝。不得为了通过局部暂存而删除仍可能被旧容器消费的宿主键。随后必须由同一可信 main bundle 的 `deploy-module --module dashboard` 完成滚动替换并核对非目标容器不变。完整 `config-plan` 会把尚未投影的其它服务继续报告为 drift，不能把 Dashboard 局部暂存伪装成全控制面配置收敛。
+
+公共云 Compose 的逐服务 `env_file` 使用长语法 `required: false`，只为允许 Compose 在局部模块发布时解析尚无投影的非目标服务；同时使用 `format: raw`，确保密码 hash、Token 等配置中的 `$` 按原始字节进入容器而不被 Compose 插值。这不是容器运行时的缺配置豁免。发布器在任何 pull/up 之前仍通过目标模块 service closure 严格生成、校验并核对目标投影 revision，目标投影缺失或必填键缺失立即失败。非目标容器不执行 `up`，且事务会逐一核对其启动时间不变。发布后的跨服务 smoke 从各目标容器真实导入 `config.API_BASE` 并请求其 `/health`，不得把 test/prod 的 Central 服务别名硬编码到通用发布器。当前正式 Compose 的 project service DNS 是 `central-api`；历史 Dashboard 投影中的 `central-api-prod` 不可解析，因此 Dashboard-only rolling 由 prod overlay 把 Dashboard Backend 精确覆盖为 `http://central-api:8003`，不修改或重启其它正式服务，完整宿主配置收敛留到独立窗口。该 Compose 内容以精确 checksum 纳入 owner-only snapshot，任一后续改动重新成为共享契约 blocker。
+
 数据库备份在容器 `/bin/sh` 中执行，URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
 
 GPU/Worker 配置与控制面配置为两条独立发布链。`deploy/service-env-contract.yml` 将 `ALLBOT_WORKER_*`、`CLOUD_TEST_WORKER_*` 和 `CLOUD_TEST_SHARED_AIO_*` 标记为控制面契约外部键：它们仍原样保存在受限宿主 env 中，但不进入控制面 environment revision、逐服务投影、漂移或影响集。因此单独修改 Worker 镜像、槽位或开关不得触发 `config-apply` 或重建主控制面。Dashboard 真实消费的 `RUNPOD_*` / `LAN_AIO_*` 仍属于 Dashboard 服务投影，非 Worker 的未知键仍影响全部服务并 fail closed。
@@ -127,6 +131,8 @@ v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
 
 正式维护由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。migration、Compose/发布契约和未知影响始终强制完整维护、数据库备份与单 Alembic head。容器可预拉取，实际替换前必须确认新生成已拒绝；失败自动恢复旧 digest，恢复不完整则保留维护。
+
+`deploy-module` 的宿主配置检查按机器定义的模块闭包投影：例如 Dashboard 只要求 `dashboard-backend`/`dashboard-frontend` 的必填键与 revision，同时仍验证 `/var/lib/allbot/config/<env>/current` 中全部既有投影未被篡改、生产环境没有 test sentinel、全局 env revision 没有漂移。这样未迁移的非目标 Bot canonical key 不会阻断 owner-only rolling，也不能借模块过滤绕过目标缺键或现有投影完整性。全局 `config-plan/config-apply` 继续检查全部服务。共享 Compose/env 文件只有内容 SHA256 精确等于已审阅 snapshot 时才可随独立模块通过；任一字节变化立即恢复 blocker。
 
 main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Dashboard 把每个 RunPod profile 解析成精确 `image@sha256`。当本批次没有 GPU 输入变化时，模块化 CI 从目标 main 的全部祖先中选择最近的完整、不可变 main-channel GPU manifest，原样继承每项 digest、artifact source SHA、OCI revision 与模型证据；这只是控制面 pin 索引，不构建、不测试、不部署 GPU，也不把历史镜像改写成当前 SHA。环境中立门禁只扫描 artifact 自身构建 SHA 对应的新增镜像；继承镜像复用原构建 CI 的扫描证据，过滤 SHA 必须等于当前 release index SHA，不能任意跳过本批新镜像。若某 profile 的 catalog、`remote_workers/**` 或真实输入发生变化，历史基线不能满足它，仍须当前 main SHA 的专用 GPU attestation/canary；找不到完整可信祖先或出现 mutable/mismatch ref 时，main bundle 在发布前阻断。
 

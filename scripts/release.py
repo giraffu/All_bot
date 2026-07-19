@@ -216,6 +216,7 @@ def compose_profile_flags(services: Iterable[str]) -> str:
         if selected & profile_services
     )
 
+
 DASHBOARD_FAST_TRACK_BACKEND_PATTERNS = (
     "dashboard/backend/**",
     "deploy/docker/Dockerfile.dashboard-backend",
@@ -1902,10 +1903,7 @@ def filter_inactive_control_artifacts(
     """Remove artifacts that cannot represent a running service in this env."""
 
     filtered = dict(manifest)
-    if (
-        manifest.get("schema_version") != 2
-        or manifest.get("track") != "control-plane"
-    ):
+    if manifest.get("schema_version") != 2 or manifest.get("track") != "control-plane":
         return filtered, set()
     artifacts = manifest.get("artifacts")
     selected = manifest.get("selected_artifacts")
@@ -2702,9 +2700,7 @@ def runtime_drift_artifacts(
     """Select target artifacts whose recorded runtime identity is not current."""
 
     current_artifacts = (
-        previous_state.get("artifacts")
-        if isinstance(previous_state, Mapping)
-        else None
+        previous_state.get("artifacts") if isinstance(previous_state, Mapping) else None
     )
     selected: set[str] = set()
     for name, raw_target in target_artifacts.items():
@@ -3229,7 +3225,9 @@ def _deploy_cloud(
     services = " ".join(shlex.quote(service) for service in cloud_services)
     resolved_api_base_checks = "".join(
         f"{compose} exec -T {shlex.quote(service)} python -c "
-        "'import config; assert config.API_BASE == \"http://central-api:8003\"' "
+        "'import config, urllib.request; "
+        "urllib.request.urlopen(config.API_BASE.rstrip(\"/\") + \"/health\", "
+        "timeout=5).read()' "
         "</dev/null\n"
         for service in cloud_services
         if service
@@ -5390,13 +5388,17 @@ def validate_credential_isolation_evidence(
 ) -> dict[str, Any]:
     """Validate a value-free, recent secret-isolation completion attestation."""
 
-    if set(evidence) != {
-        "schema_version",
-        "generated_at",
-        "isolation",
-        "health",
-        "old_credentials_revoked",
-    } or evidence.get("schema_version") != 1:
+    if (
+        set(evidence)
+        != {
+            "schema_version",
+            "generated_at",
+            "isolation",
+            "health",
+            "old_credentials_revoked",
+        }
+        or evidence.get("schema_version") != 1
+    ):
         raise ReleaseError("credential isolation evidence schema is invalid")
     try:
         generated_at = datetime.fromisoformat(
@@ -5457,7 +5459,7 @@ def _write_remote_credential_isolation_status(
     if status not in {"pending", "credential-isolation-complete"}:
         raise ReleaseError("invalid credential isolation status")
     root = f"/var/lib/allbot/config/{environment}"
-    program = r'''import hashlib,json,os,sys,tempfile
+    program = r"""import hashlib,json,os,sys,tempfile
 root,status,environment=sys.argv[1:]
 payload=sys.stdin.read()
 audit=json.loads(payload)
@@ -5487,7 +5489,7 @@ for path,text in (
     with os.fdopen(fd,'w',encoding='utf-8') as handle:
         handle.write(text)
     os.chmod(tmp,0o600); os.replace(tmp,path)
-'''
+"""
     encoded = base64.b64encode(program.encode()).decode("ascii")
     remote_command = " ".join(
         shlex.quote(value)
@@ -6179,9 +6181,7 @@ def _write_state(
         "git_sha": manifest["git_sha"],
         "config_revision": config_revision,
         "services": sorted(impact.services),
-        "disabled_services": sorted(
-            getattr(args, "disabled_cloud_services", set())
-        ),
+        "disabled_services": sorted(getattr(args, "disabled_cloud_services", set())),
         "inactive_artifacts": sorted(getattr(args, "inactive_artifacts", set())),
         "status": (
             "verified"
@@ -6319,6 +6319,51 @@ def _validate_local_env(args: argparse.Namespace) -> tuple[dict[str, str], str]:
     return values, revision
 
 
+INDEPENDENT_MODULE_ENV_SERVICES = {
+    "central-api": ("central-api",),
+    "web-api": ("web-api",),
+    "payment-api": ("payment-api",),
+    "dashboard": ("dashboard-backend", "dashboard-frontend"),
+    "main-bot": ("main-bot",),
+    "qqcc-bot": ("qqcc-bot",),
+    "qqcc-config": ("qqcc-config-backend", "qqcc-config-frontend"),
+    "private-bot-worker": ("private-bot-worker",),
+    "paid-group-bot": ("paid-group-bot",),
+}
+
+DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = frozenset(
+    {
+        "ALLBOT_ENV_FILE",
+        "FILE_BOT_TOKEN",
+        "LEGACY_MINIO_ACCESS_KEY",
+        "LEGACY_MINIO_BUCKET",
+        "LEGACY_MINIO_ENDPOINT",
+        "LEGACY_MINIO_PUBLIC_URL",
+        "LEGACY_MINIO_RESULT_BUCKET",
+        "LEGACY_MINIO_SECRET_KEY",
+        "LEGACY_MINIO_SECURE",
+        "REQUIRED_CHANNEL_ID",
+        "TZ",
+        "VITE_MERCHANT_ADDRESS",
+    }
+)
+
+
+def _runtime_env_service_options(args: argparse.Namespace) -> str:
+    """Limit module operations to their machine-owned config closure."""
+
+    modules = list(getattr(args, "modules", None) or ())
+    command = getattr(args, "command", "")
+    if command == "deploy-module" and len(modules) == 1:
+        module = str(modules[0])
+    elif command in {"config-plan", "config-apply"}:
+        module = str(getattr(args, "config_module", "") or "")
+    else:
+        module = ""
+    services = INDEPENDENT_MODULE_ENV_SERVICES.get(module, ())
+    return "".join(f" --service {shlex.quote(service)}" for service in services)
+
+
 def _remote_runtime_env_snapshot(
     args: argparse.Namespace, *, command: str = "inspect"
 ) -> tuple[dict[str, str], str, dict[str, Any]]:
@@ -6345,6 +6390,7 @@ def _remote_runtime_env_snapshot(
         f"--contract <(printf %s {contract} | base64 -d) "
         f"--defaults <(printf %s {defaults} | base64 -d) "
         f"--root {shlex.quote(root)}"
+        f"{_runtime_env_service_options(args)}"
     )
     script = "set -euo pipefail\n" + remote_command + "\n"
     result = _run(
@@ -6620,11 +6666,55 @@ def run_config_command(args: argparse.Namespace) -> int:
     print(json.dumps(plan_document, ensure_ascii=False, indent=2, sort_keys=True))
     if args.command == "config-plan" or not inspected.get("drift"):
         return 0
+    config_module = str(getattr(args, "config_module", "") or "")
     affected = {
         str(name)
         for name in inspected.get("affected_services", [])
         if isinstance(name, str)
     }
+    if config_module:
+        allowed = set(INDEPENDENT_MODULE_ENV_SERVICES[config_module])
+        if not affected or not affected <= allowed:
+            raise ReleaseError(
+                f"{config_module} config scope escaped its service closure"
+            )
+        raw_unknown_keys = inspected.get("unknown_keys")
+        unknown_keys = (
+            {str(key) for key in raw_unknown_keys if isinstance(key, str)}
+            if isinstance(raw_unknown_keys, list)
+            else set()
+        )
+        reviewed_legacy_keys = (
+            DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS
+            if args.env == "prod" and config_module == "dashboard"
+            else frozenset()
+        )
+        unreviewed_unknown_keys = unknown_keys - reviewed_legacy_keys
+        if unreviewed_unknown_keys:
+            raise ReleaseError(
+                "scoped config activation rejects unreviewed unknown keys: "
+                + ", ".join(sorted(unreviewed_unknown_keys))
+            )
+        if inspected.get("active_revision"):
+            raise ReleaseError(
+                "scoped config-apply is only allowed for the initial Dashboard projection"
+            )
+        _, revision, _activated = _remote_runtime_env_snapshot(args, command="activate")
+        print(
+            json.dumps(
+                {
+                    "environment": args.env,
+                    "environment_revision": revision,
+                    "ignored_legacy_keys": sorted(unknown_keys),
+                    "services": sorted(affected),
+                    "status": "config-staged",
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     generation = affected & GENERATION_MAINTENANCE_ARTIFACTS
     unknown_keys = inspected.get("unknown_keys")
     full_maintenance = (
@@ -6825,6 +6915,15 @@ def build_parser() -> argparse.ArgumentParser:
     for command in ("config-plan", "config-apply"):
         config = subparsers.add_parser(command)
         config.add_argument("--env", choices=("test", "prod"), required=True)
+        config.add_argument(
+            "--module",
+            dest="config_module",
+            choices=("dashboard",),
+            help=(
+                "stage the initial Dashboard-only service projection without "
+                "restarting containers"
+            ),
+        )
         config.add_argument("--remote-host")
         config.add_argument("--remote-env-file")
         config.add_argument("--execute", action="store_true")
@@ -6877,7 +6976,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "credential isolation completion requires --execute and --confirm-prod"
                 )
             try:
-                raw_evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+                raw_evidence = json.loads(
+                    Path(args.evidence).read_text(encoding="utf-8")
+                )
             except (OSError, json.JSONDecodeError) as exc:
                 raise ReleaseError("credential isolation evidence is invalid") from exc
             if not isinstance(raw_evidence, Mapping):

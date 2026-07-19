@@ -206,6 +206,181 @@ def test_config_plan_only_prints_key_names_services_and_revisions(monkeypatch, c
     assert "/must-not-be-printed" not in json.dumps(document)
 
 
+def test_dashboard_config_plan_limits_remote_projection_to_dashboard_services(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    commands = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *args, **kwargs: (
+            commands.append(kwargs["input_text"])
+            or subprocess.CompletedProcess(
+                args[0],
+                0,
+                stdout=json.dumps(
+                    {
+                        "environment": "prod",
+                        "environment_revision": "a" * 64,
+                        "active_revision": None,
+                        "contract_revision": "b" * 64,
+                        "drift": True,
+                        "changed_keys": ["RUNPOD_RELEASE_PROFILE_PINS_JSON"],
+                        "affected_services": [
+                            "dashboard-backend",
+                            "dashboard-frontend",
+                        ],
+                        "unknown_keys": [],
+                        "service_revisions": {
+                            "dashboard-backend": "c" * 64,
+                            "dashboard-frontend": "d" * 64,
+                        },
+                        "present_keys": ["ALLBOT_ENV"],
+                        "public_values": {},
+                    }
+                ),
+                stderr="",
+            )
+        ),
+    )
+
+    assert module.main(["config-plan", "--env", "prod", "--module", "dashboard"]) == 0
+    capsys.readouterr()
+
+    assert "--service dashboard-backend" in commands[0]
+    assert "--service dashboard-frontend" in commands[0]
+    assert "--service web-api" not in commands[0]
+
+
+def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, capsys):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": None,
+        "affected_services": ["dashboard-backend", "dashboard-frontend"],
+        "unknown_keys": sorted(module.DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS),
+        "drift": True,
+    }
+    activated = dict(inspected, active_revision="a" * 64, drift=False)
+    events = []
+
+    def snapshot(_args, **kwargs):
+        command = kwargs.get("command", "inspect")
+        events.append(command)
+        return ({}, "a" * 64, activated if command == "activate" else inspected)
+
+    monkeypatch.setattr(module, "_remote_runtime_env_snapshot", snapshot)
+    monkeypatch.setattr(
+        module,
+        "_prepare_config_backup",
+        lambda *_args, **_kwargs: events.append("backup"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda *_args, **_kwargs: events.append("compose"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_set_config_maintenance",
+        lambda *_args, **_kwargs: events.append("maintenance"),
+    )
+
+    assert (
+        module.main(
+            [
+                "config-apply",
+                "--env",
+                "prod",
+                "--module",
+                "dashboard",
+                "--confirm-prod",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert events == ["inspect", "activate"]
+    assert '"status": "config-staged"' in output
+    assert '"ignored_legacy_keys"' in output
+
+
+def test_initial_dashboard_config_apply_rejects_unreviewed_unknown_key(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: (
+            {},
+            "a" * 64,
+            {
+                "environment": "prod",
+                "environment_revision": "a" * 64,
+                "active_revision": None,
+                "affected_services": ["dashboard-backend"],
+                "unknown_keys": ["UNREVIEWED_PROD_KEY"],
+                "drift": True,
+            },
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="unreviewed unknown keys"):
+        module.run_config_command(
+            module.build_parser().parse_args(
+                [
+                    "config-apply",
+                    "--env",
+                    "prod",
+                    "--module",
+                    "dashboard",
+                    "--confirm-prod",
+                    "--execute",
+                ]
+            )
+        )
+
+
+def test_dashboard_config_apply_rejects_scoped_update_after_initial_activation(
+    monkeypatch,
+):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: (
+            {},
+            "a" * 64,
+            {
+                "environment": "prod",
+                "environment_revision": "a" * 64,
+                "active_revision": "b" * 64,
+                "affected_services": ["dashboard-backend"],
+                "unknown_keys": [],
+                "drift": True,
+            },
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="initial Dashboard projection"):
+        module.run_config_command(
+            module.build_parser().parse_args(
+                [
+                    "config-apply",
+                    "--env",
+                    "prod",
+                    "--module",
+                    "dashboard",
+                    "--confirm-prod",
+                    "--execute",
+                ]
+            )
+        )
+
+
 def test_config_apply_backs_up_current_database_before_full_activation(monkeypatch):
     module = _load_module()
     inspected = {
@@ -289,8 +464,8 @@ def test_full_config_backup_uses_current_running_web_api(monkeypatch):
     assert 'docker exec "$container_id"' in scripts[0]
     assert "pg_dump" in scripts[0]
     assert 'case "$DATABASE_URL" in postgresql+asyncpg:*' in scripts[0]
-    assert '${DATABASE_URL#postgresql+asyncpg:}' in scripts[0]
-    assert '${DATABASE_URL/postgresql+asyncpg:/postgresql:}' not in scripts[0]
+    assert "${DATABASE_URL#postgresql+asyncpg:}" in scripts[0]
+    assert "${DATABASE_URL/postgresql+asyncpg:/postgresql:}" not in scripts[0]
     assert "/etc/allbot/prod.env" in scripts[0]
 
 
