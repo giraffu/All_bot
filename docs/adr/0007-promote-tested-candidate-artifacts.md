@@ -23,6 +23,7 @@
 - CI 检查构建上下文、运行源码、Dockerfile/Image Config.Env、镜像应用文件系统和 Web dist，并用同一 digest 分别解析 test/prod 哨兵身份。
 - 秘密轮换分两阶段完成。`credential-isolation-complete` 之前，每次正式快捷发布必须显式提交 `--accept-pending-secret-rotation --reason --approved-by`，风险接受写入发布状态；轮换完成后该豁免失效。
 - `scripts/verify_remote_secret_isolation.py` 用同一随机 challenge 在 test/prod 目标机本地计算 HMAC，只传回键名与摘要比较结果；禁止复制或输出秘密原文。Agent Token 的实际轮换仍按测试 Worker→正式控制面→正式 Worker 顺序交给既有 GPU operator。
+- 轮换完成状态只能通过 `release.py credential-isolation-complete` 写入。命令要求一小时内生成的无值证据、全部目标健康、旧凭据已撤销、批准人、`--confirm-prod` 与 `--execute`，并在 test/prod 配置根保存不可变审计；不得手工创建状态 marker。
 - 首期只覆盖 control-plane 和 Public Web。LAN AIO/RunPod 继续使用单卡 operator/canary 流程。
 
 ## 后果

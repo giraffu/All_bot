@@ -119,6 +119,17 @@ GENERATION_MAINTENANCE_ARTIFACTS = {
     "qqcc-bot",
     "private-bot-worker",
 }
+REQUIRED_ISOLATED_SECRET_KEYS = {
+    "AGENT_SECRET_TOKEN",
+    "API_TOKEN",
+    "AUTH_TOKEN",
+    "DASHBOARD_SECRET_KEY",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+    "QQCC_CONFIG_SECRET_KEY",
+    "R2_ACCESS_KEY",
+    "R2_SECRET_KEY",
+}
 REQUIRED_ACCEPTANCE_CHECKS = {
     "health",
     "bot_interaction",
@@ -5221,6 +5232,177 @@ def require_pending_secret_rotation_acceptance(
         )
 
 
+def validate_credential_isolation_evidence(
+    evidence: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Validate a value-free, recent secret-isolation completion attestation."""
+
+    if set(evidence) != {
+        "schema_version",
+        "generated_at",
+        "isolation",
+        "health",
+        "old_credentials_revoked",
+    } or evidence.get("schema_version") != 1:
+        raise ReleaseError("credential isolation evidence schema is invalid")
+    try:
+        generated_at = datetime.fromisoformat(
+            str(evidence["generated_at"]).replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise ReleaseError("credential isolation evidence time is invalid") from exc
+    if generated_at.tzinfo is None:
+        raise ReleaseError("credential isolation evidence time must include timezone")
+    current = now or datetime.now(timezone.utc)
+    age = (current - generated_at.astimezone(timezone.utc)).total_seconds()
+    if age < -300 or age > 3600:
+        raise ReleaseError("credential isolation evidence is stale or from the future")
+    isolation = evidence.get("isolation")
+    if not isinstance(isolation, Mapping) or set(isolation) != {
+        "checked_keys",
+        "reused_keys",
+    }:
+        raise ReleaseError("credential isolation challenge evidence is invalid")
+    checked = isolation.get("checked_keys")
+    reused = isolation.get("reused_keys")
+    if (
+        not isinstance(checked, list)
+        or not all(isinstance(key, str) for key in checked)
+        or not REQUIRED_ISOLATED_SECRET_KEYS.issubset(set(checked))
+        or not isinstance(reused, list)
+        or reused
+    ):
+        raise ReleaseError("credential isolation challenge is incomplete or reused")
+    health = evidence.get("health")
+    required_health = {"test_worker", "prod_control_plane", "prod_workers"}
+    if (
+        not isinstance(health, Mapping)
+        or set(health) != required_health
+        or any(health.get(name) is not True for name in required_health)
+    ):
+        raise ReleaseError("credential isolation health evidence is incomplete")
+    if evidence.get("old_credentials_revoked") is not True:
+        raise ReleaseError("old credentials have not been confirmed revoked")
+    return {
+        "schema_version": 1,
+        "generated_at": generated_at.astimezone(timezone.utc).isoformat(),
+        "isolation": {
+            "checked_keys": sorted(set(checked)),
+            "reused_keys": [],
+        },
+        "health": {name: True for name in sorted(required_health)},
+        "old_credentials_revoked": True,
+    }
+
+
+def _write_remote_credential_isolation_status(
+    host: str,
+    environment: str,
+    status: str,
+    audit: Mapping[str, Any],
+) -> None:
+    if status not in {"pending", "credential-isolation-complete"}:
+        raise ReleaseError("invalid credential isolation status")
+    root = f"/var/lib/allbot/config/{environment}"
+    program = r'''import hashlib,json,os,sys,tempfile
+root,status,environment=sys.argv[1:]
+payload=sys.stdin.read()
+audit=json.loads(payload)
+current_path=os.path.join(root,'current.json')
+if not os.path.isfile(current_path):
+    raise SystemExit('active service environment state is missing')
+current=json.load(open(current_path,encoding='utf-8'))
+if current.get('environment') != environment:
+    raise SystemExit('active service environment identity mismatch')
+os.makedirs(os.path.join(root,'credential-isolation-audit'),mode=0o700,exist_ok=True)
+if status == 'credential-isolation-complete':
+    digest=hashlib.sha256(payload.encode()).hexdigest()
+    audit_path=os.path.join(root,'credential-isolation-audit',digest+'.json')
+    if os.path.exists(audit_path) and open(audit_path,encoding='utf-8').read() != payload:
+        raise SystemExit('credential isolation audit is immutable')
+    if not os.path.exists(audit_path):
+        fd,tmp=tempfile.mkstemp(prefix='.audit-',dir=os.path.dirname(audit_path))
+        with os.fdopen(fd,'w',encoding='utf-8') as handle:
+            handle.write(payload)
+        os.chmod(tmp,0o600); os.replace(tmp,audit_path)
+current['credential_isolation']=status
+for path,text in (
+    (current_path,json.dumps(current,sort_keys=True,indent=2)+'\n'),
+    (os.path.join(root,'credential-isolation-status'),status+'\n'),
+):
+    fd,tmp=tempfile.mkstemp(prefix='.status-',dir=root)
+    with os.fdopen(fd,'w',encoding='utf-8') as handle:
+        handle.write(text)
+    os.chmod(tmp,0o600); os.replace(tmp,path)
+'''
+    encoded = base64.b64encode(program.encode()).decode("ascii")
+    remote_command = " ".join(
+        shlex.quote(value)
+        for value in (
+            "python3",
+            "-c",
+            f"exec(__import__('base64').b64decode('{encoded}').decode())",
+            root,
+            status,
+            environment,
+        )
+    )
+    result = _run(
+        ["ssh", "-o", "BatchMode=yes", host, remote_command],
+        input_text=json.dumps(audit, sort_keys=True, indent=2) + "\n",
+        check=False,
+    )
+    if result.returncode:
+        raise ReleaseError(
+            f"failed to write credential isolation status for {environment}"
+        )
+
+
+def complete_credential_isolation(
+    args: argparse.Namespace, evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    completed_at = datetime.now(timezone.utc).isoformat()
+    audit = {
+        "schema_version": 1,
+        "status": "credential-isolation-complete",
+        "completed_at": completed_at,
+        "approved_by": args.approved_by,
+        "evidence": dict(evidence),
+    }
+    audit_sha256 = hashlib.sha256(
+        json.dumps(audit, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    audit["audit_sha256"] = audit_sha256
+    targets = [
+        (args.test_host or ENVIRONMENT["test"]["host"], "test"),
+        (args.prod_host or ENVIRONMENT["prod"]["host"], "prod"),
+    ]
+    completed: list[tuple[str, str]] = []
+    try:
+        for host, environment in targets:
+            _write_remote_credential_isolation_status(
+                host, environment, "credential-isolation-complete", audit
+            )
+            completed.append((host, environment))
+    except ReleaseError as exc:
+        recovery_errors = []
+        for host, environment in reversed(completed):
+            try:
+                _write_remote_credential_isolation_status(
+                    host, environment, "pending", audit
+                )
+            except ReleaseError as recovery_error:
+                recovery_errors.append(str(recovery_error))
+        if recovery_errors:
+            raise ReleaseError(
+                "credential isolation completion failed and rollback is incomplete"
+            ) from exc
+        raise
+    return {"audit_sha256": audit_sha256, "completed_at": completed_at}
+
+
 def _test_rollback_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
     if args.command != "rollback" or args.env != "test":
         return
@@ -6485,6 +6667,13 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--remote-host")
     verify.add_argument("--confirm-short-observation", action="store_true")
     verify.add_argument("--execute", action="store_true")
+    isolation = subparsers.add_parser("credential-isolation-complete")
+    isolation.add_argument("--evidence", required=True)
+    isolation.add_argument("--approved-by", required=True)
+    isolation.add_argument("--test-host")
+    isolation.add_argument("--prod-host")
+    isolation.add_argument("--confirm-prod", action="store_true")
+    isolation.add_argument("--execute", action="store_true")
     return parser
 
 
@@ -6505,6 +6694,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "verify-test":
             _mark_test_verified(args)
+            return 0
+        if args.command == "credential-isolation-complete":
+            if not args.execute or not args.confirm_prod:
+                raise ReleaseError(
+                    "credential isolation completion requires --execute and --confirm-prod"
+                )
+            try:
+                raw_evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ReleaseError("credential isolation evidence is invalid") from exc
+            if not isinstance(raw_evidence, Mapping):
+                raise ReleaseError("credential isolation evidence is invalid")
+            evidence = validate_credential_isolation_evidence(raw_evidence)
+            result = complete_credential_isolation(args, evidence)
+            print(
+                json.dumps(
+                    {
+                        "status": "credential-isolation-complete",
+                        "approved_by": args.approved_by,
+                        **result,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
         if args.command == "deploy-module":
             if args.env != "prod" or args.track != "control-plane":

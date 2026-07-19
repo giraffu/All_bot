@@ -158,6 +158,11 @@ python scripts/release.py deploy-module --sha <main-sha> \
 python scripts/release.py deploy-module --module web-api --confirm-prod --execute \
   --accept-pending-secret-rotation --reason '<ticket/reason>' --approved-by '<name>'
 
+# 独立轮换窗口完成全部 test/prod 隔离和 Worker 验证后，受控关闭过渡状态
+python scripts/release.py credential-isolation-complete \
+  --evidence <value-free-isolation-evidence.json> \
+  --approved-by <name> --confirm-prod --execute
+
 # 完整发布/回滚仍保留分步接口
 scripts/release.py plan --env prod --sha <40-char-sha>
 scripts/release.py preflight --env prod --sha <40-char-sha>
