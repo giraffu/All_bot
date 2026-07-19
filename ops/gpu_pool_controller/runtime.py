@@ -39,6 +39,7 @@ LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
     separators=(",", ":"),
 )
 LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV = {
+    "COMFYUI_DIR": "/opt/ComfyUI",
     "SCAIL2_FACE_SWAP_V10_ENABLED": "true",
     "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL": "http://192.168.1.226:8188",
     "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW": "face_swap_v2.json",
