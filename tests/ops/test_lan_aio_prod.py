@@ -1498,12 +1498,26 @@ def test_gpu226_pornmaster_bf16_rollback_slot_keeps_isolated_manifest():
         "pornmaster_flux2_multi_edit_bf16",
     )
     assert profile.image_ref.endswith(
-        "comfy-runpod-pornmaster-flux2-edit:"
-        "20260628-pornmaster-flux2-edit-cu128-smallvae1"
+        "comfy-runpod-pornmaster-flux2-edit-baked:"
+        "20260716-pornmaster-flux2-edit-baked-runtime-v1"
     )
     assert profile.model_manifest_key == (
         "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
     )
+
+
+def test_lan_pornmaster_profiles_use_canonical_baked_runtime_image():
+    config = load_controller_config()
+    expected = (
+        "192.168.1.115:5000/allbot/"
+        "comfy-runpod-pornmaster-flux2-edit-baked:"
+        "20260716-pornmaster-flux2-edit-baked-runtime-v1"
+    )
+
+    for profile_id in ("pornmaster_flux2_edit", "pornmaster_flux2_edit_bf16"):
+        profile = config.profiles[profile_id]
+        assert profile.image_ref == expected
+        assert profile.all_in_one_image_ref == expected
 
 
 def test_disabled_heartbeat_accepts_declared_runtime_profile_for_bf16_candidate(
@@ -1871,6 +1885,7 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
             )
             self.controls: list[tuple[str, str, str, int | None]] = []
             self.ssh_commands: list[str] = []
+            self.pulled_slots: list[str] = []
             self.started_disabled_slots: list[str] = []
 
         def _set_control(
@@ -1899,6 +1914,10 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
             self.started_disabled_slots.extend(slot.id for slot in slots)
             return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
 
+        def pull_image(self, slots):
+            self.pulled_slots.extend(slot.id for slot in slots)
+            return {"ok": True, "action": "pull-image", "slot": slots[0].id}
+
     ops = RecordingOps()
 
     result = ops.recover_physical_slot(
@@ -1911,6 +1930,7 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
     assert result["action"] == "recover"
     assert result["selected_slot"] == "gpu-252-gpu0-image_to_video"
     assert result["start"]["action"] == "start-disabled"
+    assert ops.pulled_slots == ["gpu-252-gpu0-image_to_video"]
     assert ops.started_disabled_slots == ["gpu-252-gpu0-image_to_video"]
     assert "docker stop 'allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod'" in "\n".join(
         ops.ssh_commands
@@ -1933,6 +1953,7 @@ def test_lan_aio_recover_recreates_a_stale_candidate_from_catalog():
                 model_env_file=Path(".env.lan.model-cache.missing"),
             )
             self.ssh_commands: list[str] = []
+            self.pulled_slots: list[str] = []
             self.started_disabled_slots: list[str] = []
 
         def _set_control(self, *args, **kwargs):
@@ -1960,6 +1981,10 @@ def test_lan_aio_recover_recreates_a_stale_candidate_from_catalog():
             self.started_disabled_slots.extend(slot.id for slot in slots)
             return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
 
+        def pull_image(self, slots):
+            self.pulled_slots.extend(slot.id for slot in slots)
+            return {"ok": True, "action": "pull-image", "slot": slots[0].id}
+
     ops = RecordingOps()
 
     result = ops.recover_physical_slot(
@@ -1969,6 +1994,7 @@ def test_lan_aio_recover_recreates_a_stale_candidate_from_catalog():
     )
 
     assert result["start"]["action"] == "start-disabled"
+    assert ops.pulled_slots == ["gpu-252-gpu0-image_to_video"]
     assert ops.started_disabled_slots == ["gpu-252-gpu0-image_to_video"]
     assert not any(command.startswith("docker start ") for command in ops.ssh_commands)
 
