@@ -1506,6 +1506,40 @@ def test_gpu226_pornmaster_bf16_rollback_slot_keeps_isolated_manifest():
     )
 
 
+def test_gpu252_pornmaster_bf16_candidate_targets_replacement_card_and_bf16_manifest():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-252-gpu1-pornmaster_flux2_edit_bf16"
+    ]
+    profile = ops.config.profiles[slot.target_profile_id]
+    rendered = ops.render_compose(slot)
+
+    assert slot.enabled is True
+    assert slot.phase == "catalog_ready"
+    assert slot.retargetable is True
+    assert slot.gpu_device_id == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
+    assert slot.host_port == 8191
+    assert slot.agent_id == "lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_bf16_01"
+    assert slot.target_task_types == (
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
+    )
+    assert profile.image_ref.endswith(
+        "comfy-runpod-pornmaster-flux2-edit-baked:"
+        "20260716-pornmaster-flux2-edit-baked-runtime-v1"
+    )
+    assert profile.model_manifest_key == (
+        "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
+    )
+    assert "--lowvram" in rendered
+
+
 def test_lan_pornmaster_profiles_use_canonical_baked_runtime_image():
     config = load_controller_config()
     expected = (

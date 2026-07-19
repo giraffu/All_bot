@@ -237,6 +237,26 @@ slots:
     rollout_order: 34
     notes: Candidate lower-VRAM PornMaster Flux2 edit canary for the RMA replacement gpu-252 GPU1 card, pinned to UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The user selected this profile on 2026-07-19 after the physical GPU swap; keep SCAIL-2 and Wan22 maintenance-disabled and stop the canary on any new Xid 119/154.
 
+  - id: gpu-252-gpu1-pornmaster_flux2_edit_bf16
+    enabled: false
+    phase: candidate
+    retargetable: true
+    assignment_id: lan-252-8189-worker-05
+    target_profile_id: pornmaster_flux2_edit_bf16
+    target_task_types:
+      - pornmaster_flux2_edit_bf16
+      - pornmaster_flux2_multi_edit_bf16
+    gpu_index: 1
+    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: false
+    agent_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_bf16_01
+    container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit_bf16-prod
+    remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-pornmaster-flux2-edit-bf16
+    rollout_order: 35
+    notes: Candidate BF16 PornMaster Flux2 edit worker for the RMA replacement gpu-252 GPU1 card. It uses the baked PornMaster runtime, the isolated BF16 model manifest, and only the BF16 single/multiple task types; stop the canary on any new Xid 119/154.
+
   - id: gpu-252-gpu1-i2i_pro
     enabled: true
     phase: prod_enabled

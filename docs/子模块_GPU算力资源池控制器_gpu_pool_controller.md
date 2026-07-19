@@ -153,6 +153,8 @@ GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才�
 
 2026-07-12 为 gpu-226 GPU0 新增 cache-only `pornmaster_flux2_edit_bf16` 候选：LAN 镜像复用 `20260716-pornmaster-flux2-edit-baked-runtime-v1`，独立 manifest 为 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`，主权重是 Civitai V4 turbo BF16（SHA-256 `5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e`），并复用现有 Qwen fp8 text encoder 与 small-decoder VAE。该候选现声明 `pornmaster_flux2_edit_bf16` 与 `pornmaster_flux2_multi_edit_bf16` 两个内部执行类型：单图复用 single workflow 并切换 UNet 节点 100，双图复用 multiple workflow 的输入节点 17/29 并切换 UNet 节点 9；不会承接现有 fp8 的 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit` 队列。镜像和三文件缓存已通过 fleet `pull-image` / `warm-cache` 准备完成；是否启用仍由单卡 operator 流程决定。
 
+2026-07-19 为 `gpu-252:gpu1` 增加精确 BF16 候选 `gpu-252-gpu1-pornmaster_flux2_edit_bf16`，固定 replacement UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`、host `8191` 和独立 agent `lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_bf16_01`。LAN 渲染必须与 RunPod BF16 契约共用 `--lowvram`，只声明 BF16 single/multiple 两类任务，并使用 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`；基础 `pornmaster_flux2_edit` slot 不能替代 BF16 容量。
+
 LAN AIO 与 RunPod 的单卡切换、缓存、recover/restart 是独立 GPU 执行面事务，不与 control-plane/test-train 发布绑定，也不为此部署无关服务。已有 canonical digest 的选择和复制由 GPU operator 直接执行；代码/catalog 变更继续留 Git 审计，但运行态是否可变更只由当次单卡 live/ledger/catalog、digest、健康、队列和 Xid 门禁决定。
 
 同日 14:10 Asia/Shanghai，用户明确批准后已把 gpu-226 GPU0 从 `image_to_video` 切换为 `pornmaster_flux2_edit_bf16` 正式接单。helper 等待在途视频任务自然完成，通过 Docker health、disabled heartbeat、旧 GPU 进程清空和 enable gate；当前 worker 唯一声明类型为 `pornmaster_flux2_edit_bf16`，共享 runtime metadata `pornmaster_flux2_edit`，ComfyUI `/queue` 为空。未运行生成 canary；现有 fp8 single/multi 队列与 worker 未受影响。

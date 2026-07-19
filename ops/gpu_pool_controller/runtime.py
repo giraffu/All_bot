@@ -10,6 +10,7 @@ from .config_loader import ControllerConfig
 from .runpod_profile_catalog import (
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
 )
 from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProfile
 
@@ -654,6 +655,10 @@ class RuntimePlanner:
         ]
         if profile.runtime_profile in LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES:
             args.append("--disable-dynamic-vram")
+        if profile.id == "pornmaster_flux2_edit_bf16":
+            args.extend(
+                shlex.split(RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS)
+            )
         return " ".join(args)
 
     def build_dry_run_action(

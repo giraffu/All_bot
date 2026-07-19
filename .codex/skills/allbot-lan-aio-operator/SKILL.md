@@ -71,6 +71,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 切换前必须确认当前 slot 无 running task；等待自然空闲，不强杀任务。
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 不允许直接 takeover，除非先通过配置和验证解除阻断。
 - `wan22_video_v2` 在 32GB 卡上有 OOM 历史；启用前必须确认 state 文件和 docs 没有阻断说明。
+- PornMaster BF16 必须选择精确 `pornmaster_flux2_edit_bf16` slot，核对 BF16 single/multiple task types、独立 BF16 manifest 和 `--lowvram`；基础 `pornmaster_flux2_edit` Worker 不能承接 BF16 队列。
 - helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时停止并报告。
 - `takeover/recover/restart-aio/warm-cache/pull-image` 等 mutation 先持有本地单实例锁并通过 live/ledger/catalog 三方门禁；未完成 operation 阻止后续 mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
