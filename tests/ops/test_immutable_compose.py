@@ -505,7 +505,9 @@ def test_release_postgres_integration_gate_uses_isolated_migrated_database():
     assert (
         "python -m pytest -vv --maxfail=1 --durations=20 tests/integration" in workflow
     )
-    assert "needs: [python-tests, postgres-integration-tests" in workflow
+    assert "  ci-gate:\n" in workflow
+    assert "      - python-tests\n" in workflow
+    assert "      - postgres-integration-tests\n" in workflow
 
 
 def test_release_workflow_gates_pull_requests_without_publishing_images():
@@ -517,8 +519,12 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     )
 
     assert "  pull_request:\n" in workflow
+    assert "python scripts/classify_ci_change.py" in workflow
+    assert "needs.change-scope.outputs.requires_full_ci == 'true'" in workflow
     assert "if: ${{ false }}" in workflow
     assert "workflow_run:" in modular
+    assert "python scripts/classify_ci_change.py" in modular
+    assert "needs.change-scope.outputs.requires_full_ci == 'true'" in modular
     assert 'workflows: ["Immutable control-plane release"]' in modular
     assert "github.event.workflow_run.conclusion == 'success'" in modular
     assert "github.event.workflow_run.event == 'push'" in modular

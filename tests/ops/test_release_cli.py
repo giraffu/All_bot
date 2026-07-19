@@ -751,6 +751,33 @@ def test_dashboard_shared_schemas_roll_both_dashboard_consumers():
     assert impact.unknown_paths == []
 
 
+def test_repository_governance_gate_paths_have_no_runtime_release_impact():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "docs/knowledge_base_audit_matrix.md",
+            ".codex/skills/allbot-ops-deployment/SKILL.md",
+            ".github/workflows/control-plane-release.yml",
+            "deploy/release-policy.yml",
+            "scripts/classify_ci_change.py",
+            "scripts/doc_quality_checker.py",
+            "scripts/manage_ai_workspaces.py",
+            "scripts/release_strategy.py",
+            "scripts/validate_upstream_ci_run.py",
+            "tests/ops/test_classify_ci_change.py",
+        ],
+    )
+
+    assert impact.level == "none"
+    assert impact.services == set()
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+    assert impact.matched_rules == ["non-runtime"]
+
+
 def test_qqcc_control_plane_policy_limits_release_to_qqcc_runtime_closure():
     module = _load_module()
     policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
@@ -2544,7 +2571,7 @@ def test_prod_execute_requires_explicit_confirmation_before_other_checks(tmp_pat
     assert "--confirm-prod" in result.stderr
 
 
-def test_test_acceptance_requires_same_digest_and_24_hour_observation():
+def test_test_acceptance_requires_same_digest_and_a_positive_validation_window():
     module = _load_module()
     manifest = _manifest()
     completed = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -2552,7 +2579,7 @@ def test_test_acceptance_requires_same_digest_and_24_hour_observation():
         "git_sha": FULL_SHA,
         "images": manifest["images"],
         "vendor_images": manifest["vendor_images"],
-        "observation_started_at": (completed - timedelta(hours=24)).isoformat(),
+        "observation_started_at": (completed - timedelta(minutes=1)).isoformat(),
         "completed_at": completed.isoformat(),
         "approved_by": "ops",
         "checks": {key: True for key in module.REQUIRED_ACCEPTANCE_CHECKS},
@@ -2560,8 +2587,8 @@ def test_test_acceptance_requires_same_digest_and_24_hour_observation():
 
     module.validate_test_acceptance(evidence, manifest)
 
-    evidence["completed_at"] = (completed - timedelta(hours=1)).isoformat()
-    with pytest.raises(module.ReleaseError, match="24 hours"):
+    evidence["images"] = {**manifest["images"], "app": "invalid-digest"}
+    with pytest.raises(module.ReleaseError, match="image digests"):
         module.validate_test_acceptance(evidence, manifest)
 
 
@@ -2582,7 +2609,7 @@ def test_v2_public_web_acceptance_only_requires_its_selected_module_checks():
         "git_sha": FULL_SHA,
         "track": "control-plane",
         "artifacts": {"public-web": checksum},
-        "observation_started_at": (completed - timedelta(hours=24)).isoformat(),
+        "observation_started_at": (completed - timedelta(minutes=1)).isoformat(),
         "completed_at": completed.isoformat(),
         "approved_by": "owner",
         "checks": {
@@ -2595,7 +2622,7 @@ def test_v2_public_web_acceptance_only_requires_its_selected_module_checks():
     module.validate_test_acceptance(evidence, manifest)
 
 
-def _short_observation_evidence(module, manifest, *, completed=None):
+def _acceptance_evidence(module, manifest, *, completed=None):
     completed = completed or datetime.now(timezone.utc) - timedelta(minutes=1)
     return {
         "git_sha": FULL_SHA,
@@ -2608,109 +2635,45 @@ def _short_observation_evidence(module, manifest, *, completed=None):
     }
 
 
-def test_short_observation_requires_cli_confirmation_evidence_flag_and_reason():
+def test_acceptance_has_no_minimum_duration_or_override_contract():
     module = _load_module()
     manifest = _manifest()
-    evidence = _short_observation_evidence(module, manifest)
+    evidence = _acceptance_evidence(module, manifest)
 
-    with pytest.raises(module.ReleaseError, match="24 hours"):
-        module.validate_test_acceptance(evidence, manifest)
-
-    with pytest.raises(module.ReleaseError, match="evidence flag"):
-        module.validate_test_acceptance(
-            evidence,
-            manifest,
-            confirm_short_observation=True,
-        )
-
-    evidence["short_observation_override"] = True
-    evidence["override_reason"] = ""
-    with pytest.raises(module.ReleaseError, match="override_reason"):
-        module.validate_test_acceptance(
-            evidence,
-            manifest,
-            confirm_short_observation=True,
-        )
-
-    evidence["override_reason"] = "User approved promotion after representative smoke"
-    with pytest.raises(module.ReleaseError, match="explicit CLI confirmation"):
-        module.validate_test_acceptance(evidence, manifest)
-
-
-def test_short_observation_override_keeps_time_and_smoke_guards():
-    module = _load_module()
-    manifest = _manifest()
-    evidence = _short_observation_evidence(module, manifest)
-    evidence.update(
-        short_observation_override=True,
-        override_reason="User approved promotion after representative smoke",
-    )
-
-    evidence["observation_started_at"] = evidence["completed_at"]
-    with pytest.raises(module.ReleaseError, match="after observation_started_at"):
-        module.validate_test_acceptance(
-            evidence,
-            manifest,
-            confirm_short_observation=True,
-        )
-
-    future = datetime.now(timezone.utc) + timedelta(minutes=5)
-    evidence["observation_started_at"] = (future - timedelta(hours=1)).isoformat()
-    evidence["completed_at"] = future.isoformat()
-    with pytest.raises(module.ReleaseError, match="cannot be in the future"):
-        module.validate_test_acceptance(
-            evidence,
-            manifest,
-            confirm_short_observation=True,
-        )
-
-    evidence = _short_observation_evidence(module, manifest)
-    evidence.update(
-        short_observation_override=True,
-        override_reason="User approved promotion after representative smoke",
-    )
-    evidence["checks"]["video_task"] = False
-    with pytest.raises(module.ReleaseError, match="video_task"):
-        module.validate_test_acceptance(
-            evidence,
-            manifest,
-            confirm_short_observation=True,
-        )
-
-
-def test_short_observation_override_returns_auditable_acceptance():
-    module = _load_module()
-    manifest = _manifest()
-    evidence = _short_observation_evidence(module, manifest)
-    evidence.update(
-        short_observation_override=True,
-        override_reason="User approved promotion after representative smoke",
-    )
-
-    acceptance = module.validate_test_acceptance(
-        evidence,
-        manifest,
-        confirm_short_observation=True,
-    )
+    acceptance = module.validate_test_acceptance(evidence, manifest)
 
     assert acceptance == {
         "approved_by": "ops",
         "completed_at": evidence["completed_at"],
         "observation_started_at": evidence["observation_started_at"],
         "observation_duration_seconds": 7200,
-        "short_observation_override": True,
-        "override_reason": "User approved promotion after representative smoke",
     }
 
 
-def test_mark_test_verified_persists_short_observation_audit(monkeypatch, tmp_path):
+def test_acceptance_duration_keeps_time_and_smoke_guards():
     module = _load_module()
     manifest = _manifest()
-    evidence = _short_observation_evidence(module, manifest)
-    evidence.update(
-        short_observation_override=True,
-        override_reason="User approved promotion after representative smoke",
-    )
+    evidence = _acceptance_evidence(module, manifest)
+    evidence["observation_started_at"] = evidence["completed_at"]
+    with pytest.raises(module.ReleaseError, match="after observation_started_at"):
+        module.validate_test_acceptance(evidence, manifest)
+
+    future = datetime.now(timezone.utc) + timedelta(minutes=5)
+    evidence["observation_started_at"] = (future - timedelta(hours=1)).isoformat()
+    evidence["completed_at"] = future.isoformat()
+    with pytest.raises(module.ReleaseError, match="cannot be in the future"):
+        module.validate_test_acceptance(evidence, manifest)
+
+    evidence = _acceptance_evidence(module, manifest)
+    evidence["checks"]["video_task"] = False
+    with pytest.raises(module.ReleaseError, match="video_task"):
+        module.validate_test_acceptance(evidence, manifest)
+
+
+def test_mark_test_verified_persists_actual_validation_duration(monkeypatch, tmp_path):
+    module = _load_module()
+    manifest = _manifest()
+    evidence = _acceptance_evidence(module, manifest)
     manifest_path = tmp_path / "release.json"
     evidence_path = tmp_path / "acceptance.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -2737,16 +2700,13 @@ def test_mark_test_verified_persists_short_observation_audit(monkeypatch, tmp_pa
         evidence=str(evidence_path),
         remote_host="test-host",
         execute=True,
-        confirm_short_observation=True,
     )
 
     module._mark_test_verified(args)
 
     persisted_state = json.loads(writes[1])
     assert persisted_state["status"] == "verified"
-    assert persisted_state["acceptance"]["short_observation_override"] is True
     assert persisted_state["acceptance"]["observation_duration_seconds"] == 7200
-    assert persisted_state["acceptance"]["override_reason"].startswith("User approved")
 
 
 def test_test_acceptance_rejects_runtime_when_web_was_skipped():
