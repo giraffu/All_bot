@@ -29,7 +29,9 @@
 
 CI release index 记录 `validation.mode=full|build-only|promoted`。新批次使用 `full`：批次 PR 合入 main 后，上游 main CI 全绿才触发一次模块构建；`build-only` 明确记录 tests skipped，只能经合法 direct/emergency、显式 `--skip-gate ci-tests`、原因和批准人消费；`promoted` 仅用于读取旧 candidate promotion 历史。
 
-并发槽位不再发布独立 candidate。功能分支 handoff 后由集成 AI 一次组合为 release batch，只创建一个 main PR。main bundle 固定发布到 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；`.github/workflows/modular-release-v2.yml` 只监听成功的 main push CI，不监听 test-train，也不在 PR 阶段发布容器。同一 main SHA tag 不可覆盖。
+并发槽位不再发布独立 candidate。功能分支 handoff 后由集成 AI 一次组合为 release batch，只创建一个 main PR。main bundle 固定发布到 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；`.github/workflows/modular-release-v2.yml` 通常监听成功的 main push CI，不监听 test-train，也不在 PR 阶段发布容器。同一 main SHA tag 不可覆盖。
+
+GitHub 未投递 main push workflow 时，允许对当前受保护 main 精确 head 手动运行 `Immutable control-plane release` 作为事件通道恢复。模块化 workflow 不信任事件结论本身：`scripts/validate_upstream_ci_run.py` 使用 GitHub Actions API 核对 run repository、workflow name/path、event、main branch、精确 SHA、completed/success，并要求 Web、Dashboard、PostgreSQL 与九个 Python shard 全部成功；目标 SHA还必须等于当时 `origin/main` head 且可达。任一缺项、失败 job 或陈旧 SHA 都在镜像构建前阻断。该恢复不改变 Modular workflow 自身的手动入口：它仍只能选择 `build-only`，不能宣称完整测试。
 
 用户要求测试时，`release.py` 把该 main bundle 的精确 digest/checksum 部署到云测试；standard artifact 经 `verify-test` 写入 main-channel retained history。生产 standard preflight 按 artifact 名称和 exact digest 查找这份 evidence；direct/emergency 只能按风险策略显式豁免，不能伪装 tested。旧 test-candidate、approval 和 promotion artifact 继续可读以支持历史回滚取证，但不再创建新记录。
 

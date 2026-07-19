@@ -18,7 +18,7 @@ Accepted。取代 ADR 0005 的串行 test-train 决策和 ADR 0007 的 candidate
 - 功能 AI 完成本地测试、提交和推送后生成不可变 handoff；handoff 绑定 slot、远端 branch、完整 head SHA 和 base SHA，并立即释放槽位。
 - 功能任务不创建逐成员 test-train PR，也不触发 release bundle 构建或共享测试站部署。
 - 集成 AI 冻结若干 handoff 为一个不可覆盖的 release batch JSON，从冻结 main base 一次组合，运行批次测试，只创建一个 `release-batch -> main` PR。
-- PR CI 负责代码门禁但不发布容器。main push 的可信 CI 成功后，模块化 workflow 才为该 main SHA 构建一次 main-channel bundle；未变化 artifact 可从既有 main bundle 复用。
+- PR CI 负责代码门禁但不发布容器。main push 的可信 CI 成功后，模块化 workflow 才为该 main SHA 构建一次 main-channel bundle；未变化 artifact 可从既有 main bundle 复用。若托管平台丢失 push workflow 事件，只允许手动重跑当前 main 精确 head 的同一上游 CI，并由模块化 workflow 重新验证完整 test job 集；模块化 workflow 自身的手动入口仍只有 build-only 权限。
 - main bundle 的影响判定按 artifact track 隔离：控制面、Public Web、文档和发布工具变化不调度 GPU 构建；GPU artifact/profile 或执行代码变化继续通过独立 manifest、canary 和 operator 链路发布。
 - 用户需要测试环境时，再把该 main bundle 部署到唯一云测试站。standard artifact 通过 `verify-test` 写入 exact-digest main-channel evidence；direct artifact 按风险策略明确豁免。
 - 测试失败通过新的 handoff 和新的 main 批次 forward-fix，不改写 main 历史。
@@ -45,6 +45,7 @@ Accepted。取代 ADR 0005 的串行 test-train 决策和 ADR 0007 的 candidate
 - `scripts/manage_ai_workspaces.py`
 - `.github/workflows/control-plane-release.yml`
 - `.github/workflows/modular-release-v2.yml`
+- `scripts/validate_upstream_ci_run.py`
 - `scripts/release.py`
 - `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
 - `.codex/skills/allbot-concurrent-workspaces/SKILL.md`

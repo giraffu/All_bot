@@ -65,7 +65,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 ## 6. 红线与最小验证
 
-- 禁止逐功能分支自动触发容器构建；`modular-release-v2.yml` 的自动入口只能来自 main push 的成功上游 CI。
+- 禁止逐功能分支自动触发容器构建；`modular-release-v2.yml` 的 full 自动入口只能来自 main 上游 CI 的成功 `push`，或在 push 事件丢失后对当前 main 精确 head 手动重跑同一上游 workflow。恢复重跑必须再次通过完整预期 test jobs、workflow 元数据和当前 main head 验证；Modular workflow 自身的 `workflow_dispatch` 永远只产生 `build-only`。
 - 禁止 direct push/force-push main；批次只能通过一个受保护 PR 合并。
 - 禁止把旧 `test-candidate` channel 当作新批次入口。历史 candidate/promotion 工具只作既有记录兼容，不再生成新候选。
 - 批次 PR 必须记录全部 handoff 身份、测试结果、影响 track/module、migration 和风险。
