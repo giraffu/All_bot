@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "eb31aa3f3b200a045d2f8ffb20fd7e3837209ee2",
+  "batch": "prod-dashboard-central-dns-20260720",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-prod-dashboard-central-dns-20260720",
+  "members": [
+    {
+      "base_sha": "eb31aa3f3b200a045d2f8ffb20fd7e3837209ee2",
+      "branch": "codex/a-fix-prod-dashboard-central-api-alias",
+      "head": "1e08bbe2d90a0db7397cd8ee0244a053d92118f5",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
