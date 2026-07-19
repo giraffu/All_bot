@@ -87,7 +87,7 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 
 `config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的键和契约本身变化影响全部服务，强制完整维护、数据库备份与单 Alembic head。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
 
-正式机尚无任何逐服务投影、但用户只授权首次滚动更新 Dashboard 时，可以先执行 `config-plan --env prod --module dashboard`，确认影响集严格只有 `dashboard-backend` / `dashboard-frontend` 后，再以 `config-apply --env prod --module dashboard --confirm-prod --execute` 暂存这两份初始投影。该受限入口只写权限 `600` 的投影和激活指针，状态为 `config-staged`；不得开启维护、备份数据库、调用 Compose 或重启容器。它只接受 `dashboard`，只允许无 active revision 的首次暂存，未知键、目标缺键、闭包逃逸或已有 active revision 全部拒绝。随后必须由同一可信 main bundle 的 `deploy-module --module dashboard` 完成滚动替换并核对非目标容器不变。完整 `config-plan` 会把尚未投影的其它服务继续报告为 drift，不能把 Dashboard 局部暂存伪装成全控制面配置收敛。
+正式机尚无任何逐服务投影、但用户只授权首次滚动更新 Dashboard 时，可以先执行 `config-plan --env prod --module dashboard`，确认影响集严格只有 `dashboard-backend` / `dashboard-frontend` 后，再以 `config-apply --env prod --module dashboard --confirm-prod --execute` 暂存这两份初始投影。该受限入口只写权限 `600` 的投影和激活指针，状态为 `config-staged`；不得开启维护、备份数据库、调用 Compose 或重启容器。它只接受 `dashboard`，只允许无 active revision 的首次暂存；正式宿主现存且不进入任何 Dashboard 投影的 12 个 legacy 键以代码内精确名称清单兼容并在结果中只输出键名，清单外未知键、目标缺键、闭包逃逸或已有 active revision 全部拒绝。不得为了通过局部暂存而删除仍可能被旧容器消费的宿主键。随后必须由同一可信 main bundle 的 `deploy-module --module dashboard` 完成滚动替换并核对非目标容器不变。完整 `config-plan` 会把尚未投影的其它服务继续报告为 drift，不能把 Dashboard 局部暂存伪装成全控制面配置收敛。
 
 数据库备份在容器 `/bin/sh` 中执行，URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
 
