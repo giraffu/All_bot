@@ -377,9 +377,14 @@ class RuntimePlanner:
         )
         runtime_root = comfy.runtime_root or "/srv/allbot/runpod-runtime"
         slot_id = comfy.slot_id or f"{node.id}-gpu{comfy.gpu_index or 0}"
+        workspace_key = profile.lan_workspace_key or profile.runtime_profile
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", workspace_key):
+            raise ValueError(
+                f"{profile.id} has invalid lan_workspace_key: {workspace_key!r}"
+            )
         workspace_host_dir = (
             f"{runtime_root.rstrip('/')}/slots/{slot_id}/profiles/"
-            f"{profile.runtime_profile}/workspace"
+            f"{workspace_key}/workspace"
         )
         model_cache_endpoint = (
             comfy.model_cache_endpoint or "http://192.168.1.115:9010"
