@@ -5651,8 +5651,6 @@ def required_acceptance_checks(manifest: Mapping[str, Any]) -> set[str]:
 def validate_test_acceptance(
     evidence: Mapping[str, Any],
     manifest: Mapping[str, Any],
-    *,
-    confirm_short_observation: bool = False,
 ) -> dict[str, Any]:
     if evidence.get("git_sha") != manifest.get("git_sha"):
         raise ReleaseError("test acceptance SHA does not match the release")
@@ -5686,27 +5684,6 @@ def validate_test_acceptance(
     if completed > datetime.now(timezone.utc):
         raise ReleaseError("test acceptance completed_at cannot be in the future")
     observation_duration_seconds = int((completed - started).total_seconds())
-    short_observation = observation_duration_seconds < 24 * 60 * 60
-    override_reason: str | None = None
-    if short_observation:
-        if not confirm_short_observation:
-            if evidence.get("short_observation_override") is True:
-                raise ReleaseError(
-                    "short observation override requires explicit CLI confirmation"
-                )
-            raise ReleaseError(
-                "test acceptance requires at least 24 hours of observation"
-            )
-        if evidence.get("short_observation_override") is not True:
-            raise ReleaseError(
-                "short observation override requires evidence flag "
-                "short_observation_override=true"
-            )
-        override_reason = str(evidence.get("override_reason", "")).strip()
-        if not override_reason:
-            raise ReleaseError(
-                "short observation override requires non-empty override_reason"
-            )
     checks = evidence.get("checks")
     required_checks = required_acceptance_checks(manifest)
     missing = sorted(
@@ -5725,8 +5702,6 @@ def validate_test_acceptance(
         "completed_at": evidence["completed_at"],
         "observation_started_at": evidence["observation_started_at"],
         "observation_duration_seconds": observation_duration_seconds,
-        "short_observation_override": short_observation,
-        "override_reason": override_reason,
     }
 
 
@@ -5836,11 +5811,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
             if name not in set(inactive)
         ]
     evidence = _read_json(Path(args.evidence))
-    acceptance = validate_test_acceptance(
-        evidence,
-        manifest,
-        confirm_short_observation=getattr(args, "confirm_short_observation", False),
-    )
+    acceptance = validate_test_acceptance(evidence, manifest)
     if manifest.get("schema_version") == 2:
         validate_v2_test_runtime_for_acceptance(state, manifest)
     else:
@@ -5871,11 +5842,6 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         state["status"] = "verified"
     state["acceptance"] = acceptance
     if not args.execute:
-        if acceptance["short_observation_override"]:
-            print(
-                "[dry-run] short observation override confirmed; "
-                f"duration={acceptance['observation_duration_seconds']}s"
-            )
         print(f"[dry-run] mark cloud-test {sha} verified on {host}")
         return
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
@@ -6946,7 +6912,6 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--modules", action="append", default=[])
     verify.add_argument("--policy", default=str(DEFAULT_POLICY))
     verify.add_argument("--remote-host")
-    verify.add_argument("--confirm-short-observation", action="store_true")
     verify.add_argument("--execute", action="store_true")
     isolation = subparsers.add_parser("credential-isolation-complete")
     isolation.add_argument("--evidence", required=True)

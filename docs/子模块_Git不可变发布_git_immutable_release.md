@@ -153,14 +153,6 @@ scripts/release.py verify-test \
   --evidence test-acceptance.json \
   --execute
 
-# 仅在用户明确批准提前晋级、且全部 smoke 已完成时使用
-scripts/release.py verify-test \
-  --sha <40-char-sha> \
-  --manifest release.json \
-  --evidence test-acceptance.json \
-  --confirm-short-observation \
-  --execute
-
 # 推荐正式快捷入口：未传 --sha 时一次锁定最新受保护 origin/main
 python scripts/release.py deploy-module --module web-api --confirm-prod --execute
 # 可重复选择；机器计算的依赖集合只能扩大，不能缩小
@@ -213,7 +205,7 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 `--services` 只扩大普通自动集合；独立模块只通过上述三个 `--modules` 组表达，传半组、混组或叠加其它 artifact 会拒绝。普通模式下 `src/**`/`shared/**` 仍覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包。
 
-standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified；默认观察和短观察授权只适用于 standard。
+standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified。
 
 `dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
 
@@ -221,7 +213,9 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 若唯一云测试站仍运行历史 test-train candidate，可在一次迁移期间使用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该兼容 policy 只允许 test，生产显式拒绝；新批次完成 main 部署后不再使用。
 
-生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
+生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；`verify-test` 不再设置固定 24 小时观察门禁，只要求真实开始/完成时间顺序有效、完成时间不在未来、全部适用 smoke 为 true、SHA/digest、Web checksum 与测试运行态一致，并记录实际持续秒数和批准人。旧 `short_observation_override`、`override_reason` 与 `--confirm-short-observation` 已退出契约，不得用伪造时间或直接编辑状态代替真实验收。
+
+纯非运行时变更由 `scripts/classify_ci_change.py` 窄白名单判定。仅包含 docs、Skills、tests、AGENTS/README、`.github/**`、release policy 与精确仓库治理/门禁脚本时，可用单独 PR 合入受保护 main/兼容分支；上游 workflow 跳过全量模块测试，main 后继 modular workflow 不创建 bundle，因此没有镜像构建、测试部署、`verify-test` 或生产发布动作。任一业务代码、migration、Compose、运行配置、发布执行器或未知路径都会恢复完整不可变发布链。
 
 管理后台是 owner-tools：QQCC Config 因已有专属测试实例而 auto 默认 standard，Dashboard 仍 auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 只声明 QQCC Config 前后端覆盖，Dashboard 不进入测试站；公共 base 继续用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
 

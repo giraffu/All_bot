@@ -40,12 +40,43 @@ env:
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
 
 jobs:
-  release:
+  change-scope:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       (github.event.workflow_run.event == 'push' ||
       github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-latest
+    outputs:
+      requires_full_ci: ${{ steps.classify.outputs.requires_full_ci }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+          fetch-depth: 2
+      - name: Classify runtime impact
+        id: classify
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          : > changed-paths.txt
+          if git rev-parse "${SOURCE_SHA}^" >/dev/null 2>&1; then
+            git diff --name-only "${SOURCE_SHA}^" "$SOURCE_SHA" > changed-paths.txt
+          fi
+          python scripts/classify_ci_change.py \
+            --changed-file changed-paths.txt \
+            --github-output "$GITHUB_OUTPUT"
+
+  release:
+    needs: change-scope
+    if: >-
+      needs.change-scope.outputs.requires_full_ci == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' ||
+      github.event.workflow_run.event == 'workflow_dispatch')))
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:

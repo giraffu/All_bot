@@ -52,7 +52,41 @@ env:
   DAILY_LIMIT: "10"
 
 jobs:
+  change-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      requires_full_ci: ${{ steps.classify.outputs.requires_full_ci }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Classify runtime impact
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = pull_request ] && [ -n "${PR_BASE_SHA:-}" ]; then
+            comparison_sha="$PR_BASE_SHA"
+          elif git rev-parse "${SOURCE_SHA}^" >/dev/null 2>&1; then
+            comparison_sha="${SOURCE_SHA}^"
+          else
+            comparison_sha=""
+          fi
+          : > changed-paths.txt
+          if [ -n "$comparison_sha" ]; then
+            git diff --name-only "$comparison_sha" "$SOURCE_SHA" > changed-paths.txt
+          fi
+          python scripts/classify_ci_change.py \
+            --changed-file changed-paths.txt \
+            --github-output "$GITHUB_OUTPUT"
+
   python-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_full_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -100,6 +134,8 @@ jobs:
           ${{ matrix.paths }}
 
   postgres-integration-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_full_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -163,6 +199,8 @@ jobs:
           python -m pytest -vv --maxfail=1 --durations=20 tests/integration
 
   web-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_full_ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -175,6 +213,8 @@ jobs:
         working-directory: frontend
 
   dashboard-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_full_ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -186,8 +226,36 @@ jobs:
       - run: npm install --global npm@10.9.2 && npm ci && npm test && npm run build
         working-directory: dashboard/frontend
 
+  ci-gate:
+    if: always()
+    needs:
+      - change-scope
+      - python-tests
+      - postgres-integration-tests
+      - web-tests
+      - dashboard-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the checks selected by change scope
+        env:
+          SCOPE_RESULT: ${{ needs.change-scope.result }}
+          REQUIRES_FULL_CI: ${{ needs.change-scope.outputs.requires_full_ci }}
+          PYTHON_RESULT: ${{ needs.python-tests.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-integration-tests.result }}
+          WEB_RESULT: ${{ needs.web-tests.result }}
+          DASHBOARD_RESULT: ${{ needs.dashboard-tests.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          if [ "$REQUIRES_FULL_CI" = true ]; then
+            [ "$PYTHON_RESULT" = success ]
+            [ "$POSTGRES_RESULT" = success ]
+            [ "$WEB_RESULT" = success ]
+            [ "$DASHBOARD_RESULT" = success ]
+          fi
+
   release:
-    needs: [python-tests, postgres-integration-tests, web-tests, dashboard-tests]
+    needs: ci-gate
     # Schema-v1 shared-image publishing is retired.  The workflow remains as
     # the test gate consumed by modular-release-v2.yml.
     if: ${{ false }}

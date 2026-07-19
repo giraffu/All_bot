@@ -16,6 +16,8 @@ A-H 并行开发
 
 代码集成和昂贵的容器构建以“批次”为单位，不再以“槽位成员”为单位。生产仍只消费受保护 main bundle，正式 mutation 仍需用户当次明确确认。
 
+纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据及精确仓库治理/门禁脚本；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 release batch/test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、发布执行器或未知路径都会恢复完整链路。
+
 ## 2. 固定目录和职责
 
 | 目录 | 职责 |
@@ -74,6 +76,8 @@ python scripts/manage_ai_workspaces.py batch-plan \
 - 只重建影响分析选中的 artifact，未变化 artifact 从最近 main bundle 复用；
 - main 涉及 GPU artifact 重建时必须有同 SHA 完整 attestation，否则 bundle 创建失败。
 
+两个 workflow 都先运行 `change-scope`。若分类为 `lightweight`，四组全量模块测试 job 会跳过，聚合 `ci-gate` 只核对分类成功；main 后继 modular workflow 同样只分类并跳过 release job，因此不会登录构建链、生成新容器或发布 bundle。空变更集和未知路径按 `runtime` 处理。
+
 `modular-release-v2.yml` 自身的手动 dispatch 没有测试恢复权限，始终只允许 `validation_mode=build-only`。陈旧 main SHA、缺失或失败的任一预期 test job、错误 workflow/event/branch/repository 都在构建前 fail closed。
 
 旧 `test-candidate`、freeze/approve 和 promotion workflow 不再是新发布入口。历史 bundle 和状态继续由兼容代码读取，但不能用于创建新批次。
@@ -102,4 +106,4 @@ python scripts/release.py deploy --env test --track control-plane --sha <main-sh
 
 ## 8. GitHub 保护
 
-`main` 禁止 direct push、force-push 和删除，要求批次 PR 与现有检查通过。`codex/test-train` 退出日常集成路径，可保留为历史兼容 ref，但不再接收功能 PR 或触发容器构建。
+`main` 禁止 direct push、force-push 和删除。运行时改动要求批次 PR 与完整检查；轻量改动可用单独 PR 和 change-scope/aggregate gate 合入。`codex/test-train` 退出日常运行时集成路径，可保留为历史兼容 ref；若仍需同步轻量治理改动，可直接合入且不得触发 candidate、容器构建或测试部署。
