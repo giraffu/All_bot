@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：独立模块的运行配置检查收口到机器定义的逐服务闭包；Dashboard `deploy-module` 只投影 Dashboard 前后端必填键，仍验证生产全局语义、env revision 与全部已激活投影完整性，因此非目标 main-bot 尚缺 canonical key 不再阻断 owner-only rolling，目标缺键/漂移/篡改仍 fail closed。`deploy/env.defaults` 与 legacy test compose 仅以当前精确 SHA256 加入独立发布 snapshot，任一内容变化恢复共享契约 blocker。事实源为 `release.py`、release policy、专项 TDD、不可变发布文档与 ops Skill。
+>
 > 2026-07-19：环境中立镜像扫描按 artifact 自身构建 SHA 去重：main workflow 的 `--only-source-sha` 必须精确等于 release index SHA，本批新构建镜像继续执行 Config.Env、文件系统与 test/prod 解析检查；复用控制面和仅作 Dashboard pin 索引的历史 GPU 镜像保留其原构建 CI 扫描证据，不在每个控制面 bundle 重拉超大镜像或错误执行控制面身份哨兵。事实源为环境中立校验器、模块化 workflow、专项 TDD、不可变发布文档与 ops Skill。
 >
 > 2026-07-19：main-first 控制面 bundle 的 GPU pin 清单改为从目标 main 全祖先中最近的完整 main-channel manifest 原样继承未变化 profile；保留每项精确 digest、artifact source/OCI revision 和模型证据，只用于 Dashboard 后续 RunPod operation 的完整 pin 注入，不触发 GPU build/test/deploy。真实 GPU 输入变化仍必须当前 main SHA attestation，历史基线不能满足；缺完整祖先、mutable ref、digest mismatch 或 catalog 集合不等均阻断 main bundle。事实源为模块化 workflow、`ci_release_v2.py`、专项 TDD、不可变发布文档与 ops Skill。
