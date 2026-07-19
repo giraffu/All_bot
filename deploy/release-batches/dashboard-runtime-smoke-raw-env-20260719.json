@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f03170581e9c9681ddeee09a6917e45d54e4739e",
+  "batch": "dashboard-runtime-smoke-raw-env-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-runtime-smoke-raw-env-20260719",
+  "members": [
+    {
+      "base_sha": "f03170581e9c9681ddeee09a6917e45d54e4739e",
+      "branch": "codex/a-fix-dashboard-runtime-smoke-and-raw-env",
+      "head": "c94ef0cf738f356e0ac9906adac86aec9bbe5015",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

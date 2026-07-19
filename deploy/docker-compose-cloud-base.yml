@@ -26,6 +26,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/central-api.env
         required: false
+        format: raw
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
       TZ: Asia/Shanghai
@@ -40,6 +41,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/web-api.env
         required: false
+        format: raw
     command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -54,6 +56,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/payment-api.env
         required: false
+        format: raw
     command: ["python", "src/payment_api_server.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -66,6 +69,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/dashboard-backend.env
         required: false
+        format: raw
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
       TZ: Asia/Shanghai
@@ -84,6 +88,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/dashboard-frontend.env
         required: false
+        format: raw
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
       DASHBOARD_GATEWAY_PORT: "8086"
@@ -104,6 +109,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-config-backend.env
         required: false
+        format: raw
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
       TZ: Asia/Shanghai
@@ -122,6 +128,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-config-frontend.env
         required: false
+        format: raw
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
       DASHBOARD_GATEWAY_PORT: "8088"
@@ -161,6 +168,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/main-bot.env
         required: false
+        format: raw
     command: ["python", "src/bot_main.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -173,6 +181,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/qqcc-bot.env
         required: false
+        format: raw
     command: ["python", "-m", "qqcc_bot.main"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -185,6 +194,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/private-bot-worker.env
         required: false
+        format: raw
     command: ["python", "-m", "qqcc_private_bot.worker"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -197,6 +207,7 @@ services:
     env_file:
       - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/paid-group-bot.env
         required: false
+        format: raw
     command: ["python", "-m", "paid_group_guard_bot"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs

@@ -26,6 +26,7 @@ def _projection_env_file(projection: str) -> list[dict[str, object]]:
                 f"{projection}.env"
             ),
             "required": False,
+            "format": "raw",
         }
     ]
 
@@ -76,6 +77,9 @@ def test_service_projection_files_are_optional_during_partial_project_parse():
         assert len(env_files) == 1, f"{name} must use one service projection"
         assert env_files[0].get("required") is False, (
             f"{name} projection must not block parsing an unrelated module"
+        )
+        assert env_files[0].get("format") == "raw", (
+            f"{name} projection must preserve literal dollar signs and hashes"
         )
         assert (
             str(env_files[0].get("path", "")).endswith(f"/{name}.env")
