@@ -914,11 +914,16 @@ def _transaction_state_path(
     )
 
 
+NON_SECRET_TRANSACTION_AUDIT_FIELDS = frozenset(
+    {"pending_secret_rotation_acceptance"}
+)
+
+
 def _assert_secret_free_transaction(value: Any, *, path: str = "transaction") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
             normalized = str(key).lower()
-            if any(
+            if normalized not in NON_SECRET_TRANSACTION_AUDIT_FIELDS and any(
                 marker in normalized
                 for marker in ("token", "secret", "password", "env_values")
             ):
