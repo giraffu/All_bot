@@ -80,7 +80,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 1. 读 XDG `current.yml` 找目标 `node_id + gpu_index`；首次迁移才读 legacy seed。
 2. 跑 `list --include-disabled` 和 `status --include-disabled`；确认 `state.status=passed`。
 3. 对目标端口查 `/queue`、`/system_stats`。
-4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。
+4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；普通 mutation 不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。唯一例外是目标物理槽没有任何 running catalog container 时，可用精确单槽 `recover --physical-slot ... --slot ... --execute` 收口；只允许 `live_current_missing`（可同时带 catalog revision 变化），SSH 不可达、槽位错配或未完成 operation 仍 fail closed。recover 遇到停机候选必须从当前 catalog 重渲染，禁止直接启动可能仍绑定旧 GPU UUID 的历史容器。
 
 ### 新增候选
 

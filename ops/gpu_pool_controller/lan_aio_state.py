@@ -306,6 +306,24 @@ class LanAioStateStore:
         )
         raise StateDriftError(f"LAN AIO mutation blocked by state drift: {kinds}")
 
+    @staticmethod
+    def assert_recovery_allowed(
+        report: Mapping[str, Any], physical_slots: set[str]
+    ) -> None:
+        if report.get("status") == "passed":
+            return
+        drift = list(report.get("drift") or [])
+        allowed_kinds = {"catalog_revision_mismatch", "live_current_missing"}
+        if any(item.get("kind") not in allowed_kinds for item in drift):
+            LanAioStateStore.assert_mutation_allowed(report)
+        missing_slots = {
+            str(item.get("physical_slot"))
+            for item in drift
+            if item.get("kind") == "live_current_missing"
+        }
+        if missing_slots != physical_slots:
+            LanAioStateStore.assert_mutation_allowed(report)
+
     def migrate_legacy_state(
         self,
         legacy: Mapping[str, Any],

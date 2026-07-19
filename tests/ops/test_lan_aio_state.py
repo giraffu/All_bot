@@ -311,6 +311,101 @@ def test_managed_mutation_blocks_before_handler_when_live_has_drift(tmp_path: Pa
     assert not (tmp_path / "state" / "history" / "blocked-mutation.json").exists()
 
 
+def test_managed_recover_can_restore_a_missing_current_runtime(tmp_path: Path):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+            self.live_calls = 0
+
+        def live_current_snapshot(self, physical_slots):
+            self.live_calls += 1
+            current = (
+                None
+                if self.live_calls == 1
+                else "gpu-252-gpu0-image_to_video"
+            )
+            return {
+                "current": {"gpu-252:gpu0": current},
+                "errors": {},
+                "observations": {},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": "0" * 64,
+            "physical_slots": {
+                "gpu-252:gpu0": {"current": {"slot_id": "gpu-252-gpu0-i2i_pro"}}
+            },
+        },
+        operation_id="bootstrap",
+    )
+    target = ops.slots["gpu-252-gpu0-image_to_video"]
+
+    result = ops.execute_managed_mutation(
+        action="recover",
+        slots=[ops.slots["gpu-252-gpu0-i2i_pro"]],
+        operation_id="recover-missing-runtime",
+        execute=lambda: {
+            "ok": True,
+            "selected_slot": target.id,
+            "recovery_status": "succeeded",
+        },
+    )
+
+    assert result["selected_slot"] == target.id
+    current = ops.state_store.load_current()
+    assert current is not None
+    assert current["catalog_sha256"] == ops.catalog_sha256
+    assert current["physical_slots"]["gpu-252:gpu0"]["current"]["slot_id"] == (
+        target.id
+    )
+
+
+def test_managed_recover_still_blocks_when_live_is_unavailable(tmp_path: Path):
+    class UnreachableOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+
+        def live_current_snapshot(self, physical_slots):
+            return {
+                "current": {"gpu-252:gpu0": None},
+                "errors": {"gpu-252:gpu0": "ssh unavailable"},
+                "observations": {},
+            }
+
+    ops = UnreachableOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-252:gpu0": {"current": {"slot_id": "gpu-252-gpu0-i2i_pro"}}
+            },
+        },
+        operation_id="bootstrap",
+    )
+
+    with pytest.raises(StateDriftError, match="live_unavailable"):
+        ops.execute_managed_mutation(
+            action="recover",
+            slots=[ops.slots["gpu-252-gpu0-i2i_pro"]],
+            operation_id="recover-unreachable-runtime",
+            execute=lambda: pytest.fail("unreachable target must not execute"),
+        )
+
+
 def test_managed_mutation_records_rolled_back_failure(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):

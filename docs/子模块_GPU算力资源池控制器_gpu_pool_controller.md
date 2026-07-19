@@ -241,9 +241,9 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 - 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
 - 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
 
-LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；只有 `state.status=passed` 才允许 mutation。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计。
+LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；普通 mutation 只有 `state.status=passed` 才允许。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后通常只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计；若目标物理槽没有任何 running catalog container，`state-reconcile` 无法建立明确 current，此时仅允许精确单槽 `recover` 处理 `live_current_missing`（可同时收口 catalog revision），SSH 不可达、槽位错配和未完成 operation 仍阻断。
 
-首次启用 ledger 时运行 `state-init --legacy-state-file <frozen-or-operator-copy> --execute` 并检查 status。冻结 seed 已包含 2026-07-17 的交接事实：`gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro` 并绑定各自 UUID，`gpu-002` GPU1 从 `image_to_video` 切到 `i2i_pro`，且 image_to_video/PornMaster 保留为同卡回切候选；这些值只用于首次迁移，不能替代当次 live 核对。普通 `takeover/recover/restart-aio/warm-cache/pull-image` 持有本地单实例锁，成功后再次 live 验证，再原子替换 `current.yml` 并完成 history；失败和自动回滚同样写 history，current 不会提前前移。
+首次启用 ledger 时运行 `state-init --legacy-state-file <frozen-or-operator-copy> --execute` 并检查 status。冻结 seed 已包含 2026-07-17 的交接事实：`gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro` 并绑定各自 UUID，`gpu-002` GPU1 从 `image_to_video` 切到 `i2i_pro`，且 image_to_video/PornMaster 保留为同卡回切候选；这些值只用于首次迁移，不能替代当次 live 核对。普通 `takeover/recover/restart-aio/warm-cache/pull-image` 持有本地单实例锁，成功后再次 live 验证，再原子替换 `current.yml` 并完成 history；失败和自动回滚同样写 history，current 不会提前前移。`recover` 对 missing/stopped 候选统一调用 `start-disabled` 从当前 catalog 重渲染并清理安全 stale container，不直接 `docker start` 历史容器，避免沿用旧 GPU UUID/device request。
 
 2026-06-18 阶段能力口径：
 

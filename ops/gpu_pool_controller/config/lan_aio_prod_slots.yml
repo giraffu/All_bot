@@ -216,15 +216,15 @@ slots:
 
   - id: gpu-252-gpu1-pornmaster_flux2_edit
     enabled: false
-    phase: maintenance_disabled
-    retargetable: false
+    phase: candidate
+    retargetable: true
     assignment_id: lan-252-8189-worker-05
     target_profile_id: pornmaster_flux2_edit
     target_task_types:
       - pornmaster_flux2_single_edit
       - pornmaster_flux2_multi_edit
     gpu_index: 1
-    gpu_device_id: GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
+    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
     host_port: 8191
     legacy_health_port: 8191
     legacy_preflight_required: false
@@ -234,8 +234,8 @@ slots:
     old_runtime_container: allbot-lan-aio-gpu-252-gpu1-scail2-prod
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-pornmaster-flux2-edit
-    rollout_order: 32
-    notes: Maintenance-disabled PornMaster Flux2 edit LAN AIO for gpu-252 GPU1 while UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is removed for RMA after the 2026-07-06 Asia/Shanghai operator drain. Intake was disabled, the 8191 queue was confirmed empty, allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod was stopped, and the GPU1 LAN AIO containers were set to Docker restart policy no so they should not auto-start after host reboot without this card. Keep scail2 and wan22_video_v2 maintenance-disabled on this card until workload-specific validation or vendor/driver resolution clears Xid 119/154.
+    rollout_order: 34
+    notes: Candidate lower-VRAM PornMaster Flux2 edit canary for the RMA replacement gpu-252 GPU1 card, pinned to UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The user selected this profile on 2026-07-19 after the physical GPU swap; keep SCAIL-2 and Wan22 maintenance-disabled and stop the canary on any new Xid 119/154.
 
   - id: gpu-252-gpu1-i2i_pro
     enabled: true

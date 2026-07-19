@@ -99,7 +99,7 @@ GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不
 
 Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。`gpu-226` 已在 2026-07-05 通过 `gpu-226-gpu0-image_to_video` LAN AIO slot 回切承接 image_to_video，`gpu-226-gpu0-scail2` 保留同卡回切候选；旧 host-service `cloud_prod_worker_01` disabled/stopped，宿主机 `8188` 只作手工回滚元数据。`gpu-002` 已完成第一阶段生产 AIO 接管，GPU0 SCAIL-2 和 GPU1 PornMaster Flux2 edit 都必须在 fleet 配置中声明后才进入 fleet/operator 当前态管理；`gpu-177` 已通过 `scripts/lan_aio_fleet_prod_ops.py` 整机进入 `prod_enabled`。`gpu-252` GPU0/GPU1 当前分别由 `gpu-252-gpu0-i2i_pro` `8192` 与 `gpu-252-gpu1-i2i_pro` `8191` 承接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并固定各自 UUID；旧 GPU1 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled。
 
-LAN AIO 当前态、候选和缓存状态不在本文或 Git 维护静态 slot 表。先读 `${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled`；只有 live、ledger、Git catalog 三方一致且没有未完成 operation 才允许 mutation。确认 drift 后用带原因的 `state-reconcile --execute` 收口，禁止静默覆盖。
+LAN AIO 当前态、候选和缓存状态不在本文或 Git 维护静态 slot 表。先读 `${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled`；普通 mutation 只有 live、ledger、Git catalog 三方一致且没有未完成 operation 才允许。确认 drift 后用带原因的 `state-reconcile --execute` 收口，禁止静默覆盖。目标物理槽没有任何 running catalog container 时，`state-reconcile` 本身无法通过明确 live current 门禁，唯一例外是精确单槽 `recover`：仅允许 `live_current_missing`（可同时带 catalog revision），并从当前 catalog 重渲染 stopped/missing 候选；SSH 不可达、槽位错配或未完成 operation 继续阻断。
 
 fleet helper 的普通切换只允许事务化 `takeover`，异常恢复只允许精确 `recover`；`drain-legacy/stop-old/start-disabled/rollback` 仍是内部 phase 名称，但不再允许单独 `--execute`。下文若描述这些名称，均表示 takeover 内部顺序，不是独立操作入口。
 
