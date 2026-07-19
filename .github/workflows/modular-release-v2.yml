@@ -166,9 +166,11 @@ jobs:
             comparison_sha="$previous_sha"
             echo "index=${previous_bundle_dir}/release-index.json" >> "$GITHUB_OUTPUT"
             echo "bundle=${previous_bundle_dir}" >> "$GITHUB_OUTPUT"
+            echo "sha=${previous_sha}" >> "$GITHUB_OUTPUT"
           else
             echo "index=" >> "$GITHUB_OUTPUT"
             echo "bundle=" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
           fi
           git diff --name-only "$comparison_sha" "$SOURCE_SHA" > changed-paths.txt
 
@@ -178,6 +180,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
           PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
           GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
           RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
@@ -207,7 +210,10 @@ jobs:
             test -f "$gpu_manifest"
           fi
           if [ -n "$PREVIOUS_INDEX" ]; then
+            git show "${PREVIOUS_SHA}:deploy/release-artifacts-v2.json" \
+              > previous-release-artifacts-v2.json
             args+=(--previous-index "$PREVIOUS_INDEX" --previous-bundle-dir "$PREVIOUS_BUNDLE")
+            args+=(--previous-catalog previous-release-artifacts-v2.json)
           fi
           if [ -n "$gpu_manifest" ]; then
             args+=(--gpu-manifest "$gpu_manifest")

@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：main bundle 的 catalog 影响判定改为对可信基线做逐 artifact 语义比较。控制面、Public Web、文档和发布工具变化不再自动调度 `gpu-execution`；只有 GPU artifact/profile、`remote_workers/**` 或真实基础依赖变化进入 GPU 专用 manifest/canary/operator 链路。无法读取旧 catalog 时继续 fail-safe 全量重建，真实 GPU 变化的同 SHA attestation 门禁不放宽。事实源为 `release_artifacts_v2.py`、`ci_release_v2.py`、模块化 workflow、专项测试、ADR 0008、不可变发布文档与 ops Skill。
+
 > 2026-07-19：并发发布改为 main-first release batch。A-H 统一从 `origin/main` 开发，功能 AI 推送后以 `slot/branch/head/base_sha` 不可变 handoff 并立即释放槽位；集成 AI 用 `batch-plan` 冻结多个 handoff，只创建一个 `release-batch -> main` PR。PR 阶段不发布容器，main push 的可信 CI 成功后 `modular-release-v2.yml` 只构建一次 main-channel bundle；用户需要时再部署云测试，standard artifact 用 main-channel exact-digest history 验收。旧 test-train/candidate/promotion 只保留历史兼容。事实源为 `manage_ai_workspaces.py`、两份 workflow、`release.py`、ADR 0008、并发/不可变发布文档与 Skills。
 > 2026-07-19：控制面运行配置收敛为目标主机 `/etc/allbot/<env>.env` 与权限 `600` 的逐服务投影；本机 env、镜像层和 Public Web tar 不再承载环境秘密。配置漂移先走 `config-plan`/`config-apply`，秘密轮换完成状态只能由 `credential-isolation-complete` 校验限时 HMAC/健康/撤销证据后原子写入。当前提交只实现契约和受控接口，不代表正式配置切换或秘密轮换已执行。
 > 历史（已由上条与 ADR 0008 取代）：promotion approval 曾通过受保护 GHCR 写入通道发布 test-train 批准记录；相关脚本只保留既有 artifact 兼容，不再作为新批次入口。

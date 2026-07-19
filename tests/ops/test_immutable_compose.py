@@ -370,6 +370,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "previous-release/release-v2/release-index.json" in workflow
     assert "previous-release/promoted-release/release-index.json" in workflow
     assert 'echo "bundle=${previous_bundle_dir}"' in workflow
+    assert 'echo "sha=${previous_sha}"' in workflow
+    assert "PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}" in workflow
+    assert "--previous-catalog" in workflow
+    assert 'git show "${PREVIOUS_SHA}:deploy/release-artifacts-v2.json"' in workflow
     assert "options: [build-only]" in workflow
     assert "manual dispatch cannot claim full validation" in workflow
     assert '--validation-mode "$VALIDATION_MODE"' in workflow

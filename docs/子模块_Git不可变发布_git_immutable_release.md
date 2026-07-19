@@ -47,8 +47,7 @@ manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
 如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA attestation manifest，
 聚合器不得复用旧 digest。受保护 main 只要本轮包含 GPU rebuild，就必须从 OCI
 `allbot-gpu-release-manifests:<full-sha>` 读取完整证明，
-否则在 main bundle tag 创建前 fail closed。artifact catalog 自身变化会重建全部自有 artifact，
-避免旧镜像被新 metadata 伪装。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
+否则在 main bundle tag 创建前 fail closed。已有可信增量基线时，artifact catalog 通过前后版本逐 artifact 语义比较，只重建定义变化的 artifact 及其真实 base descendants；控制面、Public Web、文档和发布工具变化不会自动调度 `gpu-execution`。只有缺少可比较旧 catalog 时才 fail-safe 全量重建。GPU artifact/profile、`remote_workers/**` 或真实 GPU 基础依赖变化继续走独立 manifest、canary 和 operator 门禁，避免旧镜像被新 metadata 伪装。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
 main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
 不会导致下一次无条件全量重建。
 

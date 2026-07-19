@@ -171,6 +171,7 @@ def main() -> int:
     parser.add_argument("--changed-file", type=Path, required=True)
     parser.add_argument("--previous-index", type=Path)
     parser.add_argument("--previous-bundle-dir", type=Path)
+    parser.add_argument("--previous-catalog", type=Path)
     parser.add_argument("--gpu-manifest", type=Path)
     parser.add_argument("--require-complete-gpu", action="store_true")
     parser.add_argument(
@@ -186,7 +187,17 @@ def main() -> int:
     catalog = load_catalog(catalog_path)
     changed = args.changed_file.read_text(encoding="utf-8").splitlines()
     has_previous = bool(args.previous_index and args.previous_index.is_file())
-    plan = plan_builds(catalog, changed, has_previous=has_previous)
+    previous_catalog = (
+        load_catalog(args.previous_catalog)
+        if args.previous_catalog and args.previous_catalog.is_file()
+        else None
+    )
+    plan = plan_builds(
+        catalog,
+        changed,
+        has_previous=has_previous,
+        previous_catalog=previous_catalog,
+    )
     gpu_builds = {
         name for name in plan.build
         if catalog[name]["track"] == "gpu-execution"
