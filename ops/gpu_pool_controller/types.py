@@ -71,6 +71,7 @@ class TaskProfile:
     all_in_one_image_ref: str | None = None
     model_prefix: str | None = None
     model_manifest_key: str | None = None
+    lan_workspace_key: str | None = None
 
 
 @dataclass(frozen=True)
