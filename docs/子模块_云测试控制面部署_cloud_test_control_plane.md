@@ -4,7 +4,7 @@
 > 配置唯一事实源为云测试主机 `/etc/allbot/test.env`；发布器只生成权限 `600` 的逐服务投影，不把整份 env 注入全部容器。`safe_deploy_cloud_test.sh` 与旧维护脚本仅作 fail-closed 历史兼容，legacy `.env`/Compose 运行态不再是新发布事实源。
 > 首次切换前如仍只有 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名，先对该主机事实源执行 `scripts/migrate_legacy_test_env.py --control-plane-only`；候选文件通过 `config-plan` 后备份并原子替换。该模式只补 canonical 控制面键，不改写任何 Worker 选择、槽位或端点。
 >
-> `ALLBOT_WORKER_*` 与 `CLOUD_TEST_WORKER_*` 属于独立 GPU/Worker 链路。控制面配置工具保留它们的受限宿主值，但不将其计入 control-plane revision、漂移、影响服务或逐服务投影。测试 Worker 的发布、候选切换和验收继续使用 `test-execution`/GPU operator，不随控制面 `config-apply` 联动。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 不在此排除集。
+> `ALLBOT_WORKER_*`、`CLOUD_TEST_WORKER_*` 与 `CLOUD_TEST_SHARED_AIO_*` 属于独立 GPU/Worker 链路。控制面配置工具保留它们的受限宿主值，但不将其计入 control-plane revision、漂移、影响服务或逐服务投影。测试 Worker 的发布、候选切换和验收继续使用 `test-execution`/GPU operator，不随控制面 `config-apply` 联动。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 不在此排除集。
 
 ## 1. 目标与边界
 

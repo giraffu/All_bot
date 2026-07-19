@@ -1,6 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
-> 2026-07-19：控制面配置契约与 GPU/Worker 链路进一步解耦。`ALLBOT_WORKER_*` / `CLOUD_TEST_WORKER_*` 仍原样保存于受限宿主 env，但不再进入 control-plane environment revision、逐服务投影、漂移或影响集；单独 Worker 变更不触发控制面 `config-apply`。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 仍被跟踪，其它未知键继续全量 fail closed。事实源为逐服务配置契约、运行时投影工具、专项回归、不可变发布/云测试控制面文档与 ops Skill。
+> 2026-07-19：控制面配置契约与 GPU/Worker 链路进一步解耦。`ALLBOT_WORKER_*` / `CLOUD_TEST_WORKER_*` / `CLOUD_TEST_SHARED_AIO_*` 仍原样保存于受限宿主 env，但不再进入 control-plane environment revision、逐服务投影、漂移或影响集；单独 Worker 变更不触发控制面 `config-apply`。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 仍被跟踪，其它未知键继续全量 fail closed。事实源为逐服务配置契约、运行时投影工具、专项回归、不可变发布/云测试控制面文档与 ops Skill。
 > 2026-07-19：云测试当前 env 仍以 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名驱动旧容器，严格逐服务投影因缺 canonical `BOT_TOKEN` 和 `TELEGRAM_FILE_BASE_URL` 在写入前 fail closed。测试迁移器新增 `--control-plane-only`：只补已知 canonical key 和旧自建 Telegram `:8081`/`:8082` 配对，canonical 已有值优先，未知 endpoint 拒绝猜测，且完整保留 Worker 选择与槽位。事实源为测试迁移器、专项回归、不可变发布文档与 ops Skill。
 > 2026-07-19：main bundle 环境中立门禁的 test/prod 运行身份哨兵收口到可运行 service artifact。`python-runtime-base` 与 `python-worker-base` 本来就不包含 `src` 应用源码，不再被误当服务启动；两者仍必须通过 Image Config.Env 与文件系统的环境材料扫描。事实源为环境中立校验器、专项回归、不可变发布文档与 ops Skill。
 > 2026-07-19：main bundle 环境中立扫描从新 Dashboard Backend 镜像检出 `/app/paid_group_guard_bot/.env.example`；根因是根级 `.env.*` ignore 没有覆盖目录级 `COPY` 的嵌套示例。构建上下文和门禁现同时要求 `**/.env`、`**/.env.*`，保留仓库内本地开发示例但禁止其进入任何镜像层；失败 SHA 未发布 bundle。事实源为 `.dockerignore`、环境中立校验器、专项测试、精确镜像只读导出、不可变发布文档与 ops Skill。
