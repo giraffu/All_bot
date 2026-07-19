@@ -415,6 +415,7 @@ def test_lan_aio_fleet_render_supports_gpu_177_gpu1_scail2_candidate():
     assert "POOL_GPU_INDEX: '1'" in rendered
     assert "NVIDIA_VISIBLE_DEVICES: '1'" in rendered
     assert "POOL_RUNTIME_PROFILE: scail2" in rendered
+    assert "COMFYUI_DIR: /opt/ComfyUI" in rendered
     assert (
         "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_action_transfer_long,"
         "scail2_video_replacement,scail2_face_swap_v2"
