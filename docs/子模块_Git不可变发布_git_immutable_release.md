@@ -66,36 +66,32 @@ manifest 的 base64 与文件 SHA256 交给受保护的
 
 ## 4. 配置
 
-代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision、镜像 digest，以及正式 Dashboard 所需的同 release index RunPod profile digest pin JSON。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复默认解析同一 track-scoped 目录。Dashboard 被选择进 main control-plane 发布时，发布器必须从 gpu-execution manifest 解析完整 `profile -> image@sha256` 映射；缺项、mutable ref 或共用 env 冲突均在 Compose mutation 前 fail closed。仅当控制面回滚目标早于 track 隔离迁移且该文件缺失时，preflight、失败恢复和恢复验证才可兼容同一 SHA 的 `/var/lib/allbot/releases/<sha>/release.env`，正向发布不得写入该兼容路径。
+代码发布不修改真实 env。本机 env 不参与云控制面配置 revision；发布器只在目标主机读取权限为 `600` 的 `/etc/allbot/<env>.env`，并先合并版本化、非敏感的 `deploy/env.defaults`。`deploy/service-env-contract.yml` 把结果投影为 `/var/lib/allbot/config/<env>/<revision>/<service>.env`，每个容器只注入自己的数据库、Redis、Token、存储、功能开关和所需环境中立默认值。`release.env` 仍按 track 保存于 `/var/lib/allbot/releases/<track>/<sha>/release.env`，但只包含 release/main/source SHA、精确 digest、配置 revision、投影根路径及非敏感 RunPod pin；禁止保存秘密。
 
-同一镜像必须可由 test/prod 宿主配置解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。`scripts/validate_release_environment_neutral.py` 在 candidate CI 构建前检查上下文和源码，构建后检查真实 image config 与 Web dist，错误只报告变量名。
+`ALLBOT_ENV` 必须是 `test|prod`，`BOT_TYPE` 由它派生且冲突立即退出。主 Bot、QQCC、Dashboard、Central 与 Web API 不自动 `load_dotenv()`，不读取 `_TEST` 别名，也没有明文 secret、password、bucket、外部 URL 或数据库/Redis fallback。显式本地开发必须由操作者先加载一份受限 dev env，再启动程序，容器入口不会寻找仓库 `.env`。
+
+同一镜像必须可由 test/prod 宿主投影解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。`scripts/validate_release_environment_neutral.py` 在构建前扫描上下文、运行源码与 Dockerfile，构建后扫描 Image Config.Env、应用目录中的 `.env`/密钥文件，并对同一 Python digest 注入 test/prod 哨兵身份做真实 import。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。
 
 若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 candidate 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
 
-Compose 合并后的 service `environment` 必须覆盖旧 env 别名。特别是 `BOT_TYPE=TEST` 时 `config._get_env_value("API_BASE")` 会优先读取 `API_BASE_TEST`，test overlay 因此同时钉死 `API_BASE` 和 `API_BASE_TEST` 为 Compose 内部 `central-api` alias；prod overlay 为所有 Python 消费者钉死 `API_BASE`。发布器在 compose health 通过后还会进入实际容器 import `config`，解析值不是 `http://central-api:8003` 则 fail closed，不写成功状态。
+test/prod overlay 不再写 `BOT_TYPE`、`API_BASE_TEST` 或环境专属 API fallback；这些值来自各自主机投影。服务投影包含自己的 `ALLBOT_CONFIG_REVISION`，因此相同镜像 digest 在两套环境中保留独立配置身份。
 
 远端发布脚本通过 SSH stdin 交给 `bash -s`。Compose v2 的 `exec -T` 只关闭伪终端，并不保证关闭 stdin；如果不重定向，队列检查可能把后续 pull/up/校验脚本全部读走并以 0 返回。发布器因此要求脚本内所有 `docker compose exec/run` 使用 `</dev/null`，脚本末尾输出绑定 SHA 的完成标记，并在标记前逐服务核对容器 `.Config.Image` 与 manifest digest、自有镜像 OCI revision。缺标记、digest 或 revision 任一不一致都不得写部署状态，也不得作为生产晋级依据。
 
-配置校验：
+配置只读计划与原子应用：
 
 ```bash
-python scripts/release.py validate-env --env test --env-file /etc/allbot/test.env
-python scripts/release.py validate-env --env prod --env-file /etc/allbot/prod.env
+python scripts/release.py config-plan --env test
+python scripts/release.py config-plan --env prod
+python scripts/release.py config-apply --env test --execute
+python scripts/release.py config-apply --env prod --confirm-prod --execute
 ```
 
-独立配置变更先 dry-run，再原子替换并仅 recreate 消费者；生产仍需明确确认：
-
-```bash
-python scripts/update_deploy_config.py --env test --source /secure/new-test.env
-python scripts/update_deploy_config.py --env test --source /secure/new-test.env --execute
-python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env --execute --confirm-prod
-```
-
-影响映射在 `deploy/config-impact.yml`。脚本备份旧 env、通过 SSH stdin 写 `600 deploy:deploy` 临时文件、原子 rename，并在 compose 校验或 recreate 失败时恢复旧 env；输出只含变更变量名、revision 和服务名。
+`config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的键和契约本身变化影响全部服务，强制完整维护、数据库备份与单 Alembic head。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
 
 错误只输出变量名，不输出值。Worker 槽位由 `ALLBOT_WORKER_SERVICES=worker-01,...` allowlist 决定；当前支持 `worker-01` 至 `worker-08`，发布器只重建该列表，未启用 canary 不会被顺带启动。每个选中槽位必须提供对应 `ALLBOT_WORKER_XX_*` 的 endpoint、任务类型、node/GPU/runtime profile 与 prefetch/pipeline 契约；08 号槽位另外保留 SCAIL-2 workflow/face-swap 配置。
 
-控制面影响分析只允许扩大依赖集合，但可选 Bot 的运行态还必须服从已校验配置：没有对应环境的 `QQCC_BOT_TOKEN*` 时不启动 `qqcc-bot`，`PRIVATE_QQCC_BOT_ENABLED` 未明确开启时不启动私有 Bot worker，没有 `PAID_GROUP_BOT_TOKEN` 时不启动付费群 Bot。`plan` 同时输出 `cloud_services` 与 `disabled_cloud_services`；该过滤白名单只覆盖这三个可选 runtime，不能借配置缩小 API、数据库、Redis、主 Bot 等核心依赖闭包。
+控制面影响分析只允许扩大依赖集合，但可选 Bot 的运行态还必须服从已校验配置：没有本环境 canonical `QQCC_BOT_TOKEN` 时不启动 `qqcc-bot`，`PRIVATE_QQCC_BOT_ENABLED` 未明确开启时不启动私有 Bot worker，没有 `PAID_GROUP_BOT_TOKEN` 时不启动付费群 Bot。`plan` 同时输出 `cloud_services` 与 `disabled_cloud_services`；该过滤白名单只覆盖这三个可选 runtime，不能借配置缩小 API、数据库、Redis、主 Bot 等核心依赖闭包。
 
 测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 生成候选文件：`--source` 必须是云测试当前 `/etc/allbot/test.env` 的受限本地副本，作为控制面配置事实源；`--worker-source` 可指向本机旧 `.env.cloud.test`，只补 Worker 槽位参数，不能用旧本机配置覆盖云端新增项。脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，补齐测试 admin/owner 非敏感 Host，且只输出计数不输出值。已知旧 test-1 `gpu-252` GPU0/8192 组合会归一到当前 i2i_pro GPU1/8191；其它显式 endpoint 组合继续保留。候选必须再经 `scripts/release.py validate-env` 和 cloud/worker Compose `config -q`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
 
@@ -155,8 +151,12 @@ scripts/release.py verify-test \
 python scripts/release.py deploy-module --module web-api --confirm-prod --execute
 # 可重复选择；机器计算的依赖集合只能扩大，不能缩小
 python scripts/release.py deploy-module --sha <main-sha> \
-  --module dashboard-backend --module dashboard-frontend \
+  --module dashboard --module qqcc-config \
   --confirm-prod --execute
+
+# credential-isolation-complete 前，每次正式替换还必须显式接受过渡风险
+python scripts/release.py deploy-module --module web-api --confirm-prod --execute \
+  --accept-pending-secret-rotation --reason '<ticket/reason>' --approved-by '<name>'
 
 # 完整发布/回滚仍保留分步接口
 scripts/release.py plan --env prod --sha <40-char-sha>

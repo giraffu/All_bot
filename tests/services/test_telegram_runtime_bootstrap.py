@@ -8,13 +8,14 @@ from telegram.request import HTTPXRequest
 from src.services import telegram_runtime_bootstrap as runtime
 
 
-def test_telegram_runtime_urls_default_and_env_override(monkeypatch):
+def test_telegram_runtime_urls_fail_closed_and_accept_env(monkeypatch):
     monkeypatch.delenv("TELEGRAM_API_BASE_URL", raising=False)
     monkeypatch.delenv("TELEGRAM_FILE_BASE_URL", raising=False)
 
-    assert runtime.resolve_telegram_api_base_url() == "http://69.63.220.115:8081"
-    assert runtime.resolve_telegram_file_base_url() == "http://69.63.220.115:8082"
-    assert runtime.build_telegram_bot_base_url() == "http://69.63.220.115:8081/bot"
+    with pytest.raises(RuntimeError, match="TELEGRAM_API_BASE_URL"):
+        runtime.resolve_telegram_api_base_url()
+    with pytest.raises(RuntimeError, match="TELEGRAM_FILE_BASE_URL"):
+        runtime.resolve_telegram_file_base_url()
 
     monkeypatch.setenv("TELEGRAM_API_BASE_URL", "http://local-api:8081/")
     monkeypatch.setenv("TELEGRAM_FILE_BASE_URL", "http://local-file:8082/")

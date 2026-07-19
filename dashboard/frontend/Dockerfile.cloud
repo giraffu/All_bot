@@ -14,9 +14,6 @@ RUN npm run build
 # Stage 2: serve the built dashboard through a locked-down Nginx gateway.
 FROM nginx:1.27-alpine
 
-ENV DASHBOARD_GATEWAY_PORT=8086
-ENV DASHBOARD_BACKEND_HOST=dashboard-backend-prod:8043
-
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.cloud-gateway.conf.template /etc/nginx/templates/default.conf.template
 

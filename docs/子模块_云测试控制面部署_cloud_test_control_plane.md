@@ -1,6 +1,8 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
 > 2026-07-17：专属测试 QQCC Bot 与 QQCC Config 前后端已可用，配置前后端重新纳入不可变 test-train standard 部署；Dashboard 仍不进入测试站。`test-execution` 继续只用 `--with-test-execution` 专项启用。状态/回滚历史按 track + artifact digest 隔离。禁止代码/env rsync、云端 build、源码 bind mount和 RunPod 启动 clone。
+>
+> 2026-07-19：`scripts/safe_deploy_cloud_test.sh` 与 `scripts/migrate_local_test_to_cloud_containers.sh` 已固定 fail closed；下文所有 `.env.cloud.test`、旧 compose 与现场重建命令只保留为历史取证，不得执行。当前事实源是 `/etc/allbot/test.env`、逐服务投影和 `test_train_release.py` / `release.py` 的不可变候选流程。
 
 ## 1. 目标与边界
 
@@ -23,9 +25,8 @@
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`
 - Compose 文件：`deploy/docker-compose-cloud-test.yml`
-- 日常快速更新：同步必要代码后直接重建目标 service 容器
-- 维护式整栈更新脚本：`scripts/update_cloud_test_with_maintenance.sh`
-- 远端控制面重建脚本：`scripts/safe_deploy_cloud_test.sh`
+- 日常快速更新、维护式同步与远端现场重建：均已退役，必须使用不可变候选发布器
+- `scripts/update_cloud_test_with_maintenance.sh`、`scripts/safe_deploy_cloud_test.sh`：历史入口，固定 fail closed
 - 环境文件：`.env.cloud.test`
 - 本地 cloud-worker Compose 文件：`workers/docker-compose-cloud-worker-test.yml`
 - 本地停止测试栈脚本：`scripts/stop_local_test_preserve.sh`

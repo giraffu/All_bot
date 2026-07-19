@@ -5,7 +5,6 @@ from typing import Literal
 
 from sqlalchemy import or_, select
 
-from config import BOT_TYPE
 from src.database.models import MembershipPlan, Order
 from src.services.membership_settlement_service import build_plan_settlement_snapshot
 
@@ -15,10 +14,6 @@ ORDER_LEGACY_PREFIX = "ORDER:"
 
 
 def _is_feature_enabled(name: str) -> bool:
-    if BOT_TYPE == "TEST":
-        test_value = os.getenv(f"{name}_TEST")
-        if test_value not in (None, ""):
-            return test_value.strip().lower() in {"1", "true", "yes", "on"}
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 

@@ -2,7 +2,7 @@ services:
   postgres:
     image: ${ALLBOT_POSTGRES_IMAGE:?release.env must pin postgres by digest}
     restart: always
-    env_file: ["${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}"]
+    env_file: ["${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/postgres.env"]
     environment:
       POSTGRES_DB: ${CLOUD_TEST_POSTGRES_DB:-bot_db_test}
       POSTGRES_USER: ${CLOUD_TEST_POSTGRES_USER:-postgres}
@@ -21,7 +21,7 @@ services:
   redis:
     image: ${ALLBOT_REDIS_IMAGE:?release.env must pin redis by digest}
     restart: always
-    env_file: ["${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}"]
+    env_file: ["${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/redis.env"]
     command: ["sh", "-lc", "redis-server --appendonly yes --save 60 1 --requirepass \"$${CLOUD_TEST_REDIS_PASSWORD}\""]
     volumes:
       - cloud-redis-test-data:/data
@@ -36,47 +36,20 @@ services:
 
   central-api:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8004:8003"]
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
     depends_on:
       redis: {condition: service_healthy}
   web-api:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8001:8001"]
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       central-api: {condition: service_healthy}
   qqcc-config-backend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"]
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
   qqcc-config-frontend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8088:8088"]
   imgproxy:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8084:8084"]
-  bot:
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
-  qqcc-bot:
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
-  qqcc-private-bot-worker:
-    environment:
-      BOT_TYPE: TEST
-      API_BASE: http://central-api:8003
-      API_BASE_TEST: http://central-api:8003
 
 volumes:
   cloud-postgres-test-data:

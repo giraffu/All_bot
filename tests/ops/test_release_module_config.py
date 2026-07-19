@@ -1,0 +1,240 @@
+import importlib.util
+import json
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+RELEASE_PATH = ROOT / "scripts" / "release.py"
+FULL_SHA = "a" * 40
+DIGEST = "sha256:" + "1" * 64
+IMAGE_REF = f"ghcr.io/giraffu/allbot-web-api@{DIGEST}"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("release_module_config", RELEASE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_deploy_module_parser_accepts_repeated_fixed_modules():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        [
+            "deploy-module",
+            "--module",
+            "web-api",
+            "--module",
+            "dashboard",
+            "--confirm-prod",
+            "--execute",
+        ]
+    )
+
+    assert args.env == "prod"
+    assert args.track == "control-plane"
+    assert args.modules == ["web-api", "dashboard"]
+
+
+def test_deploy_module_requires_exact_promoted_approval():
+    module = _load_module()
+    manifest = {
+        "selected_artifacts": ["web-api"],
+        "validation": {"mode": "promoted"},
+        "artifacts": {"web-api": {"digest": DIGEST}},
+        "promotion_approval": {
+            "artifacts": {
+                "web-api": {"status": "verified", "digest": DIGEST},
+            }
+        },
+    }
+
+    module.validate_deploy_module_approval(manifest)
+    manifest["promotion_approval"]["artifacts"]["web-api"]["digest"] = (
+        "sha256:" + "2" * 64
+    )
+
+    with pytest.raises(module.ReleaseError, match="exact promoted-main approval"):
+        module.validate_deploy_module_approval(manifest)
+
+
+def test_pending_secret_rotation_requires_explicit_risk_acceptance():
+    module = _load_module()
+    args = SimpleNamespace(
+        accept_pending_secret_rotation=False,
+        reason="",
+        approved_by="",
+    )
+
+    with pytest.raises(module.ReleaseError, match="pending secret rotation"):
+        module.require_pending_secret_rotation_acceptance(
+            args,
+            {"credential_isolation": "pending"},
+        )
+
+    args.accept_pending_secret_rotation = True
+    args.reason = "staged rotation"
+    args.approved_by = "operator"
+    module.require_pending_secret_rotation_acceptance(
+        args,
+        {"credential_isolation": "pending"},
+    )
+
+
+def test_config_plan_only_prints_key_names_services_and_revisions(monkeypatch, capsys):
+    module = _load_module()
+    snapshot = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "b" * 64,
+        "contract_revision": "c" * 64,
+        "changed_keys": ["API_TOKEN"],
+        "affected_services": ["central-api", "web-api"],
+        "unknown_keys": [],
+        "service_revisions": {"web-api": "d" * 64},
+        "public_values": {"ALLBOT_STATE_ROOT": "/must-not-be-printed"},
+        "present_keys": ["API_TOKEN"],
+        "drift": True,
+    }
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: ({}, "a" * 64, snapshot),
+    )
+
+    assert module.main(["config-plan", "--env", "prod"]) == 0
+    document = json.loads(capsys.readouterr().out)
+
+    assert document["changed_keys"] == ["API_TOKEN"]
+    assert document["affected_services"] == ["central-api", "web-api"]
+    assert "public_values" not in document
+    assert "/must-not-be-printed" not in json.dumps(document)
+
+
+def test_config_apply_backs_up_current_database_before_full_activation(monkeypatch):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "b" * 64,
+        "affected_services": ["web-api"],
+        "unknown_keys": ["NEW_CONTRACT_KEY"],
+        "drift": True,
+    }
+    activated = dict(inspected, drift=False)
+    events = []
+
+    def snapshot(_args, **kwargs):
+        command = kwargs.get("command", "inspect")
+        events.append(command)
+        return ({}, "a" * 64, activated if command == "activate" else inspected)
+
+    monkeypatch.setattr(module, "_remote_runtime_env_snapshot", snapshot)
+    monkeypatch.setattr(
+        module,
+        "_prepare_config_backup",
+        lambda _args, **_kwargs: events.append("backup"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda _args, _state, _services: events.append("compose"),
+    )
+    monkeypatch.setattr(module, "_set_config_maintenance", lambda *a, **k: None)
+
+    assert (
+        module.main(["config-apply", "--env", "prod", "--confirm-prod", "--execute"])
+        == 0
+    )
+    assert events == ["inspect", "backup", "activate", "compose"]
+
+
+def test_config_apply_snapshots_running_and_stopped_non_target_containers(monkeypatch):
+    module = _load_module()
+    scripts = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *args, **kwargs: (
+            scripts.append(kwargs["input_text"])
+            or subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+        ),
+    )
+
+    module._config_apply_cloud(
+        SimpleNamespace(env="prod", remote_host="prod-control", remote_env_file=None),
+        {
+            "environment_revision": "a" * 64,
+            "service_revisions": {"dashboard-backend": "b" * 64},
+        },
+        {"dashboard-backend"},
+    )
+
+    assert "docker ps -aq" in scripts[0]
+    assert "pg_dump" not in scripts[0]
+
+
+def test_full_config_backup_uses_current_running_web_api(monkeypatch):
+    module = _load_module()
+    scripts = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *args, **kwargs: (
+            scripts.append(kwargs["input_text"])
+            or subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+        ),
+    )
+
+    module._prepare_config_backup(
+        SimpleNamespace(env="prod", remote_host="prod-control", remote_env_file=None),
+        initial_cutover=True,
+    )
+
+    assert 'docker exec "$container_id"' in scripts[0]
+    assert "pg_dump" in scripts[0]
+    assert "/etc/allbot/prod.env" in scripts[0]
+
+
+def test_no_change_requires_exact_digest_health_and_service_config_revision(
+    monkeypatch,
+):
+    module = _load_module()
+    args = SimpleNamespace(env="prod", remote_host="prod-control")
+    impact = module.ReleaseImpact(services={"web-api"}, level="maintenance")
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "artifacts": {"web-api": {"ref": IMAGE_REF}},
+    }
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=f"web-api\t{IMAGE_REF}\n",
+            stderr="",
+        ),
+    )
+
+    result = module.verify_deploy_module_no_change(
+        args,
+        impact,
+        manifest,
+        {},
+        "environment-revision",
+        {"web-api": "service-revision"},
+    )
+
+    assert result["status"] == "no-change"
+    assert result["artifacts"]["web-api"]["digest"] == DIGEST
+    assert result["service_config_revisions"] == {
+        "web-api": "service-revision",
+    }

@@ -48,3 +48,15 @@ def test_public_web_dist_cannot_bake_test_or_prod_sentinel(tmp_path):
 
     with pytest.raises(module.NeutralityError, match="sentinel"):
         module.validate_public_web_sources(tmp_path, dist=dist)
+
+
+def test_runtime_source_cannot_auto_load_dotenv(tmp_path):
+    module = _load_module()
+    for relative in module.RUNTIME_SOURCE_FILES:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("SAFE = True\n", encoding="utf-8")
+    (tmp_path / "config.py").write_text("load_dotenv()\n", encoding="utf-8")
+
+    with pytest.raises(module.NeutralityError, match="dotenv"):
+        module.validate_runtime_sources(tmp_path)
