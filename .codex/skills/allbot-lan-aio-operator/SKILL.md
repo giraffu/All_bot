@@ -11,6 +11,8 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 
 本技能用于在本地主服务器上稳定管理 LAN AIO。它只记录操作规则和事实源路由，不把频繁变化的 GPU 当前态硬编码进技能正文。
 
+LAN AIO / RunPod 单卡运维属于独立 GPU 执行面操作，不与 control-plane、test-train 或公共 Web 发布事务绑定。已有 canonical digest 镜像的复制、缓存、单卡 takeover/recover/restart 只走本技能的 operator 门禁；不得为了运行态切换额外部署无关控制面。helper/catalog 代码仍保留 Git 审计和测试，但其 PR 集成进度不替代当次 live/ledger/catalog、镜像 digest、健康与 Xid 验证。
+
 ## 1. 必读入口
 
 每次处理 LAN AIO 前按顺序读取：
@@ -80,7 +82,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 1. 读 XDG `current.yml` 找目标 `node_id + gpu_index`；首次迁移才读 legacy seed。
 2. 跑 `list --include-disabled` 和 `status --include-disabled`；确认 `state.status=passed`。
 3. 对目标端口查 `/queue`、`/system_stats`。
-4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。
+4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；普通 mutation 不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。唯一例外是目标物理槽没有任何 running catalog container 时，可用精确单槽 `recover --physical-slot ... --slot ... --execute` 收口；只允许 `live_current_missing`（可同时带 catalog revision 变化），SSH 不可达、槽位错配或未完成 operation 仍 fail closed。recover 遇到停机候选必须先按 catalog 准备 canonical 镜像，再从当前 catalog 重渲染，禁止直接启动可能仍绑定旧 GPU UUID 的历史容器。
 
 ### 新增候选
 

@@ -1003,7 +1003,10 @@ class LanAioProdOps:
             raise RuntimeError("managed LAN AIO mutation requires a physical slot")
         with self.state_store.mutation_lock():
             report = self.state_status_payload(physical_slots)
-            self.state_store.assert_mutation_allowed(report)
+            if action == "recover":
+                self.state_store.assert_recovery_allowed(report, physical_slots)
+            else:
+                self.state_store.assert_mutation_allowed(report)
             current_only_actions = {
                 "drain-aio",
                 "disable-aio",
@@ -2022,25 +2025,17 @@ class LanAioProdOps:
             ttl_seconds=CONTROL_TTL_SECONDS,
         )
         target_state = self._remote_target_container_state(selected)
-        if not target_state.get("exists"):
+        image_payload = None
+        if not bool(target_state.get("running")):
+            image_payload = self.pull_image([selected])
             start_payload = self.start_disabled([selected])
         else:
             status = str(target_state.get("status") or "unknown").lower()
-            if not bool(target_state.get("running")):
-                if status not in SAFE_STALE_CONTAINER_STATES:
-                    raise RuntimeError(
-                        "target container exists but is not safe to start: "
-                        f"{selected.container_name} status={status}"
-                    )
-                self._ssh(
-                    selected.ssh_host,
-                    f"docker start '{selected.container_name}' >/dev/null",
-                )
             self._wait_container_health(selected)
             self._verify_disabled_heartbeat(selected)
             start_payload = {
                 "ok": True,
-                "action": "docker-start",
+                "action": "already-running",
                 "slot": selected.id,
                 "previous_state": status,
             }
@@ -2049,7 +2044,7 @@ class LanAioProdOps:
             "enabled",
             f"lan_aio_fleet_recover_prefer_{prefer}",
         )
-        return {
+        result = {
             "ok": True,
             "action": "recover",
             "physical_slot": physical_slot,
@@ -2058,6 +2053,9 @@ class LanAioProdOps:
             "start": start_payload,
             "recovery_status": "succeeded",
         }
+        if image_payload is not None:
+            result["image"] = image_payload
+        return result
 
     def _system_workers(self) -> list[dict[str, Any]]:
         payload = self._json_get(f"{self.central_url}/system/workers")
