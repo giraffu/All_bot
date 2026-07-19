@@ -157,6 +157,8 @@ jobs:
               :
             elif [ -f previous-release/release-v2/release-index.json ]; then
               previous_bundle_dir=previous-release/release-v2
+            elif [ -f previous-release/promoted-release/release-index.json ]; then
+              previous_bundle_dir=previous-release/promoted-release
             else
               echo "previous v2 bundle has no release-index.json" >&2
               exit 2
