@@ -288,6 +288,9 @@ def test_full_config_backup_uses_current_running_web_api(monkeypatch):
 
     assert 'docker exec "$container_id"' in scripts[0]
     assert "pg_dump" in scripts[0]
+    assert 'case "$DATABASE_URL" in postgresql+asyncpg:*' in scripts[0]
+    assert '${DATABASE_URL#postgresql+asyncpg:}' in scripts[0]
+    assert '${DATABASE_URL/postgresql+asyncpg:/postgresql:}' not in scripts[0]
     assert "/etc/allbot/prod.env" in scripts[0]
 
 
