@@ -68,7 +68,7 @@ manifest 的 base64 与文件 SHA256 交给受保护的
 
 `ALLBOT_ENV` 必须是 `test|prod`，`BOT_TYPE` 由它派生且冲突立即退出。主 Bot、QQCC、Dashboard、Central 与 Web API 不自动 `load_dotenv()`，不读取 `_TEST` 别名，也没有明文 secret、password、bucket、外部 URL 或数据库/Redis fallback。显式本地开发必须由操作者先加载一份受限 dev env，再启动程序，容器入口不会寻找仓库 `.env`。
 
-同一镜像必须可由 test/prod 宿主投影解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。`scripts/validate_release_environment_neutral.py` 在 main CI 构建前扫描上下文、运行源码与 Dockerfile，构建后扫描真实 Image Config.Env、应用目录中的 `.env`/密钥文件与 Web dist，并对同一 Python digest 注入 test/prod 哨兵身份做真实 import；Dashboard/QQCC Backend 的入口 smoke 同样必须显式注入合成逐服务配置，不得依赖镜像默认值，错误只报告变量名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。
+同一镜像必须可由 test/prod 宿主投影解析为两个环境。`.dockerignore` 必须同时排除根目录和任意子目录的 `.env`/`.env.*`、私钥和 SSH 材料，不能让目录级 `COPY` 把开发示例带入镜像；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。`scripts/validate_release_environment_neutral.py` 在 main CI 构建前扫描上下文、运行源码与 Dockerfile，构建后扫描真实 Image Config.Env、应用目录中的 `.env`/密钥文件与 Web dist，并对同一 Python digest 注入 test/prod 哨兵身份做真实 import；Dashboard/QQCC Backend 的入口 smoke 同样必须显式注入合成逐服务配置，不得依赖镜像默认值，错误只报告变量名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。
 
 若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 main bundle 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
 

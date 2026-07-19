@@ -61,7 +61,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - standard 测试验收只要求本次选择 artifact 对应的检查和精确 digest；公共 Web 校验 tar checksum，核心按选中服务检查，测试 Worker 仅在显式 track 中检查 heartbeat。默认观察至少 24 小时；短观察仍需 evidence 开关、原因、批准人和 `--confirm-short-observation`。
 - 正式 standard 晋级从云测试 retained history 按 artifact + exact digest 查找 main-channel verified 证据；direct artifact 只按明确风险策略豁免，不能伪装 tested。每次 execute 仍必须 `--confirm-prod`。
 - `central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一被选中时，混合事务整体进入生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布 rolling 替换。migration、Compose/发布契约、未知影响始终完整维护、备份和单 Alembic head。`no-change` 只有实际容器 RepoDigest、健康和 config revision 全部一致才能报告。
-- test/prod 共用 main bundle 镜像；环境身份、DB/Redis、Token、对象存储、bucket、域名、Bot username 和开关只允许来自宿主 env/overlay/Web runtime config。main CI 必须执行 `validate_release_environment_neutral.py` 检查 build context、Dockerfile、image Config.Env 和 Public Web dist，且不得输出秘密值。
+- test/prod 共用 main bundle 镜像；环境身份、DB/Redis、Token、对象存储、bucket、域名、Bot username 和开关只允许来自宿主 env/overlay/Web runtime config。`.dockerignore` 必须同时递归排除根目录与任意子目录的 `.env`/`.env.*`，避免目录级 `COPY` 带入开发示例。main CI 必须执行 `validate_release_environment_neutral.py` 检查 build context、Dockerfile、image Config.Env、镜像文件系统和 Public Web dist，且不得输出秘密值。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - 普通窄更新仍通过影响 planner 和必要的 `--services` 扩大集合表达；两个 fast-track 均禁止同时传 `--services`，也禁止退回单文件同步、rsync 或现场 `--build`。
 - QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=true` 且 webhook/profile/owner Host 已启用，测试环境仍禁用该 worker。
