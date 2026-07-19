@@ -90,6 +90,39 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     }
 
 
+def test_dashboard_backend_projection_requires_agent_control_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+
+    snapshot = module.build_snapshot(
+        contract,
+        "prod",
+        values,
+        services={"dashboard-backend"},
+    )
+
+    assert snapshot.projections["dashboard-backend"]["AGENT_SECRET_TOKEN"] == (
+        "prod-agent-token"
+    )
+    assert "UNRELATED_OPERATOR_SECRET" not in snapshot.projections["dashboard-backend"]
+
+
+def test_dashboard_backend_projection_rejects_missing_agent_control_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    del values["AGENT_SECRET_TOKEN"]
+
+    with pytest.raises(module.ContractError, match="AGENT_SECRET_TOKEN"):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"dashboard-backend"},
+        )
+
+
 def test_missing_required_service_key_fails_closed_without_value_disclosure():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
