@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "a5f5469758b4ecca09ff256fa459e375a85bc076",
+  "batch": "materialize-gpu-pins-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-materialize-gpu-pins-20260719",
+  "members": [
+    {
+      "base_sha": "a5f5469758b4ecca09ff256fa459e375a85bc076",
+      "branch": "codex/a-materialize-inherited-gpu-pins",
+      "head": "3d1fc8dffca3df6cd7c549e9e785c6a6f7cc53be",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

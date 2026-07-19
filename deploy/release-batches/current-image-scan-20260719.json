@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "9b624dc64272a1cb54d06ac57a92d95314a3ad7b",
+  "batch": "current-image-scan-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-current-image-scan-20260719",
+  "members": [
+    {
+      "base_sha": "9b624dc64272a1cb54d06ac57a92d95314a3ad7b",
+      "branch": "codex/a-scan-only-current-build-images",
+      "head": "f1de972c9fa6b4cef8fdd30e8addcfd816cc9c1a",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

@@ -825,6 +825,66 @@ def test_prod_worker_render_pornmaster_flux2_edit_bf16_isolated_on_4090():
     )
 
 
+def test_prod_worker_render_accepts_release_pinned_pornmaster_digest():
+    release_image = (
+        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX.removesuffix(":")
+        + "@sha256:"
+        + "c" * 64
+    )
+
+    for profile in ("pornmaster_flux2_edit", "pornmaster_flux2_edit_bf16"):
+        agent_id = prod_agent_id_from_slot("01", profile=profile)
+        provider = RunPodProvider(
+            _settings(
+                prod_agent_id=agent_id,
+                image_name_pornmaster_flux2_edit=release_image,
+                model_bucket="allbot-model-cache",
+            )
+        )
+        options = RunPodProdWorkerOptions(
+            action="render",
+            profile=profile,
+            task_type=profile,
+            agent_id=agent_id,
+            quiet=True,
+        )
+
+        payload = RunPodProdWorkerRunner(provider, options).run()
+
+        assert payload["ok"] is True, profile
+        assert payload["render"]["imageName"] == release_image
+
+
+def test_prod_worker_render_rejects_foreign_pornmaster_digest():
+    agent_id = prod_agent_id_from_slot(
+        "01", profile="pornmaster_flux2_edit_bf16"
+    )
+    provider = RunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_pornmaster_flux2_edit=(
+                "ghcr.io/example/foreign-pornmaster@sha256:" + "d" * 64
+            ),
+            model_bucket="allbot-model-cache",
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="pornmaster_flux2_edit_bf16",
+        task_type="pornmaster_flux2_edit_bf16",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert (
+        "imageName must start with "
+        + RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+    ) in payload["error"]
+
+
 def test_prod_worker_bf16_canary_covers_single_and_multi_isolated_task_types():
     agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
     runner = RunPodProdWorkerRunner(

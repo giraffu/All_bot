@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST
+from src.runtime_environment import require_env
 from src.core.auth_core_dependencies import build_auth_core_dependencies
 from src.core.auth_core_flows import (
     authenticate_and_get_user_flow,
@@ -34,6 +34,7 @@ from src.core.auth_core_rate_limit import (
 )
 
 logger = logging.getLogger(__name__)
+BOT_TOKEN = require_env("BOT_TOKEN")
 
 
 class AuthCoreError(Exception):
@@ -86,6 +87,8 @@ if user_new == 1 then
 end
 return 1
 """
+
+
 async def verify_password(plain_password: str, hashed_password: str) -> bool:
     return await verify_password_impl(plain_password, hashed_password)
 
@@ -98,7 +101,6 @@ def verify_telegram_authorization(data: dict) -> bool:
     return verify_telegram_authorization_impl(
         data,
         bot_token=BOT_TOKEN,
-        bot_token_test=BOT_TOKEN_TEST,
         logger=logger,
         build_data_check_string_func=build_telegram_data_check_string,
         get_tokens_to_try_func=get_telegram_tokens_to_try,
@@ -110,7 +112,6 @@ def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
     return verify_telegram_webapp_initdata_impl(
         init_data,
         bot_token=BOT_TOKEN,
-        bot_token_test=BOT_TOKEN_TEST,
         logger=logger,
         build_data_check_string_func=build_telegram_data_check_string,
         get_tokens_to_try_func=get_telegram_tokens_to_try,

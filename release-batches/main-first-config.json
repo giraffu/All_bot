@@ -1,0 +1,22 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "235539217590e142cc895db3c5e1f9be9327cdaf",
+  "batch": "main-first-config",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-main-first-config",
+  "members": [
+    {
+      "base_sha": "a44833237a50bf1673d522c9be1ab400424465fb",
+      "branch": "codex/a-safe-candidate-prod-promotion",
+      "head": "c49b2161ba61b14bd0d321b1d37b90d4d2981c72",
+      "slot": "A"
+    },
+    {
+      "base_sha": "a44833237a50bf1673d522c9be1ab400424465fb",
+      "branch": "codex/c-simplify-test-train-release",
+      "head": "07b4c95966610c3e86e09cd798f16d1f43866407",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

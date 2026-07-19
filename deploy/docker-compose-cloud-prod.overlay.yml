@@ -1,18 +1,14 @@
 services:
   central-api:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8003:8003"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   web-api:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8000:8001"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   payment-api:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8002:8002"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   dashboard-backend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"]
     environment:
-      BOT_TYPE: PROD
-      API_BASE: "http://central-api:8003"
+      API_BASE: http://central-api:8003
       DASHBOARD_RUNPOD_AUTOSCALER_ENABLED: ${DASHBOARD_RUNPOD_AUTOSCALER_ENABLED:-true}
       DASHBOARD_RUNPOD_AUTOSCALER_MODE: ${DASHBOARD_RUNPOD_AUTOSCALER_MODE:-execute}
       DASHBOARD_RUNPOD_ENV_FILE: ${DASHBOARD_RUNPOD_ENV_FILE:-/dev/null}
@@ -29,16 +25,7 @@ services:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8086:8086"]
   qqcc-config-backend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8045:8045"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   qqcc-config-frontend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8088:8088"]
   imgproxy:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8084:8084"]
-  bot:
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
-  qqcc-bot:
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
-  qqcc-private-bot-worker:
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
-  paid-group-guard-bot:
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}

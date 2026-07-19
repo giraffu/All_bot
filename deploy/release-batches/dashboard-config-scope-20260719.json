@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f7d5959101ad9d49a30d06b0842514a438a4676e",
+  "batch": "dashboard-config-scope-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-config-scope-20260719",
+  "members": [
+    {
+      "base_sha": "f7d5959101ad9d49a30d06b0842514a438a4676e",
+      "branch": "codex/a-scope-dashboard-runtime-contract",
+      "head": "1c958f89a3b107b87fa36bb203f6646cf98795ae",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

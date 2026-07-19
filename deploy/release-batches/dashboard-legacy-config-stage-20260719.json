@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "0ce9df4cb4743603973053538263b4e1877e1878",
+  "batch": "dashboard-legacy-config-stage-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-legacy-config-stage-20260719",
+  "members": [
+    {
+      "base_sha": "0ce9df4cb4743603973053538263b4e1877e1878",
+      "branch": "codex/a-allow-reviewed-dashboard-stage-legacy-keys",
+      "head": "67e7b22a6a2c6526692d1300981c04a272d52f49",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

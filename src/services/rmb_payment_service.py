@@ -8,17 +8,12 @@ import aiohttp
 logger = logging.getLogger("rmb_payment")
 RMB_AMOUNT_QUANT = Decimal("0.01")
 
-# 配置项，生产环境请在环境变量中设置
-HUANYUY_PID = os.getenv("HUANYUY_PID", "10001")
-HUANYUY_KEY = os.getenv("HUANYUY_KEY", "your_key_here")
-HUANYUY_GATEWAY = os.getenv("HUANYUY_GATEWAY", "http://huanyuy.com/submit.php")
-HUANYUY_NOTIFY_URL = os.getenv(
-    "HUANYUY_NOTIFY_URL", "https://rmb.aivison.it.com/api/pay/notify/huanyuy"
-)
-HUANYUY_RETURN_URL = os.getenv(
-    "HUANYUY_RETURN_URL", "https://rmb.aivison.it.com/pay/result"
-)
-HUANYUY_SITENAME = os.getenv("HUANYUY_SITENAME", "合欢宗账房")
+HUANYUY_PID = os.getenv("HUANYUY_PID")
+HUANYUY_KEY = os.getenv("HUANYUY_KEY")
+HUANYUY_GATEWAY = os.getenv("HUANYUY_GATEWAY")
+HUANYUY_NOTIFY_URL = os.getenv("HUANYUY_NOTIFY_URL")
+HUANYUY_RETURN_URL = os.getenv("HUANYUY_RETURN_URL")
+HUANYUY_SITENAME = os.getenv("HUANYUY_SITENAME")
 
 
 class RMBPaymentService:

@@ -18,6 +18,19 @@ def _compose(path: Path) -> dict:
     return value
 
 
+def _projection_env_file(projection: str) -> list[dict[str, object]]:
+    return [
+        {
+            "path": (
+                "${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/"
+                f"{projection}.env"
+            ),
+            "required": False,
+            "format": "raw",
+        }
+    ]
+
+
 def test_immutable_cloud_compose_has_no_build_or_code_mounts():
     forbidden_mounts = ("src", "backend/app", "workflows", ".env")
 
@@ -51,10 +64,47 @@ def test_every_cloud_service_has_bounded_json_log_rotation():
         }, f"{name} is missing bounded json-file logging"
 
 
+def test_service_projection_files_are_optional_during_partial_project_parse():
+    services = _compose(BASE)["services"]
+
+    projected = {
+        name: service["env_file"]
+        for name, service in services.items()
+        if "env_file" in service
+    }
+    assert projected
+    for name, env_files in projected.items():
+        assert len(env_files) == 1, f"{name} must use one service projection"
+        assert env_files[0].get("required") is False, (
+            f"{name} projection must not block parsing an unrelated module"
+        )
+        assert env_files[0].get("format") == "raw", (
+            f"{name} projection must preserve literal dollar signs and hashes"
+        )
+        assert (
+            str(env_files[0].get("path", "")).endswith(f"/{name}.env")
+            or (
+                name == "bot"
+                and str(env_files[0].get("path", "")).endswith("/main-bot.env")
+            )
+            or (
+                name == "qqcc-private-bot-worker"
+                and str(env_files[0].get("path", "")).endswith(
+                    "/private-bot-worker.env"
+                )
+            )
+            or (
+                name == "paid-group-guard-bot"
+                and str(env_files[0].get("path", "")).endswith("/paid-group-bot.env")
+            )
+        )
+
+
 def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose():
     prod_overlay = _compose(ROOT / "deploy/docker-compose-cloud-prod.overlay.yml")
     environment = prod_overlay["services"]["dashboard-backend"]["environment"]
 
+    assert environment["API_BASE"] == "http://central-api:8003"
     assert environment["DASHBOARD_RUNPOD_AUTOSCALER_ENABLED"] == (
         "${DASHBOARD_RUNPOD_AUTOSCALER_ENABLED:-true}"
     )
@@ -84,8 +134,7 @@ def test_prod_dashboard_backend_uses_required_remote_lan_aio_runner_contract():
 
     assert environment["DASHBOARD_LAN_AIO_EXECUTION_MODE"] == "ssh"
     assert environment["DASHBOARD_LAN_AIO_RUNNER_HOST"] == (
-        "${DASHBOARD_LAN_AIO_RUNNER_HOST:?"
-        "DASHBOARD_LAN_AIO_RUNNER_HOST is required}"
+        "${DASHBOARD_LAN_AIO_RUNNER_HOST:?DASHBOARD_LAN_AIO_RUNNER_HOST is required}"
     )
     assert environment["DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT"] == (
         "${DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT:-/home/hfy/APP/All_bot}"
@@ -97,8 +146,7 @@ def test_prod_dashboard_backend_uses_required_remote_lan_aio_runner_contract():
     assert (
         "${DASHBOARD_LAN_AIO_RUNNER_KEY_DIR:?"
         "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR is required}"
-        "/id_ed25519:/app/runtime/lan-aio-runner/id_ed25519:ro"
-        in dashboard["volumes"]
+        "/id_ed25519:/app/runtime/lan-aio-runner/id_ed25519:ro" in dashboard["volumes"]
     )
 
 
@@ -107,14 +155,14 @@ def test_lan_aio_dashboard_runner_has_dedicated_tailscale_openssh_unit():
         ROOT / "deploy/systemd/allbot-lan-aio-dashboard-runner-sshd.service"
     ).read_text(encoding="utf-8")
 
+    assert "EnvironmentFile=%h/.config/allbot/lan-aio-dashboard-runner.env" in unit
+    assert "/usr/sbin/sshd -D -e" in unit
     assert (
-        "EnvironmentFile=%h/.config/allbot/lan-aio-dashboard-runner.env"
+        "HostKey=%h/.local/share/allbot/lan-aio-dashboard-runner/ssh_host_ed25519_key"
         in unit
     )
-    assert "/usr/sbin/sshd -D -e" in unit
-    assert "HostKey=%h/.local/share/allbot/lan-aio-dashboard-runner/ssh_host_ed25519_key" in unit
-    assert 'ListenAddress=${ALLBOT_LAN_AIO_RUNNER_LISTEN_ADDRESS}' in unit
-    assert '${ALLBOT_LAN_AIO_RUNNER_PORT}' in unit
+    assert "ListenAddress=${ALLBOT_LAN_AIO_RUNNER_LISTEN_ADDRESS}" in unit
+    assert "${ALLBOT_LAN_AIO_RUNNER_PORT}" in unit
     assert "PasswordAuthentication=no" in unit
     assert "UsePAM=no" in unit
     assert "PermitRootLogin=no" in unit
@@ -122,12 +170,12 @@ def test_lan_aio_dashboard_runner_has_dedicated_tailscale_openssh_unit():
 
 def test_central_and_worker_images_contain_their_dependency_closure():
     central = (ROOT / "deploy/docker/Dockerfile.central").read_text(encoding="utf-8")
-    control_plane = (
-        ROOT / "deploy/docker/Dockerfile.control-plane"
-    ).read_text(encoding="utf-8")
-    dashboard = (
-        ROOT / "deploy/docker/Dockerfile.dashboard-backend"
-    ).read_text(encoding="utf-8")
+    control_plane = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
+        encoding="utf-8"
+    )
+    dashboard = (ROOT / "deploy/docker/Dockerfile.dashboard-backend").read_text(
+        encoding="utf-8"
+    )
     worker = (ROOT / "deploy/docker/Dockerfile.worker").read_text(encoding="utf-8")
 
     assert "COPY backend/app /app/app" in central
@@ -135,11 +183,24 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY config.py /app/config.py" in dashboard
     assert "COPY ops /app/ops" in dashboard
     assert "COPY paid_group_guard_bot /app/paid_group_guard_bot" in dashboard
-    assert "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
-    assert "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py" in dashboard
-    assert "COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py" in dashboard
-    assert "COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py" in dashboard
-    assert "COPY scripts/release_strategy.py /app/scripts/release_strategy.py" in dashboard
+    assert (
+        "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
+    )
+    assert (
+        "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py"
+        in dashboard
+    )
+    assert (
+        "COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py"
+        in dashboard
+    )
+    assert (
+        "COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py"
+        in dashboard
+    )
+    assert (
+        "COPY scripts/release_strategy.py /app/scripts/release_strategy.py" in dashboard
+    )
     for script in (
         "gpu_release_rollout.py",
         "release_manifest_v2.py",
@@ -153,9 +214,9 @@ def test_central_and_worker_images_contain_their_dependency_closure():
 
 
 def test_dashboard_frontend_image_prepares_nginx_template_directory():
-    dockerfile = (
-        ROOT / "deploy/docker/Dockerfile.dashboard-frontend"
-    ).read_text(encoding="utf-8")
+    dockerfile = (ROOT / "deploy/docker/Dockerfile.dashboard-frontend").read_text(
+        encoding="utf-8"
+    )
 
     assert "mkdir -p /etc/nginx/templates" in dockerfile
 
@@ -166,8 +227,13 @@ def test_dashboard_backend_image_contains_runpod_admin_runtime_dependencies():
     )
 
     assert "COPY ops /app/ops" in dashboard
-    assert "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
-    assert "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py" in dashboard
+    assert (
+        "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
+    )
+    assert (
+        "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py"
+        in dashboard
+    )
     chmod_lines = [line for line in dashboard.splitlines() if "chmod 755" in line]
     assert any("/app/scripts/runpod_prod_ops.sh" in line for line in chmod_lines)
 
@@ -228,29 +294,27 @@ def test_test_stateful_services_reuse_legacy_volumes_and_runtime_names():
         "POSTGRES_USER": "${CLOUD_TEST_POSTGRES_USER:-postgres}",
         "POSTGRES_PASSWORD": "${CLOUD_TEST_POSTGRES_PASSWORD:?CLOUD_TEST_POSTGRES_PASSWORD is required}",
     }
-    assert services["postgres"]["networks"]["default"]["aliases"] == [
-        "postgres-test"
-    ]
+    assert services["postgres"]["networks"]["default"]["aliases"] == ["postgres-test"]
     assert services["redis"]["networks"]["default"]["aliases"] == ["redis-test"]
 
 
-def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
-    services = _compose(OVERLAYS[0])["services"]
-    expected_api_base = "http://central-api:8003"
+def test_test_runtime_uses_scoped_host_projections_without_test_aliases():
+    base = _compose(BASE)["services"]
+    overlay = _compose(OVERLAYS[0])["services"]
+    projections = {
+        "central-api": "central-api",
+        "web-api": "web-api",
+        "bot": "main-bot",
+        "qqcc-bot": "qqcc-bot",
+        "qqcc-private-bot-worker": "private-bot-worker",
+    }
 
-    for name in (
-        "central-api",
-        "web-api",
-        "bot",
-        "qqcc-bot",
-        "qqcc-private-bot-worker",
-    ):
-        environment = services[name]["environment"]
-        assert environment["BOT_TYPE"] == "TEST"
-        assert environment["API_BASE"] == expected_api_base
-        assert environment["API_BASE_TEST"] == expected_api_base, (
-            f"{name} would let legacy env override the immutable Central alias"
-        )
+    for service, projection in projections.items():
+        assert base[service]["env_file"] == _projection_env_file(projection)
+        environment = overlay.get(service, {}).get("environment", {})
+        assert "BOT_TYPE" not in environment
+        assert "API_BASE" not in environment
+        assert "API_BASE_TEST" not in environment
 
 
 def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
@@ -270,11 +334,10 @@ def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
     assert test_services["qqcc-config-backend"]["ports"] == [
         "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"
     ]
-    assert test_services["qqcc-config-backend"]["environment"] == {
-        "BOT_TYPE": "TEST",
-        "API_BASE": "http://central-api:8003",
-        "API_BASE_TEST": "http://central-api:8003",
-    }
+    assert "environment" not in test_services["qqcc-config-backend"]
+    assert base["qqcc-config-backend"]["env_file"] == _projection_env_file(
+        "qqcc-config-backend"
+    )
     assert test_services["qqcc-config-frontend"]["ports"] == [
         "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8088:8088"
     ]
@@ -283,32 +346,40 @@ def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
 def test_legacy_cloud_test_compose_no_longer_defines_owner_tools():
     services = _compose(ROOT / "deploy/docker-compose-cloud-test.yml")["services"]
 
-    assert not {
-        "dashboard-backend-test",
-        "dashboard-frontend-test",
-        "qqcc-config-backend-test",
-        "qqcc-config-frontend-test",
-    } & services.keys()
+    assert (
+        not {
+            "dashboard-backend-test",
+            "dashboard-frontend-test",
+            "qqcc-config-backend-test",
+            "qqcc-config-frontend-test",
+        }
+        & services.keys()
+    )
 
 
-def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
-    services = _compose(OVERLAYS[1])["services"]
-    expected_api_base = "http://central-api:8003"
+def test_prod_runtime_uses_host_projections_for_python_consumers():
+    base = _compose(BASE)["services"]
+    overlay = _compose(OVERLAYS[1])["services"]
+    projections = {
+        "central-api": "central-api",
+        "web-api": "web-api",
+        "payment-api": "payment-api",
+        "dashboard-backend": "dashboard-backend",
+        "qqcc-config-backend": "qqcc-config-backend",
+        "bot": "main-bot",
+        "qqcc-bot": "qqcc-bot",
+        "qqcc-private-bot-worker": "private-bot-worker",
+        "paid-group-guard-bot": "paid-group-bot",
+    }
 
-    for name in (
-        "central-api",
-        "web-api",
-        "payment-api",
-        "dashboard-backend",
-        "qqcc-config-backend",
-        "bot",
-        "qqcc-bot",
-        "qqcc-private-bot-worker",
-        "paid-group-guard-bot",
-    ):
-        environment = services[name]["environment"]
-        assert environment["BOT_TYPE"] == "PROD"
-        assert environment["API_BASE"] == expected_api_base
+    for service, projection in projections.items():
+        assert base[service]["env_file"] == _projection_env_file(projection)
+        environment = overlay.get(service, {}).get("environment", {})
+        assert "BOT_TYPE" not in environment
+        if service == "dashboard-backend":
+            assert environment["API_BASE"] == "http://central-api:8003"
+        else:
+            assert "API_BASE" not in environment
 
 
 def test_release_workflow_builds_all_images_and_never_uses_latest():
@@ -327,23 +398,39 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "scripts/ci_release_v2.py" in workflow
     assert ":latest" not in workflow
     assert (
-        '05-select-dashboard-spa.sh && test -f '
-        '/etc/nginx/templates/default.conf.template'
+        "05-select-dashboard-spa.sh && test -f "
+        "/etc/nginx/templates/default.conf.template"
     ) in workflow
     assert (
-        'import dashboard.backend.main; '
-        'import dashboard.backend.qqcc_config_main'
+        "import dashboard.backend.main; import dashboard.backend.qqcc_config_main"
     ) in workflow
     assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
     assert "MINIO_ENDPOINT=127.0.0.1:1" in workflow
+    for synthetic_runtime_key in (
+        "ALLBOT_ENV=test",
+        "BOT_TYPE=TEST",
+        "DASHBOARD_SECRET_KEY=ci-smoke-dashboard-secret",
+        "DASHBOARD_ADMIN_USERNAME=ci-smoke-admin",
+        "DASHBOARD_ADMIN_PASSWORD_HASH=ci-smoke-password-hash",
+        "QQCC_CONFIG_SECRET_KEY=ci-smoke-qqcc-secret",
+        "QQCC_CONFIG_ADMIN_USERNAME=ci-smoke-qqcc-admin",
+        "QQCC_CONFIG_ADMIN_PASSWORD_HASH=ci-smoke-qqcc-password-hash",
+    ):
+        assert synthetic_runtime_key in workflow
     assert "oras repo tags" in workflow
     assert 'git rev-list --first-parent "${SOURCE_SHA}^"' in workflow
     assert "--skip-git-checks --skip-ci-checks --skip-env-checks" in workflow
-    assert "allbot-release-v2-test-candidate" in workflow
+    assert "allbot-release-v2-test-candidate" not in workflow
+    assert "branches: [main]" in workflow
     assert "EVENT_RUN_ID: ${{ github.event.workflow_run.id }}" in workflow
     assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
     assert "previous-release/release-v2/release-index.json" in workflow
+    assert "previous-release/promoted-release/release-index.json" in workflow
     assert 'echo "bundle=${previous_bundle_dir}"' in workflow
+    assert 'echo "sha=${previous_sha}"' in workflow
+    assert "PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}" in workflow
+    assert "--previous-catalog" in workflow
+    assert 'git show "${PREVIOUS_SHA}:deploy/release-artifacts-v2.json"' in workflow
     assert "options: [build-only]" in workflow
     assert "manual dispatch cannot claim full validation" in workflow
     assert '--validation-mode "$VALIDATION_MODE"' in workflow
@@ -351,10 +438,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "validation_mode=full" in workflow
     assert "allbot-gpu-release-manifests" in workflow
     assert "gpu-execution-manifest.json" in workflow
-    # Candidate publication may carry an incomplete GPU manifest; GPU/LAN
-    # promotion remains outside the control-plane/Public Web v1 scope.
-    assert "--require-complete-gpu" not in workflow
-    assert 'if [ "$RELEASE_CHANNEL" = main ]' not in workflow
+    # A trusted main bundle is complete; GPU mutation still remains outside
+    # release.py and uses the dedicated profile operator.
+    assert "--require-complete-gpu" in workflow
+    assert 'if [ "$RELEASE_CHANNEL" = main ]' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():
@@ -415,7 +502,9 @@ def test_release_postgres_integration_gate_uses_isolated_migrated_database():
     assert "Base.metadata.create_all" in workflow
     assert 'command.stamp(alembic_cfg, "head")' in workflow
     assert "await init_db()" in workflow
-    assert "python -m pytest -vv --maxfail=1 --durations=20 tests/integration" in workflow
+    assert (
+        "python -m pytest -vv --maxfail=1 --durations=20 tests/integration" in workflow
+    )
     assert "needs: [python-tests, postgres-integration-tests" in workflow
 
 
@@ -436,9 +525,7 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
 
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
-    bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
-        encoding="utf-8"
-    )
+    bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(encoding="utf-8")
 
     assert 'bash -seu <<< "$SCRIPT"' in bootstrap
     assert 'bash -ceu "$SCRIPT"' not in bootstrap
@@ -480,17 +567,15 @@ def test_python_310_container_bases_match_pinned_runtime_version_and_digest():
         first_line = path.read_text(encoding="utf-8").splitlines()[0]
         if first_line.startswith("FROM python:3.10"):
             python_310_dockerfiles.append(path)
-            assert first_line.removesuffix(
-                " AS python-runtime-base"
-            ) == expected, f"{path} has a mutable or mismatched Python base"
+            assert first_line.removesuffix(" AS python-runtime-base") == expected, (
+                f"{path} has a mutable or mismatched Python base"
+            )
 
     assert python_310_dockerfiles
 
 
 def test_hotspot_regression_script_references_existing_python_tests():
-    script = (ROOT / "scripts/run_hotspot_regression.sh").read_text(
-        encoding="utf-8"
-    )
+    script = (ROOT / "scripts/run_hotspot_regression.sh").read_text(encoding="utf-8")
     referenced_tests = set()
     for line in script.splitlines():
         token = line.strip().rstrip(" \\")

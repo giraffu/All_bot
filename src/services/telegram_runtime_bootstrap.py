@@ -9,22 +9,23 @@ from telegram import File, Poll, Update
 from telegram.ext import ContextTypes
 from telegram.request import HTTPXRequest
 
-DEFAULT_TELEGRAM_API_BASE_URL = "http://69.63.220.115:8081"
-DEFAULT_TELEGRAM_FILE_BASE_URL = "http://69.63.220.115:8082"
-
 _ORIGINAL_DOWNLOAD_TO_DRIVE = File.download_to_drive
 _ORIGINAL_POLL_DE_JSON = Poll.de_json
 _PATCHES_INSTALLED = False
 
 
 def resolve_telegram_api_base_url() -> str:
-    value = os.getenv("TELEGRAM_API_BASE_URL", DEFAULT_TELEGRAM_API_BASE_URL)
-    return value.strip().rstrip("/") or DEFAULT_TELEGRAM_API_BASE_URL
+    value = os.getenv("TELEGRAM_API_BASE_URL", "").strip().rstrip("/")
+    if not value:
+        raise RuntimeError("TELEGRAM_API_BASE_URL is required")
+    return value
 
 
 def resolve_telegram_file_base_url() -> str:
-    value = os.getenv("TELEGRAM_FILE_BASE_URL", DEFAULT_TELEGRAM_FILE_BASE_URL)
-    return value.strip().rstrip("/") or DEFAULT_TELEGRAM_FILE_BASE_URL
+    value = os.getenv("TELEGRAM_FILE_BASE_URL", "").strip().rstrip("/")
+    if not value:
+        raise RuntimeError("TELEGRAM_FILE_BASE_URL is required")
+    return value
 
 
 def build_telegram_bot_base_url() -> str:
