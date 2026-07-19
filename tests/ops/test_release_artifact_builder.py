@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -78,6 +79,49 @@ def test_catalog_contract_change_rebuilds_every_owned_artifact():
     }
     assert plan.build == owned
     assert plan.reuse == set()
+
+
+def test_control_plane_catalog_change_does_not_schedule_gpu_track():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    previous_catalog = deepcopy(catalog)
+    previous_catalog["central-api"]["inputs"] = ["old-central-api/**"]
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/release-artifacts-v2.json"],
+        has_previous=True,
+        previous_catalog=previous_catalog,
+    )
+
+    assert "central-api" in plan.build
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["track"] == "gpu-execution"
+    } <= plan.reuse
+
+
+def test_gpu_catalog_change_does_not_schedule_control_plane_track():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    previous_catalog = deepcopy(catalog)
+    previous_catalog["i2i_pro"]["profile"]["task_types"] = ["old-i2i"]
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/release-artifacts-v2.json"],
+        has_previous=True,
+        previous_catalog=previous_catalog,
+    )
+
+    assert plan.build == {"i2i_pro"}
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["track"] == "control-plane"
+        and artifact.get("kind") != "external-image"
+    } <= plan.reuse
 
 
 def test_build_matrix_contains_base_before_descendants_and_profile_metadata():

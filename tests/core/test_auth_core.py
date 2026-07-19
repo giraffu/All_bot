@@ -96,10 +96,7 @@ def _build_auth_core_dependencies(
 async def test_telegram_verify_helpers_validate_auth_date_and_tokens():
     logger = MagicMock()
 
-    assert (
-        build_telegram_data_check_string({"b": "2", "a": "1"})
-        == "a=1\nb=2"
-    )
+    assert build_telegram_data_check_string({"b": "2", "a": "1"}) == "a=1\nb=2"
 
     assert (
         is_telegram_auth_date_fresh(
@@ -123,17 +120,16 @@ async def test_telegram_verify_helpers_validate_auth_date_and_tokens():
 
     assert get_telegram_tokens_to_try(
         bot_token="prod-token",
-        bot_token_test="test-token",
         logger=logger,
-    ) == ["prod-token", "test-token"]
-    assert get_telegram_tokens_to_try(
-        bot_token=None,
-        bot_token_test=None,
-        logger=logger,
-    ) == []
-    assert logger.error.call_args_list[-1].args == (
-        "No BOT_TOKEN or BOT_TOKEN_TEST configured!",
+    ) == ["prod-token"]
+    assert (
+        get_telegram_tokens_to_try(
+            bot_token=None,
+            logger=logger,
+        )
+        == []
     )
+    assert logger.error.call_args_list[-1].args == ("No BOT_TOKEN configured!",)
 
 
 def test_telegram_verify_helper_uses_runtime_default_time_binding(monkeypatch):
@@ -225,7 +221,6 @@ def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
         verify_telegram_authorization_helper(
             {**widget_payload, "hash": widget_hash},
             bot_token=token,
-            bot_token_test=None,
             logger=logger,
             is_auth_date_fresh_func=auth_date_checker,
         )
@@ -245,13 +240,15 @@ def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
     ).hexdigest()
     init_data = urllib.parse.urlencode({**webapp_payload, "hash": webapp_hash})
 
-    assert verify_telegram_webapp_initdata_helper(
-        init_data,
-        bot_token=token,
-        bot_token_test=None,
-        logger=logger,
-        is_auth_date_fresh_func=auth_date_checker,
-    ) == webapp_user
+    assert (
+        verify_telegram_webapp_initdata_helper(
+            init_data,
+            bot_token=token,
+            logger=logger,
+            is_auth_date_fresh_func=auth_date_checker,
+        )
+        == webapp_user
+    )
 
 
 def test_telegram_validation_helpers_use_runtime_default_bindings(monkeypatch):
@@ -289,7 +286,6 @@ def test_telegram_validation_helpers_use_runtime_default_bindings(monkeypatch):
             "hash": "valid-signature",
         },
         bot_token="prod-token",
-        bot_token_test=None,
         logger=logger,
     )
 
@@ -338,7 +334,6 @@ def test_telegram_webapp_validation_helper_uses_runtime_default_bindings(monkeyp
         auth_core_telegram_validation.verify_telegram_webapp_initdata(
             init_data,
             bot_token="prod-token",
-            bot_token_test=None,
             logger=logger,
         )
         == webapp_user
@@ -368,7 +363,9 @@ async def test_build_telegram_auth_profile_normalizes_name_and_optional_fields()
 
 
 @pytest.mark.asyncio
-async def test_authenticate_and_get_user_uses_widget_profile_for_user_creation(monkeypatch):
+async def test_authenticate_and_get_user_uses_widget_profile_for_user_creation(
+    monkeypatch,
+):
     user = SimpleNamespace(telegram_id=42)
     stats = {"identity": "inner"}
 
@@ -455,13 +452,16 @@ async def test_auth_core_rate_limit_helpers_build_expected_keys_and_delegate_to_
         "allbot:ratelimit:bind:user:9",
     )
 
-    assert await is_rate_limited(
-        redis=redis,
-        ip_key="ip-key",
-        user_key="user-key",
-        max_attempts=5,
-        check_script="check-script",
-    ) is True
+    assert (
+        await is_rate_limited(
+            redis=redis,
+            ip_key="ip-key",
+            user_key="user-key",
+            max_attempts=5,
+            check_script="check-script",
+        )
+        is True
+    )
     await increment_rate_limit(
         redis=redis,
         ip_key="ip-key",
@@ -501,11 +501,14 @@ async def test_auth_core_password_version_helpers_build_and_delegate_to_redis():
         user_id=9,
         password_version=3,
     )
-    assert await is_password_version_blacklisted(
-        redis=redis,
-        user_id=9,
-        password_version=3,
-    ) is True
+    assert (
+        await is_password_version_blacklisted(
+            redis=redis,
+            user_id=9,
+            password_version=3,
+        )
+        is True
+    )
 
     redis.setex.assert_awaited_once_with("allbot:auth:blacklist:9:3", 604800, "1")
     redis.get.assert_awaited_once_with("allbot:auth:blacklist:9:3")
@@ -521,9 +524,11 @@ async def test_get_bindable_user_raises_when_user_missing():
             session=session,
             user_id=9,
             check_web_access_func=check_web_access,
-            user_not_found_error_factory=lambda: auth_core.AuthCoreError("用户不存在。"),
-            insufficient_permission_error_factory=lambda: auth_core.InsufficientPermissionError(
-                "权限不足"
+            user_not_found_error_factory=lambda: auth_core.AuthCoreError(
+                "用户不存在。"
+            ),
+            insufficient_permission_error_factory=lambda: (
+                auth_core.InsufficientPermissionError("权限不足")
             ),
         )
 
@@ -541,9 +546,11 @@ async def test_get_bindable_user_raises_when_web_access_denied():
             session=session,
             user_id=9,
             check_web_access_func=check_web_access,
-            user_not_found_error_factory=lambda: auth_core.AuthCoreError("用户不存在。"),
-            insufficient_permission_error_factory=lambda: auth_core.InsufficientPermissionError(
-                "权限不足"
+            user_not_found_error_factory=lambda: auth_core.AuthCoreError(
+                "用户不存在。"
+            ),
+            insufficient_permission_error_factory=lambda: (
+                auth_core.InsufficientPermissionError("权限不足")
             ),
         )
 
@@ -552,7 +559,9 @@ async def test_get_bindable_user_raises_when_web_access_denied():
 
 @pytest.mark.asyncio
 async def test_bind_password_to_user_hashes_updates_and_flushes_session():
-    user = SimpleNamespace(id=9, username="old", hashed_password="old-hash", password_version=3)
+    user = SimpleNamespace(
+        id=9, username="old", hashed_password="old-hash", password_version=3
+    )
     session = _FakeSession()
     get_password_hash = AsyncMock(return_value="new-hash")
 
@@ -656,8 +665,12 @@ async def test_authenticate_user_by_password_returns_stats_and_clears_rate_limit
 async def test_bind_user_password_rolls_back_and_increments_rate_limit_on_integrity_error(
     monkeypatch,
 ):
-    user = SimpleNamespace(id=7, username="old", hashed_password="old-hash", password_version=2)
-    redis = SimpleNamespace(eval=AsyncMock(side_effect=[0, 1]), delete=AsyncMock(), setex=AsyncMock())
+    user = SimpleNamespace(
+        id=7, username="old", hashed_password="old-hash", password_version=2
+    )
+    redis = SimpleNamespace(
+        eval=AsyncMock(side_effect=[0, 1]), delete=AsyncMock(), setex=AsyncMock()
+    )
     session = _FakeSession(
         get_result=user,
         flush_side_effect=IntegrityError("duplicate", {}, None),
@@ -672,7 +685,9 @@ async def test_bind_user_password_rolls_back_and_increments_rate_limit_on_integr
             check_web_access_func=AsyncMock(return_value=True),
         ),
     )
-    monkeypatch.setattr(auth_core, "get_password_hash", AsyncMock(return_value="new-hash"))
+    monkeypatch.setattr(
+        auth_core, "get_password_hash", AsyncMock(return_value="new-hash")
+    )
 
     with pytest.raises(auth_core.AuthCoreError, match="道号已被其他道友占用"):
         await auth_core.bind_user_password(7, "new-name", "secret", "127.0.0.1")
@@ -689,8 +704,12 @@ async def test_bind_user_password_rolls_back_and_increments_rate_limit_on_integr
 async def test_bind_user_password_commits_and_blacklists_previous_password_version(
     monkeypatch,
 ):
-    user = SimpleNamespace(id=9, username="old", hashed_password="old-hash", password_version=3)
-    redis = SimpleNamespace(eval=AsyncMock(return_value=0), delete=AsyncMock(), setex=AsyncMock())
+    user = SimpleNamespace(
+        id=9, username="old", hashed_password="old-hash", password_version=3
+    )
+    redis = SimpleNamespace(
+        eval=AsyncMock(return_value=0), delete=AsyncMock(), setex=AsyncMock()
+    )
     session = _FakeSession(get_result=user)
 
     monkeypatch.setattr(
@@ -702,7 +721,9 @@ async def test_bind_user_password_commits_and_blacklists_previous_password_versi
             check_web_access_func=AsyncMock(return_value=True),
         ),
     )
-    monkeypatch.setattr(auth_core, "get_password_hash", AsyncMock(return_value="new-hash"))
+    monkeypatch.setattr(
+        auth_core, "get_password_hash", AsyncMock(return_value="new-hash")
+    )
 
     await auth_core.bind_user_password(9, "new-name", "secret", "127.0.0.1")
 

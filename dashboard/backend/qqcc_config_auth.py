@@ -2,14 +2,11 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-
-load_dotenv()
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
@@ -27,21 +24,15 @@ class TokenData(BaseModel):
 
 
 def _admin_username() -> str:
-    return os.getenv("QQCC_CONFIG_ADMIN_USERNAME", "qqcc_admin")
+    return os.environ["QQCC_CONFIG_ADMIN_USERNAME"]
 
 
 def _admin_password_hash() -> str:
-    return os.getenv(
-        "QQCC_CONFIG_ADMIN_PASSWORD_HASH",
-        "$2b$12$Kk9WvI6qO8uA5j0M7Nf8q.nB2sA1qQ.xZ1HjD3wUoYv2yQ1.hX1bC",
-    )
+    return os.environ["QQCC_CONFIG_ADMIN_PASSWORD_HASH"]
 
 
 def _secret_key() -> str:
-    return os.getenv(
-        "QQCC_CONFIG_SECRET_KEY",
-        "qqcc-config-dev-secret-change-in-production",
-    )
+    return os.environ["QQCC_CONFIG_SECRET_KEY"]
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

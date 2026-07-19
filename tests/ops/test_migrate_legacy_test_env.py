@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "migrate_legacy_test_env.py"
@@ -144,3 +146,79 @@ def test_migration_cli_never_prints_values(tmp_path, capsys):
     assert target.stat().st_mode & 0o777 == 0o600
     assert "SECRET_VALUE=cloud-do-not-log-this" in target.read_text(encoding="utf-8")
     assert "ALLBOT_WORKER_04_NODE_ID=gpu-226" in target.read_text(encoding="utf-8")
+
+
+def test_control_plane_only_migration_canonicalizes_legacy_test_keys_without_worker_changes():
+    module = _load_module()
+    legacy = {
+        "CLOUD_TEST_CONTROL_HOST": "test-control",
+        "BOT_TOKEN_TEST": "test-bot-token",
+        "QQCC_BOT_TOKEN_TEST": "test-qqcc-token",
+        "API_TOKEN_TEST": "legacy-api-token",
+        "API_TOKEN": "canonical-api-token",
+        "TELEGRAM_API_BASE_URL": "http://bot-api.internal:8081",
+        "ALLBOT_WORKER_SERVICES": "worker-99",
+        "ALLBOT_WORKER_99_TASK_TYPES": "existing-profile",
+    }
+
+    values = module.migrate_values(legacy, normalize_workers=False)
+
+    assert values["BOT_TOKEN"] == "test-bot-token"
+    assert values["QQCC_BOT_TOKEN"] == "test-qqcc-token"
+    assert values["API_TOKEN"] == "canonical-api-token"
+    assert values["TELEGRAM_FILE_BASE_URL"] == "http://bot-api.internal:8082"
+    assert values["ALLBOT_WORKER_SERVICES"] == "worker-99"
+    assert values["ALLBOT_WORKER_99_TASK_TYPES"] == "existing-profile"
+    assert "ALLBOT_WORKER_01_TASK_TYPES" not in values
+
+
+def test_migration_refuses_to_guess_unknown_telegram_file_endpoint():
+    module = _load_module()
+
+    with pytest.raises(module.MigrationError, match="TELEGRAM_FILE_BASE_URL"):
+        module.migrate_values(
+            {
+                "CLOUD_TEST_CONTROL_HOST": "test-control",
+                "TELEGRAM_API_BASE_URL": "https://custom-telegram.invalid/api",
+            },
+            normalize_workers=False,
+        )
+
+
+def test_control_plane_only_cli_writes_restricted_candidate_without_worker_defaults(
+    tmp_path,
+):
+    module = _load_module()
+    source = tmp_path / "legacy.env"
+    target = tmp_path / "test.env.next"
+    source.write_text(
+        "CLOUD_TEST_CONTROL_HOST=test-control\n"
+        "BOT_TOKEN_TEST=test-bot-token\n"
+        "TELEGRAM_API_BASE_URL=http://bot-api.internal:8081\n"
+        "ALLBOT_WORKER_SERVICES=worker-99\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        module.main(
+            [
+                "--source",
+                str(source),
+                "--output",
+                str(target),
+                "--control-plane-only",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    values, ignored = module.parse_legacy(
+        target.read_text(encoding="utf-8").splitlines()
+    )
+    assert ignored == []
+    assert values["BOT_TOKEN"] == "test-bot-token"
+    assert values["TELEGRAM_FILE_BASE_URL"] == "http://bot-api.internal:8082"
+    assert values["ALLBOT_WORKER_SERVICES"] == "worker-99"
+    assert "ALLBOT_WORKER_01_TASK_TYPES" not in values
+    assert target.stat().st_mode & 0o777 == 0o600

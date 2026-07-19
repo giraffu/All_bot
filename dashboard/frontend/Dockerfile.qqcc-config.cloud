@@ -14,11 +14,6 @@ RUN npm run build
 # Stage 2: serve the QQCC config app through the same locked-down Nginx gateway.
 FROM nginx:1.27-alpine
 
-ENV DASHBOARD_GATEWAY_PORT=8088
-ENV DASHBOARD_BACKEND_HOST=qqcc-config-backend-prod:8045
-ENV PRIVATE_QQCC_BOT_OWNER_HOST=private-bot.aivison.it.com
-ENV QQCC_CONFIG_ADMIN_HOST=qqcc-admin.aivison.it.com
-
 COPY --from=build /app/dist /usr/share/nginx/html
 RUN cp /usr/share/nginx/html/index.qqcc-config.html /usr/share/nginx/html/index.html
 COPY nginx.cloud-gateway.conf.template /etc/nginx/templates/default.conf.template

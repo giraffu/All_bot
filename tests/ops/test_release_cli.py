@@ -79,7 +79,7 @@ def _valid_test_environment(*, worker_slots: tuple[str, ...] = ()) -> dict[str, 
         "MINIO_ACCESS_KEY": "test-access-key",
         "MINIO_SECRET_KEY": "test-secret-key",
         "MINIO_SECURE": "false",
-        "BOT_TOKEN_TEST": "test-bot-token",
+        "BOT_TOKEN": "test-bot-token",
         "CLOUD_TEST_BIND_IP": "127.0.0.1",
         "CLOUD_TEST_CONTROL_HOST": "test-control",
         "CLOUD_TEST_DATABASE_URL": "postgresql+asyncpg://test-db",
@@ -329,6 +329,12 @@ def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts
         skip_git_checks=True,
         skip_ci_checks=True,
         dashboard_fast_track=False,
+        previous_state={
+            "artifacts": {
+                name: {"digest": artifact["digest"]}
+                for name, artifact in artifacts.items()
+            }
+        },
     )
 
     monkeypatch.setattr(
@@ -367,6 +373,27 @@ def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts
     assert selected == []
     assert manifest["selected_artifacts"] == []
     assert impact.services == set()
+
+
+def test_reused_artifact_with_stale_runtime_digest_is_selected():
+    module = _load_module()
+    target = {
+        "central-api": {"digest": "sha256:" + "1" * 64},
+        "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+        "python-runtime-base": {"digest": "sha256:" + "3" * 64},
+    }
+    previous = {
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "9" * 64},
+            "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+        }
+    }
+
+    assert module.runtime_drift_artifacts(
+        target,
+        previous,
+        excluded={"python-runtime-base"},
+    ) == {"central-api"}
 
 
 def test_v2_test_execution_without_track_state_is_an_initial_release(
@@ -648,8 +675,7 @@ def test_v2_transaction_journal_path_is_track_scoped():
     path = module._transaction_path("test", FULL_SHA, "test-execution")
 
     assert path == (
-        "/var/lib/allbot/deployments/test/transactions/"
-        f"test-execution/{FULL_SHA}.json"
+        f"/var/lib/allbot/deployments/test/transactions/test-execution/{FULL_SHA}.json"
     )
 
 
@@ -780,9 +806,7 @@ def test_release_policy_environment_guard_rejects_test_policy_in_production():
     module = _load_module()
 
     with pytest.raises(module.ReleaseError, match="only valid for test"):
-        module.validate_release_policy_environment(
-            {"environment": "test"}, "prod"
-        )
+        module.validate_release_policy_environment({"environment": "test"}, "prod")
 
 
 def test_qqcc_test_reconcile_policy_ignores_only_audited_test_train_drift():
@@ -856,9 +880,7 @@ def test_dashboard_fast_track_rejects_non_dashboard_runtime(path):
     module = _load_module()
 
     with pytest.raises(module.ReleaseError, match="dashboard fast-track"):
-        module.plan_dashboard_fast_track(
-            ["dashboard/frontend/src/App.vue", path]
-        )
+        module.plan_dashboard_fast_track(["dashboard/frontend/src/App.vue", path])
 
 
 def test_dashboard_fast_track_requires_a_dashboard_runtime_change():
@@ -1015,9 +1037,15 @@ FROM runtime AS paid-group-bot
 
 def test_control_plane_repair_equivalence_reuses_verified_content_and_smokes_private():
     module = _load_module()
-    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
-        _repair_equivalence_inputs()
-    )
+    (
+        state,
+        manifest,
+        tested_catalog,
+        target_catalog,
+        old_dockerfile,
+        new_dockerfile,
+        paths,
+    ) = _repair_equivalence_inputs()
     smoked = []
 
     evidence = module.validate_control_plane_repair_equivalence(
@@ -1039,9 +1067,15 @@ def test_control_plane_repair_equivalence_reuses_verified_content_and_smokes_pri
 
 def test_control_plane_repair_equivalence_rejects_other_target_stage_changes():
     module = _load_module()
-    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
-        _repair_equivalence_inputs()
-    )
+    (
+        state,
+        manifest,
+        tested_catalog,
+        target_catalog,
+        old_dockerfile,
+        new_dockerfile,
+        paths,
+    ) = _repair_equivalence_inputs()
     new_dockerfile = new_dockerfile.replace(
         "COPY src /app/src", "COPY src /app/src\nRUN touch /unexpected"
     )
@@ -1061,9 +1095,15 @@ def test_control_plane_repair_equivalence_rejects_other_target_stage_changes():
 
 def test_control_plane_repair_equivalence_requires_private_runtime_copy():
     module = _load_module()
-    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
-        _repair_equivalence_inputs()
-    )
+    (
+        state,
+        manifest,
+        tested_catalog,
+        target_catalog,
+        old_dockerfile,
+        new_dockerfile,
+        paths,
+    ) = _repair_equivalence_inputs()
     new_dockerfile = new_dockerfile.replace("COPY qqcc_bot /app/qqcc_bot\n", "")
 
     with pytest.raises(module.ReleaseError, match="qqcc_bot runtime copy"):
@@ -1083,9 +1123,15 @@ def test_control_plane_repair_promotion_uses_verified_base_and_records_evidence(
     monkeypatch,
 ):
     module = _load_module()
-    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
-        _repair_equivalence_inputs()
-    )
+    (
+        state,
+        manifest,
+        tested_catalog,
+        target_catalog,
+        old_dockerfile,
+        new_dockerfile,
+        paths,
+    ) = _repair_equivalence_inputs()
     args = SimpleNamespace(
         env="prod",
         command="deploy",
@@ -1276,7 +1322,10 @@ def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeyp
     assert execute is True
     assert "GENERATION_MAINTENANCE" not in script
     assert "pull dashboard-backend dashboard-frontend" in script
-    assert "up -d --no-deps --wait --wait-timeout 180 dashboard-backend dashboard-frontend" in script
+    assert (
+        "up -d --no-deps --wait --wait-timeout 180 dashboard-backend dashboard-frontend"
+        in script
+    )
     assert "allbot-nontarget" in script
     assert "central-api web-api" not in script
 
@@ -1362,10 +1411,14 @@ def test_test_candidate_ci_must_come_from_exact_test_train_branch(monkeypatch):
             stderr="",
         )
 
-    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/test-train"))
+    monkeypatch.setattr(
+        module, "_run", lambda *_args, **_kwargs: run_for("codex/test-train")
+    )
     module.verify_release_ci(candidate, FULL_SHA)
 
-    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/other"))
+    monkeypatch.setattr(
+        module, "_run", lambda *_args, **_kwargs: run_for("codex/other")
+    )
     with pytest.raises(module.ReleaseError, match="source branch"):
         module.verify_release_ci(candidate, FULL_SHA)
 
@@ -1376,7 +1429,11 @@ def test_git_release_uses_channel_specific_remote_ancestry(monkeypatch):
 
     def fake_run(command, **_kwargs):
         commands.append(command)
-        stdout = "  origin/codex/test-train\n" if command[1:4] == ["branch", "-r", "--contains"] else ""
+        stdout = (
+            "  origin/codex/test-train\n"
+            if command[1:4] == ["branch", "-r", "--contains"]
+            else ""
+        )
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(module, "_run", fake_run)
@@ -1386,7 +1443,13 @@ def test_git_release_uses_channel_specific_remote_ancestry(monkeypatch):
         source_ref="refs/heads/codex/test-train",
     )
 
-    assert ["git", "merge-base", "--is-ancestor", FULL_SHA, "origin/codex/test-train"] in commands
+    assert [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        FULL_SHA,
+        "origin/codex/test-train",
+    ] in commands
 
 
 def test_environment_validation_reports_names_without_secret_values():
@@ -1397,7 +1460,6 @@ def test_environment_validation_reports_names_without_secret_values():
         "ALLBOT_ENV_FILE": "/etc/allbot/test.env",
         "ALLBOT_STATE_ROOT": "/var/lib/allbot/test",
         "BOT_TOKEN": "super-secret-token",
-        "BOT_TOKEN_TEST": "super-secret-token",
     }
 
     with pytest.raises(module.ReleaseError) as exc_info:
@@ -1405,7 +1467,7 @@ def test_environment_validation_reports_names_without_secret_values():
 
     message = str(exc_info.value)
     assert "super-secret-token" not in message
-    assert "BOT_TOKEN" in message
+    assert "DATABASE_URL" in message
 
 
 def test_environment_contract_accepts_worker_08_and_rejects_unknown_slots():
@@ -1447,16 +1509,12 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
         matched_rules=["initial-release"],
     )
 
-    assert module.legacy_worker_containers(
-        "test", {"worker-01", "worker-08"}
-    ) == [
+    assert module.legacy_worker_containers("test", {"worker-01", "worker-08"}) == [
         "cloud-comfy-agent-test-1",
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
     ]
-    assert module.legacy_worker_containers(
-        "prod", {"worker-01", "worker-08"}
-    ) == [
+    assert module.legacy_worker_containers("prod", {"worker-01", "worker-08"}) == [
         "cloud-prod-comfy-agent-1",
         "cloud-prod-comfy-agent-8",
         "cloud-prod-worker-relay",
@@ -1617,7 +1675,7 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
 
     enabled_values = dict(
         _valid_test_environment(),
-        QQCC_BOT_TOKEN_TEST="test-qqcc-token",
+        QQCC_BOT_TOKEN="test-qqcc-token",
         PRIVATE_QQCC_BOT_ENABLED="true",
         PAID_GROUP_BOT_TOKEN="test-paid-group-token",
     )
@@ -1627,6 +1685,108 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
 
     assert enabled == selected
     assert disabled == set()
+
+
+def test_disabled_optional_cloud_services_are_global_not_release_scoped():
+    module = _load_module()
+    values = dict(
+        _valid_test_environment(),
+        QQCC_BOT_TOKEN="test-qqcc-token",
+        PRIVATE_QQCC_BOT_ENABLED="false",
+    )
+
+    disabled = module.disabled_optional_cloud_services("test", values)
+
+    assert disabled == {"qqcc-private-bot-worker"}
+
+
+def test_inactive_control_artifacts_are_not_selected_as_runtime_deployments():
+    module = _load_module()
+    names = {
+        "central-api",
+        "dashboard-backend",
+        "payment-api",
+        "private-bot-worker",
+        "public-web",
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "selected_artifacts": sorted(names),
+        "artifacts": {name: {} for name in names},
+    }
+
+    filtered, inactive = module.filter_inactive_control_artifacts(
+        "test", manifest, {"qqcc-private-bot-worker"}
+    )
+
+    assert filtered["selected_artifacts"] == ["central-api", "public-web"]
+    assert inactive == {
+        "dashboard-backend",
+        "payment-api",
+        "private-bot-worker",
+    }
+
+
+def test_cloud_deploy_does_not_activate_profiles_for_disabled_optional_services(
+    monkeypatch,
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api", "bot", "qqcc-bot", "qqcc-private-bot-worker"},
+        level="maintenance",
+    )
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    captured = {}
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+
+    def fake_remote(host, script, *, execute):
+        captured["script"] = script
+        return f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote)
+
+    module._deploy_cloud(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_RELEASE_SHA=x\n",
+        _valid_test_environment(),
+    )
+
+    script = captured["script"]
+    assert "--profile bot" in script
+    assert "--profile qqcc-bot" not in script
+    assert "--profile qqcc-private-bots" not in script
+    assert "pull bot central-api" in script
+    assert "qqcc-private-bot-worker" not in script
+
+
+def test_compose_profile_flags_include_only_selected_profile_services():
+    module = _load_module()
+
+    flags = module.compose_profile_flags(
+        {"qqcc-private-bot-worker", "qqcc-config-backend"}
+    )
+
+    assert flags == "--profile owner-tools --profile qqcc-private-bots"
+    assert module.compose_profile_flags({"central-api", "web-api"}) == ""
 
 
 def test_ci_plan_can_skip_runtime_env_but_deploy_cannot(tmp_path):
@@ -1858,8 +2018,10 @@ def test_test_data_service_repair_uses_confirmed_external_queue_evidence(
     monkeypatch.setattr(
         module,
         "_remote_shell",
-        lambda host, script, *, execute: remote_scripts.append(script)
-        or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n",
+        lambda host, script, *, execute: (
+            remote_scripts.append(script)
+            or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+        ),
     )
 
     module._deploy_cloud(
@@ -1921,8 +2083,10 @@ def test_v2_cloud_release_contract_is_track_scoped(monkeypatch):
     monkeypatch.setattr(
         module,
         "_remote_shell",
-        lambda host, script, *, execute: remote_scripts.append(script)
-        or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n",
+        lambda host, script, *, execute: (
+            remote_scripts.append(script)
+            or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+        ),
     )
 
     module._deploy_cloud(
@@ -1935,9 +2099,7 @@ def test_v2_cloud_release_contract_is_track_scoped(monkeypatch):
 
     write_command = " ".join(writes[0][0])
     assert (
-        "/var/lib/allbot/releases/control-plane/"
-        + FULL_SHA
-        + "/release.env.tmp"
+        "/var/lib/allbot/releases/control-plane/" + FULL_SHA + "/release.env.tmp"
     ) in write_command
     assert (
         "/var/lib/allbot/releases/control-plane/" + FULL_SHA + "/release.env"
@@ -1976,9 +2138,7 @@ def test_v2_cloud_rollback_reads_track_scoped_release_contract(monkeypatch):
     )
 
     assert (
-        "/var/lib/allbot/releases/control-plane/"
-        + previous_sha
-        + "/release.env"
+        "/var/lib/allbot/releases/control-plane/" + previous_sha + "/release.env"
     ) in remote_scripts[0]
 
 
@@ -1986,7 +2146,9 @@ def test_test_execution_preflight_skips_cloud_without_cloud_services(monkeypatch
     module = _load_module()
 
     def unexpected_cloud_probe(*_args, **_kwargs):
-        pytest.fail("test-execution without cloud services must not probe cloud rollback")
+        pytest.fail(
+            "test-execution without cloud services must not probe cloud rollback"
+        )
 
     monkeypatch.setattr(module, "_run", unexpected_cloud_probe)
 
@@ -2040,9 +2202,7 @@ def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
 
     assert blockers == []
     assert (
-        "/var/lib/allbot/releases/control-plane/"
-        + previous_sha
-        + "/release.env"
+        "/var/lib/allbot/releases/control-plane/" + previous_sha + "/release.env"
     ) in remote_scripts[0]
     assert (
         "/var/lib/allbot/releases/" + previous_sha + "/release.env"
@@ -2083,10 +2243,7 @@ def test_prod_dashboard_preflight_requires_readable_lan_aio_runner_key(monkeypat
     )
 
     assert blockers == ["cloud-lan-aio-runner-key-unavailable"]
-    assert (
-        "test -r /secure/lan-aio-runner/id_ed25519"
-        in remote_scripts[0]
-    )
+    assert "test -r /secure/lan-aio-runner/id_ed25519" in remote_scripts[0]
     assert "cloud-lan-aio-runner-key-permissions-not-600" in remote_scripts[0]
 
 
@@ -2128,7 +2285,10 @@ def test_prod_dashboard_preflight_probes_dedicated_lan_aio_runner(monkeypatch):
     assert "ssh -p 2222" in remote_scripts[0]
     assert "hfy@100.99.254.53" not in remote_scripts[0]
     assert "runner@example.internal" in remote_scripts[0]
-    assert "test -r /home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py" in remote_scripts[0]
+    assert (
+        "test -r /home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py"
+        in remote_scripts[0]
+    )
 
 
 def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
@@ -2162,9 +2322,7 @@ def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
     )
 
     assert (
-        "/var/lib/allbot/releases/control-plane/"
-        + previous_sha
-        + "/release.env"
+        "/var/lib/allbot/releases/control-plane/" + previous_sha + "/release.env"
     ) in remote_scripts[0]
     assert (
         "/var/lib/allbot/releases/" + previous_sha + "/release.env"
@@ -2247,13 +2405,12 @@ def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     ]
     assert compose_calls
     assert all(
-        options["env"]["ALLBOT_ENV_FILE"] == str(env_file)
-        for options in compose_calls
+        options["env"]["ALLBOT_ENV_FILE"] == str(env_file) for options in compose_calls
     )
     assert remote_calls == []
-    assert (
-        root / "release-env" / FULL_SHA / "legacy-worker-running.txt"
-    ).read_text(encoding="utf-8").splitlines() == [
+    assert (root / "release-env" / FULL_SHA / "legacy-worker-running.txt").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
         "cloud-comfy-agent-test-1",
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
@@ -2323,13 +2480,7 @@ def test_v2_worker_preflight_reads_track_scoped_rollback_contract(
     root = tmp_path / "release-root"
     (root / "repo" / ".git").mkdir(parents=True)
     (root / "releases" / previous_sha).mkdir(parents=True)
-    release_env = (
-        root
-        / "release-env"
-        / "test-execution"
-        / previous_sha
-        / "release.env"
-    )
+    release_env = root / "release-env" / "test-execution" / previous_sha / "release.env"
     release_env.parent.mkdir(parents=True)
     release_env.write_text("ALLBOT_RELEASE_TRACK=test-execution\n", encoding="utf-8")
     env_file = tmp_path / "test.env"
@@ -2821,7 +2972,9 @@ def test_prod_environment_rejects_test_sentinels_without_exposing_values():
     values["R2_BUCKET"] = "user-data-test"
 
     with pytest.raises(module.ReleaseError) as exc:
-        module.validate_environment(module.load_structured_file(SCHEMA_PATH), "prod", values)
+        module.validate_environment(
+            module.load_structured_file(SCHEMA_PATH), "prod", values
+        )
 
     message = str(exc.value)
     assert "BOT_TOKEN" in message
@@ -2860,7 +3013,9 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
 
     def fake_run(command, **_kwargs):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(state), stderr="")
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(state), stderr=""
+        )
 
     monkeypatch.setattr(module, "_run", fake_run)
     args = SimpleNamespace(
@@ -3056,6 +3211,35 @@ def test_artifact_current_state_keeps_mixed_module_versions():
     assert merged["git_sha"] == target_sha
     assert merged["artifacts"]["central-api"]["source_sha"] == previous_sha
     assert merged["artifacts"]["dashboard-backend"]["source_sha"] == target_sha
+
+
+def test_artifact_current_state_prunes_inactive_runtime_records():
+    module = _load_module()
+    existing = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": "b" * 40,
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "1" * 64},
+            "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+            "private-bot-worker": {"digest": "sha256:" + "3" * 64},
+        },
+    }
+    incoming = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "inactive_artifacts": ["dashboard-backend", "private-bot-worker"],
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "4" * 64},
+        },
+    }
+
+    merged = module.merge_artifact_current_state(existing, incoming)
+
+    assert set(merged["artifacts"]) == {"central-api"}
 
 
 def test_artifact_current_state_recovers_partial_legacy_state_from_history():
@@ -3334,6 +3518,31 @@ def test_deploy_module_requires_exact_promoted_main_approval():
         module.validate_deploy_module_approval(manifest)
 
 
+def test_deploy_module_accepts_a_full_main_bundle_for_runtime_test_evidence():
+    module = _load_module()
+    manifest = {
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "validation": {"mode": "full", "tests": "passed"},
+        "artifacts": {"web-api": {"digest": "sha256:" + "1" * 64}},
+        "selected_artifacts": ["web-api"],
+    }
+
+    module.validate_deploy_module_approval(manifest)
+
+
+def test_deploy_module_rejects_a_full_bundle_without_explicit_main_identity():
+    module = _load_module()
+    manifest = {
+        "validation": {"mode": "full", "tests": "passed"},
+        "artifacts": {"web-api": {"digest": "sha256:" + "1" * 64}},
+        "selected_artifacts": ["web-api"],
+    }
+
+    with pytest.raises(module.ReleaseError, match="full main build"):
+        module.validate_deploy_module_approval(manifest)
+
+
 def test_promoted_release_env_records_main_and_artifact_source_identity():
     module = _load_module()
     candidate_sha = "b" * 40
@@ -3433,7 +3642,9 @@ def test_test_candidate_channel_is_test_only_and_not_verifiable():
     with pytest.raises(module.ReleaseError, match="production"):
         module.validate_release_channel(candidate, environment="prod", purpose="deploy")
     with pytest.raises(module.ReleaseError, match="verify-test"):
-        module.validate_release_channel(candidate, environment="test", purpose="verify-test")
+        module.validate_release_channel(
+            candidate, environment="test", purpose="verify-test"
+        )
     with pytest.raises(module.ReleaseError, match="fast-track"):
         module.validate_release_channel(
             candidate,
@@ -3452,7 +3663,9 @@ def test_test_rollback_to_main_allows_clean_test_train_operator(monkeypatch):
         if command[:2] == ["git", "status"]:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         if command[:3] == ["git", "rev-parse", "HEAD"]:
-            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=FULL_SHA + "\n", stderr=""
+            )
         if command[-1] == "origin/main":
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -3475,7 +3688,9 @@ def test_main_deploy_does_not_allow_test_train_operator(monkeypatch):
         if command[:2] == ["git", "status"]:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         if command[:3] == ["git", "rev-parse", "HEAD"]:
-            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=FULL_SHA + "\n", stderr=""
+            )
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
 
     monkeypatch.setattr(module, "_run", fake_run)
@@ -3502,7 +3717,9 @@ def test_v2_incremental_track_with_no_changed_modules_selects_nothing(monkeypatc
     monkeypatch.setattr(
         module,
         "select_artifacts",
-        lambda *_args, **_kwargs: pytest.fail("empty incremental selection must not expand"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "empty incremental selection must not expand"
+        ),
     )
 
     manifest = module._load_v2_track(
@@ -3583,9 +3800,7 @@ def test_render_main_dashboard_release_env_contains_exact_runpod_profile_pins():
 
     release_env = module.render_track_release_env(manifest, "config-revision")
     rendered = dict(
-        line.split("=", 1)
-        for line in release_env.splitlines()
-        if "=" in line
+        line.split("=", 1) for line in release_env.splitlines() if "=" in line
     )
 
     assert json.loads(rendered["RUNPOD_RELEASE_PROFILE_PINS_JSON"]) == pins
@@ -3669,16 +3884,17 @@ def test_independent_dashboard_release_uses_its_own_artifact_baseline():
     assert selection.previous_sha == dashboard_sha
 
 
-def test_independent_release_requires_exactly_one_module_group():
+def test_independent_release_supports_multiple_complete_module_groups():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
 
-    with pytest.raises(module.ReleaseError, match="exactly one"):
-        module.resolve_independent_module_release(
-            policy,
-            {"dashboard", "qqcc-bot"},
-            {"schema_version": 2},
-        )
+    assert module.expand_independent_module_request(
+        policy,
+        {"dashboard", "qqcc-bot"},
+    ) == (
+        "dashboard+qqcc-bot",
+        {"dashboard-backend", "dashboard-frontend", "qqcc-bot"},
+    )
 
 
 @pytest.mark.parametrize(
@@ -3689,9 +3905,7 @@ def test_independent_release_requires_exactly_one_module_group():
         ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
     ],
 )
-def test_independent_module_aliases_expand_to_complete_service_groups(
-    alias, artifacts
-):
+def test_independent_module_aliases_expand_to_complete_service_groups(alias, artifacts):
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
 
@@ -3787,8 +4001,9 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
     monkeypatch.setattr(
         module,
         "git_changed_paths",
-        lambda previous, target: diffs.append((previous, target))
-        or ["dashboard/frontend/src/App.vue"],
+        lambda previous, target: (
+            diffs.append((previous, target)) or ["dashboard/frontend/src/App.vue"]
+        ),
     )
 
     def fake_load(_path, *, sha, track, modules, select_all_when_empty):
@@ -3949,8 +4164,7 @@ def test_reviewed_qqcc_lora_catalog_contract_keeps_independent_releases_target_o
     )
     assert set(changed_paths) <= set(blocker["patterns"])
     contents = {
-        path: (ROOT / path).read_text(encoding="utf-8")
-        for path in changed_paths
+        path: (ROOT / path).read_text(encoding="utf-8") for path in changed_paths
     }
     selection = module.IndependentModuleRelease(
         name=module_name,
@@ -3960,9 +4174,7 @@ def test_reviewed_qqcc_lora_catalog_contract_keeps_independent_releases_target_o
 
     def fake_run(command, **_kwargs):
         path = command[-1].split(":", 1)[1]
-        return subprocess.CompletedProcess(
-            command, 0, stdout=contents[path], stderr=""
-        )
+        return subprocess.CompletedProcess(command, 0, stdout=contents[path], stderr="")
 
     monkeypatch.setattr(module, "_run", fake_run)
 
@@ -3983,7 +4195,9 @@ def test_main_channel_keeps_production_and_verify_test_compatibility():
     }
 
     module.validate_release_channel(main_release, environment="prod", purpose="deploy")
-    module.validate_release_channel(main_release, environment="test", purpose="verify-test")
+    module.validate_release_channel(
+        main_release, environment="test", purpose="verify-test"
+    )
 
 
 def test_release_cli_defaults_to_allbot_cloudflare_account():
@@ -4112,9 +4326,7 @@ def test_prod_rollback_preflight_accepts_cached_v2_release_index(tmp_path):
             previous_sha=previous_sha,
             bundle_cache=str(tmp_path),
         ),
-        module.ReleaseImpact(
-            services={"central-api", "web-static"}, level="rolling"
-        ),
+        module.ReleaseImpact(services={"central-api", "web-static"}, level="rolling"),
         _manifest(),
         {},
     )
@@ -4142,9 +4354,7 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
     deployment = {
         "id": "new-production-id",
         "environment": "production",
-        "deployment_trigger": {
-            "metadata": {"branch": "main", "commit_hash": sha}
-        },
+        "deployment_trigger": {"metadata": {"branch": "main", "commit_hash": sha}},
         "latest_stage": {"status": "success"},
     }
 
@@ -4220,16 +4430,16 @@ def test_pages_canonical_verification_rejects_stale_or_html_runtime(
     deployment = {
         "id": "new-production-id",
         "environment": "production",
-        "deployment_trigger": {
-            "metadata": {"branch": "main", "commit_hash": sha}
-        },
+        "deployment_trigger": {"metadata": {"branch": "main", "commit_hash": sha}},
         "latest_stage": {"status": "success"},
     }
 
     def fake_api(_args, _method, path, **_kwargs):
-        result = [deployment] if "deployments?" in path else {
-            "canonical_deployment": {"id": canonical_id}
-        }
+        result = (
+            [deployment]
+            if "deployments?" in path
+            else {"canonical_deployment": {"id": canonical_id}}
+        )
         return {"success": True, "result": result}
 
     class FakeResponse:
@@ -4249,7 +4459,9 @@ def test_pages_canonical_verification_rejects_stale_or_html_runtime(
             ).encode()
 
     monkeypatch.setattr(module, "_pages_api_request", fake_api)
-    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr(
+        module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse()
+    )
 
     with pytest.raises(module.ReleaseError, match=message):
         module.verify_pages_canonical_deployment(
@@ -4563,10 +4775,12 @@ def test_rollback_material_repair_never_mutates_running_services(monkeypatch):
     monkeypatch.setattr(
         module,
         "_remote_shell",
-        lambda host, script, *, execute: calls.append(
-            (("remote-shell", host), {"script": script, "execute": execute})
-        )
-        or f"ALLBOT_ROLLBACK_MATERIALS_READY:{FULL_SHA}\n",
+        lambda host, script, *, execute: (
+            calls.append(
+                (("remote-shell", host), {"script": script, "execute": execute})
+            )
+            or f"ALLBOT_ROLLBACK_MATERIALS_READY:{FULL_SHA}\n"
+        ),
     )
 
     environment = _valid_prod_environment()
@@ -4665,8 +4879,12 @@ def test_rollback_material_repair_command_materializes_without_preflight_loop(
     )
     monkeypatch.setattr(
         module,
-        "_validate_local_env",
-        lambda _args: (_valid_prod_environment(), "config-revision"),
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            _valid_prod_environment(),
+            "config-revision",
+            {"drift": False},
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -4726,11 +4944,17 @@ def test_rollback_material_repair_command_supports_test_without_prod_confirmatio
     monkeypatch.setattr(
         module, "build_plan", lambda _args: (impact, manifest, FULL_SHA)
     )
-    monkeypatch.setattr(module, "verify_operator_worktree_clean", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module, "verify_operator_worktree_clean", lambda **_kwargs: None
+    )
     monkeypatch.setattr(
         module,
-        "_validate_local_env",
-        lambda _args: (_valid_test_environment(), "config-revision"),
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            _valid_test_environment(),
+            "config-revision",
+            {"drift": False},
+        ),
     )
     monkeypatch.setattr(module, "verify_release_ci", lambda *_args: None)
     monkeypatch.setattr(
@@ -4816,19 +5040,28 @@ def test_rollback_material_repair_expands_disabled_test_owner_module_to_full_bas
         )
 
     monkeypatch.setattr(module, "build_plan", fake_build_plan)
-    monkeypatch.setattr(module, "verify_operator_worktree_clean", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module, "verify_operator_worktree_clean", lambda **_kwargs: None
+    )
     monkeypatch.setattr(
         module,
-        "_validate_local_env",
-        lambda _args: (_valid_test_environment(), "config-revision"),
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            _valid_test_environment(),
+            "config-revision",
+            {"drift": False},
+        ),
     )
     monkeypatch.setattr(module, "verify_release_ci", lambda *_args: None)
-    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest)
+    monkeypatch.setattr(
+        module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest
+    )
     monkeypatch.setattr(
         module,
         "render_track_release_env",
-        lambda manifest, _revision, **_kwargs: calls.append(("render", manifest))
-        or "release-env",
+        lambda manifest, _revision, **_kwargs: (
+            calls.append(("render", manifest)) or "release-env"
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -4875,9 +5108,7 @@ def test_disabled_test_owner_rollback_repair_rejects_recorded_digest_mismatch(
     full_manifest = {
         **manifest,
         "selected_artifacts": ["central-api"],
-        "artifacts": {
-            "central-api": {"kind": "image", "digest": bundled_digest}
-        },
+        "artifacts": {"central-api": {"kind": "image", "digest": bundled_digest}},
     }
     args = SimpleNamespace(
         env="test",
@@ -4886,7 +5117,9 @@ def test_disabled_test_owner_rollback_repair_rejects_recorded_digest_mismatch(
             "artifacts": {"central-api": {"digest": recorded_digest}},
         },
     )
-    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest)
+    monkeypatch.setattr(
+        module, "_load_v2_track", lambda *_args, **_kwargs: full_manifest
+    )
 
     with pytest.raises(module.ReleaseError, match="does not match"):
         module._expand_disabled_test_owner_rollback_baseline(
@@ -4936,7 +5169,9 @@ def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
 def test_transaction_journal_rejects_secret_fields_before_remote_write(monkeypatch):
     module = _load_module()
     writes = []
-    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: writes.append((args, kwargs)))
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: writes.append((args, kwargs))
+    )
     transaction = module.new_release_transaction(
         environment="prod",
         target_sha="a" * 40,
@@ -4980,7 +5215,9 @@ def test_transaction_commit_moves_staged_state_before_clearing_dual_maintenance(
     assert script.index("mv -f") < script.index(
         "rm -f /var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE"
     )
-    assert "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+    assert (
+        "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+    )
 
 
 def test_v2_transaction_commit_moves_staged_state_to_track_paths(monkeypatch):
@@ -5012,17 +5249,19 @@ def test_v2_transaction_commit_moves_staged_state_to_track_paths(monkeypatch):
     ) in script
     assert "/var/lib/allbot/deployments/test/control-plane/current.json" in script
     assert (
-        "/var/lib/allbot/deployments/test/control-plane/history/"
-        + "a" * 40
-        + ".json"
+        "/var/lib/allbot/deployments/test/control-plane/history/" + "a" * 40 + ".json"
     ) in script
 
 
-def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, monkeypatch):
+def test_preflight_manifest_resolution_never_pulls_or_creates_cache(
+    tmp_path, monkeypatch
+):
     module = _load_module()
     cache = tmp_path / "missing-cache"
     calls = []
-    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     args = SimpleNamespace(
         manifest=None,
         bundle_cache=str(cache),
@@ -5063,7 +5302,11 @@ def test_test_preflight_allows_owner_tool_bundle_with_available_test_service(
         "resolve_release_strategy",
         lambda *_args: decision,
     )
-    monkeypatch.setattr(module, "_validate_local_env", lambda _args: ({}, "rev"))
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: ({}, "rev", {"drift": False}),
+    )
     monkeypatch.setattr(module, "_plan_document", lambda *_args: {"plan": "ok"})
     monkeypatch.setattr(
         module,

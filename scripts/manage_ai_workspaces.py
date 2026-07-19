@@ -7,18 +7,20 @@ import argparse
 from contextlib import contextmanager
 import fcntl
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 
 SLOTS = ("A", "B", "C", "D", "E", "F", "G", "H")
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSPACE_ROOT = Path("/home/hfy/APP/All_bot-workspaces")
-DEFAULT_BASE_REF = "origin/codex/test-train"
+DEFAULT_BASE_REF = "origin/main"
 DEFAULT_LOCK_PATH = Path.home() / ".local" / "state" / "allbot" / "ai-workspaces.lock"
 TASK_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class WorkspaceError(RuntimeError):
@@ -262,6 +264,98 @@ class WorkspaceManager:
             self._fetch_base()
             self._git("switch", "--detach", self.base_ref, cwd=path)
 
+    def handoff(self, slot: str) -> dict[str, str]:
+        """Freeze one pushed task head and release its slot for new work."""
+
+        with self._workspace_lock():
+            slot = self._slot(slot)
+            path = self._require_initialized(slot)
+            self._require_clean(path)
+            branch = self._git("branch", "--show-current", cwd=path)
+            if not branch or not branch.startswith(f"codex/{slot.lower()}-"):
+                raise WorkspaceError("slot does not contain its assigned task branch")
+            head = self._git("rev-parse", "HEAD", cwd=path)
+            self._git("fetch", "--prune", "origin", branch)
+            remote_head = self._git("rev-parse", f"origin/{branch}", cwd=path)
+            if remote_head != head:
+                raise WorkspaceError("task branch head must be pushed exactly before handoff")
+            self._fetch_base()
+            base_sha = self._git("merge-base", head, self.base_ref, cwd=path)
+            if not FULL_SHA_RE.fullmatch(base_sha):
+                raise WorkspaceError("task branch has no trusted main base")
+            self._git("switch", "--detach", self.base_ref, cwd=path)
+            return {
+                "slot": slot,
+                "branch": branch,
+                "head": head,
+                "base_sha": base_sha,
+            }
+
+    def plan_batch(
+        self, batch: str, members: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Any]:
+        """Validate immutable handoffs for one integration PR targeting main."""
+
+        batch = self._task(batch)
+        if not members:
+            raise WorkspaceError("integration batch requires at least one handoff")
+        with self._workspace_lock():
+            self._fetch_base()
+            base_sha = self._git("rev-parse", self.base_ref)
+            frozen: list[dict[str, str]] = []
+            identities: set[tuple[str, str]] = set()
+            for raw in members:
+                slot = self._slot(str(raw.get("slot", "")))
+                branch = str(raw.get("branch", ""))
+                head = str(raw.get("head", ""))
+                if (
+                    not branch.startswith(f"codex/{slot.lower()}-")
+                    or not FULL_SHA_RE.fullmatch(head)
+                ):
+                    raise WorkspaceError("integration batch handoff identity is invalid")
+                identity = (slot, branch)
+                if identity in identities:
+                    raise WorkspaceError("integration batch contains a duplicate handoff")
+                identities.add(identity)
+                self._git("fetch", "--prune", "origin", branch)
+                remote_head = self._git("rev-parse", f"origin/{branch}")
+                if remote_head != head:
+                    raise WorkspaceError(
+                        f"handoff head changed after freeze: {slot} {branch}"
+                    )
+                member_base = str(raw.get("base_sha", ""))
+                if not member_base:
+                    member_base = self._git("merge-base", head, self.base_ref)
+                if not FULL_SHA_RE.fullmatch(member_base):
+                    raise WorkspaceError("integration batch member base is invalid")
+                if self._run(
+                    ["git", "merge-base", "--is-ancestor", member_base, head],
+                    check=False,
+                ).returncode:
+                    raise WorkspaceError("handoff head does not descend from its recorded base")
+                if self._run(
+                    ["git", "merge-base", "--is-ancestor", member_base, self.base_ref],
+                    check=False,
+                ).returncode:
+                    raise WorkspaceError("handoff base is not reachable from current main")
+                frozen.append(
+                    {
+                        "slot": slot,
+                        "branch": branch,
+                        "head": head,
+                        "base_sha": member_base,
+                    }
+                )
+            return {
+                "batch": batch,
+                "base_ref": self.base_ref,
+                "base_sha": base_sha,
+                "members": frozen,
+                "integration_branch": f"codex/release-batch-{batch}",
+                "pr_base": "main",
+                "container_build_trigger": "main-merge",
+            }
+
     def refresh(self, slot: str) -> None:
         with self._workspace_lock():
             slot = self._slot(slot)
@@ -271,6 +365,26 @@ class WorkspaceManager:
                 raise WorkspaceError("only a parked detached slot can be refreshed")
             self._fetch_base()
             self._git("switch", "--detach", self.base_ref, cwd=path)
+
+
+def write_batch_plan(path: Path, plan: Mapping[str, Any]) -> None:
+    """Persist one frozen batch plan without allowing replacement."""
+
+    output = path.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as exc:
+        raise WorkspaceError(f"batch plan output already exists: {output}") from exc
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(plan, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -287,6 +401,17 @@ def build_parser() -> argparse.ArgumentParser:
     assign.add_argument("--task", required=True)
     claim = subparsers.add_parser("claim")
     claim.add_argument("--task", required=True)
+    handoff = subparsers.add_parser("handoff")
+    handoff.add_argument("--slot", required=True)
+    batch = subparsers.add_parser("batch-plan")
+    batch.add_argument("--batch", required=True)
+    batch.add_argument("--output", type=Path, required=True)
+    batch.add_argument(
+        "--member",
+        action="append",
+        default=[],
+        help="Frozen handoff in SLOT:codex/branch@40-char-sha form.",
+    )
     for name in ("park", "refresh"):
         child = subparsers.add_parser(name)
         child.add_argument("--slot", required=True)
@@ -310,6 +435,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = {"slot": args.slot.upper(), "branch": manager.assign(args.slot, args.task)}
         elif args.command == "claim":
             result = manager.claim(args.task)
+        elif args.command == "handoff":
+            result = manager.handoff(args.slot)
+        elif args.command == "batch-plan":
+            members = []
+            for value in args.member:
+                try:
+                    slot, branch_head = value.split(":", 1)
+                    branch, head = branch_head.rsplit("@", 1)
+                except ValueError as exc:
+                    raise WorkspaceError(
+                        "member must use SLOT:codex/branch@40-char-sha"
+                    ) from exc
+                members.append({"slot": slot, "branch": branch, "head": head})
+            result = manager.plan_batch(args.batch, members)
+            write_batch_plan(args.output, result)
         elif args.command == "park":
             manager.park(args.slot)
             result = {"slot": args.slot.upper(), "status": "parked"}

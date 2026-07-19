@@ -3,7 +3,7 @@ name: Modular immutable release v2
 on:
   workflow_run:
     workflows: ["Immutable control-plane release"]
-    branches: [codex/test-train]
+    branches: [main]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -14,8 +14,8 @@ on:
         description: Immutable release channel.
         required: true
         type: choice
-        options: [test-candidate]
-        default: test-candidate
+        options: [main]
+        default: main
       gpu_manifest_ref:
         description: Optional OCI ref containing gpu-execution-manifest.json for this SHA.
         required: false
@@ -26,19 +26,6 @@ on:
         type: choice
         options: [build-only]
         default: build-only
-      publish_approval:
-        description: Publish a locally verified approval instead of building artifacts.
-        required: false
-        type: boolean
-        default: false
-      approval_base64:
-        description: Base64 encoded immutable promotion approval JSON.
-        required: false
-        default: ""
-      approval_sha256:
-        description: SHA256 of the decoded approval bytes.
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -54,7 +41,7 @@ env:
 jobs:
   release:
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.publish_approval == false) ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -79,13 +66,13 @@ jobs:
           if [ -n "$branch" ]; then
             validation_mode=full
             case "$branch" in
-              codex/test-train) channel=test-candidate ;;
+              main) channel=main ;;
               *) echo "untrusted workflow_run branch: $branch" >&2; exit 2 ;;
             esac
           else
             validation_mode="${INPUT_VALIDATION_MODE:-full}"
             case "$channel" in
-              test-candidate) branch=codex/test-train ;;
+              main) branch=main ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
             if [ "$validation_mode" != build-only ]; then
@@ -93,7 +80,7 @@ jobs:
               exit 2
             fi
           fi
-          bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
+          bundle_repository="${IMAGE_PREFIX}/allbot-release-v2"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
@@ -150,19 +137,9 @@ jobs:
           previous_sha=""
           previous_repository=""
           repositories=("$BUNDLE_REPOSITORY")
-          if [ "$RELEASE_CHANNEL" = test-candidate ]; then
-            repositories+=("${IMAGE_PREFIX}/allbot-release-v2")
-          fi
           for repository in "${repositories[@]}"; do
             tags_file="available-$(echo "$repository" | tr '/:' '--').txt"
             oras repo tags "$repository" > "$tags_file" || continue
-            if [ "$RELEASE_CHANNEL" = test-candidate ] && \
-               [ "$repository" = "${IMAGE_PREFIX}/allbot-release-v2" ] && \
-               grep -Fxq "$SOURCE_SHA" "$tags_file"; then
-              previous_sha="$SOURCE_SHA"
-              previous_repository="$repository"
-              break
-            fi
             while IFS= read -r candidate; do
               if grep -Fxq "$candidate" "$tags_file"; then
                 previous_sha="$candidate"
@@ -180,6 +157,8 @@ jobs:
               :
             elif [ -f previous-release/release-v2/release-index.json ]; then
               previous_bundle_dir=previous-release/release-v2
+            elif [ -f previous-release/promoted-release/release-index.json ]; then
+              previous_bundle_dir=previous-release/promoted-release
             else
               echo "previous v2 bundle has no release-index.json" >&2
               exit 2
@@ -187,9 +166,11 @@ jobs:
             comparison_sha="$previous_sha"
             echo "index=${previous_bundle_dir}/release-index.json" >> "$GITHUB_OUTPUT"
             echo "bundle=${previous_bundle_dir}" >> "$GITHUB_OUTPUT"
+            echo "sha=${previous_sha}" >> "$GITHUB_OUTPUT"
           else
             echo "index=" >> "$GITHUB_OUTPUT"
             echo "bundle=" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
           fi
           git diff --name-only "$comparison_sha" "$SOURCE_SHA" > changed-paths.txt
 
@@ -199,6 +180,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
           PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
           GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
           RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
@@ -216,6 +198,9 @@ jobs:
             --changed-file changed-paths.txt
             --output-dir release-v2
           )
+          if [ "$RELEASE_CHANNEL" = main ]; then
+            args+=(--require-complete-gpu)
+          fi
           gpu_manifest=""
           manifest_ref="${GPU_MANIFEST_REF:-${IMAGE_PREFIX}/allbot-gpu-release-manifests:${SOURCE_SHA}}"
           if oras manifest fetch "$manifest_ref" >/dev/null 2>&1; then
@@ -225,7 +210,10 @@ jobs:
             test -f "$gpu_manifest"
           fi
           if [ -n "$PREVIOUS_INDEX" ]; then
+            git show "${PREVIOUS_SHA}:deploy/release-artifacts-v2.json" \
+              > previous-release-artifacts-v2.json
             args+=(--previous-index "$PREVIOUS_INDEX" --previous-bundle-dir "$PREVIOUS_BUNDLE")
+            args+=(--previous-catalog previous-release-artifacts-v2.json)
           fi
           if [ -n "$gpu_manifest" ]; then
             args+=(--gpu-manifest "$gpu_manifest")
@@ -245,12 +233,58 @@ jobs:
           qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
           backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
           web_ref="$(jq -r '.artifacts["web-api"].ref' release-v2/control-plane-manifest.json)"
+          backend_env=(
+            -e ALLBOT_ENV=test
+            -e BOT_TYPE=TEST
+            -e ALLBOT_STATE_ROOT=/tmp/allbot
+            -e DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:1/bot_db
+            -e REDIS_URL=redis://127.0.0.1:1/0
+            -e WORKER_REDIS_URL=redis://127.0.0.1:1/1
+            -e API_BASE=http://127.0.0.1:1
+            -e API_TOKEN=ci-smoke-api-token
+            -e AUTH_TOKEN=ci-smoke-auth-token
+            -e AGENT_SECRET_TOKEN=ci-smoke-agent-token
+            -e BOT_TOKEN=123456:ci-smoke-only
+            -e MINIO_ENDPOINT=127.0.0.1:1
+            -e MINIO_ACCESS_KEY=ci-smoke-access
+            -e MINIO_SECRET_KEY=ci-smoke-secret
+            -e MINIO_BUCKET=ci-smoke-data
+            -e MINIO_RESULT_BUCKET=ci-smoke-results
+            -e MINIO_TEMPLATE_BUCKET=ci-smoke-templates
+            -e MINIO_SECURE=false
+            -e MINIO_PUBLIC_URL=http://127.0.0.1:1
+            -e DB_POOL_SIZE=5
+            -e DB_MAX_OVERFLOW=10
+            -e R2_MAX_POOL_CONNECTIONS=10
+            -e R2_EXISTS_POSITIVE_TTL_SECONDS=60
+            -e R2_EXISTS_NEGATIVE_TTL_SECONDS=5
+            -e R2_EXISTS_CACHE_MAX_ENTRIES=100
+            -e R2_HEAD_SEMAPHORE_LIMIT=2
+            -e R2_HEAD_CONNECT_TIMEOUT_SECONDS=1
+            -e R2_HEAD_READ_TIMEOUT_SECONDS=1
+            -e R2_HEAD_MAX_ATTEMPTS=1
+            -e POLL_INTERVAL=2
+            -e POLL_TIMEOUT=10
+            -e ENABLE_PUBLIC_SHARE=false
+            -e ENABLE_FREE_EDIT_V2=false
+            -e ENABLE_SCAIL2_LONG_ACTION_TRANSFER=false
+            -e DAILY_LIMIT=10
+            -e JWT_SECRET_KEY=ci-smoke-jwt-secret
+            -e DASHBOARD_SECRET_KEY=ci-smoke-dashboard-secret
+            -e DASHBOARD_ADMIN_USERNAME=ci-smoke-admin
+            -e DASHBOARD_ADMIN_PASSWORD_HASH=ci-smoke-password-hash
+            -e QQCC_CONFIG_SECRET_KEY=ci-smoke-qqcc-secret
+            -e QQCC_CONFIG_ADMIN_USERNAME=ci-smoke-qqcc-admin
+            -e QQCC_CONFIG_ADMIN_PASSWORD_HASH=ci-smoke-qqcc-password-hash
+            -e QQCC_CONFIG_ADMIN_HOST=qqcc-config.ci.invalid
+            -e PRIVATE_QQCC_BOT_OWNER_HOST=private-bot.ci.invalid
+          )
           docker run --rm --entrypoint sh "$dashboard_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
-          docker run --rm --entrypoint python -e MINIO_ENDPOINT=127.0.0.1:1 "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
+          docker run --rm --entrypoint python "${backend_env[@]}" "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
 
-      - name: Inspect candidate images and Web bytes for environment neutrality
+      - name: Inspect release images and Web bytes for environment neutrality
         shell: bash
         run: |
           set -euo pipefail
@@ -285,57 +319,3 @@ jobs:
           path: release-v2
           if-no-files-found: error
           retention-days: 90
-
-  publish-approval:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_approval == true
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 0
-
-      - name: Verify protected test-train head and approval bytes
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          APPROVAL_BASE64: ${{ inputs.approval_base64 }}
-          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
-        run: |
-          set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$APPROVAL_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          git fetch --prune origin codex/test-train
-          test "$(git rev-parse origin/codex/test-train)" = "$SOURCE_SHA"
-          printf '%s' "$APPROVAL_BASE64" | base64 --decode > promotion-approval.json
-          printf '%s  %s\n' "$APPROVAL_SHA256" promotion-approval.json | sha256sum --check -
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: oras-project/setup-oras@v1
-
-      - name: Validate against the immutable candidate and publish once
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          CANDIDATE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-test-candidate
-          APPROVAL_REPOSITORY: ghcr.io/${{ github.repository_owner }}/allbot-release-v2-promotions
-        run: |
-          set -euo pipefail
-          descriptor="$(oras manifest fetch --descriptor "${CANDIDATE_REPOSITORY}:${SOURCE_SHA}")"
-          candidate_digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$descriptor")"
-          mkdir -p candidate
-          oras pull "${CANDIDATE_REPOSITORY}:${SOURCE_SHA}" -o candidate
-          candidate_index="$(find candidate -name release-index.json -type f -print -quit)"
-          test -n "$candidate_index"
-          python scripts/publish_release_approval_v2.py \
-            --source-sha "$SOURCE_SHA" \
-            --candidate-index "$candidate_index" \
-            --candidate-bundle-digest "$candidate_digest" \
-            --approval promotion-approval.json \
-            --publish-ref "${APPROVAL_REPOSITORY}:${SOURCE_SHA}"

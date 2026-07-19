@@ -1,5 +1,6 @@
 import pytest
 
+from src.core.media_paths import MINIO_BUCKET
 from src.web_api.common.utils import (
     build_storage_input_file_url,
     call_with_optional_db,
@@ -108,8 +109,8 @@ def test_build_storage_input_file_url_uses_shared_storage_builder(monkeypatch):
 
     url = build_storage_input_file_url("bot-data/history/task-1/input.png")
 
-    assert url == "https://storage.example/bot-data/history/task-1/input.png"
-    assert presigned_calls == [("history/task-1/input.png", "bot-data")]
+    assert url == f"https://storage.example/{MINIO_BUCKET}/history/task-1/input.png"
+    assert presigned_calls == [("history/task-1/input.png", MINIO_BUCKET)]
 
 
 def test_build_storage_input_file_url_ignores_legacy_storage_when_object_exists(
@@ -147,8 +148,8 @@ def test_build_storage_input_file_url_ignores_legacy_storage_when_object_exists(
 
     url = build_storage_input_file_url("bot-data/history/task-1/input.png")
 
-    assert url == "https://storage.example/bot-data/history/task-1/input.png"
-    assert current_presigned == [("history/task-1/input.png", "bot-data")]
+    assert url == f"https://storage.example/{MINIO_BUCKET}/history/task-1/input.png"
+    assert current_presigned == [("history/task-1/input.png", MINIO_BUCKET)]
     assert legacy_presigned == []
 
 

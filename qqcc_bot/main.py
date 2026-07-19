@@ -135,7 +135,9 @@ def register_handlers(app, *, include_private_bot_provisioning: bool = True):
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(
-        MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_qqcc_gallery_apply_media)
+        MessageHandler(
+            filters.PHOTO | filters.Document.IMAGE, handle_qqcc_gallery_apply_media
+        )
     )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
     app.add_error_handler(global_error_handler)
@@ -184,9 +186,7 @@ def build_application(
     if config_loader is not None:
         app.bot_data["qqcc_config_loader"] = config_loader
     if callable(channel_membership_checker):
-        app.bot_data[QQCC_CHANNEL_MEMBERSHIP_CHECKER_KEY] = (
-            channel_membership_checker
-        )
+        app.bot_data[QQCC_CHANNEL_MEMBERSHIP_CHECKER_KEY] = channel_membership_checker
     register_handlers(
         app,
         include_private_bot_provisioning=include_private_bot_provisioning,
@@ -195,14 +195,14 @@ def build_application(
 
 
 def resolve_token(bot_type: str) -> str | None:
-    if bot_type == "PROD":
-        return os.getenv("QQCC_BOT_TOKEN")
-    return os.getenv("QQCC_BOT_TOKEN_TEST")
+    return os.getenv("QQCC_BOT_TOKEN")
 
 
 def main():
     setup_logging()
-    bot_type = os.getenv("BOT_TYPE", "TEST")
+    from src.runtime_environment import resolve_runtime_environment
+
+    _, bot_type = resolve_runtime_environment()
     token = resolve_token(bot_type)
     if not token:
         logger.error("Failed to start QQCC bot: %s token is not configured.", bot_type)

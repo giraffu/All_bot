@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 
+from src.core.media_paths import MINIO_BUCKET
 from src.database.models import History
 from src.web_api.services import users_history_mutation_service as mutation_service
 
@@ -139,7 +140,7 @@ async def test_favorite_user_history_prefers_latest_visible_duplicate_task_row()
     db.commit.assert_awaited_once()
     first_call = background_tasks.add_task.call_args_list[0]
     assert first_call.args[1:] == (
-        "bot-data",
+        MINIO_BUCKET,
         "123/output_images/task-1-new.png",
         "history/task-1/original.png",
     )
