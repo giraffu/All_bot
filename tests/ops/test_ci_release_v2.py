@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,24 @@ def test_complete_gpu_baseline_can_fill_unchanged_profiles():
 
     assert set(artifacts) == {"i2i", "i2i_pro", "scail2"}
     assert artifacts["i2i"]["source_sha"] == "b" * 40
+
+
+def test_inherited_gpu_baseline_is_materialized_for_bundle_assembler(tmp_path):
+    module = _load_module()
+    results = {"web-api": {"kind": "image"}}
+    inherited = {
+        name: _gpu_artifact(name)
+        for name in ("i2i", "i2i_pro", "scail2")
+    }
+
+    module._record_artifacts(inherited, results=results, results_dir=tmp_path)
+
+    assert set(results) == {"web-api", "i2i", "i2i_pro", "scail2"}
+    for name, artifact in inherited.items():
+        assert (tmp_path / f"{name}.json").is_file()
+        assert json.loads(
+            (tmp_path / f"{name}.json").read_text(encoding="utf-8")
+        ) == artifact
 
 
 @pytest.mark.parametrize(

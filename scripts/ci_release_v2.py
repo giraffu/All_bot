@@ -50,6 +50,20 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
+def _record_artifacts(
+    artifacts: Mapping[str, Mapping[str, Any]],
+    *,
+    results: dict[str, dict[str, Any]],
+    results_dir: Path,
+) -> None:
+    """Materialize validated artifacts for both planning and final assembly."""
+
+    for name, raw_artifact in artifacts.items():
+        artifact = dict(raw_artifact)
+        _write_result(results_dir / f"{name}.json", artifact)
+        results[name] = artifact
+
+
 def _digest(ref: str) -> str:
     value = _run(["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{.Manifest.Digest}}"])
     if not value.startswith("sha256:"):
@@ -296,7 +310,11 @@ def main() -> int:
             gpu_baseline_document,
             catalog=catalog,
         )
-        results.update(gpu_baseline_artifacts)
+        _record_artifacts(
+            gpu_baseline_artifacts,
+            results=results,
+            results_dir=results_dir,
+        )
 
     if args.gpu_manifest:
         gpu_document = json.loads(args.gpu_manifest.read_text(encoding="utf-8"))
@@ -305,9 +323,11 @@ def main() -> int:
             catalog=catalog,
             source_sha=args.sha,
         )
-        for name, artifact in gpu_artifacts.items():
-            _write_result(results_dir / f"{name}.json", artifact)
-            results[name] = artifact
+        _record_artifacts(
+            gpu_artifacts,
+            results=results,
+            results_dir=results_dir,
+        )
 
     unavailable_gpu = _unavailable_gpu_artifacts(
         catalog,
