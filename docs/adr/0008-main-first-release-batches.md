@@ -19,6 +19,7 @@ Accepted。取代 ADR 0005 的串行 test-train 决策和 ADR 0007 的 candidate
 - 功能任务不创建逐成员 test-train PR，也不触发 release bundle 构建或共享测试站部署。
 - 集成 AI 冻结若干 handoff 为一个不可覆盖的 release batch JSON，从冻结 main base 一次组合，运行批次测试，只创建一个 `release-batch -> main` PR。
 - PR CI 负责代码门禁但不发布容器。main push 的可信 CI 成功后，模块化 workflow 才为该 main SHA 构建一次 main-channel bundle；未变化 artifact 可从既有 main bundle 复用。
+- main bundle 的影响判定按 artifact track 隔离：控制面、Public Web、文档和发布工具变化不调度 GPU 构建；GPU artifact/profile 或执行代码变化继续通过独立 manifest、canary 和 operator 链路发布。
 - 用户需要测试环境时，再把该 main bundle 部署到唯一云测试站。standard artifact 通过 `verify-test` 写入 exact-digest main-channel evidence；direct artifact 按风险策略明确豁免。
 - 测试失败通过新的 handoff 和新的 main 批次 forward-fix，不改写 main 历史。
 - 生产继续只消费受保护 main bundle。每次 mutation 仍需 main/CI/digest/config/health/rollback 门禁和用户明确 `--confirm-prod`。

@@ -72,6 +72,7 @@ def plan_builds(
     changed_paths: Iterable[str],
     *,
     has_previous: bool,
+    previous_catalog: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> BuildPlan:
     changed_paths = tuple(changed_paths)
     owned = {
@@ -87,7 +88,8 @@ def plan_builds(
     if not has_previous:
         return BuildPlan(build=owned, reuse=(), resolve=external)
     normalized_paths = {path.removeprefix("./") for path in changed_paths}
-    if "deploy/release-artifacts-v2.json" in normalized_paths:
+    catalog_changed = "deploy/release-artifacts-v2.json" in normalized_paths
+    if catalog_changed and previous_catalog is None:
         return BuildPlan(build=owned, reuse=(), resolve=external)
     direct = {
         name
@@ -104,6 +106,12 @@ def plan_builds(
             for path in changed_paths
         )
     }
+    if catalog_changed:
+        direct.update(
+            name
+            for name in owned
+            if previous_catalog.get(name) != catalog.get(name)
+        )
     build = _expand_bases(catalog, direct) & owned
     return BuildPlan(build=build, reuse=owned - build, resolve=external)
 
@@ -129,15 +137,26 @@ def build_matrix(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", type=Path, default=Path("deploy/release-artifacts-v2.json"))
+    parser.add_argument("--previous-catalog", type=Path)
     parser.add_argument("--changed-file", type=Path)
     parser.add_argument("--no-previous", action="store_true")
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     catalog = load_catalog(args.catalog)
+    previous_catalog = (
+        load_catalog(args.previous_catalog)
+        if args.previous_catalog and args.previous_catalog.is_file()
+        else None
+    )
     changed = []
     if args.changed_file and args.changed_file.is_file():
         changed = args.changed_file.read_text(encoding="utf-8").splitlines()
-    plan = plan_builds(catalog, changed, has_previous=not args.no_previous)
+    plan = plan_builds(
+        catalog,
+        changed,
+        has_previous=not args.no_previous,
+        previous_catalog=previous_catalog,
+    )
     document = {**plan.as_dict(), "matrix": {"include": build_matrix(catalog, plan)}}
     payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
     if args.github_output:
