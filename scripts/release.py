@@ -3983,7 +3983,8 @@ test "$(stat -c %a {shlex.quote(env_file)})" = 600
 . {release_dir}/release.env
 {compose} config -q
 start_snapshot={shlex.quote(non_target_snapshot)}
-install -d -m 755 "$(dirname "$start_snapshot")"
+start_snapshot_dir="$(dirname "$start_snapshot")"
+test -d "$start_snapshot_dir" || install -d -m 755 "$start_snapshot_dir"
 target_names="$({compose} ps --format '{{{{.Name}}}}' {services} 2>/dev/null || true)"
 for name in {legacy_names or ":"}; do
   target_names="${{target_names}}

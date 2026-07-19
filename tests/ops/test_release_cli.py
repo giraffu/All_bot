@@ -1357,6 +1357,54 @@ def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeyp
     assert "central-api web-api" not in script
 
 
+def test_test_cloud_deploy_does_not_chmod_existing_tmp_snapshot_parent(monkeypatch):
+    module = _load_module()
+    args = SimpleNamespace(
+        command="deploy",
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    impact = module.ReleaseImpact(services={"imgproxy"}, level="rolling")
+    remote_scripts = []
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script)
+        or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n",
+    )
+
+    module._deploy_cloud(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_RELEASE_SHA=x\n",
+        {},
+    )
+
+    script = remote_scripts[0]
+    assert f"start_snapshot=/tmp/allbot-nontarget-{FULL_SHA}.txt" in script
+    assert 'start_snapshot_dir="$(dirname "$start_snapshot")"' in script
+    assert (
+        'test -d "$start_snapshot_dir" || '
+        'install -d -m 755 "$start_snapshot_dir"' in script
+    )
+    assert 'install -d -m 755 "$(dirname "$start_snapshot")"' not in script
+
+
 def test_explicit_services_can_only_widen_the_computed_set():
     module = _load_module()
 
