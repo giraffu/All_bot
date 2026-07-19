@@ -329,6 +329,12 @@ def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts
         skip_git_checks=True,
         skip_ci_checks=True,
         dashboard_fast_track=False,
+        previous_state={
+            "artifacts": {
+                name: {"digest": artifact["digest"]}
+                for name, artifact in artifacts.items()
+            }
+        },
     )
 
     monkeypatch.setattr(
@@ -367,6 +373,27 @@ def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts
     assert selected == []
     assert manifest["selected_artifacts"] == []
     assert impact.services == set()
+
+
+def test_reused_artifact_with_stale_runtime_digest_is_selected():
+    module = _load_module()
+    target = {
+        "central-api": {"digest": "sha256:" + "1" * 64},
+        "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+        "python-runtime-base": {"digest": "sha256:" + "3" * 64},
+    }
+    previous = {
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "9" * 64},
+            "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+        }
+    }
+
+    assert module.runtime_drift_artifacts(
+        target,
+        previous,
+        excluded={"python-runtime-base"},
+    ) == {"central-api"}
 
 
 def test_v2_test_execution_without_track_state_is_an_initial_release(
