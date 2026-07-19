@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "6ead5ba3c34807886c8c6f5e0df24a129baeb1fd",
+  "batch": "dashboard-config-stage-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-config-stage-20260719",
+  "members": [
+    {
+      "base_sha": "6ead5ba3c34807886c8c6f5e0df24a129baeb1fd",
+      "branch": "codex/a-stage-dashboard-config-only",
+      "head": "920514b39c07f8b06756b24c4544bf1ca12d8e27",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

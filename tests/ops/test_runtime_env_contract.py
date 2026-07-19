@@ -173,22 +173,28 @@ def test_gpu_worker_keys_are_outside_control_plane_revision_and_impact():
     assert "CLOUD_TEST_WORKER_ENABLED" not in changed.key_hashes
     assert "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED" not in changed.key_hashes
     assert module.changed_keys(changed, active) == set()
-    assert module.affected_services(
-        contract,
-        {
-            "ALLBOT_WORKER_I2I_PRO_IMAGE",
-            "CLOUD_TEST_WORKER_ENABLED",
-            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
-        },
-    ) == set()
-    assert module.unknown_changed_keys(
-        contract,
-        {
-            "ALLBOT_WORKER_I2I_PRO_IMAGE",
-            "CLOUD_TEST_WORKER_ENABLED",
-            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
-        },
-    ) == set()
+    assert (
+        module.affected_services(
+            contract,
+            {
+                "ALLBOT_WORKER_I2I_PRO_IMAGE",
+                "CLOUD_TEST_WORKER_ENABLED",
+                "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
+            },
+        )
+        == set()
+    )
+    assert (
+        module.unknown_changed_keys(
+            contract,
+            {
+                "ALLBOT_WORKER_I2I_PRO_IMAGE",
+                "CLOUD_TEST_WORKER_ENABLED",
+                "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
+            },
+        )
+        == set()
+    )
     assert all(
         "ALLBOT_WORKER_I2I_PRO_IMAGE" not in projection
         and "CLOUD_TEST_WORKER_ENABLED" not in projection
@@ -357,3 +363,46 @@ def test_cli_external_worker_change_is_not_control_plane_drift(tmp_path, capsys)
     assert inspected["changed_keys"] == []
     assert inspected["unknown_keys"] == []
     assert inspected["affected_services"] == []
+
+
+def test_full_inspect_detects_services_missing_from_scoped_initial_activation(
+    tmp_path, capsys
+):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(_environment("prod")), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--service",
+                "dashboard-backend",
+                "--service",
+                "dashboard-frontend",
+            ]
+        )
+        == 0
+    )
+    scoped = json.loads(capsys.readouterr().out)
+    assert scoped["drift"] is False
+
+    assert module.main(["inspect", *common]) == 0
+    full = json.loads(capsys.readouterr().out)
+
+    assert full["active_revision"] == scoped["environment_revision"]
+    assert full["drift"] is True
+    assert "web-api" in full["affected_services"]

@@ -54,8 +54,7 @@ def load_contract(path: Path) -> dict[str, Any]:
 def _external_patterns(contract: Mapping[str, Any]) -> tuple[str, ...]:
     raw_patterns = contract.get("external_patterns", [])
     if not isinstance(raw_patterns, list) or any(
-        not isinstance(pattern, str) or not pattern.strip()
-        for pattern in raw_patterns
+        not isinstance(pattern, str) or not pattern.strip() for pattern in raw_patterns
     ):
         raise ContractError("service environment external_patterns is invalid")
     return tuple(pattern.strip() for pattern in raw_patterns)
@@ -63,8 +62,7 @@ def _external_patterns(contract: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _is_external_key(contract: Mapping[str, Any], key: str) -> bool:
     return any(
-        fnmatch.fnmatchcase(key, pattern)
-        for pattern in _external_patterns(contract)
+        fnmatch.fnmatchcase(key, pattern) for pattern in _external_patterns(contract)
     )
 
 
@@ -204,9 +202,7 @@ def build_snapshot(
 
 
 def affected_services(contract: Mapping[str, Any], changed_keys: set[str]) -> set[str]:
-    changed_keys = {
-        key for key in changed_keys if not _is_external_key(contract, key)
-    }
+    changed_keys = {key for key in changed_keys if not _is_external_key(contract, key)}
     if not changed_keys:
         return set()
     configured = contract.get("services", {})
@@ -247,9 +243,7 @@ def affected_services(contract: Mapping[str, Any], changed_keys: set[str]) -> se
 def unknown_changed_keys(
     contract: Mapping[str, Any], changed_keys: set[str]
 ) -> set[str]:
-    changed_keys = {
-        key for key in changed_keys if not _is_external_key(contract, key)
-    }
+    changed_keys = {key for key in changed_keys if not _is_external_key(contract, key)}
     configured = contract.get("services", {})
     matched: set[str] = set()
     shared_defaults = contract.get("shared_defaults", {})
@@ -283,16 +277,26 @@ def snapshot_summary(
     *,
     changed_keys: Iterable[str] = (),
     active_revision: str | None = None,
+    active_service_revisions: Mapping[str, Any] | None = None,
     credential_isolation: str = "pending",
 ) -> dict[str, Any]:
     changed = set(changed_keys)
+    active_services = (
+        active_service_revisions
+        if isinstance(active_service_revisions, Mapping)
+        else {}
+    )
+    service_drift = any(
+        str(active_services.get(name, "")) != revision
+        for name, revision in snapshot.service_revisions.items()
+    )
     return {
         "schema_version": 1,
         "environment": snapshot.environment,
         "environment_revision": snapshot.environment_revision,
         "contract_revision": snapshot.contract_revision,
         "active_revision": active_revision,
-        "drift": active_revision != snapshot.environment_revision,
+        "drift": active_revision != snapshot.environment_revision or service_drift,
         "changed_keys": sorted(changed),
         "affected_services": sorted(
             name
@@ -604,7 +608,7 @@ def main(argv: list[str] | None = None) -> int:
         changed = changed_keys(snapshot, active)
         status = _credential_status(args.root)
         if args.command == "activate":
-            activate_snapshot(args.root, snapshot, credential_isolation=status)
+            active = activate_snapshot(args.root, snapshot, credential_isolation=status)
             active_revision = snapshot.environment_revision
         else:
             active_revision = (
@@ -614,10 +618,25 @@ def main(argv: list[str] | None = None) -> int:
             snapshot,
             changed_keys=changed,
             active_revision=active_revision,
+            active_service_revisions=(
+                active.get("service_revisions") if isinstance(active, Mapping) else None
+            ),
             credential_isolation=status,
         )
+        active_service_revisions = (
+            active.get("service_revisions")
+            if isinstance(active, Mapping)
+            and isinstance(active.get("service_revisions"), Mapping)
+            else {}
+        )
+        projection_drift = {
+            name
+            for name, revision in snapshot.service_revisions.items()
+            if str(active_service_revisions.get(name, "")) != revision
+        }
         summary["affected_services"] = sorted(
-            affected_services(contract, changed) & set(snapshot.projections)
+            (affected_services(contract, changed) & set(snapshot.projections))
+            | projection_drift
         )
         summary["unknown_keys"] = sorted(unknown_changed_keys(contract, changed))
         summary["present_keys"] = sorted(key for key, value in values.items() if value)
