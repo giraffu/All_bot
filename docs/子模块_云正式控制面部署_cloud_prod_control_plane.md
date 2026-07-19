@@ -262,6 +262,7 @@ python scripts/release.py promote --confirm-prod
 Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
 
 ### 4.2 专用 GPU 执行面运维
+
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
 
 SCAIL-2 的正式上线起始边界是“只更新云正式主控制面 + 正式 Web/Bot 入口 + gpu-002 slot0 SCAIL-2 AIO runtime/agent”。这条低影响路径不重建 `cloud-prod-comfy-agent-1..7`，不执行 `scripts/start_cloud_prod_worker.sh --start`，不修改 gpu-002 slot1/`8191` 或其它 GPU 节点。后续需要增加正式视频生视频容量时，可以使用手动正式 RunPod `scail2` profile 作为并行 worker；它不替代 slot0 LAN runtime，canary 通过后可与 `lan_aio_prod_gpu002_gpu0_scail2_01` 同时 enabled 接单。
