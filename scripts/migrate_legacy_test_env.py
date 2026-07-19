@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Mapping, Sequence
+from urllib.parse import urlsplit, urlunsplit
 
 
 VALID_KEY = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -94,10 +95,81 @@ STALE_SLOT_01_ASSIGNMENT = {
     "COMFY_API_URL": "http://192.168.1.252:8192",
     "COMFY_WS_URL": "ws://192.168.1.252:8192/ws",
 }
+LEGACY_CANONICAL_KEYS = {
+    "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED": (
+        "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED_TEST",
+    ),
+    "API_TOKEN": ("API_TOKEN_TEST",),
+    "BOT_TOKEN": ("BOT_TOKEN_TEST",),
+    "DATABASE_URL": ("DATABASE_URL_TEST", "CLOUD_TEST_DATABASE_URL"),
+    "MEMBERSHIP_SETTLEMENT_V2_ENABLED": (
+        "MEMBERSHIP_SETTLEMENT_V2_ENABLED_TEST",
+    ),
+    "MINI_APP_URL": ("MINI_APP_URL_TEST",),
+    "MINI_APP_VERSION": ("MINI_APP_VERSION_TEST",),
+    "ORDER_V2_ENABLED": ("ORDER_V2_ENABLED_TEST",),
+    "QQCC_BOT_TOKEN": ("QQCC_BOT_TOKEN_TEST",),
+    "REDIS_URL": ("REDIS_URL_TEST", "CLOUD_TEST_REDIS_URL"),
+    "VITE_MERCHANT_ADDRESS": ("VITE_MERCHANT_ADDRESS_TEST",),
+    "WEBAPP_URL": ("WEBAPP_URL_TEST",),
+    "WORKER_REDIS_URL": ("CLOUD_TEST_WORKER_REDIS_URL",),
+}
 
 
 class MigrationError(RuntimeError):
     pass
+
+
+def _canonicalize_legacy_keys(values: dict[str, str]) -> None:
+    for canonical, aliases in LEGACY_CANONICAL_KEYS.items():
+        if values.get(canonical, "").strip():
+            continue
+        for alias in aliases:
+            if values.get(alias, "").strip():
+                values[canonical] = values[alias]
+                break
+
+
+def _telegram_file_base_url(values: Mapping[str, str]) -> str:
+    existing = values.get("TELEGRAM_FILE_BASE_URL", "").strip()
+    if existing:
+        return existing
+    api_base = values.get("TELEGRAM_API_BASE_URL", "").strip()
+    if not api_base:
+        return ""
+    try:
+        parsed = urlsplit(api_base)
+        port = parsed.port
+    except ValueError as exc:
+        raise MigrationError(
+            "TELEGRAM_FILE_BASE_URL is required for an invalid Telegram API endpoint"
+        ) from exc
+    if (
+        parsed.scheme == "https"
+        and parsed.hostname == "api.telegram.org"
+        and port is None
+        and parsed.path.rstrip("/") == ""
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        return "https://api.telegram.org/file/bot"
+    if (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname
+        and port == 8081
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path.rstrip("/") == ""
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        hostname = (
+            f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        )
+        return urlunsplit((parsed.scheme, f"{hostname}:8082", "", "", ""))
+    raise MigrationError(
+        "TELEGRAM_FILE_BASE_URL is required for an unrecognized Telegram API endpoint"
+    )
 
 
 def parse_legacy(lines: Sequence[str]) -> tuple[dict[str, str], list[str]]:
@@ -156,17 +228,34 @@ def migrate_values(
     slots: Sequence[str] = DEFAULT_SLOTS,
     *,
     worker_legacy: Mapping[str, str] | None = None,
+    normalize_workers: bool = True,
 ) -> dict[str, str]:
     unknown = sorted(set(slots) - set(SLOT_DEFAULTS))
     if unknown:
         raise MigrationError("unsupported worker slots: " + ", ".join(unknown))
     worker_values = worker_legacy or legacy
     values = dict(legacy)
+    _canonicalize_legacy_keys(values)
     values.update(
         {
             "ALLBOT_ENV": "test",
             "ALLBOT_ENV_FILE": "/etc/allbot/test.env",
             "ALLBOT_STATE_ROOT": "/var/lib/allbot/test",
+            "QQCC_CONFIG_ADMIN_HOST": legacy.get(
+                "QQCC_CONFIG_ADMIN_HOST", "qqcc-admin-test.aivison.it.com"
+            ),
+            "PRIVATE_QQCC_BOT_OWNER_HOST": legacy.get(
+                "PRIVATE_QQCC_BOT_OWNER_HOST", "private-bot-test.aivison.it.com"
+            ),
+        }
+    )
+    telegram_file_base = _telegram_file_base_url(values)
+    if telegram_file_base:
+        values["TELEGRAM_FILE_BASE_URL"] = telegram_file_base
+    if not normalize_workers:
+        return values
+    values.update(
+        {
             "ALLBOT_WORKER_SERVICES": ",".join(f"worker-{slot}" for slot in slots),
             "ALLBOT_WORKER_STATE_ROOT": "/var/lib/allbot/test-worker",
             "ALLBOT_WORKER_CENTRAL_API_URL": (
@@ -175,12 +264,6 @@ def migrate_values(
             "ALLBOT_WORKER_RELAY_PORT": legacy.get(
                 "CLOUD_TEST_LOCAL_RELAY_PORT",
                 worker_values.get("CLOUD_TEST_LOCAL_RELAY_PORT", "8014"),
-            ),
-            "QQCC_CONFIG_ADMIN_HOST": legacy.get(
-                "QQCC_CONFIG_ADMIN_HOST", "qqcc-admin-test.aivison.it.com"
-            ),
-            "PRIVATE_QQCC_BOT_OWNER_HOST": legacy.get(
-                "PRIVATE_QQCC_BOT_OWNER_HOST", "private-bot-test.aivison.it.com"
             ),
         }
     )
@@ -257,6 +340,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--worker-services",
         default=",".join(f"worker-{slot}" for slot in DEFAULT_SLOTS),
     )
+    parser.add_argument(
+        "--control-plane-only",
+        action="store_true",
+        help="canonicalize control-plane keys without changing Worker selection or slots",
+    )
     parser.add_argument("--execute", action="store_true")
     return parser
 
@@ -271,6 +359,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             for item in args.worker_services.split(",")
             if item.strip()
         )
+        if args.control_plane_only and args.worker_source:
+            raise MigrationError(
+                "--worker-source cannot be used with --control-plane-only"
+            )
         legacy, ignored = parse_legacy(source.read_text(encoding="utf-8").splitlines())
         worker_legacy = None
         if args.worker_source:
@@ -278,10 +370,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 Path(args.worker_source).read_text(encoding="utf-8").splitlines()
             )
             ignored.extend(worker_ignored)
-        migrated = migrate_values(legacy, slots, worker_legacy=worker_legacy)
-        if not migrated.get("ALLBOT_WORKER_CENTRAL_API_URL", "").removeprefix(
-            "http://"
-        ).removesuffix(":8004"):
+        migrated = migrate_values(
+            legacy,
+            slots,
+            worker_legacy=worker_legacy,
+            normalize_workers=not args.control_plane_only,
+        )
+        if not args.control_plane_only and not migrated.get(
+            "ALLBOT_WORKER_CENTRAL_API_URL", ""
+        ).removeprefix("http://").removesuffix(":8004"):
             raise MigrationError("CLOUD_TEST_CONTROL_HOST is required")
         if not args.execute:
             print(

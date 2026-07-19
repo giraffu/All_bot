@@ -2,6 +2,7 @@
 
 > 2026-07-19：A-H 完成后以单批次 PR 合入 main，main CI 只构建一次不可变 bundle；只有用户要求测试时才部署该 main SHA。QQCC Config 前后端继续按 standard 进入专属测试实例，Dashboard 仍不进入测试站，`test-execution` 只在专项诊断时启用。状态/回滚历史按 track + artifact digest 隔离。禁止代码/env rsync、云端 build、源码 bind mount和 RunPod 启动 clone。
 > 配置唯一事实源为云测试主机 `/etc/allbot/test.env`；发布器只生成权限 `600` 的逐服务投影，不把整份 env 注入全部容器。`safe_deploy_cloud_test.sh` 与旧维护脚本仅作 fail-closed 历史兼容，legacy `.env`/Compose 运行态不再是新发布事实源。
+> 首次切换前如仍只有 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名，先对该主机事实源执行 `scripts/migrate_legacy_test_env.py --control-plane-only`；候选文件通过 `config-plan` 后备份并原子替换。该模式只补 canonical 控制面键，不改写任何 Worker 选择、槽位或端点。
 
 ## 1. 目标与边界
 
