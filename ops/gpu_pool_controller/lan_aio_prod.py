@@ -2087,6 +2087,10 @@ class LanAioProdOps:
     ) -> str:
         workspace_host_dir = str(metadata["workspace_host_dir"])
         workspace_parent_dir = posixpath.dirname(workspace_host_dir.rstrip("/")) or "/"
+        model_workspace_host_dir = str(
+            metadata.get("model_workspace_host_dir") or workspace_host_dir
+        )
+        model_host_dir = f"{model_workspace_host_dir.rstrip('/')}/ComfyUI/models"
         model_target_dir = str(metadata["model_target_dir"])
         image_ref = str(metadata["image_ref"])
         container_name = self._warm_cache_container_name(slot)
@@ -2137,11 +2141,12 @@ class LanAioProdOps:
             f"RUNPOD_REMOTE_WORKER_ROOT={REMOTE_WORKERS_TARGET_DIR}",
             "-v",
             f"{workspace_host_dir}:/workspace",
-            image_ref,
-            "bash",
-            "-lc",
-            inner_script,
         ]
+        if model_workspace_host_dir != workspace_host_dir:
+            docker_command.extend(
+                ["-v", f"{model_host_dir}:{model_target_dir}"]
+            )
+        docker_command.extend([image_ref, "bash", "-lc", inner_script])
         script = "\n".join(
             [
                 "set -euo pipefail",
@@ -2163,6 +2168,8 @@ class LanAioProdOps:
                     )
                 ),
                 f"test -d {shlex.quote(workspace_host_dir)}",
+                f"mkdir -p {shlex.quote(model_host_dir)}",
+                f"test -d {shlex.quote(model_host_dir)}",
                 f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
                 " ".join(shlex.quote(part) for part in docker_command),
             ]

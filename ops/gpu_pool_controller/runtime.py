@@ -382,10 +382,28 @@ class RuntimePlanner:
             raise ValueError(
                 f"{profile.id} has invalid lan_workspace_key: {workspace_key!r}"
             )
+        model_workspace_key = profile.lan_model_workspace_key or workspace_key
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", model_workspace_key
+        ):
+            raise ValueError(
+                f"{profile.id} has invalid lan_model_workspace_key: "
+                f"{model_workspace_key!r}"
+            )
         workspace_host_dir = (
             f"{runtime_root.rstrip('/')}/slots/{slot_id}/profiles/"
             f"{workspace_key}/workspace"
         )
+        model_workspace_host_dir = (
+            f"{runtime_root.rstrip('/')}/slots/{slot_id}/profiles/"
+            f"{model_workspace_key}/workspace"
+        )
+        volumes = [f"{workspace_host_dir}:/workspace"]
+        if model_workspace_host_dir != workspace_host_dir:
+            volumes.append(
+                f"{model_workspace_host_dir}/ComfyUI/models:"
+                "/workspace/ComfyUI/models"
+            )
         model_cache_endpoint = (
             comfy.model_cache_endpoint or "http://192.168.1.115:9010"
         )
@@ -559,7 +577,7 @@ class RuntimePlanner:
                         "RUNPOD_INSTALL_SSHD_IF_MISSING": "false",
                         "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": "false",
                     },
-                    "volumes": [f"{workspace_host_dir}:/workspace"],
+                    "volumes": volumes,
                     "labels": {
                         "allbot.gpu_pool.managed": "true",
                         "allbot.gpu_pool.runtime_shape": RUNPOD_AIO_RUNTIME_SHAPE,
@@ -634,6 +652,7 @@ class RuntimePlanner:
                 "restart_policy": "unless-stopped",
                 "process_supervision": "exit_container_when_agent_relay_or_comfy_exits",
                 "workspace_host_dir": workspace_host_dir,
+                "model_workspace_host_dir": model_workspace_host_dir,
                 "secret_policy": "runtime_env_placeholders_only",
             },
         }
