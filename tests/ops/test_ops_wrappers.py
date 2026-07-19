@@ -11,6 +11,10 @@ WHOLE_REPO_RSYNC_SCRIPTS = (
     "scripts/update_cloud_prod_qqcc_bot.sh",
     "scripts/update_cloud_test_with_maintenance.sh",
 )
+RETIRED_CLOUD_TEST_BUILD_SCRIPTS = (
+    "scripts/safe_deploy_cloud_test.sh",
+    "scripts/migrate_local_test_to_cloud_containers.sh",
+)
 
 
 def run_script(*args: str) -> subprocess.CompletedProcess[str]:
@@ -92,8 +96,19 @@ def test_legacy_sync_entrypoints_are_fail_closed(script: str):
     assert "rsync " not in script_text
 
 
+@pytest.mark.parametrize("script", RETIRED_CLOUD_TEST_BUILD_SCRIPTS)
+def test_legacy_cloud_test_build_entrypoints_are_fail_closed(script: str):
+    result = run_script("bash", script)
+
+    assert result.returncode == 2
+    assert "RETIRED" in result.stderr
+    assert "scripts/release.py" in result.stderr
+
+
 def test_lan_aio_enable_dry_run_shows_safe_order():
-    result = run_script("bash", "scripts/lan_aio_prod_ops.sh", "enable-aio", "--dry-run")
+    result = run_script(
+        "bash", "scripts/lan_aio_prod_ops.sh", "enable-aio", "--dry-run"
+    )
 
     assert result.returncode == 0, result.stderr
     output = result.stdout
@@ -350,7 +365,10 @@ def test_runpod_add_retry_unavailable_dry_run_is_additive():
     assert result.returncode == 0, result.stderr
     output = result.stdout
     assert "Would add 2 cloud-prod manual RunPod worker" in output
-    assert "Would not enable, disable, drain, delete, or recreate any existing RunPod slot" in output
+    assert (
+        "Would not enable, disable, drain, delete, or recreate any existing RunPod slot"
+        in output
+    )
     assert (
         "retry RunPod inventory/resource-unavailable responses up to 3 attempts every 1s"
         in output
@@ -416,12 +434,12 @@ raise SystemExit(0)
     "error_output",
     [
         (
-            'runpod create-pod failed for slot 02: runpod_http_500: '
+            "runpod create-pod failed for slot 02: runpod_http_500: "
             '{"error":"create pod: This machine does not have the resources '
             'to deploy your pod. Please try a different machine","status":500}'
         ),
         (
-            'runpod create-pod failed for slot 03: runpod_http_500: '
+            "runpod create-pod failed for slot 03: runpod_http_500: "
             '{"error":"create pod: Something went wrong. Please try again later '
             'or contact support.","status":500}'
         ),

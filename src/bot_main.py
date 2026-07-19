@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+from config import BOT_TYPE
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -86,10 +87,9 @@ async def post_init(application):
     if "bg_tasks" not in application.bot_data:
         application.bot_data["bg_tasks"] = set()
 
-    ton_polling_enabled = (
-        os.getenv("TON_PAYMENT_POLLING_ENABLED", "true").strip().lower()
-        in {"1", "true", "yes", "on"}
-    )
+    ton_polling_enabled = os.getenv(
+        "TON_PAYMENT_POLLING_ENABLED", "true"
+    ).strip().lower() in {"1", "true", "yes", "on"}
     if ton_polling_enabled:
         payment_validator = TonPaymentValidator(bot_app=application)
         task_payment = asyncio.create_task(payment_validator.poll_transactions())
@@ -135,28 +135,10 @@ def main():
     # - prod container `tg-bot` also starts this file
     # - test container `tg-bot-test` also starts this file
     #
-    # Token mapping:
-    # - when BOT_TYPE=PROD -> use `BOT_TOKEN`
-    # - when BOT_TYPE=TEST -> use `BOT_TOKEN_TEST` (or legacy `BOT_TOKEN_test`)
-    #
-    # In container deployment, the effective token should come from environment variables
-    # injected by docker compose. Reading `.env` below is only a local fallback for manual runs.
-    bot_type = os.getenv("BOT_TYPE", "TEST")
-
-    # Local fallback only. In Docker, env_file / environment has higher priority via os.getenv().
-    from dotenv import dotenv_values
-
-    env_vars = dotenv_values(".env")
-
-    token_prod = os.getenv("BOT_TOKEN") or env_vars.get("BOT_TOKEN")
-    token_test = (
-        os.getenv("BOT_TOKEN_test")
-        or env_vars.get("BOT_TOKEN_test")
-        or os.getenv("BOT_TOKEN_TEST")
-        or env_vars.get("BOT_TOKEN_TEST")
-    )
-
-    token = token_prod if bot_type == "PROD" else token_test
+    # ALLBOT_ENV is validated by config at import time. Both environments use the
+    # canonical BOT_TOKEN key from their own host-side service projection.
+    bot_type = BOT_TYPE
+    token = os.getenv("BOT_TOKEN")
 
     if not token:
         core_logger.error(f"Failed to start: {bot_type} token is not configured.")
