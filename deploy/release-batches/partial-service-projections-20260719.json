@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "3e3e873d9043429db109d924517ce15470dcb275",
+  "batch": "partial-service-projections-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-partial-service-projections-20260719",
+  "members": [
+    {
+      "base_sha": "3e3e873d9043429db109d924517ce15470dcb275",
+      "branch": "codex/a-allow-partial-service-projections-in-compose",
+      "head": "55cf0d6b2eb5ec15e2fdee28c14b924a5eb0cc9c",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
