@@ -20,9 +20,11 @@ LIGHTWEIGHT_PATTERNS = (
     ".gitignore",
     ".markdownlint.yaml",
     "deploy/release-policy.yml",
+    "deploy/test-acceptance.example.json",
     "scripts/classify_ci_change.py",
     "scripts/doc_quality_checker.py",
     "scripts/manage_ai_workspaces.py",
+    "scripts/release.py",
     "scripts/release_strategy.py",
     "scripts/validate_upstream_ci_run.py",
 )

@@ -16,7 +16,7 @@ A-H 并行开发
 
 代码集成和昂贵的容器构建以“批次”为单位，不再以“槽位成员”为单位。生产仍只消费受保护 main bundle，正式 mutation 仍需用户当次明确确认。
 
-纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据及精确仓库治理/门禁脚本；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 release batch/test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、发布执行器或未知路径都会恢复完整链路。
+纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 release batch/test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
 
 ## 2. 固定目录和职责
 
