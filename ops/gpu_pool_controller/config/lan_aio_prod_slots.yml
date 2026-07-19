@@ -239,8 +239,8 @@ slots:
 
   - id: gpu-252-gpu1-pornmaster_flux2_edit_bf16
     enabled: false
-    phase: candidate
-    retargetable: true
+    phase: maintenance_disabled
+    retargetable: false
     assignment_id: lan-252-8189-worker-05
     target_profile_id: pornmaster_flux2_edit_bf16
     target_task_types:
@@ -255,7 +255,7 @@ slots:
     container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit_bf16-prod
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-pornmaster-flux2-edit-bf16
     rollout_order: 35
-    notes: Candidate BF16 PornMaster Flux2 edit worker for the RMA replacement gpu-252 GPU1 card. It uses the baked PornMaster runtime, the isolated BF16 model manifest, and only the BF16 single/multiple task types; stop the canary on any new Xid 119/154.
+    notes: Maintenance-disabled BF16 PornMaster Flux2 edit slot for the RMA replacement gpu-252 GPU1 card. The exact BF16 worker, isolated model manifest, baked runtime and --lowvram all passed startup gates, but its first real pornmaster_flux2_multi_edit_bf16 task reproduced three Xid 119 GSP RPC timeouts followed by Xid 154 GPU Reset Required on 2026-07-19. Central intake was disabled and restart was set to no; keep this slot blocked until host recovery and hardware/vendor resolution.
 
   - id: gpu-252-gpu1-i2i_pro
     enabled: true

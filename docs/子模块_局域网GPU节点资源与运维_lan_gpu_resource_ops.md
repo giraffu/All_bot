@@ -268,7 +268,7 @@ ComfyUI 实例：
 - `allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-test`：临时 cloud-test PornMaster Flux2 AIO，仅在 `scripts/lan_pornmaster_flux2_edit_aio_test.sh start --execute` 窗口存在；不得与正式 prod 容器同时占用 GPU0/8192
 - `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod`：maintenance disabled，host `8191`，固定返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，只保留配置和修复后验收入口
 - `allbot-lan-aio-gpu-252-gpu1-scail2-prod`：maintenance disabled，host `8191`，固定返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，接 SCAIL-2 四任务；cache / disabled heartbeat / direct canary 曾通过，但真实 workload 复现 Xid 119/154，当前容器 exited 且不接单
-- `allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit_bf16-prod`：replacement 卡 BF16 单卡候选，host `8191`，固定 UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`，只接 BF16 single/multiple 两类任务
+- `allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit_bf16-prod`：maintenance disabled，host `8191`，固定 replacement UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；真实 BF16 多图任务复现 Xid 119/154，禁止重新接单
 - `comfy1`：旧回滚基线，停止保留，原端口 `8189`
 - `dcgm_exporter`
 - `node_exporter`
@@ -301,7 +301,7 @@ ComfyUI 实例：
 - `gpu-252-gpu0-img2img_lora`、`gpu-252-gpu0-image_to_video`、`gpu-252-gpu0-pornmaster_flux2_edit` 与 `gpu-252-gpu0-scail2` 当前只作为回切候选，切换前必须由 AI operator/CLI 明确指定同服务器替换目标并先 drain 当前 `i2i_pro`。
 - PornMaster Flux2 测试 AIO 使用同一 PornMaster Flux2 镜像和 manifest；它只用于 cloud-test，启动前必须 drain/disable 目标正式 GPU0 产能，结束后必须 `restore --execute` 恢复正式产能。
 - `gpu-252-gpu1-pornmaster_flux2_edit` 正式 AIO 使用 LAN registry baked 镜像 `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit-baked:20260716-pornmaster-flux2-edit-baked-runtime-v1`，模型从 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json` 同步；旧 `20260628` 镜像缺少 `/opt/allbot/runtime/remote_workers`，不得再用于 LAN AIO。2026-07-04 的旧卡 canary 曾通过并完成正式 `pornmaster_flux2_single_edit`；2026-07-19 新卡恢复以 baked digest、disabled heartbeat、`/system_stats`、`/object_info` 和 Xid 复核为准。
-- `gpu-252-gpu1-pornmaster_flux2_edit_bf16` 复用同一 baked Worker 镜像，但任务类型、agent 和模型 manifest 独立：只接 `pornmaster_flux2_edit_bf16` / `pornmaster_flux2_multi_edit_bf16`，同步 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`，并以 `--lowvram` 启动 ComfyUI。排查 BF16 pending 时不得误启基础 FP8/低显存 slot。
+- `gpu-252-gpu1-pornmaster_flux2_edit_bf16` 复用同一 baked Worker 镜像，但任务类型、agent 和模型 manifest 独立：只接 `pornmaster_flux2_edit_bf16` / `pornmaster_flux2_multi_edit_bf16`，同步 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`，并以 `--lowvram` 启动 ComfyUI。2026-07-19 首个真实多图 BF16 任务复现三次 Xid 119 与一次 Xid 154 `GPU Reset Required`；Central 已禁用且容器 restart=`no`，该 slot 必须保持 maintenance-disabled。排查 BF16 pending 时不得误启基础 FP8/低显存 slot。
 - `gpu-252-gpu1-wan22_video_v2` AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`，该 tag 已 baked `rife49.pth` 两处缓存；启动参数包含 `--disable-dynamic-vram`，模型从 `allbot-model-cache/wan22_video_v2/2026-06-13-test/manifest.json` 同步；返修卡已重新可见但保持 disabled，不计入可用容量。
 - `gpu-252-gpu1-scail2` AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步；cache marker、disabled heartbeat、`/system_stats`、`/queue`、`/object_info` 与 direct canary 曾通过，但真实 SCAIL-2 face-swap workload 复现 Xid 119/154，当前必须保持 disabled/exited，不得只凭短 CUDA smoke 通过而 enable。
 - `gpu-252-gpu1-wan22_video_v2` 同样依赖 `FL_RIFE` 后处理；slot 配置仍可从宿主机旧 `inst1` 路径 `/home/user/APP/data/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth` 预置到 AIO 内两处 RIFE 缓存路径，作为旧镜像回滚/热缓存兜底，避免运行时访问 HuggingFace。

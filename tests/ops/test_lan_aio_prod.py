@@ -1520,9 +1520,9 @@ def test_gpu252_pornmaster_bf16_candidate_targets_replacement_card_and_bf16_mani
     profile = ops.config.profiles[slot.target_profile_id]
     rendered = ops.render_compose(slot)
 
-    assert slot.enabled is True
-    assert slot.phase == "catalog_ready"
-    assert slot.retargetable is True
+    assert slot.enabled is False
+    assert slot.phase == "maintenance_disabled"
+    assert slot.retargetable is False
     assert slot.gpu_device_id == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     assert slot.host_port == 8191
     assert slot.agent_id == "lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_bf16_01"
