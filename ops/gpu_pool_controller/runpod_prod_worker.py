@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from contextlib import contextmanager
@@ -2381,6 +2382,17 @@ def _prod_task_type_for_profile(profile: str) -> str:
     return PROD_TASK_TYPE
 
 
+def _verified_img2img_image_exact(settings: Any) -> str:
+    configured = str(settings.image_name_img2img_lora or "").strip()
+    image_repository = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE.rsplit(":", 1)[0]
+    digest_prefix = f"{image_repository}@sha256:"
+    if configured.startswith(digest_prefix) and re.fullmatch(
+        r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
+    ):
+        return configured
+    return RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+
+
 def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
     profile_key = normalize_prod_worker_profile(profile)
     if profile_key == "image_to_video":
@@ -2503,7 +2515,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
         "supported_task_types": tuple(settings.prod_supported_task_types),
         "model_prefix": PROD_MODEL_PREFIX,
         "model_manifest_key": PROD_MODEL_MANIFEST_KEY,
-        "image_exact": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+        "image_exact": _verified_img2img_image_exact(settings),
         "image_prefix": "",
         "workflow_overrides": "",
     }
