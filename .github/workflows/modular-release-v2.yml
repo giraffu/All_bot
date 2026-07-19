@@ -344,12 +344,15 @@ jobs:
 
       - name: Inspect release images and Web bytes for environment neutrality
         shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -euo pipefail
           mkdir -p neutral-web-dist
           tar -xzf release-v2/public-web-dist.tgz -C neutral-web-dist
           python scripts/validate_release_environment_neutral.py \
             --release-index release-v2/release-index.json \
+            --only-source-sha "$SOURCE_SHA" \
             --web-dist neutral-web-dist
 
       - name: Publish immutable v2 bundle

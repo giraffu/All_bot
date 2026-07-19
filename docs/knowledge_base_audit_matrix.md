@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：环境中立镜像扫描按 artifact 自身构建 SHA 去重：main workflow 的 `--only-source-sha` 必须精确等于 release index SHA，本批新构建镜像继续执行 Config.Env、文件系统与 test/prod 解析检查；复用控制面和仅作 Dashboard pin 索引的历史 GPU 镜像保留其原构建 CI 扫描证据，不在每个控制面 bundle 重拉超大镜像或错误执行控制面身份哨兵。事实源为环境中立校验器、模块化 workflow、专项 TDD、不可变发布文档与 ops Skill。
+>
 > 2026-07-19：main-first 控制面 bundle 的 GPU pin 清单改为从目标 main 全祖先中最近的完整 main-channel manifest 原样继承未变化 profile；保留每项精确 digest、artifact source/OCI revision 和模型证据，只用于 Dashboard 后续 RunPod operation 的完整 pin 注入，不触发 GPU build/test/deploy。真实 GPU 输入变化仍必须当前 main SHA attestation，历史基线不能满足；缺完整祖先、mutable ref、digest mismatch 或 catalog 集合不等均阻断 main bundle。事实源为模块化 workflow、`ci_release_v2.py`、专项 TDD、不可变发布文档与 ops Skill。
 >
 > 2026-07-19：main-first 增量 planner 补齐运行态 digest 漂移：artifact 可由较早 main 构建并在新 bundle 复用，若当前 test/prod state 缺失该 artifact 或 digest 与目标 bundle 不同，仍必须选入部署；只有实际 digest 已一致才能返回空集/no-change。测试计划静态排除该环境不存在的 Dashboard/Payment/Paid Group artifact，可选 private worker 继续按宿主配置显式禁用。事实源为 `release.py`、发布器回归、不可变发布文档与 ops Skill。
