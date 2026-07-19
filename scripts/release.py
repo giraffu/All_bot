@@ -1876,6 +1876,38 @@ def filter_enabled_cloud_services(
     return chosen - disabled, disabled
 
 
+def filter_inactive_control_artifacts(
+    environment: str,
+    manifest: Mapping[str, Any],
+    disabled_services: Iterable[str],
+) -> tuple[dict[str, Any], set[str]]:
+    """Remove artifacts that cannot represent a running service in this env."""
+
+    filtered = dict(manifest)
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("track") != "control-plane"
+    ):
+        return filtered, set()
+    artifacts = manifest.get("artifacts")
+    selected = manifest.get("selected_artifacts")
+    if not isinstance(artifacts, Mapping) or not isinstance(selected, list):
+        raise ReleaseError("control-plane artifact selection is invalid")
+    available = set(ENVIRONMENT[environment]["available_services"]) | {"web-static"}
+    disabled = set(disabled_services)
+    inactive = {
+        str(name)
+        for name in artifacts
+        if (service := CONTROL_ARTIFACT_SERVICE.get(str(name), str(name)))
+        not in available
+        or service in disabled
+    }
+    filtered["selected_artifacts"] = [
+        str(name) for name in selected if str(name) not in inactive
+    ]
+    return filtered, inactive
+
+
 def legacy_cloud_containers(environment: str, selected: Iterable[str]) -> list[str]:
     suffix = "test" if environment == "test" else "prod"
     names = {
@@ -5746,12 +5778,6 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
             )
         manifest = raw_manifest
         validate_release_manifest(manifest, sha)
-    evidence = _read_json(Path(args.evidence))
-    acceptance = validate_test_acceptance(
-        evidence,
-        manifest,
-        confirm_short_observation=getattr(args, "confirm_short_observation", False),
-    )
     host = args.remote_host or ENVIRONMENT["test"]["host"]
     track_segment = (
         f"/{manifest['track']}" if manifest.get("schema_version") == 2 else ""
@@ -5772,6 +5798,24 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         raise ReleaseError(
             "cloud-test runtime state does not match acceptance evidence"
         )
+    if manifest.get("schema_version") == 2:
+        inactive = state.get("inactive_artifacts", [])
+        if not isinstance(inactive, list) or not all(
+            isinstance(name, str) and name for name in inactive
+        ):
+            raise ReleaseError("cloud-test inactive artifact state is invalid")
+        manifest = dict(manifest)
+        manifest["selected_artifacts"] = [
+            name
+            for name in manifest.get("selected_artifacts", [])
+            if name not in set(inactive)
+        ]
+    evidence = _read_json(Path(args.evidence))
+    acceptance = validate_test_acceptance(
+        evidence,
+        manifest,
+        confirm_short_observation=getattr(args, "confirm_short_observation", False),
+    )
     if manifest.get("schema_version") == 2:
         validate_v2_test_runtime_for_acceptance(state, manifest)
     else:
@@ -5946,6 +5990,13 @@ def merge_artifact_current_state(
             if isinstance(value, Mapping)
         }
     )
+    inactive = incoming.get("inactive_artifacts", [])
+    if not isinstance(inactive, list) or not all(
+        isinstance(name, str) and name for name in inactive
+    ):
+        raise ReleaseError("artifact current state inactive_artifacts is invalid")
+    for name in inactive:
+        artifacts.pop(name, None)
     merged["artifacts"] = artifacts
     return merged
 
@@ -6110,6 +6161,10 @@ def _write_state(
         "git_sha": manifest["git_sha"],
         "config_revision": config_revision,
         "services": sorted(impact.services),
+        "disabled_services": sorted(
+            getattr(args, "disabled_cloud_services", set())
+        ),
+        "inactive_artifacts": sorted(getattr(args, "inactive_artifacts", set())),
         "status": (
             "verified"
             if args.command == "rollback" and args.env == "test"
@@ -7012,6 +7067,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 environment_values, config_revision = {}, ""
                 args.local_env_error = True
                 args.runtime_env_snapshot = None
+        args.disabled_cloud_services = set()
+        args.inactive_artifacts = set()
+        if (
+            not args.skip_env_checks
+            and manifest.get("schema_version") == 2
+            and manifest.get("track") == "control-plane"
+        ):
+            _, disabled_cloud_services = filter_enabled_cloud_services(
+                args.env,
+                cloud_services_for_release(args.env, impact),
+                environment_values,
+            )
+            manifest, inactive_artifacts = filter_inactive_control_artifacts(
+                args.env,
+                manifest,
+                disabled_cloud_services,
+            )
+            args.disabled_cloud_services = disabled_cloud_services
+            args.inactive_artifacts = inactive_artifacts
         document = _plan_document(
             args,
             impact,
