@@ -2619,6 +2619,39 @@ def _resolve_previous_sha(
     return None
 
 
+def runtime_drift_artifacts(
+    target_artifacts: Mapping[str, Any],
+    previous_state: Mapping[str, Any] | None,
+    *,
+    excluded: set[str],
+) -> set[str]:
+    """Select target artifacts whose recorded runtime identity is not current."""
+
+    current_artifacts = (
+        previous_state.get("artifacts")
+        if isinstance(previous_state, Mapping)
+        else None
+    )
+    selected: set[str] = set()
+    for name, raw_target in target_artifacts.items():
+        if name in excluded or not isinstance(raw_target, Mapping):
+            continue
+        target_identity = raw_target.get("digest") or raw_target.get("sha256")
+        raw_current = (
+            current_artifacts.get(name)
+            if isinstance(current_artifacts, Mapping)
+            else None
+        )
+        current_identity = (
+            raw_current.get("digest") or raw_current.get("sha256")
+            if isinstance(raw_current, Mapping)
+            else None
+        )
+        if not target_identity or current_identity != target_identity:
+            selected.add(str(name))
+    return selected
+
+
 def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any], str]:
     sha = validate_full_sha(args.sha)
     manifest_path = _resolve_manifest_path(
@@ -2786,17 +2819,39 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
         if not dashboard_fast_track and not independent_release:
+            track_artifacts = release_bundle.manifests[args.track]["artifacts"]
             target_source_modules = {
                 name
-                for name, artifact in release_bundle.manifests[args.track][
-                    "artifacts"
-                ].items()
+                for name, artifact in track_artifacts.items()
                 if artifact.get("source_sha") == sha
                 and name not in {"python-runtime-base", "python-worker-base"}
             }
+            runtime_drift_modules = runtime_drift_artifacts(
+                track_artifacts,
+                getattr(args, "previous_state", None),
+                excluded={
+                    "python-runtime-base",
+                    "python-worker-base",
+                    "imgproxy",
+                    "postgres",
+                    "redis",
+                }
+                | (
+                    {
+                        name
+                        for name in track_artifacts
+                        if CONTROL_ARTIFACT_SERVICE.get(name, name)
+                        not in ENVIRONMENT[args.env]["available_services"]
+                        | {"web-static"}
+                    }
+                    if args.track == "control-plane"
+                    else set()
+                ),
+            )
             if previous_sha:
                 computed_modules.intersection_update(target_source_modules)
             computed_modules.update(target_source_modules)
+            computed_modules.update(runtime_drift_modules)
         if not independent_release:
             requested_modules.update(computed_modules)
         manifest = _load_v2_track(

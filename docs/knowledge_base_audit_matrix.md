@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：main-first 增量 planner 补齐运行态 digest 漂移：artifact 可由较早 main 构建并在新 bundle 复用，若当前 test/prod state 缺失该 artifact 或 digest 与目标 bundle 不同，仍必须选入部署；只有实际 digest 已一致才能返回空集/no-change。测试计划静态排除该环境不存在的 Dashboard/Payment/Paid Group artifact，可选 private worker 继续按宿主配置显式禁用。事实源为 `release.py`、发布器回归、不可变发布文档与 ops Skill。
 > 2026-07-19：首次控制面 `config-apply` 的数据库备份门禁在写 projection 前安全失败；根因是 Web API 容器的 `/bin/sh` 不支持 Bash 风格 `${VAR/pattern/replacement}`。配置备份与 migration 备份现以 POSIX `case` + `${VAR#prefix}` 严格接受 `postgresql+asyncpg:` / `postgresql:`，未知 scheme 继续 fail closed；不允许手工跳过 `pg_dump`。事实源为 `release.py`、发布器回归、不可变发布文档与 ops Skill。
 > 2026-07-19：控制面配置契约与 GPU/Worker 链路进一步解耦。`ALLBOT_WORKER_*` / `CLOUD_TEST_WORKER_*` / `CLOUD_TEST_SHARED_AIO_*` 仍原样保存于受限宿主 env，但不再进入 control-plane environment revision、逐服务投影、漂移或影响集；单独 Worker 变更不触发控制面 `config-apply`。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 仍被跟踪，其它未知键继续全量 fail closed。事实源为逐服务配置契约、运行时投影工具、专项回归、不可变发布/云测试控制面文档与 ops Skill。
 > 2026-07-19：云测试当前 env 仍以 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名驱动旧容器，严格逐服务投影因缺 canonical `BOT_TOKEN` 和 `TELEGRAM_FILE_BASE_URL` 在写入前 fail closed。测试迁移器新增 `--control-plane-only`：只补已知 canonical key 和旧自建 Telegram `:8081`/`:8082` 配对，canonical 已有值优先，未知 endpoint 拒绝猜测，且完整保留 Worker 选择与槽位。事实源为测试迁移器、专项回归、不可变发布文档与 ops Skill。
