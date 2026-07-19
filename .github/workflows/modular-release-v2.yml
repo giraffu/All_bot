@@ -174,6 +174,60 @@ jobs:
           fi
           git diff --name-only "$comparison_sha" "$SOURCE_SHA" > changed-paths.txt
 
+      - name: Resolve latest complete GPU baseline for unchanged profiles
+        id: gpu-baseline
+        if: steps.source.outputs.channel == 'main'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          BUNDLE_REPOSITORY: ${{ steps.source.outputs.bundle_repository }}
+        run: |
+          set -euo pipefail
+          tags_file="available-gpu-baseline-tags.txt"
+          oras repo tags "$BUNDLE_REPOSITORY" > "$tags_file"
+          expected_profiles="$(
+            jq -r '.artifacts | to_entries[] | select(.value.track == "gpu-execution") | .key' \
+              deploy/release-artifacts-v2.json | sort
+          )"
+          baseline_manifest=""
+          while IFS= read -r candidate; do
+            grep -Fxq "$candidate" "$tags_file" || continue
+            rm -rf gpu-baseline-candidate
+            mkdir -p gpu-baseline-candidate
+            oras pull "${BUNDLE_REPOSITORY}:${candidate}" -o gpu-baseline-candidate \
+              >/dev/null 2>&1 || continue
+            candidate_bundle=""
+            for directory in \
+              gpu-baseline-candidate \
+              gpu-baseline-candidate/release-v2 \
+              gpu-baseline-candidate/promoted-release; do
+              if [ -f "${directory}/release-index.json" ] && \
+                 [ -f "${directory}/gpu-execution-manifest.json" ]; then
+                candidate_bundle="$directory"
+                break
+              fi
+            done
+            [ -n "$candidate_bundle" ] || continue
+            index="${candidate_bundle}/release-index.json"
+            manifest="${candidate_bundle}/gpu-execution-manifest.json"
+            [ "$(jq -r '.source_sha' "$index")" = "$candidate" ] || continue
+            [ "$(jq -r '.release_channel' "$index")" = main ] || continue
+            [ "$(jq -r '.source_ref' "$index")" = refs/heads/main ] || continue
+            [ "$(jq -r '.source_sha' "$manifest")" = "$candidate" ] || continue
+            actual_profiles="$(jq -r '.artifacts | keys[]' "$manifest" | sort)"
+            [ "$actual_profiles" = "$expected_profiles" ] || continue
+            rm -rf gpu-baseline-release
+            mv "$candidate_bundle" gpu-baseline-release
+            baseline_manifest="gpu-baseline-release/gpu-execution-manifest.json"
+            echo "sha=${candidate}" >> "$GITHUB_OUTPUT"
+            break
+          done < <(git rev-list --topo-order "${SOURCE_SHA}^")
+          if [ -z "$baseline_manifest" ]; then
+            echo "no complete main-channel GPU baseline exists in target ancestry" >&2
+            exit 2
+          fi
+          echo "manifest=${baseline_manifest}" >> "$GITHUB_OUTPUT"
+
       - name: Build changed modules and assemble release index
         shell: bash
         env:
@@ -181,6 +235,7 @@ jobs:
           PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
           PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
           PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
+          GPU_BASELINE_MANIFEST: ${{ steps.gpu-baseline.outputs.manifest }}
           GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
           RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
@@ -214,6 +269,9 @@ jobs:
               > previous-release-artifacts-v2.json
             args+=(--previous-index "$PREVIOUS_INDEX" --previous-bundle-dir "$PREVIOUS_BUNDLE")
             args+=(--previous-catalog previous-release-artifacts-v2.json)
+          fi
+          if [ -n "$GPU_BASELINE_MANIFEST" ]; then
+            args+=(--gpu-baseline-manifest "$GPU_BASELINE_MANIFEST")
           fi
           if [ -n "$gpu_manifest" ]; then
             args+=(--gpu-manifest "$gpu_manifest")

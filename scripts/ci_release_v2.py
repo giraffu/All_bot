@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Any, Mapping
@@ -31,6 +32,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class CIReleaseError(RuntimeError):
     pass
+
+
+_SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_GIT_SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 
 
 def _run(command: list[str], *, cwd: Path = ROOT) -> str:
@@ -112,6 +117,66 @@ def _validated_gpu_evidence(
     return artifacts, exact_source
 
 
+def _validated_gpu_baseline(
+    document: Mapping[str, Any],
+    *,
+    catalog: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Validate a complete historical GPU manifest for unchanged-profile reuse.
+
+    The workflow separately proves that the bundle is an immutable main-channel
+    ancestor.  This validator deliberately preserves each artifact's original
+    source/OCI revision; inherited GPU images are not relabelled as target-SHA
+    builds or same-SHA canary evidence.
+    """
+
+    if document.get("schema_version") != 2:
+        raise CIReleaseError("GPU baseline manifest has the wrong schema")
+    if document.get("track") != "gpu-execution":
+        raise CIReleaseError("GPU baseline manifest has the wrong track")
+    raw_artifacts = document.get("artifacts")
+    if not isinstance(raw_artifacts, Mapping):
+        raise CIReleaseError("GPU baseline manifest artifacts are invalid")
+    expected = {
+        name
+        for name, metadata in catalog.items()
+        if metadata.get("track") == "gpu-execution"
+    }
+    actual = {str(name) for name in raw_artifacts}
+    if actual != expected:
+        raise CIReleaseError("GPU baseline profiles must exactly match the catalog")
+
+    artifacts: dict[str, dict[str, Any]] = {}
+    for name in sorted(expected):
+        raw_artifact = raw_artifacts[name]
+        if not isinstance(raw_artifact, Mapping):
+            raise CIReleaseError(f"GPU baseline profile is invalid: {name}")
+        artifact = dict(raw_artifact)
+        digest = str(artifact.get("digest", ""))
+        ref = str(artifact.get("ref", ""))
+        source_sha = str(artifact.get("source_sha", ""))
+        oci_revision = str(artifact.get("oci_revision", ""))
+        if artifact.get("kind") != "image":
+            raise CIReleaseError(f"GPU baseline profile is not an image: {name}")
+        if not _SHA256_RE.fullmatch(digest) or ref.count("@") != 1:
+            raise CIReleaseError(f"GPU baseline profile is not digest-pinned: {name}")
+        ref_digest = ref.rsplit("@", 1)[1]
+        if not _SHA256_RE.fullmatch(ref_digest):
+            raise CIReleaseError(f"GPU baseline profile is not digest-pinned: {name}")
+        if digest != ref_digest:
+            raise CIReleaseError(f"GPU baseline digest does not match ref: {name}")
+        if not _GIT_SHA_RE.fullmatch(source_sha) or oci_revision != source_sha:
+            raise CIReleaseError(f"GPU baseline revision is invalid: {name}")
+        model_manifest = artifact.get("model_manifest")
+        if not isinstance(model_manifest, Mapping):
+            raise CIReleaseError(f"GPU baseline model manifest is missing: {name}")
+        model_sha = str(model_manifest.get("sha256", ""))
+        if not re.fullmatch(r"[0-9a-f]{64}", model_sha):
+            raise CIReleaseError(f"GPU baseline model manifest is invalid: {name}")
+        artifacts[name] = artifact
+    return artifacts
+
+
 def _require_gpu_release_ready(
     release_channel: str,
     unavailable_gpu: set[str],
@@ -173,6 +238,7 @@ def main() -> int:
     parser.add_argument("--previous-bundle-dir", type=Path)
     parser.add_argument("--previous-catalog", type=Path)
     parser.add_argument("--gpu-manifest", type=Path)
+    parser.add_argument("--gpu-baseline-manifest", type=Path)
     parser.add_argument("--require-complete-gpu", action="store_true")
     parser.add_argument(
         "--validation-mode",
@@ -222,6 +288,16 @@ def main() -> int:
         )
 
     evidence_results: set[str] = set()
+    if args.gpu_baseline_manifest:
+        gpu_baseline_document = json.loads(
+            args.gpu_baseline_manifest.read_text(encoding="utf-8")
+        )
+        gpu_baseline_artifacts = _validated_gpu_baseline(
+            gpu_baseline_document,
+            catalog=catalog,
+        )
+        results.update(gpu_baseline_artifacts)
+
     if args.gpu_manifest:
         gpu_document = json.loads(args.gpu_manifest.read_text(encoding="utf-8"))
         gpu_artifacts, evidence_results = _validated_gpu_evidence(
@@ -244,7 +320,7 @@ def main() -> int:
             "GPU profiles omitted pending profile canary evidence: "
             + ", ".join(sorted(unavailable_gpu))
         )
-    if args.require_complete_gpu and gpu_builds:
+    if args.require_complete_gpu:
         _require_gpu_release_ready(args.release_channel, unavailable_gpu)
 
     for row in build_matrix(catalog, plan):

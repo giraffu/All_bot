@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：main-first 控制面 bundle 的 GPU pin 清单改为从目标 main 全祖先中最近的完整 main-channel manifest 原样继承未变化 profile；保留每项精确 digest、artifact source/OCI revision 和模型证据，只用于 Dashboard 后续 RunPod operation 的完整 pin 注入，不触发 GPU build/test/deploy。真实 GPU 输入变化仍必须当前 main SHA attestation，历史基线不能满足；缺完整祖先、mutable ref、digest mismatch 或 catalog 集合不等均阻断 main bundle。事实源为模块化 workflow、`ci_release_v2.py`、专项 TDD、不可变发布文档与 ops Skill。
+>
 > 2026-07-19：main-first 增量 planner 补齐运行态 digest 漂移：artifact 可由较早 main 构建并在新 bundle 复用，若当前 test/prod state 缺失该 artifact 或 digest 与目标 bundle 不同，仍必须选入部署；只有实际 digest 已一致才能返回空集/no-change。测试计划静态排除该环境不存在的 Dashboard/Payment/Paid Group artifact，可选 private worker 继续按宿主配置显式禁用。事实源为 `release.py`、发布器回归、不可变发布文档与 ops Skill。
 > 2026-07-19：首次控制面 `config-apply` 的数据库备份门禁在写 projection 前安全失败；根因是 Web API 容器的 `/bin/sh` 不支持 Bash 风格 `${VAR/pattern/replacement}`。配置备份与 migration 备份现以 POSIX `case` + `${VAR#prefix}` 严格接受 `postgresql+asyncpg:` / `postgresql:`，未知 scheme 继续 fail closed；不允许手工跳过 `pg_dump`。事实源为 `release.py`、发布器回归、不可变发布文档与 ops Skill。
 > 2026-07-19：控制面配置契约与 GPU/Worker 链路进一步解耦。`ALLBOT_WORKER_*` / `CLOUD_TEST_WORKER_*` / `CLOUD_TEST_SHARED_AIO_*` 仍原样保存于受限宿主 env，但不再进入 control-plane environment revision、逐服务投影、漂移或影响集；单独 Worker 变更不触发控制面 `config-apply`。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 仍被跟踪，其它未知键继续全量 fail closed。事实源为逐服务配置契约、运行时投影工具、专项回归、不可变发布/云测试控制面文档与 ops Skill。
