@@ -1,8 +1,6 @@
 import os
 from decimal import Decimal, ROUND_HALF_UP
 
-from config import BOT_TYPE
-
 REDEEM_USDT_QUANT = Decimal("0.0001")
 REDEEM_CREDITS_QUANT = Decimal("1")
 AFFILIATE_REDEEM_ROUNDING_MODE = "FIXED_PACKAGE"
@@ -29,7 +27,9 @@ AFFILIATE_CREDITS_REDEEM_ALLOWED_AMOUNTS_TEXT = "1、3、6、10、15、20 USDT"
 
 
 def _convert_membership_rmb_price_to_usdt(amount_rmb: str) -> Decimal:
-    return (Decimal(amount_rmb) / AFFILIATE_MEMBERSHIP_REDEEM_RMB_TO_USDT_RATE).quantize(
+    return (
+        Decimal(amount_rmb) / AFFILIATE_MEMBERSHIP_REDEEM_RMB_TO_USDT_RATE
+    ).quantize(
         REDEEM_USDT_QUANT,
         rounding=ROUND_HALF_UP,
     )
@@ -79,10 +79,6 @@ AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS = {
 
 
 def _is_feature_enabled(name: str) -> bool:
-    if BOT_TYPE == "TEST":
-        test_value = os.getenv(f"{name}_TEST")
-        if test_value not in (None, ""):
-            return test_value.strip().lower() in {"1", "true", "yes", "on"}
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -123,7 +119,9 @@ def calculate_redeem_credits(amount_usdt: Decimal) -> int:
 def list_affiliate_credits_redeem_packages() -> tuple[dict, ...]:
     return tuple(
         {
-            "amount_usdt": Decimal(str(package["amount_usdt"])).quantize(REDEEM_USDT_QUANT),
+            "amount_usdt": Decimal(str(package["amount_usdt"])).quantize(
+                REDEEM_USDT_QUANT
+            ),
             "credits": int(package["credits"]),
         }
         for package in AFFILIATE_CREDITS_REDEEM_PACKAGES

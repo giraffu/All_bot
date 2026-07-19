@@ -45,6 +45,6 @@ secret:
   create: true
   data:
     BOT_TOKEN: "base64-encoded-token"
-    API_TOKEN: "base64-encoded-token"
-    MINIO_ACCESS_KEY: "chuzeyu"
-    MINIO_SECRET_KEY: "@Cv1347968277"
+    API_TOKEN: ""
+    MINIO_ACCESS_KEY: ""
+    MINIO_SECRET_KEY: ""

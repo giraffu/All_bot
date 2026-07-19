@@ -80,6 +80,7 @@ python scripts/test_train_release.py abort-freeze
 - 当 control-plane 的可信计划没有 artifacts/services 时，`deploy` 命令只把精确 candidate 记录为 `ready-for-acceptance` / `non-runtime`，不调用 release preflight/deploy；即使相对上一个实际部署 SHA 累积到已单独验收的运维路径、使 level 高于 `none`，也以空选择集为准，禁止伪造部署。Dashboard-only 管理面候选记录 `deployment_mode=test-not-required`，不得修改共享测试站。QQCC Config 已有专属测试实例，候选必须按 standard 部署对应前后端并等待业务验收。未显式传入 `--with-test-execution` 时，状态保留 `deferred_tracks=["test-execution"]`。证据必须写 bundle/CI/non-runtime、test-not-required 或实际部署计划和延后事实，不得写未更新的容器或 Worker 已更新。
 - 部署事务失败时逆序恢复已完成 track，并在恢复成功后的错误中保留底层 `release.py` 最后一行摘要，便于集成 AI 定位失败轨道而不绕过包装器；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 - candidate 未 `accept`、处于 blocked 或仍需 forward-fix 时不得释放原槽位；修复 candidate 被 `accept` 后立即释放。
+- 最终 control-plane candidate 的测试部署必须使用 `/etc/allbot/test.env` 生成的逐服务 `600` 投影；不得把完整 test env 注入全部服务。冻结/批准证据记录候选 digest 与测试运行配置 revision，但不得记录秘密值。main promotion 只复制这些 digest；生产配置由 `/etc/allbot/prod.env` 独立投影，不能复用测试投影文件。
 
 ## 5. 交付门禁
 
