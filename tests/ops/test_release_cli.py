@@ -1687,6 +1687,34 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
     assert disabled == set()
 
 
+def test_inactive_control_artifacts_are_not_selected_as_runtime_deployments():
+    module = _load_module()
+    names = {
+        "central-api",
+        "dashboard-backend",
+        "payment-api",
+        "private-bot-worker",
+        "public-web",
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "selected_artifacts": sorted(names),
+        "artifacts": {name: {} for name in names},
+    }
+
+    filtered, inactive = module.filter_inactive_control_artifacts(
+        "test", manifest, {"qqcc-private-bot-worker"}
+    )
+
+    assert filtered["selected_artifacts"] == ["central-api", "public-web"]
+    assert inactive == {
+        "dashboard-backend",
+        "payment-api",
+        "private-bot-worker",
+    }
+
+
 def test_cloud_deploy_does_not_activate_profiles_for_disabled_optional_services(
     monkeypatch,
 ):
@@ -3170,6 +3198,35 @@ def test_artifact_current_state_keeps_mixed_module_versions():
     assert merged["git_sha"] == target_sha
     assert merged["artifacts"]["central-api"]["source_sha"] == previous_sha
     assert merged["artifacts"]["dashboard-backend"]["source_sha"] == target_sha
+
+
+def test_artifact_current_state_prunes_inactive_runtime_records():
+    module = _load_module()
+    existing = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": "b" * 40,
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "1" * 64},
+            "dashboard-backend": {"digest": "sha256:" + "2" * 64},
+            "private-bot-worker": {"digest": "sha256:" + "3" * 64},
+        },
+    }
+    incoming = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "inactive_artifacts": ["dashboard-backend", "private-bot-worker"],
+        "artifacts": {
+            "central-api": {"digest": "sha256:" + "4" * 64},
+        },
+    }
+
+    merged = module.merge_artifact_current_state(existing, incoming)
+
+    assert set(merged["artifacts"]) == {"central-api"}
 
 
 def test_artifact_current_state_recovers_partial_legacy_state_from_history():
