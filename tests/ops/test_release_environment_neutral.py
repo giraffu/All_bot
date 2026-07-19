@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -77,3 +78,68 @@ def test_runtime_identity_gate_applies_only_to_runnable_service_artifacts():
     assert module._requires_runtime_identity("python-worker-base") is False
     assert module._requires_runtime_identity("dashboard-frontend") is False
     assert module._requires_runtime_identity("qqcc-config-frontend") is False
+
+
+def test_release_image_scan_can_select_only_artifacts_built_for_target_sha(tmp_path):
+    module = _load_module()
+    target_sha = "a" * 40
+    inherited_sha = "b" * 40
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": target_sha,
+        "artifacts": {
+            "dashboard-backend": {
+                "kind": "image",
+                "ref": "registry/dashboard@sha256:" + "1" * 64,
+                "source_sha": target_sha,
+            },
+            "web-api": {
+                "kind": "image",
+                "ref": "registry/web@sha256:" + "2" * 64,
+                "source_sha": inherited_sha,
+            },
+        },
+    }
+    (tmp_path / "control-plane-manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    (tmp_path / "release-index.json").write_text(
+        json.dumps(
+            {
+                "source_sha": target_sha,
+                "manifests": {"control-plane": "control-plane-manifest.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    images = list(
+        module._release_images(
+            tmp_path / "release-index.json", only_source_sha=target_sha
+        )
+    )
+
+    assert images == [
+        ("dashboard-backend", "registry/dashboard@sha256:" + "1" * 64)
+    ]
+
+
+def test_main_workflow_scans_only_images_built_for_current_main_sha():
+    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert '--only-source-sha "$SOURCE_SHA"' in workflow
+
+
+def test_image_scan_source_filter_must_match_release_index(tmp_path):
+    module = _load_module()
+    (tmp_path / "release-index.json").write_text(
+        json.dumps({"source_sha": "a" * 40, "manifests": {}}), encoding="utf-8"
+    )
+
+    with pytest.raises(module.NeutralityError, match="does not match"):
+        module.validate_image_config(
+            tmp_path / "release-index.json", only_source_sha="b" * 40
+        )

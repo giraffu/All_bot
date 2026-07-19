@@ -1,0 +1,22 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "a4767c1432cd05b8fdf5972bf0a6662e52b12467",
+  "batch": "dashboard-runpod-pins-20260719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-runpod-pins-20260719",
+  "members": [
+    {
+      "base_sha": "a4767c1432cd05b8fdf5972bf0a6662e52b12467",
+      "branch": "codex/a-inherit-complete-gpu-manifest",
+      "head": "cbf3fdafba99991e712a2a1af98670379c7353ec",
+      "slot": "A"
+    },
+    {
+      "base_sha": "a4767c1432cd05b8fdf5972bf0a6662e52b12467",
+      "branch": "codex/e-fix-runpod-add-worker",
+      "head": "189286d6cfb2986ea5a5fcbfabbdaeec0bf741e2",
+      "slot": "E"
+    }
+  ],
+  "pr_base": "main"
+}

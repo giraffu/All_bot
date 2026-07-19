@@ -172,12 +172,21 @@ def validate_public_web_sources(repo: Path, *, dist: Path | None = None) -> None
                 )
 
 
-def _release_images(index_path: Path) -> Iterable[tuple[str, str]]:
+def _release_images(
+    index_path: Path,
+    *,
+    only_source_sha: str | None = None,
+) -> Iterable[tuple[str, str]]:
     index = _read_json(index_path, "release index")
     for relative in index.get("manifests", {}).values():
         manifest = _read_json(index_path.parent / str(relative), "release manifest")
         for name, artifact in manifest.get("artifacts", {}).items():
             if isinstance(artifact, Mapping) and artifact.get("kind") == "image":
+                if (
+                    only_source_sha is not None
+                    and artifact.get("source_sha") != only_source_sha
+                ):
+                    continue
                 ref = artifact.get("ref")
                 if isinstance(ref, str):
                     yield str(name), ref
@@ -192,8 +201,22 @@ def _requires_runtime_identity(artifact_name: str) -> bool:
     return artifact_name not in NON_RUNNABLE_IDENTITY_ARTIFACTS
 
 
-def validate_image_config(index_path: Path) -> None:
-    for artifact_name, ref in sorted(set(_release_images(index_path))):
+def validate_image_config(
+    index_path: Path,
+    *,
+    only_source_sha: str | None = None,
+) -> None:
+    if only_source_sha is not None:
+        index = _read_json(index_path, "release index")
+        if index.get("source_sha") != only_source_sha or not re.fullmatch(
+            r"[0-9a-f]{40}", only_source_sha
+        ):
+            raise NeutralityError(
+                "image scan source SHA does not match the release index"
+            )
+    for artifact_name, ref in sorted(
+        set(_release_images(index_path, only_source_sha=only_source_sha))
+    ):
         pulled = subprocess.run(
             ["docker", "pull", ref],
             text=True,
@@ -307,14 +330,18 @@ def _validate_image_runtime_identity(ref: str) -> None:
 
 
 def validate(
-    repo: Path, *, release_index: Path | None = None, web_dist: Path | None = None
+    repo: Path,
+    *,
+    release_index: Path | None = None,
+    web_dist: Path | None = None,
+    only_source_sha: str | None = None,
 ) -> None:
     validate_build_context(repo)
     validate_dockerfiles(repo)
     validate_runtime_sources(repo)
     validate_public_web_sources(repo, dist=web_dist)
     if release_index is not None:
-        validate_image_config(release_index)
+        validate_image_config(release_index, only_source_sha=only_source_sha)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -324,6 +351,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--release-index", type=Path)
     parser.add_argument("--web-dist", type=Path)
+    parser.add_argument(
+        "--only-source-sha",
+        help="Inspect only images first built for this exact immutable Git SHA.",
+    )
     return parser
 
 
@@ -334,6 +365,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.repo.resolve(),
             release_index=args.release_index,
             web_dist=args.web_dist,
+            only_source_sha=args.only_source_sha,
         )
         print("release environment-neutrality gate passed")
         return 0
