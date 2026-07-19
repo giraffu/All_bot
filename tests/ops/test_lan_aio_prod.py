@@ -456,7 +456,7 @@ def test_lan_aio_fleet_render_supports_gpu_002_gpu0_scail2_current_slot():
     ) in rendered
     assert (
         "/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/"
-        "scail2/workspace/ComfyUI/models:/workspace/ComfyUI/models"
+        "scail2/workspace/ComfyUI/models:/opt/ComfyUI/models"
     ) in rendered
 
 
@@ -1682,7 +1682,7 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
     ) in docker_command
     assert (
         "-v /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/"
-        "workspace/ComfyUI/models:/workspace/ComfyUI/models"
+        "workspace/ComfyUI/models:/opt/ComfyUI/models"
     ) in docker_command
     assert SCAIL2_BAKED_LAN_IMAGE in docker_command
 

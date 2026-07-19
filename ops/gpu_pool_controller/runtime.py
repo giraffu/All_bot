@@ -400,11 +400,6 @@ class RuntimePlanner:
             f"{model_workspace_key}/workspace"
         )
         volumes = [f"{workspace_host_dir}:/workspace"]
-        if model_workspace_host_dir != workspace_host_dir:
-            volumes.append(
-                f"{model_workspace_host_dir}/ComfyUI/models:"
-                "/workspace/ComfyUI/models"
-            )
         model_cache_endpoint = (
             comfy.model_cache_endpoint or "http://192.168.1.115:9010"
         )
@@ -426,7 +421,12 @@ class RuntimePlanner:
         extra_environment = LAN_AIO_EXTRA_ENV_BY_PROFILE.get(
             profile.runtime_profile, {}
         )
-        model_target_dir = "/workspace/ComfyUI/models"
+        comfyui_dir = str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
+        model_target_dir = f"{comfyui_dir.rstrip('/')}/models"
+        if model_workspace_host_dir != workspace_host_dir:
+            volumes.append(
+                f"{model_workspace_host_dir}/ComfyUI/models:{model_target_dir}"
+            )
         state_root = "/workspace/allbot-state"
         compose = {
             "name": self._compose_project_name(
