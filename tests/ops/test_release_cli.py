@@ -1687,6 +1687,67 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
     assert disabled == set()
 
 
+def test_cloud_deploy_does_not_activate_profiles_for_disabled_optional_services(
+    monkeypatch,
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api", "bot", "qqcc-bot", "qqcc-private-bot-worker"},
+        level="maintenance",
+    )
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    captured = {}
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+
+    def fake_remote(host, script, *, execute):
+        captured["script"] = script
+        return f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote)
+
+    module._deploy_cloud(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_RELEASE_SHA=x\n",
+        _valid_test_environment(),
+    )
+
+    script = captured["script"]
+    assert "--profile bot" in script
+    assert "--profile qqcc-bot" not in script
+    assert "--profile qqcc-private-bots" not in script
+    assert "pull bot central-api" in script
+    assert "qqcc-private-bot-worker" not in script
+
+
+def test_compose_profile_flags_include_only_selected_profile_services():
+    module = _load_module()
+
+    flags = module.compose_profile_flags(
+        {"qqcc-private-bot-worker", "qqcc-config-backend"}
+    )
+
+    assert flags == "--profile owner-tools --profile qqcc-private-bots"
+    assert module.compose_profile_flags({"central-api", "web-api"}) == ""
+
+
 def test_ci_plan_can_skip_runtime_env_but_deploy_cannot(tmp_path):
     head_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
