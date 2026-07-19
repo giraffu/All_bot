@@ -115,9 +115,9 @@ services:
       - BOT_TYPE=TEST
       - REDIS_PREFIX=test_bot_
       - TZ=Asia/Shanghai
-      - DASHBOARD_ADMIN_USERNAME=chuzeyu
+      - DASHBOARD_ADMIN_USERNAME=${DASHBOARD_ADMIN_USERNAME:?DASHBOARD_ADMIN_USERNAME is required}
       - DASHBOARD_ADMIN_PASSWORD_HASH=$$2b$$12$$YIySnXRqN4W6uLKgKUzSKe/V4g4JJEghmIdOcaW0UO21Fda5H05aa
-      - DASHBOARD_SECRET_KEY=${DASHBOARD_SECRET_KEY:-super-secret-jwt-key}
+      - DASHBOARD_SECRET_KEY=${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
     volumes:
       - ../.env.test:/app/.env:ro
       - ../logs:/app/logs

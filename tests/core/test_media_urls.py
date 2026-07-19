@@ -3,6 +3,7 @@ from src.core.media_urls import (
     build_r2_thumbnail_info,
     build_storage_presigned_url,
 )
+from src.core.media_paths import MINIO_BUCKET
 
 
 def test_build_r2_media_key_candidates_include_mirrored_full_object_path():
@@ -73,10 +74,10 @@ def test_build_storage_presigned_url_uses_resolved_bucket_and_object(monkeypatch
 
     url = build_storage_presigned_url("bot-data/history/task-1/input.png", fake_builder)
 
-    assert url == "https://cdn.example/bot-data/history/task-1/input.png"
+    assert url == f"https://cdn.example/{MINIO_BUCKET}/history/task-1/input.png"
     assert captured == {
         "object_name": "history/task-1/input.png",
-        "bucket_name": "bot-data",
+        "bucket_name": MINIO_BUCKET,
     }
 
 

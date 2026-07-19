@@ -15,7 +15,6 @@ def verify_telegram_authorization(
     data: dict,
     *,
     bot_token,
-    bot_token_test,
     logger,
     build_data_check_string_func=None,
     get_tokens_to_try_func=None,
@@ -45,7 +44,6 @@ def verify_telegram_authorization(
 
     tokens_to_try = get_tokens_to_try_func(
         bot_token=bot_token,
-        bot_token_test=bot_token_test,
         logger=logger,
     )
     if not tokens_to_try:
@@ -68,7 +66,6 @@ def verify_telegram_webapp_initdata(
     init_data: str,
     *,
     bot_token,
-    bot_token_test,
     logger,
     build_data_check_string_func=None,
     get_tokens_to_try_func=None,
@@ -102,7 +99,6 @@ def verify_telegram_webapp_initdata(
 
     tokens_to_try = get_tokens_to_try_func(
         bot_token=bot_token,
-        bot_token_test=bot_token_test,
         logger=logger,
     )
     if not tokens_to_try:

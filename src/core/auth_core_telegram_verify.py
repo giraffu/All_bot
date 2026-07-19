@@ -22,8 +22,8 @@ def is_telegram_auth_date_fresh(
     return True
 
 
-def get_telegram_tokens_to_try(*, bot_token, bot_token_test, logger) -> list[str]:
-    tokens_to_try = [t for t in [bot_token, bot_token_test] if t]
+def get_telegram_tokens_to_try(*, bot_token, logger) -> list[str]:
+    tokens_to_try = [bot_token] if bot_token else []
     if not tokens_to_try:
-        logger.error("No BOT_TOKEN or BOT_TOKEN_TEST configured!")
+        logger.error("No BOT_TOKEN configured!")
     return tokens_to_try

@@ -55,7 +55,7 @@
 - [子模块: 容灾与持久化 (Database & Recovery)](./docs/子模块_容灾与持久化_database_recovery.md)
 - [子模块: 局域网 GPU 节点 SSH 管理 (LAN GPU SSH Access)](./docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md)
 - [子模块: 局域网 GPU 节点资源与运维 (LAN GPU Resource Ops)](./docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md)
-- [子模块：并发 AI 开发工作区与测试列车](./docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md)
+- [子模块：并发 AI 工作区与单批次 main 集成](./docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md)
 - [子模块: 本地数据分析平台 (Local Analytics Platform)](./docs/子模块_本地数据分析平台_local_analytics_platform.md)
 - [本地数据分析平台提示词词义分析指南](./docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md)
 - [子模块: 本地正式灾备切换 (Local Prod Fallback)](./docs/子模块_本地正式灾备切换_local_prod_fallback.md)

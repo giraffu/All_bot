@@ -399,41 +399,30 @@ def test_promotion_relationship_requires_ancestry_and_identical_tree():
         module.validate_promotion_relationship(is_ancestor=True, tree_equal=False)
 
 
-def test_main_promotion_workflow_cannot_rebuild_or_redeploy_test():
-    workflow = (
-        ROOT / ".github" / "workflows" / "promote-tested-candidate.yml"
+def test_main_merge_is_the_only_automatic_container_build_trigger():
+    gate = (
+        ROOT / ".github" / "workflows" / "control-plane-release.yml"
     ).read_text(encoding="utf-8")
-    lowered = workflow.lower()
-
-    assert "docker build" not in lowered
-    assert "buildx" not in lowered
-    assert "test_train_release.py deploy" not in lowered
-    assert "release_promotion_v2.py" in workflow
-    assert "git diff --quiet" in workflow
-
-
-def test_candidate_build_workflow_no_longer_publishes_main_channel():
     workflow = (
         ROOT / ".github" / "workflows" / "modular-release-v2.yml"
     ).read_text(encoding="utf-8")
 
-    assert "branches: [codex/test-train]" in workflow
-    assert "options: [test-candidate]" in workflow
-    assert "main) channel=main" not in workflow
+    assert "branches: [main]" in gate
+    assert "branches: [codex/test-train]" not in gate
+    assert "branches: [main]" in workflow
+    assert "branches: [codex/test-train]" not in workflow
+    assert "github.event.workflow_run.event == 'push'" in workflow
+    assert "options: [main]" in workflow
+    assert "main) channel=main" in workflow
+    assert "--require-complete-gpu" in workflow
 
 
-def test_candidate_workflow_can_publish_a_digest_verified_approval_without_building():
+def test_legacy_candidate_promotion_workflow_is_retired():
     workflow = (
         ROOT / ".github" / "workflows" / "modular-release-v2.yml"
     ).read_text(encoding="utf-8")
-    approval_job = workflow.split("\n  publish-approval:\n", 1)[1]
 
-    assert "packages: write" in workflow
-    assert "APPROVAL_BASE64" in approval_job
-    assert "APPROVAL_SHA256" in approval_job
-    assert "base64 --decode" in approval_job
-    assert "sha256sum --check" in approval_job
-    assert "git rev-parse origin/codex/test-train" in approval_job
-    assert "publish_release_approval_v2.py" in approval_job
-    assert "docker build" not in approval_job.lower()
-    assert "ci_release_v2.py" not in approval_job
+    assert not (ROOT / ".github" / "workflows" / "promote-tested-candidate.yml").exists()
+    assert "publish-approval:" not in workflow
+    assert "publish_release_approval_v2.py" not in workflow
+    assert "allbot-release-v2-test-candidate" not in workflow

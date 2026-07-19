@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "RETIRED: cloud test must use immutable test-candidate artifacts through scripts/release.py." >&2
+exit 2
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${REMOTE_HOST:-allbot-do-sgp1-control}"
 REMOTE_DIR="${REMOTE_DIR:-/home/deploy/APP/All_bot}"

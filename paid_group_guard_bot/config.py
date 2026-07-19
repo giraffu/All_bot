@@ -3,25 +3,21 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
 
-from config import TELEGRAM_API_BASE_URL
+def _required_env(name: str) -> str:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        raise RuntimeError(f"{name} is required")
+    return raw
 
-load_dotenv()
 
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
+def _env_bool(name: str) -> bool:
+    raw = _required_env(name)
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _env_int(name: str, default: int | None = None) -> int | None:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    return int(raw)
+def _env_int(name: str) -> int:
+    return int(_required_env(name))
 
 
 def _with_bot_suffix(base_url: str | None) -> str | None:
@@ -53,48 +49,29 @@ class PaidGroupBotSettings:
 
     @classmethod
     def from_env(cls) -> "PaidGroupBotSettings":
-        token = os.getenv("PAID_GROUP_BOT_TOKEN", "").strip()
-        if not token:
-            raise RuntimeError("PAID_GROUP_BOT_TOKEN is required")
-
+        token = _required_env("PAID_GROUP_BOT_TOKEN")
         target_chat_id = _env_int("PAID_GROUP_CHAT_ID")
-        if target_chat_id is None:
-            raise RuntimeError("PAID_GROUP_CHAT_ID is required")
-
-        base_url = os.getenv("PAID_GROUP_BOT_BASE_URL")
-        if not base_url:
-            base_url = _with_bot_suffix(TELEGRAM_API_BASE_URL)
+        base_url = os.getenv("PAID_GROUP_BOT_BASE_URL") or _required_env(
+            "TELEGRAM_API_BASE_URL"
+        )
+        base_file_url = os.getenv("PAID_GROUP_BOT_BASE_FILE_URL") or _required_env(
+            "TELEGRAM_FILE_BASE_URL"
+        )
 
         return cls(
             token=token,
             target_chat_id=target_chat_id,
-            decline_unqualified=_env_bool(
-                "PAID_GROUP_DECLINE_UNQUALIFIED",
-                default=False,
-            ),
-            dry_run=_env_bool("PAID_GROUP_DRY_RUN", default=False),
+            decline_unqualified=_env_bool("PAID_GROUP_DECLINE_UNQUALIFIED"),
+            dry_run=_env_bool("PAID_GROUP_DRY_RUN"),
             base_url=_with_bot_suffix(base_url),
-            base_file_url=os.getenv("PAID_GROUP_BOT_BASE_FILE_URL")
-            or os.getenv("TELEGRAM_FILE_BASE_URL")
-            or "http://69.63.220.115:8082",
-            connect_timeout=float(
-                os.getenv("PAID_GROUP_BOT_CONNECT_TIMEOUT", "60")
-            ),
-            read_timeout=float(os.getenv("PAID_GROUP_BOT_READ_TIMEOUT", "60")),
-            write_timeout=float(os.getenv("PAID_GROUP_BOT_WRITE_TIMEOUT", "60")),
-            pool_size=int(os.getenv("PAID_GROUP_BOT_POOL_SIZE", "20")),
-            poll_interval=float(os.getenv("PAID_GROUP_BOT_POLL_INTERVAL", "2")),
-            poll_timeout=int(os.getenv("PAID_GROUP_BOT_POLL_TIMEOUT", "30")),
-            log_file=os.getenv(
-                "PAID_GROUP_BOT_LOG_FILE",
-                "logs/paid_group_guard_bot.log",
-            ),
-            moderation_config_file=os.getenv(
-                "PAID_GROUP_MODERATION_CONFIG_FILE",
-                "/app/runtime/paid-group-guard/config.json",
-            ),
-            moderation_log_file=os.getenv(
-                "PAID_GROUP_MODERATION_LOG_FILE",
-                "/app/logs/paid_group_moderation.jsonl",
-            ),
+            base_file_url=base_file_url,
+            connect_timeout=float(_required_env("PAID_GROUP_BOT_CONNECT_TIMEOUT")),
+            read_timeout=float(_required_env("PAID_GROUP_BOT_READ_TIMEOUT")),
+            write_timeout=float(_required_env("PAID_GROUP_BOT_WRITE_TIMEOUT")),
+            pool_size=_env_int("PAID_GROUP_BOT_POOL_SIZE"),
+            poll_interval=float(_required_env("PAID_GROUP_BOT_POLL_INTERVAL")),
+            poll_timeout=_env_int("PAID_GROUP_BOT_POLL_TIMEOUT"),
+            log_file=_required_env("PAID_GROUP_BOT_LOG_FILE"),
+            moderation_config_file=_required_env("PAID_GROUP_MODERATION_CONFIG_FILE"),
+            moderation_log_file=_required_env("PAID_GROUP_MODERATION_LOG_FILE"),
         )

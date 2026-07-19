@@ -10,9 +10,6 @@ ARG ALLBOT_GIT_SHA
 ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       org.opencontainers.image.source=$ALLBOT_SOURCE
-ENV DASHBOARD_GATEWAY_PORT=8086 \
-    DASHBOARD_BACKEND_HOST=dashboard-backend:8043 \
-    DASHBOARD_FRONTEND_MODE=dashboard
 COPY --from=build /build/dist /opt/allbot-spa
 COPY dashboard/frontend/nginx.cloud-gateway.conf.template /opt/allbot-nginx/qqcc.conf.template
 COPY deploy/docker/nginx.dashboard.conf.template /opt/allbot-nginx/dashboard.conf.template
