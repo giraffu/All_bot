@@ -472,6 +472,39 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
     assert provider.delete_calls == 0
 
 
+def test_prod_worker_render_accepts_release_pinned_img2img_digest():
+    release_image = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:"
+        + "a" * 64
+    )
+    provider = RunPodProvider(
+        replace(_settings(), image_name_img2img_lora=release_image)
+    )
+    options = RunPodProdWorkerOptions(action="render", quiet=True)
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] == release_image
+
+
+def test_prod_worker_render_rejects_foreign_img2img_digest():
+    provider = RunPodProvider(
+        replace(
+            _settings(),
+            image_name_img2img_lora=(
+                "ghcr.io/example/foreign-img2img@sha256:" + "b" * 64
+            ),
+        )
+    )
+    options = RunPodProdWorkerOptions(action="render", quiet=True)
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert "imageName must be the verified GHCR baked image" in payload["error"]
+
+
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
     image_ref = (
         "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
