@@ -7219,19 +7219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError(
                 "target host environment has unapplied drift; run config-plan and config-apply"
             )
-        preflight = preflight_release(args, impact, manifest, environment_values)
-        print(
-            json.dumps(
-                {"preflight": preflight},
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        require_preflight(preflight)
-        if args.command == "preflight":
-            return 0
-        if args.command == "deploy-module" and args.execute:
+        if args.command == "deploy-module":
             no_change = verify_deploy_module_no_change(
                 args,
                 impact,
@@ -7249,6 +7237,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     json.dumps(no_change, ensure_ascii=False, indent=2, sort_keys=True)
                 )
                 return 0
+        preflight = preflight_release(args, impact, manifest, environment_values)
+        print(
+            json.dumps(
+                {"preflight": preflight},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        require_preflight(preflight)
+        if args.command == "preflight":
+            return 0
         if manifest.get("schema_version") == 2 and args.track == "gpu-execution":
             raise ReleaseError(
                 "GPU track mutations must use the profile canary operator; "
