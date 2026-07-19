@@ -87,6 +87,8 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 
 `config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的键和契约本身变化影响全部服务，强制完整维护、数据库备份与单 Alembic head。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
 
+GPU/Worker 配置与控制面配置为两条独立发布链。`deploy/service-env-contract.yml` 将 `ALLBOT_WORKER_*` 和 `CLOUD_TEST_WORKER_*` 标记为控制面契约外部键：它们仍原样保存在受限宿主 env 中，但不进入控制面 environment revision、逐服务投影、漂移或影响集。因此单独修改 Worker 镜像、槽位或开关不得触发 `config-apply` 或重建主控制面。Dashboard 真实消费的 `RUNPOD_*` / `LAN_AIO_*` 仍属于 Dashboard 服务投影，非 Worker 的未知键仍影响全部服务并 fail closed。
+
 错误只输出变量名，不输出值。Worker 槽位由 `ALLBOT_WORKER_SERVICES=worker-01,...` allowlist 决定；当前支持 `worker-01` 至 `worker-08`，发布器只重建该列表，未启用 canary 不会被顺带启动。每个选中槽位必须提供对应 `ALLBOT_WORKER_XX_*` 的 endpoint、任务类型、node/GPU/runtime profile 与 prefetch/pipeline 契约；08 号槽位另外保留 SCAIL-2 workflow/face-swap 配置。
 
 控制面影响分析只允许扩大依赖集合，但可选 Bot 的运行态还必须服从已校验配置：没有本环境 canonical `QQCC_BOT_TOKEN` 时不启动 `qqcc-bot`，`PRIVATE_QQCC_BOT_ENABLED` 未明确开启时不启动私有 Bot worker，没有 `PAID_GROUP_BOT_TOKEN` 时不启动付费群 Bot。`plan` 同时输出 `cloud_services` 与 `disabled_cloud_services`；该过滤白名单只覆盖这三个可选 runtime，不能借配置缩小 API、数据库、Redis、主 Bot 等核心依赖闭包。
