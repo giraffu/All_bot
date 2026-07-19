@@ -104,6 +104,7 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
     prod_overlay = _compose(ROOT / "deploy/docker-compose-cloud-prod.overlay.yml")
     environment = prod_overlay["services"]["dashboard-backend"]["environment"]
 
+    assert environment["API_BASE"] == "http://central-api:8003"
     assert environment["DASHBOARD_RUNPOD_AUTOSCALER_ENABLED"] == (
         "${DASHBOARD_RUNPOD_AUTOSCALER_ENABLED:-true}"
     )
@@ -375,7 +376,10 @@ def test_prod_runtime_uses_host_projections_for_python_consumers():
         assert base[service]["env_file"] == _projection_env_file(projection)
         environment = overlay.get(service, {}).get("environment", {})
         assert "BOT_TYPE" not in environment
-        assert "API_BASE" not in environment
+        if service == "dashboard-backend":
+            assert environment["API_BASE"] == "http://central-api:8003"
+        else:
+            assert "API_BASE" not in environment
 
 
 def test_release_workflow_builds_all_images_and_never_uses_latest():
