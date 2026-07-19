@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-19：main bundle 环境中立门禁的 test/prod 运行身份哨兵收口到可运行 service artifact。`python-runtime-base` 与 `python-worker-base` 本来就不包含 `src` 应用源码，不再被误当服务启动；两者仍必须通过 Image Config.Env 与文件系统的环境材料扫描。事实源为环境中立校验器、专项回归、不可变发布文档与 ops Skill。
 > 2026-07-19：main bundle 环境中立扫描从新 Dashboard Backend 镜像检出 `/app/paid_group_guard_bot/.env.example`；根因是根级 `.env.*` ignore 没有覆盖目录级 `COPY` 的嵌套示例。构建上下文和门禁现同时要求 `**/.env`、`**/.env.*`，保留仓库内本地开发示例但禁止其进入任何镜像层；失败 SHA 未发布 bundle。事实源为 `.dockerignore`、环境中立校验器、专项测试、精确镜像只读导出、不可变发布文档与 ops Skill。
 > 2026-07-19：严格配置外置后，main bundle 的 Dashboard/QQCC Backend 真实 import smoke 改为显式注入合成 CI 逐服务投影；不再只传单个 MinIO 地址，也不向镜像或源码恢复鉴权默认值。缺少 Dashboard/QQCC secret、管理员标识或共享运行配置仍 fail closed。事实源为模块化 workflow、专项静态门禁、精确失败 digest 的容器重放、不可变发布文档与 ops Skill。
 > 2026-07-19：main bundle 的 catalog 影响判定改为对可信基线做逐 artifact 语义比较。控制面、Public Web、文档和发布工具变化不再自动调度 `gpu-execution`；只有 GPU artifact/profile、`remote_workers/**` 或真实基础依赖变化进入 GPU 专用 manifest/canary/operator 链路。无法读取旧 catalog 时继续 fail-safe 全量重建，真实 GPU 变化的同 SHA attestation 门禁不放宽。事实源为 `release_artifacts_v2.py`、`ci_release_v2.py`、模块化 workflow、专项测试、ADR 0008、不可变发布文档与 ops Skill。

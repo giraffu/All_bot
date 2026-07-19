@@ -66,3 +66,14 @@ def test_runtime_source_cannot_auto_load_dotenv(tmp_path):
 
     with pytest.raises(module.NeutralityError, match="dotenv"):
         module.validate_runtime_sources(tmp_path)
+
+
+def test_runtime_identity_gate_applies_only_to_runnable_service_artifacts():
+    module = _load_module()
+
+    assert module._requires_runtime_identity("central-api") is True
+    assert module._requires_runtime_identity("worker-relay") is True
+    assert module._requires_runtime_identity("python-runtime-base") is False
+    assert module._requires_runtime_identity("python-worker-base") is False
+    assert module._requires_runtime_identity("dashboard-frontend") is False
+    assert module._requires_runtime_identity("qqcc-config-frontend") is False
