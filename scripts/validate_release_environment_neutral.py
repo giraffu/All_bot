@@ -43,6 +43,12 @@ PUBLIC_SENTINELS = (
     "testAIvison_bot",
     "AIVision1111_bot",
 )
+NON_RUNNABLE_IDENTITY_ARTIFACTS = {
+    "dashboard-frontend",
+    "python-runtime-base",
+    "python-worker-base",
+    "qqcc-config-frontend",
+}
 RUNTIME_SOURCE_FILES = (
     "config.py",
     "backend/app/config.py",
@@ -166,19 +172,28 @@ def validate_public_web_sources(repo: Path, *, dist: Path | None = None) -> None
                 )
 
 
-def _release_image_refs(index_path: Path) -> Iterable[str]:
+def _release_images(index_path: Path) -> Iterable[tuple[str, str]]:
     index = _read_json(index_path, "release index")
     for relative in index.get("manifests", {}).values():
         manifest = _read_json(index_path.parent / str(relative), "release manifest")
-        for artifact in manifest.get("artifacts", {}).values():
+        for name, artifact in manifest.get("artifacts", {}).items():
             if isinstance(artifact, Mapping) and artifact.get("kind") == "image":
                 ref = artifact.get("ref")
                 if isinstance(ref, str):
-                    yield ref
+                    yield str(name), ref
+
+
+def _release_image_refs(index_path: Path) -> Iterable[str]:
+    for _, ref in _release_images(index_path):
+        yield ref
+
+
+def _requires_runtime_identity(artifact_name: str) -> bool:
+    return artifact_name not in NON_RUNNABLE_IDENTITY_ARTIFACTS
 
 
 def validate_image_config(index_path: Path) -> None:
-    for ref in sorted(set(_release_image_refs(index_path))):
+    for artifact_name, ref in sorted(set(_release_images(index_path))):
         pulled = subprocess.run(
             ["docker", "pull", ref],
             text=True,
@@ -211,9 +226,7 @@ def validate_image_config(index_path: Path) -> None:
                     f"release image Config.Env contains environment-owned key {key}"
                 )
         _validate_image_filesystem(ref)
-        labels = document[0]["Config"].get("Labels") or {}
-        module = labels.get("io.allbot.release.module")
-        if module not in {"dashboard-frontend", "qqcc-config-frontend"}:
+        if _requires_runtime_identity(artifact_name):
             _validate_image_runtime_identity(ref)
 
 
