@@ -192,6 +192,30 @@ ENVIRONMENT = {
     },
 }
 
+COMPOSE_PROFILE_SERVICES = {
+    "bot": {"bot"},
+    "owner-tools": {
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+    },
+    "paid-group": {"paid-group-guard-bot"},
+    "qqcc-bot": {"qqcc-bot"},
+    "qqcc-private-bots": {"qqcc-private-bot-worker"},
+}
+
+
+def compose_profile_flags(services: Iterable[str]) -> str:
+    """Activate only profiles that contain an enabled target service."""
+
+    selected = set(services)
+    return " ".join(
+        f"--profile {shlex.quote(profile)}"
+        for profile, profile_services in COMPOSE_PROFILE_SERVICES.items()
+        if selected & profile_services
+    )
+
 DASHBOARD_FAST_TRACK_BACKEND_PATTERNS = (
     "dashboard/backend/**",
     "deploy/docker/Dockerfile.dashboard-backend",
@@ -3143,13 +3167,14 @@ def _deploy_cloud(
     repo = f"{checkout_root}/repo"
     release_dir = _cloud_release_dir(str(sha), track)
     env_file = args.remote_env_file or environment["env_file"]
+    profile_flags = compose_profile_flags(cloud_services)
     compose = (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
         f"--env-file {checkout}/deploy/env.defaults "
         f"--env-file {shlex.quote(env_file)} --env-file {release_dir}/release.env "
         f"-f {checkout}/deploy/docker-compose-cloud-base.yml "
         f"-f {checkout}/{environment['overlay']} "
-        "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
+        f"{profile_flags}"
     )
     services = " ".join(shlex.quote(service) for service in cloud_services)
     resolved_api_base_checks = "".join(
@@ -3588,13 +3613,14 @@ def _materialize_cloud_rollback_materials(
     release_branch = release_remote_branch(
         str(manifest.get("source_ref", "refs/heads/main"))
     )
+    profile_flags = compose_profile_flags(selected_cloud_services)
     compose = (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
         f"--env-file {checkout}/deploy/env.defaults "
         f"--env-file {shlex.quote(env_file)} --env-file {release_dir}/release.env "
         f"-f {checkout}/deploy/docker-compose-cloud-base.yml "
         f"-f {checkout}/{environment['overlay']} "
-        "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
+        f"{profile_flags}"
     )
     running_checks = ""
     for service, digest in expected.items():
@@ -4329,6 +4355,7 @@ def _cloud_compose_command(
     *,
     track: str | None = None,
     release_env_variable: str | None = None,
+    services: Iterable[str] = (),
 ) -> str:
     environment = ENVIRONMENT[args.env]
     checkout = f"{args.remote_checkout_root}/releases/{sha}"
@@ -4346,7 +4373,7 @@ def _cloud_compose_command(
         f"--env-file {release_env} "
         f"-f {shlex.quote(checkout + '/deploy/docker-compose-cloud-base.yml')} "
         f"-f {shlex.quote(checkout + '/' + environment['overlay'])} "
-        "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
+        f"{compose_profile_flags(services)}"
     )
 
 
@@ -4426,6 +4453,7 @@ done < "$source_file"
             previous_sha,
             track=track,
             release_env_variable="previous_release_env",
+            services=services,
         )
         script = f"""set -euo pipefail
 test -d {shlex.quote(args.remote_checkout_root + "/releases/" + previous_sha)}
@@ -4787,6 +4815,7 @@ done < "$source_file"
                 previous_sha,
                 track=track,
                 release_env_variable="previous_release_env",
+                services=selected_cloud,
             )
             services = " ".join(shlex.quote(item) for item in sorted(selected_cloud))
             script = f"""set -euo pipefail
@@ -6376,6 +6405,7 @@ def _config_apply_cloud(
     if not compose_services:
         return
     service_args = " ".join(shlex.quote(name) for name in sorted(compose_services))
+    profile_flags = compose_profile_flags(compose_services)
     selected_case = "|".join(sorted(compose_services))
     revisions = snapshot.get("service_revisions")
     if not isinstance(revisions, Mapping):
@@ -6406,7 +6436,7 @@ tmp=path.with_suffix('.env.next')
 tmp.write_text(''.join(f'{{key}}={{values[key]}}\\n' for key in sorted(values)))
 os.replace(tmp,path)
 PY
-compose="docker compose --project-name {project} --env-file $checkout/deploy/env.defaults --env-file {shlex.quote(env_file)} --env-file $release_env -f $checkout/deploy/docker-compose-cloud-base.yml -f $checkout/{overlay} --profile bot --profile qqcc-bot --profile qqcc-private-bots --profile paid-group --profile owner-tools"
+compose="docker compose --project-name {project} --env-file $checkout/deploy/env.defaults --env-file {shlex.quote(env_file)} --env-file $release_env -f $checkout/deploy/docker-compose-cloud-base.yml -f $checkout/{overlay} {profile_flags}"
 $compose config -q
 non_target_snapshot="$(mktemp)"
 trap 'rm -f "$non_target_snapshot"' EXIT
@@ -6452,6 +6482,7 @@ def _restore_config_cloud(args: argparse.Namespace, services: set[str]) -> None:
         and CONFIG_SERVICE_TO_COMPOSE[name] in environment["available_services"]
     }
     service_args = " ".join(shlex.quote(name) for name in sorted(compose_services))
+    profile_flags = compose_profile_flags(compose_services)
     script = f"""set -euo pipefail
 state={shlex.quote(state_path)}
 sha=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_sha"])' "$state")
@@ -6459,7 +6490,7 @@ checkout=/home/deploy/APP/All_bot-release/releases/$sha
 release_env=/var/lib/allbot/releases/control-plane/$sha/release.env
 test -f "$release_env.config-backup"
 mv -f "$release_env.config-backup" "$release_env"
-compose="docker compose --project-name {environment["project"]} --env-file $checkout/deploy/env.defaults --env-file {shlex.quote(env_file)} --env-file $release_env -f $checkout/deploy/docker-compose-cloud-base.yml -f $checkout/{environment["overlay"]} --profile bot --profile qqcc-bot --profile qqcc-private-bots --profile paid-group --profile owner-tools"
+compose="docker compose --project-name {environment["project"]} --env-file $checkout/deploy/env.defaults --env-file {shlex.quote(env_file)} --env-file $release_env -f $checkout/deploy/docker-compose-cloud-base.yml -f $checkout/{environment["overlay"]} {profile_flags}"
 $compose config -q
 $compose up -d --no-deps --wait --wait-timeout 180 {service_args}
 """
