@@ -47,7 +47,25 @@ def load_contract(path: Path) -> dict[str, Any]:
         raise ContractError("service environment contract is invalid") from exc
     if value.get("schema_version") != 1 or not isinstance(value.get("services"), dict):
         raise ContractError("unsupported service environment contract")
+    _external_patterns(value)
     return value
+
+
+def _external_patterns(contract: Mapping[str, Any]) -> tuple[str, ...]:
+    raw_patterns = contract.get("external_patterns", [])
+    if not isinstance(raw_patterns, list) or any(
+        not isinstance(pattern, str) or not pattern.strip()
+        for pattern in raw_patterns
+    ):
+        raise ContractError("service environment external_patterns is invalid")
+    return tuple(pattern.strip() for pattern in raw_patterns)
+
+
+def _is_external_key(contract: Mapping[str, Any], key: str) -> bool:
+    return any(
+        fnmatch.fnmatchcase(key, pattern)
+        for pattern in _external_patterns(contract)
+    )
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -160,15 +178,20 @@ def build_snapshot(
         projection["ALLBOT_CONFIG_REVISION"] = revision
         projections[name] = projection
         revisions[name] = revision
+    tracked_values = {
+        key: value
+        for key, value in values.items()
+        if not _is_external_key(contract, key)
+    }
     key_hashes = {
         key: hashlib.sha256(value.encode("utf-8")).hexdigest()
-        for key, value in values.items()
+        for key, value in tracked_values.items()
     }
     contract_revision = hashlib.sha256(
         json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     environment_revision = _digest(
-        {**values, "ALLBOT_SERVICE_CONTRACT_REVISION": contract_revision}
+        {**tracked_values, "ALLBOT_SERVICE_CONTRACT_REVISION": contract_revision}
     )
     return EnvironmentSnapshot(
         environment=environment,
@@ -181,6 +204,11 @@ def build_snapshot(
 
 
 def affected_services(contract: Mapping[str, Any], changed_keys: set[str]) -> set[str]:
+    changed_keys = {
+        key for key in changed_keys if not _is_external_key(contract, key)
+    }
+    if not changed_keys:
+        return set()
     configured = contract.get("services", {})
     affected: set[str] = set()
     matched_keys: set[str] = set()
@@ -219,6 +247,9 @@ def affected_services(contract: Mapping[str, Any], changed_keys: set[str]) -> se
 def unknown_changed_keys(
     contract: Mapping[str, Any], changed_keys: set[str]
 ) -> set[str]:
+    changed_keys = {
+        key for key in changed_keys if not _is_external_key(contract, key)
+    }
     configured = contract.get("services", {})
     matched: set[str] = set()
     shared_defaults = contract.get("shared_defaults", {})

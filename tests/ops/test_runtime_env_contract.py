@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,61 @@ def test_changed_key_names_expand_to_affected_services_and_unknown_is_all():
     assert module.affected_services(contract, {"NEW_UNKNOWN_KEY"}) == services
 
 
+def test_gpu_worker_keys_are_outside_control_plane_revision_and_impact():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    original_values = _environment("test")
+    original_values.update(
+        {
+            "ALLBOT_WORKER_I2I_PRO_IMAGE": "registry.example/worker@sha256:old",
+            "CLOUD_TEST_WORKER_ENABLED": "false",
+        }
+    )
+    changed_values = dict(original_values)
+    changed_values.update(
+        {
+            "ALLBOT_WORKER_I2I_PRO_IMAGE": "registry.example/worker@sha256:new",
+            "CLOUD_TEST_WORKER_ENABLED": "true",
+        }
+    )
+
+    original = module.build_snapshot(contract, "test", original_values)
+    changed = module.build_snapshot(contract, "test", changed_values)
+    active = {
+        "key_hashes": original.key_hashes,
+        "contract_revision": original.contract_revision,
+    }
+
+    assert changed.environment_revision == original.environment_revision
+    assert changed.service_revisions == original.service_revisions
+    assert "ALLBOT_WORKER_I2I_PRO_IMAGE" not in changed.key_hashes
+    assert "CLOUD_TEST_WORKER_ENABLED" not in changed.key_hashes
+    assert module.changed_keys(changed, active) == set()
+    assert module.affected_services(
+        contract,
+        {"ALLBOT_WORKER_I2I_PRO_IMAGE", "CLOUD_TEST_WORKER_ENABLED"},
+    ) == set()
+    assert module.unknown_changed_keys(
+        contract,
+        {"ALLBOT_WORKER_I2I_PRO_IMAGE", "CLOUD_TEST_WORKER_ENABLED"},
+    ) == set()
+    assert all(
+        "ALLBOT_WORKER_I2I_PRO_IMAGE" not in projection
+        and "CLOUD_TEST_WORKER_ENABLED" not in projection
+        for projection in changed.projections.values()
+    )
+
+
+def test_external_worker_key_does_not_hide_unknown_control_plane_key():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    changed = {"ALLBOT_WORKER_I2I_PRO_IMAGE", "NEW_UNKNOWN_KEY"}
+
+    assert module.affected_services(contract, changed) == set(contract["services"])
+    assert module.unknown_changed_keys(contract, changed) == {"NEW_UNKNOWN_KEY"}
+
+
 def test_contract_change_alters_revision_and_impacts_all_services():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
@@ -251,3 +307,41 @@ def test_cli_merges_versioned_defaults_before_host_env_override(tmp_path):
     )
     projection = (root / "current" / "api.env").read_text(encoding="utf-8")
     assert "DB_POOL_SIZE=9\n" in projection
+
+
+def test_cli_external_worker_change_is_not_control_plane_drift(tmp_path, capsys):
+    module = _load_module()
+    env_file = tmp_path / "test.env"
+    values = _environment("test")
+    values["ALLBOT_WORKER_I2I_PRO_IMAGE"] = "worker@sha256:old"
+    values["CLOUD_TEST_WORKER_ENABLED"] = "false"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "test",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert module.main(["activate", *common]) == 0
+    activated = json.loads(capsys.readouterr().out)
+    values["ALLBOT_WORKER_I2I_PRO_IMAGE"] = "worker@sha256:new"
+    values["CLOUD_TEST_WORKER_ENABLED"] = "true"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert module.main(["inspect", *common]) == 0
+    inspected = json.loads(capsys.readouterr().out)
+
+    assert inspected["environment_revision"] == activated["environment_revision"]
+    assert inspected["active_revision"] == activated["environment_revision"]
+    assert inspected["drift"] is False
+    assert inspected["changed_keys"] == []
+    assert inspected["unknown_keys"] == []
+    assert inspected["affected_services"] == []
