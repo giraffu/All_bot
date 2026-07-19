@@ -1,6 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 > 2026-07-19：独立模块的运行配置检查收口到机器定义的逐服务闭包；Dashboard `deploy-module` 只投影 Dashboard 前后端必填键，仍验证生产全局语义、env revision 与全部已激活投影完整性，因此非目标 main-bot 尚缺 canonical key 不再阻断 owner-only rolling，目标缺键/漂移/篡改仍 fail closed。正式机无 active projection 且只授权 Dashboard rolling 时，`config-plan/config-apply --module dashboard` 仅以 `600` 暂存 Dashboard 两份投影和指针，不进维护、不备份、不调用 Compose/重启；既有且不投影到 Dashboard 的 12 个 legacy 宿主键只按代码内精确清单兼容，清单外未知键、已有 active 或闭包逃逸拒绝，完整 inspect 继续把其它缺失投影报告为 drift。`deploy/env.defaults` 与 legacy test compose 仅以当前精确 SHA256 加入独立发布 snapshot，任一内容变化恢复共享契约 blocker。事实源为 `release.py`、runtime env helper、release policy、专项 TDD、不可变发布文档与 ops Skill。
+> 2026-07-19：局部 Dashboard 首次投影后，公共 Compose 曾因解析非目标 `central-api.env` 而在 pull 前失败并完整恢复旧栈。云 Compose 的逐服务 `env_file` 改用 `required: false`，仅允许项目解析缺失的非目标投影；目标 closure 仍由发布器在 pull/up 前严格校验，非目标不得 `up` 且启动时间强制不变。公共 Compose 新内容 checksum 已更新到独立契约 snapshot，后续任何漂移恢复 shared-compose blocker。事实源为 cloud base Compose、release policy、immutable Compose TDD、不可变发布文档与 ops Skill。
 >
 > 2026-07-19：环境中立镜像扫描按 artifact 自身构建 SHA 去重：main workflow 的 `--only-source-sha` 必须精确等于 release index SHA，本批新构建镜像继续执行 Config.Env、文件系统与 test/prod 解析检查；复用控制面和仅作 Dashboard pin 索引的历史 GPU 镜像保留其原构建 CI 扫描证据，不在每个控制面 bundle 重拉超大镜像或错误执行控制面身份哨兵。事实源为环境中立校验器、模块化 workflow、专项 TDD、不可变发布文档与 ops Skill。
 >
