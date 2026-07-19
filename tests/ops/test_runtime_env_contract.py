@@ -90,6 +90,39 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     }
 
 
+def test_dashboard_backend_projection_requires_agent_control_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+
+    snapshot = module.build_snapshot(
+        contract,
+        "prod",
+        values,
+        services={"dashboard-backend"},
+    )
+
+    assert snapshot.projections["dashboard-backend"]["AGENT_SECRET_TOKEN"] == (
+        "prod-agent-token"
+    )
+    assert "UNRELATED_OPERATOR_SECRET" not in snapshot.projections["dashboard-backend"]
+
+
+def test_dashboard_backend_projection_rejects_missing_agent_control_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    del values["AGENT_SECRET_TOKEN"]
+
+    with pytest.raises(module.ContractError, match="AGENT_SECRET_TOKEN"):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"dashboard-backend"},
+        )
+
+
 def test_missing_required_service_key_fails_closed_without_value_disclosure():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
@@ -483,6 +516,110 @@ def test_scoped_activation_adds_module_without_rewriting_active_projections(
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in history_files)
 
 
+def test_scoped_activation_updates_target_and_preserves_non_target_with_rollback(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("prod")
+    old_contract = module.load_contract(CONTRACT_PATH)
+    old_contract["services"]["dashboard-backend"]["required"].remove(
+        "AGENT_SECRET_TOKEN"
+    )
+    old_contract_path = tmp_path / "old-contract.json"
+    old_contract_path.write_text(json.dumps(old_contract), encoding="utf-8")
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+
+    old_common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(old_contract_path),
+        "--root",
+        str(root),
+    ]
+    assert (
+        module.main(
+            [
+                "activate",
+                *old_common,
+                "--service",
+                "dashboard-backend",
+                "--service",
+                "qqcc-config-backend",
+            ]
+        )
+        == 0
+    )
+    first = json.loads(capsys.readouterr().out)
+    dashboard_path = root / "current" / "dashboard-backend.env"
+    qqcc_path = root / "current" / "qqcc-config-backend.env"
+    old_dashboard = dashboard_path.read_bytes()
+    old_qqcc = qqcc_path.read_bytes()
+    assert b"AGENT_SECRET_TOKEN" not in old_dashboard
+
+    values["AGENT_SECRET_TOKEN"] = "rotated-prod-agent-token"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    new_common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            ["inspect", *new_common, "--service", "dashboard-backend"]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["affected_services"] == ["dashboard-backend"]
+    assert inspected["unknown_keys"] == []
+
+    assert (
+        module.main(
+            ["activate", *new_common, "--service", "dashboard-backend"]
+        )
+        == 0
+    )
+    second = json.loads(capsys.readouterr().out)
+    active = module.load_active_state(root)
+    assert active is not None
+    assert active["previous_revision"] == first["environment_revision"]
+    assert dashboard_path.read_bytes() != old_dashboard
+    assert b"AGENT_SECRET_TOKEN=rotated-prod-agent-token" in dashboard_path.read_bytes()
+    assert qqcc_path.read_bytes() == old_qqcc
+    assert len(list((root / "states" / "activations").glob("*.json"))) == 2
+
+    assert (
+        module.main(
+            [
+                "rollback",
+                *new_common,
+                "--expected-revision",
+                second["environment_revision"],
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    restored = module.load_active_state(root)
+    assert restored is not None
+    assert restored["environment_revision"] == first["environment_revision"]
+    assert dashboard_path.read_bytes() == old_dashboard
+    assert qqcc_path.read_bytes() == old_qqcc
+
+
 def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
     module = _load_module()
     env_file = tmp_path / "prod.env"
@@ -507,6 +644,10 @@ def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
         )
         == 0
     )
+    first = module.load_active_state(root)
+    assert first is not None
+    dashboard_path = root / "current" / "dashboard-backend.env"
+    old_dashboard = dashboard_path.read_bytes()
     capsys.readouterr()
     values["DASHBOARD_SECRET_KEY"] = "rotated-dashboard-secret"
     env_file.write_text(module._env_text(values), encoding="utf-8")
@@ -530,6 +671,61 @@ def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
         == 2
     )
     assert "would change active service projections" in capsys.readouterr().err
+    assert module.load_active_state(root) == first
+    assert dashboard_path.read_bytes() == old_dashboard
+
+
+def test_scoped_activation_rejects_non_target_active_service_removal(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("prod")
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--service",
+                "dashboard-backend",
+                "--service",
+                "qqcc-bot",
+            ]
+        )
+        == 0
+    )
+    first = module.load_active_state(root)
+    assert first is not None
+    qqcc_path = root / "current" / "qqcc-bot.env"
+    old_qqcc = qqcc_path.read_bytes()
+    capsys.readouterr()
+
+    values["QQCC_BOT_TOKEN"] = ""
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(
+            ["activate", *common, "--service", "dashboard-backend"]
+        )
+        == 2
+    )
+    assert "would remove active service projections" in capsys.readouterr().err
+    assert module.load_active_state(root) == first
+    assert qqcc_path.read_bytes() == old_qqcc
 
 
 def test_full_activation_rollback_restores_incrementally_merged_projection_set(

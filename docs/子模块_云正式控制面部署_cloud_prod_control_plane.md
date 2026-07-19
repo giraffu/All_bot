@@ -5,7 +5,7 @@
 
 2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组每个 artifact 自己的已部署 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失项按成功 history 时间顺序只读恢复，组内混合版本不要求伪造共同基线。提交目标状态时不覆盖非目标版本，目标 SHA 上其它新产物不自动并入。migration、未知共享 Compose/env 和未审计跨模块契约仍 fail closed；只有 policy 中内容 SHA256 固定的 owner-only/向后兼容 snapshot 可作为精确例外，内容变化立即阻断。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
 
-2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，保证其 service revision、文件内容和权限均不变。局部 apply 只追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何已激活服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。
+2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，允许本次目标服务更新 revision，同时保证所有非目标 active 服务继续存在且 revision、投影字节和权限均不变。局部 apply 只替换或追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何非目标 active 服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。目标更新会保留不可变 activation history 和完整旧联合状态，供显式 rollback 恢复。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
@@ -362,7 +362,7 @@ Dashboard 独立发布的 plan 必须显示 `risk_class=owner-tools`、`strategy
 Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
 快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
 不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。
-Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动；真实不可变容器通过环境注入继承正式 RunPod 配置，`DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 默认使用存在但为空的 `/dev/null` 满足 CLI 路径契约，不挂载或生成含密钥的 `/app/.env`。只有拿到 Redis leader
+Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动；真实不可变容器通过最小逐服务投影继承正式 RunPod 配置，其中 `AGENT_SECRET_TOKEN` 是删除/缩容前调用 Central agent control 的必填能力，不得遗漏；`DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 默认使用存在但为空的 `/dev/null` 满足 CLI 路径契约，不挂载或生成另一份含密钥的 `/app/.env`。只有拿到 Redis leader
 lease 后才会自动执行：有已知非低信任 pending 且预计非低信任用户清空时间超过该 profile 清空阈值时，提交至多一次
 `add --count 1 --retry-unavailable --worker-timeout 2400`；有非低信任 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
 预计非低信任用户清空时间按 `non_low_trust_clear_pending_count_by_task_type` 对应的

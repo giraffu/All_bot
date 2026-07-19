@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
+SERVICE_CONTRACT_REVISION_KEY = "ALLBOT_SERVICE_CONTRACT_REVISION"
+
+
 class ContractError(RuntimeError):
     """The host environment cannot safely configure the selected services."""
 
@@ -189,7 +192,7 @@ def build_snapshot(
         json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     environment_revision = _digest(
-        {**tracked_values, "ALLBOT_SERVICE_CONTRACT_REVISION": contract_revision}
+        {**tracked_values, SERVICE_CONTRACT_REVISION_KEY: contract_revision}
     )
     return EnvironmentSnapshot(
         environment=environment,
@@ -281,27 +284,34 @@ def snapshot_summary(
     credential_isolation: str = "pending",
 ) -> dict[str, Any]:
     changed = set(changed_keys)
+    effective_changed = changed - {SERVICE_CONTRACT_REVISION_KEY}
     active_services = (
         active_service_revisions
         if isinstance(active_service_revisions, Mapping)
         else {}
     )
-    service_drift = any(
-        str(active_services.get(name, "")) != revision
+    projection_drift = {
+        name
         for name, revision in snapshot.service_revisions.items()
-    )
+        if str(active_services.get(name, "")) != revision
+    }
     return {
         "schema_version": 1,
         "environment": snapshot.environment,
         "environment_revision": snapshot.environment_revision,
         "contract_revision": snapshot.contract_revision,
         "active_revision": active_revision,
-        "drift": active_revision != snapshot.environment_revision or service_drift,
+        "drift": active_revision != snapshot.environment_revision
+        or bool(projection_drift),
         "changed_keys": sorted(changed),
         "affected_services": sorted(
-            name
-            for name, projection in snapshot.projections.items()
-            if not changed or any(key in projection for key in changed)
+            {
+                name
+                for name, projection in snapshot.projections.items()
+                if not changed
+                or any(key in projection for key in effective_changed)
+            }
+            | projection_drift
         ),
         "service_revisions": dict(sorted(snapshot.service_revisions.items())),
         "credential_isolation": credential_isolation,
@@ -419,6 +429,7 @@ def activate_snapshot(
     *,
     credential_isolation: str = "pending",
     preserve_active: bool = False,
+    mutable_services: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Write one immutable projection set and atomically select it."""
 
@@ -429,10 +440,12 @@ def activate_snapshot(
         previous.get("service_revisions") if isinstance(previous, Mapping) else None
     )
     if preserve_active and isinstance(previous_service_revisions, Mapping):
+        mutable = {str(service) for service in mutable_services}
         missing = set(previous_service_revisions) - set(snapshot.service_revisions)
         changed = {
             str(service)
             for service, revision in previous_service_revisions.items()
+            if str(service) not in mutable
             if str(snapshot.service_revisions.get(str(service), "")) != str(revision)
         }
         if missing or changed:
@@ -553,7 +566,7 @@ def changed_keys(
         if previous.get(key) != snapshot.key_hashes.get(key)
     }
     if active.get("contract_revision") != snapshot.contract_revision:
-        changed.add("ALLBOT_SERVICE_CONTRACT_REVISION")
+        changed.add(SERVICE_CONTRACT_REVISION_KEY)
     return changed
 
 
@@ -674,6 +687,7 @@ def main(argv: list[str] | None = None) -> int:
                 snapshot,
                 credential_isolation=status,
                 preserve_active=bool(requested_services),
+                mutable_services=requested_services,
             )
             active_revision = snapshot.environment_revision
         else:
@@ -700,11 +714,14 @@ def main(argv: list[str] | None = None) -> int:
             for name, revision in snapshot.service_revisions.items()
             if str(active_service_revisions.get(name, "")) != revision
         }
+        effective_changed = changed - {SERVICE_CONTRACT_REVISION_KEY}
         summary["affected_services"] = sorted(
-            (affected_services(contract, changed) & set(snapshot.projections))
+            (affected_services(contract, effective_changed) & set(snapshot.projections))
             | projection_drift
         )
-        summary["unknown_keys"] = sorted(unknown_changed_keys(contract, changed))
+        summary["unknown_keys"] = sorted(
+            unknown_changed_keys(contract, effective_changed)
+        )
         summary["present_keys"] = sorted(key for key, value in values.items() if value)
         summary["public_values"] = {
             key: values[key] for key in sorted(PUBLIC_CONFIG_KEYS) if key in values

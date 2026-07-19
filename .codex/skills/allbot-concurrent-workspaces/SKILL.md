@@ -53,7 +53,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 - 测试按 main bundle 中的精确 digest/checksum 验收；standard artifact 通过 `verify-test` 写入 main-channel verified history。
 - 测试失败不回退或改写 main 历史。修复走新的功能 handoff 和新的单批次 main PR，再为新 main SHA 构建一次。
 - 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；每次生产 mutation 仍需用户明确确认和 `--confirm-prod`。
-- 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存只追加目标投影并复核全部已激活投影，不调用 Compose 或重启容器；代码发布不能隐式修改宿主 env 或复用测试配置。
+- 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存可替换/追加目标投影，但必须保证所有非目标 active 投影继续存在且 revision/字节不变；它不调用 Compose 或重启容器，代码发布不能隐式修改宿主 env 或复用测试配置。
 - Dashboard 等 direct artifact 可按策略豁免测试验收，但不能绕过 main、CI、digest、配置、健康、事务回滚与生产确认。
 - 测试 Worker 仅在专项诊断时显式部署；GPU/LAN AIO/RunPod 继续走专用 operator/canary。
 

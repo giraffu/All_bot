@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "ac4f2664ae038cca2f4ef0fda5d391a52231e4c6",
+  "batch": "dashboard-agent-control-projection-20260720",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-agent-control-projection-20260720",
+  "members": [
+    {
+      "base_sha": "ac4f2664ae038cca2f4ef0fda5d391a52231e4c6",
+      "branch": "codex/a-scoped-target-projection-update",
+      "head": "3a13f8783d4e835cb06d5e522e16f4554a5c1561",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
