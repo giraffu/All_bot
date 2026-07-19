@@ -14,7 +14,15 @@ import tempfile
 from typing import Iterable, Mapping, Sequence
 
 
-REQUIRED_CONTEXT_EXCLUDES = {".env", ".env.*", "*.pem", "*.key", ".ssh/"}
+REQUIRED_CONTEXT_EXCLUDES = {
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "*.pem",
+    "*.key",
+    ".ssh/",
+}
 ENV_SPECIFIC_KEY = re.compile(
     r"(?:^ALLBOT_ENV$|DATABASE_URL|REDIS_URL|TOKEN|SECRET|PASSWORD|BUCKET|"
     r"MINIO_|API_BASE|PUBLIC_URL|EXTERNAL_DOMAIN|BOT_USERNAME|VITE_)",

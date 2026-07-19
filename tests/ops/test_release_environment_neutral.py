@@ -20,6 +20,12 @@ def test_checked_in_release_sources_are_environment_neutral():
     _load_module().validate(ROOT)
 
 
+def test_build_context_requires_recursive_env_excludes():
+    module = _load_module()
+
+    assert {"**/.env", "**/.env.*"} <= module.REQUIRED_CONTEXT_EXCLUDES
+
+
 def test_dockerfile_cannot_bake_token_or_env_file(tmp_path):
     module = _load_module()
     docker = tmp_path / "deploy" / "docker"
