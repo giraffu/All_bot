@@ -5231,6 +5231,62 @@ def test_transaction_journal_rejects_secret_fields_before_remote_write(monkeypat
     assert writes == []
 
 
+def test_transaction_journal_preserves_non_secret_rotation_acceptance(monkeypatch):
+    module = _load_module()
+    writes = []
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: writes.append((args, kwargs))
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    transaction["previous"]["state"] = {
+        "pending_secret_rotation_acceptance": {
+            "accepted": True,
+            "reason": "approved transition window",
+            "approved_by": "release-owner",
+        }
+    }
+
+    module._write_transaction_journal(
+        SimpleNamespace(env="prod", remote_host="prod-control"), transaction
+    )
+
+    assert len(writes) == 1
+
+
+def test_transaction_journal_rejects_secret_nested_in_rotation_acceptance(monkeypatch):
+    module = _load_module()
+    writes = []
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: writes.append((args, kwargs))
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    transaction["previous"]["state"] = {
+        "pending_secret_rotation_acceptance": {
+            "accepted": True,
+            "api_token": "must-not-be-written",
+        }
+    }
+
+    with pytest.raises(module.ReleaseError, match="forbidden field"):
+        module._write_transaction_journal(
+            SimpleNamespace(env="prod", remote_host="prod-control"), transaction
+        )
+
+    assert writes == []
+
+
 def test_transaction_commit_moves_staged_state_before_clearing_dual_maintenance(
     monkeypatch,
 ):

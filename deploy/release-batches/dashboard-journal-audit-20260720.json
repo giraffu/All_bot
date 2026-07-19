@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f603746025b683a8c3bb66bf2fcac0ac8dc5d053",
+  "batch": "dashboard-journal-audit",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-journal-audit",
+  "members": [
+    {
+      "base_sha": "f603746025b683a8c3bb66bf2fcac0ac8dc5d053",
+      "branch": "codex/a-fix-release-journal-audit-state",
+      "head": "6a35c8bf49ca670a7b041a2c1fd91039b804af6d",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
