@@ -260,7 +260,7 @@ def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, caps
         "environment_revision": "a" * 64,
         "active_revision": None,
         "affected_services": ["dashboard-backend", "dashboard-frontend"],
-        "unknown_keys": [],
+        "unknown_keys": sorted(module.DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS),
         "drift": True,
     }
     activated = dict(inspected, active_revision="a" * 64, drift=False)
@@ -306,6 +306,42 @@ def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, caps
     output = capsys.readouterr().out
     assert events == ["inspect", "activate"]
     assert '"status": "config-staged"' in output
+    assert '"ignored_legacy_keys"' in output
+
+
+def test_initial_dashboard_config_apply_rejects_unreviewed_unknown_key(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: (
+            {},
+            "a" * 64,
+            {
+                "environment": "prod",
+                "environment_revision": "a" * 64,
+                "active_revision": None,
+                "affected_services": ["dashboard-backend"],
+                "unknown_keys": ["UNREVIEWED_PROD_KEY"],
+                "drift": True,
+            },
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="unreviewed unknown keys"):
+        module.run_config_command(
+            module.build_parser().parse_args(
+                [
+                    "config-apply",
+                    "--env",
+                    "prod",
+                    "--module",
+                    "dashboard",
+                    "--confirm-prod",
+                    "--execute",
+                ]
+            )
+        )
 
 
 def test_dashboard_config_apply_rejects_scoped_update_after_initial_activation(

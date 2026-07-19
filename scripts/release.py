@@ -6329,6 +6329,23 @@ INDEPENDENT_MODULE_ENV_SERVICES = {
     "paid-group-bot": ("paid-group-bot",),
 }
 
+DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = frozenset(
+    {
+        "ALLBOT_ENV_FILE",
+        "FILE_BOT_TOKEN",
+        "LEGACY_MINIO_ACCESS_KEY",
+        "LEGACY_MINIO_BUCKET",
+        "LEGACY_MINIO_ENDPOINT",
+        "LEGACY_MINIO_PUBLIC_URL",
+        "LEGACY_MINIO_RESULT_BUCKET",
+        "LEGACY_MINIO_SECRET_KEY",
+        "LEGACY_MINIO_SECURE",
+        "REQUIRED_CHANNEL_ID",
+        "TZ",
+        "VITE_MERCHANT_ADDRESS",
+    }
+)
+
 
 def _runtime_env_service_options(args: argparse.Namespace) -> str:
     """Limit module operations to their machine-owned config closure."""
@@ -6659,9 +6676,23 @@ def run_config_command(args: argparse.Namespace) -> int:
             raise ReleaseError(
                 f"{config_module} config scope escaped its service closure"
             )
-        unknown_keys = inspected.get("unknown_keys")
-        if isinstance(unknown_keys, list) and unknown_keys:
-            raise ReleaseError("scoped config activation rejects unknown keys")
+        raw_unknown_keys = inspected.get("unknown_keys")
+        unknown_keys = (
+            {str(key) for key in raw_unknown_keys if isinstance(key, str)}
+            if isinstance(raw_unknown_keys, list)
+            else set()
+        )
+        reviewed_legacy_keys = (
+            DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS
+            if args.env == "prod" and config_module == "dashboard"
+            else frozenset()
+        )
+        unreviewed_unknown_keys = unknown_keys - reviewed_legacy_keys
+        if unreviewed_unknown_keys:
+            raise ReleaseError(
+                "scoped config activation rejects unreviewed unknown keys: "
+                + ", ".join(sorted(unreviewed_unknown_keys))
+            )
         if inspected.get("active_revision"):
             raise ReleaseError(
                 "scoped config-apply is only allowed for the initial Dashboard projection"
@@ -6672,6 +6703,7 @@ def run_config_command(args: argparse.Namespace) -> int:
                 {
                     "environment": args.env,
                     "environment_revision": revision,
+                    "ignored_legacy_keys": sorted(unknown_keys),
                     "services": sorted(affected),
                     "status": "config-staged",
                 },
