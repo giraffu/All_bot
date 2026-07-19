@@ -245,33 +245,30 @@ scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> -
 
 没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止；`plan` 应把它列入 `disabled_cloud_services`，不得为测试临时复用正式 token。
 
-只更新云正式 QQCC Bot 时，使用同一已验收 main SHA 的控制面模块入口：
+只更新云正式 QQCC Bot 时，使用日常生产门面；去掉确认可先看精简预览：
 
 ```bash
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
-scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
-scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute --confirm-prod
+python scripts/release.py promote --modules qqcc-bot --confirm-prod
 ```
 
-`--modules qqcc-bot` 是受控的单模块边界，只选择官方 Bot service；执行前仍须确认没有第二个同 token polling 实例。若差异包含 migration、共享 Compose/env 或 `src/services/qqcc_config_service.py`，planner 会拒绝独立发布并要求改走普通完整影响闭包。
+`qqcc-bot` 是受控模块边界，只选择官方 Bot service；发布器自动验证唯一目标容器、已知 legacy 实例停止，并扫描启动窗口内的 Telegram polling conflict。migration、共享/未知契约或待处理秘密轮换会在 mutation 前阻断并提示高级入口。
 
 只更新正式 QQCC Config Web 时，请求一个完整配置模块组，发布器固定展开为前后端两个 artifact：
 
 ```bash
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
-  --modules qqcc-config
+python scripts/release.py promote --modules qqcc-config --confirm-prod
 ```
 
-同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化；`current.json` 中两个目标 artifact 更新为本次 `source_sha`，其它 artifact 保持原版本。
+发布器固定展开 backend/frontend 两个 artifact，自动执行 exact-digest 测试取证、目标健康、非目标 `allbot-prod` 容器 ID/image/start time 证明和状态原子提交。
 
-QQCC Bot 与 QQCC Config Web 不能塞进同一个“独立模块”事务。若两者只是互不依赖的改动，应按两个事务分别 plan/preflight/deploy；若涉及共享配置契约，默认退出独立模式，让普通 planner 计算完整闭包。内容 SHA256 固定的已审计 owner-only snapshot 是唯一例外：当前 QQCC 后台独占 LTX 目录仅当 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 都精确匹配 `deploy/release-policy.yml` 的 snapshot 时，允许继续拆成 `qqcc-config` 两服务和 `qqcc-bot` 单服务两个事务；任一文件内容变化都会重新 fail closed。以下旧式混选始终会 fail closed：
+QQCC Bot 与 QQCC Config Web 可以在一个生产事务内组合，配置闭包取并集，测试证据与 direct/standard 保证仍按 artifact 独立计算：
 
 ```bash
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
-  --modules qqcc-bot qqcc-config-backend qqcc-config-frontend
+python scripts/release.py promote \
+  --modules qqcc-bot,qqcc-config --confirm-prod
 ```
 
-同一模块参数复用于 `preflight`/`deploy`；禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。发布后验证 8045/8088、QQCC Bot 近时段日志、single polling、目标 digest/revision 和非目标服务启动时间。正式启动一个当前停止的新实例前仍须确认全网没有第二个同 token polling 实例，并确认生产 token 已在受限 prod env 配置。
+组合名称不能绕过共享契约：blocker 对 `qqcc-bot`、`qqcc-config` 分别匹配，snapshot 任一字节漂移都会 fail closed。禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。
 
 ## 7. 最小验证
 
@@ -284,11 +281,7 @@ python -m alembic heads
 pytest tests/qqcc_bot/test_qqcc_bot_entrypoint.py \
   tests/services/test_task_service_flow.py \
   tests/services/test_recovery_service.py -q
-bash -n scripts/update_cloud_test_with_maintenance.sh \
-  scripts/update_cloud_prod_with_maintenance.sh \
-  scripts/safe_deploy_cloud_test.sh \
-  scripts/safe_deploy_cloud_prod.sh \
-  scripts/update_cloud_prod_qqcc_bot.sh
+pytest tests/ops/test_release_cli.py tests/ops/test_release_strategy.py -q
 ```
 
 涉及任务 registry 或 core 提交流程时，补跑：

@@ -1,6 +1,6 @@
 # 子模块: 运维指南与容器管理 (Ops & Deployment)
 
-> 2026-07-13 起，代码发布的唯一支持入口为 `scripts/release.py plan|deploy|rollback`，产物为 CI 构建的 digest-pinned 镜像和校验过的 Web tar。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。新 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`；实际云端切换不在本轮授权范围内。
+> 2026-07-20 起，日常正式发布唯一门面为 `python scripts/release.py promote --confirm-prod`；不带确认是零生产 mutation 的预览，部分发布可传 `--modules`，固定候选可传 `--sha`。`plan/preflight/deploy/deploy-module/rollback/recover/config-*` 只作为高级与兼容入口。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。
 
 ## 1. 目标与范围
 
@@ -30,7 +30,7 @@
 
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
-- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py promote --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 - Dashboard 与 QQCC Config 管理面默认使用通用 `--strategy direct`；`--dashboard-fast-track` 仅作旧调用兼容。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 tested artifact 证据，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke。所有路径都不放宽 main 血缘、CI 构建、digest、配置/preflight、`--confirm-prod`、事务回滚或非目标容器不变门禁。
 

@@ -2,7 +2,7 @@
 """Plan and execute AllBot immutable releases.
 
 The public seam is intentionally small: ``plan``, ``preflight``, ``deploy``,
-``deploy-module``, ``rollback``, ``recover`` and ``validate-env``. Application code is delivered
+``promote``, ``deploy-module``, ``rollback``, ``recover`` and ``validate-env``. Application code is delivered
 only through digest-pinned images from a CI-produced release manifest. Git
 checkouts on runtime hosts are used solely for the matching deployment contract
 (compose, policy and helpers).
@@ -82,6 +82,8 @@ RUNTIME_ENV_HELPER = ROOT / "scripts" / "runtime_env_contract.py"
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+DEFAULT_BUNDLE_REPOSITORY = "ghcr.io/giraffu/allbot-release-v2"
+PROMOTE_DIRECT_ARTIFACTS = {"dashboard-backend", "dashboard-frontend"}
 REQUIRED_IMAGES = {
     "app",
     "central",
@@ -111,6 +113,20 @@ CONTROL_ARTIFACT_SERVICE = {
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
     "public-web": "web-static",
+}
+PROMOTE_ARTIFACT_SERVICE = {
+    "central-api": "central-api",
+    "web-api": "web-api",
+    "payment-api": "payment-api",
+    "imgproxy": "imgproxy",
+    "dashboard-backend": "dashboard-backend",
+    "dashboard-frontend": "dashboard-frontend",
+    "main-bot": "bot",
+    "qqcc-bot": "qqcc-bot",
+    "qqcc-config-backend": "qqcc-config-backend",
+    "qqcc-config-frontend": "qqcc-config-frontend",
+    "private-bot-worker": "qqcc-private-bot-worker",
+    "paid-group-bot": "paid-group-guard-bot",
 }
 GENERATION_MAINTENANCE_ARTIFACTS = {
     "central-api",
@@ -316,11 +332,13 @@ class IndependentModuleRelease:
         self,
         *,
         name: str,
+        module_names: Iterable[str] = (),
         artifacts: Iterable[str],
         previous_sha: str,
         source_shas: Iterable[str] = (),
     ) -> None:
         self.name = name
+        self.module_names = set(module_names) or set(name.split("+"))
         self.artifacts = set(artifacts)
         self.previous_sha = previous_sha
         self.source_shas = set(source_shas) or {previous_sha}
@@ -402,6 +420,7 @@ def resolve_independent_module_release(
     current_sha = validate_full_sha(fallback_sha)
     return IndependentModuleRelease(
         name=name,
+        module_names=name.split("+"),
         artifacts=artifacts,
         previous_sha=next(iter(baselines)) if len(baselines) == 1 else current_sha,
         source_shas=baselines,
@@ -440,7 +459,7 @@ def validate_independent_release_paths(
             )
         ):
             raise ReleaseError("independent release blocker policy is invalid")
-        if isinstance(modules, list) and selection.name not in modules:
+        if isinstance(modules, list) and not selection.module_names.intersection(modules):
             continue
         matches = sorted(
             path
@@ -992,7 +1011,7 @@ def _read_transaction_journal(
         raise ReleaseError("release transaction journal is invalid") from exc
     if (
         not isinstance(transaction, dict)
-        or transaction.get("schema_version") != 1
+        or transaction.get("schema_version") not in {1, 2}
         or transaction.get("environment") != args.env
         or transaction.get("transaction_id") != transaction_id
         or (
@@ -1337,6 +1356,425 @@ def resolve_latest_protected_main_sha() -> str:
     if result.returncode != 0:
         raise ReleaseError("latest protected main revision is unavailable")
     return validate_full_sha(result.stdout.strip())
+
+
+def resolve_latest_promote_candidate(bundle_repository: str) -> str:
+    """Lock the newest immutable main bundle without using a mutable tag."""
+
+    fetched = _run(["git", "fetch", "--prune", "origin", "main"], check=False)
+    if fetched.returncode != 0:
+        raise ReleaseError("latest protected main revision is unavailable")
+    head_result = _run(
+        ["git", "rev-parse", "--verify", "origin/main"], check=False
+    )
+    if head_result.returncode != 0:
+        raise ReleaseError("latest protected main revision is unavailable")
+    main_head = validate_full_sha(head_result.stdout.strip())
+    tags_result = _run(
+        ["oras", "repo", "tags", bundle_repository], check=False
+    )
+    if tags_result.returncode != 0:
+        raise ReleaseError("immutable main bundle tags are unavailable")
+    bundle_shas = {
+        value.strip()
+        for value in tags_result.stdout.splitlines()
+        if FULL_SHA_RE.fullmatch(value.strip())
+    }
+    history_result = _run(
+        ["git", "rev-list", "--first-parent", main_head], check=False
+    )
+    if history_result.returncode != 0:
+        raise ReleaseError("protected main history is unavailable")
+    for candidate in history_result.stdout.splitlines():
+        if candidate in bundle_shas:
+            return validate_full_sha(candidate)
+    raise ReleaseError("protected main has no immutable release bundle")
+
+
+def resolve_promote_artifact_assurance(
+    artifacts: Iterable[str],
+) -> dict[str, dict[str, str]]:
+    """Return the fixed daily-promotion strategy for each runtime artifact."""
+
+    return {
+        name: {
+            "strategy": "direct" if name in PROMOTE_DIRECT_ARTIFACTS else "standard",
+            "assurance": "waived" if name in PROMOTE_DIRECT_ARTIFACTS else "tested",
+        }
+        for name in sorted(set(artifacts))
+    }
+
+
+def inspect_promote_runtime_artifacts(
+    args: argparse.Namespace,
+) -> dict[str, dict[str, str]]:
+    """Read actual AllBot production container identity without exposing env."""
+
+    project = ENVIRONMENT["prod"]["project"]
+    lines = ["set -euo pipefail"]
+    for artifact, service in sorted(PROMOTE_ARTIFACT_SERVICE.items()):
+        lines.extend(
+            [
+                (
+                    'ids="$(docker ps -q '
+                    f"--filter label=com.docker.compose.project={shlex.quote(project)} "
+                    f'--filter label=com.docker.compose.service={shlex.quote(service)})"'
+                ),
+                'set -- $ids; [ "$#" -le 1 ]',
+                'if [ "$#" -eq 1 ]; then',
+                '  id="$1"',
+                "  image=\"$(docker inspect --format '{{.Config.Image}}' \"$id\")\"",
+                "  started=\"$(docker inspect --format '{{.State.StartedAt}}' \"$id\")\"",
+                "  health=\"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \"$id\")\"",
+                "  revision=\"$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \"$id\" | sed -n 's/^ALLBOT_CONFIG_REVISION=//p')\"",
+                "  oci=\"$(docker image inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' \"$image\" 2>/dev/null || true)\"",
+                (
+                    "  printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "
+                    f"{shlex.quote(artifact)} \"$id\" \"$image\" \"$started\" \"$health\" \"$revision\" \"$oci\""
+                ),
+                "fi",
+            ]
+        )
+    host = args.remote_host or ENVIRONMENT["prod"]["host"]
+    result = _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text="\n".join(lines) + "\n",
+        check=False,
+    )
+    if result.returncode:
+        raise ReleaseError("production runtime identity inspection failed")
+    observed: dict[str, dict[str, str]] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 7 or fields[0] not in PROMOTE_ARTIFACT_SERVICE:
+            raise ReleaseError("production runtime identity output is invalid")
+        (
+            artifact,
+            container_id,
+            ref,
+            started_at,
+            health,
+            config_revision,
+            oci_revision,
+        ) = fields
+        observed[artifact] = {
+            "container_id": container_id,
+            "ref": ref,
+            "digest": ref.rsplit("@", 1)[-1] if "@" in ref else "",
+            "started_at": started_at,
+            "health": health,
+            "config_revision": config_revision,
+            "oci_revision": oci_revision,
+        }
+    return observed
+
+
+def resolve_automatic_promote_modules(
+    args: argparse.Namespace,
+) -> tuple[list[str], dict[str, dict[str, str]]]:
+    """Map live production drift to complete public module aliases."""
+
+    manifest_path = _resolve_manifest_path(args, allow_fetch=True)
+    try:
+        release = load_release_index(manifest_path, expected_sha=args.sha)
+    except ManifestV2Error as exc:
+        raise ReleaseError(str(exc)) from exc
+    artifacts = release.manifests["control-plane"]["artifacts"]
+    runtime = inspect_promote_runtime_artifacts(args)
+    policy = load_structured_file(Path(args.policy))
+    modules = policy.get("independent_modules")
+    if not isinstance(modules, Mapping):
+        raise ReleaseError("independent module policy is invalid")
+    current_state = _read_current_state(args, track_scoped=True)
+    current_artifacts = (
+        current_state.get("artifacts") if isinstance(current_state, Mapping) else {}
+    )
+    recorded_pages = (
+        current_state.get("web_deployment")
+        if isinstance(current_state, Mapping)
+        else None
+    )
+    pages_current = ""
+    if isinstance(recorded_pages, Mapping) and recorded_pages.get("deployment_id"):
+        try:
+            pages_current = _current_pages_deployment_id(args)
+        except ReleaseError:
+            pages_current = ""
+    selected: list[str] = []
+    for raw_name, raw_module in modules.items():
+        if not isinstance(raw_module, Mapping) or not isinstance(
+            raw_module.get("artifacts"), list
+        ):
+            raise ReleaseError("independent module policy is invalid")
+        differs = False
+        for artifact_name in raw_module["artifacts"]:
+            target = artifacts.get(artifact_name)
+            if not isinstance(target, Mapping):
+                raise ReleaseError(f"release bundle has no {artifact_name} artifact")
+            target_identity = target.get("digest") or target.get("sha256")
+            if artifact_name == "public-web":
+                current = (
+                    current_artifacts.get(artifact_name)
+                    if isinstance(current_artifacts, Mapping)
+                    else None
+                )
+                current_identity = (
+                    current.get("digest") if isinstance(current, Mapping) else None
+                )
+                if (
+                    not isinstance(recorded_pages, Mapping)
+                    or pages_current != str(recorded_pages.get("deployment_id", ""))
+                ):
+                    current_identity = None
+            else:
+                current_identity = runtime.get(artifact_name, {}).get("digest")
+            differs = differs or not target_identity or current_identity != target_identity
+        if differs:
+            selected.append(str(raw_name))
+    return sorted(selected), runtime
+
+
+def verify_promote_no_change(args: argparse.Namespace) -> dict[str, Any]:
+    """Verify the complete live candidate before returning a no-change result."""
+
+    manifest_path = _resolve_manifest_path(args, allow_fetch=True)
+    manifest = _load_v2_track(
+        manifest_path,
+        sha=args.sha,
+        track="control-plane",
+        modules=[],
+        select_all_when_empty=True,
+    )
+    validate_deploy_module_approval(manifest)
+    validate_release_channel(manifest, environment="prod", purpose="promote")
+    verify_git_release(
+        args.sha,
+        release_channel=manifest["release_channel"],
+        source_ref=manifest["source_ref"],
+    )
+    verify_release_ci(manifest, args.sha)
+    _values, config_revision, snapshot = _remote_runtime_env_snapshot(args)
+    if snapshot.get("drift"):
+        raise ReleaseError(
+            "target host environment has unapplied drift; use config-plan/config-apply"
+        )
+    runtime = getattr(args, "promote_runtime_artifacts", {})
+    unhealthy = sorted(
+        name
+        for name, state in runtime.items()
+        if state.get("health") not in {"healthy", "running"}
+    )
+    if unhealthy:
+        raise ReleaseError(
+            "production target health is not exact: " + ", ".join(unhealthy)
+        )
+    service_revisions = snapshot.get("service_revisions", {})
+    mismatched_config = sorted(
+        name
+        for name, state in runtime.items()
+        if state.get("config_revision")
+        and isinstance(service_revisions, Mapping)
+        and service_revisions.get(name) != state.get("config_revision")
+    )
+    if mismatched_config:
+        raise ReleaseError(
+            "production target config revision is not exact: "
+            + ", ".join(mismatched_config)
+        )
+    return {
+        "status": "no-change",
+        "candidate_sha": args.sha,
+        "modules": [],
+        "config_revision": config_revision,
+        "health": "verified",
+        "mutation": False,
+    }
+
+
+def verify_promote_selected_no_change(
+    args: argparse.Namespace,
+    manifest: Mapping[str, Any],
+    runtime_snapshot: Mapping[str, Any],
+    config_revision: str,
+) -> dict[str, Any] | None:
+    """Return no-change only when every explicitly selected target is live-exact."""
+
+    runtime = getattr(args, "promote_runtime_artifacts", None)
+    if not isinstance(runtime, Mapping):
+        runtime = inspect_promote_runtime_artifacts(args)
+        args.promote_runtime_artifacts = runtime
+    current = getattr(args, "previous_state", None)
+    current_artifacts = (
+        current.get("artifacts") if isinstance(current, Mapping) else {}
+    )
+    service_revisions = runtime_snapshot.get("service_revisions", {})
+    for name in manifest.get("selected_artifacts", []):
+        target = manifest.get("artifacts", {}).get(name)
+        if not isinstance(target, Mapping):
+            return None
+        expected = target.get("digest") or target.get("sha256")
+        if name == "public-web":
+            previous = (
+                current_artifacts.get(name)
+                if isinstance(current_artifacts, Mapping)
+                else None
+            )
+            if not isinstance(previous, Mapping) or previous.get("digest") != expected:
+                return None
+            web = current.get("web_deployment") if isinstance(current, Mapping) else None
+            if (
+                not isinstance(web, Mapping)
+                or not web.get("deployment_id")
+                or _current_pages_deployment_id(args) != str(web["deployment_id"])
+            ):
+                return None
+            continue
+        observed = runtime.get(name)
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("digest") != expected
+            or observed.get("health") not in {"healthy", "running"}
+        ):
+            return None
+        expected_revision = (
+            service_revisions.get(name)
+            if isinstance(service_revisions, Mapping)
+            else None
+        )
+        if expected_revision and observed.get("config_revision") != expected_revision:
+            return None
+    return {
+        "status": "no-change",
+        "environment": "prod",
+        "candidate_sha": manifest["git_sha"],
+        "modules": sorted(_split_services(args.modules)),
+        "config_revision": config_revision,
+        "health": "verified",
+        "mutation": False,
+    }
+
+
+def build_promote_previous_artifacts(
+    args: argparse.Namespace,
+    manifest: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Capture the real per-artifact rollback identity for a promotion."""
+
+    runtime = getattr(args, "promote_runtime_artifacts", None)
+    if not isinstance(runtime, Mapping):
+        runtime = inspect_promote_runtime_artifacts(args)
+        args.promote_runtime_artifacts = runtime
+    current = getattr(args, "previous_state", None)
+    current_artifacts = (
+        current.get("artifacts") if isinstance(current, Mapping) else {}
+    )
+    result: dict[str, dict[str, Any]] = {}
+    for name in manifest.get("selected_artifacts", []):
+        recorded = (
+            current_artifacts.get(name)
+            if isinstance(current_artifacts, Mapping)
+            else None
+        )
+        if name == "public-web":
+            web = current.get("web_deployment") if isinstance(current, Mapping) else None
+            if not isinstance(recorded, Mapping) or not isinstance(web, Mapping):
+                raise ReleaseError("public-web rollback identity is unavailable")
+            result[name] = {
+                "digest": recorded.get("digest"),
+                "source_sha": recorded.get("source_sha"),
+                "deployment_id": web.get("deployment_id"),
+                "runtime_config_revision": web.get("runtime_config_revision"),
+            }
+            continue
+        observed = runtime.get(name)
+        if not isinstance(observed, Mapping) or not DIGEST_IMAGE_RE.fullmatch(
+            str(observed.get("ref", ""))
+        ):
+            raise ReleaseError(f"{name} rollback runtime identity is unavailable")
+        source_sha = (
+            str(recorded.get("source_sha", ""))
+            if isinstance(recorded, Mapping)
+            else ""
+        )
+        if not source_sha and FULL_SHA_RE.fullmatch(
+            str(observed.get("oci_revision", ""))
+        ):
+            source_sha = str(observed["oci_revision"])
+        if source_sha:
+            validate_full_sha(source_sha)
+        result[name] = {
+            "ref": observed["ref"],
+            "digest": observed["digest"],
+            "source_sha": source_sha or None,
+            "oci_revision": observed.get("oci_revision") or None,
+            "config_revision": observed.get("config_revision") or None,
+            "container_id": observed.get("container_id"),
+            "started_at": observed.get("started_at"),
+            "health": observed.get("health"),
+        }
+    return result
+
+
+def render_promote_rollback_release_env(
+    release_env: str,
+    previous_artifacts: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Pin a transaction-local rollback contract to each observed old image."""
+
+    lines = release_env.splitlines()
+    replacements = {
+        CONTROL_ARTIFACT_ENV[name]: str(value["ref"])
+        for name, value in previous_artifacts.items()
+        if name in CONTROL_ARTIFACT_ENV and value.get("ref")
+    }
+    rendered: list[str] = []
+    for line in lines:
+        key, separator, _value = line.partition("=")
+        rendered.append(
+            f"{key}={replacements[key]}" if separator and key in replacements else line
+        )
+    return "\n".join(rendered) + "\n"
+
+
+def _prepare_promote_rollback_materials(
+    args: argparse.Namespace,
+    transaction: Mapping[str, Any],
+    rollback_release_env: str,
+) -> None:
+    """Pull old exact refs and persist rollback contract after all read-only gates."""
+
+    previous = transaction.get("previous")
+    artifacts = previous.get("artifacts") if isinstance(previous, Mapping) else None
+    path = (
+        previous.get("rollback_release_env_path")
+        if isinstance(previous, Mapping)
+        else None
+    )
+    if not isinstance(artifacts, Mapping) or not isinstance(path, str):
+        raise ReleaseError("promote rollback snapshot is invalid")
+    image_refs = sorted(
+        str(value["ref"])
+        for value in artifacts.values()
+        if isinstance(value, Mapping) and value.get("ref")
+    )
+    pulls = "".join(
+        f"docker pull {shlex.quote(ref)} >/dev/null\n"
+        f"docker image inspect {shlex.quote(ref)} >/dev/null\n"
+        for ref in image_refs
+    )
+    encoded_env = base64.b64encode(rollback_release_env.encode()).decode("ascii")
+    script = (
+        "set -euo pipefail\n"
+        + pulls
+        + f"install -d -m 755 {shlex.quote(str(Path(path).parent))}\n"
+        + f"umask 022; printf %s {encoded_env} | base64 -d > {shlex.quote(path + '.tmp')}\n"
+        + f"mv -f {shlex.quote(path + '.tmp')} {shlex.quote(path)}\n"
+    )
+    host = args.remote_host or ENVIRONMENT["prod"]["host"]
+    _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text=script,
+    )
 
 
 def validate_release_channel(
@@ -2352,6 +2790,20 @@ def _rollback_preflight(
 ) -> list[str]:
     if args.env != "prod":
         return []
+    if getattr(args, "command", "") == "promote":
+        runtime = getattr(args, "promote_runtime_artifacts", {})
+        blockers: list[str] = []
+        for name in _manifest.get("selected_artifacts", []):
+            if name == "public-web":
+                state = getattr(args, "previous_state", None)
+                web = state.get("web_deployment") if isinstance(state, Mapping) else None
+                if not isinstance(web, Mapping) or not web.get("deployment_id"):
+                    blockers.append("rollback-previous-web-deployment-unavailable")
+            elif not isinstance(runtime.get(name), Mapping) or not DIGEST_IMAGE_RE.fullmatch(
+                str(runtime[name].get("ref", ""))
+            ):
+                blockers.append(f"rollback-{name}-runtime-unavailable")
+        return blockers
     previous_sha = str(getattr(args, "previous_sha", "") or "")
     if "initial-release" in impact.matched_rules:
         return []
@@ -2730,7 +3182,7 @@ def runtime_drift_artifacts(
 def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any], str]:
     sha = validate_full_sha(args.sha)
     manifest_path = _resolve_manifest_path(
-        args, allow_fetch=args.command in {"plan", "deploy-module"}
+        args, allow_fetch=args.command in {"plan", "deploy-module", "promote"}
     )
     manifest_document = _read_json(manifest_path)
     policy = load_structured_file(Path(args.policy))
@@ -2907,7 +3359,6 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 excluded={
                     "python-runtime-base",
                     "python-worker-base",
-                    "imgproxy",
                     "postgres",
                     "redis",
                 }
@@ -2936,7 +3387,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             modules=requested_modules,
             select_all_when_empty=not bool(previous_sha),
         )
-        if args.command == "deploy-module":
+        if args.command in {"deploy-module", "promote"}:
             validate_deploy_module_approval(manifest)
         validate_release_channel(
             manifest,
@@ -2978,7 +3429,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             services = {
                 CONTROL_ARTIFACT_SERVICE.get(name, name)
                 for name in artifact_names
-                if name not in {"python-runtime-base", "imgproxy", "postgres", "redis"}
+                if name not in {"python-runtime-base", "postgres", "redis"}
             }
         elif args.track == "test-execution":
             services = (
@@ -3175,6 +3626,56 @@ def _plan_document(
     return document
 
 
+def _promote_preview_document(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    preflight: Mapping[str, Any],
+) -> dict[str, Any]:
+    current = getattr(args, "previous_state", None)
+    current_artifacts = (
+        current.get("artifacts") if isinstance(current, Mapping) else {}
+    )
+    runtime_artifacts = getattr(args, "promote_runtime_artifacts", {})
+    decisions = resolve_promote_artifact_assurance(
+        manifest.get("selected_artifacts", [])
+    )
+    artifacts: dict[str, dict[str, Any]] = {}
+    for name in manifest.get("selected_artifacts", []):
+        target = manifest.get("artifacts", {}).get(name, {})
+        previous = (
+            current_artifacts.get(name, {})
+            if isinstance(current_artifacts, Mapping)
+            else {}
+        )
+        live = (
+            runtime_artifacts.get(name, {})
+            if isinstance(runtime_artifacts, Mapping)
+            else {}
+        )
+        artifacts[name] = {
+            "current": (
+                live.get("digest")
+                if name != "public-web" and isinstance(live, Mapping)
+                else None
+            )
+            or previous.get("digest")
+            or previous.get("sha256"),
+            "target": target.get("digest") or target.get("sha256"),
+            **decisions[name],
+        }
+    return {
+        "status": "preview",
+        "candidate_sha": manifest.get("git_sha"),
+        "modules": sorted(_split_services(args.modules)),
+        "artifacts": artifacts,
+        "maintenance": impact.level == "maintenance",
+        "preflight": preflight.get("status"),
+        "blockers": list(preflight.get("blockers", [])),
+        "mutation": bool(args.execute),
+    }
+
+
 def _remote_shell(host: str, script: str, *, execute: bool) -> str:
     if not execute:
         print(f"[dry-run] ssh {host} bash -s")
@@ -3318,6 +3819,19 @@ def _deploy_cloud(
                 '"$container_id")"\n'
                 f'test "$actual_revision" = {shlex.quote(expected_revisions[service])}\n'
             )
+    polling_checks = ""
+    polling_services = {"bot", "qqcc-bot", "paid-group-guard-bot"}
+    for service in sorted(set(cloud_services) & polling_services):
+        legacy = legacy_cloud_containers(args.env, {service})
+        legacy_checks = "".join(
+            f"! docker ps --format '{{{{.Names}}}}' | grep -Fxq {shlex.quote(name)}\n"
+            for name in legacy
+        )
+        polling_checks += f"""{legacy_checks}polling_id="$({compose} ps -q {shlex.quote(service)})"
+test "$(printf '%s\\n' "$polling_id" | sed '/^$/d' | wc -l)" = 1
+started_at="$(docker inspect --format '{{{{.State.StartedAt}}}}' "$polling_id")"
+! docker logs --since "$started_at" "$polling_id" 2>&1 | grep -Eiq 'terminated by other getUpdates request|Conflict:.*getUpdates'
+"""
     revision_checks = ""
     for service in cloud_services:
         revision = expected_revisions.get(service)
@@ -3443,6 +3957,17 @@ fi
         str(manifest.get("source_ref", "refs/heads/main"))
     )
     remote_release_ref = f"origin/{release_branch}"
+    non_target_snapshot = (
+        f"/var/lib/allbot/deployments/{args.env}/transactions/"
+        f"{track + '/' if track else ''}{sha}.nontarget.tsv"
+        if getattr(args, "command", "") == "promote"
+        else f"/tmp/allbot-nontarget-{sha}.txt"
+    )
+    non_target_cleanup = (
+        ""
+        if getattr(args, "command", "") == "promote"
+        else 'rm -f "$start_snapshot"'
+    )
     script = f"""set -euo pipefail
 test -d {shlex.quote(repo)}/.git || {{ echo 'release host is not bootstrapped; run scripts/bootstrap_release_host.sh' >&2; exit 3; }}
 git -C {shlex.quote(repo)} fetch --prune origin {shlex.quote(release_branch)}
@@ -3457,26 +3982,28 @@ test -f {shlex.quote(env_file)}
 test "$(stat -c %a {shlex.quote(env_file)})" = 600
 . {release_dir}/release.env
 {compose} config -q
-start_snapshot=/tmp/allbot-nontarget-{sha}.txt
+start_snapshot={shlex.quote(non_target_snapshot)}
+install -d -m 755 "$(dirname "$start_snapshot")"
 target_names="$({compose} ps --format '{{{{.Name}}}}' {services} 2>/dev/null || true)"
 for name in {legacy_names or ":"}; do
   target_names="${{target_names}}
 ${{name}}"
 done
 : > "$start_snapshot"
-for name in $(docker ps --format '{{{{.Names}}}}'); do
+for name in $(docker ps --filter label=com.docker.compose.project={shlex.quote(environment['project'])} --format '{{{{.Names}}}}'); do
   printf '%s\n' "$target_names" | grep -Fxq "$name" && continue
-  docker inspect --format '{{{{.Name}}}} {{{{.State.StartedAt}}}}' "$name" >> "$start_snapshot"
+  docker inspect --format '{{{{.Id}}}}\t{{{{.Config.Image}}}}\t{{{{.State.StartedAt}}}}' "$name" >> "$start_snapshot"
 done
 {maintenance_prefix}{compose} pull {services}
 {revision_checks}
 {legacy_handoff}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
-{resolved_api_base_checks}{resolved_image_checks}while read -r name started_at; do
-  name="${{name#/}}"
-  test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$name")" = "$started_at"
+{resolved_api_base_checks}{resolved_image_checks}{polling_checks}while IFS=$'\t' read -r container_id image started_at; do
+  test -n "$container_id"
+  test "$(docker inspect --format '{{{{.Config.Image}}}}' "$container_id")" = "$image"
+  test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$container_id")" = "$started_at"
 done < "$start_snapshot"
-rm -f "$start_snapshot"
+{non_target_cleanup}
 {legacy_commit}
 {maintenance_suffix}
 printf '%s\n' {shlex.quote(completion_marker)}
@@ -4456,7 +4983,52 @@ def _rollback_cloud_stack(
         if transaction.get("track") in RELEASE_TRACKS
         else None
     )
-    if previous_kind == "legacy":
+    previous_artifacts = previous.get("artifacts")
+    rollback_env_path = previous.get("rollback_release_env_path")
+    if (
+        transaction.get("schema_version") == 2
+        and isinstance(previous_artifacts, Mapping)
+        and isinstance(rollback_env_path, str)
+    ):
+        target_sha = validate_full_sha(str(transaction.get("target_sha", "")))
+        compose = _cloud_compose_command(
+            args,
+            target_sha,
+            track=track,
+            release_env_variable="rollback_release_env",
+            services=services,
+        )
+        checks = ""
+        artifact_by_service = {
+            service: artifact for artifact, service in PROMOTE_ARTIFACT_SERVICE.items()
+        }
+        for service in services:
+            artifact_name = artifact_by_service.get(service)
+            artifact = previous_artifacts.get(artifact_name or "")
+            if not isinstance(artifact, Mapping) or not artifact.get("ref"):
+                raise ReleaseError(f"rollback identity is unavailable for {service}")
+            ref = str(artifact["ref"])
+            revision = str(artifact.get("config_revision") or "")
+            revision_check = (
+                "test \"$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \"$id\" | "
+                "sed -n 's/^ALLBOT_CONFIG_REVISION=//p')\" = "
+                f"{shlex.quote(revision)}\n"
+                if revision
+                else ""
+            )
+            checks += f"""id="$({compose} ps -q {shlex.quote(service)})"
+test -n "$id"
+test "$(docker inspect --format '{{{{.Config.Image}}}}' "$id")" = {shlex.quote(ref)}
+health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}' "$id")"
+[ "$health" = healthy ] || [ "$health" = running ]
+{revision_check}"""
+        script = f"""set -euo pipefail
+rollback_release_env={shlex.quote(rollback_env_path)}
+test -f "$rollback_release_env"
+{compose} config -q
+{compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
+{checks}"""
+    elif previous_kind == "legacy":
         target_sha = str(transaction["target_sha"])
         snapshot = _cloud_release_dir(target_sha, track) + "/legacy-cloud-running.txt"
         project = environment["project"]
@@ -4830,7 +5402,34 @@ def _validate_recovered_stack(
     if "cloud" in attempted and selected_cloud:
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]
-        if previous.get("kind") == "legacy":
+        previous_artifacts = previous.get("artifacts")
+        if transaction.get("schema_version") == 2 and isinstance(
+            previous_artifacts, Mapping
+        ):
+            runtime = inspect_promote_runtime_artifacts(args)
+            service_to_artifact = {
+                service: artifact
+                for artifact, service in PROMOTE_ARTIFACT_SERVICE.items()
+            }
+            for service in selected_cloud:
+                artifact_name = service_to_artifact.get(service)
+                expected = previous_artifacts.get(artifact_name or "")
+                actual = runtime.get(artifact_name or "")
+                if (
+                    not isinstance(expected, Mapping)
+                    or not isinstance(actual, Mapping)
+                    or actual.get("ref") != expected.get("ref")
+                    or actual.get("health") not in {"healthy", "running"}
+                    or (
+                        expected.get("config_revision")
+                        and actual.get("config_revision")
+                        != expected.get("config_revision")
+                    )
+                ):
+                    raise ReleaseError(
+                        f"recovered artifact identity is incorrect: {artifact_name}"
+                    )
+        elif previous.get("kind") == "legacy":
             track = (
                 str(transaction["track"])
                 if transaction.get("track") in RELEASE_TRACKS
@@ -4882,6 +5481,17 @@ for service in {services}; do
 done
 """
         _remote_shell(host, script, execute=True)
+        non_target_snapshot = previous.get("non_target_snapshot_path")
+        if isinstance(non_target_snapshot, str):
+            non_target_script = f"""set -euo pipefail
+test -f {shlex.quote(non_target_snapshot)}
+while IFS=$'\t' read -r container_id image started_at; do
+  test -n "$container_id"
+  test "$(docker inspect --format '{{{{.Config.Image}}}}' "$container_id")" = "$image"
+  test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$container_id")" = "$started_at"
+done < {shlex.quote(non_target_snapshot)}
+"""
+            _remote_shell(host, non_target_script, execute=True)
     if args.env == "test" and "worker" in attempted and "worker" in impact.services:
         port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
         if (
@@ -5248,6 +5858,30 @@ def _smoke_private_worker_image(ref: str) -> None:
 def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
     if args.env != "prod":
         return
+    if getattr(args, "command", "") == "promote" and manifest.get("schema_version") == 2:
+        decisions = resolve_promote_artifact_assurance(
+            manifest.get("selected_artifacts", [])
+        )
+        args.promote_artifact_assurance = decisions
+        standard = {
+            name
+            for name, decision in decisions.items()
+            if decision["strategy"] == "standard"
+        }
+        if not standard:
+            return
+        evidence_manifest = dict(manifest)
+        evidence_manifest["selected_artifacts"] = sorted(standard)
+        state = _read_test_artifact_evidence(args, evidence_manifest)
+        try:
+            validate_v2_promotion(
+                str(manifest["track"]),
+                {name: manifest["artifacts"][name] for name in standard},
+                state,
+            )
+        except ManifestV2Error as exc:
+            raise ReleaseError(str(exc)) from exc
+        return
     repair_fast_track = getattr(args, "control_plane_repair_fast_track", False)
     promoted_approval = manifest.get("promotion_approval")
     if manifest.get("schema_version") == 2 and isinstance(promoted_approval, Mapping):
@@ -5375,6 +6009,11 @@ def require_pending_secret_rotation_acceptance(
 
     if snapshot.get("credential_isolation") == "credential-isolation-complete":
         return
+    if getattr(args, "command", "") == "promote":
+        raise ReleaseError(
+            "pending secret rotation blocks promote; use the advanced release entry "
+            "to complete or explicitly govern credential rotation"
+        )
     if not (
         getattr(args, "accept_pending_secret_rotation", False)
         and str(getattr(args, "reason", "")).strip()
@@ -6198,7 +6837,7 @@ def _write_state(
             "approved_by": args.approved_by,
         }
     if (
-        args.command == "deploy-module"
+        args.command in {"deploy-module", "promote"}
         and args.execute
         and manifest.get("schema_version") == 2
     ):
@@ -6213,6 +6852,7 @@ def _write_state(
             )
         state["repair_acceptance"] = dict(acceptance)
     if manifest.get("schema_version") == 2:
+        promote_assurance = getattr(args, "promote_artifact_assurance", {})
         state["artifacts"] = {
             name: {
                 "digest": manifest["artifacts"][name].get("digest")
@@ -6220,7 +6860,11 @@ def _write_state(
                 "source_sha": manifest["artifacts"][name].get("source_sha")
                 or manifest["source_sha"],
                 "status": state["status"],
-                "assurance": artifact_assurance,
+                "assurance": (
+                    promote_assurance.get(name, {}).get("assurance")
+                    if args.command == "promote"
+                    else artifact_assurance
+                ),
             }
             for name in manifest["selected_artifacts"]
         }
@@ -6294,6 +6938,7 @@ INDEPENDENT_MODULE_ENV_SERVICES = {
     "central-api": ("central-api",),
     "web-api": ("web-api",),
     "payment-api": ("payment-api",),
+    "imgproxy": (),
     "dashboard": ("dashboard-backend", "dashboard-frontend"),
     "main-bot": ("main-bot",),
     "qqcc-bot": ("qqcc-bot",),
@@ -6328,16 +6973,22 @@ DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = (
 def _runtime_env_service_options(args: argparse.Namespace) -> str:
     """Limit module operations to their machine-owned config closure."""
 
-    modules = list(getattr(args, "modules", None) or ())
+    modules = _split_services(list(getattr(args, "modules", None) or ()))
     command = getattr(args, "command", "")
-    if command == "deploy-module" and len(modules) == 1:
-        module = str(modules[0])
+    if command in {"deploy-module", "promote"} and modules:
+        selected_modules = modules
     elif command in {"config-plan", "config-apply"}:
-        module = str(getattr(args, "config_module", "") or "")
+        selected_modules = {str(getattr(args, "config_module", "") or "")}
     else:
-        module = ""
-    services = INDEPENDENT_MODULE_ENV_SERVICES.get(module, ())
-    return "".join(f" --service {shlex.quote(service)}" for service in services)
+        selected_modules = set()
+    services = {
+        service
+        for module in selected_modules
+        for service in INDEPENDENT_MODULE_ENV_SERVICES.get(module, ())
+    }
+    return "".join(
+        f" --service {shlex.quote(service)}" for service in sorted(services)
+    )
 
 
 def _remote_runtime_env_snapshot(
@@ -6882,7 +7533,61 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_release_arguments(deploy_module, env_required=False)
     deploy_module.set_defaults(
-        env="prod", bundle_repository="ghcr.io/giraffu/allbot-release-v2"
+        env="prod", bundle_repository=DEFAULT_BUNDLE_REPOSITORY
+    )
+    promote = subparsers.add_parser(
+        "promote",
+        help="preview or execute one safe daily production promotion",
+    )
+    promote.add_argument("--modules", action="append", default=[])
+    promote.add_argument("--sha")
+    promote.add_argument("--confirm-prod", action="store_true")
+    promote.set_defaults(
+        env="prod",
+        track="control-plane",
+        execute=False,
+        strategy="auto",
+        services=[],
+        to=None,
+        transaction=None,
+        repair_rollback_materials=False,
+        from_sha=None,
+        manifest=None,
+        bundle_repository=DEFAULT_BUNDLE_REPOSITORY,
+        bundle_cache="~/.cache/allbot/releases",
+        web_artifact="web-dist.tgz",
+        web_runtime_config=str(DEFAULT_WEB_RUNTIME_CONFIG),
+        policy=str(DEFAULT_POLICY),
+        schema=str(DEFAULT_SCHEMA),
+        env_file=None,
+        state_file=None,
+        skip_git_checks=False,
+        skip_ci_checks=False,
+        skip_env_checks=False,
+        skip_gate=[],
+        reason="",
+        approved_by="",
+        accept_pending_secret_rotation=False,
+        dashboard_fast_track=False,
+        control_plane_repair_fast_track=False,
+        confirm_db_upgrade=False,
+        confirm_legacy_cutover=False,
+        repair_test_data_services=False,
+        confirm_empty_test_queue=False,
+        drain_timeout_seconds=7200,
+        drain_interval_seconds=15,
+        pages_verify_timeout_seconds=180,
+        pages_verify_interval_seconds=5,
+        skip_web=False,
+        remote_host=None,
+        remote_env_file=None,
+        remote_checkout_root="/home/deploy/APP/All_bot-release",
+        test_state_host="allbot-do-sgp1-test-control",
+        worker_checkout_root=str(Path.home() / "APP" / "All_bot-release"),
+        cloudflare_token_file=str(
+            Path.home() / ".config" / "allbot" / "cloudflare-pages.token"
+        ),
+        cloudflare_account_id="c7220eb751acc6f7ab8255b4a0394ef3",
     )
     for command in ("config-plan", "config-apply"):
         config = subparsers.add_parser(command)
@@ -6926,6 +7631,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    transaction: dict[str, Any] | None = None
     try:
         if args.command in {"config-plan", "config-apply"}:
             return run_config_command(args)
@@ -6969,6 +7675,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "promote":
+            requested = _split_services(args.modules)
+            configured = load_structured_file(Path(args.policy)).get(
+                "independent_modules", {}
+            )
+            allowed = set(configured) if isinstance(configured, Mapping) else set()
+            unknown = sorted(requested - allowed)
+            if unknown:
+                raise ReleaseError(
+                    "unknown promote modules: " + ", ".join(unknown)
+                )
+            if not args.sha:
+                args.sha = resolve_latest_promote_candidate(args.bundle_repository)
+            if not requested:
+                modules, runtime = resolve_automatic_promote_modules(args)
+                args.modules = modules
+                args.promote_runtime_artifacts = runtime
+                args.promote_live_no_change = not modules
+            args.execute = bool(args.confirm_prod)
         if args.command == "deploy-module":
             if args.env != "prod" or args.track != "control-plane":
                 raise ReleaseError(
@@ -7106,6 +7831,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.sha = args.to
         if not args.sha:
             raise ReleaseError(f"{args.command} requires --sha")
+        if args.command == "promote" and getattr(
+            args, "promote_live_no_change", False
+        ):
+            print(
+                json.dumps(
+                    verify_promote_no_change(args),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.env == "prod" and args.execute and not args.confirm_prod:
             raise ReleaseError("production execute requires --confirm-prod")
         if args.command == "preflight" and args.execute:
@@ -7143,9 +7880,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             args.runtime_env_snapshot = runtime_snapshot
             if (
-                args.command in {"deploy", "deploy-module"}
+                args.command in {"deploy", "deploy-module", "promote"}
                 and args.env == "prod"
-                and args.execute
+                and (args.execute or args.command == "promote")
             ):
                 require_pending_secret_rotation_acceptance(args, runtime_snapshot)
         else:
@@ -7181,7 +7918,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             previous_sha,
             environment_values,
         )
-        print(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True))
+        if args.command != "promote":
+            print(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True))
         if args.command == "plan":
             return 0
         if isinstance(
@@ -7190,35 +7928,63 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError(
                 "target host environment has unapplied drift; run config-plan and config-apply"
             )
-        if args.command == "deploy-module":
-            no_change = verify_deploy_module_no_change(
-                args,
-                impact,
-                manifest,
-                environment_values,
-                config_revision,
-                (
-                    args.runtime_env_snapshot.get("service_revisions", {})
-                    if isinstance(getattr(args, "runtime_env_snapshot", None), Mapping)
-                    else None
-                ),
+        if args.command in {"deploy-module", "promote"}:
+            no_change = (
+                verify_promote_selected_no_change(
+                    args,
+                    manifest,
+                    args.runtime_env_snapshot,
+                    config_revision,
+                )
+                if args.command == "promote"
+                else verify_deploy_module_no_change(
+                    args,
+                    impact,
+                    manifest,
+                    environment_values,
+                    config_revision,
+                    (
+                        args.runtime_env_snapshot.get("service_revisions", {})
+                        if isinstance(
+                            getattr(args, "runtime_env_snapshot", None), Mapping
+                        )
+                        else None
+                    ),
+                )
             )
             if no_change is not None:
-                print(
-                    json.dumps(no_change, ensure_ascii=False, indent=2, sort_keys=True)
-                )
+                if args.command == "promote":
+                    no_change = {
+                        **no_change,
+                        "candidate_sha": manifest["git_sha"],
+                        "modules": sorted(_split_services(args.modules)),
+                        "mutation": False,
+                    }
+                print(json.dumps(no_change, ensure_ascii=False, indent=2, sort_keys=True))
                 return 0
         preflight = preflight_release(args, impact, manifest, environment_values)
-        print(
-            json.dumps(
-                {"preflight": preflight},
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
+        if args.command == "promote":
+            print(
+                json.dumps(
+                    _promote_preview_document(args, impact, manifest, preflight),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
             )
-        )
+        else:
+            print(
+                json.dumps(
+                    {"preflight": preflight},
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
         require_preflight(preflight)
         if args.command == "preflight":
+            return 0
+        if args.command == "promote" and not args.execute:
             return 0
         if manifest.get("schema_version") == 2 and args.track == "gpu-execution":
             raise ReleaseError(
@@ -7250,6 +8016,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             transaction["track"] = manifest["track"]
         if isinstance(getattr(args, "previous_state", None), Mapping):
             transaction["previous"]["state"] = dict(args.previous_state)
+        rollback_release_env = ""
+        if args.command == "promote":
+            transaction["schema_version"] = 2
+            previous_artifacts = build_promote_previous_artifacts(args, manifest)
+            transaction["previous"]["artifacts"] = previous_artifacts
+            transaction["previous"]["rollback_release_env_path"] = (
+                "/var/lib/allbot/deployments/prod/transactions/control-plane/"
+                + str(manifest["git_sha"])
+                + ".rollback.env"
+            )
+            transaction["previous"]["non_target_snapshot_path"] = (
+                "/var/lib/allbot/deployments/prod/transactions/control-plane/"
+                + str(manifest["git_sha"])
+                + ".nontarget.tsv"
+            )
+            rollback_release_env = render_promote_rollback_release_env(
+                release_env, previous_artifacts
+            )
         transaction["services"] = sorted(impact.services)
         transaction["level"] = impact.level
         transaction.update(
@@ -7293,9 +8077,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             config_revision,
             transaction,
         )
+        if args.command == "promote":
+            _prepare_promote_rollback_materials(
+                args, transaction, rollback_release_env
+            )
         execute_release_transaction(transaction, dependencies)
+        if args.command == "promote":
+            print(
+                json.dumps(
+                    {
+                        "status": "committed",
+                        "candidate_sha": manifest["git_sha"],
+                        "modules": sorted(_split_services(args.modules)),
+                        "transaction_id": transaction["transaction_id"],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
         return 0
     except ReleaseError as exc:
+        if args.command == "promote":
+            status = "blocked"
+            transaction_id = None
+            if isinstance(transaction, Mapping):
+                transaction_id = transaction.get("transaction_id")
+                if transaction.get("status") == "rolled_back":
+                    status = "rolled-back"
+                elif transaction.get("status") == "rollback_failed":
+                    status = "rollback-incomplete"
+            print(
+                json.dumps(
+                    {
+                        "status": status,
+                        "candidate_sha": getattr(args, "sha", None),
+                        "transaction_id": transaction_id,
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+            return 2
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

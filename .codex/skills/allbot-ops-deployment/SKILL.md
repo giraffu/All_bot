@@ -38,7 +38,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。普通混合变更取最高风险。独立模块发布只重建所选服务；migration、未知共享 Compose/env 或未审计跨模块契约仍 fail closed。已审阅并固定内容 SHA256 的 owner-only Compose/env 与向后兼容 schema/config snapshot 可继续独立发布；任一文件内容变化即恢复阻断，不能把 snapshot 当通配 allowlist。
 - `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|gpu-business-canary`，并受策略约束。固定 observation gate 已取消；CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。
 - 云测试默认部署 main bundle 中 standard 所需的 control-plane/公共 Web artifact；专属测试 QQCC Config 前后端固定使用测试配置及 8045/8088，Dashboard 仍不进入测试站。test-execution 只在专项诊断时显式选择。验收状态按 track + artifact digest 写入 history；direct/emergency 写 `waived`，GPU direct 写 `attested`，不得覆盖其它核心 artifact 的 tested 证据。
-- 唯一发布入口是 `scripts/release.py plan|preflight|deploy|deploy-module|rollback|recover|config-plan|config-apply|credential-isolation-complete`。`deploy-module --module <name>` 默认一次锁定最新受保护 main，可显式传完整 SHA；接受成功 full main CI bundle，standard 模块在生产 preflight 中继续要求 main-channel exact-digest 测试证据，机器依赖集合只能扩大。普通 `preflight/deploy` 不拉材料；快捷入口可在 mutation 前只读拉取 main bundle。云端不 build、不挂载源码、不接收代码/env rsync。
+- 日常正式发布唯一门面是 `scripts/release.py promote [--modules <逗号列表>] [--sha <完整SHA>] [--confirm-prod]`。缺省只锁定一次最新受保护 main 第一父链 bundle，并按正式运行 digest/Pages 自动选择不一致模块；无确认只输出精简预览，一次 `--confirm-prod` 直接完成预检、发布、验收与失败回滚。`plan|preflight|deploy|deploy-module|rollback|recover|config-plan|config-apply|credential-isolation-complete` 保留为 migration、共享/未知契约、emergency、秘密轮换、跳门禁需求及故障恢复的高级兼容入口。云端不 build、不挂载源码、不接收代码/env rsync。
 - 云控制面运行配置的唯一事实源是目标主机 `/etc/allbot/test.env` 或 `/etc/allbot/prod.env`。发布器合并版本化非敏感默认值后，只生成权限 `600` 的 `/var/lib/allbot/config/<env>/<revision>/<service>.env` 逐服务投影；`release.env` 不保存秘密。全局 `config-plan/config-apply` 校验完整契约；所有具有容器 env 契约的独立模块均可先用 `config-plan/config-apply --module <name>` 只暂存本模块投影，Public Web 没有容器 env 投影、继续单独注入 runtime config。局部入口同时重建“已激活服务 + 目标模块”的验证快照，允许目标服务更新或加入 active state，但所有非目标 active 服务必须继续存在且保持相同 service revision 和原始字节；该操作不维护、不备份、不调用 Compose、不重启容器。目标缺键、非目标 active 服务变化、闭包逃逸、投影篡改或清单外未知键均 fail closed；正式宿主既有且不进入任何投影的 reviewed legacy 键只按代码内精确名称清单兼容。内部 contract revision 只参与 environment revision，不作为未知宿主键扩大影响集；影响闭包由真实 changed keys 和 service revision drift 计算。非目标尚缺 canonical key 不阻断局部收敛，完整 `config-plan` 仍报告其它未投影服务 drift；未知影响和全量首次契约切换继续强制完整维护与备份。
 - 公共云 Compose 的逐服务 `env_file` 使用 `required: false` 只允许局部发布解析缺少非目标投影的项目，并必须使用 `format: raw` 保留密码 hash、Token 等值中的字面 `$`；发布器仍须在 pull/up 前严格验证并生成目标服务投影，不能据此启动缺配置目标。非目标服务不得 `up`，容器 ID/digest/revision/启动时间保持不变。该公共 Compose 只在内容 checksum 与 policy 中审阅快照完全一致时允许 owner-only rolling，后续漂移恢复共享契约 blocker。
 - 秘密隔离完成前，正式 mutation 额外要求 `--accept-pending-secret-rotation --reason --approved-by`。轮换完成只能通过 `credential-isolation-complete --evidence <json> --approved-by <name> --confirm-prod --execute` 写入状态；证据必须在一小时内、覆盖全部目标键、证明 test/prod 不复用、所有目标健康且旧凭据已撤销。跨环境比较使用随机 challenge HMAC，只输出键名、是否相同和证据摘要；GPU token 切换继续走 LAN AIO/RunPod 专用 operator。
@@ -131,14 +131,14 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio；`stop-old` 保护窗口后失败应自动回滚旧服务，优先恢复产能。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。
 
-## 5. 生产单服务发布
+## 5. 生产日常发布
 
-1. 确认用户确实要求正式发布或生产热修。
-2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
-3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
-4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。单独 Dashboard、QQCC Bot、QQCC Config 分别用 `--modules dashboard|qqcc-bot|qqcc-config`，不得在一次独立事务中混选；standard 只晋级 history 中同 artifact digest 的 tested 证据，QQCC Config auto standard，Dashboard auto direct。公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
-5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
-6. 结束后核对容器 digest、OCI revision、`current.json` 中目标 artifact 的 `source_sha`、健康检查和未触碰服务启动时间；同一 track 的非目标 artifact 版本必须保留。
+1. 确认用户确实要求正式发布；本地实现、测试或文档任务本身不授权生产 mutation。
+2. 先运行 `python scripts/release.py promote` 查看精简预览；可用 `--modules dashboard,qqcc-bot` 限定模块，或用 `--sha <完整SHA>` 固定候选。无 `--confirm-prod` 时禁止创建生产事务或准备回滚材料。
+3. 预览只需核对候选、模块、逐 artifact 旧→新 digest、tested/waived、维护模式和 blocker。standard artifact 必须取得同名 exact-digest main-channel 证据；Dashboard 固定 direct/waived，混合发布各自记账。
+4. 确认无误后在同一命令增加一次 `--confirm-prod`。发布器自动完成配置闭包、回滚材料、目标部署、专属探针、非目标证明和状态提交；全部目标已运行精确 digest/config 且健康时返回 `no-change`。
+5. migration、共享/未知契约、emergency、跳门禁和待处理秘密轮换必须阻断 `promote` 并改用相应高级入口；不得为了让日常门面通过而弱化门禁。目标配置缺键或漂移时先停止，只有用户另行要求配置收敛才使用 `config-plan/config-apply`。
+6. 同次所选模块共用事务，但回滚逐 artifact 使用各自旧 digest/source/config revision，并逆序恢复 Pages 与已触碰服务。自动恢复不完整时保持维护并使用返回的 transaction ID 交给 `recover`，不得手工拼接 compose 命令续跑。
 
 ## 6. 验证矩阵
 

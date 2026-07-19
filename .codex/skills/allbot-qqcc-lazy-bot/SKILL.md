@@ -11,7 +11,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot 申请/配置、we
 - 代码入口：`qqcc_bot/main.py`
 - 正式 service：`qqcc-bot-prod` / `cloud-qqcc-bot-prod` / profile `qqcc-bot`
 - 测试 service：`qqcc-bot-test` / `cloud-qqcc-bot-test` / profile `qqcc-bot`
-- 正式发布入口：`scripts/release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`
+- 正式日常发布入口：`scripts/release.py promote --modules qqcc-bot --confirm-prod`；Bot 与配置可在同一事务用 `--modules qqcc-bot,qqcc-config`
 - 配置服务：`src/services/qqcc_config_service.py`
 - 运行时上下文 helper：`src/services/qqcc_runtime_context.py`
 - 独立配置 API 入口：`dashboard/backend/qqcc_config_main.py`
@@ -136,9 +136,9 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 
 主业务 Bot 的 `懒人bot` 菜单入口缺省显示；`QQCC_LAZY_BOT_ENABLED=false` 时隐藏新菜单并让旧文本/旧 callback fail closed。入口可用时优先读取 `QQCC_LAZY_BOT_URL`，未配置时可用 `QQCC_LAZY_BOT_USERNAME` 自动生成 `https://t.me/<username>`；两者均未配置时保留菜单但只提示“懒人bot入口暂未配置”，不得硬编码 QQCC Bot 地址。2026-07-12 正式环境按用户要求采用“菜单可见、URL/username 未配置”的不可跳转状态。主 Bot 的 `图片换脸` 二级菜单只保留 `快速换脸` 与 `随机换脸`；旧 `快速脱衣`、`快速自慰`、旧 `menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本和主 Bot 上的 `qvid_*` callback 必须回复 QQCC 懒人 Bot inline URL 跳转或入口未配置提示，且不得提交任务。QQCC 的 `qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 和旧 `qvid_mode:*` 兼容不受影响。
 
-正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。单独更新官方 QQCC Bot 时，先以 `config-plan --env prod --module qqcc-bot` 核对目标与全部已激活投影，缺少目标投影时用同模块 `config-apply --confirm-prod --execute` 只暂存配置；该步骤不调用 Compose 或重启容器。随后对同一 main release 执行 `release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`，真实执行必须带 `--execute --confirm-prod`。该模块从 `qqcc-bot` 自己的已部署 `source_sha` 计算差异和回滚，只选择 Bot service；migration、共享 Compose/env 或 `src/services/qqcc_config_service.py` 变化会拒绝独立发布。发布前核对没有第二个同 token polling 实例；若目标容器状态异常、疑似多实例、token/远端 env 异常，或要启动当前停止的新正式 QQCC 实例，必须停下确认。
+正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。日常先运行 `release.py promote --modules qqcc-bot` 查看无 mutation 预览，确认后只增加一次 `--confirm-prod`；发布器从 Bot 自己的正式 digest/source/config revision 计算变化与回滚，只选择目标服务，并在启动窗口内核对唯一目标容器、已知 legacy 实例停止和 Telegram polling conflict。目标配置缺失或漂移会在 pull/up 前阻断，发布器不得自动暂存；只有用户另行要求配置收敛时才用 `config-plan/config-apply --module qqcc-bot`。migration、共享 Compose/env、未知契约或异常 polling 状态必须停下并改用高级入口。
 
-只更新独立 QQCC 配置 Web 时先用 `config-plan/config-apply --module qqcc-config` 局部暂存 backend/frontend 两份配置，再请求 `--modules qqcc-config`；发布器固定展开为 backend/frontend 两个 artifact，一次独立事务不能再混选 Bot。Bot 与配置平台存在共享契约变化时默认退出独立模式并按 planner 完整闭包发布；唯一例外是 `deploy/release-policy.yml` 中内容 SHA256 精确固定的已审计 snapshot。当前 QQCC 后台独占 LTX 目录只在 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 两份 snapshot 内容完全匹配时，允许先后执行 `qqcc-config` 两服务事务和 `qqcc-bot` 单服务事务；任一文件后续变化立即重新 fail closed，禁止复用旧哈希。QQCC Config 已有专属云测试前后端，auto 默认 standard，必须从已构建的 main-channel bundle 按需部署，并验证测试 8045/8088 的目标 digest/revision 与业务页面；Dashboard-only 仍可按 owner-tools direct。维护模式遵循 `allbot-ops-deployment`。不得使用已 fail-closed 的 legacy 脚本，也不得 rsync、现场 build 或手工 compose；正式发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
+只更新独立 QQCC 配置 Web 时用 `release.py promote --modules qqcc-config`；发布器固定展开 backend/frontend 两个 artifact。需要同步更新官方 Bot 时可一次选择 `qqcc-bot,qqcc-config`，配置闭包取并集、blocker 按两个模块分别匹配，事务与失败回滚保持原子。Bot 与配置平台存在共享契约变化时 `promote` 直接阻断；唯一例外是 `deploy/release-policy.yml` 中内容 SHA256 精确固定的已审计 snapshot。当前 QQCC 后台独占 LTX 目录只在 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 两份 snapshot 内容完全匹配时允许独立晋级，任一文件后续变化立即重新 fail closed，禁止复用旧哈希。QQCC Config 是 standard artifact，必须具有 main-channel exact-digest 测试证据；Dashboard 仍固定 direct/waived。维护模式遵循 `allbot-ops-deployment`。不得使用已 fail-closed 的 legacy 脚本，也不得 rsync、现场 build 或手工 compose；正式发布后只验证目标 8045/8088、QQCC Bot single polling、必要共享依赖及 AllBot 非目标容器不变。
 
 ## 5. 验证要求
 至少覆盖：

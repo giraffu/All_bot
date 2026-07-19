@@ -89,7 +89,7 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 
 `config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的宿主键影响全部服务，强制完整维护、数据库备份与单 Alembic head；内部 contract revision 只用于计算 environment revision，具体影响服务由真实配置键和逐服务 revision drift 决定。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
 
-所有具有容器 env 契约的独立模块都可先执行 `config-plan --env <env> --module <name>`，确认影响集没有逃出模块闭包，再以同模块 `config-apply` 暂存目标投影。支持 `central-api`、`web-api`、`payment-api`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker` 与 `paid-group-bot`；Public Web 没有容器 env 投影，仍使用同 tar 加环境专属 runtime config。局部入口构建“全部已激活服务 + 目标服务”的联合快照：目标服务允许更新 revision，所有非目标 active 服务必须继续存在且保持原 revision/投影字节；目标缺键、非目标变化、闭包逃逸、投影篡改和清单外未知键同样 fail closed。通过后只在权限 `600` 的 revision 目录替换/追加目标文件并原子合并 active state，保留不可变 activation history 和可回滚的旧联合状态；状态为 `config-staged`，不打开维护、不备份数据库、不调用 Compose、不重启任何容器。正式宿主现存且不进入投影的 reviewed legacy 键只按代码内精确清单兼容并仅输出键名；不得删除仍可能被旧容器消费的宿主键来迁就局部暂存。随后由同一可信 main bundle 的 `deploy-module --module <name>` 替换目标容器并核对非目标容器不变。完整 `config-plan` 继续报告尚未投影的其它服务 drift，局部暂存不得伪装成全控制面配置收敛。
+所有具有容器 env 契约的独立模块都可先执行 `config-plan --env <env> --module <name>`，确认影响集没有逃出模块闭包，再以同模块 `config-apply` 暂存目标投影。日常 `promote` 本身只校验所选模块闭包与全部既有非目标投影，不自动修改配置；发现漂移会在 pull/up/Pages 前阻断。支持 `central-api`、`web-api`、`payment-api`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker` 与 `paid-group-bot`；imgproxy/Public Web 没有容器 env 投影。局部配置入口只替换目标投影并保留不可变 history，不调用 Compose、不重启容器。
 
 公共云 Compose 的逐服务 `env_file` 使用长语法 `required: false`，只为允许 Compose 在局部模块发布时解析尚无投影的非目标服务；同时使用 `format: raw`，确保密码 hash、Token 等配置中的 `$` 按原始字节进入容器而不被 Compose 插值。这不是容器运行时的缺配置豁免。发布器在任何 pull/up 之前仍通过目标模块 service closure 严格生成、校验并核对目标投影 revision，目标投影缺失或必填键缺失立即失败。非目标容器不执行 `up`，且事务会逐一核对其启动时间不变。发布后的跨服务 smoke 从各目标容器真实导入 `config.API_BASE` 并请求其 `/health`，不得把 test/prod 的 Central 服务别名硬编码到通用发布器。当前正式 Compose 的 project service DNS 是 `central-api`；历史 Dashboard 投影中的 `central-api-prod` 不可解析，因此 Dashboard-only rolling 由 prod overlay 把 Dashboard Backend 精确覆盖为 `http://central-api:8003`，不修改或重启其它正式服务，完整宿主配置收敛留到独立窗口。该 Compose 内容以精确 checksum 纳入 owner-only snapshot，任一后续改动重新成为共享契约 blocker。
 
@@ -118,7 +118,7 @@ GPU/Worker 配置与控制面配置为两条独立发布链。`deploy/service-en
 
 普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从组内每个已部署 artifact 的 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，因此前后端混合版本无需伪造共同 SHA。目标 SHA 上其它新产物不扩入，非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、未知共享 Compose/env 和未审计跨模块契约仍拒绝独立发布；`independent_contract_snapshots` 只识别内容 SHA256 已固定、已证明 owner-only 或向后兼容的精确契约版本，文件内容一变即重新 fail closed。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
 
-增量空集判定还必须与当前部署 state 的 exact digest 比较。目标 artifact 即使由较早 main 构建、本次 bundle 只复用，但当前运行态缺记录或 digest 不同时，planner 仍必须选入并替换；仅 source SHA 复用不能报告 no-change。`deploy-module` 在配置无漂移后先只读核对实际容器 image ref/RepoDigest、OCI revision、健康和逐服务配置 revision；完全一致时直接返回 `no-change`，不进入面向 mutation 的 rollback preflight，也不要求为同一当前 SHA 再准备 previous manifest。测试环境静态不存在的 Dashboard、Payment 和 Paid Group 不进入运行态漂移替换集。
+增量空集判定以正式实际容器 digest/健康/config revision 与 Pages canonical deployment 为准，不只相信 state 或 artifact `source_sha`。全部目标精确一致时 `promote` 直接返回 `no-change`，不准备面向 mutation 的回滚材料；缺失或漂移的完整模块才进入事务。
 
 QQCC 后台独占 LTX 目录把 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 作为同一份受审计 snapshot 契约。只有两者都精确匹配 `deploy/release-policy.yml` 的内容 SHA256 时，才允许分别执行 `qqcc-config` 两服务与 `qqcc-bot` 单服务的 target-only rolling 事务；任何内容漂移都会重新触发共享契约 blocker。
 
@@ -134,7 +134,7 @@ v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env
 
 正式维护由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。migration、Compose/发布契约和未知影响始终强制完整维护、数据库备份与单 Alembic head。容器可预拉取，实际替换前必须确认新生成已拒绝；失败自动恢复旧 digest，恢复不完整则保留维护。
 
-`deploy-module` 的宿主配置检查按机器定义的模块闭包投影：例如 Dashboard 只要求 `dashboard-backend`/`dashboard-frontend` 的必填键与 revision，同时仍验证 `/var/lib/allbot/config/<env>/current` 中全部既有投影未被篡改、生产环境没有 test sentinel、全局 env revision 没有漂移。这样未迁移的非目标 Bot canonical key 不会阻断 owner-only rolling，也不能借模块过滤绕过目标缺键或现有投影完整性。全局 `config-plan/config-apply` 继续检查全部服务。共享 Compose/env 文件只有内容 SHA256 精确等于已审阅 snapshot 时才可随独立模块通过；任一字节变化立即恢复 blocker。
+`promote` 的宿主配置检查按所选模块服务闭包并集投影，同时验证 `/var/lib/allbot/config/<env>/current` 中全部既有非目标投影未被篡改、生产环境没有 test sentinel、全局 env revision 没有漂移。共享 Compose/env 只有内容 SHA256 精确等于已审阅 snapshot 时才可随模块通过；任一字节变化立即恢复 blocker。
 
 main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Dashboard 把每个 RunPod profile 解析成精确 `image@sha256`。当本批次没有 GPU 输入变化时，模块化 CI 从目标 main 的全部祖先中选择最近的完整、不可变 main-channel GPU manifest，原样继承每项 digest、artifact source SHA、OCI revision 与模型证据；这只是控制面 pin 索引，不构建、不测试、不部署 GPU，也不把历史镜像改写成当前 SHA。环境中立门禁只扫描 artifact 自身构建 SHA 对应的新增镜像；继承镜像复用原构建 CI 的扫描证据，过滤 SHA 必须等于当前 release index SHA，不能任意跳过本批新镜像。若某 profile 的 catalog、`remote_workers/**` 或真实输入发生变化，历史基线不能满足它，仍须当前 main SHA 的专用 GPU attestation/canary；找不到完整可信祖先或出现 mutable/mismatch ref 时，main bundle 在发布前阻断。
 
@@ -153,57 +153,26 @@ scripts/release.py verify-test \
   --evidence test-acceptance.json \
   --execute
 
-# 推荐正式快捷入口：未传 --sha 时一次锁定最新受保护 origin/main
-python scripts/release.py deploy-module --module web-api --confirm-prod --execute
-# 可重复选择；机器计算的依赖集合只能扩大，不能缩小
-python scripts/release.py deploy-module --sha <main-sha> \
-  --module dashboard --module qqcc-config \
-  --confirm-prod --execute
-
-# credential-isolation-complete 前，每次正式替换还必须显式接受过渡风险
-python scripts/release.py deploy-module --module web-api --confirm-prod --execute \
-  --accept-pending-secret-rotation --reason '<ticket/reason>' --approved-by '<name>'
+# 日常正式入口：自动锁定最新 main bundle、识别运行态差异并确认一次
+python scripts/release.py promote --confirm-prod
+# 部分模块或固定候选
+python scripts/release.py promote \
+  --modules dashboard,qqcc-config --sha <40-char-main-sha> --confirm-prod
+# 去掉确认只输出精简预览，不执行生产 mutation
+python scripts/release.py promote --modules qqcc-bot
 
 # 独立轮换窗口完成全部 test/prod 隔离和 Worker 验证后，受控关闭过渡状态
 python scripts/release.py credential-isolation-complete \
   --evidence <value-free-isolation-evidence.json> \
   --approved-by <name> --confirm-prod --execute
 
-# 完整发布/回滚仍保留分步接口
-scripts/release.py plan --env prod --sha <40-char-sha>
-scripts/release.py preflight --env prod --sha <40-char-sha>
-scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-prod
-
-# 管理后台 auto=direct；也可显式写出策略
-scripts/release.py plan --env prod --sha <40-char-sha> --modules dashboard --strategy direct
-scripts/release.py preflight --env prod --sha <40-char-sha> --modules dashboard --strategy direct
-scripts/release.py deploy --env prod --sha <40-char-sha> --modules dashboard \
-  --strategy direct --execute --confirm-prod
-
-# 独立 QQCC Bot / QQCC Config；每次只选一个完整模块组
-scripts/release.py plan --env prod --sha <40-char-sha> --modules qqcc-bot
-scripts/release.py plan --env prod --sha <40-char-sha> --modules qqcc-config
-
-# 公共 Web direct 或核心 emergency 必须记录风险接受
-scripts/release.py deploy --env prod --sha <40-char-sha> --strategy direct \
-  --reason "urgent Web repair" --approved-by <name> --execute --confirm-prod
-scripts/release.py deploy --env prod --sha <40-char-sha> --strategy emergency \
-  --reason "restore core service" --approved-by <name> --execute --confirm-prod
-
-# 仅限已测控制面后的 private worker 镜像闭包修复
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
-  --control-plane-repair-fast-track
-scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha> \
-  --control-plane-repair-fast-track
-scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> \
-  --control-plane-repair-fast-track --execute --confirm-prod
-
-# 默认正式控制面晋级入口
-scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules central-api
-scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
+# 高级/兼容入口继续存在，但 migration、共享/未知契约、emergency、
+# 跳门禁、秘密轮换和 recover 才应使用，不属于日常 SOP。
+python scripts/release.py deploy --help
+python scripts/release.py recover --help
 ```
 
-`--services` 只扩大普通自动集合；独立模块只通过上述三个 `--modules` 组表达，传半组、混组或叠加其它 artifact 会拒绝。普通模式下 `src/**`/`shared/**` 仍覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包。
+`promote` 的模块名只接受公开完整组，逗号组合后配置闭包取并集；每个模块独立匹配共享契约 blocker，不能用组合名称绕过。普通高级模式下 `--services` 仍只能扩大自动集合；Worker、migration、未知路径与 GPU 专用链路保持原门禁。
 
 standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified。
 
