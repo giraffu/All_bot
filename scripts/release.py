@@ -6319,6 +6319,29 @@ def _validate_local_env(args: argparse.Namespace) -> tuple[dict[str, str], str]:
     return values, revision
 
 
+INDEPENDENT_MODULE_ENV_SERVICES = {
+    "central-api": ("central-api",),
+    "web-api": ("web-api",),
+    "payment-api": ("payment-api",),
+    "dashboard": ("dashboard-backend", "dashboard-frontend"),
+    "main-bot": ("main-bot",),
+    "qqcc-bot": ("qqcc-bot",),
+    "qqcc-config": ("qqcc-config-backend", "qqcc-config-frontend"),
+    "private-bot-worker": ("private-bot-worker",),
+    "paid-group-bot": ("paid-group-bot",),
+}
+
+
+def _runtime_env_service_options(args: argparse.Namespace) -> str:
+    """Limit deploy-module validation to its machine-owned config closure."""
+
+    modules = list(getattr(args, "modules", None) or ())
+    if getattr(args, "command", "") != "deploy-module" or len(modules) != 1:
+        return ""
+    services = INDEPENDENT_MODULE_ENV_SERVICES.get(str(modules[0]), ())
+    return "".join(f" --service {shlex.quote(service)}" for service in services)
+
+
 def _remote_runtime_env_snapshot(
     args: argparse.Namespace, *, command: str = "inspect"
 ) -> tuple[dict[str, str], str, dict[str, Any]]:
@@ -6345,6 +6368,7 @@ def _remote_runtime_env_snapshot(
         f"--contract <(printf %s {contract} | base64 -d) "
         f"--defaults <(printf %s {defaults} | base64 -d) "
         f"--root {shlex.quote(root)}"
+        f"{_runtime_env_service_options(args)}"
     )
     script = "set -euo pipefail\n" + remote_command + "\n"
     result = _run(
