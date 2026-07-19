@@ -1,9 +1,9 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-19 日常发布入口改为“单批次 main 构建、按需测试、按模块正式发布”。多个 handoff 只通过一个 PR 合入 main，GitHub Actions 为该 main SHA 构建一次不可变 bundle；standard artifact 部署测试后按 exact digest 写 verified evidence。正式单模块使用 `python scripts/release.py deploy-module --module <artifact> --confirm-prod --execute`；只有实际容器 RepoDigest、健康与 config revision 一致才报告 `no-change`。生成入口集合自动进入生成维护，Dashboard/QQCC 配置后台/Payment/Paid Group Bot/Public Web 单独发布不维护。下文 legacy rsync/build 脚本仅是历史与故障取证，不再是日常发布方式。
+> 2026-07-20 日常正式发布统一使用 `python scripts/release.py promote --confirm-prod`。不带确认只输出精简预览；不传模块时自动选择最新 main bundle 中与正式实际运行态不一致的模块，部分发布才传 `--modules <逗号列表>`，固定 SHA 才传 `--sha <40位SHA>`。该门面内部完成 exact-digest 测试取证、配置闭包、目标健康、single polling、非目标证明和事务回滚，不再要求操作者重复 plan/preflight 或追加 `--execute`。migration、共享/未知契约、emergency、跳门禁和待处理秘密轮换会阻断并提示使用高级入口。旧 rsync/build 命令已从活跃 SOP 删除，历史只保留归档边界。
 > 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
-2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组每个 artifact 自己的已部署 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失项按成功 history 时间顺序只读恢复，组内混合版本不要求伪造共同基线。提交目标状态时不覆盖非目标版本，目标 SHA 上其它新产物不自动并入。migration、未知共享 Compose/env 和未审计跨模块契约仍 fail closed；只有 policy 中内容 SHA256 固定的 owner-only/向后兼容 snapshot 可作为精确例外，内容变化立即阻断。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
+2026-07-20 模块边界：`promote` 支持一个事务内组合 `central-api`、`web-api`、`payment-api`、`imgproxy`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker`、`paid-group-bot` 与 `public-web`。planner 对每个模块和 artifact 分别使用真实旧 digest/source SHA、策略和 blocker；配置闭包取模块并集，状态提交保留非目标混合版本。standard artifact 必须命中测试 history 的同名 exact digest，Dashboard direct 仅记录 `waived`。migration、未知共享 Compose/env、未审计跨模块契约和 snapshot 漂移仍 fail closed。
 
 2026-07-20 事务审计兼容：秘密隔离完成前的发布状态会持久记录 `pending_secret_rotation_acceptance`，下一次事务把旧 state 纳入回滚证据时必须保留该非敏感记录。journal 校验只对这一精确审计字段例外，字段内部仍递归禁止 token、secret、password 和 env-values；不得通过删除 current/history 审计记录来绕过校验。
 
@@ -11,7 +11,7 @@
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
-> 2026-07-16 维护模式选择：每次正式发布独立选择，用户当次未说明时默认开启生成维护；只有用户对该次发布明确要求不开维护，且 `release.py plan|preflight` 证明变更可按 `rolling`/`none` 无维护执行时，才允许关闭。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被覆盖。当前发布器若不能表达并证明请求模式与实际模式一致，必须在 mutation 前停止并修发布契约；禁止手工写删 marker、执行本页归档脚本或静默按另一模式上线。正式总结同时记录请求/default、planner level 与实际模式。
+> 2026-07-16 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不进入日常门面；需要不同维护编排时改用高级入口。禁止手工写删 marker 或静默按另一模式上线。
 
 ## 1. 当前生产架构事实
 
@@ -244,188 +244,24 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：只影响人工回滚、旧外链或迁移排障链路；优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，同时确认正式 Web/Dashboard 响应没有返回 `assets` URL。
 - `cloud-dashboard-backend-prod` 高频 `Circuit Breaker is OPEN`：管理后台观测或外部余额接口降级，不代表 Central 任务调度一定失败。
 
-## 4. Legacy 部署 SOP（归档，禁止执行）
+## 4. 发布与专项运维
 
-本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许通过风险策略消费受保护 main 的不可变 release index：standard 按 track/artifact/digest 取测试证据，direct/emergency 只豁免允许的测试门禁，真实执行始终要求 `scripts/release.py deploy --env prod ... --execute --confirm-prod`。不得复制执行本节的 rsync、现场 build 或旧热修命令。
+### 4.1 日常控制面发布
 
-### 4.1 云控制面安全部署
-
-以下参数和命令只描述 legacy 脚本退役前的历史行为，不是当前维护模式选择接口；当前正式发布只能使用 `scripts/release.py`，不得据此执行 `--skip-generation-maintenance`。
-
-首选从本地主服务器执行更保守的维护式更新脚本，默认 dry-run，真实 mutation 必须同时传 `--execute --confirm-prod`：
+正式控制面日常只使用不可变候选门面：
 
 ```bash
-cd /home/hfy/APP/All_bot
-scripts/update_cloud_prod_with_maintenance.sh
-scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db-upgrade
+python scripts/release.py promote
+python scripts/release.py promote --confirm-prod
 ```
 
-该脚本默认流程：
+部分发布追加 `--modules <逗号列表>`，固定候选追加 `--sha <40位SHA>`。预览不创建事务、不拉取生产镜像、不执行 Compose 或 Pages mutation；确认后由发布器内部完成预检、回滚材料、目标更新、验收与失败恢复。配置漂移、高风险变更或待轮换秘密会在 mutation 前阻断。
 
-1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` / `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
-2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
-3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`local_analytics_platform/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
-4. 默认不更新 `.env.cloud.prod`；只有显式传 `--sync-env --env-file FILE` 时才会先备份远端 env、同步并做 checksum 校验。
-5. 远端先执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only`，再按 scope 执行控制面发布或单服务热修。
-6. 默认不启动/重建正式 Bot；如需主 Bot，必须显式传 `--bot-mode auto|start|stop`，如需 QQCC Bot，必须显式传 `--qqcc-bot-mode auto|start|stop`，且执行前确认对应 token 全网没有第二个生产 Telegram polling 实例。
-7. 默认不发布 Cloudflare Pages、不中断本地 worker、不操作 RunPod、不改 DNS/Tunnel；这些能力仍按独立 SOP 处理。
-8. 验证云内健康检查、公网正式入口、本地 worker relay、Central queue/status/workers、目标容器 restart count 与最近错误日志，成功后解除生成维护；失败时维护保持开启。
+首次不可变切换前曾使用 rsync、源码 bind mount、云端 build、`safe_deploy_cloud_prod.sh` 和按服务手工 Compose；这些流程已经退役，历史证据仅在 `docs/archive/` 中用于事故考古，不得从活跃文档恢复为执行入口。
 
-常用参数：
+Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
 
-- `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
-- `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。QQCC 配置 Web 单独更新使用 `--services "qqcc-config-backend-prod qqcc-config-frontend-prod"`。
-- `--qqcc-bot-mode start|stop|auto|skip`：默认 `skip`。`start` 会重建并启动 `qqcc-bot-prod`，要求远端 `.env.cloud.prod` 已配置 `QQCC_BOT_TOKEN`；`auto` 只在 `cloud-qqcc-bot-prod` 原本运行时重建并启动。
-- `scripts/update_cloud_prod_qqcc_bot.sh`：只更新正式 QQCC Bot 的专用窄入口，默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。
-- `--skip-generation-maintenance`：仅支持 `--scope services`，跳过生成维护和队列 drain。用于不影响生成入口的低风险服务更新，例如只更新 `dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod`。
-- `--with-db-upgrade`：随 `--scope control-plane` 显式执行 Alembic upgrade head；有迁移时必须走控制面发布并传该参数。
-- `--sync-env --env-file FILE`：显式同步正式 env；默认不动远端 `.env.cloud.prod`。
-  同步前本地 env 必须包含 `MEMBERSHIP_SETTLEMENT_V2_ENABLED=true` 与 `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED=true`，否则脚本会在本地中止，避免覆盖掉正式 affiliate 返佣兑身份入口。
-- `--keep-maintenance`：成功后仍保留生成维护，便于人工验收后再解除。
-- `--delete`：给 rsync 增加 `--delete`，默认关闭，避免生产远端误删未纳入同步的人工文件。
-
-远端控制面子步骤仍可手工执行：
-
-```bash
-ssh allbot-do-sgp1-control
-cd /home/deploy/APP/All_bot
-scripts/safe_deploy_cloud_prod.sh --preflight-only
-scripts/safe_deploy_cloud_prod.sh --start-control-plane --with-db-upgrade
-```
-
-要求：
-
-- `.env.cloud.prod` 只在服务器本地保存，不得提交、不贴日志。
-- `docker compose config` 输出会展开密钥，只能本机查看。
-- 有 Alembic 变更时必须确认单 head，并显式执行 `alembic upgrade head`；不要写“容器启动自动迁移”。
-- 正式 Bot 重建前必须确认全网只有一个生产 Telegram polling 实例。
-- `cloud-web-api-prod`、`cloud-tg-bot-prod` 与 `cloud-qqcc-bot-prod` 挂载 `../runtime/cloud-prod:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取持久生成维护标记；这保证控制面重建后新容器仍保持维护，直到脚本最后解除。
-
-### 4.2 云端单服务热修
-
-只改云端某个 COPY 型服务代码时，可以只重建目标服务：
-
-```bash
-ssh allbot-do-sgp1-control
-cd /home/deploy/APP/All_bot
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml build central-api-prod
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml up -d --no-deps central-api-prod
-```
-
-目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`dashboard-frontend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
-
-管理后台单独更新时，只同步 Dashboard 后端/前端相关文件，只重建目标 Dashboard service，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查使用 Tailscale 入口：
-
-```bash
-ssh allbot-do-sgp1-control
-cd /home/deploy/APP/All_bot
-
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml build \
-  dashboard-backend-prod dashboard-frontend-prod
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml up -d --no-deps \
-  dashboard-backend-prod dashboard-frontend-prod
-
-curl -fsS http://100.107.220.127:8043/api/health
-curl -fsS http://100.107.220.127:8086/api/health
-```
-
-若只改 Dashboard 前端，例如 RunPod 管理页面 profile 列表、按钮识别或展示逻辑，只重建
-`dashboard-frontend-prod` 即可。验证时确认 `cloud-dashboard-frontend-prod` 与
-`cloud-dashboard-backend-prod` healthy，且 `cloud-central-api-prod`、`cloud-web-api-prod`、
-`cloud-tg-bot-prod`、`cloud-payment-api-prod`、`cloud-imgproxy-prod` 的启动时间没有变化。
-
-QQCC Config Web 已从主 Dashboard 剥离；只改懒人 Bot 配置页面或独立配置认证时，重建
-`qqcc-config-backend-prod qqcc-config-frontend-prod`，验证：
-
-```bash
-curl -fsS http://100.107.220.127:8045/api/health
-curl -fsS http://100.107.220.127:8088/api/health
-```
-
-该路径不重建 `cloud-dashboard-backend-prod` / `cloud-dashboard-frontend-prod`，也不触碰 `cloud-qqcc-bot-prod` polling。
-
-QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只同步变更清单内的必要文件，通过 safe preflight、生产确认和 single-polling 检查后，用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 复用构建缓存并替换三个目标服务。COPY 型服务禁止省略 `--build` 后只 recreate；该路径不进入维护、不 drain 队列、不触碰其它控制面服务，并必须核对非目标容器启动时间不变。
-Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
-`scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`pornmaster_flux2 / 自由P图 v2` 与
-`pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
-正式 Dashboard 不再从镜像内旧 `.env` 或源码常量选择新 Pod 镜像。发布器从同一受保护 main 的 release index 解析上述全部 profile 的 canonical `image@sha256`，写入 control-plane `release.env` 的 `RUNPOD_RELEASE_PROFILE_PINS_JSON`，prod overlay 再只读注入 Dashboard Backend。每次手动新增、autoscaler add、restart/enable/down 操作都会用该集合覆盖历史 `RUNPOD_IMAGE_NAME_*`；任一 profile 缺失、引用不是完整 digest，或 PornMaster 共用 image env 出现冲突 digest，操作在调用 RunPod API 前返回 503。更新 Dashboard 本身不会删除、重启或改写已经运行的 Pod；新 pin 只影响更新后发起的创建/恢复操作。
-不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
-`/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py`、`release_manifest_v2.py`、
-`release_strategy.py` 与 `/app/ops`，否则 Dashboard operation 会在命令执行或 ASGI import smoke 阶段以
-exit 127 / `ModuleNotFoundError` 失败。该闭包必须同时固化在独立 `Dockerfile.dashboard-backend` 和可信 bundle
-实际构建 `dashboard-backend` stage 的 `Dockerfile.control-plane`，不能只更新前者。
-`deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
-与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
-不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
-关于 LAN AIO Worker 卡片：`pause/enable/restart` 不在云容器直接执行本地 helper。不可变 prod overlay 固定 SSH runner 模式，生产配置契约强制要求 `DASHBOARD_LAN_AIO_RUNNER_HOST` 与 `DASHBOARD_LAN_AIO_RUNNER_KEY_DIR`，并把该目录的 `id_ed25519` 只读挂载到 Dashboard Backend。本地主保持 Tailscale SSH 22 端口不变，`allbot-lan-aio-dashboard-runner-sshd.service` 作为已开启 linger 的用户级服务，只在本机 Tailscale 地址的 2222 端口启动另一个禁止密码、禁止 root 的 OpenSSH listener；如需变更，同步设置 `DASHBOARD_LAN_AIO_RUNNER_SSH_PORT`。正式 preflight 会检查 key 可读且权限为 `600`，并真实登录 runner 核对 helper 与所需 env 文件可读；缺少任一项时在发布前阻断，后端在 `ALLBOT_ENV=prod` 下也不会回退到 local。首次启用或轮换只更新受限 env/key 目录和本地主 runner 的 `authorized_keys`，禁止把 key 写入 Git、release bundle 或日志。
-管理面直发时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
-`--env prod --strategy direct`；旧自动化的 `--dashboard-fast-track` 仍兼容。真实执行再加 `--execute --confirm-prod`。计划必须显示
-Dashboard 独立发布的 plan 必须显示 `risk_class=owner-tools`、`strategy=direct`、`level=rolling`，服务集合精确为 Dashboard 前后端；`--modules dashboard` 是完整模块组而不是任意依赖裁剪。发布器核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
-Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
-快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
-不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。
-Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动；真实不可变容器通过最小逐服务投影继承正式 RunPod 配置，其中 `AGENT_SECRET_TOKEN` 是删除/缩容前调用 Central agent control 的必填能力，不得遗漏；`DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 默认使用存在但为空的 `/dev/null` 满足 CLI 路径契约，不挂载或生成另一份含密钥的 `/app/.env`。只有拿到 Redis leader
-lease 后才会自动执行：有已知非低信任 pending 且预计非低信任用户清空时间超过该 profile 清空阈值时，提交至多一次
-`add --count 1 --retry-unavailable --worker-timeout 2400`；有非低信任 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
-预计非低信任用户清空时间按 `non_low_trust_clear_pending_count_by_task_type` 对应的
-`pending_work_seconds + running_remaining_seconds` 除以 RunPod + 本地可接单 worker 数估算；总 pending
-工作量只作为 `estimated_total_pending_work_seconds` 观测对照，不触发扩容。只有低信任或未知用户 pending 时显示
-`hold: no non-low-trust backlog`。
-静态单任务耗时默认 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
-`i2i_pro/t2i-pornmaster-turbo/face_swap_v2=12s`；旧 `face_swap=12s` 仅展示、不触发 i2i_pro 扩容。`scail2_action_transfer/scail2_video_replacement=300s`、
-`ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。缩容只在 `pending_count == 0` 且
-RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot 的 idle RunPod；autoscaler 创建的
-RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
-autoscaler add 若已创建 slot 但 `DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS`（默认 2400）内
-仍无健康 heartbeat，会失败并自动对记录到的 slot 执行 `down --slot NN --execute` 清理；清理成功的
-bootstrap 失败不进入普通 cooldown，下一轮可重新 add。同 profile 在
-`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS`（默认 7200）内最多替换
-`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_LIMIT`（默认 2）次，超过后 hold。
-autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
-`DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时提交 `restart --slot NN --execute`；
-`control_state=disabled|draining` 且 worker 仍健康 `idle|running` 时提交 `enable --slot NN --execute`。
-RunPod `restart` 会先 disabled、调用 RunPod 原生 restart、等待健康 heartbeat，再恢复 enabled 接单。
-本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过 `/api/runpod/autoscaler/control`
-紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、其它正式 profile `30 分钟`；
-系统监控页“活跃 Worker 详情”的“清空阈值/单任务耗时”通过 `/api/runpod/autoscaler/settings`
-保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，下一轮 autoscaler 评估立即使用；
-同表格中 `autoscaler_enabled=true` 行的“自动管理”按钮通过 `profile_autoscaler_paused_by_profile` 暂停/恢复单个 profile 的 autoscaler，
-暂停后该 profile 直接显示 `hold: profile autoscaler paused`，不会自动 add/down/restart/enable，
-不影响其它 profile，也不改变现有 worker 接单状态。
-Dashboard 决策会展示 `scale_up: estimated non-low-trust clear time ... exceeds ...`、
-`restart: runpod fault persisted ...`、`enable: runpod paused worker available`、
-`replace: previous runpod bootstrap timed out ...`、`hold: runpod add still bootstrapping Ns`、
-`hold: estimated non-low-trust clear time within threshold`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: bootstrap replacement limit reached`、`hold: profile autoscaler paused`、
-`hold: minimum lifetime remaining Ns` 这类原因，
-便于区分真实容量不足、RunPod 自愈、启动换机、无排队和生命周期保护。
-
-QQCC 懒人 Bot 单独更新时使用专用脚本：
-
-```bash
-cd /home/hfy/APP/All_bot
-scripts/update_cloud_prod_qqcc_bot.sh
-scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
-```
-
-该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight，并用单条 `up -d --no-deps --build qqcc-bot-prod` 复用构建缓存和替换目标容器；随后检查容器 running、非敏感 env 合同与近 3 分钟错误日志。整仓 rsync 同样排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
-
-付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
-
-```bash
-cd /home/hfy/APP/All_bot
-scripts/update_cloud_prod_with_maintenance.sh \
-  --scope services \
-  --services "dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod" \
-  --skip-generation-maintenance
-scripts/update_cloud_prod_with_maintenance.sh \
-  --execute --confirm-prod \
-  --scope services \
-  --services "dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod" \
-  --skip-generation-maintenance
-```
-
-该路径不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/主 Bot/Worker/RunPod。执行前需确认 `.env.cloud.prod` 已包含 `PAID_GROUP_BOT_TOKEN`、`PAID_GROUP_CHAT_ID` 与 `PAID_GROUP_*` 群管理开关；日志与配置共享目录为 `runtime/cloud-prod/paid-group-guard` 和 `logs/cloud-prod`。
+### 4.2 专用 GPU 执行面运维
 
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
 
@@ -473,13 +309,11 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 
 自由P图 v2 的正式 RunPod 手动备用容量使用同一个 `pornmaster_flux2_edit` runtime profile，不写 `user-data-prod` 以外的用户结果桶，也不把模型 baked 进镜像。启用前必须确认 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向公开 GHCR tag，`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`，`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`。
 
-控制面服务发布仍按单服务最小范围处理：
+控制面服务发布仍按模块最小范围处理：
 
 ```bash
-ssh allbot-do-sgp1-control
-cd /home/deploy/APP/All_bot
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml build central-api-prod web-api-prod bot-prod
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml up -d --no-deps central-api-prod web-api-prod bot-prod
+python scripts/release.py promote --modules central-api,web-api,main-bot
+python scripts/release.py promote --modules central-api,web-api,main-bot --confirm-prod
 ```
 
 正式 Web Pages 只发布正式前端项目；不要把测试 Pages 或测试 API 域名带入正式构建。验收通过后执行：
@@ -545,114 +379,11 @@ scripts/runpod_prod_ops.sh enable --profile pornmaster_flux2_edit --slot 01 --ex
 
 `prod-worker canary --profile pornmaster_flux2_edit` 会提交 single-edit 与 multi-edit 两个正式内部任务。若要强制两单命中 RunPod，应先等待自由P图 v2 pending 清空，并临时 disable 对应 LAN PornMaster AIO agent；canary 完成后再恢复 LAN agent 或按容量计划手动 enable RunPod。
 
-### 4.3 Agent control 正式灰度更新指南
+### 4.3 Agent control 与 Worker 边界
 
-2026-06-10 已在云测试环境验证 `draining/disabled` worker 控制链路：`cloud-central-api-test` 暴露 `GET/POST /api/agent/task/control/{agent_id}`，测试 worker 重建后真实 `/pop` 会携带 `agent_id=cloud_worker_test_*`，`disabled` worker 的 `/pop` 返回空任务且不移除 pending。
+Central agent control、正式 Worker 镜像和 GPU runtime 必须分别通过不可变控制面发布与专用 Worker/GPU operator 更新。历史上按文件 rsync Central、重启源码 bind mount 容器或在本地主机现场 build 整组 Worker 的灰度步骤已经退役；其测试结论保留，命令不再作为活跃 SOP。
 
-正式环境后续更新必须同时覆盖两层：
-
-1. 云正式 Central API 代码：让 `cloud-central-api-prod` 具备 control route、control Redis key 读写、`pop(agent_id=...)` 拒绝接单能力。
-2. 本地主服务器正式 worker 镜像：让 `cloud-prod-comfy-agent-*` 在真实 `/pop` query 中携带 `agent_id=cloud_prod_worker_*`。如果只更新 Central、不重建 worker，control 接口存在但实际 worker 仍不受 drain 控制。
-
-测试环境踩坑记录：
-
-- 远端 `/home/deploy/APP/All_bot` 不应假设是 Git 工作区；生产热修前先备份文件，再用 `rsync -R` 保留相对路径同步。
-- `backend/app/queue_manager.py` 与 `backend/app/queue_manager_flow_helpers.py` 必须一起同步；只同步前者会导致 heartbeat metadata 参数不兼容。
-- 云正式 compose 中 `central-api-prod` 挂载 `../backend/app:/app/app:ro`，同步 Python 文件后重启 `central-api-prod` 即可生效；如同时更新依赖或镜像内文件，再执行 build。
-
-正式更新步骤：
-
-```bash
-# 1. 本地主服务器先跑后端 focused tests
-cd /home/hfy/APP/All_bot
-python -m pytest tests/backend/test_agent_router_helpers.py tests/backend/test_queue_manager.py -q
-
-# 2. 备份云正式 Central 文件
-ssh allbot-do-sgp1-control '
-  set -euo pipefail
-  cd /home/deploy/APP/All_bot
-  backup_dir="/home/deploy/APP/All_bot/backups/central-agent-control-$(date +%Y%m%d_%H%M%S)"
-  mkdir -p "$backup_dir/routers"
-  cp backend/app/agent_router_helpers.py backend/app/queue_manager.py backend/app/queue_manager_flow_helpers.py backend/app/models.py "$backup_dir"/
-  cp backend/app/routers/agent.py "$backup_dir/routers"/
-  echo "$backup_dir"
-'
-
-# 3. 同步 Central 相关文件，-R 用于保留 backend/app/... 相对路径
-rsync -avhR \
-  backend/app/agent_router_helpers.py \
-  backend/app/queue_manager.py \
-  backend/app/queue_manager_flow_helpers.py \
-  backend/app/models.py \
-  backend/app/routers/agent.py \
-  allbot-do-sgp1-control:/home/deploy/APP/All_bot/
-
-# 4. 只重启云正式 Central API
-ssh allbot-do-sgp1-control '
-  set -euo pipefail
-  cd /home/deploy/APP/All_bot
-  docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml restart central-api-prod
-  docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml ps central-api-prod
-'
-```
-
-Central 验证命令：
-
-```bash
-ssh allbot-do-sgp1-control '
-  set -euo pipefail
-  cd /home/deploy/APP/All_bot
-  TOKEN="$(sed -n "s/^AGENT_SECRET_TOKEN=//p" .env.cloud.prod | tail -n1)"
-  CENTRAL="http://100.107.220.127:8003"
-  curl -fsS "$CENTRAL/health"
-  curl -fsS -H "Authorization: Bearer $TOKEN" \
-    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
-  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d "{\"state\":\"disabled\",\"reason\":\"prod control route validation\",\"ttl_seconds\":60}" \
-    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
-  curl -fsS -H "Authorization: Bearer $TOKEN" \
-    "$CENTRAL/api/agent/task/pop?types=img2img_lora&agent_id=cloud_prod_worker_06&cancel_lock=true"
-  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d "{\"state\":\"enabled\",\"reason\":\"\"}" \
-    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
-'
-```
-
-期望结果：
-
-- `/control/cloud_prod_worker_06` 初始返回 `state=enabled`。
-- 设置 `disabled` 后，带 `agent_id=cloud_prod_worker_06` 的 `/pop` 返回 `task: null`，并说明该 worker 不接新任务。
-- 验证结束必须恢复 `enabled`。
-- Central 最近日志无 `500 Internal Server Error`、`TypeError`、`Traceback`。
-
-正式 worker 更新：
-
-```bash
-set -euo pipefail
-set -a
-source /home/hfy/APP/All_bot/.env.cloud.prod
-set +a
-
-cd /home/hfy/APP/All_bot/workers
-services="cloud-prod-worker-relay cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
-docker-compose -f docker-compose-cloud-prod-worker.yml build $services
-docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
-```
-
-首次上正式时注意：旧生产 worker 尚未携带 `agent_id` 前，不能依赖 Central drain 来保护 worker 重建；应选择队列低峰、确认目标 worker 无当前任务，或按单 worker 逐个更新并接受该 worker 当前任务可能中断。完成更新后，从云 Central 日志确认真实 `/pop` URL 已出现 `agent_id=cloud_prod_worker_*`。
-
-最终验收：
-
-- `curl http://100.107.220.127:8003/health` 正常。
-- `/system/workers` 看到当次目标 worker 集合的 heartbeat。若本轮只更新本地 compose worker，至少验证目标 `cloud_prod_worker_*`；若本轮包含 LAN AIO、`remote_workers` 或 RunPod，还要验证对应 agent id、任务类型和 control state。
-- 目标 worker control 状态符合发布计划；需要接正式队列的 worker 为 `enabled`，备用/未验收 worker 保持 `disabled`。
-- 抽选一个低风险 worker 短 TTL 设置 `disabled`，实际 `/pop` 不再接单；随后恢复 `enabled`。
-- 本地 relay `127.0.0.1:8013/ready` 正常，worker 日志无 `relay_forward_failed`、`sidecar_upload_failed`。
-
-回滚：
-
-- Central 异常时，恢复备份目录中的 `backend/app/*.py` 与 `backend/app/routers/agent.py`，只重启 `central-api-prod`。
-- Worker 异常时，只回滚或重建对应 `cloud-prod-comfy-agent-N`；不得对 `workers` project 使用 `--remove-orphans`，不得清理测试 worker。
+控制面 `promote` 不隐式重建生产 GPU Worker，也不以 Worker heartbeat 作为控制面提交条件。需要更新 Worker 时，先按 agent control drain 单槽，再走对应 release-index digest 和专用 operator；不得用控制面发布扩大到执行面。
 
 ### 4.4 Cloudflare Pages/API Tunnel 维护
 

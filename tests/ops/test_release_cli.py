@@ -5531,3 +5531,615 @@ def test_release_cli_accepts_nested_oras_v2_bundle_layout(tmp_path):
 
     assert module._resolve_manifest_path(args) == index
     assert module._resolved_web_artifact(args, {"git_sha": FULL_SHA}) == web
+
+
+def test_promote_exposes_only_daily_production_arguments():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        ["promote", "--modules", "dashboard,qqcc-bot", "--confirm-prod"]
+    )
+
+    assert args.command == "promote"
+    assert args.modules == ["dashboard,qqcc-bot"]
+    assert args.sha is None
+    assert args.confirm_prod is True
+    assert args.env == "prod"
+    assert args.track == "control-plane"
+    assert args.execute is False
+    assert args.strategy == "auto"
+
+    with pytest.raises(SystemExit):
+        module.build_parser().parse_args(["promote", "--execute"])
+
+
+def test_latest_promote_candidate_locks_newest_main_bundle_once(monkeypatch):
+    module = _load_module()
+    newest = "c" * 40
+    older = "b" * 40
+    main_head = "d" * 40
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:2] == ["git", "fetch"]:
+            stdout = ""
+        elif command[:3] == ["git", "rev-parse", "--verify"]:
+            stdout = main_head + "\n"
+        elif command[:3] == ["oras", "repo", "tags"]:
+            stdout = f"not-a-sha\n{older}\n{newest}\n"
+        elif command[:2] == ["git", "rev-list"]:
+            stdout = f"{main_head}\n{newest}\n{older}\n"
+        else:
+            raise AssertionError(command)
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    assert (
+        module.resolve_latest_promote_candidate(
+            "ghcr.io/giraffu/allbot-release-v2"
+        )
+        == newest
+    )
+    assert calls == [
+        ["git", "fetch", "--prune", "origin", "main"],
+        ["git", "rev-parse", "--verify", "origin/main"],
+        ["oras", "repo", "tags", "ghcr.io/giraffu/allbot-release-v2"],
+        ["git", "rev-list", "--first-parent", main_head],
+    ]
+
+
+def test_automatic_promote_modules_follow_live_digest_drift(monkeypatch, tmp_path):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    names = {
+        artifact
+        for value in policy["independent_modules"].values()
+        for artifact in value["artifacts"]
+    }
+    artifacts = {
+        name: {
+            "digest": "sha256:" + format(index, "064x"),
+            "sha256": "sha256:" + format(index, "064x"),
+        }
+        for index, name in enumerate(sorted(names), start=1)
+    }
+    runtime = {
+        name: {
+            "digest": artifact["digest"],
+            "health": "healthy",
+            "ref": f"ghcr.io/example/{name}@{artifact['digest']}",
+        }
+        for name, artifact in artifacts.items()
+        if name != "public-web"
+    }
+    runtime["dashboard-backend"]["digest"] = "sha256:" + "f" * 64
+    state = {
+        "artifacts": {
+            "public-web": {"digest": artifacts["public-web"]["digest"]}
+        },
+        "web_deployment": {"deployment_id": "pages-current"},
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/example/release",
+        policy=str(POLICY_PATH),
+        remote_host="prod",
+        env="prod",
+        track="control-plane",
+        state_file=None,
+    )
+    monkeypatch.setattr(module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index")
+    monkeypatch.setattr(
+        module,
+        "load_release_index",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            manifests={"control-plane": {"artifacts": artifacts}}
+        ),
+    )
+    monkeypatch.setattr(module, "inspect_promote_runtime_artifacts", lambda _args: runtime)
+    monkeypatch.setattr(module, "_read_current_state", lambda *_args, **_kwargs: state)
+    monkeypatch.setattr(module, "_current_pages_deployment_id", lambda _args: "pages-current")
+
+    selected, observed = module.resolve_automatic_promote_modules(args)
+
+    assert selected == ["dashboard"]
+    assert observed is runtime
+
+
+def test_promote_module_config_scope_uses_union():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote", modules=["dashboard,qqcc-config", "main-bot"]
+    )
+
+    options = module._runtime_env_service_options(args)
+
+    assert "--service dashboard-backend" in options
+    assert "--service dashboard-frontend" in options
+    assert "--service qqcc-config-backend" in options
+    assert "--service qqcc-config-frontend" in options
+    assert "--service main-bot" in options
+    assert "--service web-api" not in options
+
+
+def test_mixed_promote_assurance_is_resolved_per_artifact():
+    module = _load_module()
+
+    decisions = module.resolve_promote_artifact_assurance(
+        {"dashboard-backend", "dashboard-frontend", "qqcc-config-backend"}
+    )
+
+    assert decisions["dashboard-backend"]["strategy"] == "direct"
+    assert decisions["dashboard-backend"]["assurance"] == "waived"
+    assert decisions["dashboard-frontend"]["strategy"] == "direct"
+    assert decisions["qqcc-config-backend"]["strategy"] == "standard"
+    assert decisions["qqcc-config-backend"]["assurance"] == "tested"
+
+
+def test_promote_mixed_strategy_queries_test_evidence_only_for_standard(monkeypatch):
+    module = _load_module()
+    dashboard_digest = "sha256:" + "1" * 64
+    qqcc_digest = "sha256:" + "2" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "selected_artifacts": ["dashboard-backend", "qqcc-config-backend"],
+        "artifacts": {
+            "dashboard-backend": {"digest": dashboard_digest},
+            "qqcc-config-backend": {"digest": qqcc_digest},
+        },
+    }
+    observed = {}
+
+    def fake_evidence(_args, evidence_manifest):
+        observed["selected"] = evidence_manifest["selected_artifacts"]
+        return {
+            "track": "control-plane",
+            "release_channel": "main",
+            "artifacts": {
+                "qqcc-config-backend": {
+                    "digest": qqcc_digest,
+                    "status": "verified",
+                }
+            },
+        }
+
+    monkeypatch.setattr(module, "_read_test_artifact_evidence", fake_evidence)
+
+    module._promotion_check(
+        SimpleNamespace(env="prod", command="promote"), manifest
+    )
+
+    assert observed["selected"] == ["qqcc-config-backend"]
+
+
+def test_promote_dashboard_direct_never_requires_test_history(monkeypatch):
+    module = _load_module()
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "selected_artifacts": ["dashboard-backend"],
+        "artifacts": {
+            "dashboard-backend": {"digest": "sha256:" + "1" * 64}
+        },
+    }
+    monkeypatch.setattr(
+        module,
+        "_read_test_artifact_evidence",
+        lambda *_args: pytest.fail("direct artifact must not query test history"),
+    )
+
+    module._promotion_check(
+        SimpleNamespace(env="prod", command="promote"), manifest
+    )
+
+
+def test_combined_independent_release_checks_blockers_for_each_module():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    selection = module.IndependentModuleRelease(
+        name="dashboard+qqcc-config",
+        module_names={"dashboard", "qqcc-config"},
+        artifacts={
+            "dashboard-backend",
+            "dashboard-frontend",
+            "qqcc-config-backend",
+            "qqcc-config-frontend",
+        },
+        previous_sha="b" * 40,
+    )
+
+    with pytest.raises(module.ReleaseError, match="dashboard-qqcc-shared-schema"):
+        module.validate_independent_release_paths(
+            policy,
+            selection,
+            ["dashboard/backend/schemas.py"],
+        )
+
+
+def test_promote_preview_never_starts_a_transaction(monkeypatch, capsys):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend"},
+        level="rolling",
+        matched_rules=["independent-module:dashboard"],
+    )
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "selected_artifacts": ["dashboard-backend"],
+        "artifacts": {
+            "dashboard-backend": {
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": FULL_SHA,
+            }
+        },
+    }
+    monkeypatch.setattr(module, "build_plan", lambda _args: (impact, manifest, "b" * 40))
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(risk_class="owner-tools"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            {},
+            "config-rev",
+            {
+                "drift": False,
+                "service_revisions": {"dashboard-backend": "config-rev"},
+                "credential_isolation": "credential-isolation-complete",
+            },
+        ),
+    )
+    monkeypatch.setattr(module, "disabled_optional_cloud_services", lambda *_: set())
+    monkeypatch.setattr(
+        module,
+        "filter_inactive_control_artifacts",
+        lambda _env, value, _disabled: (value, set()),
+    )
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {})
+    monkeypatch.setattr(module, "inspect_promote_runtime_artifacts", lambda _args: {})
+    monkeypatch.setattr(module, "verify_promote_selected_no_change", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: {"status": "passed", "blockers": []},
+    )
+    monkeypatch.setattr(module, "require_preflight", lambda _report: None)
+    monkeypatch.setattr(
+        module,
+        "new_release_transaction",
+        lambda **_kwargs: pytest.fail("preview must not start a transaction"),
+    )
+
+    assert (
+        module.main(["promote", "--modules", "dashboard", "--sha", FULL_SHA])
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "preview"
+    assert output["mutation"] is False
+
+
+def test_promote_single_confirmation_executes_one_transaction(monkeypatch, capsys):
+    module = _load_module()
+    old_sha = "b" * 40
+    old_ref = "ghcr.io/giraffu/dashboard@sha256:" + "1" * 64
+    new_digest = "sha256:" + "2" * 64
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend"},
+        level="rolling",
+        matched_rules=["independent-module:dashboard"],
+    )
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "selected_artifacts": ["dashboard-backend"],
+        "artifacts": {
+            "dashboard-backend": {
+                "kind": "image",
+                "ref": "ghcr.io/giraffu/dashboard@" + new_digest,
+                "digest": new_digest,
+                "source_sha": FULL_SHA,
+                "oci_revision": FULL_SHA,
+            }
+        },
+        "runpod_profile_pins": {},
+    }
+    previous_state = {
+        "schema_version": 2,
+        "git_sha": old_sha,
+        "artifacts": {
+            "dashboard-backend": {
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": old_sha,
+            }
+        },
+    }
+    calls = []
+
+    def fake_plan(args):
+        args.previous_state = previous_state
+        return impact, manifest, old_sha
+
+    monkeypatch.setattr(module, "build_plan", fake_plan)
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(
+            risk_class="owner-tools",
+            strategy="direct",
+            validation_mode="full",
+            skipped_gates=(),
+            reason="",
+            approved_by="",
+            gates={},
+        ),
+    )
+    monkeypatch.setattr(module, "verify_operator_worktree_clean", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            {},
+            "config-rev",
+            {
+                "drift": False,
+                "service_revisions": {"dashboard-backend": "config-rev"},
+                "credential_isolation": "credential-isolation-complete",
+            },
+        ),
+    )
+    monkeypatch.setattr(module, "disabled_optional_cloud_services", lambda *_: set())
+    monkeypatch.setattr(
+        module,
+        "filter_inactive_control_artifacts",
+        lambda _env, value, _disabled: (value, set()),
+    )
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {})
+    monkeypatch.setattr(module, "verify_promote_selected_no_change", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: {"status": "passed", "blockers": []},
+    )
+    monkeypatch.setattr(module, "require_preflight", lambda _report: None)
+    monkeypatch.setattr(module, "render_track_release_env", lambda *_args, **_kwargs: "ALLBOT_DASHBOARD_BACKEND_IMAGE=new\n")
+    monkeypatch.setattr(
+        module,
+        "inspect_promote_runtime_artifacts",
+        lambda _args: {
+            "dashboard-backend": {
+                "ref": old_ref,
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": old_sha,
+                "oci_revision": old_sha,
+                "config_revision": "config-rev",
+                "container_id": "old-container",
+                "started_at": "2026-01-01T00:00:00Z",
+                "health": "healthy",
+            }
+        },
+    )
+    monkeypatch.setattr(module, "_transaction_dependencies", lambda *_args: object())
+    monkeypatch.setattr(
+        module,
+        "_prepare_promote_rollback_materials",
+        lambda _args, transaction, _env: calls.append(
+            ("prepare", transaction["schema_version"])
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "execute_release_transaction",
+        lambda transaction, _dependencies: calls.append(
+            ("execute", transaction["schema_version"])
+        ),
+    )
+
+    assert (
+        module.main(
+            [
+                "promote",
+                "--modules",
+                "dashboard",
+                "--sha",
+                FULL_SHA,
+                "--confirm-prod",
+            ]
+        )
+        == 0
+    )
+    assert calls == [("prepare", 2), ("execute", 2)]
+    assert '"status": "committed"' in capsys.readouterr().out
+
+
+def test_promote_rollback_env_preserves_mixed_old_artifact_refs():
+    module = _load_module()
+    old_dashboard = "ghcr.io/giraffu/dashboard@sha256:" + "1" * 64
+    old_qqcc = "ghcr.io/giraffu/qqcc@sha256:" + "2" * 64
+    release_env = (
+        "ALLBOT_DASHBOARD_BACKEND_IMAGE=new-dashboard\n"
+        "ALLBOT_QQCC_BOT_IMAGE=new-qqcc\n"
+        "ALLBOT_RELEASE_SHA=" + FULL_SHA + "\n"
+    )
+
+    rendered = module.render_promote_rollback_release_env(
+        release_env,
+        {
+            "dashboard-backend": {"ref": old_dashboard},
+            "qqcc-bot": {"ref": old_qqcc},
+        },
+    )
+
+    assert f"ALLBOT_DASHBOARD_BACKEND_IMAGE={old_dashboard}" in rendered
+    assert f"ALLBOT_QQCC_BOT_IMAGE={old_qqcc}" in rendered
+    assert f"ALLBOT_RELEASE_SHA={FULL_SHA}" in rendered
+
+
+def test_promote_preview_uses_live_digest_instead_of_stale_recorded_state():
+    module = _load_module()
+    live_digest = "sha256:" + "1" * 64
+    target_digest = "sha256:" + "2" * 64
+    args = SimpleNamespace(
+        modules=["central-api"],
+        execute=False,
+        previous_state={
+            "artifacts": {
+                "central-api": {"digest": "sha256:" + "0" * 64},
+            }
+        },
+        promote_runtime_artifacts={
+            "central-api": {"digest": live_digest},
+        },
+    )
+    manifest = {
+        "git_sha": FULL_SHA,
+        "selected_artifacts": ["central-api"],
+        "artifacts": {"central-api": {"digest": target_digest}},
+    }
+
+    preview = module._promote_preview_document(
+        args,
+        module.ReleaseImpact(
+            services={"central-api"}, level="rolling", matched_rules=[]
+        ),
+        manifest,
+        {"status": "passed", "blockers": []},
+    )
+
+    assert preview["artifacts"]["central-api"]["current"] == live_digest
+    assert preview["artifacts"]["central-api"]["target"] == target_digest
+
+
+def test_promote_rollback_snapshot_recovers_source_sha_from_live_oci_revision():
+    module = _load_module()
+    old_sha = "c" * 40
+    old_ref = "ghcr.io/giraffu/central@sha256:" + "1" * 64
+    args = SimpleNamespace(
+        previous_state={"artifacts": {"central-api": {}}},
+        promote_runtime_artifacts={
+            "central-api": {
+                "ref": old_ref,
+                "digest": "sha256:" + "1" * 64,
+                "oci_revision": old_sha,
+                "config_revision": "config-rev",
+                "container_id": "old-central",
+                "started_at": "2026-01-01T00:00:00Z",
+                "health": "healthy",
+            }
+        },
+    )
+
+    previous = module.build_promote_previous_artifacts(
+        args,
+        {"selected_artifacts": ["central-api"]},
+    )
+
+    assert previous["central-api"]["source_sha"] == old_sha
+
+
+def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
+    monkeypatch,
+):
+    module = _load_module()
+    scripts = []
+    old_sha = "b" * 40
+    rollback_path = "/var/lib/allbot/deployments/prod/transactions/control-plane/rollback.env"
+    old_central = "ghcr.io/giraffu/central@sha256:" + "1" * 64
+    old_dashboard = "ghcr.io/giraffu/dashboard@sha256:" + "2" * 64
+    transaction = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "target_sha": FULL_SHA,
+        "previous": {
+            "kind": "immutable",
+            "git_sha": old_sha,
+            "rollback_release_env_path": rollback_path,
+            "artifacts": {
+                "central-api": {
+                    "ref": old_central,
+                    "source_sha": "c" * 40,
+                    "config_revision": "central-config",
+                },
+                "dashboard-backend": {
+                    "ref": old_dashboard,
+                    "source_sha": "d" * 40,
+                    "config_revision": "dashboard-config",
+                },
+            },
+        },
+    }
+    args = SimpleNamespace(
+        env="prod",
+        remote_host="prod-control",
+        remote_checkout_root="/srv/allbot-release",
+        remote_env_file=None,
+    )
+    impact = module.ReleaseImpact(
+        services={"central-api", "dashboard-backend"},
+        level="rolling",
+        matched_rules=[],
+    )
+    monkeypatch.setattr(
+        module,
+        "filter_enabled_cloud_services",
+        lambda *_args: ({"central-api", "dashboard-backend"}, set()),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: scripts.append((host, script, execute)),
+    )
+
+    module._rollback_cloud_stack(args, impact, transaction, {})
+
+    assert len(scripts) == 1
+    script = scripts[0][1]
+    assert rollback_path in script
+    assert f"/srv/allbot-release/releases/{FULL_SHA}" in script
+    assert old_central in script
+    assert old_dashboard in script
+    assert old_sha not in script
+
+
+def test_promote_blocks_pending_secret_rotation_without_exposing_override_flags():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote",
+        accept_pending_secret_rotation=False,
+        reason="",
+        approved_by="",
+    )
+
+    with pytest.raises(
+        module.ReleaseError,
+        match="pending secret rotation blocks promote.*advanced release entry",
+    ):
+        module.require_pending_secret_rotation_acceptance(args, {})
+
+
+def test_release_source_scopes_non_target_snapshot_and_checks_polling_conflict():
+    source = MODULE_PATH.read_text(encoding="utf-8")
+
+    assert "docker ps --filter label=com.docker.compose.project=" in source
+    assert "{{{{.Id}}}}\\t{{{{.Config.Image}}}}\\t{{{{.State.StartedAt}}}}" in source
+    assert "terminated by other getUpdates request" in source
+    assert "Conflict:.*getUpdates" in source
