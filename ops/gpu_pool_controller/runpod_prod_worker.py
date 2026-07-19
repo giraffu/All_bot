@@ -2393,6 +2393,19 @@ def _verified_img2img_image_exact(settings: Any) -> str:
     return RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
 
 
+def _verified_pornmaster_image_exact(settings: Any) -> str:
+    configured = str(settings.image_name_pornmaster_flux2_edit or "").strip()
+    image_repository = RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX.removesuffix(
+        ":"
+    )
+    digest_prefix = f"{image_repository}@sha256:"
+    if configured.startswith(digest_prefix) and re.fullmatch(
+        r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
+    ):
+        return configured
+    return ""
+
+
 def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
     profile_key = normalize_prod_worker_profile(profile)
     if profile_key == "image_to_video":
@@ -2490,7 +2503,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_manifest_key_pornmaster_flux2_edit
                 or RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_pornmaster_image_exact(settings),
             "image_prefix": RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
@@ -2505,7 +2518,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "model_manifest_key": (
                 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_pornmaster_image_exact(settings),
             "image_prefix": RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
