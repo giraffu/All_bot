@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "2bd1b900a6127bfabb857b52430d4558799d8b7e",
+  "batch": "module-config-projections-20260720",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-module-config-projections-20260720",
+  "members": [
+    {
+      "base_sha": "2bd1b900a6127bfabb857b52430d4558799d8b7e",
+      "branch": "codex/a-module-config-projections",
+      "head": "6f8ef98f4acbff187eb3645ed965cefc8341cc5f",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
