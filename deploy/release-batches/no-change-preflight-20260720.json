@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "780cf04e23cf78e7ab7cdd61463381f97d8b50dc",
+  "batch": "no-change-preflight-20260720",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-no-change-preflight-20260720",
+  "members": [
+    {
+      "base_sha": "780cf04e23cf78e7ab7cdd61463381f97d8b50dc",
+      "branch": "codex/a-fix-deploy-module-no-change-preflight-order",
+      "head": "e20d7deb500c674af003c2384f265e1b8216c56f",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
