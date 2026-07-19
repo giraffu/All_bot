@@ -418,15 +418,39 @@ def activate_snapshot(
     snapshot: EnvironmentSnapshot,
     *,
     credential_isolation: str = "pending",
+    preserve_active: bool = False,
 ) -> dict[str, Any]:
     """Write one immutable projection set and atomically select it."""
 
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     previous = load_active_state(root)
-    previous_revision = (
-        str(previous.get("environment_revision")) if previous is not None else None
+    previous_service_revisions = (
+        previous.get("service_revisions") if isinstance(previous, Mapping) else None
     )
+    if preserve_active and isinstance(previous_service_revisions, Mapping):
+        missing = set(previous_service_revisions) - set(snapshot.service_revisions)
+        changed = {
+            str(service)
+            for service, revision in previous_service_revisions.items()
+            if str(snapshot.service_revisions.get(str(service), "")) != str(revision)
+        }
+        if missing or changed:
+            raise ContractError(
+                "scoped activation would change active service projections"
+            )
+    if (
+        preserve_active
+        and previous is not None
+        and previous.get("environment_revision") == snapshot.environment_revision
+    ):
+        previous_revision = previous.get("previous_revision")
+    else:
+        previous_revision = (
+            str(previous.get("environment_revision"))
+            if previous is not None
+            else None
+        )
     revision_dir = root / snapshot.environment_revision
     if revision_dir.exists() and not revision_dir.is_dir():
         raise ContractError("service environment revision path is not a directory")
@@ -452,9 +476,31 @@ def activate_snapshot(
     }
     states = root / "states"
     states.mkdir(mode=0o700, exist_ok=True)
+    activation_id = hashlib.sha256(
+        json.dumps(
+            state["service_revisions"], sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    activation_history = states / "activations"
+    activation_history.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(activation_history, 0o700)
+    activation_path = (
+        activation_history / f"{snapshot.environment_revision}-{activation_id}.json"
+    )
+    activation_text = json.dumps(
+        state, ensure_ascii=False, indent=2, sort_keys=True
+    ) + "\n"
+    if (
+        activation_path.exists()
+        and activation_path.read_text(encoding="utf-8") != activation_text
+    ):
+        raise ContractError("immutable service environment activation conflicts")
+    if not activation_path.exists():
+        _atomic_write(activation_path, activation_text)
+    os.chmod(activation_path, 0o600)
     _atomic_write(
         states / f"{snapshot.environment_revision}.json",
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        activation_text,
     )
     link = root / "current"
     temporary_link = root / f".current.tmp-{os.getpid()}"
@@ -596,19 +642,39 @@ def main(argv: list[str] | None = None) -> int:
         values.update(parse_env_text(args.env_file.read_text(encoding="utf-8")))
         validate_environment_semantics(args.environment, values)
         contract = load_contract(args.contract)
+        requested_services = set(args.service)
+        active = load_active_state(args.root)
+        if active is not None:
+            validate_active_projection_integrity(args.root, active)
+        selected_services = set(requested_services)
+        if requested_services and isinstance(active, Mapping):
+            active_service_revisions = active.get("service_revisions")
+            if not isinstance(active_service_revisions, Mapping):
+                raise ContractError("active service environment state is invalid")
+            selected_services.update(str(name) for name in active_service_revisions)
         snapshot = build_snapshot(
             contract,
             args.environment,
             values,
-            services=set(args.service) or None,
+            services=selected_services or None,
         )
-        active = load_active_state(args.root)
-        if active is not None:
-            validate_active_projection_integrity(args.root, active)
+        if requested_services and isinstance(active, Mapping):
+            active_services = {
+                str(name) for name in active.get("service_revisions", {})
+            }
+            if not active_services <= set(snapshot.projections):
+                raise ContractError(
+                    "scoped activation would remove active service projections"
+                )
         changed = changed_keys(snapshot, active)
         status = _credential_status(args.root)
         if args.command == "activate":
-            active = activate_snapshot(args.root, snapshot, credential_isolation=status)
+            active = activate_snapshot(
+                args.root,
+                snapshot,
+                credential_isolation=status,
+                preserve_active=bool(requested_services),
+            )
             active_revision = snapshot.environment_revision
         else:
             active_revision = (

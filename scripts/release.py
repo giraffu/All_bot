@@ -6331,7 +6331,7 @@ INDEPENDENT_MODULE_ENV_SERVICES = {
     "paid-group-bot": ("paid-group-bot",),
 }
 
-DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = frozenset(
+SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS = frozenset(
     {
         "ALLBOT_ENV_FILE",
         "FILE_BOT_TOKEN",
@@ -6346,6 +6346,11 @@ DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = frozenset(
         "TZ",
         "VITE_MERCHANT_ADDRESS",
     }
+)
+
+# Compatibility name retained for existing audit tooling and historical tests.
+DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = (
+    SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS
 )
 
 
@@ -6685,8 +6690,8 @@ def run_config_command(args: argparse.Namespace) -> int:
             else set()
         )
         reviewed_legacy_keys = (
-            DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS
-            if args.env == "prod" and config_module == "dashboard"
+            SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS
+            if args.env == "prod"
             else frozenset()
         )
         unreviewed_unknown_keys = unknown_keys - reviewed_legacy_keys
@@ -6694,10 +6699,6 @@ def run_config_command(args: argparse.Namespace) -> int:
             raise ReleaseError(
                 "scoped config activation rejects unreviewed unknown keys: "
                 + ", ".join(sorted(unreviewed_unknown_keys))
-            )
-        if inspected.get("active_revision"):
-            raise ReleaseError(
-                "scoped config-apply is only allowed for the initial Dashboard projection"
             )
         _, revision, _activated = _remote_runtime_env_snapshot(args, command="activate")
         print(
@@ -6918,10 +6919,10 @@ def build_parser() -> argparse.ArgumentParser:
         config.add_argument(
             "--module",
             dest="config_module",
-            choices=("dashboard",),
+            choices=tuple(sorted(INDEPENDENT_MODULE_ENV_SERVICES)),
             help=(
-                "stage the initial Dashboard-only service projection without "
-                "restarting containers"
+                "stage only one independent module's service projections "
+                "without restarting containers"
             ),
         )
         config.add_argument("--remote-host")
