@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,6 +85,94 @@ def test_pending_secret_rotation_requires_explicit_risk_acceptance():
     module.require_pending_secret_rotation_acceptance(
         args,
         {"credential_isolation": "pending"},
+    )
+
+
+def test_credential_isolation_completion_requires_fresh_complete_evidence():
+    module = _load_module()
+    evidence = {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "isolation": {
+            "checked_keys": [
+                "AGENT_SECRET_TOKEN",
+                "API_TOKEN",
+                "AUTH_TOKEN",
+                "DASHBOARD_SECRET_KEY",
+                "MINIO_ACCESS_KEY",
+                "MINIO_SECRET_KEY",
+                "QQCC_CONFIG_SECRET_KEY",
+                "R2_ACCESS_KEY",
+                "R2_SECRET_KEY",
+            ],
+            "reused_keys": [],
+        },
+        "health": {
+            "test_worker": True,
+            "prod_control_plane": True,
+            "prod_workers": True,
+        },
+        "old_credentials_revoked": True,
+    }
+
+    validated = module.validate_credential_isolation_evidence(evidence)
+    assert validated["isolation"]["reused_keys"] == []
+
+    evidence["health"]["prod_workers"] = False
+    with pytest.raises(module.ReleaseError, match="health evidence is incomplete"):
+        module.validate_credential_isolation_evidence(evidence)
+
+
+def test_credential_isolation_complete_command_is_explicit_and_audited(
+    tmp_path, monkeypatch, capsys
+):
+    module = _load_module()
+    evidence_path = tmp_path / "isolation.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "isolation": {
+                    "checked_keys": sorted(module.REQUIRED_ISOLATED_SECRET_KEYS),
+                    "reused_keys": [],
+                },
+                "health": {
+                    "test_worker": True,
+                    "prod_control_plane": True,
+                    "prod_workers": True,
+                },
+                "old_credentials_revoked": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    recorded = []
+    monkeypatch.setattr(
+        module,
+        "complete_credential_isolation",
+        lambda args, evidence: (
+            recorded.append((args.approved_by, evidence))
+            or {"audit_sha256": "a" * 64, "completed_at": evidence["generated_at"]}
+        ),
+    )
+
+    result = module.main(
+        [
+            "credential-isolation-complete",
+            "--evidence",
+            str(evidence_path),
+            "--approved-by",
+            "release-owner",
+            "--confirm-prod",
+            "--execute",
+        ]
+    )
+
+    assert result == 0
+    assert recorded[0][0] == "release-owner"
+    assert json.loads(capsys.readouterr().out)["status"] == (
+        "credential-isolation-complete"
     )
 
 
