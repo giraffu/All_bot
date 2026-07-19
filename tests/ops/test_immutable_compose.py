@@ -18,6 +18,18 @@ def _compose(path: Path) -> dict:
     return value
 
 
+def _projection_env_file(projection: str) -> list[dict[str, object]]:
+    return [
+        {
+            "path": (
+                "${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/"
+                f"{projection}.env"
+            ),
+            "required": False,
+        }
+    ]
+
+
 def test_immutable_cloud_compose_has_no_build_or_code_mounts():
     forbidden_mounts = ("src", "backend/app", "workflows", ".env")
 
@@ -49,6 +61,39 @@ def test_every_cloud_service_has_bounded_json_log_rotation():
             "driver": "json-file",
             "options": {"max-size": "50m", "max-file": "5"},
         }, f"{name} is missing bounded json-file logging"
+
+
+def test_service_projection_files_are_optional_during_partial_project_parse():
+    services = _compose(BASE)["services"]
+
+    projected = {
+        name: service["env_file"]
+        for name, service in services.items()
+        if "env_file" in service
+    }
+    assert projected
+    for name, env_files in projected.items():
+        assert len(env_files) == 1, f"{name} must use one service projection"
+        assert env_files[0].get("required") is False, (
+            f"{name} projection must not block parsing an unrelated module"
+        )
+        assert (
+            str(env_files[0].get("path", "")).endswith(f"/{name}.env")
+            or (
+                name == "bot"
+                and str(env_files[0].get("path", "")).endswith("/main-bot.env")
+            )
+            or (
+                name == "qqcc-private-bot-worker"
+                and str(env_files[0].get("path", "")).endswith(
+                    "/private-bot-worker.env"
+                )
+            )
+            or (
+                name == "paid-group-guard-bot"
+                and str(env_files[0].get("path", "")).endswith("/paid-group-bot.env")
+            )
+        )
 
 
 def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose():
@@ -260,10 +305,7 @@ def test_test_runtime_uses_scoped_host_projections_without_test_aliases():
     }
 
     for service, projection in projections.items():
-        assert base[service]["env_file"] == [
-            "${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/"
-            f"{projection}.env"
-        ]
+        assert base[service]["env_file"] == _projection_env_file(projection)
         environment = overlay.get(service, {}).get("environment", {})
         assert "BOT_TYPE" not in environment
         assert "API_BASE" not in environment
@@ -288,10 +330,9 @@ def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
         "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"
     ]
     assert "environment" not in test_services["qqcc-config-backend"]
-    assert base["qqcc-config-backend"]["env_file"] == [
-        "${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/"
-        "qqcc-config-backend.env"
-    ]
+    assert base["qqcc-config-backend"]["env_file"] == _projection_env_file(
+        "qqcc-config-backend"
+    )
     assert test_services["qqcc-config-frontend"]["ports"] == [
         "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8088:8088"
     ]
@@ -327,10 +368,7 @@ def test_prod_runtime_uses_host_projections_for_python_consumers():
     }
 
     for service, projection in projections.items():
-        assert base[service]["env_file"] == [
-            "${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/"
-            f"{projection}.env"
-        ]
+        assert base[service]["env_file"] == _projection_env_file(projection)
         environment = overlay.get(service, {}).get("environment", {})
         assert "BOT_TYPE" not in environment
         assert "API_BASE" not in environment
