@@ -149,7 +149,10 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     img2img = "192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
     i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro"
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
-    scail2 = "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262"
+    scail2 = (
+        "192.168.1.115:5000/allbot/comfy-runpod-scail2"
+        "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607"
+    )
 
     assert config.profiles["img2img_lora"].all_in_one_image_ref == img2img
     assert config.profiles["i2i_pro"].all_in_one_image_ref == i2i_pro

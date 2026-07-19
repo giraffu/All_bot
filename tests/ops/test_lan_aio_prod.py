@@ -21,6 +21,11 @@ from ops.gpu_pool_controller.runtime import (
     RuntimeRenderOverrides,
 )
 
+SCAIL2_BAKED_LAN_IMAGE = (
+    "192.168.1.115:5000/allbot/comfy-runpod-scail2"
+    "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607"
+)
+
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
@@ -573,14 +578,16 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
     assert payload["pulled"][0]["status"] == "loaded_from_runner"
     assert ops.remote_commands == [
         "pkill -f '^docker\\ pull\\ "
-        "192\\.168\\.1\\.115:5000/allbot/comfy\\-runpod\\-scail2:"
-        "20260704\\-sm120\\-xformers\\-pr1262$' || true; timeout 300 docker pull "
-        "'192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262'"
+        "192\\.168\\.1\\.115:5000/allbot/comfy\\-runpod\\-scail2"
+        "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607$' "
+        "|| true; timeout 300 docker pull '"
+        + SCAIL2_BAKED_LAN_IMAGE
+        + "'"
     ]
     assert ops.loaded == [
         (
             "gpu-177-gpu1-scail2",
-            "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262",
+            SCAIL2_BAKED_LAN_IMAGE,
         )
     ]
 
@@ -1663,9 +1670,7 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2:"
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2 "
     ) in docker_command
-    assert (
-        "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262"
-    ) in docker_command
+    assert SCAIL2_BAKED_LAN_IMAGE in docker_command
 
 
 def test_lan_aio_takeover_runs_single_slot_sequence():

@@ -303,7 +303,7 @@ worker 先从驱动视频抽第一帧，调用配置的图片换脸 V2 Comfy API
 - 模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`。
 - LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，因为 workflow 的 LoRA 枚举引用带 `Wan2.1/` 子目录。
 - 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`。
-- 当前 LAN AIO 镜像是 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262`，用于 RTX 5090/Blackwell 节点时保留 xformers 并包含源码编译的 sm_120 attention kernel；不要用 `--disable-xformers` 绕过性能路径。
+- 当前 LAN AIO 镜像由 profile catalog 固定为 verified GPU release `b2587e560fe3f94c941e21777dad40547e3e0158` 的 LAN mirror digest `192.168.1.115:5000/allbot/comfy-runpod-scail2@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607`；镜像内必须 baked 完整 worker bundle，禁止退回宿主 `remote_workers` 挂载。RTX 5090/Blackwell 仍不得用 `--disable-xformers` 绕过性能路径。
 - 镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`。
 - 镜像不得 baked 任何 `.safetensors` 模型权重；LAN AIO 与 RunPod 都应启动时从 `allbot-model-cache` 同步模型。
 
