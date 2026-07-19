@@ -6,7 +6,7 @@
 
 ## Status
 
-Partially superseded by ADR 0007。A-H、单测试站与 forward-fix 决策继续有效；candidate 禁止晋级以及 main 重新构建复测的结论已被取代。
+Superseded by ADR 0008。A-H 与单测试站继续有效；串行 test-train、逐成员 candidate 和候选 promotion 均退出日常流程。
 
 ## Context
 

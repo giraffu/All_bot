@@ -38,8 +38,6 @@ def _repository(tmp_path: Path) -> tuple[Path, Path]:
     _git("commit", "-m", "base", cwd=source)
     _git("remote", "add", "origin", str(remote), cwd=source)
     _git("push", "-u", "origin", "main", cwd=source)
-    _git("switch", "-c", "codex/test-train", cwd=source)
-    _git("push", "-u", "origin", "codex/test-train", cwd=source)
     return source, remote
 
 
@@ -95,7 +93,7 @@ def test_assign_refuses_stale_or_dirty_slot_and_park_requires_remote_copy(tmp_pa
     assert _git("branch", "--show-current", cwd=slot) == ""
 
 
-def test_assign_requires_refresh_after_test_train_advances(tmp_path):
+def test_assign_requires_refresh_after_main_advances(tmp_path):
     module = _load_module()
     repo, _ = _repository(tmp_path)
     manager = module.WorkspaceManager(repo=repo, workspace_root=tmp_path / "workspaces")
@@ -104,7 +102,7 @@ def test_assign_requires_refresh_after_test_train_advances(tmp_path):
     (repo / "next.txt").write_text("next\n", encoding="utf-8")
     _git("add", "next.txt", cwd=repo)
     _git("-c", "user.name=AllBot Tests", "-c", "user.email=tests@example.com", "commit", "-m", "next", cwd=repo)
-    _git("push", "origin", "codex/test-train", cwd=repo)
+    _git("push", "origin", "main", cwd=repo)
 
     with pytest.raises(module.WorkspaceError, match="refresh"):
         manager.assign("B", "new-task")
@@ -160,13 +158,13 @@ def test_claim_refreshes_an_idle_stale_slot_before_assignment(tmp_path):
         "next",
         cwd=repo,
     )
-    _git("push", "origin", "codex/test-train", cwd=repo)
+    _git("push", "origin", "main", cwd=repo)
 
     claimed = manager.claim("fresh-task")
 
     assert claimed["slot"] == "A"
     assert _git("rev-parse", "HEAD", cwd=tmp_path / "workspaces" / "A") == _git(
-        "rev-parse", "origin/codex/test-train", cwd=repo
+        "rev-parse", "origin/main", cwd=repo
     )
 
 
@@ -242,3 +240,125 @@ def test_concurrent_claim_commands_receive_distinct_slots(tmp_path):
         "codex/a-second-window",
         "codex/b-first-window",
     }
+
+
+def test_handoff_freezes_a_pushed_head_and_immediately_releases_the_slot(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    claim = manager.claim("billing-page")
+    slot = workspace_root / "A"
+    (slot / "billing.txt").write_text("ready\n", encoding="utf-8")
+    _git("add", "billing.txt", cwd=slot)
+    _git(
+        "-c",
+        "user.name=AllBot Tests",
+        "-c",
+        "user.email=tests@example.com",
+        "commit",
+        "-m",
+        "billing",
+        cwd=slot,
+    )
+    _git("push", "-u", "origin", claim["branch"], cwd=slot)
+    head = _git("rev-parse", "HEAD", cwd=slot)
+
+    handoff = manager.handoff("A")
+
+    assert handoff == {
+        "slot": "A",
+        "branch": claim["branch"],
+        "head": head,
+        "base_sha": claim["base_sha"],
+    }
+    assert _git("branch", "--show-current", cwd=slot) == ""
+    assert manager.status()[0]["safe_to_assign"] is True
+
+
+def test_batch_plan_freezes_multiple_remote_heads_for_one_main_pr(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    claims = {
+        "A": manager.claim("billing-page"),
+        "B": manager.claim("gallery-search"),
+    }
+    members = []
+    for slot_name, task, filename in (
+        ("A", "billing-page", "billing.txt"),
+        ("B", "gallery-search", "gallery.txt"),
+    ):
+        claim = claims[slot_name]
+        slot = workspace_root / slot_name
+        (slot / filename).write_text("ready\n", encoding="utf-8")
+        _git("add", filename, cwd=slot)
+        _git(
+            "-c",
+            "user.name=AllBot Tests",
+            "-c",
+            "user.email=tests@example.com",
+            "commit",
+            "-m",
+            task,
+            cwd=slot,
+        )
+        _git("push", "-u", "origin", claim["branch"], cwd=slot)
+        members.append(manager.handoff(slot_name))
+
+    plan = manager.plan_batch("july-release", members)
+
+    assert plan["base_ref"] == "origin/main"
+    assert plan["pr_base"] == "main"
+    assert plan["integration_branch"] == "codex/release-batch-july-release"
+    assert plan["container_build_trigger"] == "main-merge"
+    assert plan["members"] == members
+
+    output = tmp_path / "release-batches" / "july-release.json"
+    module.write_batch_plan(output, plan)
+    assert json.loads(output.read_text(encoding="utf-8")) == plan
+    with pytest.raises(module.WorkspaceError, match="already exists"):
+        module.write_batch_plan(output, plan)
+
+
+def test_batch_plan_rejects_a_head_that_moved_after_handoff(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    claim = manager.claim("billing-page")
+    slot = workspace_root / "A"
+    (slot / "billing.txt").write_text("ready\n", encoding="utf-8")
+    _git("add", "billing.txt", cwd=slot)
+    _git(
+        "-c",
+        "user.name=AllBot Tests",
+        "-c",
+        "user.email=tests@example.com",
+        "commit",
+        "-m",
+        "billing",
+        cwd=slot,
+    )
+    _git("push", "-u", "origin", claim["branch"], cwd=slot)
+    member = manager.handoff("A")
+    member["head"] = "f" * 40
+
+    with pytest.raises(module.WorkspaceError, match="handoff head"):
+        manager.plan_batch("july-release", [member])

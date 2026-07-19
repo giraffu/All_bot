@@ -27,11 +27,11 @@
 
 ## 3. 构建契约
 
-CI release index 记录 `validation.mode=full|build-only|promoted`。`full` 候选测试通过，`build-only` 明确记录 tests skipped，`promoted` 只允许 main 且表示复用已批准候选字节。人工 build-only 仍必须由成功 CI 构建；执行不能用 `--skip-ci-checks`，消费它必须使用合法 direct/emergency、显式 `--skip-gate ci-tests` 并填写原因和批准人。
+CI release index 记录 `validation.mode=full|build-only|promoted`。新批次使用 `full`：批次 PR 合入 main 后，上游 main CI 全绿才触发一次模块构建；`build-only` 明确记录 tests skipped，只能经合法 direct/emergency、显式 `--skip-gate ci-tests`、原因和批准人消费；`promoted` 仅用于读取旧 candidate promotion 历史。
 
-并发开发增加独立 `test-candidate` channel。`main` bundle 位于 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；精确 train bundle 位于 `ghcr.io/giraffu/allbot-release-v2-test-candidate:<candidate-sha>`，批准记录位于 `allbot-release-v2-promotions:<candidate-sha>`。Candidate bundle 只能直接部署 test，不能绕过 main 用于 prod。最终候选 `freeze`/`approve-release` 后，main CI 只验证 ancestry、整 tree 相同和证据一致，原样复制 digest/checksum；不重新构建、不重新部署测试、不重打 Public Web。
+并发槽位不再发布独立 candidate。功能分支 handoff 后由集成 AI 一次组合为 release batch，只创建一个 main PR。main bundle 固定发布到 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；`.github/workflows/modular-release-v2.yml` 只监听成功的 main push CI，不监听 test-train，也不在 PR 阶段发布容器。同一 main SHA tag 不可覆盖。
 
-批准记录必须先由集成机的 `approve-release --execute` 读取真实测试站状态并生成。本机 GitHub token 缺少 `write:packages` 时，受保护 `modular-release-v2.yml` 提供 approval-only dispatch：输入精确 train SHA、批准文件 base64 与文件 SHA256；Actions 要求该 SHA 等于当前受保护 train 头，拉取同 SHA candidate descriptor/bundle，调用 `publish_release_approval_v2.py` 复核 full CI、bundle digest、有 `source_sha` 的可晋级 artifact digest/source/status 和批准人后，以 SHA tag 不可覆盖发布。PostgreSQL、Redis、imgproxy 等无 `source_sha` 的 digest-pinned `external-image` 继续由候选 manifest 自身校验，不伪造人工测试证据，也不进入 promotion approval 集合。该 job 与候选构建 job 隔离，不运行 Buildx、`ci_release_v2.py` 或测试部署。远端已存在时必须且只能找到一份 JSON，其字节与本地批准文件完全一致；OCI layer 文件名不同不影响核验，多文件或任一字节不同仍 fail closed。
+用户要求测试时，`release.py` 把该 main bundle 的精确 digest/checksum 部署到云测试；standard artifact 经 `verify-test` 写入 main-channel retained history。生产 standard preflight 按 artifact 名称和 exact digest 查找这份 evidence；direct/emergency 只能按风险策略显式豁免，不能伪装 tested。旧 test-candidate、approval 和 promotion artifact 继续可读以支持历史回滚取证，但不再创建新记录。
 
 受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
 
@@ -45,9 +45,8 @@ manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
 
 发布 v2 release bundle 本身不创建 RunPod，也不要求八个 profile 同时完成业务 canary。
 如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA attestation manifest，
-聚合器不得复用旧 digest。test-candidate 可在 `gpu-execution-manifest.json` 中移除该 profile，
-记录 `completeness=incomplete` 与 `missing_artifacts`，继续推进 control-plane 测试；受保护 main
-只要本轮包含 GPU rebuild，就必须从 OCI `allbot-gpu-release-manifests:<full-sha>` 读取完整证明，
+聚合器不得复用旧 digest。受保护 main 只要本轮包含 GPU rebuild，就必须从 OCI
+`allbot-gpu-release-manifests:<full-sha>` 读取完整证明，
 否则在 main bundle tag 创建前 fail closed。artifact catalog 自身变化会重建全部自有 artifact，
 避免旧镜像被新 metadata 伪装。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
 main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
@@ -68,9 +67,9 @@ manifest 的 base64 与文件 SHA256 交给受保护的
 
 代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision、镜像 digest，以及正式 Dashboard 所需的同 release index RunPod profile digest pin JSON。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复默认解析同一 track-scoped 目录。Dashboard 被选择进 main control-plane 发布时，发布器必须从 gpu-execution manifest 解析完整 `profile -> image@sha256` 映射；缺项、mutable ref 或共用 env 冲突均在 Compose mutation 前 fail closed。仅当控制面回滚目标早于 track 隔离迁移且该文件缺失时，preflight、失败恢复和恢复验证才可兼容同一 SHA 的 `/var/lib/allbot/releases/<sha>/release.env`，正向发布不得写入该兼容路径。
 
-同一镜像必须可由 test/prod 宿主配置解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。`scripts/validate_release_environment_neutral.py` 在 candidate CI 构建前检查上下文和源码，构建后检查真实 image config 与 Web dist，错误只报告变量名。
+同一镜像必须可由 test/prod 宿主配置解析为两个环境。`.dockerignore` 排除 `.env*`、私钥和 SSH 材料；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。`scripts/validate_release_environment_neutral.py` 在 main CI 构建前检查上下文和源码，构建后检查真实 image config 与 Web dist，错误只报告变量名。
 
-若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 candidate 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
+若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 main bundle 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
 
 Compose 合并后的 service `environment` 必须覆盖旧 env 别名。特别是 `BOT_TYPE=TEST` 时 `config._get_env_value("API_BASE")` 会优先读取 `API_BASE_TEST`，test overlay 因此同时钉死 `API_BASE` 和 `API_BASE_TEST` 为 Compose 内部 `central-api` alias；prod overlay 为所有 Python 消费者钉死 `API_BASE`。发布器在 compose health 通过后还会进入实际容器 import `config`，解析值不是 `http://central-api:8003` 则 fail closed，不写成功状态。
 
@@ -116,9 +115,9 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 QQCC 后台独占 LTX 目录把 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 作为同一份受审计 snapshot 契约。只有两者都精确匹配 `deploy/release-policy.yml` 的内容 SHA256 时，才允许分别执行 `qqcc-config` 两服务与 `qqcc-bot` 单服务的 target-only rolling 事务；任何内容漂移都会重新触发共享契约 blocker。
 
-并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
+并发任务先 handoff，再由集成 AI 冻结为一个 release batch 和一个 main PR；A-H 功能工作区不得直接运行发布器。main bundle 构建成功且用户要求测试后，统一通过 `scripts/release.py` 部署。详细 handoff、批次与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
-包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。QQCC Config 候选部署专属测试前后端；Dashboard-only 候选记录 `test-not-required` 且不修改共享测试站。共享构建输入导致同一 bundle 同时选择 Dashboard 与 QQCC Config artifact 时，test preflight 以过滤后的可用测试服务为准：不得启动已移除的 Dashboard，但必须继续部署并验收 QQCC Config；过滤后为空的纯 owner-only 候选仍 fail closed。若 control-plane 的 artifact/service 选择集本身为空，即使相对上个实际部署 SHA 的累积路径把 level 提升到 maintenance，仍按 non-runtime 记录证据，不运行空 preflight/deploy。
+测试默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 按需选择 `test-execution`；未启用时不得写入 acceptance。QQCC Config main artifact 部署专属测试前后端；Dashboard-only 不修改共享测试站。共享构建输入导致同一 bundle 同时包含 Dashboard 与 QQCC Config artifact 时，test preflight 过滤测试环境不存在的 Dashboard 服务，但继续部署并验收 QQCC Config。若 artifact/service 选择集为空，不运行空 preflight/deploy。
 
 `test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
 
@@ -200,7 +199,7 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须选择同一模块集合和同一 digest。
 
-若唯一云测试站当前运行的是已接受但尚未整体晋级 main 的 test-train，可在测试环境用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该文件带 `environment=test`，发布器在生产显式拒绝；它只把本轮已审计、且不属于五个目标 artifact 的 test-train 路径视为非选择漂移，目标模块、digest 与正式窄策略保持一致，未知路径仍为 maintenance。测试 rollback 必须继续指向真实当前 SHA，不得用云端不存在的正式基线伪造回滚点。
+若唯一云测试站仍运行历史 test-train candidate，可在一次迁移期间使用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该兼容 policy 只允许 test，生产显式拒绝；新批次完成 main 部署后不再使用。
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 

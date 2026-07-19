@@ -3334,6 +3334,31 @@ def test_deploy_module_requires_exact_promoted_main_approval():
         module.validate_deploy_module_approval(manifest)
 
 
+def test_deploy_module_accepts_a_full_main_bundle_for_runtime_test_evidence():
+    module = _load_module()
+    manifest = {
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "validation": {"mode": "full", "tests": "passed"},
+        "artifacts": {"web-api": {"digest": "sha256:" + "1" * 64}},
+        "selected_artifacts": ["web-api"],
+    }
+
+    module.validate_deploy_module_approval(manifest)
+
+
+def test_deploy_module_rejects_a_full_bundle_without_explicit_main_identity():
+    module = _load_module()
+    manifest = {
+        "validation": {"mode": "full", "tests": "passed"},
+        "artifacts": {"web-api": {"digest": "sha256:" + "1" * 64}},
+        "selected_artifacts": ["web-api"],
+    }
+
+    with pytest.raises(module.ReleaseError, match="full main build"):
+        module.validate_deploy_module_approval(manifest)
+
+
 def test_promoted_release_env_records_main_and_artifact_source_identity():
     module = _load_module()
     candidate_sha = "b" * 40
