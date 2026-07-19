@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -51,10 +52,22 @@ def _is_lightweight(path: str) -> bool:
     )
 
 
+def _normalize_changed_path(path: str) -> str:
+    normalized = path.strip()
+    if normalized.startswith('"') and normalized.endswith('"'):
+        try:
+            decoded = ast.literal_eval(normalized)
+            if isinstance(decoded, str):
+                normalized = decoded.encode("latin-1").decode("utf-8")
+        except (SyntaxError, ValueError, UnicodeError):
+            pass
+    return normalized.removeprefix("./")
+
+
 def classify_change_scope(paths: Iterable[str]) -> ChangeScopeDecision:
     normalized = tuple(
         dict.fromkeys(
-            path.removeprefix("./").strip()
+            _normalize_changed_path(path)
             for path in paths
             if path and path.strip()
         )

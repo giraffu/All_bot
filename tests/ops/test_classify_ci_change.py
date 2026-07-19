@@ -38,6 +38,22 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
     assert decision.runtime_paths == ()
 
 
+def test_git_quoted_unicode_doc_path_uses_the_lightweight_ci_path():
+    module = _load_module()
+
+    decision = module.classify_change_scope(
+        [
+            '"docs/\\345\\255\\220\\346\\250\\241\\345\\235\\227_'
+            'Git\\344\\270\\215\\345\\217\\257\\345\\217\\230'
+            '\\345\\217\\221\\345\\270\\203_git_immutable_release.md"'
+        ]
+    )
+
+    assert decision.scope == "lightweight"
+    assert decision.requires_full_ci is False
+    assert decision.runtime_paths == ()
+
+
 def test_any_runtime_or_unknown_path_restores_full_ci():
     module = _load_module()
 
