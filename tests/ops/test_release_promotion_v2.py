@@ -412,6 +412,8 @@ def test_main_merge_is_the_only_automatic_container_build_trigger():
     assert "branches: [main]" in workflow
     assert "branches: [codex/test-train]" not in workflow
     assert "github.event.workflow_run.event == 'push'" in workflow
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in workflow
+    assert "python scripts/validate_upstream_ci_run.py" in workflow
     assert "options: [main]" in workflow
     assert "main) channel=main" in workflow
     assert "--require-complete-gpu" in workflow

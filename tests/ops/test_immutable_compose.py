@@ -522,6 +522,11 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert 'workflows: ["Immutable control-plane release"]' in modular
     assert "github.event.workflow_run.conclusion == 'success'" in modular
     assert "github.event.workflow_run.event == 'push'" in modular
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in modular
+    assert "python scripts/validate_upstream_ci_run.py" in modular
+    assert "actions: read" in modular
+    assert "if: steps.source.outputs.validation_mode == 'full'" in modular
+    assert "manual dispatch cannot claim full validation" in modular
 
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():

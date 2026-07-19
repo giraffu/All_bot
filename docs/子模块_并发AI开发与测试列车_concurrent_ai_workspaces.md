@@ -66,13 +66,15 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 ## 5. CI 与构建触发
 
-`.github/workflows/control-plane-release.yml` 在批次 PR 上运行代码门禁，在 main push 上再次建立可信 main CI 结果。`.github/workflows/modular-release-v2.yml` 只消费成功的 main push workflow run：
+`.github/workflows/control-plane-release.yml` 在批次 PR 上运行代码门禁，在 main push 上再次建立可信 main CI 结果。`.github/workflows/modular-release-v2.yml` 默认消费成功的 main push workflow run；若 GitHub 未投递该 push workflow，可对当前 `main` 精确 head 手动重跑同一上游 workflow，作为受控恢复入口。模块化 workflow 会通过 `scripts/validate_upstream_ci_run.py` 重新读取 run metadata 和 jobs，只有 repository、workflow name/path、`head_branch=main`、`head_sha=origin/main`、completed/success 以及 Web、Dashboard、PostgreSQL 和全部 Python shard 都成功时，才把上游 `workflow_dispatch` 视为 `full`：
 
 - 不监听 `codex/test-train`；
 - 不为槽位分支或批次 PR 构建发布容器；
 - 每个合入后的 main SHA 最多创建一次不可覆盖 main bundle；
 - 只重建影响分析选中的 artifact，未变化 artifact 从最近 main bundle 复用；
 - main 涉及 GPU artifact 重建时必须有同 SHA 完整 attestation，否则 bundle 创建失败。
+
+`modular-release-v2.yml` 自身的手动 dispatch 没有测试恢复权限，始终只允许 `validation_mode=build-only`。陈旧 main SHA、缺失或失败的任一预期 test job、错误 workflow/event/branch/repository 都在构建前 fail closed。
 
 旧 `test-candidate`、freeze/approve 和 promotion workflow 不再是新发布入口。历史 bundle 和状态继续由兼容代码读取，但不能用于创建新批次。
 

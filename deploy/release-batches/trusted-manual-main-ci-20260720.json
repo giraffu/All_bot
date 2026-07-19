@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "366cc2fbfab6305e76d35c7d08ade344c69830a7",
+  "batch": "trusted-manual-main-ci-20260720",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-trusted-manual-main-ci-20260720",
+  "members": [
+    {
+      "base_sha": "366cc2fbfab6305e76d35c7d08ade344c69830a7",
+      "branch": "codex/a-ci-workflow-dispatch-upstream",
+      "head": "88b37c8b2729d5c9186548f366e9923876751eec",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
