@@ -46,11 +46,11 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 合并 main 前的 PR CI 可以运行代码门禁，但不会构建或发布容器。只有 main 合并后的 push CI 成功，才触发一次模块化 GitHub Actions 构建并生成 main-channel 不可变 bundle。
 
-纯非运行时变更是批次流程的例外。`scripts/classify_ci_change.py` 仅对白名单中的 docs、`.codex/**`、tests、AGENTS/README、`.github/**`、`deploy/release-policy.yml` 与精确列出的仓库治理/门禁脚本返回 `lightweight`：
+纯非运行时变更是批次流程的例外。`scripts/classify_ci_change.py` 仅对白名单中的 docs、`.codex/**`、tests、AGENTS/README、`.github/**`、`deploy/release-policy.yml`、`deploy/test-acceptance.example.json` 与精确列出的仓库治理/门禁脚本（含 `scripts/release.py`）返回 `lightweight`：
 
 - 可创建单独 PR 直接合入受保护 main，或直接合入仍需维护的兼容分支，不必等待 release batch，也不生成 test-train candidate；
 - PR/main workflow 只运行 change-scope/aggregate gate，跳过全量 Python、PostgreSQL、Web、Dashboard 测试；main push 不创建 release bundle，不部署 test/prod；
-- 任一业务代码、migration、Compose、运行配置、发布执行器或未知路径都会 fail closed 为 `runtime`，恢复完整 CI、main bundle 与按需测试链路；
+- 任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会 fail closed 为 `runtime`，恢复完整 CI、main bundle 与按需测试链路；
 - 轻量路径仍要求本任务运行与改动相称的 focused tests 或文档检查，且不放宽 main 禁止 direct push/force-push。
 
 ## 4. 测试环境与正式发布

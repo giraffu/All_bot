@@ -23,10 +23,12 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
             ".codex/skills/allbot-ops-deployment/SKILL.md",
             ".github/workflows/control-plane-release.yml",
             "deploy/release-policy.yml",
+            "deploy/test-acceptance.example.json",
             "docs/子模块_Git不可变发布_git_immutable_release.md",
             "scripts/classify_ci_change.py",
             "scripts/doc_quality_checker.py",
             "scripts/manage_ai_workspaces.py",
+            "scripts/release.py",
             "scripts/release_strategy.py",
             "scripts/validate_upstream_ci_run.py",
             "tests/ops/test_classify_ci_change.py",
@@ -62,7 +64,6 @@ def test_any_runtime_or_unknown_path_restores_full_ci():
             "docs/README.md",
             "src/core/task_dispatcher.py",
             "deploy/docker-compose-cloud-base.yml",
-            "scripts/release.py",
             "unexpected/runtime.bin",
         ]
     )
@@ -71,7 +72,6 @@ def test_any_runtime_or_unknown_path_restores_full_ci():
     assert decision.requires_full_ci is True
     assert decision.runtime_paths == (
         "deploy/docker-compose-cloud-base.yml",
-        "scripts/release.py",
         "src/core/task_dispatcher.py",
         "unexpected/runtime.bin",
     )
