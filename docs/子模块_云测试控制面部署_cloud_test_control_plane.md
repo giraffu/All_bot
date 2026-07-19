@@ -22,7 +22,7 @@
 - 云端控制面回滚目标若是 track 隔离上线前的历史候选，可能只有 `/var/lib/allbot/releases/<sha>/release.env`。preflight、失败恢复和恢复验证必须先找 `/var/lib/allbot/releases/control-plane/<sha>/release.env`，缺失时才兼容同一 SHA 的 legacy 合约；正向候选仍只生成 track-scoped 合约，禁止回写或覆盖 legacy 文件。
 - v2 两轨事务分别写 `transactions/control-plane/<sha>` 与 `transactions/test-execution/<sha>`，不能因 SHA 相同覆盖彼此；test-execution 首次切换不重跑云端 Postgres/Redis。升级前的无 track Worker 失败 journal 必须用 `release.py recover --env test --track test-execution --transaction <sha> --execute` 收口，发布器兼容读取旧路径并把恢复结果写到新路径。
 - 若 control-plane 状态存在但 `allbot-test-postgres-1` / `allbot-test-redis-1` 缺失，普通 deploy 必须在 Redis drain 处失败，禁止手工 compose。先短暂启动停止的 `cloud-redis-test`，只读核对 worker DB 的 pending/running 均为 0 并立即停止；随后仅可对可信 main bundle 用 `release.py deploy --env test --track control-plane --repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue --execute` 做成对、维护式修复。任一队列非零不得确认。
-- Web 自由P图 v2.5/v3 发布验收共用运行时开关 `enable_free_edit_v3` 和 BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、无 LoRA、预签名上传、投稿与一键应用入口；目标 Worker 可用时分别完成“v2.5 单图”“v2.5 双图”“v3 BF16→换脸”三条黄金路径，其中双图投稿应用必须重新上传两张。Worker 不可用时记录独立待办，不得把未执行写成通过；未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
+- Web 自由P图 v2.5/v3 发布验收共用运行时开关 `enable_free_edit_v3` 和 BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、无 LoRA、预签名上传、投稿与一键应用入口；目标 Worker 可用时分别完成“v2.5 单图”“v2.5 双图”“v3 BF16→换脸”三条黄金路径，其中双图投稿应用必须重新上传两张。Worker 不可用时记录独立待办，不得把未执行写成通过；全部适用 smoke 完成后即可执行 `verify-test`，不再等待固定 24 小时。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`

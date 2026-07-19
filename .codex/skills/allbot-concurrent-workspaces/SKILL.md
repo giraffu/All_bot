@@ -46,11 +46,19 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 合并 main 前的 PR CI 可以运行代码门禁，但不会构建或发布容器。只有 main 合并后的 push CI 成功，才触发一次模块化 GitHub Actions 构建并生成 main-channel 不可变 bundle。
 
+纯非运行时变更是批次流程的例外。`scripts/classify_ci_change.py` 仅对白名单中的 docs、`.codex/**`、tests、AGENTS/README、`.github/**`、`deploy/release-policy.yml` 与精确列出的仓库治理/门禁脚本返回 `lightweight`：
+
+- 可创建单独 PR 直接合入受保护 main，或直接合入仍需维护的兼容分支，不必等待 release batch，也不生成 test-train candidate；
+- PR/main workflow 只运行 change-scope/aggregate gate，跳过全量 Python、PostgreSQL、Web、Dashboard 测试；main push 不创建 release bundle，不部署 test/prod；
+- 任一业务代码、migration、Compose、运行配置、发布执行器或未知路径都会 fail closed 为 `runtime`，恢复完整 CI、main bundle 与按需测试链路；
+- 轻量路径仍要求本任务运行与改动相称的 focused tests 或文档检查，且不放宽 main 禁止 direct push/force-push。
+
 ## 4. 测试环境与正式发布
 
 - 当用户需要部署测试环境时，使用已构建的完整 main SHA：`release.py plan -> preflight -> deploy --env test`。
 - 测试控制面只从目标主机 `/etc/allbot/test.env` 生成权限为 `600` 的逐服务投影；不得把整份 env 注入所有容器，也不得把测试投影复制给正式环境。
 - 测试按 main bundle 中的精确 digest/checksum 验收；standard artifact 通过 `verify-test` 写入 main-channel verified history。
+- `verify-test` 仍要求精确 SHA/digest、全部适用 smoke、真实开始/完成时间和批准人，但不再要求固定 24 小时观察，也没有短观察 override/CLI 确认。
 - 测试失败不回退或改写 main 历史。修复走新的功能 handoff 和新的单批次 main PR，再为新 main SHA 构建一次。
 - 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；每次生产 mutation 仍需用户明确确认和 `--confirm-prod`。
 - 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存可替换/追加目标投影，但必须保证所有非目标 active 投影继续存在且 revision/字节不变；它不调用 Compose 或重启容器，代码发布不能隐式修改宿主 env 或复用测试配置。

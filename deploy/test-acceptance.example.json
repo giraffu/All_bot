@@ -7,10 +7,8 @@
     "web-api": "sha256:<digest>"
   },
   "observation_started_at": "2026-07-01T00:00:00Z",
-  "completed_at": "2026-07-02T00:00:00Z",
+  "completed_at": "2026-07-01T00:10:00Z",
   "approved_by": "operator-name",
-  "short_observation_override": false,
-  "override_reason": "",
   "checks": {
     "health": true,
     "image_task": true,

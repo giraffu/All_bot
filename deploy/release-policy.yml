@@ -298,7 +298,12 @@
         "README.md",
         "AGENTS.md",
         ".gitignore",
-        ".markdownlint.yaml"
+        ".markdownlint.yaml",
+        "scripts/classify_ci_change.py",
+        "scripts/doc_quality_checker.py",
+        "scripts/manage_ai_workspaces.py",
+        "scripts/release_strategy.py",
+        "scripts/validate_upstream_ci_run.py"
       ],
       "level": "none",
       "services": []

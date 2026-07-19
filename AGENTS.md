@@ -12,6 +12,7 @@
 - **主目录自动接单 (Auto Claim)**：用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时，必须先加载 `allbot-concurrent-workspaces` 并执行 `python scripts/manage_ai_workspaces.py claim --task <slug>`，后续只在返回的 A-H 槽位中工作。槽位以 `origin/main` 为基线；完成后推送并执行 `handoff`，用不可变 branch/head 交接并立即释放槽位。纯查询/审查和集成发布任务不抢占槽位；无空闲槽位时必须在编辑前停止，不得回退到主目录开发。
 - **能力与授权分离 (Capability vs. Authority)**：A-H 可以读取真实 env、配置、凭据、日志和远端状态，用于只读核对、本地测试与计划；不得泄露秘密原文。凭据可见不代表获准部署或修改共享 test、prod、Cloudflare、RunPod/GPU、数据库或发布状态。槽位依赖应独立，但发现运行中任务使用历史共享依赖时只记录风险，不得自动中断或清理。
 - **单批次 main 集成与不可变发布 (Batch Main Release)**：并行槽位不再逐个进入 test-train。集成 AI 冻结多个 handoff head，一次组合为 `release-batch`，只创建一个 main PR；批次 PR 只跑代码门禁，合入 main 后才由 GitHub Actions 构建一次 main-channel digest-pinned bundle。用户需要时再部署该 main SHA 到测试环境并按精确 digest 验收；正式发布仍只接受 main 可达完整 SHA、成功 CI、配置/健康/事务/回滚门禁和每次明确的 `--confirm-prod`。云端禁止 rsync、现场 build、源码 bind mount和 `latest`；GPU/LAN AIO/RunPod 继续使用专用 operator/canary。
+- **非运行时轻量合入 (Non-runtime Fast Merge)**：仅由 `scripts/classify_ci_change.py` 窄白名单判定的 docs、Skills、tests、仓库治理与 CI 门禁元数据变更，可通过单独 PR 直接合入受保护 main 或兼容分支；不进入 release batch/test-train candidate，不跑全量模块测试，不构建或发布 release bundle，也不部署测试/正式环境。任一业务代码、migration、Compose、运行配置、发布执行器或未知路径都会恢复完整 CI 与发布流程；轻量路径不等于允许 direct push main。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 

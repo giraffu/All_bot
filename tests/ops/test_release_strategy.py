@@ -84,10 +84,11 @@ def test_direct_and_emergency_have_auditable_default_skips():
         approved_by="owner",
     )
 
-    expected = {"test-deploy", "test-acceptance", "observation"}
+    expected = {"test-deploy", "test-acceptance"}
     assert set(owner.skipped_gates) == expected
     assert set(emergency.skipped_gates) == expected
     assert emergency.gates["test-acceptance"] == "skipped"
+    assert "observation" not in emergency.gates
     assert emergency.gates["immutable-artifact"] == "required"
 
 

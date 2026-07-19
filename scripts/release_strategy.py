@@ -11,7 +11,6 @@ SKIPPABLE_GATES = {
     "ci-tests",
     "test-deploy",
     "test-acceptance",
-    "observation",
     "gpu-business-canary",
 }
 OWNER_TOOL_ARTIFACTS = {
@@ -34,7 +33,6 @@ NON_RUNTIME_ARTIFACTS = {
 DIRECT_DEFAULT_SKIPS = {
     "test-deploy",
     "test-acceptance",
-    "observation",
 }
 
 
@@ -197,7 +195,6 @@ def decide_release_strategy(
         "test-acceptance": (
             "skipped" if "test-acceptance" in skipped else "required"
         ),
-        "observation": "skipped" if "observation" in skipped else "required",
         "gpu-artifact-attestation": (
             "required" if track == "gpu-execution" else "not-applicable"
         ),
