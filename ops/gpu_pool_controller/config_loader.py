@@ -182,6 +182,7 @@ def _parse_profiles(raw_profiles: dict[str, Any]) -> dict[str, TaskProfile]:
             model_prefix=data.get("model_prefix"),
             model_manifest_key=data.get("model_manifest_key"),
             lan_workspace_key=data.get("lan_workspace_key"),
+            lan_model_workspace_key=data.get("lan_model_workspace_key"),
         )
     return profiles
 

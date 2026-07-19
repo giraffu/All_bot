@@ -183,6 +183,8 @@ profiles:
     # Keep immutable ComfyUI/custom-node bytes aligned with the baked image.
     # The previous unversioned workspace contained stale code and is retained for rollback.
     lan_workspace_key: scail2-b2587e56
+    # Models are immutable under the same manifest and can be reused without copying code.
+    lan_model_workspace_key: scail2
 
   wan22_video_v2:
     runtime_profile: wan22_video_v2
