@@ -233,9 +233,55 @@ jobs:
           qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
           backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
           web_ref="$(jq -r '.artifacts["web-api"].ref' release-v2/control-plane-manifest.json)"
+          backend_env=(
+            -e ALLBOT_ENV=test
+            -e BOT_TYPE=TEST
+            -e ALLBOT_STATE_ROOT=/tmp/allbot
+            -e DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:1/bot_db
+            -e REDIS_URL=redis://127.0.0.1:1/0
+            -e WORKER_REDIS_URL=redis://127.0.0.1:1/1
+            -e API_BASE=http://127.0.0.1:1
+            -e API_TOKEN=ci-smoke-api-token
+            -e AUTH_TOKEN=ci-smoke-auth-token
+            -e AGENT_SECRET_TOKEN=ci-smoke-agent-token
+            -e BOT_TOKEN=123456:ci-smoke-only
+            -e MINIO_ENDPOINT=127.0.0.1:1
+            -e MINIO_ACCESS_KEY=ci-smoke-access
+            -e MINIO_SECRET_KEY=ci-smoke-secret
+            -e MINIO_BUCKET=ci-smoke-data
+            -e MINIO_RESULT_BUCKET=ci-smoke-results
+            -e MINIO_TEMPLATE_BUCKET=ci-smoke-templates
+            -e MINIO_SECURE=false
+            -e MINIO_PUBLIC_URL=http://127.0.0.1:1
+            -e DB_POOL_SIZE=5
+            -e DB_MAX_OVERFLOW=10
+            -e R2_MAX_POOL_CONNECTIONS=10
+            -e R2_EXISTS_POSITIVE_TTL_SECONDS=60
+            -e R2_EXISTS_NEGATIVE_TTL_SECONDS=5
+            -e R2_EXISTS_CACHE_MAX_ENTRIES=100
+            -e R2_HEAD_SEMAPHORE_LIMIT=2
+            -e R2_HEAD_CONNECT_TIMEOUT_SECONDS=1
+            -e R2_HEAD_READ_TIMEOUT_SECONDS=1
+            -e R2_HEAD_MAX_ATTEMPTS=1
+            -e POLL_INTERVAL=2
+            -e POLL_TIMEOUT=10
+            -e ENABLE_PUBLIC_SHARE=false
+            -e ENABLE_FREE_EDIT_V2=false
+            -e ENABLE_SCAIL2_LONG_ACTION_TRANSFER=false
+            -e DAILY_LIMIT=10
+            -e JWT_SECRET_KEY=ci-smoke-jwt-secret
+            -e DASHBOARD_SECRET_KEY=ci-smoke-dashboard-secret
+            -e DASHBOARD_ADMIN_USERNAME=ci-smoke-admin
+            -e DASHBOARD_ADMIN_PASSWORD_HASH=ci-smoke-password-hash
+            -e QQCC_CONFIG_SECRET_KEY=ci-smoke-qqcc-secret
+            -e QQCC_CONFIG_ADMIN_USERNAME=ci-smoke-qqcc-admin
+            -e QQCC_CONFIG_ADMIN_PASSWORD_HASH=ci-smoke-qqcc-password-hash
+            -e QQCC_CONFIG_ADMIN_HOST=qqcc-config.ci.invalid
+            -e PRIVATE_QQCC_BOT_OWNER_HOST=private-bot.ci.invalid
+          )
           docker run --rm --entrypoint sh "$dashboard_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
-          docker run --rm --entrypoint python -e MINIO_ENDPOINT=127.0.0.1:1 "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
+          docker run --rm --entrypoint python "${backend_env[@]}" "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
 
       - name: Inspect release images and Web bytes for environment neutrality

@@ -360,6 +360,17 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     ) in workflow
     assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
     assert "MINIO_ENDPOINT=127.0.0.1:1" in workflow
+    for synthetic_runtime_key in (
+        "ALLBOT_ENV=test",
+        "BOT_TYPE=TEST",
+        "DASHBOARD_SECRET_KEY=ci-smoke-dashboard-secret",
+        "DASHBOARD_ADMIN_USERNAME=ci-smoke-admin",
+        "DASHBOARD_ADMIN_PASSWORD_HASH=ci-smoke-password-hash",
+        "QQCC_CONFIG_SECRET_KEY=ci-smoke-qqcc-secret",
+        "QQCC_CONFIG_ADMIN_USERNAME=ci-smoke-qqcc-admin",
+        "QQCC_CONFIG_ADMIN_PASSWORD_HASH=ci-smoke-qqcc-password-hash",
+    ):
+        assert synthetic_runtime_key in workflow
     assert "oras repo tags" in workflow
     assert 'git rev-list --first-parent "${SOURCE_SHA}^"' in workflow
     assert "--skip-git-checks --skip-ci-checks --skip-env-checks" in workflow
