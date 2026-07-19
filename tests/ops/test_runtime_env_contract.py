@@ -148,6 +148,7 @@ def test_gpu_worker_keys_are_outside_control_plane_revision_and_impact():
         {
             "ALLBOT_WORKER_I2I_PRO_IMAGE": "registry.example/worker@sha256:old",
             "CLOUD_TEST_WORKER_ENABLED": "false",
+            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED": "false",
         }
     )
     changed_values = dict(original_values)
@@ -155,6 +156,7 @@ def test_gpu_worker_keys_are_outside_control_plane_revision_and_impact():
         {
             "ALLBOT_WORKER_I2I_PRO_IMAGE": "registry.example/worker@sha256:new",
             "CLOUD_TEST_WORKER_ENABLED": "true",
+            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED": "true",
         }
     )
 
@@ -169,18 +171,28 @@ def test_gpu_worker_keys_are_outside_control_plane_revision_and_impact():
     assert changed.service_revisions == original.service_revisions
     assert "ALLBOT_WORKER_I2I_PRO_IMAGE" not in changed.key_hashes
     assert "CLOUD_TEST_WORKER_ENABLED" not in changed.key_hashes
+    assert "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED" not in changed.key_hashes
     assert module.changed_keys(changed, active) == set()
     assert module.affected_services(
         contract,
-        {"ALLBOT_WORKER_I2I_PRO_IMAGE", "CLOUD_TEST_WORKER_ENABLED"},
+        {
+            "ALLBOT_WORKER_I2I_PRO_IMAGE",
+            "CLOUD_TEST_WORKER_ENABLED",
+            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
+        },
     ) == set()
     assert module.unknown_changed_keys(
         contract,
-        {"ALLBOT_WORKER_I2I_PRO_IMAGE", "CLOUD_TEST_WORKER_ENABLED"},
+        {
+            "ALLBOT_WORKER_I2I_PRO_IMAGE",
+            "CLOUD_TEST_WORKER_ENABLED",
+            "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED",
+        },
     ) == set()
     assert all(
         "ALLBOT_WORKER_I2I_PRO_IMAGE" not in projection
         and "CLOUD_TEST_WORKER_ENABLED" not in projection
+        and "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED" not in projection
         for projection in changed.projections.values()
     )
 
