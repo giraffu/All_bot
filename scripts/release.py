@@ -3355,7 +3355,7 @@ printf '%s\n' {shlex.quote(completion_marker)}
         migration = f"""install -d -m 700 {backup_dir}
 backup_file={backup_dir}/pre-{sha}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
 umask 077
-{compose} run --rm -T web-api sh -lc 'url="${{DATABASE_URL/postgresql+asyncpg:/postgresql:}}"; exec pg_dump "$url"' </dev/null | gzip -c > "$backup_file"
+{compose} run --rm -T web-api sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; exec pg_dump "$url"' </dev/null | gzip -c > "$backup_file"
 test -s "$backup_file"
 heads="$({compose} run --rm -T web-api alembic heads </dev/null | grep -c ' (head)$')"
 test "$heads" = 1
@@ -6286,7 +6286,7 @@ install -d -m 700 "$backup_dir"
 test "$(printf '%s\n' "$container_id" | sed '/^$/d' | wc -l)" = 1
 backup_file="$backup_dir/config-pre-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 umask 077
-docker exec "$container_id" sh -lc 'url="${{DATABASE_URL/postgresql+asyncpg:/postgresql:}}"; exec pg_dump "$url"' | gzip -c > "$backup_file"
+docker exec "$container_id" sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; exec pg_dump "$url"' | gzip -c > "$backup_file"
 test -s "$backup_file"
 heads="$(docker exec "$container_id" alembic heads | grep -c ' (head)$')"
 test "$heads" = 1
