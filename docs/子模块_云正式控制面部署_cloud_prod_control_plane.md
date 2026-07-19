@@ -5,7 +5,7 @@
 
 2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组每个 artifact 自己的已部署 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失项按成功 history 时间顺序只读恢复，组内混合版本不要求伪造共同基线。提交目标状态时不覆盖非目标版本，目标 SHA 上其它新产物不自动并入。migration、未知共享 Compose/env 和未审计跨模块契约仍 fail closed；只有 policy 中内容 SHA256 固定的 owner-only/向后兼容 snapshot 可作为精确例外，内容变化立即阻断。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
 
-2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，保证其 service revision、文件内容和权限均不变。局部 apply 只追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何已激活服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
+2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，允许本次目标服务更新 revision，同时保证所有非目标 active 服务继续存在且 revision、投影字节和权限均不变。局部 apply 只替换或追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何非目标 active 服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。目标更新会保留不可变 activation history 和完整旧联合状态，供显式 rollback 恢复。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 

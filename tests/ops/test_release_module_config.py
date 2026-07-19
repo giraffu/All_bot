@@ -408,6 +408,56 @@ def test_scoped_config_apply_adds_module_after_initial_activation_without_runtim
     assert '"status": "config-staged"' in capsys.readouterr().out
 
 
+def test_scoped_config_apply_accepts_active_target_projection_change(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "b" * 64,
+        "affected_services": ["dashboard-backend"],
+        "unknown_keys": [],
+        "drift": True,
+    }
+    activated = dict(inspected, active_revision="a" * 64, drift=False)
+    events = []
+
+    def snapshot(_args, **kwargs):
+        command = kwargs.get("command", "inspect")
+        events.append(command)
+        return ({}, "a" * 64, activated if command == "activate" else inspected)
+
+    monkeypatch.setattr(module, "_remote_runtime_env_snapshot", snapshot)
+    monkeypatch.setattr(
+        module, "_prepare_config_backup", lambda *a, **k: events.append("backup")
+    )
+    monkeypatch.setattr(
+        module, "_config_apply_cloud", lambda *a, **k: events.append("compose")
+    )
+    monkeypatch.setattr(
+        module, "_set_config_maintenance", lambda *a, **k: events.append("maintenance")
+    )
+
+    assert (
+        module.main(
+            [
+                "config-apply",
+                "--env",
+                "prod",
+                "--module",
+                "dashboard",
+                "--confirm-prod",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    assert events == ["inspect", "activate"]
+    assert '"services": [\n    "dashboard-backend"' in capsys.readouterr().out
+
+
 def test_scoped_config_apply_rejects_active_projection_change_outside_module(
     monkeypatch,
 ):
