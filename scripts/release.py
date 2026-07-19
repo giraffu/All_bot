@@ -3225,7 +3225,9 @@ def _deploy_cloud(
     services = " ".join(shlex.quote(service) for service in cloud_services)
     resolved_api_base_checks = "".join(
         f"{compose} exec -T {shlex.quote(service)} python -c "
-        "'import config; assert config.API_BASE == \"http://central-api:8003\"' "
+        "'import config, urllib.request; "
+        "urllib.request.urlopen(config.API_BASE.rstrip(\"/\") + \"/health\", "
+        "timeout=5).read()' "
         "</dev/null\n"
         for service in cloud_services
         if service

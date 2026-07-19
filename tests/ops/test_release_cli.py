@@ -1892,13 +1892,16 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     assert "docker exec cloud-central-api-test python -c" in script
     assert "</dev/null" in script
     assert (
-        "exec -T bot python -c 'import config; "
-        'assert config.API_BASE == "http://central-api:8003"\''
+        "exec -T bot python -c 'import config, urllib.request; "
+        'urllib.request.urlopen(config.API_BASE.rstrip("/") + "/health", '
+        "timeout=5).read()'"
     ) in script
     assert (
-        "exec -T web-api python -c 'import config; "
-        'assert config.API_BASE == "http://central-api:8003"\''
+        "exec -T web-api python -c 'import config, urllib.request; "
+        'urllib.request.urlopen(config.API_BASE.rstrip("/") + "/health", '
+        "timeout=5).read()'"
     ) in script
+    assert 'config.API_BASE == "http://central-api:8003"' not in script
     assert "docker inspect --format '{{.Config.Image}}'" in script
     assert 'test "$actual_image" = "$ALLBOT_APP_IMAGE"' in script
     assert "org.opencontainers.image.revision" in script
