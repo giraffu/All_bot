@@ -206,7 +206,22 @@ def test_config_plan_only_prints_key_names_services_and_revisions(monkeypatch, c
     assert "/must-not-be-printed" not in json.dumps(document)
 
 
-def test_dashboard_config_plan_limits_remote_projection_to_dashboard_services(
+@pytest.mark.parametrize(
+    ("module_name", "expected_services"),
+    [
+        ("central-api", {"central-api"}),
+        ("web-api", {"web-api"}),
+        ("payment-api", {"payment-api"}),
+        ("dashboard", {"dashboard-backend", "dashboard-frontend"}),
+        ("main-bot", {"main-bot"}),
+        ("qqcc-bot", {"qqcc-bot"}),
+        ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
+        ("private-bot-worker", {"private-bot-worker"}),
+        ("paid-group-bot", {"paid-group-bot"}),
+    ],
+)
+def test_module_config_plan_limits_remote_projection_to_module_services(
+    module_name, expected_services,
     monkeypatch, capsys
 ):
     module = _load_module()
@@ -227,14 +242,10 @@ def test_dashboard_config_plan_limits_remote_projection_to_dashboard_services(
                         "contract_revision": "b" * 64,
                         "drift": True,
                         "changed_keys": ["RUNPOD_RELEASE_PROFILE_PINS_JSON"],
-                        "affected_services": [
-                            "dashboard-backend",
-                            "dashboard-frontend",
-                        ],
+                        "affected_services": sorted(expected_services),
                         "unknown_keys": [],
                         "service_revisions": {
-                            "dashboard-backend": "c" * 64,
-                            "dashboard-frontend": "d" * 64,
+                            service: "c" * 64 for service in expected_services
                         },
                         "present_keys": ["ALLBOT_ENV"],
                         "public_values": {},
@@ -245,12 +256,15 @@ def test_dashboard_config_plan_limits_remote_projection_to_dashboard_services(
         ),
     )
 
-    assert module.main(["config-plan", "--env", "prod", "--module", "dashboard"]) == 0
+    assert module.main(
+        ["config-plan", "--env", "prod", "--module", module_name]
+    ) == 0
     capsys.readouterr()
 
-    assert "--service dashboard-backend" in commands[0]
-    assert "--service dashboard-frontend" in commands[0]
-    assert "--service web-api" not in commands[0]
+    for service in expected_services:
+        assert f"--service {service}" in commands[0]
+    for service in set(module.CONFIG_SERVICE_TO_COMPOSE) - expected_services:
+        assert f"--service {service}" not in commands[0]
 
 
 def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, capsys):
@@ -344,7 +358,57 @@ def test_initial_dashboard_config_apply_rejects_unreviewed_unknown_key(monkeypat
         )
 
 
-def test_dashboard_config_apply_rejects_scoped_update_after_initial_activation(
+def test_scoped_config_apply_adds_module_after_initial_activation_without_runtime_mutation(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "a" * 64,
+        "affected_services": ["qqcc-config-backend", "qqcc-config-frontend"],
+        "unknown_keys": [],
+        "drift": True,
+    }
+    activated = dict(inspected, drift=False)
+    events = []
+
+    def snapshot(_args, **kwargs):
+        command = kwargs.get("command", "inspect")
+        events.append(command)
+        return ({}, "a" * 64, activated if command == "activate" else inspected)
+
+    monkeypatch.setattr(module, "_remote_runtime_env_snapshot", snapshot)
+    monkeypatch.setattr(
+        module, "_prepare_config_backup", lambda *a, **k: events.append("backup")
+    )
+    monkeypatch.setattr(
+        module, "_config_apply_cloud", lambda *a, **k: events.append("compose")
+    )
+    monkeypatch.setattr(
+        module, "_set_config_maintenance", lambda *a, **k: events.append("maintenance")
+    )
+
+    assert (
+        module.main(
+            [
+                "config-apply",
+                "--env",
+                "prod",
+                "--module",
+                "qqcc-config",
+                "--confirm-prod",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    assert events == ["inspect", "activate"]
+    assert '"status": "config-staged"' in capsys.readouterr().out
+
+
+def test_scoped_config_apply_rejects_active_projection_change_outside_module(
     monkeypatch,
 ):
     module = _load_module()
@@ -358,14 +422,14 @@ def test_dashboard_config_apply_rejects_scoped_update_after_initial_activation(
                 "environment": "prod",
                 "environment_revision": "a" * 64,
                 "active_revision": "b" * 64,
-                "affected_services": ["dashboard-backend"],
+                "affected_services": ["dashboard-backend", "qqcc-bot"],
                 "unknown_keys": [],
                 "drift": True,
             },
         ),
     )
 
-    with pytest.raises(module.ReleaseError, match="initial Dashboard projection"):
+    with pytest.raises(module.ReleaseError, match="escaped its service closure"):
         module.run_config_command(
             module.build_parser().parse_args(
                 [
@@ -373,7 +437,7 @@ def test_dashboard_config_apply_rejects_scoped_update_after_initial_activation(
                     "--env",
                     "prod",
                     "--module",
-                    "dashboard",
+                    "qqcc-bot",
                     "--confirm-prod",
                     "--execute",
                 ]

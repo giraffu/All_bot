@@ -406,3 +406,182 @@ def test_full_inspect_detects_services_missing_from_scoped_initial_activation(
     assert full["active_revision"] == scoped["environment_revision"]
     assert full["drift"] is True
     assert "web-api" in full["affected_services"]
+
+
+def test_scoped_activation_adds_module_without_rewriting_active_projections(
+    tmp_path, capsys
+):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(_environment("prod")), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--service",
+                "dashboard-backend",
+                "--service",
+                "dashboard-frontend",
+            ]
+        )
+        == 0
+    )
+    first = json.loads(capsys.readouterr().out)
+    dashboard_backend = root / "current" / "dashboard-backend.env"
+    dashboard_frontend = root / "current" / "dashboard-frontend.env"
+    before = {
+        "dashboard-backend": dashboard_backend.read_bytes(),
+        "dashboard-frontend": dashboard_frontend.read_bytes(),
+    }
+
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--service",
+                "qqcc-config-backend",
+                "--service",
+                "qqcc-config-frontend",
+            ]
+        )
+        == 0
+    )
+    second = json.loads(capsys.readouterr().out)
+    active = module.load_active_state(root)
+
+    assert active is not None
+    assert set(active["service_revisions"]) == {
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+    }
+    assert dashboard_backend.read_bytes() == before["dashboard-backend"]
+    assert dashboard_frontend.read_bytes() == before["dashboard-frontend"]
+    assert first["environment_revision"] == second["environment_revision"]
+    assert active["previous_revision"] is None
+    assert second["drift"] is False
+    activation_history = root / "states" / "activations"
+    history_files = sorted(activation_history.glob("*.json"))
+    assert len(history_files) == 2
+    assert activation_history.stat().st_mode & 0o777 == 0o700
+    assert all(path.stat().st_mode & 0o777 == 0o600 for path in history_files)
+
+
+def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    values = _environment("prod")
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            ["activate", *common, "--service", "dashboard-backend"]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    values["DASHBOARD_SECRET_KEY"] = "rotated-dashboard-secret"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(
+            ["inspect", *common, "--service", "qqcc-config-backend"]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+
+    assert "dashboard-backend" in inspected["affected_services"]
+    assert "qqcc-config-backend" in inspected["affected_services"]
+
+    assert (
+        module.main(
+            ["activate", *common, "--service", "qqcc-config-backend"]
+        )
+        == 2
+    )
+    assert "would change active service projections" in capsys.readouterr().err
+
+
+def test_full_activation_rollback_restores_incrementally_merged_projection_set(
+    tmp_path, capsys
+):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    values = _environment("prod")
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert module.main(["activate", *common, "--service", "qqcc-bot"]) == 0
+    capsys.readouterr()
+    merged = module.load_active_state(root)
+    assert merged is not None
+    assert set(merged["service_revisions"]) == {"dashboard-backend", "qqcc-bot"}
+
+    values["API_TOKEN"] = "rotated-prod-api-token"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    assert module.main(["activate", *common]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert full["environment_revision"] != first["environment_revision"]
+
+    assert (
+        module.main(
+            [
+                "rollback",
+                *common,
+                "--expected-revision",
+                full["environment_revision"],
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    restored = module.load_active_state(root)
+    assert restored is not None
+    assert set(restored["service_revisions"]) == {
+        "dashboard-backend",
+        "qqcc-bot",
+    }

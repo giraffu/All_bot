@@ -5,6 +5,8 @@
 
 2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组每个 artifact 自己的已部署 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失项按成功 history 时间顺序只读恢复，组内混合版本不要求伪造共同基线。提交目标状态时不覆盖非目标版本，目标 SHA 上其它新产物不自动并入。migration、未知共享 Compose/env 和未审计跨模块契约仍 fail closed；只有 policy 中内容 SHA256 固定的 owner-only/向后兼容 snapshot 可作为精确例外，内容变化立即阻断。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
 
+2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，保证其 service revision、文件内容和权限均不变。局部 apply 只追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何已激活服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。
+
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
 > 2026-07-16 维护模式选择：每次正式发布独立选择，用户当次未说明时默认开启生成维护；只有用户对该次发布明确要求不开维护，且 `release.py plan|preflight` 证明变更可按 `rolling`/`none` 无维护执行时，才允许关闭。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被覆盖。当前发布器若不能表达并证明请求模式与实际模式一致，必须在 mutation 前停止并修发布契约；禁止手工写删 marker、执行本页归档脚本或静默按另一模式上线。正式总结同时记录请求/default、planner level 与实际模式。
