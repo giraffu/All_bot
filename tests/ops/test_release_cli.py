@@ -201,6 +201,50 @@ def test_gpu_runtime_change_blocks_the_normal_release_path():
     assert impact.blockers == {"gpu-runtime-release-required"}
 
 
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "ops/gpu_pool_controller/lan_aio_prod.py",
+        "scripts/gpu_release_rollout.py",
+        "scripts/runpod_prod_ops.sh",
+    ],
+)
+def test_gpu_control_operator_change_rolls_only_dashboard_without_gpu_blocker(
+    changed_path,
+):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, [changed_path])
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend"}
+    assert impact.blockers == set()
+    assert impact.matched_rules == ["gpu-control-operator"]
+
+
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "scripts/lan_aio_fleet_prod_ops.py",
+        "scripts/lan_aio_prod_ops.sh",
+        "scripts/lan_scail2_aio_prod.sh",
+    ],
+)
+def test_gpu_host_operator_change_has_no_control_plane_release_target(
+    changed_path,
+):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, [changed_path])
+
+    assert impact.level == "none"
+    assert impact.services == set()
+    assert impact.blockers == set()
+    assert impact.matched_rules == ["gpu-host-operator"]
+
+
 def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     monkeypatch, tmp_path
 ):
@@ -765,7 +809,6 @@ def test_repository_governance_gate_paths_have_no_runtime_release_impact():
             "scripts/classify_ci_change.py",
             "scripts/doc_quality_checker.py",
             "scripts/manage_ai_workspaces.py",
-            "scripts/release_strategy.py",
             "scripts/validate_upstream_ci_run.py",
             "tests/ops/test_classify_ci_change.py",
         ],

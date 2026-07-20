@@ -29,7 +29,6 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
             "scripts/doc_quality_checker.py",
             "scripts/manage_ai_workspaces.py",
             "scripts/release.py",
-            "scripts/release_strategy.py",
             "scripts/validate_upstream_ci_run.py",
             "tests/ops/test_classify_ci_change.py",
         ]
@@ -37,6 +36,9 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
 
     assert decision.scope == "lightweight"
     assert decision.requires_full_ci is False
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is False
+    assert decision.operator_paths == ()
     assert decision.runtime_paths == ()
 
 
@@ -70,6 +72,9 @@ def test_any_runtime_or_unknown_path_restores_full_ci():
 
     assert decision.scope == "runtime"
     assert decision.requires_full_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is True
+    assert decision.operator_paths == ()
     assert decision.runtime_paths == (
         "deploy/docker-compose-cloud-base.yml",
         "src/core/task_dispatcher.py",
@@ -84,4 +89,86 @@ def test_empty_change_set_fails_closed_to_full_ci():
 
     assert decision.scope == "runtime"
     assert decision.requires_full_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is True
     assert decision.runtime_paths == ("<empty-change-set>",)
+
+
+def test_gpu_operator_changes_use_focused_ci_but_still_build_release_artifacts():
+    module = _load_module()
+
+    decision = module.classify_change_scope(
+        [
+            "docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md",
+            "ops/gpu_pool_controller/lan_aio_prod.py",
+            "scripts/lan_aio_fleet_prod_ops.py",
+            "tests/ops/test_lan_aio_prod.py",
+        ]
+    )
+
+    assert decision.scope == "operator"
+    assert decision.requires_full_ci is False
+    assert decision.requires_operator_ci is True
+    assert decision.requires_release_bundle is True
+    assert decision.operator_paths == (
+        "ops/gpu_pool_controller/lan_aio_prod.py",
+        "scripts/lan_aio_fleet_prod_ops.py",
+    )
+    assert decision.runtime_paths == ()
+
+
+def test_operator_and_application_changes_restore_full_ci():
+    module = _load_module()
+
+    decision = module.classify_change_scope(
+        [
+            "ops/gpu_pool_controller/runtime.py",
+            "src/core/task_dispatcher.py",
+        ]
+    )
+
+    assert decision.scope == "runtime"
+    assert decision.requires_full_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is True
+    assert decision.operator_paths == ("ops/gpu_pool_controller/runtime.py",)
+    assert decision.runtime_paths == ("src/core/task_dispatcher.py",)
+
+
+def test_shared_release_strategy_change_keeps_full_ci():
+    module = _load_module()
+
+    decision = module.classify_change_scope(["scripts/release_strategy.py"])
+
+    assert decision.scope == "runtime"
+    assert decision.requires_full_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is True
+    assert decision.operator_paths == ()
+    assert decision.runtime_paths == ("scripts/release_strategy.py",)
+
+
+def test_gpu_release_artifact_catalog_change_keeps_full_ci():
+    module = _load_module()
+
+    decision = module.classify_change_scope(["deploy/release-artifacts-v2.json"])
+
+    assert decision.scope == "runtime"
+    assert decision.requires_full_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is True
+
+
+def test_github_outputs_expose_independent_test_and_bundle_decisions(tmp_path):
+    module = _load_module()
+    output = tmp_path / "github-output.txt"
+    decision = module.classify_change_scope(["ops/gpu_pool_controller/lan_aio_prod.py"])
+
+    module._write_github_output(output, decision)
+
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "scope=operator",
+        "requires_full_ci=false",
+        "requires_operator_ci=true",
+        "requires_release_bundle=true",
+    ]

@@ -57,6 +57,8 @@ jobs:
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
       requires_full_ci: ${{ steps.classify.outputs.requires_full_ci }}
+      requires_operator_ci: ${{ steps.classify.outputs.requires_operator_ci }}
+      requires_release_bundle: ${{ steps.classify.outputs.requires_release_bundle }}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -132,6 +134,27 @@ jobs:
           timeout --signal=INT --kill-after=30s 10m
           python -m pytest -vv --maxfail=1 --durations=20
           ${{ matrix.paths }}
+
+  operator-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_operator_ci == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JWT_SECRET_KEY: ci-test-only-not-for-runtime
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.20"
+          cache: pip
+      - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
+      - name: Run focused GPU/LAN operator tests
+        run: >-
+          timeout --signal=INT --kill-after=30s 10m
+          python -m pytest -vv --maxfail=1 --durations=20 tests/ops tests/scripts
 
   postgres-integration-tests:
     needs: change-scope
@@ -231,6 +254,7 @@ jobs:
     needs:
       - change-scope
       - python-tests
+      - operator-tests
       - postgres-integration-tests
       - web-tests
       - dashboard-tests
@@ -240,7 +264,9 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.change-scope.result }}
           REQUIRES_FULL_CI: ${{ needs.change-scope.outputs.requires_full_ci }}
+          REQUIRES_OPERATOR_CI: ${{ needs.change-scope.outputs.requires_operator_ci }}
           PYTHON_RESULT: ${{ needs.python-tests.result }}
+          OPERATOR_RESULT: ${{ needs.operator-tests.result }}
           POSTGRES_RESULT: ${{ needs.postgres-integration-tests.result }}
           WEB_RESULT: ${{ needs.web-tests.result }}
           DASHBOARD_RESULT: ${{ needs.dashboard-tests.result }}
@@ -252,6 +278,9 @@ jobs:
             [ "$POSTGRES_RESULT" = success ]
             [ "$WEB_RESULT" = success ]
             [ "$DASHBOARD_RESULT" = success ]
+          fi
+          if [ "$REQUIRES_OPERATOR_CI" = true ]; then
+            [ "$OPERATOR_RESULT" = success ]
           fi
 
   release:

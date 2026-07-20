@@ -100,6 +100,54 @@ def test_successful_main_push_remains_trusted():
     assert result["event"] == "push"
 
 
+def test_successful_operator_scope_requires_only_the_focused_operator_job():
+    module = _load_module()
+    source_sha, run, _jobs = _trusted_evidence(module, event="push")
+    jobs = [{"name": "operator-tests", "status": "completed", "conclusion": "success"}]
+
+    result = module.validate_upstream_run(
+        run,
+        jobs,
+        expected_repository="giraffu/All_bot",
+        expected_sha=source_sha,
+        expected_main_sha=source_sha,
+        expected_scope="operator",
+    )
+
+    assert result["scope"] == "operator"
+    assert result["successful_test_jobs"] == ["operator-tests"]
+
+
+def test_operator_scope_fails_closed_without_the_operator_job():
+    module = _load_module()
+    source_sha, run, jobs = _trusted_evidence(module, event="push")
+
+    with pytest.raises(module.CITrustError, match="operator-tests"):
+        module.validate_upstream_run(
+            run,
+            jobs,
+            expected_repository="giraffu/All_bot",
+            expected_sha=source_sha,
+            expected_main_sha=source_sha,
+            expected_scope="operator",
+        )
+
+
+def test_unknown_upstream_scope_fails_closed():
+    module = _load_module()
+    source_sha, run, jobs = _trusted_evidence(module, event="push")
+
+    with pytest.raises(module.CITrustError, match="scope"):
+        module.validate_upstream_run(
+            run,
+            jobs,
+            expected_repository="giraffu/All_bot",
+            expected_sha=source_sha,
+            expected_main_sha=source_sha,
+            expected_scope="unexpected",
+        )
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

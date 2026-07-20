@@ -264,6 +264,7 @@
         "deploy/test-train-acceptance.example.json",
         "scripts/release.py",
         "scripts/release_manifest_v2.py",
+        "scripts/release_strategy.py",
         "scripts/release_artifacts_v2.py",
         "scripts/assemble_release_v2.py",
         "scripts/ci_release_v2.py",
@@ -278,14 +279,29 @@
       "services": "all"
     },
     {
-      "name": "gpu-runtime",
+      "name": "gpu-control-operator",
       "patterns": [
-        "remote_workers/**",
         "ops/gpu_pool_controller/**",
-        "scripts/runpod_*.sh",
+        "scripts/gpu_pool_controller.py",
+        "scripts/gpu_release_rollout.py",
+        "scripts/runpod_prod_ops.sh"
+      ],
+      "level": "rolling",
+      "services": ["dashboard-backend"]
+    },
+    {
+      "name": "gpu-host-operator",
+      "patterns": [
         "scripts/lan_aio_*.py",
+        "scripts/lan_aio_*.sh",
         "scripts/lan_*_aio_*.sh"
       ],
+      "level": "none",
+      "services": []
+    },
+    {
+      "name": "gpu-runtime",
+      "patterns": ["remote_workers/**"],
       "level": "maintenance",
       "services": [],
       "blockers": ["gpu-runtime-release-required"]
@@ -307,7 +323,6 @@
         "scripts/doc_quality_checker.py",
         "scripts/manage_ai_workspaces.py",
         "scripts/release.py",
-        "scripts/release_strategy.py",
         "scripts/validate_upstream_ci_run.py"
       ],
       "level": "none",

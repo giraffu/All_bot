@@ -27,6 +27,13 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 - live status：观测现实，不是自动覆盖源。live、ledger、catalog 任一不一致都报告 drift 并停止 mutation；live 不可达时 ledger 只显示 last-known，不能授权 mutation。
 - `lan_aio_fleet_state.legacy.yml`：只供首次 `state-init` 的冻结迁移种子，普通操作绝不更新。
 
+发布与 CI 边界：
+
+- GPU↔LAN 当前映射、cache marker、最近验证时间以及 RunPod 当前数量都是易变运行态，只写 XDG ledger、provider/operation store 或后台观测，不写 Git，不因漂移触发代码发布。
+- 仅修改 `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` 这类宿主 helper 时，CI 使用聚焦的 `operator` scope；它不构建或部署任何 control-plane/GPU artifact，合入后仍须在获授权的单槽操作中显式使用新 helper。
+- 修改 `ops/gpu_pool_controller/**`、`scripts/gpu_pool_controller.py`、`scripts/gpu_release_rollout.py` 或 `scripts/runpod_prod_ops.sh` 时，同样只跑 operator 测试，但可信 main bundle 最多重建 `dashboard-backend`；不会因此构建、canary 或替换 GPU 镜像，也不会改动现有 Pod/LAN 容器。
+- 修改 `remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、GPU Dockerfile、模型 manifest 或真实 GPU 基础依赖时，必须恢复全量 CI、同 SHA artifact attestation，并按策略执行 canary/operator；不得借 operator scope 规避。
+
 ## 2. 固定命令
 
 只使用 fleet helper 管理 LAN AIO：
@@ -45,7 +52,7 @@ python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disa
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
 python scripts/lan_aio_fleet_prod_ops.py restart-aio --slot <slot> --execute
-python scripts/lan_aio_fleet_prod_ops.py release-rollout --slot <slot> --profile <profile> --release-index <release-index.json> --sha <full-sha> --strategy direct|standard --execute
+python scripts/lan_aio_fleet_prod_ops.py release-rollout --slot <slot> --profile <profile> --release-index <release-index.json> --sha <full-sha> --strategy direct|standard [--rollback-ref <same-repo@sha256:...>] --execute
 ```
 
 辅助只读检查：
@@ -64,6 +71,9 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 未经用户明确要求，不执行生产 mutation。
 - 一次只操作一个 physical GPU / slot；禁止跨节点批量切换。
 - `release-rollout` 必须从 release index 解析精确 digest：先 disabled/drain，验证容器实际 image、OCI revision、进程健康和 disabled heartbeat 后才 enable；失败立即停止后续 slot 并恢复该 slot 的旧镜像，恢复无法验证时保持 disabled。
+- release index 若引用 GHCR canonical 仓库，而当前 LAN profile 使用 LAN registry mirror，helper 只把同一 release digest 映射到当前 profile 的 repository；必须先用 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制 canonical manifest，禁止改 digest 或现场 build。
+- 目标节点尚未配置 HTTP LAN registry 且没有 Docker daemon 维护窗口时，Git catalog 可直接固定 release index 的 canonical GHCR 完整 digest，禁止改用 tag；显式 exact rollback ref 会在停接/等待空闲前由 helper 预拉，确保回滚镜像真实可用。
+- 历史 LAN 镜像若由 tar 导入、旧 tag 没有 `RepoDigests`，只能在独立核验当前 tag 的 registry digest 后传 `--rollback-ref <same-repo@sha256:...>`；helper 拒绝 mutable 或跨仓库回滚引用，不能用该参数自由指定运行镜像。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
 - 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。
 - 不 reboot GPU 主机，不 restart Docker daemon，除非用户明确要求维护窗口。
@@ -112,7 +122,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
 ```
 
-恢复后重新跑 `status --include-disabled`；helper 自动把 recovery result 写入 XDG history/current，避免只留下远端现场。
+恢复后重新跑 `status --include-disabled`；helper 自动把 recovery result 写入 XDG history/current，避免只留下远端现场。若失败 rollout 已通过只读检查确认该物理槽没有任何 running catalog container，先用精确 `state-reconcile --physical-slot <node>:gpuN --reason ... --execute` 记录 intentionally-empty，再显式选择 `--slot` recover；既有 intentionally-empty sibling 必须原样保留。recover 发现 exited/created 容器的 image ref 与 catalog 不一致时必须安全重建，不得直接启动旧镜像。
 
 ## 5. 交付格式
 

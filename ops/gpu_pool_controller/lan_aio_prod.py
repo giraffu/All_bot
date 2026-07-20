@@ -1151,6 +1151,35 @@ class LanAioProdOps:
             )
         return str(slot_id)
 
+    def recovery_guard_slot_id(
+        self,
+        physical_slot: str,
+        *,
+        selected_slot_id: str | None = None,
+    ) -> str:
+        """Resolve the recover guard, including an explicitly reconciled empty slot."""
+
+        ledger = self.state_store.load_current()
+        if ledger is None:
+            raise StateDriftError(
+                "LAN AIO current ledger is missing; run state-init before mutation"
+            )
+        physical_state = (ledger.get("physical_slots") or {}).get(physical_slot) or {}
+        current_slot_id = (physical_state.get("current") or {}).get("slot_id")
+        if current_slot_id:
+            return self.current_slot_id(physical_slot)
+        if not physical_state.get("intentionally_empty") or not selected_slot_id:
+            raise StateDriftError(
+                f"LAN AIO ledger has no current slot for {physical_slot}"
+            )
+        selected = self.slots.get(selected_slot_id)
+        if selected is None or physical_slot_key(selected) != physical_slot:
+            raise StateDriftError(
+                "LAN AIO explicitly selected recovery slot does not match "
+                f"{physical_slot}: {selected_slot_id}"
+            )
+        return selected.id
+
     def initialize_state_from_legacy(
         self,
         legacy_state_file: Path,
@@ -1195,6 +1224,14 @@ class LanAioProdOps:
         if not physical_slots:
             raise RuntimeError("state-reconcile found no physical slots in current.yml")
         allowed_empty = set(allow_empty_physical_slots or ())
+        ledger_physical_slots = ledger.get("physical_slots") or {}
+        preserved_empty = {
+            physical_slot
+            for physical_slot, physical_state in ledger_physical_slots.items()
+            if physical_state.get("intentionally_empty")
+            and not (physical_state.get("current") or {}).get("slot_id")
+        }
+        effective_allowed_empty = allowed_empty | preserved_empty
         unknown_empty = allowed_empty - physical_slots
         if unknown_empty:
             raise RuntimeError(
@@ -1208,7 +1245,7 @@ class LanAioProdOps:
             for physical_slot in physical_slots:
                 if (
                     not (live.get("current") or {}).get(physical_slot)
-                    and physical_slot not in allowed_empty
+                    and physical_slot not in effective_allowed_empty
                 ):
                     errors.setdefault(physical_slot, "no running catalog slot detected")
             if errors:
@@ -1235,6 +1272,7 @@ class LanAioProdOps:
                     "reason": reason,
                     "live_current": live["current"],
                     "allowed_empty_physical_slots": sorted(allowed_empty),
+                    "preserved_empty_physical_slots": sorted(preserved_empty),
                     "catalog_sha256": self.catalog_sha256,
                     "superseded_operations": unfinished,
                 },
@@ -1259,6 +1297,8 @@ class LanAioProdOps:
                         "recorded_at": datetime.now(timezone.utc).isoformat(),
                         "operation_id": operation_id,
                     }
+                elif physical_slot in preserved_empty:
+                    continue
                 else:  # guarded by the ambiguity check above
                     continue
                 physical_state["last_verified_at"] = datetime.now(
@@ -1555,6 +1595,8 @@ class LanAioProdOps:
         self,
         slot: LanAioProdSlot,
         resolved: dict[str, Any],
+        *,
+        rollback_ref: str | None = None,
     ) -> dict[str, Any]:
         """Recreate one LAN slot from an exact release digest with local rollback."""
 
@@ -1567,15 +1609,40 @@ class LanAioProdOps:
         old_ref = old_profile.all_in_one_image_ref
         if not old_ref:
             raise RuntimeError("selected LAN slot has no rollback image reference")
-        old_ref = self._exact_remote_image_ref(slot, old_ref)
+        current_repository = old_ref.split("@", 1)[0]
+        current_tail = current_repository.rsplit("/", 1)[-1]
+        if ":" in current_tail:
+            current_repository = current_repository.rsplit(":", 1)[0]
+        if rollback_ref is None:
+            old_ref = self._exact_remote_image_ref(slot, old_ref)
+        else:
+            if not re.search(r"@sha256:[0-9a-f]{64}$", rollback_ref):
+                raise RuntimeError(
+                    "explicit LAN rollback ref must be an exact digest-pinned image"
+                )
+            rollback_repository = rollback_ref.split("@", 1)[0]
+            if current_repository != rollback_repository:
+                raise RuntimeError(
+                    "explicit LAN rollback ref must use the same repository as "
+                    "the current image"
+                )
+            old_ref = rollback_ref
+        target_ref = str(resolved["ref"])
+        target_repository = target_ref.split("@", 1)[0]
+        if target_repository != current_repository:
+            target_ref = f"{current_repository}@{resolved['digest']}"
+        runtime_resolved = {**resolved, "ref": target_ref}
         rollback_profile = replace(old_profile, all_in_one_image_ref=old_ref)
         target_profile = replace(
             old_profile,
-            all_in_one_image_ref=str(resolved["ref"]),
+            all_in_one_image_ref=target_ref,
             model_manifest_key=str(
                 resolved.get("model_manifest_key") or old_profile.model_manifest_key
             ),
         )
+        if rollback_ref is not None:
+            self.config.profiles[slot.target_profile_id] = rollback_profile
+            self.pull_image([slot])
         self.config.profiles[slot.target_profile_id] = target_profile
         try:
             self.pull_image([slot])
@@ -1589,7 +1656,7 @@ class LanAioProdOps:
             self._write_remote_runtime_files(slot)
             self._remote_compose(slot, "up -d --force-recreate")
             self._wait_container_health(slot)
-            self._verify_release_runtime(slot, resolved)
+            self._verify_release_runtime(slot, runtime_resolved)
             self._verify_disabled_heartbeat(slot)
             self._set_control(
                 slot.agent_id,
@@ -1634,7 +1701,7 @@ class LanAioProdOps:
             "action": "release-rollout",
             "slot": slot.id,
             "old_ref": old_ref,
-            "target_ref": resolved["ref"],
+            "target_ref": target_ref,
             "digest": resolved["digest"],
             "oci_revision": resolved["oci_revision"],
             "validation_level": resolved["validation_level"],
@@ -2055,18 +2122,34 @@ class LanAioProdOps:
                         "target container exists but is not safe to start: "
                         f"{selected.container_name} status={status}"
                     )
-                self._ssh(
-                    selected.ssh_host,
-                    f"docker start '{selected.container_name}' >/dev/null",
-                )
-            self._wait_container_health(selected)
-            self._verify_disabled_heartbeat(selected)
-            start_payload = {
-                "ok": True,
-                "action": "docker-start",
-                "slot": selected.id,
-                "previous_state": status,
-            }
+                desired_image_ref = self.config.profiles[
+                    selected.target_profile_id
+                ].all_in_one_image_ref
+                actual_image_ref = self._remote_target_container_image_ref(selected)
+                if desired_image_ref and actual_image_ref != desired_image_ref:
+                    start_payload = self.start_disabled([selected])
+                else:
+                    self._ssh(
+                        selected.ssh_host,
+                        f"docker start '{selected.container_name}' >/dev/null",
+                    )
+                    self._wait_container_health(selected)
+                    self._verify_disabled_heartbeat(selected)
+                    start_payload = {
+                        "ok": True,
+                        "action": "docker-start",
+                        "slot": selected.id,
+                        "previous_state": status,
+                    }
+            else:
+                self._wait_container_health(selected)
+                self._verify_disabled_heartbeat(selected)
+                start_payload = {
+                    "ok": True,
+                    "action": "already-running",
+                    "slot": selected.id,
+                    "previous_state": status,
+                }
         self._set_control(
             selected.agent_id,
             "enabled",
@@ -2529,6 +2612,16 @@ class LanAioProdOps:
             "status": status.strip().lower() or "unknown",
             "running": running.strip().lower() == "true",
         }
+
+    def _remote_target_container_image_ref(self, slot: LanAioProdSlot) -> str:
+        return self._ssh(
+            slot.ssh_host,
+            (
+                "docker inspect -f '{{.Config.Image}}' "
+                f"{shlex.quote(slot.container_name)}"
+            ),
+            capture=True,
+        ).strip()
 
     def _remove_remote_container(
         self,
@@ -3064,6 +3157,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--release-index", type=Path, default=None)
     parser.add_argument("--sha", default=None)
+    parser.add_argument("--rollback-ref", default=None)
     parser.add_argument("--strategy", choices=("direct", "standard"), default="direct")
     return parser
 
@@ -3155,7 +3249,10 @@ def _handle_recover(args: argparse.Namespace, ops: LanAioProdOps) -> int:
             )
         )
         return 0
-    guard_slot_id = ops.current_slot_id(physical_slot)
+    guard_slot_id = ops.recovery_guard_slot_id(
+        physical_slot,
+        selected_slot_id=selected_slot_id,
+    )
     if selected_slot_id is None and args.prefer == "old":
         selected_slot_id = guard_slot_id
     guard_slot = ops.slots[guard_slot_id]
@@ -3318,7 +3415,11 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
                 action="release-rollout",
                 slots=[slot],
                 operation_id=operation_id,
-                execute=lambda: ops.release_rollout(slot, resolved),
+                execute=lambda: ops.release_rollout(
+                    slot,
+                    resolved,
+                    rollback_ref=args.rollback_ref,
+                ),
             )
         )
         return 0

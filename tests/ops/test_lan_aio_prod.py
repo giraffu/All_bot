@@ -1102,6 +1102,120 @@ def test_lan_release_rollout_failure_restores_only_selected_slot():
     )
 
 
+def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.verified_rollback_ref = None
+            self.pulled_refs = []
+            self.verified_target_ref = None
+
+        def pull_image(self, slots):
+            self.pulled_refs.append(
+                self.config.profiles[
+                    slots[0].target_profile_id
+                ].all_in_one_image_ref
+            )
+            return {"ok": True}
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            return None
+
+        def _wait_worker_ids_idle(self, agent_ids):
+            return None
+
+        def _exact_remote_image_ref(self, slot, image_ref):
+            raise AssertionError("explicit rollback ref must bypass legacy tag lookup")
+
+        def _write_remote_runtime_files(self, slot):
+            return None
+
+        def _remote_compose(self, slot, op):
+            return None
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_release_runtime(self, slot, resolved):
+            self.verified_target_ref = resolved["ref"]
+            raise RuntimeError("target revision mismatch")
+
+        def _verify_exact_runtime_ref(self, slot, image_ref):
+            self.verified_rollback_ref = image_ref
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+    rollback_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "9" * 64
+    )
+    resolved = {
+        "profile": "image_to_video",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "image_to_video/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    with pytest.raises(RuntimeError, match="old image was restored"):
+        ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+    assert ops.verified_rollback_ref == rollback_ref
+    expected_target_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64
+    )
+    assert ops.pulled_refs == [rollback_ref, expected_target_ref]
+    assert ops.verified_target_ref == expected_target_ref
+
+
+@pytest.mark.parametrize(
+    "rollback_ref, error",
+    [
+        (
+            "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:mutable",
+            "exact digest-pinned",
+        ),
+        (
+            "ghcr.io/giraffu/allbot/different-image@sha256:" + "9" * 64,
+            "same repository",
+        ),
+    ],
+)
+def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(
+    rollback_ref, error
+):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+    resolved = {
+        "profile": "image_to_video",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "image_to_video/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    with pytest.raises(RuntimeError, match=error):
+        ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+
 def test_lan_aio_start_disabled_removes_safe_exited_target_container():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
@@ -1452,12 +1566,13 @@ def test_lan_aio_takeover_rolls_back_after_stop_old_failure_window():
     ]
 
 
-def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
+def test_lan_aio_candidate_plan_generates_stable_yaml_patch(tmp_path):
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
     )
 
     payload = ops.candidate_plan(
@@ -1553,12 +1668,13 @@ def test_disabled_heartbeat_accepts_declared_runtime_profile_for_bf16_candidate(
     ops._verify_disabled_heartbeat(slot)
 
 
-def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target():
+def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target(tmp_path):
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
     )
 
     with pytest.raises(RuntimeError, match="not an enabled current slot"):
@@ -1936,6 +2052,94 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
     )
     assert ops.controls[-1][0] == "lan_aio_prod_gpu252_gpu0_image_to_video_01"
     assert ops.controls[-1][1] == "enabled"
+
+
+def test_lan_aio_recover_recreates_exited_candidate_with_stale_image():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.started_disabled_slots: list[str] = []
+            self.ssh_commands: list[str] = []
+
+        def _set_control(self, *args, **kwargs):
+            return None
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.ssh_commands.append(command)
+            return ""
+
+        def _remote_target_container_state(self, slot):
+            return {
+                "exists": True,
+                "name": slot.container_name,
+                "status": "exited",
+                "running": False,
+            }
+
+        def _remote_target_container_image_ref(self, slot):
+            return "registry.example/wan22:stale"
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+        def start_disabled(self, slots):
+            self.started_disabled_slots.extend(slot.id for slot in slots)
+            return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
+
+    ops = RecordingOps()
+
+    result = ops.recover_physical_slot(
+        physical_slot="gpu-252:gpu0",
+        prefer="candidate",
+        selected_slot_id="gpu-252-gpu0-image_to_video",
+    )
+
+    assert result["start"]["action"] == "start-disabled"
+    assert ops.started_disabled_slots == ["gpu-252-gpu0-image_to_video"]
+    assert not any(
+        "docker start 'allbot-lan-aio-gpu-252-gpu0-image_to_video-prod'" in command
+        for command in ops.ssh_commands
+    )
+
+
+def test_lan_aio_recovery_guard_accepts_explicit_slot_from_intentionally_empty_state(
+    tmp_path: Path,
+):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
+    )
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-252:gpu0": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "failed rollout inspected empty",
+                        "operation_id": "reconcile-empty",
+                    },
+                }
+            },
+        },
+        operation_id="reconcile-empty",
+    )
+
+    assert ops.recovery_guard_slot_id(
+        "gpu-252:gpu0",
+        selected_slot_id="gpu-252-gpu0-image_to_video",
+    ) == "gpu-252-gpu0-image_to_video"
 
 
 def test_lan_aio_restart_disables_restarts_and_reenables_slot():

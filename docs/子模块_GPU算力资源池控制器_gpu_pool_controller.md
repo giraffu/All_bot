@@ -46,6 +46,18 @@
 - Controller v1 默认只做盘点、计划、渲染和 canary；不自动重启 GPU 节点、不自动替换 ComfyUI、不自动按生产队列扩容。
 - 所有真实 RunPod create/start/stop/delete/scale 都必须同时满足门禁环境变量和 `--execute`。
 
+### 1.1 状态、代码与发布门禁分层
+
+| 变化类型 | 事实源 | CI | main bundle / 最小模块 | GPU 发布门禁 |
+| :--- | :--- | :--- | :--- | :--- |
+| GPU↔LAN 当前映射、缓存态、验证时间 | XDG `current.yml` + live status | 不产生 Git 变更 | 无 | 操作时由单槽 operator 仲裁，不走代码发布 |
+| RunPod 当前/期望数量、Pod 生命周期 | Dashboard operation store、provider API、Central heartbeat | 不产生 Git 变更 | 无 | 每次 mutation 使用既有运行时授权门禁 |
+| LAN 主机 helper/candidate 工具 | `scripts/lan_aio_*.py`、`scripts/lan_aio_*.sh`、`scripts/lan_*_aio_*.sh` | `operator`：仅 `tests/ops tests/scripts` | 无运行 artifact | 无镜像 attestation/canary；实际操作仍需单槽授权 |
+| Dashboard 内置 GPU controller/rollout | `ops/gpu_pool_controller/**`、精确 controller/rollout 脚本 | `operator`：仅 `tests/ops tests/scripts` | 最多 `dashboard-backend` | 不构建、不替换 GPU runtime |
+| Worker/workflow、GPU release artifact/profile、Dockerfile、模型 manifest 或基础依赖 | `remote_workers/**`、`deploy/release-artifacts-v2.json` 与真实 GPU 构建输入 | 完整 CI | 受影响 GPU artifact | 保留同 SHA attestation、canary 和专用 operator |
+
+`operator` scope 只有在全部非轻量路径都属于明确 operator allowlist 时成立；与业务 runtime、migration、Compose、运行配置或未知路径混合会恢复完整 CI。模块化 workflow 仍会为 operator main SHA 创建 bundle，但 artifact planner 只重建真实输入命中的模块：LAN 主机 helper 全部复用，控制器代码只重建 Dashboard Backend。运行态漂移不应通过编辑 catalog“对齐”，否则既丢失现实仲裁，也会制造无意义发布。
+
 ## 2. 当前资源池口径
 
 可 SSH 管理的局域网 GPU 节点：
@@ -243,6 +255,10 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 
 LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；只有 `state.status=passed` 才允许 mutation。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计。故障隔离后需要明确保持某张物理卡停机时，只有 live 探测成功且无任何 running catalog container，才可追加精确 `--physical-slot <node>:gpuN` 写入 `intentionally_empty`；这不会启动候选，也不会忽略其它卡或 SSH/探测错误。
 
+LAN `release-rollout` 默认从当前镜像的 `RepoDigests` 固化精确回滚引用。release index 使用 GHCR canonical ref、当前 LAN profile 使用 LAN registry mirror 时，helper 只把 release index 的同一 digest 映射到当前 repository；执行前必须用 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制 canonical manifest 并核对 digest，禁止现场 build。目标节点尚未配置 HTTP LAN registry 且没有 Docker daemon 维护窗口时，catalog 可直接固定 release index 的 canonical GHCR 完整 digest，禁止退回 mutable tag；显式 exact rollback ref 会先于停接/等待空闲预拉，确保失败恢复不依赖临时网络。历史镜像若由 tar 导入、只保留 mutable tag，必须先从同一 registry 独立核验该 tag 的 digest，再额外传 `--rollback-ref <same-repo@sha256:...>`；CLI 拒绝非 digest 或跨仓库引用，目标新镜像仍只能来自 release index。
+
+失败 rollout 若在只读检查后确认目标物理槽没有任何 running catalog container，可用精确 `state-reconcile --physical-slot <node>:gpuN --reason ... --execute` 记录 intentionally-empty，再显式 `recover --physical-slot ... --slot ... --prefer candidate`；状态收口必须保留其它物理槽既有 intentionally-empty 记录。recover 遇到 exited/created 目标容器时会对比容器 image ref 与 catalog，引用不一致则安全重建，不能直接启动旧镜像。若 NVIDIA prestart hook 持续返回 `gpu requires reset`，保持 worker disabled，并在明确的单卡维护授权前停止，不得改为重启 Docker daemon、整机或影响 sibling GPU。
+
 首次启用 ledger 时运行 `state-init --legacy-state-file <frozen-or-operator-copy> --execute` 并检查 status。冻结 seed 已包含 2026-07-17 的交接事实：`gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro` 并绑定各自 UUID，`gpu-002` GPU1 从 `image_to_video` 切到 `i2i_pro`，且 image_to_video/PornMaster 保留为同卡回切候选；这些值只用于首次迁移，不能替代当次 live 核对。普通 `takeover/recover/restart-aio/warm-cache/pull-image` 持有本地单实例锁，成功后再次 live 验证，再原子替换 `current.yml` 并完成 history；失败和自动回滚同样写 history，current 不会提前前移。
 
 2026-06-18 阶段能力口径：
@@ -307,6 +323,8 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：AIO agent `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 连接正式 Central，host `8191`，只声明 `SUPPORTED_TASK_TYPES=wan22_video_v2`，不承接普通 `image_to_video` 或 `video_edit`。旧 `comfy1` 与 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线。2026-06-19 重启后该 slot 配置改回 `gpu_index: 1`；实测第二个生产 wan22 任务仍让 GPU1/ComfyUI 进入 unhealthy 且 Docker 无法 stop/kill 的状态。2026-07-04 返修卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 已重新可见；`gpu-252-gpu1-scail2` 在 host `8191` 曾通过 preflight、镜像确认/拉取、warm-cache、start-disabled、`/system_stats`、`/object_info` 模型枚举、direct SCAIL-2 canary 与 `enable-aio`，但真实 SCAIL-2 face-swap workload 随后复现 Xid 119/154 / GPU Reset Required，ComfyUI 返回 CUDA unknown error 且容器无法正常 stop/kill。主机重启后该卡短 CUDA smoke 触碰约 20.5 GiB 并计算约 120 秒未再出现 Xid。随后 `gpu-252-gpu1-pornmaster_flux2_edit` 在同一返修 UUID 上完成 preflight、pull-image、warm-cache、start-disabled、`/system_stats`、`/object_info` 节点/模型验证与多笔正式 `pornmaster_flux2_single_edit` 任务，未见新 Xid/NVRM；这只证明低负载图片编辑可接单，`gpu-252-gpu1-scail2` 与 `gpu-252-gpu1-wan22_video_v2` 仍保持 maintenance-disabled，RunPod 和其它 SCAIL-2/Wan22 容量继续兜底。
 
 2026-06-19 `gpu-252-gpu0-img2img_lora` 从 canary-ready 转入正式 LAN AIO 接流：AIO agent `lan_aio_prod_gpu252_gpu0_img2img_lora_01` 连接正式 Central，host `8190`，按 `img2img_lora` profile 承接 `img2img` 与 `img2img_lora`。2026-06-28 起该 slot 被 `gpu-252-gpu0-pornmaster_flux2_edit` 正式替换，新的 AIO agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` 监听 host `8192`，只接 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit`。2026-07-03 `gpu-252` 按单卡 takeover 切到 `i2i_pro`；2026-07-04 返修卡回装导致 host GPU index 漂移后，所有 `gpu-252` GPU0 `8192` 候选和当前 i2i_pro slot 均改用 `gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 固定健康卡，`restart-aio` 会 force-recreate 容器以应用 device request。`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 均保留为同卡回切候选，不应与当前 AIO 同时 enabled 或同卡占用显存。
+
+2026-07-20，gpu252 GPU0 切换到新的 `gpu-252-gpu0-image_to_video` 正式运行态。首次 rollout 已完成 `image_to_video/2026-07-18-lora5` 的 119 文件 warm-cache（其中显式 LoRA 为 98 文件/49 对目录）和 canonical digest 预拉，但 NVIDIA prestart hook 返回 `gpu requires reset`，operator 保持 worker disabled/intentionally-empty。用户完成整机重启后，GPU0/GPU1 均恢复为无 reset-required；`recover --physical-slot gpu-252:gpu0 --slot gpu-252-gpu0-image_to_video --prefer candidate` 只恢复 GPU0，operation `20260720T152727Z-recover-19e902b4` 成功。运行容器固定 `sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f` / OCI revision `b2587e560fe3f94c941e21777dad40547e3e0158`，host `8192`、Central enabled heartbeat、容器 health、`/system_stats`、`/queue`、`/object_info` 的 98 LoRA/49 对枚举均通过，并连续完成现网正常 `image_to_video` 任务。GPU1 ledger/live 继续 intentionally empty，本轮未启动任何 GPU1 业务容器。
 
 2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO，之后多次按单 slot 回切。2026-07-17，operator 为同卡新增并冷缓存 `gpu-002-gpu1-i2i_pro`，等待在途视频任务自然结束后通过 takeover 切换成功；当前 `lan_aio_prod_gpu002_gpu1_i2i_pro_01` 在 host `8191` 接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`，`image_to_video` 与 PornMaster 均为同卡回切候选。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
 

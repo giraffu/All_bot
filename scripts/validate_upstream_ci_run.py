@@ -20,6 +20,7 @@ EXPECTED_WORKFLOW_PATH = ".github/workflows/control-plane-release.yml"
 EXPECTED_TEST_JOBS = frozenset(
     {"web-tests", "dashboard-tests", "postgres-integration-tests"}
 )
+EXPECTED_OPERATOR_JOBS = frozenset({"operator-tests"})
 EXPECTED_PYTHON_SHARDS = (
     "services-a-o",
     "services-p",
@@ -57,7 +58,7 @@ def _successful_job_labels(jobs: Sequence[Mapping[str, Any]]) -> set[str]:
         if job.get("status") != "completed" or job.get("conclusion") != "success":
             continue
         name = _string(job.get("name"))
-        if name in EXPECTED_TEST_JOBS:
+        if name in EXPECTED_TEST_JOBS or name in EXPECTED_OPERATOR_JOBS:
             successful.add(name)
             continue
         match = PYTHON_JOB_RE.match(name)
@@ -73,6 +74,7 @@ def validate_upstream_run(
     expected_repository: str,
     expected_sha: str,
     expected_main_sha: str,
+    expected_scope: str = "runtime",
 ) -> dict[str, Any]:
     """Return a non-secret trust summary or fail closed."""
 
@@ -84,6 +86,8 @@ def validate_upstream_run(
             raise CITrustError(f"{label} SHA must be a full lowercase commit SHA")
     if expected_sha != expected_main_sha:
         raise CITrustError("upstream source SHA is not the current protected main head")
+    if expected_scope not in {"runtime", "operator"}:
+        raise CITrustError("upstream change scope must be runtime or operator")
     if _repository_name(run) != expected_repository:
         raise CITrustError("upstream workflow repository does not match")
     if run.get("name") != EXPECTED_WORKFLOW_NAME:
@@ -100,8 +104,11 @@ def validate_upstream_run(
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         raise CITrustError("upstream workflow did not complete successfully")
 
-    expected_jobs = set(EXPECTED_TEST_JOBS)
-    expected_jobs.update(f"python-tests:{name}" for name in EXPECTED_PYTHON_SHARDS)
+    if expected_scope == "operator":
+        expected_jobs = set(EXPECTED_OPERATOR_JOBS)
+    else:
+        expected_jobs = set(EXPECTED_TEST_JOBS)
+        expected_jobs.update(f"python-tests:{name}" for name in EXPECTED_PYTHON_SHARDS)
     successful_jobs = _successful_job_labels(jobs)
     missing = sorted(expected_jobs - successful_jobs)
     if missing:
@@ -117,6 +124,7 @@ def validate_upstream_run(
         "run_id": run_id,
         "event": event,
         "head_sha": expected_sha,
+        "scope": expected_scope,
         "successful_test_jobs": sorted(successful_jobs),
     }
 
@@ -172,6 +180,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--expected-main-sha", required=True)
+    parser.add_argument(
+        "--expected-scope", choices=("runtime", "operator"), required=True
+    )
     parser.add_argument("--token-env", default="GITHUB_TOKEN")
     return parser.parse_args(argv)
 
@@ -194,6 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_repository=args.repository,
             expected_sha=args.expected_sha,
             expected_main_sha=args.expected_main_sha,
+            expected_scope=args.expected_scope,
         )
     except CITrustError as exc:
         print(f"untrusted upstream CI run: {exc}", file=sys.stderr)

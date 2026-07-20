@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify repository-only changes that do not need runtime CI or release bundles."""
+"""Classify lightweight, GPU-operator, and application runtime changes."""
 
 from __future__ import annotations
 
@@ -25,24 +25,51 @@ LIGHTWEIGHT_PATTERNS = (
     "scripts/doc_quality_checker.py",
     "scripts/manage_ai_workspaces.py",
     "scripts/release.py",
-    "scripts/release_strategy.py",
     "scripts/validate_upstream_ci_run.py",
+)
+
+OPERATOR_PATTERNS = (
+    "ops/gpu_pool_controller/**",
+    "scripts/gpu_pool_controller.py",
+    "scripts/gpu_release_rollout.py",
+    "scripts/lan_aio_*.py",
+    "scripts/lan_aio_*.sh",
+    "scripts/lan_*_aio_*.sh",
+    "scripts/runpod_prod_ops.sh",
 )
 
 
 class ChangeScopeDecision:
-    def __init__(self, *, scope: str, runtime_paths: Iterable[str]) -> None:
+    def __init__(
+        self,
+        *,
+        scope: str,
+        operator_paths: Iterable[str] = (),
+        runtime_paths: Iterable[str] = (),
+    ) -> None:
         self.scope = scope
+        self.operator_paths = tuple(sorted(set(operator_paths)))
         self.runtime_paths = tuple(sorted(set(runtime_paths)))
 
     @property
     def requires_full_ci(self) -> bool:
+        return self.scope == "runtime"
+
+    @property
+    def requires_operator_ci(self) -> bool:
+        return self.scope == "operator"
+
+    @property
+    def requires_release_bundle(self) -> bool:
         return self.scope != "lightweight"
 
     def as_dict(self) -> dict[str, object]:
         return {
             "scope": self.scope,
             "requires_full_ci": self.requires_full_ci,
+            "requires_operator_ci": self.requires_operator_ci,
+            "requires_release_bundle": self.requires_release_bundle,
+            "operator_paths": list(self.operator_paths),
             "runtime_paths": list(self.runtime_paths),
         }
 
@@ -51,6 +78,13 @@ def _is_lightweight(path: str) -> bool:
     normalized = path.removeprefix("./")
     return any(
         fnmatch.fnmatchcase(normalized, pattern) for pattern in LIGHTWEIGHT_PATTERNS
+    )
+
+
+def _is_operator(path: str) -> bool:
+    normalized = path.removeprefix("./")
+    return any(
+        fnmatch.fnmatchcase(normalized, pattern) for pattern in OPERATOR_PATTERNS
     )
 
 
@@ -69,18 +103,28 @@ def _normalize_changed_path(path: str) -> str:
 def classify_change_scope(paths: Iterable[str]) -> ChangeScopeDecision:
     normalized = tuple(
         dict.fromkeys(
-            _normalize_changed_path(path)
-            for path in paths
-            if path and path.strip()
+            _normalize_changed_path(path) for path in paths if path and path.strip()
         )
     )
     if not normalized:
         return ChangeScopeDecision(
             scope="runtime", runtime_paths=("<empty-change-set>",)
         )
-    runtime_paths = tuple(path for path in normalized if not _is_lightweight(path))
+    operator_paths = tuple(path for path in normalized if _is_operator(path))
+    runtime_paths = tuple(
+        path
+        for path in normalized
+        if not _is_lightweight(path) and not _is_operator(path)
+    )
     return ChangeScopeDecision(
-        scope="runtime" if runtime_paths else "lightweight",
+        scope=(
+            "runtime"
+            if runtime_paths
+            else "operator"
+            if operator_paths
+            else "lightweight"
+        ),
+        operator_paths=operator_paths,
         runtime_paths=runtime_paths,
     )
 
@@ -91,6 +135,16 @@ def _write_github_output(path: Path, decision: ChangeScopeDecision) -> None:
         output.write(
             "requires_full_ci="
             + ("true" if decision.requires_full_ci else "false")
+            + "\n"
+        )
+        output.write(
+            "requires_operator_ci="
+            + ("true" if decision.requires_operator_ci else "false")
+            + "\n"
+        )
+        output.write(
+            "requires_release_bundle="
+            + ("true" if decision.requires_release_bundle else "false")
             + "\n"
         )
 

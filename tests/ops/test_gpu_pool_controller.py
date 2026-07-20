@@ -143,12 +143,16 @@ def test_runtime_plan_supports_canonical_image_to_video_profile():
     assert payload.runtime["production_port_unchanged"] is True
 
 
-def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
+def test_runpod_all_in_one_profiles_use_declared_exact_or_lan_images():
     config = load_controller_config()
 
     img2img = "192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
     i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro"
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
+    image_to_video = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video"
+        "@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f"
+    )
     scail2 = (
         "192.168.1.115:5000/allbot/comfy-runpod-scail2"
         "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607"
@@ -156,8 +160,8 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
 
     assert config.profiles["img2img_lora"].all_in_one_image_ref == img2img
     assert config.profiles["i2i_pro"].all_in_one_image_ref == i2i_pro
-    assert config.profiles["image_to_video"].all_in_one_image_ref == wan22
-    assert config.profiles["video_basic"].all_in_one_image_ref == wan22
+    assert config.profiles["image_to_video"].all_in_one_image_ref == image_to_video
+    assert config.profiles["video_basic"].all_in_one_image_ref == image_to_video
     assert config.profiles["wan22_video_v2"].all_in_one_image_ref == wan22
     assert config.profiles["wan22_aio_video"].all_in_one_image_ref == wan22
     assert config.profiles["scail2"].all_in_one_image_ref == scail2
