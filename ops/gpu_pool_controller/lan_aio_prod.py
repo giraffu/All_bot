@@ -1182,6 +1182,7 @@ class LanAioProdOps:
         *,
         operation_id: str,
         reason: str,
+        allow_empty_physical_slots: set[str] | None = None,
     ) -> dict[str, Any]:
         if not reason.strip():
             raise RuntimeError("state-reconcile requires a non-empty reason")
@@ -1193,12 +1194,22 @@ class LanAioProdOps:
         physical_slots = set(ledger.get("physical_slots") or {})
         if not physical_slots:
             raise RuntimeError("state-reconcile found no physical slots in current.yml")
+        allowed_empty = set(allow_empty_physical_slots or ())
+        unknown_empty = allowed_empty - physical_slots
+        if unknown_empty:
+            raise RuntimeError(
+                "state-reconcile empty physical slot is absent from current.yml: "
+                + ", ".join(sorted(unknown_empty))
+            )
         with self.state_store.mutation_lock():
             unfinished = self.state_store.unfinished_operations()
             live = self.live_current_snapshot(physical_slots)
             errors = dict(live.get("errors") or {})
             for physical_slot in physical_slots:
-                if not (live.get("current") or {}).get(physical_slot):
+                if (
+                    not (live.get("current") or {}).get(physical_slot)
+                    and physical_slot not in allowed_empty
+                ):
                     errors.setdefault(physical_slot, "no running catalog slot detected")
             if errors:
                 raise StateDriftError(
@@ -1223,6 +1234,7 @@ class LanAioProdOps:
                 request={
                     "reason": reason,
                     "live_current": live["current"],
+                    "allowed_empty_physical_slots": sorted(allowed_empty),
                     "catalog_sha256": self.catalog_sha256,
                     "superseded_operations": unfinished,
                 },
@@ -1235,9 +1247,20 @@ class LanAioProdOps:
             }
             updated["physical_slots"] = updated_physical
             for physical_slot, slot_id in live["current"].items():
-                slot = self.slots[str(slot_id)]
                 physical_state = updated_physical.setdefault(physical_slot, {})
-                physical_state["current"] = self._current_entry_for_slot(slot)
+                if slot_id:
+                    slot = self.slots[str(slot_id)]
+                    physical_state["current"] = self._current_entry_for_slot(slot)
+                    physical_state.pop("intentionally_empty", None)
+                elif physical_slot in allowed_empty:
+                    physical_state["current"] = {}
+                    physical_state["intentionally_empty"] = {
+                        "reason": reason,
+                        "recorded_at": datetime.now(timezone.utc).isoformat(),
+                        "operation_id": operation_id,
+                    }
+                else:  # guarded by the ambiguity check above
+                    continue
                 physical_state["last_verified_at"] = datetime.now(
                     timezone.utc
                 ).isoformat()
@@ -3182,6 +3205,9 @@ def _handle_state_action(args: argparse.Namespace, ops: LanAioProdOps) -> int:
         ops.reconcile_state_from_live(
             operation_id=operation_id,
             reason=args.reason,
+            allow_empty_physical_slots=(
+                {args.physical_slot} if args.physical_slot else set()
+            ),
         )
     )
     return 0

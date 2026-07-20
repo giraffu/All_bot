@@ -489,6 +489,65 @@ def test_state_reconcile_explicitly_supersedes_unfinished_operation(tmp_path: Pa
     )
 
 
+def test_state_reconcile_can_record_one_explicitly_empty_physical_slot(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+
+        def live_current_snapshot(self, physical_slots):
+            return {
+                "current": {
+                    "gpu-252:gpu0": "gpu-252-gpu0-image_to_video",
+                    "gpu-252:gpu1": None,
+                },
+                "errors": {},
+                "observations": {},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": "0" * 64,
+            "physical_slots": {
+                "gpu-252:gpu0": {
+                    "current": {"slot_id": "gpu-252-gpu0-i2i_pro"}
+                },
+                "gpu-252:gpu1": {
+                    "current": {
+                        "slot_id": "gpu-252-gpu1-pornmaster_flux2_edit"
+                    }
+                },
+            },
+        },
+        operation_id="bootstrap",
+    )
+
+    result = ops.reconcile_state_from_live(
+        operation_id="reconcile-after-xid-disable",
+        reason="operator confirmed gpu-252:gpu1 was intentionally disabled",
+        allow_empty_physical_slots={"gpu-252:gpu1"},
+    )
+
+    assert result["ok"] is True
+    current = ops.state_store.load_current()
+    assert current is not None
+    empty_state = current["physical_slots"]["gpu-252:gpu1"]
+    assert empty_state["current"] == {}
+    assert empty_state["intentionally_empty"]["operation_id"] == (
+        "reconcile-after-xid-disable"
+    )
+    report = ops.state_status_payload({"gpu-252:gpu0", "gpu-252:gpu1"})
+    assert report["status"] == "passed"
+
+
 def test_live_snapshot_requires_container_and_matching_central_worker(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
