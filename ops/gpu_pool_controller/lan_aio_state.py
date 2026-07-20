@@ -76,6 +76,7 @@ def assess_state_drift(
     for physical_slot in physical_slots:
         current = ledger_slots.get(physical_slot) or {}
         ledger_slot = (current.get("current") or {}).get("slot_id")
+        intentionally_empty = bool(current.get("intentionally_empty"))
         live_slot = live_current.get(physical_slot)
         if physical_slot in errors:
             drift.append(
@@ -96,13 +97,14 @@ def assess_state_drift(
             )
             continue
         if not ledger_slot:
-            drift.append(
-                {
-                    "physical_slot": physical_slot,
-                    "kind": "ledger_current_missing",
-                    "live_slot": live_slot,
-                }
-            )
+            if live_slot or not intentionally_empty:
+                drift.append(
+                    {
+                        "physical_slot": physical_slot,
+                        "kind": "ledger_current_missing",
+                        "live_slot": live_slot,
+                    }
+                )
             continue
         if not live_slot:
             drift.append(
