@@ -1112,8 +1112,13 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
                 model_env_file=Path(".env.lan.model-cache.missing"),
             )
             self.verified_rollback_ref = None
+            self.pulled_ref = None
+            self.verified_target_ref = None
 
         def pull_image(self, slots):
+            self.pulled_ref = self.config.profiles[
+                slots[0].target_profile_id
+            ].all_in_one_image_ref
             return {"ok": True}
 
         def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
@@ -1135,6 +1140,7 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
             return None
 
         def _verify_release_runtime(self, slot, resolved):
+            self.verified_target_ref = resolved["ref"]
             raise RuntimeError("target revision mismatch")
 
         def _verify_exact_runtime_ref(self, slot, image_ref):
@@ -1163,6 +1169,12 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
         ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
 
     assert ops.verified_rollback_ref == rollback_ref
+    expected_target_ref = (
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64
+    )
+    assert ops.pulled_ref == expected_target_ref
+    assert ops.verified_target_ref == expected_target_ref
 
 
 @pytest.mark.parametrize(

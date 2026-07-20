@@ -64,6 +64,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 未经用户明确要求，不执行生产 mutation。
 - 一次只操作一个 physical GPU / slot；禁止跨节点批量切换。
 - `release-rollout` 必须从 release index 解析精确 digest：先 disabled/drain，验证容器实际 image、OCI revision、进程健康和 disabled heartbeat 后才 enable；失败立即停止后续 slot 并恢复该 slot 的旧镜像，恢复无法验证时保持 disabled。
+- release index 若引用 GHCR canonical 仓库，而当前 LAN profile 使用 LAN registry mirror，helper 只把同一 release digest 映射到当前 profile 的 repository；必须先用 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制 canonical manifest，禁止改 digest 或现场 build。
 - 历史 LAN 镜像若由 tar 导入、旧 tag 没有 `RepoDigests`，只能在独立核验当前 tag 的 registry digest 后传 `--rollback-ref <same-repo@sha256:...>`；helper 拒绝 mutable 或跨仓库回滚引用，不能用该参数自由指定运行镜像。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
 - 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。

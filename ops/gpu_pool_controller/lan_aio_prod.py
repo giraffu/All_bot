@@ -1569,6 +1569,10 @@ class LanAioProdOps:
         old_ref = old_profile.all_in_one_image_ref
         if not old_ref:
             raise RuntimeError("selected LAN slot has no rollback image reference")
+        current_repository = old_ref.split("@", 1)[0]
+        current_tail = current_repository.rsplit("/", 1)[-1]
+        if ":" in current_tail:
+            current_repository = current_repository.rsplit(":", 1)[0]
         if rollback_ref is None:
             old_ref = self._exact_remote_image_ref(slot, old_ref)
         else:
@@ -1576,21 +1580,22 @@ class LanAioProdOps:
                 raise RuntimeError(
                     "explicit LAN rollback ref must be an exact digest-pinned image"
                 )
-            current_repository = old_ref.split("@", 1)[0]
             rollback_repository = rollback_ref.split("@", 1)[0]
-            current_tail = current_repository.rsplit("/", 1)[-1]
-            if ":" in current_tail:
-                current_repository = current_repository.rsplit(":", 1)[0]
             if current_repository != rollback_repository:
                 raise RuntimeError(
                     "explicit LAN rollback ref must use the same repository as "
                     "the current image"
                 )
             old_ref = rollback_ref
+        target_ref = str(resolved["ref"])
+        target_repository = target_ref.split("@", 1)[0]
+        if target_repository != current_repository:
+            target_ref = f"{current_repository}@{resolved['digest']}"
+        runtime_resolved = {**resolved, "ref": target_ref}
         rollback_profile = replace(old_profile, all_in_one_image_ref=old_ref)
         target_profile = replace(
             old_profile,
-            all_in_one_image_ref=str(resolved["ref"]),
+            all_in_one_image_ref=target_ref,
             model_manifest_key=str(
                 resolved.get("model_manifest_key") or old_profile.model_manifest_key
             ),
@@ -1608,7 +1613,7 @@ class LanAioProdOps:
             self._write_remote_runtime_files(slot)
             self._remote_compose(slot, "up -d --force-recreate")
             self._wait_container_health(slot)
-            self._verify_release_runtime(slot, resolved)
+            self._verify_release_runtime(slot, runtime_resolved)
             self._verify_disabled_heartbeat(slot)
             self._set_control(
                 slot.agent_id,
@@ -1653,7 +1658,7 @@ class LanAioProdOps:
             "action": "release-rollout",
             "slot": slot.id,
             "old_ref": old_ref,
-            "target_ref": resolved["ref"],
+            "target_ref": target_ref,
             "digest": resolved["digest"],
             "oci_revision": resolved["oci_revision"],
             "validation_level": resolved["validation_level"],
