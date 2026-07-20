@@ -1102,6 +1102,106 @@ def test_lan_release_rollout_failure_restores_only_selected_slot():
     )
 
 
+def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.verified_rollback_ref = None
+
+        def pull_image(self, slots):
+            return {"ok": True}
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            return None
+
+        def _wait_worker_ids_idle(self, agent_ids):
+            return None
+
+        def _exact_remote_image_ref(self, slot, image_ref):
+            raise AssertionError("explicit rollback ref must bypass legacy tag lookup")
+
+        def _write_remote_runtime_files(self, slot):
+            return None
+
+        def _remote_compose(self, slot, op):
+            return None
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_release_runtime(self, slot, resolved):
+            raise RuntimeError("target revision mismatch")
+
+        def _verify_exact_runtime_ref(self, slot, image_ref):
+            self.verified_rollback_ref = image_ref
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+    rollback_ref = (
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
+        + "9" * 64
+    )
+    resolved = {
+        "profile": "image_to_video",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "image_to_video/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    with pytest.raises(RuntimeError, match="old image was restored"):
+        ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+    assert ops.verified_rollback_ref == rollback_ref
+
+
+@pytest.mark.parametrize(
+    "rollback_ref, error",
+    [
+        (
+            "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:mutable",
+            "exact digest-pinned",
+        ),
+        (
+            "192.168.1.115:5000/allbot/different-image@sha256:" + "9" * 64,
+            "same repository",
+        ),
+    ],
+)
+def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(
+    rollback_ref, error
+):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+    resolved = {
+        "profile": "image_to_video",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "image_to_video/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    with pytest.raises(RuntimeError, match=error):
+        ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+
 def test_lan_aio_start_disabled_removes_safe_exited_target_container():
     class RecordingOps(LanAioProdOps):
         def __init__(self):

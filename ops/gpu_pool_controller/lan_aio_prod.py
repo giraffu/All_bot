@@ -1555,6 +1555,8 @@ class LanAioProdOps:
         self,
         slot: LanAioProdSlot,
         resolved: dict[str, Any],
+        *,
+        rollback_ref: str | None = None,
     ) -> dict[str, Any]:
         """Recreate one LAN slot from an exact release digest with local rollback."""
 
@@ -1567,7 +1569,24 @@ class LanAioProdOps:
         old_ref = old_profile.all_in_one_image_ref
         if not old_ref:
             raise RuntimeError("selected LAN slot has no rollback image reference")
-        old_ref = self._exact_remote_image_ref(slot, old_ref)
+        if rollback_ref is None:
+            old_ref = self._exact_remote_image_ref(slot, old_ref)
+        else:
+            if not re.search(r"@sha256:[0-9a-f]{64}$", rollback_ref):
+                raise RuntimeError(
+                    "explicit LAN rollback ref must be an exact digest-pinned image"
+                )
+            current_repository = old_ref.split("@", 1)[0]
+            rollback_repository = rollback_ref.split("@", 1)[0]
+            current_tail = current_repository.rsplit("/", 1)[-1]
+            if ":" in current_tail:
+                current_repository = current_repository.rsplit(":", 1)[0]
+            if current_repository != rollback_repository:
+                raise RuntimeError(
+                    "explicit LAN rollback ref must use the same repository as "
+                    "the current image"
+                )
+            old_ref = rollback_ref
         rollback_profile = replace(old_profile, all_in_one_image_ref=old_ref)
         target_profile = replace(
             old_profile,
@@ -3064,6 +3083,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--release-index", type=Path, default=None)
     parser.add_argument("--sha", default=None)
+    parser.add_argument("--rollback-ref", default=None)
     parser.add_argument("--strategy", choices=("direct", "standard"), default="direct")
     return parser
 
@@ -3318,7 +3338,11 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
                 action="release-rollout",
                 slots=[slot],
                 operation_id=operation_id,
-                execute=lambda: ops.release_rollout(slot, resolved),
+                execute=lambda: ops.release_rollout(
+                    slot,
+                    resolved,
+                    rollback_ref=args.rollback_ref,
+                ),
             )
         )
         return 0
