@@ -80,6 +80,8 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - 付费群审核资格不得绕过订单事实源去直接相信 `current_identity`，否则手动改身份、过期身份和赠送订单会混成同一语义；修为准入只读使用 `users.user_group` 的筑基期及以上等级。
 - TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
 - `TON_PAYMENT_POLLING_ENABLED=false` 可禁用 Bot 启动时的 TON 链上轮询；云测试 `bot-test` 默认关闭该轮询，避免空测试库回扫真实商户地址历史交易。生产默认仍为开启。
+- TON merchant 唯一事实源是宿主 `VITE_MERCHANT_ADDRESS`，必须经 `ton_payment_config` 的 TON 地址解析校验；开关为真但地址缺失/非法时 Bot 不创建 poller，Web plans 返回 `ton_payment_enabled=false`/空地址，TON 预建单在任何 DB 查询/写入前以 `503 TON_PAYMENT_UNAVAILABLE` 拒绝。前端不得保留地址常量或订单地址兜底。
+- merchant 规范化地址决定 checkpoint key；真实地址变化必须形成新 key，禁止复制旧游标。抓链或履约失败仍不得前移 `last_lt`。
 
 ## 4. 边界条件处理
 - **密码改密**：必须递增 `password_version` 并使旧 token 失效。

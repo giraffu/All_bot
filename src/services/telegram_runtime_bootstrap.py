@@ -18,6 +18,9 @@ def resolve_telegram_api_base_url() -> str:
     value = os.getenv("TELEGRAM_API_BASE_URL", "").strip().rstrip("/")
     if not value:
         raise RuntimeError("TELEGRAM_API_BASE_URL is required")
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RuntimeError("TELEGRAM_API_BASE_URL must be a valid http/https URL")
     return value
 
 

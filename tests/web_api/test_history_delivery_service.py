@@ -39,6 +39,9 @@ async def test_send_history_to_telegram_uses_clean_user_visible_prompt():
         return_value=("https://telegram.example", {"chat_id": "1"}, {"photo": ()})
     )
     dependencies = history_delivery_service.HistoryDeliveryDependencies(
+        resolve_delivery_config_func=Mock(
+            return_value=("https://telegram.example", "test-token")
+        ),
         acquire_rate_limit_func=AsyncMock(),
         load_history_record_func=AsyncMock(return_value=history),
         download_history_bytes_func=AsyncMock(return_value=("output.png", b"image")),
@@ -85,6 +88,9 @@ async def test_send_history_record_to_telegram_delegates_delivery_pipeline(monke
     post_upload = AsyncMock()
 
     dependencies = history_delivery_service.HistoryDeliveryDependencies(
+        resolve_delivery_config_func=Mock(
+            return_value=("https://telegram.example", "test-token")
+        ),
         acquire_rate_limit_func=acquire_rate_limit,
         load_history_record_func=load_history,
         download_history_bytes_func=download_bytes,
@@ -156,14 +162,10 @@ async def test_send_current_user_history_record_to_telegram_routes_to_delivery_s
 
 def test_build_telegram_upload_request_uses_canonical_environment_token(monkeypatch):
     monkeypatch.setenv("BOT_TYPE", "TEST")
-    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "test-token")
-    monkeypatch.setattr(
-        history_delivery_service,
-        "TELEGRAM_API_BASE_URL",
-        "https://telegram.example.com",
-    )
 
     url, payload, files = history_delivery_service._build_telegram_upload_request(
+        telegram_api_base_url="https://telegram.example.com",
+        bot_token="test-token",
         telegram_id=10001,
         history_type="wan22_video_v2",
         history_prompt="prompt",
@@ -190,14 +192,10 @@ def test_build_telegram_upload_request_sends_scail2_results_as_video(
     history_type,
 ):
     monkeypatch.setenv("BOT_TYPE", "PROD")
-    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "prod-token")
-    monkeypatch.setattr(
-        history_delivery_service,
-        "TELEGRAM_API_BASE_URL",
-        "https://telegram.example.com",
-    )
 
     url, _payload, files = history_delivery_service._build_telegram_upload_request(
+        telegram_api_base_url="https://telegram.example.com",
+        bot_token="prod-token",
         telegram_id=10001,
         history_type=history_type,
         history_prompt=None,
@@ -209,6 +207,39 @@ def test_build_telegram_upload_request_sends_scail2_results_as_video(
     assert "video" in files
     assert "photo" not in files
     assert files["video"][2] == "video/mp4"
+
+
+@pytest.mark.asyncio
+async def test_send_history_config_error_returns_503_without_network_or_storage():
+    acquire_rate_limit = AsyncMock()
+    load_history = AsyncMock()
+    download_bytes = AsyncMock()
+    post_upload = AsyncMock()
+    dependencies = history_delivery_service.HistoryDeliveryDependencies(
+        resolve_delivery_config_func=Mock(
+            side_effect=RuntimeError("TELEGRAM_API_BASE_URL is invalid")
+        ),
+        acquire_rate_limit_func=acquire_rate_limit,
+        load_history_record_func=load_history,
+        download_history_bytes_func=download_bytes,
+        build_upload_request_func=Mock(),
+        post_upload_func=post_upload,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await history_delivery_service.send_history_record_to_telegram(
+            task_id="task-1",
+            current_user=SimpleNamespace(id=1, telegram_id=10001),
+            db=SimpleNamespace(),
+            dependencies=dependencies,
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["reason"] == "TELEGRAM_DELIVERY_UNAVAILABLE"
+    acquire_rate_limit.assert_not_awaited()
+    load_history.assert_not_awaited()
+    download_bytes.assert_not_awaited()
+    post_upload.assert_not_awaited()
 
 
 @pytest.mark.asyncio

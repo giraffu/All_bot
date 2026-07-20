@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from config import VITE_MERCHANT_ADDRESS
 from src.services.order_v2_service import get_order_public_id
 
 
@@ -18,13 +17,21 @@ def build_payment_plan_item(plan) -> dict:
     }
 
 
-def build_payment_plans_payload(plans) -> dict:
+def build_payment_plans_payload(
+    plans,
+    *,
+    ton_payment_enabled: bool,
+    ton_receiver_address: str | None,
+) -> dict:
     return {
         "code": 0,
         "message": "success",
         "data": {
             "plans": [build_payment_plan_item(plan) for plan in plans],
-            "ton_receiver_address": VITE_MERCHANT_ADDRESS,
+            "ton_payment_enabled": ton_payment_enabled,
+            "ton_receiver_address": (
+                ton_receiver_address if ton_payment_enabled else None
+            ),
         },
     }
 
@@ -47,6 +54,7 @@ def build_ton_order_payload(
     order,
     ton_comment: str,
     amount_ton,
+    ton_receiver_address: str,
 ) -> dict:
     return {
         "code": 0,
@@ -56,7 +64,7 @@ def build_ton_order_payload(
             "business_order_id": order.business_order_id,
             "legacy_order_id": order.order_id,
             "ton_comment": ton_comment,
-            "ton_receiver_address": VITE_MERCHANT_ADDRESS,
+            "ton_receiver_address": ton_receiver_address,
             "amount_ton": float(amount_ton),
             "amount_nanotons": str(
                 int(Decimal(str(amount_ton)) * Decimal("1000000000"))

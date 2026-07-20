@@ -761,7 +761,8 @@ async def test_ton_duplicate_tx_concurrent_callback_is_idempotent_on_real_db(
     tx_hash = f"ton-hash-{prefix}"
     order_id = f"ORDER:{fixture['invitee_telegram_id']}:{fixture['plan_id']}:999"
     validator = payment_validator.TonPaymentValidator(
-        SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+        SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+        merchant_address="UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ",
     )
 
     async def _fake_get_or_create_user_by_telegram(_telegram_id, **_kwargs):

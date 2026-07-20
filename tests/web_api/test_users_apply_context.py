@@ -106,11 +106,13 @@ async def test_get_user_history_payload_resolves_media_urls_with_keyword_argumen
         output_file: str | None,
         history_type: str | None,
         fallback_to_storage_path: bool = False,
+        r2_lookup_strategy: str = "public_probe",
     ):
         assert task_id == "task-1"
         assert output_file == "bot-data/history/task-1/output.png"
         assert history_type == "image"
         assert fallback_to_storage_path is False
+        assert r2_lookup_strategy == "s3_cached"
         return ("https://example.com/output.png", "https://example.com/thumb.png")
 
     monkeypatch.setattr(
@@ -161,11 +163,13 @@ async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_a
         output_file: str | None,
         history_type: str | None,
         fallback_to_storage_path: bool = False,
+        r2_lookup_strategy: str = "public_probe",
     ):
         assert task_id == "task-1"
         assert output_file == "bot-data/history/task-1/output.png"
         assert history_type == "image"
         assert fallback_to_storage_path is False
+        assert r2_lookup_strategy == "s3_cached"
         return ("https://example.com/output.png", "https://example.com/thumb.png")
 
     monkeypatch.setattr(
@@ -288,11 +292,13 @@ async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
         output_file: str | None,
         history_type: str | None,
         fallback_to_storage_path: bool = False,
+        r2_lookup_strategy: str = "public_probe",
     ):
         assert task_id == "task-txt2img-1"
         assert output_file == "bot-data/history/task-txt2img-1/output.png"
         assert history_type == "txt2img"
         assert fallback_to_storage_path is False
+        assert r2_lookup_strategy == "s3_cached"
         return ("https://example.com/output.png", "https://example.com/thumb.png")
 
     monkeypatch.setattr(

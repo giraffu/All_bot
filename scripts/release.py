@@ -6961,7 +6961,6 @@ SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS = frozenset(
         "LEGACY_MINIO_SECURE",
         "REQUIRED_CHANNEL_ID",
         "TZ",
-        "VITE_MERCHANT_ADDRESS",
     }
 )
 

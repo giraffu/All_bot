@@ -32,7 +32,7 @@ from src.handlers.message_handler import (
     handle_video,
 )
 from src.logger import setup_logging
-from src.services.payment_validator import TonPaymentValidator
+from src.services.payment_validator import build_ton_payment_validator_if_available
 from src.services.recovery_service import recover_active_tasks
 from src.services.task_registry import TaskRegistry
 from src.services.telegram_runtime_bootstrap import (
@@ -87,18 +87,11 @@ async def post_init(application):
     if "bg_tasks" not in application.bot_data:
         application.bot_data["bg_tasks"] = set()
 
-    ton_polling_enabled = os.getenv(
-        "TON_PAYMENT_POLLING_ENABLED", "true"
-    ).strip().lower() in {"1", "true", "yes", "on"}
-    if ton_polling_enabled:
-        payment_validator = TonPaymentValidator(bot_app=application)
+    payment_validator = build_ton_payment_validator_if_available(application)
+    if payment_validator is not None:
         task_payment = asyncio.create_task(payment_validator.poll_transactions())
         application.bot_data["bg_tasks"].add(task_payment)
         task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
-    else:
-        logging.getLogger("bot.core").info(
-            "TON payment polling disabled by TON_PAYMENT_POLLING_ENABLED"
-        )
 
     # Recover tasks from Redis
     task_recover = asyncio.create_task(
