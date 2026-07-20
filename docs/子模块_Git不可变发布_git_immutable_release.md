@@ -186,7 +186,7 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；`verify-test` 不再设置固定 24 小时观察门禁，只要求真实开始/完成时间顺序有效、完成时间不在未来、全部适用 smoke 为 true、SHA/digest、Web checksum 与测试运行态一致，并记录实际持续秒数和批准人。旧 `short_observation_override`、`override_reason` 与 `--confirm-short-observation` 已退出契约，不得用伪造时间或直接编辑状态代替真实验收。
 
-纯非运行时变更由 `scripts/classify_ci_change.py` 窄白名单判定。仅包含 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理/门禁脚本（含 `scripts/release.py`）时，可用单独 PR 合入受保护 main/兼容分支；上游 workflow 跳过全量模块测试，main 后继 modular workflow 不创建 bundle，因此没有镜像构建、测试部署、`verify-test` 或生产发布动作。任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会恢复完整不可变发布链。
+`scripts/classify_ci_change.py` 区分三类路径。纯 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理脚本为 `lightweight`：上游跳过全量模块测试，main 后继 modular workflow 不创建 bundle。仅包含 `ops/gpu_pool_controller/**` 与明确 RunPod/LAN operator/helper 的变更为 `operator`：上游只跑 `tests/ops tests/scripts`，不运行 PostgreSQL、Web、Dashboard 前端或其它 Python 分片；main 后继仍创建模块化 bundle，以便真实镜像输入变化得到不可变 artifact。LAN 宿主 helper 没有 artifact，最小更新模块为零；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖、业务代码、migration、Compose、运行配置、未知路径或混合变更仍为 `runtime`，恢复完整 CI 与对应 GPU attestation/canary。三类路径都必须经受保护 main，且都不自动部署测试/正式环境。
 
 管理后台是 owner-tools：QQCC Config 因已有专属测试实例而 auto 默认 standard，Dashboard 仍 auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 只声明 QQCC Config 前后端覆盖，Dashboard 不进入测试站；公共 base 继续用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
 

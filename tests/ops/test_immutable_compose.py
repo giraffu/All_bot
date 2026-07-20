@@ -521,10 +521,17 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "  pull_request:\n" in workflow
     assert "python scripts/classify_ci_change.py" in workflow
     assert "needs.change-scope.outputs.requires_full_ci == 'true'" in workflow
+    assert "needs.change-scope.outputs.requires_operator_ci == 'true'" in workflow
+    assert "  operator-tests:\n" in workflow
+    assert (
+        "python -m pytest -vv --maxfail=1 --durations=20 tests/ops tests/scripts"
+        in workflow
+    )
     assert "if: ${{ false }}" in workflow
     assert "workflow_run:" in modular
     assert "python scripts/classify_ci_change.py" in modular
-    assert "needs.change-scope.outputs.requires_full_ci == 'true'" in modular
+    assert "needs.change-scope.outputs.requires_release_bundle == 'true'" in modular
+    assert '--expected-scope "${{ needs.change-scope.outputs.scope }}"' in modular
     assert 'workflows: ["Immutable control-plane release"]' in modular
     assert "github.event.workflow_run.conclusion == 'success'" in modular
     assert "github.event.workflow_run.event == 'push'" in modular

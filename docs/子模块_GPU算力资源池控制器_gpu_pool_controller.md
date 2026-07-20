@@ -46,6 +46,18 @@
 - Controller v1 默认只做盘点、计划、渲染和 canary；不自动重启 GPU 节点、不自动替换 ComfyUI、不自动按生产队列扩容。
 - 所有真实 RunPod create/start/stop/delete/scale 都必须同时满足门禁环境变量和 `--execute`。
 
+### 1.1 状态、代码与发布门禁分层
+
+| 变化类型 | 事实源 | CI | main bundle / 最小模块 | GPU 发布门禁 |
+| :--- | :--- | :--- | :--- | :--- |
+| GPU↔LAN 当前映射、缓存态、验证时间 | XDG `current.yml` + live status | 不产生 Git 变更 | 无 | 操作时由单槽 operator 仲裁，不走代码发布 |
+| RunPod 当前/期望数量、Pod 生命周期 | Dashboard operation store、provider API、Central heartbeat | 不产生 Git 变更 | 无 | 每次 mutation 使用既有运行时授权门禁 |
+| LAN 主机 helper/candidate 工具 | `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` | `operator`：仅 `tests/ops tests/scripts` | 无运行 artifact | 无镜像 attestation/canary；实际操作仍需单槽授权 |
+| Dashboard 内置 GPU controller/rollout | `ops/gpu_pool_controller/**`、精确 controller/rollout 脚本 | `operator`：仅 `tests/ops tests/scripts` | 最多 `dashboard-backend` | 不构建、不替换 GPU runtime |
+| Worker/workflow、GPU release artifact/profile、Dockerfile、模型 manifest 或基础依赖 | `remote_workers/**`、`deploy/release-artifacts-v2.json` 与真实 GPU 构建输入 | 完整 CI | 受影响 GPU artifact | 保留同 SHA attestation、canary 和专用 operator |
+
+`operator` scope 只有在全部非轻量路径都属于明确 operator allowlist 时成立；与业务 runtime、migration、Compose、运行配置或未知路径混合会恢复完整 CI。模块化 workflow 仍会为 operator main SHA 创建 bundle，但 artifact planner 只重建真实输入命中的模块：LAN 主机 helper 全部复用，控制器代码只重建 Dashboard Backend。运行态漂移不应通过编辑 catalog“对齐”，否则既丢失现实仲裁，也会制造无意义发布。
+
 ## 2. 当前资源池口径
 
 可 SSH 管理的局域网 GPU 节点：

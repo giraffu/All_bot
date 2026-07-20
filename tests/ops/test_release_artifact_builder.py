@@ -50,6 +50,74 @@ def test_leaf_change_rebuilds_only_modules_whose_input_closure_matches():
     assert "central-api" in plan.reuse
 
 
+def test_gpu_control_operator_change_rebuilds_dashboard_but_not_gpu_images():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["ops/gpu_pool_controller/lan_aio_prod.py"],
+        has_previous=True,
+    )
+
+    assert plan.build == {"dashboard-backend"}
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["track"] == "gpu-execution"
+    } <= plan.reuse
+
+
+def test_gpu_host_operator_change_reuses_every_release_artifact():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["scripts/lan_aio_fleet_prod_ops.py"],
+        has_previous=True,
+    )
+
+    assert plan.build == set()
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["kind"] != "external-image"
+    } == plan.reuse
+    assert {"imgproxy", "postgres", "redis"} == plan.resolve
+
+
+def test_gpu_rollout_runtime_dependencies_rebuild_dashboard():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    for changed_path in (
+        "scripts/gpu_release_rollout.py",
+        "scripts/release_manifest_v2.py",
+        "scripts/release_strategy.py",
+    ):
+        plan = module.plan_builds(catalog, [changed_path], has_previous=True)
+        assert plan.build == {"dashboard-backend"}, changed_path
+
+
+def test_gpu_worker_change_rebuilds_gpu_images_but_not_dashboard():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+        has_previous=True,
+    )
+
+    assert "dashboard-backend" not in plan.build
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["track"] == "gpu-execution"
+    } <= plan.build
+
+
 def test_first_v2_release_builds_every_owned_artifact_but_resolves_vendors():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

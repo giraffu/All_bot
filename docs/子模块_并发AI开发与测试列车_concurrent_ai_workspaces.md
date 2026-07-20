@@ -18,6 +18,8 @@ A-H 并行开发
 
 纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 release batch/test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
 
+GPU controller/RunPod/LAN helper 另有 `operator` 聚焦 scope：只有全部非轻量路径均命中明确 operator allowlist 时，PR/main 才只跑 `tests/ops tests/scripts`；main 后继 modular workflow 仍创建不可变 bundle，并由 artifact planner 决定零模块（LAN 宿主 helper）或仅 `dashboard-backend`（镜像内置 controller/rollout）。它不构建 GPU artifact、不自动部署环境；`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、Dockerfile/模型基础依赖或混合业务变更仍按 `runtime` 走完整链路。
+
 ## 2. 固定目录和职责
 
 | 目录 | 职责 |
@@ -76,7 +78,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 - 只重建影响分析选中的 artifact，未变化 artifact 从最近 main bundle 复用；
 - main 涉及 GPU artifact 重建时必须有同 SHA 完整 attestation，否则 bundle 创建失败。
 
-两个 workflow 都先运行 `change-scope`。若分类为 `lightweight`，四组全量模块测试 job 会跳过，聚合 `ci-gate` 只核对分类成功；main 后继 modular workflow 同样只分类并跳过 release job，因此不会登录构建链、生成新容器或发布 bundle。空变更集和未知路径按 `runtime` 处理。
+两个 workflow 都先运行 `change-scope`。`lightweight` 跳过全量测试，聚合 `ci-gate` 只核对分类成功，main 后继 modular workflow 也跳过 release job。`operator` 跳过九个 Python 分片、PostgreSQL、Web 和 Dashboard 前端 job，只要求单个 operator test job 成功；main 后继 release job 保留，以便构建真实命中的最小 artifact。`runtime` 运行完整检查。空变更集、未知路径和 operator/runtime 混合均按 `runtime` 处理。
 
 `modular-release-v2.yml` 自身的手动 dispatch 没有测试恢复权限，始终只允许 `validation_mode=build-only`。陈旧 main SHA、缺失或失败的任一预期 test job、错误 workflow/event/branch/repository 都在构建前 fail closed。
 
@@ -106,4 +108,4 @@ python scripts/release.py deploy --env test --track control-plane --sha <main-sh
 
 ## 8. GitHub 保护
 
-`main` 禁止 direct push、force-push 和删除。运行时改动要求批次 PR 与完整检查；轻量改动可用单独 PR 和 change-scope/aggregate gate 合入。`codex/test-train` 退出日常运行时集成路径，可保留为历史兼容 ref；若仍需同步轻量治理改动，可直接合入且不得触发 candidate、容器构建或测试部署。
+`main` 禁止 direct push、force-push 和删除。业务运行时改动要求批次 PR 与完整检查；operator 改动仍经 PR/批次集成，但使用聚焦 operator gate；轻量改动可用单独 PR 和 change-scope/aggregate gate 合入。`codex/test-train` 退出日常运行时集成路径，可保留为历史兼容 ref；若仍需同步轻量治理改动，可直接合入且不得触发 candidate、容器构建或测试部署。

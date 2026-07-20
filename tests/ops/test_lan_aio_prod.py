@@ -1566,12 +1566,13 @@ def test_lan_aio_takeover_rolls_back_after_stop_old_failure_window():
     ]
 
 
-def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
+def test_lan_aio_candidate_plan_generates_stable_yaml_patch(tmp_path):
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
     )
 
     payload = ops.candidate_plan(
@@ -1667,12 +1668,13 @@ def test_disabled_heartbeat_accepts_declared_runtime_profile_for_bf16_candidate(
     ops._verify_disabled_heartbeat(slot)
 
 
-def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target():
+def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target(tmp_path):
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
     )
 
     with pytest.raises(RuntimeError, match="not an enabled current slot"):

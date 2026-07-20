@@ -27,6 +27,13 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 - live status：观测现实，不是自动覆盖源。live、ledger、catalog 任一不一致都报告 drift 并停止 mutation；live 不可达时 ledger 只显示 last-known，不能授权 mutation。
 - `lan_aio_fleet_state.legacy.yml`：只供首次 `state-init` 的冻结迁移种子，普通操作绝不更新。
 
+发布与 CI 边界：
+
+- GPU↔LAN 当前映射、cache marker、最近验证时间以及 RunPod 当前数量都是易变运行态，只写 XDG ledger、provider/operation store 或后台观测，不写 Git，不因漂移触发代码发布。
+- 仅修改 `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` 这类宿主 helper 时，CI 使用聚焦的 `operator` scope；它不构建或部署任何 control-plane/GPU artifact，合入后仍须在获授权的单槽操作中显式使用新 helper。
+- 修改 `ops/gpu_pool_controller/**`、`scripts/gpu_pool_controller.py`、`scripts/gpu_release_rollout.py` 或 `scripts/runpod_prod_ops.sh` 时，同样只跑 operator 测试，但可信 main bundle 最多重建 `dashboard-backend`；不会因此构建、canary 或替换 GPU 镜像，也不会改动现有 Pod/LAN 容器。
+- 修改 `remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、GPU Dockerfile、模型 manifest 或真实 GPU 基础依赖时，必须恢复全量 CI、同 SHA artifact attestation，并按策略执行 canary/operator；不得借 operator scope 规避。
+
 ## 2. 固定命令
 
 只使用 fleet helper 管理 LAN AIO：
