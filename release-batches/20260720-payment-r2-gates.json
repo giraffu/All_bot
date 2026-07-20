@@ -1,0 +1,22 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "753fba4fddc1719725ca28f3803a4c1761e01ce8",
+  "batch": "20260720-payment-r2-gates",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260720-payment-r2-gates",
+  "members": [
+    {
+      "base_sha": "753fba4fddc1719725ca28f3803a4c1761e01ce8",
+      "branch": "codex/b-fix-prod-payment-runpod-release-gates",
+      "head": "7fc2b2705c7b802407abf11b00874169dd576efe",
+      "slot": "B"
+    },
+    {
+      "base_sha": "753fba4fddc1719725ca28f3803a4c1761e01ce8",
+      "branch": "codex/b-fix-ton-telegram-r2",
+      "head": "3d0cdcce187d9a594b6a4c2f90a738492f83098d",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
