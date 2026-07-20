@@ -78,7 +78,11 @@ async def _release_read_transaction(db) -> None:
         logger.warning("Failed to release task result read transaction: %s", exc)
 
 
-async def _resolve_web_r2_url(hist: _HistorySnapshot) -> str:
+async def _resolve_web_r2_url(
+    hist: _HistorySnapshot,
+    *,
+    allow_s3_presigned_fallback: bool,
+) -> str:
     object_keys = build_r2_media_key_candidates(
         output_file=hist.output_file,
         task_id=hist.task_id,
@@ -101,6 +105,8 @@ async def _resolve_web_r2_url(hist: _HistorySnapshot) -> str:
         if public_url:
             return public_url
 
+    if not allow_s3_presigned_fallback:
+        return ""
     return await _resolve_web_r2_presigned_url_from_s3(object_keys)
 
 
@@ -149,7 +155,10 @@ async def _resolve_task_result_url(hist: _HistorySnapshot, *, media_type: str) -
         return ""
 
     if hist.source == "web":
-        r2_url = await _resolve_web_r2_url(hist)
+        r2_url = await _resolve_web_r2_url(
+            hist,
+            allow_s3_presigned_fallback=(media_type == "image"),
+        )
         if r2_url:
             return r2_url
 

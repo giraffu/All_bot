@@ -81,6 +81,9 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["ALLBOT_ENV"] == "prod"
     assert web["ALLBOT_CONFIG_REVISION"] == snapshot.service_revisions["web-api"]
     assert web["BOT_TOKEN"] == "prod-bot-token"
+    assert web["TELEGRAM_API_BASE_URL"] == (
+        "https://telegram-api-prod.example.com"
+    )
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert bot["BOT_TOKEN"] == "prod-bot-token"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
@@ -88,6 +91,60 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         "ALLBOT_CONFIG_REVISION",
         "ALLBOT_ENV",
     }
+
+
+@pytest.mark.parametrize("service", ["web-api", "main-bot"])
+def test_ton_merchant_address_is_conditionally_required(service):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    values["TON_PAYMENT_POLLING_ENABLED"] = "true"
+
+    with pytest.raises(module.ContractError) as exc:
+        module.build_snapshot(contract, "prod", values, services={service})
+
+    assert "VITE_MERCHANT_ADDRESS" in str(exc.value)
+    assert "prod-bot-token" not in str(exc.value)
+
+
+@pytest.mark.parametrize("service", ["web-api", "main-bot"])
+def test_ton_merchant_address_is_projected_only_to_consuming_services(service):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    values.update(
+        {
+            "TON_PAYMENT_POLLING_ENABLED": "true",
+            "VITE_MERCHANT_ADDRESS": (
+                "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ"
+            ),
+        }
+    )
+
+    snapshot = module.build_snapshot(contract, "prod", values, services={service})
+
+    projection = snapshot.projections[service]
+    assert projection["TON_PAYMENT_POLLING_ENABLED"] == "true"
+    assert projection["VITE_MERCHANT_ADDRESS"].startswith("UQ")
+
+
+def test_disabled_ton_does_not_require_or_project_merchant_address():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values["TON_PAYMENT_POLLING_ENABLED"] = "false"
+
+    snapshot = module.build_snapshot(
+        contract,
+        "test",
+        values,
+        services={"web-api", "main-bot"},
+    )
+
+    assert all(
+        "VITE_MERCHANT_ADDRESS" not in projection
+        for projection in snapshot.projections.values()
+    )
 
 
 def test_dashboard_backend_projection_requires_agent_control_token():
@@ -134,6 +191,19 @@ def test_missing_required_service_key_fails_closed_without_value_disclosure():
 
     assert "BOT_TOKEN" in str(exc.value)
     assert "prod-bot-token" not in str(exc.value)
+
+
+def test_web_api_rejects_missing_telegram_api_base_without_value_disclosure():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    telegram_url = values.pop("TELEGRAM_API_BASE_URL")
+
+    with pytest.raises(module.ContractError) as exc:
+        module.build_snapshot(contract, "prod", values, services={"web-api"})
+
+    assert "TELEGRAM_API_BASE_URL" in str(exc.value)
+    assert telegram_url not in str(exc.value)
 
 
 def test_disabled_optional_service_does_not_receive_or_require_projection():

@@ -1,7 +1,5 @@
 import asyncio
-from typing import Any
-
-import httpx
+from typing import Any, Literal
 
 from src.core.media_paths import (
     get_media_type_from_history,
@@ -10,6 +8,7 @@ from src.core.media_paths import (
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
 from src.services.r2_presign import build_r2_presigned_url
 from src.services.storage import storage
+from src.web_api.services.r2_public_probe_service import r2_public_probe_service
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
@@ -28,30 +27,16 @@ HISTORY_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
 
 
 async def r2_public_url_exists(
+    object_key: str,
     public_url: str,
     *,
     timeout_seconds: float,
 ) -> bool:
-    if not public_url:
-        return False
-
-    request_timeout = httpx.Timeout(
-        timeout_seconds,
-        connect=min(timeout_seconds, 1.0),
+    return await r2_public_probe_service.probe(
+        object_key,
+        public_url,
+        timeout_seconds=timeout_seconds,
     )
-    try:
-        async with httpx.AsyncClient(timeout=request_timeout, trust_env=False) as client:
-            response = await client.head(public_url, follow_redirects=True)
-            if response.status_code == 405:
-                response = await client.get(
-                    public_url,
-                    headers={"Range": "bytes=0-0"},
-                    follow_redirects=True,
-                )
-    except httpx.HTTPError:
-        return False
-
-    return response.status_code in {200, 204, 206, 301, 302, 304}
 
 
 def mark_r2_object_exists(object_key: str) -> None:
@@ -73,6 +58,7 @@ async def get_r2_url_if_exists(
 
     if timeout_seconds:
         if await r2_public_url_exists(
+            object_key,
             public_url,
             timeout_seconds=timeout_seconds,
         ):
@@ -96,6 +82,25 @@ async def get_r2_url_if_exists(
         return ""
     if exists:
         return public_url
+    return ""
+
+
+async def get_first_r2_url_from_s3_cache(
+    *object_keys: str,
+    presigned_expires_hours: float = 1.0,
+) -> str:
+    for object_key in object_keys:
+        if not object_key:
+            continue
+        if not await storage.async_r2_object_exists(object_key):
+            continue
+        presigned_url = build_r2_presigned_url(
+            object_key,
+            expires_hours=presigned_expires_hours,
+        )
+        if presigned_url:
+            return presigned_url
+        return storage.get_r2_public_url(object_key) or ""
     return ""
 
 
@@ -142,20 +147,25 @@ async def resolve_media_url(
     prefer_r2: bool = True,
     expires_hours: int | None = None,
     fallback_to_storage_path: bool = False,
+    r2_lookup_strategy: Literal["public_probe", "s3_cached"] = "public_probe",
 ) -> str:
     if not output_file:
         return ""
 
     if prefer_r2:
-        r2_url = await get_first_r2_url_if_exists(
-            *build_r2_media_key_candidates(
-                output_file=output_file,
-                task_id=task_id,
-                preferred_r2_object_name=preferred_r2_object_name,
-            ),
-            timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
-            fallback_to_presigned=True,
+        object_keys = build_r2_media_key_candidates(
+            output_file=output_file,
+            task_id=task_id,
+            preferred_r2_object_name=preferred_r2_object_name,
         )
+        if r2_lookup_strategy == "s3_cached":
+            r2_url = await get_first_r2_url_from_s3_cache(*object_keys)
+        else:
+            r2_url = await get_first_r2_url_if_exists(
+                *object_keys,
+                timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+                fallback_to_presigned=True,
+            )
         if r2_url:
             return r2_url
 
@@ -172,6 +182,7 @@ async def resolve_thumbnail_url(
     task_id: str | None = None,
     preferred_r2_object_name: str | None = None,
     prefer_r2: bool = True,
+    r2_lookup_strategy: Literal["public_probe", "s3_cached"] = "public_probe",
 ) -> str:
     if not output_file:
         return ""
@@ -186,11 +197,14 @@ async def resolve_thumbnail_url(
         return ""
 
     if prefer_r2:
-        r2_url = await get_first_r2_url_if_exists(
-            *thumb_r2_keys,
-            timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
-            fallback_to_presigned=True,
-        )
+        if r2_lookup_strategy == "s3_cached":
+            r2_url = await get_first_r2_url_from_s3_cache(*thumb_r2_keys)
+        else:
+            r2_url = await get_first_r2_url_if_exists(
+                *thumb_r2_keys,
+                timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+                fallback_to_presigned=True,
+            )
         if r2_url:
             return r2_url
 
@@ -210,6 +224,7 @@ async def resolve_media_and_thumbnail_urls(
     prefer_r2_media: bool = True,
     prefer_r2_thumbnail: bool = True,
     fallback_to_storage_path: bool = False,
+    r2_lookup_strategy: Literal["public_probe", "s3_cached"] = "public_probe",
 ) -> tuple[str, str]:
     if not output_file:
         return "", ""
@@ -221,6 +236,7 @@ async def resolve_media_and_thumbnail_urls(
             preferred_r2_object_name=media_preferred_r2_object_name,
             prefer_r2=prefer_r2_media,
             fallback_to_storage_path=fallback_to_storage_path,
+            r2_lookup_strategy=r2_lookup_strategy,
         ),
         resolve_thumbnail_url(
             output_file,
@@ -228,6 +244,7 @@ async def resolve_media_and_thumbnail_urls(
             task_id=task_id,
             preferred_r2_object_name=thumbnail_preferred_r2_object_name,
             prefer_r2=prefer_r2_thumbnail,
+            r2_lookup_strategy=r2_lookup_strategy,
         ),
     )
     return media_url, thumbnail_url
@@ -274,6 +291,7 @@ async def resolve_history_media_urls(
     output_file: str | None,
     history_type: str | None,
     fallback_to_storage_path: bool = False,
+    r2_lookup_strategy: Literal["public_probe", "s3_cached"] = "s3_cached",
 ) -> tuple[str, str]:
     media_type = get_media_type_from_history(history_type)
     return await resolve_media_and_thumbnail_urls(
@@ -281,6 +299,7 @@ async def resolve_history_media_urls(
         media_type,
         task_id=task_id,
         fallback_to_storage_path=fallback_to_storage_path,
+        r2_lookup_strategy=r2_lookup_strategy,
     )
 
 
@@ -300,6 +319,7 @@ async def resolve_history_extra_outputs(
     task_id: str | None,
     extra_outputs: dict[str, Any] | None,
     source: str | None,
+    r2_lookup_strategy: Literal["public_probe", "s3_cached"] = "public_probe",
 ) -> dict[str, dict[str, Any]]:
     if not isinstance(extra_outputs, dict):
         return {}
@@ -318,6 +338,7 @@ async def resolve_history_extra_outputs(
             prefer_r2=(source == "web"),
             expires_hours=None if source == "web" else 24,
             fallback_to_storage_path=True,
+            r2_lookup_strategy=r2_lookup_strategy,
         )
         resolved[key] = {
             **value,

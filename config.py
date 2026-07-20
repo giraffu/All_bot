@@ -37,7 +37,6 @@ GROUP_ID = os.getenv("GROUP_ID")
 PROXY_URL = os.getenv("PROXY_URL")
 
 # TON Payment Configuration
-VITE_MERCHANT_ADDRESS = _get_env_value("VITE_MERCHANT_ADDRESS")
 WEBAPP_URL = _get_env_value("WEBAPP_URL")
 MINI_APP_URL = _get_env_value("MINI_APP_URL")
 MINI_APP_VERSION = _get_env_value("MINI_APP_VERSION")

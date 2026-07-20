@@ -9,6 +9,8 @@
 
 2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，允许本次目标服务更新 revision，同时保证所有非目标 active 服务继续存在且 revision、投影字节和权限均不变。局部 apply 只替换或追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何非目标 active 服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。目标更新会保留不可变 activation history 和完整旧联合状态，供显式 rollback 恢复。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
 
+2026-07-20 TON/Telegram 配置契约收口：`web-api` 必须投影 `TELEGRAM_API_BASE_URL`；当 `TON_PAYMENT_POLLING_ENABLED=true` 时，`web-api` 与 `main-bot` 条件必填并投影有效的 `VITE_MERCHANT_ADDRESS`。地址和 Telegram endpoint 只来自 `/etc/allbot/prod.env`，不得写入镜像或代码。该变更触及共享服务环境契约，必须走完整 control-plane CI、测试验收与维护式正式事务；缺键在任何容器替换前 fail closed。
+
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
 > 2026-07-16 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不进入日常门面；需要不同维护编排时改用高级入口。禁止手工写删 marker 或静默按另一模式上线。

@@ -32,6 +32,7 @@ const {
   showPaymentModal,
   orderStatus,
   tonWalletAddress,
+  tonPaymentEnabled,
   handleRmbPay,
   handleTonPay,
   openTonConnectModal,
@@ -248,8 +249,12 @@ const returnToProfile = () => {
         </div>
         <h2 class="payment-heading text-lg md:text-2xl font-bold mb-3 md:mb-5">选择支付方式</h2>
         
-        <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-6">
-          <button 
+        <div
+          class="grid gap-2 md:gap-4 mb-3 md:mb-6"
+          :class="tonPaymentEnabled ? 'grid-cols-3' : 'grid-cols-2'"
+        >
+          <button
+            v-if="tonPaymentEnabled"
             @click="payMethod = 'alipay'"
             class="payment-option payment-option--blue rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
             :class="{ 'is-selected': payMethod === 'alipay' }"
@@ -276,6 +281,12 @@ const returnToProfile = () => {
             <span class="truncate">TON</span>
           </button>
         </div>
+        <p
+          v-if="!tonPaymentEnabled"
+          class="payment-hint text-sm mb-3 md:mb-4 text-center"
+        >
+          {{ t('billing.ton_unavailable') }}
+        </p>
         
         <!-- RMB Action -->
         <div v-if="payMethod === 'alipay' || payMethod === 'wxpay'" class="flex flex-col items-center">

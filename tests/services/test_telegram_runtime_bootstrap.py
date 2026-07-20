@@ -25,6 +25,22 @@ def test_telegram_runtime_urls_fail_closed_and_accept_env(monkeypatch):
     assert runtime.build_telegram_bot_base_url() == "http://local-api:8081/bot"
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "telegram-api.internal:8081",
+        "ftp://telegram.example.com",
+        "file:///tmp/telegram",
+        "http:///missing-host",
+    ],
+)
+def test_telegram_api_base_url_rejects_invalid_urls(monkeypatch, value):
+    monkeypatch.setenv("TELEGRAM_API_BASE_URL", value)
+
+    with pytest.raises(RuntimeError, match="TELEGRAM_API_BASE_URL"):
+        runtime.resolve_telegram_api_base_url()
+
+
 def test_build_telegram_httpx_request_uses_expected_timeouts():
     request = runtime.build_telegram_httpx_request(
         connect_timeout=11.0,

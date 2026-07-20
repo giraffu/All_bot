@@ -55,7 +55,11 @@ async def test_get_r2_url_if_exists_uses_public_probe_for_timeout_path(monkeypat
     )
 
     assert url == public_url
-    public_probe_mock.assert_awaited_once_with(public_url, timeout_seconds=2.5)
+    public_probe_mock.assert_awaited_once_with(
+        "history/task-1/original.mp4",
+        public_url,
+        timeout_seconds=2.5,
+    )
     storage_exists_mock.assert_not_called()
     mark_mock.assert_called_once_with("history/task-1/original.mp4")
 
@@ -81,7 +85,11 @@ async def test_get_r2_url_if_exists_skips_s3_head_when_public_probe_misses(
     )
 
     assert url == ""
-    public_probe_mock.assert_awaited_once_with(public_url, timeout_seconds=2.5)
+    public_probe_mock.assert_awaited_once_with(
+        "history/task-1/original.mp4",
+        public_url,
+        timeout_seconds=2.5,
+    )
     storage_exists_mock.assert_not_called()
 
 
@@ -113,7 +121,11 @@ async def test_get_r2_url_if_exists_can_fallback_to_presigned_when_public_probe_
     )
 
     assert url == "https://r2-s3.example/presigned"
-    public_probe_mock.assert_awaited_once_with(public_url, timeout_seconds=2.5)
+    public_probe_mock.assert_awaited_once_with(
+        "history/task-1/original.mp4",
+        public_url,
+        timeout_seconds=2.5,
+    )
     storage_exists_mock.assert_awaited_once_with("history/task-1/original.mp4")
     presign_mock.assert_called_once_with(
         "history/task-1/original.mp4",
