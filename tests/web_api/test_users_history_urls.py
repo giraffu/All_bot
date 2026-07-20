@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,6 +38,64 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
+async def test_history_list_lookup_uses_s3_cache_without_public_head(monkeypatch):
+    public_probe = AsyncMock(side_effect=AssertionError("public HEAD is forbidden"))
+    s3_exists = AsyncMock(return_value=True)
+    presign = MagicMock(return_value="https://r2-s3.example/presigned.png")
+    monkeypatch.setattr(media_presenter, "r2_public_url_exists", public_probe)
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "async_r2_object_exists",
+        s3_exists,
+    )
+    monkeypatch.setattr(media_presenter, "build_r2_presigned_url", presign)
+
+    results = await asyncio.gather(
+        *(
+            media_presenter.resolve_history_media_urls(
+                task_id=f"task-{index}",
+                output_file=f"123/output_images/task-{index}.png",
+                history_type="image",
+                r2_lookup_strategy="s3_cached",
+            )
+            for index in range(10)
+        )
+    )
+
+    assert all(
+        output_url == "https://r2-s3.example/presigned.png"
+        for output_url, _thumbnail_url in results
+    )
+    public_probe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_history_extra_outputs_accept_explicit_list_lookup_strategy(monkeypatch):
+    public_probe = AsyncMock(side_effect=AssertionError("public HEAD is forbidden"))
+    monkeypatch.setattr(media_presenter, "r2_public_url_exists", public_probe)
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "async_r2_object_exists",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        media_presenter,
+        "build_r2_presigned_url",
+        MagicMock(return_value="https://r2-s3.example/last-frame.png"),
+    )
+
+    result = await media_presenter.resolve_history_extra_outputs(
+        task_id="task-1",
+        extra_outputs={"last_frame": {"path": "task-1_last.png"}},
+        source="web",
+        r2_lookup_strategy="s3_cached",
+    )
+
+    assert result["last_frame"]["url"] == "https://r2-s3.example/last-frame.png"
+    public_probe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_resolve_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(return_value="minio-original-url")
 
@@ -61,6 +120,7 @@ async def test_resolve_history_media_urls_prefers_r2_media_and_thumbnail(monkeyp
         task_id="task-1",
         output_file="123/output_images/task-1.mp4",
         history_type="custom_video",
+        r2_lookup_strategy="public_probe",
     )
 
     assert output_url == "https://r2.example/original.mp4"
@@ -93,6 +153,7 @@ async def test_resolve_history_media_urls_prefers_r2_thumbnail(monkeypatch):
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         history_type="image",
+        r2_lookup_strategy="public_probe",
     )
 
     assert output_url == "minio-original-url"
@@ -136,6 +197,7 @@ async def test_resolve_history_media_urls_uses_legacy_r2_media_key_when_history_
         task_id="task-1",
         output_file="123/output_images/task-1.mp4",
         history_type="custom_video",
+        r2_lookup_strategy="public_probe",
     )
 
     assert output_url == "https://r2.example/task-1.mp4"
@@ -187,6 +249,7 @@ async def test_resolve_history_media_urls_falls_back_to_minio_thumbnail(monkeypa
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         history_type="image",
+        r2_lookup_strategy="public_probe",
     )
 
     assert output_url == "minio-original-url"
@@ -219,6 +282,7 @@ async def test_resolve_history_media_urls_does_not_use_legacy_storage(monkeypatc
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         history_type="image",
+        r2_lookup_strategy="public_probe",
     )
 
     assert output_url == "current-storage-url"

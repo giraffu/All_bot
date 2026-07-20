@@ -9,6 +9,8 @@
 
 2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，允许本次目标服务更新 revision，同时保证所有非目标 active 服务继续存在且 revision、投影字节和权限均不变。局部 apply 只替换或追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何非目标 active 服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。目标更新会保留不可变 activation history 和完整旧联合状态，供显式 rollback 恢复。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
 
+2026-07-20 TON/Telegram 配置契约收口：`web-api` 必须投影 `TELEGRAM_API_BASE_URL`；当 `TON_PAYMENT_POLLING_ENABLED=true` 时，`web-api` 与 `main-bot` 条件必填并投影有效的 `VITE_MERCHANT_ADDRESS`。地址和 Telegram endpoint 只来自 `/etc/allbot/prod.env`，不得写入镜像或代码。该变更触及共享服务环境契约，必须走完整 control-plane CI、测试验收与维护式正式事务；缺键在任何容器替换前 fail closed。
+
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
 > 2026-07-16 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不进入日常门面；需要不同维护编排时改用高级入口。禁止手工写删 marker 或静默按另一模式上线。
@@ -92,7 +94,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `RUNPOD_IMAGE_NAME_IMG2IMG_LORA` | Dashboard operation 固定为 catalog 中已验收的 baked img2img 镜像 | 后续手动新增与 autoscaler 扩容不得继续使用缺少 `/opt/allbot/runpod_baked_runtime_entrypoint.sh` 的 2026-06-12 legacy 镜像；容器 `/app/.env` 中的旧值不能覆盖该 pin |
 | `RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO` / `RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO` | `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` / `false` | 正式 `image_to_video` split profile 的 RunPod 镜像；不得继承旧 `WAN22_AIO` template/image |
 | `RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2` / `RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2` | `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` / `false` | 正式 `wan22_video_v2` split profile 的 RunPod 镜像；不得继承旧 `WAN22_AIO` template/image |
-| `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_USE_TEMPLATE_I2I_PRO` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头 / `false` | 正式 `i2i_pro` 三任务 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
+| `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_USE_TEMPLATE_I2I_PRO` | 创建/render/canary 前必须显式配置，镜像须为 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>` 或同仓库的 `@sha256:<64hex>` 精确 pin / `false` | 正式 `i2i_pro` 三任务 RunPod 创建、render 与 canary 所需镜像；外部仓库的 digest 继续 fail closed，删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_USE_TEMPLATE_SCAIL2` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头 / `false` | 正式 `scail2` 手动备用 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_IMAGE_NAME_LTX_VIDEO` / `RUNPOD_USE_TEMPLATE_LTX_VIDEO` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:` 开头 / `false` | 正式 `ltx_video` 高级图生视频 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` / `RUNPOD_USE_TEMPLATE_PORNMASTER_FLUX2_EDIT` | Dashboard operation 固定为 catalog 中已验收的 PornMaster baked runtime 镜像 / `false` | 同一镜像承载 FP8 与 BF16 的 single/multiple workflow；两者通过 task type、模型 manifest、GPU/`--lowvram` 参数隔离。容器 `/app/.env` 中的旧镜像值不能覆盖该 pin；删除已有 Pod 不依赖创建镜像配置 |

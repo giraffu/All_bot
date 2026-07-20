@@ -91,6 +91,7 @@ async def build_user_history_payload(
                 task_id=history.task_id,
                 output_file=history.output_file,
                 history_type=history.type,
+                r2_lookup_strategy="s3_cached",
             )
             for history in histories
         )
@@ -101,6 +102,7 @@ async def build_user_history_payload(
                 task_id=history.task_id,
                 extra_outputs=getattr(history, "extra_outputs", None),
                 source=getattr(history, "source", None),
+                r2_lookup_strategy="s3_cached",
             )
             for history in histories
         )
@@ -166,6 +168,7 @@ async def build_favorite_gallery_payload(
                 task_id=history.task_id,
                 output_file=history.output_file,
                 history_type=history.type,
+                r2_lookup_strategy="s3_cached",
             )
             for history in histories
         )

@@ -642,6 +642,57 @@ def test_prod_worker_render_i2i_pro_uses_prod_profile_defaults():
     assert provider.delete_calls == 0
 
 
+def test_prod_worker_render_accepts_release_pinned_i2i_pro_digest():
+    release_image = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro@sha256:" + "a" * 64
+    )
+    agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
+    provider = RunPodProvider(
+        replace(
+            _settings(),
+            prod_agent_id=agent_id,
+            image_name_i2i_pro=release_image,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="i2i_pro",
+        task_type="i2i_pro",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] == release_image
+
+
+def test_prod_worker_render_rejects_foreign_i2i_pro_digest():
+    agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
+    provider = RunPodProvider(
+        replace(
+            _settings(),
+            prod_agent_id=agent_id,
+            image_name_i2i_pro=(
+                "ghcr.io/example/foreign-i2i-pro@sha256:" + "b" * 64
+            ),
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="i2i_pro",
+        task_type="i2i_pro",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert "imageName must start with" in payload["error"]
+
+
 def test_prod_worker_render_scail2_uses_prod_profile_defaults():
     agent_id = prod_agent_id_from_slot("01", profile="scail2")
     provider = FakeRunPodProvider(

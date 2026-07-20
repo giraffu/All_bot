@@ -19,6 +19,10 @@ from src.services.order_v2_service import (
     is_order_v2_enabled,
 )
 from src.services.rmb_payment_service import RMBPaymentService
+from src.services.ton_payment_config import (
+    TonPaymentAvailability,
+    get_ton_payment_availability,
+)
 from src.web_api.presenters.payment_presenter import (
     build_order_status_payload,
     build_payment_plans_payload,
@@ -56,12 +60,21 @@ def _extract_normalized_pay_url(pay_result: dict | None) -> str | None:
     )
 
 
-async def get_payment_plans_payload(*, db) -> dict:
+async def get_payment_plans_payload(
+    *,
+    db,
+    availability: TonPaymentAvailability | None = None,
+) -> dict:
+    availability = availability or get_ton_payment_availability()
     result = await db.execute(
         build_visible_membership_plans_stmt(is_rmb=True, is_subscription=None)
     )
     plans = result.scalars().all()
-    return build_payment_plans_payload(plans)
+    return build_payment_plans_payload(
+        plans,
+        ton_payment_enabled=availability.enabled,
+        ton_receiver_address=availability.merchant_address,
+    )
 
 
 async def create_rmb_order_payload(
@@ -126,6 +139,16 @@ async def create_ton_order_payload(
     current_user,
     plan_id: int,
 ) -> dict:
+    availability = get_ton_payment_availability()
+    if not availability.enabled or not availability.merchant_address:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "TON_PAYMENT_UNAVAILABLE",
+                "message": "TON payment is unavailable",
+            },
+        )
+
     plan_res = await db.execute(build_visible_membership_plan_lookup_stmt(plan_id))
     plan = plan_res.scalar_one_or_none()
     if not plan or not plan.is_active:
@@ -166,6 +189,7 @@ async def create_ton_order_payload(
         order=new_order,
         ton_comment=ton_comment,
         amount_ton=plan.price_ton,
+        ton_receiver_address=availability.merchant_address,
     )
 
 

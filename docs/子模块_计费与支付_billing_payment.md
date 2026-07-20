@@ -86,6 +86,9 @@ sequenceDiagram
 - RMB 适配层按本地业务单定位订单；TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
+- TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
+- `GET /api/payment/plans` 返回 `ton_payment_enabled` 和可空的 `ton_receiver_address`；禁用时地址必须为 `null`。`POST /api/payment/ton-orders` 在套餐查询、`Order` 构造和事务提交前检查可用性，不可用时返回 `503 / TON_PAYMENT_UNAVAILABLE`，不得留下 `PENDING` 订单。Vue 交易地址只能取自订单响应，不能保留接收地址硬编码或使用套餐地址兜底。
+- checkpoint key 使用校验后的 merchant address：同一地址的等价表示归一到同一 key，真实商户地址变化会自然形成新的 `ton:<merchant_address>:last_lt`；不得把旧地址游标复制到新地址。抓链、金额校验或履约失败时仍不得前移游标。
 - 各支付渠道发货完成后都会同步尝试：
   - 计算首单返佣 `commission_usdt`
   - 写入 `affiliate_transactions`
@@ -134,6 +137,11 @@ sequenceDiagram
 - 单纯手动修改 `current_identity` 的用户不会被自动放行；如需纳入，应通过后台赠送套餐补齐订单记录，或使其 `user_group` 达到筑基期及以上。
 
 ## 5. 对外接口口径
+
+- Web 套餐：`GET /api/payment/plans`
+  - `data.ton_payment_enabled=false` 时 `data.ton_receiver_address=null`。
+- Web TON 预建单：`POST /api/payment/ton-orders`
+  - TON 配置不可用时返回 HTTP 503，`reason=TON_PAYMENT_UNAVAILABLE`，且无数据库写入。
 
 - RMB 支付回调：`POST /api/payment/notify`
   - 仅适用于 RMB 网关异步通知。

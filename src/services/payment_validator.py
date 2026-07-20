@@ -6,7 +6,6 @@ from datetime import datetime
 import aiohttp
 from sqlalchemy.dialects.postgresql import insert
 
-from config import VITE_MERCHANT_ADDRESS
 from src.database.core import AsyncSessionLocal
 from src.database.models import RuntimeCheckpoint
 from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
@@ -19,6 +18,11 @@ from src.services.payment_fulfillment_service import (
 )
 from src.services.order_v2_service import (
     parse_order_payload,
+)
+from src.services.ton_payment_config import (
+    TonPaymentAvailability,
+    get_ton_payment_availability,
+    validate_ton_merchant_address,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +61,7 @@ class TonPaymentValidator:
     def __init__(
         self,
         bot_app,
+        merchant_address: str | None = None,
         api_base: str | None = None,
         api_key: str | None = None,
         poll_interval_seconds: int | None = None,
@@ -67,7 +72,7 @@ class TonPaymentValidator:
         )
         self.api_key = api_key if api_key is not None else os.getenv("TONCENTER_API_KEY")
         self.bot_app = bot_app
-        self.merchant_address = VITE_MERCHANT_ADDRESS
+        self.merchant_address = validate_ton_merchant_address(merchant_address)
         self.last_lt = 0  # Logical time of the last processed transaction
         self.poll_interval_seconds = max(
             1, int(poll_interval_seconds or os.getenv("TON_POLL_INTERVAL_SECONDS", "15"))
@@ -417,3 +422,28 @@ class TonPaymentValidator:
         except Exception as e:
             logger.error(f"Error processing order {order_id}: {e}")
             return False
+
+
+def build_ton_payment_validator_if_available(
+    bot_app,
+    *,
+    availability: TonPaymentAvailability | None = None,
+    validator_factory=None,
+) -> TonPaymentValidator | None:
+    availability = availability or get_ton_payment_availability()
+    if not availability.enabled or not availability.merchant_address:
+        if availability.requested_enabled:
+            logger.error(
+                "event=ton_payment_configuration_invalid polling_started=false reason=%s",
+                availability.error_reason,
+            )
+        else:
+            logger.info(
+                "event=ton_payment_polling_disabled polling_started=false"
+            )
+        return None
+    factory = validator_factory or TonPaymentValidator
+    return factory(
+        bot_app=bot_app,
+        merchant_address=availability.merchant_address,
+    )

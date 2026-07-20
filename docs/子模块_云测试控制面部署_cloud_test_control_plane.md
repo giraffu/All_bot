@@ -398,7 +398,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
   --profile bot up -d bot-test
 ```
 
-云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并先确认测试库 checkpoint 与通知目标可控。
+云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并同时提供经确认、通过 TON 地址库校验的 `VITE_MERCHANT_ADDRESS`；缺失或非法地址会在逐服务投影/运行时双层 fail closed。测试环境保持真实链轮询关闭时，可通过 fake upstream 验证 plans、下单 503 和有效地址订单契约。
 
 GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。agent 先把 ComfyUI 结果写入共享 spool，再由不可变发布的本地 relay 上传 R2；两侧默认必须共同挂载宿主机 `/var/lib/allbot/test-worker/spool`，仅在 relay 与全部 agent 同时迁移时才可统一覆盖 `CLOUD_TEST_WORKER_SPOOL_HOST_DIR`。若日志出现 `Upload sidecar returned HTTP 502`，先核对 agent/relay 的 `/app/spool` mount source 是否一致；relay 会以 `upload_asset_attempt_failed` 记录真实异常类型，`FileNotFoundError: spool file not found` 表示共享挂载契约被破坏，而不是 R2 或 ComfyUI 生成失败。
 

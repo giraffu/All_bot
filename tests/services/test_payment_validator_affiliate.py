@@ -9,6 +9,16 @@ from src.constants import TON_TO_NANOTON
 from src.services import payment_validator
 
 
+VALID_TON_ADDRESS = "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ"
+
+
+def _validator(bot):
+    return payment_validator.TonPaymentValidator(
+        SimpleNamespace(bot=bot),
+        merchant_address=VALID_TON_ADDRESS,
+    )
+
+
 class _ScalarResult:
     def __init__(self, value):
         self._value = value
@@ -128,7 +138,7 @@ async def test_process_order_records_affiliate_transaction_on_success(monkeypatc
     )
     referral = SimpleNamespace(inviter_id=1001)
     bot = SimpleNamespace(send_message=AsyncMock())
-    validator = payment_validator.TonPaymentValidator(SimpleNamespace(bot=bot))
+    validator = _validator(bot)
 
     calculate_mock = AsyncMock(
         side_effect=lambda _db, order: setattr(order, "commission_usdt", Decimal("1.5000"))
@@ -183,9 +193,7 @@ async def test_process_order_records_affiliate_transaction_on_success(monkeypatc
 @pytest.mark.asyncio
 async def test_process_order_duplicate_tx_does_not_record_affiliate_transaction(monkeypatch):
     session = _FakeSession([None, _build_plan(), _build_user(), None])
-    validator = payment_validator.TonPaymentValidator(
-        SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
-    )
+    validator = _validator(SimpleNamespace(send_message=AsyncMock()))
 
     record_mock = AsyncMock()
     calculate_mock = AsyncMock()
@@ -235,7 +243,7 @@ async def test_process_order_logs_warning_when_affiliate_ledger_insert_is_skippe
     )
     referral = SimpleNamespace(inviter_id=1001)
     bot = SimpleNamespace(send_message=AsyncMock())
-    validator = payment_validator.TonPaymentValidator(SimpleNamespace(bot=bot))
+    validator = _validator(bot)
 
     calculate_mock = AsyncMock(
         side_effect=lambda _db, order: setattr(order, "commission_usdt", Decimal("1.5000"))
@@ -293,7 +301,7 @@ async def test_process_order_uses_unified_membership_settlement_when_enabled(
     )
     referral = SimpleNamespace(inviter_id=1001)
     bot = SimpleNamespace(send_message=AsyncMock())
-    validator = payment_validator.TonPaymentValidator(SimpleNamespace(bot=bot))
+    validator = _validator(bot)
 
     calculate_mock = AsyncMock(
         side_effect=lambda _db, order: setattr(order, "commission_usdt", Decimal("1.5000"))
@@ -371,7 +379,7 @@ async def test_process_order_supports_order_v2_pending_order(monkeypatch):
     )
     session = _FakeSession([pending_order, _build_plan(), _build_user()])
     bot = SimpleNamespace(send_message=AsyncMock())
-    validator = payment_validator.TonPaymentValidator(SimpleNamespace(bot=bot))
+    validator = _validator(bot)
 
     monkeypatch.setattr(
         payment_validator, "AsyncSessionLocal", lambda: _SessionContext(session)
@@ -412,6 +420,7 @@ async def test_check_new_transactions_backs_off_on_rate_limit_payload(monkeypatc
     warning_mock = Mock()
     validator = payment_validator.TonPaymentValidator(
         SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+        merchant_address=VALID_TON_ADDRESS,
         api_key="secret-key",
         poll_interval_seconds=15,
         max_poll_interval_seconds=120,
@@ -439,6 +448,7 @@ async def test_check_new_transactions_resets_backoff_after_successful_fetch(monk
     post_calls = []
     validator = payment_validator.TonPaymentValidator(
         SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+        merchant_address=VALID_TON_ADDRESS,
         api_key="secret-key",
         poll_interval_seconds=15,
         max_poll_interval_seconds=120,
@@ -458,3 +468,96 @@ async def test_check_new_transactions_resets_backoff_after_successful_fetch(monk
 
     assert validator.current_poll_interval_seconds == 15
     assert post_calls[0]["headers"] == {"X-API-Key": "secret-key"}
+
+
+@pytest.mark.asyncio
+async def test_fulfillment_failure_does_not_advance_checkpoint(monkeypatch):
+    post_calls = []
+    validator = _validator(SimpleNamespace(send_message=AsyncMock()))
+    validator.last_lt = 10
+    validator._last_lt_loaded = True
+    process_order = AsyncMock(return_value=False)
+    persist_last_lt = AsyncMock()
+    monkeypatch.setattr(validator, "_process_order", process_order)
+    monkeypatch.setattr(validator, "_persist_last_lt", persist_last_lt)
+    monkeypatch.setattr(
+        payment_validator.aiohttp,
+        "ClientSession",
+        lambda: _FakeAiohttpSession(
+            _FakeAiohttpResponse(
+                {
+                    "result": [
+                        {
+                            "transaction_id": {"lt": "20", "hash": "tx-20"},
+                            "in_msg": {
+                                "value": str(TON_TO_NANOTON),
+                                "message": "ORDER:12345:1:999",
+                            },
+                        }
+                    ]
+                }
+            ),
+            post_calls,
+        ),
+    )
+
+    await validator._check_new_transactions()
+
+    process_order.assert_awaited_once()
+    assert validator.last_lt == 10
+    persist_last_lt.assert_not_awaited()
+
+
+def test_validator_rejects_missing_merchant_before_any_polling():
+    with pytest.raises(ValueError, match="merchant"):
+        payment_validator.TonPaymentValidator(
+            SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+            merchant_address=None,
+        )
+
+
+def test_checkpoint_key_is_scoped_to_validated_merchant_address():
+    validator = _validator(SimpleNamespace(send_message=AsyncMock()))
+
+    assert validator._last_lt_checkpoint_key == f"ton:{VALID_TON_ADDRESS}:last_lt"
+
+
+def test_invalid_runtime_config_does_not_construct_ton_poller():
+    validator_factory = Mock()
+
+    result = payment_validator.build_ton_payment_validator_if_available(
+        SimpleNamespace(),
+        availability=SimpleNamespace(
+            requested_enabled=True,
+            enabled=False,
+            merchant_address=None,
+            error_reason="TON merchant address is invalid",
+        ),
+        validator_factory=validator_factory,
+    )
+
+    assert result is None
+    validator_factory.assert_not_called()
+
+
+def test_valid_runtime_config_constructs_poller_with_resolved_address():
+    constructed = object()
+    validator_factory = Mock(return_value=constructed)
+    bot_app = SimpleNamespace()
+
+    result = payment_validator.build_ton_payment_validator_if_available(
+        bot_app,
+        availability=SimpleNamespace(
+            requested_enabled=True,
+            enabled=True,
+            merchant_address=VALID_TON_ADDRESS,
+            error_reason=None,
+        ),
+        validator_factory=validator_factory,
+    )
+
+    assert result is constructed
+    validator_factory.assert_called_once_with(
+        bot_app=bot_app,
+        merchant_address=VALID_TON_ADDRESS,
+    )

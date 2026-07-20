@@ -5,11 +5,12 @@ from dataclasses import dataclass
 import httpx
 from fastapi import HTTPException
 
-from config import BOT_TOKEN, TELEGRAM_API_BASE_URL
+from config import BOT_TOKEN
 from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.services.storage import storage
+from src.services.telegram_runtime_bootstrap import resolve_telegram_api_base_url
 from src.web_api.services.history_query_service import (
     fetch_owned_histories_by_task_id,
     pick_preferred_history,
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class HistoryDeliveryDependencies:
+    resolve_delivery_config_func: object
     acquire_rate_limit_func: object
     load_history_record_func: object
     download_history_bytes_func: object
@@ -67,18 +69,17 @@ async def _download_history_bytes(output_file: str) -> tuple[str, bytes]:
     return object_name, file_bytes
 
 
-def _resolve_delivery_bot_token() -> str:
-    token = BOT_TOKEN
+def _resolve_telegram_delivery_configuration() -> tuple[str, str]:
+    token = str(BOT_TOKEN or "").strip()
     if not token:
-        raise HTTPException(
-            status_code=500,
-            detail="发送失败：Telegram Bot 未配置，请联系管理员检查环境变量",
-        )
-    return token
+        raise RuntimeError("BOT_TOKEN is required for Telegram delivery")
+    return resolve_telegram_api_base_url(), token
 
 
 def _build_telegram_upload_request(
     *,
+    telegram_api_base_url: str,
+    bot_token: str,
     telegram_id: int,
     history_type: str | None,
     history_prompt: str | None,
@@ -87,8 +88,7 @@ def _build_telegram_upload_request(
 ) -> tuple[str, dict[str, str], dict[str, tuple[str, bytes, str]]]:
     is_video = get_media_type_from_history(history_type) == "video"
     method = "sendVideo" if is_video else "sendPhoto"
-    bot_token = _resolve_delivery_bot_token()
-    url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/{method}"
+    url = f"{telegram_api_base_url}/bot{bot_token}/{method}"
     payload = {"chat_id": str(telegram_id)}
 
     if history_prompt:
@@ -145,6 +145,7 @@ async def _post_telegram_upload(url: str, payload: dict[str, str], files: dict):
 
 def get_default_history_delivery_dependencies() -> HistoryDeliveryDependencies:
     return HistoryDeliveryDependencies(
+        resolve_delivery_config_func=_resolve_telegram_delivery_configuration,
         acquire_rate_limit_func=_acquire_send_to_bot_rate_limit,
         load_history_record_func=_load_owned_history_record,
         download_history_bytes_func=_download_history_bytes,
@@ -169,12 +170,28 @@ async def send_history_record_to_telegram(
 
     dependencies = dependencies or get_default_history_delivery_dependencies()
 
+    try:
+        telegram_api_base_url, bot_token = (
+            dependencies.resolve_delivery_config_func()
+        )
+    except RuntimeError as exc:
+        logger.error("Telegram delivery configuration unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "TELEGRAM_DELIVERY_UNAVAILABLE",
+                "message": "Telegram delivery is unavailable",
+            },
+        ) from exc
+
     await dependencies.acquire_rate_limit_func(current_user.id)
     history = await dependencies.load_history_record_func(task_id, current_user.id, db)
     object_name, file_bytes = await dependencies.download_history_bytes_func(
         history.output_file
     )
     url, payload, files = dependencies.build_upload_request_func(
+        telegram_api_base_url=telegram_api_base_url,
+        bot_token=bot_token,
         telegram_id=telegram_id,
         history_type=history.type,
         history_prompt=present_user_prompt(

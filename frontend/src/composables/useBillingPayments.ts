@@ -2,6 +2,7 @@ import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { TonConnectUI } from '@tonconnect/ui'
 import { message } from 'ant-design-vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { getRuntimeConfig } from '@/config/runtime'
@@ -17,7 +18,6 @@ type TelegramPaymentWindow = Window & {
   }
 }
 
-const DEFAULT_TON_RECEIVER = 'UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b'
 const MAX_POLL_COUNT = 100
 const TONCONNECT_MANIFEST_URL =
   getRuntimeConfig('tonconnect_manifest_url', '') ||
@@ -33,6 +33,43 @@ export const getTelegramPaymentWebApp = (): TelegramPaymentWebApp | undefined =>
 
 export const hasTelegramExternalLinkOpener = () =>
   typeof getTelegramPaymentWebApp()?.openLink === 'function'
+
+type TonPlansAvailability = {
+  ton_payment_enabled?: boolean
+  ton_receiver_address?: string | null
+}
+
+type TonOrderTransaction = {
+  ton_receiver_address?: string | null
+  amount_nanotons?: string | null
+}
+
+export const resolveTonPaymentAvailability = (data: TonPlansAvailability) => {
+  const receiverAddress = typeof data.ton_receiver_address === 'string'
+    ? data.ton_receiver_address.trim()
+    : ''
+  const enabled = data.ton_payment_enabled === true && receiverAddress.length > 0
+  return {
+    enabled,
+    receiverAddress: enabled ? receiverAddress : null,
+  }
+}
+
+export const buildTonTransactionMessage = (
+  order: TonOrderTransaction,
+  payload: string,
+) => {
+  const address = typeof order.ton_receiver_address === 'string'
+    ? order.ton_receiver_address.trim()
+    : ''
+  const amount = typeof order.amount_nanotons === 'string'
+    ? order.amount_nanotons.trim()
+    : ''
+  if (!address || !amount || !payload) {
+    throw new Error('invalid TON order response')
+  }
+  return { address, amount, payload }
+}
 
 export const openExternalPaymentUrl = (
   payUrl: string,
@@ -65,6 +102,7 @@ export const openExternalPaymentUrl = (
 export function useBillingPayments() {
   const authStore = useAuthStore()
   const route = useRoute()
+  const { t } = useI18n()
 
   const loadingPlans = ref(true)
   const plans = ref<any[]>([])
@@ -80,7 +118,7 @@ export function useBillingPayments() {
 
   const tonConnectUI = shallowRef<TonConnectUI | null>(null)
   const tonWalletAddress = ref<string | null>(null)
-  const systemTonReceiver = ref<string>(DEFAULT_TON_RECEIVER)
+  const tonPaymentEnabled = ref(false)
   const currentTonOrderId = ref<string | null>(null)
   const pendingTonPayAfterConnect = ref(false)
   const isSubmittingTonPayment = ref(false)
@@ -92,6 +130,10 @@ export function useBillingPayments() {
 
   const submitTonPayment = async (tonUI: TonConnectUI) => {
     if (!selectedPlan.value) return
+    if (!tonPaymentEnabled.value) {
+      message.warning(t('billing.ton_unavailable'))
+      return
+    }
     if (isSubmittingTonPayment.value) return
 
     isSubmittingTonPayment.value = true
@@ -102,7 +144,7 @@ export function useBillingPayments() {
         plan_id: selectedPlan.value.id
       })
       const tonOrder = res.data?.data
-      if (!tonOrder?.ton_comment || !tonOrder?.amount_nanotons) {
+      if (!tonOrder?.ton_comment) {
         throw new Error('invalid TON order response')
       }
 
@@ -112,11 +154,7 @@ export function useBillingPayments() {
       const transaction = {
         validUntil: Math.floor(Date.now() / 1000) + 600,
         messages: [
-          {
-            address: tonOrder.ton_receiver_address || systemTonReceiver.value,
-            amount: tonOrder.amount_nanotons,
-            payload: textCellHex
-          }
+          buildTonTransactionMessage(tonOrder, textCellHex)
         ]
       }
 
@@ -184,8 +222,11 @@ export function useBillingPayments() {
       const res = await api.get('/payment/plans')
       if (res.data?.data) {
         plans.value = res.data.data.plans || res.data.data
-        if (res.data.data.ton_receiver_address) {
-          systemTonReceiver.value = res.data.data.ton_receiver_address
+        tonPaymentEnabled.value = resolveTonPaymentAvailability(
+          res.data.data
+        ).enabled
+        if (!tonPaymentEnabled.value && payMethod.value === 'ton') {
+          payMethod.value = 'alipay'
         }
       }
     } catch (error) {
@@ -336,6 +377,10 @@ export function useBillingPayments() {
   }
 
   const openTonConnectModal = async () => {
+    if (!tonPaymentEnabled.value) {
+      message.warning(t('billing.ton_unavailable'))
+      return
+    }
     try {
       pendingTonPayAfterConnect.value = true
       const tonUI = await ensureTonModules()
@@ -360,6 +405,10 @@ export function useBillingPayments() {
 
   const handleTonPay = async () => {
     if (!selectedPlan.value) return
+    if (!tonPaymentEnabled.value) {
+      message.warning(t('billing.ton_unavailable'))
+      return
+    }
 
     let tonUI: TonConnectUI | null = null
     try {
@@ -404,6 +453,10 @@ export function useBillingPayments() {
       resetTonConnectIntent()
       return
     }
+    if (!tonPaymentEnabled.value) {
+      payMethod.value = 'alipay'
+      return
+    }
 
     try {
       await ensureTonModules()
@@ -421,6 +474,7 @@ export function useBillingPayments() {
     showPaymentModal,
     orderStatus,
     tonWalletAddress,
+    tonPaymentEnabled,
     handleRmbPay,
     handleTonPay,
     openTonConnectModal,

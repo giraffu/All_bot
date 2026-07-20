@@ -30,8 +30,8 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
   - Gallery 列表热路径不得对每条媒体做公网 `HEAD`；R2 S3 命中时优先返回 R2 S3 短签 URL，避免 `R2_PUBLIC_DOMAIN` 自定义域名 miss 导致前端空白，预签不可用时才退回公网 URL。
   - Telegram Gallery 浏览优先复用 `GalleryPost.telegram_file_id` 秒发缓存；缓存缺失或失效时只下载当前作品的 Gallery R2/S3 URL 并刷新 file_id，测试 Bot 不写回。不得恢复旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 主路径。
   - 列表页缩略图 R2 miss 后应快速返回空值，不做深度探测。
-  - 历史详情、Wan22 预览等读路径可短超时探测 R2 公网 URL，公网 miss 但 R2 S3 `HEAD` 命中时可返回 R2 S3 短签 URL。
-  - Web owner `/result` 延迟敏感路径仍必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 storage fallback，视频继续 `pending_result` 等 R2。
+  - History、收藏、Gallery 等集合路径统一走已有 R2 S3 existence cache/singleflight 和短签，不得逐条公网 HEAD；History extra outputs 必须显式使用列表策略。
+  - Web owner `/result` 延迟敏感路径保留 R2 公网 HEAD 快探测，但每个 Web worker 必须复用连接池，并按 object key singleflight；公网 hit 缓存 60 秒、404 缓存 5 秒。公网 miss 时图片可走 R2 S3 短签，视频继续 `pending_result`，不得生成 legacy URL。
   - 缩略图和 `input_file_url` 使用当前 R2 key/短签逻辑。
   - 迁移脚本可使用 `--hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files` 补齐 Web 可见热集的原文件、缩略图和输入文件。
   - 若只迁移 Gallery 投稿、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，可追加 `--skip-per-user-recent-history` 并使用独立 cursor，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。

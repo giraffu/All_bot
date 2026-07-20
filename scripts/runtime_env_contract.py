@@ -51,6 +51,10 @@ def load_contract(path: Path) -> dict[str, Any]:
     if value.get("schema_version") != 1 or not isinstance(value.get("services"), dict):
         raise ContractError("unsupported service environment contract")
     _external_patterns(value)
+    for service, config in value["services"].items():
+        if not isinstance(config, Mapping):
+            raise ContractError(f"{service} service environment contract is invalid")
+        _conditional_contract_keys(config)
     return value
 
 
@@ -93,6 +97,56 @@ def _digest(values: Mapping[str, str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _condition_matches(condition: Mapping[str, Any], values: Mapping[str, str]) -> bool:
+    key = str(condition.get("key", "")).strip()
+    if not key:
+        raise ContractError("conditional environment contract key is invalid")
+    value = values.get(key, "").strip()
+    if condition.get("nonempty") is True:
+        return bool(value)
+    if "equals" in condition:
+        return value.lower() == str(condition["equals"]).strip().lower()
+    raise ContractError("conditional environment contract is invalid")
+
+
+def _conditional_contract_keys(config: Mapping[str, Any]) -> set[str]:
+    raw_rules = config.get("required_if", [])
+    if not isinstance(raw_rules, list):
+        raise ContractError("service required_if contract is invalid")
+    keys: set[str] = set()
+    for rule in raw_rules:
+        if not isinstance(rule, Mapping):
+            raise ContractError("service required_if contract is invalid")
+        key = str(rule.get("key", "")).strip()
+        condition = rule.get("when")
+        if not key or not isinstance(condition, Mapping):
+            raise ContractError("service required_if contract is invalid")
+        condition_key = str(condition.get("key", "")).strip()
+        if not condition_key:
+            raise ContractError("service required_if contract is invalid")
+        _condition_matches(condition, {})
+        keys.update({key, condition_key})
+    return keys
+
+
+def _active_conditional_required_keys(
+    config: Mapping[str, Any], values: Mapping[str, str]
+) -> set[str]:
+    required: set[str] = set()
+    for rule in config.get("required_if", []):
+        condition = rule["when"]
+        if _condition_matches(condition, values):
+            required.add(str(rule["key"]).strip())
+    return required
+
+
+def _conditional_condition_keys(config: Mapping[str, Any]) -> set[str]:
+    return {
+        str(rule["when"]["key"]).strip()
+        for rule in config.get("required_if", [])
+    }
+
+
 def _projection(
     name: str,
     config: Mapping[str, Any],
@@ -101,6 +155,7 @@ def _projection(
     included_keys: Iterable[str] = (),
 ) -> dict[str, str]:
     required = {str(key) for key in config.get("required", [])}
+    required.update(_active_conditional_required_keys(config, values))
     missing = sorted(key for key in required if not values.get(key, "").strip())
     if missing:
         raise ContractError(
@@ -108,6 +163,7 @@ def _projection(
         )
     patterns = [str(pattern) for pattern in config.get("patterns", [])]
     included = {str(key) for key in included_keys}
+    included.update(_conditional_condition_keys(config))
     selected = {
         key: value
         for key, value in values.items()
@@ -123,13 +179,10 @@ def _service_enabled(config: Mapping[str, Any], values: Mapping[str, str]) -> bo
     condition = config.get("enabled_if")
     if not isinstance(condition, Mapping):
         return True
-    key = str(condition.get("key", ""))
-    value = values.get(key, "").strip()
-    if condition.get("nonempty") is True:
-        return bool(value)
-    if "equals" in condition:
-        return value.lower() == str(condition["equals"]).strip().lower()
-    raise ContractError("service enabled_if contract is invalid")
+    try:
+        return _condition_matches(condition, values)
+    except ContractError as exc:
+        raise ContractError("service enabled_if contract is invalid") from exc
 
 
 def build_snapshot(
@@ -228,6 +281,7 @@ def affected_services(contract: Mapping[str, Any], changed_keys: set[str]) -> se
         if not isinstance(raw_config, Mapping):
             continue
         required = {str(key) for key in raw_config.get("required", [])}
+        required.update(_conditional_contract_keys(raw_config))
         patterns = [str(pattern) for pattern in raw_config.get("patterns", [])]
         matched = {
             key
@@ -265,6 +319,7 @@ def unknown_changed_keys(
         if not isinstance(raw_config, Mapping):
             continue
         required = {str(key) for key in raw_config.get("required", [])}
+        required.update(_conditional_contract_keys(raw_config))
         patterns = [str(pattern) for pattern in raw_config.get("patterns", [])]
         matched.update(
             key

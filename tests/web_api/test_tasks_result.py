@@ -267,6 +267,52 @@ async def test_get_task_result_falls_back_to_storage_url_when_web_history_r2_not
 
 
 @pytest.mark.asyncio
+async def test_get_task_result_uses_r2_s3_presign_for_image_after_public_miss(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="txt2img",
+        output_file="123/output_images/task-1.png",
+        source="web",
+    )
+    monkeypatch.setattr(
+        task_result_service,
+        "get_first_r2_url_if_exists",
+        AsyncMock(return_value=""),
+    )
+    r2_exists_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        task_result_service.storage,
+        "async_r2_object_exists",
+        r2_exists_mock,
+    )
+    r2_presign = MagicMock(return_value="https://r2-s3.example/presigned.png")
+    monkeypatch.setattr(task_result_service, "build_r2_presigned_url", r2_presign)
+    legacy_presign = MagicMock(
+        side_effect=AssertionError("legacy/current storage fallback must not be used")
+    )
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", legacy_presign)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response["status"] == "success"
+    assert response["result_url"] == "https://r2-s3.example/presigned.png"
+    assert "assets.aivison.it.com" not in response["result_url"]
+    r2_presign.assert_called_once_with(
+        "history/task-1/original.png",
+        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+    )
+    legacy_presign.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_get_task_result_keeps_web_video_pending_when_r2_not_ready(
     monkeypatch,
 ):
@@ -304,11 +350,11 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_not_ready(
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once()
-    assert r2_exists_mock.await_count == 3
+    r2_exists_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_task_result_uses_parallel_r2_presigned_fallback_for_web_video(
+async def test_get_task_result_keeps_video_pending_when_only_s3_fallback_exists(
     monkeypatch,
 ):
     history = History(
@@ -343,13 +389,11 @@ async def test_get_task_result_uses_parallel_r2_presigned_fallback_for_web_video
     )
 
     assert response == {
-        "status": "success",
+        "status": "pending_result",
         "task_id": "task-1",
         "task_type": "custom_video",
         "media_type": "video",
-        "result_url": "https://r2-s3.example/presigned.mp4",
         "extra_outputs": {},
-        "result_meta": {},
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once_with(
@@ -359,15 +403,8 @@ async def test_get_task_result_uses_parallel_r2_presigned_fallback_for_web_video
         timeout_seconds=task_result_service.WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
         fallback_to_presigned=False,
     )
-    assert [call.args[0] for call in r2_exists_mock.await_args_list] == [
-        "history/task-1/original.mp4",
-        "123/output_images/task-1.mp4",
-        "task-1.mp4",
-    ]
-    presigned_mock.assert_called_once_with(
-        "history/task-1/original.mp4",
-        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
-    )
+    r2_exists_mock.assert_not_awaited()
+    presigned_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -420,11 +457,11 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_lookup_times_out(
         "extra_outputs": {},
     }
     presign_mock.assert_not_called()
-    assert r2_exists_mock.await_count == 3
+    r2_exists_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_task_result_uses_r2_presigned_fallback_when_public_lookup_times_out(
+async def test_get_task_result_keeps_video_pending_when_public_lookup_times_out(
     monkeypatch,
 ):
     history = History(
@@ -478,23 +515,14 @@ async def test_get_task_result_uses_r2_presigned_fallback_when_public_lookup_tim
     )
 
     assert response == {
-        "status": "success",
+        "status": "pending_result",
         "task_id": "task-1",
         "task_type": "custom_video",
         "media_type": "video",
-        "result_url": "https://r2-s3.example/presigned.mp4",
         "extra_outputs": {},
-        "result_meta": {},
     }
-    assert [call.args[0] for call in r2_exists_mock.await_args_list] == [
-        "history/task-1/original.mp4",
-        "123/output_images/task-1.mp4",
-        "task-1.mp4",
-    ]
-    presigned_mock.assert_called_once_with(
-        "history/task-1/original.mp4",
-        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
-    )
+    r2_exists_mock.assert_not_awaited()
+    presigned_mock.assert_not_called()
     minio_presign_mock.assert_not_called()
 
 
