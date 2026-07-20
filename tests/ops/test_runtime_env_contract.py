@@ -81,6 +81,16 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["ALLBOT_ENV"] == "prod"
     assert web["ALLBOT_CONFIG_REVISION"] == snapshot.service_revisions["web-api"]
     assert web["BOT_TOKEN"] == "prod-bot-token"
+    for key in (
+        "HUANYUY_PID",
+        "HUANYUY_KEY",
+        "HUANYUY_GATEWAY",
+        "HUANYUY_NOTIFY_URL",
+        "HUANYUY_RETURN_URL",
+        "HUANYUY_SITENAME",
+    ):
+        assert web[key] == _environment("prod")[key]
+        assert bot[key] == _environment("prod")[key]
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert bot["BOT_TOKEN"] == "prod-bot-token"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
@@ -164,6 +174,11 @@ def test_changed_key_names_expand_to_affected_services_and_unknown_is_all():
 
     assert module.affected_services(contract, {"BOT_TOKEN"}) == {
         "main-bot",
+        "web-api",
+    }
+    assert module.affected_services(contract, {"HUANYUY_KEY"}) == {
+        "main-bot",
+        "payment-api",
         "web-api",
     }
     assert module.affected_services(contract, {"DB_POOL_SIZE"}) == set(

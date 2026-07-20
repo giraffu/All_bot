@@ -1625,7 +1625,10 @@ class RunPodProdWorkerRunner:
         if spec["image_exact"]:
             if image_name != spec["image_exact"]:
                 failures.append("imageName must be the verified GHCR baked image")
-        elif not image_name.startswith(str(spec["image_prefix"])):
+        elif not _matches_verified_image_repository(
+            image_name,
+            str(spec["image_prefix"]),
+        ):
             failures.append(f"imageName must start with {spec['image_prefix']}")
         expected_env = self._expected_prod_render_env(
             spec=spec,
@@ -2404,6 +2407,16 @@ def _verified_pornmaster_image_exact(settings: Any) -> str:
     ):
         return configured
     return ""
+
+
+def _matches_verified_image_repository(image_name: str, image_prefix: str) -> bool:
+    if image_name.startswith(image_prefix):
+        return True
+    repository = image_prefix.removesuffix(":")
+    digest_prefix = f"{repository}@sha256:"
+    return image_name.startswith(digest_prefix) and bool(
+        re.fullmatch(r"[0-9a-f]{64}", image_name.removeprefix(digest_prefix))
+    )
 
 
 def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
