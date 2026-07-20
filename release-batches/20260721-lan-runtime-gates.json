@@ -1,0 +1,22 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "70d092d9602c135a9812ee760ab4fecd9bcfc5c6",
+  "batch": "20260721-lan-runtime-gates",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260721-lan-runtime-gates",
+  "members": [
+    {
+      "base_sha": "753fba4fddc1719725ca28f3803a4c1761e01ce8",
+      "branch": "codex/a-lan-image-to-video-lora5",
+      "head": "a704e4f60d05c60dc8b2b6d7f668fa84d7ea7782",
+      "slot": "A"
+    },
+    {
+      "base_sha": "70d092d9602c135a9812ee760ab4fecd9bcfc5c6",
+      "branch": "codex/a-optimize-gpu-runtime-gates",
+      "head": "67fc46d6ec6057138398baee0559859273be111f",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

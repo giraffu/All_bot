@@ -52,7 +52,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | GPU↔LAN 当前映射、缓存态、验证时间 | XDG `current.yml` + live status | 不产生 Git 变更 | 无 | 操作时由单槽 operator 仲裁，不走代码发布 |
 | RunPod 当前/期望数量、Pod 生命周期 | Dashboard operation store、provider API、Central heartbeat | 不产生 Git 变更 | 无 | 每次 mutation 使用既有运行时授权门禁 |
-| LAN 主机 helper/candidate 工具 | `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` | `operator`：仅 `tests/ops tests/scripts` | 无运行 artifact | 无镜像 attestation/canary；实际操作仍需单槽授权 |
+| LAN 主机 helper/candidate 工具 | `scripts/lan_aio_*.py`、`scripts/lan_aio_*.sh`、`scripts/lan_*_aio_*.sh` | `operator`：仅 `tests/ops tests/scripts` | 无运行 artifact | 无镜像 attestation/canary；实际操作仍需单槽授权 |
 | Dashboard 内置 GPU controller/rollout | `ops/gpu_pool_controller/**`、精确 controller/rollout 脚本 | `operator`：仅 `tests/ops tests/scripts` | 最多 `dashboard-backend` | 不构建、不替换 GPU runtime |
 | Worker/workflow、GPU release artifact/profile、Dockerfile、模型 manifest 或基础依赖 | `remote_workers/**`、`deploy/release-artifacts-v2.json` 与真实 GPU 构建输入 | 完整 CI | 受影响 GPU artifact | 保留同 SHA attestation、canary 和专用 operator |
 
