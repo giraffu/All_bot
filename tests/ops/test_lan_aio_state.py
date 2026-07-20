@@ -548,6 +548,61 @@ def test_state_reconcile_can_record_one_explicitly_empty_physical_slot(
     assert report["status"] == "passed"
 
 
+def test_state_reconcile_preserves_an_existing_intentionally_empty_sibling(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+
+        def live_current_snapshot(self, physical_slots):
+            return {
+                "current": {"gpu-252:gpu0": None, "gpu-252:gpu1": None},
+                "errors": {},
+                "observations": {},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-252:gpu0": {
+                    "current": {"slot_id": "gpu-252-gpu0-image_to_video"}
+                },
+                "gpu-252:gpu1": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "existing hardware isolation",
+                        "operation_id": "existing-empty",
+                    },
+                },
+            },
+        },
+        operation_id="bootstrap",
+    )
+
+    result = ops.reconcile_state_from_live(
+        operation_id="reconcile-gpu0-empty",
+        reason="failed rollout inspected gpu0 empty",
+        allow_empty_physical_slots={"gpu-252:gpu0"},
+    )
+
+    assert result["ok"] is True
+    current = ops.state_store.load_current()
+    assert current is not None
+    assert current["physical_slots"]["gpu-252:gpu1"]["intentionally_empty"] == {
+        "reason": "existing hardware isolation",
+        "operation_id": "existing-empty",
+    }
+
+
 def test_live_snapshot_requires_container_and_matching_central_worker(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
