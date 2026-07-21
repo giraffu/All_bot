@@ -27,7 +27,7 @@
 
 ## 3. 构建契约
 
-CI release index 记录 `validation.mode=full|build-only|promoted`。新批次使用 `full`：批次 PR 合入 main 后，上游 main CI 全绿才触发一次模块构建；`build-only` 明确记录 tests skipped，只能经合法 direct/emergency、显式 `--skip-gate ci-tests`、原因和批准人消费；`promoted` 仅用于读取旧 candidate promotion 历史。
+CI release index 记录 `validation.mode=full|build-only|promoted`。新批次使用 `full`：批次 PR 合入 main 后，上游 main CI 全绿才触发一次模块构建；`build-only` 明确记录 tests skipped，只能经合法 direct/emergency、显式 `--skip-gate ci-tests` 与原因消费；`promoted` 仅用于读取旧 candidate promotion 历史。
 
 并发槽位不再发布独立 candidate。功能分支 handoff 后由集成 AI 一次组合为 release batch，只创建一个 main PR。main bundle 固定发布到 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；`.github/workflows/modular-release-v2.yml` 通常监听成功的 main push CI，不监听 test-train，也不在 PR 阶段发布容器。同一 main SHA tag 不可覆盖。
 
@@ -166,7 +166,7 @@ python scripts/release.py promote --modules qqcc-bot
 # 独立轮换窗口完成全部 test/prod 隔离和 Worker 验证后，受控关闭过渡状态
 python scripts/release.py credential-isolation-complete \
   --evidence <value-free-isolation-evidence.json> \
-  --approved-by <name> --confirm-prod --execute
+  --confirm-prod --execute
 
 # 高级/兼容入口继续存在，但 migration、共享/未知契约、emergency、
 # 跳门禁、秘密轮换和 recover 才应使用，不属于日常 SOP。
@@ -184,7 +184,7 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 若唯一云测试站仍运行历史 test-train candidate，可在一次迁移期间使用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该兼容 policy 只允许 test，生产显式拒绝；新批次完成 main 部署后不再使用。
 
-生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；`verify-test` 不再设置固定 24 小时观察门禁，只要求真实开始/完成时间顺序有效、完成时间不在未来、全部适用 smoke 为 true、SHA/digest、Web checksum 与测试运行态一致，并记录实际持续秒数和批准人。旧 `short_observation_override`、`override_reason` 与 `--confirm-short-observation` 已退出契约，不得用伪造时间或直接编辑状态代替真实验收。
+生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；`verify-test` 不再设置固定 24 小时观察门禁或批准人字段，只要求真实开始/完成时间顺序有效、完成时间不在未来、全部适用 smoke 为 true、SHA/digest、Web checksum 与测试运行态一致，并记录实际持续秒数。旧 `short_observation_override`、`override_reason` 与 `--confirm-short-observation` 已退出契约，不得用伪造时间或直接编辑状态代替真实验收。
 
 `scripts/classify_ci_change.py` 区分三类路径。纯 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理脚本为 `lightweight`：上游跳过全量模块测试，main 后继 modular workflow 不创建 bundle。仅包含 `ops/gpu_pool_controller/**` 与明确 RunPod/LAN operator/helper 的变更为 `operator`：上游只跑 `tests/ops tests/scripts`，不运行 PostgreSQL、Web、Dashboard 前端或其它 Python 分片；main 后继仍创建模块化 bundle，以便真实镜像输入变化得到不可变 artifact。LAN 宿主 helper 没有 artifact，最小更新模块为零；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖、业务代码、migration、Compose、运行配置、未知路径或混合变更仍为 `runtime`，恢复完整 CI 与对应 GPU attestation/canary。三类路径都必须经受保护 main，且都不自动部署测试/正式环境。
 

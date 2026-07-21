@@ -47,6 +47,8 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 
 后台可增删场景、调整按钮名称、提示词、负面提示词、固定时长、底层模型和可选尾帧来源。旧五个默认动图也只是一次性种子化的普通预设，保存后与自定义场景一致。`image_to_video` 与 `wan22_video_v2` 都支持从 QQCC 专用视频 LoRA 清单按顺序选择最多 5 个模型，并为每项编辑 `0.1..2.0`、步长 `0.05` 的强度；切换 engine 保留选择。清单固定为本地模型注册表 `wan22_explicit_lora_library/2026-07-18` 已下载并逐项核对的 49 组 High/Low；后台 options 返回带编号中文标签和单强度保守推荐值，Vue 只消费 options 并支持搜索，不硬编码清单。旧七模型键在配置归一化时迁移到最接近的新条目。尾帧来源、场景 callback 与菜单规则保持不变；该能力只作用官方/私有 QQCC Bot，主 Bot 不增加多选入口。
 
+`AI动图` 与 `AI视频` 场景还可通过 `next_scene_id` 选择同类型的下一个模板。每个场景只有一个后继，但可形成任意长度的线性链；后台过滤自身和会回到当前场景的候选，保存 API 也会拒绝缺失目标、自环和间接循环并返回循环路径。提交时迭代快照完整链，配置后续修改不影响运行中任务。上一段 Worker 产出的 `extra_outputs.last_frame` 是下一段首帧；每段仍使用自己的 prompt、时长、模型、LoRA、比例和尾帧绘图链。全部成功后按第一段画布对后续视频等比放大、居中裁剪并统一音视频格式后拼接；拼接免费。官方后续段失败时停止并返回成功前缀，失败段沿用现有退款，成功段保持计费。私有 Bot 用 durable checkpoint 保存当前段、首帧和视频引用，重启后不重复生成已完成段。后台“生成示例”使用 TTL 24 小时的 Redis checkpoint 推进完整链并只保存最终拼接草稿。
+
 `AI绘图` 场景由管理后台 `draw_scenes` 动态配置，`快速自慰` 与 `快速脱衣` 两个默认项是一次性种子化的普通预设，底层 engine 均为旧 `free_edit`。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选 `postprocess_draw_scene_id` 绘图后处理、可选 `postprocess_filter_scene_id` 滤镜终止后处理和 `original_face_swap_enabled` 原图换脸，`id` 使用短安全 callback 字符串；所有场景都必须有非空按钮名称和提示词，`negative_prompt` 可选，缺省或非法归一为空字符串，QQCC 运行时只读取场景自身 `prompt` 与 `negative_prompt`，不再通过 `prompt_key` 或 `prompts.ini` 回退。新增自定义场景默认 engine 是自由P图 v2 `free_edit_v2`，不支持附加模型；切到旧 `free_edit` 时才可选图片 LoRA。绘图后处理只能选择其它有效绘图场景；滤镜后处理只能选择有效滤镜场景并作为终止步骤。`postprocess_draw_scene_id` 与 `postprocess_filter_scene_id` 互斥，若两者都有效则保存时保留绘图后处理并清空滤镜引用；后端还会清空非法引用、自引用和绘图循环引用，前端也过滤会形成循环的选项。`original_face_swap_enabled` 只接受布尔 `true`，缺省或非法值归一为 `false`；开启后该步骤按“场景绘图/滤镜 -> 使用用户最初上传原图做人脸来源换脸 -> 后处理链下一步”执行，内部任务类型为 `face_swap_v2`，每个开启步骤额外计费 `2` 灵石，内部换脸不传负面提示词。用户点击主菜单 `AI绘图` 后，QQCC Bot 回复 `system.ai_draw_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qdraw_scene:<scene_id>`。该 callback 由 `get_quick_image_fsm_handler()` 承接，进入发送 1 张图片步骤；收到图片后按 `draw -> draw...` 或 `draw -> filter` 串行提交绘图/滤镜/原图换脸，每步使用自身负面提示词，只把最终图发给用户。若最终可见输出来自内部原图换脸，历史、结果展示和完成文案仍按原 AI绘图场景归类，不暴露成 `快速换脸`。新 continuation 必须写 V2；恢复升级前 QQCC checkpoint 时，仅把内部原脸恢复 stage 的旧 `face_swap` 解释为 V2，不影响快速换脸。QQCC 生成结果不可投稿、不可公开。旧消息中的已删除场景 callback 必须回复 `功能暂未开放`，不提交任务。本次复用现有 `free_edit`/`img2img` 与 V2 执行面，不新增数据库表。
 
 `AI滤镜` 场景由管理后台 `filter_scenes` 动态配置。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选图片 LoRA 和 `original_face_swap_enabled`，最多 20 个；所有归一化规则与 AI绘图一致，但不提供后处理选择。用户点击主菜单 `AI滤镜` 后，QQCC Bot 回复 `system.ai_filter_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qfilter_scene:<scene_id>`。该 callback 同样由 `get_quick_image_fsm_handler()` 承接，收到 1 张图片后按单步滤镜场景提交；直接滤镜结果展示滤镜场景名。关闭 `main_buttons.ai_filter` 只隐藏直接入口和拒绝旧 `qfilter_scene:*`，不影响 AI绘图通过有效 `postprocess_filter_scene_id` 引用滤镜模板。
@@ -88,7 +90,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `main_menu_layout`: `{ buttons_per_row, button_order }`；`buttons_per_row` 仅允许 `null` 或整数 `1..4`，`null` 保持旧固定分行；`button_order` 只保留可渲染主菜单 key 且自动去重/补齐。独立配置 Web 选择统一列数后才解锁上移/下移，关闭按钮仍保留排序位置
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
-- `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_items, lora_name, lora_strength, end_frame_draw_scene_id }]`；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。其余 prompt、duration、id 和尾帧引用约束不变。
+- `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id }]`；`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。其余 prompt、duration、id 和尾帧引用约束不变。
 - `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, lora_items, end_frame_draw_scene_id, demo_input_media, demo_output_media }]`；默认空数组。`engine` 首版固定 `ltx_video`，尺寸固定 `1280x704`，配置时长仅允许数字 `5/10/15/20`（提交到 LTX 任务边界时转为 `5s/10s/15s/20s`）；`lora_items` 使用 `{path,strength}`，来自配置选项接口的 QQCC 专用 LTX catalog，最多 3 个、不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。该专用目录由 `src/qqcc_ltx_lora_catalog.py` 在公开目录之外追加，当前接入本机 2026-07-17 校验库的 32 个权重（26 个为公开目录外新增项）；主 Bot 和公共 Web 不读取该目录。`negative_prompt` trim 后为空仍保存为空，但提交任务时完全省略。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
@@ -123,6 +125,16 @@ QQCC Config 专用 LoRA 的“可配置”和“运行时可加载”是两个�
 不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或主 Bot 完整 gallery 菜单入口。`修仙市集` 只能通过 QQCC 专用 handler 与 `qg:` callback 实现轻量浏览/应用。
 
 AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata，结果按钮除“重新生成”外还提供“换个主题”“生成动图”“生成视频”。换主题从该 History 的用户原图开始并选择新的绘图场景；动图和视频从该 History 的最终生成图开始并分别选择当前可用的 AI动图和 AI视频场景。每次点击均重新校验 History 归属、场景有效性和灵石余额，临时素材只用于这一条后续提交。
+
+链式 AI 绘图/滤镜的中间绘图、原图换脸和视频尾帧步骤必须 `record_history=false`，不写入 History/闪回瓶、不可投稿且不发送结果。每条链仅最终可见步骤写一条 History 并发送一份结果；首个真实子任务复用一条生成状态消息，后续阶段不得新增排队或生成展示。
+
+### 2.1 AI动图输入比例适配
+
+后台场景编辑面板的“视频比例”从配置 GET `options.video_aspect_ratios` 读取原始枚举，中文标签仅由 Vue 映射；默认和新增场景均为 `source`。非 `source` 时，QQCC 专属适配器在任务提交前执行 JPEG/PNG 校验、EXIF 方向归一及最大内接精确整数比例的居中裁剪，不拉伸、不补边、不扩图，也不主动放大；后续 Wan22 仍按用户画质档位缩放。
+
+单首帧 `image_to_video` / `wan22_video_v2` 都提交适配后的首图。尾帧链先用适配首图执行绘图链，再适配最终尾图，保证首尾比例一致。私有 Bot checkpoint 保存内部比例策略，最终 executor 对 durable `original/current` 执行同一处理并在调用既有任务入口前剥离内部字段；后台示例生成也在上传 Central 临时输入前适配 R2 bytes。重新生成和 AI绘图结果的“生成动图”按当前配置重建同一 plan。适配失败时清理 FSM 临时文件、提示图片处理失败，且不调用任务入口、不扣灵石。
+
+该能力是 QQCC 输入适配，不是 workflow 比例开关。主 Bot、固定 `1280x704` 的 AI视频、`Wan22AioV82.json`、mapping/patcher/profile、RunPod/LAN AIO、费用及四档用户画质保持不变，比例字段不进入 Central/Worker payload。
 
 ## 3. 代码入口
 

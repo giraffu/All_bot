@@ -161,6 +161,10 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
+`video_scenes[].aspect_ratio` 的 `source / 9:16 / 16:9 / 1:1` 不是 Comfy workflow 参数。它由 `src/services/qqcc_video_frame_adapter.py` 和 QQCC Quick Video plan 在任务提交前裁剪首帧/尾帧，私有 continuation 的内部比例字段在调用现有任务入口前剥离。不得因此修改 `Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、分辨率档位或计费。
+
+`video_scenes[].next_scene_id` / `ai_video_scenes[].next_scene_id` 同样不是 workflow 参数。它由 QQCC scene-chain resolver、quick video runner、私有 durable continuation 与通用 ffmpeg 拼接器在 Bot/配置服务层处理；每段仍提交现有 Wan22/LTX task type。禁止为模板串联复制 workflow、增加 Worker patcher 字段、建立新 GPU profile 或把 QQCC 内部链元数据发送给 Central。
+
 - `AI动图` 的 `image_to_video` 与 `wan22_video_v2` 都接受最多 5 个有序 `{name,strength}`。QQCC Config options 从 `src/wan22_explicit_lora_catalog.py` 返回 49 个稳定键、编号中文标签与推荐强度；推荐值取本地 registry 同条目 High/Low 建议的较低者，以适配一个强度同时驱动两阶段。旧 `lora_name/lora_strength` 与七个旧键自动迁移并镜像首项。Vue 复用 AI视频的多选/逐项强度交互、支持搜索，切换 engine 不清空。
 - `wan22_video_v2` 的 R2 baseline 保持 `2026-07-18-lora5` manifest。LAN GPU-177 预热时从受控下载源取得 DaSiWa SnatchKiss v11 FP8-pruned High/Low（每个 `14,528,782,272` bytes），必须以声明的 SHA-256/大小校验后按同相对路径替换 baseline；不上传 v11 对象或 manifest 到 R2。RunPod 保持禁用的旧 manifest 回退，`image_to_video` 与兼容 `wan22_aio_video` 不变。
 - 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO 与 `image_to_video` 保持各自 `2026-07-18-lora5` key；v2 使用独立的 pruned key，旧 6 月 key 均不覆盖。所有候选 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。

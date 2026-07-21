@@ -538,7 +538,7 @@ def test_test_environment_includes_qqcc_config_but_excludes_dashboard():
     }.isdisjoint(module.ENVIRONMENT["test"]["available_services"])
 
 
-def test_release_cli_exposes_risk_strategy_and_audited_gate_skips():
+def test_release_cli_exposes_risk_strategy_and_gate_skips():
     module = _load_module()
 
     args = module.build_parser().parse_args(
@@ -554,15 +554,12 @@ def test_release_cli_exposes_risk_strategy_and_audited_gate_skips():
             "ci-tests",
             "--reason",
             "restore API",
-            "--approved-by",
-            "owner",
         ]
     )
 
     assert args.strategy == "emergency"
     assert args.skip_gate == ["ci-tests"]
     assert args.reason == "restore API"
-    assert args.approved_by == "owner"
 
 
 def test_release_plan_reports_owner_tool_direct_strategy_and_gate_matrix():
@@ -594,7 +591,6 @@ def test_release_plan_reports_owner_tool_direct_strategy_and_gate_matrix():
         strategy="auto",
         skip_gate=[],
         reason="",
-        approved_by="",
         dashboard_fast_track=False,
         control_plane_repair_fast_track=False,
         skip_env_checks=False,
@@ -2672,7 +2668,6 @@ def test_test_acceptance_requires_same_digest_and_a_positive_validation_window()
         "vendor_images": manifest["vendor_images"],
         "observation_started_at": (completed - timedelta(minutes=1)).isoformat(),
         "completed_at": completed.isoformat(),
-        "approved_by": "ops",
         "checks": {key: True for key in module.REQUIRED_ACCEPTANCE_CHECKS},
     }
 
@@ -2734,7 +2729,6 @@ def test_acceptance_has_no_minimum_duration_or_override_contract():
     acceptance = module.validate_test_acceptance(evidence, manifest)
 
     assert acceptance == {
-        "approved_by": "ops",
         "completed_at": evidence["completed_at"],
         "observation_started_at": evidence["observation_started_at"],
         "observation_duration_seconds": 7200,
@@ -5980,7 +5974,6 @@ def test_promote_single_confirmation_executes_one_transaction(monkeypatch, capsy
             validation_mode="full",
             skipped_gates=(),
             reason="",
-            approved_by="",
             gates={},
         ),
     )
@@ -6217,7 +6210,6 @@ def test_promote_blocks_pending_secret_rotation_without_exposing_override_flags(
         command="promote",
         accept_pending_secret_rotation=False,
         reason="",
-        approved_by="",
     )
 
     with pytest.raises(

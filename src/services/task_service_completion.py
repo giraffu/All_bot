@@ -314,6 +314,7 @@ async def handle_task_completion(
             registry_task_id=registry_task_id,
             saved_inputs=list(saved_input_images or []),
             output_file=persistence_result.output_file,
+            extra_outputs=persisted_extra_outputs,
         )
         if send_result:
             return persistence_result.media_bytes, persistence_result.output_file

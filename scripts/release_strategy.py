@@ -49,7 +49,6 @@ class ReleaseStrategyDecision:
         validation_mode: str,
         skipped_gates: Iterable[str],
         reason: str,
-        approved_by: str,
         gates: dict[str, str],
     ) -> None:
         self.risk_class = risk_class
@@ -57,7 +56,6 @@ class ReleaseStrategyDecision:
         self.validation_mode = validation_mode
         self.skipped_gates = tuple(sorted(set(skipped_gates)))
         self.reason = reason
-        self.approved_by = approved_by
         self.gates = dict(gates)
 
     def as_dict(self) -> dict[str, object]:
@@ -67,7 +65,6 @@ class ReleaseStrategyDecision:
             "validation_mode": self.validation_mode,
             "skipped_gates": list(self.skipped_gates),
             "reason": self.reason or None,
-            "approved_by": self.approved_by or None,
             "gates": dict(self.gates),
         }
 
@@ -126,7 +123,6 @@ def decide_release_strategy(
     validation_mode: str,
     skip_gates: Iterable[str] = (),
     reason: str = "",
-    approved_by: str = "",
 ) -> ReleaseStrategyDecision:
     if requested not in STRATEGIES:
         raise ReleaseStrategyError(f"unknown release strategy: {requested}")
@@ -174,11 +170,8 @@ def decide_release_strategy(
         or "ci-tests" in skipped
     )
     clean_reason = reason.strip()
-    clean_approver = approved_by.strip()
     if risk_reason_required and not clean_reason:
         raise ReleaseStrategyError("release risk acceptance requires a reason")
-    if risk_reason_required and not clean_approver:
-        raise ReleaseStrategyError("release risk acceptance requires approved-by")
 
     gates = {
         "protected-main-ancestry": "required",
@@ -212,7 +205,6 @@ def decide_release_strategy(
         validation_mode=validation_mode,
         skipped_gates=skipped,
         reason=clean_reason,
-        approved_by=clean_approver,
         gates=gates,
     )
 

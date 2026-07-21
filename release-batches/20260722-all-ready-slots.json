@@ -1,0 +1,34 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d",
+  "batch": "20260722-all-ready-slots",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260722-all-ready-slots",
+  "members": [
+    {
+      "base_sha": "fa1bde2e1c4fbfd6e4c1ff75d0a1694bac51f3b4",
+      "branch": "codex/a-qqcc-single-history-status",
+      "head": "4e179936fdb092032c611356c0c0dd12d8781f89",
+      "slot": "A"
+    },
+    {
+      "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d",
+      "branch": "codex/a-lan-recovery-duplicate-drift",
+      "head": "9e1fe953ece999368b4a7dc5f5a887f4139183ea",
+      "slot": "A"
+    },
+    {
+      "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d",
+      "branch": "codex/b-remove-release-audit-authorization-gate",
+      "head": "602f6fc246005c9f322f067c06b8841959640ded",
+      "slot": "B"
+    },
+    {
+      "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d",
+      "branch": "codex/b-qqcc-video-template-chain",
+      "head": "bd6b2f563b3a6b4f9b6f1cdddff9ac67dd467707",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}

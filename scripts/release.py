@@ -573,7 +573,6 @@ def resolve_release_strategy(
             validation_mode=_release_validation_mode(manifest),
             skip_gates=_split_services(getattr(args, "skip_gate", [])),
             reason=str(getattr(args, "reason", "")),
-            approved_by=str(getattr(args, "approved_by", "")),
         )
     except ReleaseStrategyError as exc:
         raise ReleaseError(str(exc)) from exc
@@ -3595,7 +3594,6 @@ def _plan_document(
         "validation_mode": decision.validation_mode,
         "skipped_gates": list(decision.skipped_gates),
         "reason": decision.reason or None,
-        "approved_by": decision.approved_by or None,
         "gates": dict(decision.gates),
         "test_required": release_requires_test(decision),
         "promotion_mode": (
@@ -6018,11 +6016,10 @@ def require_pending_secret_rotation_acceptance(
     if not (
         getattr(args, "accept_pending_secret_rotation", False)
         and str(getattr(args, "reason", "")).strip()
-        and str(getattr(args, "approved_by", "")).strip()
     ):
         raise ReleaseError(
-            "pending secret rotation requires --accept-pending-secret-rotation, "
-            "--reason, and --approved-by"
+            "pending secret rotation requires --accept-pending-secret-rotation and "
+            "--reason"
         )
 
 
@@ -6166,7 +6163,6 @@ def complete_credential_isolation(
         "schema_version": 1,
         "status": "credential-isolation-complete",
         "completed_at": completed_at,
-        "approved_by": args.approved_by,
         "evidence": dict(evidence),
     }
     audit_sha256 = hashlib.sha256(
@@ -6335,10 +6331,7 @@ def validate_test_acceptance(
         raise ReleaseError(
             "test acceptance checks are incomplete: " + ", ".join(missing)
         )
-    if not str(evidence.get("approved_by", "")).strip():
-        raise ReleaseError("test acceptance approved_by is required")
     return {
-        "approved_by": str(evidence["approved_by"]).strip(),
         "completed_at": evidence["completed_at"],
         "observation_started_at": evidence["observation_started_at"],
         "observation_duration_seconds": observation_duration_seconds,
@@ -6805,7 +6798,6 @@ def _write_state(
         "validation_mode": decision.validation_mode,
         "skipped_gates": list(decision.skipped_gates),
         "reason": decision.reason or None,
-        "approved_by": decision.approved_by or None,
         "gates": dict(decision.gates),
         "promotion_mode": (
             "control-plane-repair-fast-track"
@@ -6835,7 +6827,6 @@ def _write_state(
         state["pending_secret_rotation_acceptance"] = {
             "accepted": True,
             "reason": args.reason,
-            "approved_by": args.approved_by,
         }
     if (
         args.command in {"deploy-module", "promote"}
@@ -7454,11 +7445,10 @@ def _add_release_arguments(
         help="explicitly waive an allowlisted release gate",
     )
     parser.add_argument("--reason", default="")
-    parser.add_argument("--approved-by", default="")
     parser.add_argument(
         "--accept-pending-secret-rotation",
         action="store_true",
-        help="temporarily accept the audited staged secret-rotation risk",
+        help="temporarily accept the staged secret-rotation risk",
     )
     parser.add_argument(
         "--dashboard-fast-track",
@@ -7566,7 +7556,6 @@ def build_parser() -> argparse.ArgumentParser:
         skip_env_checks=False,
         skip_gate=[],
         reason="",
-        approved_by="",
         accept_pending_secret_rotation=False,
         dashboard_fast_track=False,
         control_plane_repair_fast_track=False,
@@ -7620,7 +7609,6 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--execute", action="store_true")
     isolation = subparsers.add_parser("credential-isolation-complete")
     isolation.add_argument("--evidence", required=True)
-    isolation.add_argument("--approved-by", required=True)
     isolation.add_argument("--test-host")
     isolation.add_argument("--prod-host")
     isolation.add_argument("--confirm-prod", action="store_true")
@@ -7666,7 +7654,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 json.dumps(
                     {
                         "status": "credential-isolation-complete",
-                        "approved_by": args.approved_by,
                         **result,
                     },
                     ensure_ascii=False,
@@ -8043,7 +8030,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "validation_mode": decision.validation_mode,
                 "skipped_gates": list(decision.skipped_gates),
                 "reason": decision.reason or None,
-                "approved_by": decision.approved_by or None,
             }
         )
         transaction["snapshots"] = {

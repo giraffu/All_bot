@@ -559,7 +559,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
 
         def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
             self.remote_commands.append(command)
-            if "timeout 300 docker pull" in command:
+            if "timeout 3600 docker pull" in command:
                 raise subprocess.CalledProcessError(
                     1,
                     command,
@@ -589,7 +589,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
         "pkill -f '^docker\\ pull\\ "
         "192\\.168\\.1\\.115:5000/allbot/comfy\\-runpod\\-scail2"
         "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607$' "
-        "|| true; timeout 300 docker pull '"
+            "|| true; timeout 3600 docker pull '"
         + SCAIL2_BAKED_LAN_IMAGE
         + "'"
     ]
