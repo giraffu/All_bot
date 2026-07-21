@@ -1282,6 +1282,7 @@ def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manife
     assert body["name"] == "allbot-runpod-prod-image-to-video-manual-01"
     assert body["imageName"] == image_ref
     assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == 100
     assert env["ENVIRONMENT"] == "prod"
     assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
     assert env["RUNPOD_TASK_TYPE"] == "image_to_video"
