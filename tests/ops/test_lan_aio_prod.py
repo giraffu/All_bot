@@ -1746,6 +1746,51 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
 
 
+def test_lan_local_model_token_uses_ephemeral_remote_env_file_not_command_line():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[str] = []
+            self.copies: list[tuple[str, str]] = []
+            self.env_values.update(
+                {
+                    "LAN_AIO_AGENT_SECRET_TOKEN": "test-token",
+                    "LAN_AIO_MINIO_ENDPOINT": "minio.example",
+                    "LAN_AIO_MINIO_ACCESS_KEY": "minio-access",
+                    "LAN_AIO_MINIO_SECRET_KEY": "minio-secret",
+                    "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+                    "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+                    "CIVITAI_API_TOKEN": "must-not-appear-in-command",
+                }
+            )
+
+        def _sync_remote_workers(self, slot) -> None:
+            return None
+
+        def _scp(self, source: Path, host: str, target: str) -> None:
+            self.copies.append((source.read_text(encoding="utf-8"), target))
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.commands.append(command)
+            return ""
+
+        def _write_cache_marker(self, slot, marker: dict[str, object]) -> None:
+            return None
+
+    ops = RecordingOps()
+    ops.warm_cache([ops.slots["gpu-177-gpu0-wan22_video_v2"]])
+
+    assert all("must-not-appear-in-command" not in command for command in ops.commands)
+    secret_copy = next(copy for copy in ops.copies if "CIVITAI_API_TOKEN=" in copy[0])
+    assert secret_copy[1].endswith("/.env.local-model-download")
+    assert any("rm -f" in command and secret_copy[1] in command for command in ops.commands)
+
+
 def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
     class RecordingOps(LanAioProdOps):
         def __init__(self):

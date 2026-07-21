@@ -99,6 +99,7 @@ ENV_ALLOWLIST = {
     "LAN_MODEL_CACHE_ACCESS_KEY",
     "LAN_MODEL_CACHE_SECRET_KEY",
     "CIVITAI_API_TOKEN",
+    "CIVITAI_API_TOKEN",
 }
 
 
@@ -144,6 +145,10 @@ class LanAioProdSlot:
     @property
     def remote_env_file(self) -> str:
         return f"{self.remote_dir}/.env.lan-aio-prod"
+
+    @property
+    def remote_local_model_env_file(self) -> str:
+        return f"{self.remote_dir}/.env.local-model-download"
 
     @property
     def remote_workers_dir(self) -> str:
@@ -1831,6 +1836,14 @@ class LanAioProdOps:
         if not image_ref:
             raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
         env_content = runtime_env_content(self.env_values)
+        local_model_env_content = ""
+        if metadata.get("lan_local_model_overrides"):
+            token = self.env_values.get("CIVITAI_API_TOKEN", "")
+            if not token:
+                raise RuntimeError("missing CIVITAI_API_TOKEN for LAN local model override")
+            if "\n" in token or "\r" in token:
+                raise RuntimeError("refusing newline in CIVITAI_API_TOKEN")
+            local_model_env_content = f"CIVITAI_API_TOKEN={token}\n"
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env.lan-aio-prod"
             env_file.write_text(env_content, encoding="utf-8")
@@ -1840,7 +1853,26 @@ class LanAioProdOps:
             )
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
-        self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
+            if local_model_env_content:
+                local_model_env_file = Path(tmp) / ".env.local-model-download"
+                local_model_env_file.write_text(local_model_env_content, encoding="utf-8")
+                self._scp(
+                    local_model_env_file,
+                    slot.ssh_host,
+                    slot.remote_local_model_env_file,
+                )
+                self._ssh(
+                    slot.ssh_host,
+                    f"chmod 600 '{slot.remote_local_model_env_file}'",
+                )
+        try:
+            self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
+        finally:
+            if local_model_env_content:
+                self._ssh(
+                    slot.ssh_host,
+                    f"rm -f '{slot.remote_local_model_env_file}'",
+                )
         marker = {
             "ok": True,
             "slot": slot.id,
@@ -2255,10 +2287,14 @@ class LanAioProdOps:
             f"{workspace_host_dir}:/workspace",
         ]
         if metadata.get("lan_local_model_overrides"):
-            docker_command.extend([
-                "-e", f"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES={json.dumps(metadata['lan_local_model_overrides'], separators=(',', ':'))}",
-                "-e", "CIVITAI_API_TOKEN=" + self.env_values.get("CIVITAI_API_TOKEN", ""),
-            ])
+            docker_command.extend(
+                [
+                    "--env-file",
+                    slot.remote_local_model_env_file,
+                    "-e",
+                    f"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES={json.dumps(metadata['lan_local_model_overrides'], separators=(',', ':'))}",
+                ]
+            )
         if model_workspace_host_dir != workspace_host_dir:
             docker_command.extend(
                 ["-v", f"{model_host_dir}:{model_target_dir}"]

@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "c596b774702b3a2446c435a8ad423d9c8e5ad4dc",
+  "batch": "wan22-local-token-isolation",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-wan22-local-token-isolation",
+  "members": [
+    {
+      "base_sha": "c596b774702b3a2446c435a8ad423d9c8e5ad4dc",
+      "branch": "codex/a-wan22-local-token-isolation",
+      "head": "07ae92a36b34051efeb7ec68ec23aa564fb7d42c",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
