@@ -39,6 +39,21 @@ python scripts/prepare_ltx_t2v_model_bundle.py \
 脚本在下载前要求 registry 同文件系统至少 75 GiB 可用空间，流式写临时文件，
 校验 size/SHA256 后用硬链接导入 blob store，再移除临时文件。
 
+发布到 LAN model-cache 必须复用共享 SHA 对象池，禁止按新 profile 前缀重复上传
+七个既有 blob：
+
+```bash
+python scripts/upload_all_task_models_to_lan_cache.py \
+  --env-file .env.lan.model-cache \
+  --repo-root /srv/allbot/model-registry \
+  --target ltx_t2v
+# 核对 dry-run 的 upload_count / upload_total_size_bytes 与宿主余量后才追加 --execute
+```
+
+`--target ltx_t2v` 只构建 `ltx_t2v/2026-07-22/manifest.json`，模型对象使用
+`models/by-sha256/<sha[:2]>/<sha>`；manifest 只有在全部对象 HEAD 的大小和 SHA
+metadata 都通过后才发布。
+
 ## 3. 工作流与容器
 
 运行 workflow 的事实源：
@@ -112,6 +127,20 @@ catalog 并带原因收口 unfinished operation；状态不唯一就停止。只
 `gpu-252/gpu1` 顺序验证人物候选与 LTX 候选，检查 heartbeat、`/system_stats`、
 `/object_info`、模型枚举、R2、音轨、时长、OOM/status 137 和三段人物一致性。
 验收结束必须停止候选并恢复 `intentionally_empty`，不得开启 production intake。
+
+本地验收固定使用事务化入口：
+
+```bash
+python scripts/lan_aio_fleet_prod_ops.py canary-start-disabled \
+  --slot <slot> --include-disabled --execute
+python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled \
+  --slot <slot> --include-disabled --execute
+```
+
+启动事务只执行 preflight、digest-pinned image、warm-cache 与 disabled heartbeat，
+绝不执行 `enable-aio`；停止事务必须等待 Central worker 和 Comfy `/queue` 均空闲，
+再停止候选并原子恢复 ledger 的 `intentionally_empty`。低层 `start-disabled`、手工
+Docker 或成功后会开启 intake 的 `recover/takeover` 都不能用于这类验收。
 
 代码/容器 smoke 通过不等于 LAN 全链路通过；运行结果必须单独记录。RunPod、
 GHCR、autoscaler/canary 与共享环境发布属于下一阶段授权。

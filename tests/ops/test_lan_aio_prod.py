@@ -1928,6 +1928,92 @@ def test_lan_aio_takeover_runs_single_slot_sequence():
     ]
 
 
+def test_lan_aio_disabled_canary_start_never_enables_intake():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def preflight_payload(self, slots, *, execute: bool = False):
+            self.events.append(f"preflight:{execute}")
+            return {"ok": True, "action": "preflight"}
+
+        def pull_image(self, slots):
+            self.events.append("pull-image")
+            return {"ok": True, "action": "pull-image"}
+
+        def warm_cache(self, slots):
+            self.events.append("warm-cache")
+            return {"ok": True, "action": "warm-cache"}
+
+        def start_disabled(self, slots):
+            self.events.append("start-disabled")
+            return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
+
+        def enable_aio(self, slots):  # pragma: no cover - safety tripwire
+            raise AssertionError("disabled canary must never enable intake")
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-ltx_t2v"]
+
+    result = ops.start_disabled_canary([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "canary-start-disabled"
+    assert ops.events == [
+        "preflight:True",
+        "pull-image",
+        "warm-cache",
+        "start-disabled",
+    ]
+
+
+def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def disable_aio(self, slots):
+            self.events.append("disable-aio")
+            return {"ok": True, "action": "disable-aio"}
+
+        def _wait_worker_ids_idle(self, targets):
+            self.events.append("worker-idle")
+
+        def _verify_comfy_queue_idle(self, slot):
+            self.events.append("comfy-idle")
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            assert "docker stop" in command
+            self.events.append("docker-stop")
+            return ""
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-ltx_t2v"]
+
+    result = ops.stop_disabled_canary([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "canary-stop-disabled"
+    assert ops.events == [
+        "disable-aio",
+        "worker-idle",
+        "comfy-idle",
+        "docker-stop",
+    ]
+
+
 def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
     class RecordingOps(LanAioProdOps):
         def __init__(self):

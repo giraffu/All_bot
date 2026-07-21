@@ -48,6 +48,12 @@ TAKEOVER_STEPS = (
     "start-disabled",
     "enable-aio",
 )
+DISABLED_CANARY_START_STEPS = (
+    "preflight",
+    "pull-image",
+    "warm-cache",
+    "start-disabled",
+)
 RETARGETABLE_REPLACE_SLOT_ACTIONS = {
     "render",
     "preflight",
@@ -68,6 +74,8 @@ MANAGED_MUTATION_ACTIONS = {
     "restart-aio",
     "recover",
     "release-rollout",
+    "canary-start-disabled",
+    "canary-stop-disabled",
 }
 DIRECT_TRANSITION_ACTIONS = {
     "drain-legacy",
@@ -1031,6 +1039,7 @@ class LanAioProdOps:
                 "enable-aio",
                 "restart-aio",
                 "release-rollout",
+                "canary-stop-disabled",
             }
             if action in current_only_actions:
                 ledger_current = report.get("ledger_current") or {}
@@ -1074,6 +1083,18 @@ class LanAioProdOps:
                             f"{selected_slot_id}"
                         )
                     expected_current[physical_slot_key(selected)] = selected.id
+                elif action == "canary-start-disabled":
+                    if len(slots) != 1:
+                        raise RuntimeError(
+                            "managed disabled canary start requires exactly one slot"
+                        )
+                    expected_current[physical_slot_key(slots[0])] = slots[0].id
+                elif action == "canary-stop-disabled":
+                    if len(slots) != 1:
+                        raise RuntimeError(
+                            "managed disabled canary stop requires exactly one slot"
+                        )
+                    expected_current[physical_slot_key(slots[0])] = None
 
                 live_after = self.live_current_snapshot(physical_slots)
                 verification_errors = dict(live_after.get("errors") or {})
@@ -1102,11 +1123,25 @@ class LanAioProdOps:
                 updated["physical_slots"] = updated_physical
                 for physical_slot in physical_slots:
                     physical_state = updated_physical.setdefault(physical_slot, {})
-                    expected_slot_id = expected_current[physical_slot]
-                    expected_slot = self.slots[expected_slot_id]
-                    physical_state["current"] = self._current_entry_for_slot(
-                        expected_slot
-                    )
+                    expected_slot_id = expected_current.get(physical_slot)
+                    if action == "canary-stop-disabled":
+                        physical_state["current"] = {}
+                        physical_state["intentionally_empty"] = {
+                            "reason": "disabled canary stopped after local acceptance",
+                            "recorded_at": datetime.now(timezone.utc).isoformat(),
+                            "operation_id": operation_id,
+                        }
+                    else:
+                        if not expected_slot_id:
+                            raise RuntimeError(
+                                "managed mutation lost expected current slot for "
+                                f"{physical_slot}"
+                            )
+                        expected_slot = self.slots[expected_slot_id]
+                        physical_state["current"] = self._current_entry_for_slot(
+                            expected_slot
+                        )
+                        physical_state.pop("intentionally_empty", None)
                     physical_state["last_verified_at"] = datetime.now(
                         timezone.utc
                     ).isoformat()
@@ -1443,6 +1478,21 @@ class LanAioProdOps:
             if action == "takeover":
                 operations.extend(
                     f"run {step} for {slot.id}" for step in TAKEOVER_STEPS
+                )
+            elif action == "canary-start-disabled":
+                operations.extend(
+                    f"run {step} for {slot.id}"
+                    for step in DISABLED_CANARY_START_STEPS
+                )
+                operations.append(f"keep {slot.agent_id}=disabled")
+            elif action == "canary-stop-disabled":
+                operations.extend(
+                    [
+                        f"set {slot.agent_id}=disabled",
+                        f"wait for {slot.agent_id} and ComfyUI queue to become idle",
+                        f"stop disabled canary container {slot.container_name}",
+                        f"record {physical_slot_key(slot)} intentionally empty",
+                    ]
                 )
             elif action == "configure-registry":
                 operations.extend(
@@ -1952,6 +2002,86 @@ class LanAioProdOps:
             "slot": slot.id,
             "stale_target_container": stale_target_container,
             "legacy_hot_cache_copies": hot_cache_copies,
+        }
+
+    def start_disabled_canary(
+        self, slots: list[LanAioProdSlot]
+    ) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("canary-start-disabled requires exactly one --slot")
+        slot = slots[0]
+        if slot.phase.startswith("blocked_"):
+            raise RuntimeError(
+                f"disabled canary is blocked by catalog policy: {slot.id} phase={slot.phase}"
+            )
+        steps: list[dict[str, Any]] = []
+        preflight = self.preflight_payload([slot], execute=True)
+        steps.append({"action": "preflight", "payload": preflight})
+        if not preflight.get("ok"):
+            raise RuntimeError(f"disabled canary preflight failed for {slot.id}")
+        try:
+            for action, callback in (
+                ("pull-image", self.pull_image),
+                ("warm-cache", self.warm_cache),
+                ("start-disabled", self.start_disabled),
+            ):
+                steps.append({"action": action, "payload": callback([slot])})
+        except Exception as exc:
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_disabled_canary_start_failed",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
+            )
+            raise RuntimeError(
+                "disabled canary start failed; candidate was stopped and intake "
+                f"remains disabled: {exc}"
+            ) from exc
+        return {
+            "ok": True,
+            "action": "canary-start-disabled",
+            "slot": slot.id,
+            "steps": steps,
+            "intake": "disabled",
+        }
+
+    def _verify_comfy_queue_idle(self, slot: LanAioProdSlot) -> None:
+        checker = (
+            "import json,sys; payload=json.load(sys.stdin); "
+            "running=payload.get('queue_running') or []; "
+            "pending=payload.get('queue_pending') or []; "
+            "raise SystemExit(1 if running or pending else 0)"
+        )
+        self._ssh(
+            slot.ssh_host,
+            (
+                f"curl -fsS --max-time 8 http://127.0.0.1:{slot.host_port}/queue "
+                f"| python3 -c {shlex.quote(checker)}"
+            ),
+        )
+
+    def stop_disabled_canary(
+        self, slots: list[LanAioProdSlot]
+    ) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("canary-stop-disabled requires exactly one --slot")
+        slot = slots[0]
+        self.disable_aio([slot])
+        self._wait_worker_ids_idle({slot.agent_id})
+        self._verify_comfy_queue_idle(slot)
+        self._ssh(
+            slot.ssh_host,
+            f"docker stop '{slot.container_name}' >/dev/null",
+        )
+        return {
+            "ok": True,
+            "action": "canary-stop-disabled",
+            "slot": slot.id,
+            "intake": "disabled",
         }
 
     def rollback(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -3206,6 +3336,8 @@ def build_parser() -> argparse.ArgumentParser:
             "recover",
             "candidate-plan",
             "release-rollout",
+            "canary-start-disabled",
+            "canary-stop-disabled",
             "state-init",
             "state-reconcile",
         ),
@@ -3450,6 +3582,10 @@ def _run_raw_execute_action(
         return ops.wait_idle(slots)
     if args.action == "takeover":
         return ops.takeover(slots, failure_policy=args.failure_policy)
+    if args.action == "canary-start-disabled":
+        return ops.start_disabled_canary(slots)
+    if args.action == "canary-stop-disabled":
+        return ops.stop_disabled_canary(slots)
     if args.action == "start-disabled":
         return ops.start_disabled(slots)
     if args.action == "enable-aio":

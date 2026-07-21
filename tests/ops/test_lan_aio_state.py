@@ -311,6 +311,80 @@ def test_managed_mutation_blocks_before_handler_when_live_has_drift(tmp_path: Pa
     assert not (tmp_path / "state" / "history" / "blocked-mutation.json").exists()
 
 
+def test_disabled_canary_managed_mutations_enter_and_restore_intentionally_empty(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+            self.live_slot = None
+
+        def live_current_snapshot(self, physical_slots):
+            return {
+                "current": {
+                    physical_slot: self.live_slot for physical_slot in physical_slots
+                },
+                "errors": {},
+                "observations": {},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-252:gpu1": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "local canary staging",
+                        "operation_id": "bootstrap-empty",
+                    },
+                }
+            },
+        },
+        operation_id="bootstrap-empty",
+    )
+    target = ops.slots["gpu-252-gpu1-ltx_t2v"]
+
+    def start():
+        ops.live_slot = target.id
+        return {"ok": True, "action": "canary-start-disabled", "slot": target.id}
+
+    ops.execute_managed_mutation(
+        action="canary-start-disabled",
+        slots=[target],
+        operation_id="canary-start",
+        execute=start,
+    )
+    current = ops.state_store.load_current()
+    assert current is not None
+    physical = current["physical_slots"]["gpu-252:gpu1"]
+    assert physical["current"]["slot_id"] == target.id
+    assert "intentionally_empty" not in physical
+
+    def stop():
+        ops.live_slot = None
+        return {"ok": True, "action": "canary-stop-disabled", "slot": target.id}
+
+    ops.execute_managed_mutation(
+        action="canary-stop-disabled",
+        slots=[target],
+        operation_id="canary-stop",
+        execute=stop,
+    )
+    current = ops.state_store.load_current()
+    assert current is not None
+    physical = current["physical_slots"]["gpu-252:gpu1"]
+    assert physical["current"] == {}
+    assert physical["intentionally_empty"]["operation_id"] == "canary-stop"
+
+
 def test_managed_mutation_records_rolled_back_failure(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):

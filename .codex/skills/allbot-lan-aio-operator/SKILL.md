@@ -49,6 +49,8 @@ python scripts/lan_aio_fleet_prod_ops.py render --slot <slot> --include-disabled
 python scripts/lan_aio_fleet_prod_ops.py preflight --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py pull-image --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disabled --execute
+python scripts/lan_aio_fleet_prod_ops.py canary-start-disabled --slot <slot> --include-disabled --execute
+python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
 python scripts/lan_aio_fleet_prod_ops.py restart-aio --slot <slot> --execute
@@ -81,8 +83,9 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 不允许直接 takeover，除非先通过配置和验证解除阻断。
 - `wan22_video_v2` 在 32GB 卡上有 OOM 历史；启用前必须确认 state 文件和 docs 没有阻断说明。
 - helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时停止并报告。
-- `takeover/recover/restart-aio/warm-cache/pull-image` 等 mutation 先持有本地单实例锁并通过 live/ledger/catalog 三方门禁；未完成 operation 阻止后续 mutation。
+- `takeover/recover/restart-aio/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 先持有本地单实例锁并通过 live/ledger/catalog 三方门禁；未完成 operation 阻止后续 mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
+- 只做本地验收且禁止 intake 的候选必须使用成对的 `canary-start-disabled` / `canary-stop-disabled`。前者只允许单 slot，执行 preflight、精确镜像、warm-cache、disabled heartbeat 后保持 Central control disabled；后者同时等待 worker 与 Comfy `/queue` 为空，停止精确候选容器并把物理槽原子恢复为 `intentionally_empty`。不得用 `recover/takeover` 替代，因为它们成功后会 enable intake。
 
 ## 4. 标准流程
 
@@ -113,6 +116,13 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 4. 验证新容器 healthy、disabled heartbeat gate、enable 后 Central worker profile/task types 正确。
 5. helper 在 post-switch live 验证通过后原子更新 `current.yml`，并将 operation 收口为 `succeeded`；失败/回滚也必须留下 history。
 6. 普通 profile 切换不改 Git catalog/docs；只有新增候选、换卡/UUID、digest/manifest、稳定阻断策略变化才走 PR 并同步必要知识库。
+
+### Disabled canary 验收
+
+1. 目标物理槽必须由 live/ledger 明确证明为 `intentionally_empty`，候选只能是 `maintenance_disabled` 或普通 catalog-ready，`blocked_*` 仍拒绝启动。
+2. 用 `canary-start-disabled --slot <slot> --include-disabled --execute` 完成镜像、模型缓存、容器健康和 disabled heartbeat 闭环；该事务绝不执行 `enable-aio`。
+3. 验收任务结束并确认结果后，用 `canary-stop-disabled --slot <slot> --include-disabled --execute` 收口；它会等待 Central worker 与 Comfy queue 均空闲，再停止容器并恢复本地账本的 `intentionally_empty`。
+4. 任一门禁失败都停止，不允许退回独立 `start-disabled`、手工 Docker 或先 enable 再 disable。
 
 ### 恢复失败现场
 
