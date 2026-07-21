@@ -252,9 +252,10 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
                     "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
                     "strength": 1.0,
                 },
-            ],
-            "end_frame_draw_scene_id": "tail_pose",
-        },
+                ],
+                "end_frame_draw_scene_id": "tail_pose",
+                "next_scene_id": None,
+            },
         {
             "id": "fallbacks",
             "name": "Fallbacks",
@@ -262,10 +263,60 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "negative_prompt": "",
             "duration": 5,
             "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
-            "lora_items": [],
-            "end_frame_draw_scene_id": "",
-        },
+                "lora_items": [],
+                "end_frame_draw_scene_id": "",
+                "next_scene_id": None,
+            },
     ]
+
+
+def test_normalize_qqcc_config_round_trips_same_kind_video_scene_links():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": 1,
+            "video_scenes": [
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "first prompt",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                    "next_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "Second",
+                    "prompt": "second prompt",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                },
+            ],
+            "ai_video_scenes": [],
+        }
+    )
+
+    assert config["video_scenes"][0]["next_scene_id"] == "second"
+    assert config["video_scenes"][1]["next_scene_id"] is None
+
+
+def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": 1,
+            "video_scenes": [
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "first prompt",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                    "next_scene_id": "deleted",
+                }
+            ],
+        }
+    )
+
+    assert config["video_scenes"][0]["next_scene_id"] is None
 
     options = config_service_module.build_qqcc_config_options()
     assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_LTX_VIDEO
@@ -663,6 +714,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "lora_strength": 1.0,
                 "lora_items": [],
                 "end_frame_draw_scene_id": "",
+                "next_scene_id": None,
         },
         {
             "id": "scene_2",
@@ -676,6 +728,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "lora_strength": 1.0,
                 "lora_items": [],
                 "end_frame_draw_scene_id": "",
+                "next_scene_id": None,
         },
         {
             "id": "scene_3",
@@ -689,6 +742,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "lora_strength": 1.0,
                 "lora_items": [],
                 "end_frame_draw_scene_id": "",
+                "next_scene_id": None,
         },
     ]
 
@@ -1660,6 +1714,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "lora_strength": 1.0,
                 "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
                 "end_frame_draw_scene_id": "tail_pose",
+                "next_scene_id": None,
             },
             {
                 "id": "missionary",
@@ -1690,6 +1745,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "lora_strength": 1.0,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
             "end_frame_draw_scene_id": "tail_pose",
+            "next_scene_id": None,
         },
         {
             "id": "missionary",
@@ -1703,6 +1759,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "lora_strength": 0.7,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 0.7}],
             "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
         },
     ]
 

@@ -89,6 +89,7 @@ interface VideoSceneConfig extends SceneDemoFields {
   lora_strength: number
   lora_items: VideoLoraItem[]
   end_frame_draw_scene_id: string
+  next_scene_id: string | null
 }
 
 interface VideoLoraItem {
@@ -110,6 +111,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   engine: AiVideoSceneEngine
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
+  next_scene_id: string | null
 }
 
 interface DrawSceneConfig extends SceneDemoFields {
@@ -499,6 +501,7 @@ const sceneConfig = reactive({
   video_lora_items: [] as VideoLoraItem[],
   lora_items: [] as AiVideoLoraItem[],
   end_frame_draw_scene_id: '',
+  next_scene_id: '',
   postprocess_draw_scene_id: '',
   postprocess_filter_scene_id: '',
   original_face_swap_enabled: false,
@@ -888,6 +891,57 @@ const activeEndFrameDrawOptions = computed(() =>
     (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
   )
 )
+const videoScenesForKind = (kind: SceneConfigKind) =>
+  kind === 'video'
+    ? config.video_scenes
+    : kind === 'ai_video'
+      ? config.ai_video_scenes
+      : []
+const wouldCreateVideoSceneCycle = (
+  kind: SceneConfigKind,
+  sourceSceneId: string,
+  candidateSceneId: string,
+) => {
+  const scenes = videoScenesForKind(kind)
+  const byId = new Map(scenes.map(scene => [scene.id, scene]))
+  const visited = new Set<string>()
+  let current = candidateSceneId
+  while (current) {
+    if (current === sourceSceneId) return true
+    if (visited.has(current)) return true
+    visited.add(current)
+    current = byId.get(current)?.next_scene_id || ''
+  }
+  return false
+}
+const activeNextVideoSceneOptions = computed(() => {
+  const scenes = videoScenesForKind(sceneConfig.kind)
+  const source = scenes[sceneConfig.index]
+  if (!source) return []
+  return scenes.filter(scene =>
+    scene.id.trim()
+    && scene.name.trim()
+    && scene.id !== source.id
+    && !wouldCreateVideoSceneCycle(sceneConfig.kind, source.id, scene.id),
+  )
+})
+const activeVideoSceneChainPreview = computed(() => {
+  const scenes = videoScenesForKind(sceneConfig.kind)
+  const source = scenes[sceneConfig.index]
+  if (!source) return ''
+  const byId = new Map(scenes.map(scene => [scene.id, scene]))
+  const names = [source.name || source.id]
+  const visited = new Set([source.id])
+  let current = sceneConfig.next_scene_id
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    const scene = byId.get(current)
+    if (!scene) break
+    names.push(scene.name || scene.id)
+    current = scene.next_scene_id || ''
+  }
+  return names.join(' → ')
+})
 const activePostprocessDrawOptions = computed(() => {
   const sourceScene = config.draw_scenes[sceneConfig.index]
   if (sceneConfig.kind !== 'draw' || !sourceScene) return []
@@ -1055,6 +1109,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
+            ? scene.next_scene_id.trim()
+            : null,
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'video', sceneId: id, slot: 'input',
           }),
@@ -1087,6 +1144,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
+            ? scene.next_scene_id.trim()
+            : null,
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'ai_video', sceneId: id, slot: 'input',
           }),
@@ -1096,7 +1156,6 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
-      .slice(0, 20)
   }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
@@ -1129,6 +1188,7 @@ const addVideoScene = () => {
     lora_strength: 1,
     lora_items: [],
     end_frame_draw_scene_id: '',
+    next_scene_id: null,
   })
   showScenePageContaining('video', config.video_scenes.length - 1)
 }
@@ -1139,10 +1199,6 @@ const createAiVideoSceneId = () => {
 }
 
 const addAiVideoScene = () => {
-  if (config.ai_video_scenes.length >= 20) {
-    message.warning('AI视频场景最多 20 个')
-    return
-  }
   config.ai_video_scenes.push({
     id: createAiVideoSceneId(),
     name: '',
@@ -1152,17 +1208,28 @@ const addAiVideoScene = () => {
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
     lora_items: [],
     end_frame_draw_scene_id: '',
+    next_scene_id: null,
   })
   showScenePageContaining('ai_video', config.ai_video_scenes.length - 1)
 }
 
 const removeAiVideoScene = (index: number) => {
-  config.ai_video_scenes.splice(index, 1)
+  const [removed] = config.ai_video_scenes.splice(index, 1)
+  if (removed) {
+    config.ai_video_scenes.forEach((scene) => {
+      if (scene.next_scene_id === removed.id) scene.next_scene_id = null
+    })
+  }
   normalizeScenePage('ai_video')
 }
 
 const removeVideoScene = (index: number) => {
-  config.video_scenes.splice(index, 1)
+  const [removed] = config.video_scenes.splice(index, 1)
+  if (removed) {
+    config.video_scenes.forEach((scene) => {
+      if (scene.next_scene_id === removed.id) scene.next_scene_id = null
+    })
+  }
   normalizeScenePage('video')
 }
 
@@ -1506,6 +1573,9 @@ const buildPayload = (): QqccBotConfig => {
           scene.end_frame_draw_scene_id,
           payload.draw_scenes,
         ),
+        next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
+          ? scene.next_scene_id.trim()
+          : null,
       }
     })
     .filter((scene) => scene.name || scene.prompt)
@@ -1523,9 +1593,11 @@ const buildPayload = (): QqccBotConfig => {
         scene.end_frame_draw_scene_id,
         payload.draw_scenes,
       ),
+      next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
+        ? scene.next_scene_id.trim()
+        : null,
     }))
     .filter((scene) => scene.name || scene.prompt)
-    .slice(0, 20)
   return payload
 }
 
@@ -1576,6 +1648,10 @@ const openSceneConfig = (
     kind === 'video' || kind === 'ai_video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).end_frame_draw_scene_id)
       : ''
+  sceneConfig.next_scene_id =
+    kind === 'video' || kind === 'ai_video'
+      ? (scene as VideoSceneConfig | AiVideoSceneConfig).next_scene_id || ''
+      : ''
   sceneConfig.postprocess_draw_scene_id =
     kind === 'draw'
       ? normalizePostprocessDrawSceneId((scene as DrawSceneConfig).postprocess_draw_scene_id, index)
@@ -1597,6 +1673,7 @@ const closeSceneConfig = () => {
   sceneConfig.video_lora_items = []
   sceneConfig.aspect_ratio = 'source'
   sceneConfig.end_frame_draw_scene_id = ''
+  sceneConfig.next_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
   sceneConfig.original_face_swap_enabled = false
@@ -1625,6 +1702,7 @@ const confirmSceneConfig = () => {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
       )
+      scene.next_scene_id = sceneConfig.next_scene_id || null
     }
   } else if (sceneConfig.kind === 'ai_video') {
     const scene = config.ai_video_scenes[sceneConfig.index]
@@ -1636,6 +1714,7 @@ const confirmSceneConfig = () => {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
       )
+      scene.next_scene_id = sceneConfig.next_scene_id || null
     }
   } else if (sceneConfig.kind === 'draw') {
     const scene = config.draw_scenes[sceneConfig.index]
@@ -2226,6 +2305,34 @@ onMounted(() => {
               {{ item.name || item.id }}
             </a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && (sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video')"
+          label="自动拼接下一个模板"
+          class="mb-4"
+        >
+          <a-select
+            v-model:value="sceneConfig.next_scene_id"
+            data-testid="scene-next-video-scene-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option
+              v-for="item in activeNextVideoSceneOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name || item.id }}
+            </a-select-option>
+          </a-select>
+          <div
+            v-if="activeVideoSceneChainPreview"
+            class="mt-2 text-xs text-slate-500"
+            data-testid="scene-video-chain-preview"
+          >
+            {{ activeVideoSceneChainPreview }}
+          </div>
         </a-form-item>
         <a-form-item
           v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"

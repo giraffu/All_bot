@@ -22,6 +22,7 @@ from src.services.qqcc_demo_generation_service import (
     get_qqcc_demo_generation,
     submit_qqcc_demo_generation,
 )
+from src.services.qqcc_video_scene_chain_service import QqccVideoSceneChainError
 
 router = APIRouter(prefix="/api/qqcc", tags=["qqcc"])
 logger = logging.getLogger("dashboard.qqcc")
@@ -59,7 +60,12 @@ async def update_qqcc_config(
     payload: QqccBotConfigRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await save_qqcc_config_payload(db, payload.model_dump(exclude_unset=True))
+    try:
+        return await save_qqcc_config_payload(
+            db, payload.model_dump(exclude_unset=True)
+        )
+    except QqccVideoSceneChainError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/demo-media/{scene_kind}/{scene_id}/{slot}")
@@ -135,12 +141,18 @@ async def put_qqcc_scene_demo_media_json(
 async def submit_qqcc_scene_demo_generation(
     scene_kind: str,
     payload: QqccDemoGenerationRequest,
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await submit_qqcc_demo_generation(
-            scene_kind=scene_kind,
-            scene=payload.scene,
+        config_payload = (
+            await load_qqcc_config_payload(db, include_preview_urls=False)
+            if hasattr(db, "execute")
+            else None
         )
+        submit_kwargs = {"scene_kind": scene_kind, "scene": payload.scene}
+        if config_payload:
+            submit_kwargs["config"] = config_payload["config"]
+        return await submit_qqcc_demo_generation(**submit_kwargs)
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

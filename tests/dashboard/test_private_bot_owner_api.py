@@ -264,8 +264,8 @@ async def test_owner_demo_generation_stays_in_private_bot_media_namespace(monkey
     )
 
     assert result["status"] == "pending"
-    submit.assert_awaited_once_with(
-        scene_kind="draw",
-        scene=scene,
-        object_prefix="qqcc/private/7/demo",
-    )
+    submit.assert_awaited_once()
+    assert submit.await_args.kwargs["scene_kind"] == "draw"
+    assert submit.await_args.kwargs["scene"] == scene
+    assert submit.await_args.kwargs["object_prefix"] == "qqcc/private/7/demo"
+    assert isinstance(submit.await_args.kwargs["config"], dict)

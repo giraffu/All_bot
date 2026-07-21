@@ -10,6 +10,9 @@ from src.services.qqcc_config_service import (
     normalize_qqcc_config,
 )
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
+from src.services.qqcc_video_scene_chain_service import (
+    validate_qqcc_video_scene_chain_config,
+)
 
 
 class PrivateBotConfigVersionConflict(ValueError):
@@ -138,10 +141,6 @@ def validate_private_bot_config_limits(raw_config: dict[str, Any]) -> None:
         raw_scenes = raw_config.get(section, [])
         if not isinstance(raw_scenes, list):
             continue
-        if len(raw_scenes) > PRIVATE_BOT_CONFIG_MAX_SCENES_PER_KIND:
-            raise PrivateBotConfigLimitError(
-                "private Bot config contains too many scenes of one kind"
-            )
         scene_count += len(raw_scenes)
         for scene in raw_scenes:
             if not isinstance(scene, dict):
@@ -153,8 +152,6 @@ def validate_private_bot_config_limits(raw_config: dict[str, Any]) -> None:
                     raise PrivateBotConfigLimitError(
                         "private Bot scene prompt is too long"
                     )
-    if scene_count > PRIVATE_BOT_CONFIG_MAX_SCENES_TOTAL:
-        raise PrivateBotConfigLimitError("private Bot config contains too many scenes")
     _validate_draw_chain_depth(raw_config)
 
 
@@ -167,6 +164,7 @@ def update_private_bot_config_record(
     if int(expected_version) != int(bot.config_version):
         raise PrivateBotConfigVersionConflict("private Bot config version is stale")
     validate_private_bot_config_limits(raw_config)
+    validate_qqcc_video_scene_chain_config(raw_config)
     normalized = normalize_qqcc_config(raw_config)
     _validate_media_scope(normalized, private_bot_id=int(bot.id))
     bot.config = normalized

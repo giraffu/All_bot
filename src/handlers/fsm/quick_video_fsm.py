@@ -49,11 +49,16 @@ from src.services.qqcc_config_service import (
     get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
+    get_enabled_qqcc_video_scenes,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
     render_qqcc_copywriting,
+)
+from src.services.qqcc_video_scene_chain_service import (
+    QqccVideoSceneChainError,
+    resolve_qqcc_video_scene_chain,
 )
 from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
 from src.services.qqcc_runtime_context import (
@@ -228,6 +233,28 @@ async def _resolve_quick_video_allowed_settings(
     return allowed_resolutions, allowed_durations, user_group, user_identity
 
 
+def _qqcc_chain_allows_1024p(
+    qqcc_config: dict | None,
+    fsm_data: dict | None,
+) -> bool:
+    if not qqcc_config or not fsm_data or fsm_data.get("scene_kind") == "ai_video":
+        return True
+    root_scene_id = str(fsm_data.get("scene_id") or "").strip()
+    if not root_scene_id:
+        return True
+    chain_config = dict(qqcc_config)
+    chain_config["video_scenes"] = get_enabled_qqcc_video_scenes(qqcc_config)
+    try:
+        scenes = resolve_qqcc_video_scene_chain(
+            chain_config,
+            scene_kind="video",
+            root_scene_id=root_scene_id,
+        )
+    except QqccVideoSceneChainError:
+        return False
+    return all(str(scene.get("duration") or "") != "10s" for scene in scenes)
+
+
 def _strip_menu_prefix(text: str) -> str:
     text = (text or "").strip()
     first_token, _, rest = text.partition(" ")
@@ -364,6 +391,13 @@ async def _build_quick_video_settings_markup(
             res
             for res in allowed_resolutions
             if not (res == "1024p" and duration == "10s")
+            and not (
+                res == "1024p"
+                and not _qqcc_chain_allows_1024p(
+                    qqcc_config,
+                    context.user_data.get("quick_video_data"),
+                )
+            )
         ]
         for res in visible_resolutions:
             base_cost = RESOLUTION_COST.get(res, 6)
@@ -641,6 +675,10 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             res
             for res in allowed_resolutions
             if not (res == "1024p" and fsm_data.get("duration") == "10s")
+            and not (
+                res == "1024p"
+                and not _qqcc_chain_allows_1024p(qqcc_config, fsm_data)
+            )
         ]
         if not allowed_resolutions:
             await _reply_qqcc_feature_disabled(update, context)

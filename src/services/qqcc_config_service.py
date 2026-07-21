@@ -27,6 +27,10 @@ from src.services.qqcc_video_frame_adapter import (
     QQCC_VIDEO_ASPECT_SOURCE,
     normalize_qqcc_video_aspect_ratio,
 )
+from src.services.qqcc_video_scene_chain_service import (
+    normalize_qqcc_video_scene_links,
+    validate_qqcc_video_scene_chain_config,
+)
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 SCENE_PRESET_VERSION = 1
@@ -198,6 +202,7 @@ def _default_video_scenes(
             "lora_strength": 1.0,
             "lora_items": [],
             "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
     ]
@@ -637,6 +642,12 @@ def _normalize_video_scene(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
+        "next_scene_id": (
+            str(raw_scene.get("next_scene_id")).strip()
+            if isinstance(raw_scene.get("next_scene_id"), str)
+            and str(raw_scene.get("next_scene_id")).strip()
+            else None
+        ),
     }
     _attach_scene_demo_media(
         scene,
@@ -658,7 +669,7 @@ def _normalize_video_scenes(
         return []
     scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
-    for index, raw_scene in enumerate(raw_scenes[:VIDEO_SCENE_MAX_COUNT]):
+    for index, raw_scene in enumerate(raw_scenes):
         scene = _normalize_video_scene(
             raw_scene,
             index=index,
@@ -673,7 +684,7 @@ def _normalize_video_scenes(
         scenes = _merge_seeded_scene_presets(
             scenes=scenes,
             preset_scenes=_default_video_scenes(raw_prompts),
-            max_count=VIDEO_SCENE_MAX_COUNT,
+            max_count=None,
         )
     return scenes
 
@@ -744,6 +755,12 @@ def _normalize_ai_video_scene(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
+        "next_scene_id": (
+            str(raw_scene.get("next_scene_id")).strip()
+            if isinstance(raw_scene.get("next_scene_id"), str)
+            and str(raw_scene.get("next_scene_id")).strip()
+            else None
+        ),
     }
     _attach_scene_demo_media(
         scene,
@@ -763,7 +780,7 @@ def _normalize_ai_video_scenes(
         return []
     scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
-    for index, raw_scene in enumerate(raw_scenes[:AI_VIDEO_SCENE_MAX_COUNT]):
+    for index, raw_scene in enumerate(raw_scenes):
         scene = _normalize_ai_video_scene(
             raw_scene,
             index=index,
@@ -1034,6 +1051,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "lora_strength": 1.0,
                 "lora_items": [],
                 "end_frame_draw_scene_id": "",
+                "next_scene_id": None,
             }
         )
     return scenes
@@ -1140,6 +1158,8 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         raw.get("ai_video_scenes"),
         allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
     )
+    normalize_qqcc_video_scene_links(config["video_scenes"])
+    normalize_qqcc_video_scene_links(config["ai_video_scenes"])
 
     config["prompts"] = {
         key: raw_prompts[key].strip() if isinstance(raw_prompts.get(key), str) else ""
@@ -1468,6 +1488,7 @@ async def save_qqcc_config_payload(
 ) -> dict[str, Any]:
     from src.database.models import RuntimeCheckpoint
 
+    validate_qqcc_video_scene_chain_config(payload)
     config = normalize_qqcc_config(payload)
     result = await db.execute(
         select(RuntimeCheckpoint)

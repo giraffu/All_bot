@@ -688,6 +688,7 @@ describe('QqccBotSettings', () => {
         lora_strength: 0.7,
         lora_items: [{ name: 'BreastGrow', strength: 0.7 }],
         end_frame_draw_scene_id: '',
+        next_scene_id: null,
       },
     ])
     expect(payload.draw_scenes).toEqual([
@@ -1144,6 +1145,8 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="scene-engine-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-next-video-scene-select"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="scene-video-chain-preview"]').text()).toContain('亲吻')
     await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
