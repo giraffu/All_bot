@@ -201,6 +201,7 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[0]["prompt"] == "soft light prompt"
     assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[0]["allow_contribute"] is False
     assert process_calls[0]["allow_cancel"] is True
     assert process_calls[0]["user_cancel_allowed"] is True
@@ -209,6 +210,7 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[1]["negative_prompt"] == "bad anatomy"
     assert process_calls[1]["images"] == ["/tmp/intermediate.png"]
     assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["record_history"] is True
     assert process_calls[1]["allow_contribute"] is False
     assert process_calls[1]["allow_cancel"] is False
     assert process_calls[1]["user_cancel_allowed"] is False
@@ -294,8 +296,10 @@ async def test_private_qqcc_draw_chain_uses_durable_continuation_before_dispatch
     assert create_checkpoint.await_args.kwargs["original_input_durable"] is True
     assert len(stages) == 2
     assert stages[0]["task_kwargs"]["send_result"] is False
+    assert stages[0]["task_kwargs"]["record_history"] is False
     assert stages[0]["task_kwargs"]["user_cancel_allowed"] is True
     assert stages[1]["task_kwargs"]["send_result"] is True
+    assert stages[1]["task_kwargs"]["record_history"] is True
     assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
     resume_checkpoint.assert_awaited_once()
     resume_kwargs = resume_checkpoint.await_args.kwargs
@@ -456,6 +460,7 @@ async def test_run_qqcc_draw_scene_can_postprocess_with_filter_template():
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "draw"
     assert process_calls[0]["prompt"] == "soft light prompt"
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[1]["prompt"] == "real skin prompt"
     assert process_calls[1]["negative_prompt"] == "plastic skin"
     assert process_calls[1]["send_result"] is True
@@ -544,10 +549,12 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
     assert "negative_prompt" not in process_calls[1]
     assert process_calls[1]["cost_override"] == 2
     assert process_calls[1]["send_result"] is False
+    assert process_calls[1]["record_history"] is False
     assert process_calls[2]["images"] == ["/tmp/download-2.png"]
     assert process_calls[2]["prompt"] == "polish prompt"
     assert process_calls[2]["negative_prompt"] == "bad anatomy"
     assert process_calls[2]["send_result"] is True
+    assert process_calls[2]["record_history"] is True
 
 
 @pytest.mark.asyncio
@@ -599,11 +606,13 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
         MODE_FACE_SWAP_V2,
     ]
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[0]["allow_cancel"] is True
     assert process_calls[0]["user_cancel_allowed"] is True
     assert process_calls[0]["base_priority"] == 0
     assert process_calls[0]["show_queue_status"] is True
     assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["record_history"] is True
     assert process_calls[1]["allow_cancel"] is False
     assert process_calls[1]["user_cancel_allowed"] is False
     assert process_calls[1]["base_priority"] == 100

@@ -770,6 +770,7 @@ def build_private_qqcc_draw_continuation_stages(
             "delete_status": final_delete_status if draw_sends_result else False,
             "cleanup": True,
             "send_result": draw_sends_result,
+            "record_history": draw_sends_result,
             "allow_contribute": (
                 final_allow_contribute if draw_sends_result else False
             ),
@@ -805,6 +806,7 @@ def build_private_qqcc_draw_continuation_stages(
             "delete_status": final_delete_status if face_sends_result else False,
             "cleanup": True,
             "send_result": face_sends_result,
+            "record_history": face_sends_result,
             "allow_contribute": (
                 final_allow_contribute if face_sends_result else False
             ),

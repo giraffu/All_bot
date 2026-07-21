@@ -124,6 +124,8 @@ QQCC Config 专用 LoRA 的“可配置”和“运行时可加载”是两个�
 
 AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata，结果按钮除“重新生成”外还提供“换个主题”“生成动图”“生成视频”。换主题从该 History 的用户原图开始并选择新的绘图场景；动图和视频从该 History 的最终生成图开始并分别选择当前可用的 AI动图和 AI视频场景。每次点击均重新校验 History 归属、场景有效性和灵石余额，临时素材只用于这一条后续提交。
 
+链式 AI 绘图/滤镜的中间绘图、原图换脸和视频尾帧步骤必须 `record_history=false`，不写入 History/闪回瓶、不可投稿且不发送结果。每条链仅最终可见步骤写一条 History 并发送一份结果；首个真实子任务复用一条生成状态消息，后续阶段不得新增排队或生成展示。
+
 ## 3. 代码入口
 
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。
