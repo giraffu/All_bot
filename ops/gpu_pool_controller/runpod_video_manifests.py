@@ -24,6 +24,20 @@ LEGACY_WAN22_AIO_MANIFEST_KEY = "wan22_aio_video/2026-06-12-test/manifest.json"
 WAN22_EXPLICIT_LORA_MANIFEST_KEY = (
     "wan22_explicit_lora_library/2026-07-18/manifest.json"
 )
+WAN22_VIDEO_V2_PRUNED_V11_VERSION = "2026-07-21-pruned-v11"
+WAN22_VIDEO_V2_PRUNED_V11_SOURCE_MANIFEST_KEY = (
+    "wan22_video_v2/2026-07-18-lora5/manifest.json"
+)
+WAN22_VIDEO_V2_PRUNED_V11_REPLACEMENTS = {
+    "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors": {
+        "sha256": "fa4202ea621725c57b0cbb84543bd6a5548de1d85c0c5a9f18db0bcf91202a54",
+        "size_bytes": 14528782272,
+    },
+    "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors": {
+        "sha256": "6e746571355bb589b966a72ed7a8717a09af0aeaf699391138e9788bace224d1",
+        "size_bytes": 14528782272,
+    },
+}
 IMAGE_TO_VIDEO_MARKERS = ("FASTMOVE",)
 WAN22_VIDEO_V2_MARKERS = ("DasiwaWAN22I2V14B",)
 
@@ -285,6 +299,107 @@ def prepare_split_video_manifests(
         "missing_count": 0,
         "uploads": uploads,
         "manifests": _manifest_summaries(manifests, targets),
+    }
+
+
+def prepare_wan22_video_v2_pruned_v11_manifest(
+    *,
+    client: Any,
+    bucket: str,
+    source_key: str = WAN22_VIDEO_V2_PRUNED_V11_SOURCE_MANIFEST_KEY,
+    execute: bool = False,
+) -> dict[str, Any]:
+    """Publish a new immutable v2 manifest after both pruned v11 UNets exist.
+
+    The source v2 manifest supplies the shared VAE, text encoder and LoRAs.  The
+    two same-named UNets must be replaced by objects under the new version
+    prefix, otherwise a worker could silently retain the former FP8-full files.
+    """
+    source_manifest = read_json_object(client, bucket=bucket, key=source_key)
+    target_prefix = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
+    files: list[dict[str, Any]] = []
+    replaced_paths: set[str] = set()
+    for raw_entry in source_manifest.get("files") or []:
+        entry = dict(raw_entry)
+        relative_path = str(entry.get("relative_path") or "")
+        replacement = WAN22_VIDEO_V2_PRUNED_V11_REPLACEMENTS.get(relative_path)
+        if replacement is not None:
+            entry.update(replacement)
+            entry["key"] = f"{target_prefix}/models/{relative_path}"
+            entry.pop("objectKey", None)
+            replaced_paths.add(relative_path)
+        files.append(entry)
+    expected_paths = set(WAN22_VIDEO_V2_PRUNED_V11_REPLACEMENTS)
+    if replaced_paths != expected_paths:
+        missing = sorted(expected_paths - replaced_paths)
+        raise ValueError(f"source v2 manifest missing pruned replacement path(s): {missing}")
+
+    manifest = {
+        "bundle": "wan22_video_v2",
+        "profile": "wan22_video_v2",
+        "version": WAN22_VIDEO_V2_PRUNED_V11_VERSION,
+        "prefix": target_prefix,
+        "source": {
+            "replaced_from_manifest_key": source_key,
+            "unet_variant": "Dasiwa SnatchKiss v11 FP8 pruned",
+        },
+        "file_count": len(files),
+        "total_size_bytes": sum(
+            int(item.get("size_bytes") or item.get("size") or 0) for item in files
+        ),
+        "files": sorted(files, key=lambda item: str(item["relative_path"])),
+    }
+    missing = []
+    for entry in manifest["files"]:
+        key = str(entry.get("key") or entry.get("objectKey") or "")
+        if not key:
+            missing.append({"relative_path": entry["relative_path"], "key": "", "reason": "missing_key"})
+            continue
+        matches, reason = head_object_matches_manifest_entry(
+            client, bucket=bucket, key=key, entry=entry
+        )
+        if not matches:
+            missing.append(
+                {"relative_path": entry["relative_path"], "key": key, "reason": reason}
+            )
+    if missing:
+        return {
+            "ok": False,
+            "dry_run": not execute,
+            "source_key": source_key,
+            "target_key": RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+            "missing_count": len(missing),
+            "missing": missing,
+        }
+
+    uploads = []
+    if execute:
+        target_key = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+        body = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+        checksum = hashlib.sha256(body).hexdigest()
+        client.put_object(
+            Bucket=bucket,
+            Key=target_key,
+            Body=body,
+            ContentType="application/json",
+            Metadata={"sha256": checksum},
+        )
+        head = client.head_object(Bucket=bucket, Key=target_key)
+        if (
+            int(head.get("ContentLength") or 0) != len(body)
+            or _metadata_value(head.get("Metadata"), "sha256") != checksum
+        ):
+            raise RuntimeError(f"published manifest HEAD verification failed: {target_key}")
+        uploads.append({"key": target_key, "bytes": len(body), "sha256": checksum})
+    return {
+        "ok": True,
+        "dry_run": not execute,
+        "source_key": source_key,
+        "target_key": RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+        "missing_count": 0,
+        "file_count": manifest["file_count"],
+        "total_size_bytes": manifest["total_size_bytes"],
+        "uploads": uploads,
     }
 
 

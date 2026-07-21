@@ -13,6 +13,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
 )
 from ops.gpu_pool_controller.runpod_video_manifests import (
+    prepare_wan22_video_v2_pruned_v11_manifest,
     prepare_wan22_lora5_manifests,
     prepare_split_video_manifests,
     split_wan22_aio_manifest,
@@ -167,10 +168,71 @@ def test_wan22_lora5_manifests_use_new_immutable_keys_for_all_profiles():
     assert RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY == (
         f"image_to_video/{expected_version}/manifest.json"
     )
-    assert RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX == f"wan22_video_v2/{expected_version}"
+    assert RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX == "wan22_video_v2/2026-07-21-pruned-v11"
     assert RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY == (
-        f"wan22_video_v2/{expected_version}/manifest.json"
+        "wan22_video_v2/2026-07-21-pruned-v11/manifest.json"
     )
+
+
+def test_prepare_wan22_v2_pruned_manifest_replaces_only_unets_and_checks_objects():
+    source = _source_manifest()
+    source["bundle"] = "wan22_video_v2"
+    source["version"] = "2026-07-18-lora5"
+    client = _FakeR2Client({"wan22_video_v2/2026-07-18-lora5/manifest.json": source})
+    client.objects = {
+        item["key"]: {
+            "ContentLength": item["size_bytes"],
+            "Metadata": {"sha256": item["sha256"]},
+        }
+        for item in source["files"]
+    }
+    replacements = {
+        "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors": (
+            "fa4202ea621725c57b0cbb84543bd6a5548de1d85c0c5a9f18db0bcf91202a54",
+            14528782272,
+        ),
+        "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors": (
+            "6e746571355bb589b966a72ed7a8717a09af0aeaf699391138e9788bace224d1",
+            14528782272,
+        ),
+    }
+    for relative_path, (sha256, size_bytes) in replacements.items():
+        client.objects[f"wan22_video_v2/2026-07-21-pruned-v11/models/{relative_path}"] = {
+            "ContentLength": size_bytes,
+            "Metadata": {"sha256": sha256},
+        }
+
+    payload = prepare_wan22_video_v2_pruned_v11_manifest(
+        client=client, bucket="allbot-model-cache", execute=True
+    )
+
+    assert payload["ok"] is True
+    assert {item["Key"] for item in client.puts} == {
+        RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    }
+    manifest = json.loads(client.puts[0]["Body"])
+    assert manifest["version"] == "2026-07-21-pruned-v11"
+    by_path = {item["relative_path"]: item for item in manifest["files"]}
+    for relative_path, (sha256, size_bytes) in replacements.items():
+        assert by_path[relative_path]["sha256"] == sha256
+        assert by_path[relative_path]["size_bytes"] == size_bytes
+        assert by_path[relative_path]["key"].startswith(
+            "wan22_video_v2/2026-07-21-pruned-v11/models/"
+        )
+
+
+def test_prepare_wan22_v2_pruned_manifest_fails_before_publish_when_unet_missing():
+    source = _source_manifest()
+    source["bundle"] = "wan22_video_v2"
+    client = _FakeR2Client({"wan22_video_v2/2026-07-18-lora5/manifest.json": source})
+
+    payload = prepare_wan22_video_v2_pruned_v11_manifest(
+        client=client, bucket="allbot-model-cache", execute=True
+    )
+
+    assert payload["ok"] is False
+    assert payload["missing_count"] >= 2
+    assert client.puts == []
 
 
 def test_prepare_split_video_manifests_heads_all_reused_keys_and_uploads_manifest_only():

@@ -1,0 +1,22 @@
+{
+  "transfers": [
+    {
+      "source_url": "https://civitai.com/api/download/models/2953474?type=Model&format=SafeTensor&size=pruned&fp=fp8",
+      "source_token_env": "CIVITAI_API_TOKEN",
+      "source_token_query_param": "token",
+      "key": "wan22_video_v2/2026-07-21-pruned-v11/models/diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors",
+      "relative_path": "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors",
+      "sha256": "fa4202ea621725c57b0cbb84543bd6a5548de1d85c0c5a9f18db0bcf91202a54",
+      "size_bytes": 14528782272
+    },
+    {
+      "source_url": "https://civitai.com/api/download/models/2953485?type=Model&format=SafeTensor&size=pruned&fp=fp8",
+      "source_token_env": "CIVITAI_API_TOKEN",
+      "source_token_query_param": "token",
+      "key": "wan22_video_v2/2026-07-21-pruned-v11/models/diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors",
+      "relative_path": "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors",
+      "sha256": "6e746571355bb589b966a72ed7a8717a09af0aeaf699391138e9788bace224d1",
+      "size_bytes": 14528782272
+    }
+  ]
+}

@@ -376,7 +376,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
 - LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-22，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`scail2/2026-06-17-test/manifest.json` 与 `ltx_video/2026-06-10/manifest.json`。LAN LTX 缓存可能仍有旧 v1 残留；云端 R2 `ltx_video/2026-06-10/manifest.json` 当前是 10Eros v1.2-only，正式 RunPod 不依赖旧 v1 回退。
 - 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
-- canonical manifest 中 Wan22 AIO、`image_to_video`、`wan22_video_v2` 的下一不可变候选分别是各自独立的 `2026-07-18-lora5/manifest.json`，旧 6 月 key 不覆盖。本地 registry 的 `wan22_explicit_lora_library/2026-07-18` 已完成 49 High + 49 Low 下载和文件存在性核对；LAN/R2 组装入口会把该 bundle 合入 Wan22 AIO union，并把全部 98 个显式 LoRA 文件同时纳入旧图生视频和 v2 split。对象上传后须逐项核对 size/SHA metadata，三个 manifest 使用 SHA-256 metadata 锁定；任一对象或 checksum 不符时禁止发布/切换。
+- canonical manifest 中 Wan22 AIO、`image_to_video` 保持各自独立的 `2026-07-18-lora5/manifest.json`；`wan22_video_v2` 使用不可变 `2026-07-21-pruned-v11/manifest.json`，替换为同名 DaSiWa SnatchKiss v11 FP8-pruned High/Low 对象，旧 full-FP8 manifest 保留回滚且不覆盖。本地 registry 的 `wan22_explicit_lora_library/2026-07-18` 已完成 49 High + 49 Low 下载和文件存在性核对；LAN/R2 组装入口会把该 bundle 合入 Wan22 AIO union，并把全部 98 个显式 LoRA 文件同时纳入旧图生视频和 v2 split。对象上传后须逐项核对 size/SHA metadata，三个 manifest 使用 SHA-256 metadata 锁定；任一对象或 checksum 不符时禁止发布/切换。
 - `pornmaster_flux2_edit/2026-06-27/manifest.json` 是新增测试目标，不纳入全任务批量上传；本地 registry manifest 已完整缓存，后续用 `scripts/import_pornmaster_flux2_edit_models.py --download-unet --execute` 复核或更新，再用 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute` 单独上传到 LAN cache。若 PornMaster 9B UNET 缺失或未授权，导入脚本应返回 `pornmaster_unet_missing_or_unauthorized` 并拒绝写半截 manifest。
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
@@ -419,7 +419,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | :--- | :--- | :--- | :--- | :--- |
 | `img2img_lora` / `img2img` | `img2img,img2img_lora` | `img2img_lora` | `runpod_test_img2img_lora` | `img2img_lora/2026-06-10/manifest.json` |
 | `image_to_video` | `image_to_video` | `image_to_video` | `runpod_test_image_to_video` | `image_to_video/2026-07-18-lora5/manifest.json` |
-| `wan22_video_v2` | `wan22_video_v2` | `wan22_video_v2` | `runpod_test_wan22_video_v2` | `wan22_video_v2/2026-07-18-lora5/manifest.json` |
+| `wan22_video_v2` | `wan22_video_v2` | `wan22_video_v2` | `runpod_test_wan22_video_v2` | `wan22_video_v2/2026-07-21-pruned-v11/manifest.json` |
 | `i2i_pro` | `i2i_pro,t2i-pornmaster-turbo,face_swap_v2` | `i2i_pro` | `runpod_test_i2i_pro` | `i2i_pro/2026-06-14-test/manifest.json` |
 | `scail2` | `scail2_action_transfer,scail2_video_replacement` | `scail2` | `runpod_test_scail2` | `scail2/2026-06-17-test/manifest.json` |
 | `pornmaster_flux2_edit` | `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit` | `pornmaster_flux2_edit` | `runpod_test_pornmaster_flux2_edit` | `pornmaster_flux2_edit/2026-06-27/manifest.json` |
@@ -436,7 +436,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | :--- | :--- | :--- | :--- | :--- |
 | `img2img` | `runpod_prod_img2img_manual_NN` | `img2img,img2img_lora` | `img2img_lora/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `image_to_video` | `runpod_prod_image_to_video_manual_NN` | `image_to_video` | `image_to_video/2026-07-18-lora5/manifest.json` | `NVIDIA GeForce RTX 4090` |
-| `wan22_video_v2` | `runpod_prod_wan22_video_v2_manual_NN` | `wan22_video_v2` | `wan22_video_v2/2026-07-18-lora5/manifest.json` | `NVIDIA GeForce RTX 4090` |
+| `wan22_video_v2` | `runpod_prod_wan22_video_v2_manual_NN` | `wan22_video_v2` | `wan22_video_v2/2026-07-21-pruned-v11/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap_v2` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `ltx_video` | `runpod_prod_ltx_video_manual_NN` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` | `ltx_video/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090` |
@@ -912,7 +912,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 | `RUNPOD_IMAGE_NAME_LTX_VIDEO` / `RUNPOD_USE_TEMPLATE_LTX_VIDEO` | `ltx_video` 高级图生视频镜像与 template 开关 | `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<tag>` / `false` | 创建/render/canary 前必须显式配置正式 tag；不得使用 LAN registry |
 | `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | 默认模型 manifest，主要给 `img2img_lora` | `img2img_lora/2026-06-10` | `img2img_lora/2026-06-10` |
 | `RUNPOD_MODEL_PREFIX_IMAGE_TO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_IMAGE_TO_VIDEO` | split `image_to_video` 模型 manifest | `image_to_video/2026-07-18-lora5/manifest.json` | 同 cloud-test manifest |
-| `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-07-18-lora5/manifest.json` | 含视频 LoRA，模型就绪后再发布/切换 |
+| `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-07-21-pruned-v11/manifest.json` | FP8-pruned v11 High/Low + 视频 LoRA；两个对象 HEAD 与 manifest checksum 通过后再发布/切换 |
 | `RUNPOD_MODEL_PREFIX_I2I_PRO` / `RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO` | `i2i_pro` 三任务模型 manifest | `i2i_pro/2026-06-14-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_SCAIL2` / `RUNPOD_MODEL_MANIFEST_KEY_SCAIL2` | `scail2` 视频生视频模型 manifest | `scail2/2026-06-17-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_LTX_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO` | `ltx_video` 高级图生视频模型 manifest | `ltx_video/2026-06-10/manifest.json` | 同 cloud-test manifest；云端 R2 manifest 当前为 10Eros v1.2-only，不保留旧 v1 正式回退 |
