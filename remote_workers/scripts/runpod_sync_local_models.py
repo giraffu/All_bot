@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
 """Download declared LAN-only model overrides with immutable verification."""
-import hashlib, json, os, tempfile, urllib.parse, urllib.request
-from pathlib import Path
 import argparse
+import hashlib
+import json
+import os
+import tempfile
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+CHUNK_SIZE = 64 * 1024 * 1024
+
+
+def sha256_file(path: Path) -> str:
+    """Hash a model in bounded memory; models routinely exceed host RAM."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 def request_for(item):
     url = item["source_url"]
@@ -20,17 +37,35 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-dir", type=Path, required=True)
     args = parser.parse_args()
-    for item in json.loads(os.environ.get("RUNPOD_LAN_LOCAL_MODEL_OVERRIDES", "[]")):
+    for item in json.loads(
+        os.environ.get("RUNPOD_LAN_LOCAL_MODEL_OVERRIDES", "[]")
+    ):
         target = args.target_dir / item["relative_path"]
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and target.stat().st_size == int(item["size_bytes"]):
-            if hashlib.sha256(target.read_bytes()).hexdigest() == item["sha256"]: continue
-        with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as tmp, urllib.request.urlopen(request_for(item), timeout=120) as source:
+        if (
+            target.exists()
+            and target.stat().st_size == int(item["size_bytes"])
+            and sha256_file(target) == item["sha256"]
+        ):
+            continue
+        with (
+            tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as tmp,
+            urllib.request.urlopen(request_for(item), timeout=120) as source,
+        ):
             digest = hashlib.sha256()
-            while chunk := source.read(64 * 1024 * 1024): tmp.write(chunk); digest.update(chunk)
+            while chunk := source.read(CHUNK_SIZE):
+                tmp.write(chunk)
+                digest.update(chunk)
             name = tmp.name
         partial = Path(name)
-        if partial.stat().st_size != int(item["size_bytes"]) or digest.hexdigest() != item["sha256"]:
-            partial.unlink(missing_ok=True); raise RuntimeError(f"local model checksum mismatch: {item['relative_path']}")
+        if (
+            partial.stat().st_size != int(item["size_bytes"])
+            or digest.hexdigest() != item["sha256"]
+        ):
+            partial.unlink(missing_ok=True)
+            raise RuntimeError(f"local model checksum mismatch: {item['relative_path']}")
         partial.replace(target)
-if __name__ == "__main__": main()
+
+
+if __name__ == "__main__":
+    main()
