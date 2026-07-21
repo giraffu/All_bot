@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "ecd5e5381970a250fc19cec954bdeca0cc509eff",
+  "batch": "wan22-local-sync-safety",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-wan22-local-sync-safety",
+  "members": [
+    {
+      "base_sha": "ecd5e5381970a250fc19cec954bdeca0cc509eff",
+      "branch": "codex/a-wan22-local-sync-safety",
+      "head": "05ab8818977359f83256f5389989b659f831f56d",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
