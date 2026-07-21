@@ -207,6 +207,7 @@ async def execute_qqcc_draw_scene_chain(
                 (keep_initial_image and index == 0) or original_needed_from_draw
             ),
             "send_result": send_result,
+            "record_history": send_result,
             "allow_contribute": final_allow_contribute if send_result else False,
         }
         task_kwargs.update(build_qqcc_chain_task_controls(submitted_subtask_index))
@@ -252,6 +253,7 @@ async def execute_qqcc_draw_scene_chain(
                 ),
                 "cleanup": not original_needed_after_face_swap,
                 "send_result": face_swap_send_result,
+                "record_history": face_swap_send_result,
                 "allow_contribute": (
                     final_allow_contribute if face_swap_send_result else False
                 ),
