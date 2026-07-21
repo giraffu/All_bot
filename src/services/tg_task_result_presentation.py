@@ -28,6 +28,8 @@ from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_CALLBACK_PREFIX,
     has_qqcc_regenerate_context,
     extract_qqcc_regenerate_context,
+    QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX,
+    supports_qqcc_draw_result_followups,
 )
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -196,6 +198,14 @@ def _build_qqcc_regenerate_button(task_id: str) -> InlineKeyboardButton:
     )
 
 
+def _build_qqcc_draw_followup_row(task_id: str) -> list[InlineKeyboardButton]:
+    return [
+        InlineKeyboardButton("🎨 换个主题", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:t:{task_id}"),
+        InlineKeyboardButton("🎬 生成动图", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:m:{task_id}"),
+        InlineKeyboardButton("🎥 生成视频", callback_data=f"{QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX}:v:{task_id}"),
+    ]
+
+
 def _build_wan22_stitch_button(task_id: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         "🔗 完成拼接",
@@ -232,6 +242,8 @@ def _build_result_action_rows(
         primary_row.append(_build_ltx_extension_button(task_id))
     if primary_row:
         rows.append(primary_row)
+    if supports_qqcc_draw_result_followups(result_meta):
+        rows.append(_build_qqcc_draw_followup_row(task_id))
     if _supports_wan22_stitch(task_type, result_meta):
         rows.append([_build_wan22_stitch_button(task_id)])
     if _supports_ltx_stitch(task_type, result_meta):

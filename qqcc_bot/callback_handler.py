@@ -11,6 +11,7 @@ import src.handlers.callbacks.misc_callbacks  # noqa: F401
 import src.handlers.callbacks.task_callbacks  # noqa: F401
 import qqcc_bot.gallery_market  # noqa: F401
 import qqcc_bot.regeneration_callback  # noqa: F401
+import qqcc_bot.result_followup_callback  # noqa: F401
 
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
@@ -24,6 +25,7 @@ QQCC_REQUIRED_CALLBACK_PREFIXES = (
     "public_share",
     "rate_like",
     "qqcc_regenerate",
+    "qfu",
     "qvid_mode:",
     "qg:m",
     "qg:p:",

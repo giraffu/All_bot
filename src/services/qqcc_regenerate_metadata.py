@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 QQCC_REGENERATE_CALLBACK_PREFIX = "qqcc_regenerate"
+QQCC_RESULT_FOLLOWUP_CALLBACK_PREFIX = "qfu"
 QQCC_REGENERATE_CONTEXT_KEY = "_qqcc_regenerate"
 QQCC_REGENERATE_KIND_QUICK_IMAGE = "quick_image"
 QQCC_REGENERATE_KIND_QUICK_VIDEO = "quick_video"
@@ -60,6 +61,14 @@ def extract_qqcc_regenerate_context(meta: dict[str, Any] | None) -> dict[str, An
 
 def has_qqcc_regenerate_context(meta: dict[str, Any] | None) -> bool:
     return bool(extract_qqcc_regenerate_context(meta))
+
+
+def supports_qqcc_draw_result_followups(meta: dict[str, Any] | None) -> bool:
+    context = extract_qqcc_regenerate_context(meta)
+    return (
+        context.get("kind") == QQCC_REGENERATE_KIND_QUICK_IMAGE
+        and context.get("scene_kind") == "draw"
+    )
 
 
 def merge_qqcc_regenerate_context_into_extra_outputs(
