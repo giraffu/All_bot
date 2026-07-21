@@ -85,11 +85,11 @@
 主要配置文件：
 
 - `nodes.yml`：节点、GPU、Comfy 实例、模型目录、worker 对应关系
-- `task_profiles.yml`：任务类型、模型 bundle、workflow、custom node、最低显存、镜像引用
+- `task_profiles.yml`：任务类型、模型 bundle、workflow、custom node、显存遥测阈值、镜像引用
 - `assignments.yml`：worker/节点支持哪些任务
 - `model_bundles.yml`：模型 bundle manifest 计划与版本
 - `lan_aio_prod_slots.yml`：LAN AIO helper 可管理的 slot/catalog，不代表每张卡的最新 live 当前态
-- XDG `current.yml`：本地主 helper 原子维护的 last-known current/cache/验证时间；`history/<operation-id>.json` 记录成功、失败和回滚，未完成 operation 阻止下一次 mutation
+- XDG `current.yml`：本地主 helper 原子维护的 last-known current/cache/验证时间；`history/<operation-id>.json` 记录成功、失败和回滚，未完成 operation 仅作为后续 mutation 的审计信息
 - `lan_aio_fleet_state.legacy.yml`：冻结的一次性迁移种子，不再是运行态事实源，也不得在普通运维后更新
 
 常用只读 / dry-run 命令：
@@ -255,7 +255,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 - 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
 - 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
 
-LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；只有 `state.status=passed` 才允许 mutation。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计。故障隔离后需要明确保持某张物理卡停机时，只有 live 探测成功且无任何 running catalog container，才可追加精确 `--physical-slot <node>:gpuN` 写入 `intentionally_empty`；这不会启动候选，也不会忽略其它卡或 SSH/探测错误。
+LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；live、ledger、catalog 的不一致、live 不可达、catalog revision 改变和未完成 operation 都输出为审计状态，但不阻断已明确授权的单 slot mutation。每次 mutation 后 helper 以实际 live 探测结果回写 ledger；`state-reconcile --reason ... --execute` 仍可用于显式收口历史记录。故障隔离后需要明确保持某张物理卡停机时，只有 live 探测成功且无任何 running catalog container，才可追加精确 `--physical-slot <node>:gpuN` 写入 `intentionally_empty`。
 
 LAN `release-rollout` 默认从当前镜像的 `RepoDigests` 固化精确回滚引用。release index 使用 GHCR canonical ref、当前 LAN profile 使用 LAN registry mirror 时，helper 只把 release index 的同一 digest 映射到当前 repository；执行前必须用 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制 canonical manifest 并核对 digest，禁止现场 build。目标节点尚未配置 HTTP LAN registry 且没有 Docker daemon 维护窗口时，catalog 可直接固定 release index 的 canonical GHCR 完整 digest，禁止退回 mutable tag；显式 exact rollback ref 会先于停接/等待空闲预拉，确保失败恢复不依赖临时网络。历史镜像若由 tar 导入、只保留 mutable tag，必须先从同一 registry 独立核验该 tag 的 digest，再额外传 `--rollback-ref <same-repo@sha256:...>`；CLI 拒绝非 digest 或跨仓库引用，目标新镜像仍只能来自 release index。
 
@@ -267,8 +267,8 @@ LAN `release-rollout` 默认从当前镜像的 `RepoDigests` 固化精确回滚�
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 表中为 V2 候选契约；旧 `face_swap` V1 由 `worker_remote_02` 保留，不进入 i2i_pro LAN profile。当前容量必须以当次 XDG ledger、live helper 与 Central 心跳仲裁，不再从 Git catalog 或冻结 legacy seed 推断；blocked/maintenance slot 不计入容量 |
-| LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及未 blocked 的新增候选 | 候选 slot 不自动接单；AI operator/CLI takeover 必须指定或推断同服务器当前运行目标，且按 live runtime profile 拒绝同 profile 替换；`maintenance_disabled` / `blocked_*` slot 不允许 takeover |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 表中为 V2 候选契约；旧 `face_swap` V1 由 `worker_remote_02` 保留，不进入 i2i_pro LAN profile。当前容量以当次 XDG ledger、live helper 与 Central 心跳观测；历史 blocked/maintenance 仅作审计，不限制显式操作 |
+| LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及新增候选 | 候选 slot 不自动接单；AI operator/CLI 仍须明确指定或推断同服务器当前运行目标，但 `maintenance_disabled` / `blocked_*` 不再拒绝显式 takeover/recover |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | 无固定口径 | `i2i_pro` 已由 `gpu-252` GPU0 LAN AIO 正式接单；新增 profile 仍按 slot/state/live 三方仲裁 |
 | 暂缓 | `face_i2i_t2i` / `gpu-226` 旧综合能力 | 旧综合 host-service worker 已下线，若要恢复 face/i2i/t2i 综合能力，需要单独的容器化 profile 或手工回滚宿主机链路 |
@@ -288,7 +288,7 @@ scripts/lan_aio_fleet_prod_ops.py pull-image --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py warm-cache --slot gpu-252-gpu0-img2img_lora --include-disabled
 scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id gpu-252 --profile img2img_lora --replace-slot gpu-252-gpu0-image_to_video
 scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-002-gpu1-image_to_video --include-disabled
-# gpu-177-gpu1-wan22_video_v2 is blocked_oom_32gb after the 2026-07-01 OOM test; do not run takeover for it.
+# gpu-177-gpu1-wan22_video_v2 keeps its blocked_oom_32gb history as an audit observation.
 scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video
 scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --prefer old

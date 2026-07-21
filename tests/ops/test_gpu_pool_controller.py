@@ -535,12 +535,12 @@ def test_t2i_workflow_uses_existing_z_image_unet_name():
     assert "z image\\z_image_turbo_fp8_e4m3fn.safetensors" not in values
 
 
-def test_canary_compares_min_vram_as_decimal_gb():
+def test_canary_reports_vram_as_telemetry_not_a_gate():
     canary = ComfyCanary()
 
     def fake_get_json(url: str):
         if url.endswith("/system_stats"):
-            return {"devices": [{"vram_total": 32_000_000_000}]}
+            return {"devices": [{"vram_total": 24_000_000_000}]}
         if url.endswith("/queue"):
             return {"queue_running": [], "queue_pending": []}
         if url.endswith("/object_info"):
@@ -570,5 +570,7 @@ def test_canary_compares_min_vram_as_decimal_gb():
     )
 
     assert result.ok is True
-    assert result.details["vram_total_gb"] == 32.0
+    assert result.checks["min_vram"] is True
+    assert result.details["vram_total_gb"] == 24.0
+    assert result.details["min_vram_gb"] == 32
     assert result.details["vram_total_gib"] < 32.0
