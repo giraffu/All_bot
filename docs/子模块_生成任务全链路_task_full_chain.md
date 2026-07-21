@@ -744,6 +744,10 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 
 ## 15. 推荐联读文件
 
+新增 LTX 文生视频与人物一致性任务的固定模型栈、人物所有权、计费、workflow
+和仅限 LAN 的发布边界，见
+`docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`。
+
 - `frontend/src/composables/useTaskStream.ts`
 - `frontend/src/stores/tasks.ts`
 - `src/web_api/routers/tasks.py`

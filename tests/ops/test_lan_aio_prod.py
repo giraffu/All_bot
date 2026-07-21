@@ -149,10 +149,17 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
+        "character_reference_build",
+    )
+    assert slots["gpu-252-gpu1-ltx_t2v"].enabled is False
+    assert slots["gpu-252-gpu1-ltx_t2v"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu1-ltx_t2v"].target_task_types == (
+        "ltx_t2v",
+        "ltx_t2v_ic",
     )
     assert (
         slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
-        == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
+        == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     )
     assert slots["gpu-226-gpu0-image_to_video"].enabled is True
     assert slots["gpu-226-gpu0-image_to_video"].phase == "catalog_ready"

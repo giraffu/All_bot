@@ -25,6 +25,9 @@ LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
         "wan22_video_v2",
     }
 )
+LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
+    "ltx_t2v": 5,
+}
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
     {
         "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
@@ -685,6 +688,9 @@ class RuntimePlanner:
         ]
         if profile.runtime_profile in LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES:
             args.append("--disable-dynamic-vram")
+        reserve_vram = LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE.get(profile.runtime_profile)
+        if reserve_vram is not None:
+            args.extend(["--reserve-vram", str(reserve_vram)])
         return " ".join(args)
 
     def build_dry_run_action(

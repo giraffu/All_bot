@@ -165,6 +165,26 @@ def object_exists(
         return False
 
 
+def object_size(
+    service,
+    *,
+    bucket_name: str,
+    object_name: str,
+    logger,
+) -> int | None:
+    """Return the object size, or ``None`` when it cannot be inspected."""
+    try:
+        return int(service.client.stat_object(bucket_name, object_name).size)
+    except Exception as exc:
+        logger.warning(
+            "Unable to inspect object size for %s/%s: %s",
+            bucket_name,
+            object_name,
+            exc,
+        )
+        return None
+
+
 async def async_object_exists(
     service,
     *,
@@ -174,6 +194,22 @@ async def async_object_exists(
 ) -> bool:
     return await asyncio.to_thread(
         object_exists,
+        service,
+        bucket_name=bucket_name,
+        object_name=object_name,
+        logger=logger,
+    )
+
+
+async def async_object_size(
+    service,
+    *,
+    bucket_name: str,
+    object_name: str,
+    logger,
+) -> int | None:
+    return await asyncio.to_thread(
+        object_size,
         service,
         bucket_name=bucket_name,
         object_name=object_name,

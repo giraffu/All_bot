@@ -1,9 +1,12 @@
 import asyncio
+import io
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from PIL import Image, ImageOps
 
 from agent_result_assets import (
     LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES,
@@ -144,6 +147,82 @@ def _extract_last_frame_from_video_bytes(video_bytes: bytes, logger) -> bytes | 
         return None
 
 
+def _character_view_assets(
+    history: dict[str, Any], prompt_id: str
+) -> list[dict[str, Any]]:
+    prompt_history = history.get(prompt_id) or {}
+    outputs = prompt_history.get("outputs") or {}
+    matched: dict[int, dict[str, Any]] = {}
+    for node_output in outputs.values():
+        if not isinstance(node_output, dict):
+            continue
+        for asset in node_output.get("images", []) or []:
+            filename = str(asset.get("filename") or "")
+            marker = "character_reference_view_"
+            if marker not in filename:
+                continue
+            try:
+                index = int(filename.split(marker, 1)[1][:2])
+            except (TypeError, ValueError):
+                continue
+            if index in matched:
+                raise RuntimeError(f"duplicate character reference view {index:02d}")
+            matched[index] = asset
+    if set(matched) != set(range(1, 7)):
+        missing = sorted(set(range(1, 7)) - set(matched))
+        raise RuntimeError(f"character reference workflow missing views: {missing}")
+    return [matched[index] for index in range(1, 7)]
+
+
+def _compose_character_sheet(images: list[bytes]) -> bytes:
+    if len(images) != 6:
+        raise RuntimeError("character reference sheet requires exactly six views")
+    canvas = Image.new("RGB", (1536, 896), "black")
+    for index, payload in enumerate(images):
+        try:
+            with Image.open(io.BytesIO(payload)) as source:
+                tile = ImageOps.fit(
+                    source.convert("RGB"), (512, 448), method=Image.Resampling.LANCZOS
+                )
+        except Exception as exc:
+            raise RuntimeError(
+                f"corrupt character reference view {index + 1:02d}"
+            ) from exc
+        canvas.paste(tile, ((index % 3) * 512, (index // 3) * 448))
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+async def _materialize_character_reference(
+    *, comfy_client, execution, history
+) -> MaterializedTaskOutputs:
+    assets = _character_view_assets(history, execution.prompt_id)
+    image_bytes = []
+    for asset in assets:
+        image_bytes.append(
+            await comfy_client.get_view(
+                asset["filename"],
+                asset.get("subfolder", ""),
+                type=asset.get("type", "output"),
+            )
+        )
+    result_name = f"{execution.task_id}_character_reference.png"
+    execution.task_result = result_name
+    execution.task_result_priority = 0
+    return MaterializedTaskOutputs(
+        primary=MaterializedPrimaryResult(
+            object_name=result_name,
+            file_name=result_name,
+            subfolder="",
+            view_type="output",
+            content_type="image/png",
+            file_data=await asyncio.to_thread(_compose_character_sheet, image_bytes),
+        ),
+        extra_outputs={},
+    )
+
+
 async def materialize_task_outputs(
     *,
     comfy_client,
@@ -152,6 +231,12 @@ async def materialize_task_outputs(
     logger,
 ) -> MaterializedTaskOutputs:
     history = await comfy_client.get_history(execution.prompt_id)
+    if task_type == "character_reference_build":
+        return await _materialize_character_reference(
+            comfy_client=comfy_client,
+            execution=execution,
+            history=history,
+        )
     history_result = resolve_history_result_asset(
         history,
         prompt_id=execution.prompt_id,

@@ -22,9 +22,11 @@ def test_worker_pool_registry_groups_execution_types_by_shared_capacity():
             "scail2_face_swap_v2",
         },
         "ltx_video": {"ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"},
+        "ltx_t2v": {"ltx_t2v", "ltx_t2v_ic"},
         "pornmaster_flux2_edit": {
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
+            "character_reference_build",
         },
         "pornmaster_flux2_edit_bf16": {
             "pornmaster_flux2_edit_bf16",

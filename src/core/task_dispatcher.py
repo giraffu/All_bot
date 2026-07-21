@@ -41,6 +41,14 @@ from src.domain_config.scail2_video import (
     resolve_scail2_execution_task_type,
 )
 from src.domain_config.task_type_registry import get_execution_task_type
+from src.domain_config.ltx_t2v import (
+    CHARACTER_REFERENCE_BUILD_COST,
+    CHARACTER_REFERENCE_BUILD_TASK_TYPE,
+    LTX_T2V_IC_TASK_TYPE,
+    LTX_T2V_TASK_TYPE,
+    LtxT2VValidationError,
+    build_ltx_t2v_spec,
+)
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
@@ -875,6 +883,85 @@ class LtxVideoStrategy(BaseTaskStrategy):
         )
 
 
+class LtxT2VStrategy(BaseTaskStrategy):
+    def __init__(self, task_type: str):
+        self.task_type = task_type
+
+    def _spec(self, inputs: Dict[str, Any]):
+        try:
+            return build_ltx_t2v_spec(self.task_type, inputs)
+        except LtxT2VValidationError as exc:
+            raise CoreDomainError(str(exc)) from exc
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return self._spec(inputs).cost
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return []
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        spec = self._spec(inputs)
+        return {
+            "requested_duration": spec.duration_seconds,
+            "ltx_width": spec.width,
+            "ltx_height": spec.height,
+            "ltx_fps": spec.fps,
+            "ltx_frame_count": spec.frame_count,
+            "character_id": inputs.get("character_id"),
+            "character_sheet": spec.character_sheet,
+        }
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        spec = self._spec(inputs)
+        return await _get_dispatch_image_service().submit_ltx_t2v_task(
+            task_id,
+            task_type=self.task_type,
+            prompt=_get_input_prompt(inputs, "cinematic scene"),
+            negative_prompt=str(inputs.get("negative_prompt") or "").strip() or None,
+            audio_prompt=str(inputs.get("audio_prompt") or "").strip() or None,
+            character_sheet=spec.character_sheet,
+            width=spec.width,
+            height=spec.height,
+            length=spec.duration_seconds,
+            frame_count=spec.frame_count,
+            fps=spec.fps,
+            priority=priority,
+        )
+
+
+class CharacterReferenceBuildStrategy(BaseTaskStrategy):
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return CHARACTER_REFERENCE_BUILD_COST
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        images = inputs.get("images") or []
+        return list(images[:1]) if isinstance(images, list) else []
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "saved_inputs": _get_saved_input_images(inputs),
+            "character_id": inputs.get("character_id"),
+            "gallery_supported": False,
+        }
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        saved = _get_saved_input_images(inputs)
+        if len(saved) != 1:
+            raise CoreDomainError("人物参考表构建必须上传且仅上传一张源图。")
+        return (
+            await _get_dispatch_image_service().submit_character_reference_build_task(
+                task_id,
+                prompt=_get_input_prompt(inputs, "adult character reference sheet"),
+                image_path=saved[0],
+                priority=priority,
+            )
+        )
+
+
 class Wan22VideoV2Strategy(Wan22AioVideoStrategy):
     def __init__(self):
         super().__init__(MODE_WAN22_VIDEO_V2)
@@ -969,6 +1056,11 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     MODE_FACE_SWAP: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
     MODE_FACE_SWAP_V2: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
     "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
+    LTX_T2V_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
+    LTX_T2V_IC_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
+    CHARACTER_REFERENCE_BUILD_TASK_TYPE: (
+        lambda _task_type, _feature_flags: CharacterReferenceBuildStrategy()
+    ),
     MODE_WAN22_VIDEO_V2: lambda _task_type, _feature_flags: Wan22VideoV2Strategy(),
     **dict.fromkeys(
         SCAIL2_TASK_TYPES,

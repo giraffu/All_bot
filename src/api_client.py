@@ -22,6 +22,9 @@ from config import (
     LTX_VIDEO_FLF2V_ENDPOINT,
     LTX_VIDEO_ENDPOINT,
     LTX_VIDEO_V2V_AUDIO_ENDPOINT,
+    LTX_T2V_ENDPOINT,
+    LTX_T2V_IC_ENDPOINT,
+    CHARACTER_REFERENCE_BUILD_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
     PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT,
@@ -609,6 +612,58 @@ class APIClient:
             "POST",
             LTX_VIDEO_ENDPOINT,
             json=data,
+            circuit_breaker_key="submit",
+        )
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_ltx_t2v(
+        self,
+        task_id: str,
+        *,
+        task_type: str,
+        prompt: str,
+        negative_prompt: str | None,
+        audio_prompt: str | None,
+        character_sheet: str | None,
+        width: int,
+        height: int,
+        length: int,
+        frame_count: int,
+        fps: int,
+        priority: int = 0,
+    ) -> str:
+        endpoint = LTX_T2V_IC_ENDPOINT if task_type == "ltx_t2v_ic" else LTX_T2V_ENDPOINT
+        data = {
+            "task_id": task_id,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "audio_prompt": audio_prompt,
+            "character_sheet": character_sheet,
+            "width": width,
+            "height": height,
+            "length": length,
+            "frame_count": frame_count,
+            "fps": fps,
+            "priority": priority,
+        }
+        r = await self._request("POST", endpoint, json=data, circuit_breaker_key="submit")
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_character_reference_build(
+        self, task_id: str, *, prompt: str, image_path: str, priority: int = 0
+    ) -> str:
+        r = await self._request(
+            "POST",
+            CHARACTER_REFERENCE_BUILD_ENDPOINT,
+            json={
+                "task_id": task_id,
+                "images": [image_path],
+                "prompt": prompt,
+                "negative_prompt": "text, labels, collage, duplicate person",
+                "priority": priority,
+            },
             circuit_breaker_key="submit",
         )
         return r.json()["task_id"]

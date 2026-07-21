@@ -93,6 +93,7 @@ __all__ = [
     "sync_user_concurrency",
 ]
 
+
 def get_default_task_core_process_dependencies() -> TaskCoreProcessDependencies:
     from src.task_core_process_defaults import (
         build_runtime_default_task_core_process_dependencies,
@@ -147,6 +148,7 @@ async def persist_successful_task_result(
         dependencies=dependencies,
     )
 
+
 async def process_and_submit_task(
     user_id: int,
     username: str,
@@ -166,6 +168,7 @@ async def process_and_submit_task(
     submission_concurrency_idempotency_key: str | None = None,
     submission_idempotency_key: str | None = None,
     registry_metadata: dict[str, Any] | None = None,
+    allow_contribute_override: bool | None = None,
     submission_prepare_timeout_seconds: float | None = None,
     submission_before_debit_func: Callable[..., Awaitable[Any]] | None = None,
     submission_after_debit_func: Callable[..., Awaitable[Any]] | None = None,
@@ -181,12 +184,10 @@ async def process_and_submit_task(
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
     concurrency_idempotency_key = (
-        submission_concurrency_idempotency_key
-        or f"task_concurrency:{task_id}"
+        submission_concurrency_idempotency_key or f"task_concurrency:{task_id}"
     )
     release_idempotency_key = (
-        submission_release_idempotency_key
-        or concurrency_idempotency_key
+        submission_release_idempotency_key or concurrency_idempotency_key
     )
     submission_side_effect_plan = normalize_task_submission_side_effect_plan(
         submission_side_effect_plan=submission_side_effect_plan,
@@ -223,9 +224,7 @@ async def process_and_submit_task(
             dependencies=dependencies,
         )
         if submission_prepare_timeout_seconds is None:
-            submission_context = await prepare_task_submission_context(
-                **prepare_kwargs
-            )
+            submission_context = await prepare_task_submission_context(**prepare_kwargs)
         else:
             submission_context = await asyncio.wait_for(
                 prepare_task_submission_context(**prepare_kwargs),
@@ -233,11 +232,11 @@ async def process_and_submit_task(
             )
         if registry_metadata:
             submission_context.metadata.update(registry_metadata)
+        if allow_contribute_override is not None:
+            submission_context.allow_contribute = bool(allow_contribute_override)
         submission_context.client_type = client_type
         submission_context.user_cancel_allowed = user_cancel_allowed
-        submission_context.concurrency_acquisition_key = (
-            concurrency_idempotency_key
-        )
+        submission_context.concurrency_acquisition_key = concurrency_idempotency_key
         if delivery_context:
             submission_context.delivery_context.update(
                 {

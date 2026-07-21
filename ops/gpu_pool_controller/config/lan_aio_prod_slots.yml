@@ -223,19 +223,43 @@ slots:
     target_task_types:
       - pornmaster_flux2_single_edit
       - pornmaster_flux2_multi_edit
+      - character_reference_build
     gpu_index: 1
-    gpu_device_id: GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
+    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
     host_port: 8191
     legacy_health_port: 8191
     legacy_preflight_required: false
     agent_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01
     container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod
-    legacy_worker_id: lan_aio_prod_gpu252_gpu1_scail2_01
-    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-scail2-prod
+    legacy_worker_id: lan_aio_prod_gpu252_gpu1_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-pornmaster-flux2-edit
     rollout_order: 32
-    notes: Maintenance-disabled PornMaster Flux2 edit LAN AIO for gpu-252 GPU1 while UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is removed for RMA after the 2026-07-06 Asia/Shanghai operator drain. Intake was disabled, the 8191 queue was confirmed empty, allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod was stopped, and the GPU1 LAN AIO containers were set to Docker restart policy no so they should not auto-start after host reboot without this card. Keep scail2 and wan22_video_v2 maintenance-disabled on this card until workload-specific validation or vendor/driver resolution clears Xid 119/154.
+    notes: Maintenance-disabled character-reference candidate for the replacement GPU UUID. It may be started only for the explicitly authorized local LAN validation and must return to intentionally empty afterward.
+
+  - id: gpu-252-gpu1-ltx_t2v
+    enabled: false
+    phase: maintenance_disabled
+    retargetable: false
+    assignment_id: lan-252-8189-worker-05
+    target_profile_id: ltx_t2v
+    target_task_types:
+      - ltx_t2v
+      - ltx_t2v_ic
+    gpu_index: 1
+    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: false
+    agent_id: lan_aio_prod_gpu252_gpu1_ltx_t2v_01
+    container_name: allbot-lan-aio-gpu-252-gpu1-ltx_t2v-prod
+    legacy_worker_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod
+    old_local_agent_container: ""
+    remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-ltx-t2v
+    rollout_order: 32
+    notes: Maintenance-disabled LTX 2.3 Sulphur T2V/Ingredients candidate. Local LAN validation only; never enable production intake and restore the physical slot to intentionally empty after acceptance.
 
   - id: gpu-252-gpu1-i2i_pro
     enabled: true

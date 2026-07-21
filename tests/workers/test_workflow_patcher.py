@@ -18,9 +18,7 @@ WORKER_WORKFLOW_DIR = str(
 
 def test_wan22_explicit_lora_catalog_is_mirrored_for_remote_workers():
     repo_root = Path(__file__).resolve().parents[2]
-    assert (
-        repo_root / "src" / "wan22_explicit_lora_catalog.py"
-    ).read_bytes() == (
+    assert (repo_root / "src" / "wan22_explicit_lora_catalog.py").read_bytes() == (
         repo_root / "remote_workers" / "src" / "wan22_explicit_lora_catalog.py"
     ).read_bytes()
 
@@ -34,6 +32,61 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
 
     assert "img2img" in patcher.mappings
     assert patcher.load_workflow("img2img") is not None
+
+
+def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("ltx_t2v")
+    patched = patcher.patch_workflow(
+        "ltx_t2v",
+        workflow,
+        {"prompt": "rainy street", "audio_prompt": "distant traffic", "duration": 20},
+    )
+    loader = patched["256"]["inputs"]
+    assert loader["lora_1"] == {
+        "on": True,
+        "lora": "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+        "strength": 0.5,
+    }
+    assert loader["lora_2"] == {
+        "on": True,
+        "lora": "ltx2.3/sulphur_lora_rank_768.safetensors",
+        "strength": 1.0,
+    }
+    assert patched["26:39"]["inputs"]["width"] == 1280
+    assert patched["26:39"]["inputs"]["height"] == 704
+    assert patched["18"]["inputs"]["Xi"] == 20
+    assert "#Audio\ndistant traffic" in patched["28"]["inputs"]["text"]
+
+
+def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {"prompt": "scene", "duration": 5, "character_sheet": "owned-sheet.png"},
+    )
+    assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
+    assert patched["271"]["inputs"]["strength_model"] == 1.0
+    assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
+    assert patched["26:39"]["inputs"]["width"] == 768
+    assert patched["26:39"]["inputs"]["height"] == 448
+
+
+def test_character_reference_patcher_marks_six_outputs_in_order():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "character_reference_build",
+        patcher.load_workflow("character_reference_build"),
+        {"image": "owned-source.png", "seed": 42},
+    )
+    assert [patched[f"v{i}:15"]["inputs"]["image"] for i in range(1, 7)] == [
+        "owned-source.png"
+    ] * 6
+    assert [
+        patched[f"v{i}:201"]["inputs"]["filename_prefix"].split("_42")[0]
+        for i in range(1, 7)
+    ] == [f"character_reference_view_{i:02d}" for i in range(1, 7)]
 
 
 @pytest.mark.parametrize(
@@ -181,7 +234,10 @@ def test_workflow_patcher_uses_scail2_default_prompt_when_empty():
         },
     )
 
-    assert patched["6"]["inputs"]["text"] == SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT
+    assert (
+        patched["6"]["inputs"]["text"]
+        == SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT
+    )
 
 
 def test_workflow_patcher_preserves_faceswap_default_constraints_with_user_prompt():
@@ -236,20 +292,23 @@ def test_workflow_patcher_strips_ltx_video_optional_lora_node_when_unset(tmp_pat
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()
 
-    _write_json(workflow_dir / "LTX 2.3 I2V 6.1.json", {
-        "8": {
-            "inputs": {
-                "model": ["256", 0],
-            }
-        },
-        "256": {
-            "inputs": {
-                "model": ["191", 0],
-                "clip": ["189", 0],
+    _write_json(
+        workflow_dir / "LTX 2.3 I2V 6.1.json",
+        {
+            "8": {
+                "inputs": {
+                    "model": ["256", 0],
+                }
             },
-            "class_type": "Power Lora Loader (rgthree)",
+            "256": {
+                "inputs": {
+                    "model": ["191", 0],
+                    "clip": ["189", 0],
+                },
+                "class_type": "Power Lora Loader (rgthree)",
+            },
         },
-    })
+    )
 
     patcher = WorkflowPatcher(str(workflow_dir))
     workflow = patcher.load_workflow("ltx_video")
@@ -264,20 +323,23 @@ def test_workflow_patcher_injects_ltx_video_optional_lora_when_present(tmp_path)
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()
 
-    _write_json(workflow_dir / "LTX 2.3 I2V 6.1.json", {
-        "8": {
-            "inputs": {
-                "model": ["256", 0],
-            }
-        },
-        "256": {
-            "inputs": {
-                "model": ["191", 0],
-                "clip": ["189", 0],
+    _write_json(
+        workflow_dir / "LTX 2.3 I2V 6.1.json",
+        {
+            "8": {
+                "inputs": {
+                    "model": ["256", 0],
+                }
             },
-            "class_type": "Power Lora Loader (rgthree)",
+            "256": {
+                "inputs": {
+                    "model": ["191", 0],
+                    "clip": ["189", 0],
+                },
+                "class_type": "Power Lora Loader (rgthree)",
+            },
         },
-    })
+    )
 
     patcher = WorkflowPatcher(str(workflow_dir))
     workflow = patcher.load_workflow("ltx_video")
@@ -305,21 +367,24 @@ def test_workflow_patcher_injects_multiple_ltx_video_loras_from_lora_items(tmp_p
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()
 
-    _write_json(workflow_dir / "LTX 2.3 I2V 6.1.json", {
-        "8": {
-            "inputs": {
-                "model": ["256", 0],
-            }
-        },
-        "256": {
-            "inputs": {
-                "model": ["191", 0],
-                "clip": ["189", 0],
-                "lora_9": {"on": False, "lora": "stale", "strength": 1.0},
+    _write_json(
+        workflow_dir / "LTX 2.3 I2V 6.1.json",
+        {
+            "8": {
+                "inputs": {
+                    "model": ["256", 0],
+                }
             },
-            "class_type": "Power Lora Loader (rgthree)",
+            "256": {
+                "inputs": {
+                    "model": ["191", 0],
+                    "clip": ["189", 0],
+                    "lora_9": {"on": False, "lora": "stale", "strength": 1.0},
+                },
+                "class_type": "Power Lora Loader (rgthree)",
+            },
         },
-    })
+    )
 
     patcher = WorkflowPatcher(str(workflow_dir))
     workflow = patcher.load_workflow("ltx_video")
@@ -379,7 +444,9 @@ def test_workflow_patcher_patches_real_ltx_flf2v_workflow():
     assert patched["26:297"]["inputs"]["num_images.image_2"] == ["26:313", 0]
     assert patched["26:297"]["inputs"]["num_images.index_2"] == ["26:315", 0]
     assert patched["26:312"]["inputs"]["num_images"] == "2"
-    assert patched["902"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_last_frame"
+    assert (
+        patched["902"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_last_frame"
+    )
     assert patched["61"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_61"
 
 
@@ -425,7 +492,10 @@ def test_workflow_patcher_patches_real_ltx_v2v_audio_workflow():
     assert patched["900"]["inputs"]["frame_load_cap"] == 361
     assert patched["900"]["inputs"]["skip_first_frames"] == 0
     assert patched["900"]["inputs"]["select_every_nth"] == 1
-    assert patched["902"]["inputs"]["filename_prefix"] == "ltx_video_v2v_audio_456_last_frame"
+    assert (
+        patched["902"]["inputs"]["filename_prefix"]
+        == "ltx_video_v2v_audio_456_last_frame"
+    )
     assert patched["61"]["inputs"]["filename_prefix"] == "ltx_video_v2v_audio_456_61"
 
 
@@ -537,7 +607,9 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["2607"]["inputs"]["batch_index"] == 4095
     assert patched["2607"]["inputs"]["image"] == ["265", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_video"
-    assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
+    assert (
+        patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
+    )
     assert patched["2503"]["inputs"]["images"] == ["2607", 0]
 
 
@@ -564,8 +636,15 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
             "2607": {"inputs": {"batch_index": 0, "length": 1, "image": ["2603", 0]}},
             "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
             "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
-            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
-            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
+            "28": {
+                "inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2607", 0],
+                }
+            },
         },
     )
 
@@ -608,8 +687,15 @@ def test_workflow_patcher_patches_wan22_video_v2_small_resolution(tmp_path):
             "2607": {"inputs": {"batch_index": 0, "length": 1, "image": ["2603", 0]}},
             "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
             "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
-            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
-            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
+            "28": {
+                "inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2607", 0],
+                }
+            },
         },
     )
 
@@ -629,7 +715,9 @@ def test_workflow_patcher_patches_wan22_video_v2_small_resolution(tmp_path):
     assert patched["2612"]["inputs"]["precision_presets"] == "0.36 MP - Small"
 
 
-def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(tmp_path):
+def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(
+    tmp_path,
+):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()
 
@@ -680,8 +768,15 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
                 },
                 "class_type": "Power Lora Loader (rgthree)",
             },
-            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
-            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
+            "28": {
+                "inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2607", 0],
+                }
+            },
         },
     )
 
@@ -840,7 +935,9 @@ def test_workflow_patcher_resolves_downloaded_wan22_pair_paths(tmp_path):
     )
 
 
-def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):
+def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
+    tmp_path,
+):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()
 
