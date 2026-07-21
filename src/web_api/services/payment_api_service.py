@@ -203,4 +203,4 @@ async def get_payment_order_status_payload(
     order = order_res.scalar_one_or_none()
     if not order or order.internal_user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Order not found")
-    return build_order_status_payload(order)
+    return build_order_status_payload(order, account=current_user)

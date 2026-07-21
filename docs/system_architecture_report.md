@@ -123,6 +123,7 @@ graph TD
   - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，订阅付费群 `chat_join_request` 与普通 `message` update，按成功订单、后台赠送订单或筑基期及以上修为只读判断入群资格，并可对目标群执行非管理员链接/违禁词删除，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
+  - TON 用户侧不再维护独立静态应用：主 Bot 通过 `MINI_APP_URL` 打开 Vue `/billing?method=ton&kind=membership`，低阶用户使用支付专用 Telegram 会话访问预建单与本人订单状态，链上到账仍由 Bot 轮询并进入共享履约内核。
   - `dashboard-frontend` 是管理后台云端 Nginx 网关，默认只通过 Tailscale/受控入口访问；`dashboard-backend` 除系统视图外，当前还承接站点通知管理和付费群审核 Bot 配置/日志管理入口。
 - **核心领域与调度**
   - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。

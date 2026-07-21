@@ -972,6 +972,7 @@
     "maintenance_off": "✅ Maintenance mode disabled. Generation services are back online."
   },
   "billing": {
+    "title": "Recharge Center",
     "ton_unavailable": "TON payment is temporarily unavailable. Please use Alipay or WeChat Pay.",
     "ton_monthly_plan_btn": "💎 TON Monthly Plans",
     "stars_monthly_plan_btn": "⭐️ Star Monthly Plans",

@@ -646,7 +646,6 @@ def validate_environment_semantics(environment: str, values: Mapping[str, str]) 
         "MINIO_TEMPLATE_BUCKET",
         "R2_BUCKET",
         "R2_PUBLIC_DOMAIN",
-        "WEBAPP_URL",
         "MINI_APP_URL",
         "QQCC_CONFIG_ADMIN_HOST",
         "PRIVATE_QQCC_BOT_OWNER_HOST",

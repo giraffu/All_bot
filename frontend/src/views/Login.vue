@@ -89,6 +89,18 @@ const hasTelegramLaunchContext = (webApp?: TelegramWebAppLike) => (
   || window.location.search.includes('tgWebApp')
 )
 
+const rawRedirect = Array.isArray(route.query.redirect)
+  ? route.query.redirect[0]
+  : route.query.redirect
+const paymentRedirect = typeof rawRedirect === 'string'
+  && (rawRedirect === '/billing' || rawRedirect.startsWith('/billing?'))
+  ? rawRedirect
+  : null
+const telegramAuthEndpoint = paymentRedirect
+  ? '/auth/telegram/payment'
+  : '/auth/telegram'
+const postLoginTarget = paymentRedirect ?? '/profile'
+
 const shouldPreferPasswordLogin = () =>
   route.query.mode === 'password'
   || sessionStorage.getItem(FORCE_PASSWORD_LOGIN_KEY) === '1'
@@ -119,7 +131,7 @@ const handlePasswordLogin = async () => {
     if (response.data?.access_token) {
       authStore.setAuth(response.data.access_token, response.data.user)
       message.success('破界成功！')
-      router.push('/profile')
+      router.push(postLoginTarget)
     }
   } catch (error: any) {
     console.error('Password Login error:', error)
@@ -132,19 +144,23 @@ const handlePasswordLogin = async () => {
 const handleTelegramAuth = async (user: any) => {
   loading.value = true
   try {
-    const response = await api.post('/auth/telegram', user)
+    const response = await api.post(telegramAuthEndpoint, user)
     if (response.data?.access_token) {
       const userData = response.data.user
       
       // 校验用户身份
-      if (!checkWebAccess(userData)) {
+      if (!paymentRedirect && !checkWebAccess(userData)) {
         message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
         return
       }
 
-      authStore.setAuth(response.data.access_token, userData)
+      authStore.setAuth(
+        response.data.access_token,
+        userData,
+        paymentRedirect ? 'payment' : 'full'
+      )
       message.success('登录成功！')
-      router.push('/profile')
+      router.push(postLoginTarget)
     } else {
       throw new Error('Invalid token response')
     }
@@ -164,24 +180,28 @@ const checkWebAppLogin = async () => {
     loading.value = true
     try {
       // Send initData to backend for verification
-      const response = await api.post('/auth/telegram', { initData })
+      const response = await api.post(telegramAuthEndpoint, { initData })
       
       if (response.data?.access_token) {
         const userData = response.data.user
         
         // 校验用户身份
-        if (!checkWebAccess(userData)) {
+        if (!paymentRedirect && !checkWebAccess(userData)) {
           message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
           return false
         }
 
-        authStore.setAuth(response.data.access_token, userData)
+        authStore.setAuth(
+          response.data.access_token,
+          userData,
+          paymentRedirect ? 'payment' : 'full'
+        )
         message.success('Mini App 自动登录成功！')
         
         // Expand WebApp to full height if possible
         webApp?.expand?.()
         
-        router.push('/profile')
+        router.push(postLoginTarget)
         return true // Successfully logged in via WebApp
       }
     } catch (error: any) {

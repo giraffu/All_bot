@@ -7,6 +7,38 @@ from src.handlers.callbacks import billing_callbacks
 
 
 @pytest.mark.asyncio
+async def test_recharge_back_preserves_buttons_and_uses_unified_ton_webapp(
+    monkeypatch,
+):
+    message = SimpleNamespace(edit_reply_markup=AsyncMock())
+    query = SimpleNamespace(message=message)
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(lang="zh", user_data={})
+
+    monkeypatch.setattr(billing_callbacks, "safe_answer_query", AsyncMock())
+    monkeypatch.setattr(
+        billing_callbacks,
+        "build_ton_payment_mini_app_url",
+        lambda: "https://web.example/billing?method=ton&kind=membership",
+    )
+
+    await billing_callbacks.recharge_back_callback(update, context)
+
+    reply_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+    buttons = [row[0] for row in reply_markup.inline_keyboard]
+    assert len(buttons) == 5
+    assert buttons[0].web_app.url.endswith(
+        "/billing?method=ton&kind=membership"
+    )
+    assert [button.callback_data for button in buttons[1:]] == [
+        "recharge_stars_menu",
+        "recharge_stars_credit_menu",
+        "recharge_rmb_menu",
+        "recharge_rmb_credit_menu",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_recharge_rmb_menu_callback_translates_membership_option_labels(
     monkeypatch,
 ):

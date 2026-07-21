@@ -41,6 +41,15 @@ export interface User {
   is_unlocked?: boolean
 }
 
+export interface PaymentAccountSummary {
+  credits: number
+  current_identity: string
+  identity_expire_at?: string | null
+  user_group: string
+}
+
+export type SessionPurpose = 'full' | 'payment'
+
 export function checkWebAccess(user: User | null): boolean {
   if (!user) return false
   const allowedGroups = ['练气期', '筑基期', '金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
@@ -51,12 +60,21 @@ export function checkWebAccess(user: User | null): boolean {
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token') || null)
   const user = ref<User | null>(JSON.parse(localStorage.getItem('user') || 'null'))
+  const sessionPurpose = ref<SessionPurpose>(
+    localStorage.getItem('session_purpose') === 'payment' ? 'payment' : 'full'
+  )
 
-  function setAuth(newToken: string, newUser: User) {
+  function setAuth(
+    newToken: string,
+    newUser: User,
+    purpose: SessionPurpose = 'full'
+  ) {
     token.value = newToken
     user.value = newUser
+    sessionPurpose.value = purpose
     localStorage.setItem('token', newToken)
     localStorage.setItem('user', JSON.stringify(newUser))
+    localStorage.setItem('session_purpose', purpose)
     
     if (newUser.language_code && ['zh', 'en'].includes(newUser.language_code)) {
       i18n.global.locale.value = newUser.language_code as 'zh' | 'en'
@@ -68,6 +86,12 @@ export const useAuthStore = defineStore('auth', () => {
       user.value.credits = newCredits
       localStorage.setItem('user', JSON.stringify(user.value))
     }
+  }
+
+  function applyPaymentAccount(account: PaymentAccountSummary) {
+    if (!user.value) return
+    user.value = { ...user.value, ...account }
+    localStorage.setItem('user', JSON.stringify(user.value))
   }
   
   let fetchUserPromise: Promise<void> | null = null
@@ -99,9 +123,20 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = null
     user.value = null
+    sessionPurpose.value = 'full'
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('session_purpose')
   }
 
-  return { token, user, setAuth, updateBalance, fetchUser, logout }
+  return {
+    token,
+    user,
+    sessionPurpose,
+    setAuth,
+    updateBalance,
+    applyPaymentAccount,
+    fetchUser,
+    logout
+  }
 })

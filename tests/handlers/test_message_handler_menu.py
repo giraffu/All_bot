@@ -85,6 +85,11 @@ async def test_build_back_main_and_recharge_payload(monkeypatch):
         "get_runtime_main_menu_keyboard",
         keyboard_builder,
     )
+    monkeypatch.setattr(
+        message_handler_menu,
+        "build_ton_payment_mini_app_url",
+        lambda: "https://web.example/billing?method=ton&kind=membership",
+    )
     message, keyboard = await message_handler_menu.build_back_to_main_payload(
         _build_context()
     )
@@ -99,6 +104,23 @@ async def test_build_back_main_and_recharge_payload(monkeypatch):
         recharge_keyboard.inline_keyboard[0][0].text
         == "translated:billing.ton_monthly_plan_btn"
     )
+    buttons = [row[0] for row in recharge_keyboard.inline_keyboard]
+    assert [button.text for button in buttons] == [
+        "translated:billing.ton_monthly_plan_btn",
+        "translated:billing.stars_monthly_plan_btn",
+        "translated:billing.stars_credit_btn",
+        "translated:billing.rmb_monthly_plan_btn",
+        "translated:billing.rmb_credit_btn",
+    ]
+    assert buttons[0].web_app.url.endswith(
+        "/billing?method=ton&kind=membership"
+    )
+    assert [button.callback_data for button in buttons[1:]] == [
+        "recharge_stars_menu",
+        "recharge_stars_credit_menu",
+        "recharge_rmb_menu",
+        "recharge_rmb_credit_menu",
+    ]
 
 
 def test_build_switch_lang_message():
