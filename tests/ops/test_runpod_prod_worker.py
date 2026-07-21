@@ -7,6 +7,7 @@ from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
@@ -593,6 +594,10 @@ def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
     assert (
         payload["render"]["model_manifest_key"]
         == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    )
+    assert (
+        payload["render"]["container_disk_gb"]
+        == RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB
     )
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"

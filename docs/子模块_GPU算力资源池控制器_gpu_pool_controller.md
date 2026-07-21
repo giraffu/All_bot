@@ -565,6 +565,10 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 
 正式 RunPod worker 只作为手动备用，不自动按生产队列扩容。
 
+管理后台或 `scripts/runpod_prod_ops.sh` 后续创建 `image_to_video` Pod 时，
+`containerDiskInGb` 的独立下限为 100 GB（`RUNPOD_CONTAINER_DISK_GB_IMAGE_TO_VIDEO`）；
+该设置只进入新建请求，不会调整、重启或替换已经运行的 Pod。
+
 日常入口优先使用 `scripts/runpod_prod_ops.sh`。它不改变底层 `prod-worker` 语义，只把正式手动备用池的常见动作收窄成固定 SOP；所有 mutation 默认 dry-run，真实执行必须显式 `--execute`，且必须指定 `--profile`。
 
 | 日常动作 | 命令 | 语义 |
