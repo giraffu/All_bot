@@ -183,6 +183,9 @@ def _parse_profiles(raw_profiles: dict[str, Any]) -> dict[str, TaskProfile]:
             model_manifest_key=data.get("model_manifest_key"),
             lan_workspace_key=data.get("lan_workspace_key"),
             lan_model_workspace_key=data.get("lan_model_workspace_key"),
+            lan_local_model_overrides=tuple(
+                dict(item) for item in (data.get("lan_local_model_overrides") or [])
+            ),
         )
     return profiles
 

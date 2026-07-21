@@ -73,6 +73,7 @@ class TaskProfile:
     model_manifest_key: str | None = None
     lan_workspace_key: str | None = None
     lan_model_workspace_key: str | None = None
+    lan_local_model_overrides: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
