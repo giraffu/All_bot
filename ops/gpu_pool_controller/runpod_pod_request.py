@@ -6,6 +6,7 @@ from typing import Any
 
 from .runpod_profile_catalog import (
     RUNPOD_I2I_PRO_CONTAINER_DISK_GB,
+    RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_LTX_VIDEO_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
@@ -267,6 +268,12 @@ class RunPodPodRequestBuilder:
         environment: str,
     ) -> int:
         del environment
+        if profile.task_type == "image_to_video":
+            return max(
+                self.settings.container_disk_gb,
+                self.settings.container_disk_gb_image_to_video,
+                RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
+            )
         if profile.task_type == "i2i_pro":
             return max(
                 self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB
