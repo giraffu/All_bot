@@ -136,7 +136,7 @@ The current LAN cache has manifests for `img2img_lora/2026-06-10`,
 `i2i_pro/2026-06-14-test`, `scail2/2026-06-17-test`, and
 `ltx_video/2026-06-10` (including both the old v1 LTX main model and
 10Eros v1.2). The all-task target set additionally prepares
-`image_to_video/2026-07-18-lora5`, `wan22_video_v2/2026-07-18-lora5`,
+`image_to_video/2026-07-18-lora5`, `wan22_video_v2/2026-07-21-pruned-v11`,
 `wan22_aio_video/2026-07-18-lora5`, `ltx_video/2026-06-10`, and
 `face_i2i_t2i/2026-06-10`. `video_basic/2026-06-10` is not a primary manifest;
 legacy `video_insert` and `video_edit` are compatibility task types that run as

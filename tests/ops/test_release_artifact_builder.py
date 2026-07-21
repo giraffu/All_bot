@@ -237,7 +237,7 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
         "image_to_video/2026-07-18-lora5/manifest.json"
     )
     assert catalog["wan22_video_v2"]["profile"]["model_manifest_key"] == (
-        "wan22_video_v2/2026-07-18-lora5/manifest.json"
+        "wan22_video_v2/2026-07-21-pruned-v11/manifest.json"
     )
 
 
