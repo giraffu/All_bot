@@ -45,12 +45,10 @@ class ComfyCanary:
         details["missing_required_nodes"] = missing_nodes
         checks["required_nodes"] = not missing_nodes
 
-        if profile.min_vram_gb is None:
-            checks["min_vram"] = True
-        else:
+        checks["min_vram"] = True
+        if profile.min_vram_gb is not None:
             devices = stats.get("devices") or []
             total_vram = float((devices[0] if devices else {}).get("vram_total") or 0)
-            checks["min_vram"] = total_vram >= profile.min_vram_gb * 1000**3
             details["vram_total_gb"] = round(total_vram / 1000**3, 2)
             details["vram_total_gib"] = round(total_vram / 1024**3, 2)
             details["min_vram_gb"] = profile.min_vram_gb

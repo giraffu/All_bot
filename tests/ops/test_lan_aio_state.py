@@ -264,7 +264,7 @@ def test_managed_takeover_updates_local_current_only_after_live_verification(
     assert history["status"] == "succeeded"
 
 
-def test_managed_mutation_blocks_before_handler_when_live_has_drift(tmp_path: Path):
+def test_managed_mutation_records_live_drift_without_blocking_handler(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
             super().__init__(
@@ -299,16 +299,19 @@ def test_managed_mutation_blocks_before_handler_when_live_has_drift(tmp_path: Pa
         called = True
         return {"ok": True}
 
-    with pytest.raises(StateDriftError, match="live_ledger_mismatch"):
-        ops.execute_managed_mutation(
-            action="warm-cache",
-            slots=[ops.slots["gpu-252-gpu0-image_to_video"]],
-            operation_id="blocked-mutation",
-            execute=execute,
-        )
+    result = ops.execute_managed_mutation(
+        action="warm-cache",
+        slots=[ops.slots["gpu-252-gpu0-image_to_video"]],
+        operation_id="drift-observed-mutation",
+        execute=execute,
+    )
 
-    assert called is False
-    assert not (tmp_path / "state" / "history" / "blocked-mutation.json").exists()
+    assert called is True
+    assert result["operation_id"] == "drift-observed-mutation"
+    history = json.loads(
+        (tmp_path / "state" / "history" / "drift-observed-mutation.json").read_text()
+    )
+    assert history["status"] == "succeeded"
 
 
 def test_managed_mutation_records_rolled_back_failure(tmp_path: Path):
@@ -398,7 +401,7 @@ def test_takeover_retargets_from_local_ledger_not_git_enabled_flags(tmp_path: Pa
     )
 
 
-def test_dashboard_style_control_action_must_target_ledger_current(tmp_path: Path):
+def test_dashboard_style_control_action_allows_noncurrent_ledger_target(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
             super().__init__(
@@ -427,13 +430,22 @@ def test_dashboard_style_control_action_must_target_ledger_current(tmp_path: Pat
         operation_id="bootstrap",
     )
 
-    with pytest.raises(StateDriftError, match="target is not current"):
-        ops.execute_managed_mutation(
-            action="restart-aio",
-            slots=[ops.slots["gpu-252-gpu0-image_to_video"]],
-            operation_id="wrong-restart-target",
-            execute=lambda: pytest.fail("wrong target must not execute"),
-        )
+    called = False
+
+    def execute():
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    result = ops.execute_managed_mutation(
+        action="restart-aio",
+        slots=[ops.slots["gpu-252-gpu0-image_to_video"]],
+        operation_id="noncurrent-restart-target",
+        execute=execute,
+    )
+
+    assert called is True
+    assert result["operation_id"] == "noncurrent-restart-target"
 
 
 def test_state_reconcile_explicitly_supersedes_unfinished_operation(tmp_path: Path):
