@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 
 import pytest
@@ -9,6 +10,11 @@ from src.services.qqcc_video_chain_stitch_service import (
     extract_qqcc_video_last_frame,
     stitch_qqcc_video_segments,
 )
+
+
+def _require_ffmpeg_tools() -> None:
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg/ffprobe are required for stitching media regression tests")
 
 
 def _video(*, width: int, height: int, color: str, audio: bool) -> bytes:
@@ -41,6 +47,7 @@ def _probe(payload: bytes, tmp_path) -> dict:
 
 @pytest.mark.asyncio
 async def test_stitch_video_segments_normalizes_later_segments_to_first_canvas(tmp_path):
+    _require_ffmpeg_tools()
     first = _video(width=320, height=180, color="red", audio=True)
     second = _video(width=180, height=320, color="blue", audio=False)
 
@@ -54,6 +61,7 @@ async def test_stitch_video_segments_normalizes_later_segments_to_first_canvas(t
 
 @pytest.mark.asyncio
 async def test_extract_video_last_frame_returns_png():
+    _require_ffmpeg_tools()
     frame = await extract_qqcc_video_last_frame(
         _video(width=160, height=90, color="green", audio=False)
     )
@@ -63,5 +71,6 @@ async def test_extract_video_last_frame_returns_png():
 
 @pytest.mark.asyncio
 async def test_stitch_single_segment_is_lossless_fast_path():
+    _require_ffmpeg_tools()
     video = _video(width=160, height=90, color="green", audio=False)
     assert await stitch_qqcc_video_segments([video]) == video
