@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 
 SLOTS = ("A", "B", "C", "D", "E", "F", "G", "H")
@@ -19,6 +19,11 @@ DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSPACE_ROOT = Path("/home/hfy/APP/All_bot-workspaces")
 DEFAULT_BASE_REF = "origin/main"
 DEFAULT_LOCK_PATH = Path.home() / ".local" / "state" / "allbot" / "ai-workspaces.lock"
+DEFAULT_INTEGRATION_QUEUE_ROOT = (
+    Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    / "allbot"
+    / "ai-integration-queue"
+)
 TASK_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -264,7 +269,12 @@ class WorkspaceManager:
             self._fetch_base()
             self._git("switch", "--detach", self.base_ref, cwd=path)
 
-    def handoff(self, slot: str) -> dict[str, str]:
+    def handoff(
+        self,
+        slot: str,
+        *,
+        enqueue: Callable[[Mapping[str, str]], Any] | None = None,
+    ) -> dict[str, str]:
         """Freeze one pushed task head and release its slot for new work."""
 
         with self._workspace_lock():
@@ -283,13 +293,16 @@ class WorkspaceManager:
             base_sha = self._git("merge-base", head, self.base_ref, cwd=path)
             if not FULL_SHA_RE.fullmatch(base_sha):
                 raise WorkspaceError("task branch has no trusted main base")
-            self._git("switch", "--detach", self.base_ref, cwd=path)
-            return {
+            result = {
                 "slot": slot,
                 "branch": branch,
                 "head": head,
                 "base_sha": base_sha,
             }
+            if enqueue is not None:
+                enqueue(result)
+            self._git("switch", "--detach", self.base_ref, cwd=path)
+            return result
 
     def plan_batch(
         self, batch: str, members: Sequence[Mapping[str, Any]]
@@ -393,6 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
     parser.add_argument("--base-ref", default=DEFAULT_BASE_REF)
     parser.add_argument("--lock-path", type=Path, default=DEFAULT_LOCK_PATH)
+    parser.add_argument(
+        "--queue-root", type=Path, default=DEFAULT_INTEGRATION_QUEUE_ROOT
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("init")
     subparsers.add_parser("status")
@@ -403,6 +419,11 @@ def build_parser() -> argparse.ArgumentParser:
     claim.add_argument("--task", required=True)
     handoff = subparsers.add_parser("handoff")
     handoff.add_argument("--slot", required=True)
+    handoff.add_argument(
+        "--no-enqueue",
+        action="store_true",
+        help="freeze and release without adding the handoff to automatic integration",
+    )
     batch = subparsers.add_parser("batch-plan")
     batch.add_argument("--batch", required=True)
     batch.add_argument("--output", type=Path, required=True)
@@ -436,7 +457,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "claim":
             result = manager.claim(args.task)
         elif args.command == "handoff":
-            result = manager.handoff(args.slot)
+            enqueue = None
+            if not args.no_enqueue:
+                from auto_integrate_handoffs import (
+                    IntegrationQueue,
+                    IntegrationQueueError,
+                )
+
+                queue = IntegrationQueue(args.queue_root)
+
+                def enqueue_handoff(handoff: Mapping[str, str]) -> Any:
+                    try:
+                        return queue.enqueue(handoff)
+                    except IntegrationQueueError as exc:
+                        raise WorkspaceError(f"integration queue unavailable: {exc}") from exc
+
+                enqueue = enqueue_handoff
+            result = manager.handoff(args.slot, enqueue=enqueue)
+            if enqueue is not None:
+                result["integration_queue"] = str(args.queue_root.expanduser().resolve())
         elif args.command == "batch-plan":
             members = []
             for value in args.member:

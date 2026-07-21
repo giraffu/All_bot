@@ -68,6 +68,7 @@
 - **云测试不可变发布**：将受保护 `main` 可达的完整 SHA 对应 release bundle 部署到云测试；服务范围由依赖影响自动计算，应用代码只来自 digest-pinned 镜像。
 - **不可变 handoff**：功能槽位完成本地测试并推送后，用槽位、远端任务分支、完整 head SHA 和 main base SHA 标识的一次交接；交接后槽位可立即复用，批次集成不再依赖槽位当前内容。
 - **发布批次**：集成 AI 从若干不可变 handoff 冻结出的单次交付集合；所有成员只组合成一个 release-batch 分支和一个 main PR，容器构建在 main 合并后统一触发。
+- **自动集成队列**：本地主服务器保存不可变 handoff 的持久化队列；唯一协调器按批次串行推进 main PR、可信 CI/bundle 和共享测试部署，失败批次会阻断后续项，接口不包含正式环境发布。
 - **发布风险类**：根据选中 artifact 的最高影响划分为 critical、owner-tools、public-web、execution 或 locked；共享代码和混合变更不得通过缩小选择集降低风险。
 - **发布策略**：standard 要求测试部署/验收/观察，direct 用于低风险直发，emergency 用于显式接受核心业务风险的紧急直发；三者都保留不可变产物、配置、健康、回滚和生产确认。
 - **artifact assurance**：逐 artifact digest 的证据状态；tested 表示 main bundle 的精确 digest 已完成要求的测试，waived 表示策略明确豁免，attested 表示 GPU 不做业务 canary 但不可变产物声明已验证。

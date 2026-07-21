@@ -1,0 +1,12 @@
+[Unit]
+Description=AllBot immutable handoff integration and shared test deployment
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ALLBOT_ROOT__
+ExecStart=/usr/bin/env python3 __ALLBOT_ROOT__/scripts/auto_integrate_handoffs.py --repo __ALLBOT_ROOT__ run-once --execute
+TimeoutStartSec=8h
+PrivateTmp=true
+NoNewPrivileges=true

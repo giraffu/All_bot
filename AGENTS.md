@@ -9,10 +9,10 @@
 - **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
 - **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
 - **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **主目录自动接单 (Auto Claim)**：用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时，必须先加载 `allbot-concurrent-workspaces` 并执行 `python scripts/manage_ai_workspaces.py claim --task <slug>`，后续只在返回的 A-H 槽位中工作。槽位以 `origin/main` 为基线；完成后推送并执行 `handoff`，用不可变 branch/head 交接并立即释放槽位。纯查询/审查和集成发布任务不抢占槽位；无空闲槽位时必须在编辑前停止，不得回退到主目录开发。
+- **主目录自动接单 (Auto Claim)**：用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时，必须先加载 `allbot-concurrent-workspaces` 并执行 `python scripts/manage_ai_workspaces.py claim --task <slug>`，后续只在返回的 A-H 槽位中工作。槽位以 `origin/main` 为基线；完成后推送并执行 `handoff`，用不可变 branch/head 交接、写入本机自动集成队列并立即释放槽位。纯查询/审查和集成发布任务不抢占槽位；无空闲槽位时必须在编辑前停止，不得回退到主目录开发。
 - **能力与授权分离 (Capability vs. Authority)**：A-H 可以读取真实 env、配置、凭据、日志和远端状态，用于只读核对、本地测试与计划；不得泄露秘密原文。凭据可见不代表获准部署或修改共享 test、prod、Cloudflare、RunPod/GPU、数据库或发布状态。槽位依赖应独立，但发现运行中任务使用历史共享依赖时只记录风险，不得自动中断或清理。
-- **单批次 main 集成与不可变发布 (Batch Main Release)**：并行槽位不再逐个进入 test-train。集成 AI 冻结多个 handoff head，一次组合为 `release-batch`，只创建一个 main PR；批次 PR 只跑代码门禁，合入 main 后才由 GitHub Actions 构建一次 main-channel digest-pinned bundle。用户需要时再部署该 main SHA 到测试环境并按精确 digest 验收；正式发布仍只接受 main 可达完整 SHA、成功 CI、配置/健康/事务/回滚门禁和每次明确的 `--confirm-prod`。云端禁止 rsync、现场 build、源码 bind mount和 `latest`；GPU/LAN AIO/RunPod 继续使用专用 operator/canary。
-- **非运行时轻量合入 (Non-runtime Fast Merge)**：仅由 `scripts/classify_ci_change.py` 窄白名单判定的 docs、Skills、tests、仓库治理与 CI 门禁元数据变更（含精确列出的 `scripts/release.py` 与测试验收样例），可通过单独 PR 直接合入受保护 main 或兼容分支；不进入 release batch/test-train candidate，不跑全量模块测试，不构建或发布 release bundle，也不部署测试/正式环境。任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会恢复完整 CI 与发布流程；轻量路径不等于允许 direct push main。
+- **单批次 main 集成与不可变发布 (Batch Main Release)**：并行槽位不再逐个进入 test-train。启用 `allbot-ai-integration-queue.timer` 后，本机单写者会把当次等待的 handoff 冻结为一个 `release-batch`，串行创建一个 main PR、等待门禁、合并、等待 main bundle，并只更新共享测试环境；运行中到达的新 handoff 自动排入下一批，任一冲突、CI 或测试部署失败都会阻断后续批次。轻量变更合入后跳过 bundle/环境更新。协调器没有 prod 参数，正式发布仍只接受 main 可达完整 SHA、成功 CI、配置/健康/事务/回滚门禁和每次明确的 `--confirm-prod`。云端禁止 rsync、现场 build、源码 bind mount和 `latest`；GPU/LAN AIO/RunPod 继续使用专用 operator/canary。
+- **非运行时轻量合入 (Non-runtime Fast Merge)**：仅由 `scripts/classify_ci_change.py` 窄白名单判定的 docs、Skills、tests、仓库治理、`deploy/release-batches/*.json` 审计元数据与 CI 门禁元数据变更（含精确列出的 `scripts/release.py` 与测试验收样例），可通过单独 PR 直接合入受保护 main 或兼容分支；不进入 test-train candidate，不跑全量模块测试，不构建或发布 release bundle，也不部署测试/正式环境。任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会恢复完整 CI 与发布流程；轻量路径不等于允许 direct push main。
 - **GPU 运维聚焦门禁 (GPU Operator Focused Gate)**：仅包含 `ops/gpu_pool_controller/**` 与明确列出的 RunPod/LAN operator/helper 路径时，CI 使用 `operator` scope，只跑 `tests/ops`、`tests/scripts`，不启动 PostgreSQL、Web、Dashboard 前端或其它 Python 分片。LAN 主机 helper/candidate 变更不构建运行模块；Dashboard 镜像内置的 controller/rollout 依赖只重建 `dashboard-backend`。GPU↔LAN 当前映射、缓存态、实时 RunPod 数量属于 XDG/Provider/后台运行态，不写 Git，也不触发发布。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖或与业务 runtime 混合的变更仍恢复完整 CI、同 SHA attestation/canary 和 GPU 专用发布门禁。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
@@ -37,7 +37,7 @@
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **QQCC 懒人 Bot / 用户私有 Bot** | `allbot-qqcc-lazy-bot` | 官方 QQCC polling、私有 Bot 申请 FSM/webhook worker、租户配置、`client_type` 恢复隔离和 token 红线 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
-| **并发 AI 工作区与发布批次** | `allbot-concurrent-workspaces` | 主目录自动接单、A-H 高访问能力、main 基线、不可变 handoff、单批次 main PR 和按需测试发布 |
+| **并发 AI 工作区与发布批次** | `allbot-concurrent-workspaces` | 主目录自动接单、A-H 高访问能力、main 基线、不可变 handoff、单写者批次队列、main PR 和自动测试发布 |
 | **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
 | **本地分析提示词词义治理** | `allbot-local-analytics-prompt-semantics` | 提示词词元分类、指定词元、同义映射、删除表、tokens-only 物化、模板候选槽位口径 |
 | **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
@@ -64,7 +64,7 @@
 - **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
 - **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
 - **Git 不可变发布**：`/docs/子模块_Git不可变发布_git_immutable_release.md`（完整 SHA、GHCR digest、公共 Compose、配置契约、测试验收、生产晋级与回滚）
-- **并发 AI 开发与发布批次**：`/docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`（A-H worktree、不可变 handoff、单批次 main PR 与按需测试发布）
+- **并发 AI 开发与发布批次**：`/docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`（A-H worktree、不可变 handoff、自动单写者批次、main PR 与测试发布）
 - **并发 AI 自动接单**：`/docs/并发AI自动接单使用指南_auto_workspace_claim.md`（用户只需在主目录说需求，AI 自动抢占空闲槽位）
 - **首次可信发布准备**：`/docs/子模块_首次可信发布准备_first_trusted_release.md`（本地 stabilization 验证结果、Git 血缘和外部待办）
 - **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）

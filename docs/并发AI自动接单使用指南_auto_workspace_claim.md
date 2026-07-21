@@ -14,29 +14,31 @@
 2. 调用 `manage_ai_workspaces.py claim`，在跨进程锁下抢占第一个空闲槽位。
 3. 自动进入该槽位对应的任务分支，加载业务 Skill 并开发。
 4. 运行测试，提交并推送任务分支；不创建逐任务 test-train PR。
-5. 执行 `handoff --slot <A-H>` 冻结远端 branch/head，并立即释放槽位。
+5. 执行 `handoff --slot <A-H>` 冻结远端 branch/head，幂等写入本机自动集成队列，并立即释放槽位。
+6. 用户级集成 timer 把当时等待的 handoff 合成一个批次，依次等待 PR CI、main 合并、main bundle，再只更新共享测试环境。
 
 因此，第二个 AI 窗口会自动拿到下一个空闲槽位。即使两个窗口同时开始，也不会抢到同一槽位。
 
 ## 与批次集成并行
 
-集成 AI 启动 main 批次时，会冻结当次 handoff 成员。之后新窗口仍可认领空闲槽位并继续开发；新任务属于后续批次，不会因为尚未完成而延迟当前批次。
+自动协调器取得单写者锁后，会冻结当次所有 pending handoff。之后新窗口仍可认领空闲槽位并继续开发；新任务留在 pending，属于后续批次，不会动态插入当前批次。
 
-批次成员按槽位、任务分支、交接 head 和 base SHA 共同识别。槽位在 handoff 时已经释放，即使被新任务复用，集成 AI 仍只读取冻结的远端 branch/head。所有成员只组合成一个 `release-batch`，并通过一个 PR 合入 main。
+批次成员按槽位、任务分支、交接 head 和 base SHA 共同识别。槽位在 handoff 时已经释放，即使被新任务复用，协调器仍只读取冻结的远端 branch/head。所有成员只组合成一个 `release-batch`，并通过一个 PR 合入 main。若组合冲突、CI、bundle 或测试部署失败，当前批次进入 failed 并阻断后续批次，避免在坏基线上继续滚动。
 
 ## AI 可以访问什么
 
 - A-H 槽位 AI 可以读取项目中的真实配置、env、密钥、日志和远端运行状态，不会因为需要了解实际环境而被限制在示例配置中。
 - AI 可以使用现有凭据做只读核对、本地测试和操作计划，但不会在对话、提交或 PR 中展示秘密原文。
-- “可以读取凭据”不等于“可以修改外部系统”。共享测试站部署、生产发布、Cloudflare、RunPod/GPU 和数据库 migration 仍由集成 AI按发布流程执行。
+- “可以读取凭据”不等于“可以修改外部系统”。启用 timer 后只有自动协调器可以串行修改共享测试站；生产发布、Cloudflare、RunPod/GPU 和数据库 migration 仍需各自明确授权。
 - `.venv`、`node_modules` 和可写缓存仍应尽量保持槽位独立。若运行中任务已在使用历史共享依赖，只记录提醒，不会为修复隔离而中断当前任务。
 
 ## 什么时候需要你介入
 
 - A-H 全部占用时，AI 会直接报告“没有可用槽位”，不会在主目录写代码。
 - 任务分支已推送且 `handoff` 成功后，槽位立即释放，不等待批次、容器构建、测试环境或正式发布。
-- 只有当你要求形成发布批次时，集成 AI 才一次组合已选 handoff 并创建一个 main PR；main 合并后才开始 GitHub Actions 容器构建。
-- 只有当你要求部署测试环境时，集成 AI 才使用已构建 main bundle 切换唯一测试站。
+- timer 启用后，handoff 会自动进入批次，不需要逐次要求创建 main PR 或部署测试站；纯 lightweight 变更会自动跳过 bundle 和环境更新。
+- 自动协调器固定只使用 `--env test`，没有 prod 参数。正式环境永远不会被这条队列更新。
+- 查看队列：`python scripts/auto_integrate_handoffs.py status`；失败修复后重排：`python scripts/auto_integrate_handoffs.py retry-failed --batch <batch-id>`。
 
 ## 可选的状态查询
 
