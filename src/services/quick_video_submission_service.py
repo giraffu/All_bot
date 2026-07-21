@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from dataclasses import dataclass, field
@@ -49,6 +50,11 @@ from src.services.private_qqcc_continuation_service import (
     resume_private_qqcc_continuation,
 )
 from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
+from src.services.qqcc_video_frame_adapter import (
+    QQCC_VIDEO_ASPECT_SOURCE,
+    adapt_qqcc_video_frame_file,
+    normalize_qqcc_video_aspect_ratio,
+)
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.task_service_entrypoints_specialized import (
     process_ltx_video_task_for_actor,
@@ -100,6 +106,7 @@ class QuickVideoSubmissionPlan:
     lora_items: list[dict[str, Any]] = field(default_factory=list)
     scene_kind: str = "video"
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
+    aspect_ratio: str = QQCC_VIDEO_ASPECT_SOURCE
 
 
 @dataclass(frozen=True)
@@ -120,6 +127,7 @@ ProcessLtxVideoTask = Callable[..., Awaitable[Any] | Any]
 ExecuteDrawChain = Callable[..., Awaitable[Any] | Any]
 DownloadOutputFile = Callable[..., Awaitable[str] | str]
 CleanupTempFiles = Callable[[list[str | None]], None]
+AdaptVideoFrameFile = Callable[..., str]
 
 
 QUICK_VIDEO_MODE_CONFIG_KEYS = {
@@ -466,6 +474,7 @@ def build_quick_video_submission_plan(
         lora_name=lora_name,
         lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
+        aspect_ratio=normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio")),
     )
 
 
@@ -497,9 +506,24 @@ async def run_quick_video_submission_plan(
     execute_draw_chain_func: ExecuteDrawChain = execute_qqcc_draw_scene_chain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile = download_output_file_to_fsm_temp,
     cleanup_temp_files_func: CleanupTempFiles = cleanup_fsm_temp_files,
+    adapt_video_frame_file_func: AdaptVideoFrameFile = adapt_qqcc_video_frame_file,
     private_continuation_store: PrivateQqccContinuationStore | None = None,
     private_continuation_execute_stage_func: StageExecutor | None = None,
 ) -> None:
+    if plan.aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
+        source_image_path = image_path
+        try:
+            image_path = await asyncio.to_thread(
+                adapt_video_frame_file_func,
+                source_image_path,
+                aspect_ratio=plan.aspect_ratio,
+            )
+        except BaseException:
+            cleanup_temp_files_func([source_image_path])
+            raise
+        if image_path != source_image_path:
+            cleanup_temp_files_func([source_image_path])
+
     if is_private_qqcc_bot_context(context) and quick_video_plan_requires_continuation(
         plan
     ):
@@ -558,6 +582,7 @@ async def run_quick_video_submission_plan(
                         "resolution": plan.resolution,
                         "duration": plan.duration,
                         "lora_items": plan.lora_items,
+                        "_qqcc_aspect_ratio": plan.aspect_ratio,
                         **continuation_controls,
                     },
                 }
@@ -585,6 +610,7 @@ async def run_quick_video_submission_plan(
                         "allow_contribute": plan.allow_contribute,
                         "resolution": plan.resolution,
                         "duration": plan.duration,
+                        "_qqcc_aspect_ratio": plan.aspect_ratio,
                         **continuation_controls,
                     },
                 }
@@ -625,6 +651,11 @@ async def run_quick_video_submission_plan(
                 process_generation_task_func=process_generation_task_func,
                 process_video_task_template_func=process_video_task_template_func,
                 process_ltx_video_task_func=process_ltx_video_task_func,
+                download_video_frame_to_fsm_temp_func=(
+                    download_output_file_to_fsm_temp_func
+                ),
+                adapt_video_frame_file_func=adapt_video_frame_file_func,
+                cleanup_temp_files_func=cleanup_temp_files_func,
             )
 
         await resume_private_qqcc_continuation(
@@ -653,6 +684,7 @@ async def run_quick_video_submission_plan(
             execute_draw_chain_func=execute_draw_chain_func,
             download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
             cleanup_temp_files_func=cleanup_temp_files_func,
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
         )
         return
 
@@ -746,6 +778,7 @@ async def _run_tail_frame_video_plan(
     execute_draw_chain_func: ExecuteDrawChain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile,
     cleanup_temp_files_func: CleanupTempFiles,
+    adapt_video_frame_file_func: AdaptVideoFrameFile,
 ) -> None:
     end_image_path = None
     video_task_started = False
@@ -776,6 +809,16 @@ async def _run_tail_frame_video_plan(
                 "QQCC video end-frame generation returned no output; video skipped."
             )
             return
+
+        if plan.aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
+            source_end_image_path = end_image_path
+            end_image_path = await asyncio.to_thread(
+                adapt_video_frame_file_func,
+                source_end_image_path,
+                aspect_ratio=plan.aspect_ratio,
+            )
+            if end_image_path != source_end_image_path:
+                cleanup_temp_files_func([source_end_image_path])
 
         video_task_started = True
         if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:

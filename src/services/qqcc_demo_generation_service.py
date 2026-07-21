@@ -23,6 +23,11 @@ from src.services.qqcc_demo_media_service import (
     build_qqcc_demo_preview_url,
     upload_qqcc_demo_media,
 )
+from src.services.qqcc_video_frame_adapter import (
+    QQCC_VIDEO_ASPECT_SOURCE,
+    adapt_qqcc_video_frame_bytes,
+    normalize_qqcc_video_aspect_ratio,
+)
 from src.services.storage import storage
 
 GENERATION_INPUT_PREFIX = "qqcc/demo-generation"
@@ -184,6 +189,13 @@ async def submit_qqcc_demo_generation(
         raise QqccDemoGenerationError("Invalid generation id")
     minio_input_key = f"{GENERATION_INPUT_PREFIX}/{generation_id}/input.png"
     content = await asyncio.to_thread(_read_r2_bytes, storage_service, r2_input_key)
+    aspect_ratio = normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio"))
+    if scene_kind == "video" and aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
+        content = await asyncio.to_thread(
+            adapt_qqcc_video_frame_bytes,
+            content,
+            aspect_ratio=aspect_ratio,
+        )
     uploaded = await asyncio.to_thread(
         storage_service.upload_bytes,
         content,

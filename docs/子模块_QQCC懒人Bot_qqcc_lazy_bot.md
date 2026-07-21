@@ -88,7 +88,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `main_menu_layout`: `{ buttons_per_row, button_order }`；`buttons_per_row` 仅允许 `null` 或整数 `1..4`，`null` 保持旧固定分行；`button_order` 只保留可渲染主菜单 key 且自动去重/补齐。独立配置 Web 选择统一列数后才解锁上移/下移，关闭按钮仍保留排序位置
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
-- `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_items, lora_name, lora_strength, end_frame_draw_scene_id }]`；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。其余 prompt、duration、id 和尾帧引用约束不变。
+- `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id }]`；`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。其余 prompt、duration、id 和尾帧引用约束不变。
 - `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, lora_items, end_frame_draw_scene_id, demo_input_media, demo_output_media }]`；默认空数组。`engine` 首版固定 `ltx_video`，尺寸固定 `1280x704`，配置时长仅允许数字 `5/10/15/20`（提交到 LTX 任务边界时转为 `5s/10s/15s/20s`）；`lora_items` 使用 `{path,strength}`，来自配置选项接口的 QQCC 专用 LTX catalog，最多 3 个、不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。该专用目录由 `src/qqcc_ltx_lora_catalog.py` 在公开目录之外追加，当前接入本机 2026-07-17 校验库的 32 个权重（26 个为公开目录外新增项）；主 Bot 和公共 Web 不读取该目录。`negative_prompt` trim 后为空仍保存为空，但提交任务时完全省略。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
@@ -123,6 +123,14 @@ QQCC Config 专用 LoRA 的“可配置”和“运行时可加载”是两个�
 不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或主 Bot 完整 gallery 菜单入口。`修仙市集` 只能通过 QQCC 专用 handler 与 `qg:` callback 实现轻量浏览/应用。
 
 AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata，结果按钮除“重新生成”外还提供“换个主题”“生成动图”“生成视频”。换主题从该 History 的用户原图开始并选择新的绘图场景；动图和视频从该 History 的最终生成图开始并分别选择当前可用的 AI动图和 AI视频场景。每次点击均重新校验 History 归属、场景有效性和灵石余额，临时素材只用于这一条后续提交。
+
+### 2.1 AI动图输入比例适配
+
+后台场景编辑面板的“视频比例”从配置 GET `options.video_aspect_ratios` 读取原始枚举，中文标签仅由 Vue 映射；默认和新增场景均为 `source`。非 `source` 时，QQCC 专属适配器在任务提交前执行 JPEG/PNG 校验、EXIF 方向归一及最大内接精确整数比例的居中裁剪，不拉伸、不补边、不扩图，也不主动放大；后续 Wan22 仍按用户画质档位缩放。
+
+单首帧 `image_to_video` / `wan22_video_v2` 都提交适配后的首图。尾帧链先用适配首图执行绘图链，再适配最终尾图，保证首尾比例一致。私有 Bot checkpoint 保存内部比例策略，最终 executor 对 durable `original/current` 执行同一处理并在调用既有任务入口前剥离内部字段；后台示例生成也在上传 Central 临时输入前适配 R2 bytes。重新生成和 AI绘图结果的“生成动图”按当前配置重建同一 plan。适配失败时清理 FSM 临时文件、提示图片处理失败，且不调用任务入口、不扣灵石。
+
+该能力是 QQCC 输入适配，不是 workflow 比例开关。主 Bot、固定 `1280x704` 的 AI视频、`Wan22AioV82.json`、mapping/patcher/profile、RunPod/LAN AIO、费用及四档用户画质保持不变，比例字段不进入 Central/Worker payload。
 
 ## 3. 代码入口
 
