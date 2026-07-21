@@ -53,6 +53,8 @@ from src.services.qqcc_demo_generation_service import (
     get_qqcc_demo_generation,
     submit_qqcc_demo_generation,
 )
+from src.services.qqcc_video_scene_chain_service import QqccVideoSceneChainError
+from src.services.qqcc_config_service import normalize_qqcc_config
 from src.services.redis_client import redis_client
 
 router = APIRouter(prefix="/api/private-bots", tags=["private-bots"])
@@ -166,6 +168,8 @@ async def update_owner_private_bot_config(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PrivateBotConfigLimitError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccVideoSceneChainError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.add(
         PrivateQqccBotAuditLog(
             private_bot=bot,
@@ -289,6 +293,7 @@ async def submit_owner_private_bot_demo_generation(
             scene_kind=scene_kind,
             scene=payload.scene,
             object_prefix=f"qqcc/private/{bot.id}/demo",
+            config=normalize_qqcc_config(bot.config or {}),
         )
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

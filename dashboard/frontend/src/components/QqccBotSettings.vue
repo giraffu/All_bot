@@ -34,6 +34,7 @@ type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
 type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
+type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
@@ -83,10 +84,12 @@ interface VideoSceneConfig extends SceneDemoFields {
   negative_prompt: string
   duration: DurationKey
   engine: VideoSceneEngine
+  aspect_ratio: VideoAspectRatio
   lora_name: string
   lora_strength: number
   lora_items: VideoLoraItem[]
   end_frame_draw_scene_id: string
+  next_scene_id: string | null
 }
 
 interface VideoLoraItem {
@@ -108,6 +111,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   engine: AiVideoSceneEngine
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
+  next_scene_id: string | null
 }
 
 interface DrawSceneConfig extends SceneDemoFields {
@@ -172,6 +176,7 @@ interface QqccBotConfigOptions {
   default_ai_video_engine: AiVideoSceneEngine
   default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
+  video_aspect_ratios: VideoAspectRatio[]
   ai_video_engines: SceneEngineOption[]
   draw_engines: SceneEngineOption[]
   video_lora_models: LoraModelOption[]
@@ -226,6 +231,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   default_ai_video_engine: 'ltx_video',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
+  video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
@@ -374,6 +380,13 @@ const videoEngineLabels: Record<VideoSceneEngine, string> = {
   wan22_video_v2: '图生视频v2',
 }
 
+const videoAspectRatioLabels: Record<VideoAspectRatio, string> = {
+  source: '跟随原图',
+  '9:16': '9:16（竖屏）',
+  '16:9': '16:9（横屏）',
+  '1:1': '1:1（方形）',
+}
+
 const aiVideoEngineLabels: Record<AiVideoSceneEngine, string> = {
   ltx_video: '高级图生视频（LTX）',
 }
@@ -483,10 +496,12 @@ const sceneConfig = reactive({
   panel: 'model' as SceneConfigPanel,
   index: -1,
   engine: 'image_to_video',
+  aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
   video_lora_items: [] as VideoLoraItem[],
   lora_items: [] as AiVideoLoraItem[],
   end_frame_draw_scene_id: '',
+  next_scene_id: '',
   postprocess_draw_scene_id: '',
   postprocess_filter_scene_id: '',
   original_face_swap_enabled: false,
@@ -534,6 +549,9 @@ const showScenePageContaining = (kind: SceneConfigKind, index: number) => {
 
 const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
   value === 'wan22_video_v2' ? 'wan22_video_v2' : 'image_to_video'
+
+const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
+  value === '9:16' || value === '16:9' || value === '1:1' ? value : 'source'
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
 
@@ -800,6 +818,12 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
   }
+  if (Array.isArray(raw.video_aspect_ratios) && raw.video_aspect_ratios.length > 0) {
+    const ratios = raw.video_aspect_ratios
+      .map(normalizeVideoAspectRatio)
+      .filter((item, index, values) => values.indexOf(item) === index)
+    merged.video_aspect_ratios = ratios.length > 0 ? ratios : merged.video_aspect_ratios
+  }
   if (Array.isArray(raw.ai_video_engines) && raw.ai_video_engines.length > 0) {
     merged.ai_video_engines = raw.ai_video_engines
       .filter((item) => typeof item?.value === 'string')
@@ -867,6 +891,57 @@ const activeEndFrameDrawOptions = computed(() =>
     (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
   )
 )
+const videoScenesForKind = (kind: SceneConfigKind) =>
+  kind === 'video'
+    ? config.video_scenes
+    : kind === 'ai_video'
+      ? config.ai_video_scenes
+      : []
+const wouldCreateVideoSceneCycle = (
+  kind: SceneConfigKind,
+  sourceSceneId: string,
+  candidateSceneId: string,
+) => {
+  const scenes = videoScenesForKind(kind)
+  const byId = new Map(scenes.map(scene => [scene.id, scene]))
+  const visited = new Set<string>()
+  let current = candidateSceneId
+  while (current) {
+    if (current === sourceSceneId) return true
+    if (visited.has(current)) return true
+    visited.add(current)
+    current = byId.get(current)?.next_scene_id || ''
+  }
+  return false
+}
+const activeNextVideoSceneOptions = computed(() => {
+  const scenes = videoScenesForKind(sceneConfig.kind)
+  const source = scenes[sceneConfig.index]
+  if (!source) return []
+  return scenes.filter(scene =>
+    scene.id.trim()
+    && scene.name.trim()
+    && scene.id !== source.id
+    && !wouldCreateVideoSceneCycle(sceneConfig.kind, source.id, scene.id),
+  )
+})
+const activeVideoSceneChainPreview = computed(() => {
+  const scenes = videoScenesForKind(sceneConfig.kind)
+  const source = scenes[sceneConfig.index]
+  if (!source) return ''
+  const byId = new Map(scenes.map(scene => [scene.id, scene]))
+  const names = [source.name || source.id]
+  const visited = new Set([source.id])
+  let current = sceneConfig.next_scene_id
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    const scene = byId.get(current)
+    if (!scene) break
+    names.push(scene.name || scene.id)
+    current = scene.next_scene_id || ''
+  }
+  return names.join(' → ')
+})
 const activePostprocessDrawOptions = computed(() => {
   const sourceScene = config.draw_scenes[sceneConfig.index]
   if (sceneConfig.kind !== 'draw' || !sourceScene) return []
@@ -1026,6 +1101,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           negative_prompt,
           duration,
           engine,
+          aspect_ratio: normalizeVideoAspectRatio(scene?.aspect_ratio),
           lora_name: loraItems[0]?.name || '',
           lora_strength: loraItems[0]?.strength ?? 1,
           lora_items: loraItems,
@@ -1033,6 +1109,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
+            ? scene.next_scene_id.trim()
+            : null,
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'video', sceneId: id, slot: 'input',
           }),
@@ -1065,6 +1144,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
+            ? scene.next_scene_id.trim()
+            : null,
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'ai_video', sceneId: id, slot: 'input',
           }),
@@ -1074,7 +1156,6 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
-      .slice(0, 20)
   }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
@@ -1102,10 +1183,12 @@ const addVideoScene = () => {
     negative_prompt: '',
     duration: '5s',
     engine: normalizeVideoEngine(modelOptions.default_video_engine),
+    aspect_ratio: 'source',
     lora_name: '',
     lora_strength: 1,
     lora_items: [],
     end_frame_draw_scene_id: '',
+    next_scene_id: null,
   })
   showScenePageContaining('video', config.video_scenes.length - 1)
 }
@@ -1116,10 +1199,6 @@ const createAiVideoSceneId = () => {
 }
 
 const addAiVideoScene = () => {
-  if (config.ai_video_scenes.length >= 20) {
-    message.warning('AI视频场景最多 20 个')
-    return
-  }
   config.ai_video_scenes.push({
     id: createAiVideoSceneId(),
     name: '',
@@ -1129,17 +1208,28 @@ const addAiVideoScene = () => {
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
     lora_items: [],
     end_frame_draw_scene_id: '',
+    next_scene_id: null,
   })
   showScenePageContaining('ai_video', config.ai_video_scenes.length - 1)
 }
 
 const removeAiVideoScene = (index: number) => {
-  config.ai_video_scenes.splice(index, 1)
+  const [removed] = config.ai_video_scenes.splice(index, 1)
+  if (removed) {
+    config.ai_video_scenes.forEach((scene) => {
+      if (scene.next_scene_id === removed.id) scene.next_scene_id = null
+    })
+  }
   normalizeScenePage('ai_video')
 }
 
 const removeVideoScene = (index: number) => {
-  config.video_scenes.splice(index, 1)
+  const [removed] = config.video_scenes.splice(index, 1)
+  if (removed) {
+    config.video_scenes.forEach((scene) => {
+      if (scene.next_scene_id === removed.id) scene.next_scene_id = null
+    })
+  }
   normalizeScenePage('video')
 }
 
@@ -1475,6 +1565,7 @@ const buildPayload = (): QqccBotConfig => {
         prompt: scene.prompt.trim(),
         negative_prompt: scene.negative_prompt.trim(),
         engine,
+        aspect_ratio: normalizeVideoAspectRatio(scene.aspect_ratio),
         lora_name: loraItems[0]?.name || '',
         lora_strength: loraItems[0]?.strength ?? 1,
         lora_items: loraItems,
@@ -1482,6 +1573,9 @@ const buildPayload = (): QqccBotConfig => {
           scene.end_frame_draw_scene_id,
           payload.draw_scenes,
         ),
+        next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
+          ? scene.next_scene_id.trim()
+          : null,
       }
     })
     .filter((scene) => scene.name || scene.prompt)
@@ -1499,9 +1593,11 @@ const buildPayload = (): QqccBotConfig => {
         scene.end_frame_draw_scene_id,
         payload.draw_scenes,
       ),
+      next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
+        ? scene.next_scene_id.trim()
+        : null,
     }))
     .filter((scene) => scene.name || scene.prompt)
-    .slice(0, 20)
   return payload
 }
 
@@ -1534,6 +1630,9 @@ const openSceneConfig = (
   sceneConfig.panel = panel
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
+  sceneConfig.aspect_ratio = kind === 'video'
+    ? normalizeVideoAspectRatio((scene as VideoSceneConfig).aspect_ratio)
+    : 'source'
   sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
   sceneConfig.video_lora_items = kind === 'video'
     ? normalizeVideoLoraItems(
@@ -1548,6 +1647,10 @@ const openSceneConfig = (
   sceneConfig.end_frame_draw_scene_id =
     kind === 'video' || kind === 'ai_video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).end_frame_draw_scene_id)
+      : ''
+  sceneConfig.next_scene_id =
+    kind === 'video' || kind === 'ai_video'
+      ? (scene as VideoSceneConfig | AiVideoSceneConfig).next_scene_id || ''
       : ''
   sceneConfig.postprocess_draw_scene_id =
     kind === 'draw'
@@ -1568,7 +1671,9 @@ const closeSceneConfig = () => {
   sceneConfig.index = -1
   sceneConfig.lora_items = []
   sceneConfig.video_lora_items = []
+  sceneConfig.aspect_ratio = 'source'
   sceneConfig.end_frame_draw_scene_id = ''
+  sceneConfig.next_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
   sceneConfig.original_face_swap_enabled = false
@@ -1589,6 +1694,7 @@ const confirmSceneConfig = () => {
     if (sceneConfig.panel === 'model') {
       const engine = normalizeVideoEngine(sceneConfig.engine)
       scene.engine = engine
+      scene.aspect_ratio = normalizeVideoAspectRatio(sceneConfig.aspect_ratio)
       scene.lora_items = normalizeVideoLoraItems(sceneConfig.video_lora_items)
       scene.lora_name = scene.lora_items[0]?.name || ''
       scene.lora_strength = scene.lora_items[0]?.strength ?? 1
@@ -1596,6 +1702,7 @@ const confirmSceneConfig = () => {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
       )
+      scene.next_scene_id = sceneConfig.next_scene_id || null
     }
   } else if (sceneConfig.kind === 'ai_video') {
     const scene = config.ai_video_scenes[sceneConfig.index]
@@ -1607,6 +1714,7 @@ const confirmSceneConfig = () => {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
       )
+      scene.next_scene_id = sceneConfig.next_scene_id || null
     }
   } else if (sceneConfig.kind === 'draw') {
     const scene = config.draw_scenes[sceneConfig.index]
@@ -2096,6 +2204,22 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'video'" label="视频比例" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.aspect_ratio"
+            data-testid="scene-video-aspect-ratio-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option
+              v-for="item in modelOptions.video_aspect_ratios"
+              :key="item"
+              :value="item"
+            >
+              {{ videoAspectRatioLabels[item] }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind !== 'video' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
@@ -2181,6 +2305,34 @@ onMounted(() => {
               {{ item.name || item.id }}
             </a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && (sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video')"
+          label="自动拼接下一个模板"
+          class="mb-4"
+        >
+          <a-select
+            v-model:value="sceneConfig.next_scene_id"
+            data-testid="scene-next-video-scene-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option
+              v-for="item in activeNextVideoSceneOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name || item.id }}
+            </a-select-option>
+          </a-select>
+          <div
+            v-if="activeVideoSceneChainPreview"
+            class="mt-2 text-xs text-slate-500"
+            data-testid="scene-video-chain-preview"
+          >
+            {{ activeVideoSceneChainPreview }}
+          </div>
         </a-form-item>
         <a-form-item
           v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"

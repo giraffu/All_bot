@@ -1013,6 +1013,7 @@
       "invalid_video_file": "❌ Invalid format. Please send a video file (.mp4, .mov, .avi).",
       "invalid_video": "❌ Unrecognized input. Please send a video file.",
       "download_image_failed": "❌ Failed to download the image. Please try again or send /cancel to exit.",
+      "image_processing_failed": "❌ Image processing failed. No task was submitted and no credits were charged. Please try another image.",
       "download_video_failed": "❌ Failed to download the video. The file may be too large. Please try again or send /cancel to exit.",
       "expired_restart": "⚠️ The state expired. Please tap the menu again to restart the task.",
       "expired_cleaned": "⚠️ The state has expired or was cleaned up. Please send /cancel and start again.",

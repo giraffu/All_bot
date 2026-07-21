@@ -49,11 +49,16 @@ from src.services.qqcc_config_service import (
     get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
+    get_enabled_qqcc_video_scenes,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
     render_qqcc_copywriting,
+)
+from src.services.qqcc_video_scene_chain_service import (
+    QqccVideoSceneChainError,
+    resolve_qqcc_video_scene_chain,
 )
 from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
 from src.services.qqcc_runtime_context import (
@@ -73,6 +78,7 @@ from src.services.quick_video_submission_service import (
     resolve_qqcc_video_scene_task_type,
     run_quick_video_submission_plan,
 )
+from src.services.qqcc_video_frame_adapter import QqccVideoFrameAdaptationError
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
@@ -88,6 +94,7 @@ from src.utils import (
     create_background_task,
     robust_edit_text,
     robust_reply_text,
+    robust_send_message,
     safe_answer_query,
 )
 import contextlib
@@ -123,6 +130,20 @@ QUICK_VIDEO_MODE_CONFIG_KEYS = {
 }
 
 _t = translate_fsm_text
+
+
+async def _run_quick_video_submission_with_error_notice(
+    *, context, chat_id: int, submission
+):
+    try:
+        await submission
+    except QqccVideoFrameAdaptationError as exc:
+        logger.warning("QQCC video frame adaptation failed: %s", exc)
+        await robust_send_message(
+            context.bot,
+            chat_id,
+            _t(context, "fsm.common.image_processing_failed"),
+        )
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
@@ -210,6 +231,28 @@ async def _resolve_quick_video_allowed_settings(
     ]
 
     return allowed_resolutions, allowed_durations, user_group, user_identity
+
+
+def _qqcc_chain_allows_1024p(
+    qqcc_config: dict | None,
+    fsm_data: dict | None,
+) -> bool:
+    if not qqcc_config or not fsm_data or fsm_data.get("scene_kind") == "ai_video":
+        return True
+    root_scene_id = str(fsm_data.get("scene_id") or "").strip()
+    if not root_scene_id:
+        return True
+    chain_config = dict(qqcc_config)
+    chain_config["video_scenes"] = get_enabled_qqcc_video_scenes(qqcc_config)
+    try:
+        scenes = resolve_qqcc_video_scene_chain(
+            chain_config,
+            scene_kind="video",
+            root_scene_id=root_scene_id,
+        )
+    except QqccVideoSceneChainError:
+        return False
+    return all(str(scene.get("duration") or "") != "10s" for scene in scenes)
 
 
 def _strip_menu_prefix(text: str) -> str:
@@ -348,6 +391,13 @@ async def _build_quick_video_settings_markup(
             res
             for res in allowed_resolutions
             if not (res == "1024p" and duration == "10s")
+            and not (
+                res == "1024p"
+                and not _qqcc_chain_allows_1024p(
+                    qqcc_config,
+                    context.user_data.get("quick_video_data"),
+                )
+            )
         ]
         for res in visible_resolutions:
             base_cost = RESOLUTION_COST.get(res, 6)
@@ -625,6 +675,10 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             res
             for res in allowed_resolutions
             if not (res == "1024p" and fsm_data.get("duration") == "10s")
+            and not (
+                res == "1024p"
+                and not _qqcc_chain_allows_1024p(qqcc_config, fsm_data)
+            )
         ]
         if not allowed_resolutions:
             await _reply_qqcc_feature_disabled(update, context)
@@ -778,18 +832,22 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     create_background_task(
         context,
-        run_quick_video_submission_plan(
-            plan=plan,
+        _run_quick_video_submission_with_error_notice(
             context=context,
             chat_id=update.effective_chat.id,
-            user_id=user_id,
-            username=update.effective_user.username,
-            image_path=image_path,
-            status_msg_id=getattr(status_message, "message_id", None),
-            process_video_task_template_func=process_video_task_template,
-            process_generation_task_func=process_generation_task,
-            download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
-            cleanup_temp_files_func=cleanup_fsm_temp_files,
+            submission=run_quick_video_submission_plan(
+                plan=plan,
+                context=context,
+                chat_id=update.effective_chat.id,
+                user_id=user_id,
+                username=update.effective_user.username,
+                image_path=image_path,
+                status_msg_id=getattr(status_message, "message_id", None),
+                process_video_task_template_func=process_video_task_template,
+                process_generation_task_func=process_generation_task,
+                download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
+                cleanup_temp_files_func=cleanup_fsm_temp_files,
+            ),
         ),
     )
 
