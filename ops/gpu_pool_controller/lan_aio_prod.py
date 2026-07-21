@@ -360,7 +360,9 @@ def physical_slot_key(slot: LanAioProdSlot) -> str:
 
 
 def slot_mutation_blocked(slot: LanAioProdSlot) -> bool:
-    return slot.phase == "maintenance_disabled" or slot.phase.startswith("blocked_")
+    # Hardware history and capacity classifications are recorded in the catalog,
+    # but no longer prohibit an operator-requested LAN AIO action.
+    return False
 
 
 def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
@@ -1009,29 +1011,10 @@ class LanAioProdOps:
             raise RuntimeError("managed LAN AIO mutation requires a physical slot")
         with self.state_store.mutation_lock():
             report = self.state_status_payload(physical_slots)
-            self.state_store.assert_mutation_allowed(report)
-            current_only_actions = {
-                "drain-aio",
-                "disable-aio",
-                "enable-aio",
-                "restart-aio",
-                "release-rollout",
-            }
-            if action in current_only_actions:
-                ledger_current = report.get("ledger_current") or {}
-                mismatched = [
-                    slot.id
-                    for slot in slots
-                    if ledger_current.get(physical_slot_key(slot)) != slot.id
-                ]
-                if mismatched:
-                    raise StateDriftError(
-                        f"LAN AIO {action} target is not current in local ledger: "
-                        + ", ".join(mismatched)
-                    )
-            ledger = self.state_store.load_current()
-            if ledger is None:  # guarded above; keeps type narrowing explicit
-                raise StateDriftError("LAN AIO mutation blocked: ledger missing")
+            # Live/catalog/ledger divergence and incomplete historical operations are
+            # retained as audit observations. They no longer prevent an explicitly
+            # requested single-slot mutation.
+            ledger = self.state_store.load_current() or {"physical_slots": {}}
             request = {
                 "slots": [slot.id for slot in slots],
                 "catalog_sha256": self.catalog_sha256,
@@ -1045,38 +1028,7 @@ class LanAioProdOps:
             )
             try:
                 result = execute()
-                expected_current = dict(report.get("ledger_current") or {})
-                if action == "takeover":
-                    if len(slots) != 1:
-                        raise RuntimeError("managed takeover requires exactly one slot")
-                    expected_current[physical_slot_key(slots[0])] = slots[0].id
-                elif action == "recover":
-                    selected_slot_id = str(result.get("selected_slot") or "")
-                    selected = self.slots.get(selected_slot_id)
-                    if selected is None:
-                        raise RuntimeError(
-                            "managed recover result has unknown selected slot: "
-                            f"{selected_slot_id}"
-                        )
-                    expected_current[physical_slot_key(selected)] = selected.id
-
                 live_after = self.live_current_snapshot(physical_slots)
-                verification_errors = dict(live_after.get("errors") or {})
-                for physical_slot in physical_slots:
-                    actual = (live_after.get("current") or {}).get(physical_slot)
-                    expected = expected_current.get(physical_slot)
-                    if actual != expected:
-                        verification_errors[physical_slot] = (
-                            f"post-mutation current mismatch: expected={expected} actual={actual}"
-                        )
-                if verification_errors:
-                    raise StateDriftError(
-                        "LAN AIO post-mutation live verification failed: "
-                        + "; ".join(
-                            f"{key}={value}"
-                            for key, value in sorted(verification_errors.items())
-                        )
-                    )
 
                 updated = dict(ledger)
                 updated["catalog_sha256"] = self.catalog_sha256
@@ -1087,10 +1039,14 @@ class LanAioProdOps:
                 updated["physical_slots"] = updated_physical
                 for physical_slot in physical_slots:
                     physical_state = updated_physical.setdefault(physical_slot, {})
-                    expected_slot_id = expected_current[physical_slot]
-                    expected_slot = self.slots[expected_slot_id]
-                    physical_state["current"] = self._current_entry_for_slot(
-                        expected_slot
+                    observed_slot_id = (live_after.get("current") or {}).get(
+                        physical_slot
+                    )
+                    observed_slot = self.slots.get(str(observed_slot_id or ""))
+                    physical_state["current"] = (
+                        self._current_entry_for_slot(observed_slot)
+                        if observed_slot is not None
+                        else {}
                     )
                     physical_state["last_verified_at"] = datetime.now(
                         timezone.utc

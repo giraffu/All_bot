@@ -24,7 +24,7 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 
 - `lan_aio_prod_slots.yml`：Git 声明式 catalog，只保存物理卡/端口、候选 profile、镜像与模型 manifest、稳定阻断策略；catalog v2 的 legacy `enabled/phase/old_runtime` 字段不再表示 current。
 - XDG `current.yml`：本地主 operator 的 last-known 运行态账本，记录 current、cache、最近验证与 operation ID；`history/<operation-id>.json` 保存成功、失败和回滚审计。
-- live status：观测现实，不是自动覆盖源。live、ledger、catalog 任一不一致都报告 drift 并停止 mutation；live 不可达时 ledger 只显示 last-known，不能授权 mutation。
+- live status：观测现实，不是自动覆盖源。live、ledger、catalog 的不一致会记录为 drift 审计，但不阻断已经明确授权的单 slot mutation；live 不可达时 ledger 只显示 last-known。
 - `lan_aio_fleet_state.legacy.yml`：只供首次 `state-init` 的冻结迁移种子，普通操作绝不更新。
 
 发布与 CI 边界：
@@ -78,10 +78,10 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。
 - 不 reboot GPU 主机，不 restart Docker daemon，除非用户明确要求维护窗口。
 - 切换前必须确认当前 slot 无 running task；等待自然空闲，不强杀任务。
-- `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 不允许直接 takeover，除非先通过配置和验证解除阻断。
-- `wan22_video_v2` 在 32GB 卡上有 OOM 历史；启用前必须确认 state 文件和 docs 没有阻断说明。
-- helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时停止并报告。
-- `takeover/recover/restart-aio/warm-cache/pull-image` 等 mutation 先持有本地单实例锁并通过 live/ledger/catalog 三方门禁；未完成 operation 阻止后续 mutation。
+- `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 与 OOM/Xid 记录仅作为 catalog 审计信息，不阻断显式 slot 操作。
+- profile 的最低显存与实际显存只作为 canary 遥测，不构成启动或接单门禁。
+- helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时报告；容器、Central 与 ComfyUI 健康验证仍必须执行。
+- `takeover/recover/restart-aio/warm-cache/pull-image` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续 mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
 
 ## 4. 标准流程

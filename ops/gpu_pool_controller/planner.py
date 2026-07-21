@@ -79,12 +79,6 @@ class GpuPoolPlanner:
             warnings.append(
                 "docker runtime is not marked managed; execute requires an explicit maintenance window"
             )
-        if profile.min_vram_gb is not None and comfy.gpu_index is not None:
-            gpu = next((item for item in node.gpus if item.index == comfy.gpu_index), None)
-            if gpu and gpu.vram_gb < profile.min_vram_gb:
-                warnings.append(
-                    f"gpu vram {gpu.vram_gb:g}GB below profile minimum {profile.min_vram_gb:g}GB"
-                )
         for bundle_id in profile.model_bundles:
             if bundle_id not in self.config.bundles:
                 warnings.append(f"model bundle {bundle_id} is not defined")
