@@ -122,6 +122,8 @@ QQCC Config 专用 LoRA 的“可配置”和“运行时可加载”是两个�
 
 不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或主 Bot 完整 gallery 菜单入口。`修仙市集` 只能通过 QQCC 专用 handler 与 `qg:` callback 实现轻量浏览/应用。
 
+AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata，结果按钮除“重新生成”外还提供“换个主题”“生成动图”“生成视频”。换主题从该 History 的用户原图开始并选择新的绘图场景；动图和视频从该 History 的最终生成图开始并分别选择当前可用的 AI动图和 AI视频场景。每次点击均重新校验 History 归属、场景有效性和灵石余额，临时素材只用于这一条后续提交。
+
 ## 3. 代码入口
 
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。

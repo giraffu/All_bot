@@ -675,6 +675,7 @@ def test_build_result_reply_markup_adds_qqcc_regenerate_button_when_context_pres
                 "kind": "quick_image",
                 "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
                 "scene_id": "soft_light",
+                "scene_kind": "draw",
                 "display_mode_name": "柔光写真",
             }
         },
@@ -687,6 +688,9 @@ def test_build_result_reply_markup_adds_qqcc_regenerate_button_when_context_pres
         if button.callback_data
     ]
     assert callbacks[0] == "qqcc_regenerate:task-qqcc"
+    assert "qfu:t:task-qqcc" in callbacks
+    assert "qfu:m:task-qqcc" in callbacks
+    assert "qfu:v:task-qqcc" in callbacks
     assert "submit_gallery_task-qqcc" not in callbacks
     assert "public_share_request" not in callbacks
 
