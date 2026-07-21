@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import (
     IMAGE_LORA_MODELS,
-    VIDEO_LORA_MODELS,
     normalize_ltx_video_lora_items,
 )
 from src.qqcc_ltx_lora_catalog import (
@@ -23,6 +22,11 @@ from src.qqcc_video_lora_catalog import (
     normalize_qqcc_video_lora_items,
 )
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
+from src.services.qqcc_video_frame_adapter import (
+    QQCC_VIDEO_ASPECT_RATIOS,
+    QQCC_VIDEO_ASPECT_SOURCE,
+    normalize_qqcc_video_aspect_ratio,
+)
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 SCENE_PRESET_VERSION = 1
@@ -188,6 +192,7 @@ def _default_video_scenes(
             "prompt": _preset_prompt(scene["prompt_key"], raw_prompts),
             "negative_prompt": "",
             "duration": "5s",
+            "aspect_ratio": QQCC_VIDEO_ASPECT_SOURCE,
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
             "lora_strength": 1.0,
@@ -621,6 +626,9 @@ def _normalize_video_scene(
             raw_scene.get("negative_prompt")
         ),
         "duration": duration,
+        "aspect_ratio": normalize_qqcc_video_aspect_ratio(
+            raw_scene.get("aspect_ratio")
+        ),
         "engine": engine,
         "lora_name": first_lora["name"] if first_lora else "",
         "lora_strength": first_lora["strength"] if first_lora else 1.0,
@@ -1020,6 +1028,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "prompt": prompt,
                 "negative_prompt": "",
                 "duration": "5s",
+                "aspect_ratio": QQCC_VIDEO_ASPECT_SOURCE,
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
                 "lora_strength": 1.0,
@@ -1321,6 +1330,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
         "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),
         "video_engines": [
             {
                 "value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,

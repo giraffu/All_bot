@@ -261,6 +261,7 @@ describe('QqccBotSettings', () => {
             negative_prompt: 'video negative',
             duration: '8s',
             engine: 'image_to_video',
+            aspect_ratio: '9:16',
             lora_name: 'BreastGrow',
             end_frame_draw_scene_id: '',
           },
@@ -317,6 +318,7 @@ describe('QqccBotSettings', () => {
           { value: 'image_to_video', supports_lora: true },
           { value: 'wan22_video_v2', supports_lora: true },
         ],
+        video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
         draw_engines: [
           { value: 'free_edit', supports_lora: true },
           { value: 'free_edit_v2', supports_lora: false },
@@ -681,6 +683,7 @@ describe('QqccBotSettings', () => {
         negative_prompt: 'video bad hands',
         duration: '10s',
         engine: 'image_to_video',
+        aspect_ratio: '9:16',
         lora_name: 'BreastGrow',
         lora_strength: 0.7,
         lora_items: [{ name: 'BreastGrow', strength: 0.7 }],
@@ -834,6 +837,7 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].prompt).toBe('turn around')
     expect(payload.video_scenes[0].negative_prompt).toBe('motion blur')
     expect(payload.video_scenes[0].engine).toBe('image_to_video')
+    expect(payload.video_scenes[0].aspect_ratio).toBe('source')
     expect(payload.video_scenes[0].lora_name).toBe('')
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
   })
@@ -1045,6 +1049,26 @@ describe('QqccBotSettings', () => {
       { name: 'Cunilingus', strength: 0.9 },
       { name: 'Footjob', strength: 1.4 },
     ])
+  })
+
+  it('loads, changes, saves, and reloads a video scene aspect ratio', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-model-0"]').trigger('click')
+    const ratioSelect = wrapper.get('[data-testid="scene-video-aspect-ratio-select"]')
+    expect((ratioSelect.element as HTMLSelectElement).value).toBe('9:16')
+    expect(ratioSelect.text()).toContain('跟随原图')
+    await ratioSelect.setValue('16:9')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].video_scenes[0].aspect_ratio).toBe('16:9')
+    await wrapper.get('[data-testid="config-video-scene-model-0"]').trigger('click')
+    expect(
+      (wrapper.get('[data-testid="scene-video-aspect-ratio-select"]').element as HTMLSelectElement).value,
+    ).toBe('16:9')
   })
 
   it('saves AI video negative prompt and up to three LTX LoRAs with strengths', async () => {

@@ -85,6 +85,73 @@ async def test_private_continuation_ltx_executor_resumes_with_original_and_curre
     }
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("executor", ["generation", "legacy_video"])
+async def test_private_video_executor_restores_aspect_policy_without_leaking_internal_kwarg(
+    executor,
+):
+    checkpoint = SimpleNamespace(
+        original_input_ref="durable/original.png",
+        current_output_ref="durable/tail.png",
+        chat_id=456,
+        telegram_user_id=123,
+        username="tester",
+        status_message_id=77,
+    )
+    stage = {
+        "executor": executor,
+        "input_mode": "original_current",
+        "task_kwargs": {
+            "task_type": "wan22_video_v2",
+            "_qqcc_aspect_ratio": "9:16",
+            "cleanup": True,
+        },
+    }
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-video",
+        stage_index=1,
+        submission_sequence=2,
+        registry_task_id="task-video",
+        executor_token="token",
+    )
+    generation_task = AsyncMock(return_value=(b"video", "results/video.mp4"))
+    legacy_task = AsyncMock(return_value=(b"video", "results/video.mp4"))
+    cleanup_calls = []
+
+    async def download_frame(*, output_file, suffix, name_hint):
+        del suffix, name_hint
+        return f"/tmp/{output_file.rsplit('/', 1)[-1]}"
+
+    def adapt_frame(path, *, aspect_ratio):
+        assert aspect_ratio == "9:16"
+        return path.replace(".png", "-portrait.png")
+
+    await execute_private_qqcc_continuation_stage_default(
+        checkpoint,
+        stage,
+        ref,
+        SimpleNamespace(),
+        process_generation_task_func=generation_task,
+        process_video_task_template_func=legacy_task,
+        download_video_frame_to_fsm_temp_func=download_frame,
+        adapt_video_frame_file_func=adapt_frame,
+        cleanup_temp_files_func=lambda paths: cleanup_calls.extend(paths),
+    )
+
+    task = generation_task if executor == "generation" else legacy_task
+    kwargs = task.await_args.kwargs
+    assert "_qqcc_aspect_ratio" not in kwargs
+    if executor == "generation":
+        assert kwargs["images"] == [
+            "/tmp/original-portrait.png",
+            "/tmp/tail-portrait.png",
+        ]
+    else:
+        assert kwargs["image_path"] == "/tmp/original-portrait.png"
+        assert kwargs["end_image_path"] == "/tmp/tail-portrait.png"
+    assert cleanup_calls == ["/tmp/original.png", "/tmp/tail.png"]
+
+
 class MemoryContinuationStore:
     def __init__(self):
         self.items: dict[str, PrivateQqccContinuationCheckpoint] = {}

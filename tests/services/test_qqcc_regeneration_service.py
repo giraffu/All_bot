@@ -81,6 +81,7 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
                     "negative_prompt": "video blur",
                     "duration": "5s",
                     "engine": "image_to_video",
+                    "aspect_ratio": "16:9",
                     "lora_name": "BreastGrow",
                 }
             ],
@@ -125,6 +126,7 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
     assert submission.plan.mode == MODE_IMAGE_TO_VIDEO
     assert submission.plan.default_prompt_text == "video prompt"
     assert submission.plan.allow_contribute is False
+    assert submission.plan.aspect_ratio == "16:9"
     assert submission.plan.result_meta == history.extra_outputs
     download_input.assert_awaited_once_with(
         history=history,

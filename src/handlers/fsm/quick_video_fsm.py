@@ -73,6 +73,7 @@ from src.services.quick_video_submission_service import (
     resolve_qqcc_video_scene_task_type,
     run_quick_video_submission_plan,
 )
+from src.services.qqcc_video_frame_adapter import QqccVideoFrameAdaptationError
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
@@ -88,6 +89,7 @@ from src.utils import (
     create_background_task,
     robust_edit_text,
     robust_reply_text,
+    robust_send_message,
     safe_answer_query,
 )
 import contextlib
@@ -123,6 +125,20 @@ QUICK_VIDEO_MODE_CONFIG_KEYS = {
 }
 
 _t = translate_fsm_text
+
+
+async def _run_quick_video_submission_with_error_notice(
+    *, context, chat_id: int, submission
+):
+    try:
+        await submission
+    except QqccVideoFrameAdaptationError as exc:
+        logger.warning("QQCC video frame adaptation failed: %s", exc)
+        await robust_send_message(
+            context.bot,
+            chat_id,
+            _t(context, "fsm.common.image_processing_failed"),
+        )
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
@@ -778,18 +794,22 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     create_background_task(
         context,
-        run_quick_video_submission_plan(
-            plan=plan,
+        _run_quick_video_submission_with_error_notice(
             context=context,
             chat_id=update.effective_chat.id,
-            user_id=user_id,
-            username=update.effective_user.username,
-            image_path=image_path,
-            status_msg_id=getattr(status_message, "message_id", None),
-            process_video_task_template_func=process_video_task_template,
-            process_generation_task_func=process_generation_task,
-            download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
-            cleanup_temp_files_func=cleanup_fsm_temp_files,
+            submission=run_quick_video_submission_plan(
+                plan=plan,
+                context=context,
+                chat_id=update.effective_chat.id,
+                user_id=user_id,
+                username=update.effective_user.username,
+                image_path=image_path,
+                status_msg_id=getattr(status_message, "message_id", None),
+                process_video_task_template_func=process_video_task_template,
+                process_generation_task_func=process_generation_task,
+                download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
+                cleanup_temp_files_func=cleanup_fsm_temp_files,
+            ),
         ),
     )
 

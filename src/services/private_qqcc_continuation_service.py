@@ -21,6 +21,12 @@ from src.services.private_bot_update_admission import (
     activate_private_bot_update_scope,
     get_private_bot_submission_cursor,
 )
+from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
+from src.services.qqcc_video_frame_adapter import (
+    QQCC_VIDEO_ASPECT_SOURCE,
+    adapt_qqcc_video_frame_file,
+    normalize_qqcc_video_aspect_ratio,
+)
 from src.services.redis_client import redis_client
 
 
@@ -951,6 +957,39 @@ def _resolve_stage_images(
     return [current]
 
 
+async def _prepare_private_video_stage_images(
+    image_refs: list[str],
+    *,
+    aspect_ratio: str,
+    download_video_frame_to_fsm_temp_func,
+    adapt_video_frame_file_func,
+    cleanup_temp_files_func,
+) -> list[str]:
+    local_paths: list[str] = []
+    adapted_paths: list[str] = []
+    try:
+        for index, image_ref in enumerate(image_refs):
+            suffix = os.path.splitext(image_ref)[1] or ".png"
+            local_path = await download_video_frame_to_fsm_temp_func(
+                output_file=image_ref,
+                suffix=suffix,
+                name_hint=f"private_qqcc_video_frame_{index}",
+            )
+            local_paths.append(local_path)
+            adapted_path = await asyncio.to_thread(
+                adapt_video_frame_file_func,
+                local_path,
+                aspect_ratio=aspect_ratio,
+            )
+            adapted_paths.append(adapted_path)
+            if adapted_path != local_path:
+                cleanup_temp_files_func([local_path])
+        return adapted_paths
+    except BaseException:
+        cleanup_temp_files_func(list(dict.fromkeys(local_paths + adapted_paths)))
+        raise
+
+
 async def execute_private_qqcc_continuation_stage_default(
     checkpoint: PrivateQqccContinuationCheckpoint,
     stage: dict[str, Any],
@@ -960,6 +999,9 @@ async def execute_private_qqcc_continuation_stage_default(
     process_generation_task_func=None,
     process_video_task_template_func=None,
     process_ltx_video_task_func=None,
+    download_video_frame_to_fsm_temp_func=None,
+    adapt_video_frame_file_func=adapt_qqcc_video_frame_file,
+    cleanup_temp_files_func=cleanup_fsm_temp_files,
 ) -> tuple[bytes | None, str | None]:
     if process_generation_task_func is None:
         from src.services.task_service_generation_image import (
@@ -979,9 +1021,32 @@ async def execute_private_qqcc_continuation_stage_default(
         )
 
         process_ltx_video_task_func = process_ltx_video_task_for_actor
+    if download_video_frame_to_fsm_temp_func is None:
+        from src.services.wan22_video_v2_extension_service import (
+            download_output_file_to_fsm_temp,
+        )
+
+        download_video_frame_to_fsm_temp_func = download_output_file_to_fsm_temp
 
     executor = str(stage.get("executor") or "")
     task_kwargs = dict(stage.get("task_kwargs") or {})
+    aspect_ratio = normalize_qqcc_video_aspect_ratio(
+        task_kwargs.pop("_qqcc_aspect_ratio", QQCC_VIDEO_ASPECT_SOURCE)
+    )
+    prepared_video_images = None
+    if aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE and executor in {
+        "generation",
+        "legacy_video",
+    }:
+        prepared_video_images = await _prepare_private_video_stage_images(
+            _resolve_stage_images(checkpoint, stage),
+            aspect_ratio=aspect_ratio,
+            download_video_frame_to_fsm_temp_func=(
+                download_video_frame_to_fsm_temp_func
+            ),
+            adapt_video_frame_file_func=adapt_video_frame_file_func,
+            cleanup_temp_files_func=cleanup_temp_files_func,
+        )
     if executor == "generation" and task_kwargs.get("task_type") == "face_swap":
         # Legacy QQCC continuation checkpoints used the old execution label for
         # the internal original-face restoration stage. Standalone quick face
@@ -994,13 +1059,14 @@ async def execute_private_qqcc_continuation_stage_default(
                 chat_id=checkpoint.chat_id,
                 user_id=checkpoint.telegram_user_id,
                 username=checkpoint.username,
-                images=_resolve_stage_images(checkpoint, stage),
+                images=prepared_video_images
+                or _resolve_stage_images(checkpoint, stage),
                 status_msg_id=checkpoint.status_message_id,
                 **task_kwargs,
             )
             return result
         if executor == "legacy_video":
-            images = _resolve_stage_images(checkpoint, stage)
+            images = prepared_video_images or _resolve_stage_images(checkpoint, stage)
             if len(images) != 2:
                 raise PrivateQqccContinuationConflict(
                     "tail-frame video stage requires two inputs"

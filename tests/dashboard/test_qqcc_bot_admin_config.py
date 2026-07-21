@@ -11,6 +11,7 @@ from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+    build_qqcc_config_options,
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
     QQCC_SCENE_PRESET_PROMPTS,
@@ -502,12 +503,59 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "undress_tongue",
         "closeup_blowjob",
     ]
+    assert {scene["aspect_ratio"] for scene in config["video_scenes"]} == {"source"}
     assert resolve_qqcc_prompt(
         config,
         "face_swap",
         {"face_swap": "prompts ini fallback"},
         "default fallback",
     ) == "prompts ini fallback"
+
+
+@pytest.mark.parametrize("aspect_ratio", ["source", "9:16", "16:9", "1:1"])
+def test_normalize_qqcc_video_scene_keeps_supported_aspect_ratio(aspect_ratio):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {
+                    "id": "ratio_scene",
+                    "name": "比例场景",
+                    "prompt": "move",
+                    "aspect_ratio": aspect_ratio,
+                }
+            ],
+        }
+    )
+
+    assert config["video_scenes"][0]["aspect_ratio"] == aspect_ratio
+
+
+@pytest.mark.parametrize("aspect_ratio", [None, "", "4:3", 123])
+def test_normalize_qqcc_video_scene_defaults_invalid_aspect_ratio_to_source(
+    aspect_ratio,
+):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {
+                    "id": "ratio_scene",
+                    "name": "比例场景",
+                    "prompt": "move",
+                    "aspect_ratio": aspect_ratio,
+                }
+            ],
+        }
+    )
+
+    assert config["video_scenes"][0]["aspect_ratio"] == "source"
+
+
+def test_qqcc_config_options_expose_raw_video_aspect_ratio_values():
+    options = build_qqcc_config_options()
+
+    assert options["video_aspect_ratios"] == ["source", "9:16", "16:9", "1:1"]
 
 
 def test_normalize_qqcc_config_keeps_supported_copywriting_and_renders_scene_button():
@@ -609,6 +657,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "kissing prompt",
             "negative_prompt": "blur, low quality",
             "duration": "8s",
+                "aspect_ratio": "source",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
                 "lora_strength": 1.0,
@@ -621,6 +670,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "duplicate prompt",
             "negative_prompt": "",
             "duration": "10s",
+                "aspect_ratio": "source",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
                 "lora_strength": 1.0,
@@ -633,6 +683,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "safe id prompt",
             "negative_prompt": "",
             "duration": "5s",
+                "aspect_ratio": "source",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
                 "lora_strength": 1.0,
@@ -1603,6 +1654,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "prompt": "custom kiss prompt",
                 "negative_prompt": "bad hands",
                 "duration": "8s",
+                "aspect_ratio": "source",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "wan22_explicit_077",
                 "lora_strength": 1.0,
@@ -1632,6 +1684,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "prompt": "custom kiss prompt",
             "negative_prompt": "bad hands",
             "duration": "8s",
+            "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
@@ -1644,6 +1697,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "prompt": "custom missionary prompt",
             "negative_prompt": "",
             "duration": "10s",
+            "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 0.7,

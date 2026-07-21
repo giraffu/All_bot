@@ -34,6 +34,7 @@ type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
 type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
+type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
@@ -83,6 +84,7 @@ interface VideoSceneConfig extends SceneDemoFields {
   negative_prompt: string
   duration: DurationKey
   engine: VideoSceneEngine
+  aspect_ratio: VideoAspectRatio
   lora_name: string
   lora_strength: number
   lora_items: VideoLoraItem[]
@@ -172,6 +174,7 @@ interface QqccBotConfigOptions {
   default_ai_video_engine: AiVideoSceneEngine
   default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
+  video_aspect_ratios: VideoAspectRatio[]
   ai_video_engines: SceneEngineOption[]
   draw_engines: SceneEngineOption[]
   video_lora_models: LoraModelOption[]
@@ -226,6 +229,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   default_ai_video_engine: 'ltx_video',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
+  video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
@@ -374,6 +378,13 @@ const videoEngineLabels: Record<VideoSceneEngine, string> = {
   wan22_video_v2: '图生视频v2',
 }
 
+const videoAspectRatioLabels: Record<VideoAspectRatio, string> = {
+  source: '跟随原图',
+  '9:16': '9:16（竖屏）',
+  '16:9': '16:9（横屏）',
+  '1:1': '1:1（方形）',
+}
+
 const aiVideoEngineLabels: Record<AiVideoSceneEngine, string> = {
   ltx_video: '高级图生视频（LTX）',
 }
@@ -483,6 +494,7 @@ const sceneConfig = reactive({
   panel: 'model' as SceneConfigPanel,
   index: -1,
   engine: 'image_to_video',
+  aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
   video_lora_items: [] as VideoLoraItem[],
   lora_items: [] as AiVideoLoraItem[],
@@ -534,6 +546,9 @@ const showScenePageContaining = (kind: SceneConfigKind, index: number) => {
 
 const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
   value === 'wan22_video_v2' ? 'wan22_video_v2' : 'image_to_video'
+
+const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
+  value === '9:16' || value === '16:9' || value === '1:1' ? value : 'source'
 
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
 
@@ -800,6 +815,12 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
   }
+  if (Array.isArray(raw.video_aspect_ratios) && raw.video_aspect_ratios.length > 0) {
+    const ratios = raw.video_aspect_ratios
+      .map(normalizeVideoAspectRatio)
+      .filter((item, index, values) => values.indexOf(item) === index)
+    merged.video_aspect_ratios = ratios.length > 0 ? ratios : merged.video_aspect_ratios
+  }
   if (Array.isArray(raw.ai_video_engines) && raw.ai_video_engines.length > 0) {
     merged.ai_video_engines = raw.ai_video_engines
       .filter((item) => typeof item?.value === 'string')
@@ -1026,6 +1047,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           negative_prompt,
           duration,
           engine,
+          aspect_ratio: normalizeVideoAspectRatio(scene?.aspect_ratio),
           lora_name: loraItems[0]?.name || '',
           lora_strength: loraItems[0]?.strength ?? 1,
           lora_items: loraItems,
@@ -1102,6 +1124,7 @@ const addVideoScene = () => {
     negative_prompt: '',
     duration: '5s',
     engine: normalizeVideoEngine(modelOptions.default_video_engine),
+    aspect_ratio: 'source',
     lora_name: '',
     lora_strength: 1,
     lora_items: [],
@@ -1475,6 +1498,7 @@ const buildPayload = (): QqccBotConfig => {
         prompt: scene.prompt.trim(),
         negative_prompt: scene.negative_prompt.trim(),
         engine,
+        aspect_ratio: normalizeVideoAspectRatio(scene.aspect_ratio),
         lora_name: loraItems[0]?.name || '',
         lora_strength: loraItems[0]?.strength ?? 1,
         lora_items: loraItems,
@@ -1534,6 +1558,9 @@ const openSceneConfig = (
   sceneConfig.panel = panel
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
+  sceneConfig.aspect_ratio = kind === 'video'
+    ? normalizeVideoAspectRatio((scene as VideoSceneConfig).aspect_ratio)
+    : 'source'
   sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
   sceneConfig.video_lora_items = kind === 'video'
     ? normalizeVideoLoraItems(
@@ -1568,6 +1595,7 @@ const closeSceneConfig = () => {
   sceneConfig.index = -1
   sceneConfig.lora_items = []
   sceneConfig.video_lora_items = []
+  sceneConfig.aspect_ratio = 'source'
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
@@ -1589,6 +1617,7 @@ const confirmSceneConfig = () => {
     if (sceneConfig.panel === 'model') {
       const engine = normalizeVideoEngine(sceneConfig.engine)
       scene.engine = engine
+      scene.aspect_ratio = normalizeVideoAspectRatio(sceneConfig.aspect_ratio)
       scene.lora_items = normalizeVideoLoraItems(sceneConfig.video_lora_items)
       scene.lora_name = scene.lora_items[0]?.name || ''
       scene.lora_strength = scene.lora_items[0]?.strength ?? 1
@@ -2093,6 +2122,22 @@ onMounted(() => {
               :value="item.value"
             >
               {{ getEngineLabel(sceneConfig.kind, item.value) }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'video'" label="视频比例" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.aspect_ratio"
+            data-testid="scene-video-aspect-ratio-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option
+              v-for="item in modelOptions.video_aspect_ratios"
+              :key="item"
+              :value="item"
+            >
+              {{ videoAspectRatioLabels[item] }}
             </a-select-option>
           </a-select>
         </a-form-item>
