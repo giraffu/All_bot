@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "43c8007198d682350190ddb46a20f08ac758f8ee",
+  "batch": "wan22-lan-local-v11",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-wan22-lan-local-v11",
+  "members": [
+    {
+      "base_sha": "43c8007198d682350190ddb46a20f08ac758f8ee",
+      "branch": "codex/a-wan22-lan-local-v11",
+      "head": "2b36e81d9312c0daa6f35e8828a3a475b51717bd",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

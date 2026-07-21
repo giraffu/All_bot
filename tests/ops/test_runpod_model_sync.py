@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 MODULE_PATH = Path("remote_workers/scripts/runpod_sync_models_from_r2.py")
 
@@ -68,6 +70,23 @@ def test_runpod_model_sync_resumes_partial_download(monkeypatch, tmp_path):
         expected_size=len(payload),
         relative_path="checkpoints/big.safetensors",
     )
-
     assert client.offsets == [3, 5]
     assert temp_target.read_bytes() == payload
+
+
+def test_runpod_model_sync_rejects_invalid_lan_override(monkeypatch, tmp_path):
+    sync_module = _load_module()
+
+    class Client:
+        def get_object(self, *_args):
+            class Response:
+                def read(self):
+                    return b'{"files":[{"relative_path":"diffusion_models/v11.safetensors","size_bytes":2,"sha256":"00"}]}'
+                def close(self): pass
+                def release_conn(self): pass
+            return Response()
+
+    monkeypatch.setattr(sync_module, "_client_from_env", lambda: Client())
+    monkeypatch.setenv("RUNPOD_LAN_LOCAL_MODEL_OVERRIDES", '[{"relative_path":"diffusion_models/v11.safetensors","size_bytes":2,"sha256":"00"}]')
+    with pytest.raises(RuntimeError, match="LAN local model override is missing or invalid"):
+        sync_module.sync_models(bucket="models", prefix="wan", target_dir=tmp_path, verify_existing=True)

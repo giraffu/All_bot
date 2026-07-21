@@ -4,6 +4,8 @@
 
 ## 1. 目标与范围
 
+2026-07-21 起，`gpu-177-gpu0-wan22_video_v2` 可声明 LAN-only 本地模型 override：预热由 fleet helper 使用临时 Civitai 凭据将固定 SHA/大小的文件下载到该 slot workspace，R2 不新增对象，RunPod 保持旧 manifest 回退。运行及重启时同步器只接受通过校验的 override 文件；缺失或不匹配会 fail closed，不能以旧 R2 文件覆盖。
+
 本模块记录 AllBot 第一阶段 GPU 算力资源池方案。当前不是 K8s/K3s，也不是自动生产弹性伸缩系统；它是一个以声明式配置、dry-run 计划、canary 和受控 RunPod provider 为主的运维控制器。
 
 当前实现入口：

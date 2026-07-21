@@ -572,6 +572,11 @@ class RuntimePlanner:
                         "RUNPOD_MODEL_BUCKET": DEFAULT_LAN_MODEL_CACHE_BUCKET,
                         "RUNPOD_MODEL_PREFIX": model_prefix,
                         "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
+                        **(
+                            {"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES": json.dumps(profile.lan_local_model_overrides, separators=(",", ":"))}
+                            if profile.lan_local_model_overrides
+                            else {}
+                        ),
                         "RUNPOD_MODEL_TARGET_DIR": model_target_dir,
                         "RUNPOD_MODEL_SECURE": "false",
                         "RUNPOD_START_SSHD": "false",
@@ -631,7 +636,8 @@ class RuntimePlanner:
                 "model_cache_endpoint": model_cache_endpoint,
                 "model_cache_bucket": DEFAULT_LAN_MODEL_CACHE_BUCKET,
                 "model_prefix": model_prefix,
-                "model_manifest_key": model_manifest_key,
+                        "model_manifest_key": model_manifest_key,
+                        "lan_local_model_overrides": list(profile.lan_local_model_overrides),
                 "model_target_dir": model_target_dir,
                 "model_write_scope": [model_target_dir],
                 "central_url": central_url,

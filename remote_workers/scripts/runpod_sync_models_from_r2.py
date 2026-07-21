@@ -240,6 +240,10 @@ def sync_models(*, bucket: str, prefix: str, target_dir: Path, verify_existing: 
     downloaded: list[str] = []
     skipped: list[str] = []
     target_dir.mkdir(parents=True, exist_ok=True)
+    local_overrides = {
+        str(item["relative_path"]): item
+        for item in json.loads(os.getenv("RUNPOD_LAN_LOCAL_MODEL_OVERRIDES", "[]"))
+    }
     for raw_file in files:
         if not isinstance(raw_file, dict):
             raise RuntimeError("model manifest file entries must be objects")
@@ -248,6 +252,12 @@ def sync_models(*, bucket: str, prefix: str, target_dir: Path, verify_existing: 
         expected_sha256 = str(raw_file["sha256"])
         key = _object_key(raw_file, prefix)
         target = target_dir / relative_path
+        override = local_overrides.get(relative_path)
+        if override is not None:
+            if not _target_valid(target, expected_size=int(override["size_bytes"]), expected_sha256=str(override["sha256"]), verify=True):
+                raise RuntimeError(f"LAN local model override is missing or invalid: {relative_path}")
+            skipped.append(relative_path)
+            continue
         if _target_valid(
             target,
             expected_size=expected_size,

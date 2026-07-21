@@ -98,6 +98,7 @@ ENV_ALLOWLIST = {
     "LAN_AIO_MINIO_SECRET_KEY",
     "LAN_MODEL_CACHE_ACCESS_KEY",
     "LAN_MODEL_CACHE_SECRET_KEY",
+    "CIVITAI_API_TOKEN",
 }
 
 
@@ -2210,6 +2211,11 @@ class LanAioProdOps:
                 'test -n "${RUNPOD_MODEL_SECRET_KEY:-}"',
                 'mkdir -p "${RUNPOD_MODEL_TARGET_DIR:?}"',
                 (
+                    'python3 "$remote_root/scripts/runpod_sync_local_models.py" '
+                    '--target-dir "$RUNPOD_MODEL_TARGET_DIR" '
+                    if metadata.get("lan_local_model_overrides") else ""
+                ),
+                (
                     "python3 - <<'PY' || "
                     'python3 -m pip install --no-cache-dir -r "$remote_root/requirements.txt"\n'
                     "import minio\n"
@@ -2248,6 +2254,11 @@ class LanAioProdOps:
             "-v",
             f"{workspace_host_dir}:/workspace",
         ]
+        if metadata.get("lan_local_model_overrides"):
+            docker_command.extend([
+                "-e", f"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES={json.dumps(metadata['lan_local_model_overrides'], separators=(',', ':'))}",
+                "-e", "CIVITAI_API_TOKEN=" + self.env_values.get("CIVITAI_API_TOKEN", ""),
+            ])
         if model_workspace_host_dir != workspace_host_dir:
             docker_command.extend(
                 ["-v", f"{model_host_dir}:{model_target_dir}"]
