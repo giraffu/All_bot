@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .config_loader import CONFIG_DIR, ControllerConfig, load_controller_config
 from .lan_aio_state import (
@@ -36,6 +36,7 @@ DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
 REMOTE_WORKERS_TARGET_DIR = "/opt/allbot/runtime/remote_workers"
 CONTROL_TTL_SECONDS = 3600
+IMAGE_PULL_TIMEOUT_SECONDS = 3600
 WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
 TAKEOVER_STEPS = (
     "preflight",
@@ -1009,7 +1010,21 @@ class LanAioProdOps:
             raise RuntimeError("managed LAN AIO mutation requires a physical slot")
         with self.state_store.mutation_lock():
             report = self.state_status_payload(physical_slots)
-            self.state_store.assert_mutation_allowed(report)
+            drift = list(report.get("drift") or [])
+            recoverable_duplicate_slots = (
+                action == "recover"
+                and drift
+                and all(
+                    isinstance(item, Mapping)
+                    and item.get("kind") == "live_unavailable"
+                    and str(item.get("error", "")).startswith(
+                        "multiple running catalog slots:"
+                    )
+                    for item in drift
+                )
+            )
+            if not recoverable_duplicate_slots:
+                self.state_store.assert_mutation_allowed(report)
             current_only_actions = {
                 "drain-aio",
                 "disable-aio",
@@ -1764,15 +1779,10 @@ class LanAioProdOps:
         for host, host_slots in touched_hosts.items():
             self._configure_registry_on_host(host)
             for slot in host_slots:
-                port = _legacy_port_for_slot(self.config, slot)
-                self._ssh(
-                    host,
-                    (
-                        f"docker inspect -f '{{{{.State.Status}}}}' "
-                        f"'{slot.old_runtime_container}' >/dev/null && "
-                        f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null"
-                    ),
-                )
+                # Docker restart may leave the retained rollback container stopped.
+                # Verify the selected slot's own health endpoint instead of treating a
+                # stopped rollback candidate as a registry-configuration failure.
+                self._wait_container_health(slot)
         return {
             "ok": True,
             "action": "configure-registry",
@@ -1803,7 +1813,7 @@ class LanAioProdOps:
                 self._ssh(
                     slot.ssh_host,
                     f"pkill -f '^{pull_pattern}$' || true; "
-                    f"timeout 300 docker pull '{image_ref}'",
+                    f"timeout {IMAGE_PULL_TIMEOUT_SECONDS} docker pull '{image_ref}'",
                     capture=True,
                 )
             except subprocess.CalledProcessError as exc:
@@ -2904,10 +2914,36 @@ data["insecure-registries"] = sorted(registries)
 print(json.dumps(data, indent=2, sort_keys=True))
 PY
 sudo_cmd install -m 0644 /tmp/allbot-daemon.json /etc/docker/daemon.json
+python3 - <<'PY' >/tmp/allbot-lan-aio-registry-proxy.conf
+import shlex
+import subprocess
+
+raw = subprocess.check_output(
+    ["systemctl", "show", "--property=Environment", "--value", "docker"],
+    text=True,
+).strip()
+environment = {}
+for item in shlex.split(raw):
+    if "=" in item:
+        key, value = item.split("=", 1)
+        environment[key] = value
+no_proxy = [entry.strip() for entry in environment.get("NO_PROXY", "").split(",")]
+for entry in ("192.168.1.115", "192.168.1.115:5000"):
+    if entry not in no_proxy:
+        no_proxy.append(entry)
+merged = ",".join(entry for entry in no_proxy if entry)
+print("[Service]")
+print(f'Environment="NO_PROXY={merged}"')
+print(f'Environment="no_proxy={merged}"')
+PY
+sudo_cmd install -d -m 0755 /etc/systemd/system/docker.service.d
+sudo_cmd install -m 0644 /tmp/allbot-lan-aio-registry-proxy.conf /etc/systemd/system/docker.service.d/zz-allbot-lan-aio-registry.conf
+sudo_cmd systemctl daemon-reload
 sudo_cmd systemctl restart docker
 deadline=$((SECONDS + 240))
 while [ "$SECONDS" -lt "$deadline" ]; do
-  if docker info 2>/dev/null | grep -q "192.168.1.115:5000"; then
+  if docker info 2>/dev/null | grep -q "192.168.1.115:5000" && \
+    docker info --format '{{.NoProxy}}' 2>/dev/null | grep -q "192.168.1.115:5000"; then
     exit 0
   fi
   sleep 3
