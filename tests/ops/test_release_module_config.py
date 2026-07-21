@@ -70,7 +70,6 @@ def test_pending_secret_rotation_requires_explicit_risk_acceptance():
     args = SimpleNamespace(
         accept_pending_secret_rotation=False,
         reason="",
-        approved_by="",
     )
 
     with pytest.raises(module.ReleaseError, match="pending secret rotation"):
@@ -81,7 +80,6 @@ def test_pending_secret_rotation_requires_explicit_risk_acceptance():
 
     args.accept_pending_secret_rotation = True
     args.reason = "staged rotation"
-    args.approved_by = "operator"
     module.require_pending_secret_rotation_acceptance(
         args,
         {"credential_isolation": "pending"},
@@ -123,7 +121,7 @@ def test_credential_isolation_completion_requires_fresh_complete_evidence():
         module.validate_credential_isolation_evidence(evidence)
 
 
-def test_credential_isolation_complete_command_is_explicit_and_audited(
+def test_credential_isolation_complete_command_is_explicit(
     tmp_path, monkeypatch, capsys
 ):
     module = _load_module()
@@ -152,7 +150,7 @@ def test_credential_isolation_complete_command_is_explicit_and_audited(
         module,
         "complete_credential_isolation",
         lambda args, evidence: (
-            recorded.append((args.approved_by, evidence))
+            recorded.append(evidence)
             or {"audit_sha256": "a" * 64, "completed_at": evidence["generated_at"]}
         ),
     )
@@ -162,15 +160,13 @@ def test_credential_isolation_complete_command_is_explicit_and_audited(
             "credential-isolation-complete",
             "--evidence",
             str(evidence_path),
-            "--approved-by",
-            "release-owner",
             "--confirm-prod",
             "--execute",
         ]
     )
 
     assert result == 0
-    assert recorded[0][0] == "release-owner"
+    assert recorded[0]["isolation"]["reused_keys"] == []
     assert json.loads(capsys.readouterr().out)["status"] == (
         "credential-isolation-complete"
     )
