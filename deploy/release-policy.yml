@@ -64,7 +64,7 @@
     "deploy/env.schema.yml": "0706942a7ed19a399fa67b3ebf1b74dfb4981e3e60a7a79812cbc31ff6ad802f",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
     "src/qqcc_video_lora_catalog.py": "d019e33ce2978290f969473d5d43065a2a4ee825213b93c7c8264c94189816ae",
-    "src/services/qqcc_config_service.py": "533912ec7030390ed14f4e82d647f2ca0a4fd9fa3a787c385dadfffc7f2fa3c7",
+    "src/services/qqcc_config_service.py": "3cc5dbc568229bf25dddcd94587d726fa3a2a6f9ea6fa73928d99b13940ba262",
     "src/wan22_explicit_lora_catalog.py": "aa8cccb89214890d317121f724cddf2ebc8bee63d94fa907290c0829fe4e53b1"
   },
   "independent_release_blockers": [
