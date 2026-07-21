@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "89c2ba38b68cd94d8d318b66f354d44e465dee59",
+  "batch": "wan22-local-manifest-fallback",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-wan22-local-manifest-fallback",
+  "members": [
+    {
+      "base_sha": "89c2ba38b68cd94d8d318b66f354d44e465dee59",
+      "branch": "codex/a-wan22-local-manifest-fallback",
+      "head": "648df9dfa6d45d54419708b712e7a9fe822a7fbb",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
