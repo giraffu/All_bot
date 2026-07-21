@@ -80,6 +80,21 @@ def test_runtime_identity_gate_applies_only_to_runnable_service_artifacts():
     assert module._requires_runtime_identity("qqcc-config-frontend") is False
 
 
+def test_gpu_execution_images_do_not_claim_control_plane_runtime_identity():
+    module = _load_module()
+
+    assert (
+        module._requires_runtime_identity(
+            "wan22_video_v2", track="gpu-execution"
+        )
+        is False
+    )
+    assert (
+        module._requires_runtime_identity("worker-relay", track="test-execution")
+        is True
+    )
+
+
 def test_release_image_scan_can_select_only_artifacts_built_for_target_sha(tmp_path):
     module = _load_module()
     target_sha = "a" * 40

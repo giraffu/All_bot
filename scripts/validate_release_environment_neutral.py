@@ -192,13 +192,35 @@ def _release_images(
                     yield str(name), ref
 
 
+def _release_image_artifacts(
+    index_path: Path,
+    *,
+    only_source_sha: str | None = None,
+) -> Iterable[tuple[str, str, str]]:
+    index = _read_json(index_path, "release index")
+    for relative in index.get("manifests", {}).values():
+        manifest = _read_json(index_path.parent / str(relative), "release manifest")
+        track = str(manifest.get("track", ""))
+        for name, artifact in manifest.get("artifacts", {}).items():
+            if not isinstance(artifact, Mapping) or artifact.get("kind") != "image":
+                continue
+            if only_source_sha is not None and artifact.get("source_sha") != only_source_sha:
+                continue
+            ref = artifact.get("ref")
+            if isinstance(ref, str):
+                yield str(name), ref, track
+
+
 def _release_image_refs(index_path: Path) -> Iterable[str]:
     for _, ref in _release_images(index_path):
         yield ref
 
 
-def _requires_runtime_identity(artifact_name: str) -> bool:
-    return artifact_name not in NON_RUNNABLE_IDENTITY_ARTIFACTS
+def _requires_runtime_identity(artifact_name: str, *, track: str = "") -> bool:
+    return (
+        track != "gpu-execution"
+        and artifact_name not in NON_RUNNABLE_IDENTITY_ARTIFACTS
+    )
 
 
 def validate_image_config(
@@ -214,8 +236,8 @@ def validate_image_config(
             raise NeutralityError(
                 "image scan source SHA does not match the release index"
             )
-    for artifact_name, ref in sorted(
-        set(_release_images(index_path, only_source_sha=only_source_sha))
+    for artifact_name, ref, track in sorted(
+        set(_release_image_artifacts(index_path, only_source_sha=only_source_sha))
     ):
         pulled = subprocess.run(
             ["docker", "pull", ref],
@@ -249,7 +271,7 @@ def validate_image_config(
                     f"release image Config.Env contains environment-owned key {key}"
                 )
         _validate_image_filesystem(ref)
-        if _requires_runtime_identity(artifact_name):
+        if _requires_runtime_identity(artifact_name, track=track):
             _validate_image_runtime_identity(ref)
 
 
