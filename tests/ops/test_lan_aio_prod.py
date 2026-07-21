@@ -385,7 +385,7 @@ def test_lan_aio_fleet_render_keeps_gpu_177_gpu1_wan22_v2_blocked_slot_renderabl
         "SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video" not in rendered
     )
     assert (
-        "RUNPOD_MODEL_MANIFEST_KEY: wan22_video_v2/2026-07-21-pruned-v11/manifest.json"
+        "RUNPOD_MODEL_MANIFEST_KEY: wan22_video_v2/2026-07-18-lora5/manifest.json"
         in rendered
     )
     assert "--disable-dynamic-vram" in rendered

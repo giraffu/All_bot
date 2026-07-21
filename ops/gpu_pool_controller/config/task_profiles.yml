@@ -203,9 +203,11 @@ profiles:
     min_vram_gb: 48
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-    model_prefix: wan22_video_v2/2026-07-21-pruned-v11
-    model_manifest_key: wan22_video_v2/2026-07-21-pruned-v11/manifest.json
-    # LAN-only v11 UNets: downloaded directly to the active LAN workspace; never uploaded to R2.
+    # The R2 baseline stays on the old immutable manifest.  The two v11 UNets
+    # below replace its same relative paths only on the LAN worker, so no v11
+    # model object or manifest is needed in R2.
+    model_prefix: wan22_video_v2/2026-07-18-lora5
+    model_manifest_key: wan22_video_v2/2026-07-18-lora5/manifest.json
     lan_local_model_overrides:
       - relative_path: diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors
         source_url: https://civitai.com/api/download/models/2953474?type=Model&format=SafeTensor&size=pruned&fp=fp8
