@@ -3888,7 +3888,7 @@ def test_render_legacy_dashboard_rollback_materials_allows_missing_profile_pins(
         allow_legacy_missing_dashboard_profile_pins=True,
     )
 
-    assert "RUNPOD_RELEASE_PROFILE_PINS_JSON=" not in release_env
+    assert "RUNPOD_RELEASE_PROFILE_PINS_JSON={}" in release_env
 
 
 def test_independent_dashboard_release_uses_its_own_artifact_baseline():
@@ -4971,7 +4971,7 @@ def test_rollback_material_repair_command_materializes_without_preflight_loop(
         "selected_artifacts": ["qqcc-bot"],
         "artifacts": {},
     }
-    impact = module.ReleaseImpact(services={"qqcc-bot"}, level="rolling")
+    impact = module.ReleaseImpact(services={"qqcc-bot"}, level="maintenance")
     monkeypatch.setattr(
         module, "build_plan", lambda _args: (impact, manifest, FULL_SHA)
     )

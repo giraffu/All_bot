@@ -2036,8 +2036,9 @@ def render_track_release_env(
     """Render only image variables owned by one schema-v2 track.
 
     The legacy-pin exception is restricted to rollback-material recovery. It
-    lets an already deployed Dashboard baseline from before the pin contract
-    remain recoverable; normal plan/preflight/deploy rendering stays strict.
+    lets an already deployed baseline from before the pin contract remain
+    recoverable by projecting the old, unpinned behavior as an empty mapping;
+    normal plan/preflight/deploy rendering stays strict.
     """
 
     track = str(manifest.get("track", ""))
@@ -2095,6 +2096,8 @@ def render_track_release_env(
                 "RUNPOD_RELEASE_PROFILE_PINS_JSON="
                 + json.dumps(dict(pins), sort_keys=True, separators=(",", ":"))
             )
+        elif allow_legacy_missing_dashboard_profile_pins:
+            lines.append("RUNPOD_RELEASE_PROFILE_PINS_JSON={}")
     elif track == "test-execution":
         for name, variable in {
             "worker-agent": "ALLBOT_WORKER_AGENT_IMAGE",
@@ -7729,13 +7732,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "rollback material repair SHA is not the deployed module baseline"
                     )
                 if (
-                    impact.level != "rolling"
-                    or impact.requires_db_upgrade
+                    impact.requires_db_upgrade
                     or impact.blockers
                     or impact.unknown_paths
                 ):
                     raise ReleaseError(
-                        "rollback material repair requires a clean rolling module boundary"
+                        "rollback material repair requires a clean independent module boundary"
                     )
                 verify_operator_worktree_clean(
                     source_ref=str(manifest.get("source_ref", "refs/heads/main")),
