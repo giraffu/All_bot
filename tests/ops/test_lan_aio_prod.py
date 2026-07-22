@@ -2003,6 +2003,35 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
     ]
 
 
+def test_lan_aio_disabled_canary_queue_check_retries_transient_failure():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.attempts = 0
+            self.sleeps: list[float] = []
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise subprocess.CalledProcessError(28, command)
+            return ""
+
+        def _sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+
+    ops = RecordingOps()
+
+    ops._verify_comfy_queue_idle(ops.slots["gpu-252-gpu1-ltx_t2v"])
+
+    assert ops.attempts == 2
+    assert ops.sleeps == [5.0]
+
+
 def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
     class RecordingOps(LanAioProdOps):
         def __init__(self):

@@ -1133,15 +1133,20 @@ class LanAioProdOps:
                         }
                     else:
                         if not expected_slot_id:
-                            raise RuntimeError(
-                                "managed mutation lost expected current slot for "
-                                f"{physical_slot}"
+                            if not (
+                                not (physical_state.get("current") or {}).get("slot_id")
+                                and physical_state.get("intentionally_empty")
+                            ):
+                                raise RuntimeError(
+                                    "managed mutation lost expected current slot for "
+                                    f"{physical_slot}"
+                                )
+                        else:
+                            expected_slot = self.slots[expected_slot_id]
+                            physical_state["current"] = self._current_entry_for_slot(
+                                expected_slot
                             )
-                        expected_slot = self.slots[expected_slot_id]
-                        physical_state["current"] = self._current_entry_for_slot(
-                            expected_slot
-                        )
-                        physical_state.pop("intentionally_empty", None)
+                            physical_state.pop("intentionally_empty", None)
                     physical_state["last_verified_at"] = datetime.now(
                         timezone.utc
                     ).isoformat()
@@ -2074,13 +2079,22 @@ class LanAioProdOps:
             "pending=payload.get('queue_pending') or []; "
             "raise SystemExit(1 if running or pending else 0)"
         )
-        self._ssh(
-            slot.ssh_host,
-            (
-                f"curl -fsS --max-time 8 http://127.0.0.1:{slot.host_port}/queue "
-                f"| python3 -c {shlex.quote(checker)}"
-            ),
+        command = (
+            f"curl -fsS --max-time 8 http://127.0.0.1:{slot.host_port}/queue "
+            f"| python3 -c {shlex.quote(checker)}"
         )
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                self._ssh(slot.ssh_host, command)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt < 4:
+                    self._sleep(5.0)
+        raise RuntimeError(
+            f"ComfyUI queue did not become verifiably idle for {slot.id}"
+        ) from last_error
 
     def stop_disabled_canary(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         if len(slots) != 1:

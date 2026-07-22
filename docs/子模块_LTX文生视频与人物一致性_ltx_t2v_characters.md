@@ -150,3 +150,17 @@ Docker 或成功后会开启 intake 的 `recover/takeover` 都不能用于这类
 
 代码/容器 smoke 通过不等于 LAN 全链路通过；运行结果必须单独记录。RunPod、
 GHCR、autoscaler/canary 与共享环境发布属于下一阶段授权。
+
+### 6.1 2026-07-22 LAN 运行结果
+
+- `ltx_t2v/2026-07-22` 模型缓存与两个候选镜像的构建/registry 门禁已通过。
+- PornMaster disabled 候选通过 exact digest、warm-cache、heartbeat、
+  `/system_stats`、`/queue`、`/object_info` 与节点枚举；六视图 workflow 成功生成
+  6 个唯一输出，并由正式 materializer 拼为 1536×896 PNG。
+- 六视图完成后，`gpu-252/gpu1` 的 `GPU-8153a439-...` 先报 Xid 119
+  （GSP RPC timeout），随后报 Xid 154（GPU Reset Required）。Docker 无法收到
+  candidate 的退出事件，候选保持 Central disabled，但不能伪记为
+  `intentionally_empty`。
+- 因硬件门禁失败，LTX A/B、T2V、T2V-IC、音轨/R2 与 Web 端到端均未执行，
+  本轮 LAN 全链路明确不通过。恢复必须在同机 GPU0 空闲且取得明确维护授权后，
+  通过 operator 收口容器和 ledger；不得在当前状态继续启动 LTX 或启用 intake。
