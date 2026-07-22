@@ -81,6 +81,90 @@ async def test_perform_checkin_records_base_and_identity_bonus(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_perform_checkin_refreshes_stale_mortal_group_before_rejecting(
+    monkeypatch,
+):
+    async def fake_get_or_create_user_by_telegram(tg_id, username=None, full_name=None):
+        return SimpleNamespace(id=123), False
+
+    refreshed_user_ids = []
+    refreshed = False
+
+    async def refresh_user_group(user_id, is_member=None):
+        nonlocal refreshed
+        refreshed = True
+        refreshed_user_ids.append((user_id, is_member))
+        return "练气期"
+
+    async def get_user_group(user_id):
+        return "练气期" if refreshed else "凡人"
+
+    async def get_user_identity(user_id):
+        return "外门弟子"
+
+    async def get_user_credits(tg_id, username, full_name):
+        return 88
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        fake_get_or_create_user_by_telegram,
+    )
+    quota = _QuotaSpy()
+    service = PermissionGrowthChannelService(
+        quota,
+        refresh_user_group_func=refresh_user_group,
+        get_user_group_func=get_user_group,
+        get_user_identity_func=get_user_identity,
+        get_user_credits_func=get_user_credits,
+    )
+
+    result = await service.perform_checkin(54321, "tester", "测试修士")
+
+    assert result == (True, 88, "", 8, 10)
+    assert refreshed_user_ids == [(123, None), (123, None)]
+    assert quota.checkin_kwargs["checkin_user_group"] == "练气期"
+
+
+@pytest.mark.asyncio
+async def test_perform_checkin_allows_inner_disciple_when_group_remains_mortal(
+    monkeypatch,
+):
+    async def fake_get_or_create_user_by_telegram(tg_id, username=None, full_name=None):
+        return SimpleNamespace(id=123), False
+
+    async def refresh_user_group(user_id, is_member=None):
+        return "凡人"
+
+    async def get_user_group(user_id):
+        return "凡人"
+
+    async def get_user_identity(user_id):
+        return "内门弟子"
+
+    async def get_user_credits(tg_id, username, full_name):
+        return 88
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        fake_get_or_create_user_by_telegram,
+    )
+    quota = _QuotaSpy()
+    service = PermissionGrowthChannelService(
+        quota,
+        refresh_user_group_func=refresh_user_group,
+        get_user_group_func=get_user_group,
+        get_user_identity_func=get_user_identity,
+        get_user_credits_func=get_user_credits,
+    )
+
+    result = await service.perform_checkin(54321, "tester", "测试修士")
+
+    assert result == (True, 88, "", 8, 40)
+    assert quota.checkin_kwargs["checkin_user_group"] == "凡人"
+    assert quota.checkin_kwargs["checkin_identity_bonus"] == 30
+
+
+@pytest.mark.asyncio
 async def test_existing_user_cannot_be_attached_to_referral(monkeypatch):
     async def fake_get_or_create_user_by_telegram(
         tg_id, username=None, full_name=None

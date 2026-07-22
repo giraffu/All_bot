@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-22：签到资格判定前会重新计算修为，避免频道成员资格已写入而旧 `user_group=凡人` 被提前拒绝；动态有效的内门、核心、真传弟子即使修为仍显示凡人也可领取基础 `10` 灵石及对应身份加成，外门凡人仍须先入宗门。事实源为 `permission_growth_channel_service.py` 与 focused pytest 回归；本条未部署 test/prod。
+
 > 2026-07-22：正式晋级的 cloud-test artifact evidence 历史改为一次 SSH 批量流读取：远端仍按受限的 40 位 SHA 文件名筛选、倒序读取并逐条 JSON/main-channel/exact-digest 校验，但不再对每份 history 建立独立 SSH 连接。语义和 fail-closed 证据要求不变，修复高延迟连接导致 QQCC 发布预检卡住的问题。事实源为 `scripts/release.py` 与发布器回归；本条未部署 test/prod。
 > 2026-07-22：单人开发授权模型移除待秘密轮换的重复风险接受门禁。日常 `promote --confirm-prod` 不再要求 `--accept-pending-secret-rotation --reason`，pending 仅作为 release state 风险审计；main/CI、不可变 digest、配置闭包、健康、事务回滚、非目标完整性和 `--confirm-prod` 保持不变。历史的 `pending_secret_rotation_acceptance` 继续可读，轮换完成证据仍由 `credential-isolation-complete` 写入。事实源为 `scripts/release.py`、发布器回归、正式/不可变发布文档与 ops Skill；本条未部署 test/prod。
 > 2026-07-22：日常 `release.py promote` 的独立模块审批策略改为从候选不可变 SHA 读取默认 `deploy/release-policy.yml`。因此在落后的本地 checkout 发起 QQCC Bot + QQCC Config 发布时，候选提交中已审核的 Compose/运行时契约 SHA256 snapshot 能正确生效；自定义 `--policy` 仍是显式本地覆盖，任一未审核快照、migration 或未知共享契约仍 fail closed。事实源为发布器、专项回归、QQCC 文档与 ops Skill；本条未部署 test/prod。

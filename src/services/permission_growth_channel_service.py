@@ -3,6 +3,9 @@ from src.database.core import AsyncSessionLocal
 from src.quota import QuotaManager
 
 
+CHECKIN_IDENTITIES_ALLOWED_WHEN_MORTAL = {"内门弟子", "核心弟子", "真传弟子"}
+
+
 class PermissionGrowthChannelService:
     def __init__(
         self,
@@ -81,8 +84,17 @@ class PermissionGrowthChannelService:
         )
         internal_user_id = internal_user.id
 
+        # The channel status is normally persisted by the Telegram entrypoint.
+        # Recalculate here as well so a previously joined user whose stored group
+        # is still "凡人" is not rejected before the persisted membership can
+        # take effect. This also keeps non-Telegram callers on the same rule.
+        await self.refresh_user_group_func(internal_user_id)
         user_group = await self.get_user_group_func(internal_user_id)
-        if user_group == "凡人":
+        identity = await self.get_user_identity_func(internal_user_id)
+        if (
+            user_group == "凡人"
+            and identity not in CHECKIN_IDENTITIES_ALLOWED_WHEN_MORTAL
+        ):
             invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
             msg = (
                 "🚫 **凡人无法签到**\n\n"
@@ -91,7 +103,6 @@ class PermissionGrowthChannelService:
             )
             return False, 0, msg, 0, 0
 
-        identity = await self.get_user_identity_func(internal_user_id)
         base_reward = 10
         if user_group == "元婴期":
             base_reward = 20
