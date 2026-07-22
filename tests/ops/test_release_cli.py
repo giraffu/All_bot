@@ -4154,6 +4154,102 @@ def test_independent_module_rejects_shared_contract_changes(
         )
 
 
+def test_support_platform_allows_only_reviewed_additive_migration(monkeypatch):
+    module = _load_module()
+    path = "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py"
+    content = "reviewed additive migration\n"
+    policy = {
+        "independent_additive_migration_snapshots": {
+            "support-platform": {
+                path: hashlib.sha256(content.encode()).hexdigest(),
+            }
+        }
+    }
+    selection = module.IndependentModuleRelease(
+        name="support-platform",
+        artifacts={"dashboard-backend", "dashboard-frontend", "support-bot"},
+        previous_sha="b" * 40,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            _args[0], 0, stdout=content, stderr=""
+        ),
+    )
+
+    assert module.reviewed_additive_migration_paths(
+        policy,
+        selection,
+        [path],
+        target_sha=FULL_SHA,
+    ) == {path}
+    assert not module.reviewed_additive_migration_paths(
+        policy,
+        selection,
+        ["migrations/versions/other.py"],
+        target_sha=FULL_SHA,
+    )
+
+
+def test_support_platform_accepts_first_release_of_support_bot():
+    module = _load_module()
+    policy = {
+        "independent_modules": {
+            "support-platform": {
+                "artifacts": [
+                    "dashboard-backend",
+                    "dashboard-frontend",
+                    "support-bot",
+                ],
+                "initial_artifacts": ["support-bot"],
+            }
+        }
+    }
+    state = {
+        "schema_version": 2,
+        "git_sha": "a" * 40,
+        "artifacts": {
+            "dashboard-backend": {"source_sha": "b" * 40},
+            "dashboard-frontend": {"source_sha": "c" * 40},
+        },
+    }
+
+    selection = module.resolve_independent_module_release(
+        policy,
+        {"support-platform"},
+        state,
+    )
+
+    assert selection is not None
+    assert selection.artifacts == {
+        "dashboard-backend",
+        "dashboard-frontend",
+        "support-bot",
+    }
+    assert selection.source_shas == {"a" * 40, "b" * 40, "c" * 40}
+
+
+def test_user_authorized_no_maintenance_accepts_reviewed_additive_migration():
+    module = _load_module()
+    args = SimpleNamespace(
+        no_maintenance=True,
+        command="promote",
+        env="prod",
+        modules=["support-platform"],
+    )
+    impact = module.ReleaseImpact(
+        level="rolling",
+        requires_db_upgrade=True,
+        matched_rules=["reviewed-additive-migration"],
+    )
+
+    module.apply_user_authorized_no_maintenance(args, impact)
+
+    assert impact.level == "rolling"
+    assert args.maintenance_required is False
+
+
 def test_independent_module_accepts_pinned_owner_contract_snapshot(monkeypatch):
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)

@@ -83,7 +83,11 @@ FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 DEFAULT_BUNDLE_REPOSITORY = "ghcr.io/giraffu/allbot-release-v2"
-PROMOTE_DIRECT_ARTIFACTS = {"dashboard-backend", "dashboard-frontend"}
+PROMOTE_DIRECT_ARTIFACTS = {
+    "dashboard-backend",
+    "dashboard-frontend",
+    "support-bot",
+}
 REQUIRED_IMAGES = {
     "app",
     "central",
@@ -100,6 +104,7 @@ CONTROL_ARTIFACT_ENV = {
     "qqcc-bot": "ALLBOT_QQCC_BOT_IMAGE",
     "private-bot-worker": "ALLBOT_PRIVATE_BOT_WORKER_IMAGE",
     "paid-group-bot": "ALLBOT_PAID_GROUP_BOT_IMAGE",
+    "support-bot": "ALLBOT_SUPPORT_BOT_IMAGE",
     "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
     "qqcc-config-backend": "ALLBOT_QQCC_CONFIG_BACKEND_IMAGE",
     "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
@@ -112,6 +117,7 @@ CONTROL_ARTIFACT_SERVICE = {
     "main-bot": "bot",
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
+    "support-bot": "support-bot",
     "public-web": "web-static",
 }
 PROMOTE_ARTIFACT_SERVICE = {
@@ -127,6 +133,7 @@ PROMOTE_ARTIFACT_SERVICE = {
     "qqcc-config-frontend": "qqcc-config-frontend",
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
+    "support-bot": "support-bot",
 }
 GENERATION_MAINTENANCE_ARTIFACTS = {
     "central-api",
@@ -203,6 +210,7 @@ ENVIRONMENT = {
             "qqcc-bot",
             "qqcc-private-bot-worker",
             "paid-group-guard-bot",
+            "support-bot",
             "imgproxy",
         },
     },
@@ -407,17 +415,36 @@ def resolve_independent_module_release(
     if not isinstance(state_artifacts, Mapping):
         raise ReleaseError("independent module deployment state has no artifacts")
     name, artifacts = expanded
+    configured = policy.get("independent_modules")
+    initial_artifacts: set[str] = set()
+    if not isinstance(configured, Mapping):
+        raise ReleaseError("independent module policy is invalid")
+    for module_name in name.split("+"):
+        module_config = configured.get(module_name)
+        if not isinstance(module_config, Mapping):
+            raise ReleaseError("independent module policy is invalid")
+        raw_initial = module_config.get("initial_artifacts", [])
+        if not isinstance(raw_initial, list) or not all(
+            isinstance(value, str) and value for value in raw_initial
+        ):
+            raise ReleaseError("independent module policy is invalid")
+        initial_artifacts.update(raw_initial)
+    if not initial_artifacts <= artifacts:
+        raise ReleaseError("independent module initial artifacts are invalid")
     fallback_sha = str(state.get("git_sha", ""))
+    current_sha = validate_full_sha(fallback_sha)
     baselines: set[str] = set()
     for artifact_name in artifacts:
         artifact_state = state_artifacts.get(artifact_name)
         if not isinstance(artifact_state, Mapping):
+            if artifact_name in initial_artifacts:
+                baselines.add(current_sha)
+                continue
             raise ReleaseError(
                 f"independent module {name} has no deployed {artifact_name} baseline"
             )
         baseline = str(artifact_state.get("source_sha") or fallback_sha)
         baselines.add(validate_full_sha(baseline))
-    current_sha = validate_full_sha(fallback_sha)
     return IndependentModuleRelease(
         name=name,
         module_names=name.split("+"),
@@ -466,6 +493,15 @@ def validate_independent_release_paths(
             for path in normalized_paths
             if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
         )
+        if name == "database-migrations" and matches and target_sha:
+            reviewed = reviewed_additive_migration_paths(
+                policy,
+                selection,
+                matches,
+                target_sha=target_sha,
+            )
+            if reviewed == set(matches):
+                continue
         if (
             matches
             and target_sha
@@ -481,6 +517,49 @@ def validate_independent_release_paths(
                 f"independent module {selection.name} is blocked by {name}: "
                 + ", ".join(matches)
             )
+
+
+def reviewed_additive_migration_paths(
+    policy: Mapping[str, Any],
+    selection: IndependentModuleRelease,
+    changed_paths: Iterable[str],
+    *,
+    target_sha: str,
+) -> set[str]:
+    """Return exact reviewed additive migrations for this module and SHA."""
+
+    configured = policy.get("independent_additive_migration_snapshots")
+    if not isinstance(configured, Mapping):
+        return set()
+    target_sha = validate_full_sha(target_sha)
+    migration_paths = {
+        path.removeprefix("./")
+        for path in changed_paths
+        if path.removeprefix("./").startswith("migrations/")
+        or path.removeprefix("./") == "alembic.ini"
+    }
+    if not migration_paths:
+        return set()
+    snapshots: dict[str, str] = {}
+    for module_name in selection.module_names:
+        raw_snapshots = configured.get(module_name, {})
+        if not isinstance(raw_snapshots, Mapping):
+            raise ReleaseError("independent additive migration policy is invalid")
+        for path, expected in raw_snapshots.items():
+            if not isinstance(path, str) or not re.fullmatch(
+                r"[0-9a-f]{64}", str(expected)
+            ):
+                raise ReleaseError("independent additive migration policy is invalid")
+            snapshots[path] = str(expected)
+    if not migration_paths <= set(snapshots):
+        return set()
+    for path in migration_paths:
+        result = _run(["git", "show", f"{target_sha}:{path}"], check=False)
+        if result.returncode != 0:
+            return set()
+        if hashlib.sha256(result.stdout.encode()).hexdigest() != snapshots[path]:
+            return set()
+    return migration_paths
 
 
 def independent_contract_snapshot_matches(
@@ -1506,7 +1585,7 @@ def resolve_automatic_promote_modules(
     artifacts = release.manifests["control-plane"]["artifacts"]
     runtime = inspect_promote_runtime_artifacts(args)
     policy = (
-        load_promote_policy(Path(args.policy), sha)
+        load_promote_policy(Path(args.policy), str(args.sha))
         if getattr(args, "command", None) == "promote"
         else load_structured_file(Path(args.policy))
     )
@@ -1534,6 +1613,8 @@ def resolve_automatic_promote_modules(
             raw_module.get("artifacts"), list
         ):
             raise ReleaseError("independent module policy is invalid")
+        if raw_module.get("automatic", True) is False:
+            continue
         differs = False
         for artifact_name in raw_module["artifacts"]:
             target = artifacts.get(artifact_name)
@@ -2342,6 +2423,7 @@ def filter_enabled_cloud_services(
         .lower()
         in {"1", "true", "yes", "on"},
         "paid-group-guard-bot": bool(values.get("PAID_GROUP_BOT_TOKEN", "").strip()),
+        "support-bot": bool(values.get("SUPPORT_BOT_TOKEN", "").strip()),
     }
     disabled = {
         service
@@ -2415,6 +2497,7 @@ def legacy_cloud_containers(environment: str, selected: Iterable[str]) -> list[s
         "qqcc-bot": f"cloud-qqcc-bot-{suffix}",
         "qqcc-private-bot-worker": f"cloud-qqcc-private-bot-worker-{suffix}",
         "paid-group-guard-bot": f"cloud-paid-group-guard-bot-{suffix}",
+        "support-bot": f"cloud-support-bot-{suffix}",
     }
     chosen = set(selected)
     return [name for service, name in names.items() if service in chosen]
@@ -3356,6 +3439,17 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                         f"independent-artifact-scope:{independent_release.name}"
                     ],
                 )
+                reviewed_migrations = reviewed_additive_migration_paths(
+                    policy,
+                    independent_release,
+                    changed_paths,
+                    target_sha=sha,
+                )
+                if reviewed_migrations:
+                    planned_impact.requires_db_upgrade = True
+                    planned_impact.matched_rules.append(
+                        "reviewed-additive-migration"
+                    )
             else:
                 planned_impact = plan_changed_paths(policy, changed_paths)
         if dashboard_fast_track:
@@ -3602,8 +3696,11 @@ def apply_user_authorized_no_maintenance(
         "initial-release",
         "test-data-service-repair",
     }
+    reviewed_additive_migration = (
+        "reviewed-additive-migration" in impact.matched_rules
+    )
     if (
-        impact.requires_db_upgrade
+        (impact.requires_db_upgrade and not reviewed_additive_migration)
         or impact.blockers
         or impact.unknown_paths
         or locked_rules & set(impact.matched_rules)
@@ -3838,6 +3935,7 @@ def _deploy_cloud(
             "dashboard-frontend": "dashboard-frontend",
             "imgproxy": "imgproxy",
             "paid-group-guard-bot": "paid-group-bot",
+            "support-bot": "support-bot",
             "payment-api": "payment-api",
             "postgres": "postgres",
             "qqcc-bot": "qqcc-bot",
@@ -3865,6 +3963,7 @@ def _deploy_cloud(
             "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
             "imgproxy": "ALLBOT_IMGPROXY_IMAGE",
             "paid-group-guard-bot": "ALLBOT_APP_IMAGE",
+            "support-bot": "ALLBOT_APP_IMAGE",
             "payment-api": "ALLBOT_APP_IMAGE",
             "postgres": "ALLBOT_POSTGRES_IMAGE",
             "qqcc-bot": "ALLBOT_APP_IMAGE",
@@ -3902,7 +4001,7 @@ def _deploy_cloud(
                 f'test "$actual_revision" = {shlex.quote(expected_revisions[service])}\n'
             )
     polling_checks = ""
-    polling_services = {"bot", "qqcc-bot", "paid-group-guard-bot"}
+    polling_services = {"bot", "qqcc-bot", "paid-group-guard-bot", "support-bot"}
     for service in sorted(set(cloud_services) & polling_services):
         legacy = legacy_cloud_containers(args.env, {service})
         legacy_checks = "".join(
@@ -6732,6 +6831,7 @@ def _collect_module_runtime_state(
         "qqcc-config-backend": "qqcc-config-backend",
         "qqcc-config-frontend": "qqcc-config-frontend",
         "qqcc-private-bot-worker": "private-bot-worker",
+        "support-bot": "support-bot",
         "web-api": "web-api",
     }
     environment_values: dict[str, str] = {}
@@ -6995,6 +7095,12 @@ INDEPENDENT_MODULE_ENV_SERVICES = {
     "qqcc-config": ("qqcc-config-backend", "qqcc-config-frontend"),
     "private-bot-worker": ("private-bot-worker",),
     "paid-group-bot": ("paid-group-bot",),
+    "support-bot": ("support-bot",),
+    "support-platform": (
+        "dashboard-backend",
+        "dashboard-frontend",
+        "support-bot",
+    ),
 }
 
 SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS = frozenset(
@@ -7111,6 +7217,7 @@ CONFIG_SERVICE_TO_COMPOSE = {
     "qqcc-config-frontend": "qqcc-config-frontend",
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
+    "support-bot": "support-bot",
     "postgres": "postgres",
     "redis": "redis",
 }
@@ -7585,6 +7692,7 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--modules", action="append", default=[])
     promote.add_argument("--sha")
     promote.add_argument("--confirm-prod", action="store_true")
+    promote.add_argument("--confirm-db-upgrade", action="store_true")
     promote.add_argument(
         "--no-maintenance",
         action="store_true",

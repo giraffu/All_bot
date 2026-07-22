@@ -52,6 +52,7 @@
 - [任务黄金路径回归清单](./docs/子模块_任务黄金路径回归清单_task_golden_path.md)
 - [子模块：前端浏览器预览与截图](./docs/子模块_前端浏览器预览截图_frontend_browser_preview.md)
 - [子模块: 后台监控与清理 (Dashboard & Monitoring)](./docs/子模块_后台监控与清理_dashboard_monitoring.md)
+- [独立客服 Bot](./docs/子模块_客服Bot_support_bot.md)
 - [子模块: 容灾与持久化 (Database & Recovery)](./docs/子模块_容灾与持久化_database_recovery.md)
 - [子模块: 局域网 GPU 节点 SSH 管理 (LAN GPU SSH Access)](./docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md)
 - [子模块: 局域网 GPU 节点资源与运维 (LAN GPU Resource Ops)](./docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md)
