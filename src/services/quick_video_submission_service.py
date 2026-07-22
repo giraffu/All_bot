@@ -1330,9 +1330,11 @@ async def _run_qqcc_video_scene_chain(
     output_files: list[str] = []
     current_image_path = image_path
     failed_index: int | None = None
+    failed_stage: str | None = None
 
     for index, segment in enumerate(plan.qqcc_chain_segments):
         segment_plan = _plan_for_qqcc_chain_segment(plan, segment)
+        current_stage = "generation"
 
         async def call_task(func, kwargs):
             kwargs["send_result"] = False
@@ -1379,6 +1381,7 @@ async def _run_qqcc_video_scene_chain(
             video_segments.append(bytes(media_bytes))
             output_files.append(str(output_file or ""))
             if index + 1 < len(plan.qqcc_chain_segments):
+                current_stage = "tail_frame"
                 frame_bytes = await _maybe_await(
                     extract_video_last_frame_func(bytes(media_bytes))
                 )
@@ -1387,9 +1390,14 @@ async def _run_qqcc_video_scene_chain(
                 )
         except Exception:
             failed_index = index
+            failed_stage = current_stage
             if not video_segments:
                 raise
-            logger.exception("QQCC video chain stopped at segment %s", index + 1)
+            logger.exception(
+                "QQCC video chain stopped at segment %s during %s",
+                index + 1,
+                current_stage,
+            )
             break
 
     partial = failed_index is not None
@@ -1407,9 +1415,19 @@ async def _run_qqcc_video_scene_chain(
         )
     )
     if partial:
+        if failed_stage == "tail_frame":
+            failure_message = (
+                f"第 {failed_index + 1} 段已生成，但尾帧处理失败，"
+                f"已返回前 {len(video_segments)} 段。"
+            )
+        else:
+            failure_message = (
+                f"第 {failed_index + 1} 段生成失败，"
+                f"已返回前 {len(video_segments)} 段。"
+            )
         await robust_send_message(
             context.bot,
             chat_id,
-            f"第 {failed_index + 1} 段生成失败，已返回前 {len(video_segments)} 段。",
+            failure_message,
         )
     return persisted

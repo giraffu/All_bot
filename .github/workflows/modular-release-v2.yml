@@ -344,7 +344,10 @@ jobs:
           dashboard_ref="$(jq -r '.artifacts["dashboard-frontend"].ref' release-v2/control-plane-manifest.json)"
           qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
           backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_config_backend_ref="$(jq -r '.artifacts["qqcc-config-backend"].ref' release-v2/control-plane-manifest.json)"
           web_ref="$(jq -r '.artifacts["web-api"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_bot_ref="$(jq -r '.artifacts["qqcc-bot"].ref' release-v2/control-plane-manifest.json)"
+          private_bot_ref="$(jq -r '.artifacts["private-bot-worker"].ref' release-v2/control-plane-manifest.json)"
           backend_env=(
             -e ALLBOT_ENV=test
             -e BOT_TYPE=TEST
@@ -395,6 +398,10 @@ jobs:
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint python "${backend_env[@]}" "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
+          docker run --rm --entrypoint sh "$backend_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$qqcc_config_backend_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$qqcc_bot_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$private_bot_ref" -c 'ffmpeg -version && ffprobe -version'
 
       - name: Inspect release images and Web bytes for environment neutrality
         shell: bash

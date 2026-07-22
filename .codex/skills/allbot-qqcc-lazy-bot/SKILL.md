@@ -96,6 +96,8 @@ QQCC 懒人 Bot 配置已从主 Dashboard 剥离为独立 QQCC Config Web。主 
 
 QQCC 视频模板串联属于 Bot 编排层，不是 Comfy workflow 嵌套或比例开关。全链费用在首段提交前汇总；第一段沿用普通队列/取消，后续段固定 continuation 优先级且不可单独取消。官方 Bot 在内存中收集已完成段并生成最终 History；私有 Bot checkpoint 保存场景快照、当前首帧和各段视频引用，最终 `delivery_pending` 拼接后投递。后续段失败时官方 Bot 返回已成功前缀，失败任务沿用现有退款幂等；拼接本身不扣费。后台示例用 24 小时 Redis checkpoint 执行同一完整链。
 
+链式视频媒体处理的运行时依赖必须落在真实消费者镜像，不得只修改已退出模块化发布路径的 legacy Dockerfile。`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 统一继承 `python-media-runtime-base`，full-validation 必须分别在四个最终 digest 中执行 `ffmpeg -version` 与 `ffprobe -version`。尾帧处理发生在某段成功之后；此处失败应提示“该段已生成，但尾帧处理失败”，不得误报为该段生成失败，也不得改变成功段计费或失败任务退款语义。
+
 这不是 Comfy workflow 比例开关。不得修改主 Bot、固定 `1280x704` 的 `AI视频`、`Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、画质档位或计费；比例字段不得进入 Central/Worker payload。重新生成及 AI绘图结果的“生成动图”必须从当前场景重建同一 Quick Video plan，自然读取最新比例。
 
 ## 3. 任务归属红线

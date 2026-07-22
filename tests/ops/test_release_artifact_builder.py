@@ -50,6 +50,26 @@ def test_leaf_change_rebuilds_only_modules_whose_input_closure_matches():
     assert "central-api" in plan.reuse
 
 
+def test_media_runtime_change_rebuilds_only_qqcc_media_consumers():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/docker/Dockerfile.media-runtime-base"],
+        has_previous=True,
+    )
+
+    assert plan.build == {
+        "python-media-runtime-base",
+        "qqcc-bot",
+        "private-bot-worker",
+        "dashboard-backend",
+        "qqcc-config-backend",
+    }
+    assert {"central-api", "web-api", "payment-api", "main-bot"} <= plan.reuse
+
+
 def test_gpu_control_operator_change_rebuilds_dashboard_but_not_gpu_images():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

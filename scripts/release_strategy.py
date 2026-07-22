@@ -25,6 +25,7 @@ TEST_REQUIRED_OWNER_TOOL_ARTIFACTS = {
 }
 PUBLIC_WEB_ARTIFACTS = {"public-web"}
 NON_RUNTIME_ARTIFACTS = {
+    "python-media-runtime-base",
     "python-runtime-base",
     "python-worker-base",
     "postgres",

@@ -42,6 +42,20 @@ def _load_config_updater():
     return module
 
 
+def test_media_runtime_base_is_excluded_from_services_and_acceptance():
+    module = _load_module()
+
+    assert "python-media-runtime-base" in module.RUNTIME_BASE_ARTIFACTS
+    assert "python-media-runtime-base" in module.NON_DEPLOYABLE_ARTIFACTS
+    assert module.required_acceptance_checks(
+        {
+            "schema_version": 2,
+            "track": "control-plane",
+            "selected_artifacts": ["python-media-runtime-base"],
+        }
+    ) == set()
+
+
 def _manifest(sha: str = FULL_SHA) -> dict:
     return {
         "schema_version": 1,
