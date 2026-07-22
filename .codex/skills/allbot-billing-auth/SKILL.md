@@ -20,7 +20,8 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
 - **低阶用户容量准入**：`billing_core.check_concurrency_lock(..., task_type=...)` 在扣费前按目标 Worker 执行池检查 projected pending；只限制外门弟子中的凡人/练气期，不再读取全局 `queue_size > 300`。
 - **自由P图版本定价**：主 Bot/Web 的 `free_edit_v2_5` 单图 3 灵石、双图 7 灵石并走标准单阶段 Saga，扣费前必须按实际图片数确定成本；自由P图 v3 固定 5 灵石并把 BF16→换脸视为同一根任务，第二阶段不得重复扣费。两者失败/取消退款都以根业务任务的实际扣费和账本幂等键收口；QQCC 自由P图 v3 仍保持 6 灵石，不随主入口调整。
-- **图片换脸版本定价**：独立 `face_swap`（V1）固定 1 灵石，独立 `face_swap_v2` 固定 2 灵石；快速/随机换脸仍走 V1。自由P图 v3、SCAIL-2 首帧预处理等组合任务中的 V2 已包含在根任务总价，禁止二次扣费；QQCC AI绘图/滤镜每个启用的原脸恢复步骤仍显式增加 2 灵石。幻想换脸继续提交 `i2i_pro` 并保持 6 灵石。
+- **图片换脸版本定价**：独立 `face_swap`（V1）固定 1 灵石，独立 `face_swap_v2` 固定 2 灵石；快速/随机换脸仍走 V1。自由P图 v3、SCAIL-2 首帧预处理等组合任务中的 V2 已包含在根任务总价，禁止二次扣费；QQCC 场景未配置 `credit_cost` 时每个原脸恢复步骤仍显式增加 2 灵石，配置固定总价后则属于根场景价格、不得二次扣费。幻想换脸继续提交 `i2i_pro` 并保持 6 灵石。
+- **QQCC 场景固定总价**：`video_scenes`、`ai_video_scenes`、`draw_scenes`、`filter_scenes` 的根场景可配置正整数 `credit_cost`。固定价链只在第一个真实任务用 `cost_override` 扣一次，后续任务必须 `deduct_quota=false`；后续生成或最终投递失败以 `qqcc_scene_refund:<billing_id>` 全额幂等退款。`null`/缺失保持旧逐段计费与退款，快速换脸不受影响。
 - **入口负责 provider 注册**：Bot、Web API、Payment API 和 Dashboard Backend 只要会调用 billing core，都必须在启动入口调用 `ensure_billing_core_providers_registered()`。Dashboard 的退款、强制终止和资产类管理接口也会进入 billing core；只注册 task core provider 会触发 `Billing core providers 未注册`。
 
 ## 2. 输入输出规范

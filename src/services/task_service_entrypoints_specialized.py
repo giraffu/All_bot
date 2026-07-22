@@ -74,6 +74,8 @@ async def process_ltx_video_task_for_actor(
     send_result: bool = True,
     delete_status: bool = True,
     record_history: bool = True,
+    deduct_quota: bool = True,
+    cost_override: int | None = None,
 ):
     from src.constants import MODE_LTX_VIDEO
 
@@ -122,17 +124,17 @@ async def process_ltx_video_task_for_actor(
     if ltx_mode == "v2v_audio":
         submit_images = [video_path] if video_path else []
     elif ltx_mode == "flf2v":
-        submit_images = [
-            path for path in [image_path, end_image_path] if path
-        ]
+        submit_images = [path for path in [image_path, end_image_path] if path]
     else:
         submit_images = [image_path] if image_path else []
 
     task_result_meta = dict(result_meta or {})
-    task_result_meta.update({
-        "ltx_mode": ltx_mode,
-        "extract_last_frame": True,
-    })
+    task_result_meta.update(
+        {
+            "ltx_mode": ltx_mode,
+            "extract_last_frame": True,
+        }
+    )
     normalized_ltx_prev_task_id = str(ltx_prev_task_id or "").strip()
     normalized_ltx_chain_task_ids = normalize_ltx_video_chain_task_ids(
         ltx_chain_task_ids
@@ -190,6 +192,8 @@ async def process_ltx_video_task_for_actor(
             prompt=prompt,
             is_video=True,
             source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+            cost_override=cost_override,
             message_spec=message_spec,
             submitted_status_builder=build_translated_cost_status_builder(
                 context,
@@ -216,8 +220,9 @@ async def process_ltx_video_task_for_actor(
             runtime_state=runtime_state,
             task_label="ltx video task",
             failure_policy=BotTaskFailurePolicy(
-                unexpected_should_refund=lambda state: state.task_submitted
-                and state.actual_cost > 0,
+                unexpected_should_refund=lambda state: (
+                    state.task_submitted and state.actual_cost > 0
+                ),
                 unexpected_error_log_message=build_unexpected_error_log_message(
                     "ltx video task"
                 ),
@@ -359,12 +364,15 @@ async def process_scail2_video_task(
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
             cleanup=cleanup,
-            cleanup_paths=build_cleanup_paths([reference_image_path, motion_video_path]),
+            cleanup_paths=build_cleanup_paths(
+                [reference_image_path, motion_video_path]
+            ),
             runtime_state=runtime_state,
             task_label="scail2 video task",
             failure_policy=BotTaskFailurePolicy(
-                unexpected_should_refund=lambda state: state.task_submitted
-                and state.actual_cost > 0,
+                unexpected_should_refund=lambda state: (
+                    state.task_submitted and state.actual_cost > 0
+                ),
                 unexpected_error_log_message=build_unexpected_error_log_message(
                     "scail2 video task",
                     verb="processing",
@@ -460,8 +468,9 @@ async def process_face_video_task(
             runtime_state=runtime_state,
             task_label="face video task",
             failure_policy=BotTaskFailurePolicy(
-                unexpected_should_refund=lambda state: state.task_submitted
-                and state.actual_cost > 0,
+                unexpected_should_refund=lambda state: (
+                    state.task_submitted and state.actual_cost > 0
+                ),
                 unexpected_error_log_message=build_unexpected_error_log_message(
                     "face video task",
                     verb="processing",

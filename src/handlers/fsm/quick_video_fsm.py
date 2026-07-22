@@ -65,6 +65,7 @@ from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
+from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
 from src.services.quick_video_submission_service import (
     QuickVideoSubmissionReject,
     QuickVideoSubmissionRejectReason,
@@ -284,7 +285,14 @@ def _resolve_quick_video_entry(
         route_key = parse_quick_video_mode_callback_data(query.data)
         mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
         mode_name = _strip_menu_prefix(_t(context, route_key)) if route_key else ""
-        return mode, mode_name, getattr(query, "message", None), route_key, None, "video"
+        return (
+            mode,
+            mode_name,
+            getattr(query, "message", None),
+            route_key,
+            None,
+            "video",
+        )
 
     message = update.message or update.edited_message
     text = message.text.strip() if message and message.text else ""
@@ -332,6 +340,11 @@ def _sync_qqcc_scene_to_quick_video_data(
             "scene_kind": scene_kind,
         }
     )
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
+    if fixed_credit_cost is None:
+        fsm_data.pop("credit_cost", None)
+    else:
+        fsm_data["credit_cost"] = fixed_credit_cost
     if scene_kind != "ai_video":
         fsm_data.pop("lora_items", None)
         fsm_data.pop("scene_kind", None)
@@ -385,6 +398,9 @@ async def _build_quick_video_settings_markup(
             qqcc_config=qqcc_config,
         )
         credits_text = _t(context, "app.credits")
+        fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(
+            getattr(context, "user_data", {}).get("quick_video_data")
+        )
         keyboard = []
         res_row = []
         visible_resolutions = [
@@ -400,9 +416,13 @@ async def _build_quick_video_settings_markup(
             )
         ]
         for res in visible_resolutions:
-            base_cost = RESOLUTION_COST.get(res, 6)
-            multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
-            display_text = f"{res} ({int(base_cost * multiplier)}{credits_text})"
+            if fixed_credit_cost is not None:
+                display_cost = fixed_credit_cost
+            else:
+                base_cost = RESOLUTION_COST.get(res, 6)
+                multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+                display_cost = int(base_cost * multiplier)
+            display_text = f"{res} ({display_cost}{credits_text})"
             text = f"✅ {display_text}" if res == resolution else display_text
             res_row.append(InlineKeyboardButton(text, callback_data=f"set_res_{res}"))
         if res_row:
@@ -424,13 +444,18 @@ def _build_quick_video_settings_text(
     context: ContextTypes.DEFAULT_TYPE,
     resolution: str,
     duration: str,
+    fixed_credit_cost: int | None = None,
 ) -> str:
     return _t(
         context,
         "fsm.quick_video.settings_text",
         resolution=resolution,
         duration=duration,
-        cost=calculate_quick_video_cost(resolution, duration),
+        cost=(
+            fixed_credit_cost
+            if fixed_credit_cost is not None
+            else calculate_quick_video_cost(resolution, duration)
+        ),
         start_button=_t(context, "fsm.quick_video.start_button"),
     )
 
@@ -440,8 +465,8 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     if query:
         await safe_answer_query(query)
-    mode, mode_name, reply_message, route_key, scene_id, scene_kind = _resolve_quick_video_entry(
-        update, context
+    mode, mode_name, reply_message, route_key, scene_id, scene_kind = (
+        _resolve_quick_video_entry(update, context)
     )
 
     from src.utils import is_maintenance_mode
@@ -509,13 +534,19 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
     if scene is not None and qqcc_config is not None:
-        msg = render_qqcc_copywriting(
-            get_qqcc_copywriting_override(
-                qqcc_config,
-                "ai_video_scene_start" if scene_kind == "ai_video" else "video_scene_start",
-            ),
-            str(scene.get("name") or mode_name),
-        ) or msg
+        msg = (
+            render_qqcc_copywriting(
+                get_qqcc_copywriting_override(
+                    qqcc_config,
+                    "ai_video_scene_start"
+                    if scene_kind == "ai_video"
+                    else "video_scene_start",
+                ),
+                str(scene.get("name") or mode_name),
+                cost=resolve_qqcc_scene_fixed_credit_cost(scene),
+            )
+            or msg
+        )
     if scene is not None:
         private_bot_id = get_private_qqcc_bot_id(context)
         demo_kwargs = {"private_bot_id": private_bot_id} if private_bot_id else {}
@@ -619,6 +650,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             context=context,
             resolution=res,
             duration=dur,
+            fixed_credit_cost=resolve_qqcc_scene_fixed_credit_cost(fsm_data),
         ),
         reply_markup=reply_markup,
         parse_mode="Markdown",
@@ -676,8 +708,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             for res in allowed_resolutions
             if not (res == "1024p" and fsm_data.get("duration") == "10s")
             and not (
-                res == "1024p"
-                and not _qqcc_chain_allows_1024p(qqcc_config, fsm_data)
+                res == "1024p" and not _qqcc_chain_allows_1024p(qqcc_config, fsm_data)
             )
         ]
         if not allowed_resolutions:
@@ -724,6 +755,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 context=context,
                 resolution=res,
                 duration=dur,
+                fixed_credit_cost=resolve_qqcc_scene_fixed_credit_cost(fsm_data),
             ),
             reply_markup=reply_markup,
             parse_mode="Markdown",
@@ -744,7 +776,9 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = (
         query.from_user.id
         if query is not None
-        else update.effective_user.id if update.effective_user else 0
+        else update.effective_user.id
+        if update.effective_user
+        else 0
     )
 
     fsm_data = context.user_data.get("quick_video_data", {})
@@ -789,7 +823,6 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         cleanup_fsm_temp_files([image_path])
         _cleanup_context(context, user_id)
         return ConversationHandler.END
-
 
     if not update.effective_user:
         cleanup_fsm_temp_files([image_path])

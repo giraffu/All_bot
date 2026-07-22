@@ -98,6 +98,160 @@ def test_qqcc_free_edit_v3_scene_builds_bf16_plan_with_six_credit_cost():
     assert plan.images == ["/tmp/input.png"]
 
 
+def test_qqcc_draw_fixed_credit_cost_replaces_entire_nested_chain_cost():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root prompt",
+                    "credit_cost": 7,
+                    "original_face_swap_enabled": True,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {
+                    "id": "child",
+                    "name": "后处理",
+                    "prompt": "child prompt",
+                    "credit_cost": 99,
+                },
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.total_cost == 7
+    assert plan.fixed_credit_cost == 7
+    assert plan.billing_id
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_draw_chain_charges_first_real_task_only():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root prompt",
+                    "credit_cost": 7,
+                    "original_face_swap_enabled": True,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {"id": "child", "name": "后处理", "prompt": "child prompt"},
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    calls = []
+
+    async def process(**kwargs):
+        calls.append(kwargs)
+        return b"image", f"output-{len(calls)}.png"
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=1,
+        user_id=2,
+        username="tester",
+        status_msg_id=3,
+        process_generation_task_func=process,
+        download_output_file_to_fsm_temp_func=AsyncMock(return_value="/tmp/next.png"),
+    )
+
+    assert calls[0]["cost_override"] == 7
+    assert calls[0].get("deduct_quota", True) is True
+    assert calls[1]["deduct_quota"] is False
+    assert "cost_override" not in calls[1]
+    assert calls[2]["deduct_quota"] is False
+    assert "cost_override" not in calls[2]
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_draw_chain_refunds_root_charge_when_later_stage_fails(
+    monkeypatch,
+):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root",
+                    "credit_cost": 7,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {"id": "child", "name": "后处理", "prompt": "child"},
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    call_count = 0
+
+    async def process(**_kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("postprocess failed")
+        return b"image", "root-output.png"
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    with pytest.raises(RuntimeError, match="postprocess failed"):
+        await run_quick_image_submission_plan(
+            plan=plan,
+            context=SimpleNamespace(),
+            chat_id=1,
+            user_id=2,
+            username="tester",
+            status_msg_id=3,
+            process_generation_task_func=process,
+            download_output_file_to_fsm_temp_func=AsyncMock(
+                return_value="/tmp/next.png"
+            ),
+            refund_credits_func=refund,
+        )
+
+    refund.assert_awaited_once_with(
+        999,
+        7,
+        username="tester",
+        task_type="refund_qqcc_scene_fixed_cost",
+        idempotency_key=f"qqcc_scene_refund:{plan.billing_id}",
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_qqcc_single_step_draw_chain_stays_cancellable_with_normal_priority():
     config = normalize_qqcc_config(
@@ -401,6 +555,37 @@ def test_qqcc_filter_scene_builds_draw_chain_plan_with_filter_scene_kind():
             "display_mode_name": "真实质感",
         }
     }
+
+
+def test_qqcc_filter_fixed_credit_cost_replaces_dynamic_cost():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                    "credit_cost": 5,
+                    "original_face_swap_enabled": True,
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "real_skin",
+            "scene_kind": "filter",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.total_cost == 5
+    assert plan.fixed_credit_cost == 5
+    assert plan.billing_id
 
 
 @pytest.mark.asyncio

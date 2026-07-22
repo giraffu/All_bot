@@ -28,7 +28,9 @@ from src.handlers.fsm.quick_draw_callback_data import (
     parse_quick_filter_scene_callback_data,
 )
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
-from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task,
+)
 from src.services.permission_service import permission_service
 from src.services.qqcc_draw_chain_service import (
     QQCC_SCENE_KIND_DRAW,
@@ -50,11 +52,14 @@ from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
+from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
-from src.services.wan22_video_v2_extension_service import download_output_file_to_fsm_temp
+from src.services.wan22_video_v2_extension_service import (
+    download_output_file_to_fsm_temp,
+)
 from src.services.quick_image_submission_service import (
     QQCC_AI_DRAW_TASK_TYPES,
     QuickImageSubmissionKind,
@@ -149,6 +154,8 @@ def _initialize_quick_image_context(
         "cost": cost,
         "image_path": None,
     }
+
+
 def _resolve_quick_image_start_message(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -234,7 +241,12 @@ async def _start_qqcc_image_scene(
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    cost = calculate_qqcc_draw_chain_cost(draw_chain)
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
+    cost = (
+        fixed_credit_cost
+        if fixed_credit_cost is not None
+        else calculate_qqcc_draw_chain_cost(draw_chain)
+    )
     _initialize_quick_image_context(
         context,
         mode=mode,
@@ -261,10 +273,14 @@ async def _start_qqcc_image_scene(
         if scene_kind == QQCC_SCENE_KIND_FILTER
         else "ai_draw_scene_start"
     )
-    msg = render_qqcc_copywriting(
-        get_qqcc_copywriting_override(qqcc_config, copywriting_key),
-        scene["name"],
-    ) or msg
+    msg = (
+        render_qqcc_copywriting(
+            get_qqcc_copywriting_override(qqcc_config, copywriting_key),
+            scene["name"],
+            cost=cost,
+        )
+        or msg
+    )
 
     if query and query.message:
         private_bot_id = get_private_qqcc_bot_id(context)
@@ -415,9 +431,7 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     message = update.message or update.edited_message
     query = update.callback_query
-    draw_scene_id = parse_quick_draw_scene_callback_data(
-        query.data if query else None
-    )
+    draw_scene_id = parse_quick_draw_scene_callback_data(query.data if query else None)
     filter_scene_id = parse_quick_filter_scene_callback_data(
         query.data if query else None
     )
@@ -540,7 +554,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         user_id=user_id,
     )
     if not fsm_data["image_path"]:
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return QuickImageState.WAIT_IMAGE
 
     image_path = fsm_data.pop("image_path", None)
@@ -560,7 +576,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             context=context,
         )
     except Exception as exc:
-        logger.error("Error in quick image FSM submission planning: %s", exc, exc_info=True)
+        logger.error(
+            "Error in quick image FSM submission planning: %s", exc, exc_info=True
+        )
         await robust_reply_text(
             message, _t(context, "fsm.quick_image.system_error", error_msg=str(exc))
         )

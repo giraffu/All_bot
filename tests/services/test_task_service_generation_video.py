@@ -34,7 +34,9 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         fake_run_bot_task_application,
     )
 
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    context = SimpleNamespace(
+        user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+    )
     result = await process_image_to_video_generation_task(
         context=context,
         chat_id=123,
@@ -52,6 +54,8 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
             {"name": "Footjob", "strength": 1.4},
         ],
         cleanup=False,
+        deduct_quota=False,
+        cost_override=13,
     )
 
     assert result == (b"video-bytes", "task-image-to-video")
@@ -65,6 +69,8 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
     assert flow.request.inputs["duration"] == 8
     assert flow.request.inputs["extract_last_frame"] is True
     assert flow.billing.requested_duration == 8
+    assert flow.request.deduct_quota is False
+    assert flow.request.cost_override == 13
     assert flow.presentation.result_meta == {
         "wan22_resolution_preset": "standard",
         "wan22_duration_seconds": 8,
@@ -90,7 +96,9 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(monkeypatch):
+async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(
+    monkeypatch,
+):
     captured_kwargs = {}
 
     async def fake_process_wan22_video_v2_generation_task(**kwargs):
@@ -106,7 +114,9 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         fake_process_wan22_video_v2_generation_task,
     )
 
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    context = SimpleNamespace(
+        user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+    )
     result = await process_standard_generation_task(
         context=context,
         chat_id=123,
@@ -123,6 +133,8 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
             {"name": "BreastGrow", "strength": 0.75},
             {"name": "Footjob", "strength": 1.4},
         ],
+        deduct_quota=False,
+        cost_override=17,
         cleanup=False,
     )
 
@@ -134,3 +146,5 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         {"name": "BreastGrow", "strength": 0.75},
         {"name": "Footjob", "strength": 1.4},
     ]
+    assert captured_kwargs["deduct_quota"] is False
+    assert captured_kwargs["cost_override"] == 17

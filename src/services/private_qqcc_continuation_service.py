@@ -28,6 +28,11 @@ from src.services.qqcc_video_frame_adapter import (
     normalize_qqcc_video_aspect_ratio,
 )
 from src.services.redis_client import redis_client
+from src.services.qqcc_scene_billing_service import (
+    RefundCredits,
+    QqccSceneBillingState,
+    refund_qqcc_scene_fixed_charge,
+)
 
 
 PRIVATE_QQCC_CONTINUATION_METADATA_KEY = "_private_qqcc_continuation"
@@ -78,6 +83,11 @@ class PrivateQqccContinuationCheckpoint:
     next_submission_sequence: int
     original_input_ref: str
     original_input_durable: bool
+    billing_id: str | None = None
+    fixed_credit_cost: int | None = None
+    billing_root_task_id: str | None = None
+    billing_actual_charged_cost: int = 0
+    billing_refund_completed: bool = False
     current_output_ref: str | None = None
     current_segment_start_ref: str | None = None
     video_segment_output_refs: tuple[str, ...] = ()
@@ -101,9 +111,7 @@ class PrivateQqccContinuationStore(Protocol):
         self, checkpoint: PrivateQqccContinuationCheckpoint
     ) -> PrivateQqccContinuationCheckpoint: ...
 
-    async def get(
-        self, chain_id: str
-    ) -> PrivateQqccContinuationCheckpoint | None: ...
+    async def get(self, chain_id: str) -> PrivateQqccContinuationCheckpoint | None: ...
 
     async def list_all(
         self, *, tolerate_corrupt: bool = False
@@ -155,6 +163,10 @@ class PrivateQqccContinuationStore(Protocol):
         self, *, ref: PrivateQqccContinuationTaskRef, error_code: str
     ) -> PrivateQqccContinuationCheckpoint: ...
 
+    async def mark_billing_refunded(
+        self, *, chain_id: str
+    ) -> PrivateQqccContinuationCheckpoint: ...
+
     async def acquire_lock(self, chain_id: str) -> str | None: ...
 
     async def renew_lock(self, chain_id: str, token: str) -> bool: ...
@@ -179,8 +191,7 @@ def activate_private_qqcc_continuation_task(
         _CURRENT_TASK_REF.reset(token)
 
 
-def get_private_qqcc_continuation_task_ref(
-) -> PrivateQqccContinuationTaskRef | None:
+def get_private_qqcc_continuation_task_ref() -> PrivateQqccContinuationTaskRef | None:
     return _CURRENT_TASK_REF.get()
 
 
@@ -248,6 +259,11 @@ def _checkpoint_from_json(raw: str | bytes) -> PrivateQqccContinuationCheckpoint
     payload["video_segment_output_refs"] = tuple(
         payload.get("video_segment_output_refs") or []
     )
+    payload.setdefault("billing_id", None)
+    payload.setdefault("fixed_credit_cost", None)
+    payload.setdefault("billing_root_task_id", None)
+    payload.setdefault("billing_actual_charged_cost", 0)
+    payload.setdefault("billing_refund_completed", False)
     checkpoint = PrivateQqccContinuationCheckpoint(**payload)
     if checkpoint.version != PRIVATE_QQCC_CONTINUATION_VERSION:
         raise ValueError("unsupported private QQCC continuation version")
@@ -399,7 +415,7 @@ _MARK_FAILED_SCRIPT = """
 local raw = redis.call('GET', KEYS[1])
 if not raw then return '' end
 local data = cjson.decode(raw)
-if data['status'] ~= 'running' then return raw end
+if data['status'] ~= 'running' and data['status'] ~= 'delivery_pending' and data['status'] ~= 'partial_delivery_pending' then return raw end
 if tonumber(data['current_stage_index']) ~= tonumber(ARGV[1]) then return raw end
 if data['current_registry_task_id'] ~= ARGV[2] then return raw end
 if data['current_executor_token'] ~= ARGV[3] then return raw end
@@ -425,6 +441,16 @@ data['current_output_ref'] = data['video_segment_output_refs'][#data['video_segm
 data['current_executor_token'] = cjson.null
 local encoded = cjson.encode(data)
 redis.call('SET', KEYS[1], encoded, 'EX', ARGV[5])
+return encoded
+"""
+
+_MARK_BILLING_REFUNDED_SCRIPT = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return '' end
+local data = cjson.decode(raw)
+data['billing_refund_completed'] = true
+local encoded = cjson.encode(data)
+redis.call('SET', KEYS[1], encoded, 'EX', ARGV[1])
 return encoded
 """
 
@@ -498,9 +524,7 @@ class RedisPrivateQqccContinuationStore:
             )
         return existing
 
-    async def get(
-        self, chain_id: str
-    ) -> PrivateQqccContinuationCheckpoint | None:
+    async def get(self, chain_id: str) -> PrivateQqccContinuationCheckpoint | None:
         raw = await self.redis.get(self._key(chain_id))
         return _checkpoint_from_json(raw) if raw else None
 
@@ -575,7 +599,9 @@ class RedisPrivateQqccContinuationStore:
         saved_inputs: list[str],
         last_frame_output_file: str | None = None,
     ) -> PrivateQqccContinuationCheckpoint:
-        original_input = str(saved_inputs[0]) if ref.stage_index == 0 and saved_inputs else ""
+        original_input = (
+            str(saved_inputs[0]) if ref.stage_index == 0 and saved_inputs else ""
+        )
         raw = await self.redis.eval(
             _RECORD_COMPLETED_SCRIPT,
             1,
@@ -721,11 +747,28 @@ class RedisPrivateQqccContinuationStore:
             checkpoint.status != "partial_delivery_pending"
             or checkpoint.current_stage_index != ref.stage_index
             or checkpoint.current_registry_task_id != ref.registry_task_id
-            or checkpoint.current_output_ref
-            != checkpoint.video_segment_output_refs[-1]
+            or checkpoint.current_output_ref != checkpoint.video_segment_output_refs[-1]
         ):
             raise PrivateQqccContinuationConflict(
                 "continuation partial delivery did not pass its executor fence"
+            )
+        return checkpoint
+
+    async def mark_billing_refunded(
+        self, *, chain_id: str
+    ) -> PrivateQqccContinuationCheckpoint:
+        raw = await self.redis.eval(
+            _MARK_BILLING_REFUNDED_SCRIPT,
+            1,
+            self._key(chain_id),
+            self.ttl_seconds,
+        )
+        if not raw:
+            raise PrivateQqccContinuationUnavailable("continuation checkpoint missing")
+        checkpoint = _checkpoint_from_json(raw)
+        if not checkpoint.billing_refund_completed:
+            raise PrivateQqccContinuationConflict(
+                "continuation billing refund was not persisted"
             )
         return checkpoint
 
@@ -933,6 +976,7 @@ async def create_private_qqcc_continuation(
     username: str | None,
     status_message_id: int | None,
     original_input_durable: bool = False,
+    fixed_credit_cost: int | None = None,
     store: PrivateQqccContinuationStore | None = None,
 ) -> PrivateQqccContinuationCheckpoint:
     cursor = get_private_bot_submission_cursor()
@@ -941,7 +985,9 @@ async def create_private_qqcc_continuation(
             "private continuation requires a durable webhook update scope"
         )
     _assert_private_bot_context_tenant(context, cursor.private_bot_id)
-    normalized_stages = _normalized_stages(stages)
+    normalized_stages = _normalized_stages(
+        _apply_fixed_credit_billing_to_stages(stages, fixed_credit_cost)
+    )
     stages_json = json.dumps(
         normalized_stages,
         ensure_ascii=False,
@@ -977,8 +1023,82 @@ async def create_private_qqcc_continuation(
         next_submission_sequence=cursor.next_sequence,
         original_input_ref=str(original_input_ref),
         original_input_durable=bool(original_input_durable),
+        billing_id=chain_id if fixed_credit_cost is not None else None,
+        fixed_credit_cost=fixed_credit_cost,
+        billing_root_task_id=(
+            _registry_task_id_for_cursor(
+                cursor.private_bot_id,
+                cursor.update_id,
+                cursor.next_sequence,
+            )
+            if fixed_credit_cost is not None
+            else None
+        ),
+        billing_actual_charged_cost=fixed_credit_cost or 0,
+        billing_refund_completed=False,
     )
     return await (store or get_private_qqcc_continuation_store()).create(checkpoint)
+
+
+def _apply_fixed_credit_billing_to_stages(
+    stages: list[dict[str, Any]], fixed_credit_cost: int | None
+) -> list[dict[str, Any]]:
+    if fixed_credit_cost is None:
+        return stages
+    billed_stages: list[dict[str, Any]] = []
+    for index, stage in enumerate(stages):
+        stage_copy = dict(stage)
+        task_kwargs = dict(stage.get("task_kwargs") or {})
+        task_kwargs.pop("cost_override", None)
+        task_kwargs.pop("deduct_quota", None)
+        if index == 0:
+            task_kwargs["cost_override"] = fixed_credit_cost
+        else:
+            task_kwargs["deduct_quota"] = False
+        stage_copy["task_kwargs"] = task_kwargs
+        billed_stages.append(stage_copy)
+    return billed_stages
+
+
+async def _refund_failed_fixed_continuation(
+    checkpoint: PrivateQqccContinuationCheckpoint,
+    *,
+    store: PrivateQqccContinuationStore,
+    refund_credits_func: RefundCredits | None = None,
+) -> bool:
+    root_task_succeeded = bool(
+        checkpoint.next_stage_index > 0
+        or checkpoint.current_output_ref
+        or checkpoint.video_segment_output_refs
+    )
+    if (
+        checkpoint.fixed_credit_cost is None
+        or not root_task_succeeded
+        or not checkpoint.billing_id
+        or checkpoint.billing_refund_completed
+    ):
+        return False
+    billing_state = QqccSceneBillingState(
+        fixed_credit_cost=checkpoint.fixed_credit_cost,
+        billing_id=checkpoint.billing_id,
+        successful_task_count=max(1, checkpoint.next_stage_index),
+        root_task_id=checkpoint.billing_root_task_id,
+        actual_charged_cost=(
+            checkpoint.billing_actual_charged_cost or checkpoint.fixed_credit_cost
+        ),
+    )
+    refunded = await refund_qqcc_scene_fixed_charge(
+        billing_state=billing_state,
+        telegram_user_id=checkpoint.telegram_user_id,
+        username=checkpoint.username,
+        **(
+            {"refund_credits_func": refund_credits_func}
+            if refund_credits_func is not None
+            else {}
+        ),
+    )
+    await store.mark_billing_refunded(chain_id=checkpoint.chain_id)
+    return refunded
 
 
 async def persist_private_qqcc_continuation_input(
@@ -1017,12 +1137,23 @@ async def persist_private_qqcc_continuation_input(
 
 
 StageExecutor = Callable[
-    [PrivateQqccContinuationCheckpoint, dict[str, Any], PrivateQqccContinuationTaskRef, Any],
+    [
+        PrivateQqccContinuationCheckpoint,
+        dict[str, Any],
+        PrivateQqccContinuationTaskRef,
+        Any,
+    ],
     Awaitable[tuple[bytes | None, str | None]],
 ]
 
 DeliveryExecutor = Callable[
-    [PrivateQqccContinuationCheckpoint, dict[str, Any], PrivateQqccContinuationTaskRef, Any, bytes],
+    [
+        PrivateQqccContinuationCheckpoint,
+        dict[str, Any],
+        PrivateQqccContinuationTaskRef,
+        Any,
+        bytes,
+    ],
     Awaitable[None],
 ]
 
@@ -1360,6 +1491,7 @@ async def _deliver_pending_continuation(
     media_bytes: bytes | None,
     deliver_result_func: DeliveryExecutor | None,
     lease_lost: asyncio.Event,
+    refund_credits_func: RefundCredits | None = None,
 ) -> PrivateQqccContinuationCheckpoint:
     stage_index = checkpoint.current_stage_index
     registry_task_id = checkpoint.current_registry_task_id
@@ -1413,7 +1545,19 @@ async def _deliver_pending_continuation(
             ),
             delivery_stage,
         )
-    await deliver(checkpoint, delivery_stage, ref, context, payload)
+    try:
+        await deliver(checkpoint, delivery_stage, ref, context, payload)
+    except Exception as exc:
+        failed = await store.mark_failed(
+            ref=ref,
+            error_code=f"delivery_{type(exc).__name__}"[:64],
+        )
+        await _refund_failed_fixed_continuation(
+            failed,
+            store=store,
+            refund_credits_func=refund_credits_func,
+        )
+        raise
     delivered = await store.mark_delivered(ref=ref)
     await _delete_continuation_status_best_effort(
         checkpoint,
@@ -1423,7 +1567,9 @@ async def _deliver_pending_continuation(
     return delivered
 
 
-def _registry_task_id_for_cursor(private_bot_id: int, update_id: int, sequence: int) -> str:
+def _registry_task_id_for_cursor(
+    private_bot_id: int, update_id: int, sequence: int
+) -> str:
     submission_key = f"private_bot_update:{private_bot_id}:{update_id}:{sequence}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, submission_key))
 
@@ -1435,6 +1581,7 @@ async def resume_private_qqcc_continuation(
     store: PrivateQqccContinuationStore | None = None,
     execute_stage_func: StageExecutor | None = None,
     deliver_result_func: DeliveryExecutor | None = None,
+    refund_credits_func: RefundCredits | None = None,
 ) -> PrivateQqccContinuationCheckpoint | None:
     store = store or get_private_qqcc_continuation_store()
     token = await store.acquire_lock(chain_id)
@@ -1470,7 +1617,15 @@ async def resume_private_qqcc_continuation(
     )
     try:
         checkpoint = await store.get(chain_id)
-        if checkpoint is None or checkpoint.is_terminal:
+        if checkpoint is None:
+            return checkpoint
+        if checkpoint.is_terminal:
+            if checkpoint.status == "failed":
+                await _refund_failed_fixed_continuation(
+                    checkpoint,
+                    store=store,
+                    refund_credits_func=refund_credits_func,
+                )
             return checkpoint
         _assert_private_bot_context_tenant(context, checkpoint.private_bot_id)
         if checkpoint.status == "running":
@@ -1513,6 +1668,7 @@ async def resume_private_qqcc_continuation(
                         media_bytes=None,
                         deliver_result_func=deliver_result_func,
                         lease_lost=lease_lost,
+                        refund_credits_func=refund_credits_func,
                     )
                     continue
                 if checkpoint.status != "ready" or not checkpoint.has_more_stages:
@@ -1570,6 +1726,11 @@ async def resume_private_qqcc_continuation(
                             ref=ref,
                             error_code=error_code,
                         )
+                        await _refund_failed_fixed_continuation(
+                            checkpoint,
+                            store=store,
+                            refund_credits_func=refund_credits_func,
+                        )
                         checkpoint = await _deliver_pending_continuation(
                             checkpoint=checkpoint,
                             context=context,
@@ -1578,12 +1739,19 @@ async def resume_private_qqcc_continuation(
                             media_bytes=None,
                             deliver_result_func=deliver_result_func,
                             lease_lost=lease_lost,
+                            refund_credits_func=refund_credits_func,
                         )
                         continue
-                    return await store.mark_failed(
+                    checkpoint = await store.mark_failed(
                         ref=ref,
                         error_code=error_code,
                     )
+                    await _refund_failed_fixed_continuation(
+                        checkpoint,
+                        store=store,
+                        refund_credits_func=refund_credits_func,
+                    )
+                    return checkpoint
                 if lease_lost.is_set():
                     raise PrivateQqccContinuationUnavailable(
                         "continuation execution lease was lost"
@@ -1606,6 +1774,7 @@ async def resume_private_qqcc_continuation(
                             media_bytes=None,
                             deliver_result_func=deliver_result_func,
                             lease_lost=lease_lost,
+                            refund_credits_func=refund_credits_func,
                         )
                         continue
                     if checkpoint.status in {"ready", "completed", "failed"}:
@@ -1633,6 +1802,11 @@ async def resume_private_qqcc_continuation(
                             ref=ref,
                             error_code="stage_returned_no_output",
                         )
+                        await _refund_failed_fixed_continuation(
+                            checkpoint,
+                            store=store,
+                            refund_credits_func=refund_credits_func,
+                        )
                         checkpoint = await _deliver_pending_continuation(
                             checkpoint=checkpoint,
                             context=context,
@@ -1643,10 +1817,16 @@ async def resume_private_qqcc_continuation(
                             lease_lost=lease_lost,
                         )
                         continue
-                    return await store.mark_failed(
+                    checkpoint = await store.mark_failed(
                         ref=ref,
                         error_code="stage_returned_no_output",
                     )
+                    await _refund_failed_fixed_continuation(
+                        checkpoint,
+                        store=store,
+                        refund_credits_func=refund_credits_func,
+                    )
+                    return checkpoint
                 # The task flow completion hook must advance the checkpoint
                 # before it removes active registry/runtime state.
                 if checkpoint.status == "running":
@@ -1667,6 +1847,7 @@ async def resume_private_qqcc_continuation(
                         media_bytes=media_bytes,
                         deliver_result_func=deliver_result_func,
                         lease_lost=lease_lost,
+                        refund_credits_func=refund_credits_func,
                     )
         return checkpoint
     except asyncio.CancelledError:
@@ -1730,6 +1911,17 @@ async def list_private_qqcc_continuations_for_recovery(
     recoverable: list[PrivateQqccContinuationCheckpoint] = []
     for checkpoint in await store.list_all(tolerate_corrupt=True):
         if checkpoint.is_terminal:
+            if (
+                checkpoint.status == "failed"
+                and checkpoint.fixed_credit_cost is not None
+                and bool(
+                    checkpoint.next_stage_index > 0
+                    or checkpoint.current_output_ref
+                    or checkpoint.video_segment_output_refs
+                )
+                and not checkpoint.billing_refund_completed
+            ):
+                recoverable.append(checkpoint)
             continue
         # A stage result can advance its checkpoint immediately before the
         # old TaskRegistry record/user lock is cleaned. Let that task's
@@ -1740,10 +1932,12 @@ async def list_private_qqcc_continuations_for_recovery(
         if checkpoint.status == "running":
             if checkpoint.current_registry_task_id in active_registry_task_ids:
                 continue
-            checkpoint = await store.rewind_orphaned_stage(
-                chain_id=checkpoint.chain_id
-            )
-        if checkpoint.status in {"ready", "delivery_pending"}:
+            checkpoint = await store.rewind_orphaned_stage(chain_id=checkpoint.chain_id)
+        if checkpoint.status in {
+            "ready",
+            "delivery_pending",
+            "partial_delivery_pending",
+        }:
             recoverable.append(checkpoint)
     return recoverable
 
@@ -1755,7 +1949,6 @@ async def private_bot_has_nonterminal_continuations(
 ) -> bool:
     store = store or get_private_qqcc_continuation_store()
     return any(
-        checkpoint.private_bot_id == int(private_bot_id)
-        and not checkpoint.is_terminal
+        checkpoint.private_bot_id == int(private_bot_id) and not checkpoint.is_terminal
         for checkpoint in await store.list_all()
     )

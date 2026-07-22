@@ -90,6 +90,7 @@ interface VideoSceneConfig extends SceneDemoFields {
   lora_items: VideoLoraItem[]
   end_frame_draw_scene_id: string
   next_scene_id: string | null
+  credit_cost: number | null
 }
 
 interface VideoLoraItem {
@@ -112,6 +113,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
   next_scene_id: string | null
+  credit_cost: number | null
 }
 
 interface DrawSceneConfig extends SceneDemoFields {
@@ -124,6 +126,7 @@ interface DrawSceneConfig extends SceneDemoFields {
   postprocess_draw_scene_id: string
   postprocess_filter_scene_id: string
   original_face_swap_enabled: boolean
+  credit_cost: number | null
 }
 
 interface FilterSceneConfig extends SceneDemoFields {
@@ -134,6 +137,7 @@ interface FilterSceneConfig extends SceneDemoFields {
   engine: DrawSceneEngine
   lora_name: string
   original_face_swap_enabled: boolean
+  credit_cost: number | null
 }
 
 interface QqccBotConfig {
@@ -182,6 +186,7 @@ interface QqccBotConfigOptions {
   video_lora_models: LoraModelOption[]
   ltx_video_lora_models: LoraModelOption[]
   image_lora_models: LoraModelOption[]
+  default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
 }
 
 interface QqccBotConfigResponse {
@@ -237,6 +242,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   video_lora_models: [],
   ltx_video_lora_models: [],
   image_lora_models: [],
+  default_scene_credit_costs: {},
 })
 
 const filterSceneMaxCount = 20
@@ -813,6 +819,15 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   merged.default_video_engine = normalizeVideoEngine(raw.default_video_engine)
   merged.default_ai_video_engine = normalizeAiVideoEngine(raw.default_ai_video_engine)
   merged.default_draw_engine = normalizeDrawEngine(raw.default_draw_engine)
+  const rawCreditCosts = raw.default_scene_credit_costs
+  if (rawCreditCosts && typeof rawCreditCosts === 'object') {
+    ;(['video', 'ai_video', 'draw', 'filter'] as SceneConfigKind[]).forEach((kind) => {
+      const value = rawCreditCosts[kind]
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 1) {
+        merged.default_scene_credit_costs[kind] = value
+      }
+    })
+  }
   if (Array.isArray(raw.video_engines) && raw.video_engines.length > 0) {
     merged.video_engines = raw.video_engines
       .filter((item) => typeof item?.value === 'string')
@@ -865,6 +880,9 @@ const getEngineLabel = (kind: SceneConfigKind, engine: string) => {
   if (kind === 'ai_video') return aiVideoEngineLabels[normalizeAiVideoEngine(engine)]
   return drawEngineLabels[normalizeDrawEngine(engine)]
 }
+
+const normalizeSceneCreditCost = (raw: unknown): number | null =>
+  typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 ? raw : null
 
 const getSceneSelectPopupContainer = (triggerNode: HTMLElement) =>
   triggerNode.parentElement || document.body
@@ -1030,6 +1048,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'filter', engine }),
           original_face_swap_enabled: scene?.original_face_swap_enabled === true,
+          credit_cost: normalizeSceneCreditCost(scene?.credit_cost),
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'filter', sceneId: id, slot: 'input',
           }),
@@ -1065,6 +1084,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
               ? scene.postprocess_filter_scene_id.trim()
               : '',
           original_face_swap_enabled: scene?.original_face_swap_enabled === true,
+          credit_cost: normalizeSceneCreditCost(scene?.credit_cost),
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'draw', sceneId: id, slot: 'input',
           }),
@@ -1112,6 +1132,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
             ? scene.next_scene_id.trim()
             : null,
+          credit_cost: normalizeSceneCreditCost(scene?.credit_cost),
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'video', sceneId: id, slot: 'input',
           }),
@@ -1147,6 +1168,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
             ? scene.next_scene_id.trim()
             : null,
+          credit_cost: normalizeSceneCreditCost(scene?.credit_cost),
           demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
             kind: 'ai_video', sceneId: id, slot: 'input',
           }),
@@ -1175,6 +1197,9 @@ const createVideoSceneId = () => {
   return `scene_${Date.now().toString(36)}_${sceneCounter.value}`
 }
 
+const defaultSceneCreditCost = (kind: SceneConfigKind) =>
+  normalizeSceneCreditCost(modelOptions.default_scene_credit_costs[kind])
+
 const addVideoScene = () => {
   config.video_scenes.push({
     id: createVideoSceneId(),
@@ -1189,6 +1214,7 @@ const addVideoScene = () => {
     lora_items: [],
     end_frame_draw_scene_id: '',
     next_scene_id: null,
+    credit_cost: defaultSceneCreditCost('video'),
   })
   showScenePageContaining('video', config.video_scenes.length - 1)
 }
@@ -1209,6 +1235,7 @@ const addAiVideoScene = () => {
     lora_items: [],
     end_frame_draw_scene_id: '',
     next_scene_id: null,
+    credit_cost: defaultSceneCreditCost('ai_video'),
   })
   showScenePageContaining('ai_video', config.ai_video_scenes.length - 1)
 }
@@ -1282,6 +1309,7 @@ const addDrawScene = () => {
     postprocess_draw_scene_id: '',
     postprocess_filter_scene_id: '',
     original_face_swap_enabled: false,
+    credit_cost: defaultSceneCreditCost('draw'),
   })
   showScenePageContaining('draw', config.draw_scenes.length - 1)
 }
@@ -1295,6 +1323,7 @@ const addFilterScene = () => {
     engine: normalizeDrawEngine(modelOptions.default_draw_engine),
     lora_name: '',
     original_face_swap_enabled: false,
+    credit_cost: defaultSceneCreditCost('filter'),
   })
   showScenePageContaining('filter', config.filter_scenes.length - 1)
 }
@@ -1494,6 +1523,17 @@ const validateDrawScenes = () =>
 const validateFilterScenes = () =>
   config.filter_scenes.every(
     (scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()),
+  )
+
+const validateSceneCreditCosts = () =>
+  [
+    ...config.video_scenes,
+    ...config.ai_video_scenes,
+    ...config.draw_scenes,
+    ...config.filter_scenes,
+  ].every(
+    scene => scene.credit_cost === null
+      || (Number.isInteger(scene.credit_cost) && scene.credit_cost >= 1),
   )
 
 const buildPayload = (): QqccBotConfig => {
@@ -1781,6 +1821,10 @@ const saveConfig = async () => {
     message.error('请完善AI滤镜场景的按钮名称和提示词')
     return
   }
+  if (!validateSceneCreditCosts()) {
+    message.error('灵石消耗必须留空或填写大于等于 1 的整数')
+    return
+  }
   if (hasDrawPostprocessCycle(config.draw_scenes)) {
     message.error('AI绘图后处理配置不能形成循环')
     return
@@ -1944,17 +1988,21 @@ onMounted(() => {
                 添加场景
               </a-button>
             </div>
-            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-center">时长</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedVideoScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`video-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`video-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`video-scene-negative-prompt-${index}`" />
+              <div class="scene-credit-cell">
+                <span class="scene-mobile-field-label">灵石消耗</span>
+                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`video-scene-credit-cost-${index}`" class="scene-credit-input" />
+              </div>
               <div class="scene-duration-cell">
                 <a-select v-model:value="scene.duration" :data-testid="`video-scene-duration-${index}`" class="scene-duration-select">
                   <a-select-option v-for="item in durationOptions" :key="item" :value="item">{{ item }}</a-select-option>
@@ -2007,17 +2055,21 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理高级图生视频按钮、正负提示词、固定时长、LTX 模型和尾帧来源</span>
               <a-button data-testid="add-ai-video-scene" @click="addAiVideoScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-center">时长</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedAiVideoScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`ai-video-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`ai-video-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" placeholder="留空使用 ComfyUI 工作流默认负面提示词" :data-testid="`ai-video-scene-negative-prompt-${index}`" />
+              <div class="scene-credit-cell">
+                <span class="scene-mobile-field-label">灵石消耗</span>
+                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`ai-video-scene-credit-cost-${index}`" class="scene-credit-input" />
+              </div>
               <div class="scene-duration-cell">
                 <a-select v-model:value="scene.duration" :data-testid="`ai-video-scene-duration-${index}`" class="scene-duration-select">
                   <a-select-option v-for="item in aiVideoDurationOptions" :key="item" :value="item">{{ item }}s</a-select-option>
@@ -2058,17 +2110,21 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理绘图按钮、提示词、模型和后处理链</span>
               <a-button data-testid="add-draw-scene" @click="addDrawScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedDrawScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`draw-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`draw-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`draw-scene-negative-prompt-${index}`" />
+              <div class="scene-credit-cell">
+                <span class="scene-mobile-field-label">灵石消耗</span>
+                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`draw-scene-credit-cost-${index}`" class="scene-credit-input" />
+              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-draw-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('draw', config.draw_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
@@ -2115,17 +2171,21 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理滤镜按钮、提示词和底层模型</span>
               <a-button data-testid="add-filter-scene" @click="addFilterScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedFilterScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`filter-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`filter-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`filter-scene-negative-prompt-${index}`" />
+              <div class="scene-credit-cell">
+                <span class="scene-mobile-field-label">灵石消耗</span>
+                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`filter-scene-credit-cost-${index}`" class="scene-credit-input" />
+              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-filter-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('filter', config.filter_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
@@ -2478,6 +2538,7 @@ onMounted(() => {
 }
 
 .scene-duration-cell,
+.scene-credit-cell,
 .scene-action-cell {
   display: flex;
   align-items: center;
@@ -2485,6 +2546,24 @@ onMounted(() => {
 
 .scene-duration-cell {
   justify-content: flex-start;
+}
+
+.scene-credit-cell {
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.scene-credit-input {
+  width: 100%;
+}
+
+.scene-mobile-field-label {
+  display: none;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .scene-action-cell {
@@ -2617,8 +2696,13 @@ onMounted(() => {
   }
 
   .scene-duration-cell,
+  .scene-credit-cell,
   .scene-action-cell {
     justify-content: flex-start;
+  }
+
+  .scene-mobile-field-label {
+    display: block;
   }
 
   .scene-management-actions,

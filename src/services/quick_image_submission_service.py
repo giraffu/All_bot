@@ -5,6 +5,7 @@ import random
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Awaitable, Callable, Iterable
+from uuid import uuid4
 
 from src.constants import (
     MODE_EDIT,
@@ -54,6 +55,12 @@ from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
 from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
+from src.services.qqcc_scene_billing_service import (
+    QqccSceneBillingState,
+    RefundCredits,
+    refund_qqcc_scene_fixed_charge,
+    resolve_qqcc_scene_fixed_credit_cost,
+)
 from src.services.wan22_video_v2_extension_service import (
     download_output_file_to_fsm_temp,
 )
@@ -82,6 +89,8 @@ class QuickImageSubmissionPlan:
     mode: str
     task_type: str
     total_cost: int
+    fixed_credit_cost: int | None = None
+    billing_id: str = field(default_factory=lambda: uuid4().hex)
     allow_contribute: bool = True
     prompt: str = ""
     images: list[str] = field(default_factory=list)
@@ -242,7 +251,12 @@ async def run_quick_image_submission_plan(
     download_output_file_to_fsm_temp_func: DownloadOutputFile = download_output_file_to_fsm_temp,
     private_continuation_store: PrivateQqccContinuationStore | None = None,
     private_continuation_execute_stage_func: StageExecutor | None = None,
+    refund_credits_func: RefundCredits | None = None,
 ) -> None:
+    billing_state = QqccSceneBillingState(
+        fixed_credit_cost=plan.fixed_credit_cost,
+        billing_id=plan.billing_id,
+    )
     if is_private_qqcc_bot_context(context) and quick_image_plan_requires_continuation(
         plan
     ):
@@ -270,6 +284,7 @@ async def run_quick_image_submission_plan(
                 telegram_user_id=user_id,
                 username=username,
                 status_message_id=status_msg_id,
+                fixed_credit_cost=plan.fixed_credit_cost,
                 store=private_continuation_store,
             )
         finally:
@@ -296,28 +311,59 @@ async def run_quick_image_submission_plan(
             context=context,
             store=private_continuation_store,
             execute_stage_func=execute_stage,
+            refund_credits_func=refund_credits_func,
         )
         return
 
     if plan.kind == QuickImageSubmissionKind.DRAW_CHAIN:
-        await _maybe_await(
-            execute_draw_chain_func(
-                context=context,
-                chat_id=chat_id,
-                user_id=user_id,
-                username=username,
-                image_path=_require_first_image(plan),
-                chain=plan.draw_chain,
-                status_msg_id=status_msg_id,
-                process_generation_task_func=process_generation_task_func,
-                download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
-                final_send_result=True,
-                final_allow_contribute=plan.allow_contribute,
-                final_delete_status=True,
-                final_display_mode_name=plan.display_mode_name,
-                final_result_meta=plan.result_meta,
+        try:
+            result = await _maybe_await(
+                execute_draw_chain_func(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    username=username,
+                    image_path=_require_first_image(plan),
+                    chain=plan.draw_chain,
+                    status_msg_id=status_msg_id,
+                    process_generation_task_func=process_generation_task_func,
+                    download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
+                    final_send_result=True,
+                    final_allow_contribute=plan.allow_contribute,
+                    final_delete_status=True,
+                    final_display_mode_name=plan.display_mode_name,
+                    final_result_meta=plan.result_meta,
+                    billing_state=billing_state,
+                )
             )
-        )
+            if (
+                plan.fixed_credit_cost is not None
+                and billing_state.requires_chain_refund
+                and not getattr(result, "output_file", None)
+            ):
+                await refund_qqcc_scene_fixed_charge(
+                    billing_state=billing_state,
+                    telegram_user_id=user_id,
+                    username=username,
+                    **(
+                        {"refund_credits_func": refund_credits_func}
+                        if refund_credits_func is not None
+                        else {}
+                    ),
+                )
+        except BaseException:
+            if billing_state.requires_chain_refund:
+                await refund_qqcc_scene_fixed_charge(
+                    billing_state=billing_state,
+                    telegram_user_id=user_id,
+                    username=username,
+                    **(
+                        {"refund_credits_func": refund_credits_func}
+                        if refund_credits_func is not None
+                        else {}
+                    ),
+                )
+            raise
         return
 
     task_kwargs: dict[str, Any] = {
@@ -340,8 +386,11 @@ async def run_quick_image_submission_plan(
     if plan.lora_name:
         task_kwargs["lora_name"] = plan.lora_name
         task_kwargs["lora_strength"] = plan.lora_strength
+    task_kwargs.update(billing_state.allocate_task_billing())
 
-    await _maybe_await(process_generation_task_func(**task_kwargs))
+    result = await _maybe_await(process_generation_task_func(**task_kwargs))
+    if isinstance(result, tuple) and len(result) == 2 and result[1]:
+        billing_state.mark_task_succeeded()
 
 
 def _build_qqcc_draw_chain_plan(
@@ -385,11 +434,17 @@ def _build_qqcc_draw_chain_plan(
     images = [image_path] if image_path else []
     scene_id = str(scene.get("id") or "").strip()
     display_mode_name = str(scene.get("name") or "").strip()
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
     return QuickImageSubmissionPlan(
         kind=QuickImageSubmissionKind.DRAW_CHAIN,
         mode=mode,
         task_type=mode,
-        total_cost=calculate_qqcc_draw_chain_cost(draw_chain),
+        total_cost=(
+            fixed_credit_cost
+            if fixed_credit_cost is not None
+            else calculate_qqcc_draw_chain_cost(draw_chain)
+        ),
+        fixed_credit_cost=fixed_credit_cost,
         allow_contribute=False,
         prompt=str(draw_chain[0].get("prompt") or ""),
         images=images,
@@ -476,7 +531,9 @@ def _build_single_image_plan(
         qqcc_config=qqcc_config,
         fsm_data=fsm_data,
     )
-    lora_name = str(fsm_data.get("lora_name") or "") if mode == MODE_IMG2IMG_LORA else ""
+    lora_name = (
+        str(fsm_data.get("lora_name") or "") if mode == MODE_IMG2IMG_LORA else ""
+    )
     return QuickImageSubmissionPlan(
         kind=QuickImageSubmissionKind.SINGLE_IMAGE,
         mode=mode,
