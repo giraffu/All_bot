@@ -92,6 +92,13 @@ export function installAntDesign(app: App) {
     () => import('ant-design-vue/es/layout'),
     namedExport('LayoutSider')
   )
+  registerAsyncComponent(app, 'a-list', () => import('ant-design-vue/es/list'))
+  registerAsyncComponent(
+    app,
+    'a-list-item',
+    () => import('ant-design-vue/es/list'),
+    namedExport('ListItem')
+  )
   registerAsyncComponent(app, 'a-menu', () => import('ant-design-vue/es/menu'))
   registerAsyncComponent(app, 'a-menu-item', () => import('ant-design-vue/es/menu'), namedExport('MenuItem'))
   registerAsyncComponent(app, 'a-modal', () => import('ant-design-vue/es/modal'))
