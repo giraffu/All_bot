@@ -71,6 +71,7 @@ export function useLabWorkbench() {
 
   const currentModeId = ref<UnifiedLabModeId>(DEFAULT_LAB_MODE_ID)
   const prompt = ref('')
+  const audioPrompt = ref('')
   const selectedEditLora = ref('')
   const customEditLoraStrength = ref(DEFAULT_EDIT_LORA_STRENGTH)
   const selectedVideoLora = ref(getDefaultVideoLoraSelection())
@@ -80,6 +81,7 @@ export function useLabWorkbench() {
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
   const resolution = ref(getDefaultResolutionForMode(DEFAULT_LAB_MODE_ID))
   const duration = ref(DEFAULT_VIDEO_DURATION)
+  const selectedCharacterId = ref<string | null>(null)
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -105,6 +107,7 @@ export function useLabWorkbench() {
     references.clearReferences()
     slots.clearSlotAssets()
     prompt.value = ''
+    audioPrompt.value = ''
     selectedEditLora.value = ''
     customEditLoraStrength.value = DEFAULT_EDIT_LORA_STRENGTH
     selectedVideoLora.value = getDefaultVideoLoraSelection()
@@ -114,6 +117,7 @@ export function useLabWorkbench() {
     wan22ResolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
+    selectedCharacterId.value = null
     template.resetTemplateState()
     wan22.resetWan22ChainState()
     ltx.resetLtxExtensionState()
@@ -224,6 +228,7 @@ export function useLabWorkbench() {
     resolution: resolution.value,
     duration: duration.value,
     wan22ResolutionPreset: wan22ResolutionPreset.value,
+    hasCharacter: Boolean(selectedCharacterId.value),
   }))
 
   const costHint = computed(() => {
@@ -243,6 +248,7 @@ export function useLabWorkbench() {
 
   const isDirty = computed(() => (
     prompt.value.trim().length > 0
+    || audioPrompt.value.trim().length > 0
     || references.uploadedReferences.value.length > 0
     || Object.keys(slots.uploadedSlotAssets.value).length > 0
     || selectedEditLora.value !== ''
@@ -254,6 +260,7 @@ export function useLabWorkbench() {
     || resolution.value !== getDefaultResolutionForMode(currentModeId.value)
     || duration.value !== DEFAULT_VIDEO_DURATION
     || template.isTemplateApplied.value
+    || selectedCharacterId.value !== null
   ))
 
   watch(selectedEditLora, (nextValue) => {
@@ -274,6 +281,12 @@ export function useLabWorkbench() {
       duration.value = options[0]?.value ?? DEFAULT_VIDEO_DURATION
     }
   }, { immediate: true })
+
+  watch(selectedCharacterId, (characterId) => {
+    if (currentMode.value.id !== 'ltx_t2v') return
+    resolution.value = characterId ? '768x448' : '1280x704'
+    if (characterId) duration.value = '5'
+  })
 
   watch(
     () => [
@@ -364,6 +377,7 @@ export function useLabWorkbench() {
     uploadedReferences: references.uploadedReferences,
     uploadedSlotAssets: slots.uploadedSlotAssets,
     prompt,
+    audioPrompt,
     selectedEditLora,
     customEditLoraStrength,
     selectedVideoLora,
@@ -372,6 +386,7 @@ export function useLabWorkbench() {
     wan22ResolutionPreset,
     resolution,
     duration,
+    selectedCharacterId,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -398,6 +413,7 @@ export function useLabWorkbench() {
     currentMode,
     currentModeId,
     prompt,
+    audioPrompt,
     uploadedReferences: references.uploadedReferences,
     displayedReferences: references.displayedReferences,
     assetUploadSlots: slots.assetUploadSlots,
@@ -441,6 +457,7 @@ export function useLabWorkbench() {
     resolution,
     videoDurationOptions,
     duration,
+    selectedCharacterId,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

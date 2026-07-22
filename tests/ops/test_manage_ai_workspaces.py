@@ -281,6 +281,62 @@ def test_handoff_freezes_a_pushed_head_and_immediately_releases_the_slot(tmp_pat
     assert manager.status()[0]["safe_to_assign"] is True
 
 
+def test_handoff_enqueues_before_releasing_the_slot(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    claim = manager.claim("queued-task")
+    slot = workspace_root / "A"
+    (slot / "queued.txt").write_text("ready\n", encoding="utf-8")
+    _git("add", "queued.txt", cwd=slot)
+    _git(
+        "-c", "user.name=AllBot Tests", "-c", "user.email=tests@example.com",
+        "commit", "-m", "queued", cwd=slot,
+    )
+    _git("push", "-u", "origin", claim["branch"], cwd=slot)
+    calls = []
+
+    handoff = manager.handoff("A", enqueue=calls.append)
+
+    assert calls == [handoff]
+    assert _git("branch", "--show-current", cwd=slot) == ""
+
+
+def test_handoff_does_not_release_slot_when_enqueue_fails(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    claim = manager.claim("queue-failure")
+    slot = workspace_root / "A"
+    (slot / "queued.txt").write_text("ready\n", encoding="utf-8")
+    _git("add", "queued.txt", cwd=slot)
+    _git(
+        "-c", "user.name=AllBot Tests", "-c", "user.email=tests@example.com",
+        "commit", "-m", "queued", cwd=slot,
+    )
+    _git("push", "-u", "origin", claim["branch"], cwd=slot)
+
+    def fail(_handoff):
+        raise module.WorkspaceError("queue unavailable")
+
+    with pytest.raises(module.WorkspaceError, match="queue unavailable"):
+        manager.handoff("A", enqueue=fail)
+
+    assert _git("branch", "--show-current", cwd=slot) == claim["branch"]
+
+
 def test_batch_plan_freezes_multiple_remote_heads_for_one_main_pr(tmp_path):
     module = _load_module()
     repo, _ = _repository(tmp_path)

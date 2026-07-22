@@ -106,9 +106,7 @@ async def enqueue_pending_web_finalizer(
             "kind": FREE_EDIT_V3_CONTINUATION_KIND,
             "stage": "bf16",
             "stage2_task_type": FREE_EDIT_V3_STAGE2_TASK_TYPE,
-            "stage2_backend_task_id": _free_edit_v3_stage2_task_id(
-                registry_task_id
-            ),
+            "stage2_backend_task_id": _free_edit_v3_stage2_task_id(registry_task_id),
             "original_image": continuation_marker.get("original_image"),
             "stage1_result_path": None,
             "final_allow_contribute": bool(
@@ -158,9 +156,7 @@ async def _resume_free_edit_v3_face_swap(
     # stale V1 labels so an upgrade/retry can never silently downgrade stage 2.
     stage2_task_type = FREE_EDIT_V3_STAGE2_TASK_TYPE
     continuation["stage2_task_type"] = FREE_EDIT_V3_STAGE2_TASK_TYPE
-    final_allow_contribute = bool(
-        continuation.get("final_allow_contribute", True)
-    )
+    final_allow_contribute = bool(continuation.get("final_allow_contribute", True))
     continuation["stage"] = "face_swap_dispatching"
     next_record["backend_task_id"] = stage2_backend_task_id
     submission_context = next_record["submission_context"]
@@ -256,7 +252,9 @@ async def _finalize_pending_web_failure(
     await remove_record_func()
 
 
-async def _finalize_terminal_record(record: dict[str, Any], status_data: dict[str, Any]) -> None:
+async def _finalize_terminal_record(
+    record: dict[str, Any], status_data: dict[str, Any]
+) -> None:
     final_status = normalize_backend_status(status_data.get("status"))
     registry_task_id = record["registry_task_id"]
     terminal_snapshot = build_task_terminal_snapshot(
@@ -269,6 +267,18 @@ async def _finalize_terminal_record(record: dict[str, Any], status_data: dict[st
 
     async def _remove_record() -> None:
         await redis_client.remove_pending_web_finalizer(registry_task_id)
+
+    submission = record.get("submission_context") or {}
+    if submission.get("task_type") == "character_reference_build":
+        from src.web_api.services.character_reference_service import (
+            finalize_character_reference,
+        )
+
+        await finalize_character_reference(
+            task_id=registry_task_id,
+            status=final_status,
+            result_path=status_data.get("result_path"),
+        )
 
     await route_backend_terminal_snapshot(
         terminal_snapshot=terminal_snapshot,

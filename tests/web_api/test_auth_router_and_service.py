@@ -97,6 +97,36 @@ async def test_login_telegram_payload_checks_permission_and_builds_token():
 
 
 @pytest.mark.asyncio
+async def test_login_telegram_payment_payload_skips_web_access_gate():
+    req = SimpleNamespace(
+        initData="init-data",
+        model_dump=lambda **kwargs: {"id": 1},
+    )
+    user = _build_user(user_group="凡人", current_identity="外门弟子")
+
+    with patch(
+        "src.web_api.services.auth_api_service.authenticate_and_get_user",
+        new=AsyncMock(return_value=(user, {"credits": 6})),
+    ) as mock_auth, patch(
+        "src.web_api.services.auth_api_service.permission_service.check_web_access",
+        new=AsyncMock(),
+    ) as mock_permission, patch(
+        "src.web_api.services.auth_api_service.build_auth_token_payload",
+        return_value={"access_token": "payment-token"},
+    ) as mock_build_payload:
+        response = await auth_api_service.login_telegram_payment_payload(req=req)
+
+    assert response == {"access_token": "payment-token"}
+    mock_auth.assert_awaited_once_with(init_data="init-data", widget_data=None)
+    mock_permission.assert_not_awaited()
+    mock_build_payload.assert_called_once_with(
+        user=user,
+        stats={"credits": 6},
+        channel="telegram_payment",
+    )
+
+
+@pytest.mark.asyncio
 async def test_login_with_password_payload_extracts_ip_and_schedules_notification():
     req = SimpleNamespace(username="tester", password="secret")
     request = _build_request(real_ip="8.8.8.8")
@@ -158,6 +188,20 @@ async def test_auth_router_routes_to_service():
         response = await auth_router.login_telegram(req)
 
     assert response == {"access_token": "token"}
+    mock_service.assert_awaited_once_with(req=req)
+
+
+@pytest.mark.asyncio
+async def test_payment_auth_router_routes_to_payment_login_service():
+    req = SimpleNamespace(initData="init-data")
+
+    with patch(
+        "src.web_api.routers.auth.login_telegram_payment_payload",
+        new=AsyncMock(return_value={"access_token": "payment-token"}),
+    ) as mock_service:
+        response = await auth_router.login_telegram_payment(req)
+
+    assert response == {"access_token": "payment-token"}
     mock_service.assert_awaited_once_with(req=req)
 
 

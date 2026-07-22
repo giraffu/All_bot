@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.backend.schemas import QqccBotConfigRequest, QqccBotConfigResponse
 from src.database.core import get_db
 from src.services.qqcc_config_service import (
+    QqccSceneCreditCostError,
     load_qqcc_config_payload,
     save_qqcc_config_payload,
 )
@@ -66,6 +67,8 @@ async def update_qqcc_config(
         )
     except QqccVideoSceneChainError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except QqccSceneCreditCostError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/demo-media/{scene_kind}/{scene_id}/{slot}")
@@ -91,7 +94,9 @@ async def upload_qqcc_scene_demo_media(
             scene_id,
             slot,
         )
-        raise HTTPException(status_code=503, detail="Demo media storage unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Demo media storage unavailable"
+        ) from exc
     return {
         "media": media,
         "preview_url": build_qqcc_demo_preview_url(media),
@@ -123,7 +128,9 @@ async def put_qqcc_scene_demo_media_json(
     try:
         content = base64.b64decode(payload.content_base64, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid demo media encoding") from exc
+        raise HTTPException(
+            status_code=400, detail="Invalid demo media encoding"
+        ) from exc
     upload = _MemoryUpload(
         content=content,
         content_type=payload.mime_type,
@@ -157,7 +164,9 @@ async def submit_qqcc_scene_demo_generation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Failed to submit QQCC demo generation kind=%s", scene_kind)
-        raise HTTPException(status_code=503, detail="Demo generation unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Demo generation unavailable"
+        ) from exc
 
 
 @router.get("/demo-generation/{scene_kind}/{scene_id}/{generation_id}")
@@ -176,4 +185,6 @@ async def get_qqcc_scene_demo_generation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Failed to poll QQCC demo generation id=%s", generation_id)
-        raise HTTPException(status_code=503, detail="Demo generation unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Demo generation unavailable"
+        ) from exc

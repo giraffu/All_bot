@@ -45,6 +45,7 @@ PUBLIC_SENTINELS = (
 )
 NON_RUNNABLE_IDENTITY_ARTIFACTS = {
     "dashboard-frontend",
+    "python-media-runtime-base",
     "python-runtime-base",
     "python-worker-base",
     "qqcc-config-frontend",

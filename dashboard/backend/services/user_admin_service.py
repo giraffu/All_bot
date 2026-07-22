@@ -20,6 +20,7 @@ from src.core.billing_core_membership import (
 from src.database.models import (
     AffiliateRedeem,
     AffiliateTransaction,
+    CharacterReference,
     CheckinHistory,
     GalleryComment,
     GalleryPost,
@@ -86,7 +87,9 @@ class UserTransferPlan:
     dry_run: bool = False
 
 
-def _normalize_user_list_sort(sort_by: str | None, sort_order: str | None) -> tuple[str, str]:
+def _normalize_user_list_sort(
+    sort_by: str | None, sort_order: str | None
+) -> tuple[str, str]:
     normalized_sort_by = (sort_by or USER_LIST_DEFAULT_SORT_BY).strip()
     normalized_sort_order = (sort_order or USER_LIST_DEFAULT_SORT_ORDER).strip().lower()
 
@@ -167,7 +170,9 @@ def _build_user_list_stmt(query: UserListQuery):
 
 
 def _present_user_list_item(user: User) -> dict:
-    user_dict = {column.name: getattr(user, column.name) for column in user.__table__.columns}
+    user_dict = {
+        column.name: getattr(user, column.name) for column in user.__table__.columns
+    }
     user_dict["referral_count"] = user.referral_count or 0
     user_dict["last_activity"] = user.last_activity
     user_dict["generation_count"] = user.generation_count or 0
@@ -229,7 +234,9 @@ async def get_users_payload(
             user_query.sort_order,
         )
         stmt = _build_user_list_stmt(user_query)
-        total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+        total_result = await db.execute(
+            select(func.count()).select_from(stmt.subquery())
+        )
         total = total_result.scalar() or 0
 
         stmt = stmt.options(selectinload(User.inviter_user))
@@ -260,14 +267,22 @@ async def get_users_payload(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-async def get_user_stats_payload(*, user_id: int, db, logger_override: logging.Logger | None = None) -> dict:
+async def get_user_stats_payload(
+    *, user_id: int, db, logger_override: logging.Logger | None = None
+) -> dict:
     active_logger = logger_override or logger
     try:
         recharge_stmt = (
             select(
-                func.sum(case((Order.payment_channel == "RMB", Order.final_price), else_=0)).label("total_recharge_rmb"),
-                func.sum(case((Order.payment_channel == "TON", Order.final_price), else_=0)).label("total_recharge_ton"),
-                func.sum(case((Order.payment_channel == "XTR", Order.final_price), else_=0)).label("total_recharge_stars"),
+                func.sum(
+                    case((Order.payment_channel == "RMB", Order.final_price), else_=0)
+                ).label("total_recharge_rmb"),
+                func.sum(
+                    case((Order.payment_channel == "TON", Order.final_price), else_=0)
+                ).label("total_recharge_ton"),
+                func.sum(
+                    case((Order.payment_channel == "XTR", Order.final_price), else_=0)
+                ).label("total_recharge_stars"),
             )
             .where(Order.status == "SUCCESS")
             .where(Order.tx_hash.notlike("manual_%"))
@@ -339,7 +354,11 @@ def _min_value(*values):
 
 
 def _compute_user_group(
-    *, referral_count: int, checkin_count: int, generation_count: int, is_channel_member: bool
+    *,
+    referral_count: int,
+    checkin_count: int,
+    generation_count: int,
+    is_channel_member: bool,
 ) -> str:
     if referral_count > 100 and checkin_count > 300 and generation_count > 1000:
         return "元婴期"
@@ -352,11 +371,15 @@ def _compute_user_group(
     return "凡人"
 
 
-def _merge_membership_state(source_user: User, target_user: User) -> tuple[str, datetime | None]:
+def _merge_membership_state(
+    source_user: User, target_user: User
+) -> tuple[str, datetime | None]:
     now = datetime.now()
     entitlements: list[tuple[str, float]] = []
     for user in (source_user, target_user):
-        identity = normalize_membership_identity(getattr(user, "current_identity", None))
+        identity = normalize_membership_identity(
+            getattr(user, "current_identity", None)
+        )
         expire_at = getattr(user, "identity_expire_at", None)
         if identity != DEFAULT_IDENTITY and expire_at and expire_at > now:
             remaining_days = max((expire_at - now).total_seconds() / 86400.0, 0.0)
@@ -434,7 +457,9 @@ async def _prune_duplicate_interactions(
     return sum(int(deleted_count or 0) for _, _, deleted_count in duplicate_rows)
 
 
-async def _merge_user_interactions(*, db, source_user_id: int, target_user_id: int) -> dict:
+async def _merge_user_interactions(
+    *, db, source_user_id: int, target_user_id: int
+) -> dict:
     duplicate_reactions_deleted = await _prune_duplicate_interactions(
         db=db,
         source_user_id=source_user_id,
@@ -556,7 +581,10 @@ async def _merge_referral_graph(*, db, source_user: User, target_user: User) -> 
 
     if target_user.invited_by == source_user.id:
         target_user.invited_by = inherited_inviter_id
-    elif target_user.invited_by is None and inherited_inviter_id not in (None, target_user.id):
+    elif target_user.invited_by is None and inherited_inviter_id not in (
+        None,
+        target_user.id,
+    ):
         target_user.invited_by = inherited_inviter_id
 
     repoint_invited_users_result = await db.execute(
@@ -620,10 +648,18 @@ async def _load_transfer_users(*, db, source_user_id: int, target_user_id: int):
     return source_user, target_user
 
 
-async def _move_user_owned_rows(*, db, source_user_id: int, target_user_id: int) -> dict[str, int]:
+async def _move_user_owned_rows(
+    *, db, source_user_id: int, target_user_id: int
+) -> dict[str, int]:
     moved_counts: dict[str, int] = {}
     update_specs = [
         ("history_rows", History, History.user_id, {"user_id": target_user_id}),
+        (
+            "character_references",
+            CharacterReference,
+            CharacterReference.user_id,
+            {"user_id": target_user_id},
+        ),
         (
             "template_contributions",
             TemplateContribution,
@@ -655,7 +691,12 @@ async def _move_user_owned_rows(*, db, source_user_id: int, target_user_id: int)
             AffiliateRedeem.user_id,
             {"user_id": target_user_id},
         ),
-        ("gallery_posts", GalleryPost, GalleryPost.user_id, {"user_id": target_user_id}),
+        (
+            "gallery_posts",
+            GalleryPost,
+            GalleryPost.user_id,
+            {"user_id": target_user_id},
+        ),
         (
             "gallery_comments",
             GalleryComment,
@@ -705,9 +746,9 @@ def _merge_transfer_profile(*, source_user: User, target_user: User) -> None:
     target_user.total_contributions = int(target_user.total_contributions or 0) + int(
         source_user.total_contributions or 0
     )
-    target_user.approved_contributions = int(target_user.approved_contributions or 0) + int(
-        source_user.approved_contributions or 0
-    )
+    target_user.approved_contributions = int(
+        target_user.approved_contributions or 0
+    ) + int(source_user.approved_contributions or 0)
     target_user.last_checkin = _max_value(
         target_user.last_checkin,
         source_user.last_checkin,
@@ -727,10 +768,13 @@ def _merge_transfer_profile(*, source_user: User, target_user: User) -> None:
     )
 
     if target_user.is_submission_banned:
-        target_user.submission_banned_at = _max_value(
-            target_user.submission_banned_at,
-            source_user.submission_banned_at,
-        ) or datetime.now()
+        target_user.submission_banned_at = (
+            _max_value(
+                target_user.submission_banned_at,
+                source_user.submission_banned_at,
+            )
+            or datetime.now()
+        )
         target_user.submission_ban_reason = build_submission_ban_message(
             target_user.submission_ban_reason or source_user.submission_ban_reason
         )
@@ -847,7 +891,9 @@ def _build_user_transfer_plan(
             "checkin_count_delta": int(source_user.checkin_count or 0),
             "generation_count_delta": int(source_user.generation_count or 0),
             "total_contributions_delta": int(source_user.total_contributions or 0),
-            "approved_contributions_delta": int(source_user.approved_contributions or 0),
+            "approved_contributions_delta": int(
+                source_user.approved_contributions or 0
+            ),
         },
         dry_run=dry_run,
     )
@@ -873,6 +919,7 @@ async def _estimate_transfer_counts(
 ) -> dict[str, int]:
     count_specs = [
         ("history_rows", History, History.user_id),
+        ("character_references", CharacterReference, CharacterReference.user_id),
         ("template_contributions", TemplateContribution, TemplateContribution.user_id),
         ("checkin_history_rows", CheckinHistory, CheckinHistory.user_id),
         ("user_logs", UserLog, UserLog.user_id),
@@ -1016,15 +1063,22 @@ def _build_transfer_user_response(
     }
 
 
-async def delete_user_payload(*, user_id: int, db, logger_override: logging.Logger | None = None) -> dict:
+async def delete_user_payload(
+    *, user_id: int, db, logger_override: logging.Logger | None = None
+) -> dict:
     active_logger = logger_override or logger
     try:
         user = await _load_user(db, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        await db.execute(delete(CheckinHistory).where(CheckinHistory.user_id == user_id))
+        await db.execute(
+            delete(CheckinHistory).where(CheckinHistory.user_id == user_id)
+        )
         await db.execute(delete(History).where(History.user_id == user_id))
+        await db.execute(
+            delete(CharacterReference).where(CharacterReference.user_id == user_id)
+        )
         await db.execute(
             delete(Referral).where(
                 (Referral.inviter_id == user_id) | (Referral.invitee_id == user_id)
@@ -1046,7 +1100,9 @@ async def delete_user_payload(*, user_id: int, db, logger_override: logging.Logg
                 .group_by(GalleryComment.post_id)
             )
         ).all()
-        await db.execute(delete(GalleryComment).where(GalleryComment.user_id == user_id))
+        await db.execute(
+            delete(GalleryComment).where(GalleryComment.user_id == user_id)
+        )
         for post_id, deleted_count in comment_count_rows:
             if not post_id or not deleted_count:
                 continue
@@ -1054,7 +1110,9 @@ async def delete_user_payload(*, user_id: int, db, logger_override: logging.Logg
                 update(GalleryPost)
                 .where(GalleryPost.id == post_id)
                 .values(
-                    comments_count=func.greatest(GalleryPost.comments_count - deleted_count, 0)
+                    comments_count=func.greatest(
+                        GalleryPost.comments_count - deleted_count, 0
+                    )
                 )
             )
         await db.delete(user)
@@ -1135,7 +1193,9 @@ async def clear_user_history_payload(
                     try:
                         storage_client.remove_object("bot-data", file_name)
                     except Exception as file_exc:
-                        active_logger.warning(f"Failed to delete input file {file_name}: {file_exc}")
+                        active_logger.warning(
+                            f"Failed to delete input file {file_name}: {file_exc}"
+                        )
 
             if record.output_file:
                 bucket = "comfyui-temp" if "/" not in record.output_file else "bot-data"
@@ -1171,7 +1231,9 @@ async def admin_gift_plan_payload(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        plan_result = await db.execute(select(MembershipPlan).where(MembershipPlan.id == request.plan_id))
+        plan_result = await db.execute(
+            select(MembershipPlan).where(MembershipPlan.id == request.plan_id)
+        )
         plan = plan_result.scalar_one_or_none()
         if not plan:
             raise HTTPException(status_code=404, detail="Plan not found")
@@ -1331,7 +1393,9 @@ async def transfer_user_data_payload(
         raise
     except Exception as exc:
         await db.rollback()
-        active_logger.error(f"Error transferring user data {user_id} -> {request.target_user_id}: {exc}")
+        active_logger.error(
+            f"Error transferring user data {user_id} -> {request.target_user_id}: {exc}"
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -1386,7 +1450,9 @@ async def update_user_identity_payload(
                 "old_identity": old_identity,
                 "new_identity": user.current_identity,
                 "old_expire": str(old_expire) if old_expire else None,
-                "new_expire": str(user.identity_expire_at) if user.identity_expire_at else None,
+                "new_expire": str(user.identity_expire_at)
+                if user.identity_expire_at
+                else None,
                 "converted": request.convert,
                 "source": "dashboard_admin_edit",
             },

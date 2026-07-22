@@ -72,7 +72,7 @@ async def test_process_video_task_template_allows_missing_username(monkeypatch):
     monkeypatch.setattr(
         task_service_entrypoints_video,
         "build_translated_cost_status_builder",
-        lambda *args, **kwargs: (lambda cost: f"submitted:{cost}"),
+        lambda *args, **kwargs: lambda cost: f"submitted:{cost}",
     )
     monkeypatch.setattr(
         task_service_entrypoints_video,
@@ -99,6 +99,8 @@ async def test_process_video_task_template_allows_missing_username(monkeypatch):
         chat_id=123,
         user_id=456,
         username=None,
+        deduct_quota=False,
+        cost_override=19,
     )
 
     assert result == (b"video-bytes", "result.mp4")
@@ -108,6 +110,8 @@ async def test_process_video_task_template_allows_missing_username(monkeypatch):
     assert flow.request.chat_id == 123
     assert flow.request.internal_user_id == 321
     assert flow.request.username is None
+    assert flow.request.deduct_quota is False
+    assert flow.request.cost_override == 19
 
 
 @pytest.mark.asyncio
@@ -177,7 +181,7 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
     monkeypatch.setattr(
         task_service_entrypoints_video,
         "build_translated_cost_status_builder",
-        lambda *args, **kwargs: (lambda cost: f"submitted:{cost}"),
+        lambda *args, **kwargs: lambda cost: f"submitted:{cost}",
     )
     monkeypatch.setattr(
         task_service_entrypoints_video,
@@ -217,7 +221,9 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
     assert resolve_settings.await_args.kwargs["resolution"] == "720p"
     assert resolve_settings.await_args.kwargs["duration"] == "8s"
 
-    flow = task_service_entrypoints_video.run_bot_task_application.await_args.kwargs["flow"]
+    flow = task_service_entrypoints_video.run_bot_task_application.await_args.kwargs[
+        "flow"
+    ]
     assert flow.cleanup_policy.cleanup_paths == ["/tmp/start.png", "/tmp/end.png"]
 
 

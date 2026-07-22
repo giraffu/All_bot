@@ -76,6 +76,8 @@ sequenceDiagram
 
 - Web 侧 JWT 由 `src/web_api/core/security.py` 使用 `SECRET_KEY` 签发，不再由 `BOT_TOKEN` 直接签发。
 - 登录通道已经包含 Telegram Mini App / Login Widget 与账号密码两类入口。
+- Bot TON 按钮统一进入主 Vue `/billing?method=ton&kind=membership`；旧独立 React TON 前端与 `WEBAPP_URL` 已删除。深链只负责筛选月卡并预选 TON，用户仍须选择套餐、连接钱包并确认交易。
+- `POST /api/auth/telegram/payment` 复用 Telegram 验签并签发 `telegram_payment` 支付会话。支付依赖只跳过 Web 等级准入，仍校验 JWT、密码版本与订单归属；练功房、历史、画廊等路由继续使用 `get_current_user`，并在动态身份门禁前显式拒绝支付 channel，因此高阶用户也不能借支付会话访问其它 Web 能力。
 - `get_current_user` 在解 JWT 后还会做两次动态校验：
   - `password_version` 黑名单校验，确保改密后旧 Token 失效。
   - 当前身份/境界是否仍满足 Web 访问条件，防止“先登录后降权”继续访问。
@@ -88,6 +90,7 @@ sequenceDiagram
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
 - TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
 - `GET /api/payment/plans` 返回 `ton_payment_enabled` 和可空的 `ton_receiver_address`；禁用时地址必须为 `null`。`POST /api/payment/ton-orders` 在套餐查询、`Order` 构造和事务提交前检查可用性，不可用时返回 `503 / TON_PAYMENT_UNAVAILABLE`，不得留下 `PENDING` 订单。Vue 交易地址只能取自订单响应，不能保留接收地址硬编码或使用套餐地址兜底。
+- `POST /api/payment/orders`、`POST /api/payment/ton-orders` 与本人订单状态查询接受完整 Web 会话或支付会话；成功状态附带白名单账户摘要，供充值页刷新灵石、身份、到期时间与境界，不要求支付用户调用受限的 `/api/users/me`。
 - checkpoint key 使用校验后的 merchant address：同一地址的等价表示归一到同一 key，真实商户地址变化会自然形成新的 `ton:<merchant_address>:last_lt`；不得把旧地址游标复制到新地址。抓链、金额校验或履约失败时仍不得前移游标。
 - 各支付渠道发货完成后都会同步尝试：
   - 计算首单返佣 `commission_usdt`
@@ -142,6 +145,10 @@ sequenceDiagram
   - `data.ton_payment_enabled=false` 时 `data.ton_receiver_address=null`。
 - Web TON 预建单：`POST /api/payment/ton-orders`
   - TON 配置不可用时返回 HTTP 503，`reason=TON_PAYMENT_UNAVAILABLE`，且无数据库写入。
+- 支付专用 Telegram 登录：`POST /api/auth/telegram/payment`
+  - 返回支付用途 JWT；低阶用户可使用支付路由，不能据此访问其它受限 Web 能力。
+- Web 订单状态：`GET /api/payment/orders/{order_id}/status`
+  - 仅允许订单所属用户查询；成功状态额外返回 `account` 白名单摘要。
 
 - RMB 支付回调：`POST /api/payment/notify`
   - 仅适用于 RMB 网关异步通知。
@@ -151,6 +158,7 @@ sequenceDiagram
 - 密码登录：`POST /api/auth/login`
 - 绑定/修改密码：`POST /api/auth/bind-password`
 - Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
+- QQCC 四类场景可配置根场景固定总价 `credit_cost`：首个真实任务通过 `cost_override` 扣一次，后续内部任务统一 `deduct_quota=false`；后续阶段或最终投递失败按根任务实际扣费并以 `qqcc_scene_refund:<billing_id>` 全额幂等退款。`null`/缺失保持旧逐段计费与标准任务退款，快速换脸不读取该配置。
 - Web 个人中心灵石账本：`GET /api/users/me/credits/ledger?page=&page_size=`
   - 只允许当前登录用户查询自己的 `user_logs` 非 0 灵石变动。
   - 返回 `operation_type` 兼容字段、语言无关的 `display_key`、收入/支出方向、`credit_change`、`current_balance`、时间与白名单展示上下文；Vue 只能通过共享 i18n 渲染 `display_key`，不得把原始 operation/task type 当作用户文案。

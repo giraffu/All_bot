@@ -9,7 +9,8 @@ import { useI18n } from 'vue-i18n'
 import {
   mainLayoutContentRefKey
 } from '@/composables/useWorkbenchScrollLock'
-import { User as UserIcon, Wand2, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark } from 'lucide-vue-next'
+import { User as UserIcon, Wand2, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Users } from 'lucide-vue-next'
+import { getRuntimeFlag } from '@/config/runtime'
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
 import TaskDetailModal from '@/components/TaskDetailModal.vue'
@@ -25,6 +26,7 @@ const { t } = useI18n()
 const TemplateApplyWorkbenchHost = defineAsyncComponent(
   () => import('@/components/template-apply/TemplateApplyWorkbenchHost.vue')
 )
+const ltxT2VEnabled = getRuntimeFlag('enable_ltx_t2v', false)
 
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
@@ -66,6 +68,7 @@ const pageTitle = computed(() => {
     Profile: t('menu.profile'),
     Gallery: t('menu.gallery'),
     CustomFeatures: t('menu.custom_features'),
+    Characters: t('menu.characters'),
     History: t('menu.history'),
     MyFavorites: t('menu.my_favorites'),
     Billing: t('menu.recharge'),
@@ -224,7 +227,9 @@ const initParticles = () => {
 // Ensure selected key matches current route
 onMounted(() => {
   selectedKeys.value = [route.name as string || 'Profile']
-  void authStore.fetchUser()
+  if (authStore.sessionPurpose !== 'payment') {
+    void authStore.fetchUser()
+  }
   themeStore.initTheme()
   syncCanvasPalette()
   initParticles()
@@ -275,6 +280,10 @@ watch(resolvedTheme, () => {
         <a-menu-item key="CustomFeatures">
           <template #icon><Wand2 :size="18" /></template>
           <span>{{ $t('menu.custom_features') }}</span>
+        </a-menu-item>
+        <a-menu-item v-if="ltxT2VEnabled" key="Characters">
+          <template #icon><Users :size="18" /></template>
+          <span>{{ $t('menu.characters') }}</span>
         </a-menu-item>
         <a-menu-item key="History">
           <template #icon><HistoryIcon :size="18" /></template>
@@ -429,5 +438,44 @@ watch(resolvedTheme, () => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .header-custom {
+    gap: 0.5rem;
+    padding-inline: 0.75rem !important;
+  }
+
+  .header-left {
+    min-width: 0;
+  }
+
+  .header-title {
+    overflow: hidden;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    gap: 0.25rem;
+  }
+
+  .balance {
+    padding-inline: 0.5rem;
+  }
+
+  .user-profile {
+    padding: 0.125rem;
+  }
+
+  .user-profile :deep(.ant-avatar) {
+    margin-right: 0 !important;
+  }
+
+  .user-name {
+    display: none;
+  }
 }
 </style>

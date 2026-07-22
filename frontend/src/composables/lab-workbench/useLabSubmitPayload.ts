@@ -28,6 +28,7 @@ type UseLabSubmitPayloadOptions = {
   uploadedReferences: Ref<UploadedReference[]>
   uploadedSlotAssets: Ref<Partial<Record<LabUploadSlotId, UploadedSlotAsset>>>
   prompt: Ref<string>
+  audioPrompt?: Ref<string>
   selectedEditLora: Ref<string>
   customEditLoraStrength: Ref<number>
   selectedVideoLora: Ref<string>
@@ -36,6 +37,7 @@ type UseLabSubmitPayloadOptions = {
   wan22ResolutionPreset: Ref<Wan22VideoV2ResolutionPreset>
   resolution: Ref<string>
   duration: Ref<string>
+  selectedCharacterId?: Ref<string | null>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -55,6 +57,7 @@ export function useLabSubmitPayload({
   uploadedReferences,
   uploadedSlotAssets,
   prompt,
+  audioPrompt,
   selectedEditLora,
   customEditLoraStrength,
   selectedVideoLora,
@@ -63,6 +66,7 @@ export function useLabSubmitPayload({
   wan22ResolutionPreset,
   resolution,
   duration,
+  selectedCharacterId,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -162,6 +166,24 @@ export function useLabSubmitPayload({
         },
         isTemplate: isTemplateApplied.value,
         sourcePostId: templateSourcePostId.value,
+      }))
+      return
+    }
+
+    if (currentMode.value.id === 'ltx_t2v') {
+      const characterId = selectedCharacterId?.value ?? null
+      await submitAndTrack(buildGenerationTaskPayload({
+        taskType: characterId ? 'ltx_t2v_ic' : 'ltx_t2v',
+        images: [],
+        prompt: prompt.value,
+        negativePrompt: negativePrompt.value,
+        promptTarget: 'inputs',
+        resolution: characterId ? '768x448' : '1280x704',
+        duration: characterId ? 5 : Number(duration.value),
+        extraInputs: {
+          ...(characterId ? { character_id: characterId } : {}),
+          ...(audioPrompt?.value.trim() ? { audio_prompt: audioPrompt.value.trim() } : {}),
+        },
       }))
       return
     }

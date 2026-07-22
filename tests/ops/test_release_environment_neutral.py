@@ -75,6 +75,7 @@ def test_runtime_identity_gate_applies_only_to_runnable_service_artifacts():
     assert module._requires_runtime_identity("central-api") is True
     assert module._requires_runtime_identity("worker-relay") is True
     assert module._requires_runtime_identity("python-runtime-base") is False
+    assert module._requires_runtime_identity("python-media-runtime-base") is False
     assert module._requires_runtime_identity("python-worker-base") is False
     assert module._requires_runtime_identity("dashboard-frontend") is False
     assert module._requires_runtime_identity("qqcc-config-frontend") is False

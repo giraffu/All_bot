@@ -10,6 +10,7 @@ from src.database.models import User
 from src.web_api.services.auth_api_service import (
     bind_password_payload,
     login_telegram_payload,
+    login_telegram_payment_payload,
     login_with_password_payload,
 )
 
@@ -22,6 +23,12 @@ async def login_telegram(req: TelegramLoginRequest):
     Login or register via Telegram Web App or Login Widget.
     """
     return await login_telegram_payload(req=req)
+
+
+@router.post("/telegram/payment", response_model=dict)
+async def login_telegram_payment(req: TelegramLoginRequest):
+    """Authenticate a Telegram user for payment-only Web access."""
+    return await login_telegram_payment_payload(req=req)
 
 
 @router.post("/login")

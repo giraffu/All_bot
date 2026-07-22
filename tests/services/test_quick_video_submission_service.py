@@ -188,6 +188,7 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
         allowed_resolutions=["512p", "720p"],
     )
 
+    assert plan.fixed_credit_cost is None
     assert plan.kind == QuickVideoSubmissionKind.LEGACY_VIDEO
     assert plan.mode == MODE_IMAGE_TO_VIDEO
     assert plan.default_prompt_key == MODE_CUSTOM_VIDEO
@@ -210,6 +211,47 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
             "display_mode_name": "模型动图",
         }
     }
+
+
+def test_qqcc_video_fixed_credit_cost_ignores_resolution_and_tail_scene_price():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {
+                    "id": "fixed-video",
+                    "name": "固定价动图",
+                    "prompt": "move",
+                    "duration": "10s",
+                    "credit_cost": 9,
+                    "end_frame_draw_scene_id": "tail",
+                }
+            ],
+            "draw_scenes": [
+                {
+                    "id": "tail",
+                    "name": "尾帧",
+                    "prompt": "tail",
+                    "credit_cost": 88,
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "fixed-video",
+            "resolution": "720p",
+            "duration": "5s",
+        },
+        qqcc_config=config,
+        allowed_resolutions=["512p", "720p"],
+    )
+
+    assert plan.total_cost == 9
+    assert plan.fixed_credit_cost == 9
+    assert plan.billing_id
 
 
 def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
@@ -280,7 +322,10 @@ def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_lora
                     "duration": 15,
                     "engine": "ltx_video",
                     "lora_items": [
-                        {"path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75},
+                        {
+                            "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                            "strength": 0.75,
+                        },
                     ],
                 }
             ],
@@ -303,6 +348,75 @@ def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_lora
         {"name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75}
     ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
+
+
+def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "fixed-cinema",
+                    "name": "固定价视频",
+                    "prompt": "camera orbit",
+                    "duration": 20,
+                    "credit_cost": 11,
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "fixed-cinema"},
+        qqcc_config=config,
+        allowed_resolutions=[],
+    )
+
+    assert plan.duration == "20s"
+    assert plan.total_cost == 11
+    assert plan.fixed_credit_cost == 11
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_direct_video_passes_cost_override_to_entrypoint():
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "fixed",
+                    "name": "固定价动图",
+                    "prompt": "move",
+                    "duration": "5s",
+                    "credit_cost": 9,
+                }
+            ],
+        }
+    )
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "fixed",
+            "resolution": "720p",
+            "duration": "5s",
+        },
+        qqcc_config=config,
+        allowed_resolutions=["720p"],
+    )
+    video_task = AsyncMock(return_value=(b"video", "output.mp4"))
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=1,
+        user_id=2,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=3,
+        process_video_task_template_func=video_task,
+    )
+
+    assert video_task.await_args.kwargs["cost_override"] == 9
+    assert video_task.await_args.kwargs.get("deduct_quota", True) is True
 
 
 def test_qqcc_ai_video_plan_submits_config_only_ltx_lora_to_worker():
@@ -664,7 +778,9 @@ async def test_run_qqcc_wan22_v2_video_plan_passes_scene_negative_prompt():
         (QuickVideoSubmissionKind.WAN22_VIDEO_V2, "images"),
     ],
 )
-async def test_qqcc_video_runner_adapts_input_before_task_submission(kind, expected_key):
+async def test_qqcc_video_runner_adapts_input_before_task_submission(
+    kind, expected_key
+):
     base_plan = build_quick_video_submission_plan(
         fsm_data={"mode": MODE_CUSTOM_VIDEO, "scene_id": "scene", "resolution": "512p"},
         qqcc_config=normalize_qqcc_config(
@@ -685,7 +801,9 @@ async def test_qqcc_video_runner_adapts_input_before_task_submission(kind, expec
     plan = replace(
         base_plan,
         kind=kind,
-        mode=MODE_WAN22_VIDEO_V2 if kind == QuickVideoSubmissionKind.WAN22_VIDEO_V2 else MODE_IMAGE_TO_VIDEO,
+        mode=MODE_WAN22_VIDEO_V2
+        if kind == QuickVideoSubmissionKind.WAN22_VIDEO_V2
+        else MODE_IMAGE_TO_VIDEO,
     )
     video_task = AsyncMock()
     generation_task = AsyncMock()
@@ -717,7 +835,11 @@ async def test_qqcc_video_runner_adapts_input_before_task_submission(kind, expec
         if kind == QuickVideoSubmissionKind.LEGACY_VIDEO
         else generation_task.await_args.kwargs[expected_key]
     )
-    assert submitted == "/tmp/adapted.png" if expected_key == "image_path" else ["/tmp/adapted.png"]
+    assert (
+        submitted == "/tmp/adapted.png"
+        if expected_key == "image_path"
+        else ["/tmp/adapted.png"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1128,8 +1250,7 @@ def test_build_quick_video_submission_plan_snapshots_full_same_kind_chain_and_co
         "1:1",
     ]
     assert plan.total_cost == sum(
-        calculate_quick_video_cost("720p", duration)
-        for duration in ("5s", "8s")
+        calculate_quick_video_cost("720p", duration) for duration in ("5s", "8s")
     )
 
 
@@ -1216,13 +1337,31 @@ async def test_run_qqcc_video_scene_chain_passes_each_tail_frame_and_stitches_on
 @pytest.mark.asyncio
 async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_failure():
     plan = build_quick_video_submission_plan(
-        fsm_data={"scene_kind": "video", "scene_id": "first", "resolution": "720p", "duration": "5s"},
+        fsm_data={
+            "scene_kind": "video",
+            "scene_id": "first",
+            "resolution": "720p",
+            "duration": "5s",
+        },
         qqcc_config={
             "scene_preset_version": 1,
             "main_buttons": {"video_edit": True},
             "video_scenes": [
-                {"id": "first", "name": "First", "prompt": "one", "duration": "5s", "engine": "image_to_video", "next_scene_id": "second"},
-                {"id": "second", "name": "Second", "prompt": "two", "duration": "5s", "engine": "wan22_video_v2"},
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "one",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                    "next_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "Second",
+                    "prompt": "two",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
             ],
         },
         allowed_resolutions=["720p"],
@@ -1238,8 +1377,12 @@ async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_fai
         username="tester",
         image_path="/tmp/input.png",
         status_msg_id=77,
-        process_video_task_template_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
-        process_generation_task_func=AsyncMock(side_effect=RuntimeError("segment failed")),
+        process_video_task_template_func=AsyncMock(
+            return_value=(b"one", "history/one.mp4")
+        ),
+        process_generation_task_func=AsyncMock(
+            side_effect=RuntimeError("segment failed")
+        ),
         extract_video_last_frame_func=AsyncMock(return_value=b"png-tail"),
         stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
         persist_chain_result_func=persist,
@@ -1248,11 +1391,14 @@ async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_fai
     assert result == {"task_id": "partial"}
     assert persist.await_args.kwargs["partial"] is True
     assert persist.await_args.kwargs["segment_output_files"] == ["history/one.mp4"]
-    bot.send_message.assert_awaited_once()
+    bot.send_message.assert_awaited_once_with(
+        chat_id=456,
+        text="第 2 段生成失败，已返回前 1 段。",
+    )
 
 
 @pytest.mark.asyncio
-async def test_private_qqcc_video_scene_chain_persists_all_segments_in_durable_plan(monkeypatch):
+async def test_run_qqcc_video_scene_chain_reports_tail_frame_failure_after_success():
     plan = build_quick_video_submission_plan(
         fsm_data={"scene_kind": "video", "scene_id": "first", "resolution": "720p", "duration": "5s"},
         qqcc_config={
@@ -1261,6 +1407,69 @@ async def test_private_qqcc_video_scene_chain_persists_all_segments_in_durable_p
             "video_scenes": [
                 {"id": "first", "name": "First", "prompt": "one", "duration": "5s", "engine": "image_to_video", "next_scene_id": "second"},
                 {"id": "second", "name": "Second", "prompt": "two", "duration": "5s", "engine": "wan22_video_v2"},
+            ],
+        },
+        allowed_resolutions=["720p"],
+    )
+    bot = SimpleNamespace(send_message=AsyncMock())
+    persist = AsyncMock(return_value={"task_id": "partial"})
+    second_segment = AsyncMock()
+
+    result = await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(bot=bot),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_video_task_template_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
+        process_generation_task_func=second_segment,
+        extract_video_last_frame_func=AsyncMock(side_effect=RuntimeError("ffmpeg missing")),
+        stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
+        persist_chain_result_func=persist,
+    )
+
+    assert result == {"task_id": "partial"}
+    second_segment.assert_not_awaited()
+    assert persist.await_args.kwargs["partial"] is True
+    assert persist.await_args.kwargs["segment_output_files"] == ["history/one.mp4"]
+    bot.send_message.assert_awaited_once_with(
+        chat_id=456,
+        text="第 1 段已生成，但尾帧处理失败，已返回前 1 段。",
+    )
+
+
+@pytest.mark.asyncio
+async def test_private_qqcc_video_scene_chain_persists_all_segments_in_durable_plan(
+    monkeypatch,
+):
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "scene_kind": "video",
+            "scene_id": "first",
+            "resolution": "720p",
+            "duration": "5s",
+        },
+        qqcc_config={
+            "scene_preset_version": 1,
+            "main_buttons": {"video_edit": True},
+            "video_scenes": [
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "one",
+                    "duration": "5s",
+                    "engine": "image_to_video",
+                    "next_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "Second",
+                    "prompt": "two",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
             ],
         },
         allowed_resolutions=["720p"],
@@ -1277,7 +1486,9 @@ async def test_private_qqcc_video_scene_chain_persists_all_segments_in_durable_p
 
     await run_quick_video_submission_plan(
         plan=plan,
-        context=SimpleNamespace(bot_data={"bot_client_type": "bot:qqcc-private:7", "private_qqcc_bot_id": 7}),
+        context=SimpleNamespace(
+            bot_data={"bot_client_type": "bot:qqcc-private:7", "private_qqcc_bot_id": 7}
+        ),
         chat_id=456,
         user_id=123,
         username="tester",
@@ -1290,6 +1501,9 @@ async def test_private_qqcc_video_scene_chain_persists_all_segments_in_durable_p
     assert all(stage["qqcc_video_segment"] is True for stage in stages)
     assert stages[0]["delivery_required"] is False
     assert stages[1]["delivery_required"] is True
-    assert stages[1]["task_kwargs"]["_qqcc_chain_delivery"]["segments"][0]["scene_id"] == "first"
+    assert (
+        stages[1]["task_kwargs"]["_qqcc_chain_delivery"]["segments"][0]["scene_id"]
+        == "first"
+    )
     assert stages[1]["task_kwargs"]["show_queue_status"] is False
     resume.assert_awaited_once()

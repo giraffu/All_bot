@@ -64,6 +64,21 @@ def test_classification_uses_the_highest_risk_module(
     assert decision.strategy == expected_strategy
 
 
+def test_media_runtime_base_is_non_runtime_release_infrastructure():
+    module = _load_module()
+
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts={"python-media-runtime-base"},
+        requested="auto",
+        locked=False,
+        validation_mode="full",
+    )
+
+    assert decision.risk_class == "non-runtime"
+    assert decision.strategy == "standard"
+
+
 def test_direct_and_emergency_have_default_skips():
     module = _load_module()
 

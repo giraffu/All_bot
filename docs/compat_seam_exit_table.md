@@ -51,6 +51,7 @@
 | `Profile.vue` 欢迎区摘要 / 快捷入口装配 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileWelcomeSummary.ts`、`frontend/src/composables/useProfileQuickActions.ts` | 已下沉，欢迎区与快捷入口的数据/行为编排进一步退出页面脚本 |
 | swap 双文件页结果重置 controller | 旧 swap 页面内联 | `frontend/src/composables/useSwapResetController.ts` | 已统一，reset 会同步清上传态、taskId、分辨率与模板态/sourcePostId |
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
+| 独立 TON React 支付页 | `ton_payment_frontend` + `WEBAPP_URL` + `pay.aivison.it.com` 代码兜底 | 主 Vue `/billing?method=ton&kind=membership` + Web payment API | 已删除；Bot TON 按钮与 Web 个人中心共用 Vue、服务端预建单和共享履约内核 |
 | `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `TaskSuccessPersistenceCommand` + `persist_successful_task_result_command(...)` + `task_core_persistence_flow.py` | 已收口，旧 `persist_successful_task_result(...)` 仅保留兼容包装，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
 | `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/services/gallery_feed_queries.py` | 已下沉到 service 层，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；category/media_type/sort/time_range/page/count 查询拼装不再堆在 core 主文件 |

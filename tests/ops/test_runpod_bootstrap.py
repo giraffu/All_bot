@@ -13,6 +13,9 @@ PROFILE_LOCAL_DOCKERFILE = Path(
     "remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
 )
 WAN22_PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile")
+LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
+    "remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
+)
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
 
@@ -122,6 +125,19 @@ def test_runpod_profile_build_script_has_valid_bash_syntax():
         ["bash", "-n", str(PROFILE_BUILD_SCRIPT)],
         check=True,
     )
+
+
+def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
+    dockerfile = LTX_T2V_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert (
+        "BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:"
+        "124cd638cab69e87c39946190a7e17169b6223e35c7d946e9df540719ddb385b"
+        in dockerfile
+    )
+    assert "LTX 2.3 Sulphur Ingredients T2V.json" in dockerfile
+    assert 'ic["26:91"]["inputs"]["latent"] == ["26:153",0]' in dockerfile
+    assert "LTX model files must stay out of the runtime refresh image" in dockerfile
 
 
 def test_pornmaster_profile_smoke_requires_bf16_workflow_and_mapping():

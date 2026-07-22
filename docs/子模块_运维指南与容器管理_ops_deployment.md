@@ -1,10 +1,13 @@
 # 子模块: 运维指南与容器管理 (Ops & Deployment)
 
+> 2026-07-22 起，`release.py` 在同一门面内自动选择 `streamlined` 或 `strict`，并在 plan/promote JSON 输出原因。普通 full-validation main control-plane、已知影响且目标配置投影精确时使用 streamlined；migration、Compose/env、数据库/Redis、首次切换、未知影响、GPU/test-execution 或任一 strict artifact 使整次混合发布进入 strict。streamlined 只 pull/recreate 目标服务并用本机旧 ref 快速回切，测试 smoke 自动写 exact-digest verified evidence；strict 保留备份、Alembic、维护、queue drain、完整回滚和恢复。
 > 2026-07-20 起，日常正式发布唯一门面为 `python scripts/release.py promote --confirm-prod`；不带确认是零生产 mutation 的预览，部分发布可传 `--modules`，固定候选可传 `--sha`。`plan/preflight/deploy/deploy-module/rollback/recover/config-*` 只作为高级与兼容入口。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。
 
 ## 1. 目标与范围
 
 本模块记录当前仓库真实生效的发布、迁移与故障恢复边界。新发布只消费 CI 生成的不可变镜像 digest，不在目标机 build，也不从云端源码目录加载应用代码。migration 由发布器识别并进入显式维护、备份、单 Alembic head 与 upgrade 流程。
+
+普通 streamlined 事务使用进程专属临时目录中的 SSH ControlMaster；退出时关闭且不写仓库。事务 journal 记录 candidate、evidence、config、pull、replace、health、state、target-rollback 的无敏感阶段耗时。正式晋级不再次查询 GitHub CI：direct 校验 bundle 的 full/passed，standard 额外读取测试 retained history 的同 artifact + exact digest verified evidence。配置只读检查只覆盖目标投影；任何目标 drift 都先停下，代码发布不会替操作者激活或改写配置。
 
 ## 2. Legacy 部署路径（禁止用于新代码发布）
 
@@ -104,6 +107,7 @@
 ## 4. 服务重建注意事项
 
 - 所有自有服务只运行 release manifest 中的 digest-pinned 镜像；目标机不得现场 build。
+- QQCC 链式视频的尾帧探测与拼接由控制面执行；`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。模块化 full-validation 对四个最终 digest 分别执行 `ffmpeg` / `ffprobe` smoke；修改该窄基础层只重建真实 descendants，不得把所有控制面服务无差别卷入重建。
 - Dashboard、QQCC Config 或 Bot 的单模块发布由影响 planner 选择完整消费者，并在发布后核对目标健康与非目标容器启动时间不变。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。

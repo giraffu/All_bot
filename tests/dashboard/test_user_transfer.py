@@ -12,6 +12,7 @@ from dashboard.backend.services import user_admin_service
 from src.database.models import (
     AffiliateRedeem,
     AffiliateTransaction,
+    CharacterReference,
     CheckinHistory,
     GalleryComment,
     GalleryPost,
@@ -45,6 +46,7 @@ async def _create_transfer_session():
         await conn.run_sync(MembershipPlan.__table__.create)
         await conn.run_sync(Referral.__table__.create)
         await conn.run_sync(History.__table__.create)
+        await conn.run_sync(CharacterReference.__table__.create)
         await conn.run_sync(TemplateContribution.__table__.create)
         await conn.run_sync(CheckinHistory.__table__.create)
         await conn.run_sync(UserLog.__table__.create)
@@ -62,7 +64,9 @@ async def _create_transfer_session():
 
 
 @pytest.mark.asyncio
-async def test_transfer_user_data_payload_moves_business_data_and_deletes_source(monkeypatch):
+async def test_transfer_user_data_payload_moves_business_data_and_deletes_source(
+    monkeypatch,
+):
     engine, session = await _create_transfer_session()
     now = datetime.now()
     source_expire = now + timedelta(days=10)
@@ -129,6 +133,15 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
             Referral(inviter_id=9, invitee_id=1),
             Referral(inviter_id=1, invitee_id=10),
             History(user_id=1, task_id="task-1", type="image", prompt="hello"),
+            CharacterReference(
+                id="character-1",
+                user_id=1,
+                name="Source character",
+                source_object_key="bot-data/source.png",
+                task_id="character-task-1",
+                status="ready",
+                sheet_object_key="bot-data/sheet.png",
+            ),
             TemplateContribution(user_id=1, file_path="foo.png", file_type="photo"),
             CheckinHistory(user_id=1, checkin_date=date(2026, 5, 20)),
             UserLog(
@@ -168,12 +181,24 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
                 idempotency_key="aff-rd-1",
                 status="SUCCESS",
             ),
-            GalleryPost(id=100, task_id="task-1", user_id=1, media_type="image", likes_count=2),
-            GalleryPost(id=101, task_id="task-2", user_id=2, media_type="image", applied_count=2),
-            GalleryPost(id=102, task_id="task-3", user_id=2, media_type="image", dislikes_count=1),
+            GalleryPost(
+                id=100, task_id="task-1", user_id=1, media_type="image", likes_count=2
+            ),
+            GalleryPost(
+                id=101, task_id="task-2", user_id=2, media_type="image", applied_count=2
+            ),
+            GalleryPost(
+                id=102,
+                task_id="task-3",
+                user_id=2,
+                media_type="image",
+                dislikes_count=1,
+            ),
             GalleryPost(id=103, task_id="task-4", user_id=9, media_type="image"),
             GalleryPost(id=104, task_id="task-5", user_id=9, media_type="image"),
-            GalleryComment(post_id=100, user_id=1, content="hello comment", is_active=True),
+            GalleryComment(
+                post_id=100, user_id=1, content="hello comment", is_active=True
+            ),
             GalleryPromptUnlock(user_id=1, post_id=103, author_id=9),
             GalleryPromptUnlock(user_id=2, post_id=103, author_id=9),
             GalleryPromptUnlock(user_id=1, post_id=104, author_id=9),
@@ -208,6 +233,7 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert result["source_user_id"] == 1
     assert result["target_user_id"] == 2
     assert result["moved_counts"]["history_rows"] == 1
+    assert result["moved_counts"]["character_references"] == 1
     assert result["moved_counts"]["duplicate_reactions_deleted"] == 1
     assert result["moved_counts"]["duplicate_applies_deleted"] == 1
     assert result["moved_counts"]["gallery_prompt_unlocks"] == 1
@@ -236,9 +262,20 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert merged_target.created_at == now - timedelta(days=10)
 
     history_row = (
-        await session.execute(select(History.user_id).where(History.task_id == "task-1"))
+        await session.execute(
+            select(History.user_id).where(History.task_id == "task-1")
+        )
     ).scalar_one()
     assert history_row == 2
+
+    character_owner = (
+        await session.execute(
+            select(CharacterReference.user_id).where(
+                CharacterReference.id == "character-1"
+            )
+        )
+    ).scalar_one()
+    assert character_owner == 2
 
     template_row = (
         await session.execute(select(TemplateContribution.user_id))
@@ -246,12 +283,16 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert template_row == 2
 
     checkin_count = (
-        await session.execute(select(func.count(CheckinHistory.id)).where(CheckinHistory.user_id == 2))
+        await session.execute(
+            select(func.count(CheckinHistory.id)).where(CheckinHistory.user_id == 2)
+        )
     ).scalar_one()
     assert checkin_count == 1
 
     order_owner = (
-        await session.execute(select(Order.internal_user_id).where(Order.order_id == "order-1"))
+        await session.execute(
+            select(Order.internal_user_id).where(Order.order_id == "order-1")
+        )
     ).scalar_one()
     assert order_owner == 2
 
@@ -271,22 +312,30 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert invited_by == 2
 
     transferred_referral = (
-        await session.execute(select(Referral.inviter_id).where(Referral.invitee_id == 10))
+        await session.execute(
+            select(Referral.inviter_id).where(Referral.invitee_id == 10)
+        )
     ).scalar_one()
     assert transferred_referral == 2
 
     target_inviter = (
-        await session.execute(select(Referral.inviter_id).where(Referral.invitee_id == 2))
+        await session.execute(
+            select(Referral.inviter_id).where(Referral.invitee_id == 2)
+        )
     ).scalar_one()
     assert target_inviter == 9
 
     likes_count = (
-        await session.execute(select(GalleryPost.likes_count).where(GalleryPost.id == 100))
+        await session.execute(
+            select(GalleryPost.likes_count).where(GalleryPost.id == 100)
+        )
     ).scalar_one()
     assert likes_count == 1
 
     applied_count = (
-        await session.execute(select(GalleryPost.applied_count).where(GalleryPost.id == 101))
+        await session.execute(
+            select(GalleryPost.applied_count).where(GalleryPost.id == 101)
+        )
     ).scalar_one()
     assert applied_count == 1
 
@@ -306,7 +355,9 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
             ).order_by(GalleryPromptUnlock.post_id)
         )
     ).all()
-    assert all(user_id != 1 and author_id != 1 for user_id, _, author_id in prompt_unlock_rows)
+    assert all(
+        user_id != 1 and author_id != 1 for user_id, _, author_id in prompt_unlock_rows
+    )
     assert (2, 100, 2) in prompt_unlock_rows
     assert (2, 104, 9) in prompt_unlock_rows
     assert sum(1 for row in prompt_unlock_rows if row == (2, 103, 9)) == 1
@@ -319,7 +370,10 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
             )
         )
     ).all()
-    assert all(follower_id != 1 and followee_id != 1 for follower_id, followee_id in follow_rows)
+    assert all(
+        follower_id != 1 and followee_id != 1
+        for follower_id, followee_id in follow_rows
+    )
     assert (2, 9) in follow_rows
     assert (2, 10) in follow_rows
     assert (9, 2) in follow_rows
@@ -412,9 +466,13 @@ async def test_transfer_user_route_delegates_to_service(monkeypatch):
     db = object()
     request = TransferUserDataRequest(target_user_id=2, note="route")
     service_mock = AsyncMock(return_value=expected)
-    monkeypatch.setattr(dashboard_users_router, "transfer_user_data_payload", service_mock)
+    monkeypatch.setattr(
+        dashboard_users_router, "transfer_user_data_payload", service_mock
+    )
 
-    response = await dashboard_users_router.transfer_user_data(1, request=request, db=db)
+    response = await dashboard_users_router.transfer_user_data(
+        1, request=request, db=db
+    )
 
     assert response == expected
     service_mock.assert_awaited_once_with(

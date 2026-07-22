@@ -9,12 +9,14 @@ const {
   routerPushMock,
   setAuthMock,
   checkWebAccessMock,
+  routeQueryMock,
 } = vi.hoisted(() => ({
   apiPostMock: vi.fn(),
   messageErrorMock: vi.fn(),
   routerPushMock: vi.fn(),
   setAuthMock: vi.fn(),
   checkWebAccessMock: vi.fn(),
+  routeQueryMock: {} as Record<string, unknown>,
 }))
 
 vi.mock('@/api', () => ({
@@ -38,7 +40,7 @@ vi.mock('@ant-design/icons-vue', () => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({ query: routeQueryMock }),
   useRouter: () => ({
     push: routerPushMock,
   }),
@@ -57,6 +59,7 @@ describe('Login Mini App auth', () => {
     sessionStorage.clear()
     window.history.replaceState(null, '', '/login')
     checkWebAccessMock.mockReturnValue(true)
+    Object.keys(routeQueryMock).forEach((key) => delete routeQueryMock[key])
     ;(window as any).Telegram = {
       WebApp: {
         initData: 'tg-init-data',
@@ -131,7 +134,53 @@ describe('Login Mini App auth', () => {
       telegram_id: 123456,
       user_group: '练气期',
       current_identity: '外门弟子',
-    })
+    }, 'full')
     expect(routerPushMock).toHaveBeenCalledWith('/profile')
+  }, 10000)
+
+  it('uses payment auth and returns to the TON billing deep link', async () => {
+    routeQueryMock.redirect = '/billing?method=ton&kind=membership'
+    checkWebAccessMock.mockReturnValue(false)
+    apiPostMock.mockResolvedValueOnce({
+      data: {
+        access_token: 'payment-token',
+        user: {
+          id: 2,
+          telegram_id: 654321,
+          credits: 6,
+          user_group: '凡人',
+          current_identity: '外门弟子',
+        },
+      },
+    })
+
+    const { default: Login } = await import('./Login.vue')
+    mount(Login, {
+      global: {
+        stubs: {
+          'a-button': { template: '<button><slot /></button>' },
+          'a-input': { template: '<input />' },
+          'a-input-password': { template: '<input />' },
+          'a-spin': { template: '<div><slot /></div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith('/auth/telegram/payment', {
+      initData: 'tg-init-data',
+    })
+    expect(checkWebAccessMock).not.toHaveBeenCalled()
+    expect(setAuthMock).toHaveBeenCalledWith('payment-token', {
+      id: 2,
+      telegram_id: 654321,
+      credits: 6,
+      user_group: '凡人',
+      current_identity: '外门弟子',
+    }, 'payment')
+    expect(routerPushMock).toHaveBeenCalledWith(
+      '/billing?method=ton&kind=membership'
+    )
   }, 10000)
 })

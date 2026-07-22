@@ -458,6 +458,32 @@ class History(Base):
     user = relationship("User", back_populates="history")
 
 
+class CharacterReference(Base):
+    __tablename__ = "character_references"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending', 'ready', 'failed', 'deleted')",
+            name="ck_character_references_status",
+        ),
+        Index("ix_character_references_user_status", "user_id", "status"),
+        Index("ix_character_references_task_id", "task_id", unique=True),
+    )
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(60), nullable=False)
+    description = Column(String(500), nullable=True)
+    source_object_key = Column(String(1024), nullable=False)
+    sheet_object_key = Column(String(1024), nullable=True)
+    task_id = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
+    deleted_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", backref="character_references")
+
+
 class TemplateContribution(Base):
     __tablename__ = "template_contributions"
 

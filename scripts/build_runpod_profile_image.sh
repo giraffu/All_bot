@@ -45,6 +45,9 @@ default_comfyui_ref_for_profile() {
         ltx_video)
             printf '%s\n' "f026b01ba576d98442839861a0eb0046bc2250d3"
             ;;
+        ltx_t2v)
+            printf '%s\n' "7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1"
+            ;;
         *)
             printf '%s\n' "master"
             ;;
@@ -57,7 +60,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, ltx_video, or pornmaster_flux2_edit.
+  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -184,6 +187,9 @@ case "$PROFILE" in
     ltx_video)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-ltx-video:local}"
         ;;
+    ltx_t2v)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-ltx-t2v:local}"
+        ;;
     *)
         echo "Unsupported RunPod profile: ${PROFILE}" >&2
         exit 2
@@ -229,11 +235,11 @@ elif [ "$PROFILE" = "scail2" ]; then
     cp -a remote_workers "${cleanup_dir}/remote_workers"
     dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "ltx_video" ]; then
+elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     cp -a remote_workers "${cleanup_dir}/remote_workers"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
     cleanup_dir="$(mktemp -d)"
@@ -373,7 +379,7 @@ fi
 echo "COMFYUI_DIR=${comfyui_dir}"
 echo "WAN22_CUSTOM_NODES_PRESENT=true"
 '
-    elif [ "$PROFILE" = "ltx_video" ]; then
+    elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ]; then
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
 set -euo pipefail
 comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
@@ -388,7 +394,7 @@ test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
 test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
 python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
 python3 -c '"'"'from sageattention import sageattn; assert callable(sageattn)'"'"'
-COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'"'"'
+COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'"'"'
 LTX_MIN_NODE_DIR="${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes" python3 -c '"'"'import importlib.util, os; from pathlib import Path; spec = importlib.util.spec_from_file_location("allbot_ltx_min_nodes_smoke", Path(os.environ["LTX_MIN_NODE_DIR"]) / "__init__.py"); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(module); expected = {"ImpactDummyInput", "TwoWaySwitch", "easy int", "mxSlider", "RAMCleanup", "VRAMCleanup", "Float", "IntToFloat", "Sigmas Sigmoid", "MathExpression|pysssss"}; assert expected <= set(module.NODE_CLASS_MAPPINGS)'"'"'
 command -v ffmpeg >/dev/null
 command -v ffprobe >/dev/null
