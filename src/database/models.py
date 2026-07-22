@@ -123,7 +123,13 @@ class SupportTicket(Base):
 
 class SupportMessage(Base):
     __tablename__ = "support_messages"
-    __table_args__ = (Index("ix_support_messages_ticket_created", "ticket_id", "created_at", "id"),)
+    __table_args__ = (
+        CheckConstraint(
+            "sender_type in ('user', 'admin', 'internal')",
+            name="ck_support_messages_sender_type",
+        ),
+        Index("ix_support_messages_ticket_created", "ticket_id", "created_at", "id"),
+    )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id = Column(BigInteger, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False, index=True)

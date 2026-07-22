@@ -88,7 +88,8 @@ async def list_tickets(
         (
             await session.execute(
                 query.order_by(
-                    SupportTicket.status == "open", SupportTicket.last_message_at.desc()
+                    (SupportTicket.status == "open").desc(),
+                    SupportTicket.last_message_at.desc(),
                 )
                 .offset((page - 1) * page_size)
                 .limit(page_size)

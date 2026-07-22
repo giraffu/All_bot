@@ -16,7 +16,7 @@ def upgrade():
     op.create_index("ix_support_tickets_telegram_user_id", "support_tickets", ["telegram_user_id"])
     op.create_index("ix_support_tickets_status_last_message", "support_tickets", ["status", "last_message_at"])
     op.create_index("ix_support_tickets_telegram_status", "support_tickets", ["telegram_user_id", "status"])
-    op.create_table("support_messages", sa.Column("id", sa.BigInteger(), primary_key=True), sa.Column("ticket_id", sa.BigInteger(), nullable=False), sa.Column("sender_type", sa.String(16), nullable=False), sa.Column("body", sa.Text()), sa.Column("telegram_message_id", sa.BigInteger()), sa.Column("attachments", sa.JSON(), nullable=False, server_default="[]"), sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()), sa.ForeignKeyConstraint(["ticket_id"], ["support_tickets.id"], ondelete="CASCADE"))
+    op.create_table("support_messages", sa.Column("id", sa.BigInteger(), primary_key=True), sa.Column("ticket_id", sa.BigInteger(), nullable=False), sa.Column("sender_type", sa.String(16), nullable=False), sa.Column("body", sa.Text()), sa.Column("telegram_message_id", sa.BigInteger()), sa.Column("attachments", sa.JSON(), nullable=False, server_default="[]"), sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()), sa.CheckConstraint("sender_type in ('user', 'admin', 'internal')", name="ck_support_messages_sender_type"), sa.ForeignKeyConstraint(["ticket_id"], ["support_tickets.id"], ondelete="CASCADE"))
     op.create_index("ix_support_messages_ticket_id", "support_messages", ["ticket_id"])
     op.create_index("ix_support_messages_ticket_created", "support_messages", ["ticket_id", "created_at", "id"])
 

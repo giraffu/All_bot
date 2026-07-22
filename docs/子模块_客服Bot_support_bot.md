@@ -4,4 +4,6 @@
 
 用户消息写入 `support_tickets` 与 `support_messages`；附件写入私有 R2 `support/<telegram-user-id>/<message-id>/...` 路径，仅由已认证的 Dashboard 生成短时访问链接。管理员在 Dashboard 的“客服工单”页处理、备注和回复。
 
-正式更新走 `scripts/release.py promote --modules support-bot --confirm-prod`。该模块不需要测试环境或维护窗口，但仍需 main 可达 SHA、成功 CI、精确镜像及每次生产确认。Token 仅配置在受控环境变量，泄露后立即通过 BotFather 轮换。
+首次正式更新使用显式组合模块 `support-platform`，只包含 `dashboard-backend`、`dashboard-frontend` 与 `support-bot`。`e7f8a9b0c1d2` 仅创建两张新表及其索引/约束；发布器只在候选 main 中该迁移内容与 `deploy/release-policy.yml` 的精确 SHA256 相符时，才允许 `promote --modules support-platform --no-maintenance --confirm-db-upgrade --confirm-prod` 在备份和单 Alembic head 检查后执行在线升级。任何其它迁移或内容漂移继续 fail closed。
+
+该组合不部署测试环境、不进入前向维护窗口，滚动替换 Dashboard 前后端并首次启动客服 Bot；事务会核对全部非目标正式容器的 image 与启动时间不变。`SUPPORT_BOT_TOKEN` 同时投影给客服 Bot 与 Dashboard Backend，仅配置在受控正式环境中，绝不写入仓库或发布状态。

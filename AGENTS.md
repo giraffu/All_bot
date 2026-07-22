@@ -69,6 +69,7 @@
 - **首次可信发布准备**：`/docs/子模块_首次可信发布准备_first_trusted_release.md`（本地 stabilization 验证结果、Git 血缘和外部待办）
 - **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
 - **QQCC 用户私有 Bot 平台**：`/docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`（一人一 Bot、加密凭据、Webhook 多租户 worker、Owner WebApp、管理员治理与发布门禁）
+- **独立客服 Bot**：`/docs/子模块_客服Bot_support_bot.md`（客服工单、私有附件、Dashboard 回复与无维护组合发布门禁）
 - **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
 - **Cloudflare 公网入口与账号管理**：`/docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`（Cloudflare Token、DNS、Tunnel、Access、公网管理入口与本地分析平台公网访问）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）

@@ -22,6 +22,7 @@ KEYBOARD = ReplyKeyboardMarkup(
     [["充值问题", "Bug反馈", "意见反馈"]], resize_keyboard=True
 )
 CATEGORY_BY_TEXT = {"充值问题": "recharge", "Bug反馈": "bug", "意见反馈": "suggestion"}
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 
 async def start(update: Update, _context):
@@ -40,7 +41,9 @@ async def _store_attachment(message, context):
             attachment.mime_type or "application/octet-stream",
         )
     if not attachment:
-        return []
+        return [], None
+    if attachment.file_size and attachment.file_size > MAX_ATTACHMENT_BYTES:
+        return [], "附件超过 20MB，请压缩后重新发送。"
     key = f"support/{message.from_user.id}/{message.message_id}/{Path(filename).name}"
     try:
         remote = await context.bot.get_file(attachment.file_id)
@@ -55,17 +58,20 @@ async def _store_attachment(message, context):
             ContentType=mime,
         )
         storage.mark_r2_object_exists(key)
-        return [
-            {
-                "object_key": key,
-                "filename": filename,
-                "mime_type": mime,
-                "telegram_file_id": attachment.file_id,
-            }
-        ]
+        return (
+            [
+                {
+                    "object_key": key,
+                    "filename": filename,
+                    "mime_type": mime,
+                    "telegram_file_id": attachment.file_id,
+                }
+            ],
+            None,
+        )
     except Exception:
         logger.exception("support attachment upload failed")
-        return []
+        return [], "附件暂时保存失败，请稍后重新发送。"
 
 
 async def receive(update: Update, context):
@@ -74,7 +80,9 @@ async def receive(update: Update, context):
     category = CATEGORY_BY_TEXT.get(body or "", "uncategorized")
     if category != "uncategorized" and not message.photo and not message.document:
         body = None
-    attachments = await _store_attachment(message, context)
+    attachments, attachment_error = await _store_attachment(message, context)
+    if attachment_error:
+        body = "\n".join(value for value in (body, f"[{attachment_error}]") if value)
     async with AsyncSessionLocal() as session:
         ticket = await add_user_message(
             session,
@@ -85,7 +93,15 @@ async def receive(update: Update, context):
             category=category,
         )
     await message.reply_text(
-        f"已记录您的反馈（工单 #{ticket.id}），客服会尽快回复。", reply_markup=KEYBOARD
+        "\n".join(
+            value
+            for value in (
+                f"已记录您的反馈（工单 #{ticket.id}），客服会尽快回复。",
+                attachment_error,
+            )
+            if value
+        ),
+        reply_markup=KEYBOARD,
     )
 
 
