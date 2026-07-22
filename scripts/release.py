@@ -5796,29 +5796,30 @@ def _read_test_artifact_evidence(
         find_command = (
             f"find {shlex.quote(history_root)} -maxdepth 1 -type f "
             "-regextype posix-extended "
-            "-regex '.*/[0-9a-f]{40}\\.json' -print"
+            "-regex '.*/[0-9a-f]{40}\\.json' -print0 "
+            "| sort -z -r | while IFS= read -r -d '' path; do "
+            "printf '%s\\t' \"$path\"; cat \"$path\"; printf '\\0'; done"
         )
         listing = _run(
             ["ssh", "-o", "BatchMode=yes", host, find_command],
             check=False,
         )
         if listing.returncode == 0:
-            for path in sorted(set(listing.stdout.splitlines()), reverse=True):
+            for record in listing.stdout.split("\0"):
                 if set(evidence) == set(selected):
                     break
+                if not record:
+                    continue
+                path, separator, payload = record.partition("\t")
+                if not separator:
+                    continue
                 if not path.startswith(history_root + "/"):
                     continue
                 basename = Path(path).name
                 if not re.fullmatch(r"[0-9a-f]{40}\.json", basename):
                     continue
-                result = _run(
-                    ["ssh", "-o", "BatchMode=yes", host, f"cat {shlex.quote(path)}"],
-                    check=False,
-                )
-                if result.returncode != 0:
-                    continue
                 try:
-                    state = json.loads(result.stdout)
+                    state = json.loads(payload)
                 except json.JSONDecodeError:
                     continue
                 if isinstance(state, Mapping):
