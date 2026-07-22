@@ -337,6 +337,98 @@ class ReleaseImpact:
         }
 
 
+class ExecutionProfile:
+    """Internal release path selection; the public CLI remains unchanged."""
+
+    def __init__(self, name: str, reasons: Iterable[str]) -> None:
+        if name not in {"streamlined", "strict"}:
+            raise ReleaseError("unsupported release execution profile")
+        self.name = name
+        self.reasons = tuple(dict.fromkeys(str(reason) for reason in reasons))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "reasons": list(self.reasons)}
+
+
+STRICT_EXECUTION_RULES = {
+    "database-migrations",
+    "deployment-contract",
+    "initial-release",
+    "initial-artifact",
+    "reviewed-additive-migration",
+    "test-data-service-repair",
+    "dashboard-lan-runner-change",
+}
+
+
+def dashboard_lan_runner_paths_changed(paths: Iterable[str]) -> bool:
+    patterns = (
+        "ops/gpu_pool_controller/**",
+        "scripts/gpu_pool_controller.py",
+        "scripts/gpu_release_rollout.py",
+        "scripts/lan_aio_*.py",
+        "scripts/lan_aio_*.sh",
+        "scripts/lan_*_aio_*.sh",
+    )
+    return any(
+        fnmatch.fnmatchcase(path.removeprefix("./"), pattern)
+        for path in paths
+        for pattern in patterns
+    )
+
+
+def resolve_execution_profile(
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    runtime_snapshot: Mapping[str, Any] | None,
+) -> ExecutionProfile:
+    """Choose the narrow rolling path only for a fully known main bundle."""
+
+    reasons: list[str] = []
+    track = str(manifest.get("track", "control-plane"))
+    validation = manifest.get("validation")
+    if manifest.get("schema_version") != 2:
+        reasons.append("legacy-release-schema")
+    if track != "control-plane":
+        reasons.append(f"specialized-track:{track}")
+    if (
+        manifest.get("release_channel") != "main"
+        or manifest.get("source_ref") != "refs/heads/main"
+    ):
+        reasons.append("unprotected-release-source")
+    if not isinstance(validation, Mapping) or (
+        validation.get("mode") != "full" or validation.get("tests") != "passed"
+    ):
+        reasons.append("incomplete-bundle-validation")
+    if impact.requires_db_upgrade:
+        reasons.append("database-migration")
+    if impact.blockers:
+        reasons.append("release-blocker")
+    if impact.unknown_paths:
+        reasons.append("unknown-impact")
+    for rule in sorted(STRICT_EXECUTION_RULES & set(impact.matched_rules)):
+        if rule not in reasons:
+            reasons.append(rule)
+    artifacts = manifest.get("artifacts")
+    if isinstance(artifacts, Mapping):
+        for name in manifest.get("selected_artifacts", []):
+            artifact = artifacts.get(name)
+            if isinstance(artifact, Mapping) and (
+                artifact.get("execution_profile") == "strict"
+                or artifact.get("requires_strict") is True
+            ):
+                reasons.append(f"strict-artifact:{name}")
+    if not isinstance(runtime_snapshot, Mapping):
+        reasons.append("target-config-not-checked")
+    elif runtime_snapshot.get("drift"):
+        reasons.append("target-config-drift")
+    if reasons:
+        return ExecutionProfile("strict", reasons)
+    return ExecutionProfile(
+        "streamlined", ("eligible-known-control-plane-change",)
+    )
+
+
 class IndependentModuleRelease:
     """A strict module boundary and the rollback baseline it owns."""
 
@@ -422,7 +514,7 @@ def resolve_independent_module_release(
         raise ReleaseError("independent module deployment state has no artifacts")
     name, artifacts = expanded
     configured = policy.get("independent_modules")
-    initial_artifacts: set[str] = set()
+    configured_initial_artifacts: set[str] = set()
     if not isinstance(configured, Mapping):
         raise ReleaseError("independent module policy is invalid")
     for module_name in name.split("+"):
@@ -434,16 +526,18 @@ def resolve_independent_module_release(
             isinstance(value, str) and value for value in raw_initial
         ):
             raise ReleaseError("independent module policy is invalid")
-        initial_artifacts.update(raw_initial)
-    if not initial_artifacts <= artifacts:
+        configured_initial_artifacts.update(raw_initial)
+    if not configured_initial_artifacts <= artifacts:
         raise ReleaseError("independent module initial artifacts are invalid")
     fallback_sha = str(state.get("git_sha", ""))
     current_sha = validate_full_sha(fallback_sha)
     baselines: set[str] = set()
+    initial_artifacts: set[str] = set()
     for artifact_name in artifacts:
         artifact_state = state_artifacts.get(artifact_name)
         if not isinstance(artifact_state, Mapping):
-            if artifact_name in initial_artifacts:
+            if artifact_name in configured_initial_artifacts:
+                initial_artifacts.add(artifact_name)
                 baselines.add(current_sha)
                 continue
             raise ReleaseError(
@@ -810,7 +904,22 @@ def execute_release_transaction(
             _journal_transition(
                 transaction, dependencies.journal, phase=f"{name}_started"
             )
+            stage_started = time.monotonic()
             value = action()
+            stage_duration = max(0.0, time.monotonic() - stage_started)
+            timings = transaction.setdefault("phase_timings_seconds", {})
+            if isinstance(timings, dict):
+                timings[name] = stage_duration
+                if isinstance(value, Mapping):
+                    remote_timings = value.get("phase_timings_seconds")
+                    if isinstance(remote_timings, Mapping):
+                        timings.update(
+                            {
+                                str(phase): float(duration)
+                                for phase, duration in remote_timings.items()
+                                if isinstance(duration, (int, float))
+                            }
+                        )
             if name == "pages" and isinstance(value, Mapping):
                 pages_result = value
                 transaction["pages_deployment"] = dict(value)
@@ -831,10 +940,12 @@ def execute_release_transaction(
         transaction["failed_stage"] = failed_stage
         transaction["failure_type"] = type(exc).__name__
         rollback_failures: list[str] = []
-        try:
-            dependencies.enable_maintenance()
-        except Exception:
-            rollback_failures.append("maintenance_enable")
+        streamlined = transaction.get("execution_profile") == "streamlined"
+        if not streamlined:
+            try:
+                dependencies.enable_maintenance()
+            except Exception:
+                rollback_failures.append("maintenance_enable")
         try:
             _journal_transition(
                 transaction,
@@ -857,6 +968,11 @@ def execute_release_transaction(
             except Exception:
                 rollback_failures.append(name)
         if rollback_failures:
+            if streamlined:
+                try:
+                    dependencies.enable_maintenance()
+                except Exception:
+                    rollback_failures.append("maintenance_enable")
             transaction["rollback_failures"] = rollback_failures
             _journal_transition(
                 transaction,
@@ -877,6 +993,11 @@ def execute_release_transaction(
             )
             dependencies.clear_maintenance()
         except Exception as recovery_exc:
+            if streamlined:
+                try:
+                    dependencies.enable_maintenance()
+                except Exception:
+                    pass
             transaction["rollback_failures"] = ["recovery_validation"]
             _journal_transition(
                 transaction,
@@ -1522,7 +1643,11 @@ def inspect_promote_runtime_artifacts(
 
     project = ENVIRONMENT["prod"]["project"]
     lines = ["set -euo pipefail"]
+    requested = getattr(args, "promote_target_artifacts", None)
+    selected = set(requested) if isinstance(requested, (set, list, tuple)) else None
     for artifact, service in sorted(PROMOTE_ARTIFACT_SERVICE.items()):
+        if selected is not None and artifact not in selected:
+            continue
         lines.extend(
             [
                 (
@@ -2217,6 +2342,25 @@ def render_track_release_env(
     return "\n".join((*lines, ""))
 
 
+_SSH_CONTROL_PATH: str | None = None
+_SSH_CONTROL_HOSTS: set[str] = set()
+
+
+def _ssh_destination(args: Sequence[str]) -> str | None:
+    takes_value = {"-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w"}
+    index = 1
+    while index < len(args):
+        value = str(args[index])
+        if value in takes_value:
+            index += 2
+            continue
+        if value.startswith("-"):
+            index += 1
+            continue
+        return value
+    return None
+
+
 def _run(
     args: Sequence[str],
     *,
@@ -2225,12 +2369,25 @@ def _run(
     env: Mapping[str, str] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    command = list(args)
+    if command and command[0] == "ssh" and _SSH_CONTROL_PATH:
+        destination = _ssh_destination(command)
+        if destination:
+            _SSH_CONTROL_HOSTS.add(destination)
+        command[1:1] = [
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPersist=30",
+            "-o",
+            f"ControlPath={_SSH_CONTROL_PATH}",
+        ]
     process_env = None
     if env is not None:
         process_env = os.environ.copy()
         process_env.update(env)
     result = subprocess.run(
-        list(args),
+        command,
         cwd=cwd,
         input=input_text,
         env=process_env,
@@ -2604,14 +2761,22 @@ def _operator_preflight(
     _environment_values: Mapping[str, str],
 ) -> list[str]:
     blockers: list[str] = []
-    env_path = local_env_file(args)
-    if not env_path.is_file():
-        blockers.append("operator-env-file-unavailable")
-    elif env_path.stat().st_mode & 0o077:
-        blockers.append("operator-env-file-permissions-not-600")
-    if getattr(args, "local_env_error", False):
-        blockers.append("operator-env-contract-invalid")
-    if not args.skip_ci_checks:
+    profile = getattr(args, "execution_profile", None)
+    streamlined = isinstance(profile, ExecutionProfile) and profile.name == "streamlined"
+    if not streamlined:
+        env_path = local_env_file(args)
+        if not env_path.is_file():
+            blockers.append("operator-env-file-unavailable")
+        elif env_path.stat().st_mode & 0o077:
+            blockers.append("operator-env-file-permissions-not-600")
+        if getattr(args, "local_env_error", False):
+            blockers.append("operator-env-contract-invalid")
+    if not args.skip_ci_checks and not (
+        args.env == "prod"
+        and getattr(args, "command", "") == "promote"
+        and isinstance(profile, ExecutionProfile)
+        and profile.name == "streamlined"
+    ):
         try:
             verify_release_ci(manifest, str(manifest["git_sha"]))
         except ReleaseError:
@@ -2628,7 +2793,7 @@ def _operator_preflight(
             )
             if promotion_required:
                 _promotion_check(args, manifest)
-        else:
+        elif not streamlined:
             _test_rollback_check(args, manifest)
     except ReleaseError as exc:
         message = str(exc)
@@ -2685,7 +2850,11 @@ test -f /home/deploy/.ssh/allbot_release_ed25519 || echo cloud-readonly-deploy-k
 test -f /home/deploy/.docker/config.json || echo cloud-ghcr-credentials-unavailable
 if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*:[[:space:]]*\"(committed|rolled_back)\"' {shlex.quote(transaction_path)}; then echo cloud-unfinished-release-transaction; fi
 """
-    if args.env == "prod" and "dashboard-backend" in selected_cloud_services:
+    if (
+        args.env == "prod"
+        and "dashboard-backend" in selected_cloud_services
+        and "dashboard-lan-runner-change" in impact.matched_rules
+    ):
         runner_key = str(
             Path(environment_values["DASHBOARD_LAN_AIO_RUNNER_KEY_DIR"]) / "id_ed25519"
         )
@@ -3009,8 +3178,15 @@ def preflight_release(
         }
     }
     blockers: list[str] = list(impact_blockers)
+    profile = getattr(args, "execution_profile", None)
+    streamlined = (
+        isinstance(profile, ExecutionProfile) and profile.name == "streamlined"
+    )
     for name in ("operator", "cloud", "worker", "pages", "rollback"):
         if name == "worker" and args.env == "prod":
+            checks[name] = {"status": "skipped", "blockers": []}
+            continue
+        if streamlined and name in {"cloud", "rollback"}:
             checks[name] = {"status": "skipped", "blockers": []}
             continue
         check = getattr(dependencies, name)
@@ -3066,6 +3242,10 @@ def preflight_release(
         "strategy": decision.strategy,
         "validation_mode": decision.validation_mode,
         "skipped_gates": list(decision.skipped_gates),
+        "execution_profile": profile.name if isinstance(profile, ExecutionProfile) else "strict",
+        "execution_profile_reasons": (
+            list(profile.reasons) if isinstance(profile, ExecutionProfile) else []
+        ),
         "blockers": blockers,
     }
 
@@ -3582,8 +3762,6 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                     for name in required_gpu
                 ):
                     planned_impact.blockers.remove("gpu-runtime-release-required")
-        if not args.skip_ci_checks:
-            verify_release_ci(manifest, sha)
         artifact_names = set(manifest["selected_artifacts"])
         if args.track == "control-plane":
             services = {
@@ -3626,7 +3804,23 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             planned_impact.matched_rules.append(
                 f"independent-module:{independent_release.name}"
             )
+            if independent_release.initial_artifacts:
+                planned_impact.matched_rules.append("initial-artifact")
+        args.changed_paths = list(changed_paths)
+        if (
+            "dashboard-backend" in planned_impact.services
+            and dashboard_lan_runner_paths_changed(changed_paths)
+            and "dashboard-lan-runner-change" not in planned_impact.matched_rules
+        ):
+            planned_impact.matched_rules.append("dashboard-lan-runner-change")
         scope_release_impact(args.env, planned_impact, requested=requested_services)
+        structural_profile = resolve_execution_profile(
+            planned_impact, manifest, {"drift": False}
+        )
+        if not args.skip_ci_checks and not (
+            args.command == "promote" and structural_profile.name == "streamlined"
+        ):
+            verify_release_ci(manifest, sha)
         return planned_impact, manifest, previous_sha or ""
 
     if getattr(args, "control_plane_repair_fast_track", False):
@@ -3762,6 +3956,13 @@ def _plan_document(
     decision = getattr(args, "release_decision", None)
     if not isinstance(decision, ReleaseStrategyDecision):
         decision = resolve_release_strategy(args, impact, manifest)
+    execution_profile = getattr(args, "execution_profile", None)
+    if not isinstance(execution_profile, ExecutionProfile):
+        execution_profile = resolve_execution_profile(
+            impact,
+            manifest,
+            getattr(args, "runtime_env_snapshot", None),
+        )
     computed_cloud_services = cloud_services_for_release(args.env, impact)
     if args.skip_env_checks:
         cloud_services = computed_cloud_services
@@ -3815,6 +4016,8 @@ def _plan_document(
             getattr(args, "maintenance_required", impact.level == "maintenance")
         ),
         "maintenance_waived": bool(getattr(args, "maintenance_waived", False)),
+        "execution_profile": execution_profile.name,
+        "execution_profile_reasons": list(execution_profile.reasons),
     }
     runtime_snapshot = getattr(args, "runtime_env_snapshot", None)
     if isinstance(runtime_snapshot, Mapping):
@@ -3873,6 +4076,11 @@ def _promote_preview_document(
             "target": target.get("digest") or target.get("sha256"),
             **decisions[name],
         }
+    execution_profile = getattr(args, "execution_profile", None)
+    if not isinstance(execution_profile, ExecutionProfile):
+        execution_profile = resolve_execution_profile(
+            impact, manifest, getattr(args, "runtime_env_snapshot", None)
+        )
     return {
         "status": "preview",
         "candidate_sha": manifest.get("git_sha"),
@@ -3886,6 +4094,8 @@ def _promote_preview_document(
         "preflight": preflight.get("status"),
         "blockers": list(preflight.get("blockers", [])),
         "mutation": bool(args.execute),
+        "execution_profile": execution_profile.name,
+        "execution_profile_reasons": list(execution_profile.reasons),
     }
 
 
@@ -3900,6 +4110,263 @@ def _remote_shell(host: str, script: str, *, execute: bool) -> str:
     ).stdout
 
 
+def _deploy_cloud_streamlined(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    release_env: str,
+    environment_values: Mapping[str, str],
+) -> Mapping[str, Any] | None:
+    """Replace only selected services and roll them back from local image refs."""
+
+    environment = ENVIRONMENT[args.env]
+    host = args.remote_host or environment["host"]
+    selected, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    services = sorted(selected)
+    if not services:
+        return
+    if manifest.get("schema_version") != 2 or manifest.get("track") != "control-plane":
+        raise ReleaseError("streamlined cloud deployment requires control-plane schema v2")
+    previous_sha = validate_full_sha(str(getattr(args, "previous_sha", "")))
+    sha = validate_full_sha(str(manifest["git_sha"]))
+    checkout = f"{args.remote_checkout_root}/releases/{previous_sha}"
+    release_dir = _cloud_release_dir(sha, "control-plane")
+    env_file = args.remote_env_file or environment["env_file"]
+    profile_flags = compose_profile_flags(services)
+    compose = (
+        f"docker compose --project-name {shlex.quote(environment['project'])} "
+        f"--env-file {checkout}/deploy/env.defaults "
+        f"--env-file {shlex.quote(env_file)} --env-file {release_dir}/release.env "
+        f"-f {checkout}/deploy/docker-compose-cloud-base.yml "
+        f"-f {checkout}/{environment['overlay']} {profile_flags}"
+    )
+    service_args = " ".join(shlex.quote(service) for service in services)
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise ReleaseError("streamlined release artifacts are unavailable")
+    service_to_artifact = {
+        service: artifact for artifact, service in PROMOTE_ARTIFACT_SERVICE.items()
+    }
+    target_rows: list[tuple[str, str, str, str, str]] = []
+    snapshot = getattr(args, "runtime_env_snapshot", None)
+    service_revisions = (
+        snapshot.get("service_revisions", {}) if isinstance(snapshot, Mapping) else {}
+    )
+    compose_to_config = {
+        compose_service: config_service
+        for config_service, compose_service in CONFIG_SERVICE_TO_COMPOSE.items()
+    }
+    for service in services:
+        artifact_name = service_to_artifact.get(service, service)
+        artifact = artifacts.get(artifact_name)
+        if not isinstance(artifact, Mapping) or artifact.get("kind") != "image":
+            raise ReleaseError(f"streamlined target artifact is invalid: {artifact_name}")
+        ref = str(artifact.get("ref", ""))
+        oci = str(artifact.get("oci_revision", ""))
+        variable = CONTROL_ARTIFACT_ENV.get(artifact_name, "")
+        if not DIGEST_IMAGE_RE.fullmatch(ref) or not variable or not FULL_SHA_RE.fullmatch(oci):
+            raise ReleaseError(f"streamlined target identity is invalid: {artifact_name}")
+        config_name = compose_to_config.get(service)
+        config_revision = str(service_revisions.get(config_name, "")) if config_name else ""
+        if config_name and not config_revision:
+            raise ReleaseError(f"streamlined target config is unavailable: {artifact_name}")
+        target_rows.append((service, artifact_name, variable, oci, config_revision))
+
+    release_payload = base64.b64encode(release_env.encode("utf-8")).decode("ascii")
+    rollback_env = f"/tmp/allbot-target-rollback-{sha}.env"
+    prepare_lines: list[str] = []
+    verify_lines: list[str] = []
+    rollback_verify_lines: list[str] = []
+    api_services = {
+        "web-api",
+        "payment-api",
+        "dashboard-backend",
+        "qqcc-config-backend",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "paid-group-guard-bot",
+        "support-bot",
+    }
+    polling_services = {"bot", "qqcc-bot", "paid-group-guard-bot", "support-bot"}
+    for service, artifact_name, variable, oci, config_revision in target_rows:
+        quoted_service = shlex.quote(service)
+        quoted_artifact = shlex.quote(artifact_name)
+        quoted_variable = shlex.quote(variable)
+        quoted_oci = shlex.quote(oci)
+        quoted_config_revision = shlex.quote(config_revision)
+        config_name = compose_to_config.get(service)
+        if config_name:
+            projection = f"/var/lib/allbot/config/{args.env}/current/{config_name}.env"
+            prepare_lines.extend(
+                [
+                    f"test -f {shlex.quote(projection)}",
+                    f'test "$(stat -c %a {shlex.quote(projection)})" = 600',
+                ]
+            )
+        prepare_lines.extend(
+            [
+                f'old_id="$({compose} ps -q {quoted_service})"',
+                'test "$(printf \'%s\\n\' "$old_id" | sed \'/^$/d\' | wc -l)" = 1',
+                'old_ref="$(docker inspect --format \'{{.Config.Image}}\' "$old_id")"',
+                'docker image inspect "$old_ref" >/dev/null',
+                f"printf '%s=%s\\n' {quoted_variable} \"$old_ref\" >> \"$rollback_env\"",
+            ]
+        )
+        verify_lines.extend(
+            [
+                f'new_id="$({compose} ps -q {quoted_service})"',
+                'test "$(printf \'%s\\n\' "$new_id" | sed \'/^$/d\' | wc -l)" = 1',
+                'new_ref="$(docker inspect --format \'{{.Config.Image}}\' "$new_id")"',
+                f'test "$new_ref" = "${{{variable}}}"',
+                'new_oci="$(docker image inspect --format \'{{index .Config.Labels "org.opencontainers.image.revision"}}\' "$new_ref")"',
+                f'test "$new_oci" = {quoted_oci}',
+                'new_health="$(docker inspect --format \'{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}\' "$new_id")"',
+                'test "$new_health" = healthy -o "$new_health" = running',
+                'new_started="$(docker inspect --format \'{{.State.StartedAt}}\' "$new_id")"',
+                f"printf 'ALLBOT_RUNTIME\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' {quoted_artifact} {quoted_service} \"$new_id\" \"$new_ref\" \"$new_health\" \"$new_started\"",
+            ]
+        )
+        if config_revision:
+            verify_lines.extend(
+                [
+                    'new_config="$(docker inspect --format \'{{range .Config.Env}}{{println .}}{{end}}\' "$new_id" | sed -n \'s/^ALLBOT_CONFIG_REVISION=//p\')"',
+                    f'test "$new_config" = {quoted_config_revision}',
+                ]
+            )
+        rollback_verify_lines.extend(
+            [
+                f'rollback_id="$({compose} --env-file "$rollback_env" ps -q {quoted_service})"',
+                'test -n "$rollback_id"',
+                'rollback_health="$(docker inspect --format \'{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}\' "$rollback_id")"',
+                'test "$rollback_health" = healthy -o "$rollback_health" = running',
+            ]
+        )
+        if service in api_services:
+            verify_lines.append(
+                f"{compose} exec -T {quoted_service} python -c "
+                "'import config,urllib.request; urllib.request.urlopen(config.API_BASE.rstrip(\"/\") + \"/health\", timeout=5).read()' </dev/null"
+            )
+        if service in polling_services:
+            for legacy_name in legacy_cloud_containers(args.env, {service}):
+                verify_lines.append(
+                    "! docker ps --format '{{.Names}}' | grep -Fxq "
+                    + shlex.quote(legacy_name)
+                )
+            verify_lines.extend(
+                [
+                    f'polling_id="$({compose} ps -q {quoted_service})"',
+                    'test "$(printf \'%s\\n\' "$polling_id" | sed \'/^$/d\' | wc -l)" = 1',
+                    'polling_started="$(docker inspect --format \'{{.State.StartedAt}}\' "$polling_id")"',
+                    '! docker logs --since "$polling_started" "$polling_id" 2>&1 | grep -Eiq \'terminated by other getUpdates request|Conflict:.*getUpdates\'',
+                ]
+            )
+    rollback_compose = f'{compose} --env-file "$rollback_env"'
+    completion_marker = f"ALLBOT_CLOUD_RELEASE_VERIFIED:{sha}"
+    script = f"""set -eEuo pipefail
+config_started=$(date +%s%N)
+install -d -m 755 /var/lib/allbot/deployments/{shlex.quote(args.env)}
+exec 9> /var/lib/allbot/deployments/{shlex.quote(args.env)}/release.lock
+flock -n 9 || {{ echo 'another release transaction is active' >&2; exit 3; }}
+test -d {shlex.quote(checkout)}
+test -f {shlex.quote(env_file)}
+test "$(stat -c %a {shlex.quote(env_file)})" = 600
+install -d -m 755 {shlex.quote(release_dir)}
+printf %s {shlex.quote(release_payload)} | base64 -d > {shlex.quote(release_dir + '/release.env.tmp')}
+mv -f {shlex.quote(release_dir + '/release.env.tmp')} {shlex.quote(release_dir + '/release.env')}
+. {shlex.quote(release_dir + '/release.env')}
+{compose} config -q
+rollback_env={shlex.quote(rollback_env)}
+: > "$rollback_env"
+chmod 600 "$rollback_env"
+{chr(10).join(prepare_lines)}
+config_finished=$(date +%s%N)
+printf 'ALLBOT_TIMING:config:%s\\n' "$((config_finished-config_started))"
+mutation_started=0
+target_rollback() {{
+  status=$?
+  trap - ERR
+  set +e
+  if [ "$mutation_started" = 1 ]; then
+    rollback_started=$(date +%s%N)
+    {rollback_compose} up -d --no-deps --wait --wait-timeout 180 {service_args}
+    rollback_status=$?
+    if [ "$rollback_status" = 0 ]; then
+      set -e
+      {chr(10).join(rollback_verify_lines)}
+      echo ALLBOT_TARGET_ROLLBACK_VERIFIED
+      rollback_finished=$(date +%s%N)
+      printf 'ALLBOT_TIMING:target-rollback:%s\\n' "$((rollback_finished-rollback_started))"
+      set +e
+    fi
+  fi
+  rm -f "$rollback_env"
+  exit "$status"
+}}
+trap target_rollback ERR
+pull_started=$(date +%s%N)
+{compose} pull {service_args}
+pull_finished=$(date +%s%N)
+printf 'ALLBOT_TIMING:pull:%s\\n' "$((pull_finished-pull_started))"
+mutation_started=1
+replace_started=$(date +%s%N)
+{compose} up -d --no-deps --wait --wait-timeout 180 {service_args}
+replace_finished=$(date +%s%N)
+printf 'ALLBOT_TIMING:replace:%s\\n' "$((replace_finished-replace_started))"
+health_started=$(date +%s%N)
+{chr(10).join(verify_lines)}
+health_finished=$(date +%s%N)
+printf 'ALLBOT_TIMING:health:%s\\n' "$((health_finished-health_started))"
+trap - ERR
+rm -f "$rollback_env"
+printf '%s\\n' {shlex.quote(completion_marker)}
+"""
+    if not args.execute:
+        _remote_shell(host, script, execute=False)
+        return
+    result = _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text=script,
+        check=False,
+    )
+    timings: dict[str, float] = {}
+    runtime: dict[str, Any] = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("ALLBOT_TIMING:"):
+            _, phase, nanoseconds = line.split(":", 2)
+            if nanoseconds.isdigit():
+                timings[phase] = int(nanoseconds) / 1_000_000_000
+        elif line.startswith("ALLBOT_RUNTIME\t"):
+            fields = line.split("\t")
+            if len(fields) == 7:
+                _, artifact_name, service, container_id, ref, health, started_at = fields
+                runtime[artifact_name] = {
+                    "service": service,
+                    "container_id": container_id,
+                    "ref": ref,
+                    "digest": ref.rsplit("@", 1)[-1],
+                    "health": health,
+                    "started_at": started_at,
+                }
+    args.streamlined_phase_timings = timings
+    args.streamlined_runtime_services = runtime
+    if result.returncode:
+        args.streamlined_cloud_rolled_back = (
+            "ALLBOT_TARGET_ROLLBACK_VERIFIED" in result.stdout.splitlines()
+        )
+        raise ReleaseError(
+            "streamlined target replacement failed"
+            + (" and was rolled back" if args.streamlined_cloud_rolled_back else "")
+        )
+    if completion_marker not in result.stdout.splitlines():
+        raise ReleaseError("cloud release completion marker is missing")
+    return {"phase_timings_seconds": timings}
+
+
 def _deploy_cloud(
     args: argparse.Namespace,
     impact: ReleaseImpact,
@@ -3907,6 +4374,11 @@ def _deploy_cloud(
     release_env: str,
     environment_values: Mapping[str, str],
 ) -> None:
+    profile = getattr(args, "execution_profile", None)
+    if isinstance(profile, ExecutionProfile) and profile.name == "streamlined":
+        return _deploy_cloud_streamlined(
+            args, impact, manifest, release_env, environment_values
+        )
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     selected_cloud_services, _ = filter_enabled_cloud_services(
@@ -5182,6 +5654,10 @@ def _rollback_cloud_stack(
     transaction: Mapping[str, Any],
     environment_values: Mapping[str, str],
 ) -> None:
+    if transaction.get("execution_profile") == "streamlined":
+        if bool(getattr(args, "streamlined_cloud_rolled_back", False)):
+            return
+        raise ReleaseError("streamlined target rollback was not verified")
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     selected, _ = filter_enabled_cloud_services(
@@ -5867,6 +6343,22 @@ def _transaction_dependencies(
                 f"{value.get('transaction_id')} phase={value.get('phase')}"
             )
 
+    def validate_recovery() -> None:
+        if (
+            transaction.get("execution_profile") == "streamlined"
+            and bool(getattr(args, "streamlined_cloud_rolled_back", False))
+        ):
+            return
+        _validate_recovered_stack(args, impact, transaction, environment_values)
+
+    def clear_maintenance() -> None:
+        if (
+            transaction.get("execution_profile") == "streamlined"
+            and transaction.get("phase") != "state_completed"
+        ):
+            return
+        _clear_transaction_maintenance(args, transaction)
+
     return ReleaseTransactionDependencies(
         cloud=lambda: _deploy_cloud(
             args, impact, manifest, release_env, environment_values
@@ -5895,10 +6387,8 @@ def _transaction_dependencies(
         rollback_cloud=lambda: _rollback_cloud_stack(
             args, impact, transaction, environment_values
         ),
-        validate_recovery=lambda: _validate_recovered_stack(
-            args, impact, transaction, environment_values
-        ),
-        clear_maintenance=lambda: _clear_transaction_maintenance(args, transaction),
+        validate_recovery=validate_recovery,
+        clear_maintenance=clear_maintenance,
         journal=persist,
         enable_maintenance=lambda: _enable_transaction_maintenance(args, transaction),
     )
@@ -6896,6 +7386,41 @@ def _collect_module_runtime_state(
 ) -> dict[str, Any]:
     """Verify and record the exact post-deploy runtime without exposing env values."""
 
+    streamlined = getattr(args, "streamlined_runtime_services", None)
+    if isinstance(streamlined, Mapping):
+        artifacts = manifest.get("artifacts")
+        snapshot = getattr(args, "runtime_env_snapshot", None)
+        service_revisions = (
+            snapshot.get("service_revisions", {})
+            if isinstance(snapshot, Mapping)
+            else {}
+        )
+        recorded: dict[str, Any] = {}
+        for name in manifest.get("selected_artifacts", []):
+            artifact = artifacts.get(name) if isinstance(artifacts, Mapping) else None
+            observed = streamlined.get(name)
+            if name == "public-web":
+                continue
+            if not isinstance(artifact, Mapping) or not isinstance(observed, Mapping):
+                raise ReleaseError("streamlined runtime identity is incomplete")
+            ref = str(artifact.get("ref", ""))
+            if observed.get("ref") != ref:
+                raise ReleaseError("streamlined runtime identity is not exact")
+            config_name = next(
+                (
+                    key
+                    for key, compose_service in CONFIG_SERVICE_TO_COMPOSE.items()
+                    if compose_service == observed.get("service")
+                ),
+                name,
+            )
+            recorded[name] = {
+                **dict(observed),
+                "source_sha": artifact.get("source_sha") or manifest.get("source_sha"),
+                "config_revision": service_revisions.get(config_name),
+            }
+        return recorded
+
     service_artifacts = {
         "bot": "main-bot",
         "central-api": "central-api",
@@ -7006,8 +7531,18 @@ def _write_state(
     decision = getattr(args, "release_decision", None)
     if not isinstance(decision, ReleaseStrategyDecision):
         decision = resolve_release_strategy(args, impact, manifest)
+    profile = getattr(args, "execution_profile", None)
+    automated_test_acceptance = (
+        args.env == "test"
+        and args.execute
+        and isinstance(profile, ExecutionProfile)
+        and profile.name == "streamlined"
+        and args.command == "deploy"
+    )
     artifact_assurance = (
-        "pending"
+        "verified"
+        if automated_test_acceptance
+        else "pending"
         if args.env == "test"
         else "tested"
         if decision.strategy == "standard"
@@ -7028,7 +7563,8 @@ def _write_state(
         "inactive_artifacts": sorted(getattr(args, "inactive_artifacts", set())),
         "status": (
             "verified"
-            if args.command == "rollback" and args.env == "test"
+            if (args.command == "rollback" and args.env == "test")
+            or automated_test_acceptance
             else "deployed"
         ),
         "deployed_at": datetime.now(timezone.utc).isoformat(),
@@ -7062,6 +7598,23 @@ def _write_state(
             ),
         },
     }
+    if automated_test_acceptance:
+        started = getattr(args, "automated_acceptance_started_at", None)
+        if not isinstance(started, datetime):
+            started = datetime.now(timezone.utc)
+        completed = datetime.now(timezone.utc)
+        state["acceptance"] = {
+            "source": "release.py-streamlined-smoke",
+            "automated": True,
+            "started_at": started.isoformat(),
+            "completed_at": completed.isoformat(),
+            "duration_seconds": max(0.0, (completed - started).total_seconds()),
+            "checks": {
+                "target_health": True,
+                "api_base": True,
+                "single_polling": True,
+            },
+        }
     if (
         args.command in {"deploy-module", "promote"}
         and args.execute
@@ -7217,6 +7770,11 @@ def _runtime_env_service_options(args: argparse.Namespace) -> str:
         for module in selected_modules
         for service in INDEPENDENT_MODULE_ENV_SERVICES.get(module, ())
     }
+    target_services = getattr(args, "target_env_services", None)
+    if bool(getattr(args, "streamlined_candidate", False)) and isinstance(
+        target_services, (set, list, tuple)
+    ):
+        services.update(str(service) for service in target_services)
     return "".join(
         f" --service {shlex.quote(service)}" for service in sorted(services)
     )
@@ -7241,14 +7799,22 @@ def _remote_runtime_env_snapshot(
         defaults = base64.b64encode(DEFAULT_ENV_DEFAULTS.read_bytes()).decode("ascii")
     except OSError as exc:
         raise ReleaseError("runtime environment helper is unavailable") from exc
+    service_options = _runtime_env_service_options(args)
+    remote_operation = command
+    if (
+        command == "inspect"
+        and bool(getattr(args, "streamlined_candidate", False))
+        and service_options
+    ):
+        remote_operation = "inspect-target"
     remote_command = (
-        f'python3 -c "$(printf %s {helper} | base64 -d)" {command} '
+        f'python3 -c "$(printf %s {helper} | base64 -d)" {remote_operation} '
         f"--environment {shlex.quote(args.env)} "
         f"--env-file {shlex.quote(env_file)} "
         f"--contract <(printf %s {contract} | base64 -d) "
         f"--defaults <(printf %s {defaults} | base64 -d) "
         f"--root {shlex.quote(root)}"
-        f"{_runtime_env_service_options(args)}"
+        f"{service_options}"
     )
     script = "set -euo pipefail\n" + remote_command + "\n"
     result = _run(
@@ -7869,9 +8435,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    command_started = time.monotonic()
+    args.pre_transaction_timings = {}
     transaction: dict[str, Any] | None = None
     try:
         if args.command in {"config-plan", "config-apply"}:
@@ -8094,6 +8662,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.skip_env_checks and args.command != "plan":
             raise ReleaseError("--skip-env-checks is only available for plan")
         impact, manifest, previous_sha = build_plan(args)
+        args.pre_transaction_timings["candidate"] = max(
+            0.0, time.monotonic() - command_started
+        )
+        if args.command == "promote":
+            args.promote_target_artifacts = set(
+                manifest.get("selected_artifacts", [])
+            )
         apply_user_authorized_no_maintenance(args, impact)
         if args.execute:
             verify_operator_worktree_clean(
@@ -8105,6 +8680,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "rollback" and not args.dashboard_fast_track:
             impact.level = "maintenance"
         decision = resolve_release_strategy(args, impact, manifest)
+        args.streamlined_candidate = (
+            resolve_execution_profile(impact, manifest, {"drift": False}).name
+            == "streamlined"
+        )
+        compose_to_config = {
+            compose_service: config_service
+            for config_service, compose_service in CONFIG_SERVICE_TO_COMPOSE.items()
+        }
+        args.target_env_services = {
+            compose_to_config[service]
+            for service in impact.services
+            if service in compose_to_config
+        }
         if (
             args.env == "test"
             and decision.risk_class == "owner-tools"
@@ -8114,6 +8702,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError(
                 "owner-only admin services are removed from the test environment"
             )
+        config_started = time.monotonic()
         if args.skip_env_checks:
             environment_values, config_revision = {}, ""
             args.runtime_env_snapshot = None
@@ -8131,6 +8720,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 environment_values, config_revision = {}, ""
                 args.local_env_error = True
                 args.runtime_env_snapshot = None
+        args.pre_transaction_timings["config"] = max(
+            0.0, time.monotonic() - config_started
+        )
+        args.execution_profile = resolve_execution_profile(
+            impact,
+            manifest,
+            (
+                args.runtime_env_snapshot
+                if isinstance(getattr(args, "runtime_env_snapshot", None), Mapping)
+                else None
+            ),
+        )
         args.disabled_cloud_services = set()
         args.inactive_artifacts = set()
         if (
@@ -8199,7 +8800,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     }
                 print(json.dumps(no_change, ensure_ascii=False, indent=2, sort_keys=True))
                 return 0
+        evidence_started = time.monotonic()
         preflight = preflight_release(args, impact, manifest, environment_values)
+        args.pre_transaction_timings["evidence"] = max(
+            0.0, time.monotonic() - evidence_started
+        )
         if args.command == "promote":
             print(
                 json.dumps(
@@ -8258,19 +8863,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             transaction["schema_version"] = 2
             previous_artifacts = build_promote_previous_artifacts(args, manifest)
             transaction["previous"]["artifacts"] = previous_artifacts
-            transaction["previous"]["rollback_release_env_path"] = (
-                "/var/lib/allbot/deployments/prod/transactions/control-plane/"
-                + str(manifest["git_sha"])
-                + ".rollback.env"
-            )
-            transaction["previous"]["non_target_snapshot_path"] = (
-                "/var/lib/allbot/deployments/prod/transactions/control-plane/"
-                + str(manifest["git_sha"])
-                + ".nontarget.tsv"
-            )
-            rollback_release_env = render_promote_rollback_release_env(
-                release_env, previous_artifacts
-            )
+            if args.execution_profile.name == "strict":
+                transaction["previous"]["rollback_release_env_path"] = (
+                    "/var/lib/allbot/deployments/prod/transactions/control-plane/"
+                    + str(manifest["git_sha"])
+                    + ".rollback.env"
+                )
+                transaction["previous"]["non_target_snapshot_path"] = (
+                    "/var/lib/allbot/deployments/prod/transactions/control-plane/"
+                    + str(manifest["git_sha"])
+                    + ".nontarget.tsv"
+                )
+                rollback_release_env = render_promote_rollback_release_env(
+                    release_env, previous_artifacts
+                )
         transaction["services"] = sorted(impact.services)
         transaction["level"] = impact.level
         transaction["maintenance_required"] = bool(
@@ -8279,6 +8885,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         transaction["maintenance_waived"] = bool(
             getattr(args, "maintenance_waived", False)
         )
+        transaction["execution_profile"] = args.execution_profile.name
+        transaction["execution_profile_reasons"] = list(
+            args.execution_profile.reasons
+        )
+        transaction["phase_timings_seconds"] = {
+            "candidate": 0.0,
+            "evidence": 0.0,
+            "config": 0.0,
+            "pull": 0.0,
+            "replace": 0.0,
+            "health": 0.0,
+            "state": 0.0,
+            "target-rollback": 0.0,
+        }
+        transaction["phase_timings_seconds"].update(args.pre_transaction_timings)
         transaction.update(
             {
                 "risk_class": decision.risk_class,
@@ -8319,10 +8940,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             config_revision,
             transaction,
         )
-        if args.command == "promote":
+        if args.command == "promote" and args.execution_profile.name == "strict":
             _prepare_promote_rollback_materials(
                 args, transaction, rollback_release_env
             )
+        if args.env == "test" and args.execution_profile.name == "streamlined":
+            args.automated_acceptance_started_at = datetime.now(timezone.utc)
         execute_release_transaction(transaction, dependencies)
         if args.command == "promote":
             print(
@@ -8365,6 +8988,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run one release command with process-scoped SSH connection reuse."""
+
+    global _SSH_CONTROL_PATH
+    global _SSH_CONTROL_HOSTS
+    with tempfile.TemporaryDirectory(prefix="allbot-release-ssh-") as directory:
+        _SSH_CONTROL_PATH = str(Path(directory) / "control-%C")
+        _SSH_CONTROL_HOSTS = set()
+        try:
+            return _main(argv)
+        finally:
+            control_path = _SSH_CONTROL_PATH
+            hosts = set(_SSH_CONTROL_HOSTS)
+            _SSH_CONTROL_PATH = None
+            _SSH_CONTROL_HOSTS = set()
+            if control_path:
+                for host in hosts:
+                    subprocess.run(
+                        [
+                            "ssh",
+                            "-o",
+                            f"ControlPath={control_path}",
+                            "-O",
+                            "exit",
+                            host,
+                        ],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
 
 
 if __name__ == "__main__":

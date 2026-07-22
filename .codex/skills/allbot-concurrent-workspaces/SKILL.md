@@ -57,14 +57,14 @@ GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `op
 
 ## 4. 测试环境与正式发布
 
-- 当用户需要部署测试环境时，使用已构建的完整 main SHA：`release.py plan -> preflight -> deploy --env test`。
+- 当用户需要部署测试环境时，使用已构建的完整 main SHA：先用 `release.py plan --env test` 核对 `execution_profile`，再 `deploy --env test --execute`；普通 streamlined 不要求操作者重复单独 preflight，strict/专项诊断仍可使用。
 - 测试控制面只从目标主机 `/etc/allbot/test.env` 生成权限为 `600` 的逐服务投影；不得把整份 env 注入所有容器，也不得把测试投影复制给正式环境。
-- 测试按 main bundle 中的精确 digest/checksum 验收；standard artifact 通过 `verify-test` 写入 main-channel verified history。
+- 测试按 main bundle 中的精确 digest/checksum 验收；普通 streamlined 目标 smoke 成功后自动写入 main-channel exact-digest verified history，`verify-test` 保留作专项人工补充。
 - `verify-test` 仍要求精确 SHA/digest、全部适用 smoke、真实开始/完成时间和批准人，但不再要求固定 24 小时观察，也没有短观察 override/CLI 确认。
 - 测试失败不回退或改写 main 历史。修复走新的功能 handoff 和新的单批次 main PR，再为新 main SHA 构建一次。
-- 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；日常入口为 `python scripts/release.py promote --confirm-prod`，由它自动锁定候选和实际变化模块。每次生产 mutation 仍需用户明确调用并确认；高风险情形继续走发布器高级入口。
+- 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；日常入口为 `python scripts/release.py promote --confirm-prod`，由它自动锁定候选、实际变化模块及 streamlined/strict。streamlined standard 复用测试 exact-digest evidence，direct 读取 bundle full/passed；migration、Compose/env、首次切换、未知或专用执行轨整体 strict。每次生产 mutation仍需用户明确调用并确认。
 - 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存可替换/追加目标投影，但必须保证所有非目标 active 投影继续存在且 revision/字节不变；它不调用 Compose 或重启容器，代码发布不能隐式修改宿主 env 或复用测试配置。
-- Dashboard 等 direct artifact 可按策略豁免测试验收，但不能绕过 main、CI、digest、配置、健康、事务回滚与生产确认。
+- Dashboard 等 direct artifact 可按策略不要求测试 history，但不能绕过 main full-validation bundle、digest、目标配置、健康、目标回切与生产确认；LAN runner 仅在相关影响规则命中时检查。
 - 测试 Worker 仅在专项诊断时显式部署；GPU/LAN AIO/RunPod 继续走专用 operator/canary。
 
 ## 5. 能力与授权边界
