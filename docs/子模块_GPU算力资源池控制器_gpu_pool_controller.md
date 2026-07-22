@@ -68,7 +68,7 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 正式 LAN AIO `8190` 承接 `image_to_video` / `video_insert` / `video_edit`；`pornmaster_flux2_edit_bf16` 为同卡已缓存回切候选，宿主机 ComfyUI `8188` / `cloud_prod_worker_01` 仅作手工回滚元数据 |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191` only；旧 `comfy0/comfy1` 与本地主 agent 2/3 已退役删除 |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，2 x production active | 当前实时能力仍以 `lan_aio_fleet_state.yml` 与 Central 心跳为准；本次不可变发布候选会把 i2i_pro LAN AIO 的图片换脸声明从 `face_swap` 切到 `face_swap_v2`，不代表文档更新时已部署。GPU0 `8192` 与 RMA replacement GPU1 `8191` 分别固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；旧返修 UUID 对应的 PornMaster/SCAIL-2/Wan22 槽位保持 maintenance disabled |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，0 x production active | 当前实时能力只以 XDG ledger、live container 与 Central 心跳为准。2026-07-22 GPU0 完成 LTX/PornMaster disabled canary 后恢复 intentionally-empty，GPU1 因 Xid 119/154 保持硬件隔离和 intentionally-empty；两者未开启 production intake |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 PornMaster Flux2 edit `8191`；image_to_video AIO stopped rollback，旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：

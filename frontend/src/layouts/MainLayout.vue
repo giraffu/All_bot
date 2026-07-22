@@ -437,4 +437,43 @@ watch(resolvedTheme, () => {
 .fade-leave-to {
   opacity: 0;
 }
+
+@media (max-width: 640px) {
+  .header-custom {
+    gap: 0.5rem;
+    padding-inline: 0.75rem !important;
+  }
+
+  .header-left {
+    min-width: 0;
+  }
+
+  .header-title {
+    overflow: hidden;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    gap: 0.25rem;
+  }
+
+  .balance {
+    padding-inline: 0.5rem;
+  }
+
+  .user-profile {
+    padding: 0.125rem;
+  }
+
+  .user-profile :deep(.ant-avatar) {
+    margin-right: 0 !important;
+  }
+
+  .user-name {
+    display: none;
+  }
+}
 </style>

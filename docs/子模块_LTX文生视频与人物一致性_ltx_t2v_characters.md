@@ -129,8 +129,8 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 分别进入任务输入，默认生成同步音频。
 
 LAN mutation 只能通过 `scripts/lan_aio_fleet_prod_ops.py`。先核对 live、ledger、
-catalog 并带原因收口 unfinished operation；状态不唯一就停止。只在当前空闲的
-`gpu-252/gpu1` 顺序验证人物候选与 LTX 候选，检查 heartbeat、`/system_stats`、
+catalog 并带原因收口 unfinished operation；状态不唯一就停止。只在明确授权的
+空闲物理槽顺序验证人物候选与 LTX 候选，检查 heartbeat、`/system_stats`、
 `/object_info`、模型枚举、R2、音轨、时长、OOM/status 137 和三段人物一致性。
 验收结束必须停止候选并恢复 `intentionally_empty`，不得开启 production intake。
 
@@ -159,8 +159,27 @@ GHCR、autoscaler/canary 与共享环境发布属于下一阶段授权。
   6 个唯一输出，并由正式 materializer 拼为 1536×896 PNG。
 - 六视图完成后，`gpu-252/gpu1` 的 `GPU-8153a439-...` 先报 Xid 119
   （GSP RPC timeout），随后报 Xid 154（GPU Reset Required）。Docker 无法收到
-  candidate 的退出事件，候选保持 Central disabled，但不能伪记为
-  `intentionally_empty`。
-- 因硬件门禁失败，LTX A/B、T2V、T2V-IC、音轨/R2 与 Web 端到端均未执行，
-  本轮 LAN 全链路明确不通过。恢复必须在同机 GPU0 空闲且取得明确维护授权后，
-  通过 operator 收口容器和 ledger；不得在当前状态继续启动 LTX 或启用 intake。
+  candidate 的退出事件。用户重启主机后已通过 operator 收口该槽；GPU1 继续
+  硬件隔离，不参与后续验收。
+- 用户明确授权后，GPU0 `GPU-09b7ea85-...` 先完成同一六视图/1536×896 人物表，
+  再运行 LTX disabled candidate。10 个模型文件共约 62GB 全部通过 manifest
+  size/SHA；最终镜像固定为
+  `sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043`，
+  OCI revision 为 `2f0a7459...`，46/46 workflow 节点和模型枚举齐全。
+- 运行反馈环修复两项真实问题：LAN compose 必须从镜像内 `/opt/ComfyUI` 启动并
+  单独挂载持久模型目录；工作流固定 x2 upscaler 前必须使用半尺寸 latent，
+  Ingredients guide latent 必须在空间放大前裁剪，否则会输出 129 帧。最终 T2V
+  为 1280×704，T2V-IC 为 768×448/121 帧，均为 24fps、约 5.04 秒并含 AAC。
+- 四组 A/B 均生成可播放音视频；硬门禁第 2 组 Sulphur T2V 与第 4 组
+  Sulphur + Ingredients 都通过。成人 NSFW T2V 抽帧确认无审查遮挡；同一人物表
+  的美术馆、植物园、夜间城市三场景在脸、发型、红黑服装、体型和配件上保持
+  一致。运行期间没有 OOM、任务中 status 137 或新 Xid/NVRM。
+- 最终 `canary-stop-disabled` operation 为
+  `20260722T133455Z-canary_stop_disabled-db3b9380`；GPU0/GPU1 的 live 与 ledger
+  都恢复 `intentionally_empty`，production intake 从未开启。Web 代码、组件测试
+  和构建门禁通过；Playwright 在独立本地进程开启 flag，以内存 API
+  拦截完成了选图→预签名上传→建人物→ready 刷新→选人物→提交 IC，
+  并断言最终 payload 为 `ltx_t2v_ic`/768×448/5 秒、只传 `character_id`。
+  桌面/移动端截图保存在
+  `/home/hfy/.local/state/allbot/lan-aio/evidence/2026-07-22-ltx-t2v-web/`；该验收
+  证明 Web 交互链，但不等于真实 Central/账本/队列的隔离环境 E2E。

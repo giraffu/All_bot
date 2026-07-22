@@ -10,7 +10,7 @@
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次云正式只读负载/数据巡检：2026-06-18 03:06，Asia/Shanghai。
 最近一次云测试控制面核对：2026-06-18 03:06，Asia/Shanghai。
-最近一次 gpu-252/GPU1 LAN AIO 接管更新：2026-07-17，Asia/Shanghai；RMA replacement 新 UUID 已通过 i2i_pro disabled-first 门禁并由 8191 正式接单，旧返修 UUID 对应槽位继续隔离。
+最近一次 gpu-252 LTX 本地验收更新：2026-07-22，Asia/Shanghai；GPU0 完成 PornMaster 人物表与 LTX T2V/Ingredients disabled canary 后恢复 intentionally-empty，GPU1 因 Xid 119/154 继续隔离。
 最近一次本地云正式 shadow 同步能力更新：2026-06-25，Asia/Shanghai。
 
 ## 2. 主服务器
@@ -192,10 +192,10 @@ GPU 节点运行方式与模型挂载快照：
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
 | `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧 `/data/comfy` 已删除 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 已删除 | 2026-06-20 清理后根分区可用约 680G，使用率约 22%；旧 `comfy0/comfy1` 和旧 agent 2/3 已删除，`cloud_prod_worker_02/03` control 为 `disabled` |
-| `192.168.1.252` | 正式 AIO `allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod` host `8192`；正式 AIO `allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod` host `8191`；旧 `comfy0`/`comfy1` stopped rollback | AIO workspace `/workspace/ComfyUI/models` 由 manifest 同步；旧 `/home/user/APP/data/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0`/`inst1` 保留回滚 | GPU0/GPU1 分别固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；两者均为 i2i_pro 正式容量，旧 UUID 的 SCAIL-2/Wan22 仍 maintenance-disabled |
+| `192.168.1.252` | GPU0/GPU1 当前均 intentionally-empty；GPU0 `8192` 已完成 LTX/PornMaster disabled canary 后停止，GPU1 `8191` 因 Xid 119/154 隔离 | GPU0 保留 `ltx_t2v/2026-07-22` 的 10 文件模型 workspace；旧 `/home/user/APP/data/models` 保留回滚 | AIO 使用 profile workspace 与 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0`/`inst1` 保留回滚 | GPU0/GPU1 UUID 分别为 `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；2026-07-22 结束时 live/ledger 均为空且 intake disabled，GPU1 不得解除隔离 |
 | `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod`，host `8190`/`8191`；`image_to_video` 与 PornMaster AIO 为 stopped rollback | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-07-17 GPU1 i2i_pro 六文件模型缓存与单卡 takeover 门禁通过；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
 
-双卡节点的重要边界：`gpu-177` 日常只按 AIO 容器和 `8190/8191` 端口操作，旧本地回滚链路已删除；`gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 仍只作为 stopped rollback baseline；`gpu-252` 当前 `8192` 与 `8191` 均接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，必须按各自固定 UUID 单卡操作，旧 SCAIL-2/Wan22 槽位仍不计入视频容量。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个实例；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+双卡节点的重要边界：`gpu-177` 日常只按 AIO 容器和 `8190/8191` 端口操作，旧本地回滚链路已删除；`gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 仍只作为 stopped rollback baseline；`gpu-252` 当前两卡均为 intentionally-empty，GPU1 仍为硬件隔离状态，GPU0 上的 LTX/PornMaster 只是 disabled 验收候选而非生产容量。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个实例；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
 ComfyUI 素材清理口径：
 
