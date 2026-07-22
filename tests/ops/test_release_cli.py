@@ -4331,6 +4331,24 @@ def test_checked_in_independent_contract_snapshots_match_current_files():
     assert mismatches == {}
 
 
+def test_checked_in_support_migration_snapshots_match_current_files():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+    snapshots = policy["independent_additive_migration_snapshots"][
+        "support-platform"
+    ]
+
+    mismatches = {
+        path: {
+            "expected": expected,
+            "actual": hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
+        }
+        for path, expected in snapshots.items()
+        if hashlib.sha256((ROOT / path).read_bytes()).hexdigest() != expected
+    }
+
+    assert mismatches == {}
+
+
 def test_promote_uses_the_candidate_policy_not_the_callers_checkout(monkeypatch):
     module = _load_module()
     candidate_policy = {"independent_modules": {"qqcc-bot": {"artifacts": []}}}
