@@ -69,13 +69,14 @@ slots:
 
   - id: gpu-252-gpu0-pornmaster_flux2_edit
     enabled: false
-    phase: superseded_by_i2i_pro
-    retargetable: true
+    phase: maintenance_disabled
+    retargetable: false
     assignment_id: lan-252-8188-worker-04
     target_profile_id: pornmaster_flux2_edit
     target_task_types:
       - pornmaster_flux2_single_edit
       - pornmaster_flux2_multi_edit
+      - character_reference_build
     gpu_index: 0
     gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
     host_port: 8192
@@ -88,7 +89,30 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu0-pornmaster-flux2-edit
     rollout_order: 21
-    notes: PornMaster Flux2 edit rollback candidate for gpu-252 GPU0 after the 2026-07-03 switch to i2i_pro. It restores lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01 / allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod on host port 8192 by replacing the active i2i_pro AIO when explicitly requested.
+    notes: Maintenance-disabled character-reference acceptance candidate on the healthy gpu-252 GPU0 UUID. Local LAN validation only; never enable production intake and restore the physical slot to intentionally empty after acceptance.
+
+  - id: gpu-252-gpu0-ltx_t2v
+    enabled: false
+    phase: maintenance_disabled
+    retargetable: false
+    assignment_id: lan-252-8188-worker-04
+    target_profile_id: ltx_t2v
+    target_task_types:
+      - ltx_t2v
+      - ltx_t2v_ic
+    gpu_index: 0
+    gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
+    host_port: 8192
+    legacy_health_port: 8192
+    legacy_preflight_required: false
+    agent_id: lan_aio_prod_gpu252_gpu0_ltx_t2v_01
+    container_name: allbot-lan-aio-gpu-252-gpu0-ltx_t2v-prod
+    legacy_worker_id: lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod
+    old_local_agent_container: ""
+    remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu0-ltx-t2v
+    rollout_order: 22
+    notes: Maintenance-disabled LTX 2.3 Sulphur T2V/Ingredients candidate on the healthy gpu-252 GPU0 UUID. Local LAN validation only; never enable production intake and restore the physical slot to intentionally empty after acceptance.
 
   - id: gpu-252-gpu0-image_to_video
     enabled: false

@@ -443,7 +443,9 @@ def _patch_ltx_t2v_workflow(
     duration = _resolve_ltx_duration_seconds(params)
     if duration not in ({5} if ingredients else {5, 10, 15, 20}):
         raise ValueError("invalid ltx_t2v duration")
-    width, height = (768, 448) if ingredients else (1280, 704)
+    # The workflow's fixed spatial upscaler doubles the latent dimensions.
+    # Keep the API contract expressed as final output size.
+    width, height = (384, 224) if ingredients else (640, 352)
     for node_id in ("26:93", "26:65", "26:39"):
         node = workflow.get(node_id)
         if isinstance(node, dict):

@@ -429,8 +429,8 @@
   "26:93": {
     "inputs": {
       "value": 0,
-      "width": 768,
-      "height": 448
+      "width": 384,
+      "height": 224
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -527,8 +527,8 @@
   "26:65": {
     "inputs": {
       "value": 0,
-      "width": 768,
-      "height": 448
+      "width": 384,
+      "height": 224
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -538,8 +538,8 @@
   "26:89": {
     "inputs": {
       "samples": [
-        "26:153",
-        0
+        "26:91",
+        2
       ],
       "upscale_model": [
         "4",
@@ -569,8 +569,8 @@
         0
       ],
       "latents": [
-        "26:91",
-        2
+        "26:95",
+        0
       ]
     },
     "class_type": "LTXVSpatioTemporalTiledVAEDecode",
@@ -580,8 +580,8 @@
   },
   "26:39": {
     "inputs": {
-      "width": 768,
-      "height": 448,
+      "width": 384,
+      "height": 224,
       "length": [
         "26:42",
         0
@@ -846,11 +846,11 @@
         0
       ],
       "positive": [
-        "272",
+        "26:91",
         0
       ],
       "negative": [
-        "272",
+        "26:91",
         1
       ]
     },
@@ -890,7 +890,7 @@
         1
       ],
       "latent": [
-        "26:95",
+        "26:153",
         0
       ]
     },

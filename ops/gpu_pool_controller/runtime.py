@@ -47,6 +47,9 @@ LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV = {
     "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL": "http://192.168.1.226:8188",
     "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW": "face_swap_v2.json",
 }
+LAN_AIO_LTX_T2V_ENV = {
+    "COMFYUI_DIR": "/opt/ComfyUI",
+}
 LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
     "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
@@ -54,6 +57,7 @@ LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
 }
 LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "scail2": LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV,
+    "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
 }
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
@@ -96,7 +100,10 @@ class RuntimeRenderOverrides:
             raise ValueError(
                 "--runtime-shape must be standard_comfy_runtime or runpod_all_in_one"
             )
-        if self.environment is not None and self.environment not in LAN_AIO_ENVIRONMENTS:
+        if (
+            self.environment is not None
+            and self.environment not in LAN_AIO_ENVIRONMENTS
+        ):
             allowed = ", ".join(sorted(LAN_AIO_ENVIRONMENTS))
             raise ValueError(f"--environment must be one of: {allowed}")
         if self.target_task_types is not None and not all(
@@ -251,7 +258,9 @@ class RuntimePlanner:
         service_name = self._effective_container_name(comfy, overrides)
         image_ref = profile.image_ref or comfy.image
         if not image_ref:
-            raise ValueError(f"{profile.id} has no image_ref and {comfy.id} has no image")
+            raise ValueError(
+                f"{profile.id} has no image_ref and {comfy.id} has no image"
+            )
 
         bundle_versions = self._bundle_versions(profile)
         host_port = self._effective_host_port(comfy, overrides)
@@ -346,7 +355,9 @@ class RuntimePlanner:
         }
         try:
             import yaml  # type: ignore
-        except Exception as exc:  # pragma: no cover - config loading already requires yaml
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - config loading already requires yaml
             raise RuntimeError("runtime-render requires PyYAML") from exc
         return yaml.safe_dump(compose, allow_unicode=True, sort_keys=False)
 
@@ -387,9 +398,7 @@ class RuntimePlanner:
                 f"{profile.id} has invalid lan_workspace_key: {workspace_key!r}"
             )
         model_workspace_key = profile.lan_model_workspace_key or workspace_key
-        if not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", model_workspace_key
-        ):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", model_workspace_key):
             raise ValueError(
                 f"{profile.id} has invalid lan_model_workspace_key: "
                 f"{model_workspace_key!r}"
@@ -403,9 +412,7 @@ class RuntimePlanner:
             f"{model_workspace_key}/workspace"
         )
         volumes = [f"{workspace_host_dir}:/workspace"]
-        model_cache_endpoint = (
-            comfy.model_cache_endpoint or "http://192.168.1.115:9010"
-        )
+        model_cache_endpoint = comfy.model_cache_endpoint or "http://192.168.1.115:9010"
         environment = self._effective_lan_aio_environment(overrides)
         environment_settings = LAN_AIO_ENVIRONMENTS[environment]
         central_url = (
@@ -446,24 +453,24 @@ class RuntimePlanner:
                         "bash",
                         "-lc",
                         (
-                            "remote_root=\"$${RUNPOD_REMOTE_WORKER_ROOT:-/opt/allbot/remote_workers}\"; "
+                            'remote_root="$${RUNPOD_REMOTE_WORKER_ROOT:-/opt/allbot/remote_workers}"; '
                             "if [ -x /opt/allbot/runpod_baked_runtime_entrypoint.sh ]; then "
                             "exec bash /opt/allbot/runpod_baked_runtime_entrypoint.sh; "
                             "fi; "
-                            "model_target=\"$${RUNPOD_MODEL_TARGET_DIR:-/workspace/ComfyUI/models}\"; "
-                            "mkdir -p \"$${model_target}\"; "
+                            'model_target="$${RUNPOD_MODEL_TARGET_DIR:-/workspace/ComfyUI/models}"; '
+                            'mkdir -p "$${model_target}"; '
                             "if [ -f /opt/allbot-comfyui-dir ]; then "
-                            "baked_comfy=\"$$(cat /opt/allbot-comfyui-dir)\"; "
-                            "if [ -n \"$${baked_comfy}\" ] && [ -d \"$${baked_comfy}\" ]; then "
-                            "rm -rf \"$${baked_comfy}/models\"; "
-                            "ln -s \"$${model_target}\" \"$${baked_comfy}/models\"; "
+                            'baked_comfy="$$(cat /opt/allbot-comfyui-dir)"; '
+                            'if [ -n "$${baked_comfy}" ] && [ -d "$${baked_comfy}" ]; then '
+                            'rm -rf "$${baked_comfy}/models"; '
+                            'ln -s "$${model_target}" "$${baked_comfy}/models"; '
                             "fi; "
                             "fi; "
                             "if [ -d /default-comfyui-bundle/ComfyUI ]; then "
                             "rm -rf /default-comfyui-bundle/ComfyUI/models; "
-                            "ln -s \"$${model_target}\" /default-comfyui-bundle/ComfyUI/models; "
+                            'ln -s "$${model_target}" /default-comfyui-bundle/ComfyUI/models; '
                             "fi; "
-                            "if [ -f \"$${remote_root}/requirements.txt\" ]; then "
+                            'if [ -f "$${remote_root}/requirements.txt" ]; then '
                             "python3 - <<'PY' || python3 -m pip install --no-cache-dir -r \"$${remote_root}/requirements.txt\"\n"
                             "import fastapi\n"
                             "import minio\n"
@@ -471,24 +478,24 @@ class RuntimePlanner:
                             "import websockets\n"
                             "PY\n"
                             "fi; "
-                            "if [ \"$${RUNPOD_MODEL_SYNC_ENABLED:-false}\" = \"true\" ]; then "
-                            "python3 \"$${remote_root}/scripts/runpod_sync_models_from_r2.py\" "
-                            "--bucket \"$${RUNPOD_MODEL_BUCKET:-}\" "
-                            "--prefix \"$${RUNPOD_MODEL_PREFIX:-img2img_lora/2026-06-10}\" "
-                            "--target-dir \"$${model_target}\"; "
+                            'if [ "$${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then '
+                            'python3 "$${remote_root}/scripts/runpod_sync_models_from_r2.py" '
+                            '--bucket "$${RUNPOD_MODEL_BUCKET:-}" '
+                            '--prefix "$${RUNPOD_MODEL_PREFIX:-img2img_lora/2026-06-10}" '
+                            '--target-dir "$${model_target}"; '
                             "fi; "
-                            "if [ -f \"$${remote_root}/scripts/ensure_wan22_rife_cache.py\" ]; then "
-                            "python3 \"$${remote_root}/scripts/ensure_wan22_rife_cache.py\" "
-                            "--model-target-dir \"$${model_target}\"; "
+                            'if [ -f "$${remote_root}/scripts/ensure_wan22_rife_cache.py" ]; then '
+                            'python3 "$${remote_root}/scripts/ensure_wan22_rife_cache.py" '
+                            '--model-target-dir "$${model_target}"; '
                             "fi; "
-                            "entrypoint=\"$${remote_root}/scripts/runpod_entrypoint.sh\"; "
-                            "if [ \"$${remote_root}\" = \"/opt/allbot/remote_workers\" ] "
-                            "&& [ -f \"$${entrypoint}\" ]; then "
+                            'entrypoint="$${remote_root}/scripts/runpod_entrypoint.sh"; '
+                            'if [ "$${remote_root}" = "/opt/allbot/remote_workers" ] '
+                            '&& [ -f "$${entrypoint}" ]; then '
                             "sed -i "
                             "'s#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/ready#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/health#g' "
-                            "\"$${entrypoint}\" || true; "
+                            '"$${entrypoint}" || true; '
                             "fi; "
-                            "exec bash \"$${entrypoint}\""
+                            'exec bash "$${entrypoint}"'
                         ),
                     ],
                     "ports": [f"{host_port}:8188"],
@@ -576,7 +583,12 @@ class RuntimePlanner:
                         "RUNPOD_MODEL_PREFIX": model_prefix,
                         "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
                         **(
-                            {"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES": json.dumps(profile.lan_local_model_overrides, separators=(",", ":"))}
+                            {
+                                "RUNPOD_LAN_LOCAL_MODEL_OVERRIDES": json.dumps(
+                                    profile.lan_local_model_overrides,
+                                    separators=(",", ":"),
+                                )
+                            }
                             if profile.lan_local_model_overrides
                             else {}
                         ),
@@ -639,8 +651,8 @@ class RuntimePlanner:
                 "model_cache_endpoint": model_cache_endpoint,
                 "model_cache_bucket": DEFAULT_LAN_MODEL_CACHE_BUCKET,
                 "model_prefix": model_prefix,
-                        "model_manifest_key": model_manifest_key,
-                        "lan_local_model_overrides": list(profile.lan_local_model_overrides),
+                "model_manifest_key": model_manifest_key,
+                "lan_local_model_overrides": list(profile.lan_local_model_overrides),
                 "model_target_dir": model_target_dir,
                 "model_write_scope": [model_target_dir],
                 "central_url": central_url,
@@ -668,7 +680,9 @@ class RuntimePlanner:
         }
         try:
             import yaml  # type: ignore
-        except Exception as exc:  # pragma: no cover - config loading already requires yaml
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - config loading already requires yaml
             raise RuntimeError("runtime-render requires PyYAML") from exc
         return yaml.safe_dump(compose, allow_unicode=True, sort_keys=False)
 
@@ -717,16 +731,22 @@ class RuntimePlanner:
                 "Phase 1 canary validation and an explicit maintenance window"
             )
         else:
-            payload["message"] = "dry-run only; no remote runtime or worker mutation executed"
+            payload["message"] = (
+                "dry-run only; no remote runtime or worker mutation executed"
+            )
         return payload
 
-    def build_rollback_plan(self, assignment_id: str, *, execute: bool = False) -> dict[str, Any]:
+    def build_rollback_plan(
+        self, assignment_id: str, *, execute: bool = False
+    ) -> dict[str, Any]:
         assignment = self._assignment_for(assignment_id)
         node = self._node_for(assignment)
         comfy = self._comfy_for(node, assignment)
         warnings = []
         if not comfy.rollback_state:
-            warnings.append("rollback_state is empty; nothing can be restored automatically")
+            warnings.append(
+                "rollback_state is empty; nothing can be restored automatically"
+            )
         payload: dict[str, Any] = {
             "ok": not execute,
             "action": "rollback-profile",
@@ -739,7 +759,9 @@ class RuntimePlanner:
             "runtime_kind": comfy.comfy_runtime_kind,
             "rollback_state": comfy.rollback_state,
             "warnings": warnings,
-            "commands": self._rollback_commands(assignment=assignment, node=node, comfy=comfy),
+            "commands": self._rollback_commands(
+                assignment=assignment, node=node, comfy=comfy
+            ),
         }
         if execute:
             payload["error"] = (
@@ -758,13 +780,17 @@ class RuntimePlanner:
         try:
             return self.config.nodes[assignment.node_id]
         except KeyError as exc:
-            raise ValueError(f"Unknown node_id for assignment {assignment.id}: {assignment.node_id}") from exc
+            raise ValueError(
+                f"Unknown node_id for assignment {assignment.id}: {assignment.node_id}"
+            ) from exc
 
     def _comfy_for(self, node: GpuNode, assignment: Assignment) -> ComfyInstance:
         for comfy in node.comfy:
             if comfy.id == assignment.comfy_id:
                 return comfy
-        raise ValueError(f"Unknown comfy_id for assignment {assignment.id}: {assignment.comfy_id}")
+        raise ValueError(
+            f"Unknown comfy_id for assignment {assignment.id}: {assignment.comfy_id}"
+        )
 
     def _profile_for(self, profile_id: str) -> TaskProfile:
         try:
@@ -799,7 +825,9 @@ class RuntimePlanner:
         overrides: RuntimeRenderOverrides,
         for_render: bool,
     ) -> None:
-        if comfy.comfy_runtime_kind == HOST_RUNTIME_KIND and (for_render or overrides.has_any):
+        if comfy.comfy_runtime_kind == HOST_RUNTIME_KIND and (
+            for_render or overrides.has_any
+        ):
             operation = "runtime-render" if for_render else "runtime-plan override"
             raise ValueError(
                 f"{assignment.id} uses host_service; {operation} only supports docker_container"
@@ -1016,14 +1044,21 @@ class RuntimePlanner:
             if not comfy.runtime_root:
                 warnings.append("runpod_all_in_one runtime_root is not configured")
             if not comfy.model_cache_endpoint:
-                warnings.append("runpod_all_in_one model_cache_endpoint is not configured")
+                warnings.append(
+                    "runpod_all_in_one model_cache_endpoint is not configured"
+                )
             if not profile.all_in_one_image_ref:
                 warnings.append(f"profile {profile.id} has no all_in_one_image_ref")
             if not profile.model_manifest_key:
                 warnings.append(f"profile {profile.id} has no model_manifest_key")
-            if overrides.environment == "cloud-prod" and (
-                overrides.central_url or LAN_AIO_ENVIRONMENTS["cloud-prod"]["central_url"]
-            ).find("test") >= 0:
+            if (
+                overrides.environment == "cloud-prod"
+                and (
+                    overrides.central_url
+                    or LAN_AIO_ENVIRONMENTS["cloud-prod"]["central_url"]
+                ).find("test")
+                >= 0
+            ):
                 warnings.append("cloud-prod render should not use a test Central URL")
         if self._render_mode(comfy, overrides) == "canary":
             warnings.append(
@@ -1042,7 +1077,13 @@ class RuntimePlanner:
             comfy.comfy_runtime_kind == DOCKER_RUNTIME_KIND
             and runtime_shape == STANDARD_RUNTIME_SHAPE
         ):
-            for field_name in ("container_name", "model_dir", "input_dir", "output_dir", "temp_dir"):
+            for field_name in (
+                "container_name",
+                "model_dir",
+                "input_dir",
+                "output_dir",
+                "temp_dir",
+            ):
                 if not getattr(comfy, field_name):
                     warnings.append(f"docker runtime missing {field_name}")
             if profile.image_ref is None:
@@ -1076,7 +1117,8 @@ class RuntimePlanner:
             )
             model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
             model_manifest_key = (
-                profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
+                profile.model_manifest_key
+                or f"{model_prefix.rstrip('/')}/manifest.json"
             )
             commands = [
                 (

@@ -434,8 +434,8 @@
   "26:93": {
     "inputs": {
       "value": 0,
-      "width": 1280,
-      "height": 704
+      "width": 640,
+      "height": 352
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -532,8 +532,8 @@
   "26:65": {
     "inputs": {
       "value": 0,
-      "width": 1280,
-      "height": 704
+      "width": 640,
+      "height": 352
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -585,8 +585,8 @@
   },
   "26:39": {
     "inputs": {
-      "width": 1280,
-      "height": 704,
+      "width": 640,
+      "height": 352,
       "length": [
         "26:42",
         0

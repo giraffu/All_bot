@@ -78,6 +78,8 @@ profiles:
 
   ltx_t2v:
     runtime_profile: ltx_t2v
+    lan_workspace_key: ltx-t2v-124cd638
+    lan_model_workspace_key: ltx_t2v
     task_types:
       - ltx_t2v
       - ltx_t2v_ic

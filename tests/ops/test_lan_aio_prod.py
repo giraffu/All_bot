@@ -154,6 +154,25 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         "ltx_t2v",
         "ltx_t2v_ic",
     )
+    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].enabled is False
+    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].target_task_types == (
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+        "character_reference_build",
+    )
+    assert slots["gpu-252-gpu0-ltx_t2v"].enabled is False
+    assert slots["gpu-252-gpu0-ltx_t2v"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu0-ltx_t2v"].retargetable is False
+    assert slots["gpu-252-gpu0-ltx_t2v"].host_port == 8192
+    assert slots["gpu-252-gpu0-ltx_t2v"].target_task_types == (
+        "ltx_t2v",
+        "ltx_t2v_ic",
+    )
+    assert (
+        slots["gpu-252-gpu0-ltx_t2v"].gpu_device_id
+        == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
+    )
     assert (
         slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
         == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
@@ -685,6 +704,33 @@ def test_lan_aio_fleet_render_supports_gpu_177_ltx_profile():
     assert "RUNPOD_MODEL_MANIFEST_KEY: ltx_video/2026-06-10/manifest.json" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
     assert "host_port: 8191" in rendered
+
+
+def test_lan_aio_fleet_render_runs_ltx_t2v_from_baked_comfy_with_persistent_models():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-ltx_t2v"]
+    rendered = ops.render_compose(slot)
+
+    import yaml
+
+    compose = yaml.safe_load(rendered)
+    service = compose["services"][slot.container_name]
+    assert service["environment"]["COMFYUI_DIR"] == "/opt/ComfyUI"
+    assert service["environment"]["RUNPOD_MODEL_TARGET_DIR"] == ("/opt/ComfyUI/models")
+    assert (
+        "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/"
+        "ltx_t2v/workspace/ComfyUI/models:/opt/ComfyUI/models" in service["volumes"]
+    )
+    assert (
+        "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/"
+        "ltx-t2v-124cd638/workspace:/workspace" in service["volumes"]
+    )
+    assert "--reserve-vram 5" in service["environment"]["COMFY_EXTRA_ARGS"]
 
 
 def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
@@ -1832,11 +1878,31 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
     )
     assert (
         "mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
-        "scail2-b2587e56/workspace "
-        "|| docker run --rm -v "
+        "scail2-b2587e56/workspace/ComfyUI/models "
+        "|| docker run --rm"
+    ) in docker_command
+    assert (
+        "-v "
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2-b2587e56:"
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2-b2587e56 "
     ) in docker_command
+    assert "host_uid=$(id -u)" in docker_command
+    assert "host_gid=$(id -g)" in docker_command
+    assert "ALLBOT_HOST_UID=$host_uid" in docker_command
+    assert "ALLBOT_HOST_GID=$host_gid" in docker_command
+    assert (
+        'chown -R "$ALLBOT_HOST_UID:$ALLBOT_HOST_GID" '
+        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace"
+    ) in docker_command
+    assert (
+        "test -w /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace/ComfyUI/models"
+    ) in docker_command
+    assert (
+        "test -w /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2/workspace/ComfyUI/models"
+    ) not in docker_command
     assert (
         "-v /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/"
         "workspace/ComfyUI/models:/opt/ComfyUI/models"

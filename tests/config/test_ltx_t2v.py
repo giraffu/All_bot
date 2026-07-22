@@ -87,3 +87,10 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
         assert ("lora_2" in lora_inputs) is has_sulphur
         assert ("271" in workflow) is has_ingredients
         assert ("272" in workflow) is has_ingredients
+        if has_ingredients:
+            # Crop the appended IC guide token before x2 spatial upscaling;
+            # otherwise one latent guide frame decodes as eight extra frames.
+            assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
+            assert workflow["26:89"]["inputs"]["samples"] == ["26:91", 2]
+            assert workflow["26:90"]["inputs"]["positive"] == ["26:91", 0]
+            assert workflow["26:149"]["inputs"]["latents"] == ["26:95", 0]

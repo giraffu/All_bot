@@ -2396,6 +2396,7 @@ class LanAioProdOps:
     ) -> str:
         workspace_host_dir = str(metadata["workspace_host_dir"])
         workspace_parent_dir = posixpath.dirname(workspace_host_dir.rstrip("/")) or "/"
+        workspace_models_dir = f"{workspace_host_dir.rstrip('/')}/ComfyUI/models"
         model_workspace_host_dir = str(
             metadata.get("model_workspace_host_dir") or workspace_host_dir
         )
@@ -2469,29 +2470,65 @@ class LanAioProdOps:
         if model_workspace_host_dir != workspace_host_dir:
             docker_command.extend(["-v", f"{model_host_dir}:{model_target_dir}"])
         docker_command.extend([image_ref, "bash", "-lc", inner_script])
+
+        def prepare_writable_directory(
+            target_dir: str,
+            writable_root: str,
+            mount_root: str,
+            *,
+            require_host_write: bool = True,
+        ) -> list[str]:
+            fallback_script = "; ".join(
+                [
+                    f"mkdir -p {shlex.quote(target_dir)}",
+                    (
+                        'chown -R "$ALLBOT_HOST_UID:$ALLBOT_HOST_GID" '
+                        f"{shlex.quote(writable_root)}"
+                    ),
+                ]
+            )
+            fallback_command = " ".join(
+                [
+                    "docker run --rm",
+                    '-e "ALLBOT_HOST_UID=$host_uid"',
+                    '-e "ALLBOT_HOST_GID=$host_gid"',
+                    f"-v {shlex.quote(mount_root)}:{shlex.quote(mount_root)}",
+                    shlex.quote(image_ref),
+                    "bash -lc",
+                    shlex.quote(fallback_script),
+                ]
+            )
+            commands = [
+                f"mkdir -p {shlex.quote(target_dir)} || {fallback_command}",
+                f"test -d {shlex.quote(target_dir)}",
+            ]
+            if require_host_write:
+                commands.append(f"test -w {shlex.quote(target_dir)}")
+            return commands
+
+        directory_setup = prepare_writable_directory(
+            workspace_models_dir,
+            workspace_host_dir,
+            workspace_parent_dir,
+        )
+        if model_workspace_host_dir != workspace_host_dir:
+            model_workspace_parent_dir = (
+                posixpath.dirname(model_workspace_host_dir.rstrip("/")) or "/"
+            )
+            directory_setup.extend(
+                prepare_writable_directory(
+                    model_host_dir,
+                    model_workspace_host_dir,
+                    model_workspace_parent_dir,
+                    require_host_write=False,
+                )
+            )
         script = "\n".join(
             [
                 "set -euo pipefail",
-                (
-                    f"mkdir -p {shlex.quote(workspace_host_dir)} || "
-                    + " ".join(
-                        shlex.quote(part)
-                        for part in [
-                            "docker",
-                            "run",
-                            "--rm",
-                            "-v",
-                            f"{workspace_parent_dir}:{workspace_parent_dir}",
-                            image_ref,
-                            "bash",
-                            "-lc",
-                            f"mkdir -p {shlex.quote(workspace_host_dir)}",
-                        ]
-                    )
-                ),
-                f"test -d {shlex.quote(workspace_host_dir)}",
-                f"mkdir -p {shlex.quote(model_host_dir)}",
-                f"test -d {shlex.quote(model_host_dir)}",
+                "host_uid=$(id -u)",
+                "host_gid=$(id -g)",
+                *directory_setup,
                 f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
                 " ".join(shlex.quote(part) for part in docker_command),
             ]

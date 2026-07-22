@@ -53,8 +53,10 @@ def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
         "lora": "ltx2.3/sulphur_lora_rank_768.safetensors",
         "strength": 1.0,
     }
-    assert patched["26:39"]["inputs"]["width"] == 1280
-    assert patched["26:39"]["inputs"]["height"] == 704
+    # The graph has a fixed x2 spatial upscaler, so latent dimensions are half
+    # the public final-output contract (1280x704).
+    assert patched["26:39"]["inputs"]["width"] == 640
+    assert patched["26:39"]["inputs"]["height"] == 352
     assert patched["18"]["inputs"]["Xi"] == 20
     assert "#Audio\ndistant traffic" in patched["28"]["inputs"]["text"]
 
@@ -69,8 +71,8 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
     assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
-    assert patched["26:39"]["inputs"]["width"] == 768
-    assert patched["26:39"]["inputs"]["height"] == 448
+    assert patched["26:39"]["inputs"]["width"] == 384
+    assert patched["26:39"]["inputs"]["height"] == 224
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():
