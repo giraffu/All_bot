@@ -558,6 +558,7 @@ def test_full_config_backup_uses_current_running_web_api(monkeypatch):
     assert "sslmode=" in scripts[0]
     assert "postgresql+asyncpg" in scripts[0]
     assert module.PG_DUMP_IMAGE in scripts[0]
+    assert "docker exec" in scripts[0]
     assert 'case "$DATABASE_URL" in postgresql+asyncpg:*' in scripts[0]
     assert "${DATABASE_URL#postgresql+asyncpg:}" in scripts[0]
     assert "${DATABASE_URL/postgresql+asyncpg:/postgresql:}" not in scripts[0]

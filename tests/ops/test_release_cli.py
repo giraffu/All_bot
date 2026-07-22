@@ -1341,7 +1341,9 @@ def test_general_direct_strategy_skips_test_promotion_but_keeps_ci_preflight(
     assert calls == [(FULL_SHA, FULL_SHA)]
 
 
-def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeypatch):
+def test_dashboard_fast_track_migration_uses_running_web_container_for_backup(
+    monkeypatch,
+):
     module = _load_module()
     args = SimpleNamespace(
         execute=True,
@@ -1350,12 +1352,14 @@ def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeyp
         remote_checkout_root="/release-root",
         remote_env_file="/etc/allbot/prod.env",
         confirm_legacy_cutover=False,
+        confirm_db_upgrade=True,
         drain_timeout_seconds=30,
         drain_interval_seconds=1,
     )
     impact = module.ReleaseImpact(
         services={"dashboard-backend", "dashboard-frontend"},
         level="rolling",
+        requires_db_upgrade=True,
         matched_rules=["dashboard-fast-track"],
     )
     remote_scripts = []
@@ -1394,6 +1398,10 @@ def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeyp
     )
     assert "allbot-nontarget" in script
     assert "central-api web-api" not in script
+    assert "label=com.docker.compose.service=web-api" in script
+    assert 'database_url="$(docker exec "$web_container"' in script
+    assert "run --rm -T web-api sh -lc 'printf" not in script
+    assert module.PG_DUMP_IMAGE in script
 
 
 def test_test_cloud_deploy_does_not_chmod_existing_tmp_snapshot_parent(monkeypatch):
