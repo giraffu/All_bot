@@ -111,7 +111,7 @@ jobs:
           - name: bots
             paths: >-
               tests/handlers tests/paid_group_guard_bot tests/qqcc_bot
-              tests/qqcc_private_bot
+              tests/qqcc_private_bot tests/support_bot
           - name: dashboard-analytics
             paths: tests/dashboard tests/local_analytics
           - name: web-workers-misc
