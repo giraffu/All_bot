@@ -72,4 +72,50 @@ describe('SupportTickets', () => {
     expect(wrapper.text()).toContain('测试用户')
     expect(wrapper.text()).toContain('open')
   })
+
+  it('renders received image attachments as authenticated previews', async () => {
+    apiMocks.fetchSupportTicket.mockResolvedValue({
+      id: 42,
+      category: 'business',
+      status: 'open',
+      telegram_user_id: 123,
+      last_message_at: '2026-07-22T14:20:00Z',
+      messages: [
+        {
+          id: 7,
+          sender_type: 'user',
+          attachments: [
+            {
+              filename: 'proposal.png',
+              mime_type: 'image/png',
+              url: '/api/support-tickets/attachments/proposal',
+            },
+          ],
+          created_at: '2026-07-22T14:21:00Z',
+        },
+      ],
+    })
+    const wrapper = mount(SupportTickets, {
+      global: {
+        stubs: {
+          'a-list': ListStub,
+          'a-list-item': passthroughStub('ListItemStub'),
+          'a-spin': passthroughStub('SpinStub'),
+          'a-select': passthroughStub('SelectStub'),
+          'a-button': passthroughStub('ButtonStub'),
+          'a-tag': passthroughStub('TagStub'),
+          'a-textarea': passthroughStub('TextareaStub'),
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.find('.ticket-item').trigger('click')
+    await flushPromises()
+
+    const image = wrapper.get('img.attachment-image')
+    expect(image.attributes('src')).toBe('/api/support-tickets/attachments/proposal')
+    expect(image.attributes('alt')).toBe('proposal.png')
+    expect(wrapper.text()).toContain('商业合作')
+  })
 })

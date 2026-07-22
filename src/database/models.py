@@ -100,7 +100,7 @@ class User(Base):
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     __table_args__ = (
-        CheckConstraint("category in ('recharge', 'bug', 'suggestion', 'uncategorized')", name="ck_support_tickets_category"),
+        CheckConstraint("category in ('recharge', 'bug', 'suggestion', 'business', 'uncategorized')", name="ck_support_tickets_category"),
         CheckConstraint("status in ('open', 'processing', 'resolved', 'closed')", name="ck_support_tickets_status"),
         Index("ix_support_tickets_status_last_message", "status", "last_message_at"),
         Index("ix_support_tickets_telegram_status", "telegram_user_id", "status"),

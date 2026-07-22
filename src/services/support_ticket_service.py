@@ -6,7 +6,7 @@ from sqlalchemy import select, func
 from src.database.models import SupportMessage, SupportTicket, User
 
 ACTIVE_STATUSES = ("open", "processing", "resolved")
-CATEGORIES = {"recharge", "bug", "suggestion", "uncategorized"}
+CATEGORIES = {"recharge", "bug", "suggestion", "business", "uncategorized"}
 STATUSES = {*ACTIVE_STATUSES, "closed"}
 
 
@@ -65,6 +65,24 @@ async def add_user_message(
             telegram_message_id=telegram_message_id,
             attachments=attachments,
         )
+    )
+    ticket.last_message_at = datetime.now()
+    if ticket.status == "resolved":
+        ticket.status = "open"
+    await session.commit()
+    return ticket
+
+
+async def select_ticket_category(
+    session,
+    *,
+    telegram_user,
+    category: str,
+) -> SupportTicket:
+    ticket = await get_or_create_ticket(
+        session,
+        telegram_user=telegram_user,
+        category=category,
     )
     ticket.last_message_at = datetime.now()
     if ticket.status == "resolved":

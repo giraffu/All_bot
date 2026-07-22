@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-22：客服 Bot 附件失败定位为 Local Bot API 文件基址与 PTB 默认字节下载规则不兼容，失败发生在 URL 组装阶段、早于网络下载与 R2 上传。修复收口在 `support_bot/attachment_service.py`：Local API 使用独立文件服务直连，公网 Bot API 保留 PTB fallback；附件仍只写私有 R2并由已认证 Dashboard 短签访问，图片在工单时间线显示可点击预览。同轮新增 `business` 商业合作分类和分类后内容引导，分类点击不再写入空白消息；`f8a9b0c1d2e3` 仅扩展分类约束，已通过临时 PostgreSQL 升降级验证。本条记录代码与测试事实，不表示已部署正式环境。
 > 2026-07-22：新增独立 `support-bot`、`support_tickets/support_messages`、Dashboard 客服工单页与显式 `support-platform` 组合发布。客服迁移只创建新表/索引/约束，并以模块 + 文件 SHA256 精确固定为 reviewed additive migration；首次正式晋级执行了完整数据库备份、单 Alembic head、显式 DB upgrade 与非目标容器启动时间核对，按用户要求跳过测试环境和前向维护，只滚动 Dashboard 前后端并首次启动客服 Bot。正式验收确认单一 polling 实例、Telegram webhook 为空、无 getUpdates 冲突、两张客服表存在、后台接口鉴权拒绝未登录请求、非目标容器零变化且维护标记关闭。任一迁移内容、模块或共享契约漂移继续 fail closed。
 > 2026-07-22：签到资格判定前会重新计算修为，避免频道成员资格已写入而旧 `user_group=凡人` 被提前拒绝；动态有效的内门、核心、真传弟子即使修为仍显示凡人也可领取基础 `10` 灵石及对应身份加成，外门凡人仍须先入宗门。事实源为 `permission_growth_channel_service.py` 与 focused pytest 回归；本条未部署 test/prod。
 > 2026-07-22：正式晋级的 cloud-test artifact evidence 历史改为一次 SSH 批量流读取：远端仍按受限的 40 位 SHA 文件名筛选、倒序读取并逐条 JSON/main-channel/exact-digest 校验，但不再对每份 history 建立独立 SSH 连接。语义和 fail-closed 证据要求不变，修复高延迟连接导致 QQCC 发布预检卡住的问题。事实源为 `scripts/release.py` 与发布器回归；本条未部署 test/prod。
