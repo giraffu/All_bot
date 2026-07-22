@@ -55,7 +55,7 @@ RETARGETABLE_REPLACE_SLOT_ACTIONS = {
     "warm-cache",
     "takeover",
 }
-SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing"}
+SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing", "restarting"}
 FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
 MANAGED_MUTATION_ACTIONS = {
     "configure-registry",
@@ -1784,7 +1784,11 @@ class LanAioProdOps:
             raise RuntimeError("warm-cache requires exactly one --slot")
         slot = slots[0]
         metadata = self._runtime_metadata(slot)
-        image_ref = str(metadata.get("image_ref") or "")
+        image_ref = os.environ.get("LAN_AIO_WARM_CACHE_IMAGE_REF") or str(
+            metadata.get("image_ref") or ""
+        )
+        if "@sha256:" in image_ref:
+            metadata = {**metadata, "image_ref": image_ref}
         if not image_ref:
             raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
         env_content = runtime_env_content(self.env_values)
@@ -2127,14 +2131,21 @@ class LanAioProdOps:
                         "previous_state": status,
                     }
             else:
-                self._wait_container_health(selected)
-                self._verify_disabled_heartbeat(selected)
-                start_payload = {
-                    "ok": True,
-                    "action": "already-running",
-                    "slot": selected.id,
-                    "previous_state": status,
-                }
+                desired_image_ref = self.config.profiles[
+                    selected.target_profile_id
+                ].all_in_one_image_ref
+                actual_image_ref = self._remote_target_container_image_ref(selected)
+                if desired_image_ref and actual_image_ref != desired_image_ref:
+                    start_payload = self.start_disabled([selected])
+                else:
+                    self._wait_container_health(selected)
+                    self._verify_disabled_heartbeat(selected)
+                    start_payload = {
+                        "ok": True,
+                        "action": "already-running",
+                        "slot": selected.id,
+                        "previous_state": status,
+                    }
         self._set_control(
             selected.agent_id,
             "enabled",
@@ -2627,7 +2638,7 @@ class LanAioProdOps:
         slot: LanAioProdSlot,
         container_name: str,
     ) -> None:
-        self._ssh(slot.ssh_host, f"docker rm {shlex.quote(container_name)} >/dev/null")
+        self._ssh(slot.ssh_host, f"docker rm -f {shlex.quote(container_name)} >/dev/null")
 
     def _ensure_target_container_recreate_safe(
         self,
@@ -2647,7 +2658,10 @@ class LanAioProdOps:
                 "target container inspect returned mismatched name: "
                 f"{state_name!r} != {slot.container_name!r}"
             )
-        if bool(state.get("running")) or status not in SAFE_STALE_CONTAINER_STATES:
+        if (
+            (bool(state.get("running")) and status != "restarting")
+            or status not in SAFE_STALE_CONTAINER_STATES
+        ):
             raise RuntimeError(
                 "target container already exists and is not safe to remove: "
                 f"{slot.container_name} status={status}"
