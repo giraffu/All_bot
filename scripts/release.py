@@ -3581,6 +3581,46 @@ def apply_generation_maintenance(
         impact.matched_rules.append("generation-entry-maintenance")
 
 
+def apply_user_authorized_no_maintenance(
+    args: argparse.Namespace, impact: ReleaseImpact
+) -> None:
+    """Suppress planned maintenance for an explicitly selected prod module set.
+
+    This changes only the forward rollout mode. Transaction compensation may
+    still enable maintenance when a failed rollout cannot yet be proven safe.
+    """
+
+    if not getattr(args, "no_maintenance", False):
+        return
+    if args.command != "promote" or args.env != "prod":
+        raise ReleaseError("--no-maintenance is restricted to production promote")
+    if not _split_services(args.modules):
+        raise ReleaseError("--no-maintenance requires explicit --modules")
+    locked_rules = {
+        "database-migrations",
+        "deployment-contract",
+        "initial-release",
+        "test-data-service-repair",
+    }
+    if (
+        impact.requires_db_upgrade
+        or impact.blockers
+        or impact.unknown_paths
+        or locked_rules & set(impact.matched_rules)
+    ):
+        raise ReleaseError(
+            "--no-maintenance cannot waive migration, deployment-contract, "
+            "initial-release, blocker, or unknown-path safety gates"
+        )
+    args.maintenance_required = impact.level == "maintenance"
+    args.maintenance_waived = args.maintenance_required
+    if not args.maintenance_required:
+        return
+    impact.level = "rolling"
+    if "user-authorized-no-maintenance" not in impact.matched_rules:
+        impact.matched_rules.append("user-authorized-no-maintenance")
+
+
 def _plan_document(
     args: argparse.Namespace,
     impact: ReleaseImpact,
@@ -3640,6 +3680,10 @@ def _plan_document(
         "mode": "execute" if args.execute else "dry-run",
         "release_channel": manifest.get("release_channel", "main"),
         "source_ref": manifest.get("source_ref", "refs/heads/main"),
+        "maintenance_required": bool(
+            getattr(args, "maintenance_required", impact.level == "maintenance")
+        ),
+        "maintenance_waived": bool(getattr(args, "maintenance_waived", False)),
     }
     runtime_snapshot = getattr(args, "runtime_env_snapshot", None)
     if isinstance(runtime_snapshot, Mapping):
@@ -3704,6 +3748,10 @@ def _promote_preview_document(
         "modules": sorted(_split_services(args.modules)),
         "artifacts": artifacts,
         "maintenance": impact.level == "maintenance",
+        "maintenance_required": bool(
+            getattr(args, "maintenance_required", impact.level == "maintenance")
+        ),
+        "maintenance_waived": bool(getattr(args, "maintenance_waived", False)),
         "preflight": preflight.get("status"),
         "blockers": list(preflight.get("blockers", [])),
         "mutation": bool(args.execute),
@@ -7537,6 +7585,14 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--modules", action="append", default=[])
     promote.add_argument("--sha")
     promote.add_argument("--confirm-prod", action="store_true")
+    promote.add_argument(
+        "--no-maintenance",
+        action="store_true",
+        help=(
+            "for an explicit module set, record the user's decision and use a "
+            "rolling forward update; rollback failure safety may still enable maintenance"
+        ),
+    )
     promote.set_defaults(
         env="prod",
         track="control-plane",
@@ -7842,6 +7898,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.skip_env_checks and args.command != "plan":
             raise ReleaseError("--skip-env-checks is only available for plan")
         impact, manifest, previous_sha = build_plan(args)
+        apply_user_authorized_no_maintenance(args, impact)
         if args.execute:
             verify_operator_worktree_clean(
                 source_ref=str(manifest.get("source_ref", "refs/heads/main")),
@@ -8020,6 +8077,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         transaction["services"] = sorted(impact.services)
         transaction["level"] = impact.level
+        transaction["maintenance_required"] = bool(
+            getattr(args, "maintenance_required", impact.level == "maintenance")
+        )
+        transaction["maintenance_waived"] = bool(
+            getattr(args, "maintenance_waived", False)
+        )
         transaction.update(
             {
                 "risk_class": decision.risk_class,

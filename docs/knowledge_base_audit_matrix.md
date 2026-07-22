@@ -295,3 +295,5 @@
 > 2026-07-16：为生产启用、测试禁用的 private worker 闭包修复新增显式 `--control-plane-repair-fast-track`，不作为通用免测入口。它复用 verified main-channel 测试状态，只允许 control-plane Dockerfile、v2 catalog 与 release/docs/tests/skills 元数据；其它变化 digest 必须证明 inputs 未变且 Docker target 与已测 SHA 等价，private digest 必须以 `--network none` 真实导入两个运行包。业务代码、migration、Compose、GPU/ops、未知路径及 module/service/from-SHA override 均 fail closed，生产 main/CI/env/preflight/确认/事务回滚门禁保持。事实源为 `scripts/release.py`、`tests/ops/test_release_cli.py` 与不可变发布/部署 Skill。
 >
 > 2026-07-22：独立模块回滚材料恢复不再把 `maintenance` 风险分类误当成运行 mutation；仍要求精确已部署基线、main/CI、无 migration/blocker/unknown path，并继续禁止 pull/up/stop/restart。早于 Dashboard RunPod pin 契约的旧基线只在此恢复入口投影 `RUNPOD_RELEASE_PROFILE_PINS_JSON={}`，使全文件 Compose 插值可验证；普通发布仍要求完整 digest pin。事实源为 `scripts/release.py`、`tests/ops/test_release_cli.py` 与不可变发布文档。
+>
+> 2026-07-22：用户明确决定显式模块本次不进入默认维护时，`promote --no-maintenance` 直接把 forward rollout 改为 rolling，并记录 `maintenance_required=true` / `maintenance_waived=true`；同一次 `--confirm-prod` 即为执行授权，不再二次确认。migration、首次切换、部署契约、blocker、未知路径与失败补偿维护仍 fail closed。事实源为 `scripts/release.py`、`tests/ops/test_release_cli.py`、部署/QQCC Skills 与不可变发布文档。

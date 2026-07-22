@@ -3532,6 +3532,47 @@ def test_generation_entries_elevate_mixed_prod_release_to_maintenance():
     assert management.level == "rolling"
 
 
+def test_user_authorized_no_maintenance_turns_explicit_module_into_rolling():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote",
+        env="prod",
+        modules=["qqcc-bot"],
+        no_maintenance=True,
+    )
+    impact = module.ReleaseImpact(
+        services={"qqcc-bot"},
+        level="maintenance",
+        matched_rules=["generation-entry-maintenance"],
+    )
+
+    module.apply_user_authorized_no_maintenance(args, impact)
+
+    assert impact.level == "rolling"
+    assert args.maintenance_required is True
+    assert args.maintenance_waived is True
+    assert "user-authorized-no-maintenance" in impact.matched_rules
+
+
+def test_user_authorized_no_maintenance_keeps_locked_gates_fail_closed():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote",
+        env="prod",
+        modules=["qqcc-bot"],
+        no_maintenance=True,
+    )
+    impact = module.ReleaseImpact(
+        services={"qqcc-bot"},
+        level="maintenance",
+        requires_db_upgrade=True,
+        matched_rules=["database-migrations"],
+    )
+
+    with pytest.raises(module.ReleaseError, match="cannot waive migration"):
+        module.apply_user_authorized_no_maintenance(args, impact)
+
+
 def test_deploy_module_defaults_to_prod_and_accepts_singular_module_option():
     module = _load_module()
 

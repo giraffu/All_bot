@@ -134,7 +134,7 @@ v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env
 
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
 
-正式维护由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。migration、Compose/发布契约和未知影响始终强制完整维护、数据库备份与单 Alembic head。容器可预拉取，实际替换前必须确认新生成已拒绝；失败自动恢复旧 digest，恢复不完整则保留维护。
+正式维护默认由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。用户明确决定所选模块不进入维护时，`promote --modules <...> --no-maintenance` 把 forward rollout 改为 rolling，并在预览和事务记录 `maintenance_required` / `maintenance_waived`；该决定随同一次 `--confirm-prod` 生效，不再二次确认。migration、Compose/发布契约、首次切换、blocker 和未知影响不可豁免；失败补偿仍可启用维护以保证恢复。
 
 `promote` 的宿主配置检查按所选模块服务闭包并集投影，同时验证 `/var/lib/allbot/config/<env>/current` 中全部既有非目标投影未被篡改、生产环境没有 test sentinel、全局 env revision 没有漂移。共享 Compose/env 只有内容 SHA256 精确等于已审阅 snapshot 时才可随模块通过；任一字节变化立即恢复 blocker。
 
@@ -160,6 +160,9 @@ python scripts/release.py promote --confirm-prod
 # 部分模块或固定候选
 python scripts/release.py promote \
   --modules dashboard,qqcc-config --sha <40-char-main-sha> --confirm-prod
+# 用户已明确决定 QQCC Bot 本次不进入默认生成维护：
+python scripts/release.py promote \
+  --modules qqcc-bot --sha <40-char-main-sha> --no-maintenance --confirm-prod
 # 去掉确认只输出精简预览，不执行生产 mutation
 python scripts/release.py promote --modules qqcc-bot
 
