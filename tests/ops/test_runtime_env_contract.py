@@ -768,6 +768,111 @@ def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
     assert dashboard_path.read_bytes() == old_dashboard
 
 
+def test_target_inspect_ignores_unknown_non_target_active_service(tmp_path, capsys):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(_environment("prod")), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 0
+    capsys.readouterr()
+
+    active = module.load_active_state(root)
+    assert active is not None
+    active["service_revisions"]["historical-support-bot"] = "f" * 64
+    (root / "current.json").write_text(
+        json.dumps(active, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "current.json").chmod(0o600)
+
+    assert (
+        module.main(
+            ["inspect-target", *common, "--service", "dashboard-backend"]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["status"] == "target-inspected"
+    assert inspected["drift"] is False
+    assert set(inspected["service_revisions"]) == {"dashboard-backend"}
+
+
+def test_target_inspect_rejects_tampered_target_projection(tmp_path, capsys):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(_environment("prod")), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 0
+    capsys.readouterr()
+    projection = root / "current" / "dashboard-backend.env"
+    projection.write_text(projection.read_text(encoding="utf-8") + "TAMPERED=1\n")
+    projection.chmod(0o600)
+
+    assert (
+        module.main(
+            ["inspect-target", *common, "--service", "dashboard-backend"]
+        )
+        == 2
+    )
+    assert "target service environment integrity check failed" in capsys.readouterr().err
+
+
+def test_target_inspect_reports_only_target_revision_drift(tmp_path, capsys):
+    module = _load_module()
+    values = _environment("prod")
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 0
+    capsys.readouterr()
+    values["DASHBOARD_SECRET_KEY"] = "rotated-dashboard-secret"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(
+            ["inspect-target", *common, "--service", "dashboard-backend"]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["drift"] is True
+    assert inspected["affected_services"] == ["dashboard-backend"]
+
+
 def test_scoped_activation_rejects_non_target_active_service_removal(
     tmp_path, capsys
 ):

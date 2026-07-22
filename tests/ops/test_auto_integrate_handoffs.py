@@ -79,14 +79,12 @@ def test_test_deployment_commands_are_fixed_to_test_and_exact_sha(tmp_path):
 
     commands = module.test_deployment_commands(tmp_path, sha)
 
-    assert [command[-1] for command in commands[:2]] == [sha, sha]
-    assert commands[2][-2:] == ["--execute", "--sha"] or commands[2][-3:] == [
-        "--sha",
-        sha,
-        "--execute",
-    ]
+    assert [command[2] for command in commands] == ["plan", "deploy"]
+    assert all(command[-1] in {sha, "--execute"} for command in commands)
+    assert commands[1][-3:] == ["--sha", sha, "--execute"]
     flattened = " ".join(part for command in commands for part in command)
     assert "--env test" in flattened
+    assert "preflight" not in flattened
     assert "prod" not in flattened
     assert "promote" not in flattened
 

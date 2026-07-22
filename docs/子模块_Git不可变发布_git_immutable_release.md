@@ -136,7 +136,7 @@ v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env
 
 正式维护默认由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。用户明确决定所选模块不进入维护时，`promote --modules <...> --no-maintenance` 把 forward rollout 改为 rolling，并在预览和事务记录 `maintenance_required` / `maintenance_waived`；该决定随同一次 `--confirm-prod` 生效，不再二次确认。migration、Compose/发布契约、首次切换、blocker 和未知影响不可豁免；失败补偿仍可启用维护以保证恢复。
 
-`promote` 的宿主配置检查按所选模块服务闭包并集投影，同时验证 `/var/lib/allbot/config/<env>/current` 中全部既有非目标投影未被篡改、生产环境没有 test sentinel、全局 env revision 没有漂移。共享 Compose/env 只有内容 SHA256 精确等于已审阅 snapshot 时才可随模块通过；任一字节变化立即恢复 blocker。
+`promote` 的普通 streamlined 宿主配置检查只构造所选模块服务闭包，并验证目标 current projection 的文件、权限、字节和 revision；非目标 active state 中的未知历史名称或 drift 不阻断无关模块。目标缺键、篡改或 revision 漂移仍 fail closed，并要求显式 `config-plan/config-apply --module`；代码发布不激活或重写配置。全量 `config-plan/config-apply` 和 strict 发布继续验证全局投影。共享 Compose/env 只有内容 SHA256 精确等于已审阅 snapshot 时才可随模块通过；任一字节变化立即恢复 blocker。
 
 main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Dashboard 把每个 RunPod profile 解析成精确 `image@sha256`。当本批次没有 GPU 输入变化时，模块化 CI 从目标 main 的全部祖先中选择最近的完整、不可变 main-channel GPU manifest，原样继承每项 digest、artifact source SHA、OCI revision 与模型证据；这只是控制面 pin 索引，不构建、不测试、不部署 GPU，也不把历史镜像改写成当前 SHA。环境中立门禁只扫描 artifact 自身构建 SHA 对应的新增镜像；继承镜像复用原构建 CI 的扫描证据，过滤 SHA 必须等于当前 release index SHA，不能任意跳过本批新镜像。若某 profile 的 catalog、`remote_workers/**` 或真实输入发生变化，历史基线不能满足它，仍须当前 main SHA 的专用 GPU attestation/canary；找不到完整可信祖先或出现 mutable/mismatch ref 时，main bundle 在发布前阻断。
 
@@ -187,7 +187,7 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 若唯一云测试站仍运行历史 test-train candidate，可在一次迁移期间使用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该兼容 policy 只允许 test，生产显式拒绝；新批次完成 main 部署后不再使用。
 
-生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；`verify-test` 不再设置固定 24 小时观察门禁或批准人字段，只要求真实开始/完成时间顺序有效、完成时间不在未来、全部适用 smoke 为 true、SHA/digest、Web checksum 与测试运行态一致，并记录实际持续秒数。旧 `short_observation_override`、`override_reason` 与 `--confirm-short-observation` 已退出契约，不得用伪造时间或直接编辑状态代替真实验收。
+普通 streamlined 云测试部署在目标 health/API_BASE/polling smoke 成功后，自动按 artifact + exact digest 向 `current/history` 写入 `verified` evidence，并记录真实开始/完成时间和自动化来源。正式 standard 从 retained history 复用相同 artifact/digest，不要求全局 SHA 相同；direct 只校验 bundle full/passed。`verify-test` 保留作专项人工补充，仍校验时间顺序、未来时间、适用 smoke、SHA/digest、Web checksum 与测试运行态，禁止伪造时间或直接编辑状态。
 
 `scripts/classify_ci_change.py` 区分三类路径。纯 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理脚本为 `lightweight`：上游跳过全量模块测试，main 后继 modular workflow 不创建 bundle。仅包含 `ops/gpu_pool_controller/**` 与明确 RunPod/LAN operator/helper 的变更为 `operator`：上游只跑 `tests/ops tests/scripts`，不运行 PostgreSQL、Web、Dashboard 前端或其它 Python 分片；main 后继仍创建模块化 bundle，以便真实镜像输入变化得到不可变 artifact。LAN 宿主 helper 没有 artifact，最小更新模块为零；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖、业务代码、migration、Compose、运行配置、未知路径或混合变更仍为 `runtime`，恢复完整 CI 与对应 GPU attestation/canary。三类路径都必须经受保护 main，且都不自动部署测试/正式环境。
 

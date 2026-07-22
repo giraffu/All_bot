@@ -10,11 +10,14 @@ A-H 并行开发
 → 本机单写者自动冻结等待项为 release batch
 → 一个 PR 合入 main
 → main CI 一次构建不可变 bundle
-→ 自动串行部署云测试并验收
-→ 用户另行确认后发布正式模块
+→ 自动串行以 streamlined/strict 分类部署云测试
+→ 普通 smoke 自动写 exact-digest verified evidence
+→ 用户另行确认后以同一分类发布正式模块
 ```
 
 代码集成和昂贵的容器构建以“批次”为单位，不再以“槽位成员”为单位。生产仍只消费受保护 main bundle，正式 mutation 仍需用户当次明确确认。
+
+`streamlined` 只适用于已知 schema-v2 main control-plane 影响且目标服务配置投影无漂移；测试和正式均只替换 planner 选中的服务，失败使用目标主机已有旧 ref 回切。任一 migration、Compose/env、首次切换、未知影响或专用执行轨会使整个混合发布进入 `strict`，继续使用完整门禁。该分类不改变自动 handoff 队列、A-H release batch、main CI 构建或生产确认边界，也不授权槽位直接部署共享环境。
 
 纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、`deploy/release-batches/*.json` 审计记录、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
 

@@ -27,7 +27,7 @@ description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handof
 
 ## 3. 一次性发布批次
 
-启用用户级 `allbot-ai-integration-queue.timer` 后，`scripts/auto_integrate_handoffs.py run-once --execute` 是唯一自动集成写者。它用非阻塞文件锁判断是否已有批次或测试部署在运行，把锁定时所有 pending handoff 冻结为一个批次；运行期间新到达的 handoff 留给下一批。协调器按 `PR CI → main merge → main CI/bundle → release.py plan/preflight/deploy --env test` 串行推进，并持久化阶段以便进程重启后续跑。组合冲突、CI、bundle 或测试部署任一失败都会把批次移入 failed 并阻断后续工作，必须修复原因后显式 `retry-failed` 从原阶段续跑。协调器不接受环境参数，也没有任何 prod/promote 调用；纯 lightweight 批次在 main CI 后直接完成，不构建 bundle或更新环境。
+启用用户级 `allbot-ai-integration-queue.timer` 后，`scripts/auto_integrate_handoffs.py run-once --execute` 是唯一自动集成写者。它用非阻塞文件锁判断是否已有批次或测试部署在运行，把锁定时所有 pending handoff 冻结为一个批次；运行期间新到达的 handoff 留给下一批。协调器按 `PR CI → main merge → main CI/bundle → release.py plan/deploy --env test` 串行推进，并持久化阶段以便进程重启后续跑；strict 由 deploy 内部执行完整门禁。组合冲突、CI、bundle 或测试部署任一失败都会把批次移入 failed 并阻断后续工作，必须修复原因后显式 `retry-failed` 从原阶段续跑。协调器不接受环境参数，也没有任何 prod/promote 调用；纯 lightweight 批次在 main CI 后直接完成，不构建 bundle或更新环境。
 
 未启用 timer、自动协调器故障或需要人工选择成员时，保留下列手工冻结入口：
 
@@ -61,14 +61,14 @@ GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `op
 
 ## 4. 测试环境与正式发布
 
-- 自动集成 timer 已启用时，非 lightweight 批次在 main bundle 成功后使用完整 main SHA 自动执行 `release.py plan -> preflight -> deploy --env test`；不要并行启动另一条共享测试发布。
+- 自动集成 timer 已启用时，非 lightweight 批次在 main bundle 成功后使用完整 main SHA 串行执行 `release.py plan -> deploy --env test`；`plan` 先显示 `execution_profile`，普通 streamlined 不重复单独 preflight，strict 由 deploy 路由完整门禁，专项诊断仍可显式使用 preflight。不要并行启动另一条共享测试发布。
 - 测试控制面只从目标主机 `/etc/allbot/test.env` 生成权限为 `600` 的逐服务投影；不得把整份 env 注入所有容器，也不得把测试投影复制给正式环境。
-- 测试按 main bundle 中的精确 digest/checksum 验收；standard artifact 通过 `verify-test` 写入 main-channel verified history。
+- 测试按 main bundle 中的精确 digest/checksum 验收；普通 streamlined 目标 smoke 成功后自动写入 main-channel exact-digest verified history，`verify-test` 保留作专项人工补充。
 - `verify-test` 仍要求精确 SHA/digest、全部适用 smoke、真实开始/完成时间和批准人，但不再要求固定 24 小时观察，也没有短观察 override/CLI 确认。
 - 测试失败不回退或改写 main 历史。修复走新的功能 handoff 和新的单批次 main PR，再为新 main SHA 构建一次。
-- 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；日常入口为 `python scripts/release.py promote --confirm-prod`，由它自动锁定候选和实际变化模块。每次生产 mutation 仍需用户明确调用并确认；高风险情形继续走发布器高级入口。
+- 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；日常入口为 `python scripts/release.py promote --confirm-prod`，由它自动锁定候选、实际变化模块及 streamlined/strict。streamlined standard 复用测试 exact-digest evidence，direct 读取 bundle full/passed；migration、Compose/env、首次切换、未知或专用执行轨整体 strict。每次生产 mutation仍需用户明确调用并确认。
 - 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存可替换/追加目标投影，但必须保证所有非目标 active 投影继续存在且 revision/字节不变；它不调用 Compose 或重启容器，代码发布不能隐式修改宿主 env 或复用测试配置。
-- Dashboard 等 direct artifact 可按策略豁免测试验收，但不能绕过 main、CI、digest、配置、健康、事务回滚与生产确认。
+- Dashboard 等 direct artifact 可按策略不要求测试 history，但不能绕过 main full-validation bundle、digest、目标配置、健康、目标回切与生产确认；LAN runner 仅在相关影响规则命中时检查。
 - 测试 Worker 仅在专项诊断时显式部署；GPU/LAN AIO/RunPod 继续走专用 operator/canary。
 
 ## 5. 能力与授权边界

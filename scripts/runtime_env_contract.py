@@ -13,6 +13,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -478,6 +479,52 @@ def validate_active_projection_integrity(root: Path, active: Mapping[str, Any]) 
             raise ContractError("active service environment integrity check failed")
 
 
+def validate_target_projection_integrity(
+    root: Path,
+    active: Mapping[str, Any],
+    services: Iterable[str],
+) -> None:
+    """Validate only requested active projections without trusting other state names.
+
+    This is deliberately read-only and narrower than activation integrity.  It is
+    used by ordinary rolling releases where an unrelated historical service must
+    not block a known target, while the target's state, permissions and bytes stay
+    fail-closed.
+    """
+
+    revision = str(active.get("environment_revision", ""))
+    service_revisions = active.get("service_revisions")
+    link = root / "current"
+    state_path = root / "current.json"
+    revision_path = root / revision
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", revision)
+        or not isinstance(service_revisions, Mapping)
+        or not link.is_symlink()
+        or os.readlink(link) != revision
+        or root.stat().st_mode & 0o077
+        or not revision_path.is_dir()
+        or revision_path.stat().st_mode & 0o077
+        or not state_path.is_file()
+        or state_path.stat().st_mode & 0o077
+    ):
+        raise ContractError("target service environment integrity check failed")
+    for service in sorted(set(services)):
+        recorded = str(service_revisions.get(service, ""))
+        path = revision_path / f"{service}.env"
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", recorded)
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_mode & 0o077
+        ):
+            raise ContractError("target service environment integrity check failed")
+        projection = parse_env_text(path.read_text(encoding="utf-8"))
+        embedded = projection.pop("ALLBOT_CONFIG_REVISION", None)
+        if embedded != recorded or _digest(projection) != recorded:
+            raise ContractError("target service environment integrity check failed")
+
+
 def activate_snapshot(
     root: Path,
     snapshot: EnvironmentSnapshot,
@@ -671,7 +718,9 @@ def _credential_status(root: Path) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("inspect", "activate", "rollback"))
+    parser.add_argument(
+        "command", choices=("inspect", "inspect-target", "activate", "rollback")
+    )
     parser.add_argument("--environment", choices=("test", "prod"), required=True)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--defaults", type=Path)
@@ -710,11 +759,23 @@ def main(argv: list[str] | None = None) -> int:
         validate_environment_semantics(args.environment, values)
         contract = load_contract(args.contract)
         requested_services = set(args.service)
+        if args.command == "inspect-target" and not requested_services:
+            raise ContractError("target inspection requires at least one service")
         active = load_active_state(args.root)
-        if active is not None:
+        if args.command == "inspect-target":
+            if active is None:
+                raise ContractError("target service environment is not activated")
+            validate_target_projection_integrity(
+                args.root, active, requested_services
+            )
+        elif active is not None:
             validate_active_projection_integrity(args.root, active)
         selected_services = set(requested_services)
-        if requested_services and isinstance(active, Mapping):
+        if (
+            args.command != "inspect-target"
+            and requested_services
+            and isinstance(active, Mapping)
+        ):
             active_service_revisions = active.get("service_revisions")
             if not isinstance(active_service_revisions, Mapping):
                 raise ContractError("active service environment state is invalid")
@@ -725,7 +786,11 @@ def main(argv: list[str] | None = None) -> int:
             values,
             services=selected_services or None,
         )
-        if requested_services and isinstance(active, Mapping):
+        if (
+            args.command != "inspect-target"
+            and requested_services
+            and isinstance(active, Mapping)
+        ):
             active_services = {
                 str(name) for name in active.get("service_revisions", {})
             }
@@ -769,6 +834,16 @@ def main(argv: list[str] | None = None) -> int:
             if str(active_service_revisions.get(name, "")) != revision
         }
         effective_changed = changed - {SERVICE_CONTRACT_REVISION_KEY}
+        if args.command == "inspect-target":
+            # Global env and unrelated active revisions are intentionally outside
+            # this read-only gate.  Only the requested projection may block the
+            # rolling release.
+            summary["drift"] = bool(projection_drift)
+            summary["changed_keys"] = sorted(
+                key
+                for key in effective_changed
+                if affected_services(contract, {key}) & set(snapshot.projections)
+            )
         summary["affected_services"] = sorted(
             (affected_services(contract, effective_changed) & set(snapshot.projections))
             | projection_drift
@@ -780,7 +855,13 @@ def main(argv: list[str] | None = None) -> int:
         summary["public_values"] = {
             key: values[key] for key in sorted(PUBLIC_CONFIG_KEYS) if key in values
         }
-        summary["status"] = "activated" if args.command == "activate" else "inspected"
+        summary["status"] = (
+            "activated"
+            if args.command == "activate"
+            else "target-inspected"
+            if args.command == "inspect-target"
+            else "inspected"
+        )
         print(dumps_summary(summary))
         return 0
     except ContractError as exc:

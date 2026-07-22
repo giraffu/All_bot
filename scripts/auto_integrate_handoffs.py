@@ -229,7 +229,6 @@ def test_deployment_commands(checkout: Path, sha: str) -> list[list[str]]:
     common = ["--env", "test", "--track", "control-plane", "--sha", sha]
     return [
         ["python", release, "plan", *common],
-        ["python", release, "preflight", *common],
         ["python", release, "deploy", *common, "--execute"],
     ]
 
