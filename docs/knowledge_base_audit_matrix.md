@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-22：单人开发授权模型移除待秘密轮换的重复风险接受门禁。日常 `promote --confirm-prod` 不再要求 `--accept-pending-secret-rotation --reason`，pending 仅作为 release state 风险审计；main/CI、不可变 digest、配置闭包、健康、事务回滚、非目标完整性和 `--confirm-prod` 保持不变。历史的 `pending_secret_rotation_acceptance` 继续可读，轮换完成证据仍由 `credential-isolation-complete` 写入。事实源为 `scripts/release.py`、发布器回归、正式/不可变发布文档与 ops Skill；本条未部署 test/prod。
 > 2026-07-22：日常 `release.py promote` 的独立模块审批策略改为从候选不可变 SHA 读取默认 `deploy/release-policy.yml`。因此在落后的本地 checkout 发起 QQCC Bot + QQCC Config 发布时，候选提交中已审核的 Compose/运行时契约 SHA256 snapshot 能正确生效；自定义 `--policy` 仍是显式本地覆盖，任一未审核快照、migration 或未知共享契约仍 fail closed。事实源为发布器、专项回归、QQCC 文档与 ops Skill；本条未部署 test/prod。
 > 2026-07-21：按单人开发授权模型移除发布流程的 `--approved-by` 审计授权门禁。direct/emergency 与跳过 CI 仍须提供 `--reason`，待秘密轮换仍须显式接受并说明原因；`verify-test`、`credential-isolation-complete` 与发布状态不再要求或写入批准人。受保护 main 血缘、CI/精确 digest、配置闭包、目标健康、事务回滚、非目标完整性及每次生产 `--confirm-prod` 均保留。历史 promoted bundle 的 approval 仅继续只读支持回滚取证。事实源为 `scripts/release.py`、`scripts/release_strategy.py`、专项发布回归、不可变发布文档与 ops Skill；本条不执行 test/prod 部署。
 >
