@@ -974,6 +974,7 @@
     "maintenance_off": "✅ 维护模式已关闭，生成服务恢复正常。"
   },
   "billing": {
+    "title": "充值中心",
     "ton_unavailable": "TON 支付暂不可用，请选择支付宝或微信支付。",
     "ton_monthly_plan_btn": "💎 TON月卡套餐",
     "stars_monthly_plan_btn": "⭐️ Star月卡套餐",

@@ -10,7 +10,10 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { useBillingPayments } from '@/composables/useBillingPayments'
+import {
+  filterPlansForBillingKind,
+  useBillingPayments,
+} from '@/composables/useBillingPayments'
 import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
 import { useAuthStore } from '@/stores/auth'
 import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
@@ -26,6 +29,7 @@ const { identityExpireText } = useProfileWelcomeSummary({
 const {
   loadingPlans,
   plans,
+  planKind,
   selectedPlan,
   payMethod,
   isPaying,
@@ -101,7 +105,8 @@ const planDisplayOrder = [1, 2, 3, 5, 6, 7]
 
 const displayPlans = computed<BillingPlanDisplay[]>(() => {
   const planMap = new Map<number, BillingPlan>(
-    (plans.value as BillingPlan[]).map((plan) => [plan.id, plan])
+    filterPlansForBillingKind(plans.value as BillingPlan[], planKind.value)
+      .map((plan) => [plan.id, plan])
   )
 
   return planDisplayOrder
@@ -254,7 +259,6 @@ const returnToProfile = () => {
           :class="tonPaymentEnabled ? 'grid-cols-3' : 'grid-cols-2'"
         >
           <button
-            v-if="tonPaymentEnabled"
             @click="payMethod = 'alipay'"
             class="payment-option payment-option--blue rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
             :class="{ 'is-selected': payMethod === 'alipay' }"
@@ -272,7 +276,8 @@ const returnToProfile = () => {
             <span class="truncate">微信</span>
           </button>
           
-          <button 
+          <button
+            v-if="tonPaymentEnabled"
             @click="payMethod = 'ton'"
             class="payment-option payment-option--cyan rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
             :class="{ 'is-selected': payMethod === 'ton' }"
@@ -308,7 +313,7 @@ const returnToProfile = () => {
         </div>
         
         <!-- TON Action -->
-        <div v-if="payMethod === 'ton'" class="flex flex-col items-center">
+        <div v-if="payMethod === 'ton' && tonPaymentEnabled" class="flex flex-col items-center">
           <p class="payment-hint text-sm md:text-base mb-3 md:mb-4 text-center">连接钱包并发送 {{ selectedPlan.price_ton }} TON 即可自动发货</p>
           
           <a-button 

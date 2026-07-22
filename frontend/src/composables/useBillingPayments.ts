@@ -4,10 +4,11 @@ import { message } from 'ant-design-vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, type PaymentAccountSummary } from '@/stores/auth'
 import { getRuntimeConfig } from '@/config/runtime'
 
-type PayMethod = 'alipay' | 'wxpay' | 'ton'
+export type PayMethod = 'alipay' | 'wxpay' | 'ton'
+export type BillingPlanKind = 'membership' | 'credits' | null
 type OrderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'
 type TelegramPaymentWebApp = {
   openLink?: (url: string, options?: { try_instant_view?: boolean }) => void
@@ -33,6 +34,41 @@ export const getTelegramPaymentWebApp = (): TelegramPaymentWebApp | undefined =>
 
 export const hasTelegramExternalLinkOpener = () =>
   typeof getTelegramPaymentWebApp()?.openLink === 'function'
+
+const asSingleQueryValue = (value: unknown) => {
+  if (value === null || value === undefined) return null
+  return typeof value === 'string' ? value : undefined
+}
+
+export const resolveBillingEntry = (query: Record<string, unknown>): {
+  method: PayMethod
+  kind: BillingPlanKind
+} => {
+  const rawMethod = asSingleQueryValue(query.method)
+  const rawKind = asSingleQueryValue(query.kind)
+  const validMethod = rawMethod !== undefined
+    && (rawMethod === null || ['alipay', 'wxpay', 'ton'].includes(rawMethod))
+  const validKind = rawKind !== undefined
+    && (rawKind === null || ['membership', 'credits'].includes(rawKind))
+
+  if (!validMethod || !validKind) {
+    return { method: 'alipay', kind: null }
+  }
+
+  return {
+    method: (rawMethod ?? 'alipay') as PayMethod,
+    kind: rawKind as BillingPlanKind,
+  }
+}
+
+export const filterPlansForBillingKind = <T extends { duration_days: number }>(
+  plans: T[],
+  kind: BillingPlanKind,
+) => {
+  if (kind === 'membership') return plans.filter((plan) => plan.duration_days > 0)
+  if (kind === 'credits') return plans.filter((plan) => plan.duration_days === 0)
+  return plans
+}
 
 type TonPlansAvailability = {
   ton_payment_enabled?: boolean
@@ -107,7 +143,9 @@ export function useBillingPayments() {
   const loadingPlans = ref(true)
   const plans = ref<any[]>([])
   const selectedPlan = ref<any>(null)
-  const payMethod = ref<PayMethod>('alipay')
+  const billingEntry = resolveBillingEntry(route.query)
+  const payMethod = ref<PayMethod>(billingEntry.method)
+  const planKind = ref<BillingPlanKind>(billingEntry.kind)
   const isPaying = ref(false)
 
   const rmbPollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -225,9 +263,6 @@ export function useBillingPayments() {
         tonPaymentEnabled.value = resolveTonPaymentAvailability(
           res.data.data
         ).enabled
-        if (!tonPaymentEnabled.value && payMethod.value === 'ton') {
-          payMethod.value = 'alipay'
-        }
       }
     } catch (error) {
       console.error('Failed to fetch plans', error)
@@ -237,9 +272,9 @@ export function useBillingPayments() {
     }
   }
 
-  const handlePaymentSuccess = async () => {
+  const handlePaymentSuccess = async (account?: PaymentAccountSummary | null) => {
     message.success('支付成功，灵石/身份已到账！')
-    await authStore.fetchUser()
+    if (account) authStore.applyPaymentAccount(account)
   }
 
   const stopRmbPolling = () => {
@@ -269,10 +304,11 @@ export function useBillingPayments() {
       pollCount.value++
       try {
         const res = await api.get(`/payment/orders/${orderId}/status`)
-        const status = res.data?.data?.status
+        const statusData = res.data?.data
+        const status = statusData?.status
         if (status === 'SUCCESS') {
           orderStatus.value = 'SUCCESS'
-          await handlePaymentSuccess()
+          await handlePaymentSuccess(statusData.account)
           return
         }
         if (status === 'FAILED') {
@@ -356,10 +392,11 @@ export function useBillingPayments() {
 
       try {
         const res = await api.get(`/payment/orders/${targetOrderId}/status`)
-        const status = res.data?.data?.status
+        const statusData = res.data?.data
+        const status = statusData?.status
         if (status === 'SUCCESS') {
           orderStatus.value = 'SUCCESS'
-          await handlePaymentSuccess()
+          await handlePaymentSuccess(statusData.account)
           return
         }
         if (status === 'FAILED') {
@@ -453,11 +490,6 @@ export function useBillingPayments() {
       resetTonConnectIntent()
       return
     }
-    if (!tonPaymentEnabled.value) {
-      payMethod.value = 'alipay'
-      return
-    }
-
     try {
       await ensureTonModules()
     } catch (error) {
@@ -468,6 +500,7 @@ export function useBillingPayments() {
   return {
     loadingPlans,
     plans,
+    planKind,
     selectedPlan,
     payMethod,
     isPaying,

@@ -10,6 +10,7 @@ const {
 } = vi.hoisted(() => ({
   authStoreMock: {
     token: 'token',
+    sessionPurpose: 'full',
     user: {
       id: 1,
       credits: 10,
@@ -49,12 +50,14 @@ describe('router template apply guard', () => {
     window.history.pushState({}, '', '/')
 
     authStoreMock.token = 'token'
+    authStoreMock.sessionPurpose = 'full'
     authStoreMock.user = {
       id: 1,
       credits: 10,
       user_group: '练气期',
       current_identity: '内门弟子'
     }
+    authStoreMock.logout.mockReset()
 
     checkWebAccessMock.mockReset()
     checkWebAccessMock.mockReturnValue(true)
@@ -162,5 +165,61 @@ describe('router template apply guard', () => {
     expect(router.currentRoute.value.path).toBe('/login')
     expect(router.currentRoute.value.query).toMatchObject({ v: 'release-42' })
     expect(router.currentRoute.value.hash).toBe('#tgWebAppData=encoded-init-data&tgWebAppVersion=7.0')
+  })
+
+  it('preserves the TON billing target when redirecting a guest to login', async () => {
+    authStoreMock.token = ''
+    authStoreMock.user = null as any
+    checkWebAccessMock.mockReturnValue(false)
+
+    const router = await loadRouter()
+    await router.push('/billing?method=ton&kind=membership#tgWebAppData=encoded-init-data')
+    await router.isReady()
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query.redirect).toBe(
+      '/billing?method=ton&kind=membership'
+    )
+    expect(router.currentRoute.value.hash).toBe('#tgWebAppData=encoded-init-data')
+  })
+
+  it('allows a payment-only user into billing but not protected Web pages', async () => {
+    authStoreMock.token = 'payment-token'
+    authStoreMock.sessionPurpose = 'payment'
+    authStoreMock.user = {
+      id: 2,
+      credits: 6,
+      user_group: '凡人',
+      current_identity: '外门弟子'
+    }
+    checkWebAccessMock.mockReturnValue(false)
+
+    const router = await loadRouter()
+    await router.push('/billing?method=ton&kind=membership')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/billing')
+
+    await router.push('/history')
+    expect(authStoreMock.logout).toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('does not let a privileged payment session enter protected Web pages', async () => {
+    authStoreMock.token = 'payment-token'
+    authStoreMock.sessionPurpose = 'payment'
+    authStoreMock.user = {
+      id: 3,
+      credits: 6,
+      user_group: '练气期',
+      current_identity: '核心弟子'
+    }
+    checkWebAccessMock.mockReturnValue(true)
+
+    const router = await loadRouter()
+    await router.push('/history')
+    await router.isReady()
+
+    expect(authStoreMock.logout).toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 })

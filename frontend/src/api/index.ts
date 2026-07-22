@@ -10,7 +10,11 @@ const api = axios.create({
   timeout: 30000
 })
 
-const callerHandledUnauthorizedPaths = ['/auth/login', '/auth/telegram']
+const callerHandledUnauthorizedPaths = [
+  '/auth/login',
+  '/auth/telegram',
+  '/auth/telegram/payment',
+]
 
 function isCallerHandledUnauthorized(url?: string): boolean {
   if (!url) return false

@@ -224,7 +224,9 @@ const initParticles = () => {
 // Ensure selected key matches current route
 onMounted(() => {
   selectedKeys.value = [route.name as string || 'Profile']
-  void authStore.fetchUser()
+  if (authStore.sessionPurpose !== 'payment') {
+    void authStore.fetchUser()
+  }
   themeStore.initTheme()
   syncCanvasPalette()
   initParticles()

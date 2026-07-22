@@ -26,3 +26,15 @@ def test_build_versioned_mini_app_url_uses_explicit_arguments_without_global_env
     )
 
     assert url == "https://web.aivison.it.com/app?from=profile&v=release-42"
+
+
+def test_build_ton_payment_mini_app_url_targets_membership_billing():
+    url = config.build_ton_payment_mini_app_url(
+        base_url="https://web.aivison.it.com/app?from=bot",
+        version="release-42",
+    )
+
+    assert url == (
+        "https://web.aivison.it.com/app/billing"
+        "?from=bot&method=ton&kind=membership&v=release-42"
+    )

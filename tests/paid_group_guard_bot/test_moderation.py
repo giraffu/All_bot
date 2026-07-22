@@ -158,7 +158,7 @@ async def test_message_moderation_allows_configured_domain(tmp_path):
     context = _context(status="member")
 
     await handle_message_moderation(
-        _update(text="official https://pay.aivison.it.com/path"),
+        _update(text="official https://web.aivison.it.com/path"),
         context,
         settings=settings,
         config_provider=_ConfigProvider(

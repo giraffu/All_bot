@@ -10,7 +10,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 涉及支付、扣费、退款、身份或 affiliate bug 时，叠加 `allbot-diagnosing-bugs` 建立可复现反馈环；新增或修复资产副作用时，叠加 `allbot-tdd` 用行为测试锁定幂等、事务和审计。
 
 ## 1. 模块功能描述
-- **Web 认证与会话安全**：支持 Telegram Mini App / Login Widget 验签、用户名密码登录、绑定密码、改密后 `password_version` 失效旧 token 与安全通知。
+- **Web 认证与会话安全**：支持 Telegram Mini App / Login Widget 验签、用户名密码登录、绑定密码、改密后 `password_version` 失效旧 token 与安全通知；`POST /api/auth/telegram/payment` 只签发支付会话，允许低阶用户访问支付路由，但普通 Web 路由必须拒绝该 channel，即使用户自身已满足身份/境界门禁也不能借支付会话访问。
 - **JWT 体系**：JWT 由 Web 安全层签发，当前认证链会把 `pwd_ver` / `channel` 等 claim 纳入令牌语义；旧 token 失效依赖 `password_version` 与 Redis 黑名单协同收口。
 - **多支付通道履约**：RMB、TON、Telegram Stars 均收口到 `payment_fulfillment_service.fulfill_payment_command(...)` 的共享履约内核；RMB `fulfill_order(...)` 仅作为兼容包装保留，TON / Stars 适配层只负责通道解析、金额校验输入与通知适配。
 - **标准邀请奖励**：仅当用户 facade 在本次邀请请求中真实创建用户（`is_new=True`）时，才允许记录邀请关系和被邀请人 `welcome_bonus = +6`；历史用户即使 `invited_by` 为空也不得补绑。邀请人不发注册奖励；入群阶段邀请人累计补到 5 灵石，首次生成阶段累计补到 10 灵石，历史 `referral_reward_initial` 需计入目标防重复发。
@@ -32,6 +32,11 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **接口**：`POST /api/auth/login`
 - **输入**：`username`、`password`
 - **输出**：`access_token`、`token_type`、聚合后的 `user`
+
+- **接口**：`POST /api/auth/telegram/payment`
+- **输入**：Telegram Mini App `initData` 或 Login Widget 字段
+- **输出**：`channel=telegram_payment` 的支付会话及聚合后的 `user`
+- **语义**：只跳过 Web 身份/境界准入，不跳过 Telegram 验签、JWT 校验、`password_version` 失效或订单归属校验
 
 - **接口**：密码绑定 / 修改密码相关认证入口
 - **语义**：成功后需更新 `password_version` 并触发安全通知链路
@@ -81,6 +86,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
 - `TON_PAYMENT_POLLING_ENABLED=false` 可禁用 Bot 启动时的 TON 链上轮询；云测试 `bot-test` 默认关闭该轮询，避免空测试库回扫真实商户地址历史交易。生产默认仍为开启。
 - TON merchant 唯一事实源是宿主 `VITE_MERCHANT_ADDRESS`，必须经 `ton_payment_config` 的 TON 地址解析校验；开关为真但地址缺失/非法时 Bot 不创建 poller，Web plans 返回 `ton_payment_enabled=false`/空地址，TON 预建单在任何 DB 查询/写入前以 `503 TON_PAYMENT_UNAVAILABLE` 拒绝。前端不得保留地址常量或订单地址兜底。
+- TON 用户入口统一为主 Vue `/billing?method=ton&kind=membership`；Bot 只使用 `MINI_APP_URL` 构造该深链。独立 `ton_payment_frontend`、`WEBAPP_URL` 和 `pay.aivison.it.com` 代码兜底均已退出。
 - merchant 规范化地址决定 checkpoint key；真实地址变化必须形成新 key，禁止复制旧游标。抓链或履约失败仍不得前移 `last_lt`。
 
 ## 4. 边界条件处理
@@ -93,6 +99,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 
 ## 5. 测试要求
 - 同一回调或同一链上流水不能重复发货。
+- 支付专用 Telegram 会话必须覆盖“低阶用户可创建/查询本人订单、普通 Web 路由仍拒绝”的权限隔离测试。
 - 密码登录需覆盖 Redis 限流、错误口令、改密后旧 token 失效与安全通知。
 - Affiliate 兑换需覆盖 PostgreSQL 并发、同幂等稳定返回、同幂等参数冲突。
 - 标准邀请奖励需覆盖历史用户不建关系且无账本副作用、新用户注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。

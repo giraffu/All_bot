@@ -4,8 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildTonTransactionMessage,
+  filterPlansForBillingKind,
   hasTelegramExternalLinkOpener,
   openExternalPaymentUrl,
+  resolveBillingEntry,
   resolveTonPaymentAvailability,
 } from './useBillingPayments'
 
@@ -71,6 +73,24 @@ describe('openExternalPaymentUrl', () => {
 })
 
 describe('TON payment contract', () => {
+  it('resolves the Bot TON deep link and filters membership plans', () => {
+    const entry = resolveBillingEntry({ method: 'ton', kind: 'membership' })
+    const plans = [
+      { id: 1, duration_days: 30 },
+      { id: 5, duration_days: 0 },
+    ]
+
+    expect(entry).toEqual({ method: 'ton', kind: 'membership' })
+    expect(filterPlansForBillingKind(plans, entry.kind)).toEqual([plans[0]])
+  })
+
+  it('falls back to the complete billing page for invalid entry params', () => {
+    expect(resolveBillingEntry({ method: 'crypto', kind: 'membership' })).toEqual({
+      method: 'alipay',
+      kind: null,
+    })
+  })
+
   it('treats a disabled plans response as unavailable', () => {
     expect(resolveTonPaymentAvailability({
       ton_payment_enabled: false,
