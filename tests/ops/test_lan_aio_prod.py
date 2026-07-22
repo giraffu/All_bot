@@ -728,7 +728,7 @@ def test_lan_aio_fleet_render_runs_ltx_t2v_from_baked_comfy_with_persistent_mode
     )
     assert (
         "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/"
-        "ltx-t2v-124cd638/workspace:/workspace" in service["volumes"]
+        "ltx-t2v-9ed3de73/workspace:/workspace" in service["volumes"]
     )
     assert "--reserve-vram 5" in service["environment"]["COMFY_EXTRA_ARGS"]
 
