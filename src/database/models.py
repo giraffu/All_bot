@@ -97,6 +97,45 @@ class User(Base):
     )
 
 
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        CheckConstraint("category in ('recharge', 'bug', 'suggestion', 'uncategorized')", name="ck_support_tickets_category"),
+        CheckConstraint("status in ('open', 'processing', 'resolved', 'closed')", name="ck_support_tickets_status"),
+        Index("ix_support_tickets_status_last_message", "status", "last_message_at"),
+        Index("ix_support_tickets_telegram_status", "telegram_user_id", "status"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    telegram_user_id = Column(BigInteger, nullable=False, index=True)
+    internal_user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    category = Column(String(32), nullable=False, server_default=text("'uncategorized'"))
+    status = Column(String(32), nullable=False, server_default=text("'open'"))
+    username = Column(String(100), nullable=True)
+    full_name = Column(String(200), nullable=True)
+    language_code = Column(String(20), nullable=True)
+    assigned_admin = Column(String(100), nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    last_message_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, server_default=func.now())
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+    __table_args__ = (Index("ix_support_messages_ticket_created", "ticket_id", "created_at", "id"),)
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id = Column(BigInteger, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_type = Column(String(16), nullable=False)
+    body = Column(Text, nullable=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    attachments = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    ticket = relationship("SupportTicket", backref="messages")
+
+
 class PrivateQqccBot(Base):
     __tablename__ = "private_qqcc_bots"
     __table_args__ = (

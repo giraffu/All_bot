@@ -100,6 +100,7 @@ CONTROL_ARTIFACT_ENV = {
     "qqcc-bot": "ALLBOT_QQCC_BOT_IMAGE",
     "private-bot-worker": "ALLBOT_PRIVATE_BOT_WORKER_IMAGE",
     "paid-group-bot": "ALLBOT_PAID_GROUP_BOT_IMAGE",
+    "support-bot": "ALLBOT_SUPPORT_BOT_IMAGE",
     "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
     "qqcc-config-backend": "ALLBOT_QQCC_CONFIG_BACKEND_IMAGE",
     "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
@@ -112,6 +113,7 @@ CONTROL_ARTIFACT_SERVICE = {
     "main-bot": "bot",
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
+    "support-bot": "support-bot",
     "public-web": "web-static",
 }
 PROMOTE_ARTIFACT_SERVICE = {
@@ -127,6 +129,7 @@ PROMOTE_ARTIFACT_SERVICE = {
     "qqcc-config-frontend": "qqcc-config-frontend",
     "private-bot-worker": "qqcc-private-bot-worker",
     "paid-group-bot": "paid-group-guard-bot",
+    "support-bot": "support-bot",
 }
 GENERATION_MAINTENANCE_ARTIFACTS = {
     "central-api",
@@ -6995,6 +6998,7 @@ INDEPENDENT_MODULE_ENV_SERVICES = {
     "qqcc-config": ("qqcc-config-backend", "qqcc-config-frontend"),
     "private-bot-worker": ("private-bot-worker",),
     "paid-group-bot": ("paid-group-bot",),
+    "support-bot": ("support-bot",),
 }
 
 SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS = frozenset(

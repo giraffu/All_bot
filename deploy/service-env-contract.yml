@@ -2,7 +2,7 @@
   "schema_version": 1,
   "external_patterns": ["ALLBOT_WORKER_*", "CLOUD_TEST_WORKER_*", "CLOUD_TEST_SHARED_AIO_*"],
   "shared_defaults": {
-    "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot"],
+    "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot", "support-bot"],
     "keys": ["DB_POOL_SIZE", "DB_MAX_OVERFLOW", "R2_MAX_POOL_CONNECTIONS", "R2_EXISTS_POSITIVE_TTL_SECONDS", "R2_EXISTS_NEGATIVE_TTL_SECONDS", "R2_EXISTS_CACHE_MAX_ENTRIES", "R2_HEAD_SEMAPHORE_LIMIT", "R2_HEAD_CONNECT_TIMEOUT_SECONDS", "R2_HEAD_READ_TIMEOUT_SECONDS", "R2_HEAD_MAX_ATTEMPTS", "POLL_INTERVAL", "POLL_TIMEOUT", "ENABLE_PUBLIC_SHARE", "ENABLE_FREE_EDIT_V2", "ENABLE_SCAIL2_LONG_ACTION_TRANSFER", "DAILY_LIMIT"]
   },
   "services": {
@@ -54,6 +54,11 @@
       "enabled_if": {"key": "PAID_GROUP_BOT_TOKEN", "nonempty": true},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "PAID_GROUP_BOT_TOKEN", "PAID_GROUP_CHAT_ID", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
       "patterns": ["PAID_GROUP_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*"]
+    },
+    "support-bot": {
+      "enabled_if": {"key": "SUPPORT_BOT_TOKEN", "nonempty": true},
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
+      "patterns": ["SUPPORT_BOT_*", "TELEGRAM_*", "DATABASE_*", "R2_*"]
     },
     "postgres": {
       "required": ["ALLBOT_ENV"],
