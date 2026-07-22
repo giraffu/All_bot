@@ -530,6 +530,9 @@ def test_config_apply_snapshots_running_and_stopped_non_target_containers(monkey
     )
 
     assert "docker ps -aq" in scripts[0]
+    assert "available_services=\"$($compose config --services)\"" in scripts[0]
+    assert 'grep -Fxq "$service"' in scripts[0]
+    assert '"${compose_service_args[@]}"' in scripts[0]
     assert "pg_dump" not in scripts[0]
 
 
