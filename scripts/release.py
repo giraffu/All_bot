@@ -1035,6 +1035,31 @@ def load_structured_file(path: Path) -> dict[str, Any]:
     return value
 
 
+def load_promote_policy(path: Path, target_sha: str) -> dict[str, Any]:
+    """Load the daily-promotion policy from the immutable candidate revision.
+
+    Daily promotion may be invoked from a checkout that is behind the selected
+    main bundle.  The policy that authorizes reviewed contract snapshots must
+    therefore travel with that bundle, rather than with the caller's checkout.
+    """
+
+    resolved_path = path.resolve()
+    if resolved_path != DEFAULT_POLICY.resolve():
+        return load_structured_file(resolved_path)
+    target_sha = validate_full_sha(target_sha)
+    relative_path = resolved_path.relative_to(ROOT).as_posix()
+    result = _run(["git", "show", f"{target_sha}:{relative_path}"], check=False)
+    if result.returncode != 0:
+        raise ReleaseError("candidate release policy is unavailable")
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ReleaseError("candidate release policy is invalid") from exc
+    if not isinstance(value, dict):
+        raise ReleaseError("candidate release policy must contain an object")
+    return value
+
+
 def validate_release_policy_environment(
     policy: Mapping[str, Any], environment: str
 ) -> None:
@@ -1480,7 +1505,11 @@ def resolve_automatic_promote_modules(
         raise ReleaseError(str(exc)) from exc
     artifacts = release.manifests["control-plane"]["artifacts"]
     runtime = inspect_promote_runtime_artifacts(args)
-    policy = load_structured_file(Path(args.policy))
+    policy = (
+        load_promote_policy(Path(args.policy), sha)
+        if getattr(args, "command", None) == "promote"
+        else load_structured_file(Path(args.policy))
+    )
     modules = policy.get("independent_modules")
     if not isinstance(modules, Mapping):
         raise ReleaseError("independent module policy is invalid")
@@ -3184,7 +3213,11 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         args, allow_fetch=args.command in {"plan", "deploy-module", "promote"}
     )
     manifest_document = _read_json(manifest_path)
-    policy = load_structured_file(Path(args.policy))
+    policy = (
+        load_promote_policy(Path(args.policy), sha)
+        if getattr(args, "command", None) == "promote"
+        else load_structured_file(Path(args.policy))
+    )
     validate_release_policy_environment(policy, args.env)
     if manifest_document.get("schema_version") == 2:
         requested_modules = _split_services(args.modules)
@@ -7664,17 +7697,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "promote":
             requested = _split_services(args.modules)
-            configured = load_structured_file(Path(args.policy)).get(
-                "independent_modules", {}
-            )
+            if not args.sha:
+                args.sha = resolve_latest_promote_candidate(args.bundle_repository)
+            configured = load_promote_policy(
+                Path(args.policy), validate_full_sha(args.sha)
+            ).get("independent_modules", {})
             allowed = set(configured) if isinstance(configured, Mapping) else set()
             unknown = sorted(requested - allowed)
             if unknown:
                 raise ReleaseError(
                     "unknown promote modules: " + ", ".join(unknown)
                 )
-            if not args.sha:
-                args.sha = resolve_latest_promote_candidate(args.bundle_repository)
             if not requested:
                 modules, runtime = resolve_automatic_promote_modules(args)
                 args.modules = modules
