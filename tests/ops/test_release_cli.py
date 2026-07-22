@@ -3157,12 +3157,10 @@ def test_v2_promotion_reuses_verified_artifact_digest_across_new_sha(monkeypatch
                 0,
                 stdout=(
                     "/var/lib/allbot/deployments/test/control-plane/history/"
-                    f"{tested_sha}.json\n"
+                    f"{tested_sha}.json\t{json.dumps(tested_state)}\0"
                 ),
                 stderr="",
             )
-        elif remote.endswith(f"history/{tested_sha}.json"):
-            value = tested_state
         else:
             raise AssertionError(command)
         return subprocess.CompletedProcess(
@@ -6239,6 +6237,41 @@ def test_promote_no_longer_exposes_pending_secret_rotation_override():
         module.build_parser().parse_args(
             ["promote", "--accept-pending-secret-rotation"]
         )
+
+
+def test_test_artifact_evidence_reads_history_in_one_remote_batch(monkeypatch):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    older = "a" * 40
+    newer = "b" * 40
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        remote = command[-1]
+        if remote.startswith("cat "):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="missing")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                f"/var/lib/allbot/deployments/test/control-plane/history/{newer}.json\t"
+                + json.dumps({"git_sha": newer, "track": "control-plane", "release_channel": "main", "artifacts": {"qqcc-bot": {"status": "verified", "digest": digest}}})
+                + "\0"
+                + f"/var/lib/allbot/deployments/test/control-plane/history/{older}.json\t{{}}\0"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    evidence = module._read_test_artifact_evidence(
+        SimpleNamespace(test_state_host="test", command="promote"),
+        {"track": "control-plane", "git_sha": "c" * 40, "selected_artifacts": ["qqcc-bot"], "artifacts": {"qqcc-bot": {"digest": digest}}},
+    )
+
+    assert evidence["artifacts"]["qqcc-bot"]["digest"] == digest
+    assert len(calls) == 2
+    assert "-print0" in calls[-1][-1]
 
 
 def test_release_source_scopes_non_target_snapshot_and_checks_polling_conflict():
