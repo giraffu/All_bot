@@ -81,15 +81,11 @@ def _config_with_all_main_menu_entries(*, buttons_per_row: int):
                     "video_edit",
                 ],
             },
-            "draw_scenes": [
-                {"id": "draw", "name": "绘图", "prompt": "draw prompt"}
-            ],
+            "draw_scenes": [{"id": "draw", "name": "绘图", "prompt": "draw prompt"}],
             "filter_scenes": [
                 {"id": "filter", "name": "滤镜", "prompt": "filter prompt"}
             ],
-            "video_scenes": [
-                {"id": "video", "name": "动图", "prompt": "video prompt"}
-            ],
+            "video_scenes": [{"id": "video", "name": "动图", "prompt": "video prompt"}],
             "ai_video_scenes": [
                 {
                     "id": "ai_video",
@@ -104,9 +100,7 @@ def _config_with_all_main_menu_entries(*, buttons_per_row: int):
 
 @pytest.mark.parametrize("buttons_per_row", [1, 2, 3, 4])
 def test_qqcc_main_menu_supports_one_to_four_buttons_per_row(buttons_per_row):
-    config = _config_with_all_main_menu_entries(
-        buttons_per_row=buttons_per_row
-    )
+    config = _config_with_all_main_menu_entries(buttons_per_row=buttons_per_row)
 
     rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
     flat = [button for row in rows for button in row]
@@ -179,7 +173,9 @@ def test_qqcc_grid_menu_falls_back_when_every_entry_is_hidden():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("loader", [qqcc_commands._load_menu_config, prompt_handlers._load_menu_config])
+@pytest.mark.parametrize(
+    "loader", [qqcc_commands._load_menu_config, prompt_handlers._load_menu_config]
+)
 async def test_private_bot_menu_config_failure_does_not_fall_back_to_defaults(loader):
     context = SimpleNamespace(
         bot_data={
@@ -346,7 +342,9 @@ def test_qqcc_main_menu_shows_ai_video_after_ai_animation_only_with_valid_scene(
     assert rows[1] == ["AI绘图", "AI动图", "AI视频"]
     ai_video_keyboard = keyboards.get_qqcc_ai_video_inline_keyboard("zh", config)
     assert ai_video_keyboard.inline_keyboard[0][0].text == "电影运镜"
-    assert ai_video_keyboard.inline_keyboard[0][0].callback_data == "qaivid_scene:cinema"
+    assert (
+        ai_video_keyboard.inline_keyboard[0][0].callback_data == "qaivid_scene:cinema"
+    )
 
 
 def test_qqcc_video_menu_contains_lazy_video_scenes():
@@ -496,7 +494,7 @@ async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeyp
                     "name": "动漫风",
                     "prompt": "anime style prompt",
                 },
-            ]
+            ],
         }
     )
     monkeypatch.setattr(
@@ -722,10 +720,14 @@ async def test_qqcc_regenerate_callback_routes_and_starts_background_task(monkey
     prepare = AsyncMock(return_value=submission)
 
     monkeypatch.setattr(callback_handler.permission_service, "ensure_user", ensure_user)
-    monkeypatch.setattr(regeneration_callback.permission_service, "check_quota", check_quota)
+    monkeypatch.setattr(
+        regeneration_callback.permission_service, "check_quota", check_quota
+    )
     monkeypatch.setattr(regeneration_callback, "safe_answer_query", answer)
     monkeypatch.setattr(regeneration_callback, "robust_send_message", send_message)
-    monkeypatch.setattr(regeneration_callback, "create_background_task", fake_create_background_task)
+    monkeypatch.setattr(
+        regeneration_callback, "create_background_task", fake_create_background_task
+    )
     monkeypatch.setattr(
         regeneration_callback,
         "prepare_qqcc_regeneration_submission",
@@ -762,7 +764,7 @@ async def test_qqcc_regenerate_callback_routes_and_starts_background_task(monkey
                     "scene_id": "soft_light",
                     "display_mode_name": "柔光写真",
                 }
-            }
+            },
         },
     )
 
@@ -1209,6 +1211,59 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
     assert "set_res_720p" in callbacks
     assert "set_res_1024p" not in callbacks
     assert not any(callback.startswith("set_dur_") for callback in callbacks)
+
+
+@pytest.mark.asyncio
+async def test_qqcc_fixed_price_video_resolution_buttons_show_same_total(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=7), False)),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_group",
+        AsyncMock(return_value="金丹期"),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "fixed",
+                    "name": "固定价",
+                    "prompt": "move",
+                    "duration": "5s",
+                    "credit_cost": 9,
+                }
+            ]
+        }
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        user_data={"quick_video_data": {"credit_cost": 9}},
+        t=lambda key, **_kwargs: "灵石" if key == "app.credits" else key,
+    )
+
+    markup = await quick_video_fsm._build_quick_video_settings_markup(
+        context=context,
+        user_id=123,
+        resolution="512p",
+        duration="5s",
+        qqcc_config=config,
+    )
+    resolution_labels = [
+        button.text
+        for row in markup.inline_keyboard
+        for button in row
+        if str(button.callback_data).startswith("set_res_")
+    ]
+
+    assert resolution_labels
+    assert all("(9灵石)" in label for label in resolution_labels)
 
 
 @pytest.mark.asyncio

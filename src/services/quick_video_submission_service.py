@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Awaitable, Callable
+from uuid import uuid4
 
 from src.constants import (
     MODE_BLOWJOB,
@@ -55,6 +56,12 @@ from src.services.private_qqcc_continuation_service import (
     resume_private_qqcc_continuation,
 )
 from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
+from src.services.qqcc_scene_billing_service import (
+    QqccSceneBillingState,
+    RefundCredits,
+    refund_qqcc_scene_fixed_charge,
+    resolve_qqcc_scene_fixed_credit_cost,
+)
 from src.services.qqcc_video_frame_adapter import (
     QQCC_VIDEO_ASPECT_SOURCE,
     adapt_qqcc_video_frame_file,
@@ -133,6 +140,8 @@ class QuickVideoSubmissionPlan:
     total_cost: int
     default_prompt_key: str
     default_prompt_text: str
+    fixed_credit_cost: int | None = None
+    billing_id: str = field(default_factory=lambda: uuid4().hex)
     allow_contribute: bool = True
     prompt_override: str | None = None
     negative_prompt: str = ""
@@ -530,6 +539,7 @@ def build_quick_video_submission_plan(
         prompt = str(scene.get("prompt") or "").strip()
         display_mode_name = str(scene.get("name") or "")
         scene_id = str(scene.get("id") or "").strip()
+        fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
         return QuickVideoSubmissionPlan(
             kind=(
                 QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
@@ -539,7 +549,11 @@ def build_quick_video_submission_plan(
             mode=MODE_LTX_VIDEO,
             resolution="1280x704",
             duration=duration,
-            total_cost=sum(segment.cost for segment in chain_segments),
+            total_cost=(
+                fixed_credit_cost
+                if fixed_credit_cost is not None
+                else sum(segment.cost for segment in chain_segments)
+            ),
             default_prompt_key=MODE_LTX_VIDEO,
             default_prompt_text=prompt,
             allow_contribute=False,
@@ -561,6 +575,7 @@ def build_quick_video_submission_plan(
             tail_draw_chain=tail_draw_chain,
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
+            fixed_credit_cost=fixed_credit_cost,
         )
 
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
@@ -592,9 +607,13 @@ def build_quick_video_submission_plan(
         scene_kind="video",
         root_scene_id=str(scene.get("id") or ""),
     )
-    if len(chain_scenes) > 1 and resolution == "1024p" and any(
-        str(chain_scene.get("duration") or "") == "10s"
-        for chain_scene in chain_scenes
+    if (
+        len(chain_scenes) > 1
+        and resolution == "1024p"
+        and any(
+            str(chain_scene.get("duration") or "") == "10s"
+            for chain_scene in chain_scenes
+        )
     ):
         return QuickVideoSubmissionReject(
             QuickVideoSubmissionRejectReason.INVALID_SETTINGS
@@ -632,12 +651,17 @@ def build_quick_video_submission_plan(
     scene_id = str(scene.get("id") or "").strip()
     display_mode_name = str(scene.get("name") or "")
 
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
     return QuickVideoSubmissionPlan(
         kind=kind,
         mode=mode,
         resolution=resolution,
         duration=duration,
-        total_cost=sum(segment.cost for segment in chain_segments),
+        total_cost=(
+            fixed_credit_cost
+            if fixed_credit_cost is not None
+            else sum(segment.cost for segment in chain_segments)
+        ),
         default_prompt_key=MODE_CUSTOM_VIDEO,
         default_prompt_text=prompt,
         allow_contribute=False,
@@ -655,6 +679,7 @@ def build_quick_video_submission_plan(
         tail_draw_chain=tail_draw_chain,
         aspect_ratio=normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio")),
         qqcc_chain_segments=chain_segments,
+        fixed_credit_cost=fixed_credit_cost,
     )
 
 
@@ -662,6 +687,12 @@ async def _maybe_await(value: Awaitable[Any] | Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _task_result_has_output(result: Any) -> bool:
+    return bool(
+        isinstance(result, tuple) and len(result) == 2 and (result[0] or result[1])
+    )
 
 
 def quick_video_plan_requires_continuation(plan: QuickVideoSubmissionPlan) -> bool:
@@ -803,7 +834,14 @@ async def run_quick_video_submission_plan(
     stitch_video_segments_func: StitchVideoSegments = stitch_qqcc_video_segments,
     extract_video_last_frame_func: ExtractVideoLastFrame = extract_qqcc_video_last_frame,
     persist_chain_result_func: PersistChainResult = persist_and_send_qqcc_video_chain_result,
+    refund_credits_func: RefundCredits | None = None,
+    billing_state: QqccSceneBillingState | None = None,
 ) -> Any:
+    if billing_state is None:
+        billing_state = QqccSceneBillingState(
+            fixed_credit_cost=plan.fixed_credit_cost,
+            billing_id=plan.billing_id,
+        )
     if len(plan.qqcc_chain_segments) > 1 and not is_private_qqcc_bot_context(context):
         return await _run_qqcc_video_scene_chain(
             plan=plan,
@@ -823,6 +861,8 @@ async def run_quick_video_submission_plan(
             stitch_video_segments_func=stitch_video_segments_func,
             extract_video_last_frame_func=extract_video_last_frame_func,
             persist_chain_result_func=persist_chain_result_func,
+            refund_credits_func=refund_credits_func,
+            billing_state=billing_state,
         )
     if plan.aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
         source_image_path = image_path
@@ -855,6 +895,7 @@ async def run_quick_video_submission_plan(
                 telegram_user_id=user_id,
                 username=username,
                 status_message_id=status_msg_id,
+                fixed_credit_cost=plan.fixed_credit_cost,
                 store=private_continuation_store,
             )
         finally:
@@ -883,6 +924,7 @@ async def run_quick_video_submission_plan(
             context=context,
             store=private_continuation_store,
             execute_stage_func=execute_chain_stage,
+            refund_credits_func=refund_credits_func,
         )
         return None
 
@@ -992,6 +1034,7 @@ async def run_quick_video_submission_plan(
                 telegram_user_id=user_id,
                 username=username,
                 status_message_id=status_msg_id,
+                fixed_credit_cost=plan.fixed_credit_cost,
                 store=private_continuation_store,
             )
         finally:
@@ -1025,6 +1068,7 @@ async def run_quick_video_submission_plan(
             context=context,
             store=private_continuation_store,
             execute_stage_func=execute_stage,
+            refund_credits_func=refund_credits_func,
         )
         return None
 
@@ -1047,13 +1091,16 @@ async def run_quick_video_submission_plan(
             download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
             cleanup_temp_files_func=cleanup_temp_files_func,
             adapt_video_frame_file_func=adapt_video_frame_file_func,
+            refund_credits_func=refund_credits_func,
+            billing_state=billing_state,
         )
 
     if plan.kind == QuickVideoSubmissionKind.LTX_VIDEO:
         optional_negative = (
             {"negative_prompt": plan.negative_prompt} if plan.negative_prompt else {}
         )
-        return await _maybe_await(
+        task_kwargs = billing_state.allocate_task_billing()
+        result = await _maybe_await(
             process_ltx_video_task_func(
                 context=context,
                 chat_id=chat_id,
@@ -1071,11 +1118,15 @@ async def run_quick_video_submission_plan(
                 result_meta=plan.result_meta,
                 status_msg_id=status_msg_id,
                 **optional_negative,
+                **task_kwargs,
             )
         )
+        if _task_result_has_output(result):
+            billing_state.mark_task_succeeded()
+        return result
 
     if plan.kind == QuickVideoSubmissionKind.WAN22_VIDEO_V2:
-        return await _maybe_await(
+        result = await _maybe_await(
             process_generation_task_func(
                 context=context,
                 chat_id=chat_id,
@@ -1094,10 +1145,14 @@ async def run_quick_video_submission_plan(
                 resolution=plan.resolution,
                 duration=plan.duration,
                 lora_items=plan.lora_items or None,
+                **billing_state.allocate_task_billing(),
             )
         )
+        if _task_result_has_output(result):
+            billing_state.mark_task_succeeded()
+        return result
 
-    return await _maybe_await(
+    result = await _maybe_await(
         process_video_task_template_func(
             context=context,
             mode=plan.mode,
@@ -1118,8 +1173,12 @@ async def run_quick_video_submission_plan(
             status_msg_id=status_msg_id,
             resolution=plan.resolution,
             duration=plan.duration,
+            **billing_state.allocate_task_billing(),
         )
     )
+    if _task_result_has_output(result):
+        billing_state.mark_task_succeeded()
+    return result
 
 
 async def _run_tail_frame_video_plan(
@@ -1138,6 +1197,8 @@ async def _run_tail_frame_video_plan(
     download_output_file_to_fsm_temp_func: DownloadOutputFile,
     cleanup_temp_files_func: CleanupTempFiles,
     adapt_video_frame_file_func: AdaptVideoFrameFile,
+    refund_credits_func: RefundCredits | None,
+    billing_state: QqccSceneBillingState,
 ) -> Any:
     end_image_path = None
     video_task_started = False
@@ -1160,6 +1221,7 @@ async def _run_tail_frame_video_plan(
                 keep_initial_image=True,
                 download_final_output=True,
                 name_hint="qqcc_video_end_frame",
+                billing_state=billing_state,
             )
         )
         end_image_path = getattr(chain_result, "local_output_path", None)
@@ -1167,6 +1229,17 @@ async def _run_tail_frame_video_plan(
             logger.warning(
                 "QQCC video end-frame generation returned no output; video skipped."
             )
+            if billing_state.requires_chain_refund:
+                await refund_qqcc_scene_fixed_charge(
+                    billing_state=billing_state,
+                    telegram_user_id=user_id,
+                    username=username,
+                    **(
+                        {"refund_credits_func": refund_credits_func}
+                        if refund_credits_func is not None
+                        else {}
+                    ),
+                )
             return None
 
         if plan.aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
@@ -1186,7 +1259,7 @@ async def _run_tail_frame_video_plan(
                 if plan.negative_prompt
                 else {}
             )
-            return await _maybe_await(
+            result = await _maybe_await(
                 process_ltx_video_task_func(
                     context=context,
                     chat_id=chat_id,
@@ -1209,10 +1282,25 @@ async def _run_tail_frame_video_plan(
                     user_cancel_allowed=False,
                     show_queue_status=False,
                     **optional_negative,
+                    **billing_state.allocate_task_billing(),
                 )
             )
+            if _task_result_has_output(result):
+                billing_state.mark_task_succeeded()
+            elif billing_state.requires_chain_refund:
+                await refund_qqcc_scene_fixed_charge(
+                    billing_state=billing_state,
+                    telegram_user_id=user_id,
+                    username=username,
+                    **(
+                        {"refund_credits_func": refund_credits_func}
+                        if refund_credits_func is not None
+                        else {}
+                    ),
+                )
+            return result
         if plan.mode == MODE_WAN22_VIDEO_V2:
-            return await _maybe_await(
+            result = await _maybe_await(
                 process_generation_task_func(
                     context=context,
                     chat_id=chat_id,
@@ -1235,10 +1323,25 @@ async def _run_tail_frame_video_plan(
                     allow_cancel=False,
                     user_cancel_allowed=False,
                     show_queue_status=False,
+                    **billing_state.allocate_task_billing(),
                 )
             )
+            if _task_result_has_output(result):
+                billing_state.mark_task_succeeded()
+            elif billing_state.requires_chain_refund:
+                await refund_qqcc_scene_fixed_charge(
+                    billing_state=billing_state,
+                    telegram_user_id=user_id,
+                    username=username,
+                    **(
+                        {"refund_credits_func": refund_credits_func}
+                        if refund_credits_func is not None
+                        else {}
+                    ),
+                )
+            return result
 
-        return await _maybe_await(
+        result = await _maybe_await(
             process_video_task_template_func(
                 context=context,
                 mode=plan.mode,
@@ -1265,8 +1368,36 @@ async def _run_tail_frame_video_plan(
                 allow_cancel=False,
                 user_cancel_allowed=False,
                 show_queue_status=False,
+                **billing_state.allocate_task_billing(),
             )
         )
+        if _task_result_has_output(result):
+            billing_state.mark_task_succeeded()
+        elif billing_state.requires_chain_refund:
+            await refund_qqcc_scene_fixed_charge(
+                billing_state=billing_state,
+                telegram_user_id=user_id,
+                username=username,
+                **(
+                    {"refund_credits_func": refund_credits_func}
+                    if refund_credits_func is not None
+                    else {}
+                ),
+            )
+        return result
+    except BaseException:
+        if billing_state.requires_chain_refund:
+            await refund_qqcc_scene_fixed_charge(
+                billing_state=billing_state,
+                telegram_user_id=user_id,
+                username=username,
+                **(
+                    {"refund_credits_func": refund_credits_func}
+                    if refund_credits_func is not None
+                    else {}
+                ),
+            )
+        raise
     finally:
         if not video_task_started:
             cleanup_temp_files_func([image_path, end_image_path])
@@ -1300,7 +1431,9 @@ def _plan_for_qqcc_chain_segment(
 
 def _write_qqcc_chain_last_frame(frame_bytes: bytes) -> str:
     Path(FSM_TEMP_DIR).mkdir(parents=True, exist_ok=True)
-    fd, path = tempfile.mkstemp(prefix="qqcc_chain_last_", suffix=".png", dir=FSM_TEMP_DIR)
+    fd, path = tempfile.mkstemp(
+        prefix="qqcc_chain_last_", suffix=".png", dir=FSM_TEMP_DIR
+    )
     os.close(fd)
     Path(path).write_bytes(frame_bytes)
     return path
@@ -1325,6 +1458,8 @@ async def _run_qqcc_video_scene_chain(
     stitch_video_segments_func: StitchVideoSegments,
     extract_video_last_frame_func: ExtractVideoLastFrame,
     persist_chain_result_func: PersistChainResult,
+    refund_credits_func: RefundCredits | None,
+    billing_state: QqccSceneBillingState,
 ) -> Any:
     video_segments: list[bytes] = []
     output_files: list[str] = []
@@ -1372,6 +1507,8 @@ async def _run_qqcc_video_scene_chain(
                 download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
                 cleanup_temp_files_func=cleanup_temp_files_func,
                 adapt_video_frame_file_func=adapt_video_frame_file_func,
+                refund_credits_func=refund_credits_func,
+                billing_state=billing_state,
             )
             if not isinstance(result, tuple) or len(result) != 2 or not result[0]:
                 raise RuntimeError("QQCC video segment completed without media")
@@ -1393,20 +1530,45 @@ async def _run_qqcc_video_scene_chain(
             break
 
     partial = failed_index is not None
-    stitched = await _maybe_await(stitch_video_segments_func(video_segments))
-    persisted = await _maybe_await(
-        persist_chain_result_func(
-            context=context,
-            chat_id=chat_id,
-            telegram_user_id=user_id,
-            username=username,
-            plan=plan,
-            video_bytes=stitched,
-            segment_output_files=output_files,
-            partial=partial,
+    try:
+        stitched = await _maybe_await(stitch_video_segments_func(video_segments))
+        persisted = await _maybe_await(
+            persist_chain_result_func(
+                context=context,
+                chat_id=chat_id,
+                telegram_user_id=user_id,
+                username=username,
+                plan=plan,
+                video_bytes=stitched,
+                segment_output_files=output_files,
+                partial=partial,
+            )
         )
-    )
+    except BaseException:
+        if billing_state.requires_chain_refund:
+            await refund_qqcc_scene_fixed_charge(
+                billing_state=billing_state,
+                telegram_user_id=user_id,
+                username=username,
+                **(
+                    {"refund_credits_func": refund_credits_func}
+                    if refund_credits_func is not None
+                    else {}
+                ),
+            )
+        raise
     if partial:
+        if billing_state.requires_chain_refund:
+            await refund_qqcc_scene_fixed_charge(
+                billing_state=billing_state,
+                telegram_user_id=user_id,
+                username=username,
+                **(
+                    {"refund_credits_func": refund_credits_func}
+                    if refund_credits_func is not None
+                    else {}
+                ),
+            )
         await robust_send_message(
             context.bot,
             chat_id,

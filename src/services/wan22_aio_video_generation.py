@@ -106,6 +106,7 @@ async def process_wan22_aio_video_generation_task(
     cleanup: bool = True,
     send_result: bool = True,
     deduct_quota: bool = True,
+    cost_override: int | None = None,
     reply_markup: Any = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
@@ -124,9 +125,7 @@ async def process_wan22_aio_video_generation_task(
     normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
         resolution_preset or resolution
     )
-    normalized_duration_seconds = normalize_wan22_video_v2_duration_seconds(
-        duration
-    )
+    normalized_duration_seconds = normalize_wan22_video_v2_duration_seconds(duration)
     normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
         negative_prompt
     )
@@ -164,9 +163,12 @@ async def process_wan22_aio_video_generation_task(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
     )
-    display_mode_name = display_mode_name_override or resolve_generation_display_mode_name(
-        context,
-        public_task_type,
+    display_mode_name = (
+        display_mode_name_override
+        or resolve_generation_display_mode_name(
+            context,
+            public_task_type,
+        )
     )
     inputs = _build_wan22_aio_inputs(
         profile=profile,
@@ -262,6 +264,7 @@ async def process_wan22_aio_video_generation_task(
             is_video=True,
             source_post_id=source_post_id,
             deduct_quota=deduct_quota,
+            cost_override=cost_override,
             message_spec=message_spec,
             submitted_status_builder=build_generation_submitted_status_builder(
                 context,

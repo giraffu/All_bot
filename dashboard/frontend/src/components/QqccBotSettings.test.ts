@@ -66,9 +66,9 @@ const InputStub = defineComponent({
 
 const InputNumberStub = defineComponent({
   name: 'InputNumberStub',
-  props: ['value'],
+  props: ['value', 'min', 'step', 'precision', 'placeholder'],
   emits: ['update:value'],
-  template: '<input type="number" :value="value" @input="$emit(\'update:value\', Number($event.target.value))" />',
+  template: '<input type="number" :value="value ?? \'\'" :min="min" :step="step" :placeholder="placeholder" @input="$emit(\'update:value\', $event.target.value === \'\' ? null : Number($event.target.value))" />',
 })
 
 const TextareaStub = defineComponent({
@@ -336,6 +336,12 @@ describe('QqccBotSettings', () => {
           { value: '', label: '无' },
           { value: 'qwen/YARN_1.0.safetensors', label: '逼真' },
         ],
+        default_scene_credit_costs: {
+          video: 6,
+          ai_video: 10,
+          draw: 2,
+          filter: 2,
+        },
       },
     })
     apiMocks.updateQqccBotConfig.mockImplementation(payload =>
@@ -689,6 +695,7 @@ describe('QqccBotSettings', () => {
         lora_items: [{ name: 'BreastGrow', strength: 0.7 }],
         end_frame_draw_scene_id: '',
         next_scene_id: null,
+        credit_cost: null,
       },
     ])
     expect(payload.draw_scenes).toEqual([
@@ -702,6 +709,7 @@ describe('QqccBotSettings', () => {
         postprocess_draw_scene_id: '',
         postprocess_filter_scene_id: '',
         original_face_swap_enabled: false,
+        credit_cost: null,
       },
       {
         id: 'quick_undress',
@@ -713,6 +721,7 @@ describe('QqccBotSettings', () => {
         postprocess_draw_scene_id: '',
         postprocess_filter_scene_id: '',
         original_face_swap_enabled: false,
+        credit_cost: null,
       },
       {
         id: 'soft_light',
@@ -724,6 +733,7 @@ describe('QqccBotSettings', () => {
         postprocess_draw_scene_id: '',
         postprocess_filter_scene_id: '',
         original_face_swap_enabled: false,
+        credit_cost: null,
       },
     ])
     expect(payload.filter_scenes).toEqual([
@@ -735,6 +745,7 @@ describe('QqccBotSettings', () => {
         engine: 'free_edit_v2',
         lora_name: '',
         original_face_swap_enabled: false,
+        credit_cost: null,
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
@@ -841,6 +852,60 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].aspect_ratio).toBe('source')
     expect(payload.video_scenes[0].lora_name).toBe('')
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
+  })
+
+  it('loads legacy scene prices as empty and uses backend defaults for new scenes', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="video-scene-credit-cost-0"]').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('[data-testid="draw-scene-credit-cost-0"]').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('[data-testid="filter-scene-credit-cost-0"]').element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('[data-testid="add-video-scene"]').trigger('click')
+    await wrapper.get('[data-testid="add-ai-video-scene"]').trigger('click')
+    await wrapper.get('[data-testid="add-draw-scene"]').trigger('click')
+    await wrapper.get('[data-testid="add-filter-scene"]').trigger('click')
+
+    expect((wrapper.get('[data-testid="video-scene-credit-cost-1"]').element as HTMLInputElement).value).toBe('6')
+    expect((wrapper.get('[data-testid="ai-video-scene-credit-cost-0"]').element as HTMLInputElement).value).toBe('10')
+    expect((wrapper.get('[data-testid="draw-scene-credit-cost-3"]').element as HTMLInputElement).value).toBe('2')
+    expect((wrapper.get('[data-testid="filter-scene-credit-cost-1"]').element as HTMLInputElement).value).toBe('2')
+  })
+
+  it('does not invent a new scene price when options omit defaults', async () => {
+    const fetchConfig = vi.fn().mockResolvedValue({
+      config: {
+        scene_preset_version: 1,
+        video_scenes: [],
+        ai_video_scenes: [],
+        draw_scenes: [],
+        filter_scenes: [],
+      },
+      options: {},
+    })
+    const wrapper = mountSettings({ fetchConfig })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="add-video-scene"]').trigger('click')
+
+    expect((wrapper.get('[data-testid="video-scene-credit-cost-0"]').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('saves configured and cleared scene credit costs', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="video-scene-credit-cost-0"]').setValue('7')
+    await wrapper.get('[data-testid="draw-scene-credit-cost-0"]').setValue('3')
+    await wrapper.get('[data-testid="filter-scene-credit-cost-0"]').setValue('')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes[0].credit_cost).toBe(7)
+    expect(payload.draw_scenes[0].credit_cost).toBe(3)
+    expect(payload.filter_scenes[0].credit_cost).toBeNull()
   })
 
   it('adds and removes dynamic draw scenes before saving', async () => {
@@ -1113,8 +1178,10 @@ describe('QqccBotSettings', () => {
       'ltx/a.safetensors', 'ltx/b.safetensors', 'ltx/c.safetensors', 'ltx/d.safetensors',
     ])
     await flushPromises()
-    expect(wrapper.findAllComponents(InputNumberStub)).toHaveLength(3)
-    wrapper.findAllComponents(InputNumberStub)[1]!.vm.$emit('update:value', 1.55)
+    const loraStrengthInputs = wrapper.findAllComponents(InputNumberStub)
+      .filter(component => component.attributes('data-testid')?.startsWith('scene-ai-video-lora-strength-'))
+    expect(loraStrengthInputs).toHaveLength(3)
+    loraStrengthInputs[1]!.vm.$emit('update:value', 1.55)
     await flushPromises()
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')

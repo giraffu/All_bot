@@ -93,6 +93,12 @@ DRAW_SCENE_ENGINE_KEYS = (
 )
 DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
 FILTER_SCENE_MAX_COUNT = 20
+DEFAULT_SCENE_CREDIT_COSTS = {
+    "video": 6,
+    "ai_video": 10,
+    "draw": 2,
+    "filter": 2,
+}
 PROMPT_KEYS = (
     "undress",
     "i2i_draw_quick_undress",
@@ -123,6 +129,41 @@ VIDEO_PROMPT_KEYS = (
     "undress_tongue",
     "closeup_blowjob",
 )
+
+
+class QqccSceneCreditCostError(ValueError):
+    """Raised when an explicitly configured scene price is not a positive integer."""
+
+
+def _normalize_scene_credit_cost(raw_cost: Any) -> int | None:
+    return (
+        raw_cost
+        if isinstance(raw_cost, int)
+        and not isinstance(raw_cost, bool)
+        and raw_cost >= 1
+        else None
+    )
+
+
+def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
+    if not isinstance(raw_config, dict):
+        return
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+        raw_scenes = raw_config.get(section)
+        if not isinstance(raw_scenes, list):
+            continue
+        for raw_scene in raw_scenes:
+            if not isinstance(raw_scene, dict) or "credit_cost" not in raw_scene:
+                continue
+            raw_cost = raw_scene.get("credit_cost")
+            if raw_cost is None:
+                continue
+            if _normalize_scene_credit_cost(raw_cost) is None:
+                raise QqccSceneCreditCostError(
+                    f"{section}.credit_cost must be a positive integer or null"
+                )
+
+
 DRAW_PROMPT_KEYS = ("undress", "masturbation")
 
 QQCC_SCENE_PRESET_PROMPTS = {
@@ -202,6 +243,7 @@ def _default_video_scenes(
             "lora_strength": 1.0,
             "lora_items": [],
             "end_frame_draw_scene_id": "",
+            "credit_cost": None,
             "next_scene_id": None,
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
@@ -222,6 +264,7 @@ def _default_draw_scenes(
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
         {
             "id": "quick_undress",
@@ -233,6 +276,7 @@ def _default_draw_scenes(
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
     ]
 
@@ -501,9 +545,7 @@ def _normalize_scene_demo_media(
     normalized_media_type = str(raw_media.get("media_type") or "").strip()
     mime_type = str(raw_media.get("mime_type") or "").strip().lower()
     allowed_mime_types = (
-        {"image/jpeg", "image/png"}
-        if media_type == "image"
-        else {"video/mp4"}
+        {"image/jpeg", "image/png"} if media_type == "image" else {"video/mp4"}
     )
     if (
         (
@@ -638,6 +680,7 @@ def _normalize_video_scene(
         "lora_name": first_lora["name"] if first_lora else "",
         "lora_strength": first_lora["strength"] if first_lora else 1.0,
         "lora_items": lora_items,
+        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
@@ -751,6 +794,7 @@ def _normalize_ai_video_scene(
         "duration": duration,
         "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
         "lora_items": lora_items,
+        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
@@ -860,6 +904,7 @@ def _normalize_draw_scene(
         "postprocess_filter_scene_id": postprocess_filter_scene_id,
         "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
         is True,
+        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
     }
     _attach_scene_demo_media(
         scene,
@@ -913,6 +958,7 @@ def _normalize_filter_scene(
         "lora_name": lora_name,
         "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
         is True,
+        "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
     }
     _attach_scene_demo_media(
         scene,
@@ -967,7 +1013,7 @@ def _normalize_draw_scene_postprocess_refs(
         current_id = str(scene.get("id") or "")
         while current_id:
             if current_id in seen_at:
-                cycle_scene_ids.update(path[seen_at[current_id]:])
+                cycle_scene_ids.update(path[seen_at[current_id] :])
                 break
             current_scene = scenes_by_id.get(current_id)
             if current_scene is None:
@@ -1051,6 +1097,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "lora_strength": 1.0,
                 "lora_items": [],
                 "end_frame_draw_scene_id": "",
+                "credit_cost": None,
                 "next_scene_id": None,
             }
         )
@@ -1080,7 +1127,9 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
 
     global_enabled = raw.get("global_enabled", defaults["global_enabled"])
     config["global_enabled"] = (
-        global_enabled if isinstance(global_enabled, bool) else defaults["global_enabled"]
+        global_enabled
+        if isinstance(global_enabled, bool)
+        else defaults["global_enabled"]
     )
     config["main_buttons"] = _normalize_bool_section(
         raw.get("main_buttons"),
@@ -1315,13 +1364,19 @@ def get_qqcc_copywriting_override(config: dict[str, Any], key: str) -> str | Non
     return text or None
 
 
-def render_qqcc_copywriting(template: str | None, button_name: str) -> str | None:
-    """Render the documented scene-name placeholder in a configured message."""
+def render_qqcc_copywriting(
+    template: str | None,
+    button_name: str,
+    *,
+    cost: int | None = None,
+) -> str | None:
+    """Render documented scene placeholders in a configured message."""
 
     if not template:
         return None
     name = str(button_name or "")
-    return template.replace("{butten}", name).replace("{button}", name)
+    rendered = template.replace("{butten}", name).replace("{button}", name)
+    return rendered.replace("{cost}", str(cost)) if cost is not None else rendered
 
 
 def resolve_qqcc_prompt(
@@ -1338,10 +1393,7 @@ def resolve_qqcc_prompt(
 
 
 def _build_lora_model_options(catalog: dict[str, str]) -> list[dict[str, str]]:
-    return [
-        {"value": value, "label": label}
-        for value, label in catalog.items()
-    ]
+    return [{"value": value, "label": label} for value, label in catalog.items()]
 
 
 def build_qqcc_config_options() -> dict[str, Any]:
@@ -1350,6 +1402,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
         "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "default_scene_credit_costs": dict(DEFAULT_SCENE_CREDIT_COSTS),
         "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),
         "video_engines": [
             {
@@ -1394,7 +1447,9 @@ def build_qqcc_config_options() -> dict[str, Any]:
             {
                 "value": value,
                 "label": label,
-                "default_strength": QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(value, 1.0),
+                "default_strength": QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(
+                    value, 1.0
+                ),
             }
             for value, label in QQCC_LTX_VIDEO_LORA_MODELS.items()
             if value
@@ -1410,7 +1465,12 @@ def _build_config_response(
 ) -> dict[str, Any]:
     normalized_config = normalize_qqcc_config(config)
     if include_preview_urls:
-        for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+        for section in (
+            "video_scenes",
+            "ai_video_scenes",
+            "draw_scenes",
+            "filter_scenes",
+        ):
             for scene in normalized_config[section]:
                 for field in ("demo_input_media", "demo_output_media"):
                     media = scene.get(field)
@@ -1489,6 +1549,7 @@ async def save_qqcc_config_payload(
     from src.database.models import RuntimeCheckpoint
 
     validate_qqcc_video_scene_chain_config(payload)
+    validate_qqcc_scene_credit_costs(payload)
     config = normalize_qqcc_config(payload)
     result = await db.execute(
         select(RuntimeCheckpoint)

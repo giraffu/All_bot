@@ -32,6 +32,8 @@ from src.services.qqcc_config_service import (
     render_qqcc_copywriting,
     resolve_qqcc_prompt,
     save_qqcc_config_payload,
+    validate_qqcc_scene_credit_costs,
+    QqccSceneCreditCostError,
 )
 from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 
@@ -103,6 +105,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
         {
             "id": "quick_undress",
@@ -114,8 +117,63 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
     ]
+
+
+def test_qqcc_scene_credit_cost_contract_preserves_valid_values_and_legacy_nulls():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {"id": "video", "name": "Video", "prompt": "move", "credit_cost": 9}
+            ],
+            "ai_video_scenes": [
+                {
+                    "id": "ai-video",
+                    "name": "AI Video",
+                    "prompt": "move",
+                    "credit_cost": 11,
+                }
+            ],
+            "draw_scenes": [
+                {"id": "draw", "name": "Draw", "prompt": "draw", "credit_cost": None}
+            ],
+            "filter_scenes": [{"id": "filter", "name": "Filter", "prompt": "filter"}],
+        }
+    )
+
+    assert config["video_scenes"][0]["credit_cost"] == 9
+    assert config["ai_video_scenes"][0]["credit_cost"] == 11
+    assert config["draw_scenes"][0]["credit_cost"] is None
+    assert config["filter_scenes"][0]["credit_cost"] is None
+
+
+@pytest.mark.parametrize("invalid_cost", [0, -1, 1.5, True, False, "2"])
+def test_validate_qqcc_scene_credit_costs_rejects_invalid_explicit_values(invalid_cost):
+    with pytest.raises(QqccSceneCreditCostError):
+        validate_qqcc_scene_credit_costs(
+            {
+                "draw_scenes": [
+                    {
+                        "id": "draw",
+                        "name": "Draw",
+                        "prompt": "draw",
+                        "credit_cost": invalid_cost,
+                    }
+                ]
+            }
+        )
+
+
+def test_build_qqcc_config_options_exposes_scene_credit_cost_defaults():
+    assert build_qqcc_config_options()["default_scene_credit_costs"] == {
+        "video": 6,
+        "ai_video": 10,
+        "draw": 2,
+        "filter": 2,
+    }
 
 
 def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
@@ -252,10 +310,11 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
                     "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
                     "strength": 1.0,
                 },
-                ],
-                "end_frame_draw_scene_id": "tail_pose",
-                "next_scene_id": None,
-            },
+            ],
+            "credit_cost": None,
+            "end_frame_draw_scene_id": "tail_pose",
+            "next_scene_id": None,
+        },
         {
             "id": "fallbacks",
             "name": "Fallbacks",
@@ -263,10 +322,11 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "negative_prompt": "",
             "duration": 5,
             "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
-                "lora_items": [],
-                "end_frame_draw_scene_id": "",
-                "next_scene_id": None,
-            },
+            "lora_items": [],
+            "credit_cost": None,
+            "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
+        },
     ]
 
 
@@ -339,7 +399,8 @@ def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
 
     options = config_service_module.build_qqcc_config_options()
     assert any(
-        item == {
+        item
+        == {
             "value": admin_only_path,
             "label": "自然裸体与写真姿势",
             "default_strength": 0.8,
@@ -371,23 +432,27 @@ def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
 
 
 def test_normalize_config_keeps_generated_output_draft_only_after_save_payload():
-    config = normalize_qqcc_config({
-        "scene_preset_version": 1,
-        "video_scenes": [],
-        "filter_scenes": [],
-        "draw_scenes": [{
-            "id": "portrait",
-            "name": "Portrait",
-            "prompt": "portrait prompt",
-            "engine": "free_edit_v2",
-            "demo_output_media": {
-                "object_key": "qqcc/demo/draw/portrait/generated/qqcc-demo-task-1/output",
-                "media_type": "image",
-                "mime_type": "image/png",
-                "file_name": "generated.png",
-            },
-        }],
-    })
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": 1,
+            "video_scenes": [],
+            "filter_scenes": [],
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "Portrait",
+                    "prompt": "portrait prompt",
+                    "engine": "free_edit_v2",
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/draw/portrait/generated/qqcc-demo-task-1/output",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "generated.png",
+                    },
+                }
+            ],
+        }
+    )
 
     assert config["draw_scenes"][0]["demo_output_media"]["object_key"].endswith(
         "/generated/qqcc-demo-task-1/output"
@@ -406,9 +471,13 @@ def test_demo_media_upload_route_supports_put_and_legacy_post():
 
 
 @pytest.mark.asyncio
-async def test_demo_generation_routes_submit_and_poll_without_saving_config(monkeypatch):
+async def test_demo_generation_routes_submit_and_poll_without_saving_config(
+    monkeypatch,
+):
     submit = AsyncMock(return_value={"generation_id": "task-1", "status": "pending"})
-    poll = AsyncMock(return_value={"generation_id": "task-1", "status": "done", "media": {}})
+    poll = AsyncMock(
+        return_value={"generation_id": "task-1", "status": "done", "media": {}}
+    )
     monkeypatch.setattr(router_module, "submit_qqcc_demo_generation", submit)
     monkeypatch.setattr(router_module, "get_qqcc_demo_generation", poll)
     scene = {
@@ -437,7 +506,9 @@ async def test_demo_generation_routes_submit_and_poll_without_saving_config(monk
 
 
 @pytest.mark.asyncio
-async def test_json_demo_media_upload_decodes_file_and_uses_existing_validation(monkeypatch):
+async def test_json_demo_media_upload_decodes_file_and_uses_existing_validation(
+    monkeypatch,
+):
     uploaded = {
         "object_key": "qqcc/demo/draw/portrait/input",
         "media_type": "image",
@@ -491,7 +562,9 @@ def test_normalize_qqcc_config_migrates_legacy_config_with_scene_presets():
         "little_hip",
     ]
     assert config["draw_scenes"][0]["name"] == "快速自慰"
-    assert config["draw_scenes"][0]["prompt"] == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+    assert (
+        config["draw_scenes"][0]["prompt"] == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+    )
     assert config["draw_scenes"][1]["name"] == "快速脱衣"
     assert config["draw_scenes"][1]["prompt"] == QQCC_SCENE_PRESET_PROMPTS["undress"]
     assert config["draw_scenes"][2]["name"] == "小屁股"
@@ -555,12 +628,15 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "closeup_blowjob",
     ]
     assert {scene["aspect_ratio"] for scene in config["video_scenes"]} == {"source"}
-    assert resolve_qqcc_prompt(
-        config,
-        "face_swap",
-        {"face_swap": "prompts ini fallback"},
-        "default fallback",
-    ) == "prompts ini fallback"
+    assert (
+        resolve_qqcc_prompt(
+            config,
+            "face_swap",
+            {"face_swap": "prompts ini fallback"},
+            "default fallback",
+        )
+        == "prompts ini fallback"
+    )
 
 
 @pytest.mark.parametrize("aspect_ratio", ["source", "9:16", "16:9", "1:1"])
@@ -626,10 +702,21 @@ def test_normalize_qqcc_config_keeps_supported_copywriting_and_renders_scene_but
     )
     assert "unknown" not in config["copywriting"]
     assert get_qqcc_copywriting_override(config, "ai_filter_menu") is None
-    assert render_qqcc_copywriting(
-        get_qqcc_copywriting_override(config, "ai_draw_scene_start"),
-        "柔光写真",
-    ) == "已切换到【柔光写真】模式，请发送图片。"
+    assert (
+        render_qqcc_copywriting(
+            get_qqcc_copywriting_override(config, "ai_draw_scene_start"),
+            "柔光写真",
+        )
+        == "已切换到【柔光写真】模式，请发送图片。"
+    )
+    assert (
+        render_qqcc_copywriting(
+            "已选择【{butten}】，总计 {cost} 灵石。",
+            "柔光写真",
+            cost=7,
+        )
+        == "已选择【柔光写真】，总计 7 灵石。"
+    )
 
 
 def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
@@ -695,7 +782,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 },
                 {"id": "empty_prompt", "name": "无提示词", "prompt": ""},
                 {"id": "empty_name", "name": " ", "prompt": "has prompt"},
-            ]
+            ],
         }
     )
 
@@ -708,13 +795,14 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "kissing prompt",
             "negative_prompt": "blur, low quality",
             "duration": "8s",
-                "aspect_ratio": "source",
-                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-                "lora_name": "",
-                "lora_strength": 1.0,
-                "lora_items": [],
-                "end_frame_draw_scene_id": "",
-                "next_scene_id": None,
+            "aspect_ratio": "source",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
+            "lora_strength": 1.0,
+            "lora_items": [],
+            "credit_cost": None,
+            "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
         },
         {
             "id": "scene_2",
@@ -722,13 +810,14 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "duplicate prompt",
             "negative_prompt": "",
             "duration": "10s",
-                "aspect_ratio": "source",
-                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-                "lora_name": "",
-                "lora_strength": 1.0,
-                "lora_items": [],
-                "end_frame_draw_scene_id": "",
-                "next_scene_id": None,
+            "aspect_ratio": "source",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
+            "lora_strength": 1.0,
+            "lora_items": [],
+            "credit_cost": None,
+            "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
         },
         {
             "id": "scene_3",
@@ -736,13 +825,14 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "safe id prompt",
             "negative_prompt": "",
             "duration": "5s",
-                "aspect_ratio": "source",
-                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-                "lora_name": "",
-                "lora_strength": 1.0,
-                "lora_items": [],
-                "end_frame_draw_scene_id": "",
-                "next_scene_id": None,
+            "aspect_ratio": "source",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
+            "lora_strength": 1.0,
+            "lora_items": [],
+            "credit_cost": None,
+            "end_frame_draw_scene_id": "",
+            "next_scene_id": None,
         },
     ]
 
@@ -963,7 +1053,7 @@ def test_normalize_qqcc_config_validates_draw_postprocess_reference():
                     "prompt": "missing prompt",
                     "postprocess_draw_scene_id": "removed_scene",
                 },
-            ]
+            ],
         }
     )
 
@@ -1032,6 +1122,7 @@ def test_normalize_qqcc_config_validates_filter_scenes_and_draw_filter_reference
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "qwen/YARN_1.0.safetensors",
             "original_face_swap_enabled": True,
+            "credit_cost": None,
         },
         {
             "id": "v2_filter",
@@ -1041,9 +1132,12 @@ def test_normalize_qqcc_config_validates_filter_scenes_and_draw_filter_reference
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
     ]
-    scenes_by_id = {scene["id"]: scene for scene in get_enabled_qqcc_draw_scenes(config)}
+    scenes_by_id = {
+        scene["id"]: scene for scene in get_enabled_qqcc_draw_scenes(config)
+    }
     assert scenes_by_id["base"]["postprocess_filter_scene_id"] == "real_skin"
     assert scenes_by_id["missing"]["postprocess_filter_scene_id"] == ""
     assert scenes_by_id["draw_wins"]["postprocess_draw_scene_id"] == "base"
@@ -1073,7 +1167,7 @@ def test_normalize_qqcc_config_breaks_draw_postprocess_cycles():
                     "prompt": "outer prompt",
                     "postprocess_draw_scene_id": "base",
                 },
-            ]
+            ],
         }
     )
 
@@ -1116,7 +1210,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
                 },
                 {"id": "empty_prompt", "name": "无提示词", "prompt": ""},
                 {"id": "empty_name", "name": " ", "prompt": "has prompt"},
-            ]
+            ],
         }
     )
 
@@ -1133,6 +1227,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
         {
             "id": "scene_2",
@@ -1144,6 +1239,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
         {
             "id": "scene_3",
@@ -1155,6 +1251,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
     ]
 
@@ -1253,16 +1350,25 @@ def test_normalize_qqcc_config_migrates_legacy_draw_prompt_keys_to_scene_prompts
 
     assert "prompt_key" not in scenes_by_id["quick_undress"]
     assert "prompt_key" not in scenes_by_id["quick_masturbation"]
-    assert resolve_qqcc_draw_scene_prompt(
-        config,
-        scenes_by_id["quick_undress"],
-        {"undress": "prompts ini undress", "masturbation": "prompts ini masturbation"},
-    ) == "config override"
-    assert resolve_qqcc_draw_scene_prompt(
-        config,
-        scenes_by_id["quick_masturbation"],
-        {"masturbation": "prompts ini masturbation"},
-    ) == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+    assert (
+        resolve_qqcc_draw_scene_prompt(
+            config,
+            scenes_by_id["quick_undress"],
+            {
+                "undress": "prompts ini undress",
+                "masturbation": "prompts ini masturbation",
+            },
+        )
+        == "config override"
+    )
+    assert (
+        resolve_qqcc_draw_scene_prompt(
+            config,
+            scenes_by_id["quick_masturbation"],
+            {"masturbation": "prompts ini masturbation"},
+        )
+        == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+    )
 
 
 def test_normalize_qqcc_config_seeds_presets_once_and_respects_new_empty_scenes():
@@ -1297,10 +1403,17 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
 
     assert response["key"] == QQCC_LAZY_BOT_CONFIG_KEY
     assert response["config"] == DEFAULT_QQCC_LAZY_BOT_CONFIG
-    assert response["options"]["video_engines"][0]["value"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
-    assert response["options"]["draw_engines"][0]["value"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert (
+        response["options"]["video_engines"][0]["value"]
+        == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    )
+    assert (
+        response["options"]["draw_engines"][0]["value"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    )
     assert response["options"]["scene_preset_version"] == SCENE_PRESET_VERSION
-    assert response["options"]["default_video_engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert (
+        response["options"]["default_video_engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    )
     assert response["options"]["default_draw_engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
     assert response["options"]["draw_engines"][-1] == {
         "value": DRAW_SCENE_ENGINE_FREE_EDIT_V3,
@@ -1322,10 +1435,20 @@ def test_normalize_qqcc_config_preserves_free_edit_v3_for_draw_and_filter_scenes
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
             "draw_scenes": [
-                {"id": "draw_v3", "name": "绘图 v3", "prompt": "draw", "engine": "free_edit_v3"}
+                {
+                    "id": "draw_v3",
+                    "name": "绘图 v3",
+                    "prompt": "draw",
+                    "engine": "free_edit_v3",
+                }
             ],
             "filter_scenes": [
-                {"id": "filter_v3", "name": "滤镜 v3", "prompt": "filter", "engine": "free_edit_v3"}
+                {
+                    "id": "filter_v3",
+                    "name": "滤镜 v3",
+                    "prompt": "filter",
+                    "engine": "free_edit_v3",
+                }
             ],
         }
     )
@@ -1586,9 +1709,7 @@ async def test_save_qqcc_config_preserves_newer_telegram_demo_cache():
 
     scene = checkpoint.value["draw_scenes"][0]
     assert scene["prompt"] == "updated prompt"
-    assert scene["demo_input_media"]["telegram_file_ids"] == {
-        "123": "cached-photo"
-    }
+    assert scene["demo_input_media"]["telegram_file_ids"] == {"123": "cached-photo"}
 
 
 @pytest.mark.asyncio
@@ -1726,7 +1847,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "lora_name": "wan22_explicit_077",
                 "end_frame_draw_scene_id": "removed_tail",
             },
-        ]
+        ],
     )
 
     response = await router_module.update_qqcc_config(payload, db=db)
@@ -1744,6 +1865,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
+            "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
             "next_scene_id": None,
         },
@@ -1758,6 +1880,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "lora_name": "wan22_explicit_077",
             "lora_strength": 0.7,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 0.7}],
+            "credit_cost": None,
             "end_frame_draw_scene_id": "",
             "next_scene_id": None,
         },
@@ -1808,6 +1931,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "postprocess_draw_scene_id": "anime",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": True,
+            "credit_cost": None,
         },
         {
             "id": "anime",
@@ -1819,6 +1943,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
+            "credit_cost": None,
         },
     ]
 
@@ -1863,6 +1988,10 @@ async def test_update_qqcc_config_router_preserves_filter_scenes_and_draw_filter
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "qwen/YARN_1.0.safetensors",
             "original_face_swap_enabled": True,
+            "credit_cost": None,
         }
     ]
-    assert response["config"]["draw_scenes"][0]["postprocess_filter_scene_id"] == "real_skin"
+    assert (
+        response["config"]["draw_scenes"][0]["postprocess_filter_scene_id"]
+        == "real_skin"
+    )

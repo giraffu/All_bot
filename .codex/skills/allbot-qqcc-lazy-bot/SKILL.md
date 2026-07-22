@@ -155,7 +155,8 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - 官方 QQCC `/start` 只返回简化主菜单，默认包含 `快速换脸`、`AI绘图`、`AI动图`、`修仙市集`、`前往主bot` 与 `私有bot`，不包含旧 `快速脱衣`、`懒人P图` 或空场景 `AI滤镜`；管理后台关闭 `main_buttons.private_bot` 后官方菜单隐藏该入口且旧入口拒绝申请，私有实例始终隐藏 `私有bot`。管理员配置有效滤镜场景后，功能行顺序为 `AI绘图` / `AI滤镜` / `AI动图`。
 - QQCC `/start` 不额外发送主 Bot 跳转消息；配置主 Bot 跳转 env 时，点击菜单里的 `前往主bot` 后回复 inline URL 跳转按钮。
 - 点击主菜单 `快速换脸` 直接进入现有单图随机换脸流程，发送 1 张正脸图后自动匹配模板；不注册或调用 `faceswap_fsm`。
-- QQCC 快速换脸继续提交 `face_swap` V1、扣 1 灵石；AI绘图/AI滤镜的 `original_face_swap_enabled` 内部原脸恢复提交 `face_swap_v2`，每个启用步骤额外 2 灵石，最终 History/文案仍按原场景显示。
+- QQCC 快速换脸继续提交 `face_swap` V1、扣 1 灵石且不读取场景价格；AI绘图/AI滤镜的 `original_face_swap_enabled` 内部原脸恢复提交 `face_swap_v2`。根场景 `credit_cost=null` 时每个启用步骤额外 2 灵石；配置固定总价后内部换脸包含在根价内，最终 History/文案仍按原场景显示。
+- 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数；缺失按 `null` 兼容。固定价只读取用户点击的根场景，不叠加后处理、尾帧或 `next_scene_id` 子场景价格；首个真实任务 `cost_override=credit_cost`，后续任务 `deduct_quota=false`。后续阶段或最终投递失败按根价全额幂等退款；私有 continuation 必须持久化计费锚点并防重扣/重退。新增场景默认价只能读配置 options：AI动图 6、AI视频 10、AI绘图/滤镜 2。
 - 旧 `快速脱衣`、旧 `懒人P图` 与旧 P 图子按钮回复 `功能暂未开放` 且不提交任务。
 - `AI绘图` 点击后，默认迁移配置会回复 `快速自慰`、`快速脱衣` 两个 inline 场景按钮，三个一行；管理员删除预设后旧 callback 回复 `功能暂未开放`。点击 `qdraw_scene:<id>` 不转圈并进入 quick image 发送图片步骤，发 1 张图片后按场景 engine、场景 `prompt` / `negative_prompt`、`postprocess_draw_scene_id` 或终止 `postprocess_filter_scene_id` 链提交 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`；中间绘图隐藏且不可投稿，最终只发送链路最后一张图。删除/禁用后的 callback 回复 `功能暂未开放` 且不提交任务。
 - `AI滤镜` 默认无场景时不展示；配置有效 `filter_scenes` 后点击主菜单会回复滤镜 inline 场景按钮。点击 `qfilter_scene:<id>` 不转圈并进入 quick image 发送图片步骤，发 1 张图片后按单步滤镜场景提交；场景删除、禁用或主开关关闭后回复 `功能暂未开放` 且不提交任务。

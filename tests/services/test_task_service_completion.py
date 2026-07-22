@@ -1779,6 +1779,8 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
         lora_name="ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
         lora_strength=0.8,
         cleanup=False,
+        deduct_quota=False,
+        cost_override=23,
     )
 
     assert result == (b"video-bytes", "task-ltx")
@@ -1789,6 +1791,8 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
     assert flow.request.inputs["lora_strength"] == 0.8
     assert flow.request.inputs["resolution"] == "1280x704"
     assert flow.request.inputs["duration"] == "10s"
+    assert flow.request.deduct_quota is False
+    assert flow.request.cost_override == 23
 
 
 @pytest.mark.asyncio

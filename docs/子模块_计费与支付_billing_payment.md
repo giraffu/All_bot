@@ -151,6 +151,7 @@ sequenceDiagram
 - 密码登录：`POST /api/auth/login`
 - 绑定/修改密码：`POST /api/auth/bind-password`
 - Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
+- QQCC 四类场景可配置根场景固定总价 `credit_cost`：首个真实任务通过 `cost_override` 扣一次，后续内部任务统一 `deduct_quota=false`；后续阶段或最终投递失败按根任务实际扣费并以 `qqcc_scene_refund:<billing_id>` 全额幂等退款。`null`/缺失保持旧逐段计费与标准任务退款，快速换脸不读取该配置。
 - Web 个人中心灵石账本：`GET /api/users/me/credits/ledger?page=&page_size=`
   - 只允许当前登录用户查询自己的 `user_logs` 非 0 灵石变动。
   - 返回 `operation_type` 兼容字段、语言无关的 `display_key`、收入/支出方向、`credit_change`、`current_balance`、时间与白名单展示上下文；Vue 只能通过共享 i18n 渲染 `display_key`，不得把原始 operation/task type 当作用户文案。

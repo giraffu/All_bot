@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.services.qqcc_config_service import QqccSceneCreditCostError
+
 from src.services.private_qqcc_bot_management import (
     PRIVATE_BOT_CONFIG_MAX_DRAW_CHAIN_DEPTH,
     PrivateBotConfigLimitError,
@@ -73,6 +75,28 @@ def test_owner_config_update_rejects_stale_version_without_mutating_record():
         )
 
     assert bot.config == original
+    assert bot.config_version == 3
+
+
+def test_owner_config_update_rejects_non_positive_scene_credit_cost():
+    bot = _bot()
+
+    with pytest.raises(QqccSceneCreditCostError):
+        update_private_bot_config_record(
+            bot,
+            expected_version=3,
+            raw_config={
+                "draw_scenes": [
+                    {
+                        "id": "draw",
+                        "name": "Draw",
+                        "prompt": "draw",
+                        "credit_cost": 0,
+                    }
+                ]
+            },
+        )
+
     assert bot.config_version == 3
 
 

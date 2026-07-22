@@ -243,11 +243,7 @@ class MemoryContinuationStore:
             status=(
                 "delivery_pending"
                 if delivery_required
-                else (
-                    "completed"
-                    if next_stage >= len(checkpoint.stages)
-                    else "ready"
-                )
+                else ("completed" if next_stage >= len(checkpoint.stages) else "ready")
             ),
             next_stage_index=(
                 checkpoint.next_stage_index if delivery_required else next_stage
@@ -321,9 +317,7 @@ class MemoryContinuationStore:
         )
         checkpoint = replace(
             checkpoint,
-            status=(
-                "completed" if next_stage >= len(checkpoint.stages) else "ready"
-            ),
+            status=("completed" if next_stage >= len(checkpoint.stages) else "ready"),
             next_stage_index=next_stage,
             current_stage_index=None,
             current_submission_sequence=None,
@@ -353,7 +347,12 @@ class MemoryContinuationStore:
     async def mark_failed(self, *, ref, error_code):
         checkpoint = self.items[ref.chain_id]
         if (
-            checkpoint.status != "running"
+            checkpoint.status
+            not in {
+                "running",
+                "delivery_pending",
+                "partial_delivery_pending",
+            }
             or checkpoint.current_stage_index != ref.stage_index
             or checkpoint.current_registry_task_id != ref.registry_task_id
             or checkpoint.current_executor_token != ref.executor_token
@@ -387,6 +386,14 @@ class MemoryContinuationStore:
         self.items[ref.chain_id] = checkpoint
         return checkpoint
 
+    async def mark_billing_refunded(self, *, chain_id):
+        checkpoint = replace(
+            self.items[chain_id],
+            billing_refund_completed=True,
+        )
+        self.items[chain_id] = checkpoint
+        return checkpoint
+
     async def acquire_lock(self, chain_id):
         if chain_id in self.locked:
             return None
@@ -395,11 +402,7 @@ class MemoryContinuationStore:
 
     async def renew_lock(self, chain_id, token):
         self.renew_count += 1
-        return (
-            self.renew_ok
-            and chain_id in self.locked
-            and token == "lock-token"
-        )
+        return self.renew_ok and chain_id in self.locked and token == "lock-token"
 
     async def release_lock(self, chain_id, token):
         if token:
@@ -530,6 +533,131 @@ def test_continuation_checkpoint_round_trip_preserves_queue_presentation_policy(
 
 
 @pytest.mark.asyncio
+async def test_fixed_price_continuation_persists_billing_anchor_and_refunds_once_after_later_failure(
+    monkeypatch,
+):
+    store = MemoryContinuationStore()
+    context = SimpleNamespace(lang="zh")
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=120)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=_stages(),
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=context,
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=400,
+            fixed_credit_cost=7,
+            store=store,
+        )
+
+    restored = continuation_service._checkpoint_from_json(
+        continuation_service._checkpoint_to_json(checkpoint)
+    )
+    assert restored.billing_id == restored.chain_id
+    assert restored.fixed_credit_cost == 7
+    assert restored.billing_actual_charged_cost == 7
+    assert restored.billing_root_task_id
+    assert restored.stages[0]["task_kwargs"]["cost_override"] == 7
+    assert restored.stages[1]["task_kwargs"]["deduct_quota"] is False
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    async def execute_stage(_checkpoint, _stage, ref, _context):
+        if ref.stage_index == 1:
+            raise RuntimeError("later stage failed")
+        await store.record_completed_stage(
+            ref=ref,
+            output_file="outputs/stage-0.png",
+            saved_inputs=["inputs/original.png"],
+        )
+        return b"image", "outputs/stage-0.png"
+
+    failed = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=store,
+        execute_stage_func=execute_stage,
+        refund_credits_func=refund,
+    )
+    repeated = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=store,
+        execute_stage_func=execute_stage,
+        refund_credits_func=refund,
+    )
+
+    assert failed.status == "failed"
+    assert repeated.status == "failed"
+    refund.assert_awaited_once_with(
+        999,
+        7,
+        username="visitor",
+        task_type="refund_qqcc_scene_fixed_cost",
+        idempotency_key=f"qqcc_scene_refund:{checkpoint.chain_id}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_continuation_refunds_when_final_delivery_fails(monkeypatch):
+    store = MemoryContinuationStore()
+    context = SimpleNamespace(lang="zh")
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=121)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=[_stages()[1]],
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=context,
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=None,
+            fixed_credit_cost=9,
+            store=store,
+        )
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    async def execute_stage(_checkpoint, _stage, ref, _context):
+        await store.record_completed_stage(
+            ref=ref,
+            output_file="outputs/final.png",
+            saved_inputs=["inputs/original.png"],
+        )
+        return b"image", "outputs/final.png"
+
+    async def fail_delivery(*_args):
+        raise RuntimeError("telegram delivery failed")
+
+    with pytest.raises(RuntimeError, match="delivery failed"):
+        await resume_private_qqcc_continuation(
+            chain_id=checkpoint.chain_id,
+            context=context,
+            store=store,
+            execute_stage_func=execute_stage,
+            deliver_result_func=fail_delivery,
+            refund_credits_func=refund,
+        )
+
+    failed = await store.get(checkpoint.chain_id)
+    assert failed.status == "failed"
+    assert failed.billing_refund_completed is True
+    refund.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_continuation_checkpoint_rejects_cross_tenant_application_context():
     store = MemoryContinuationStore()
     scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=100)
@@ -593,9 +721,7 @@ async def test_two_stage_continuation_advances_durably_with_deterministic_sequen
             await store.record_completed_stage(
                 ref=ref,
                 output_file=output,
-                saved_inputs=(
-                    ["inputs/original.png"] if ref.stage_index == 0 else []
-                ),
+                saved_inputs=(["inputs/original.png"] if ref.stage_index == 0 else []),
             )
             return b"image", output
 
@@ -945,17 +1071,54 @@ async def test_ready_checkpoint_waits_for_previous_active_stage_cleanup():
     )
 
     assert (await store.get(checkpoint.chain_id)).status == "ready"
-    assert await list_private_qqcc_continuations_for_recovery(
-        active_registry_task_ids={"registry-old-stage"},
-        active_chain_ids={checkpoint.chain_id},
-        store=store,
-    ) == []
+    assert (
+        await list_private_qqcc_continuations_for_recovery(
+            active_registry_task_ids={"registry-old-stage"},
+            active_chain_ids={checkpoint.chain_id},
+            store=store,
+        )
+        == []
+    )
 
     recoverable = await list_private_qqcc_continuations_for_recovery(
         active_registry_task_ids=set(),
         active_chain_ids=set(),
         store=store,
     )
+    assert [item.chain_id for item in recoverable] == [checkpoint.chain_id]
+
+
+@pytest.mark.asyncio
+async def test_recovery_includes_partial_delivery_checkpoint():
+    store = MemoryContinuationStore()
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=207)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=[_stages()[0]],
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=SimpleNamespace(lang="zh"),
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=None,
+            store=store,
+        )
+    store.items[checkpoint.chain_id] = replace(
+        checkpoint,
+        status="partial_delivery_pending",
+        current_stage_index=0,
+        current_submission_sequence=0,
+        current_registry_task_id="registry-partial",
+        current_executor_token="executor-partial",
+        current_output_ref="outputs/prefix.mp4",
+    )
+
+    recoverable = await list_private_qqcc_continuations_for_recovery(
+        active_registry_task_ids=set(),
+        store=store,
+    )
+
     assert [item.chain_id for item in recoverable] == [checkpoint.chain_id]
 
 
@@ -1272,7 +1435,9 @@ async def test_external_cancel_after_delivery_checkpoint_and_registry_cleanup_de
 
     checkpoint_advanced = asyncio.Event()
 
-    async def executor_advances_then_swallows_cancel(_checkpoint, _stage, ref, _context):
+    async def executor_advances_then_swallows_cancel(
+        _checkpoint, _stage, ref, _context
+    ):
         await store.record_completed_stage(
             ref=ref,
             output_file="outputs/final.png",
