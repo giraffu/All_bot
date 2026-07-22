@@ -7340,6 +7340,14 @@ os.replace(tmp,path)
 PY
 compose="docker compose --project-name {project} --env-file $checkout/deploy/env.defaults --env-file {shlex.quote(env_file)} --env-file $release_env -f $checkout/deploy/docker-compose-cloud-base.yml -f $checkout/{overlay} {profile_flags}"
 $compose config -q
+available_services="$($compose config --services)"
+compose_service_args=()
+for service in {service_args}; do
+  if grep -Fxq "$service" <<<"$available_services"; then
+    compose_service_args+=("$service")
+  fi
+done
+test "${{#compose_service_args[@]}}" -gt 0
 non_target_snapshot="$(mktemp)"
 trap 'rm -f "$non_target_snapshot"' EXIT
 for container_id in $(docker ps -aq --filter label=com.docker.compose.project={shlex.quote(project)}); do
@@ -7347,7 +7355,7 @@ for container_id in $(docker ps -aq --filter label=com.docker.compose.project={s
   case "$service" in {selected_case}) continue ;; esac
   docker inspect --format '{{{{.Id}}}}\t{{{{.Config.Image}}}}\t{{{{.State.StartedAt}}}}' "$container_id" >> "$non_target_snapshot"
 done
-$compose up -d --no-deps --wait --wait-timeout 180 {service_args}
+$compose up -d --no-deps --wait --wait-timeout 180 "${{compose_service_args[@]}}"
 while IFS=$'\t' read -r container_id image started_at; do
   test -n "$container_id"
   test "$(docker inspect --format '{{{{.Config.Image}}}}' "$container_id")" = "$image"
