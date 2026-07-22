@@ -83,6 +83,10 @@ FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 DEFAULT_BUNDLE_REPOSITORY = "ghcr.io/giraffu/allbot-release-v2"
+PG_DUMP_IMAGE = (
+    "docker.io/library/postgres@"
+    "sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
+)
 PROMOTE_DIRECT_ARTIFACTS = {
     "dashboard-backend",
     "dashboard-frontend",
@@ -1818,17 +1822,33 @@ def build_promote_previous_artifacts(
             source_sha = str(observed["oci_revision"])
         if source_sha:
             validate_full_sha(source_sha)
+        active_revision = _active_service_config_revision(args, name)
         result[name] = {
             "ref": observed["ref"],
             "digest": observed["digest"],
             "source_sha": source_sha or None,
             "oci_revision": observed.get("oci_revision") or None,
-            "config_revision": observed.get("config_revision") or None,
+            "config_revision": active_revision
+            or observed.get("config_revision")
+            or None,
             "container_id": observed.get("container_id"),
             "started_at": observed.get("started_at"),
             "health": observed.get("health"),
         }
     return result
+
+
+def _active_service_config_revision(
+    args: argparse.Namespace, artifact_name: str
+) -> str | None:
+    """Return the revision that Compose will inject when recreating a service."""
+
+    snapshot = getattr(args, "runtime_env_snapshot", None)
+    revisions = (
+        snapshot.get("service_revisions") if isinstance(snapshot, Mapping) else None
+    )
+    revision = revisions.get(artifact_name) if isinstance(revisions, Mapping) else None
+    return str(revision) if revision else None
 
 
 def render_promote_rollback_release_env(
@@ -4211,7 +4231,8 @@ printf '%s\n' {shlex.quote(completion_marker)}
         migration = f"""install -d -m 700 {backup_dir}
 backup_file={backup_dir}/pre-{sha}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
 umask 077
-{compose} run --rm -T web-api sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; exec pg_dump "$url"' </dev/null | gzip -c > "$backup_file"
+database_url="$({compose} run --rm -T web-api sh -lc 'printf %s "$DATABASE_URL"' </dev/null)"
+docker run --rm -e DATABASE_URL="$database_url" {shlex.quote(PG_DUMP_IMAGE)} sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; url="$(printf %s "$url" | sed "s/\\([?&]\\)ssl=/\\1sslmode=/")"; exec pg_dump "$url"' | gzip -c > "$backup_file"
 test -s "$backup_file"
 heads="$({compose} run --rm -T web-api alembic heads </dev/null | grep -c ' (head)$')"
 test "$heads" = 1
@@ -5213,7 +5234,11 @@ test -z "$({compose} ps -aq {shlex.quote(service)})"
                 raise ReleaseError(f"rollback identity is unavailable for {service}")
             restore_services.append(service)
             ref = str(artifact["ref"])
-            revision = str(artifact.get("config_revision") or "")
+            revision = str(
+                _active_service_config_revision(args, artifact_name or "")
+                or artifact.get("config_revision")
+                or ""
+            )
             revision_check = (
                 "test \"$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \"$id\" | "
                 "sed -n 's/^ALLBOT_CONFIG_REVISION=//p')\" = "
@@ -5616,6 +5641,7 @@ def _validate_recovered_stack(
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]
         previous_artifacts = previous.get("artifacts")
+        script: str | None = None
         if transaction.get("schema_version") == 2 and isinstance(
             previous_artifacts, Mapping
         ):
@@ -5628,6 +5654,13 @@ def _validate_recovered_stack(
                 artifact_name = service_to_artifact.get(service)
                 expected = previous_artifacts.get(artifact_name or "")
                 actual = runtime.get(artifact_name or "")
+                expected_revision = _active_service_config_revision(
+                    args, artifact_name or ""
+                ) or (
+                    expected.get("config_revision")
+                    if isinstance(expected, Mapping)
+                    else None
+                )
                 if (
                     isinstance(expected, Mapping)
                     and expected.get("absent") is True
@@ -5643,9 +5676,9 @@ def _validate_recovered_stack(
                     or actual.get("ref") != expected.get("ref")
                     or actual.get("health") not in {"healthy", "running"}
                     or (
-                        expected.get("config_revision")
+                        expected_revision
                         and actual.get("config_revision")
-                        != expected.get("config_revision")
+                        != expected_revision
                     )
                 ):
                     raise ReleaseError(
@@ -5702,7 +5735,8 @@ for service in {services}; do
   [ "$health" = healthy ] || [ "$health" = none ]
 done
 """
-        _remote_shell(host, script, execute=True)
+        if script is not None:
+            _remote_shell(host, script, execute=True)
         non_target_snapshot = previous.get("non_target_snapshot_path")
         if isinstance(non_target_snapshot, str):
             non_target_script = f"""set -euo pipefail
@@ -7312,7 +7346,8 @@ install -d -m 700 "$backup_dir"
 test "$(printf '%s\n' "$container_id" | sed '/^$/d' | wc -l)" = 1
 backup_file="$backup_dir/config-pre-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 umask 077
-docker exec "$container_id" sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; exec pg_dump "$url"' | gzip -c > "$backup_file"
+database_url="$(docker exec "$container_id" sh -lc 'printf %s "$DATABASE_URL"')"
+docker run --rm -e DATABASE_URL="$database_url" {shlex.quote(PG_DUMP_IMAGE)} sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; url="$(printf %s "$url" | sed "s/\\([?&]\\)ssl=/\\1sslmode=/")"; exec pg_dump "$url"' | gzip -c > "$backup_file"
 test -s "$backup_file"
 heads="$(docker exec "$container_id" alembic heads | grep -c ' (head)$')"
 test "$heads" = 1
@@ -8000,7 +8035,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.env == "prod" and not args.confirm_prod:
                 raise ReleaseError("production recover requires --confirm-prod")
             if args.track == "control-plane":
-                environment_values, _, _ = _remote_runtime_env_snapshot(args)
+                environment_values, _, runtime_snapshot = (
+                    _remote_runtime_env_snapshot(args)
+                )
+                args.runtime_env_snapshot = runtime_snapshot
             else:
                 environment_values, _ = _validate_local_env(args)
             transaction = _read_transaction_journal(args, transaction_id)

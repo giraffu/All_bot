@@ -4817,6 +4817,56 @@ def test_recovery_validation_checks_only_stages_the_transaction_attempted(monkey
     assert remote_calls[0][0] == "cloud-test"
 
 
+def test_recovery_validation_uses_active_projected_config_revision(monkeypatch):
+    module = _load_module()
+    image = "ghcr.io/giraffu/dashboard@sha256:" + "1" * 64
+    args = SimpleNamespace(
+        env="prod",
+        remote_host="prod-control",
+        remote_checkout_root="/srv/allbot-release",
+        remote_env_file=None,
+        runtime_env_snapshot={
+            "service_revisions": {"dashboard-backend": "active-config"}
+        },
+    )
+    transaction = {
+        "schema_version": 2,
+        "attempted_stages": ["cloud"],
+        "previous": {
+            "kind": "immutable",
+            "artifacts": {
+                "dashboard-backend": {
+                    "ref": image,
+                    "config_revision": "stale-live-config",
+                }
+            },
+        },
+    }
+    monkeypatch.setattr(
+        module,
+        "filter_enabled_cloud_services",
+        lambda *_args: ({"dashboard-backend"}, set()),
+    )
+    monkeypatch.setattr(
+        module,
+        "inspect_promote_runtime_artifacts",
+        lambda _args: {
+            "dashboard-backend": {
+                "ref": image,
+                "health": "healthy",
+                "config_revision": "active-config",
+            }
+        },
+    )
+
+    module._validate_recovered_stack(
+        args,
+        module.ReleaseImpact(services={"dashboard-backend"}, level="rolling"),
+        transaction,
+        {},
+    )
+
+
 def test_transaction_keeps_maintenance_when_compensation_is_incomplete():
     module = _load_module()
     calls = []
@@ -6304,6 +6354,30 @@ def test_promote_rollback_snapshot_recovers_source_sha_from_live_oci_revision():
     assert previous["central-api"]["source_sha"] == old_sha
 
 
+def test_promote_rollback_snapshot_uses_active_projected_config_revision():
+    module = _load_module()
+    args = SimpleNamespace(
+        previous_state={"artifacts": {"dashboard-backend": {}}},
+        runtime_env_snapshot={
+            "service_revisions": {"dashboard-backend": "active-config"}
+        },
+        promote_runtime_artifacts={
+            "dashboard-backend": {
+                "ref": "ghcr.io/giraffu/dashboard@sha256:" + "1" * 64,
+                "digest": "sha256:" + "1" * 64,
+                "config_revision": "live-old-config",
+                "health": "healthy",
+            }
+        },
+    )
+
+    previous = module.build_promote_previous_artifacts(
+        args, {"selected_artifacts": ["dashboard-backend"]}
+    )
+
+    assert previous["dashboard-backend"]["config_revision"] == "active-config"
+
+
 def test_promote_rollback_snapshot_records_first_release_as_absent():
     module = _load_module()
     args = SimpleNamespace(
@@ -6373,6 +6447,9 @@ def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
         remote_host="prod-control",
         remote_checkout_root="/srv/allbot-release",
         remote_env_file=None,
+        runtime_env_snapshot={
+            "service_revisions": {"dashboard-backend": "active-dashboard-config"}
+        },
     )
     impact = module.ReleaseImpact(
         services={"central-api", "dashboard-backend"},
@@ -6399,6 +6476,8 @@ def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
     assert old_central in script
     assert old_dashboard in script
     assert old_sha not in script
+    assert "active-dashboard-config" in script
+    assert "= dashboard-config\n" not in script
 
 
 def test_promote_v2_cloud_rollback_removes_first_release_service(monkeypatch):
