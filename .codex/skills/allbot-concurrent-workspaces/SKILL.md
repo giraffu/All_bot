@@ -1,6 +1,6 @@
 ---
 name: allbot-concurrent-workspaces
-description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handoff、单批次 main PR 与按需测试发布。用户在主目录提出写仓库需求、需要分配/释放工作区、冻结并行交接或组装发布批次时必须使用。"
+description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handoff、自动集成队列、单批次 main PR 与测试发布。用户在主目录提出写仓库需求、需要分配/释放工作区、冻结并行交接或组装发布批次时必须使用。"
 ---
 
 # AllBot 并发工作区与单批次集成
@@ -21,11 +21,15 @@ description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handof
 
 - 功能 AI 只在自己的 worktree 开发、运行 focused tests、提交并推送任务分支。
 - 功能槽位不创建逐任务 test-train PR，不构建 release bundle，不部署共享 test，也不操作 prod、Cloudflare 或 GPU runtime。
-- 代码推送完成后执行 `python scripts/manage_ai_workspaces.py handoff --slot <A-H>`。该命令验证工作区 clean、远端分支精确包含本地 head，返回 `slot + branch + head + base_sha` 的不可变交接身份，并立即把槽位停放到最新 `origin/main`。
+- 代码推送完成后执行 `python scripts/manage_ai_workspaces.py handoff --slot <A-H>`。该命令验证工作区 clean、远端分支精确包含本地 head，先把 `slot + branch + head + base_sha` 的不可变身份幂等写入 `${XDG_STATE_HOME:-~/.local/state}/allbot/ai-integration-queue`，成功后才把槽位停放到最新 `origin/main`。只有明确不进入自动集成时才使用 `--no-enqueue`。
 - handoff 完成即允许槽位接新任务；后续集成按不可变 branch/head 找代码，不能再按槽位字母推断成员。
 - handoff 后任务分支不得改写或 force-push。需要修改时产生新的 head，并作为新交接或当前批次的可追溯修订。
 
 ## 3. 一次性发布批次
+
+启用用户级 `allbot-ai-integration-queue.timer` 后，`scripts/auto_integrate_handoffs.py run-once --execute` 是唯一自动集成写者。它用非阻塞文件锁判断是否已有批次或测试部署在运行，把锁定时所有 pending handoff 冻结为一个批次；运行期间新到达的 handoff 留给下一批。协调器按 `PR CI → main merge → main CI/bundle → release.py plan/preflight/deploy --env test` 串行推进，并持久化阶段以便进程重启后续跑。组合冲突、CI、bundle 或测试部署任一失败都会把批次移入 failed 并阻断后续工作，必须修复原因后显式 `retry-failed` 从原阶段续跑。协调器不接受环境参数，也没有任何 prod/promote 调用；纯 lightweight 批次在 main CI 后直接完成，不构建 bundle或更新环境。
+
+未启用 timer、自动协调器故障或需要人工选择成员时，保留下列手工冻结入口：
 
 集成 AI 在开始批次前冻结本轮 handoff：
 
@@ -46,7 +50,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 合并 main 前的 PR CI 可以运行代码门禁，但不会构建或发布容器。只有 main 合并后的 push CI 成功，才触发一次模块化 GitHub Actions 构建并生成 main-channel 不可变 bundle。
 
-纯非运行时变更是批次流程的例外。`scripts/classify_ci_change.py` 仅对白名单中的 docs、`.codex/**`、tests、AGENTS/README、`.github/**`、`deploy/release-policy.yml`、`deploy/test-acceptance.example.json` 与精确列出的仓库治理/门禁脚本（含 `scripts/release.py`）返回 `lightweight`：
+纯非运行时变更是批次流程的例外。`scripts/classify_ci_change.py` 仅对白名单中的 docs、`.codex/**`、tests、AGENTS/README、`.github/**`、`deploy/release-policy.yml`、`deploy/release-batches/*.json` 审计元数据、`deploy/test-acceptance.example.json` 与精确列出的仓库治理/门禁脚本（含 `scripts/release.py`）返回 `lightweight`：
 
 - 可创建单独 PR 直接合入受保护 main，或直接合入仍需维护的兼容分支，不必等待 release batch，也不生成 test-train candidate；
 - PR/main workflow 只运行 change-scope/aggregate gate，跳过全量 Python、PostgreSQL、Web、Dashboard 测试；main push 不创建 release bundle，不部署 test/prod；
@@ -57,7 +61,7 @@ GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `op
 
 ## 4. 测试环境与正式发布
 
-- 当用户需要部署测试环境时，使用已构建的完整 main SHA：`release.py plan -> preflight -> deploy --env test`。
+- 自动集成 timer 已启用时，非 lightweight 批次在 main bundle 成功后使用完整 main SHA 自动执行 `release.py plan -> preflight -> deploy --env test`；不要并行启动另一条共享测试发布。
 - 测试控制面只从目标主机 `/etc/allbot/test.env` 生成权限为 `600` 的逐服务投影；不得把整份 env 注入所有容器，也不得把测试投影复制给正式环境。
 - 测试按 main bundle 中的精确 digest/checksum 验收；standard artifact 通过 `verify-test` 写入 main-channel verified history。
 - `verify-test` 仍要求精确 SHA/digest、全部适用 smoke、真实开始/完成时间和批准人，但不再要求固定 24 小时观察，也没有短观察 override/CLI 确认。

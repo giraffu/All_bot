@@ -23,6 +23,7 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
             ".codex/skills/allbot-ops-deployment/SKILL.md",
             ".github/workflows/control-plane-release.yml",
             "deploy/release-policy.yml",
+            "deploy/release-batches/20260722-example.json",
             "deploy/test-acceptance.example.json",
             "docs/子模块_Git不可变发布_git_immutable_release.md",
             "scripts/classify_ci_change.py",

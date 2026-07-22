@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll the AllBot immutable handoff integration queue
+
+[Timer]
+OnBootSec=2m
+OnUnitInactiveSec=1m
+RandomizedDelaySec=10s
+Persistent=true
+Unit=allbot-ai-integration-queue.service
+
+[Install]
+WantedBy=timers.target

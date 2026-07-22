@@ -7,16 +7,16 @@ AllBot 保留 A-H 八个固定 Git worktree 并行开发，但退出“每个功
 ```text
 A-H 并行开发
 → 推送并冻结不可变 handoff head
-→ 一次组合为 release batch
+→ 本机单写者自动冻结等待项为 release batch
 → 一个 PR 合入 main
 → main CI 一次构建不可变 bundle
-→ 用户需要时部署云测试并验收
+→ 自动串行部署云测试并验收
 → 用户另行确认后发布正式模块
 ```
 
 代码集成和昂贵的容器构建以“批次”为单位，不再以“槽位成员”为单位。生产仍只消费受保护 main bundle，正式 mutation 仍需用户当次明确确认。
 
-纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 release batch/test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
+纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、`deploy/release-batches/*.json` 审计记录、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
 
 GPU controller/RunPod/LAN helper 另有 `operator` 聚焦 scope：只有全部非轻量路径均命中明确 operator allowlist 时，PR/main 才只跑 `tests/ops tests/scripts`；main 后继 modular workflow 仍创建不可变 bundle，并由 artifact planner 决定零模块（LAN 宿主 helper）或仅 `dashboard-backend`（镜像内置 controller/rollout）。它不构建 GPU artifact、不自动部署环境；`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、Dockerfile/模型基础依赖或混合业务变更仍按 `runtime` 走完整链路。
 
@@ -41,11 +41,25 @@ python scripts/manage_ai_workspaces.py status
 - 空闲槽位 detached 在最新 `origin/main`。
 - `claim` 原子选择第一个 clean、detached、main 基线最新的槽位，创建 `codex/<slot>-<task>`。
 - 功能 AI 完成后先测试、提交并推送，再执行 `handoff`。
-- `handoff` 要求远端分支 head 与本地完全一致，返回 `slot/branch/head/base_sha`，随后立即释放槽位。
+- `handoff` 要求远端分支 head 与本地完全一致，先将 `slot/branch/head/base_sha` 幂等写入本机 XDG 自动集成队列，成功后立即释放槽位。明确不自动集成时才使用 `--no-enqueue`。
 - 交接身份是远端 branch + 完整 head，不是槽位字母。槽位释放后即使被新任务复用，也不会进入旧批次。
 - 任务分支不删除、不 force-push；修订使用新 head 并保留可追溯关系。
 
 ## 4. 批次冻结与唯一 main PR
+
+日常入口是用户级 `allbot-ai-integration-queue.timer`。每分钟唤醒的 `scripts/auto_integrate_handoffs.py run-once --execute` 先抢非阻塞单写者锁：已有集成/测试发布在运行时本轮不抢占；拿到锁后把当时全部 pending handoff 冻结为一个不可变批次，后到任务留给下一批。协调器依次组合精确 head、创建 main PR、等待 PR checks、合并、等待 main CI 和 modular bundle，最后只执行固定的 `release.py ... --env test`。阶段写入 `running/*.json`，进程中断后从 PR、main CI 或测试部署阶段续跑。
+
+任一 head 漂移、组合冲突、CI、bundle 或测试部署失败都会把批次移入 `failed/` 并阻断后续批次；排除原因后使用 `retry-failed --batch <id>` 将同一批次移回 running，并从已持久化的 PR、main CI 或测试部署阶段续跑。纯 lightweight 批次不写 release-batch JSON，在 main CI 后完成，不构建 bundle或更新环境。协调器没有 `--env`、prod 或 promote 参数，不能修改正式环境。
+
+首次启用必须等实现进入 main 后从主目录 dry-run 并安装用户 timer：
+
+```bash
+scripts/install_ai_integration_queue_timer.sh
+scripts/install_ai_integration_queue_timer.sh --execute
+python scripts/auto_integrate_handoffs.py status
+```
+
+未启用 timer、自动协调器故障或需要人工选择成员时，仍可使用下列手工入口。
 
 集成 AI 先选择本轮要交付的 handoff，再执行只读冻结：
 
@@ -86,7 +100,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 ## 6. 云测试
 
-main bundle 构建成功后，只有用户要求部署测试时才启动缓慢的拉取、preflight 和共享测试站切换：
+自动队列中的非 lightweight main bundle 构建成功后，协调器串行启动拉取、preflight 和共享测试站切换：
 
 ```bash
 python scripts/release.py plan --env test --track control-plane --sha <main-sha>

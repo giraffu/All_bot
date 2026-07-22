@@ -251,7 +251,7 @@
 
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
-| `.codex/skills/allbot-concurrent-workspaces/SKILL.md` | `AGENTS.md`、自动接单/批次集成文档、ADR 0008、`scripts/manage_ai_workspaces.py`、两份 release workflow | 已修正 | A-H 保持高读取能力与秘密脱敏边界；2026-07-19 改为 origin/main 基线、推送后不可变 handoff 立即释放、多个 handoff 只形成一个 main PR。PR 不发布容器，main 合并后才构建一次 bundle；冻结后的新开发自动进入后续批次。 |
+| `.codex/skills/allbot-concurrent-workspaces/SKILL.md` | `AGENTS.md`、自动接单/批次集成文档、ADR 0008、`scripts/manage_ai_workspaces.py`、`scripts/auto_integrate_handoffs.py`、`scripts/classify_ci_change.py`、systemd timer、两份 release workflow | 已修正 | A-H 保持高读取能力与秘密脱敏边界；2026-07-22 handoff 默认持久化入队，本机单写者将等待项冻结为一个 main PR，串行等待 CI/bundle 并只部署 test。新 handoff 进入下一批，失败批次阻断后续；协调器无 prod 能力。release-batch JSON 仅作轻量审计元数据，使纯 lightweight 批次跳过 bundle/环境且 operator 批次保持聚焦门禁。 |
 | `AGENTS.md` / `docs/adr/0006-risk-based-artifact-release-gates.md` / `docs/adr/0008-main-first-release-batches.md` / `docs/子模块_Git不可变发布_git_immutable_release.md` | `scripts/release_strategy.py`、`scripts/release.py`、v2 release manifest/workflow、用户风险授权 | 已修正 | 按 artifact 的 standard/direct/emergency 保留；2026-07-19 构建事实源收敛到单批次 main push，standard 从云测试 retained history 按 exact digest 取证，direct/waived/attested 不伪装 tested；main/CI/digest/配置/健康/事务/回滚/生产确认永久保留。 |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
 | `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service、LAN AIO worker 基础控制、Cloudflare ops Skill、Skill 体积审计 | 已修正 | 保留路由型运维入口与既有高压红线；2026-07-16 新增逐次正式维护模式契约，并补充 Dashboard RunPod operation 必须 pin 已验收 img2img/PornMaster baked 镜像、镜像发布/smoke 先于 Dashboard 部署的门禁 |
