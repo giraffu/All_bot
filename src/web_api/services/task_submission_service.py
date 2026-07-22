@@ -1,7 +1,9 @@
+import os
 import uuid
 from collections.abc import Awaitable, Callable
 
 from asgi_correlation_id import correlation_id
+from fastapi import HTTPException
 
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError
@@ -40,9 +42,45 @@ async def submit_generation_task(
 
         _raise_if_web_generation_task_disabled(req.task_type)
 
+        if req.task_type in {
+            "ltx_t2v",
+            "ltx_t2v_ic",
+            "character_reference_build",
+        } and os.getenv("LTX_T2V_BACKEND_ENABLED", "false").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            raise CoreDomainError("文生视频与人物图库功能当前未开放。")
+
         is_template = getattr(req, "is_template", False)
 
         inputs = dict(req.inputs)
+        if req.negative_prompt:
+            inputs["negative_prompt"] = req.negative_prompt
+        if req.task_type == "character_reference_build":
+            raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
+        if req.task_type == "ltx_t2v_ic":
+            if inputs.get("character_sheet"):
+                raise CoreDomainError("不得直接指定人物参考表存储路径。")
+            character_id = str(inputs.get("character_id") or "").strip()
+            if not character_id:
+                raise CoreDomainError("请选择一个已就绪人物。")
+            from src.database.core import AsyncSessionLocal
+            from src.web_api.services.character_reference_service import (
+                resolve_ready_character_sheet,
+            )
+
+            async with AsyncSessionLocal() as character_db:
+                try:
+                    inputs["character_sheet"] = await resolve_ready_character_sheet(
+                        db=character_db,
+                        user_id=current_user.id,
+                        character_id=character_id,
+                    )
+                except HTTPException as exc:
+                    raise CoreDomainError(str(exc.detail)) from exc
         images = list(inputs.get("images") or [])
         if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
             raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")

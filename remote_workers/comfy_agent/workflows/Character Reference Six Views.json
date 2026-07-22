@@ -1,0 +1,1316 @@
+{
+  "v1:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v1:3": {
+    "inputs": {
+      "conditioning": [
+        "v1:185",
+        0
+      ],
+      "latent": [
+        "v1:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v1:4": {
+    "inputs": {
+      "conditioning": [
+        "v1:254",
+        0
+      ],
+      "latent": [
+        "v1:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v1:7": {
+    "inputs": {
+      "width": [
+        "v1:13",
+        0
+      ],
+      "height": [
+        "v1:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v1:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v1:13",
+        0
+      ],
+      "height": [
+        "v1:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v1:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v1:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v1:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v1:13": {
+    "inputs": {
+      "image": [
+        "v1:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v1:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v1:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v1:100",
+        0
+      ],
+      "positive": [
+        "v1:3",
+        0
+      ],
+      "negative": [
+        "v1:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v1:20": {
+    "inputs": {
+      "noise": [
+        "v1:28",
+        0
+      ],
+      "guider": [
+        "v1:16",
+        0
+      ],
+      "sampler": [
+        "v1:9",
+        0
+      ],
+      "sigmas": [
+        "v1:8",
+        0
+      ],
+      "latent_image": [
+        "v1:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v1:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v1:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v1:179": {
+    "inputs": {
+      "samples": [
+        "v1:20",
+        0
+      ],
+      "vae": [
+        "v1:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v1:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v1:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. front close-up face portrait, looking at camera. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v1:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v1:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_01",
+      "images": [
+        "v1:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v1:235": {
+    "inputs": {
+      "pixels": [
+        "v1:11",
+        0
+      ],
+      "vae": [
+        "v1:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v1:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v1:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "v2:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v2:3": {
+    "inputs": {
+      "conditioning": [
+        "v2:185",
+        0
+      ],
+      "latent": [
+        "v2:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v2:4": {
+    "inputs": {
+      "conditioning": [
+        "v2:254",
+        0
+      ],
+      "latent": [
+        "v2:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v2:7": {
+    "inputs": {
+      "width": [
+        "v2:13",
+        0
+      ],
+      "height": [
+        "v2:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v2:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v2:13",
+        0
+      ],
+      "height": [
+        "v2:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v2:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v2:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v2:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v2:13": {
+    "inputs": {
+      "image": [
+        "v2:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v2:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v2:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v2:100",
+        0
+      ],
+      "positive": [
+        "v2:3",
+        0
+      ],
+      "negative": [
+        "v2:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v2:20": {
+    "inputs": {
+      "noise": [
+        "v2:28",
+        0
+      ],
+      "guider": [
+        "v2:16",
+        0
+      ],
+      "sampler": [
+        "v2:9",
+        0
+      ],
+      "sigmas": [
+        "v2:8",
+        0
+      ],
+      "latent_image": [
+        "v2:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v2:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v2:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v2:179": {
+    "inputs": {
+      "samples": [
+        "v2:20",
+        0
+      ],
+      "vae": [
+        "v2:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v2:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v2:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. three-quarter close-up face portrait. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v2:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v2:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_02",
+      "images": [
+        "v2:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v2:235": {
+    "inputs": {
+      "pixels": [
+        "v2:11",
+        0
+      ],
+      "vae": [
+        "v2:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v2:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v2:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "v3:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v3:3": {
+    "inputs": {
+      "conditioning": [
+        "v3:185",
+        0
+      ],
+      "latent": [
+        "v3:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v3:4": {
+    "inputs": {
+      "conditioning": [
+        "v3:254",
+        0
+      ],
+      "latent": [
+        "v3:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v3:7": {
+    "inputs": {
+      "width": [
+        "v3:13",
+        0
+      ],
+      "height": [
+        "v3:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v3:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v3:13",
+        0
+      ],
+      "height": [
+        "v3:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v3:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v3:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v3:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v3:13": {
+    "inputs": {
+      "image": [
+        "v3:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v3:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v3:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v3:100",
+        0
+      ],
+      "positive": [
+        "v3:3",
+        0
+      ],
+      "negative": [
+        "v3:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v3:20": {
+    "inputs": {
+      "noise": [
+        "v3:28",
+        0
+      ],
+      "guider": [
+        "v3:16",
+        0
+      ],
+      "sampler": [
+        "v3:9",
+        0
+      ],
+      "sigmas": [
+        "v3:8",
+        0
+      ],
+      "latent_image": [
+        "v3:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v3:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v3:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v3:179": {
+    "inputs": {
+      "samples": [
+        "v3:20",
+        0
+      ],
+      "vae": [
+        "v3:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v3:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v3:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. front waist-up portrait. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v3:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v3:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_03",
+      "images": [
+        "v3:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v3:235": {
+    "inputs": {
+      "pixels": [
+        "v3:11",
+        0
+      ],
+      "vae": [
+        "v3:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v3:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v3:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "v4:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v4:3": {
+    "inputs": {
+      "conditioning": [
+        "v4:185",
+        0
+      ],
+      "latent": [
+        "v4:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v4:4": {
+    "inputs": {
+      "conditioning": [
+        "v4:254",
+        0
+      ],
+      "latent": [
+        "v4:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v4:7": {
+    "inputs": {
+      "width": [
+        "v4:13",
+        0
+      ],
+      "height": [
+        "v4:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v4:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v4:13",
+        0
+      ],
+      "height": [
+        "v4:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v4:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v4:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v4:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v4:13": {
+    "inputs": {
+      "image": [
+        "v4:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v4:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v4:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v4:100",
+        0
+      ],
+      "positive": [
+        "v4:3",
+        0
+      ],
+      "negative": [
+        "v4:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v4:20": {
+    "inputs": {
+      "noise": [
+        "v4:28",
+        0
+      ],
+      "guider": [
+        "v4:16",
+        0
+      ],
+      "sampler": [
+        "v4:9",
+        0
+      ],
+      "sigmas": [
+        "v4:8",
+        0
+      ],
+      "latent_image": [
+        "v4:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v4:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v4:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v4:179": {
+    "inputs": {
+      "samples": [
+        "v4:20",
+        0
+      ],
+      "vae": [
+        "v4:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v4:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v4:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. front full-body standing view. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v4:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v4:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_04",
+      "images": [
+        "v4:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v4:235": {
+    "inputs": {
+      "pixels": [
+        "v4:11",
+        0
+      ],
+      "vae": [
+        "v4:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v4:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v4:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "v5:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v5:3": {
+    "inputs": {
+      "conditioning": [
+        "v5:185",
+        0
+      ],
+      "latent": [
+        "v5:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v5:4": {
+    "inputs": {
+      "conditioning": [
+        "v5:254",
+        0
+      ],
+      "latent": [
+        "v5:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v5:7": {
+    "inputs": {
+      "width": [
+        "v5:13",
+        0
+      ],
+      "height": [
+        "v5:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v5:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v5:13",
+        0
+      ],
+      "height": [
+        "v5:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v5:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v5:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v5:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v5:13": {
+    "inputs": {
+      "image": [
+        "v5:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v5:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v5:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v5:100",
+        0
+      ],
+      "positive": [
+        "v5:3",
+        0
+      ],
+      "negative": [
+        "v5:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v5:20": {
+    "inputs": {
+      "noise": [
+        "v5:28",
+        0
+      ],
+      "guider": [
+        "v5:16",
+        0
+      ],
+      "sampler": [
+        "v5:9",
+        0
+      ],
+      "sigmas": [
+        "v5:8",
+        0
+      ],
+      "latent_image": [
+        "v5:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v5:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v5:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v5:179": {
+    "inputs": {
+      "samples": [
+        "v5:20",
+        0
+      ],
+      "vae": [
+        "v5:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v5:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v5:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. side full-body standing profile. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v5:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v5:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_05",
+      "images": [
+        "v5:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v5:235": {
+    "inputs": {
+      "pixels": [
+        "v5:11",
+        0
+      ],
+      "vae": [
+        "v5:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v5:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v5:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "v6:1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "v6:3": {
+    "inputs": {
+      "conditioning": [
+        "v6:185",
+        0
+      ],
+      "latent": [
+        "v6:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v6:4": {
+    "inputs": {
+      "conditioning": [
+        "v6:254",
+        0
+      ],
+      "latent": [
+        "v6:235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "v6:7": {
+    "inputs": {
+      "width": [
+        "v6:13",
+        0
+      ],
+      "height": [
+        "v6:13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "v6:8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "v6:13",
+        0
+      ],
+      "height": [
+        "v6:13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "v6:9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "v6:11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "v6:15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "v6:13": {
+    "inputs": {
+      "image": [
+        "v6:11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "v6:15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "v6:16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "v6:100",
+        0
+      ],
+      "positive": [
+        "v6:3",
+        0
+      ],
+      "negative": [
+        "v6:4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "v6:20": {
+    "inputs": {
+      "noise": [
+        "v6:28",
+        0
+      ],
+      "guider": [
+        "v6:16",
+        0
+      ],
+      "sampler": [
+        "v6:9",
+        0
+      ],
+      "sigmas": [
+        "v6:8",
+        0
+      ],
+      "latent_image": [
+        "v6:7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "v6:28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "v6:100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "v6:179": {
+    "inputs": {
+      "samples": [
+        "v6:20",
+        0
+      ],
+      "vae": [
+        "v6:180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "v6:180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "v6:185": {
+    "inputs": {
+      "text": "Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. back full-body standing view. Single view, pure black background, no text, no labels, no border.",
+      "clip": [
+        "v6:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "v6:201": {
+    "inputs": {
+      "filename_prefix": "character_reference_view_06",
+      "images": [
+        "v6:179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "v6:235": {
+    "inputs": {
+      "pixels": [
+        "v6:11",
+        0
+      ],
+      "vae": [
+        "v6:180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "v6:254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "v6:1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  }
+}

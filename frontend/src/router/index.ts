@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { LocationQueryRaw, RouteLocationNormalized, RouteLocationRaw, RouteRecordRaw } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
+import { getRuntimeFlag } from '@/config/runtime'
 import {
   confirmTemplateApplyClose,
   useTemplateApplyStore
@@ -54,6 +55,13 @@ const routes: RouteRecordRaw[] = [
         name: 'CustomFeatures',
         component: () => import('@/views/CustomFeatures.vue')
       },
+      ...(getRuntimeFlag('enable_ltx_t2v', false)
+        ? [{
+            path: 'characters',
+            name: 'Characters',
+            component: () => import('@/views/Characters.vue')
+          } satisfies RouteRecordRaw]
+        : []),
       {
         path: 'face-swap',
         name: 'FaceSwap',

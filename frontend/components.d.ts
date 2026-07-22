@@ -66,6 +66,7 @@ declare module 'vue' {
     LabReferenceTray: typeof import('./src/components/lab/LabReferenceTray.vue')['default']
     LazyVideo: typeof import('./src/components/LazyVideo.vue')['default']
     ListStateBlock: typeof import('./src/components/ListStateBlock.vue')['default']
+    LtxT2VCharacterSelector: typeof import('./src/components/lab/LtxT2VCharacterSelector.vue')['default']
     MobileTabbar: typeof import('./src/components/MobileTabbar.vue')['default']
     MySubmissionsPanel: typeof import('./src/components/MySubmissionsPanel.vue')['default']
     OriginalInputBadge: typeof import('./src/components/OriginalInputBadge.vue')['default']

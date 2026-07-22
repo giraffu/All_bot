@@ -34,6 +34,14 @@ vi.mock('@/composables/useLabWorkbench', () => ({
   useLabWorkbench: () => workbench,
 }))
 
+vi.mock('@/stores/characters', () => ({
+  useCharactersStore: () => ({
+    readyItems: [],
+    loading: false,
+    refresh: vi.fn(),
+  }),
+}))
+
 const baseMode = {
   id: 'wan22_video_v2',
   taskType: 'wan22_video_v2',
@@ -50,6 +58,8 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   currentMode: computed(() => baseMode),
   currentModeId: ref('wan22_video_v2'),
   prompt: ref(''),
+  audioPrompt: ref(''),
+  selectedCharacterId: ref(null),
   displayedReferences: ref([]),
   isSubmitting: ref(false),
   currentTask: ref({

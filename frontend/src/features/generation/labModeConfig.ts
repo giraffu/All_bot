@@ -18,6 +18,7 @@ export type UnifiedLabModeId =
   | 'random_faceswap'
   | 'face_video'
   | 'ltx_video'
+  | 'ltx_t2v'
   | 'wan22_video_v2'
   | 'scail2_action_transfer'
   | 'scail2_video_replacement'
@@ -183,6 +184,7 @@ export const FREE_EDIT_V3_MODE_ID = 'edit_v3' as const
 export const FREE_EDIT_V3_ENABLED = getRuntimeFlag('enable_free_edit_v3', true)
 export const FREE_EDIT_V2_5_ENABLED = FREE_EDIT_V3_ENABLED
 export const WEB_I2I_DRAW_ENABLED = false
+export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 export const PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = 'pornmaster_flux2_edit_bf16'
@@ -571,6 +573,27 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     unified: true,
   },
   {
+    id: 'ltx_t2v',
+    taskType: 'ltx_t2v',
+    titleKey: 'lab.cards.ltx_t2v_title',
+    descriptionKey: 'lab.cards.ltx_t2v_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 10,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.ltx_t2v',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: true,
+    supportsNegativePrompt: true,
+    supportsAdvancedOptions: true,
+    promptRequired: true,
+    unified: true,
+  },
+  {
     id: 'wan22_video_v2',
     taskType: 'wan22_video_v2',
     titleKey: 'lab.cards.wan22_video_v2_title',
@@ -607,6 +630,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
+  && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
 )) as LabModeConfig[]
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
@@ -639,6 +663,9 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return 'scail2_face_swap_v2'
     case 'ltx_video':
       return 'ltx_video'
+    case 'ltx_t2v':
+    case 'ltx_t2v_ic':
+      return 'ltx_t2v'
     case 'scail2_action_transfer_long':
       return 'scail2_action_transfer'
     case 'wan22_video_v2':

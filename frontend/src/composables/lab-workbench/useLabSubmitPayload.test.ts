@@ -33,6 +33,7 @@ type SubmitHarness = {
   uploadedReferences: Ref<UploadedReference[]>
   uploadedSlotAssets: Ref<Partial<Record<LabUploadSlotId, UploadedSlotAsset>>>
   prompt: Ref<string>
+  audioPrompt: Ref<string>
   selectedEditLora: Ref<string>
   customEditLoraStrength: Ref<number>
   selectedVideoLora: Ref<string>
@@ -41,6 +42,7 @@ type SubmitHarness = {
   wan22ResolutionPreset: Ref<Wan22VideoV2ResolutionPreset>
   resolution: Ref<string>
   duration: Ref<string>
+  selectedCharacterId: Ref<string | null>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -79,6 +81,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const uploadedReferences = ref<UploadedReference[]>([])
   const uploadedSlotAssets = ref<Partial<Record<LabUploadSlotId, UploadedSlotAsset>>>({})
   const prompt = ref('')
+  const audioPrompt = ref('')
   const selectedEditLora = ref('')
   const customEditLoraStrength = ref(1)
   const selectedVideoLora = ref('__none__')
@@ -87,6 +90,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>('preview')
   const resolution = ref('512')
   const duration = ref('5')
+  const selectedCharacterId = ref<string | null>(null)
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -106,6 +110,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     uploadedReferences,
     uploadedSlotAssets,
     prompt,
+    audioPrompt,
     selectedEditLora,
     customEditLoraStrength,
     selectedVideoLora,
@@ -114,6 +119,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ResolutionPreset,
     resolution,
     duration,
+    selectedCharacterId,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -132,6 +138,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     uploadedReferences,
     uploadedSlotAssets,
     prompt,
+    audioPrompt,
     selectedEditLora,
     customEditLoraStrength,
     selectedVideoLora,
@@ -140,6 +147,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ResolutionPreset,
     resolution,
     duration,
+    selectedCharacterId,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -169,6 +177,35 @@ const slotAsset = (key: string, previewKind: 'image' | 'video' = 'image'): Uploa
 describe('useLabSubmitPayload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('switches LTX text-to-video payload by character selection', async () => {
+    const harness = createHarness('ltx_t2v')
+    harness.prompt.value = 'an adult character walks through a candlelit room'
+    harness.audioPrompt.value = 'quiet dialogue and crackling candles'
+    harness.duration.value = '15'
+    harness.resolution.value = '1280x704'
+
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'ltx_t2v',
+      inputs: expect.objectContaining({
+        duration: 15,
+        resolution: '1280x704',
+        audio_prompt: 'quiet dialogue and crackling candles',
+      }),
+    }), 'lab.cards.ltx_t2v_title')
+
+    harness.selectedCharacterId.value = 'character-1'
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'ltx_t2v_ic',
+      inputs: expect.objectContaining({
+        character_id: 'character-1',
+        duration: 5,
+        resolution: '768x448',
+      }),
+    }), 'lab.cards.ltx_t2v_title')
   })
 
   it('builds txt2img payloads with top-level prompts', async () => {

@@ -62,6 +62,7 @@
 - [子模块: 本地正式灾备切换 (Local Prod Fallback)](./docs/子模块_本地正式灾备切换_local_prod_fallback.md)
 - [热点文件门禁与回归触发规则](./docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md)
 - [子模块: 生成任务全链路 (Task Full Chain)](./docs/子模块_生成任务全链路_task_full_chain.md)
+- [子模块: LTX 2.3 Sulphur 文生视频与 Ingredients 人物一致性](./docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md)
 - [子模块: 用户认证与权限管理 (User Auth & Permission)](./docs/子模块_用户认证与权限_user_auth_permission.md)
 - [子模块: 社区广场与分级存储 (Gallery & Storage)](./docs/子模块_社区与存储_gallery_storage.md)
 - [子模块: 系统资源与容量画像 (Resource Inventory)](./docs/子模块_系统资源与容量画像_resource_inventory.md)

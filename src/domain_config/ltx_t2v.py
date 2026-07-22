@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+LTX_T2V_TASK_TYPE = "ltx_t2v"
+LTX_T2V_IC_TASK_TYPE = "ltx_t2v_ic"
+CHARACTER_REFERENCE_BUILD_TASK_TYPE = "character_reference_build"
+
+LTX_T2V_WIDTH = 1280
+LTX_T2V_HEIGHT = 704
+LTX_T2V_IC_WIDTH = 768
+LTX_T2V_IC_HEIGHT = 448
+LTX_T2V_FPS = 24
+LTX_T2V_ALLOWED_DURATIONS = (5, 10, 15, 20)
+LTX_T2V_COST_BY_DURATION = {5: 10, 10: 20, 15: 30, 20: 40}
+LTX_T2V_IC_COST = 12
+CHARACTER_REFERENCE_BUILD_COST = 18
+
+DISTILLED_LORA_NAME = "ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
+DISTILLED_LORA_STRENGTH = 0.5
+SULPHUR_LORA_NAME = "sulphur_lora_rank_768.safetensors"
+SULPHUR_LORA_STRENGTH = 1.0
+INGREDIENTS_LORA_NAME = "ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+INGREDIENTS_LORA_STRENGTH = 1.0
+
+
+class LtxT2VValidationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class LtxT2VSpec:
+    task_type: str
+    duration_seconds: int
+    width: int
+    height: int
+    frame_count: int
+    fps: int
+    cost: int
+    character_sheet: str | None
+
+
+def _duration(value: Any) -> int:
+    try:
+        return int(str(value if value is not None else 5).removesuffix("s"))
+    except (TypeError, ValueError) as exc:
+        raise LtxT2VValidationError("文生视频时长必须为 5、10、15 或 20 秒。") from exc
+
+
+def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
+    if inputs.get("lora_name") or inputs.get("lora_items"):
+        raise LtxT2VValidationError("当前文生视频固定模型栈不支持额外 LoRA。")
+
+    duration = _duration(inputs.get("duration", inputs.get("length", 5)))
+    character_sheet = str(inputs.get("character_sheet") or "").strip() or None
+    if task_type == LTX_T2V_IC_TASK_TYPE:
+        if duration != 5:
+            raise LtxT2VValidationError("人物一致性文生视频当前仅支持 5 秒。")
+        if not character_sheet:
+            raise LtxT2VValidationError("人物一致性文生视频缺少已就绪的人物参考表。")
+        width, height, cost = LTX_T2V_IC_WIDTH, LTX_T2V_IC_HEIGHT, LTX_T2V_IC_COST
+    elif task_type == LTX_T2V_TASK_TYPE:
+        if character_sheet:
+            raise LtxT2VValidationError("普通文生视频不得携带人物参考表。")
+        if duration not in LTX_T2V_ALLOWED_DURATIONS:
+            raise LtxT2VValidationError("文生视频时长必须为 5、10、15 或 20 秒。")
+        width, height, cost = (
+            LTX_T2V_WIDTH,
+            LTX_T2V_HEIGHT,
+            LTX_T2V_COST_BY_DURATION[duration],
+        )
+    else:
+        raise LtxT2VValidationError(f"未知 LTX 文生视频任务类型: {task_type}")
+
+    resolution = str(inputs.get("resolution") or f"{width}x{height}")
+    if resolution != f"{width}x{height}":
+        raise LtxT2VValidationError(f"{task_type} 仅支持 {width}x{height}。")
+    return LtxT2VSpec(
+        task_type=task_type,
+        duration_seconds=duration,
+        width=width,
+        height=height,
+        frame_count=LTX_T2V_FPS * duration + 1,
+        fps=LTX_T2V_FPS,
+        cost=cost,
+        character_sheet=character_sheet,
+    )

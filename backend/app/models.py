@@ -36,6 +36,9 @@ class TaskType(str, Enum):
     LTX_VIDEO = "ltx_video"
     LTX_VIDEO_FLF2V = "ltx_video_flf2v"
     LTX_VIDEO_V2V_AUDIO = "ltx_video_v2v_audio"
+    LTX_T2V = "ltx_t2v"
+    LTX_T2V_IC = "ltx_t2v_ic"
+    CHARACTER_REFERENCE_BUILD = "character_reference_build"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
     SCAIL2_ACTION_TRANSFER_LONG = SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE
@@ -261,6 +264,20 @@ class LtxVideoV2VAudioRequest(BaseModel):
     width: int = 704
     height: int = 1280
     extract_last_frame: bool = True
+    priority: int = 0
+
+
+class LtxT2VRequest(BaseModel):
+    task_id: str
+    prompt: str
+    negative_prompt: Optional[str] = None
+    audio_prompt: Optional[str] = None
+    length: int = 5
+    width: int = 1280
+    height: int = 704
+    frame_count: int = 121
+    fps: int = 24
+    character_sheet: Optional[str] = None
     priority: int = 0
 
 

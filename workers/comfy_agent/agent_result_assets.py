@@ -6,6 +6,8 @@ LTX_VIDEO_TASK_TYPES = {
     "ltx_video",
     "ltx_video_flf2v",
     "ltx_video_v2v_audio",
+    "ltx_t2v",
+    "ltx_t2v_ic",
 }
 SCAIL2_VIDEO_TASK_TYPES = {
     "scail2_action_transfer",

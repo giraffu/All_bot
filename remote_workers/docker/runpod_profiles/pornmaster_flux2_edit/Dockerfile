@@ -30,7 +30,11 @@ COPY remote_workers /opt/allbot/runtime/remote_workers
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh && \
-    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'
+    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS' && \
+    PYTHONPATH=/opt/allbot/runtime/remote_workers python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; assert "character_reference_build" in p' && \
+    python3 -c 'import json; from pathlib import Path; p=Path("/opt/allbot/runtime/remote_workers/comfy_agent/workflows/Character Reference Six Views.json"); d=json.loads(p.read_text()); assert len([n for n in d.values() if isinstance(n,dict) and n.get("class_type")=="SaveImage"]) == 6' && \
+    python3 -c 'from PIL import Image, ImageOps; assert Image and ImageOps' && \
+    if find "$(cat /opt/allbot-comfyui-dir)/models" -type f -name "*.safetensors" -print -quit | grep -q .; then echo "model weights must not be baked into PornMaster image" >&2; exit 1; fi
 ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
     ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
 CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

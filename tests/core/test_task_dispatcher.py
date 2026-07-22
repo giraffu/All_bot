@@ -28,6 +28,7 @@ from src.core.task_dispatcher import (
     DefaultImageStrategy,
     FaceSwapStrategy,
     LtxVideoStrategy,
+    LtxT2VStrategy,
     Scail2VideoStrategy,
     StrategyFactory,
     TaskDispatcherFeatureFlags,
@@ -63,6 +64,9 @@ def test_strategy_factory_returns_correct_strategy():
     # LTX Video
     strategy = StrategyFactory.get_strategy("ltx_video")
     assert isinstance(strategy, LtxVideoStrategy)
+
+    assert isinstance(StrategyFactory.get_strategy("ltx_t2v"), LtxT2VStrategy)
+    assert isinstance(StrategyFactory.get_strategy("ltx_t2v_ic"), LtxT2VStrategy)
 
     strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
     assert isinstance(strategy, Wan22VideoV2Strategy)
@@ -185,6 +189,76 @@ def test_video_strategy_cost_calculation():
     # 720p base is 18, 8s multiplier is 2.0
     cost = strategy.get_cost({"resolution": "720p", "duration": "8s"})
     assert cost == 36
+
+
+@pytest.mark.parametrize(
+    ("duration", "expected_cost"),
+    [(5, 10), (10, 20), (15, 30), (20, 40)],
+)
+def test_ltx_t2v_costs_follow_duration(duration, expected_cost):
+    strategy = StrategyFactory.get_strategy("ltx_t2v")
+
+    assert (
+        strategy.get_cost({"duration": duration, "resolution": "1280x704"})
+        == expected_cost
+    )
+
+
+def test_ltx_t2v_ic_is_fixed_to_five_seconds_and_twelve_credits():
+    strategy = StrategyFactory.get_strategy("ltx_t2v_ic")
+
+    assert (
+        strategy.get_cost(
+            {
+                "duration": 5,
+                "resolution": "768x448",
+                "character_sheet": "bucket/character.png",
+            }
+        )
+        == 12
+    )
+    with pytest.raises(CoreDomainError, match="仅支持 5 秒"):
+        strategy.get_cost(
+            {
+                "duration": 10,
+                "resolution": "768x448",
+                "character_sheet": "bucket/character.png",
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_submits_audio_video_spec(monkeypatch):
+    submit = AsyncMock(return_value="backend-task")
+    _patch_dispatch_image_service(monkeypatch, submit_ltx_t2v_task=submit)
+
+    result = await StrategyFactory.get_strategy("ltx_t2v").submit_task(
+        "task-1",
+        {
+            "prompt": "camera circles an adult performer",
+            "negative_prompt": "flicker",
+            "audio_prompt": "quiet room tone",
+            "duration": 10,
+            "resolution": "1280x704",
+        },
+        8,
+    )
+
+    assert result == "backend-task"
+    submit.assert_awaited_once_with(
+        "task-1",
+        task_type="ltx_t2v",
+        prompt="camera circles an adult performer",
+        negative_prompt="flicker",
+        audio_prompt="quiet room tone",
+        character_sheet=None,
+        width=1280,
+        height=704,
+        length=10,
+        frame_count=241,
+        fps=24,
+        priority=8,
+    )
 
 
 def test_base_video_strategy_face_video_upload_paths_accept_step_modes():
@@ -1061,7 +1135,9 @@ async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_submit_task_only_forwards_non_empty_negative_prompt(monkeypatch):
+async def test_ltx_video_submit_task_only_forwards_non_empty_negative_prompt(
+    monkeypatch,
+):
     strategy = StrategyFactory.get_strategy("ltx_video")
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(monkeypatch, submit_ltx_video_task=submit_mock)
