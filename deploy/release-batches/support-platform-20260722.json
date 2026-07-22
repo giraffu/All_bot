@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "b5f1a6d41fb893fa4ac5fd3ad9ce4872bd04e13e",
+  "batch": "support-platform-20260722",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-support-platform-20260722",
+  "members": [
+    {
+      "base_sha": "b5f1a6d41fb893fa4ac5fd3ad9ce4872bd04e13e",
+      "branch": "codex/a-support-bot-zero-downtime-release",
+      "head": "aa3fb0dd089d1db95b0cd3a0d1b3cd073ec9ba28",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
