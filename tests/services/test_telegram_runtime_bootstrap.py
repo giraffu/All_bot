@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from telegram import File, Poll
+from telegram import ChatMember, ChatMemberRestricted, File, Poll
 from telegram.request import HTTPXRequest
 
 from src.services import telegram_runtime_bootstrap as runtime
@@ -58,6 +58,7 @@ def test_install_telegram_runtime_patches_is_idempotent_and_adds_poll_default(
 ):
     original_file_download = File.download_to_drive
     original_poll_de_json = Poll.de_json
+    original_restricted_member_de_json = ChatMemberRestricted.de_json
     captured = {}
 
     def fake_poll_de_json(data, bot=None):
@@ -82,6 +83,52 @@ def test_install_telegram_runtime_patches_is_idempotent_and_adds_poll_default(
     finally:
         File.download_to_drive = original_file_download
         Poll.de_json = original_poll_de_json
+        ChatMemberRestricted.de_json = original_restricted_member_de_json
+        runtime._PATCHES_INSTALLED = False
+
+
+@pytest.mark.skipif(
+    not hasattr(ChatMemberRestricted, "can_react_to_messages"),
+    reason="requires python-telegram-bot 22.8",
+)
+def test_install_telegram_runtime_patches_accepts_legacy_restricted_member_payload(
+    monkeypatch,
+):
+    original_de_json = ChatMemberRestricted.de_json
+    payload = {
+        "status": "restricted",
+        "user": {"id": 1, "is_bot": True, "first_name": "Main Bot"},
+        "is_member": True,
+        "can_change_info": False,
+        "can_invite_users": True,
+        "can_pin_messages": False,
+        "can_send_messages": True,
+        "can_send_polls": True,
+        "can_send_other_messages": True,
+        "can_add_web_page_previews": True,
+        "can_manage_topics": False,
+        "until_date": 0,
+        "can_send_audios": True,
+        "can_send_documents": True,
+        "can_send_photos": True,
+        "can_send_videos": True,
+        "can_send_video_notes": True,
+        "can_send_voice_notes": True,
+        "can_edit_tag": False,
+    }
+
+    monkeypatch.setattr(runtime, "_PATCHES_INSTALLED", False)
+
+    try:
+        runtime.install_telegram_runtime_patches()
+
+        member = ChatMember.de_json(payload)
+
+        assert isinstance(member, ChatMemberRestricted)
+        assert member.can_react_to_messages is True
+        assert "can_react_to_messages" not in payload
+    finally:
+        ChatMemberRestricted.de_json = original_de_json
         runtime._PATCHES_INSTALLED = False
 
 
