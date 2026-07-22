@@ -4187,6 +4187,24 @@ def test_checked_in_independent_contract_snapshots_match_current_files():
     assert mismatches == {}
 
 
+def test_promote_uses_the_candidate_policy_not_the_callers_checkout(monkeypatch):
+    module = _load_module()
+    candidate_policy = {"independent_modules": {"qqcc-bot": {"artifacts": []}}}
+    local_policy = {"independent_modules": {"dashboard": {"artifacts": []}}}
+    policy_path = ROOT / "deploy" / "release-policy.yml"
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(
+            args, 0, stdout=json.dumps(candidate_policy), stderr=""
+        ),
+    )
+
+    assert module.load_promote_policy(policy_path, FULL_SHA) == candidate_policy
+    assert module.load_promote_policy(policy_path, FULL_SHA) != local_policy
+
+
 def test_dashboard_module_runtime_snapshot_validates_only_dashboard_services(
     monkeypatch,
 ):
@@ -5850,6 +5868,11 @@ def test_combined_independent_release_checks_blockers_for_each_module():
 
 def test_promote_preview_never_starts_a_transaction(monkeypatch, capsys):
     module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "load_promote_policy",
+        lambda path, _sha: module.load_structured_file(path),
+    )
     impact = module.ReleaseImpact(
         services={"dashboard-backend"},
         level="rolling",
@@ -5921,6 +5944,11 @@ def test_promote_preview_never_starts_a_transaction(monkeypatch, capsys):
 
 def test_promote_single_confirmation_executes_one_transaction(monkeypatch, capsys):
     module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "load_promote_policy",
+        lambda path, _sha: module.load_structured_file(path),
+    )
     old_sha = "b" * 40
     old_ref = "ghcr.io/giraffu/dashboard@sha256:" + "1" * 64
     new_digest = "sha256:" + "2" * 64

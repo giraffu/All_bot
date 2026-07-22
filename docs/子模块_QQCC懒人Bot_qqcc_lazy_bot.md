@@ -282,7 +282,7 @@ python scripts/release.py promote \
   --modules qqcc-bot,qqcc-config --confirm-prod
 ```
 
-组合名称不能绕过共享契约：blocker 对 `qqcc-bot`、`qqcc-config` 分别匹配，snapshot 任一字节漂移都会 fail closed。禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。
+组合名称不能绕过共享契约：blocker 对 `qqcc-bot`、`qqcc-config` 分别匹配，snapshot 任一字节漂移都会 fail closed。日常 `promote` 总是从候选不可变 SHA 读取该 snapshot 策略，不受调用机器当前工作目录分支影响。禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。
 
 ## 7. 最小验证
 
