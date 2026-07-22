@@ -65,27 +65,6 @@ def test_deploy_module_requires_exact_promoted_approval():
         module.validate_deploy_module_approval(manifest)
 
 
-def test_pending_secret_rotation_requires_explicit_risk_acceptance():
-    module = _load_module()
-    args = SimpleNamespace(
-        accept_pending_secret_rotation=False,
-        reason="",
-    )
-
-    with pytest.raises(module.ReleaseError, match="pending secret rotation"):
-        module.require_pending_secret_rotation_acceptance(
-            args,
-            {"credential_isolation": "pending"},
-        )
-
-    args.accept_pending_secret_rotation = True
-    args.reason = "staged rotation"
-    module.require_pending_secret_rotation_acceptance(
-        args,
-        {"credential_isolation": "pending"},
-    )
-
-
 def test_credential_isolation_completion_requires_fresh_complete_evidence():
     module = _load_module()
     evidence = {

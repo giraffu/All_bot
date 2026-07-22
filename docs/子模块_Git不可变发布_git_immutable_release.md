@@ -169,7 +169,7 @@ python scripts/release.py credential-isolation-complete \
   --confirm-prod --execute
 
 # 高级/兼容入口继续存在，但 migration、共享/未知契约、emergency、
-# 跳门禁、秘密轮换和 recover 才应使用，不属于日常 SOP。
+# 跳门禁和 recover 才应使用，不属于日常 SOP；秘密轮换状态仅作审计。
 python scripts/release.py deploy --help
 python scripts/release.py recover --help
 ```

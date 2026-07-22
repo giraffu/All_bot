@@ -6034,28 +6034,6 @@ def validate_deploy_module_approval(manifest: Mapping[str, Any]) -> None:
             raise ReleaseError(f"{name} has no exact promoted-main approval")
 
 
-def require_pending_secret_rotation_acceptance(
-    args: argparse.Namespace, snapshot: Mapping[str, Any]
-) -> None:
-    """Keep the user-selected staged rotation explicit in every mutation."""
-
-    if snapshot.get("credential_isolation") == "credential-isolation-complete":
-        return
-    if getattr(args, "command", "") == "promote":
-        raise ReleaseError(
-            "pending secret rotation blocks promote; use the advanced release entry "
-            "to complete or explicitly govern credential rotation"
-        )
-    if not (
-        getattr(args, "accept_pending_secret_rotation", False)
-        and str(getattr(args, "reason", "")).strip()
-    ):
-        raise ReleaseError(
-            "pending secret rotation requires --accept-pending-secret-rotation and "
-            "--reason"
-        )
-
-
 def validate_credential_isolation_evidence(
     evidence: Mapping[str, Any],
     *,
@@ -6856,11 +6834,6 @@ def _write_state(
             ),
         },
     }
-    if getattr(args, "accept_pending_secret_rotation", False):
-        state["pending_secret_rotation_acceptance"] = {
-            "accepted": True,
-            "reason": args.reason,
-        }
     if (
         args.command in {"deploy-module", "promote"}
         and args.execute
@@ -7479,11 +7452,6 @@ def _add_release_arguments(
     )
     parser.add_argument("--reason", default="")
     parser.add_argument(
-        "--accept-pending-secret-rotation",
-        action="store_true",
-        help="temporarily accept the staged secret-rotation risk",
-    )
-    parser.add_argument(
         "--dashboard-fast-track",
         action="store_true",
         help=(
@@ -7589,7 +7557,6 @@ def build_parser() -> argparse.ArgumentParser:
         skip_env_checks=False,
         skip_gate=[],
         reason="",
-        accept_pending_secret_rotation=False,
         dashboard_fast_track=False,
         control_plane_repair_fast_track=False,
         confirm_db_upgrade=False,
@@ -7899,12 +7866,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _remote_runtime_env_snapshot(args)
             )
             args.runtime_env_snapshot = runtime_snapshot
-            if (
-                args.command in {"deploy", "deploy-module", "promote"}
-                and args.env == "prod"
-                and (args.execute or args.command == "promote")
-            ):
-                require_pending_secret_rotation_acceptance(args, runtime_snapshot)
         else:
             try:
                 environment_values, config_revision = _validate_local_env(args)

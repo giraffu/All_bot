@@ -6232,19 +6232,13 @@ def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
     assert old_sha not in script
 
 
-def test_promote_blocks_pending_secret_rotation_without_exposing_override_flags():
+def test_promote_no_longer_exposes_pending_secret_rotation_override():
     module = _load_module()
-    args = SimpleNamespace(
-        command="promote",
-        accept_pending_secret_rotation=False,
-        reason="",
-    )
-
-    with pytest.raises(
-        module.ReleaseError,
-        match="pending secret rotation blocks promote.*advanced release entry",
-    ):
-        module.require_pending_secret_rotation_acceptance(args, {})
+    assert not hasattr(module, "require_pending_secret_rotation_acceptance")
+    with pytest.raises(SystemExit):
+        module.build_parser().parse_args(
+            ["promote", "--accept-pending-secret-rotation"]
+        )
 
 
 def test_release_source_scopes_non_target_snapshot_and_checks_polling_conflict():
