@@ -86,6 +86,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - `takeover/recover/restart-aio/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 先持有本地单实例锁并通过 live/ledger/catalog 三方门禁；未完成 operation 阻止后续 mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
 - 只做本地验收且禁止 intake 的候选必须使用成对的 `canary-start-disabled` / `canary-stop-disabled`。前者只允许单 slot，执行 preflight、精确镜像、warm-cache、disabled heartbeat 后保持 Central control disabled；后者同时等待 worker 与 Comfy `/queue` 为空，停止精确候选容器并把物理槽原子恢复为 `intentionally_empty`。不得用 `recover/takeover` 替代，因为它们成功后会 enable intake。
+- ledger 明确记录 `intentionally_empty` 时，允许对同一物理槽的指定候选执行只读 `preflight --execute`，用于读取逐项门禁；该例外不扩展到 pull、warm-cache 或其它 mutation。`configure-registry` 重启 Docker 后只等待重启前已运行的候选恢复，本来停止的候选必须保持停止。
 
 ## 4. 标准流程
 

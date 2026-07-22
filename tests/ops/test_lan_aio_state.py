@@ -472,6 +472,46 @@ def test_takeover_retargets_from_local_ledger_not_git_enabled_flags(tmp_path: Pa
     )
 
 
+def test_preflight_can_inspect_candidate_from_intentionally_empty_state(tmp_path: Path):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+        state_dir=tmp_path / "state",
+    )
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-252:gpu0": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "disabled canary stopped",
+                        "operation_id": "canary-stop",
+                    },
+                }
+            },
+        },
+        operation_id="canary-stop",
+    )
+    args = build_parser().parse_args(
+        [
+            "preflight",
+            "--slot",
+            "gpu-252-gpu0-i2i_pro",
+            "--include-disabled",
+            "--execute",
+            "--state-dir",
+            str(tmp_path / "state"),
+        ]
+    )
+
+    selected = _select_action_slots(args, ops)
+
+    assert [slot.id for slot in selected] == ["gpu-252-gpu0-i2i_pro"]
+
+
 def test_dashboard_style_control_action_must_target_ledger_current(tmp_path: Path):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
@@ -591,13 +631,9 @@ def test_state_reconcile_can_record_one_explicitly_empty_physical_slot(
         {
             "catalog_sha256": "0" * 64,
             "physical_slots": {
-                "gpu-252:gpu0": {
-                    "current": {"slot_id": "gpu-252-gpu0-i2i_pro"}
-                },
+                "gpu-252:gpu0": {"current": {"slot_id": "gpu-252-gpu0-i2i_pro"}},
                 "gpu-252:gpu1": {
-                    "current": {
-                        "slot_id": "gpu-252-gpu1-pornmaster_flux2_edit"
-                    }
+                    "current": {"slot_id": "gpu-252-gpu1-pornmaster_flux2_edit"}
                 },
             },
         },
@@ -647,9 +683,7 @@ def test_state_reconcile_preserves_an_existing_intentionally_empty_sibling(
         {
             "catalog_sha256": ops.catalog_sha256,
             "physical_slots": {
-                "gpu-252:gpu0": {
-                    "current": {"slot_id": "gpu-252-gpu0-image_to_video"}
-                },
+                "gpu-252:gpu0": {"current": {"slot_id": "gpu-252-gpu0-image_to_video"}},
                 "gpu-252:gpu1": {
                     "current": {},
                     "intentionally_empty": {

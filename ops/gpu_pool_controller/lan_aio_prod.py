@@ -1481,8 +1481,7 @@ class LanAioProdOps:
                 )
             elif action == "canary-start-disabled":
                 operations.extend(
-                    f"run {step} for {slot.id}"
-                    for step in DISABLED_CANARY_START_STEPS
+                    f"run {step} for {slot.id}" for step in DISABLED_CANARY_START_STEPS
                 )
                 operations.append(f"keep {slot.agent_id}=disabled")
             elif action == "canary-stop-disabled":
@@ -1500,7 +1499,8 @@ class LanAioProdOps:
                         f"backup {slot.ssh_host}:/etc/docker/daemon.json",
                         f"add 192.168.1.115:5000 to {slot.ssh_host} Docker insecure registries",
                         f"restart Docker on {slot.ssh_host}",
-                        f"verify old runtime container {slot.old_runtime_container} recovers",
+                        "verify only candidates running before the Docker restart recover; "
+                        "keep intentionally empty slots empty",
                     ]
                 )
             elif action == "pull-image":
@@ -1826,17 +1826,33 @@ class LanAioProdOps:
         touched_hosts: dict[str, list[LanAioProdSlot]] = {}
         for slot in slots:
             touched_hosts.setdefault(slot.ssh_host, []).append(slot)
+        running_before = {
+            slot.id: self._ssh(
+                slot.ssh_host,
+                (
+                    "docker inspect -f '{{.State.Running}}' "
+                    f"'{slot.container_name}' 2>/dev/null || true"
+                ),
+                capture=True,
+            ).strip()
+            == "true"
+            for slot in slots
+        }
         for host, host_slots in touched_hosts.items():
             self._configure_registry_on_host(host)
             for slot in host_slots:
                 # Docker restart may leave the retained rollback container stopped.
-                # Verify the selected slot's own health endpoint instead of treating a
-                # stopped rollback candidate as a registry-configuration failure.
-                self._wait_container_health(slot)
+                # Only candidates that were running before the restart must recover;
+                # an intentionally empty slot must remain empty.
+                if running_before[slot.id]:
+                    self._wait_container_health(slot)
         return {
             "ok": True,
             "action": "configure-registry",
             "hosts": sorted(touched_hosts),
+            "recovered_running_slots": sorted(
+                slot.id for slot in slots if running_before[slot.id]
+            ),
         }
 
     def pull_image(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -1900,7 +1916,9 @@ class LanAioProdOps:
         if metadata.get("lan_local_model_overrides"):
             token = self.env_values.get("CIVITAI_API_TOKEN", "")
             if not token:
-                raise RuntimeError("missing CIVITAI_API_TOKEN for LAN local model override")
+                raise RuntimeError(
+                    "missing CIVITAI_API_TOKEN for LAN local model override"
+                )
             if "\n" in token or "\r" in token:
                 raise RuntimeError("refusing newline in CIVITAI_API_TOKEN")
             local_model_env_content = f"CIVITAI_API_TOKEN={token}\n"
@@ -1915,7 +1933,9 @@ class LanAioProdOps:
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
             if local_model_env_content:
                 local_model_env_file = Path(tmp) / ".env.local-model-download"
-                local_model_env_file.write_text(local_model_env_content, encoding="utf-8")
+                local_model_env_file.write_text(
+                    local_model_env_content, encoding="utf-8"
+                )
                 self._scp(
                     local_model_env_file,
                     slot.ssh_host,
@@ -2004,9 +2024,7 @@ class LanAioProdOps:
             "legacy_hot_cache_copies": hot_cache_copies,
         }
 
-    def start_disabled_canary(
-        self, slots: list[LanAioProdSlot]
-    ) -> dict[str, Any]:
+    def start_disabled_canary(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         if len(slots) != 1:
             raise RuntimeError("canary-start-disabled requires exactly one --slot")
         slot = slots[0]
@@ -2064,9 +2082,7 @@ class LanAioProdOps:
             ),
         )
 
-    def stop_disabled_canary(
-        self, slots: list[LanAioProdSlot]
-    ) -> dict[str, Any]:
+    def stop_disabled_canary(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         if len(slots) != 1:
             raise RuntimeError("canary-stop-disabled requires exactly one --slot")
         slot = slots[0]
@@ -2385,7 +2401,8 @@ class LanAioProdOps:
                 (
                     'python3 "$remote_root/scripts/runpod_sync_local_models.py" '
                     '--target-dir "$RUNPOD_MODEL_TARGET_DIR" '
-                    if metadata.get("lan_local_model_overrides") else ""
+                    if metadata.get("lan_local_model_overrides")
+                    else ""
                 ),
                 (
                     "python3 - <<'PY' || "
@@ -2436,9 +2453,7 @@ class LanAioProdOps:
                 ]
             )
         if model_workspace_host_dir != workspace_host_dir:
-            docker_command.extend(
-                ["-v", f"{model_host_dir}:{model_target_dir}"]
-            )
+            docker_command.extend(["-v", f"{model_host_dir}:{model_target_dir}"])
         docker_command.extend([image_ref, "bash", "-lc", inner_script])
         script = "\n".join(
             [
@@ -3542,6 +3557,15 @@ def _select_action_slots(
             else:
                 ledger_current_slot_id = ops.current_slot_id(physical_slot)
         else:
+            physical_state = (ledger.get("physical_slots") or {}).get(
+                physical_slot
+            ) or {}
+            if (
+                args.action == "preflight"
+                and not (physical_state.get("current") or {}).get("slot_id")
+                and physical_state.get("intentionally_empty")
+            ):
+                return slots
             ledger_current_slot_id = ops.current_slot_id(physical_slot)
             if args.replace_slot and args.replace_slot != ledger_current_slot_id:
                 raise SystemExit(

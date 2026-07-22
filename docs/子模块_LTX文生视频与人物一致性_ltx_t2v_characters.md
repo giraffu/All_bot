@@ -54,6 +54,12 @@ python scripts/upload_all_task_models_to_lan_cache.py \
 `models/by-sha256/<sha[:2]>/<sha>`；manifest 只有在全部对象 HEAD 的大小和 SHA
 metadata 都通过后才发布。
 
+2026-07-22 本地发布验收已确认：复用 7 个共享 blob，新上传 3 个 blob、
+`40,722,210,544` bytes；10/10 对象 HEAD 验证通过，manifest SHA256 为
+`e9f35a43c75bc539f4fe6d5545da267907ac483fca88de02cf0a4d6c897e2ca8`。
+发布后的第二次 dry-run 为 `upload_count=0`、`skipped_existing_count=10`、
+`manifest_skip_count=1`。该缓存证据不代表 GPU workflow 或业务全链路已通过。
+
 ## 3. 工作流与容器
 
 运行 workflow 的事实源：
