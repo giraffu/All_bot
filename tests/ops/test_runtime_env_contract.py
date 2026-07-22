@@ -59,6 +59,7 @@ def _environment(environment: str) -> dict[str, str]:
         "PRIVATE_QQCC_BOT_TOKEN_FINGERPRINT_KEY": f"{suffix}-fingerprint",
         "PAID_GROUP_BOT_TOKEN": f"{suffix}-paid-token",
         "PAID_GROUP_CHAT_ID": "-1000000000000",
+        "SUPPORT_BOT_TOKEN": f"{suffix}-support-token",
         "HUANYUY_NOTIFY_URL": f"https://pay-{suffix}.example.com/notify",
         "HUANYUY_RETURN_URL": f"https://pay-{suffix}.example.com/return",
         "HUANYUY_PID": f"{suffix}-merchant",
@@ -78,6 +79,8 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     web = snapshot.projections["web-api"]
     bot = snapshot.projections["main-bot"]
     dashboard_frontend = snapshot.projections["dashboard-frontend"]
+    dashboard_backend = snapshot.projections["dashboard-backend"]
+    support_bot = snapshot.projections["support-bot"]
     assert web["ALLBOT_ENV"] == "prod"
     assert web["ALLBOT_CONFIG_REVISION"] == snapshot.service_revisions["web-api"]
     assert web["BOT_TOKEN"] == "prod-bot-token"
@@ -97,6 +100,11 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert bot["BOT_TOKEN"] == "prod-bot-token"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
+    assert dashboard_backend["SUPPORT_BOT_TOKEN"] == "prod-support-token"
+    assert support_bot["SUPPORT_BOT_TOKEN"] == "prod-support-token"
+    for service, projection in snapshot.projections.items():
+        if service not in {"dashboard-backend", "support-bot"}:
+            assert "SUPPORT_BOT_TOKEN" not in projection
     assert set(dashboard_frontend) == {
         "ALLBOT_CONFIG_REVISION",
         "ALLBOT_ENV",
