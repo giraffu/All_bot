@@ -4228,6 +4228,7 @@ def test_support_platform_accepts_first_release_of_support_bot():
         "support-bot",
     }
     assert selection.source_shas == {"a" * 40, "b" * 40, "c" * 40}
+    assert selection.initial_artifacts == {"support-bot"}
 
 
 def test_user_authorized_no_maintenance_accepts_reviewed_additive_migration():
@@ -6303,6 +6304,39 @@ def test_promote_rollback_snapshot_recovers_source_sha_from_live_oci_revision():
     assert previous["central-api"]["source_sha"] == old_sha
 
 
+def test_promote_rollback_snapshot_records_first_release_as_absent():
+    module = _load_module()
+    args = SimpleNamespace(
+        previous_state={"artifacts": {}},
+        promote_runtime_artifacts={},
+        promote_initial_artifacts={"support-bot"},
+    )
+
+    previous = module.build_promote_previous_artifacts(
+        args,
+        {"selected_artifacts": ["support-bot"]},
+    )
+
+    assert previous == {"support-bot": {"absent": True}}
+
+
+def test_promote_rollback_preflight_accepts_declared_first_release_artifact():
+    module = _load_module()
+    blockers = module._rollback_preflight(
+        SimpleNamespace(
+            env="prod",
+            command="promote",
+            promote_runtime_artifacts={},
+            promote_initial_artifacts={"support-bot"},
+        ),
+        module.ReleaseImpact(services={"support-bot"}, level="rolling"),
+        {"selected_artifacts": ["support-bot"]},
+        {},
+    )
+
+    assert blockers == []
+
+
 def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
     monkeypatch,
 ):
@@ -6365,6 +6399,55 @@ def test_promote_v2_cloud_rollback_uses_transaction_local_artifact_contract(
     assert old_central in script
     assert old_dashboard in script
     assert old_sha not in script
+
+
+def test_promote_v2_cloud_rollback_removes_first_release_service(monkeypatch):
+    module = _load_module()
+    scripts = []
+    old_dashboard = "ghcr.io/giraffu/dashboard@sha256:" + "2" * 64
+    transaction = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "target_sha": FULL_SHA,
+        "previous": {
+            "kind": "immutable",
+            "rollback_release_env_path": "/tmp/rollback.env",
+            "artifacts": {
+                "dashboard-backend": {"ref": old_dashboard},
+                "support-bot": {"absent": True},
+            },
+        },
+    }
+    args = SimpleNamespace(
+        env="prod",
+        remote_host="prod-control",
+        remote_checkout_root="/srv/allbot-release",
+        remote_env_file=None,
+    )
+    monkeypatch.setattr(
+        module,
+        "filter_enabled_cloud_services",
+        lambda *_args: ({"dashboard-backend", "support-bot"}, set()),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: scripts.append(script),
+    )
+
+    module._rollback_cloud_stack(
+        args,
+        module.ReleaseImpact(
+            services={"dashboard-backend", "support-bot"}, level="rolling"
+        ),
+        transaction,
+        {},
+    )
+
+    script = scripts[0]
+    assert "ps -aq support-bot" in script
+    assert 'docker rm -f "$id"' in script
+    assert "up -d --no-deps --wait --wait-timeout 180 dashboard-backend" in script
 
 
 def test_promote_no_longer_exposes_pending_secret_rotation_override():

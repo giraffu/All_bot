@@ -344,12 +344,14 @@ class IndependentModuleRelease:
         artifacts: Iterable[str],
         previous_sha: str,
         source_shas: Iterable[str] = (),
+        initial_artifacts: Iterable[str] = (),
     ) -> None:
         self.name = name
         self.module_names = set(module_names) or set(name.split("+"))
         self.artifacts = set(artifacts)
         self.previous_sha = previous_sha
         self.source_shas = set(source_shas) or {previous_sha}
+        self.initial_artifacts = set(initial_artifacts)
 
 
 def expand_independent_module_request(
@@ -451,6 +453,7 @@ def resolve_independent_module_release(
         artifacts=artifacts,
         previous_sha=next(iter(baselines)) if len(baselines) == 1 else current_sha,
         source_shas=baselines,
+        initial_artifacts=initial_artifacts,
     )
 
 
@@ -1778,6 +1781,7 @@ def build_promote_previous_artifacts(
         current.get("artifacts") if isinstance(current, Mapping) else {}
     )
     result: dict[str, dict[str, Any]] = {}
+    initial_artifacts = set(getattr(args, "promote_initial_artifacts", set()))
     for name in manifest.get("selected_artifacts", []):
         recorded = (
             current_artifacts.get(name)
@@ -1799,6 +1803,9 @@ def build_promote_previous_artifacts(
         if not isinstance(observed, Mapping) or not DIGEST_IMAGE_RE.fullmatch(
             str(observed.get("ref", ""))
         ):
+            if name in initial_artifacts:
+                result[name] = {"absent": True}
+                continue
             raise ReleaseError(f"{name} rollback runtime identity is unavailable")
         source_sha = (
             str(recorded.get("source_sha", ""))
@@ -2906,6 +2913,9 @@ def _rollback_preflight(
         return []
     if getattr(args, "command", "") == "promote":
         runtime = getattr(args, "promote_runtime_artifacts", {})
+        initial_artifacts = set(
+            getattr(args, "promote_initial_artifacts", set())
+        )
         blockers: list[str] = []
         for name in _manifest.get("selected_artifacts", []):
             if name == "public-web":
@@ -2916,7 +2926,8 @@ def _rollback_preflight(
             elif not isinstance(runtime.get(name), Mapping) or not DIGEST_IMAGE_RE.fullmatch(
                 str(runtime[name].get("ref", ""))
             ):
-                blockers.append(f"rollback-{name}-runtime-unavailable")
+                if name not in initial_artifacts:
+                    blockers.append(f"rollback-{name}-runtime-unavailable")
         return blockers
     previous_sha = str(getattr(args, "previous_sha", "") or "")
     if "initial-release" in impact.matched_rules:
@@ -3589,6 +3600,9 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         if f"track:{args.track}" not in planned_impact.matched_rules:
             planned_impact.matched_rules.append(f"track:{args.track}")
         if independent_release:
+            args.promote_initial_artifacts = set(
+                independent_release.initial_artifacts
+            )
             planned_impact.matched_rules.append(
                 f"independent-module:{independent_release.name}"
             )
@@ -5181,14 +5195,23 @@ def _rollback_cloud_stack(
             services=services,
         )
         checks = ""
+        removals = ""
+        restore_services: list[str] = []
         artifact_by_service = {
             service: artifact for artifact, service in PROMOTE_ARTIFACT_SERVICE.items()
         }
         for service in services:
             artifact_name = artifact_by_service.get(service)
             artifact = previous_artifacts.get(artifact_name or "")
+            if isinstance(artifact, Mapping) and artifact.get("absent") is True:
+                removals += f"""ids="$({compose} ps -aq {shlex.quote(service)})"
+for id in $ids; do docker rm -f "$id" >/dev/null; done
+test -z "$({compose} ps -aq {shlex.quote(service)})"
+"""
+                continue
             if not isinstance(artifact, Mapping) or not artifact.get("ref"):
                 raise ReleaseError(f"rollback identity is unavailable for {service}")
+            restore_services.append(service)
             ref = str(artifact["ref"])
             revision = str(artifact.get("config_revision") or "")
             revision_check = (
@@ -5204,11 +5227,19 @@ test "$(docker inspect --format '{{{{.Config.Image}}}}' "$id")" = {shlex.quote(r
 health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}' "$id")"
 [ "$health" = healthy ] || [ "$health" = running ]
 {revision_check}"""
+        restore_words = " ".join(
+            shlex.quote(service) for service in restore_services
+        )
+        restore_command = (
+            f"{compose} up -d --no-deps --wait --wait-timeout 180 {restore_words}\n"
+            if restore_services
+            else ""
+        )
         script = f"""set -euo pipefail
 rollback_release_env={shlex.quote(rollback_env_path)}
 test -f "$rollback_release_env"
 {compose} config -q
-{compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
+{removals}{restore_command}
 {checks}"""
     elif previous_kind == "legacy":
         target_sha = str(transaction["target_sha"])
@@ -5597,6 +5628,15 @@ def _validate_recovered_stack(
                 artifact_name = service_to_artifact.get(service)
                 expected = previous_artifacts.get(artifact_name or "")
                 actual = runtime.get(artifact_name or "")
+                if (
+                    isinstance(expected, Mapping)
+                    and expected.get("absent") is True
+                ):
+                    if isinstance(actual, Mapping) and actual.get("ref"):
+                        raise ReleaseError(
+                            f"recovered artifact identity is incorrect: {artifact_name}"
+                        )
+                    continue
                 if (
                     not isinstance(expected, Mapping)
                     or not isinstance(actual, Mapping)
