@@ -1,7 +1,7 @@
 """add private character reference library
 
 Revision ID: 62d4a8f9c7e1
-Revises: 3e9c7a1b5d24
+Revises: f8a9b0c1d2e3
 """
 
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "62d4a8f9c7e1"
-down_revision: Union[str, Sequence[str], None] = "3e9c7a1b5d24"
+down_revision: Union[str, Sequence[str], None] = "f8a9b0c1d2e3"
 branch_labels = None
 depends_on = None
 

@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 
 from .config_loader import CONFIG_DIR, ControllerConfig, load_controller_config
 from .lan_aio_state import (
