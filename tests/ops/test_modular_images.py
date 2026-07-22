@@ -51,7 +51,7 @@ def test_python_bases_and_thin_targets_are_explicit():
     )
     assert "AS python-runtime-base" in runtime
     assert "ARG RUNTIME_BASE_IMAGE" in control
-    for target in (
+    targets = (
         "central-api",
         "web-api",
         "payment-api",
@@ -59,14 +59,16 @@ def test_python_bases_and_thin_targets_are_explicit():
         "qqcc-bot",
         "private-bot-worker",
         "paid-group-bot",
+        "support-bot",
         "dashboard-backend",
         "qqcc-config-backend",
-    ):
+    )
+    for target in targets:
         assert f"AS {target}" in control
         section = control.split(f"AS {target}", 1)[1]
         assert "ARG ALLBOT_GIT_SHA" in section
         assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in section
-    assert control.count("COPY config.py /app/config.py") == 9
+    assert control.count("COPY config.py /app/config.py") == len(targets)
     dashboard_section = control.split("AS dashboard-backend", 1)[1].split(
         "AS qqcc-config-backend", 1
     )[0]
