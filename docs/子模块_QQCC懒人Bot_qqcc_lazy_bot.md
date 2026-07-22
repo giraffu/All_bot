@@ -263,6 +263,8 @@ scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> -
 
 ```bash
 python scripts/release.py promote --modules qqcc-bot --confirm-prod
+# 用户明确决定本次不进入默认生成维护时：
+python scripts/release.py promote --modules qqcc-bot --no-maintenance --confirm-prod
 ```
 
 `qqcc-bot` 是受控模块边界，只选择官方 Bot service；发布器自动验证唯一目标容器、已知 legacy 实例停止，并扫描启动窗口内的 Telegram polling conflict。migration 或共享/未知契约会在 mutation 前阻断并提示高级入口；待处理秘密轮换仅保留审计状态。
