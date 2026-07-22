@@ -1248,7 +1248,53 @@ async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_fai
     assert result == {"task_id": "partial"}
     assert persist.await_args.kwargs["partial"] is True
     assert persist.await_args.kwargs["segment_output_files"] == ["history/one.mp4"]
-    bot.send_message.assert_awaited_once()
+    bot.send_message.assert_awaited_once_with(
+        chat_id=456,
+        text="第 2 段生成失败，已返回前 1 段。",
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_video_scene_chain_reports_tail_frame_failure_after_success():
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "video", "scene_id": "first", "resolution": "720p", "duration": "5s"},
+        qqcc_config={
+            "scene_preset_version": 1,
+            "main_buttons": {"video_edit": True},
+            "video_scenes": [
+                {"id": "first", "name": "First", "prompt": "one", "duration": "5s", "engine": "image_to_video", "next_scene_id": "second"},
+                {"id": "second", "name": "Second", "prompt": "two", "duration": "5s", "engine": "wan22_video_v2"},
+            ],
+        },
+        allowed_resolutions=["720p"],
+    )
+    bot = SimpleNamespace(send_message=AsyncMock())
+    persist = AsyncMock(return_value={"task_id": "partial"})
+    second_segment = AsyncMock()
+
+    result = await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(bot=bot),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_video_task_template_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
+        process_generation_task_func=second_segment,
+        extract_video_last_frame_func=AsyncMock(side_effect=RuntimeError("ffmpeg missing")),
+        stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
+        persist_chain_result_func=persist,
+    )
+
+    assert result == {"task_id": "partial"}
+    second_segment.assert_not_awaited()
+    assert persist.await_args.kwargs["partial"] is True
+    assert persist.await_args.kwargs["segment_output_files"] == ["history/one.mp4"]
+    bot.send_message.assert_awaited_once_with(
+        chat_id=456,
+        text="第 1 段已生成，但尾帧处理失败，已返回前 1 段。",
+    )
 
 
 @pytest.mark.asyncio

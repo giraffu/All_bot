@@ -100,6 +100,12 @@ REQUIRED_IMAGES = {
     "worker",
 }
 REQUIRED_VENDOR_IMAGES = {"imgproxy", "postgres", "redis"}
+RUNTIME_BASE_ARTIFACTS = {
+    "python-runtime-base",
+    "python-media-runtime-base",
+    "python-worker-base",
+}
+NON_DEPLOYABLE_ARTIFACTS = RUNTIME_BASE_ARTIFACTS | {"postgres", "redis"}
 CONTROL_ARTIFACT_ENV = {
     "central-api": "ALLBOT_CENTRAL_IMAGE",
     "web-api": "ALLBOT_WEB_API_IMAGE",
@@ -3511,17 +3517,12 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 name
                 for name, artifact in track_artifacts.items()
                 if artifact.get("source_sha") == sha
-                and name not in {"python-runtime-base", "python-worker-base"}
+                and name not in RUNTIME_BASE_ARTIFACTS
             }
             runtime_drift_modules = runtime_drift_artifacts(
                 track_artifacts,
                 getattr(args, "previous_state", None),
-                excluded={
-                    "python-runtime-base",
-                    "python-worker-base",
-                    "postgres",
-                    "redis",
-                }
+                excluded=NON_DEPLOYABLE_ARTIFACTS
                 | (
                     {
                         name
@@ -3589,7 +3590,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             services = {
                 CONTROL_ARTIFACT_SERVICE.get(name, name)
                 for name in artifact_names
-                if name not in {"python-runtime-base", "postgres", "redis"}
+                if name not in NON_DEPLOYABLE_ARTIFACTS
             }
         elif args.track == "test-execution":
             services = (
@@ -6497,11 +6498,9 @@ def required_acceptance_checks(manifest: Mapping[str, Any]) -> set[str]:
         return set(WORKER_ACCEPTANCE_CHECKS)
     selected = set(manifest.get("selected_artifacts", []))
     required: set[str] = set()
-    runtime = selected - {
-        "python-runtime-base",
-        "postgres",
-        "redis",
-    }
+    runtime = selected - NON_DEPLOYABLE_ARTIFACTS
+    if not runtime:
+        return set()
     if runtime & {"public-web"}:
         required.update(WEB_ACCEPTANCE_CHECKS)
     if runtime - {

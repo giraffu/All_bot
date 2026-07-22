@@ -56,7 +56,7 @@
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
-不可变控制面镜像与日志还需满足以下运行契约：Web API 会在 `src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须包含 `ffmpeg`，模块化 release 的 full-validation smoke 必须在最终 digest 镜像中执行 `ffmpeg -version`；不能只因为主 Bot 镜像含有 ffmpeg 就视为 Web 已满足依赖。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用 `json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器按不可变发布流程重建后生效，不得通过远端手改 container HostConfig 代替仓库契约。
+不可变控制面镜像与日志还需满足以下运行契约：Web API 会在 `src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须包含 `ffmpeg`，模块化 release 的 full-validation smoke 必须在最终 digest 镜像中执行 `ffmpeg -version`。QQCC 多段视频还会在控制面执行尾帧探测、提取与拼接，`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可运行的 `python-media-runtime-base`，并在各自最终 digest 中同时执行 `ffmpeg -version` 与 `ffprobe -version`；不能只因为基础镜像、旧 `Dockerfile.qqcc` 或其它服务含有工具就视为依赖满足。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用 `json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器按不可变发布流程重建后生效，不得通过远端手改 container HostConfig 代替仓库契约。
 
 QQCC 私有 Bot 正式启用不是 QQCC 单 polling 热修：它涉及 Alembic、新共享 secret、Web API webhook、QQCC Config Backend/Frontend、官方 QQCC 申请入口、独立 worker 和公网 owner Host。必须走完整生产确认与迁移门禁，不能套用只替换 `qqcc-bot-prod` 的单服务脚本。生产顺序、env contract 和回滚见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。2026-07-12 已执行 migration、设置 `PRIVATE_QQCC_BOT_ENABLED=true`、启动 private profile、启用生产 webhook，并将 `private-bot.aivison.it.com` 接入现有 Tunnel；严格 validator、Host 隔离、owner/admin 公网行为和 worker heartbeat 已验证。safe deploy 的 `--allow-disabled` 仍只适用于 gate 关闭的未启用环境，不能替代启用态严格校验。
 
