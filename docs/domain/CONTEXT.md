@@ -21,6 +21,8 @@
 
 ## 生成任务
 
+- **Clarity task_id**：独立媒体增强平台中的持久业务请求标识，不复用 AllBot `registry_task_id` 或 `backend_task_id`。
+- **Clarity attempt_id**：独立媒体增强平台中一次带租约的 Worker 执行标识；同一业务任务重试时创建新 attempt。
 - **registry_task_id**：AllBot 运行态注册表中的任务 ID，面向 Web/Bot 查询、取消、历史和权限语义。
 - **private Bot client_type**：`bot:qqcc-private:<private_bot_id>`，用于把私有 Bot 的提交、运行态恢复和结果投递严格归属到单一租户实例。
 - **backend_task_id**：执行面任务 ID，面向 Central API、QueueManager、worker pop/status/complete/cancel 等执行语义。

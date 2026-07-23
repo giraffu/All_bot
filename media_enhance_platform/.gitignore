@@ -1,0 +1,11 @@
+.env
+.local-admin-credentials
+.venv/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+**/*.sqlite
+data/
+test-results/
+playwright-report/

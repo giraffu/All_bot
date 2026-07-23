@@ -1,0 +1,53 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__SOURCE_FILE__"
+    }
+  },
+  "2": {
+    "class_type": "SeedVR2LoadDiTModel",
+    "inputs": {
+      "model": "seedvr2_ema_7b_fp16.safetensors",
+      "device": "cuda:0",
+      "blocks_to_swap": 0,
+      "cache_model": false,
+      "offload_device": "cpu",
+      "use_fp8": false,
+      "attention_mode": "sdpa"
+    }
+  },
+  "3": {
+    "class_type": "SeedVR2LoadVAEModel",
+    "inputs": {
+      "model": "ema_vae_fp16.safetensors",
+      "device": "cuda:0",
+      "encode_tiled": true,
+      "encode_tile_size": 1024,
+      "encode_tile_overlap": 128,
+      "decode_tiled": true,
+      "decode_tile_size": 1024,
+      "decode_tile_overlap": 128,
+      "offload_device": "cpu"
+    }
+  },
+  "4": {
+    "class_type": "SeedVR2VideoUpscaler",
+    "inputs": {
+      "image": ["1", 0],
+      "dit": ["2", 0],
+      "vae": ["3", 0],
+      "resolution": 2048,
+      "seed": 1,
+      "batch_size": 1,
+      "color_correction": "lab"
+    }
+  },
+  "5": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["4", 0],
+      "filename_prefix": "clarity/image_upscale"
+    }
+  }
+}
