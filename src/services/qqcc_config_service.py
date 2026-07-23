@@ -1636,6 +1636,82 @@ async def save_qqcc_config_payload(
     )
 
 
+async def save_qqcc_generated_demo_output_media(
+    db: AsyncSession,
+    *,
+    scene_kind: str,
+    scene_id: str,
+    generation_id: str,
+    media: dict[str, Any],
+) -> bool:
+    """Atomically attach a completed demo draft to the current scene config."""
+
+    from src.database.models import RuntimeCheckpoint
+
+    section = {
+        "video": "video_scenes",
+        "ai_video": "ai_video_scenes",
+        "draw": "draw_scenes",
+        "filter": "filter_scenes",
+    }.get(scene_kind)
+    output_media_type = "video" if scene_kind in {"video", "ai_video"} else "image"
+    if (
+        section is None
+        or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", generation_id) is None
+    ):
+        return False
+    expected_object_key = (
+        f"qqcc/demo/{scene_kind}/{scene_id}/generated/{generation_id}/output"
+    )
+    normalized_media = _normalize_scene_demo_media(
+        media,
+        scene_kind=scene_kind,
+        scene_id=scene_id,
+        slot="output",
+        media_type=output_media_type,
+    )
+    if (
+        normalized_media is None
+        or normalized_media.get("object_key") != expected_object_key
+    ):
+        return False
+
+    result = await db.execute(
+        select(RuntimeCheckpoint)
+        .where(RuntimeCheckpoint.key == QQCC_LAZY_BOT_CONFIG_KEY)
+        .with_for_update()
+    )
+    checkpoint = result.scalar_one_or_none()
+    if checkpoint is None:
+        return False
+    config = normalize_qqcc_config(checkpoint.value or {})
+    scene = next(
+        (item for item in config[section] if item.get("id") == scene_id),
+        None,
+    )
+    if scene is None:
+        return False
+
+    existing_media = scene.get("demo_output_media")
+    if (
+        isinstance(existing_media, dict)
+        and existing_media.get("object_key") == normalized_media["object_key"]
+        and existing_media.get("content_sha256")
+        == normalized_media.get("content_sha256")
+    ):
+        normalized_media["telegram_file_ids"] = dict(
+            existing_media.get("telegram_file_ids") or {}
+        )
+    if existing_media == normalized_media:
+        return True
+
+    scene["demo_output_media"] = normalized_media
+    checkpoint.value = config
+    await db.commit()
+    return True
+
+
 async def cache_qqcc_demo_telegram_file_ids(
     *,
     scene_kind: str,

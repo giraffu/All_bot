@@ -1,8 +1,11 @@
 import logging
 import base64
 import binascii
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +15,7 @@ from src.services.qqcc_config_service import (
     QqccSceneCreditCostError,
     QqccSceneResolutionError,
     load_qqcc_config_payload,
+    save_qqcc_generated_demo_output_media,
     save_qqcc_config_payload,
 )
 from src.services.qqcc_demo_media_service import (
@@ -50,6 +54,71 @@ class _MemoryUpload:
         if size is None or size < 0:
             return self._content
         return self._content[:size]
+
+
+async def complete_qqcc_demo_generation(
+    *,
+    scene_kind: str,
+    scene_id: str,
+    generation_id: str,
+    max_wait_seconds: float = 24 * 60 * 60,
+    poll_interval_seconds: float = 3,
+    poll_func: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+    persist_func: Callable[..., Awaitable[bool]] | None = None,
+    session_factory=None,
+    sleep_func: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+) -> None:
+    """Finish and persist a demo even when the submitting browser disconnects."""
+
+    poll = poll_func or get_qqcc_demo_generation
+    persist = persist_func or save_qqcc_generated_demo_output_media
+    if session_factory is None:
+        from src.database.core import AsyncSessionLocal
+
+        session_factory = AsyncSessionLocal
+    deadline = asyncio.get_running_loop().time() + max_wait_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            result = await poll(
+                scene_kind=scene_kind,
+                scene_id=scene_id,
+                generation_id=generation_id,
+            )
+            status = str(result.get("status") or "")
+            if status == "done" and isinstance(result.get("media"), dict):
+                async with session_factory() as db:
+                    saved = await persist(
+                        db,
+                        scene_kind=scene_kind,
+                        scene_id=scene_id,
+                        generation_id=generation_id,
+                        media=result["media"],
+                    )
+                if not saved:
+                    logger.warning(
+                        "Completed QQCC demo could not be attached kind=%s scene=%s id=%s",
+                        scene_kind,
+                        scene_id,
+                        generation_id,
+                    )
+                return
+            if status in {"failed", "error", "cancelled"}:
+                return
+        except Exception:
+            logger.warning(
+                "QQCC demo completion monitor retrying after failure kind=%s scene=%s id=%s",
+                scene_kind,
+                scene_id,
+                generation_id,
+                exc_info=True,
+            )
+        await sleep_func(poll_interval_seconds)
+    logger.warning(
+        "QQCC demo completion monitor timed out kind=%s scene=%s id=%s",
+        scene_kind,
+        scene_id,
+        generation_id,
+    )
 
 
 @router.get("/config", response_model=QqccBotConfigResponse)
@@ -151,6 +220,7 @@ async def put_qqcc_scene_demo_media_json(
 async def submit_qqcc_scene_demo_generation(
     scene_kind: str,
     payload: QqccDemoGenerationRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -162,7 +232,21 @@ async def submit_qqcc_scene_demo_generation(
         submit_kwargs = {"scene_kind": scene_kind, "scene": payload.scene}
         if config_payload:
             submit_kwargs["config"] = config_payload["config"]
-        return await submit_qqcc_demo_generation(**submit_kwargs)
+        result = await submit_qqcc_demo_generation(**submit_kwargs)
+        generation_id = str(result.get("generation_id") or "")
+        scene_id = str(payload.scene.get("id") or "")
+        if generation_id and scene_id and result.get("status") not in {
+            "failed",
+            "error",
+            "cancelled",
+        }:
+            background_tasks.add_task(
+                complete_qqcc_demo_generation,
+                scene_kind=scene_kind,
+                scene_id=scene_id,
+                generation_id=generation_id,
+            )
+        return result
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -177,13 +261,28 @@ async def get_qqcc_scene_demo_generation(
     scene_kind: str,
     scene_id: str,
     generation_id: str,
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await get_qqcc_demo_generation(
+        result = await get_qqcc_demo_generation(
             scene_kind=scene_kind,
             scene_id=scene_id,
             generation_id=generation_id,
         )
+        if result.get("status") == "done" and isinstance(result.get("media"), dict):
+            saved = await save_qqcc_generated_demo_output_media(
+                db,
+                scene_kind=scene_kind,
+                scene_id=scene_id,
+                generation_id=generation_id,
+                media=result["media"],
+            )
+            if not saved:
+                raise QqccDemoGenerationError(
+                    "Generated output could not be attached to the current scene"
+                )
+            result["config_saved"] = True
+        return result
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
