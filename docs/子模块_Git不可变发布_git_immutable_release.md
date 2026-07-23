@@ -146,6 +146,8 @@ main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Das
 
 当 GPU catalog 删除退役 profile、导致旧 release bundle 的 profile 键集合不再等于当前 catalog 时，模块化 CI 可继续从 main 祖先的独立 `allbot-gpu-release-manifests:<full-sha>` 查找基线。该回退仍要求 manifest source SHA 等于祖先 tag、`completeness=complete`、`missing_artifacts=[]` 且 artifact 键与当前 catalog 完全一致；不接受分支外 SHA、mutable tag 或部分 manifest。
 
+若自动 full release 在同 SHA GPU manifest 发布前已 fail closed，可手动重放该 source SHA，但必须同时提供原始成功的 `Immutable control-plane release` run ID。workflow 会再次验证 run conclusion、精确 source SHA、当前 main 祖先关系与 change scope；没有可信 run ID 的手动入口仍只能生成 `build-only` artifact。当前 SHA 已存在完整 GPU manifest 时，不再强制要求历史 GPU baseline。
+
 ```bash
 scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
 scripts/release.py preflight --env test --track control-plane --sha <40-char-sha>

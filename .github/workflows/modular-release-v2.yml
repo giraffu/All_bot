@@ -21,11 +21,15 @@ on:
         required: false
         default: ""
       validation_mode:
-        description: Manual dispatch only creates build-only artifacts; full is emitted by a successful upstream test workflow.
+        description: Full replay requires a verified upstream_run_id for the same source SHA.
         required: true
         type: choice
-        options: [build-only]
+        options: [build-only, full]
         default: build-only
+      upstream_run_id:
+        description: Successful Immutable control-plane release run ID required for a manual full replay.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -92,6 +96,7 @@ jobs:
           INPUT_SHA: ${{ inputs.source_sha }}
           INPUT_CHANNEL: ${{ inputs.release_channel }}
           INPUT_VALIDATION_MODE: ${{ inputs.validation_mode }}
+          INPUT_UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
         run: |
           set -euo pipefail
           sha="${EVENT_SHA:-${INPUT_SHA:-}}"
@@ -110,8 +115,14 @@ jobs:
               main) branch=main ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
-            if [ "$validation_mode" != build-only ]; then
-              echo "manual dispatch cannot claim full validation" >&2
+            if [ "$validation_mode" = full ] && \
+               [[ ! "${INPUT_UPSTREAM_RUN_ID:-}" =~ ^[0-9]+$ ]]; then
+              echo "manual full replay requires upstream_run_id" >&2
+              exit 2
+            fi
+            if [ "$validation_mode" != build-only ] && \
+               [ "$validation_mode" != full ]; then
+              echo "invalid manual validation mode" >&2
               exit 2
             fi
           fi
@@ -125,7 +136,8 @@ jobs:
           if [ -n "${EVENT_RUN_ID:-}" ]; then
             echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${EVENT_RUN_ID}" >> "$GITHUB_OUTPUT"
           else
-            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+            ci_run_id="${INPUT_UPSTREAM_RUN_ID:-$GITHUB_RUN_ID}"
+            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
@@ -148,7 +160,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           SOURCE_BRANCH: ${{ steps.source.outputs.branch }}
-          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || inputs.upstream_run_id }}
         run: |
           set -euo pipefail
           git fetch --prune origin "$SOURCE_BRANCH"
@@ -235,6 +247,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           BUNDLE_REPOSITORY: ${{ steps.source.outputs.bundle_repository }}
+          GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
         run: |
           set -euo pipefail
           tags_file="available-gpu-baseline-tags.txt"
@@ -298,7 +311,9 @@ jobs:
               break
             done < <(git rev-list --topo-order "${SOURCE_SHA}^")
           fi
-          if [ -z "$baseline_manifest" ]; then
+          current_manifest_ref="${GPU_MANIFEST_REF:-${IMAGE_PREFIX}/allbot-gpu-release-manifests:${SOURCE_SHA}}"
+          if [ -z "$baseline_manifest" ] && \
+             ! oras manifest fetch "$current_manifest_ref" >/dev/null 2>&1; then
             echo "no complete main-channel GPU baseline exists in target ancestry" >&2
             exit 2
           fi

@@ -200,6 +200,7 @@ def test_main_workflow_resolves_complete_gpu_baseline_from_all_ancestors():
     assert "gpu-baseline-standalone/gpu-execution-manifest.json" in workflow
     assert 'oras repo tags "$gpu_manifest_repository"' in workflow
     assert "[ \"$(jq -r '.completeness' \"$manifest\")\" = complete ]" in workflow
+    assert 'oras manifest fetch "$current_manifest_ref"' in workflow
     assert '--gpu-baseline-manifest "$GPU_BASELINE_MANIFEST"' in workflow
 
 
