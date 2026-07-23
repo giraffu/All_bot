@@ -13,6 +13,25 @@ POST_COMFY_PHASES = frozenset(
     }
 )
 
+BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
+
+
+def resolve_pipeline_limits(
+    *,
+    policy: str,
+    max_running_tasks: int,
+    max_claimed_tasks: int,
+    delivery_concurrency: int,
+) -> tuple[int, int, int]:
+    if policy.strip() == BF16_LAN_PIPELINE_POLICY:
+        return 2, 3, 1
+    normalized_running = max(1, int(max_running_tasks))
+    return (
+        normalized_running,
+        max(normalized_running, int(max_claimed_tasks)),
+        max(1, int(delivery_concurrency)),
+    )
+
 
 class PipelineAdmission:
     def __init__(self, *, max_claimed_tasks: int, max_comfy_inflight: int) -> None:
