@@ -95,7 +95,7 @@ RMB 创建支付链接的 `HUANYUY_*` 六项配置同时是 `payment-api`、`web
 
 公共云 Compose 的逐服务 `env_file` 使用长语法 `required: false`，只为允许 Compose 在局部模块发布时解析尚无投影的非目标服务；同时使用 `format: raw`，确保密码 hash、Token 等配置中的 `$` 按原始字节进入容器而不被 Compose 插值。这不是容器运行时的缺配置豁免。发布器在任何 pull/up 之前仍通过目标模块 service closure 严格生成、校验并核对目标投影 revision，目标投影缺失或必填键缺失立即失败。非目标容器不执行 `up`，且事务会逐一核对其启动时间不变。发布后的跨服务 smoke 从各目标容器真实导入 `config.API_BASE` 并请求其 `/health`，不得把 test/prod 的 Central 服务别名硬编码到通用发布器。当前正式 Compose 的 project service DNS 是 `central-api`；历史 Dashboard 投影中的 `central-api-prod` 不可解析，因此 Dashboard-only rolling 由 prod overlay 把 Dashboard Backend 精确覆盖为 `http://central-api:8003`，不修改或重启其它正式服务，完整宿主配置收敛留到独立窗口。该 Compose 内容以精确 checksum 纳入 owner-only snapshot，任一后续改动重新成为共享契约 blocker。
 
-数据库备份在容器 `/bin/sh` 中执行，URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
+数据库备份在容器 `/bin/sh` 中执行；migration 的临时 PostgreSQL client 以 `--network container:$web_container` 共享当前 Web 容器网络命名空间，使 `postgres-test`/正式 Compose DNS 在备份时保持可解析，但不把数据库端口暴露到宿主。URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
 
 GPU/Worker 配置与控制面配置为两条独立发布链。`deploy/service-env-contract.yml` 将 `ALLBOT_WORKER_*`、`CLOUD_TEST_WORKER_*` 和 `CLOUD_TEST_SHARED_AIO_*` 标记为控制面契约外部键：它们仍原样保存在受限宿主 env 中，但不进入控制面 environment revision、逐服务投影、漂移或影响集。因此单独修改 Worker 镜像、槽位或开关不得触发 `config-apply` 或重建主控制面。Dashboard 真实消费的 `RUNPOD_*` / `LAN_AIO_*` 仍属于 Dashboard 服务投影，非 Worker 的未知键仍影响全部服务并 fail closed。
 
