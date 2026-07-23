@@ -545,7 +545,10 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "github.event.workflow_run.conclusion == 'success'" in modular
     assert "github.event.workflow_run.event == 'push'" in modular
     assert "github.event.workflow_run.event == 'workflow_dispatch'" in modular
-    assert "python scripts/validate_upstream_ci_run.py" in modular
+    assert "ref: ${{ github.workflow_sha }}" in modular
+    assert "path: .release-tooling" in modular
+    assert "python .release-tooling/scripts/validate_upstream_ci_run.py" in modular
+    assert "rm -rf -- .release-tooling" in modular
     assert "actions: read" in modular
     assert "if: steps.source.outputs.validation_mode == 'full'" in modular
     assert "manual full replay requires upstream_run_id" in modular
