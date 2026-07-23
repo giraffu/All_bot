@@ -80,6 +80,9 @@
     }
   },
   "independent_non_target_migration_snapshots": {
+    "support-platform": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2"
+    },
     "qqcc-bot": {
       "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
       "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",

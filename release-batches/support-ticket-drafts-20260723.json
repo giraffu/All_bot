@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "d07df2b0b80931d23fda1f5f3c74c1f1a63e35e6",
+  "batch": "support-ticket-drafts-20260723",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-support-ticket-drafts-20260723",
+  "members": [
+    {
+      "base_sha": "d07df2b0b80931d23fda1f5f3c74c1f1a63e35e6",
+      "branch": "codex/a-support-ticket-drafts",
+      "head": "93969ed7e826527c20385e0916a8e605b8e5938a",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

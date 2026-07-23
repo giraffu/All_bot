@@ -574,7 +574,12 @@ def test_no_change_requires_exact_digest_health_and_service_config_revision(
     manifest = {
         "schema_version": 2,
         "git_sha": FULL_SHA,
-        "artifacts": {"web-api": {"ref": IMAGE_REF}},
+        "artifacts": {
+            "web-api": {
+                "ref": IMAGE_REF,
+                "oci_revision": FULL_SHA,
+            }
+        },
     }
     monkeypatch.setattr(
         module,
