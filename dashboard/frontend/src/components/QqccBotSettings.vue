@@ -220,6 +220,7 @@ interface QqccDemoMediaUploadResponse {
 interface QqccDemoGenerationResponse extends Partial<QqccDemoMediaUploadResponse> {
   generation_id: string
   status: string
+  config_saved?: boolean
   error?: string
 }
 
@@ -536,6 +537,28 @@ const sceneConfig = reactive({
 })
 const loraHelp = ref<Wan22LoraHelpModel | null>(null)
 const loraHelpLabel = ref('')
+const demoVideoPreview = reactive({
+  open: false,
+  url: '',
+  title: '',
+})
+
+const openDemoVideoPreview = (
+  sceneName: string,
+  slot: DemoMediaSlot,
+  previewUrl: string,
+) => {
+  if (!previewUrl) return
+  demoVideoPreview.url = previewUrl
+  demoVideoPreview.title = `${sceneName || '未命名场景'} · ${slot === 'input' ? '输入示范' : '输出示范'}`
+  demoVideoPreview.open = true
+}
+
+const closeDemoVideoPreview = () => {
+  demoVideoPreview.open = false
+  demoVideoPreview.url = ''
+  demoVideoPreview.title = ''
+}
 
 const loraStrengthSourceLabels: Record<string, string> = {
   archive_general_guidance: '归档页通用建议',
@@ -1565,12 +1588,14 @@ const generateSceneDemo = async (kind: SceneConfigKind, index: number) => {
   setDemoOperationLoading(generatingDemoKeys, generationKey, true)
   try {
     const submitted = await props.generateDemoMedia(kind, JSON.parse(JSON.stringify(scene)))
-    const generated = submitted.status === 'done'
+    const generated = submitted.status === 'done' && submitted.config_saved === true
       ? submitted
       : await waitForDemoGeneration(kind, scene.id, submitted.generation_id)
-    if (!generated?.media) throw new Error('QQCC_DEMO_GENERATION_INVALID_RESPONSE')
+    if (!generated?.media || generated.config_saved !== true) {
+      throw new Error('QQCC_DEMO_GENERATION_INVALID_RESPONSE')
+    }
     scene.demo_output_media = { ...generated.media, preview_url: generated.preview_url }
-    message.success('输出示范已生成，请检查后保存配置')
+    message.success('输出示范已生成并自动保存')
   } catch (error: unknown) {
     const candidate = error as { response?: { data?: { detail?: unknown } } }
     const detail = candidate.response?.data?.detail
@@ -2105,7 +2130,21 @@ onMounted(() => {
                   <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card" :title="slot === 'input' ? '输入示范' : '输出示范'">
                   <span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span>
                   <a-image v-if="scene[`demo_${slot}_media`]?.media_type === 'image' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" :data-testid="`video-demo-${slot}-preview-${index}`" alt="示范图片" />
-                  <video v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :data-testid="`video-demo-${slot}-preview-${index}`" controls preload="metadata" />
+                  <video
+                    v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url"
+                    :src="scene[`demo_${slot}_media`]?.preview_url"
+                    :data-testid="`video-demo-${slot}-preview-${index}`"
+                    class="scene-demo-video-trigger"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="`放大查看${scene.name || '场景'}${slot === 'input' ? '输入' : '输出'}示范视频`"
+                    @click="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                    @keydown.enter.prevent="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                    @keydown.space.prevent="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                  />
                   <span v-else class="scene-demo-preview-empty">未上传</span>
                   </div>
                 </div>
@@ -2155,7 +2194,26 @@ onMounted(() => {
                   </div>
                 </div>
                 <div v-if="scene.demo_input_media || scene.demo_output_media" class="scene-demo-preview-strip">
-                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card"><span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span><a-image v-if="scene[`demo_${slot}_media`]?.media_type === 'image' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" /><video v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" controls preload="metadata" /><span v-else class="scene-demo-preview-empty">未上传</span></div>
+                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card">
+                    <span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span>
+                    <a-image v-if="scene[`demo_${slot}_media`]?.media_type === 'image' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" />
+                    <video
+                      v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url"
+                      :src="scene[`demo_${slot}_media`]?.preview_url"
+                      :data-testid="`ai-video-demo-${slot}-preview-${index}`"
+                      class="scene-demo-video-trigger"
+                      muted
+                      playsinline
+                      preload="metadata"
+                      role="button"
+                      tabindex="0"
+                      :aria-label="`放大查看${scene.name || '场景'}${slot === 'input' ? '输入' : '输出'}示范视频`"
+                      @click="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                      @keydown.enter.prevent="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                      @keydown.space.prevent="openDemoVideoPreview(scene.name, slot, scene[`demo_${slot}_media`]?.preview_url || '')"
+                    />
+                    <span v-else class="scene-demo-preview-empty">未上传</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2291,6 +2349,27 @@ onMounted(() => {
         </a-form-item>
       </div>
     </section>
+
+    <a-modal
+      v-model:open="demoVideoPreview.open"
+      :title="demoVideoPreview.title"
+      :footer="null"
+      :width="960"
+      data-testid="demo-video-modal"
+      wrap-class-name="qqcc-demo-video-modal"
+      @cancel="closeDemoVideoPreview"
+    >
+      <video
+        v-if="demoVideoPreview.url"
+        :src="demoVideoPreview.url"
+        data-testid="demo-video-modal-player"
+        class="demo-video-modal-player"
+        controls
+        autoplay
+        playsinline
+        preload="metadata"
+      />
+    </a-modal>
 
     <a-modal
       v-model:open="sceneConfig.open"
@@ -2901,6 +2980,19 @@ onMounted(() => {
   border-radius: 4px;
   background: #0f172a;
   object-fit: cover;
+}
+
+.scene-demo-video-trigger {
+  cursor: zoom-in;
+}
+
+.demo-video-modal-player {
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 760px);
+  border-radius: 10px;
+  background: #020617;
+  object-fit: contain;
 }
 
 .scene-demo-preview-label,
