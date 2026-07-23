@@ -4676,6 +4676,34 @@ def test_qqcc_release_allows_only_pinned_non_target_migration(monkeypatch):
         )
 
 
+def test_support_platform_policy_pins_character_migration_as_non_target(monkeypatch):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    selection = module.IndependentModuleRelease(
+        name="support-platform",
+        artifacts={"dashboard-backend", "dashboard-frontend", "support-bot"},
+        previous_sha="b" * 40,
+    )
+    path = "migrations/versions/62d4a8f9c7e1_add_character_references.py"
+    content = (ROOT / path).read_text()
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            _args[0], 0, stdout=content, stderr=""
+        ),
+    )
+
+    reviewed = module.reviewed_non_target_migration_paths(
+        policy,
+        selection,
+        [path],
+        target_sha=FULL_SHA,
+    )
+
+    assert reviewed == {path}
+
+
 def test_support_platform_accepts_first_release_of_support_bot():
     module = _load_module()
     policy = {

@@ -1,92 +1,57 @@
 from __future__ import annotations
 
-from datetime import datetime
-from sqlalchemy import select, func
+from collections.abc import Sequence
+from typing import Any
+
+from sqlalchemy import func, select
 
 from src.database.models import SupportMessage, SupportTicket, User
 
-ACTIVE_STATUSES = ("open", "processing", "resolved")
 CATEGORIES = {"recharge", "bug", "suggestion", "business", "uncategorized"}
-STATUSES = {*ACTIVE_STATUSES, "closed"}
+STATUSES = {"open", "processing", "resolved", "closed"}
 
 
-async def get_or_create_ticket(
-    session, *, telegram_user, category: str
+async def finalize_ticket_submission(
+    session,
+    *,
+    telegram_user_id: int,
+    username: str | None,
+    full_name: str | None,
+    language_code: str | None,
+    category: str,
+    messages: Sequence[dict[str, Any]],
 ) -> SupportTicket:
+    """Persist one completed support submission as a new ticket."""
+
+    if not messages:
+        raise ValueError("support submission requires at least one message")
     if category not in CATEGORIES:
         category = "uncategorized"
-    ticket = (
-        await session.execute(
-            select(SupportTicket)
-            .where(
-                SupportTicket.telegram_user_id == telegram_user.id,
-                SupportTicket.status.in_(ACTIVE_STATUSES),
-            )
-            .order_by(SupportTicket.last_message_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
     user = (
-        await session.execute(select(User).where(User.telegram_id == telegram_user.id))
+        await session.execute(select(User).where(User.telegram_id == telegram_user_id))
     ).scalar_one_or_none()
-    if ticket is None:
-        ticket = SupportTicket(
-            telegram_user_id=telegram_user.id,
-            internal_user_id=user.id if user else None,
-            category=category,
-            username=telegram_user.username,
-            full_name=telegram_user.full_name,
-            language_code=telegram_user.language_code,
-        )
-        session.add(ticket)
-        await session.flush()
-    elif category != "uncategorized":
-        ticket.category = category
-    return ticket
-
-
-async def add_user_message(
-    session,
-    *,
-    telegram_user,
-    telegram_message_id: int,
-    body: str | None,
-    attachments: list[dict],
-    category: str = "uncategorized",
-) -> SupportTicket:
-    ticket = await get_or_create_ticket(
-        session, telegram_user=telegram_user, category=category
-    )
-    session.add(
-        SupportMessage(
-            ticket_id=ticket.id,
-            sender_type="user",
-            body=body,
-            telegram_message_id=telegram_message_id,
-            attachments=attachments,
-        )
-    )
-    ticket.last_message_at = datetime.now()
-    if ticket.status == "resolved":
-        ticket.status = "open"
-    await session.commit()
-    return ticket
-
-
-async def select_ticket_category(
-    session,
-    *,
-    telegram_user,
-    category: str,
-) -> SupportTicket:
-    ticket = await get_or_create_ticket(
-        session,
-        telegram_user=telegram_user,
+    ticket = SupportTicket(
+        telegram_user_id=telegram_user_id,
+        internal_user_id=user.id if user else None,
         category=category,
+        username=username,
+        full_name=full_name,
+        language_code=language_code,
+        last_message_at=messages[-1]["created_at"],
     )
-    ticket.last_message_at = datetime.now()
-    if ticket.status == "resolved":
-        ticket.status = "open"
+    session.add(ticket)
+    await session.flush()
+    for message in messages:
+        session.add(
+            SupportMessage(
+                ticket_id=ticket.id,
+                sender_type="user",
+                body=message.get("body"),
+                telegram_message_id=message.get("telegram_message_id"),
+                attachments=list(message.get("attachments") or []),
+                created_at=message["created_at"],
+            )
+        )
     await session.commit()
     return ticket
 
