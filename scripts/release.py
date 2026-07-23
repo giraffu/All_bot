@@ -605,6 +605,14 @@ def validate_independent_release_paths(
             if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
         )
         if name == "database-migrations" and matches and target_sha:
+            non_target = reviewed_non_target_migration_paths(
+                policy,
+                selection,
+                matches,
+                target_sha=target_sha,
+            )
+            if non_target == set(matches):
+                continue
             reviewed = reviewed_additive_migration_paths(
                 policy,
                 selection,
@@ -639,7 +647,45 @@ def reviewed_additive_migration_paths(
 ) -> set[str]:
     """Return exact reviewed additive migrations for this module and SHA."""
 
-    configured = policy.get("independent_additive_migration_snapshots")
+    return _reviewed_independent_migration_paths(
+        policy,
+        selection,
+        changed_paths,
+        target_sha=target_sha,
+        policy_key="independent_additive_migration_snapshots",
+        error_label="independent additive migration policy is invalid",
+    )
+
+
+def reviewed_non_target_migration_paths(
+    policy: Mapping[str, Any],
+    selection: IndependentModuleRelease,
+    changed_paths: Iterable[str],
+    *,
+    target_sha: str,
+) -> set[str]:
+    """Return pinned migrations reviewed as unrelated to the selected module."""
+
+    return _reviewed_independent_migration_paths(
+        policy,
+        selection,
+        changed_paths,
+        target_sha=target_sha,
+        policy_key="independent_non_target_migration_snapshots",
+        error_label="independent non-target migration policy is invalid",
+    )
+
+
+def _reviewed_independent_migration_paths(
+    policy: Mapping[str, Any],
+    selection: IndependentModuleRelease,
+    changed_paths: Iterable[str],
+    *,
+    target_sha: str,
+    policy_key: str,
+    error_label: str,
+) -> set[str]:
+    configured = policy.get(policy_key)
     if not isinstance(configured, Mapping):
         return set()
     target_sha = validate_full_sha(target_sha)
@@ -655,12 +701,12 @@ def reviewed_additive_migration_paths(
     for module_name in selection.module_names:
         raw_snapshots = configured.get(module_name, {})
         if not isinstance(raw_snapshots, Mapping):
-            raise ReleaseError("independent additive migration policy is invalid")
+            raise ReleaseError(error_label)
         for path, expected in raw_snapshots.items():
             if not isinstance(path, str) or not re.fullmatch(
                 r"[0-9a-f]{64}", str(expected)
             ):
-                raise ReleaseError("independent additive migration policy is invalid")
+                raise ReleaseError(error_label)
             snapshots[path] = str(expected)
     if not migration_paths <= set(snapshots):
         return set()
@@ -3975,6 +4021,16 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                         f"independent-artifact-scope:{independent_release.name}"
                     ],
                 )
+                non_target_migrations = reviewed_non_target_migration_paths(
+                    policy,
+                    independent_release,
+                    changed_paths,
+                    target_sha=sha,
+                )
+                if non_target_migrations:
+                    planned_impact.matched_rules.append(
+                        "reviewed-non-target-migration"
+                    )
                 reviewed_migrations = reviewed_additive_migration_paths(
                     policy,
                     independent_release,
@@ -4234,8 +4290,10 @@ def apply_user_authorized_no_maintenance(
 
     if not getattr(args, "no_maintenance", False):
         return
-    if args.command != "promote" or args.env != "prod":
-        raise ReleaseError("--no-maintenance is restricted to production promote")
+    if args.command not in {"promote", "deploy"} or args.env != "prod":
+        raise ReleaseError(
+            "--no-maintenance is restricted to production promote/deploy"
+        )
     if not _split_services(args.modules):
         raise ReleaseError("--no-maintenance requires explicit --modules")
     locked_rules = {
@@ -8651,7 +8709,10 @@ def run_config_command(args: argparse.Namespace) -> int:
 
 
 def _add_release_arguments(
-    parser: argparse.ArgumentParser, *, env_required: bool = True
+    parser: argparse.ArgumentParser,
+    *,
+    env_required: bool = True,
+    allow_no_maintenance: bool = False,
 ) -> None:
     parser.add_argument(
         "--env",
@@ -8735,6 +8796,15 @@ def _add_release_arguments(
         ),
     )
     parser.add_argument("--confirm-db-upgrade", action="store_true")
+    if allow_no_maintenance:
+        parser.add_argument(
+            "--no-maintenance",
+            action="store_true",
+            help=(
+                "for an explicit production module set, record the user's "
+                "decision and use a rolling forward update"
+            ),
+        )
     parser.add_argument("--confirm-legacy-cutover", action="store_true")
     parser.add_argument(
         "--repair-test-data-services",
@@ -8783,7 +8853,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("plan", "preflight", "deploy", "rollback", "recover"):
         child = subparsers.add_parser(command)
-        _add_release_arguments(child)
+        _add_release_arguments(child, allow_no_maintenance=command == "deploy")
     deploy_module = subparsers.add_parser(
         "deploy-module",
         help="deploy approved artifacts from one exact protected-main bundle",

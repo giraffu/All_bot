@@ -4616,6 +4616,66 @@ def test_support_platform_allows_only_reviewed_additive_migration(monkeypatch):
     )
 
 
+def test_qqcc_release_allows_only_pinned_non_target_migration(monkeypatch):
+    module = _load_module()
+    path = "migrations/versions/support_only.py"
+    content = "reviewed non-target migration\n"
+    policy = {
+        "independent_non_target_migration_snapshots": {
+            "qqcc-bot": {
+                path: hashlib.sha256(content.encode()).hexdigest(),
+            }
+        },
+        "independent_release_blockers": [
+            {
+                "name": "database-migrations",
+                "patterns": ["migrations/**", "alembic.ini"],
+            }
+        ],
+    }
+    selection = module.IndependentModuleRelease(
+        name="qqcc-bot",
+        artifacts={"qqcc-bot"},
+        previous_sha="b" * 40,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            _args[0], 0, stdout=content, stderr=""
+        ),
+    )
+
+    module.validate_independent_release_paths(
+        policy,
+        selection,
+        [path],
+        target_sha=FULL_SHA,
+    )
+    assert module.reviewed_non_target_migration_paths(
+        policy,
+        selection,
+        [path],
+        target_sha=FULL_SHA,
+    ) == {path}
+    assert not module.reviewed_non_target_migration_paths(
+        policy,
+        selection,
+        ["migrations/versions/other.py"],
+        target_sha=FULL_SHA,
+    )
+    policy["independent_non_target_migration_snapshots"]["qqcc-bot"][path] = (
+        "0" * 64
+    )
+    with pytest.raises(module.ReleaseError, match="database-migrations"):
+        module.validate_independent_release_paths(
+            policy,
+            selection,
+            [path],
+            target_sha=FULL_SHA,
+        )
+
+
 def test_support_platform_accepts_first_release_of_support_bot():
     module = _load_module()
     policy = {
@@ -4682,6 +4742,30 @@ def test_user_authorized_no_maintenance_accepts_reviewed_additive_migration():
 
     assert impact.level == "rolling"
     assert args.maintenance_required is False
+
+
+def test_advanced_deploy_accepts_no_maintenance_for_reviewed_non_target_migration():
+    module = _load_module()
+    args = module.build_parser().parse_args(
+        [
+            "deploy",
+            "--env",
+            "prod",
+            "--modules",
+            "qqcc-bot,qqcc-config",
+            "--no-maintenance",
+        ]
+    )
+    impact = module.ReleaseImpact(
+        level="rolling",
+        matched_rules=["reviewed-non-target-migration"],
+    )
+
+    module.apply_user_authorized_no_maintenance(args, impact)
+
+    assert args.no_maintenance is True
+    assert args.maintenance_required is False
+    assert impact.level == "rolling"
 
 
 def test_independent_module_accepts_pinned_owner_contract_snapshot(monkeypatch):
@@ -4768,6 +4852,23 @@ def test_checked_in_support_migration_snapshots_match_current_files():
             "actual": hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
         }
         for path, expected in snapshots.items()
+        if hashlib.sha256((ROOT / path).read_bytes()).hexdigest() != expected
+    }
+
+    assert mismatches == {}
+
+
+def test_checked_in_qqcc_non_target_migration_snapshots_match_current_files():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+    configured = policy["independent_non_target_migration_snapshots"]
+
+    assert configured["qqcc-bot"] == configured["qqcc-config"]
+    mismatches = {
+        path: {
+            "expected": expected,
+            "actual": hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
+        }
+        for path, expected in configured["qqcc-bot"].items()
         if hashlib.sha256((ROOT / path).read_bytes()).hexdigest() != expected
     }
 
