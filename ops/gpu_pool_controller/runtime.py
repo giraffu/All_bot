@@ -59,9 +59,10 @@ LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "scail2": LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
 }
+BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
 LAN_AIO_PIPELINE_ENV_BY_PROFILE = {
     "pornmaster_flux2_edit_bf16": {
-        "PIPELINE_PROFILE_POLICY": "bf16_lan_claim3_comfy2_delivery1",
+        "PIPELINE_PROFILE_POLICY": BF16_LAN_PIPELINE_POLICY,
     },
 }
 LAN_AIO_ENVIRONMENTS = {

@@ -1299,6 +1299,43 @@ def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(rollback_ref, 
         ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
 
 
+def test_bf16_release_and_rollback_verify_versioned_pipeline_contract():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[str] = []
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.commands.append(command)
+            return ""
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"]
+    digest = "sha256:" + "1" * 64
+    image_ref = f"192.168.1.115:5000/allbot/pornmaster@{digest}"
+
+    ops._verify_release_runtime(
+        slot,
+        {
+            "ref": image_ref,
+            "oci_revision": "a" * 40,
+        },
+    )
+    ops._verify_exact_runtime_ref(slot, image_ref)
+
+    assert len(ops.commands) == 2
+    for command in ops.commands:
+        assert "PIPELINE_PROFILE_POLICY=bf16_lan_claim3_comfy2_delivery1" in command
+        assert "PIPELINE_MAX_RUNNING_TASKS=1" in command
+        assert "PIPELINE_MAX_CLAIMED_TASKS=2" in command
+        assert "PIPELINE_DELIVERY_CONCURRENCY=1" in command
+
+
 def test_lan_aio_start_disabled_removes_safe_exited_target_container():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
