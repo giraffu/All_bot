@@ -44,6 +44,7 @@ def _environment(environment: str) -> dict[str, str]:
         "BOT_TOKEN": f"{suffix}-bot-token",
         "TELEGRAM_API_BASE_URL": f"https://telegram-api-{suffix}.example.com",
         "TELEGRAM_FILE_BASE_URL": f"https://telegram-file-{suffix}.example.com",
+        "REQUIRED_CHANNEL_ID": "-1001234567890",
         "QQCC_BOT_TOKEN": f"{suffix}-qqcc-token",
         "JWT_SECRET_KEY": f"{suffix}-jwt-secret",
         "DASHBOARD_SECRET_KEY": f"{suffix}-dashboard-secret",
@@ -229,6 +230,33 @@ def test_qqcc_config_backend_projection_rejects_missing_central_api_token():
             values,
             services={"qqcc-config-backend"},
         )
+
+
+def test_main_bot_projection_includes_required_channel_id_only_for_main_bot():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+
+    snapshot = module.build_snapshot(contract, "prod", values)
+
+    assert snapshot.projections["main-bot"]["REQUIRED_CHANNEL_ID"] == (
+        values["REQUIRED_CHANNEL_ID"]
+    )
+    assert all(
+        "REQUIRED_CHANNEL_ID" not in projection
+        for service, projection in snapshot.projections.items()
+        if service != "main-bot"
+    )
+
+
+def test_main_bot_projection_rejects_missing_required_channel_id():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    del values["REQUIRED_CHANNEL_ID"]
+
+    with pytest.raises(module.ContractError, match="REQUIRED_CHANNEL_ID"):
+        module.build_snapshot(contract, "prod", values, services={"main-bot"})
 
 
 def test_missing_required_service_key_fails_closed_without_value_disclosure():

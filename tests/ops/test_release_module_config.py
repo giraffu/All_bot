@@ -298,6 +298,12 @@ def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, caps
     assert '"ignored_legacy_keys"' in output
 
 
+def test_required_channel_id_is_not_an_ignorable_legacy_key():
+    module = _load_module()
+
+    assert "REQUIRED_CHANNEL_ID" not in module.SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS
+
+
 def test_initial_dashboard_config_apply_rejects_unreviewed_unknown_key(monkeypatch):
     module = _load_module()
     monkeypatch.setattr(
