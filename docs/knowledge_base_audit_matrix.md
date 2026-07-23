@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-23：为 gpu-226 的 `pornmaster_flux2_edit_bf16` / `pornmaster_flux2_multi_edit_bf16` 准备生产 Worker 有界流水线候选。`remote_workers` 以 claimed/Comfy/delivery 三类独立门禁实现 `3/2/1`：最多占三单、物理 GPU 仍单执行且最多一个 Comfy pending、结果交付串行；`gpu_done` 后下一单可继续计算，但前一单必须在上传成功且 Central `/complete` 确认后才终态。其它 LAN profile 保持单计算槽，RunPod 不启用该特例。事实源为生产 worker、LAN runtime renderer、focused tests、任务链路文档与 task-engine Skill；本条只记录代码候选，不表示 main artifact 已构建或 gpu-226 已完成 20 单正式灰度。
+
 > 2026-07-23：QQCC 四类场景配置收口为单一“场景配置”面板，按基础、模型、首尾帧或后处理独立分区；AI滤镜原图换脸归入后处理。`video_scenes[].resolution` 新增 `512p|720p|1024p`（旧值默认 `720p`），`ai_video_scenes[].resolution` 当前固定 `1280x704`，API 拒绝非法值及 `1024p + 10s`。QQCC AI动图不再展示画质按钮或读取用户等级权限，提交、重生成、结果续作和多段链逐段读取当前场景分辨率；主 Bot、workflow、Worker mapping、GPU runtime 与数据库结构不变。发布边界固定为测试/正式 `qqcc-bot,qqcc-config --no-maintenance`，任一强制维护或未知契约 blocker 必须在 mutation 前停止。
 > 2026-07-23：Dashboard 客服工单分类统一收口为显式五项清单，包含 `business`（商业合作）和 `uncategorized`（未分类）；列表与详情对未知分类显示带原始值的兜底标签，分类下拉保留完整中文显示宽度。管理后台 SPA 新增发布版本监测，定期及窗口重新获得焦点时读取 `no-store` 入口页，比对哈希化 `main-*.js`，发现新版本后自动刷新，避免已打开页面长期运行旧资源。本条记录代码与测试事实，不表示已部署正式环境；本变更不含数据库迁移。
 > 2026-07-23：客服 Bot 工单改为进程内多消息草稿。分类点击不写数据库；每条成功记录的文字/图片/文件附“结束提交”，切换其它分类会先提交已有内容，最后一次内容后 5 分钟自动提交，未分类直接留言进入同一流程。最终提交通过 `support_ticket_service.finalize_ticket_submission(...)` 在单事务中创建一张全新工单及有序消息，Dashboard 只看到完成工单；附件失败不再伪装成功。草稿不使用 Redis，容器异常重启会丢失未完成内容。生产数据库若仍在 `e7f8a9b0c1d2`，发布前必须确认单一 head 并由 `alembic upgrade head` 连续执行 `f8a9b0c1d2e3` 与 `62d4a8f9c7e1`，不得只挑单条 migration。本条记录代码、测试与发布约束，不表示已部署正式环境。
