@@ -78,7 +78,6 @@ def test_pod_request_builder_matches_provider_render_for_prod_profiles():
         ("i2i_pro", "i2i_pro"),
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
-        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ]
     for task_type, profile in cases:
@@ -104,7 +103,6 @@ def test_future_runpod_requests_reserve_one_prefetched_task_for_every_profile():
         ("i2i_pro", "i2i_pro"),
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
-        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ]
 
@@ -148,13 +146,6 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
         task_type="ltx_video",
         environment="cloud-prod",
     )
-    pornmaster = RunPodPodRequestBuilder(
-        _settings_for_profile("pornmaster_flux2_edit")
-    ).create_pod_body(
-        task_type="pornmaster_flux2_edit",
-        environment="cloud-prod",
-    )
-
     assert img2img["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
     assert img2img["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
     assert wan22["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
@@ -168,19 +159,3 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     assert ltx["containerDiskInGb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     assert ltx["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
     assert ltx["env"]["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
-    assert pornmaster["imageName"] == PORNMASTER_FLUX2_EDIT_IMAGE
-    assert pornmaster["containerDiskInGb"] == RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
-    assert pornmaster["dockerStartCmd"] == list(
-        RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
-    )
-    assert pornmaster["env"]["SUPPORTED_TASK_TYPES"] == (
-        "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
-    )
-    assert (
-        pornmaster["env"]["RUNPOD_MODEL_PREFIX"]
-        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
-    )
-    assert (
-        pornmaster["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
-        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
-    )
