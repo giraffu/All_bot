@@ -2,7 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.qqcc_config_service import QqccSceneCreditCostError
+from src.services.qqcc_config_service import (
+    QqccSceneCreditCostError,
+    QqccSceneResolutionError,
+)
 
 from src.services.private_qqcc_bot_management import (
     PRIVATE_BOT_CONFIG_MAX_DRAW_CHAIN_DEPTH,
@@ -188,6 +191,26 @@ def test_private_demo_media_must_belong_to_current_tenant():
             },
         )
 
+
+def test_owner_config_update_rejects_invalid_scene_resolution():
+    bot = _bot()
+
+    with pytest.raises(QqccSceneResolutionError):
+        update_private_bot_config_record(
+            bot,
+            expected_version=bot.config_version,
+            raw_config={
+                "video_scenes": [
+                    {
+                        "id": "scene",
+                        "name": "Scene",
+                        "prompt": "move",
+                        "duration": "10s",
+                        "resolution": "1024p",
+                    }
+                ],
+            },
+        )
 
 def test_owner_config_rejects_oversized_prompt_before_normalization():
     bot = _bot()

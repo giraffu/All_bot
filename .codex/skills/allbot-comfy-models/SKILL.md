@@ -86,6 +86,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 ## 8. 交付要求
 
+QQCC 固定分辨率属于配置与提交参数边界：`video_scenes[].resolution` 为 `512p|720p|1024p`（缺失默认 `720p`），`ai_video_scenes[].resolution` 当前只允许 `1280x704`，AI动图 `1024p + 10s` 必须拒绝。不得借此扩展 workflow、Worker mapping、模型 profile、RunPod 或 LAN AIO；主 Bot 用户画质权限保持不变。
+
 - 修改后同步必要的 `/docs` 和 `docs/knowledge_base_audit_matrix.md`。
 - 如果技能体积再次接近 20KB，优先拆到 `references/` 或对应子模块文档，不继续堆正文。
 - 最终回复必须说明：改了哪些模型/工作流入口、如何验证、是否需要部署同步，以及是否存在未触达的运行态。

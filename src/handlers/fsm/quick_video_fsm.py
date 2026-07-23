@@ -11,7 +11,6 @@ from telegram.ext import (
 )
 
 from src.constants import (
-    DURATION_MULTIPLIER,
     DURATION_PERMISSIONS,
     DEFAULT_DURATION,
     DEFAULT_RESOLUTION,
@@ -22,7 +21,6 @@ from src.constants import (
     MODE_DOGGY_STYLE,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
-    RESOLUTION_COST,
     RESOLUTION_PERMISSIONS,
     get_video_settings_keyboard,
 )
@@ -49,16 +47,11 @@ from src.services.qqcc_config_service import (
     get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
-    get_enabled_qqcc_video_scenes,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
     render_qqcc_copywriting,
-)
-from src.services.qqcc_video_scene_chain_service import (
-    QqccVideoSceneChainError,
-    resolve_qqcc_video_scene_chain,
 )
 from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
 from src.services.qqcc_runtime_context import (
@@ -73,7 +66,6 @@ from src.services.quick_video_submission_service import (
     build_quick_video_settings_update,
     build_quick_video_submission_plan,
     calculate_quick_video_cost,
-    normalize_qqcc_quick_video_resolution,
     resolve_qqcc_video_scene_from_fsm_data,
     resolve_qqcc_ai_video_scene_from_fsm_data,
     resolve_qqcc_video_scene_task_type,
@@ -234,28 +226,6 @@ async def _resolve_quick_video_allowed_settings(
     return allowed_resolutions, allowed_durations, user_group, user_identity
 
 
-def _qqcc_chain_allows_1024p(
-    qqcc_config: dict | None,
-    fsm_data: dict | None,
-) -> bool:
-    if not qqcc_config or not fsm_data or fsm_data.get("scene_kind") == "ai_video":
-        return True
-    root_scene_id = str(fsm_data.get("scene_id") or "").strip()
-    if not root_scene_id:
-        return True
-    chain_config = dict(qqcc_config)
-    chain_config["video_scenes"] = get_enabled_qqcc_video_scenes(qqcc_config)
-    try:
-        scenes = resolve_qqcc_video_scene_chain(
-            chain_config,
-            scene_kind="video",
-            root_scene_id=root_scene_id,
-        )
-    except QqccVideoSceneChainError:
-        return False
-    return all(str(scene.get("duration") or "") != "10s" for scene in scenes)
-
-
 def _strip_menu_prefix(text: str) -> str:
     text = (text or "").strip()
     first_token, _, rest = text.partition(" ")
@@ -333,6 +303,10 @@ def _sync_qqcc_scene_to_quick_video_data(
         {
             "mode": mode,
             "duration": scene["duration"],
+            "resolution": str(
+                scene.get("resolution")
+                or ("1280x704" if scene_kind == "ai_video" else "720p")
+            ),
             "engine": scene.get("engine"),
             "lora_name": str(scene.get("lora_name") or ""),
             "lora_items": list(scene.get("lora_items") or []),
@@ -387,46 +361,7 @@ async def _build_quick_video_settings_markup(
         )
         keyboard = list(reply_markup.inline_keyboard)
     else:
-        (
-            allowed_resolutions,
-            allowed_durations,
-            _user_group,
-            _user_identity,
-        ) = await _resolve_quick_video_allowed_settings(
-            context=context,
-            user_id=user_id,
-            qqcc_config=qqcc_config,
-        )
-        credits_text = _t(context, "app.credits")
-        fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(
-            getattr(context, "user_data", {}).get("quick_video_data")
-        )
         keyboard = []
-        res_row = []
-        visible_resolutions = [
-            res
-            for res in allowed_resolutions
-            if not (res == "1024p" and duration == "10s")
-            and not (
-                res == "1024p"
-                and not _qqcc_chain_allows_1024p(
-                    qqcc_config,
-                    context.user_data.get("quick_video_data"),
-                )
-            )
-        ]
-        for res in visible_resolutions:
-            if fixed_credit_cost is not None:
-                display_cost = fixed_credit_cost
-            else:
-                base_cost = RESOLUTION_COST.get(res, 6)
-                multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
-                display_cost = int(base_cost * multiplier)
-            display_text = f"{res} ({display_cost}{credits_text})"
-            text = f"✅ {display_text}" if res == resolution else display_text
-            res_row.append(InlineKeyboardButton(text, callback_data=f"set_res_{res}"))
-        if res_row:
-            keyboard.append(res_row)
 
     keyboard.append(
         [
@@ -615,27 +550,6 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
-    if qqcc_config is not None:
-        (
-            allowed_resolutions,
-            _allowed_durations,
-            _group,
-            _identity,
-        ) = await _resolve_quick_video_allowed_settings(
-            context=context,
-            user_id=user_id,
-            qqcc_config=qqcc_config,
-        )
-        res = normalize_qqcc_quick_video_resolution(
-            resolution=res,
-            duration=dur,
-            allowed_resolutions=allowed_resolutions,
-        )
-        if res is None:
-            await _reply_qqcc_feature_disabled(update, context)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
-        fsm_data["resolution"] = res
     reply_markup = await _build_quick_video_settings_markup(
         context=context,
         user_id=user_id,
@@ -690,39 +604,17 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return await start_generation(update, context)
 
-    allowed_resolutions: list[str] | None = None
-    allowed_durations: list[str] | None = None
     if qqcc_config is not None:
-        (
-            allowed_resolutions,
-            _allowed_durations,
-            _group,
-            _identity,
-        ) = await _resolve_quick_video_allowed_settings(
-            context=context,
-            user_id=user_id,
-            qqcc_config=qqcc_config,
-        )
-        allowed_resolutions = [
-            res
-            for res in allowed_resolutions
-            if not (res == "1024p" and fsm_data.get("duration") == "10s")
-            and not (
-                res == "1024p" and not _qqcc_chain_allows_1024p(qqcc_config, fsm_data)
-            )
-        ]
-        if not allowed_resolutions:
-            await _reply_qqcc_feature_disabled(update, context)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
+        await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
+        return QuickVideoState.WAIT_SETTINGS
 
     settings_update = build_quick_video_settings_update(
         callback_data=data,
         resolution=str(fsm_data.get("resolution") or ""),
         duration=str(fsm_data.get("duration") or ""),
         qqcc_config_present=qqcc_config is not None,
-        allowed_resolutions=allowed_resolutions,
-        allowed_durations=allowed_durations,
+        allowed_resolutions=None,
+        allowed_durations=None,
     )
     if isinstance(settings_update, QuickVideoSettingsReject):
         if settings_update.reason == QuickVideoSubmissionRejectReason.FEATURE_DISABLED:
@@ -799,23 +691,10 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
-    allowed_resolutions: list[str] | None = None
-    if qqcc_config is not None:
-        (
-            allowed_resolutions,
-            _allowed_durations,
-            _group,
-            _identity,
-        ) = await _resolve_quick_video_allowed_settings(
-            context=context,
-            user_id=user_id,
-            qqcc_config=qqcc_config,
-        )
-
     plan = build_quick_video_submission_plan(
         fsm_data=fsm_data,
         qqcc_config=qqcc_config,
-        allowed_resolutions=allowed_resolutions,
+        allowed_resolutions=None,
     )
     if isinstance(plan, QuickVideoSubmissionReject):
         if qqcc_config is not None:

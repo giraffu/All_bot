@@ -10,6 +10,7 @@ from dashboard.backend.schemas import QqccBotConfigRequest, QqccBotConfigRespons
 from src.database.core import get_db
 from src.services.qqcc_config_service import (
     QqccSceneCreditCostError,
+    QqccSceneResolutionError,
     load_qqcc_config_payload,
     save_qqcc_config_payload,
 )
@@ -68,6 +69,8 @@ async def update_qqcc_config(
     except QqccVideoSceneChainError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except QqccSceneCreditCostError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccSceneResolutionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

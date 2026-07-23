@@ -183,3 +183,10 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - QQCC AI视频结果只展示场景名与 `重新生成`，不得展示 LTX 扩展/拼接按钮；重生成必须读取最新 `ai_video_scenes` 并重新核费。私有 Bot 尾帧链用 durable continuation 的 `ltx_video` executor 保存原图、当前尾帧和阶段状态后续跑。
 - 主 Dashboard 不再出现 `懒人Bot配置` 导航；独立 QQCC Config Web 登录、加载、开关切换和保存 payload 有前端测试。
 - compose/script 语法检查通过。
+
+### 2026-07-23 场景统一配置与固定分辨率
+
+- 独立 QQCC Config 的四类场景行只能保留一个“场景配置”入口。面板使用单份草稿，取消不改场景、确定一次写回；子标题分别为全部场景的“基础配置”“模型配置”，AI动图/AI视频的“首尾帧配置”，AI绘图/AI滤镜的“后处理配置”。灵石消耗位于基础配置，AI滤镜的原图换脸位于后处理配置。
+- `video_scenes[].resolution` 只允许 `512p|720p|1024p`，旧场景缺失时默认 `720p`；`ai_video_scenes[].resolution` 当前只允许 `1280x704`。配置 API 必须拒绝非法值和 AI动图 `1024p + 10s`，不得静默降级；不新增表或 migration。
+- QQCC AI动图上传后只显示固定参数摘要和“开始生成”，不得显示画质按钮或按用户等级过滤；AI视频继续收图后直接提交。提交、重新生成、结果续作和多段链都以当前场景配置为权威，每段使用自己的分辨率、时长、模型和动态价格。根场景固定价仍只扣一次。非 QQCC 主 Bot 的画质权限与设置保持原样。
+- 此变更不得扩大到 workflow、Worker mapping、模型或 GPU runtime。独立发布只允许 `qqcc-bot,qqcc-config`；用户明确授权 `--no-maintenance` 时也必须在 migration、未知契约、配置漂移、首次切换或发布器 blocker 出现时于 mutation 前停止，不得转维护模式或扩大模块。

@@ -392,7 +392,7 @@ def _build_qqcc_ai_video_chain_segment(
             else QuickVideoSubmissionKind.LTX_VIDEO
         ),
         mode=MODE_LTX_VIDEO,
-        resolution="1280x704",
+        resolution=str(scene.get("resolution") or "1280x704"),
         duration=f"{duration_seconds}s",
         cost=(10 * (duration_seconds // 5))
         + calculate_qqcc_draw_chain_cost(tail_draw_chain),
@@ -420,11 +420,10 @@ def _build_qqcc_ai_video_chain_segment(
 def _build_qqcc_video_chain_segment(
     config: dict[str, Any],
     scene: dict[str, Any],
-    *,
-    resolution: str,
 ) -> QqccVideoChainSegment:
     mode = resolve_qqcc_video_scene_task_type(scene)
     duration = str(scene.get("duration") or "5s")
+    resolution = str(scene.get("resolution") or "720p")
     tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(config, scene)
     tail_draw_chain = (
         resolve_qqcc_draw_scene_chain(config, tail_draw_scene)
@@ -547,7 +546,7 @@ def build_quick_video_submission_plan(
                 else QuickVideoSubmissionKind.LTX_VIDEO
             ),
             mode=MODE_LTX_VIDEO,
-            resolution="1280x704",
+            resolution=str(scene.get("resolution") or "1280x704"),
             duration=duration,
             total_cost=(
                 fixed_credit_cost
@@ -590,15 +589,7 @@ def build_quick_video_submission_plan(
 
     mode = resolve_qqcc_video_scene_task_type(scene)
     duration = str(scene.get("duration") or duration)
-    resolution = normalize_qqcc_quick_video_resolution(
-        resolution=resolution,
-        duration=duration,
-        allowed_resolutions=allowed_resolutions or [],
-    )
-    if resolution is None:
-        return QuickVideoSubmissionReject(
-            QuickVideoSubmissionRejectReason.INVALID_SETTINGS
-        )
+    resolution = str(scene.get("resolution") or "720p")
 
     chain_config = dict(qqcc_config)
     chain_config["video_scenes"] = get_enabled_qqcc_video_scenes(qqcc_config)
@@ -607,23 +598,16 @@ def build_quick_video_submission_plan(
         scene_kind="video",
         root_scene_id=str(scene.get("id") or ""),
     )
-    if (
-        len(chain_scenes) > 1
-        and resolution == "1024p"
-        and any(
-            str(chain_scene.get("duration") or "") == "10s"
-            for chain_scene in chain_scenes
-        )
+    if any(
+        str(chain_scene.get("resolution") or "720p") == "1024p"
+        and str(chain_scene.get("duration") or "5s") == "10s"
+        for chain_scene in chain_scenes
     ):
         return QuickVideoSubmissionReject(
             QuickVideoSubmissionRejectReason.INVALID_SETTINGS
         )
     chain_segments = tuple(
-        _build_qqcc_video_chain_segment(
-            chain_config,
-            chain_scene,
-            resolution=resolution,
-        )
+        _build_qqcc_video_chain_segment(chain_config, chain_scene)
         for chain_scene in chain_scenes
     )
 

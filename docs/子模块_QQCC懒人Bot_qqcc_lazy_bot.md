@@ -104,6 +104,10 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 
 `video_scenes`、`ai_video_scenes`、`draw_scenes`、`filter_scenes` 的数组顺序分别决定 AI动图、AI视频、AI绘图、AI滤镜二级场景菜单的展示顺序。独立 QQCC Config Web 使用四个 Tab，每类场景独立按每页 5 条分页；分页只优化当前渲染行，保存仍提交完整场景数组。每个场景行提供上移/下移按钮，首行不能上移、末行不能下移；移动后仍通过现有整份配置 PUT 保存，仅交换数组位置并保持场景 `id` 和引用不变。新增场景自动打开其所在末页，删除和跨页移动后自动校正到包含目标行的有效页。
 
+每个场景行只保留一个“场景配置”按钮，弹窗使用单份草稿，取消不修改、确定一次性写回。四类场景均按独立子标题展示“基础配置”和“模型配置”；AI动图/AI视频另有“首尾帧配置”，AI绘图/AI滤镜另有“后处理配置”。灵石消耗属于基础配置；AI动图的分辨率、时长、画面比例和 AI视频的分辨率、时长也在基础配置；AI滤镜的原图换脸从模型区移到后处理区。桌面与移动端弹窗均使用内部滚动。
+
+`video_scenes[].resolution` 允许 `512p`、`720p`、`1024p`，旧场景缺失字段按 `720p` 归一；`ai_video_scenes[].resolution` 当前只允许 `1280x704`。GET options 下发可选清单和默认值，前端不维护另一份运行时清单。PUT 对非法显式值返回 422，并拒绝 AI动图 `1024p + 10s`，不静默改值。QQCC AI动图上传后只显示固定参数摘要和“开始生成”，AI视频继续收图后直接提交；提交、重新生成、结果续作和多段链逐段读取当前场景的分辨率、时长、模型与动态价格，根场景固定价仍只扣一次。非 QQCC 主 Bot 的画质设置和用户权限不变。该扩展继续存储在现有 `runtime_checkpoints` JSON 中，不新增数据库表或 migration，也不改变 workflow、Worker mapping 或 GPU runtime。
+
 示范媒体上传主接口为 `PUT /api/qqcc/demo-media-json/{scene_kind}/{scene_id}/{slot}`，前端以 Base64 JSON 传输，规避 Cloudflare 对 multipart 文件请求的边缘拦截；旧 `/demo-media/...` POST/PUT 仅保留兼容，全部仍由独立 QQCC Config JWT 保护。图片上限 10MB、视频上限 50MB；前端先按槽位校验 MIME 与大小，后端解码后仍检查 MIME、文件签名与大小。上传失败时前端必须优先展示后端 `detail` 的安全中文映射或明确的网络/413/401/403 原因。上传返回媒体描述和短期预览 URL，管理员仍需点击页面“保存”把描述写入当前配置。
 
 上传 input 示范后，每个场景操作区可点击“生成”。`POST /api/qqcc/demo-generation/{scene_kind}` 只负责把 input 示范复制到 Central 可读的临时 MinIO key 并按场景当前草稿的 engine、prompt、negative prompt、LoRA 和动图 duration 提交；前端每 2 秒轮询 `GET /api/qqcc/demo-generation/{scene_kind}/{scene_id}/{generation_id}`，最长等待 15 分钟。成功终态下载图片或 MP4，经签名校验后写入场景目录下带 generation ID 的唯一 output 草稿 key，并清理临时 input；不得覆盖当前配置已引用的 output 对象。该后台预览链不调用用户任务 facade，不扣灵石、不占用户并发、不写 History，也没有退款语义；前端仅把返回的 output media 写入当前配置草稿，仍须管理员手动点击“保存”后 Bot 才引用新媒体。私有 Bot owner 复用对应 owner API，输入/输出严格限定在 `qqcc/private/<private_bot_id>/demo/...`，不得跨租户引用。

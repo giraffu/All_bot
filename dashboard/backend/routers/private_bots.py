@@ -56,6 +56,7 @@ from src.services.qqcc_demo_generation_service import (
 from src.services.qqcc_video_scene_chain_service import QqccVideoSceneChainError
 from src.services.qqcc_config_service import (
     QqccSceneCreditCostError,
+    QqccSceneResolutionError,
     normalize_qqcc_config,
 )
 from src.services.redis_client import redis_client
@@ -170,6 +171,8 @@ async def update_owner_private_bot_config(
     except PrivateBotConfigLimitError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except QqccSceneCreditCostError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccSceneResolutionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except QqccVideoSceneChainError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

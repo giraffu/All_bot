@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "010fe01156e49f746d134f68f382b3ea4afb2c37",
+  "batch": "2026-07-23-qqcc-scene-config",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-2026-07-23-qqcc-scene-config",
+  "members": [
+    {
+      "base_sha": "010fe01156e49f746d134f68f382b3ea4afb2c37",
+      "branch": "codex/a-qqcc-scene-unified-config",
+      "head": "e28d55646d3fe1b3d2f81496fe283164125c2d69",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

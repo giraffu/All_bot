@@ -67,6 +67,7 @@ VIDEO_BUTTON_KEYS = (
     "closeup_blowjob",
 )
 VIDEO_RESOLUTION_KEYS = ("512p", "720p", "1024p")
+DEFAULT_VIDEO_SCENE_RESOLUTION = "720p"
 VIDEO_DURATION_KEYS = ("5s", "8s", "10s")
 VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO = "image_to_video"
 VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2 = "wan22_video_v2"
@@ -80,6 +81,8 @@ VIDEO_SCENE_MAX_LORA_ITEMS = 5
 AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"
 AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,)
 AI_VIDEO_DURATION_KEYS = (5, 10, 15, 20)
+AI_VIDEO_RESOLUTION_KEYS = ("1280x704",)
+DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
 AI_VIDEO_MAX_LORA_ITEMS = 3
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -135,6 +138,10 @@ class QqccSceneCreditCostError(ValueError):
     """Raised when an explicitly configured scene price is not a positive integer."""
 
 
+class QqccSceneResolutionError(ValueError):
+    """Raised when an explicitly configured scene resolution is unsupported."""
+
+
 def _normalize_scene_credit_cost(raw_cost: Any) -> int | None:
     return (
         raw_cost
@@ -161,6 +168,35 @@ def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
             if _normalize_scene_credit_cost(raw_cost) is None:
                 raise QqccSceneCreditCostError(
                     f"{section}.credit_cost must be a positive integer or null"
+                )
+
+
+def validate_qqcc_scene_resolutions(raw_config: Any) -> None:
+    if not isinstance(raw_config, dict):
+        return
+    sections = (
+        ("video_scenes", frozenset(VIDEO_RESOLUTION_KEYS)),
+        ("ai_video_scenes", frozenset(AI_VIDEO_RESOLUTION_KEYS)),
+    )
+    for section, allowed in sections:
+        raw_scenes = raw_config.get(section)
+        if not isinstance(raw_scenes, list):
+            continue
+        for raw_scene in raw_scenes:
+            if not isinstance(raw_scene, dict) or "resolution" not in raw_scene:
+                continue
+            resolution = raw_scene.get("resolution")
+            if not isinstance(resolution, str) or resolution.strip() not in allowed:
+                raise QqccSceneResolutionError(
+                    f"{section}.resolution must be one of {sorted(allowed)}"
+                )
+            if (
+                section == "video_scenes"
+                and resolution.strip() == "1024p"
+                and raw_scene.get("duration") == "10s"
+            ):
+                raise QqccSceneResolutionError(
+                    "video_scenes resolution 1024p is incompatible with duration 10s"
                 )
 
 
@@ -237,6 +273,7 @@ def _default_video_scenes(
             "prompt": _preset_prompt(scene["prompt_key"], raw_prompts),
             "negative_prompt": "",
             "duration": "5s",
+            "resolution": DEFAULT_VIDEO_SCENE_RESOLUTION,
             "aspect_ratio": QQCC_VIDEO_ASPECT_SOURCE,
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
@@ -673,6 +710,12 @@ def _normalize_video_scene(
             raw_scene.get("negative_prompt")
         ),
         "duration": duration,
+        "resolution": (
+            raw_scene.get("resolution").strip()
+            if isinstance(raw_scene.get("resolution"), str)
+            and raw_scene.get("resolution").strip() in VIDEO_RESOLUTION_KEYS
+            else DEFAULT_VIDEO_SCENE_RESOLUTION
+        ),
         "aspect_ratio": normalize_qqcc_video_aspect_ratio(
             raw_scene.get("aspect_ratio")
         ),
@@ -792,6 +835,12 @@ def _normalize_ai_video_scene(
             raw_scene.get("negative_prompt")
         ),
         "duration": duration,
+        "resolution": (
+            raw_scene.get("resolution").strip()
+            if isinstance(raw_scene.get("resolution"), str)
+            and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
+            else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
+        ),
         "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
         "lora_items": lora_items,
         "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
@@ -1091,6 +1140,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "prompt": prompt,
                 "negative_prompt": "",
                 "duration": "5s",
+                "resolution": DEFAULT_VIDEO_SCENE_RESOLUTION,
                 "aspect_ratio": QQCC_VIDEO_ASPECT_SOURCE,
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
@@ -1402,6 +1452,14 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
         "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "default_video_resolution": DEFAULT_VIDEO_SCENE_RESOLUTION,
+        "default_ai_video_resolution": DEFAULT_AI_VIDEO_SCENE_RESOLUTION,
+        "video_resolutions": [
+            {"value": value, "label": value} for value in VIDEO_RESOLUTION_KEYS
+        ],
+        "ai_video_resolutions": [
+            {"value": DEFAULT_AI_VIDEO_SCENE_RESOLUTION, "label": "1280×704"}
+        ],
         "default_scene_credit_costs": dict(DEFAULT_SCENE_CREDIT_COSTS),
         "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),
         "video_engines": [
@@ -1550,6 +1608,7 @@ async def save_qqcc_config_payload(
 
     validate_qqcc_video_scene_chain_config(payload)
     validate_qqcc_scene_credit_costs(payload)
+    validate_qqcc_scene_resolutions(payload)
     config = normalize_qqcc_config(payload)
     result = await db.execute(
         select(RuntimeCheckpoint)

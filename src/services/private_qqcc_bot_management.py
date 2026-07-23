@@ -9,6 +9,7 @@ from src.services.qqcc_config_service import (
     build_qqcc_config_options,
     normalize_qqcc_config,
     validate_qqcc_scene_credit_costs,
+    validate_qqcc_scene_resolutions,
 )
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
 from src.services.qqcc_video_scene_chain_service import (
@@ -170,6 +171,7 @@ def update_private_bot_config_record(
         raise PrivateBotConfigVersionConflict("private Bot config version is stale")
     validate_private_bot_config_limits(raw_config)
     validate_qqcc_scene_credit_costs(raw_config)
+    validate_qqcc_scene_resolutions(raw_config)
     validate_qqcc_video_scene_chain_config(raw_config)
     normalized = normalize_qqcc_config(raw_config)
     _validate_media_scope(normalized, private_bot_id=int(bot.id))
