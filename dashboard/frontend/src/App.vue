@@ -145,7 +145,7 @@ const handleLogout = () => {
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
         :class="isActiveTabScrollable ? 'overflow-y-auto' : 'overflow-hidden'"
       >
-        <div class="w-full flex-1 flex flex-col">
+        <div class="dashboard-tab-viewport w-full flex-1 flex flex-col min-h-0">
           <div :class="currentTabView.containerClass">
             <component :is="currentTabView.component" v-bind="currentTabView.bindings" />
           </div>
