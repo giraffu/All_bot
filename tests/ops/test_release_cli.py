@@ -1416,6 +1416,7 @@ def test_dashboard_fast_track_migration_uses_running_web_container_for_backup(
     assert 'database_url="$(docker exec "$web_container"' in script
     assert "run --rm -T web-api sh -lc 'printf" not in script
     assert module.PG_DUMP_IMAGE in script
+    assert '--network "container:$web_container"' in script
 
 
 def test_test_cloud_deploy_does_not_chmod_existing_tmp_snapshot_parent(monkeypatch):
