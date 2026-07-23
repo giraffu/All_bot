@@ -437,6 +437,8 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - `PREFETCH_RESERVE_TASK`
 - `PIPELINE_ENABLED`
 - `PIPELINE_MAX_RUNNING_TASKS`
+- `PIPELINE_MAX_CLAIMED_TASKS`
+- `PIPELINE_DELIVERY_CONCURRENCY`
 - `PIPELINE_TASK_TYPES`
 - `CANCEL_LOCK_ON_POP`
 - `RESULT_SPOOL_DIR`
@@ -463,7 +465,8 @@ Worker 拉到任务后会先处理输入：
 - 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间提前下载、规范化和上传同类型下一单输入。默认仍通过 relay/Central `/api/agent/task/peek` 只读观察候选，真实 `/pop` 后只有 `task_id` 命中缓存才复用。
 - `PREFETCH_RESERVE_TASK=true` 是单 Worker 一槽本地预接模式：预取协程改用现有原子 `/api/agent/task/pop?cancel_lock=true` 先接走一单并保存在 Worker 内存中，当前单结束后优先执行该预接单，不再访问 Central 抢第二次。多个 Worker 因此不会预拉同一任务；代价是预接单会提前进入 Central running，且短暂不可取消。该模式不要求修改 Central 服务。
 - `PREFETCH_CONSUME_WAIT_SECONDS` 只限制下一单开始时等待尚未完成的预取下载多久；缓存已完成时不等待。超时后会取消未完成的预取下载并对已经原子预接的任务走正常输入准备，不会再从 Central 接新任务。所有正式 LAN AIO Worker，以及统一 RunPod create request 后续新建的 cloud-test/cloud-prod Pod，默认使用深度 1、预接模式和 10 秒上限，`PREFETCH_TASK_TYPES` 自动跟随该 Worker 的 `SUPPORTED_TASK_TYPES`；预接任务等待前一单期间每 15 秒续一次 task heartbeat，但使用 `set_current=false`，不会覆盖当前执行任务。RunPod 该契约不反向更新已运行 Pod，且新 Pod 的 `deploy` Worker bundle 必须包含预接实现。
-- 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 running slot 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。默认每个 worker 最多持有 2 个 Central running 任务，pending 仍可取消，进入输入准备后不可取消。
+- 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 Comfy inflight 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。`PIPELINE_MAX_RUNNING_TASKS` 控制 Comfy preparing/queued/running 数，`PIPELINE_MAX_CLAIMED_TASKS` 是包含 execution、delivery 和 reserved prefetch 的硬上限，promote reserved task 只能做等量阶段转换，不能多占一单。`PIPELINE_DELIVERY_CONCURRENCY` 单独限制结果解析、物化、spool、上传和 complete 的并发；GPU 发出 `gpu_done` 后可立即让下一单进入计算，但当前任务仍保持 running，直到拿到交付槽、上传成功并收到 Central `/complete` 确认。
+- LAN `pornmaster_flux2_edit_bf16` 是首个有界重叠灰度 profile：单图与多图 BF16 共用最多 3 个 claimed、最多 2 个 Comfy inflight（一个真实执行、一个 pending）和 1 个交付槽。其它 LAN profile 默认仍为 1 个 Comfy inflight、1 个 reserved prefetch；RunPod 不启用本次 BF16 LAN 特例。
 
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。
 
@@ -508,8 +511,8 @@ Worker 执行流程：
 4. `wait_for_task_completion(...)` 以 WebSocket 终态为快路径，同时在提交后约 45 秒开始周期性探测 ComfyUI `/history/{prompt_id}`，约每 12 秒探测一次；若 history 已有结果，会立即设置完成态，避免半活 WebSocket 让 Worker 等满旧的固定窗口
 5. Worker 普通任务保留约 30 分钟硬超时，超时后先做最终 history 探测；若仍无结果则抛出 `TaskExecutionTimeoutError` 并按失败上报，避免超时后误进入成功收口。RunPod `wan22_video_v2` profile 默认使用约 10 分钟专属完成超时，timeout 时会 best-effort 调用 ComfyUI `/interrupt`，上报失败并退出 agent/container，让外层重启获得干净 ComfyUI 队列，避免继续接下一单叠在卡住的 prompt 后面
    - RunPod `wan22_video_v2` ComfyUI 启动 env 还默认带 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`；若日志停在 `WanTEModel prepared for dynamic VRAM loading` 后无采样进展，先核验该 env 是否在新 Pod 中生效，再继续排查 workflow、模型或 GPU 规格。
-6. 开启双槽 pipeline 时，当前任务 GPU 完成后会进入后台 finalizer；worker 可同时让下一单继续占用 ComfyUI/GPU 队列。WebSocket 事件按 `prompt_id -> TaskExecutionContext` 路由，heartbeat 会覆盖本地所有 running/finalizing context。
-7. finalizer 从 ComfyUI history 或 view API 取回结果文件
+6. 开启有界 pipeline 时，当前任务收到 `gpu_done` 后释放 Comfy inflight 并等待独立交付槽；worker 可同时让下一单继续占用 ComfyUI/GPU 队列。WebSocket 事件按 `prompt_id -> TaskExecutionContext` 路由，heartbeat 覆盖本地 preparing/queued/running/gpu_done/delivering context。
+7. 拿到交付槽后，finalizer 从 ComfyUI history 或 view API 取回结果文件
 8. `i2i_pro` 在上传前会对主结果做轻量质量闸门：若 ComfyUI success 但输出为纯黑/极暗图，或与参考输入过度相似，worker 会换 seed 重新提交一次；重试后仍退化则按失败上报，避免把黑图或近原图结果 `/complete` 给用户。
 9. 上传结果到当前 output bucket。云正式/云测试 worker 可先把结果写入本地 `RESULT_SPOOL_DIR`，再交给本地 relay sidecar 上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时继续由 worker 进程直接上传。
 10. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。无论是否使用 sidecar，都必须先拿到 R2/S3 put 成功确认，再 `/complete`。

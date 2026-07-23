@@ -345,6 +345,48 @@ def test_all_active_lan_aio_workers_reserve_and_prefetch_one_task(slot_id):
     assert environment["PREFETCH_CONSUME_WAIT_SECONDS"] == "10"
 
 
+def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["PIPELINE_ENABLED"] == "true"
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "2"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "3"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert environment["PIPELINE_TASK_TYPES"] == (
+        "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
+    )
+
+
+def test_non_bf16_lan_aio_keeps_single_compute_slot():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-i2i_pro"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+
+
 def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
     ops = LanAioProdOps(
         config_root=None,
