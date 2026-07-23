@@ -16,14 +16,17 @@
       "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "payment-api": {
+      "environments": ["prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
       "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-backend": {
+      "environments": ["prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "AGENT_SECRET_TOKEN", "DASHBOARD_SECRET_KEY", "DASHBOARD_ADMIN_USERNAME", "DASHBOARD_ADMIN_PASSWORD_HASH", "SUPPORT_BOT_TOKEN"],
       "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-frontend": {
+      "environments": ["prod"],
       "required": ["ALLBOT_ENV"],
       "patterns": []
     },
@@ -51,20 +54,24 @@
       "patterns": ["PRIVATE_QQCC_BOT_*", "QQCC_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "JWT_*"]
     },
     "paid-group-bot": {
+      "environments": ["prod"],
       "enabled_if": {"key": "PAID_GROUP_BOT_TOKEN", "nonempty": true},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "PAID_GROUP_BOT_TOKEN", "PAID_GROUP_CHAT_ID", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
       "patterns": ["PAID_GROUP_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*"]
     },
     "support-bot": {
+      "environments": ["prod"],
       "enabled_if": {"key": "SUPPORT_BOT_TOKEN", "nonempty": true},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
       "patterns": ["SUPPORT_BOT_*", "TELEGRAM_*", "DATABASE_*", "R2_*"]
     },
     "postgres": {
+      "environments": ["test"],
       "required": ["ALLBOT_ENV"],
       "patterns": ["CLOUD_TEST_POSTGRES_*"]
     },
     "redis": {
+      "environments": ["test"],
       "required": ["ALLBOT_ENV"],
       "patterns": ["CLOUD_TEST_REDIS_*"]
     }

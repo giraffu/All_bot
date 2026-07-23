@@ -1,6 +1,7 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
 > 2026-07-22：普通 schema-v2 main control-plane 发布由 `release.py` 自动选择 `streamlined`：目标主机只读检查选中服务的现有投影，单次 pull 后以 `compose up --no-deps --wait` 替换目标服务，并在同一远端脚本核对 exact digest、OCI revision、health、解析后的 `API_BASE` 与 Bot single polling/getUpdates conflict。成功即按 artifact + exact digest 自动写入带真实开始/完成时间的 `verified` evidence；`verify-test` 保留作专项人工补充，不再是普通路径必需步骤。失败只使用主机已有旧 ref 回切目标服务，不预拉旧镜像、不做全局 queue drain、完整 rollback preflight、非目标快照或固定 observation。migration、Compose/env、首次切换、未知影响及 test-execution/GPU 继续使用 `strict`/专用 operator。
+> 2026-07-23：control-plane 的 strict 与 streamlined 都按测试环境实际服务裁剪配置检查；migration 继续 strict，但不再构造测试站不存在的 Dashboard、Payment、Paid Group 或 Support 投影。服务配置契约以 `environments` 标注拓扑；全量 `config-plan/config-apply` 会报告并清理历史 prod-only `retired_services`，代码发布只核验目标 current projection，并以 `effective_environment_revision` 记录当前已激活配置。目标缺键、篡改、revision drift 或影响目标的未知键仍 fail closed。
 > 2026-07-22：A-H handoff 默认进入本机自动集成队列；单写者将等待项合成一个 main PR，依次等待 CI/bundle 后只部署该 main SHA 到测试环境。新 handoff 在已有集成/测试发布运行时排入下一批，任一失败阻断后续批次；正式环境不在协调器能力范围。QQCC Config 前后端继续按 standard 进入专属测试实例，Dashboard 仍不进入测试站，`test-execution` 只在专项诊断时启用。状态/回滚历史按 track + artifact digest 隔离。禁止代码/env rsync、云端 build、源码 bind mount和 RunPod 启动 clone。
 > 配置唯一事实源为云测试主机 `/etc/allbot/test.env`；发布器只生成权限 `600` 的逐服务投影，不把整份 env 注入全部容器。`safe_deploy_cloud_test.sh` 与旧维护脚本仅作 fail-closed 历史兼容，legacy `.env`/Compose 运行态不再是新发布事实源。
 > 首次切换前如仍只有 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名，先对该主机事实源执行 `scripts/migrate_legacy_test_env.py --control-plane-only`；候选文件通过 `config-plan` 后备份并原子替换。该模式只补 canonical 控制面键，不改写任何 Worker 选择、槽位或端点。
@@ -16,7 +17,7 @@
 ## 2. Legacy 入口与新事实源
 
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
-- 私密配置：`/etc/allbot/test.env`；逐服务投影：`/var/lib/allbot/config/test/<revision>/<service>.env`；非敏感镜像/SHA/配置 revision：release 目录的 `release.env`
+- 私密配置：`/etc/allbot/test.env`；逐服务投影：`/var/lib/allbot/config/test/<revision>/<service>.env`；非敏感镜像/SHA/当前已激活 `effective_environment_revision`：release 目录的 `release.env`。宿主候选 revision 未执行 `config-apply` 前不得写成已部署 revision。
 - 计划/发布：先执行 `scripts/release.py plan --env test --sha <full-sha>` 查看 `execution_profile` 与原因，再执行 `deploy --env test --sha <full-sha> --execute`；普通 `streamlined` 无需单独重复 `preflight`，`strict` 或人工诊断仍可显式执行。不得用 `--services` 人工缩小机器计算的依赖闭包。
 - 发布批次：A-H 推送并 handoff 后默认写入 `${XDG_STATE_HOME:-~/.local/state}/allbot/ai-integration-queue`；用户级 timer 以文件锁保证唯一写者，一次组合当前等待项为 release-batch，只创建一个 main PR。main CI bundle 成功后自动执行固定的 `release.py plan|deploy --env test --track control-plane`，strict 由 deploy 路由完整门禁。默认只部署需要测试的 control-plane/公共 Web；QQCC Config 按 standard 部署专属测试前后端，Dashboard-only 不修改测试站。Worker 专项诊断显式选择 `test-execution`。timer 启用后禁止并行启动另一条共享测试发布。
 - `test-execution` 首次没有独立 `current.json` 时，release plan 必须标记 `initial-release`，从当前 legacy `cloud-comfy-agent-test-*` / `cloud-worker-relay-test` 做 allowlist 快照和受控切换；快照、release env 与回滚材料统一位于 `~/APP/All_bot-release/release-env/test-execution/<sha>/`，后续 Worker preflight 也必须从该 track-scoped 路径读取。test-execution 未选择任何 cloud service 时跳过 cloud preflight，不要求云端存在该轨的 release.env。若 control-plane 已完成而 Worker 预检失败，保持原槽位做 forward-fix，不能把候选记为已完整部署。

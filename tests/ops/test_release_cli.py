@@ -6111,7 +6111,7 @@ def test_promote_module_config_scope_uses_union():
     assert "--service web-api" not in options
 
 
-def test_streamlined_deploy_uses_target_only_runtime_env_inspection(monkeypatch):
+def test_release_uses_target_only_runtime_env_inspection_for_strict_too(monkeypatch):
     module = _load_module()
     captured = {}
     revision = "1" * 64
@@ -6125,6 +6125,7 @@ def test_streamlined_deploy_uses_target_only_runtime_env_inspection(monkeypatch)
                 {
                     "environment": "test",
                     "environment_revision": "2" * 64,
+                    "effective_environment_revision": "4" * 64,
                     "service_revisions": {"qqcc-config-backend": revision},
                     "present_keys": ["ALLBOT_ENV"],
                     "public_values": {"ALLBOT_ENV": "test"},
@@ -6139,17 +6140,53 @@ def test_streamlined_deploy_uses_target_only_runtime_env_inspection(monkeypatch)
         env="test",
         command="deploy",
         modules=[],
-        streamlined_candidate=True,
         target_env_services={"qqcc-config-backend"},
         remote_host="cloud-test",
         remote_env_file="/etc/allbot/test.env",
     )
 
-    _values, _environment_revision, document = module._remote_runtime_env_snapshot(args)
+    _values, environment_revision, document = module._remote_runtime_env_snapshot(args)
 
     assert " inspect-target " in captured["script"]
     assert "--service qqcc-config-backend" in captured["script"]
+    assert environment_revision == "4" * 64
     assert document["drift"] is False
+
+
+def test_strict_test_target_config_scope_excludes_unavailable_prod_services():
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={
+            "central-api",
+            "dashboard-backend",
+            "payment-api",
+            "qqcc-config-backend",
+            "support-bot",
+            "web-api",
+        },
+        level="maintenance",
+        requires_db_upgrade=True,
+        matched_rules=["database-migrations"],
+    )
+
+    selected = module._release_target_env_services("test", impact)
+
+    assert selected == {"central-api", "qqcc-config-backend", "web-api"}
+    profile = module.resolve_execution_profile(
+        impact,
+        {
+            "schema_version": 2,
+            "track": "control-plane",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+            "selected_artifacts": ["central-api"],
+            "artifacts": {"central-api": {}},
+        },
+        {"drift": False},
+    )
+    assert profile.name == "strict"
+    assert "database-migration" in profile.reasons
 
 
 def test_streamlined_prod_operator_uses_bundle_and_evidence_without_ci_query(
@@ -6365,6 +6402,52 @@ def test_streamlined_cloud_deploy_pulls_and_recreates_only_target(monkeypatch):
     assert "ALLBOT_TARGET_ROLLBACK_VERIFIED" in script
     assert result["phase_timings_seconds"]["pull"] == pytest.approx(0.002)
     assert set(args.streamlined_runtime_services) == {"qqcc-config-backend"}
+
+
+def test_strict_cloud_deploy_pulls_once_before_oci_revision_check(monkeypatch):
+    module = _load_module()
+    scripts = []
+    digest = "sha256:" + "7" * 64
+    args = SimpleNamespace(
+        env="test",
+        execute=False,
+        command="deploy",
+        execution_profile=module.ExecutionProfile("strict", ["unknown-impact"]),
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda _host, script, *, execute: scripts.append(script) or "",
+    )
+
+    module._deploy_cloud(
+        args,
+        module.ReleaseImpact(services={"central-api"}, level="rolling"),
+        {
+            "schema_version": 2,
+            "track": "control-plane",
+            "git_sha": FULL_SHA,
+            "artifacts": {
+                "central-api": {
+                    "kind": "image",
+                    "ref": f"ghcr.io/example/central@{digest}",
+                    "oci_revision": FULL_SHA,
+                }
+            },
+        },
+        f"ALLBOT_CENTRAL_IMAGE=ghcr.io/example/central@{digest}\n",
+        {},
+    )
+
+    assert len(scripts) == 1
+    script = scripts[0]
+    assert script.count("pull central-api") == 1
+    assert "docker pull" not in script
+    assert 'docker image inspect "$ref"' in script
+    assert "org.opencontainers.image.revision" in script
 
 
 def test_streamlined_cloud_failure_records_verified_target_rollback(monkeypatch):
