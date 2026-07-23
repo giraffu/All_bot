@@ -61,9 +61,7 @@ LAN_AIO_EXTRA_ENV_BY_PROFILE = {
 }
 LAN_AIO_PIPELINE_ENV_BY_PROFILE = {
     "pornmaster_flux2_edit_bf16": {
-        "PIPELINE_MAX_RUNNING_TASKS": "2",
-        "PIPELINE_MAX_CLAIMED_TASKS": "3",
-        "PIPELINE_DELIVERY_CONCURRENCY": "1",
+        "PIPELINE_PROFILE_POLICY": "bf16_lan_claim3_comfy2_delivery1",
     },
 }
 LAN_AIO_ENVIRONMENTS = {
