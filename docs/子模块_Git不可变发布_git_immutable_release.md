@@ -93,6 +93,8 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 
 RMB 创建支付链接的 `HUANYUY_*` 六项配置同时是 `payment-api`、`web-api` 和 `main-bot` 的必填投影：Payment API 承载公网入口与回调，Web/Bot 则在创建链接的调用点直接消费同一套配置。任一目标投影缺失时必须在配置阶段 fail closed，不得以 Payment API 自身健康作为 Web/Bot 配置完整性的替代证据。
 
+主 Bot 的 `REQUIRED_CHANNEL_ID` 同样是精确必填投影，只属于 `main-bot`。它驱动 Telegram `getChatMember`、频道成员状态同步、凡人晋级和签到资格；`CHANNEL_INVITE_LINK` 只是展示链接，不能替代频道 ID。该键不得进入可忽略 legacy 清单，宿主缺失时配置投影必须 fail closed。契约变更后，正式 main-bot 更新先显式执行同模块 `config-plan/config-apply` 刷新投影，再执行受控发布；`promote` 不会隐式改写配置。
+
 公共云 Compose 的逐服务 `env_file` 使用长语法 `required: false`，只为允许 Compose 在局部模块发布时解析尚无投影的非目标服务；同时使用 `format: raw`，确保密码 hash、Token 等配置中的 `$` 按原始字节进入容器而不被 Compose 插值。这不是容器运行时的缺配置豁免。发布器在任何 pull/up 之前仍通过目标模块 service closure 严格生成、校验并核对目标投影 revision，目标投影缺失或必填键缺失立即失败。非目标容器不执行 `up`，且事务会逐一核对其启动时间不变。发布后的跨服务 smoke 从各目标容器真实导入 `config.API_BASE` 并请求其 `/health`，不得把 test/prod 的 Central 服务别名硬编码到通用发布器。当前正式 Compose 的 project service DNS 是 `central-api`；历史 Dashboard 投影中的 `central-api-prod` 不可解析，因此 Dashboard-only rolling 由 prod overlay 把 Dashboard Backend 精确覆盖为 `http://central-api:8003`，不修改或重启其它正式服务，完整宿主配置收敛留到独立窗口。该 Compose 内容以精确 checksum 纳入 owner-only snapshot，任一后续改动重新成为共享契约 blocker。
 
 数据库备份在容器 `/bin/sh` 中执行；migration 的临时 PostgreSQL client 以 `--network container:$web_container` 共享当前 Web 容器网络命名空间，使 `postgres-test`/正式 Compose DNS 在备份时保持可解析，但不把数据库端口暴露到宿主。URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
