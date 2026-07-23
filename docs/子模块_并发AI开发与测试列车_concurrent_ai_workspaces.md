@@ -19,7 +19,7 @@ A-H 并行开发
 
 `streamlined` 只适用于已知 schema-v2 main control-plane 影响且目标服务配置投影无漂移；测试和正式均只替换 planner 选中的服务，失败使用目标主机已有旧 ref 回切。任一 migration、Compose/env、首次切换、未知影响或专用执行轨会使整个混合发布进入 `strict`，继续使用完整门禁。该分类不改变自动 handoff 队列、A-H release batch、main CI 构建或生产确认边界，也不授权槽位直接部署共享环境。
 
-纯非运行时仓库治理变更不进入上述发布链。`scripts/classify_ci_change.py` 以窄白名单识别 docs、Skills、tests、AGENTS/README、CI workflow/release policy 元数据、`deploy/release-batches/*.json` 审计记录、测试验收样例及精确仓库治理/门禁脚本（含 `scripts/release.py`）；全部路径均为轻量时，可用单独 PR 直接合入受保护 main 或兼容分支，不加入 test-train candidate，不跑全量模块测试，不创建 release bundle，也不部署或验收环境。任一运行时、migration、Compose、配置、白名单外发布执行器或未知路径都会恢复完整链路。
+纯非运行时与发布工具变更不进入上述运行时发布链。classifier 将 docs/Skills/tests/治理元数据归为 `lightweight`，将 `release.py`、配置契约、CI run 校验、classifier 和自动集成协调器归为 `release-tooling`；后者只运行发布专项回归。两者均可用单独受保护 main PR，不创建 release bundle，也不部署环境。任一运行时、migration、Compose、运行配置、白名单外执行器或未知路径都会恢复完整链路。
 
 GPU controller/RunPod/LAN helper 另有 `operator` 聚焦 scope：只有全部非轻量路径均命中明确 operator allowlist 时，PR/main 才只跑 `tests/ops tests/scripts`；main 后继 modular workflow 仍创建不可变 bundle，并由 artifact planner 决定零模块（LAN 宿主 helper）或仅 `dashboard-backend`（镜像内置 controller/rollout）。它不构建 GPU artifact、不自动部署环境；`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、Dockerfile/模型基础依赖或混合业务变更仍按 `runtime` 走完整链路。
 
@@ -103,17 +103,17 @@ python scripts/manage_ai_workspaces.py batch-plan \
 
 ## 6. 云测试
 
-自动队列中的非 lightweight main bundle 构建成功后，协调器串行启动拉取、preflight 和共享测试站切换：
+自动队列中的 runtime/operator main bundle 构建成功后，协调器串行启动 plan 和共享测试站切换：
 
 ```bash
 python scripts/release.py plan --env test --track control-plane --sha <main-sha>
-python scripts/release.py preflight --env test --track control-plane --sha <main-sha>
-python scripts/release.py deploy --env test --track control-plane --sha <main-sha> --execute
+# 从上条 JSON 读取 plan_token；自动协调器会完成这一步
+python scripts/release.py deploy --env test --track control-plane --sha <main-sha> --plan-token <token> --execute
 ```
 
 默认只部署实际受影响的 control-plane/公共 Web。测试 Worker 专项诊断才选择 `test-execution`；GPU profile 不由共享测试站自动 mutation。
 
-通过 smoke、组合回归、回滚演练和观察后，standard artifact 使用 `verify-test` 把精确 digest 写入 main-channel verified history。Dashboard 等 direct artifact 按策略记录 waived/attested，不能伪装为 tested。
+普通 streamlined 目标 smoke 成功后自动把 exact digest 写入 main-channel verified history；专项 strict/人工验收才补用 `verify-test`。plan token 在 10 分钟内复用候选、CI 和 evidence，但 deploy 仍重新检查目标配置 revision；相同 exact digest/OCI/config/健康直接 no-op。Dashboard 等 direct artifact 按策略记录 waived/attested，不能伪装为 tested。
 
 测试失败时保留 main SHA 和事务证据，通过新 handoff/new batch 做 forward-fix；不 revert 其它并行成果、不改写 main 历史、不做自动 Alembic downgrade。
 

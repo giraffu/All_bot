@@ -26,11 +26,8 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
             "deploy/release-batches/20260722-example.json",
             "deploy/test-acceptance.example.json",
             "docs/子模块_Git不可变发布_git_immutable_release.md",
-            "scripts/classify_ci_change.py",
             "scripts/doc_quality_checker.py",
             "scripts/manage_ai_workspaces.py",
-            "scripts/release.py",
-            "scripts/validate_upstream_ci_run.py",
             "tests/ops/test_classify_ci_change.py",
         ]
     )
@@ -41,6 +38,53 @@ def test_repository_governance_changes_use_the_lightweight_ci_path():
     assert decision.requires_release_bundle is False
     assert decision.operator_paths == ()
     assert decision.runtime_paths == ()
+
+
+def test_release_tooling_changes_run_only_the_focused_release_gate():
+    module = _load_module()
+
+    decision = module.classify_change_scope(
+        [
+            ".github/workflows/control-plane-release.yml",
+            ".codex/skills/allbot-ops-deployment/SKILL.md",
+            "docs/子模块_Git不可变发布_git_immutable_release.md",
+            "scripts/auto_integrate_handoffs.py",
+            "scripts/classify_ci_change.py",
+            "scripts/release.py",
+            "scripts/runtime_env_contract.py",
+            "scripts/validate_upstream_ci_run.py",
+            "tests/ops/test_release_cli.py",
+        ]
+    )
+
+    assert decision.scope == "release-tooling"
+    assert decision.requires_full_ci is False
+    assert decision.requires_release_ci is True
+    assert decision.requires_operator_ci is False
+    assert decision.requires_release_bundle is False
+    assert decision.release_paths == (
+        "scripts/auto_integrate_handoffs.py",
+        "scripts/classify_ci_change.py",
+        "scripts/release.py",
+        "scripts/runtime_env_contract.py",
+        "scripts/validate_upstream_ci_run.py",
+    )
+    assert decision.runtime_paths == ()
+
+
+def test_release_tooling_mixed_with_runtime_fails_closed_to_full_ci():
+    module = _load_module()
+
+    decision = module.classify_change_scope(
+        ["scripts/release.py", "src/core/task_dispatcher.py"]
+    )
+
+    assert decision.scope == "runtime"
+    assert decision.requires_full_ci is True
+    assert decision.requires_release_ci is False
+    assert decision.requires_release_bundle is True
+    assert decision.release_paths == ("scripts/release.py",)
+    assert decision.runtime_paths == ("src/core/task_dispatcher.py",)
 
 
 def test_git_quoted_unicode_doc_path_uses_the_lightweight_ci_path():
@@ -170,6 +214,7 @@ def test_github_outputs_expose_independent_test_and_bundle_decisions(tmp_path):
     assert output.read_text(encoding="utf-8").splitlines() == [
         "scope=operator",
         "requires_full_ci=false",
+        "requires_release_ci=false",
         "requires_operator_ci=true",
         "requires_release_bundle=true",
     ]
