@@ -7086,10 +7086,74 @@ def test_streamlined_cloud_deploy_pulls_and_recreates_only_target(monkeypatch):
     assert "/release-root/releases/" + "b" * 40 not in script
     assert 'com.docker.compose.project.working_dir' in script
     assert 'compose_checkout="${compose_working_dir%/deploy}"' in script
-    assert 'test "$target_working_dir" = "$compose_working_dir"' in script
+    assert 'target_checkout="${target_working_dir%/deploy}"' in script
+    assert 'test "$target_config_files" = "$target_expected_config_files"' in script
+    assert 'test "$target_working_dir" = "$compose_working_dir"' not in script
     assert "ALLBOT_TARGET_ROLLBACK_VERIFIED" in script
     assert result["phase_timings_seconds"]["pull"] == pytest.approx(0.002)
     assert set(args.streamlined_runtime_services) == {"qqcc-config-backend"}
+
+
+def test_streamlined_cloud_deploy_accepts_targets_from_distinct_valid_checkouts(
+    monkeypatch,
+):
+    module = _load_module()
+    scripts = []
+    digest = "sha256:" + "4" * 64
+    args = SimpleNamespace(
+        env="prod",
+        execute=False,
+        previous_sha="b" * 40,
+        remote_host="cloud-prod",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/prod.env",
+        runtime_env_snapshot={
+            "service_revisions": {
+                "qqcc-config-backend": "5" * 64,
+                "qqcc-config-frontend": "6" * 64,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda _host, script, *, execute: scripts.append(script) or "",
+    )
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/example/{name}@{digest}",
+            "oci_revision": FULL_SHA,
+        }
+        for name in ("qqcc-config-backend", "qqcc-config-frontend")
+    }
+
+    module._deploy_cloud_streamlined(
+        args,
+        module.ReleaseImpact(
+            services={"qqcc-config-backend", "qqcc-config-frontend"}
+        ),
+        {
+            "schema_version": 2,
+            "track": "control-plane",
+            "git_sha": FULL_SHA,
+            "artifacts": artifacts,
+        },
+        "\n".join(
+            [
+                f"ALLBOT_QQCC_CONFIG_BACKEND_IMAGE={artifacts['qqcc-config-backend']['ref']}",
+                f"ALLBOT_QQCC_CONFIG_FRONTEND_IMAGE={artifacts['qqcc-config-frontend']['ref']}",
+            ]
+        ),
+        {},
+    )
+
+    script = scripts[0]
+    assert script.count('target_checkout="${target_working_dir%/deploy}"') == 2
+    assert script.count(
+        'test "$target_config_files" = "$target_expected_config_files"'
+    ) == 2
+    assert 'test "$target_working_dir" = "$compose_working_dir"' not in script
 
 
 def test_strict_cloud_deploy_pulls_once_before_oci_revision_check(monkeypatch):

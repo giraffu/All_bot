@@ -4585,6 +4585,11 @@ def _deploy_cloud_streamlined(
         "support-bot",
     }
     polling_services = {"bot", "qqcc-bot", "paid-group-guard-bot", "support-bot"}
+    checkout_pattern = (
+        "^"
+        + re.escape(args.remote_checkout_root.rstrip("/"))
+        + r"/releases/[0-9a-f]{40}/deploy$"
+    )
     for service, artifact_name, variable, oci, config_revision in target_rows:
         quoted_service = shlex.quote(service)
         quoted_artifact = shlex.quote(artifact_name)
@@ -4604,8 +4609,14 @@ def _deploy_cloud_streamlined(
                 'target_config_files="$(docker inspect --format '
                 "'{{index .Config.Labels \"com.docker.compose.project.config_files\"}}' "
                 '"$target_ids")"',
-                'test "$target_working_dir" = "$compose_working_dir"',
-                'test "$target_config_files" = "$compose_config_files"',
+                f'[[ "$target_working_dir" =~ {checkout_pattern} ]]',
+                'target_checkout="${target_working_dir%/deploy}"',
+                'test -f "$target_checkout/deploy/env.defaults"',
+                'test -f "$target_checkout/deploy/docker-compose-cloud-base.yml"',
+                f'test -f "$target_checkout/{environment["overlay"]}"',
+                'target_expected_config_files="$target_checkout/deploy/docker-compose-cloud-base.yml,'
+                f'$target_checkout/{environment["overlay"]}"',
+                'test "$target_config_files" = "$target_expected_config_files"',
             ]
         )
         if config_name:
@@ -4675,11 +4686,6 @@ def _deploy_cloud_streamlined(
             )
     rollback_compose = f'{compose} --env-file "$rollback_env"'
     completion_marker = f"ALLBOT_CLOUD_RELEASE_VERIFIED:{sha}"
-    checkout_pattern = (
-        "^"
-        + re.escape(args.remote_checkout_root.rstrip("/"))
-        + r"/releases/[0-9a-f]{40}/deploy$"
-    )
     seed_service = shlex.quote(services[0])
     script = f"""set -eEuo pipefail
 config_started=$(date +%s%N)
