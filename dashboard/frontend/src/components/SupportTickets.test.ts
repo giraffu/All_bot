@@ -79,6 +79,34 @@ describe('SupportTickets', () => {
     expect(wrapper.text()).toContain('open')
   })
 
+  it('keeps both ticket columns available as visible vertical scroll regions', async () => {
+    const wrapper = mount(SupportTickets, {
+      global: {
+        stubs: {
+          'a-list': ListStub,
+          'a-list-item': passthroughStub('ListItemStub'),
+          'a-spin': passthroughStub('SpinStub'),
+          'a-select': SelectStub,
+          'a-button': passthroughStub('ButtonStub'),
+          'a-tag': passthroughStub('TagStub'),
+          'a-textarea': passthroughStub('TextareaStub'),
+        },
+      },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+
+    const scrollRegions = wrapper.findAll('.ticket-scroll-pane')
+    expect(scrollRegions).toHaveLength(2)
+    expect(scrollRegions.map(region => region.attributes('aria-label'))).toEqual([
+      '工单列表',
+      '工单详情',
+    ])
+
+    wrapper.unmount()
+  })
+
   it('shows business tickets completely and exposes business in the category filter', async () => {
     apiMocks.fetchSupportTickets.mockResolvedValue({
       items: [

@@ -287,6 +287,7 @@ describe('Dashboard App', () => {
     expect(wrapper.find('.current-tab-stub').text()).toBe('home')
     expect(wrapper.find('.container-home').exists()).toBe(true)
     expect(wrapper.find('.a-layout-content-stub').classes()).toContain('overflow-y-auto')
+    expect(wrapper.get('.dashboard-tab-viewport').classes()).toContain('min-h-0')
 
     await wrapper.get('.to-finance').trigger('click')
     await nextTick()
