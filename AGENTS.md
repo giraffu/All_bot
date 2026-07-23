@@ -47,6 +47,7 @@
 | **代码库架构设计** | `allbot-codebase-design` | 使用 module/interface/seam/adapter/depth/leverage/locality 词汇审查模块深度、职责移动与可测试性 |
 | **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
 | **附加模型与工作流配置** | `allbot-comfy-models` | 处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、参数透传与工作流注入 |
+| **独立媒体增强平台** | `allbot-media-enhance-platform` | `media_enhance_platform/` 的独立前后端、账本、媒体、Worker 契约、workflow 与本地 Compose |
 | **前端代码审查与规范** | `vue-best-practices` | 针对 Vue3 / SPA 前端（如 Dashboard 或 Web 工作台）的开发规范，推荐 Composition API 与 TypeScript |
 | **前端预览与截图验收** | `frontend-browser-preview` | 使用 Playwright Chromium 在本服务器生成桌面/移动端截图，规避系统 Chrome headless 本地 HTTP 卡住问题 |
 | **系统日志监控与排障** | `ops-log-monitor` | 自动采集多环境日志，进行链路追踪与异常分析，并生成排障报告，期间保持静默与无痕清理 |
@@ -73,6 +74,7 @@
 - **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
 - **Cloudflare 公网入口与账号管理**：`/docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`（Cloudflare Token、DNS、Tunnel、Access、公网管理入口与本地分析平台公网访问）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
+- **独立媒体增强平台**：`/docs/子模块_独立媒体增强平台_media_enhance_platform.md`（Clarity AI 独立边界、账本、任务/attempt、Worker 契约与本地运行）
 - **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`
 - **业务领域设计**：`/docs/business/`（包含生成、商业化、社区、用户体系的深度文档）
 - **技术子模块规范**：`/docs/子模块_*.md`（针对网络穿透、FSM、任务调度等的专项说明）

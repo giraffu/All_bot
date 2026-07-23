@@ -19,6 +19,7 @@
 | `allbot-local-analytics-prompt-semantics` | 本地数据分析平台提示词词义分析、词元分类、指定词元、同义映射、删除表、自由P图拆解、tokens-only 物化与模板候选槽位口径 | 审查/治理提示词词元、处理高频未覆盖词元、合并映射、软删除无效词、年龄人群发现标签、自由P图拆解筛选或模板候选语义槽位时 |
 | `allbot-lan-aio-operator` | LAN AIO fleet state、slot catalog、单物理 GPU takeover/recover/restart、镜像拉取、模型热缓存、drift 检查 | 查看或切换局域网 GPU 节点 LAN AIO 当前类型、缓存候选、阻断 profile 或执行受控单卡切换时 |
 | `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Worker/remote_workers workflow 映射校验、SCAIL-2 视频生视频模型与 workflow | 修改附加模型、工作流映射、Bot 菜单参数或 RunPod/LAN Comfy profile 时 |
+| `allbot-media-enhance-platform` | Clarity AI 独立前后端、账本、媒体、任务/attempt、Worker 契约、workflow 与本地 Compose | 修改 `media_enhance_platform/` 或准备其独立部署时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |
 | `allbot-kb-auto-updater` | 评估代码现状对知识库的影响并同步更新 docs/skills/memory | 代码新增功能、重构、接口变更后 |
 | `allbot-diagnosing-bugs` | bug 诊断反馈环、假设排序、精准插桩、修复回归和收尾清理 | 用户报告失败、慢、卡住、线上异常、任务不可见或要求 debug/diagnose/troubleshoot 时 |
