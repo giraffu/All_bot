@@ -1159,7 +1159,7 @@ async def test_qqcc_filter_scene_sends_input_output_demo_images(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
+async def test_qqcc_video_settings_only_keeps_start_button(monkeypatch):
     monkeypatch.setattr(
         "src.core.user_core.get_or_create_user_by_telegram",
         AsyncMock(return_value=(SimpleNamespace(id=7), False)),
@@ -1207,14 +1207,12 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
         button.callback_data for row in markup.inline_keyboard for button in row
     ]
 
-    assert "set_res_512p" in callbacks
-    assert "set_res_720p" in callbacks
-    assert "set_res_1024p" not in callbacks
+    assert callbacks == ["qvid_start_generation"]
     assert not any(callback.startswith("set_dur_") for callback in callbacks)
 
 
 @pytest.mark.asyncio
-async def test_qqcc_fixed_price_video_resolution_buttons_show_same_total(monkeypatch):
+async def test_qqcc_fixed_price_video_settings_have_no_resolution_buttons(monkeypatch):
     monkeypatch.setattr(
         "src.core.user_core.get_or_create_user_by_telegram",
         AsyncMock(return_value=(SimpleNamespace(id=7), False)),
@@ -1255,15 +1253,14 @@ async def test_qqcc_fixed_price_video_resolution_buttons_show_same_total(monkeyp
         duration="5s",
         qqcc_config=config,
     )
-    resolution_labels = [
-        button.text
+    resolution_callbacks = [
+        button.callback_data
         for row in markup.inline_keyboard
         for button in row
         if str(button.callback_data).startswith("set_res_")
     ]
 
-    assert resolution_labels
-    assert all("(9灵石)" in label for label in resolution_labels)
+    assert resolution_callbacks == []
 
 
 @pytest.mark.asyncio
@@ -1697,7 +1694,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
     await quick_video_fsm.start_generation(update, context)
     await background_tasks[0]
 
-    assert check_quota.await_args.kwargs["cost"] == 8
+    assert check_quota.await_args.kwargs["cost"] == 22
     assert tail_calls[0]["task_type"] == "pornmaster_flux2_single_edit"
     assert tail_calls[0]["prompt"] == "tail prompt"
     assert tail_calls[0]["images"] == ["/tmp/input.png"]
@@ -1832,7 +1829,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
     await quick_video_fsm.start_generation(update, context)
     await background_tasks[0]
 
-    assert check_quota.await_args.kwargs["cost"] == 10
+    assert check_quota.await_args.kwargs["cost"] == 24
     assert generation_calls[0]["prompt"] == "tail prompt"
     assert generation_calls[0]["images"] == ["/tmp/input.png"]
     assert generation_calls[0]["send_result"] is False
@@ -1962,7 +1959,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_wan22_v2(monkeypatch
         "/tmp/input.png",
         "/tmp/generated-tail.png",
     ]
-    assert generation_calls[1]["resolution"] == "512p"
+    assert generation_calls[1]["resolution"] == "720p"
     assert generation_calls[1]["duration"] == "8s"
 
 
@@ -2166,7 +2163,7 @@ async def test_qqcc_video_scene_tail_frame_precheck_uses_combined_cost(monkeypat
 
     await quick_video_fsm.start_generation(update, context)
 
-    assert check_quota.await_args.kwargs["cost"] == 8
+    assert check_quota.await_args.kwargs["cost"] == 22
     assert background_tasks == []
     cleanup_mock.assert_any_call(["/tmp/input.png"])
 
@@ -2250,7 +2247,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         "engine": "image_to_video",
         "lora_name": "",
         "end_frame_draw_scene_id": "",
-        "resolution": "512p",
+            "resolution": "720p",
         "duration": "8s",
         "image_path": None,
     }

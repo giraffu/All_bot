@@ -242,10 +242,6 @@ async def prepare_qqcc_regeneration_submission(
         index=0,
         name_hint="qqcc_regenerate_video",
     )
-    allowed_resolutions = await resolve_allowed_quick_video_resolutions(
-        telegram_user_id=telegram_user_id,
-        username=username,
-    )
     try:
         plan = build_quick_video_submission_plan(
             fsm_data={
@@ -256,7 +252,7 @@ async def prepare_qqcc_regeneration_submission(
                 "duration": _coerce_quick_video_duration(history),
             },
             qqcc_config=qqcc_config,
-            allowed_resolutions=allowed_resolutions,
+            allowed_resolutions=None,
         )
     except Exception:
         cleanup_fsm_temp_files([image_path])

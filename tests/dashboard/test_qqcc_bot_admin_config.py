@@ -33,7 +33,9 @@ from src.services.qqcc_config_service import (
     resolve_qqcc_prompt,
     save_qqcc_config_payload,
     validate_qqcc_scene_credit_costs,
+    validate_qqcc_scene_resolutions,
     QqccSceneCreditCostError,
+    QqccSceneResolutionError,
 )
 from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 
@@ -176,6 +178,77 @@ def test_build_qqcc_config_options_exposes_scene_credit_cost_defaults():
     }
 
 
+def test_qqcc_scene_resolution_contract_defaults_and_options():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {"id": "legacy", "name": "Legacy", "prompt": "move"},
+                {
+                    "id": "explicit",
+                    "name": "Explicit",
+                    "prompt": "move",
+                    "resolution": "1024p",
+                    "duration": "8s",
+                },
+            ],
+            "ai_video_scenes": [
+                {"id": "cinema", "name": "Cinema", "prompt": "orbit"}
+            ],
+        }
+    )
+
+    assert config["video_scenes"][0]["resolution"] == "720p"
+    assert config["video_scenes"][1]["resolution"] == "1024p"
+    assert config["ai_video_scenes"][0]["resolution"] == "1280x704"
+    assert build_qqcc_config_options()["video_resolutions"] == [
+        {"value": "512p", "label": "512p"},
+        {"value": "720p", "label": "720p"},
+        {"value": "1024p", "label": "1024p"},
+    ]
+    assert build_qqcc_config_options()["ai_video_resolutions"] == [
+        {"value": "1280x704", "label": "1280×704"}
+    ]
+    assert build_qqcc_config_options()["default_video_resolution"] == "720p"
+    assert build_qqcc_config_options()["default_ai_video_resolution"] == "1280x704"
+
+
+@pytest.mark.parametrize("invalid_resolution", ["", "2048p", 720, True])
+def test_validate_qqcc_scene_resolutions_rejects_invalid_explicit_values(
+    invalid_resolution,
+):
+    with pytest.raises(QqccSceneResolutionError):
+        validate_qqcc_scene_resolutions(
+            {
+                "video_scenes": [
+                    {
+                        "id": "video",
+                        "name": "Video",
+                        "prompt": "move",
+                        "resolution": invalid_resolution,
+                    }
+                ]
+            }
+        )
+
+
+def test_validate_qqcc_scene_resolutions_rejects_1024p_ten_seconds():
+    with pytest.raises(QqccSceneResolutionError):
+        validate_qqcc_scene_resolutions(
+            {
+                "video_scenes": [
+                    {
+                        "id": "video",
+                        "name": "Video",
+                        "prompt": "move",
+                        "resolution": "1024p",
+                        "duration": "10s",
+                    }
+                ]
+            }
+        )
+
+
 def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
     config = normalize_qqcc_config(
         {
@@ -294,8 +367,9 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "id": "cinematic",
             "name": "Cinematic",
             "prompt": "move slowly",
-            "negative_prompt": "blur, jitter",
-            "duration": 10,
+                "negative_prompt": "blur, jitter",
+                "duration": 10,
+                "resolution": "1280x704",
             "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
             "lora_items": [
                 {
@@ -319,8 +393,9 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "id": "fallbacks",
             "name": "Fallbacks",
             "prompt": "prompt",
-            "negative_prompt": "",
-            "duration": 5,
+                "negative_prompt": "",
+                "duration": 5,
+                "resolution": "1280x704",
             "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
             "lora_items": [],
             "credit_cost": None,
@@ -793,8 +868,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "kiss",
             "name": "亲吻",
             "prompt": "kissing prompt",
-            "negative_prompt": "blur, low quality",
-            "duration": "8s",
+                "negative_prompt": "blur, low quality",
+                "duration": "8s",
+                "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
@@ -808,8 +884,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "scene_2",
             "name": "重复 id",
             "prompt": "duplicate prompt",
-            "negative_prompt": "",
-            "duration": "10s",
+                "negative_prompt": "",
+                "duration": "10s",
+                "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
@@ -823,8 +900,9 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "id": "scene_3",
             "name": "安全 id",
             "prompt": "safe id prompt",
-            "negative_prompt": "",
-            "duration": "5s",
+                "negative_prompt": "",
+                "duration": "5s",
+                "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
@@ -1829,6 +1907,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "prompt": "custom kiss prompt",
                 "negative_prompt": "bad hands",
                 "duration": "8s",
+                "resolution": "720p",
                 "aspect_ratio": "source",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "wan22_explicit_077",
@@ -1858,9 +1937,10 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "id": "kiss",
             "name": "贴贴",
             "prompt": "custom kiss prompt",
-            "negative_prompt": "bad hands",
-            "duration": "8s",
-            "aspect_ratio": "source",
+                "negative_prompt": "bad hands",
+                "duration": "8s",
+                "resolution": "720p",
+                "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
@@ -1873,8 +1953,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "id": "missionary",
             "name": "自定义传教士",
             "prompt": "custom missionary prompt",
-            "negative_prompt": "",
-            "duration": "10s",
+                "negative_prompt": "",
+                "duration": "10s",
+                "resolution": "720p",
             "aspect_ratio": "source",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",

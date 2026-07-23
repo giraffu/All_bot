@@ -166,6 +166,7 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
                     "prompt": "lora scene prompt",
                     "negative_prompt": "video bad hands",
                     "duration": "5s",
+                    "resolution": "1024p",
                     "engine": "image_to_video",
                     "aspect_ratio": "9:16",
                     "lora_items": [
@@ -185,10 +186,11 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
             "duration": "5s",
         },
         qqcc_config=config,
-        allowed_resolutions=["512p", "720p"],
+        allowed_resolutions=["512p"],
     )
 
     assert plan.fixed_credit_cost is None
+    assert plan.resolution == "1024p"
     assert plan.kind == QuickVideoSubmissionKind.LEGACY_VIDEO
     assert plan.mode == MODE_IMAGE_TO_VIDEO
     assert plan.default_prompt_key == MODE_CUSTOM_VIDEO
@@ -265,6 +267,7 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
                     "prompt": "v2 scene prompt",
                     "negative_prompt": "v2 blur",
                     "duration": "10s",
+                    "resolution": "720p",
                     "engine": "wan22_video_v2",
                     "lora_items": [
                         {"name": "BreastGrow", "strength": 0.75},
@@ -348,6 +351,52 @@ def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_lora
         {"name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75}
     ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
+
+
+def test_qqcc_video_chain_uses_each_scene_configured_resolution():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {
+                    "id": "first",
+                    "name": "First",
+                    "prompt": "first",
+                    "duration": "5s",
+                    "resolution": "720p",
+                    "next_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "Second",
+                    "prompt": "second",
+                    "duration": "8s",
+                    "resolution": "512p",
+                },
+            ],
+        }
+    )
+
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "first",
+            "resolution": "1024p",
+            "duration": "10s",
+        },
+        qqcc_config=config,
+        allowed_resolutions=[],
+    )
+
+    assert not isinstance(plan, QuickVideoSubmissionReject)
+    assert plan.resolution == "720p"
+    assert [segment.resolution for segment in plan.qqcc_chain_segments] == [
+        "720p",
+        "512p",
+    ]
+    assert plan.total_cost == calculate_quick_video_cost(
+        "720p", "5s"
+    ) + calculate_quick_video_cost("512p", "8s")
 
 
 def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
@@ -536,7 +585,7 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     ]
     assert plan.tail_draw_chain[0]["negative_prompt"] == "tail bad anatomy"
     assert plan.negative_prompt == "video blur"
-    assert plan.total_cost == 12
+    assert plan.total_cost == 26
     assert plan.allow_contribute is False
     assert plan.result_meta == {
         "_qqcc_regenerate": {
@@ -913,6 +962,7 @@ async def test_qqcc_video_adapter_failure_stops_submission_and_cleans_input():
                         "name": "场景",
                         "prompt": "scene prompt",
                         "duration": "10s",
+                        "resolution": "1024p",
                     }
                 ]
             },

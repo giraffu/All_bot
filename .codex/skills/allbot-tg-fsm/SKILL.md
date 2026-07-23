@@ -102,3 +102,4 @@ def build_handler() -> ConversationHandler:
 - 覆盖 `paid_group_guard_bot` 的资格命中、未命中保留待审/拒绝、目标群过滤、消息删除 dry-run、管理员豁免、链接白名单和违禁词行为。
 - 当 FSM 使用 PTB 已知 warning 配置时，测试应显式说明该 warning 是否属于预期行为。
 - 私有 Application 回归必须证明频道资格查询来自官方 checker、租户 Bot 不被调用，并覆盖正/负缓存与并发 singleflight。
+- QQCC quick video 的分辨率/时长由当前场景配置固定：AI动图上传后只显示摘要和开始按钮，旧 `set_res_*` / `set_dur_*` 不得覆盖；AI视频收图即按场景 `1280x704` 提交。重新生成、结果续作和多段链不得读取历史画质或用户权限。该规则不改变非 QQCC 主 Bot 的设置面板与等级权限。

@@ -4,7 +4,6 @@ import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
   DownOutlined,
-  LinkOutlined,
   PlusOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -31,6 +30,7 @@ type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
 type ResolutionKey = '512p' | '720p' | '1024p'
+type AiVideoResolutionKey = '1280x704'
 type DurationKey = '5s' | '8s' | '10s'
 type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
@@ -38,7 +38,6 @@ type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
-type SceneConfigPanel = 'model' | 'reference'
 type DemoMediaSlot = 'input' | 'output'
 type DemoUploadFile = File & { originFileObj?: File }
 type PromptKey =
@@ -83,6 +82,7 @@ interface VideoSceneConfig extends SceneDemoFields {
   prompt: string
   negative_prompt: string
   duration: DurationKey
+  resolution: ResolutionKey
   engine: VideoSceneEngine
   aspect_ratio: VideoAspectRatio
   lora_name: string
@@ -109,6 +109,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   prompt: string
   negative_prompt: string
   duration: AiVideoDurationKey
+  resolution: AiVideoResolutionKey
   engine: AiVideoSceneEngine
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
@@ -174,6 +175,11 @@ interface LoraModelOption {
   default_strength?: number
 }
 
+interface ResolutionOption<T extends string> {
+  value: T
+  label: string
+}
+
 interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
@@ -186,6 +192,10 @@ interface QqccBotConfigOptions {
   video_lora_models: LoraModelOption[]
   ltx_video_lora_models: LoraModelOption[]
   image_lora_models: LoraModelOption[]
+  video_resolutions: ResolutionOption<ResolutionKey>[]
+  ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
+  default_video_resolution: ResolutionKey
+  default_ai_video_resolution: AiVideoResolutionKey
   default_scene_credit_costs: Partial<Record<SceneConfigKind, number>>
 }
 
@@ -242,6 +252,10 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   video_lora_models: [],
   ltx_video_lora_models: [],
   image_lora_models: [],
+  video_resolutions: [],
+  ai_video_resolutions: [],
+  default_video_resolution: '720p',
+  default_ai_video_resolution: '1280x704',
   default_scene_credit_costs: {},
 })
 
@@ -499,8 +513,10 @@ const filterSceneCounter = ref(0)
 const sceneConfig = reactive({
   open: false,
   kind: 'video' as SceneConfigKind,
-  panel: 'model' as SceneConfigPanel,
   index: -1,
+  credit_cost: null as number | null,
+  duration: '5s' as DurationKey | AiVideoDurationKey,
+  resolution: '720p' as ResolutionKey | AiVideoResolutionKey,
   engine: 'image_to_video',
   aspect_ratio: 'source' as VideoAspectRatio,
   lora_name: '',
@@ -819,6 +835,25 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   merged.default_video_engine = normalizeVideoEngine(raw.default_video_engine)
   merged.default_ai_video_engine = normalizeAiVideoEngine(raw.default_ai_video_engine)
   merged.default_draw_engine = normalizeDrawEngine(raw.default_draw_engine)
+  if (resolutionOptions.includes(raw.default_video_resolution as ResolutionKey)) {
+    merged.default_video_resolution = raw.default_video_resolution as ResolutionKey
+  }
+  if (raw.default_ai_video_resolution === '1280x704') {
+    merged.default_ai_video_resolution = raw.default_ai_video_resolution
+  }
+  if (Array.isArray(raw.video_resolutions)) {
+    merged.video_resolutions = raw.video_resolutions.filter(
+      (item): item is ResolutionOption<ResolutionKey> =>
+        resolutionOptions.includes(item?.value as ResolutionKey)
+        && typeof item?.label === 'string',
+    )
+  }
+  if (Array.isArray(raw.ai_video_resolutions)) {
+    merged.ai_video_resolutions = raw.ai_video_resolutions.filter(
+      (item): item is ResolutionOption<AiVideoResolutionKey> =>
+        item?.value === '1280x704' && typeof item?.label === 'string',
+    )
+  }
   const rawCreditCosts = raw.default_scene_credit_costs
   if (rawCreditCosts && typeof rawCreditCosts === 'object') {
     ;(['video', 'ai_video', 'draw', 'filter'] as SceneConfigKind[]).forEach((kind) => {
@@ -977,10 +1012,7 @@ const activePostprocessFilterOptions = computed(() =>
     (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
   )
 )
-const sceneModalTitle = computed(() => {
-  if (sceneConfig.panel === 'model') return '模型配置'
-  return sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video' ? '首尾帧配置' : '后处理配置'
-})
+const sceneModalTitle = computed(() => '场景配置')
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
   const merged = emptyConfig()
@@ -1120,6 +1152,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           prompt,
           negative_prompt,
           duration,
+          resolution: resolutionOptions.includes(scene?.resolution as ResolutionKey)
+            ? scene.resolution as ResolutionKey
+            : modelOptions.default_video_resolution,
           engine,
           aspect_ratio: normalizeVideoAspectRatio(scene?.aspect_ratio),
           lora_name: loraItems[0]?.name || '',
@@ -1159,6 +1194,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           prompt: typeof scene?.prompt === 'string' ? scene.prompt : '',
           negative_prompt: typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : '',
           duration,
+          resolution: scene?.resolution === '1280x704'
+            ? scene.resolution
+            : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
           lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
           end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
@@ -1207,6 +1245,7 @@ const addVideoScene = () => {
     prompt: '',
     negative_prompt: '',
     duration: '5s',
+    resolution: modelOptions.default_video_resolution,
     engine: normalizeVideoEngine(modelOptions.default_video_engine),
     aspect_ratio: 'source',
     lora_name: '',
@@ -1231,6 +1270,7 @@ const addAiVideoScene = () => {
     prompt: '',
     negative_prompt: '',
     duration: 5,
+    resolution: modelOptions.default_ai_video_resolution,
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
     lora_items: [],
     end_frame_draw_scene_id: '',
@@ -1655,7 +1695,6 @@ const applyResponse = (payload: QqccBotConfigResponse) => {
 const openSceneConfig = (
   kind: SceneConfigKind,
   index: number,
-  panel: SceneConfigPanel,
 ) => {
   const scene =
     kind === 'video'
@@ -1667,8 +1706,16 @@ const openSceneConfig = (
         : config.draw_scenes[index]
   if (!scene) return
   sceneConfig.kind = kind
-  sceneConfig.panel = panel
   sceneConfig.index = index
+  sceneConfig.credit_cost = normalizeSceneCreditCost(scene.credit_cost)
+  sceneConfig.duration = kind === 'video' || kind === 'ai_video'
+    ? (scene as VideoSceneConfig | AiVideoSceneConfig).duration
+    : '5s'
+  sceneConfig.resolution = kind === 'video'
+    ? (scene as VideoSceneConfig).resolution
+    : kind === 'ai_video'
+      ? (scene as AiVideoSceneConfig).resolution
+      : modelOptions.default_video_resolution
   sceneConfig.engine = scene.engine
   sceneConfig.aspect_ratio = kind === 'video'
     ? normalizeVideoAspectRatio((scene as VideoSceneConfig).aspect_ratio)
@@ -1707,8 +1754,10 @@ const openSceneConfig = (
 
 const closeSceneConfig = () => {
   sceneConfig.open = false
-  sceneConfig.panel = 'model'
   sceneConfig.index = -1
+  sceneConfig.credit_cost = null
+  sceneConfig.duration = '5s'
+  sceneConfig.resolution = modelOptions.default_video_resolution
   sceneConfig.lora_items = []
   sceneConfig.video_lora_items = []
   sceneConfig.aspect_ratio = 'source'
@@ -1731,60 +1780,63 @@ const confirmSceneConfig = () => {
   if (sceneConfig.kind === 'video') {
     const scene = config.video_scenes[sceneConfig.index]
     if (!scene) return
-    if (sceneConfig.panel === 'model') {
-      const engine = normalizeVideoEngine(sceneConfig.engine)
-      scene.engine = engine
-      scene.aspect_ratio = normalizeVideoAspectRatio(sceneConfig.aspect_ratio)
-      scene.lora_items = normalizeVideoLoraItems(sceneConfig.video_lora_items)
-      scene.lora_name = scene.lora_items[0]?.name || ''
-      scene.lora_strength = scene.lora_items[0]?.strength ?? 1
-    } else {
-      scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
-        sceneConfig.end_frame_draw_scene_id,
-      )
-      scene.next_scene_id = sceneConfig.next_scene_id || null
+    if (sceneConfig.resolution === '1024p' && sceneConfig.duration === '10s') {
+      message.error('AI动图不支持 1024p + 10s，请调整分辨率或时长')
+      return
     }
+    const engine = normalizeVideoEngine(sceneConfig.engine)
+    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
+    scene.duration = sceneConfig.duration as DurationKey
+    scene.resolution = sceneConfig.resolution as ResolutionKey
+    scene.engine = engine
+    scene.aspect_ratio = normalizeVideoAspectRatio(sceneConfig.aspect_ratio)
+    scene.lora_items = normalizeVideoLoraItems(sceneConfig.video_lora_items)
+    scene.lora_name = scene.lora_items[0]?.name || ''
+    scene.lora_strength = scene.lora_items[0]?.strength ?? 1
+    scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
+      sceneConfig.end_frame_draw_scene_id,
+    )
+    scene.next_scene_id = sceneConfig.next_scene_id || null
   } else if (sceneConfig.kind === 'ai_video') {
     const scene = config.ai_video_scenes[sceneConfig.index]
     if (!scene) return
-    if (sceneConfig.panel === 'model') {
-      scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
-      scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items)
-    } else {
-      scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
-        sceneConfig.end_frame_draw_scene_id,
-      )
-      scene.next_scene_id = sceneConfig.next_scene_id || null
-    }
+    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
+    scene.duration = sceneConfig.duration as AiVideoDurationKey
+    scene.resolution = sceneConfig.resolution as AiVideoResolutionKey
+    scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
+    scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items)
+    scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
+      sceneConfig.end_frame_draw_scene_id,
+    )
+    scene.next_scene_id = sceneConfig.next_scene_id || null
   } else if (sceneConfig.kind === 'draw') {
     const scene = config.draw_scenes[sceneConfig.index]
     if (!scene) return
-    if (sceneConfig.panel === 'model') {
-      const engine = normalizeDrawEngine(sceneConfig.engine)
-      scene.engine = engine
-      scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
-    } else {
-      const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
-        sceneConfig.postprocess_draw_scene_id,
-        sceneConfig.index,
-      )
-      if (
-        postprocessDrawSceneId &&
-        wouldCreateDrawPostprocessCycle(scene.id, postprocessDrawSceneId)
-      ) {
-        message.error('AI绘图后处理配置不能形成循环')
-        return
-      }
-      scene.postprocess_draw_scene_id = postprocessDrawSceneId
-      scene.postprocess_filter_scene_id = postprocessDrawSceneId
-        ? ''
-        : normalizePostprocessFilterSceneId(sceneConfig.postprocess_filter_scene_id)
-      scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
+    const engine = normalizeDrawEngine(sceneConfig.engine)
+    const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
+      sceneConfig.postprocess_draw_scene_id,
+      sceneConfig.index,
+    )
+    if (
+      postprocessDrawSceneId &&
+      wouldCreateDrawPostprocessCycle(scene.id, postprocessDrawSceneId)
+    ) {
+      message.error('AI绘图后处理配置不能形成循环')
+      return
     }
+    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
+    scene.engine = engine
+    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
+    scene.postprocess_draw_scene_id = postprocessDrawSceneId
+    scene.postprocess_filter_scene_id = postprocessDrawSceneId
+      ? ''
+      : normalizePostprocessFilterSceneId(sceneConfig.postprocess_filter_scene_id)
+    scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
   } else {
     const scene = config.filter_scenes[sceneConfig.index]
     if (!scene) return
     const engine = normalizeDrawEngine(sceneConfig.engine)
+    scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.engine = engine
     scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'filter', engine })
     scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
@@ -1988,32 +2040,22 @@ onMounted(() => {
                 添加场景
               </a-button>
             </div>
-            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedVideoScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`video-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`video-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`video-scene-negative-prompt-${index}`" />
-              <div class="scene-credit-cell">
-                <span class="scene-mobile-field-label">灵石消耗</span>
-                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`video-scene-credit-cost-${index}`" class="scene-credit-input" />
-              </div>
-              <div class="scene-duration-cell">
-                <a-select v-model:value="scene.duration" :data-testid="`video-scene-duration-${index}`" class="scene-duration-select">
-                  <a-select-option v-for="item in durationOptions" :key="item" :value="item">{{ item }}</a-select-option>
-                </a-select>
-              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-video-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('video', config.video_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
                   <a-button class="scene-icon-button" :disabled="index === config.video_scenes.length - 1" :data-testid="`move-video-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('video', config.video_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-video-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('video', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-video-scene-end-frame-${index}`" title="配置首尾帧" aria-label="配置首尾帧" @click="openSceneConfig('video', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-video-scene-${index}`" title="场景配置" aria-label="场景配置" @click="openSceneConfig('video', index)"><template #icon><SettingOutlined /></template></a-button>
                   <a-button danger class="scene-icon-button" :data-testid="`remove-video-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeVideoScene(index)"><template #icon><DeleteOutlined /></template></a-button>
                 </div>
                 <div class="scene-demo-actions">
@@ -2055,32 +2097,22 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理高级图生视频按钮、正负提示词、固定时长、LTX 模型和尾帧来源</span>
               <a-button data-testid="add-ai-video-scene" @click="addAiVideoScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedAiVideoScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_78px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`ai-video-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`ai-video-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" placeholder="留空使用 ComfyUI 工作流默认负面提示词" :data-testid="`ai-video-scene-negative-prompt-${index}`" />
-              <div class="scene-credit-cell">
-                <span class="scene-mobile-field-label">灵石消耗</span>
-                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`ai-video-scene-credit-cost-${index}`" class="scene-credit-input" />
-              </div>
-              <div class="scene-duration-cell">
-                <a-select v-model:value="scene.duration" :data-testid="`ai-video-scene-duration-${index}`" class="scene-duration-select">
-                  <a-select-option v-for="item in aiVideoDurationOptions" :key="item" :value="item">{{ item }}s</a-select-option>
-                </a-select>
-              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-ai-video-scene-up-${index}`" title="上移场景" @click="moveScene('ai_video', config.ai_video_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
                   <a-button class="scene-icon-button" :disabled="index === config.ai_video_scenes.length - 1" :data-testid="`move-ai-video-scene-down-${index}`" title="下移场景" @click="moveScene('ai_video', config.ai_video_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-ai-video-scene-model-${index}`" title="配置模型" @click="openSceneConfig('ai_video', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-ai-video-scene-end-frame-${index}`" title="配置首尾帧" @click="openSceneConfig('ai_video', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-ai-video-scene-${index}`" title="场景配置" @click="openSceneConfig('ai_video', index)"><template #icon><SettingOutlined /></template></a-button>
                   <a-button danger class="scene-icon-button" :data-testid="`remove-ai-video-scene-${index}`" title="删除场景" @click="removeAiVideoScene(index)"><template #icon><DeleteOutlined /></template></a-button>
                 </div>
                 <div class="scene-demo-actions">
@@ -2110,27 +2142,22 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理绘图按钮、提示词、模型和后处理链</span>
               <a-button data-testid="add-draw-scene" @click="addDrawScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedDrawScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`draw-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`draw-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`draw-scene-negative-prompt-${index}`" />
-              <div class="scene-credit-cell">
-                <span class="scene-mobile-field-label">灵石消耗</span>
-                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`draw-scene-credit-cost-${index}`" class="scene-credit-input" />
-              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-draw-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('draw', config.draw_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
                   <a-button class="scene-icon-button" :disabled="index === config.draw_scenes.length - 1" :data-testid="`move-draw-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('draw', config.draw_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-draw-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('draw', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-draw-scene-postprocess-${index}`" title="配置后处理" aria-label="配置后处理" @click="openSceneConfig('draw', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-draw-scene-${index}`" title="场景配置" aria-label="场景配置" @click="openSceneConfig('draw', index)"><template #icon><SettingOutlined /></template></a-button>
                   <a-button danger class="scene-icon-button" :data-testid="`remove-draw-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeDrawScene(index)"><template #icon><DeleteOutlined /></template></a-button>
                 </div>
                 <div class="scene-demo-actions">
@@ -2171,26 +2198,22 @@ onMounted(() => {
               <span class="text-sm text-slate-500">管理滤镜按钮、提示词和底层模型</span>
               <a-button data-testid="add-filter-scene" @click="addFilterScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
-            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
-              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span>灵石消耗</span><span class="text-right">操作</span>
+            <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
             </div>
             <div
               v-for="{ scene, index } in paginatedFilterScenes"
               :key="scene.id"
-              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_124px_286px]"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]"
             >
               <a-input v-model:value="scene.name" :data-testid="`filter-scene-name-${index}`" />
               <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`filter-scene-prompt-${index}`" />
               <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`filter-scene-negative-prompt-${index}`" />
-              <div class="scene-credit-cell">
-                <span class="scene-mobile-field-label">灵石消耗</span>
-                <a-input-number v-model:value="scene.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" :data-testid="`filter-scene-credit-cost-${index}`" class="scene-credit-input" />
-              </div>
               <div class="scene-action-cell">
                 <div class="scene-management-actions">
                   <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-filter-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('filter', config.filter_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
                   <a-button class="scene-icon-button" :disabled="index === config.filter_scenes.length - 1" :data-testid="`move-filter-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('filter', config.filter_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
-                  <a-button class="scene-icon-button" :data-testid="`config-filter-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('filter', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-filter-scene-${index}`" title="场景配置" aria-label="场景配置" @click="openSceneConfig('filter', index)"><template #icon><SettingOutlined /></template></a-button>
                   <a-button danger class="scene-icon-button" :data-testid="`remove-filter-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeFilterScene(index)"><template #icon><DeleteOutlined /></template></a-button>
                 </div>
                 <div class="scene-demo-actions">
@@ -2242,12 +2265,48 @@ onMounted(() => {
       v-model:open="sceneConfig.open"
       :title="sceneModalTitle"
       :footer="null"
-      :width="520"
+      :width="720"
       wrap-class-name="qqcc-scene-config-modal"
       @cancel="closeSceneConfig"
     >
       <a-form layout="vertical" class="scene-config-form">
-        <a-form-item v-if="sceneConfig.panel === 'model'" label="底层模型" class="mb-4">
+        <section class="scene-config-section" data-testid="scene-config-basic-section">
+          <h3>基础配置</h3>
+          <div class="scene-config-grid">
+            <a-form-item label="灵石消耗" class="mb-0">
+              <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" data-testid="scene-config-credit-cost" class="w-full" />
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'video'" label="分辨率" class="mb-0">
+              <a-select v-model:value="sceneConfig.resolution" data-testid="scene-config-resolution" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option v-for="item in modelOptions.video_resolutions" :key="item.value" :value="item.value" :disabled="item.value === '1024p' && sceneConfig.duration === '10s'">{{ item.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="分辨率" class="mb-0">
+              <a-select v-model:value="sceneConfig.resolution" data-testid="scene-config-resolution" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option v-for="item in modelOptions.ai_video_resolutions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'video'" label="时长" class="mb-0">
+              <a-select v-model:value="sceneConfig.duration" data-testid="scene-config-duration" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option v-for="item in durationOptions" :key="item" :value="item" :disabled="item === '10s' && sceneConfig.resolution === '1024p'">{{ item }}</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="时长" class="mb-0">
+              <a-select v-model:value="sceneConfig.duration" data-testid="scene-config-duration" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option v-for="item in aiVideoDurationOptions" :key="item" :value="item">{{ item }}s</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item v-if="sceneConfig.kind === 'video'" label="画面比例" class="mb-0">
+              <a-select v-model:value="sceneConfig.aspect_ratio" data-testid="scene-video-aspect-ratio-select" :get-popup-container="getSceneSelectPopupContainer">
+                <a-select-option v-for="item in modelOptions.video_aspect_ratios" :key="item" :value="item">{{ videoAspectRatioLabels[item] }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </div>
+        </section>
+
+        <section class="scene-config-section" data-testid="scene-config-model-section">
+        <h3>模型配置</h3>
+        <a-form-item label="底层模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.engine"
             data-testid="scene-engine-select"
@@ -2264,23 +2323,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'video'" label="视频比例" class="mb-4">
-          <a-select
-            v-model:value="sceneConfig.aspect_ratio"
-            data-testid="scene-video-aspect-ratio-select"
-            class="w-full"
-            :get-popup-container="getSceneSelectPopupContainer"
-          >
-            <a-select-option
-              v-for="item in modelOptions.video_aspect_ratios"
-              :key="item"
-              :value="item"
-            >
-              {{ videoAspectRatioLabels[item] }}
-            </a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind !== 'video' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind !== 'video' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
             data-testid="scene-lora-select"
@@ -2297,7 +2340,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'video'" label="附加模型（最多 5 个）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'video'" label="附加模型（最多 5 个）" class="mb-4">
           <a-select
             :value="sceneConfig.video_lora_items.map(item => item.name)"
             mode="multiple"
@@ -2317,7 +2360,7 @@ onMounted(() => {
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'ai_video'" label="附加模型（最多 3 个）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="附加模型（最多 3 个）" class="mb-4">
           <a-select
             :value="sceneConfig.lora_items.map(item => item.path)"
             mode="multiple"
@@ -2335,18 +2378,10 @@ onMounted(() => {
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-ai-video-lora-strength-${item.path}`" />
           </div>
         </a-form-item>
+        </section>
+        <section v-if="sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video'" class="scene-config-section" data-testid="scene-config-frame-section">
+        <h3>首尾帧配置</h3>
         <a-form-item
-          v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'filter'"
-          label="原图换脸"
-          class="mb-4"
-        >
-          <a-switch
-            v-model:checked="sceneConfig.original_face_swap_enabled"
-            data-testid="filter-scene-original-face-swap-switch"
-          />
-        </a-form-item>
-        <a-form-item
-          v-if="sceneConfig.panel === 'reference' && (sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video')"
           label="尾帧来源"
           class="mb-4"
         >
@@ -2367,7 +2402,6 @@ onMounted(() => {
           </a-select>
         </a-form-item>
         <a-form-item
-          v-if="sceneConfig.panel === 'reference' && (sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video')"
           label="自动拼接下一个模板"
           class="mb-4"
         >
@@ -2394,8 +2428,11 @@ onMounted(() => {
             {{ activeVideoSceneChainPreview }}
           </div>
         </a-form-item>
+        </section>
+        <section v-if="sceneConfig.kind === 'draw' || sceneConfig.kind === 'filter'" class="scene-config-section" data-testid="scene-config-postprocess-section">
+        <h3>后处理配置</h3>
         <a-form-item
-          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
+          v-if="sceneConfig.kind === 'draw'"
           label="绘图后处理"
           class="mb-4"
         >
@@ -2416,7 +2453,7 @@ onMounted(() => {
           </a-select>
         </a-form-item>
         <a-form-item
-          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
+          v-if="sceneConfig.kind === 'draw'"
           label="滤镜后处理"
           class="mb-4"
         >
@@ -2437,7 +2474,6 @@ onMounted(() => {
           </a-select>
         </a-form-item>
         <a-form-item
-          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
           label="原图换脸"
           class="mb-4"
         >
@@ -2446,8 +2482,9 @@ onMounted(() => {
             data-testid="scene-original-face-swap-switch"
           />
         </a-form-item>
+        </section>
         <div class="flex justify-end gap-2">
-          <a-button @click="closeSceneConfig">取消</a-button>
+          <a-button data-testid="scene-config-cancel" @click="closeSceneConfig">取消</a-button>
           <a-button
             type="primary"
             data-testid="scene-config-confirm"
@@ -2662,6 +2699,33 @@ onMounted(() => {
   padding: 0;
 }
 
+.scene-config-form {
+  max-height: min(72vh, 760px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.scene-config-section {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.scene-config-section h3 {
+  margin: 0 0 14px;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.scene-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 :deep(.scene-duration-select .ant-select-selector) {
   align-items: center;
   padding-inline-end: 28px;
@@ -2691,6 +2755,10 @@ onMounted(() => {
 }
 
 @media (max-width: 767px) {
+  .scene-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .scene-row {
     align-items: stretch;
   }
