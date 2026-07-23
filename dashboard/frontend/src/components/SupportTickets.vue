@@ -39,5 +39,6 @@ onMounted(load)
 .ticket-scroll-pane::-webkit-scrollbar-track { background:#f1f5f9; border-radius:10px }
 .ticket-scroll-pane::-webkit-scrollbar-thumb { background:#94a3b8; border:2px solid #f1f5f9; border-radius:10px }
 .ticket-scroll-pane::-webkit-scrollbar-thumb:hover { background:#64748b }
+.ticket-scroll-pane:focus-visible { outline:2px solid #1677ff; outline-offset:2px }
 .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px }.status-filter { width:110px }.category-filter { width:140px }.ticket-item { cursor:pointer }.messages { margin:16px 0 }.message { padding:10px; margin:8px 0; border-radius:8px; background:#f5f5f5 }.message.admin { background:#e6f4ff }.message.internal { background:#fffbe6 }.message p { white-space:pre-wrap; margin:6px 0 }.message a,.message small { display:block }.attachment { width:max-content; max-width:100%; margin:8px 0 }.attachment-image { display:block; max-width:min(360px, 100%); max-height:280px; border-radius:8px; object-fit:contain; margin-bottom:4px }.ticket-detail :deep(.ant-input),.ticket-detail :deep(.ant-select),.ticket-detail :deep(.ant-btn) { margin:6px 0; width:100% } @media (max-width: 800px) { .support-grid { grid-template-columns:1fr; grid-template-rows:repeat(2, minmax(0, 1fr)) } }
 </style>
