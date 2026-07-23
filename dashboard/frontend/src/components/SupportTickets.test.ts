@@ -34,6 +34,12 @@ const passthroughStub = (name: string) =>
     template: '<div><slot /></div>',
   })
 
+const SelectStub = defineComponent({
+  name: 'SelectStub',
+  props: ['options'],
+  template: '<div><slot /></div>',
+})
+
 describe('SupportTickets', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -58,7 +64,7 @@ describe('SupportTickets', () => {
           'a-list': ListStub,
           'a-list-item': passthroughStub('ListItemStub'),
           'a-spin': passthroughStub('SpinStub'),
-          'a-select': passthroughStub('SelectStub'),
+          'a-select': SelectStub,
           'a-button': passthroughStub('ButtonStub'),
           'a-tag': passthroughStub('TagStub'),
           'a-textarea': passthroughStub('TextareaStub'),
@@ -71,6 +77,72 @@ describe('SupportTickets', () => {
     expect(wrapper.text()).toContain('#42 充值问题')
     expect(wrapper.text()).toContain('测试用户')
     expect(wrapper.text()).toContain('open')
+  })
+
+  it('shows business tickets completely and exposes business in the category filter', async () => {
+    apiMocks.fetchSupportTickets.mockResolvedValue({
+      items: [
+        {
+          id: 5,
+          category: 'business',
+          status: 'open',
+          username: 'giraffe',
+          last_message_at: '2026-07-23T20:04:56Z',
+        },
+      ],
+      total: 1,
+    })
+    const wrapper = mount(SupportTickets, {
+      global: {
+        stubs: {
+          'a-list': ListStub,
+          'a-list-item': passthroughStub('ListItemStub'),
+          'a-spin': passthroughStub('SpinStub'),
+          'a-select': SelectStub,
+          'a-button': passthroughStub('ButtonStub'),
+          'a-tag': passthroughStub('TagStub'),
+          'a-textarea': passthroughStub('TextareaStub'),
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('#5 商业合作')
+    const categoryOptions = wrapper.findAllComponents(SelectStub)[1].props('options')
+    expect(categoryOptions).toContainEqual({ value: 'business', label: '商业合作' })
+  })
+
+  it('never renders an empty ticket heading for a future category', async () => {
+    apiMocks.fetchSupportTickets.mockResolvedValue({
+      items: [
+        {
+          id: 9,
+          category: 'partner',
+          status: 'open',
+          username: 'giraffe',
+          last_message_at: '2026-07-23T20:04:56Z',
+        },
+      ],
+      total: 1,
+    })
+    const wrapper = mount(SupportTickets, {
+      global: {
+        stubs: {
+          'a-list': ListStub,
+          'a-list-item': passthroughStub('ListItemStub'),
+          'a-spin': passthroughStub('SpinStub'),
+          'a-select': SelectStub,
+          'a-button': passthroughStub('ButtonStub'),
+          'a-tag': passthroughStub('TagStub'),
+          'a-textarea': passthroughStub('TextareaStub'),
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('#9 其他分类（partner）')
   })
 
   it('renders received image attachments as authenticated previews', async () => {
@@ -101,7 +173,7 @@ describe('SupportTickets', () => {
           'a-list': ListStub,
           'a-list-item': passthroughStub('ListItemStub'),
           'a-spin': passthroughStub('SpinStub'),
-          'a-select': passthroughStub('SelectStub'),
+          'a-select': SelectStub,
           'a-button': passthroughStub('ButtonStub'),
           'a-tag': passthroughStub('TagStub'),
           'a-textarea': passthroughStub('TextareaStub'),
