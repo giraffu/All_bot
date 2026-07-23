@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f94a9f5a88b2a05af7fb3e98b61fc51a7279ffd7",
+  "batch": "20260723-optimize-release-gates",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-optimize-release-gates",
+  "members": [
+    {
+      "base_sha": "f94a9f5a88b2a05af7fb3e98b61fc51a7279ffd7",
+      "branch": "codex/a-optimize-release-gates",
+      "head": "3fca776a31ba948e9704b1d2cc3cceea430ea9c3",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

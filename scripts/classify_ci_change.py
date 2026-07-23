@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify lightweight, GPU-operator, and application runtime changes."""
+"""Classify lightweight, release-tooling, GPU-operator, and runtime changes."""
 
 from __future__ import annotations
 
@@ -22,10 +22,15 @@ LIGHTWEIGHT_PATTERNS = (
     "deploy/release-policy.yml",
     "deploy/release-batches/*.json",
     "deploy/test-acceptance.example.json",
-    "scripts/classify_ci_change.py",
     "scripts/doc_quality_checker.py",
     "scripts/manage_ai_workspaces.py",
+)
+
+RELEASE_TOOLING_PATTERNS = (
+    "scripts/auto_integrate_handoffs.py",
+    "scripts/classify_ci_change.py",
     "scripts/release.py",
+    "scripts/runtime_env_contract.py",
     "scripts/validate_upstream_ci_run.py",
 )
 
@@ -45,10 +50,12 @@ class ChangeScopeDecision:
         self,
         *,
         scope: str,
+        release_paths: Iterable[str] = (),
         operator_paths: Iterable[str] = (),
         runtime_paths: Iterable[str] = (),
     ) -> None:
         self.scope = scope
+        self.release_paths = tuple(sorted(set(release_paths)))
         self.operator_paths = tuple(sorted(set(operator_paths)))
         self.runtime_paths = tuple(sorted(set(runtime_paths)))
 
@@ -61,15 +68,21 @@ class ChangeScopeDecision:
         return self.scope == "operator"
 
     @property
+    def requires_release_ci(self) -> bool:
+        return self.scope == "release-tooling"
+
+    @property
     def requires_release_bundle(self) -> bool:
-        return self.scope != "lightweight"
+        return self.scope in {"operator", "runtime"}
 
     def as_dict(self) -> dict[str, object]:
         return {
             "scope": self.scope,
             "requires_full_ci": self.requires_full_ci,
+            "requires_release_ci": self.requires_release_ci,
             "requires_operator_ci": self.requires_operator_ci,
             "requires_release_bundle": self.requires_release_bundle,
+            "release_paths": list(self.release_paths),
             "operator_paths": list(self.operator_paths),
             "runtime_paths": list(self.runtime_paths),
         }
@@ -86,6 +99,14 @@ def _is_operator(path: str) -> bool:
     normalized = path.removeprefix("./")
     return any(
         fnmatch.fnmatchcase(normalized, pattern) for pattern in OPERATOR_PATTERNS
+    )
+
+
+def _is_release_tooling(path: str) -> bool:
+    normalized = path.removeprefix("./")
+    return any(
+        fnmatch.fnmatchcase(normalized, pattern)
+        for pattern in RELEASE_TOOLING_PATTERNS
     )
 
 
@@ -111,20 +132,27 @@ def classify_change_scope(paths: Iterable[str]) -> ChangeScopeDecision:
         return ChangeScopeDecision(
             scope="runtime", runtime_paths=("<empty-change-set>",)
         )
+    release_paths = tuple(path for path in normalized if _is_release_tooling(path))
     operator_paths = tuple(path for path in normalized if _is_operator(path))
     runtime_paths = tuple(
         path
         for path in normalized
-        if not _is_lightweight(path) and not _is_operator(path)
+        if not _is_lightweight(path)
+        and not _is_release_tooling(path)
+        and not _is_operator(path)
     )
+    mixed_focused_scopes = bool(release_paths and operator_paths)
     return ChangeScopeDecision(
         scope=(
             "runtime"
-            if runtime_paths
+            if runtime_paths or mixed_focused_scopes
             else "operator"
             if operator_paths
+            else "release-tooling"
+            if release_paths
             else "lightweight"
         ),
+        release_paths=release_paths,
         operator_paths=operator_paths,
         runtime_paths=runtime_paths,
     )
@@ -136,6 +164,11 @@ def _write_github_output(path: Path, decision: ChangeScopeDecision) -> None:
         output.write(
             "requires_full_ci="
             + ("true" if decision.requires_full_ci else "false")
+            + "\n"
+        )
+        output.write(
+            "requires_release_ci="
+            + ("true" if decision.requires_release_ci else "false")
             + "\n"
         )
         output.write(

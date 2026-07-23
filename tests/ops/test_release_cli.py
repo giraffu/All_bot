@@ -24,6 +24,13 @@ CONFIG_UPDATER_PATH = ROOT / "scripts" / "update_deploy_config.py"
 FULL_SHA = "a" * 40
 
 
+@pytest.fixture(autouse=True)
+def _isolate_release_plan_cache(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "ALLBOT_RELEASE_PLAN_CACHE", str(tmp_path / "release-plan-cache")
+    )
+
+
 def _load_module():
     spec = importlib.util.spec_from_file_location("allbot_release", MODULE_PATH)
     assert spec is not None and spec.loader is not None
@@ -40,6 +47,232 @@ def _load_config_updater():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _plan_token_args(tmp_path, *, sha=FULL_SHA):
+    manifest = tmp_path / "release-index.json"
+    manifest.write_text('{"schema_version": 2}\n', encoding="utf-8")
+    web = tmp_path / "public-web-dist.tgz"
+    web.write_bytes(b"web")
+    return SimpleNamespace(
+        command="plan",
+        env="test",
+        sha=sha,
+        track="control-plane",
+        modules=[],
+        services=[],
+        strategy="auto",
+        skip_gate=[],
+        reason="",
+        manifest=str(manifest),
+        web_artifact=str(web),
+        policy=str(POLICY_PATH),
+        schema=str(SCHEMA_PATH),
+        skip_git_checks=False,
+        skip_ci_checks=False,
+        skip_env_checks=False,
+        dashboard_fast_track=False,
+        control_plane_repair_fast_track=False,
+        repair_test_data_services=False,
+        confirm_legacy_cutover=False,
+    )
+
+
+def test_plan_token_round_trip_is_short_lived_and_bound_to_release_identity(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    monkeypatch.setenv("ALLBOT_RELEASE_PLAN_CACHE", str(tmp_path / "plans"))
+    args = _plan_token_args(tmp_path)
+    impact = module.ReleaseImpact(
+        services={"central-api"}, matched_rules=["track:control-plane"]
+    )
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "track": "control-plane",
+        "artifacts": {},
+        "selected_artifacts": [],
+    }
+
+    token, expires_at = module._create_plan_token(
+        args,
+        impact=impact,
+        manifest=manifest,
+        previous_sha="b" * 40,
+        config_revision="config-revision",
+        runtime_snapshot={
+            "environment_revision": "environment-revision",
+            "drift": False,
+        },
+    )
+    cached = module._load_plan_token(args, token)
+
+    assert token
+    assert expires_at > datetime.now(timezone.utc)
+    assert cached["manifest"] == manifest
+    assert cached["impact"]["services"] == ["central-api"]
+    assert cached["config_revision"] == "config-revision"
+    assert cached["preflight"] is None
+    assert (tmp_path / "plans" / f"{token}.json").stat().st_mode & 0o777 == 0o600
+
+    changed_args = _plan_token_args(tmp_path, sha="c" * 40)
+    with pytest.raises(module.ReleaseError, match="does not match"):
+        module._load_plan_token(changed_args, token)
+
+
+def test_plan_token_preflight_can_be_reused_and_expired_tokens_fail_closed(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    monkeypatch.setenv("ALLBOT_RELEASE_PLAN_CACHE", str(tmp_path / "plans"))
+    args = _plan_token_args(tmp_path)
+    token, _expires_at = module._create_plan_token(
+        args,
+        impact=module.ReleaseImpact(services={"central-api"}),
+        manifest={
+            "schema_version": 2,
+            "git_sha": FULL_SHA,
+            "track": "control-plane",
+            "artifacts": {},
+            "selected_artifacts": [],
+        },
+        previous_sha="b" * 40,
+        config_revision="config-revision",
+        runtime_snapshot={"environment_revision": "environment-revision"},
+    )
+    preflight = {"status": "passed", "blockers": []}
+
+    module._cache_plan_preflight(args, token, preflight)
+
+    assert module._load_plan_token(args, token)["preflight"] == preflight
+
+    path = tmp_path / "plans" / f"{token}.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["expires_at"] = "2000-01-01T00:00:00+00:00"
+    path.write_text(json.dumps(record), encoding="utf-8")
+    path.chmod(0o600)
+    with pytest.raises(module.ReleaseError, match="expired"):
+        module._load_plan_token(args, token)
+
+
+def test_cli_reuses_cached_candidate_and_passed_preflight(monkeypatch, tmp_path):
+    module = _load_module()
+    args = _plan_token_args(tmp_path)
+    token, _expires_at = module._create_plan_token(
+        args,
+        impact=module.ReleaseImpact(
+            services={"central-api"}, matched_rules=["track:control-plane"]
+        ),
+        manifest={
+            "schema_version": 2,
+            "git_sha": FULL_SHA,
+            "track": "control-plane",
+            "source_ref": "refs/heads/main",
+            "artifacts": {},
+            "selected_artifacts": [],
+        },
+        previous_sha="b" * 40,
+        config_revision="config-revision",
+        runtime_snapshot={
+            "environment_revision": "environment-revision",
+            "drift": False,
+            "service_revisions": {},
+        },
+    )
+    module._cache_plan_preflight(
+        args, token, {"status": "passed", "blockers": []}
+    )
+
+    monkeypatch.setattr(
+        module,
+        "build_plan",
+        lambda _args: (_ for _ in ()).throw(
+            AssertionError("cached plan must skip candidate and CI resolution")
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            {},
+            "config-revision",
+            {
+                "environment_revision": "environment-revision",
+                "drift": False,
+                "service_revisions": {},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(risk_class="app-runtime"),
+    )
+    monkeypatch.setattr(module, "disabled_optional_cloud_services", lambda *_: set())
+    monkeypatch.setattr(
+        module,
+        "filter_inactive_control_artifacts",
+        lambda _env, value, _disabled: (value, set()),
+    )
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {"plan": "cached"})
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("passed cached preflight must be reused")
+        ),
+    )
+
+    assert (
+        module.main(
+            [
+                "preflight",
+                "--env",
+                "test",
+                "--sha",
+                FULL_SHA,
+                "--manifest",
+                args.manifest,
+                "--web-artifact",
+                args.web_artifact,
+                "--plan-token",
+                token,
+            ]
+        )
+        == 0
+    )
+
+
+def test_plan_token_rejects_changed_public_web_bytes(monkeypatch, tmp_path):
+    module = _load_module()
+    args = _plan_token_args(tmp_path)
+    token, _expires_at = module._create_plan_token(
+        args,
+        impact=module.ReleaseImpact(services={"web-static"}),
+        manifest={
+            "schema_version": 2,
+            "git_sha": FULL_SHA,
+            "track": "control-plane",
+            "artifacts": {
+                "public-web": {
+                    "kind": "file",
+                    "sha256": hashlib.sha256(b"web").hexdigest(),
+                }
+            },
+            "selected_artifacts": ["public-web"],
+        },
+        previous_sha="b" * 40,
+        config_revision="config-revision",
+        runtime_snapshot={"environment_revision": "environment-revision"},
+    )
+
+    Path(args.web_artifact).write_bytes(b"changed")
+
+    with pytest.raises(
+        module.ReleaseError, match="does not match|Public Web artifact changed"
+    ):
+        module._load_plan_token(args, token)
 
 
 def test_media_runtime_base_is_excluded_from_services_and_acceptance():
@@ -1415,8 +1648,15 @@ def test_dashboard_fast_track_migration_uses_running_web_container_for_backup(
     assert "label=com.docker.compose.service=web-api" in script
     assert 'database_url="$(docker exec "$web_container"' in script
     assert "run --rm -T web-api sh -lc 'printf" not in script
+    assert "run --no-deps --rm -T web-api alembic heads" in script
+    assert "run --no-deps --rm -T web-api alembic upgrade head" in script
     assert module.PG_DUMP_IMAGE in script
     assert '--network "container:$web_container"' in script
+    assert "ALLBOT_PROGRESS:%s:started" in script
+    assert "trap progress_failed ERR" in script
+    assert "progress_start maintenance" in script
+    assert "progress_start backup" in script
+    assert "progress_start migration" in script
 
 
 def test_test_cloud_deploy_does_not_chmod_existing_tmp_snapshot_parent(monkeypatch):
@@ -3773,6 +4013,7 @@ def test_deploy_module_no_change_requires_digest_health_and_config_revision(
                 "kind": "image",
                 "ref": ref,
                 "digest": digest,
+                "oci_revision": FULL_SHA,
             }
         },
     }
@@ -3796,6 +4037,7 @@ def test_deploy_module_no_change_requires_digest_health_and_config_revision(
     assert result["status"] == "no-change"
     assert result["artifacts"]["web-api"]["digest"] == digest
     assert "RepoDigests" in observed["script"]
+    assert "org.opencontainers.image.revision" in observed["script"]
     assert "ALLBOT_CONFIG_REVISION" in observed["script"]
 
 
@@ -4919,7 +5161,9 @@ def test_pages_canonical_verification_rejects_stale_or_html_runtime(
         )
 
 
-def test_transaction_compensates_attempted_stages_in_reverse_and_then_clears_maintenance():
+def test_transaction_compensates_attempted_stages_in_reverse_and_then_clears_maintenance(
+    capsys,
+):
     module = _load_module()
     calls = []
     journals = []
@@ -4969,7 +5213,67 @@ def test_transaction_compensates_attempted_stages_in_reverse_and_then_clears_mai
     assert "state" not in calls
     assert transaction["status"] == "rolled_back"
     assert transaction["phase"] == "recovery_verified"
+    assert transaction["failed_stage"] == "pages"
+    assert transaction["failure_detail"] == "canonical remained stale"
+    assert transaction["phase_timings_seconds"]["pages"] >= 0
     assert journals[-1]["status"] == "rolled_back"
+    progress = capsys.readouterr().err
+    assert "[release] stage=cloud status=started" in progress
+    assert "[release] stage=pages status=failed" in progress
+
+
+def test_transaction_failure_detail_redacts_credentials():
+    module = _load_module()
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    dependencies = module.ReleaseTransactionDependencies(
+        cloud=lambda: (_ for _ in ()).throw(
+            module.ReleaseError("password=hunter2")
+        ),
+        worker=lambda: None,
+        pages=lambda: None,
+        state=lambda: None,
+        rollback_pages=lambda: None,
+        rollback_worker=lambda: None,
+        rollback_cloud=lambda: None,
+        validate_recovery=lambda: None,
+        clear_maintenance=lambda: None,
+        journal=lambda _value: None,
+    )
+
+    with pytest.raises(module.ReleaseError, match="sensitive detail redacted"):
+        module.execute_release_transaction(transaction, dependencies)
+
+    assert "hunter2" not in transaction["failure_detail"]
+
+
+def test_long_remote_command_streams_only_explicit_progress_markers(capsys):
+    module = _load_module()
+
+    result = module._run_with_progress(
+        [
+            "bash",
+            "-c",
+            (
+                "cat >/dev/null; "
+                "printf 'ALLBOT_PROGRESS:pull:started\\n' >&2; "
+                "printf 'registry detail stays captured\\n' >&2; "
+                "printf 'ALLBOT_TIMING:pull:1\\n'"
+            ),
+        ],
+        input_text="script\n",
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "ALLBOT_TIMING:pull:1\n"
+    assert "registry detail stays captured" in result.stderr
+    visible = capsys.readouterr().err
+    assert visible == "ALLBOT_PROGRESS:pull:started\n"
 
 
 def test_recovery_validation_checks_only_stages_the_transaction_attempted(monkeypatch):
@@ -6055,6 +6359,103 @@ def test_deploy_module_returns_verified_no_change_before_rollback_preflight(
 
     assert calls == ["no-change"]
     assert '"status": "no-change"' in capsys.readouterr().out
+
+
+def test_test_deploy_same_digest_returns_no_change_before_preflight(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api"},
+        level="rolling",
+        matched_rules=["central-api", "track:control-plane"],
+    )
+    manifest = {
+        "schema_version": 2,
+        "git_sha": FULL_SHA,
+        "track": "control-plane",
+        "source_ref": "refs/heads/main",
+        "release_channel": "main",
+        "validation": {"mode": "full", "tests": "passed"},
+        "selected_artifacts": ["central-api"],
+        "artifacts": {
+            "central-api": {
+                "kind": "image",
+                "ref": "ghcr.io/example/central@sha256:" + "7" * 64,
+                "digest": "sha256:" + "7" * 64,
+                "oci_revision": FULL_SHA,
+            }
+        },
+    }
+    no_change = {
+        "status": "no-change",
+        "environment": "test",
+        "git_sha": FULL_SHA,
+        "health": "verified",
+    }
+    calls = []
+
+    def build_plan(args):
+        args.previous_state = {
+            "artifacts": {
+                "central-api": {"digest": "sha256:" + "7" * 64}
+            }
+        }
+        return impact, manifest, "b" * 40
+
+    monkeypatch.setattr(module, "build_plan", build_plan)
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(risk_class="app-runtime"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args: (
+            {},
+            "environment-revision",
+            {
+                "environment_revision": "environment-revision",
+                "drift": False,
+                "service_revisions": {"central-api": "environment-revision"},
+            },
+        ),
+    )
+    monkeypatch.setattr(module, "disabled_optional_cloud_services", lambda *_: set())
+    monkeypatch.setattr(
+        module,
+        "filter_inactive_control_artifacts",
+        lambda _env, value, _disabled: (value, set()),
+    )
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {"plan": "ok"})
+    monkeypatch.setattr(
+        module,
+        "verify_deploy_module_no_change",
+        lambda *_args: calls.append("no-change") or no_change,
+    )
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("same digest must skip preflight and deployment")
+        ),
+    )
+
+    assert (
+        module.main(
+            [
+                "deploy",
+                "--env",
+                "test",
+                "--sha",
+                FULL_SHA,
+            ]
+        )
+        == 0
+    )
+    assert calls == ["no-change"]
+    assert '"environment": "test"' in capsys.readouterr().out
 
 
 def test_release_cli_accepts_nested_oras_v2_bundle_layout(tmp_path):
