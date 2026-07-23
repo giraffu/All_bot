@@ -1858,7 +1858,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert "--publish" not in docker_run_line
     assert "AGENT_ID" not in docker_run_line
     assert ops.marker is not None
-    assert ops.marker["profile"] == "pornmaster_flux2_edit"
+    assert ops.marker["profile"] == "img2img_lora"
     assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
 
 
