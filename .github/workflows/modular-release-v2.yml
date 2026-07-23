@@ -277,6 +277,28 @@ jobs:
             break
           done < <(git rev-list --topo-order "${SOURCE_SHA}^")
           if [ -z "$baseline_manifest" ]; then
+            gpu_manifest_repository="${IMAGE_PREFIX}/allbot-gpu-release-manifests"
+            gpu_tags_file="available-gpu-manifest-tags.txt"
+            oras repo tags "$gpu_manifest_repository" > "$gpu_tags_file" || true
+            while IFS= read -r candidate; do
+              grep -Fxq "$candidate" "$gpu_tags_file" || continue
+              rm -rf gpu-baseline-standalone
+              mkdir -p gpu-baseline-standalone
+              oras pull "${gpu_manifest_repository}:${candidate}" \
+                -o gpu-baseline-standalone >/dev/null 2>&1 || continue
+              manifest="gpu-baseline-standalone/gpu-execution-manifest.json"
+              [ -f "$manifest" ] || continue
+              [ "$(jq -r '.source_sha' "$manifest")" = "$candidate" ] || continue
+              [ "$(jq -r '.completeness' "$manifest")" = complete ] || continue
+              [ "$(jq -c '.missing_artifacts' "$manifest")" = '[]' ] || continue
+              actual_profiles="$(jq -r '.artifacts | keys[]' "$manifest" | sort)"
+              [ "$actual_profiles" = "$expected_profiles" ] || continue
+              baseline_manifest="$manifest"
+              echo "sha=${candidate}" >> "$GITHUB_OUTPUT"
+              break
+            done < <(git rev-list --topo-order "${SOURCE_SHA}^")
+          fi
+          if [ -z "$baseline_manifest" ]; then
             echo "no complete main-channel GPU baseline exists in target ancestry" >&2
             exit 2
           fi
