@@ -151,6 +151,8 @@ Web 统一入口在：
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`
 - 返回给前端 `pending` 初态和余额变化
 
+当低阶外门用户因目标 Worker 执行池的 projected pending 达到容量上限而被拒绝时，`billing_core` 会经 task core 抛出 `QueueCapacityError`。`POST /api/tasks/generate` 将其映射为 HTTP 429，并返回结构化 `detail.code=GENERATION_QUEUE_FULL`；Vue 根据该 code 展示“当前任务队列已满”、可改用其他任务，以及仅适用于外门练气期及以下用户的充值升级身份提示。其它并发限制仍使用普通 429，避免将用户自身并发已满或其它接口限流误称为执行池满载。
+
 这意味着 Web 成功返回给前端时，任务通常已经：
 
 - 完成了计费检查

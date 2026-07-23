@@ -8,6 +8,7 @@ from src.core.task_core_types import (
     ConcurrencyLimitError,
     CoreDomainError,
     InsufficientCreditsError,
+    QueueCapacityError,
     TaskSubmissionContext,
     TaskSubmissionExecutionResult,
     TaskSubmissionSideEffectPlan,
@@ -96,6 +97,8 @@ async def ensure_submission_concurrency_lock(
         **kwargs,
     )
     if not can_run:
+        if "当前任务类型排队已达到" in str(err):
+            raise QueueCapacityError(err)
         raise ConcurrencyLimitError(err)
 
 
