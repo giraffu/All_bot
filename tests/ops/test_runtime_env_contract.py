@@ -198,6 +198,39 @@ def test_dashboard_backend_projection_rejects_missing_agent_control_token():
         )
 
 
+def test_qqcc_config_backend_projection_includes_central_api_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+
+    snapshot = module.build_snapshot(
+        contract,
+        "prod",
+        values,
+        services={"qqcc-config-backend"},
+    )
+
+    projection = snapshot.projections["qqcc-config-backend"]
+    assert projection["API_TOKEN"] == "prod-api-token"
+    assert "AGENT_SECRET_TOKEN" not in projection
+    assert "UNRELATED_OPERATOR_SECRET" not in projection
+
+
+def test_qqcc_config_backend_projection_rejects_missing_central_api_token():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    del values["API_TOKEN"]
+
+    with pytest.raises(module.ContractError, match="API_TOKEN"):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"qqcc-config-backend"},
+        )
+
+
 def test_missing_required_service_key_fails_closed_without_value_disclosure():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
