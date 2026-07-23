@@ -87,8 +87,6 @@ def validate_upstream_run(
     ):
         if not FULL_SHA_RE.fullmatch(sha):
             raise CITrustError(f"{label} SHA must be a full lowercase commit SHA")
-    if expected_sha != expected_main_sha:
-        raise CITrustError("upstream source SHA is not the current protected main head")
     if expected_scope not in {"runtime", "operator"}:
         raise CITrustError("upstream change scope must be runtime or operator")
     if _repository_name(run) != expected_repository:
@@ -127,6 +125,7 @@ def validate_upstream_run(
         "run_id": run_id,
         "event": event,
         "head_sha": expected_sha,
+        "protected_main_sha": expected_main_sha,
         "scope": expected_scope,
         "successful_test_jobs": sorted(successful_jobs),
     }

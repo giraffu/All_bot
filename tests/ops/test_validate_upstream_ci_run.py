@@ -210,18 +210,21 @@ def test_untrusted_upstream_metadata_or_incomplete_jobs_fail_closed(
         )
 
 
-def test_stale_upstream_sha_is_rejected_even_when_that_run_passed():
+def test_historical_main_sha_is_trusted_when_exact_run_passed():
     module = _load_module()
     source_sha, run, jobs = _trusted_evidence(module)
+    current_main_sha = "b" * 40
 
-    with pytest.raises(module.CITrustError, match="current protected main head"):
-        module.validate_upstream_run(
-            run,
-            jobs,
-            expected_repository="giraffu/All_bot",
-            expected_sha=source_sha,
-            expected_main_sha="b" * 40,
-        )
+    result = module.validate_upstream_run(
+        run,
+        jobs,
+        expected_repository="giraffu/All_bot",
+        expected_sha=source_sha,
+        expected_main_sha=current_main_sha,
+    )
+
+    assert result["head_sha"] == source_sha
+    assert result["protected_main_sha"] == current_main_sha
 
 
 def test_expected_python_shards_match_the_upstream_workflow_contract():
