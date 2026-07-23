@@ -59,6 +59,13 @@ LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "scail2": LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
 }
+LAN_AIO_PIPELINE_ENV_BY_PROFILE = {
+    "pornmaster_flux2_edit_bf16": {
+        "PIPELINE_MAX_RUNNING_TASKS": "2",
+        "PIPELINE_MAX_CLAIMED_TASKS": "3",
+        "PIPELINE_DELIVERY_CONCURRENCY": "1",
+    },
+}
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
         "central_url": "https://worker-central-test.aivison.it.com",
@@ -431,6 +438,7 @@ class RuntimePlanner:
         extra_environment = LAN_AIO_EXTRA_ENV_BY_PROFILE.get(
             profile.runtime_profile, {}
         )
+        pipeline_environment = LAN_AIO_PIPELINE_ENV_BY_PROFILE.get(profile.id, {})
         comfyui_dir = str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
         model_target_dir = f"{comfyui_dir.rstrip('/')}/models"
         if model_workspace_host_dir != workspace_host_dir:
@@ -554,12 +562,15 @@ class RuntimePlanner:
                         "PREFETCH_CACHE_DIR": f"{state_root}/prefetch-cache/{agent_id}",
                         "PIPELINE_ENABLED": "true",
                         "PIPELINE_MAX_RUNNING_TASKS": "1",
-                        "PIPELINE_TASK_TYPES": "all",
+                        "PIPELINE_MAX_CLAIMED_TASKS": "2",
+                        "PIPELINE_DELIVERY_CONCURRENCY": "1",
+                        "PIPELINE_TASK_TYPES": supported_task_types,
                         "PREFETCH_ENABLED": "true",
                         "PREFETCH_RESERVE_TASK": "true",
                         "PREFETCH_DEPTH": "1",
                         "PREFETCH_TASK_TYPES": supported_task_types,
                         "PREFETCH_CONSUME_WAIT_SECONDS": "10",
+                        **pipeline_environment,
                         "CANCEL_LOCK_ON_POP": "true",
                         "NO_PROXY": "*",
                         "no_proxy": "*",
