@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -6,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from dashboard.backend import auth as dashboard_auth
 from dashboard.backend import qqcc_config_auth, qqcc_config_main
 from dashboard.backend.routers import qqcc as qqcc_router
+from src.database import core as database_core
 from src.services.qqcc_config_service import QQCC_LAZY_BOT_CONFIG_KEY
 
 
@@ -187,3 +189,65 @@ async def test_qqcc_config_routes_load_and_save_runtime_checkpoint():
         "quick_faceswap",
     ]
     assert fake_db.committed is True
+
+
+@pytest.mark.asyncio
+async def test_demo_generation_releases_config_session_before_background_monitor(
+    monkeypatch,
+):
+    open_sessions = 0
+    monitor_session_counts = []
+
+    class _TrackedSessionContext:
+        async def __aenter__(self):
+            nonlocal open_sessions
+            open_sessions += 1
+            return object()
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            nonlocal open_sessions
+            open_sessions -= 1
+
+    monkeypatch.setattr(
+        database_core,
+        "AsyncSessionLocal",
+        lambda: _TrackedSessionContext(),
+    )
+    monkeypatch.setattr(
+        qqcc_router,
+        "load_qqcc_config_payload",
+        AsyncMock(return_value={"config": {"video_scenes": []}}),
+    )
+    monkeypatch.setattr(
+        qqcc_router,
+        "submit_qqcc_demo_generation",
+        AsyncMock(return_value={"generation_id": "task-1", "status": "pending"}),
+    )
+
+    async def complete_demo(**_kwargs):
+        monitor_session_counts.append(open_sessions)
+
+    monkeypatch.setattr(
+        qqcc_router,
+        "complete_qqcc_demo_generation",
+        complete_demo,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=qqcc_config_main.app),
+        base_url="http://testserver",
+    ) as client:
+        token = await _login(client)
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    "/api/qqcc/demo-generation/video",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"scene": {"id": f"scene-{index}"}},
+                )
+                for index in range(3)
+            )
+        )
+
+    assert [response.status_code for response in responses] == [200, 200, 200]
+    assert monitor_session_counts == [0, 0, 0]

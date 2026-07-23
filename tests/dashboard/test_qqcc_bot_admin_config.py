@@ -570,6 +570,11 @@ async def test_demo_generation_poll_saves_completed_media_to_the_scene(
     monkeypatch.setattr(router_module, "get_qqcc_demo_generation", poll)
     monkeypatch.setattr(
         router_module,
+        "load_qqcc_demo_generation_config",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        router_module,
         "save_qqcc_generated_demo_output_media",
         persist,
     )
