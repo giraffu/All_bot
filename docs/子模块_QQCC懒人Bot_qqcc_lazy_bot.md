@@ -104,6 +104,8 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 
 `video_scenes`、`ai_video_scenes`、`draw_scenes`、`filter_scenes` 的数组顺序分别决定 AI动图、AI视频、AI绘图、AI滤镜二级场景菜单的展示顺序。独立 QQCC Config Web 使用四个 Tab，每类场景独立按每页 5 条分页；分页只优化当前渲染行，保存仍提交完整场景数组。每个场景行提供上移/下移按钮，首行不能上移、末行不能下移；移动后仍通过现有整份配置 PUT 保存，仅交换数组位置并保持场景 `id` 和引用不变。新增场景自动打开其所在末页，删除和跨页移动后自动校正到包含目标行的有效页。
 
+AI动图模型配置中，每个已选 Wan22 附加模型的强度行提供说明按钮。说明内容固定来自本地模型 registry 的 `wan22_explicit_lora_library/2026-07-18`，前端静态覆盖当前 catalog 的 49 个稳定键，展示分类、用途、触发词、High/Low 强度范围与推荐值、模型页、全部中英提示词示例和注意点；提示词示例默认折叠。该说明只随 QQCC Config 前端发布，运行时不读取 `/srv/allbot/model-registry`，不进入配置 checkpoint、API payload、Bot 提交、workflow 或 GPU 模型装配。
+
 每个场景行只保留一个“场景配置”按钮，弹窗使用单份草稿，取消不修改、确定一次性写回。四类场景均按独立子标题展示“基础配置”和“模型配置”；AI动图/AI视频另有“首尾帧配置”，AI绘图/AI滤镜另有“后处理配置”。灵石消耗属于基础配置；AI动图的分辨率、时长、画面比例和 AI视频的分辨率、时长也在基础配置；AI滤镜的原图换脸从模型区移到后处理区。桌面与移动端弹窗均使用内部滚动。
 
 `video_scenes[].resolution` 允许 `512p`、`720p`、`1024p`，旧场景缺失字段按 `720p` 归一；`ai_video_scenes[].resolution` 当前只允许 `1280x704`。GET options 下发可选清单和默认值，前端不维护另一份运行时清单。PUT 对非法显式值返回 422，并拒绝 AI动图 `1024p + 10s`，不静默改值。QQCC AI动图上传后只显示固定参数摘要和“开始生成”，AI视频继续收图后直接提交；提交、重新生成、结果续作和多段链逐段读取当前场景的分辨率、时长、模型与动态价格，根场景固定价仍只扣一次。非 QQCC 主 Bot 的画质设置和用户权限不变。该扩展继续存储在现有 `runtime_checkpoints` JSON 中，不新增数据库表或 migration，也不改变 workflow、Worker mapping 或 GPU runtime。
@@ -170,6 +172,7 @@ AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata�
 - `dashboard/backend/routers/qqcc.py`：QQCC 配置 router，被独立配置后端挂载。
 - `dashboard/frontend/src/QqccConfigApp.vue` / `dashboard/frontend/index.qqcc-config.html`：独立 QQCC Config Web 入口。
 - `dashboard/frontend/src/components/QqccBotSettings.vue`：QQCC 配置页主体组件，供独立 Web 复用；通过 props 接收独立配置 API handler，只渲染后端返回的 config/options，不在组件内合成默认场景。
+- `dashboard/frontend/src/data/wan22LoraHelp.zh-CN.json`：AI动图 49 个 Wan22 附加模型的版本化中文帮助数据，只供配置页说明弹窗使用；选项可用性、默认强度和运行时路径仍以服务端 catalog 为准。
 
 主 Bot 入口仍是 `src/bot_main.py`。不要在 `qqcc_bot/` 中导入 `src.bot_main`，否则会把主 Bot 的完整 handler 面一起注册进来。
 QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 不得启用 PTB `concurrent_updates(True)`；`/cancel` 必须调用 `cleanup_fsm_user_data(...)` 清理 `*_data` 与临时文件，再清理 `qqcc_gallery_apply` session。

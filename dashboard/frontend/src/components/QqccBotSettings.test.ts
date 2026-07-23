@@ -183,6 +183,7 @@ const mountSettings = (props = {}) =>
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
         DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
         DownOutlined: passthroughStub('DownOutlinedStub'),
+        InfoCircleOutlined: passthroughStub('InfoCircleOutlinedStub'),
         LinkOutlined: passthroughStub('LinkOutlinedStub'),
         PlusOutlined: passthroughStub('PlusOutlinedStub'),
         PlayCircleOutlined: passthroughStub('PlayCircleOutlinedStub'),
@@ -1147,6 +1148,45 @@ describe('QqccBotSettings', () => {
       { name: 'Cunilingus', strength: 0.9 },
       { name: 'Footjob', strength: 1.4 },
     ])
+  })
+
+  it('shows complete Wan22 model help without changing the selected strength', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    const selector = wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-video-lora-select')
+    if (!selector) throw new Error('Missing video LoRA selector')
+    selector.vm.$emit('change', ['wan22_explicit_040'])
+    await flushPromises()
+
+    const strengthInput = wrapper.get(
+      '[data-testid="scene-video-lora-strength-wan22_explicit_040"]',
+    )
+    await strengthInput.setValue(1.25)
+    await getButtonByTestId(
+      wrapper,
+      'scene-video-lora-help-wan22_explicit_040',
+    ).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('wan22_explicit_040 · 模型说明')
+    expect(wrapper.text()).toContain('足部动作')
+    expect(wrapper.text()).toContain('HIGH：0.80–1.10 / 推荐 1.00')
+    expect(wrapper.text()).toContain('https://civitaiarchive.com/models/1861926')
+    expect(wrapper.text()).toContain('提示词示例与翻译')
+    expect(wrapper.text()).toContain('注意点')
+
+    const example = wrapper.get('[data-testid="wan22-lora-prompt-example-0"]')
+    expect((example.element as HTMLDetailsElement).open).toBe(false)
+    await example.get('summary').trigger('click')
+    expect((example.element as HTMLDetailsElement).open).toBe(true)
+    expect(
+      (wrapper.get(
+        '[data-testid="scene-video-lora-strength-wan22_explicit_040"]',
+      ).element as HTMLInputElement).value,
+    ).toBe('1.25')
   })
 
   it('loads, changes, saves, and reloads a video scene aspect ratio', async () => {
