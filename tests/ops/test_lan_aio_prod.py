@@ -1261,6 +1261,63 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
     assert ops.verified_target_ref == expected_target_ref
 
 
+def test_lan_release_rollout_accepts_img2img_artifact_for_lora_slot():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.verified_target_ref = None
+
+        def pull_image(self, slots):
+            return {"ok": True}
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            return None
+
+        def _wait_worker_ids_idle(self, agent_ids):
+            return None
+
+        def _write_remote_runtime_files(self, slot):
+            return None
+
+        def _remote_compose(self, slot, op):
+            return None
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_release_runtime(self, slot, resolved):
+            self.verified_target_ref = resolved["ref"]
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
+    rollback_ref = (
+        "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "9" * 64
+    )
+    resolved = {
+        "profile": "img2img",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:" + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "img2img/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    result = ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+    assert result["ok"] is True
+    assert ops.verified_target_ref == (
+        "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "1" * 64
+    )
+
+
 @pytest.mark.parametrize(
     "rollback_ref, error",
     [
