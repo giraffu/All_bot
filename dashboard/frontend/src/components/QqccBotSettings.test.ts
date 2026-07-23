@@ -183,6 +183,7 @@ const mountSettings = (props = {}) =>
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
         DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
         DownOutlined: passthroughStub('DownOutlinedStub'),
+        InfoCircleOutlined: passthroughStub('InfoCircleOutlinedStub'),
         LinkOutlined: passthroughStub('LinkOutlinedStub'),
         PlusOutlined: passthroughStub('PlusOutlinedStub'),
         PlayCircleOutlined: passthroughStub('PlayCircleOutlinedStub'),
@@ -1045,6 +1046,85 @@ describe('QqccBotSettings', () => {
       { name: 'Cunilingus', strength: 0.9 },
       { name: 'Footjob', strength: 1.4 },
     ])
+  })
+
+  it('shows complete Wan22 model help without changing the selected strength', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    const selector = wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-video-lora-select')
+    if (!selector) throw new Error('Missing video LoRA selector')
+    selector.vm.$emit('change', ['wan22_explicit_040'])
+    await flushPromises()
+
+    const strengthInput = wrapper.get(
+      '[data-testid="scene-video-lora-strength-wan22_explicit_040"]',
+    )
+    await strengthInput.setValue(1.25)
+    await getButtonByTestId(
+      wrapper,
+      'scene-video-lora-help-wan22_explicit_040',
+    ).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('wan22_explicit_040 · 模型说明')
+    expect(wrapper.text()).toContain('足部动作')
+    expect(wrapper.text()).toContain('HIGH：0.80–1.10 / 推荐 1.00')
+    expect(wrapper.text()).toContain('https://civitaiarchive.com/models/1861926')
+    expect(wrapper.text()).toContain('提示词示例与翻译')
+    expect(wrapper.text()).toContain('注意点')
+
+    const example = wrapper.get('[data-testid="wan22-lora-prompt-example-0"]')
+    expect((example.element as HTMLDetailsElement).open).toBe(false)
+    await example.get('summary').trigger('click')
+    expect((example.element as HTMLDetailsElement).open).toBe(true)
+    expect(
+      (wrapper.get(
+        '[data-testid="scene-video-lora-strength-wan22_explicit_040"]',
+      ).element as HTMLInputElement).value,
+    ).toBe('1.25')
+  })
+
+  it('loads, changes, saves, and reloads a video scene aspect ratio', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    const ratioSelect = wrapper.get('[data-testid="scene-video-aspect-ratio-select"]')
+    expect((ratioSelect.element as HTMLSelectElement).value).toBe('9:16')
+    expect(ratioSelect.text()).toContain('跟随原图')
+    await ratioSelect.setValue('16:9')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].video_scenes[0].aspect_ratio).toBe('16:9')
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    expect(
+      (wrapper.get('[data-testid="scene-video-aspect-ratio-select"]').element as HTMLSelectElement).value,
+    ).toBe('16:9')
+  })
+
+  it('keeps one scene draft, rejects 1024p plus 10s, and discards cancel', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="scene-config-resolution"]').setValue('1024p')
+    await wrapper.get('[data-testid="scene-config-duration"]').setValue('10s')
+    await wrapper.get('[data-testid="scene-config-credit-cost"]').setValue('9')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+
+    expect(antMocks.error).toHaveBeenCalledWith('AI动图不支持 1024p + 10s，请调整分辨率或时长')
+    expect(wrapper.find('[data-testid="scene-model-modal"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="scene-config-cancel"]').trigger('click')
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    expect((wrapper.get('[data-testid="scene-config-resolution"]').element as HTMLSelectElement).value).toBe('720p')
+    expect((wrapper.get('[data-testid="scene-config-duration"]').element as HTMLSelectElement).value).toBe('8s')
+    expect((wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value).toBe('')
   })
 
   it('saves AI video negative prompt and up to three LTX LoRAs with strengths', async () => {

@@ -1,5 +1,7 @@
 import pytest
 import base64
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 from dashboard.backend.routers import qqcc as router_module
@@ -799,6 +801,41 @@ def test_qqcc_video_lora_options_expose_all_downloaded_pairs_with_defaults():
         "label": "198 · 舔嘴唇",
         "default_strength": 0.8,
     }
+
+
+def test_qqcc_video_lora_help_covers_the_full_runtime_catalog():
+    repo_root = Path(__file__).resolve().parents[2]
+    help_path = (
+        repo_root
+        / "dashboard"
+        / "frontend"
+        / "src"
+        / "data"
+        / "wan22LoraHelp.zh-CN.json"
+    )
+    payload = json.loads(help_path.read_text(encoding="utf-8"))
+    models = payload["models"]
+
+    assert payload["schema_version"] == 1
+    assert payload["source_bundle"] == "wan22_explicit_lora_library/2026-07-18"
+    assert set(models) == set(WAN22_EXPLICIT_LORA_MODELS)
+    assert len(models) == 49
+    assert sum(len(item["prompt_examples"]) for item in models.values()) == 98
+
+    for model_key, help_item in models.items():
+        assert help_item["category"].strip(), model_key
+        assert help_item["purpose"].strip(), model_key
+        assert all(word.strip() for word in help_item["trigger_words"]), model_key
+        assert help_item["model_page"].startswith("https://"), model_key
+        assert all(note.strip() for note in help_item["notes"]), model_key
+        for stage_name in ("high", "low"):
+            stage = help_item["strength"][stage_name]
+            assert stage["min"] <= stage["recommended"] <= stage["max"], model_key
+        assert help_item["strength"]["source"].strip(), model_key
+        assert help_item["prompt_examples"], model_key
+        for example in help_item["prompt_examples"]:
+            assert example["prompt"].strip(), model_key
+            assert example["translation_zh"].strip(), model_key
 
 
 def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():

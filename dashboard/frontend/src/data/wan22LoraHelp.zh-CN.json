@@ -1,0 +1,1800 @@
+{
+  "schema_version": 1,
+  "source_bundle": "wan22_explicit_lora_library/2026-07-18",
+  "source_readme": "/srv/allbot/model-registry/bundles/wan22_explicit_lora_library/2026-07-18/README.md",
+  "models": {
+    "wan22_explicit_005": {
+      "category": "动作/转场",
+      "purpose": "从单人首帧生成男性进入画面并开始口部动作；适合“人物先独处→动作发生”的懒人模板，输入图要给脸部和画面侧边留空间。",
+      "trigger_words": [
+        "A man appears and she sucks his penis"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1874153?modelVersionId=2121297",
+      "prompt_examples": [
+        {
+          "prompt": "A man appears and she sucks his penis. Static camera, fixed viewpoint, still shot.",
+          "translation_zh": "一个男人出现，她吮吸他的阴茎。静态相机，固定视点，静态拍摄。"
+        }
+      ],
+      "notes": [
+        "ZIP 含 H/L；README 建议 high CFG≈3.5、low CFG 5–7。",
+        "发布者建议 high CFG≈3.5、low CFG 5–7，并避免 LightX2V 稀释效果。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_006": {
+      "category": "体位/POV",
+      "purpose": "把正面躺卧或腿部可见的人像转成第一视角传教士运动；适合用户上传床上、仰躺、全身或半身图。窄脸部特写、腿部被裁切时稳定性较差。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1331682?modelVersionId=2098405",
+      "prompt_examples": [
+        {
+          "prompt": "A woman is lying on her back with her legs spread looking up at the viewer. The man's penis is above her between her legs. The nude man inserts his penis into the woman's vagina. He then starts to thrust back and forth inside her vagina. Movements are fast with bouncing breasts. The view is POV from above.",
+          "translation_zh": "一名妇女仰面躺着，双腿张开，抬头看着观众。男人的阴茎在她双腿之间。裸体男人将他的阴茎插入女人的阴道。然后他开始在她的阴道内来回抽动。动作快速，乳房有弹性。该视图是从上方观察的 POV。"
+        },
+        {
+          "prompt": "A woman is lying on her back with her legs spread looking up at the viewer having sex with a man. She is moaning with pleasure. The nude man rapidly thrusts his penis back and forth inside her vagina. Movements are fast with bouncing breasts. The view is POV from above.",
+          "translation_zh": "一名女子仰卧，双腿张开，抬头看着观众与一名男子发生性关系。她高兴地呻吟着。裸体男人将他的阴茎快速地在她的阴道内来回插入。动作快速，乳房有弹性。该视图是从上方观察的 POV。"
+        },
+        {
+          "prompt": "A woman is lying on her back with her legs spread looking up at the viewer. A light-skinned man enters the frame from the bottom and slowly inserts his penis into the woman's vagina with his hand on his penis. He then starts thrusting back and forth inside the woman's vagina. Movements are fast with bouncing breasts. The view is POV from above.",
+          "translation_zh": "一名妇女仰面躺着，双腿张开，抬头看着观众。一名浅色皮肤的男子从下方进入画面，用手按住阴茎，将阴茎慢慢插入女子的阴道。然后他开始在女人的阴道内来回抽动。动作快速，乳房有弹性。该视图是从上方观察的 POV。"
+        }
+      ],
+      "notes": [
+        "作者要求 H/L 同时使用，prompt 影响大。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_008": {
+      "category": "事件动作",
+      "purpose": "生成人物面部和上身的射精事件，适合正脸、半身、嘴部可见输入；可做“面部射精”按钮。",
+      "trigger_words": [
+        "f4c3spl4sh"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.2,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 1.2,
+          "max": 1.5,
+          "recommended": 1.4
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1922973?modelVersionId=2178869",
+      "prompt_examples": [
+        {
+          "prompt": "f4c3spl4sh, the scenes starts with the camera zooming out revealing a cinematic scene with a woman in the frame with a man entering from the right side, only his lower body is visible, side view of his hips, thighs and legs, with a gigantic erected penis with testicles. She starts recieving a cumshot on her face from the penis. The stream of semen is directed towards her mouth. The force of the ejaculation is strong, and the trajectory of the semen is aimed directly at her open mouth. The quantity of semen is substantial, covering a significant portion of her face and neck area. The woman's eyes are open, and her mouth is slightly open as she receives the semen. The camera is positioned close to the woman's face and chest, capturing the moment of male ejaculation directly onto her face and chest. The semen is seen forcefully erupting from the penis and landing on her skin, creating a visible pool of semen on her chest.",
+          "translation_zh": "f4c3spl4sh，场景从镜头拉远开始，呈现出电影场景，画面中一个女人，一个男人从右侧进入，只能看到他的下半身，侧视图是他的臀部、大腿和腿，有一个巨大的勃起阴茎和睾丸。她开始从阴茎射到她的脸上。精液流直接流向她的嘴。射精的力量强劲，精液的轨迹直指她张开的嘴。精液的量很大，覆盖了她脸部和颈部的很大一部分。当她接受精液时，女人的眼睛是睁着的，嘴也微微张开。相机放置在靠近女性脸部和胸部的位置，捕捉男性直接射精到她的脸部和胸部的瞬间。可以看到精液从阴茎中强力喷出并落在她的皮肤上，在她的胸部形成了可见的精液池。"
+        }
+      ],
+      "notes": [
+        "推荐 H=1.0/L=1.4，当前固定 1/1 不匹配。",
+        "H/L 推荐强度不对称；不要按统一 1.0 盲用。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_009": {
+      "category": "体位",
+      "purpose": "同一对模型可做正向牛仔和反向牛仔两个按钮；适合跨坐姿、下半身有空间的输入，提示词决定朝向。",
+      "trigger_words": [
+        "c0wg1rl",
+        "r3v3rs3_c0wg1rl",
+        "straddling  him in the reverse cowgirl position"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1428098?modelVersionId=2156392",
+      "prompt_examples": [
+        {
+          "prompt": "r3v3rs3_c0wg1rl, a nude woman with light brown hair small breasts and a navel piercing straddling a nude man with a visible erect penis penetrating her vagina. The man's hands grip her hips from below as she rides him in the reverse cowgirl position facing forward with a slight devilish smile. His penis is thrusting into her and his testicles are visible below. They are in an urban street setting at night with neon signs in the background including a prominent red and blue \"NEON\" sign. Cars are parked along the street and buildings with lit windows line the background. The perspective is from a low angle looking up at the woman. The lighting is bright highlighting their bodies against the dimly lit street. The woman's legs are spread wide and the man is lying on his back beneath her.",
+          "translation_zh": "r3v3rs3_c0wg1rl，一名浅棕色头发、小乳房和肚脐穿孔的裸体女人，骑在一名裸体男人身上，可见勃起的阴茎插入她的阴道。男人的双手从下方抓住她的臀部，而她则以相反的女牛仔姿势骑在他身上，面朝前方，脸上带着一丝邪恶的微笑。他的阴茎正插入她的体内，下面可以看到他的睾丸。他们在夜间的城市街道上，背景是霓虹灯标志，包括醒目的红色和蓝色“霓虹灯”标志。汽车停在街边，背景是窗户亮着的建筑物。视角是从低角度仰视女人。灯光明亮，在昏暗的街道上突出了他们的身体。女人的双腿张开，男人仰面躺在她身下。"
+        },
+        {
+          "prompt": "c0wg1rl, a nude woman with light skin long blonde hair and small breasts straddling a man who is lying on his back. The woman's legs are spread wide and she is sitting on top of the man in the cowgirl position with his erect penis penetrating her vagina. She has a navel piercing and a focused expression on her face. The man's lower body and erect penis are visible while his upper body is out of frame. They are in a dimly lit room with a fireplace in the background casting warm light and shadows. Logs are stacked in the fireplace and there is a wooden shelf with various items on the right side of the frame. The perspective is from a slightly low angle looking up at the woman. The lighting emphasizes the contours of their bodies and the texture of their skin.",
+          "translation_zh": "c0wg1rl，一个裸体女人，有着浅色皮肤、长长的金发和小乳房，骑在一个仰卧的男人身上。女人的双腿张开，以女牛仔的姿势坐在男人身上，男人勃起的阴茎插入她的阴道。她的肚脐上有穿孔，脸上表情专注。该男子的下半身和勃起的阴茎清晰可见，而他的上半身则在画面之外。他们在一间光线昏暗的房间里，背景中有一个壁炉，投射出温暖的光影。壁炉里堆放着原木，框架右侧有一个木架子，上面放着各种物品。视角是从略低的角度仰视女人。灯光强调了他们身体的轮廓和皮肤的纹理。"
+        },
+        {
+          "prompt": "r3v3rs3_c0wg1rl, a digital animation of a nude woman with red shoulder-length hair straddling a man from behind in a Reverse Cowgirl position. Her eyes are closed and her head is tilted back in an expression of pleasure. She has a slim toned physique with small to medium-sized breasts and visible nipples. Her skin is shiny and wet with droplets of sweat covering her body. The man's erect penis is visible thrusting into her vagina with her hands resting on his chest behind her as she bounces on him. The background is a dimly lit room with purple and black tones featuring neon lights on the walls. The perspective is from a low angle focusing on her upper body and face. The lighting highlights her wet skin creating a glossy texture. The woman's body is slightly arched and the man is lying beneath her with only his lower body and hands visible.",
+          "translation_zh": "r3v3rs3_c0wg1rl，一个数字动画，一个留着红色齐肩头发的裸体女人以反向女牛仔的姿势从后面跨坐在一个男人身上。她闭着眼睛，头向后仰，脸上露出愉悦的表情。她身材苗条，胸部小到中等大小，乳头清晰可见。她的皮肤闪闪发亮，湿漉漉的，全身布满了汗珠。可以看到这名男子勃起的阴茎刺入了她的阴道，而她的双手则放在身后的他的胸口上，而她则在他身上弹跳。背景是一间光线昏暗的房间，紫色和黑色的色调，墙上挂着霓虹灯。视角是从低角度聚焦于她的上半身和脸部。灯光突出了她湿润的皮肤，营造出光滑的质感。女人的身体微微拱起，男人躺在她的身下，只露出下半身和双手。"
+        }
+      ],
+      "notes": [
+        "建议拆成两个场景，共用资产。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_010": {
+      "category": "动作/转场",
+      "purpose": "从单人正面图创建男性进入画面并完成插入，重点是“出现→对位→插入”的连贯过程；适合骨盆区域无遮挡的正面构图。",
+      "trigger_words": [
+        "A man appears and inserts his penis into her pussy"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1855263?modelVersionId=2200389",
+      "prompt_examples": [
+        {
+          "prompt": "A man appears and inserts his penis into her pussy. Static camera, fixed viewpoint, still shot.",
+          "translation_zh": "一个男人出现并将他的阴茎插入她的阴户。静态相机，固定视点，静态拍摄。"
+        }
+      ],
+      "notes": [
+        "ZIP 内含 H/L。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_014": {
+      "category": "口部/手部动作",
+      "purpose": "同一视频同时表现手部上下动作和口部动作；适合近景、腰部以下人物从侧边进入的构图，可拆 POV/侧视两个 prompt 预设。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1899045?modelVersionId=2149593",
+      "prompt_examples": [
+        {
+          "prompt": "A sexy woman is giving a man a blowjob and a handjob. The man is out of frame. She is in front of the man. She is giving him a blowjob, while simultaneously giving a handjob. She is performing fellatio while stroking the shaft of his penis with one hand.",
+          "translation_zh": "一个性感的女人正在给一个男人口交和打手枪。男人已经脱离了框架。她就在男人的面前。她一边给他口交，一边给他手交。她一边用一只手抚摸他的阴茎，一边进行口交。"
+        }
+      ],
+      "notes": [
+        "strength 1。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_022": {
+      "category": "口部动作",
+      "purpose": "强化完整深喉过程、嘴部深入和头部运动；适合侧面或正面近景，目标比通用 Deepthroat 更强调深度和接触。",
+      "trigger_words": [
+        "a  woman in front of a penis, she engages in a deep throat blowjob, she swallows the penis all the way. Her lips touches the man's groin. Her nose smashes against the man's hips."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1874811?modelVersionId=2325788",
+      "prompt_examples": [
+        {
+          "prompt": "a cinematic scene, extreme dynamic side view, a woman in the frame, a man enters from the left side, only his lower body is visible, side view of his hips, thighs and legs, with a gigantic, veiny, erected penis with testicles. The man forcefully grabs the woman's head with both hands, controlling her movement. She engages in an intense, strenuous deepthroat blowjob. **(extremely detailed facial expression: 1.4), tears streaming from her eyes, face flushed bright red with strain, nostrils flared, veins bulging on her forehead and temples. **(extremely detailed neck: 1.3), neck muscles straining aggressively, trachea visibly distended, veins protruding from her neck from the intense pressure. She gags violently as she rams her head forward, swallowing the entire penis until her nose smashes against his hips, then pulls back gasping for air, saliva strands breaking. Hyper-realistic proportions, cinematic lighting, raw and unfiltered intensity, motion blur emphasizing the forceful movement.",
+          "translation_zh": "电影场景，极端动态的侧视图，画面中是一个女人，一个男人从左侧进入，只能看到他的下半身，侧视图是他的臀部、大腿和小腿，巨大的、有静脉的、勃起的阴茎和睾丸。男人双手用力抓住女人的头，控制着她的动作。她进行着激烈、费力的深喉口交。 **（面部表情极其细致：1.4），泪水从她的眼睛里流出来，脸因紧张而涨得通红，鼻孔张开，额头和太阳穴上青筋暴起。 **（极其细致的颈部：1.3），颈部肌肉剧烈拉紧，气管明显扩张，静脉因巨大压力而从颈部突出。当她把头向前猛冲时，她剧烈地作呕，吞下了整个阴茎，直到她的鼻子撞到了他的臀部，然后向后缩了缩，大口喘气，唾液断了。超现实的比例、电影般的灯光、原始且未经过滤的强度、强调有力运动的运动模糊。"
+        },
+        {
+          "prompt": "a cinematic scene with a woman in the frame, a naked man enters from the left side, only his lower body is visible, side view of his hips, thighs and legs, with a gigantic erected penis with testicles appears and she starts engaging in a deepthroat blowjob with that penis. She swallows the entire penis, her nose smashes agains the man's hips. She moves her head back and fort swallowing the penis, realistic proportions, natural lighting, cinematic composition",
+          "translation_zh": "画面中有一个女人的电影场景，一个裸体男人从左侧进入，只能看到他的下半身，从侧面可以看到他的臀部、大腿和腿部，出现一个带有睾丸的巨大勃起阴茎，她开始用那个阴茎进行深喉口交。她吞下了整个阴茎，她的鼻子撞上了男人的臀部。她向后移动头并吞下阴茎，逼真的比例，自然光线，电影构图"
+        },
+        {
+          "prompt": "a cinematic scene, extreme dynamic side view, a woman in the frame, a naked man enters from the left side, only his lower body is visible, side view of his hips, thighs and legs, with a gigantic, veiny, erected penis with testicles. The man has a powerful, unyielding grip on the woman's head, his hands tangled in her hair, relentlessly pushing her face down onto his penis and holding her there against his hips. She engages in an intense, strenuous deepthroat blowjob sticking her tongue out. (extremely detailed facial expression: 1.4), tears streaming from her eyes, face flushed bright red with strain, nostrils flared, veins bulging on her forehead and temples. She gets intense gag reflexes she is having intense gag reflexes with her eyes rolling up, (extremely bulged neck: 1.3), neck muscles straining aggressively, trachea visibly distended, veins protruding from her neck from the intense pressure. The man does not release his grip, maintaining constant forceful pressure, causing her to gag and choke violently. She sticks her tongue out while the man is throatfucking her, she vomits blobs of saliva. She moves and tries to release herself helplessly. (The skin on her face turns red gradually, she starts sweating profusely. Veins starts to appear on the woman's forehead.:1.75) The woman's facial expresion shows disgust and revulsion. Hyper-realistic proportions, cinematic lighting, raw and unfiltered intensity.",
+          "translation_zh": "电影场景，极端动态的侧视图，画面中的女人，裸体男人从左侧进入，只能看到他的下半身，侧视图是他的臀部、大腿和小腿，巨大的、有静脉的、勃起的阴茎和睾丸。男人用力、不屈地抓住女人的头，双手纠缠着她的头发，无情地把她的脸压在他的阴茎上，把她靠在他的臀部上。她伸出舌头进行激烈、费力的深喉口交。 （面部表情极其细致：1.4），泪水从她的眼睛里流出来，脸因紧张而涨得通红，鼻孔张开，额头和太阳穴上青筋暴起。她有强烈的呕吐反射，她的眼睛向上翻，有强烈的呕吐反射（颈部极度凸出：1.3），颈部肌肉剧烈拉紧，气管明显扩张，静脉因巨大的压力而从颈部突出。男人不肯松开，持续用力施压，让她剧烈作呕、窒息。当男人用喉咙操她时，她伸出舌头，吐出一滴口水。她动了动，无助地试图释放自己。 （脸上的皮肤逐渐变红，开始大汗淋漓。女人的额头上开始出现青筋。：1.75）女人的面部表情表现出厌恶和厌恶。超现实的比例、电影般的灯光、原始且未经过滤的强度。"
+        }
+      ],
+      "notes": [
+        "优先 v1.1，不用旧 v1 混配。",
+        "只保留 v1.1 H/L；未把旧 v1.0 混入本 bundle。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_025": {
+      "category": "体位",
+      "purpose": "把已有后入、侧卧或臀部清晰构图转成肛交运动；适合后视/侧视，正面脸部特写不适合。",
+      "trigger_words": [
+        "anal sex"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1426284?modelVersionId=2161023",
+      "prompt_examples": [
+        {
+          "prompt": "A woman is having anal sex with a man. The man thrusts his penis slides all the way in and out of her asshole. the man's penis slides in and out of the woman's asshole from penis tip to the penis base. her breasts are bouncing. she is moaning in pleasure. nsfwsks, Score_9, score_8_up, masterpiece, sharp, high resolution",
+          "translation_zh": "一名女子正在与一名男子进行肛交。男人将他的阴茎从她的屁眼里滑进滑出。男人的阴茎从阴茎尖到阴茎根部滑入和滑出女人的肛门。她的乳房在弹跳。她高兴地呻吟着。 nsfwsks、Score_9、score_8_up、杰作、锐利、高分辨率"
+        }
+      ],
+      "notes": [
+        "H/L 完整。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_026": {
+      "category": "体位",
+      "purpose": "表现女性主动跨坐、蹲姿上下运动，运动幅度比普通牛仔更强；适合正面、人物全身或大腿可见输入。",
+      "trigger_words": [
+        "a woman is straddling a man... she is squatting",
+        "a woman is straddling a man and eagerly having sex with him. she is squatting."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.7,
+          "max": 1.0,
+          "recommended": 0.85
+        },
+        "low": {
+          "min": 0.7,
+          "max": 1.0,
+          "recommended": 0.85
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1566648?modelVersionId=2129122",
+      "prompt_examples": [
+        {
+          "prompt": "photorealistic image of a woman straddling a man and eagerly having sex with him. she is assertinve and dominant. she moves quickly. she moves energetically. she is squatting. her hips move quickly down on his penis. she vigorously slams her hips down on the man. she has a serious expression. she is looking at the camera. she is angry. she leans in. the image is in sharp focus. she is quickly moving her hips up and down. the man's penis slides in and out of view as it enters her vagina. it is raining.",
+          "translation_zh": "一个女人跨坐在一个男人身上并急切地与他发生性关系的逼真图像。她很自信，很有统治力。她动作很快。她的动作充满活力。她蹲着。她的臀部快速向下移动到他的阴茎上。她用力地将臀部压在男人身上。她表情严肃。她正在看着相机。她很生气。她倾身过去。图像清晰可见。她快速地上下移动臀部。当男人的阴茎进入她的阴道时，它会在视线中滑入或滑出。正在下雨。"
+        },
+        {
+          "prompt": "photorealistic image of a woman straddling a man and eagerly having sex with him. she is assertinve and dominant. she moves quickly. she moves energetically. she is squatting. her hips move quickly down on his penis. she vigorously slams her hips down on the man. she takes off her hat and waves it in the air like a cowboy. she is hollaring. she is the screaming cowboy. she is quickly moving her hips up and down. the man's penis slides in and out of view as it enters her vagina.",
+          "translation_zh": "一个女人跨坐在一个男人身上并急切地与他发生性关系的逼真图像。她很自信，很有统治力。她动作很快。她的动作充满活力。她蹲着。她的臀部快速向下移动到他的阴茎上。她用力地将臀部压在男人身上。她摘下帽子，像牛仔一样在空中挥舞。她在大声喊叫。她是尖叫的牛仔。她快速地上下移动臀部。当男人的阴茎进入她的阴道时，它会在视线中滑入或滑出。"
+        },
+        {
+          "prompt": "a woman is straddling a man and eagerly having sex with him. she is assertive. she moves quickly. she moves energetically. she is squatting. her hips move quickly down on his penis. she vigorously slams her hips down on the man. she is a shy nerdy girl. she is nervous. a person walks by in the background. the woman is shocked, she looks back at the person, then back at the camera. she giggles and shushes the camera. she puts her finger to her lips and shushes the viewer. she is nervous. she is quickly moving her hips up and down. the man's penis slides in and out of view as it enters her vagina.",
+          "translation_zh": "一个女人跨坐在一个男人身上，急切地与他发生性关系。她很自信。她动作很快。她的动作充满活力。她蹲着。她的臀部快速向下移动到他的阴茎上。她用力地将臀部压在男人身上。她是一个害羞的书呆子女孩。她很紧张。一个人在后台走过。女人很震惊，她回头看看那个人，然后又看看镜头。她咯咯地笑着，然后关闭了相机。她把手指放在嘴唇上，让观众闭嘴。她很紧张。她快速地上下移动臀部。当男人的阴茎进入她的阴道时，它会在视线中滑入或滑出。"
+        }
+      ],
+      "notes": [
+        "建议 0.7–1.0。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_029": {
+      "category": "多人/口部动作",
+      "purpose": "为第一视角生成两名人物共同口部动作；要求首帧已有人数空间或构图能容纳第二人，单人紧特写容易身份漂移。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1906148?modelVersionId=2164213",
+      "prompt_examples": [
+        {
+          "prompt": "Two sexy women are giving a man a double blowjob. The man is out of frame. The view is POV. Both women are licking and sucking the sides the penis. They move their head up and down relative to the camera. They lick the penis with their tongues and kiss the penis with their lips.",
+          "translation_zh": "两个性感的女人正在给一个男人双重口交。男人已经脱离了框架。视图是 POV。两个女人都在舔吮阴茎的两侧。他们相对于摄像机上下移动头部。他们用舌头舔阴茎，用嘴唇亲吻阴茎。"
+        }
+      ],
+      "notes": [
+        "strength 1。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_030": {
+      "category": "手部互动",
+      "purpose": "聚焦手部触摸、把玩和展示，而不是完整体位；适合近景、手和下半身区域可见的输入，可做“手部挑逗”模板。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1844313?modelVersionId=2087124",
+      "prompt_examples": [
+        {
+          "prompt": "A woman performs penis worshipping, holding a large, erect penis with both hands and bringing it towards her face. She is licking the shaft, smiling. She continues to kiss and suck the penis, then rubs it on her face. Camera is focused from a low, upward angle.",
+          "translation_zh": "一名妇女进行阴茎崇拜，用双手握住一根大而勃起的阴茎并将其靠近自己的脸。她微笑着舔着阴茎。她继续亲吻和吮吸阴茎，然后将其擦在脸上。相机从低的、向上的角度聚焦。"
+        },
+        {
+          "prompt": "A woman performs penis worshipping",
+          "translation_zh": "一个女人进行阴茎崇拜"
+        },
+        {
+          "prompt": "A woman is performing penis worshipping, holding an erect penis with both hands and bringing it close to her face. She is licking the penis. The camera focuses on the interaction between her face and the penis. She smiles while engaging in the act.",
+          "translation_zh": "一名女子正在进行阴茎崇拜，双手握住勃起的阴茎，将其靠近自己的脸。她正在舔阴茎。镜头聚焦在她的脸部和阴茎之间的互动上。她在表演时微笑着。"
+        }
+      ],
+      "notes": [
+        "README 含 LightX2V 采样口径，需 A/B。",
+        "模型主 API 已撤下；权重仍可由版本 API/归档核验。high 文件为低 rank 小权重，需单独 smoke。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_034": {
+      "category": "通用增强",
+      "purpose": "用作其它成人动作 LoRA 的平滑、连贯和细节增强，不对应单一体位；更适合作为工作流内部辅助层而非独立公开按钮。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.5,
+          "max": 0.8,
+          "recommended": 0.65
+        },
+        "low": {
+          "min": 0.5,
+          "max": 0.8,
+          "recommended": 0.65
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/2040641?modelVersionId=2376136",
+      "prompt_examples": [
+        {
+          "prompt": "a woman giving a blowjob, a woman sucking a penis, she has a headgear in the from of a halo over her head, her face is covered by a stick while liquid, blowjob,",
+          "translation_zh": "一名女性正在口交并吮吸阴茎；她头戴光环形头饰，脸部被棒状物和白色液体遮挡。"
+        },
+        {
+          "prompt": "A man and a woman having sex, she is being fucked from behind, his penis goes in and out of her ass, anal sex, sex from behind,",
+          "translation_zh": "一男一女正在进行后入式肛交，男性阴茎在她的肛门内进出。"
+        },
+        {
+          "prompt": "POV, A man and a woman having sex, his penis goes in and out of her ass, she bounces up and down, anal sex, reverse cowgirl position,",
+          "translation_zh": "POV 视角：一男一女以反向牛仔体位进行肛交，男性阴茎在她的肛门内进出，她上下起伏。"
+        }
+      ],
+      "notes": [
+        "推荐 0.5–0.8，当前固定 1 不合适。",
+        "通用增强层，建议与主动作 LoRA 分开 smoke；高强度易穿衣。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_035": {
+      "category": "体位",
+      "purpose": "生成双人悬空、抱持、上下运动的复杂姿态；适合全身和站立构图，需要保留四肢空间。",
+      "trigger_words": [
+        "A  woman is having sex in the reverse_suspended_congress position",
+        "She spreads her legs and her body moves up and down, while the man thrusts his penis in and out of her vaginal."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1894970?modelVersionId=2145089",
+      "prompt_examples": [
+        {
+          "prompt": "A blue-eyed woman is being violently anally penetrated in the reverse_suspended_congress position. Her face is flushed, and she has a lustful expression. She spreads her legs and moves her body up and down, while the man thrusts his penis rapidly in and out of her anus. (From the front view)",
+          "translation_zh": "一名蓝眼睛的女人正在以反向悬挂的姿势被猛烈地肛门插入。她的脸色涨得通红，一脸情欲的表情。她张开双腿，上下移动身体，而男人则将他的阴茎快速地进出她的肛门。 （从正面看）"
+        },
+        {
+          "prompt": "一个女性正在接受猛烈的性交，体位是reverse_suspended_congress。女性表情愉悦，半闭双眼，眉头微皱，脸色潮红，单手做出胜利手势。她的身后是一个男人，男人抱住她的双腿，她的双腿分开。男性扭动腰肢，阴茎在阴道中抽插。正视视角",
+          "translation_zh": "一个女性正在接受猛烈的性交，体位是reverse_suspended_congress。女性表情愉悦，半闭双眼，眉头微皱，脸色潮红，单手做出胜利手势。她的身后是一个男人，男人抱住她的双腿，她的双腿分开。男性扭动腰肢，阴茎在阴道中抽插。正视视角"
+        },
+        {
+          "prompt": "一个女性正在接受猛烈的肛交，体位是reverse_suspended_congress。女性眉头微皱，脸色潮红，双手做出V胜利手势。她的身后是一个男人，男人抱住她的双腿，她的双腿分开。男性扭动腰肢，阴茎在肛门中快速抽插。正视视角。",
+          "translation_zh": "一个女性正在接受猛烈的肛交，体位是reverse_suspended_congress。女性眉头微皱，脸色潮红，双手做出V胜利手势。她的身后是一个男人，男人抱住她的双腿，她的双腿分开。男性扭动腰肢，阴茎在肛门中快速抽插。正视视角。"
+        }
+      ],
+      "notes": [
+        "数据多为 3D，写实输入可能失败。",
+        "训练素材偏 3D，写实输入的四肢与抱持结构风险较高。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_038": {
+      "category": "手部动作",
+      "purpose": "从仰躺、坐姿或腿部张开的单人图生成手指进入和往复运动；适合手与骨盆区域可见的输入。",
+      "trigger_words": [
+        "sensual_fingering"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.7,
+          "max": 1.0,
+          "recommended": 0.85
+        },
+        "low": {
+          "min": 0.7,
+          "max": 1.0,
+          "recommended": 0.85
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1952032?modelVersionId=2209481",
+      "prompt_examples": [
+        {
+          "prompt": "sensual_fingering, fingering her vagina with her two middle fingers, her fingers are sliding in and out of her vagina, water is squirting out of her vagina when her fingers slides out",
+          "translation_zh": "sensual_fingering，用她的两个中指抚摸她的阴道，她的手指滑入和滑出她的阴道，当她的手指滑出时，水从她的阴道喷出"
+        }
+      ],
+      "notes": [
+        "建议 0.7–1.0。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_040": {
+      "category": "足部动作",
+      "purpose": "生成双脚包围并上下运动；适合脚部、腿部和目标区域都在画面的全身/低机位输入。",
+      "trigger_words": [
+        "footjob",
+        "footjob.  the woman's feet move up and down.  her toes surround his penis.  the woman is performing a footjob.",
+        "footjob. the woman's feet move up and down. her toes surround his penis. the woman is performing a footjob."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1861926?modelVersionId=2107285",
+      "prompt_examples": [
+        {
+          "prompt": "footjob. the woman's feet move up and down. her toes surround his penis. the woman is performing a footjob.",
+          "translation_zh": "脚交。女人的脚上下移动。她的脚趾包围着他的阴茎。该女子正在进行脚交。"
+        }
+      ],
+      "notes": [
+        "H/L 都建议 1。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_046": {
+      "category": "事件动作",
+      "purpose": "表现从插入到拔出，再在身体表面射精的连续事件；适合 POV、身体和接触部位无遮挡的输入。",
+      "trigger_words": [
+        "b0dyshot",
+        "pull0ut",
+        "p4rtner",
+        "s3lf",
+        "sp0ntaneous"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2031069?modelVersionId=2298673",
+      "prompt_examples": [
+        {
+          "prompt": "b0dyshot sp0ntaneous pull0ut The video shows a man ejaculating on a woman's stomach and chest. The man pulls out. He pulls his penis out of her vagina. He ejaculates on her stomach and breasts. Her body and breasts covered in cum. The cum spreads thickly across her stomach and breasts. A huge, thick load of white cum shoots from the penis. the cum lands with a wet splat, spreading thickly across her stomach and breasts. The woman is happy. The penis is not being stroked. The penis ejaculates spontaneously, without being touched.",
+          "translation_zh": "b0dyshot sp0ntaneous pull0ut 该视频显示一名男子在一名女子的腹部和胸部上射精。男人拉了出来。他把他的阴茎从她的阴道里拉出来。他射精在她的腹部和乳房上。她的身体和乳房都沾满了精液。精液浓密地遍布她的腹部和乳房。大量浓稠的白色精液从阴茎中射出。精液湿漉漉地落在她的腹部和乳房上。女人很高兴。阴茎没有被抚摸。阴茎无需触碰即可自动射精。"
+        },
+        {
+          "prompt": "b0dyshot s3lf pull0ut The video shows a man ejaculating on a woman's stomach and chest. The man pulls out. He pulls his penis out of her vagina. He ejaculates on her stomach and breasts. Her body and breasts covered in cum. The cum spreads thickly across her stomach and breasts. A huge, thick load of white cum shoots from the penis. the cum lands with a wet splat, spreading thickly across her stomach and breasts. The woman is happy. The man is stroking his penis.",
+          "translation_zh": "b0dyshot s3lf pull0ut 该视频显示一名男子在一名女子的腹部和胸部射精。男人拉了出来。他把他的阴茎从她的阴道里拉出来。他射精在她的腹部和乳房上。她的身体和乳房都沾满了精液。精液浓密地遍布她的腹部和乳房。大量浓稠的白色精液从阴茎中射出。精液湿漉漉地落在她的腹部和乳房上。女人很高兴。男人正在抚摸他的阴茎。"
+        },
+        {
+          "prompt": "b0dyshot p4rtner pull0ut The video shows a man ejaculating on a woman's stomach and chest. The man pulls out. He pulls his penis out of her vagina. He ejaculates on her stomach and breasts. Her body and breasts covered in cum. The cum spreads thickly across her stomach and breasts. A huge, thick load of white cum shoots from the penis. the cum lands with a wet splat, spreading thickly across her stomach and breasts. The woman is happy. The woman is stroking his penis.",
+          "translation_zh": "b0dyshot p4rtner pull0ut 该视频显示一名男子在一名女子的腹部和胸部射精。男人拉了出来。他把他的阴茎从她的阴道里拉出来。他射精在她的腹部和乳房上。她的身体和乳房都沾满了精液。精液浓密地遍布她的腹部和乳房。大量浓稠的白色精液从阴茎中射出。精液湿漉漉地落在她的腹部和乳房上。女人很高兴。女人正在抚摸他的阴茎。"
+        }
+      ],
+      "notes": [
+        "可按 partner/self 等拆 prompt 预设。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_048": {
+      "category": "手部/身体互动",
+      "purpose": "生成揉捏、拉扯乳头、单手或双手胸部互动；适合胸部和手清晰可见的半身输入。",
+      "trigger_words": [
+        "breast play",
+        "nipPull",
+        "nipRub",
+        "nipSqueeze",
+        "oneHand",
+        "nipple play"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1967237?modelVersionId=2230125",
+      "prompt_examples": [
+        {
+          "prompt": "nipPull she pulls her own nipples nipple play",
+          "translation_zh": "`nipPull`：她拉扯自己的乳头，进行乳头玩弄。"
+        },
+        {
+          "prompt": "nipPull nipRub nipSqueeze",
+          "translation_zh": "`nipPull nipRub nipSqueeze`：拉扯、摩擦并挤压乳头。"
+        },
+        {
+          "prompt": "She is massaging and squeezing her breasts Breast play. She is grabbing her own breasts.",
+          "translation_zh": "她按摩并挤压自己的乳房，进行胸部玩弄，并用手抓握乳房。"
+        }
+      ],
+      "notes": [
+        "可拆多个按钮，共用资产。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_053": {
+      "category": "口部动作",
+      "purpose": "强调抓头、快速往复、深喉后喘气等动作序列；适合侧视近景，动作比普通口交更激烈。",
+      "trigger_words": [
+        "a woman is kneeling in front of a man, she is giving him a deepthroat blowjob, almost the entire penis is in her mouth, he is grabbing her head and holding it in place, then he sharply pulls her head back until the penis is no longer in her mouth, she is gasping for air, then he quickly grabs her head and pulls her head towards his penis, she starts giving him a deepthroat blowjob, the view is from the side"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2023407?modelVersionId=2517513",
+      "prompt_examples": [
+        {
+          "prompt": "a woman is kneeling in front of a man, he is grabbing her head and holding it in place, he is face fucking her, he rapidly thrusts his hips back and forth moving the entire penis inside her mouth, her nose is touching his midsection in between thrusts, there is a sticky translucent saliva string going from his testicles to her chin, then she starts giving him a deepthroat blowjob, he thrusts his hips forward moving the entire penis into her mouth, she is struggling, he is grabbing her head forcefully and shakes her head back and forth with the entire penis in her mouth, he is grabbing her head forcefully and pulling her head towards his midsection as she tries to move away, then she gags on the penis and some saliva blasts out of her mouth around the penis, three-quarter shot, ultra close-up",
+          "translation_zh": "一个女人跪在一个男人面前，他抓住她的头并固定在适当的位置，他对她进行面部操，他快速地前后推动臀部，将整个阴茎移入她的嘴里，她的鼻子在推力之间接触到他的中部，有一条粘稠的半透明唾液线从他的睾丸流到她的下巴，然后她开始给他深喉口交，他向前推臀部，将整个阴茎移入她的嘴里，她在挣扎，他在用力抓住她的头，来回摇动她的头，整个阴茎都含在她的嘴里，当她试图移开时，他用力抓住她的头，将她的头拉向他的腹部，然后她对着阴茎作呕，一些唾液从她的嘴里喷出，围绕着阴茎，四分之三镜头，超特写"
+        },
+        {
+          "prompt": "a man is sitting with a woman between his legs, she is giving him a deepthroat blowjob, he is grabbing her head forcefully and pulling her head towards his midsection slowly moving the entire penis into her mouth, he grabs his penis, she is struggling, there is a lot of resistance to the penis going into her mouth, pov close-up view",
+          "translation_zh": "一个男人和一个女人坐在他的两腿之间，她正在给他深喉口交，他用力抓住她的头，将她的头拉向他的腹部，慢慢地将整个阴茎移入她的嘴里，他抓住他的阴茎，她正在挣扎，阴茎进入她的嘴里有很大的阻力，pov特写视图"
+        },
+        {
+          "prompt": "a woman is lying on her back and a man appears on the left part of the view and is kneeling over her chest with his knees on either side of her torso, he has a big penis, she starts giving him a deepthroat blowjob, he thrusts his hips forward moving the entire penis into her mouth in one single slow movement, the entire penis is in her mouth, her nose is touching his midsection, the view is from the side, ultra close-up",
+          "translation_zh": "一个女人仰面躺着，一个男人出现在画面的左侧，跪在她的胸前，膝盖放在她躯干的两侧，他有一个很大的阴茎，她开始给他深喉口交，他向前推动臀部，以一个缓慢的动作将整个阴茎移入她的嘴里，整个阴茎在她的嘴里，她的鼻子接触着他的腹部，视图是从侧面看的，超特写"
+        }
+      ],
+      "notes": [
+        "H 下载项显示 dataset ZIP，须核包内权重。",
+        "只保留 v3 默认 low；未纳入 v3 low-alt 与 v1/v2。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_054": {
+      "category": "转场/体位",
+      "purpose": "从首帧突然硬切到双人场景，适合“普通写真→成人动作”的强转场按钮；不是平滑变身。",
+      "trigger_words": [
+        "<SM4SHCUT> The scene changes..."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2058870?modelVersionId=2329863",
+      "prompt_examples": [
+        {
+          "prompt": "<SM4SHCUT> The scene changes and a man is thrusting his penis into and out of her pussy",
+          "translation_zh": "`<SM4SHCUT>`：场景突然切换，一名男性正将阴茎插入她的阴道并反复抽动。"
+        }
+      ],
+      "notes": [
+        "宽画幅更好，README 报告约 20% body-horror。",
+        "模型主 API 已撤下，使用 CivArchive 镜像并按归档 SHA256 校验；转场有较高 body-horror 风险。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_055": {
+      "category": "写真/镜头",
+      "purpose": "让人物在同一场景连续变换站姿、转身和展示角度，适合全身写真输入；可做“写真连拍/姿势切换”按钮。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1648982?modelVersionId=2391828",
+      "prompt_examples": [
+        {
+          "prompt": "A beautiful nude woman at a photo studio photoshoot, she is posing seductively and then turns around and looks back. She is completely naked. Professional studio lighting, high quality production",
+          "translation_zh": "一名美丽的裸体女子在照相馆拍摄照片，摆出诱人的姿势，然后转过身来回头看。她全身赤裸。专业演播室灯光，高品质制作"
+        },
+        {
+          "prompt": "The clothing suddenly disappears, revealing her naked body. The woman is now nude, and she poses sexily.",
+          "translation_zh": "衣服突然消失，露出了她赤裸的身体。这名女子现在赤身裸体，摆出性感的姿势。"
+        },
+        {
+          "prompt": "A beautiful nude woman at a photo studio photoshoot, she is posing seductively. She is completely naked. Professional studio lighting, high quality production",
+          "translation_zh": "照相馆拍摄的裸体美女，摆出诱人的姿势。她全身赤裸。专业演播室灯光，高品质制作"
+        }
+      ],
+      "notes": [
+        "v1/v2 均命中，优先 v2。",
+        "只保留 v2 H/L；未纳入 v1。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_056": {
+      "category": "特殊动作",
+      "purpose": "让触手、尾巴、绳状物或柔性部件持续蠕动；适合首帧已经包含目标物的奇幻/二次元构图。",
+      "trigger_words": [
+        "wriggling"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1814871?modelVersionId=2161335",
+      "prompt_examples": [
+        {
+          "prompt": "2x speed, wriggling tentacles rapidly move and wriggle in the foreground and background, the floor churns with wriggling tentacles, wriggling tentacles go in and out of a woman's anus and mouth, her body rocks back and forth, she struggles against the tentacles but they pull on her arms and legs, she breathes heavily, the tentacles suck milk out of her breasts, the wriggling tentacles go all the way inside her anus, she looks at the viewer with an expression of defeat and shame on her face",
+          "translation_zh": "2倍速度，蠕动的触手在前景和背景中快速移动和蠕动，地板上有蠕动的触手翻腾，蠕动的触手进出女人的肛门和嘴，她的身体前后摇晃，她与触手作斗争，但它们拉着她的手臂和腿，她呼吸沉重，触手从她的乳房中吸出乳汁，蠕动的触手一直进入她的体内肛门，她脸上带着失败和羞耻的表情看着观众"
+        },
+        {
+          "prompt": "nsfwsks, wriggling tentacles swarm around a woman's face and body, she gives a deepthroat blowjob to a wriggling tentacle, tentacles squeeze breasts, the tentacle goes all the way inside her mouth and disappears inside, her cheeks puff out as the tentacle enters, her eyes open very wide with an expression of fear and shock on her face, her body violently bounces up and down, her hair bounces in time with her body movements, gooey, dripping",
+          "translation_zh": "nsfwsks，蠕动的触手聚集在女人的脸和身体周围，她对蠕动的触手进行深喉口交，触手挤压乳房，触手一直进入她的嘴里并消失在里面，当触手进入时，她的脸颊鼓起，她的眼睛睁得很大，脸上露出恐惧和震惊的表情，她的身体猛烈地上下弹动，她的头发随着她的身体动作而弹动，粘稠的、滴落的"
+        }
+      ],
+      "notes": [
+        "主要训练用例是 tentacles。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_059": {
+      "category": "胸部动作",
+      "purpose": "生成大胸部包夹和上下运动；适合胸部占画面主体的近景输入，普通身材或遮挡输入泛化风险高。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 1.0,
+          "max": 1.5,
+          "recommended": 1.25
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.0,
+          "recommended": 0.9
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1867280?modelVersionId=2166737",
+      "prompt_examples": [
+        {
+          "prompt": "an armored woman uses her boobs to titfuck a man. She is using her hands to bounce her jiggly breasts up and down on the man's penis. Thick, white cum coats the man's penis.",
+          "translation_zh": "一个全副武装的女人用她的胸部来操一个男人。她用双手在男人的阴茎上上下晃动着摇晃的乳房。男人的阴茎上覆盖着厚厚的白色精液。"
+        },
+        {
+          "prompt": "a woman using her boobs to titfuck a man. She uses her hands to smash her jiggling breasts together around the man's penis as she bounces them up and down. Thick, white cum oozes from the woman's cleavage and coats the man's penis. The woman is wearing a green coat that is falling off, they are in a traditional japanese room. Anime style.",
+          "translation_zh": "一个女人用她的胸部来操一个男人。当她上下弹动时，她用手将自己摇晃的乳房紧紧地围绕着男人的阴茎。浓稠的白色精液从女人的乳沟渗出，覆盖在男人的阴茎上。女人穿着一件正在脱落的绿色外套，他们在一个传统的日式房间里。动漫风格。"
+        },
+        {
+          "prompt": "a woman using her boobs to titfuck a man. She uses her hands to smash her jiggling breasts together around the man's penis as she bounces them up and down. Thick, white cum oozes from the woman's cleavage and coats the man's penis. The woman is wearing a bikini top that is falling off, they are on a wooden ship at sea.",
+          "translation_zh": "一个女人用她的胸部来操一个男人。当她上下弹动时，她用手将自己摇晃的乳房紧紧地围绕着男人的阴茎。浓稠的白色精液从女人的乳沟渗出，覆盖在男人的阴茎上。这名女子穿着一件正在脱落的比基尼上衣，他们在海上的一艘木船上。"
+        }
+      ],
+      "notes": [
+        "README 提到配其它 T2V high，当前不能直接接。",
+        "参考榜单只命中 low；补入同页 I2V high 作为运行配对，属于榜外 companion。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_060": {
+      "category": "舞蹈/臀部动作",
+      "purpose": "生成背对镜头的臀部抖动和 twerk 循环；适合全身、后视或三分之二身输入。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2008663?modelVersionId=2273468",
+      "prompt_examples": [
+        {
+          "prompt": "a slightly sweaty woman with blue hair in a loop facing away from the viewer twerks causing her ass to jiggle and shake.",
+          "translation_zh": "一名背对着观众、一头蓝色头发盘成一圈、略显出汗的女子在扭臀，导致她的屁股轻轻摇晃。"
+        },
+        {
+          "prompt": "she twerks causing her ass to jiggle and shake",
+          "translation_zh": "她扭臀导致她的屁股摇晃"
+        },
+        {
+          "prompt": "a face down woman with short bob cut white hair and a black hairband faces away from the viewer with her butt in the air as she twerks causing her ass to jiggle and shake.",
+          "translation_zh": "一位脸朝下的女人，留着白色的波波头短发，戴着黑色发带，背对着观众，她的臀部在空中扭动，导致她的屁股轻轻摇晃。"
+        }
+      ],
+      "notes": [
+        "H 下载项显示 dataset ZIP，需核资产。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_067": {
+      "category": "表情/身体反应",
+      "purpose": "让人物出现全身紧绷、抖动、后仰和高潮反应；适合已有成人动作或裸露构图，也可作为叠加反应模板。",
+      "trigger_words": [
+        "She is having an orgasm."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "source": "archive_general_guidance"
+      },
+      "model_page": "https://civitaiarchive.com/models/1814751?modelVersionId=2178018",
+      "prompt_examples": [
+        {
+          "prompt": "She is having an orgasm. Her body shudders and shivers as a profound, guttural moan of sexual pleasure escapes her lips, her face a portrait of sublime ecstasy as she reaches the peak of her orgasm.",
+          "translation_zh": "她正在达到高潮；身体发抖并颤动，伴随深沉的快感呻吟，面部在高潮顶峰呈现强烈愉悦表情。"
+        }
+      ],
+      "notes": [
+        "官方 Wan 2.2 release 版本。",
+        "模型主 API 已撤下，使用 CivArchive 镜像并按归档 SHA256 校验。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_069": {
+      "category": "口部动作/体位",
+      "purpose": "生成低机位或双人构图中的舔阴动作；适合腿部张开、目标区域和第二人头部有空间的输入。",
+      "trigger_words": [
+        "cunn1l1ngu5"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1954774?modelVersionId=2212384",
+      "prompt_examples": [
+        {
+          "prompt": "dynamic camera movement pivoting left, revealing a woman's body from a side angle, her legs spread. Close-up from the left side on her vulva. A second woman walks into the frame from the right side, leaning in. Her tongue flicks and sucks rhythmically on the clitoris. The recipient's hips make small, involuntary circles and twitches of pleasure. Her vagina gets wet and shiny, full of saliva and drooling from the second woman's mouth. The scene is intimate, sensual, and focused on the detailed motion. Masterpiece, ultra-detailed, photorealistic skin texture.",
+          "translation_zh": "动态摄影机向左旋转，从侧面展现出女人的身体，她的双腿张开。她外阴左侧的特写。第二个女人从右侧走进画面，身体前倾。她的舌头有节奏地轻拂并吸吮阴蒂。接受者的臀部会不自觉地小圈并快乐地抽动。她的阴道变得湿润、闪亮，充满了第二个女人嘴里的唾液和口水。这个场景亲密、感性，并且专注于细节动作。杰作，超详细，逼真的皮肤纹理。"
+        },
+        {
+          "prompt": "dynamic camera movement pivoting left, revealing a woman's body from a side angle, her legs spread. Close-up from the left side on her vulva. A second woman walks into the frame from the left side, leaning in. Her tongue flicks and sucks rhythmically on the clitoris. The recipient's hips make small, involuntary circles and twitches of pleasure. Her vagina gets wet and shiny, full of saliva and drooling from the second woman's mouth. The scene is intimate, sensual, and focused on the detailed motion. Masterpiece, ultra-detailed, photorealistic skin texture.",
+          "translation_zh": "动态摄影机向左旋转，从侧面展现出女人的身体，她的双腿张开。她外阴左侧的特写。第二个女人从左侧走进画面，身体前倾。她的舌头有节奏地轻拂并吸吮阴蒂。接受者的臀部会不自觉地小圈并快乐地抽动。她的阴道变得湿润、闪亮，充满了第二个女人嘴里的唾液和口水。这个场景亲密、感性，并且专注于细节动作。杰作，超详细，逼真的皮肤纹理。"
+        },
+        {
+          "prompt": "dynamic camera movement pivoting left, revealing a woman's body from a side angle, her legs spread. Close-up from the left side on her vulva. The woman's tongue flicks and sucks rhythmically on the clitoris. The recipient's hips make small, involuntary circles and twitches of pleasure. Her vagina gets wet and shiny. The scene is intimate, sensual, and focused on the detailed motion. Masterpiece, ultra-detailed, photorealistic skin texture.",
+          "translation_zh": "动态摄影机向左旋转，从侧面展现出女人的身体，她的双腿张开。她外阴左侧的特写。女人的舌头有节奏地轻拂并吸吮阴蒂。接受者的臀部会不自觉地小圈并快乐地抽动。她的阴道变得湿润、闪亮。这个场景亲密、感性，并且专注于细节动作。杰作，超详细，逼真的皮肤纹理。"
+        }
+      ],
+      "notes": [
+        "H/L 完整。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_070": {
+      "category": "体位",
+      "purpose": "生成双腿抬高、身体压合的 mating press；适合全身或腿部可见的躺卧双人构图。",
+      "trigger_words": [
+        "mating press"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1875500?modelVersionId=2122806",
+      "prompt_examples": [
+        {
+          "prompt": "A woman in mating press position, a man inserting his penis into her vagina.",
+          "translation_zh": "一名女性处于 Mating Press 体位，一名男性将阴茎插入她的阴道。"
+        }
+      ],
+      "notes": [
+        "同一旧模型页含 high_noise/low_noise 两个版本；本 bundle 已完整配对。第 177 名另有新版模型，可后续做 A/B。",
+        "同一旧模型页的 high_noise（2122834）与 low_noise（2122806）已完整配对；第 177 名另有新版模型，可后续做 A/B smoke。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_071": {
+      "category": "口部动作",
+      "purpose": "侧重慢速、眼神交流、间歇靠近等挑逗过程，不追求强烈深喉；适合脸部清楚的正面/侧面近景。",
+      "trigger_words": [
+        "sensualBJ"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2231076?modelVersionId=2511581",
+      "prompt_examples": [
+        {
+          "prompt": "sensualBJ She licks the tip of the penis before opening her mouth to take the head inside.",
+          "translation_zh": "sensualBJ 她舔了舔阴茎的尖端，然后张开嘴将阴茎头放进去。"
+        },
+        {
+          "prompt": "sensualBJ She sucks and kisses the penis.",
+          "translation_zh": "sensualBJ 她吮吸并亲吻阴茎。"
+        },
+        {
+          "prompt": "sensualBJ She is sliding her mouth down the shaft of the penis with her tongue extended.",
+          "translation_zh": "sensualBJ 她伸出舌头，将嘴沿着阴茎的轴滑下。"
+        }
+      ],
+      "notes": [
+        "H/L 完整。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_076": {
+      "category": "镜头运动",
+      "purpose": "在动作进行时把镜头向后拉，逐步展示更多身体和场景；适合近景首帧，可作为镜头层模板与其它动作 prompt 配合。",
+      "trigger_words": [
+        "The camera zooms out while she is having sex"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "source": "archive_general_guidance"
+      },
+      "model_page": "https://civitaiarchive.com/models/1923528?modelVersionId=2177091",
+      "prompt_examples": [
+        {
+          "prompt": "The camera zooms out while she is having sex.",
+          "translation_zh": "当她做爱时，镜头拉远。"
+        }
+      ],
+      "notes": [
+        "ZIP 含 H/L。",
+        "模型主 API 已撤下；ZIP 内 H/L 以外层归档 SHA256 和解包后本地 SHA256 双重记录。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_077": {
+      "category": "身体形变",
+      "purpose": "让胸部从初始尺寸逐渐增长、下垂或快速膨胀；适合正面半身图，可拆“缓慢增长/快速膨胀”两个按钮。",
+      "trigger_words": [
+        "Br3ast3xpansion",
+        "her breasts grow",
+        "rapid expansion"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 0.8,
+          "recommended": 0.7
+        },
+        "low": {
+          "min": 0.6,
+          "max": 0.8,
+          "recommended": 0.7
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1918611?modelVersionId=2204414",
+      "prompt_examples": [
+        {
+          "prompt": "Br3ast3xpansion, her breasts grow",
+          "translation_zh": "Br3ast3xpansion，她的乳房长大了"
+        },
+        {
+          "prompt": "Br3ast3xpansion, her breasts grow, she looks down suprised",
+          "translation_zh": "Br3ast3xpansion，她的乳房变大，她惊讶地低下头"
+        }
+      ],
+      "notes": [
+        "作者建议约 0.7；优先 v5。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_079": {
+      "category": "身体变形",
+      "purpose": "表现身体部位生长和转化过程；适合全身或骨盆区域清晰的二次元/写实输入。",
+      "trigger_words": [
+        "FutaTF",
+        "futanari transformation",
+        "futanari transformation happening to her and penis growing out of her"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.0,
+          "recommended": 0.9
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.0,
+          "recommended": 0.9
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1911812?modelVersionId=2163877",
+      "prompt_examples": [
+        {
+          "prompt": "FutaTF, futanari transformation happening to her and penis growing out of her.",
+          "translation_zh": "`FutaTF`：她正在发生扶她变身，阴茎从其身体上生长出来。"
+        }
+      ],
+      "notes": [
+        "README 还要求 penis LoRA，当前单 LoRA 场景不完整。",
+        "按用户指定排名保留 v1 H/L；没有自动替换为同页 v1.2。发布者还建议叠加 penis helper，单 LoRA 可能不完整。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_081": {
+      "category": "体位/镜头",
+      "purpose": "镜头从近景拉开并转为后入构图，兼具体位和 FOV 变化；适合正方形或较宽输入。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1987345?modelVersionId=2249697",
+      "prompt_examples": [
+        {
+          "prompt": "Camera zooms out right away to reveal her on all fours, naked, ass in the air, having fast, rough, intense sex with a man behind her. The man is thrusting is penis inside her from behind, causing her hips to jolt with each impact.",
+          "translation_zh": "镜头立即拉远，显示她四肢着地，裸体，屁股悬在空中，与身后的一名男子快速、粗暴、激烈地做爱。男人从后面将阴茎插入她体内，每次撞击都会导致她的臀部震动。"
+        }
+      ],
+      "notes": [
+        "README 称方形输出更稳定。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_088": {
+      "category": "动作/转场",
+      "purpose": "从单人胸部近景生成男性从侧边出现并进入乳沟；输入胸部须无遮挡且侧边有空间。",
+      "trigger_words": [
+        "A man appears and inserts his penis between her breasts"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1972311?modelVersionId=2232429",
+      "prompt_examples": [
+        {
+          "prompt": "A man appears and inserts his penis between her breasts. Static camera, fixed viewpoint, still shot.",
+          "translation_zh": "一个男人出现并将他的阴茎插入她的乳房之间。静态相机，固定视点，静态拍摄。"
+        }
+      ],
+      "notes": [
+        "ZIP 内含 H/L。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_089": {
+      "category": "舞蹈",
+      "purpose": "让人物举手、摆动身体并持续跳舞；适合站立全身或半身图，可作为通用“热舞”按钮。",
+      "trigger_words": [
+        "dncng1",
+        "dancing",
+        "hand_above_head",
+        ",dancing, hand_above_head,",
+        "hand_above_head,"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.4,
+          "max": 0.7,
+          "recommended": 0.5
+        },
+        "low": {
+          "min": 0.4,
+          "max": 0.7,
+          "recommended": 0.5
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1921237?modelVersionId=2174518",
+      "prompt_examples": [
+        {
+          "prompt": "dncng1 she is dancing, swaying her breasts, both hands above head, ,,,",
+          "translation_zh": "dncng1 她在跳舞，摇晃着乳房，双手举过头顶，,,,"
+        }
+      ],
+      "notes": [
+        "非成人专属，但进入 Explicit 排名。",
+        "按用户指定排名保留 v1 H/L；没有自动替换为同页 v2。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_096": {
+      "category": "事件动作",
+      "purpose": "生成嘴部内外的射精和液体停留，适合嘴部张开、正面或略仰视近景。",
+      "trigger_words": [
+        "m0u7hfu11"
+      ],
+      "strength": {
+        "high": {
+          "min": 1.0,
+          "max": 1.3,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 1.0,
+          "max": 1.3,
+          "recommended": 1.0
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/2148595?modelVersionId=2430424",
+      "prompt_examples": [
+        {
+          "prompt": "m0u7hfu11, the scene begins with the camera zooming in onto the woman's face while the man's hand holding his penis near her mouth, with her mouth open wide. The focus is on the act of oral ejaculation, with the man's hand holding the penis near her mouth. The woman appears to be in a state of arousal, with her eyes closed and lips parted. Seminal fluid is white, thick and sticky being ejaculate from the penis is visible as it fills her mouth, dripping from her lips and pooling on her tongue. The camera angle is an extreme close-up, focusing on the open mouth and the action of swallowing. There are no other other participants or significant background details visible in the frame.",
+          "translation_zh": "m0u7hfu11，场景开始于镜头拉近女人的脸，而男人的手握住他的阴茎靠近她的嘴，她的嘴张得大大的。重点是口腔射精的行为，男人的手将阴茎靠近她的嘴。该女子似乎处于兴奋状态，闭着眼睛，嘴唇张开。精液是白色的，浓稠而粘稠，从阴茎射出的精液充满了她的嘴，从她的嘴唇滴下来并积聚在她的舌头上。镜头角度是极限特写，重点关注张开的嘴和吞咽的动作。框架中没有可见的其他参与者或重要的背景细节。"
+        },
+        {
+          "prompt": "m0u7hfu11, the scene begins with the camera zooming in onto an ansian woman's face while the man's hand holding his penis near her mouth, with her mouth open wide. The focus is on the act of oral ejaculation, with the man's hand holding the penis near her mouth. The woman appears to be in a state of arousal, with her eyes closed and lips parted. Seminal fluid being ejaculate from the penis is visible as it fills her mouth, dripping from her lips and pooling on her tongue. The camera angle is an extreme close-up, focusing on the open mouth and the action of swallowing. There are no other other participants or significant background details visible in the frame. The woman is an asian woman with distinctive asian face.",
+          "translation_zh": "m0u7hfu11，场景开始于镜头拉近一位亚洲女人的脸，而男人的手握住他的阴茎靠近她的嘴，她的嘴张得大大的。重点是口腔射精的行为，男人的手将阴茎靠近她的嘴。该女子似乎处于兴奋状态，闭着眼睛，嘴唇张开。可以看到从阴茎射出的精液充满了她的嘴，从她的嘴唇滴落并积聚在她的舌头上。镜头角度是极限特写，重点关注张开的嘴和吞咽的动作。框架中没有可见的其他参与者或重要的背景细节。该女子是一名亚裔女性，有着独特的亚洲面孔。"
+        }
+      ],
+      "notes": [
+        "作者建议 strength 至少 1。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_097": {
+      "category": "体位",
+      "purpose": "镜头面向人物正面，但动作来自身后；适合人物上身正对镜头、后方仍有空间的构图。",
+      "trigger_words": [
+        "sfb3hind",
+        "sfbehind",
+        "sfb3hind, sfbehind"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2227622?modelVersionId=2545249",
+      "prompt_examples": [
+        {
+          "prompt": "sfb3hind, sfbehind, swinging breasts, slides in and out, fast, long thrusts, a man, slick with sweat, dominates a woman as she arches into the ride. He penetrates her with his cock sliding in and out with effortless rhythm, her hips pressing into the womans ass. The woman, moans loudly as her partner spanks her ass hard once — her head thrown back, mouth open in gasp, thighs trembling. Camera remains stationary, medium shot, framing their bodies in full intimacy. The camera is still without zooming or moving.",
+          "translation_zh": "sfb3hind，sfbehind，摆动乳房，滑入滑出，快速、长距离的推力，一个满身汗水的男人在一个女人弓起身子时主宰着她。他用他的鸡巴以毫不费力的节奏滑入滑出，将她的臀部压入女人的屁股。当她的伴侣用力打她的屁股时，这名女子大声呻吟——她的头向后仰，张着嘴喘气，大腿颤抖。镜头保持静止，中景拍摄，将他们的身体描绘得十分亲密。相机静止不动，没有变焦或移动。"
+        },
+        {
+          "prompt": "sfb3hind, sfbehind, swinging breasts, slides in and out, fast, long thrusts, a futa, slick with sweat, dominates a woman as she arches into the ride. He penetrates her with his cock sliding in and out with effortless rhythm, her hips pressing into the womans ass. The woman, moans loudly as her partner spanks her ass hard once — her head thrown back, mouth open in gasp, thighs trembling. Camera remains stationary, medium shot, framing their bodies in full intimacy. The camera is still without zooming or moving.",
+          "translation_zh": "sfb3hind、sfbehind、摆动乳房、滑入滑出、快速、长距离的推力，一个满身是汗的 futa，在女人弓起身子时主宰着她。他用他的鸡巴以毫不费力的节奏滑入滑出，将她的臀部压入女人的屁股。当她的伴侣用力打她的屁股时，这名女子大声呻吟——她的头向后仰，张着嘴喘气，大腿颤抖。镜头保持静止，中景拍摄，将他们的身体描绘得十分亲密。相机静止不动，没有变焦或移动。"
+        }
+      ],
+      "notes": [
+        "README 用三 sampler + Lightning，简单 loader 需另测。",
+        "发布者示例使用三 sampler + Lightning；简单双 loader 需另做 smoke。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_103": {
+      "category": "身体形变",
+      "purpose": "强调内部接触造成腹部或胃部轮廓隆起的超现实运动；适合腹部清晰的正面/侧面输入，不适合作为通用体位按钮。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.5,
+          "max": 0.7,
+          "recommended": 0.6
+        },
+        "low": {
+          "min": 0.5,
+          "max": 0.7,
+          "recommended": 0.6
+        },
+        "source": "publisher_general_guidance"
+      },
+      "model_page": "https://civitaiarchive.com/models/1985613?modelVersionId=2308339",
+      "prompt_examples": [
+        {
+          "prompt": "2d anime, st0m4chBulg3， nsfwsks,penis goes in and out of vagina，The penis rapidly thrusts in and out of the vagina.,",
+          "translation_zh": "2d 动漫，st0m4chBulg3， nsfwsks，阴茎进出阴道，阴茎快速地进出阴道，"
+        },
+        {
+          "prompt": "2D animation effects，4K resolution, high-quality resolution， nsfwsks, Tracking the woman's motion, the camera continuously sways from side to side while she and the man are having fierce/passionate sex., penis goes in and out of vagina，The penis rapidly thrusts in and out of the vagina.,",
+          "translation_zh": "2D动画效果，4K分辨率，高画质分辨率，nsfwsks，跟踪女人的动作，镜头不断左右晃动，而她和男人正在激烈/激情的做爱，阴茎进出阴道，阴茎快速地进出阴道，"
+        },
+        {
+          "prompt": "2D animation effects，4K resolution, high-quality resolution， nsfwsks， Tracking the woman's motion, the camera continuously sways from side to side while she and the man are having fierce/passionate sex., penis goes in and out of vagina，The penis rapidly thrusts in and out of the vagina.,",
+          "translation_zh": "2D动画效果，4K分辨率，高画质分辨率，nsfwsks， 跟踪女人的动作，镜头不断左右晃动，而她和男人正在激烈/激情的做爱，阴茎进出阴道，阴茎快速地进出阴道，"
+        }
+      ],
+      "notes": [
+        "README 建议避免文学化 prompt，明确写物理动作。",
+        "仅纳入 Stomach Bulge H/L，未混入同页 Penis/FluidCore/Reward/Beta 权重。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_104": {
+      "category": "事件序列",
+      "purpose": "在一个视频中生成连续、多段或不同方向的射精事件；适合正脸/上身和画面侧边有空间的输入，可与普通单次射精区分。",
+      "trigger_words": [
+        "sh00tz"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2429545?modelVersionId=2731730",
+      "prompt_examples": [
+        {
+          "prompt": "sh00tz, just a few cumshots from random guys before going back home.",
+          "translation_zh": "`sh00tz`：回家前遭遇几名随机男性的连续射精。"
+        },
+        {
+          "prompt": "sh00tz, crazy lovely woman elf loving cum.",
+          "translation_zh": "`sh00tz`：一位疯狂而可爱的女精灵喜欢精液。"
+        },
+        {
+          "prompt": "sh00tz adventures of a busty candid indecent bimbo in a cummers' paradise. realistic, excellent quality.",
+          "translation_zh": "`sh00tz`：一名丰满、坦率而放荡的女性在“射精者乐园”中的冒险；写实、优质。"
+        }
+      ],
+      "notes": [
+        "新模型，需检查多次事件是否造成时间跳变。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_115": {
+      "category": "亲密互动",
+      "purpose": "将双人脸部靠近构图生成深吻、嘴唇和舌部互动；适合双人近景、脸部比例接近的输入，可作为非体位亲密模板。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.5,
+          "max": 1.0,
+          "recommended": 0.7
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/2171333?modelVersionId=2445168",
+      "prompt_examples": [
+        {
+          "prompt": "An 8K, hyper-realistic cinematic sequence, medium composition two woman. a woman with blonde hair and dark leather jacket is looking at the camera. the woman with dark brown hair is looking at the woman. (AT 0-2s) the woman blonde hair turns towards the woman and passionately french kisses the woman (AT 2-4s) the woman continue to passionately french kiss each other. CINEMATOGRAPHY & AESTHETICS: The lighting is warm, soft and naturalistic, creating an intimate, believable atmosphere. A very shallow depth of field. (the camera is fixed)",
+          "translation_zh": "8K、超现实的电影序列，中等构图，两个女人。一位金发、身穿深色皮夹克的女士正在看着镜头。深棕色头发的女人正在看着女人。 （0-2秒）女人金发转向女人并热情地法式热吻女人（2-4秒）女人继续彼此热情地法式热吻。摄影与美学：灯光温暖、柔和、自然，营造出一种亲密、可信的氛围。景深非常浅。 （相机固定）"
+        },
+        {
+          "prompt": "An 8K, hyper-realistic cinematic sequence, extreme close-up composition two woman's face. a woman with black hair and white black top and another woman with dark brown hair. they are looking at each other. (AT 0-2s) the woman passionately french kisses the woman. The woman are tongue playing as they french kiss. (AT 2-4s) the woman continue to passionately french kiss each other and continue to tongue play. CINEMATOGRAPHY & AESTHETICS: The lighting is warm, soft and naturalistic, creating an intimate, believable atmosphere. A very shallow depth of field. (the camera is fixed)",
+          "translation_zh": "8K、超现实的电影序列，极端特写镜头构图了两个女人的脸。一名黑发、白色黑色上衣的女子和另一名深棕色头发的女子。他们互相看着对方。 （0-2 秒）女人热情地法式热吻。女人在法式接吻时正在玩舌头。 （2-4秒）女人继续热情地法式热吻并继续舌战。摄影与美学：灯光温暖、柔和、自然，营造出一种亲密、可信的氛围。景深非常浅。 （相机固定）"
+        },
+        {
+          "prompt": "An 8K, hyper-realistic cinematic sequence, composition two man looking at each other. the older man is leaning towards the young man. the old man has a salt and pepper colored beared. the young man has a shaved beard and shaved head. (AT 0-2s) the older man leans towards the young man and passionately french kiss each other.. (AT 2-5s) the men continue to french kiss each other. CINEMATOGRAPHY & AESTHETICS: The lighting is warm, soft and naturalistic, creating an intimate, believable atmosphere. A very shallow depth of field. (the camera is fixed)",
+          "translation_zh": "8K 超现实电影序列，由两个男人互相看着对方组成。年长者正向年轻人倾斜。这位老人留着盐和胡椒色的胡须。年轻人剃光了胡须和光头。 （0-2 秒）年长男子向年轻人倾斜，互相热烈地法式热吻。（2-5 秒）男人们继续互相法式热吻。摄影与美学：灯光温暖、柔和、自然，营造出一种亲密、可信的氛围。景深非常浅。 （相机固定）"
+        }
+      ],
+      "notes": [
+        "双人身份和口部结构是 smoke 重点。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_118": {
+      "category": "器械动作",
+      "purpose": "让躺卧或坐姿人物使用带金属杆的往复式机器；适合首帧下半身区域空旷，模型会生成器械并持续机械运动。",
+      "trigger_words": [
+        "She is using a sex machine with a dildo attached to a metal rod..."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "source": "archive_general_guidance"
+      },
+      "model_page": "https://civitaiarchive.com/models/1877774?modelVersionId=2176320",
+      "prompt_examples": [
+        {
+          "prompt": "She is using a sex machine with a dildo attached to a metal rod. The dildo thrusts back and forth into her vagina.",
+          "translation_zh": "她正在使用一台金属杆连接假阳具的性爱机器；假阳具有节奏地在她的阴道内前后抽动。"
+        }
+      ],
+      "notes": [
+        "器械结构、杆件穿模需重点检查。",
+        "模型主 API 已撤下，使用 CivArchive 镜像并按归档 SHA256 校验；器械杆件穿模是主要风险。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_120": {
+      "category": "姿势/体位",
+      "purpose": "把全身或后视图转成 face-down-ass-up 姿势，并可继续添加后入动作；适合床面、臀部和腿部均可见的输入。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1929094?modelVersionId=2183383",
+      "prompt_examples": [
+        {
+          "prompt": "A sexy woman is having sex with a man in the face-down ass-up position. She is having sex with a man in the top-down bottom-up position. The man is mostly out of frame, with his hands on her hips. They are having rough, intense sex. The view is a fixed third-person view. The video focuses on her face. Her body is bouncing back and forth roughly due to the man's thrusts. She moans and screams loudly. Her eyes roll up as she experiences a screaming orgasm.",
+          "translation_zh": "一个性感的女人正在与一个面朝下、屁股朝上的男人做爱。她以自上而下、自下而上的姿势与一名男子发生性关系。男人大部分时间都在画面之外，双手放在她的臀部。他们正在进行粗暴、激烈的性行为。该视图是固定的第三人称视图。视频的焦点集中在她的脸上。她的身体因男人的抽插而剧烈地前后颤动。她大声呻吟和尖叫。当她体验到尖叫的高潮时，她的眼睛翻了起来。"
+        }
+      ],
+      "notes": [
+        "可做姿势模板，也可作为其它动作前置。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_130": {
+      "category": "身体细节",
+      "purpose": "在起始图未显示目标细节时生成位置和外观相对自然的肛门，适合后视、趴跪或 face-sitting 类首帧；它更像细节辅助，不是完整动作。",
+      "trigger_words": [
+        "anus"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.5,
+          "max": 1.0,
+          "recommended": 0.75
+        },
+        "low": {
+          "min": 0.75,
+          "max": 1.25,
+          "recommended": 1.0
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/2143379?modelVersionId=2433303",
+      "prompt_examples": [
+        {
+          "prompt": "A woman is standing looking back over her shoulder. The woman is naked and has ginger hair tied in a ponytail. The woman bends forward onto the bed and uses her hands to spread her glutes wide, revealing her anus and vulva. The camera zooms into her buttocks so her anus and vulva are visible. Her anus is directly above her vulva. Her anus is pink, puckered and round. Her vulva is smooth, and her pink vagina is slightly visible. The last frame of the video is a close up of her buttocks, focusing on her anus. Her buttocks, anus, vagina and vulva are well illuminated and clearly visible.",
+          "translation_zh": "一个女人站在那里回头看。这名女子赤身裸体，姜黄色的头发扎成马尾辫。女人向前弯腰躺在床上，用双手张开臀部，露出肛门和外阴。摄像机放大她的臀部，使她的肛门和外阴清晰可见。她的肛门位于外阴正上方。她的肛门呈粉红色，皱起，呈圆形。她的外阴光滑，粉红色的阴道隐约可见。视频的最后一帧是她臀部的特写，重点是她的肛门。她的臀部、肛门、阴道和外阴照明良好，清晰可见。"
+        },
+        {
+          "prompt": "A woman is standing looking back over her shoulder. The woman is naked and has ginger hair tied in a ponytail. The woman bends forward onto the bed and uses her hands to spread her glutes wide, revealing her anus and vulva. The camera zooms into her buttocks so her anus and vulva are visible. Her anus is directly above her vulva. Her anus is pink, puckered and round. Her vulva is smooth, with her pink vagina slightly visible. The last frame of the video is a close up of her buttocks, focusing on her anus. Her buttocks, anus, vagina and vulva are well illuminated and clearly visible.",
+          "translation_zh": "一个女人站在那里回头看。这名女子赤身裸体，姜黄色的头发扎成马尾辫。女人向前弯腰躺在床上，用双手张开臀部，露出肛门和外阴。摄像机放大她的臀部，使她的肛门和外阴清晰可见。她的肛门位于外阴正上方。她的肛门呈粉红色，皱起，呈圆形。她的外阴光滑，粉红色的阴道隐约可见。视频的最后一帧是她臀部的特写，重点是她的肛门。她的臀部、肛门、阴道和外阴照明良好，清晰可见。"
+        }
+      ],
+      "notes": [
+        "建议 L 0.75–1.25，H 0.5–1；不宜固定 1 盲用。",
+        "H/L 建议不对称；low 是主要细节模型，high 仅辅助。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_135": {
+      "category": "口部动作/特写",
+      "purpose": "从画面侧边出现并插入口腔，强调脸颊随运动鼓起和变形；适合脸部侧面或正面近景。",
+      "trigger_words": [
+        "appears from the left... cheeks are moving/bulge",
+        "A penis appears from the left of frame. He inserts his penis into her mouth. A man is moving his penis in and out of a woman's mouth.",
+        "A penis appears from the left of frame. He inserts his penis into her mouth. A man is moving his penis in and out of a woman's mouth. He is holding her head. Her cheeks are moving with the movements of the penis. After a second, he pushes his penis deep into her mouth, taking a moment to bulge her cheek out."
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1981666?modelVersionId=2243201",
+      "prompt_examples": [
+        {
+          "prompt": "A penis appears from the left of frame. He inserts his penis into her mouth. A man is moving his penis in and out of a woman's mouth. He is holding her head. Her cheeks are moving with the movements of the penis. After a second, he pushes his penis deep into her mouth, taking a moment to bulge her cheek out.",
+          "translation_zh": "一根阴茎从画面左侧出现并插入她的口中。男性扶住她的头，让阴茎在她口中反复进出；随后深入口腔并短暂停留，使她的一侧脸颊鼓起。"
+        }
+      ],
+      "notes": [
+        "面部身份和脸颊变形风险高。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_148": {
+      "category": "体位/镜头",
+      "purpose": "固定从侧面展示肛交动作，便于同时看到双方身体和接触位置；适合横图、双人侧面构图。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.5,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.5,
+          "max": 0.65,
+          "recommended": 0.6
+        },
+        "source": "publisher"
+      },
+      "model_page": "https://civitaiarchive.com/models/1935054?modelVersionId=2190121",
+      "prompt_examples": [
+        {
+          "prompt": "center composition, a woman in a clown outfit is nude with a shaved penis. a man penetrates her anus deeply with his penis. She smiles.",
+          "translation_zh": "中心构图中，一名身穿小丑服装的女性裸体，阴茎被剃光。一个男人用他的阴茎深深地插入她的肛门。她微笑着。"
+        },
+        {
+          "prompt": "a close-up a man inserts his penis deeply into a woman's anus",
+          "translation_zh": "一个男人将阴茎深深插入女人肛门的特写镜头"
+        },
+        {
+          "prompt": "center composition, a mans penis is penetrating a woman's anus while she expresses pleasure and delight while her breasts bounce. Her pussy is visible, she medium breasts and a black top. the scene is dark room. the scene is high quality and detailed.",
+          "translation_zh": "在中心构图中，男人的阴茎正在插入女人的肛门，而女人则在乳房弹跳时表达出愉悦和喜悦。她的阴户是可见的，她有中等的乳房和黑色的上衣。场景是黑暗的房间。场景质量高且细节丰富。"
+        }
+      ],
+      "notes": [
+        "适合作为与后视肛交不同的独立按钮。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_149": {
+      "category": "体位",
+      "purpose": "表现跨坐后的前后/环形研磨，而不是大幅上下弹跳；适合腰胯清晰的正面或略侧面输入。",
+      "trigger_words": [
+        "grindingCowgirl"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2323362?modelVersionId=2613687",
+      "prompt_examples": [
+        {
+          "prompt": "grindingCowgirl She is having sex with a man in the cowgirl position. She is riding the man with a steady grinding motion, thrusting her hips forward and back. She pushes her pelvis forward and pulls back rhythmically against him.",
+          "translation_zh": "`grindingCowgirl`：她以牛仔体位骑在男性身上，用稳定的研磨动作让髋部前后摆动，骨盆有节奏地贴着对方前推、后拉。"
+        }
+      ],
+      "notes": [
+        "与 Assertive Cowgirl 的动作节奏不同。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_155": {
+      "category": "口部动作",
+      "purpose": "针对夸张尺寸、嘴部拉伸和深入动作；适合脸部近景和侧面输入，风格化程度高。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2095336?modelVersionId=2370687",
+      "prompt_examples": [
+        {
+          "prompt": "the video starts with the camera zooming out revealing the woman kneeling on the floor, then, a naked black man enters from the left side, only his lower body is visible, with a large, thick cock with testicles. The cock is large and thick, with the glans pressing against the back of her throat. She starts engaging in a deepthroat blowjob with that penis. She swallows the entire penis, her nose smashes agains the man's hips. She moves her head back and fort swallowing the penis, realistic proportions, natural lighting, cinematic composition",
+          "translation_zh": "视频一开始，镜头拉远，看到跪在地板上的女人，然后，一个裸体的黑人从左侧进入，只能看到他的下半身，有一个又大又粗的鸡巴，还有睾丸。鸡巴又大又粗，龟头压在她喉咙的后面。她开始用阴茎进行深喉口交。她吞下了整个阴茎，她的鼻子撞上了男人的臀部。她后仰头，吞下阴茎，逼真的比例，自然的光线，电影般的构图"
+        },
+        {
+          "prompt": "the video starts with the camera zooming out revealing the woman kneeling on the floor, then, a naked black man enters from the left side, only his lower body is visible, with a large, fat, thick black cock. The cock is large with a prominent glans. The woman is attempting to deepthroat the man's cock. The scene is shot in a close-up view, focusing on the interaction between the cock and her mouth/throat. The man's dark, thick cock is prominently visible as it presses against her cheek and slides into her throat. Her eyes are closed, and she straininging to take more of the shaft into her mouth. Her cheeks are hollowed from suction. The man's hand is visible, holding her head steady as he guides his cock into her mouth.",
+          "translation_zh": "视频一开始，镜头拉远，看到跪在地板上的女人，然后，一个裸体的黑人从左侧进入，只能看到他的下半身，有一个又大又粗的黑色鸡巴。公鸡很大，龟头突出。女人正试图深喉男人的阴茎。该场景以特写镜头拍摄，重点关注鸡巴和她的嘴/喉咙之间的相互作用。男人黑色粗壮的阴茎清晰可见，它压在她的脸颊上，滑入她的喉咙。她闭着眼睛，努力将更多的轴放入嘴里。她的脸颊因吸力而凹陷。男人的手清晰可见，稳稳地托住她的头，将阴茎插入她的嘴里。"
+        },
+        {
+          "prompt": "the video starts with the camera zooming out revealing the woman kneeling naked on the floor, then, a naked black man enters from the bottom side, only his lower body is visible, with a large, thick cock with testicles. The cock is thick and long, with a prominent glans. The cock is being inserted into her mouth, and she is attempting to swallow it. She starts engaging in a deepthroat blowjob with that penis. She swallows the entire penis, her nose smashes agains the man's hips. She moves her head back and fort swallowing the penis, realistic proportions, natural lighting, cinematic composition",
+          "translation_zh": "视频一开始，镜头拉远，看到女人赤身裸体地跪在地板上，然后，一个裸体的黑人从底部进入，只能看到他的下半身，有一个又大又粗的鸡巴，还有睾丸。阴茎又粗又长，龟头突出。阴茎被插入她的嘴里，她正试图吞下它。她开始用阴茎进行深喉口交。她吞下了整个阴茎，她的鼻子撞上了男人的臀部。她向后仰头，强行吞咽阴茎，逼真的比例，自然光，电影构图"
+        }
+      ],
+      "notes": [
+        "L 文件名含 720，需在当前分辨率 profile 验证。",
+        "low 文件标注 720 训练口径，需在当前 Wan AIO 分辨率上验证。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_157": {
+      "category": "表情/互动",
+      "purpose": "生成他人手掌进入画面扇脸，或人物自己扇脸；适合正脸半身、头部侧边有空间的输入，可拆“被扇/自扇”两个按钮。",
+      "trigger_words": [
+        "she is slapped in the face",
+        "she slaps herself",
+        "she slaps herself in the face"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/2062140?modelVersionId=2509620",
+      "prompt_examples": [
+        {
+          "prompt": "She slaps herself in the face extremely hard and gets upset.",
+          "translation_zh": "她狠狠地打自己的脸，然后变得心烦意乱。"
+        },
+        {
+          "prompt": "She slaps her in the face over and over.",
+          "translation_zh": "她一次又一次地打她的脸。"
+        },
+        {
+          "prompt": "He slaps himself in the face hard and gets upset.",
+          "translation_zh": "他狠狠地打了自己一巴掌，心里很不高兴。"
+        }
+      ],
+      "notes": [
+        "暴力/成人边界应在模板名称和使用规则中明确。",
+        "仅限明确成年、知情同意的表演/角色扮演；不得用于现实伤害或非自愿内容。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_162": {
+      "category": "多人/事件",
+      "purpose": "从黑场或快速切镜后生成大量液体覆盖面部和头发的群体射精效果；适合脸部/上身特写。",
+      "trigger_words": [
+        "pornmaster bukkake",
+        "pornmaster bukkake, a woman, after a completely black screen, the camera quickly switches and excessive sperm on her face, excessive sperm on her hair,"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "low": {
+          "min": 0.8,
+          "max": 1.1,
+          "recommended": 1.0
+        },
+        "source": "publisher_context"
+      },
+      "model_page": "https://civitaiarchive.com/models/2069477?modelVersionId=2341721",
+      "prompt_examples": [
+        {
+          "prompt": "pornmaster bukkake, a woman, after a completely black screen, the camera quickly switches and excessive sperm on her face, excessive sperm on her hair, and she was talking.",
+          "translation_zh": "`pornmaster bukkake`：黑屏后镜头快速切换；一名女性的脸部和头发覆盖大量精液，同时她仍在说话。"
+        },
+        {
+          "prompt": "pornmaster bukkake, a woman, after a completely black screen, the camera quickly switches and excessive sperm on her face, excessive sperm on her hair, excessive sperm on her on glasses, She licked her lips back and forth with her tongue.",
+          "translation_zh": "`pornmaster bukkake`：黑屏后镜头快速切换；一名女性的脸部、头发和眼镜覆盖大量精液，她用舌头来回舔嘴唇。"
+        },
+        {
+          "prompt": "pornmaster bukkake, a woman, after a completely black screen, the camera quickly switches and focuses on her face, excessive sperm on her face, excessive sperm on her hair,She looked at the audience, opened her mouth and licked her lips with her tongue.",
+          "translation_zh": "`pornmaster bukkake`：黑屏后镜头快速聚焦一名女性的脸；她的脸部和头发覆盖大量精液，她看向观众、张开嘴并舔嘴唇。"
+        }
+      ],
+      "notes": [
+        "包含黑屏切镜语义，可能不是无缝首帧延续。",
+        "H/L 必须配对；其黑场/切镜语义可能破坏首帧连续性。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_164": {
+      "category": "身体外观",
+      "purpose": "在动画过程中保持较小胸部体型，减少 Wan 自动增大胸部的倾向；适合平胸角色一致性，作为外观辅助而非动作。",
+      "trigger_words": [],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 0.9,
+          "recommended": 0.8
+        },
+        "source": "archive_general_guidance"
+      },
+      "model_page": "https://civitaiarchive.com/models/1983079?modelVersionId=2244856",
+      "prompt_examples": [
+        {
+          "prompt": "A woman takes off her clothes.",
+          "translation_zh": "一名女性脱下衣服。"
+        }
+      ],
+      "notes": [
+        "更适合作为隐藏角色一致性选项。",
+        "模型主 API 已撤下；只用于明确成年主体的体型一致性，不得把平胸与未成年混同。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    },
+    "wan22_explicit_198": {
+      "category": "表情/微动",
+      "purpose": "人物用舌头舔嘴唇或上排牙齿，适合头像、正脸、半身图；可做通用“诱惑舔唇”短动图。",
+      "trigger_words": [
+        "She is licking her lips seductively...",
+        "She is licking her lips in a seductive way.",
+        "she licks her lips in a sexually suggestive manner",
+        "She licks her top teeth seductively",
+        "She is licking her lips seductively with her tongue",
+        "The woman is licking her top teeth in a seductive way with her sexy tongue"
+      ],
+      "strength": {
+        "high": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "low": {
+          "min": 0.6,
+          "max": 1.0,
+          "recommended": 0.8
+        },
+        "source": "local_conservative_start"
+      },
+      "model_page": "https://civitaiarchive.com/models/1978869?modelVersionId=2239947",
+      "prompt_examples": [
+        {
+          "prompt": "She is licking her lips seductively with her tongue.",
+          "translation_zh": "她用舌头挑逗地舔着嘴唇。"
+        }
+      ],
+      "notes": [
+        "只有 high；口舌结构需 smoke。",
+        "参考榜单只命中 high；补入同页 low 作为运行配对，属于榜外 companion。",
+        "仅允许明确成年且知情同意的主体；禁止未成年人、年龄模糊主体、现实伤害和非自愿内容。",
+        "本地入库不代表已兼容 Wan22 AIO；加入任何正式 catalog 前必须逐项单 LoRA smoke。"
+      ]
+    }
+  }
+}

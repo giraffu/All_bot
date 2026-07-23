@@ -4,6 +4,7 @@ import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
   DownOutlined,
+  InfoCircleOutlined,
   LinkOutlined,
   PlusOutlined,
   PlayCircleOutlined,
@@ -13,6 +14,11 @@ import {
   UploadOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
+import {
+  getWan22LoraHelp,
+  type Wan22LoraHelpModel,
+  type Wan22LoraStrengthStage,
+} from '../data/wan22LoraHelp'
 
 type MainButtonKey =
   | 'quick_undress'
@@ -491,6 +497,31 @@ const sceneConfig = reactive({
   postprocess_filter_scene_id: '',
   original_face_swap_enabled: false,
 })
+const loraHelp = ref<Wan22LoraHelpModel | null>(null)
+const loraHelpLabel = ref('')
+
+const loraStrengthSourceLabels: Record<string, string> = {
+  archive_general_guidance: '归档页通用建议',
+  local_conservative_start: '本地保守起点',
+  publisher: '发布者建议',
+  publisher_context: '发布者上下文建议',
+  publisher_general_guidance: '发布者通用建议',
+}
+
+const formatLoraStrengthStage = (stage: Wan22LoraStrengthStage) =>
+  `${stage.min.toFixed(2)}–${stage.max.toFixed(2)} / 推荐 ${stage.recommended.toFixed(2)}`
+
+const openLoraHelp = (modelKey: string) => {
+  const help = getWan22LoraHelp(modelKey)
+  if (!help) return
+  loraHelp.value = help
+  loraHelpLabel.value = activeLoraOptions.value.find(option => option.value === modelKey)?.label || modelKey
+}
+
+const closeLoraHelp = () => {
+  loraHelp.value = null
+  loraHelpLabel.value = ''
+}
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
 const updatedAtText = computed(() => updatedAt.value || '-')
@@ -2128,8 +2159,19 @@ onMounted(() => {
           >
             <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :label="item.label" :disabled="sceneConfig.video_lora_items.length >= 5 && !sceneConfig.video_lora_items.some(selected => selected.name === item.value)">{{ item.label }}</a-select-option>
           </a-select>
-          <div v-for="item in sceneConfig.video_lora_items" :key="item.name" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
+          <div v-for="item in sceneConfig.video_lora_items" :key="item.name" class="video-lora-strength-row mt-3">
             <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.name)?.label || item.name }}</div>
+            <a-button
+              v-if="getWan22LoraHelp(item.name)"
+              type="text"
+              class="lora-help-button"
+              :data-testid="`scene-video-lora-help-${item.name}`"
+              :title="`查看 ${activeLoraOptions.find(option => option.value === item.name)?.label || item.name} 说明`"
+              :aria-label="`查看 ${activeLoraOptions.find(option => option.value === item.name)?.label || item.name} 说明`"
+              @click="openLoraHelp(item.name)"
+            >
+              <template #icon><InfoCircleOutlined /></template>
+            </a-button>
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
@@ -2246,6 +2288,77 @@ onMounted(() => {
         </div>
       </a-form>
     </a-modal>
+
+    <a-modal
+      :open="Boolean(loraHelp)"
+      :title="loraHelpLabel ? `${loraHelpLabel} · 模型说明` : '模型说明'"
+      :footer="null"
+      :width="760"
+      wrap-class-name="qqcc-lora-help-modal"
+      data-testid="wan22-lora-help-modal"
+      @cancel="closeLoraHelp"
+    >
+      <div v-if="loraHelp" class="lora-help-content">
+        <dl class="lora-help-summary">
+          <div>
+            <dt>分类</dt>
+            <dd>{{ loraHelp.category }}</dd>
+          </div>
+          <div>
+            <dt>用途</dt>
+            <dd>{{ loraHelp.purpose }}</dd>
+          </div>
+          <div>
+            <dt>触发词 / 关键词</dt>
+            <dd class="lora-help-keywords">
+              <code v-for="keyword in loraHelp.trigger_words" :key="keyword">{{ keyword }}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>强度</dt>
+            <dd>
+              <div>HIGH：{{ formatLoraStrengthStage(loraHelp.strength.high) }}</div>
+              <div>LOW：{{ formatLoraStrengthStage(loraHelp.strength.low) }}</div>
+              <div class="lora-help-source">
+                建议来源：{{ loraStrengthSourceLabels[loraHelp.strength.source] || loraHelp.strength.source }}
+                <span>（{{ loraHelp.strength.source }}）</span>
+              </div>
+            </dd>
+          </div>
+          <div>
+            <dt>模型页</dt>
+            <dd>
+              <a :href="loraHelp.model_page" target="_blank" rel="noopener noreferrer">
+                {{ loraHelp.model_page }}
+              </a>
+            </dd>
+          </div>
+        </dl>
+
+        <section class="lora-help-section">
+          <h3>提示词示例与翻译</h3>
+          <details
+            v-for="(example, index) in loraHelp.prompt_examples"
+            :key="`${index}:${example.prompt}`"
+            class="lora-prompt-example"
+            :data-testid="`wan22-lora-prompt-example-${index}`"
+          >
+            <summary>示例 {{ index + 1 }}</summary>
+            <div class="lora-prompt-language">英文原文</div>
+            <p>{{ example.prompt }}</p>
+            <div class="lora-prompt-language">中文翻译</div>
+            <p>{{ example.translation_zh }}</p>
+          </details>
+        </section>
+
+        <section class="lora-help-section">
+          <h3>注意点</h3>
+          <ul>
+            <li v-for="note in loraHelp.notes" :key="note">{{ note }}</li>
+          </ul>
+        </section>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -2269,6 +2382,127 @@ onMounted(() => {
 
 :global(.qqcc-scene-config-modal .ant-modal-body) {
   padding-top: 8px;
+}
+
+:global(.qqcc-lora-help-modal .ant-modal) {
+  max-width: calc(100vw - 32px);
+  margin: 0 auto;
+}
+
+.video-lora-strength-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 92px;
+  align-items: center;
+  gap: 10px;
+}
+
+.lora-help-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #1677ff;
+  font-size: 17px;
+}
+
+.lora-help-content {
+  max-height: min(72vh, 760px);
+  overflow-y: auto;
+  padding-right: 6px;
+  color: #334155;
+}
+
+.lora-help-summary {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+.lora-help-summary > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.lora-help-summary dt,
+.lora-help-section h3 {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.lora-help-summary dd {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.lora-help-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lora-help-keywords code {
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: #f1f5f9;
+  color: #334155;
+  white-space: normal;
+}
+
+.lora-help-source {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.lora-help-section {
+  margin-top: 20px;
+}
+
+.lora-help-section h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.lora-prompt-example {
+  margin-bottom: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.lora-prompt-example summary {
+  cursor: pointer;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.lora-prompt-example p {
+  margin: 4px 0 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.lora-prompt-language {
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lora-help-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.lora-help-section li {
+  margin-bottom: 6px;
+  line-height: 1.65;
 }
 
 .scene-row {
@@ -2460,6 +2694,20 @@ onMounted(() => {
 }
 
 @media (max-width: 767px) {
+  .video-lora-strength-row {
+    grid-template-columns: minmax(0, 1fr) 34px 84px;
+    gap: 8px;
+  }
+
+  .lora-help-summary > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .scene-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .scene-row {
     align-items: stretch;
   }
