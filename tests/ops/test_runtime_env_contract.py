@@ -873,6 +873,223 @@ def test_target_inspect_reports_only_target_revision_drift(tmp_path, capsys):
     assert inspected["affected_services"] == ["dashboard-backend"]
 
 
+def test_test_snapshot_excludes_prod_only_services_without_prod_secrets():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values.pop("SUPPORT_BOT_TOKEN")
+    values.pop("DASHBOARD_SECRET_KEY")
+    values.pop("DASHBOARD_ADMIN_USERNAME")
+    values.pop("DASHBOARD_ADMIN_PASSWORD_HASH")
+
+    snapshot = module.build_snapshot(contract, "test", values)
+
+    assert "central-api" in snapshot.projections
+    assert "qqcc-config-backend" in snapshot.projections
+    assert "dashboard-backend" not in snapshot.projections
+    assert "dashboard-frontend" not in snapshot.projections
+    assert "payment-api" not in snapshot.projections
+    assert "paid-group-bot" not in snapshot.projections
+    assert "support-bot" not in snapshot.projections
+
+
+def test_full_test_inspect_reports_and_activation_prunes_retired_prod_service(
+    tmp_path, capsys
+):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    legacy_contract = json.loads(json.dumps(contract))
+    legacy_contract["services"]["dashboard-backend"].pop("environments", None)
+    legacy_contract_path = tmp_path / "legacy-contract.json"
+    legacy_contract_path.write_text(json.dumps(legacy_contract), encoding="utf-8")
+    values = _environment("test")
+    env_file = tmp_path / "test.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "test",
+        "--env-file",
+        str(env_file),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--contract",
+                str(legacy_contract_path),
+                "--service",
+                "central-api",
+                "--service",
+                "dashboard-backend",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    values.pop("SUPPORT_BOT_TOKEN")
+    values.pop("DASHBOARD_SECRET_KEY")
+    values.pop("DASHBOARD_ADMIN_USERNAME")
+    values.pop("DASHBOARD_ADMIN_PASSWORD_HASH")
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    current_common = [*common, "--contract", str(CONTRACT_PATH)]
+
+    assert module.main(["inspect", *current_common]) == 0
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["drift"] is True
+    assert inspected["retired_services"] == ["dashboard-backend"]
+
+    assert module.main(["activate", *current_common]) == 0
+    activated = json.loads(capsys.readouterr().out)
+    assert activated["retired_services"] == ["dashboard-backend"]
+    assert "dashboard-backend" not in activated["service_revisions"]
+    assert "dashboard-backend" not in module.load_active_state(root)["service_revisions"]
+
+
+def test_target_inspect_uses_active_revision_and_ignores_non_target_host_change(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("prod")
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert module.main(["activate", *common]) == 0
+    activated = json.loads(capsys.readouterr().out)
+    values["DASHBOARD_SECRET_KEY"] = "unapplied-dashboard-change"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(["inspect-target", *common, "--service", "central-api"])
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+
+    assert inspected["drift"] is False
+    assert inspected["effective_environment_revision"] == activated[
+        "environment_revision"
+    ]
+    assert inspected["environment_revision"] != activated["environment_revision"]
+    assert inspected["changed_keys"] == []
+
+
+def test_target_inspect_unknown_host_key_affecting_all_services_fails_closed(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("prod")
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--root",
+        str(root),
+    ]
+    assert module.main(["activate", *common]) == 0
+    capsys.readouterr()
+    values["NEW_UNKNOWN_CONTROL_KEY"] = "candidate"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(["inspect-target", *common, "--service", "central-api"])
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+
+    assert inspected["drift"] is True
+    assert inspected["unknown_keys"] == ["NEW_UNKNOWN_CONTROL_KEY"]
+    assert inspected["affected_services"] == ["central-api"]
+
+
+def test_target_inspect_without_container_services_is_host_only(tmp_path, capsys):
+    module = _load_module()
+    values = _environment("test")
+    values.pop("SUPPORT_BOT_TOKEN")
+    env_file = tmp_path / "test.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(
+            [
+                "inspect-target",
+                "--environment",
+                "test",
+                "--env-file",
+                str(env_file),
+                "--contract",
+                str(CONTRACT_PATH),
+                "--root",
+                str(tmp_path / "state"),
+            ]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["status"] == "target-inspected"
+    assert inspected["drift"] is False
+    assert inspected["service_revisions"] == {}
+
+
+def test_target_inspect_skips_disabled_optional_target_without_active_projection(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("test")
+    values.pop("QQCC_BOT_TOKEN")
+    env_file = tmp_path / "test.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+
+    assert (
+        module.main(
+            [
+                "inspect-target",
+                "--environment",
+                "test",
+                "--env-file",
+                str(env_file),
+                "--contract",
+                str(CONTRACT_PATH),
+                "--root",
+                str(tmp_path / "state"),
+                "--service",
+                "qqcc-bot",
+            ]
+        )
+        == 0
+    )
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["drift"] is False
+    assert inspected["service_revisions"] == {}
+
+
 def test_scoped_activation_rejects_non_target_active_service_removal(
     tmp_path, capsys
 ):
