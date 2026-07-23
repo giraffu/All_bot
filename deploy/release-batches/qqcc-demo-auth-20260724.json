@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+  "batch": "qqcc-demo-auth-20260724",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-qqcc-demo-auth-20260724",
+  "members": [
+    {
+      "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+      "branch": "codex/a-fix-qqcc-demo-generation",
+      "head": "c2551b1d01f66eec6b94c890a659b34503fa688e",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
