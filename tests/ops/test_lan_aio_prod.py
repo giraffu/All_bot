@@ -360,9 +360,10 @@ def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     environment = compose["services"][slot.container_name]["environment"]
 
     assert environment["PIPELINE_ENABLED"] == "true"
-    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "2"
-    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "3"
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert environment["PIPELINE_PROFILE_POLICY"] == "bf16_lan_claim3_comfy2_delivery1"
     assert environment["PIPELINE_TASK_TYPES"] == (
         "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
     )

@@ -3,8 +3,10 @@ import asyncio
 import pytest
 
 from remote_workers.comfy_agent.pipeline_slots import (
+    BF16_LAN_PIPELINE_POLICY,
     PipelineAdmission,
     PipelineDeliveryGate,
+    resolve_pipeline_limits,
 )
 from remote_workers.comfy_agent.agent_runtime_types import TaskExecutionContext
 
@@ -15,6 +17,22 @@ def _execution(task_id: str, phase: str) -> TaskExecutionContext:
         task_type="pornmaster_flux2_edit_bf16",
         phase=phase,
     )
+
+
+def test_bf16_policy_enables_pipeline_only_for_compatible_worker_image():
+    assert resolve_pipeline_limits(
+        policy=BF16_LAN_PIPELINE_POLICY,
+        max_running_tasks=1,
+        max_claimed_tasks=2,
+        delivery_concurrency=1,
+    ) == (2, 3, 1)
+
+    assert resolve_pipeline_limits(
+        policy="",
+        max_running_tasks=1,
+        max_claimed_tasks=2,
+        delivery_concurrency=1,
+    ) == (1, 2, 1)
 
 
 def test_pipeline_admission_caps_claims_and_promotes_reserved_task():

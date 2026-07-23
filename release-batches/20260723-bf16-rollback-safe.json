@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+  "batch": "20260723-bf16-rollback-safe",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-bf16-rollback-safe",
+  "members": [
+    {
+      "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+      "branch": "codex/b-bf16-pipeline-rollback-safe",
+      "head": "834b866565b713f8333ac31606ec6f1063feb892",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
