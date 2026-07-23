@@ -48,7 +48,11 @@ from agent_workflow_execution import (
 from comfy_client import ComfyClient
 from dotenv import load_dotenv
 from minio import Minio  # type: ignore
-from pipeline_slots import PipelineAdmission, PipelineDeliveryGate
+from pipeline_slots import (
+    PipelineAdmission,
+    PipelineDeliveryGate,
+    resolve_pipeline_limits,
+)
 from PIL import Image, ImageOps, UnidentifiedImageError
 from scail2_face_swap_v10_pipeline import prepare_scail2_face_swap_v10_reference
 from workflow_patcher import WorkflowPatcher
@@ -190,22 +194,32 @@ PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
     "yes",
     "on",
 }
-PIPELINE_MAX_RUNNING_TASKS = max(
+_PIPELINE_MAX_RUNNING_TASKS = max(
     1,
     int(os.getenv("PIPELINE_MAX_RUNNING_TASKS", "2")),
 )
-PIPELINE_MAX_CLAIMED_TASKS = max(
-    PIPELINE_MAX_RUNNING_TASKS,
+_PIPELINE_MAX_CLAIMED_TASKS = max(
+    _PIPELINE_MAX_RUNNING_TASKS,
     int(
         os.getenv(
             "PIPELINE_MAX_CLAIMED_TASKS",
-            str(PIPELINE_MAX_RUNNING_TASKS + (1 if PREFETCH_RESERVE_TASK else 0)),
+            str(_PIPELINE_MAX_RUNNING_TASKS + (1 if PREFETCH_RESERVE_TASK else 0)),
         )
     ),
 )
-PIPELINE_DELIVERY_CONCURRENCY = max(
+_PIPELINE_DELIVERY_CONCURRENCY = max(
     1,
     int(os.getenv("PIPELINE_DELIVERY_CONCURRENCY", "1")),
+)
+(
+    PIPELINE_MAX_RUNNING_TASKS,
+    PIPELINE_MAX_CLAIMED_TASKS,
+    PIPELINE_DELIVERY_CONCURRENCY,
+) = resolve_pipeline_limits(
+    policy=os.getenv("PIPELINE_PROFILE_POLICY", ""),
+    max_running_tasks=_PIPELINE_MAX_RUNNING_TASKS,
+    max_claimed_tasks=_PIPELINE_MAX_CLAIMED_TASKS,
+    delivery_concurrency=_PIPELINE_DELIVERY_CONCURRENCY,
 )
 PIPELINE_TASK_TYPES = os.getenv("PIPELINE_TASK_TYPES", "all")
 CANCEL_LOCK_ON_POP = os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in {
