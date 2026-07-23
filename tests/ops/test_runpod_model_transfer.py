@@ -91,31 +91,6 @@ def test_batch_transfer_render_redacts_all_source_urls(tmp_path, monkeypatch):
     assert "exit 0" in body["dockerStartCmd"][2]
 
 
-def test_pornmaster_flux2_edit_batch_uses_cloud_model_prefix_and_token_secret(monkeypatch):
-    module = _load_module()
-    monkeypatch.setenv("RUNPOD_MODEL_ENDPOINT", "https://r2.example.test")
-
-    args = _args(pornmaster_flux2_edit=True)
-    items = module._load_transfer_items(args)
-    body = module._create_body(args, items)
-    redacted = module._redacted_body(body)
-    rendered = json.dumps(redacted, ensure_ascii=False)
-
-    assert len(items) == 3
-    assert body["env"]["RUNPOD_MODEL_TRANSFER_COUNT"] == "3"
-    assert body["env"]["CIVITAI_API_TOKEN"] == "{{ RUNPOD_SECRET_allbot_civitai_api_token }}"
-    assert items[0]["source_token_env"] == "CIVITAI_API_TOKEN"
-    assert items[0]["source_token_query_param"] == "token"
-    assert all(
-        item["key"].startswith("pornmaster_flux2_edit/2026-06-27/models/")
-        for item in items
-    )
-    assert "https://civitai.com/api/download/models/2973304" not in rendered
-    assert "huggingface.co" not in rendered
-    assert redacted["env"]["CIVITAI_API_TOKEN"] == "<redacted>"
-    assert rendered.count("<source-url>") >= 3
-
-
 def test_pornmaster_flux2_edit_bf16_batch_streams_exact_cloud_artifacts(monkeypatch):
     module = _load_module()
     monkeypatch.setenv("RUNPOD_MODEL_ENDPOINT", "https://r2.example.test")
@@ -253,7 +228,7 @@ def test_transfer_execute_requires_confirm_before_runpod_lookup(tmp_path, monkey
             str(MODULE_PATH),
             "--env-file",
             str(tmp_path / "missing.env"),
-            "--pornmaster-flux2-edit",
+            "--pornmaster-flux2-edit-bf16",
             "--execute",
         ],
         check=False,
