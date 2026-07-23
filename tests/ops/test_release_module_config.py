@@ -433,6 +433,138 @@ def test_scoped_config_apply_accepts_active_target_projection_change(
     assert '"services": [\n    "dashboard-backend"' in capsys.readouterr().out
 
 
+def test_scoped_config_apply_can_activate_one_staged_service_without_maintenance(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "a" * 64,
+        "service_revisions": {"qqcc-config-backend": "b" * 64},
+        "affected_services": [],
+        "unknown_keys": [],
+        "drift": False,
+    }
+    events = []
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: ({}, "a" * 64, inspected),
+    )
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda _args, _state, services: events.append(("compose", services)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_set_config_maintenance",
+        lambda *_args, **_kwargs: events.append(("maintenance",)),
+    )
+
+    assert (
+        module.main(
+            [
+                "config-apply",
+                "--env",
+                "prod",
+                "--module",
+                "qqcc-config",
+                "--activate-staged",
+                "--service",
+                "qqcc-config-backend",
+                "--confirm-prod",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    assert events == [("compose", {"qqcc-config-backend"})]
+    output = capsys.readouterr().out
+    assert '"status": "config-activated"' in output
+    assert '"maintenance": false' in output
+
+
+def test_scoped_staged_activation_rejects_service_outside_module(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: (
+            {},
+            "a" * 64,
+            {
+                "environment": "prod",
+                "environment_revision": "a" * 64,
+                "active_revision": "a" * 64,
+                "affected_services": [],
+                "unknown_keys": [],
+                "drift": False,
+            },
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="outside module closure"):
+        module.run_config_command(
+            module.build_parser().parse_args(
+                [
+                    "config-apply",
+                    "--env",
+                    "prod",
+                    "--module",
+                    "qqcc-config",
+                    "--activate-staged",
+                    "--service",
+                    "qqcc-bot",
+                    "--confirm-prod",
+                    "--execute",
+                ]
+            )
+        )
+
+
+def test_staged_service_activation_restores_projection_and_runtime_on_failure(
+    monkeypatch,
+):
+    module = _load_module()
+    events = []
+    snapshot = {
+        "environment_revision": "a" * 64,
+        "service_revisions": {"qqcc-config-backend": "b" * 64},
+    }
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            module.ReleaseError("compose failed")
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_rollback",
+        lambda _args, revision: events.append(("projection", revision)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_config_cloud",
+        lambda _args, services: events.append(("runtime", services)),
+    )
+
+    with pytest.raises(module.ReleaseError, match="compose failed"):
+        module._activate_staged_config_service(
+            SimpleNamespace(),
+            snapshot,
+            "qqcc-config-backend",
+        )
+
+    assert events == [
+        ("projection", "a" * 64),
+        ("runtime", {"qqcc-config-backend"}),
+    ]
+
+
 def test_scoped_config_apply_rejects_active_projection_change_outside_module(
     monkeypatch,
 ):
