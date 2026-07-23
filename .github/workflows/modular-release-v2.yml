@@ -153,6 +153,15 @@ jobs:
           set -euo pipefail
           git fetch --prune origin "$SOURCE_BRANCH"
           git merge-base --is-ancestor "$SOURCE_SHA" "origin/$SOURCE_BRANCH"
+      - name: Check out trusted release tooling
+        if: steps.source.outputs.validation_mode == 'full'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tooling
+          sparse-checkout: scripts/validate_upstream_ci_run.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Verify successful upstream test run
         if: steps.source.outputs.validation_mode == 'full'
         shell: bash
@@ -163,10 +172,11 @@ jobs:
           UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || inputs.upstream_run_id }}
         run: |
           set -euo pipefail
+          trap 'rm -rf -- .release-tooling' EXIT
           git fetch --prune origin "$SOURCE_BRANCH"
           main_sha="$(git rev-parse "origin/$SOURCE_BRANCH")"
           git merge-base --is-ancestor "$SOURCE_SHA" "$main_sha"
-          python scripts/validate_upstream_ci_run.py \
+          python .release-tooling/scripts/validate_upstream_ci_run.py \
             --repository "$GITHUB_REPOSITORY" \
             --run-id "$UPSTREAM_RUN_ID" \
             --expected-sha "$SOURCE_SHA" \
