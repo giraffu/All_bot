@@ -105,7 +105,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认清空阈值按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s`、autoscaler RunPod 最短生命周期 `1800s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容只在 `pending_count == 0` 时考虑，保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级清空阈值和 task duration 会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
-`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2`、`--profile ltx_video` 与 `--profile pornmaster_flux2_edit` 七条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
+`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video` 与 `pornmaster_flux2_edit_bf16`；旧 `pornmaster_flux2_edit` FP8 profile 已退役。真实创建或启用生产任务仍必须由用户明确确认并满足 RunPod 门禁。
 
 `prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`、`face_swap_v2` 指向 `face_swap_v2.json`；不得声明旧 `face_swap`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；生产 canary 会串行提交 `i2i_pro`、Web `txt2img` 与 `face_swap_v2` 三单，全部由 `runpod_prod_i2i_pro_manual_NN` 接单并出图后才可启用接正式队列。
 
@@ -113,7 +113,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `prod-worker --profile ltx_video` 使用 `runpod_prod_ltx_video_manual_NN` agent 和 `allbot-runpod-prod-ltx-video-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，`containerDiskInGb` 至少 `180`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<prod-tag>`，模型从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；云端 R2 该 manifest 当前为 10Eros v1.2-only，不包含旧 v1 正式回退。生产 profile 通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 默认指向三份 10Eros v1.2 workflow。旧无 `-v2` 包只保留为历史回滚来源，不允许登记新的 code/workflow revision。生产 canary 只提交一单 `ltx_video` 5s I2V，全部由 `runpod_prod_ltx_video_manual_NN` 接单并返回可播放 MP4 后，才可手动 enable 接正式高级图生视频订单。该 profile 不改变 LAN LTX AIO，也不覆盖老 `LTX 2.3 *.json` workflow。
 
-`prod-worker --profile pornmaster_flux2_edit` 使用 `runpod_prod_pornmaster_flux2_edit_manual_NN` agent 和 `allbot-runpod-prod-pornmaster-flux2-edit-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 4090,NVIDIA L40S,NVIDIA GeForce RTX 5090`，`containerDiskInGb` 至少 `120`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，镜像由 `.github/workflows/runpod_pornmaster_flux2_edit_profile_image.yml` 发布到 workflow-owned `ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:<prod-tag>`，模型从 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json` 同步。模型准备不得从本地上传大权重，优先用 `scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit` 在临时 RunPod 内从授权下载链接流式转存，再用 `scripts/publish_pornmaster_flux2_model_manifest.py` 发布 manifest。生产 canary 会串行提交 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit` 两单，全部由 `runpod_prod_pornmaster_flux2_edit_manual_NN` 接单并返回 image 后，才可手动 enable 接正式自由P图 v2 队列。Dashboard 可手动新增该 profile，也会通过 RunPod autoscaler 自动 add/down；默认估算为单任务 30 秒、清空阈值 30 分钟，可在 Dashboard 按实测调整。
+`prod-worker --profile pornmaster_flux2_edit`（FP8）已退役，Dashboard、autoscaler 和 CLI 均拒绝新建。当前只允许 `pornmaster_flux2_edit_bf16`，并同时声明单图与双图 BF16 内部类型。
 
 RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
 只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
@@ -361,28 +361,7 @@ scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
 
 `prod-worker canary --profile scail2` 会提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个正式内部任务。若要强制两单命中 RunPod，应先等待 SCAIL-2 pending 清空，临时 disable `lan_aio_prod_gpu002_gpu0_scail2_01`，canary 完成后再恢复 LAN agent；其它正式 worker 与其它 RunPod profile 不在本操作范围内。
 
-正式 PornMaster Flux2 RunPod 模型转存与创建验收：
-
-```bash
-python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test
-# 确认 request 中 source URL 已脱敏、bucket/prefix/sha256/size 正确后，按用户确认打开门禁执行
-RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true RUNPOD_MAX_PODS_TOTAL=1 \
-python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test --execute --confirm-model-transfer
-
-python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test
-python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test --execute
-
-RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT=ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:<prod-tag> \
-python scripts/gpu_pool_controller.py runpod prod-worker render --profile pornmaster_flux2_edit --slot 01
-
-RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
-scripts/runpod_prod_ops.sh add --profile pornmaster_flux2_edit --count 1 --execute
-
-scripts/runpod_prod_ops.sh canary --profile pornmaster_flux2_edit --slot 01 --execute
-scripts/runpod_prod_ops.sh enable --profile pornmaster_flux2_edit --slot 01 --execute
-```
-
-`prod-worker canary --profile pornmaster_flux2_edit` 会提交 single-edit 与 multi-edit 两个正式内部任务。若要强制两单命中 RunPod，应先等待自由P图 v2 pending 清空，并临时 disable 对应 LAN PornMaster AIO agent；canary 完成后再恢复 LAN agent 或按容量计划手动 enable RunPod。
+旧 PornMaster Flux2 FP8 的模型转存、manifest 发布、RunPod 创建与 canary 命令均已退役；禁止从历史文档恢复。BF16 使用独立 profile、模型 manifest 与发布清单。
 
 ### 4.3 Agent control 与 Worker 边界
 

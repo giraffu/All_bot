@@ -25,11 +25,8 @@ from .lan_aio_state import (
     assess_state_drift,
     catalog_sha256,
 )
-from .runtime import (
-    BF16_LAN_PIPELINE_POLICY,
-    RuntimePlanner,
-    RuntimeRenderOverrides,
-)
+from .pipeline_policy import pipeline_policy_for_profile
+from .runtime import RuntimePlanner, RuntimeRenderOverrides
 from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
 
@@ -1740,10 +1737,11 @@ class LanAioProdOps:
         slot: LanAioProdSlot,
         container: str,
     ) -> str:
-        if slot.target_profile_id != "pornmaster_flux2_edit_bf16":
+        policy = pipeline_policy_for_profile(slot.target_profile_id)
+        if not policy:
             return ":"
         expected = (
-            f"PIPELINE_PROFILE_POLICY={BF16_LAN_PIPELINE_POLICY}",
+            f"PIPELINE_PROFILE_POLICY={policy}",
             "PIPELINE_MAX_RUNNING_TASKS=1",
             "PIPELINE_MAX_CLAIMED_TASKS=2",
             "PIPELINE_DELIVERY_CONCURRENCY=1",

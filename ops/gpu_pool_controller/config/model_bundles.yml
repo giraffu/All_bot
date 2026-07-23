@@ -107,28 +107,6 @@ bundles:
     notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap_v2 via face_swap_v2.json.
     files: []
 
-  pornmaster_flux2_edit_baseline:
-    version: 2026-06-27
-    profiles:
-      - pornmaster_flux2_edit
-    source:
-      node_id: local-model-downloads
-      comfy_id: local-registry
-      model_dir: /srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-06-27
-      discovered_size_gb: 17.5
-      import_status: cached
-      notes: Cached local registry bundle for the PornMaster Flux2 9B Turbo single/multiple automatic image-editing workflows. qwen_3_8b_fp8mixed is reused from i2i_pro_baseline, full_encoder_small_decoder is downloaded locally, and the PornMaster 9B fp8 UNET is imported from the authorized local download without recording the token.
-    files:
-      - relative_path: diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors
-        sha256: e90eeb50140a10806341b7521c340214c6f76cec2f8f8dae7a443c5806072df7
-        size_bytes: 9433104872
-      - relative_path: text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors
-        sha256: abad16806e0cbabc54e0325d6565847443fe396d5f0be38bb3cd3fe75a1201d6
-        size_bytes: 8664848742
-      - relative_path: vae/flux2/full_encoder_small_decoder.safetensors
-        sha256: ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62
-        size_bytes: 249519092
-
   pornmaster_flux2_edit_bf16_baseline:
     version: 2026-07-12
     profiles:

@@ -402,62 +402,6 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
     )
 
 
-async def test_autoscaler_scales_pornmaster_flux2_edit_profile():
-    calls = []
-
-    async def start_add(**kwargs):
-        calls.append(kwargs)
-        return RunPodAdminOperation(
-            id="op-add-pornmaster",
-            action="add",
-            profile=kwargs["profile"],
-            command=["runpod", "add"],
-            source="autoscaler",
-            trigger_reason=kwargs["trigger_reason"],
-        )
-
-    payload = await evaluate_runpod_autoscaler_once(
-        mutate=True,
-        config=_config(),
-        store=InMemoryRunPodAutoscalerStateStore(),
-        status_payload=_status(
-            profile="pornmaster_flux2_edit",
-            pending=61,
-            wait=1800,
-            pending_count_by_task_type={
-                "pornmaster_flux2_single_edit": 30,
-                "pornmaster_flux2_multi_edit": 31,
-            },
-        ),
-        workers_payload=_workers(
-            _local_worker(
-                "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
-            )
-        ),
-        operations_payload={"operations": []},
-        start_add_func=start_add,
-        now_func=lambda: 1000.0,
-    )
-
-    decisions = {item["profile"]: item for item in payload["decisions"]}
-    decision = decisions["pornmaster_flux2_edit"]
-    assert payload["config"]["scale_up_wait_seconds_by_profile"][
-        "pornmaster_flux2_edit"
-    ] == 30 * 60
-    assert payload["config"]["task_duration_seconds_by_type"][
-        "pornmaster_flux2_single_edit"
-    ] == 30
-    assert payload["config"]["task_duration_seconds_by_type"][
-        "pornmaster_flux2_multi_edit"
-    ] == 30
-    assert decision["action"] == "scale_up"
-    assert decision["estimated_pending_work_seconds"] == 1830
-    assert decision["estimated_non_low_trust_pending_work_seconds"] == 1830
-    assert decision["estimated_total_pending_work_seconds"] == 1830
-    assert decision["estimated_clear_time_seconds"] == 1830
-    assert calls[0]["profile"] == "pornmaster_flux2_edit"
-
-
 async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
     calls = []
 
@@ -506,50 +450,6 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
     assert decision["action"] == "scale_up"
     assert decision["estimated_clear_time_seconds"] == 1830
     assert calls[0]["profile"] == "pornmaster_flux2_edit_bf16"
-
-
-async def test_autoscaler_uses_non_low_trust_clear_prefix_instead_of_total_pending():
-    calls = []
-
-    async def start_add(**kwargs):
-        calls.append(kwargs)
-        raise AssertionError("should not start add")
-
-    payload = await evaluate_runpod_autoscaler_once(
-        mutate=True,
-        config=_config(),
-        store=InMemoryRunPodAutoscalerStateStore(),
-        status_payload=_status(
-            profile="pornmaster_flux2_edit",
-            pending=100,
-            wait=2400,
-            pending_count_by_task_type={
-                "pornmaster_flux2_single_edit": 50,
-                "pornmaster_flux2_multi_edit": 50,
-            },
-            non_low_trust_clear_pending_count_by_task_type={
-                "pornmaster_flux2_single_edit": 1,
-            },
-        ),
-        workers_payload=_workers(
-            _local_worker(
-                "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
-            )
-        ),
-        operations_payload={"operations": []},
-        start_add_func=start_add,
-        now_func=lambda: 1000.0,
-    )
-
-    decision = {item["profile"]: item for item in payload["decisions"]}[
-        "pornmaster_flux2_edit"
-    ]
-    assert decision["action"] == "hold"
-    assert decision["reason"] == "hold: estimated non-low-trust clear time within threshold"
-    assert decision["estimated_total_pending_work_seconds"] == 3000
-    assert decision["estimated_non_low_trust_pending_work_seconds"] == 30
-    assert decision["estimated_clear_time_seconds"] == 30
-    assert calls == []
 
 
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
@@ -779,63 +781,6 @@ def test_prod_worker_render_ltx_video_uses_v12_profile_defaults():
     assert provider.delete_calls == 0
 
 
-def test_prod_worker_render_pornmaster_flux2_edit_uses_profile_defaults():
-    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit")
-    provider = FakeRunPodProvider(
-        _settings(
-            prod_agent_id=agent_id,
-            image_name_pornmaster_flux2_edit=PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
-            model_bucket="allbot-model-cache",
-            model_prefix_pornmaster_flux2_edit=RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
-            model_manifest_key_pornmaster_flux2_edit=(
-                RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
-            ),
-        )
-    )
-    options = RunPodProdWorkerOptions(
-        action="render",
-        profile="pornmaster_flux2_edit",
-        task_type="pornmaster_flux2_edit",
-        agent_id=agent_id,
-        quiet=True,
-    )
-
-    payload = RunPodProdWorkerRunner(provider, options).run()
-
-    assert payload["ok"] is True
-    assert payload["profile"] == "pornmaster_flux2_edit"
-    assert (
-        payload["render"]["pod_name"]
-        == "allbot-runpod-prod-pornmaster-flux2-edit-manual-01"
-    )
-    assert payload["render"]["imageName"] == PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE
-    assert (
-        payload["render"]["agent_id"]
-        == "runpod_prod_pornmaster_flux2_edit_manual_01"
-    )
-    assert payload["render"]["supported_task_types"] == ",".join(
-        RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
-    )
-    assert payload["render"]["pool_runtime_profile"] == "pornmaster_flux2_edit"
-    assert (
-        payload["render"]["model_prefix"]
-        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
-    )
-    assert (
-        payload["render"]["model_manifest_key"]
-        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
-    )
-    assert (
-        payload["render"]["container_disk_gb"]
-        == RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
-    )
-    assert payload["render"]["buckets"]["result"] == "user-data-prod"
-    assert payload["render"]["custom_nodes_enabled"] == "false"
-    assert payload["render"]["sshd_enabled"] == "false"
-    assert provider.create_calls == 0
-    assert provider.delete_calls == 0
-
-
 def test_prod_worker_render_pornmaster_flux2_edit_bf16_isolated_on_4090():
     agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
     provider = FakeRunPodProvider(
@@ -888,7 +833,7 @@ def test_prod_worker_render_accepts_release_pinned_pornmaster_digest():
         + "c" * 64
     )
 
-    for profile in ("pornmaster_flux2_edit", "pornmaster_flux2_edit_bf16"):
+    for profile in ("pornmaster_flux2_edit_bf16",):
         agent_id = prod_agent_id_from_slot("01", profile=profile)
         provider = RunPodProvider(
             _settings(
@@ -1007,45 +952,6 @@ def test_prod_worker_scail2_canary_cases_use_reference_then_motion_video():
         assert inputs["resolution"] == "512x896"
         assert payload["prompt"] == "prod scail2 prompt"
         assert payload["negative_prompt"] == "prod scail2 negative"
-
-
-def test_prod_worker_pornmaster_flux2_canary_cases_cover_single_and_multi_edit():
-    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit")
-    provider = FakeRunPodProvider(_settings(prod_agent_id=agent_id))
-    options = RunPodProdWorkerOptions(
-        action="canary",
-        profile="pornmaster_flux2_edit",
-        task_type="pornmaster_flux2_edit",
-        agent_id=agent_id,
-        prompt="prod pornmaster prompt",
-        negative_prompt="prod pornmaster negative",
-        quiet=True,
-    )
-    runner = RunPodProdWorkerRunner(provider, options)
-
-    cases = runner._pornmaster_flux2_edit_task_cases(
-        "user-data-prod/web_uploads/3/reference.png"
-    )
-
-    assert [case["expected_central_task_type"] for case in cases] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-    ]
-    assert [case["result_kind"] for case in cases] == ["image", "image"]
-    single_inputs = cases[0]["payload"]["inputs"]
-    multi_inputs = cases[1]["payload"]["inputs"]
-    assert single_inputs["images"] == ["user-data-prod/web_uploads/3/reference.png"]
-    assert single_inputs["image"] == "user-data-prod/web_uploads/3/reference.png"
-    assert multi_inputs["images"] == [
-        "user-data-prod/web_uploads/3/reference.png",
-        "user-data-prod/web_uploads/3/reference.png",
-    ]
-    assert multi_inputs["image2"] == "user-data-prod/web_uploads/3/reference.png"
-    for case in cases:
-        payload = case["payload"]
-        assert payload["prompt"] == "prod pornmaster prompt"
-        assert payload["negative_prompt"] == "prod pornmaster negative"
-        assert payload["priority"] == 0
 
 
 def test_prod_worker_scail2_canary_input_keys_are_stringified():
@@ -1442,11 +1348,6 @@ def test_prod_worker_down_deletes_existing_slots_without_create_render_config():
         ("wan22_video_v2", "wan22_video_v2", {}),
         ("i2i_pro", "i2i_pro", {"image_name_i2i_pro": ""}),
         ("scail2", "scail2", {"image_name_scail2": ""}),
-        (
-            "pornmaster_flux2_edit",
-            "pornmaster_flux2_edit",
-            {"image_name_pornmaster_flux2_edit": ""},
-        ),
     ]
     for profile, task_type, setting_overrides in cases:
         agent_id = prod_agent_id_from_slot("01", profile=profile)
@@ -1917,34 +1818,6 @@ def test_prod_worker_selection_ltx_video_profile_uses_dedicated_agent_env(
     assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
 
 
-def test_prod_worker_selection_pornmaster_flux2_profile_uses_dedicated_agent_env(
-    monkeypatch,
-):
-    monkeypatch.setenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
-    args = build_parser().parse_args(
-        [
-            "runpod",
-            "prod-worker",
-            "status",
-            "--profile",
-            "pornmaster_flux2_edit",
-            "--slot",
-            "02",
-        ]
-    )
-
-    selection = apply_prod_worker_selection_to_env(args)
-
-    assert selection["profile"] == "pornmaster_flux2_edit"
-    assert selection["slot"] == "02"
-    assert selection["agent_id"] == "runpod_prod_pornmaster_flux2_edit_manual_02"
-    assert (
-        selection["pod_name"]
-        == "allbot-runpod-prod-pornmaster-flux2-edit-manual-02"
-    )
-    assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
-
-
 def test_cli_parses_runpod_prod_worker_up_command():
     args = build_parser().parse_args(
         [
@@ -2105,25 +1978,20 @@ def test_cli_parses_runpod_prod_worker_ltx_video_profile_command():
     assert args.quiet is True
 
 
-def test_cli_parses_runpod_prod_worker_pornmaster_flux2_profile_command():
-    args = build_parser().parse_args(
-        [
-            "runpod",
-            "prod-worker",
-            "render",
-            "--profile",
-            "pornmaster_flux2_edit",
-            "--slot",
-            "01",
-            "--quiet",
-        ]
-    )
-
-    assert args.runpod_command == "prod-worker"
-    assert args.prod_worker_command == "render"
-    assert args.profile == "pornmaster_flux2_edit"
-    assert args.slot == "01"
-    assert args.quiet is True
+def test_cli_rejects_retired_runpod_pornmaster_flux2_fp8_profile():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            [
+                "runpod",
+                "prod-worker",
+                "render",
+                "--profile",
+                "pornmaster_flux2_edit",
+                "--slot",
+                "01",
+                "--quiet",
+            ]
+        )
 
 
 def test_cli_parses_runpod_prod_worker_pornmaster_flux2_bf16_profile_command():
