@@ -3066,6 +3066,17 @@ registries = list(data.get("insecure-registries") or [])
 if "192.168.1.115:5000" not in registries:
     registries.append("192.168.1.115:5000")
 data["insecure-registries"] = sorted(registries)
+proxies = dict(data.get("proxies") or {})
+no_proxy = [
+    entry.strip()
+    for entry in str(proxies.get("no-proxy") or "").split(",")
+    if entry.strip()
+]
+for entry in ("192.168.1.115", "192.168.1.115:5000"):
+    if entry not in no_proxy:
+        no_proxy.append(entry)
+proxies["no-proxy"] = ",".join(no_proxy)
+data["proxies"] = proxies
 print(json.dumps(data, indent=2, sort_keys=True))
 PY
 sudo_cmd install -m 0644 /tmp/allbot-daemon.json /etc/docker/daemon.json
