@@ -4727,7 +4727,7 @@ umask 077
 web_container="$(docker ps -q --filter label=com.docker.compose.project={shlex.quote(environment['project'])} --filter label=com.docker.compose.service=web-api)"
 test "$(printf '%s\n' "$web_container" | sed '/^$/d' | wc -l)" = 1
 database_url="$(docker exec "$web_container" sh -lc 'printf %s "$DATABASE_URL"')"
-docker run --rm -e DATABASE_URL="$database_url" {shlex.quote(PG_DUMP_IMAGE)} sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; url="$(printf %s "$url" | sed "s/\\([?&]\\)ssl=/\\1sslmode=/")"; exec pg_dump "$url"' | gzip -c > "$backup_file"
+docker run --rm --network "container:$web_container" -e DATABASE_URL="$database_url" {shlex.quote(PG_DUMP_IMAGE)} sh -lc 'case "$DATABASE_URL" in postgresql+asyncpg:*) url="postgresql:${{DATABASE_URL#postgresql+asyncpg:}}";; postgresql:*) url="$DATABASE_URL";; *) exit 2;; esac; url="$(printf %s "$url" | sed "s/\\([?&]\\)ssl=/\\1sslmode=/")"; exec pg_dump "$url"' | gzip -c > "$backup_file"
 test -s "$backup_file"
 heads="$({compose} run --rm -T web-api alembic heads </dev/null | grep -c ' (head)$')"
 test "$heads" = 1
