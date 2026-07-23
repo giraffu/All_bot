@@ -3,7 +3,8 @@ import asyncio
 import pytest
 
 from remote_workers.comfy_agent.pipeline_slots import (
-    BF16_LAN_PIPELINE_POLICY,
+    FAST_IMAGE_PIPELINE_POLICY,
+    MEDIA_PIPELINE_POLICY,
     PipelineAdmission,
     PipelineDeliveryGate,
     resolve_pipeline_limits,
@@ -19,13 +20,20 @@ def _execution(task_id: str, phase: str) -> TaskExecutionContext:
     )
 
 
-def test_bf16_policy_enables_pipeline_only_for_compatible_worker_image():
+def test_profile_policies_resolve_bounded_image_and_media_limits():
     assert resolve_pipeline_limits(
-        policy=BF16_LAN_PIPELINE_POLICY,
+        policy=FAST_IMAGE_PIPELINE_POLICY,
         max_running_tasks=1,
         max_claimed_tasks=2,
         delivery_concurrency=1,
     ) == (2, 3, 1)
+
+    assert resolve_pipeline_limits(
+        policy=MEDIA_PIPELINE_POLICY,
+        max_running_tasks=1,
+        max_claimed_tasks=2,
+        delivery_concurrency=1,
+    ) == (1, 2, 1)
 
     assert resolve_pipeline_limits(
         policy="",

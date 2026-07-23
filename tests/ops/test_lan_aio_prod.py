@@ -345,7 +345,7 @@ def test_all_active_lan_aio_workers_reserve_and_prefetch_one_task(slot_id):
     assert environment["PREFETCH_CONSUME_WAIT_SECONDS"] == "10"
 
 
-def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
+def test_fast_image_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -363,13 +363,16 @@ def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
-    assert environment["PIPELINE_PROFILE_POLICY"] == "bf16_lan_claim3_comfy2_delivery1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
     assert environment["PIPELINE_TASK_TYPES"] == (
         "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
     )
 
 
-def test_non_bf16_lan_aio_keeps_single_compute_slot():
+def test_i2i_lan_aio_uses_fast_image_pipeline_policy():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -386,6 +389,10 @@ def test_non_bf16_lan_aio_keeps_single_compute_slot():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
 
 
 def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():

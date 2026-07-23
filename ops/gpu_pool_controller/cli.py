@@ -897,7 +897,6 @@ def build_parser() -> argparse.ArgumentParser:
             "i2i_pro",
             "scail2",
             "ltx_video",
-            "pornmaster_flux2_edit",
             "pornmaster_flux2_edit_bf16",
         ),
         default=None,
