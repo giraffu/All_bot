@@ -1402,7 +1402,7 @@ class ComfyAgent:
         return False
 
     def _pipeline_enabled_for_task_type(self, task_type: str) -> bool:
-        if not PIPELINE_ENABLED or PIPELINE_MAX_RUNNING_TASKS <= 1:
+        if not PIPELINE_ENABLED or PIPELINE_MAX_CLAIMED_TASKS <= 1:
             return False
         if "all" in self._pipeline_task_types:
             return True

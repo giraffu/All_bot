@@ -13,7 +13,11 @@ POST_COMFY_PHASES = frozenset(
     }
 )
 
-BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
+FAST_IMAGE_PIPELINE_POLICY = "image_claim3_comfy2_delivery1_v1"
+MEDIA_PIPELINE_POLICY = "media_claim2_comfy1_delivery1_v1"
+LEGACY_BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
+# Import compatibility for tests and older code that named the pilot policy.
+BF16_LAN_PIPELINE_POLICY = LEGACY_BF16_LAN_PIPELINE_POLICY
 
 
 def resolve_pipeline_limits(
@@ -23,8 +27,14 @@ def resolve_pipeline_limits(
     max_claimed_tasks: int,
     delivery_concurrency: int,
 ) -> tuple[int, int, int]:
-    if policy.strip() == BF16_LAN_PIPELINE_POLICY:
+    normalized_policy = policy.strip()
+    if normalized_policy in {
+        FAST_IMAGE_PIPELINE_POLICY,
+        LEGACY_BF16_LAN_PIPELINE_POLICY,
+    }:
         return 2, 3, 1
+    if normalized_policy == MEDIA_PIPELINE_POLICY:
+        return 1, 2, 1
     normalized_running = max(1, int(max_running_tasks))
     return (
         normalized_running,

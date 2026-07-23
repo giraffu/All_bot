@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config_loader import ControllerConfig
+from .pipeline_policy import pipeline_environment_for_profile
 from .runpod_profile_catalog import (
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
@@ -58,12 +59,6 @@ LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
 LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "scail2": LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
-}
-BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
-LAN_AIO_PIPELINE_ENV_BY_PROFILE = {
-    "pornmaster_flux2_edit_bf16": {
-        "PIPELINE_PROFILE_POLICY": BF16_LAN_PIPELINE_POLICY,
-    },
 }
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
@@ -437,7 +432,7 @@ class RuntimePlanner:
         extra_environment = LAN_AIO_EXTRA_ENV_BY_PROFILE.get(
             profile.runtime_profile, {}
         )
-        pipeline_environment = LAN_AIO_PIPELINE_ENV_BY_PROFILE.get(profile.id, {})
+        pipeline_environment = pipeline_environment_for_profile(profile.id)
         comfyui_dir = str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
         model_target_dir = f"{comfyui_dir.rstrip('/')}/models"
         if model_workspace_host_dir != workspace_host_dir:

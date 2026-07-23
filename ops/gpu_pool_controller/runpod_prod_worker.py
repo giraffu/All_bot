@@ -2759,7 +2759,7 @@ def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
             "i2i_pro",
             "scail2",
             "ltx_video",
-            "pornmaster_flux2_edit",
+            "pornmaster_flux2_edit_bf16",
         )
     return (normalize_prod_worker_profile(profile),)
 

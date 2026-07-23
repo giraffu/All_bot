@@ -237,13 +237,16 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
     assert catalog["pornmaster_flux2_edit_bf16"]["profile"][
         "model_manifest_key"
     ] == "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
-    assert catalog["pornmaster_flux2_edit"]["profile"]["task_types"] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
+    assert "pornmaster_flux2_edit" not in catalog
+    assert catalog["pornmaster_flux2_edit_bf16"]["profile"]["task_types"] == [
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert catalog["scail2"]["profile"]["task_types"] == [
         "scail2_action_transfer",
+        "scail2_action_transfer_long",
         "scail2_video_replacement",
+        "scail2_face_swap_v2",
     ]
     assert catalog["ltx_video"]["profile"]["task_types"] == [
         "ltx_video",

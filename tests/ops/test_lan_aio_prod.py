@@ -136,17 +136,14 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-252-gpu1-wan22_video_v2"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu1-wan22_video_v2"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "maintenance_disabled"
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].host_port == 8191
-    assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_preflight_required is False
-    )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-        "character_reference_build",
+    assert "gpu-252-gpu1-pornmaster_flux2_edit" not in slots
+    assert slots["gpu-252-gpu1-img2img_lora"].enabled is True
+    assert slots["gpu-252-gpu1-img2img_lora"].phase == "catalog_ready"
+    assert slots["gpu-252-gpu1-img2img_lora"].retargetable is True
+    assert slots["gpu-252-gpu1-img2img_lora"].host_port == 8191
+    assert slots["gpu-252-gpu1-img2img_lora"].target_task_types == (
+        "img2img",
+        "img2img_lora",
     )
     assert slots["gpu-252-gpu1-ltx_t2v"].enabled is False
     assert slots["gpu-252-gpu1-ltx_t2v"].phase == "maintenance_disabled"
@@ -154,13 +151,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         "ltx_t2v",
         "ltx_t2v_ic",
     )
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].phase == "maintenance_disabled"
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-        "character_reference_build",
-    )
+    assert "gpu-252-gpu0-pornmaster_flux2_edit" not in slots
     assert slots["gpu-252-gpu0-ltx_t2v"].enabled is False
     assert slots["gpu-252-gpu0-ltx_t2v"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu0-ltx_t2v"].retargetable is False
@@ -174,7 +165,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
     )
     assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
+        slots["gpu-252-gpu1-img2img_lora"].gpu_device_id
         == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     )
     assert slots["gpu-226-gpu0-image_to_video"].enabled is True
@@ -188,9 +179,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-002-gpu1-image_to_video"].enabled is True
     assert slots["gpu-002-gpu1-image_to_video"].phase == "catalog_ready"
     assert slots["gpu-002-gpu1-image_to_video"].retargetable is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == "catalog_ready"
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].retargetable is True
+    assert "gpu-002-gpu1-pornmaster_flux2_edit" not in slots
     assert slots["gpu-177-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-177-gpu1-wan22_video_v2"].phase == "blocked_oom_32gb"
     assert slots["gpu-177-gpu1-wan22_video_v2"].retargetable is False
@@ -254,17 +243,17 @@ def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
     rendered = ops.render_compose(slot)
 
     assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
     assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
     assert (
-        "SUPPORTED_TASK_TYPES: pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+        "SUPPORTED_TASK_TYPES: img2img,img2img_lora"
     ) in rendered
-    assert "POOL_RUNTIME_PROFILE: pornmaster_flux2_edit" in rendered
-    assert "host_port: 8192" in rendered
+    assert "POOL_RUNTIME_PROFILE: img2img_lora" in rendered
+    assert "host_port: 8191" in rendered
     assert "--disable-dynamic-vram" not in rendered
     assert "cloud-test" not in rendered
     assert "user-data-test" not in rendered
@@ -345,7 +334,7 @@ def test_all_active_lan_aio_workers_reserve_and_prefetch_one_task(slot_id):
     assert environment["PREFETCH_CONSUME_WAIT_SECONDS"] == "10"
 
 
-def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
+def test_fast_image_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -363,13 +352,16 @@ def test_bf16_lan_aio_uses_bounded_compute_and_delivery_pipeline():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
-    assert environment["PIPELINE_PROFILE_POLICY"] == "bf16_lan_claim3_comfy2_delivery1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
     assert environment["PIPELINE_TASK_TYPES"] == (
         "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
     )
 
 
-def test_non_bf16_lan_aio_keeps_single_compute_slot():
+def test_i2i_lan_aio_uses_fast_image_pipeline_policy():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -386,6 +378,10 @@ def test_non_bf16_lan_aio_keeps_single_compute_slot():
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
     assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
 
 
 def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
@@ -395,13 +391,13 @@ def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
 
     payload = ops.dry_run_action("stop-old", [slot])
 
     assert payload["operations"] == [
-        "set lan_aio_prod_gpu252_gpu0_i2i_pro_01=disabled",
-        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod",
+        "set lan_aio_prod_gpu252_gpu1_i2i_pro_01=disabled",
+        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod",
     ]
 
 
@@ -858,7 +854,7 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
 def test_lan_aio_prod_compose_assertion_rejects_test_storage():
     config = load_controller_config()
     slot = load_lan_aio_prod_slots(include_disabled=True)[
-        "gpu-252-gpu0-pornmaster_flux2_edit"
+        "gpu-252-gpu0-img2img_lora"
     ]
     rendered = RuntimePlanner(config).render_compose(
         slot.assignment_id,
@@ -1330,7 +1326,7 @@ def test_bf16_release_and_rollback_verify_versioned_pipeline_contract():
 
     assert len(ops.commands) == 2
     for command in ops.commands:
-        assert "PIPELINE_PROFILE_POLICY=bf16_lan_claim3_comfy2_delivery1" in command
+        assert "PIPELINE_PROFILE_POLICY=image_claim3_comfy2_delivery1_v1" in command
         assert "PIPELINE_MAX_RUNNING_TASKS=1" in command
         assert "PIPELINE_MAX_CLAIMED_TASKS=2" in command
         assert "PIPELINE_DELIVERY_CONCURRENCY=1" in command
@@ -1443,7 +1439,7 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
             ]
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     payload = ops.preflight_payload([slot], execute=True)
 
@@ -1455,7 +1451,7 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
     assert port_check["ok"] is False
     assert port_check["allowed_containers"] == [
         "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod",
-        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod",
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
     ]
     assert port_check["unexpected_owners"] == [
         {
@@ -1488,7 +1484,7 @@ def test_lan_aio_status_lists_unexpected_host_port_owner():
             ]
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     lines = ops._remote_container_status(slot)
 
@@ -1560,7 +1556,7 @@ def test_lan_aio_start_disabled_refuses_lingering_host_port_owner():
             raise AssertionError("compose must not run while host port is occupied")
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     with pytest.raises(RuntimeError, match="host port 8191.*image_to_video-prod"):
         ops.start_disabled([slot])
@@ -1669,7 +1665,7 @@ def test_lan_aio_takeover_rolls_back_after_stop_old_failure_window():
             return {"ok": True, "recovery_status": "succeeded"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
 
     with pytest.raises(RuntimeError, match="recovery_status=succeeded"):
         ops.takeover([slot])
@@ -1841,7 +1837,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
             self.marker = marker
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
 
     result = ops.warm_cache([slot])
 
@@ -1862,7 +1858,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert "--publish" not in docker_run_line
     assert "AGENT_ID" not in docker_run_line
     assert ops.marker is not None
-    assert ops.marker["profile"] == "pornmaster_flux2_edit"
+    assert ops.marker["profile"] == "img2img_lora"
     assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
 
 
@@ -2034,13 +2030,13 @@ def test_lan_aio_takeover_runs_single_slot_sequence():
             return {"ok": True, "action": "enable-aio"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     result = ops.takeover([slot])
 
     assert result["ok"] is True
     assert result["action"] == "takeover"
-    assert result["slot"] == "gpu-002-gpu1-pornmaster_flux2_edit"
+    assert result["slot"] == "gpu-002-gpu1-image_to_video"
     assert [step["action"] for step in result["steps"]] == [
         "preflight",
         "pull-image",
@@ -2202,7 +2198,7 @@ def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
             return {"ok": True, "action": "pull-image"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     with pytest.raises(RuntimeError, match="preflight failed"):
         ops.takeover([slot])
@@ -2277,19 +2273,19 @@ def test_lan_aio_takeover_dry_run_shows_full_sequence():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     payload = ops.dry_run_action("takeover", [slot])
 
     assert payload["operations"][:8] == [
-        "run preflight for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run pull-image for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run warm-cache for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run drain-legacy for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run wait-idle for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run stop-old for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run start-disabled for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run enable-aio for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run preflight for gpu-002-gpu1-image_to_video",
+        "run pull-image for gpu-002-gpu1-image_to_video",
+        "run warm-cache for gpu-002-gpu1-image_to_video",
+        "run drain-legacy for gpu-002-gpu1-image_to_video",
+        "run wait-idle for gpu-002-gpu1-image_to_video",
+        "run stop-old for gpu-002-gpu1-image_to_video",
+        "run start-disabled for gpu-002-gpu1-image_to_video",
+        "run enable-aio for gpu-002-gpu1-image_to_video",
     ]
 
 
