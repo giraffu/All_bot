@@ -4704,6 +4704,60 @@ def test_support_platform_policy_pins_character_migration_as_non_target(monkeypa
     assert reviewed == {path}
 
 
+def test_support_platform_allows_reviewed_additive_and_non_target_migrations_together(
+    monkeypatch,
+):
+    module = _load_module()
+    additive_path = "migrations/versions/support_category.py"
+    non_target_path = "migrations/versions/character_references.py"
+    contents = {
+        additive_path: "reviewed additive migration\n",
+        non_target_path: "reviewed non-target migration\n",
+    }
+    policy = {
+        "independent_additive_migration_snapshots": {
+            "support-platform": {
+                additive_path: hashlib.sha256(
+                    contents[additive_path].encode()
+                ).hexdigest(),
+            }
+        },
+        "independent_non_target_migration_snapshots": {
+            "support-platform": {
+                non_target_path: hashlib.sha256(
+                    contents[non_target_path].encode()
+                ).hexdigest(),
+            }
+        },
+        "independent_release_blockers": [
+            {
+                "name": "database-migrations",
+                "patterns": ["migrations/**", "alembic.ini"],
+            }
+        ],
+    }
+    selection = module.IndependentModuleRelease(
+        name="support-platform",
+        artifacts={"dashboard-backend", "dashboard-frontend", "support-bot"},
+        previous_sha="b" * 40,
+    )
+
+    def fake_run(command, **_kwargs):
+        path = command[-1].split(":", 1)[1]
+        return subprocess.CompletedProcess(
+            command, 0, stdout=contents[path], stderr=""
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    module.validate_independent_release_paths(
+        policy,
+        selection,
+        [additive_path, non_target_path],
+        target_sha=FULL_SHA,
+    )
+
+
 def test_support_platform_accepts_first_release_of_support_bot():
     module = _load_module()
     policy = {

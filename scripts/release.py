@@ -611,15 +611,13 @@ def validate_independent_release_paths(
                 matches,
                 target_sha=target_sha,
             )
-            if non_target == set(matches):
-                continue
             reviewed = reviewed_additive_migration_paths(
                 policy,
                 selection,
                 matches,
                 target_sha=target_sha,
             )
-            if reviewed == set(matches):
+            if non_target | reviewed == set(matches):
                 continue
         if (
             matches
@@ -708,15 +706,16 @@ def _reviewed_independent_migration_paths(
             ):
                 raise ReleaseError(error_label)
             snapshots[path] = str(expected)
-    if not migration_paths <= set(snapshots):
+    reviewed_paths = migration_paths.intersection(snapshots)
+    if not reviewed_paths:
         return set()
-    for path in migration_paths:
+    for path in reviewed_paths:
         result = _run(["git", "show", f"{target_sha}:{path}"], check=False)
         if result.returncode != 0:
             return set()
         if hashlib.sha256(result.stdout.encode()).hexdigest() != snapshots[path]:
             return set()
-    return migration_paths
+    return reviewed_paths
 
 
 def independent_contract_snapshot_matches(
