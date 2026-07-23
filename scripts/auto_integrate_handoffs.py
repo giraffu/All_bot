@@ -32,6 +32,7 @@ DEFAULT_QUEUE_ROOT = (
     / "ai-integration-queue"
 )
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+PLAN_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 BRANCH_RE = re.compile(r"^codex/([a-h])-([a-z0-9]+(?:-[a-z0-9]+)*)$")
 
 
@@ -222,15 +223,20 @@ class IntegrationQueue:
         return batch
 
 
-def test_deployment_commands(checkout: Path, sha: str) -> list[list[str]]:
+def test_deployment_commands(
+    checkout: Path, sha: str, plan_token: str | None = None
+) -> list[list[str]]:
     if not FULL_SHA_RE.fullmatch(sha):
         raise IntegrationQueueError("test deployment requires an exact main SHA")
     release = str(checkout / "scripts" / "release.py")
     common = ["--env", "test", "--track", "control-plane", "--sha", sha]
-    return [
-        ["python", release, "plan", *common],
-        ["python", release, "deploy", *common, "--execute"],
-    ]
+    deploy = ["python", release, "deploy", *common]
+    if plan_token is not None:
+        if not PLAN_TOKEN_RE.fullmatch(plan_token):
+            raise IntegrationQueueError("test deployment plan token is invalid")
+        deploy.extend(["--plan-token", plan_token])
+    deploy.append("--execute")
+    return [["python", release, "plan", *common], deploy]
 
 
 def classify_paths(paths: Sequence[str]) -> str:
@@ -462,8 +468,28 @@ class Coordinator:
                 self.queue.update_batch(batch, stage="deploying-test")
             self._git("fetch", "origin", "main", cwd=checkout)
             self._git("checkout", "--detach", main_sha, cwd=checkout)
-            for command in test_deployment_commands(checkout, main_sha):
-                self._run(command, cwd=checkout, capture=False)
+            plan_command, deploy_command = test_deployment_commands(
+                checkout, main_sha
+            )
+            try:
+                plan = json.loads(
+                    self._run(plan_command, cwd=checkout, capture=True)
+                )
+            except json.JSONDecodeError as exc:
+                raise IntegrationQueueError(
+                    "release plan output is invalid"
+                ) from exc
+            plan_token = plan.get("plan_token") if isinstance(plan, Mapping) else None
+            if not isinstance(plan_token, str) or not PLAN_TOKEN_RE.fullmatch(
+                plan_token
+            ):
+                raise IntegrationQueueError(
+                    "release plan did not return a reusable plan token"
+                )
+            deploy_command = test_deployment_commands(
+                checkout, main_sha, plan_token
+            )[1]
+            self._run(deploy_command, cwd=checkout, capture=False)
             return {
                 "branch": branch,
                 "pr_url": str(batch["pr_url"]),

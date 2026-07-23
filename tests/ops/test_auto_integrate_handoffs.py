@@ -89,6 +89,19 @@ def test_test_deployment_commands_are_fixed_to_test_and_exact_sha(tmp_path):
     assert "promote" not in flattened
 
 
+def test_test_deploy_command_reuses_validated_plan_token(tmp_path):
+    module = _load_module()
+    token = "rp_" + "x" * 40
+
+    _plan, deploy = module.test_deployment_commands(
+        tmp_path, "b" * 40, token
+    )
+
+    assert deploy[-3:] == ["--plan-token", token, "--execute"]
+    with pytest.raises(module.IntegrationQueueError, match="token is invalid"):
+        module.test_deployment_commands(tmp_path, "b" * 40, "-unsafe")
+
+
 def test_single_writer_lock_reports_an_active_integration(tmp_path):
     module = _load_module()
     first = module.IntegrationQueue(tmp_path / "queue")

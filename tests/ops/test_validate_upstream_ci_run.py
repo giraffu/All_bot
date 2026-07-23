@@ -265,3 +265,70 @@ def test_job_api_pagination_is_pinned_to_latest_attempt(monkeypatch):
     assert len(jobs) == 101
     assert "filter=latest" in urls[1]
     assert "page=2" in urls[2]
+
+
+def test_eventually_consistent_jobs_are_retried_then_trusted():
+    module = _load_module()
+    source_sha, run, jobs = _trusted_evidence(module, event="push")
+    incomplete = [job for job in jobs if "services-t-z" not in job["name"]]
+    attempts = iter([(run, incomplete), (run, jobs)])
+    sleeps = []
+
+    result = module.fetch_and_validate_upstream_run(
+        fetch=lambda: next(attempts),
+        expected_repository="giraffu/All_bot",
+        expected_sha=source_sha,
+        expected_main_sha=source_sha,
+        attempts=2,
+        retry_interval_seconds=5,
+        sleep=lambda seconds: sleeps.append(seconds),
+    )
+
+    assert result["head_sha"] == source_sha
+    assert sleeps == [5]
+
+
+def test_non_transient_upstream_mismatch_is_not_retried():
+    module = _load_module()
+    source_sha, run, jobs = _trusted_evidence(module, event="push")
+    run["repository"]["full_name"] = "attacker/fork"
+    fetches = []
+
+    def fetch():
+        fetches.append(True)
+        return run, jobs
+
+    with pytest.raises(module.CITrustError, match="repository"):
+        module.fetch_and_validate_upstream_run(
+            fetch=fetch,
+            expected_repository="giraffu/All_bot",
+            expected_sha=source_sha,
+            expected_main_sha=source_sha,
+            attempts=7,
+            retry_interval_seconds=5,
+            sleep=lambda _seconds: pytest.fail("metadata mismatch must not retry"),
+        )
+
+    assert len(fetches) == 1
+
+
+def test_eventual_consistency_retry_is_bounded_and_fails_closed():
+    module = _load_module()
+    source_sha, run, jobs = _trusted_evidence(module, event="push")
+    incomplete = [job for job in jobs if "services-t-z" not in job["name"]]
+    fetches = []
+    sleeps = []
+
+    with pytest.raises(module.CITrustError, match="services-t-z"):
+        module.fetch_and_validate_upstream_run(
+            fetch=lambda: fetches.append(True) or (run, incomplete),
+            expected_repository="giraffu/All_bot",
+            expected_sha=source_sha,
+            expected_main_sha=source_sha,
+            attempts=7,
+            retry_interval_seconds=5,
+            sleep=lambda seconds: sleeps.append(seconds),
+        )
+
+    assert len(fetches) == 7
+    assert sleeps == [5] * 6

@@ -521,8 +521,13 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "  pull_request:\n" in workflow
     assert "python scripts/classify_ci_change.py" in workflow
     assert "needs.change-scope.outputs.requires_full_ci == 'true'" in workflow
+    assert "needs.change-scope.outputs.requires_release_ci == 'true'" in workflow
     assert "needs.change-scope.outputs.requires_operator_ci == 'true'" in workflow
+    assert "  release-tooling-tests:\n" in workflow
     assert "  operator-tests:\n" in workflow
+    assert (
+        "tests/ops/test_release_cli.py tests/ops/test_release_strategy.py" in workflow
+    )
     assert (
         "python -m pytest -vv --maxfail=1 --durations=20 tests/ops tests/scripts"
         in workflow
