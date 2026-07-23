@@ -3,6 +3,7 @@ import base64
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock
+from fastapi import BackgroundTasks
 
 from dashboard.backend.routers import qqcc as router_module
 from dashboard.backend.schemas import QqccBotConfigRequest
@@ -548,15 +549,32 @@ def test_demo_media_upload_route_supports_put_and_legacy_post():
 
 
 @pytest.mark.asyncio
-async def test_demo_generation_routes_submit_and_poll_without_saving_config(
+async def test_demo_generation_poll_saves_completed_media_to_the_scene(
     monkeypatch,
 ):
     submit = AsyncMock(return_value={"generation_id": "task-1", "status": "pending"})
     poll = AsyncMock(
-        return_value={"generation_id": "task-1", "status": "done", "media": {}}
+        return_value={
+            "generation_id": "task-1",
+            "status": "done",
+            "media": {
+                "object_key": "qqcc/demo/draw/portrait/generated/task-1/output",
+                "media_type": "image",
+                "mime_type": "image/png",
+                "file_name": "generated.png",
+            },
+        }
     )
+    persist = AsyncMock(return_value=True)
     monkeypatch.setattr(router_module, "submit_qqcc_demo_generation", submit)
     monkeypatch.setattr(router_module, "get_qqcc_demo_generation", poll)
+    monkeypatch.setattr(
+        router_module,
+        "save_qqcc_generated_demo_output_media",
+        persist,
+    )
+    db = object()
+    background_tasks = BackgroundTasks()
     scene = {
         "id": "portrait",
         "prompt": "portrait prompt",
@@ -568,18 +586,208 @@ async def test_demo_generation_routes_submit_and_poll_without_saving_config(
     }
 
     submitted = await router_module.submit_qqcc_scene_demo_generation(
-        "draw", router_module.QqccDemoGenerationRequest(scene=scene)
+        "draw",
+        router_module.QqccDemoGenerationRequest(scene=scene),
+        background_tasks,
     )
     completed = await router_module.get_qqcc_scene_demo_generation(
-        "draw", "portrait", "task-1"
+        "draw", "portrait", "task-1", db
     )
 
     assert submitted["status"] == "pending"
     assert completed["status"] == "done"
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is router_module.complete_qqcc_demo_generation
     submit.assert_awaited_once_with(scene_kind="draw", scene=scene)
     poll.assert_awaited_once_with(
         scene_kind="draw", scene_id="portrait", generation_id="task-1"
     )
+    persist.assert_awaited_once_with(
+        db,
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        media=completed["media"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_completed_demo_media_is_persisted_without_overwriting_other_scenes():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {"id": "portrait", "name": "Portrait", "prompt": "portrait"},
+                {
+                    "id": "other",
+                    "name": "Other",
+                    "prompt": "other",
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/draw/other/output",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "other.png",
+                    },
+                },
+            ],
+        }
+    )
+    checkpoint = RuntimeCheckpoint(key=QQCC_LAZY_BOT_CONFIG_KEY, value=config)
+    db = _FakeSession(checkpoint)
+
+    saved = await config_service_module.save_qqcc_generated_demo_output_media(
+        db,
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        media={
+            "object_key": "qqcc/demo/draw/portrait/generated/task-1/output",
+            "media_type": "image",
+            "mime_type": "image/png",
+            "file_name": "generated.png",
+        },
+    )
+
+    scenes = {scene["id"]: scene for scene in checkpoint.value["draw_scenes"]}
+    assert saved is True
+    assert db.committed is True
+    assert scenes["portrait"]["demo_output_media"]["object_key"].endswith(
+        "/generated/task-1/output"
+    )
+    assert scenes["other"]["demo_output_media"]["object_key"] == (
+        "qqcc/demo/draw/other/output"
+    )
+
+
+@pytest.mark.asyncio
+async def test_completed_demo_media_rejects_a_different_generation_namespace():
+    checkpoint = RuntimeCheckpoint(
+        key=QQCC_LAZY_BOT_CONFIG_KEY,
+        value=normalize_qqcc_config(
+            {
+                "scene_preset_version": SCENE_PRESET_VERSION,
+                "draw_scenes": [
+                    {"id": "portrait", "name": "Portrait", "prompt": "portrait"}
+                ],
+            }
+        ),
+    )
+    db = _FakeSession(checkpoint)
+
+    saved = await config_service_module.save_qqcc_generated_demo_output_media(
+        db,
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        media={
+            "object_key": "qqcc/demo/draw/portrait/generated/task-2/output",
+            "media_type": "image",
+            "mime_type": "image/png",
+            "file_name": "generated.png",
+        },
+    )
+
+    assert saved is False
+    assert db.committed is False
+    assert "demo_output_media" not in checkpoint.value["draw_scenes"][0]
+
+
+@pytest.mark.asyncio
+async def test_demo_completion_monitor_persists_after_the_submit_request_returns():
+    generated_media = {
+        "object_key": "qqcc/demo/draw/portrait/generated/task-1/output",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "generated.png",
+    }
+    poll = AsyncMock(
+        side_effect=[
+            {"generation_id": "task-1", "status": "pending"},
+            {
+                "generation_id": "task-1",
+                "status": "done",
+                "media": generated_media,
+            },
+        ]
+    )
+    persist = AsyncMock(return_value=True)
+    sleep = AsyncMock()
+    db = object()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_args):
+            return None
+
+    await router_module.complete_qqcc_demo_generation(
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        poll_func=poll,
+        persist_func=persist,
+        session_factory=_SessionContext,
+        sleep_func=sleep,
+        poll_interval_seconds=0,
+        max_wait_seconds=10,
+    )
+
+    assert poll.await_count == 2
+    sleep.assert_awaited_once_with(0)
+    persist.assert_awaited_once_with(
+        db,
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        media=generated_media,
+    )
+
+
+@pytest.mark.asyncio
+async def test_demo_completion_monitor_retries_a_transient_poll_failure():
+    generated_media = {
+        "object_key": "qqcc/demo/draw/portrait/generated/task-1/output",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "generated.png",
+    }
+    poll = AsyncMock(
+        side_effect=[
+            RuntimeError("temporary central outage"),
+            {
+                "generation_id": "task-1",
+                "status": "done",
+                "media": generated_media,
+            },
+        ]
+    )
+    persist = AsyncMock(return_value=True)
+    sleep = AsyncMock()
+    db = object()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_args):
+            return None
+
+    await router_module.complete_qqcc_demo_generation(
+        scene_kind="draw",
+        scene_id="portrait",
+        generation_id="task-1",
+        poll_func=poll,
+        persist_func=persist,
+        session_factory=_SessionContext,
+        sleep_func=sleep,
+        poll_interval_seconds=0,
+        max_wait_seconds=10,
+    )
+
+    assert poll.await_count == 2
+    sleep.assert_awaited_once_with(0)
+    persist.assert_awaited_once()
 
 
 @pytest.mark.asyncio

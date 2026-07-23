@@ -222,6 +222,7 @@ describe('QqccBotSettings', () => {
     apiMocks.getQqccDemoGeneration.mockResolvedValue({
       generation_id: 'task-1',
       status: 'done',
+      config_saved: true,
       media: {
         object_key: 'qqcc/demo/draw/quick_masturbation/output',
         media_type: 'image',
@@ -425,12 +426,12 @@ describe('QqccBotSettings', () => {
     expect(getButtonByTestId(wrapper, 'generate-draw-demo-0').props('loading')).toBe(true)
     expect(getButtonByTestId(wrapper, 'generate-draw-demo-1').props('loading')).toBe(true)
 
-    generations[0]!({ generation_id: 'generation-1', status: 'done', media: { object_key: 'output-1' }, preview_url: 'https://preview.example/output-1.png' })
-    generations[1]!({ generation_id: 'generation-2', status: 'done', media: { object_key: 'output-2' }, preview_url: 'https://preview.example/output-2.png' })
+    generations[0]!({ generation_id: 'generation-1', status: 'done', config_saved: true, media: { object_key: 'output-1' }, preview_url: 'https://preview.example/output-1.png' })
+    generations[1]!({ generation_id: 'generation-2', status: 'done', config_saved: true, media: { object_key: 'output-2' }, preview_url: 'https://preview.example/output-2.png' })
     await flushPromises()
   })
 
-  it('generates an output demo from the uploaded input without saving the config', async () => {
+  it('shows the output returned by an automatically persisted generation', async () => {
     const wrapper = mountSettings()
     await flushPromises()
     const file = new File(['demo'], 'before.png', { type: 'image/png' })
@@ -459,7 +460,34 @@ describe('QqccBotSettings', () => {
     expect(wrapper.get('[data-testid="draw-demo-output-preview-0"]').attributes('src')).toBe(
       'https://preview.example/generated.png',
     )
-    expect(antMocks.success).toHaveBeenCalledWith('输出示范已生成，请检查后保存配置')
+    expect(antMocks.success).toHaveBeenCalledWith('输出示范已生成并自动保存')
+  })
+
+  it('opens a large modal preview when the generated video is clicked', async () => {
+    apiMocks.uploadQqccDemoMedia.mockResolvedValueOnce({
+      media: {
+        object_key: 'qqcc/demo/video/kiss/output',
+        media_type: 'video',
+        mime_type: 'video/mp4',
+        file_name: 'generated.mp4',
+        telegram_file_ids: {},
+      },
+      preview_url: 'https://preview.example/generated.mp4',
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const file = new File(['video'], 'generated.mp4', { type: 'video/mp4' })
+    await wrapper.findAllComponents(UploadStub)[1]!.props('beforeUpload')(file)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="video-demo-output-preview-0"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="demo-video-modal-player"]').attributes('src')).toBe(
+      'https://preview.example/generated.mp4',
+    )
+    expect(wrapper.get('[data-testid="demo-video-modal"]').text()).toContain('亲吻 · 输出示范')
   })
 
   it('shows the backend reason when demo media upload is rejected', async () => {
