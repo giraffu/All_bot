@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "1e522f7cc56620b0e626cbb38c4e043fb49a9e27",
+  "batch": "dashboard-business-category-20260723",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-business-category-20260723",
+  "members": [
+    {
+      "base_sha": "1e522f7cc56620b0e626cbb38c4e043fb49a9e27",
+      "branch": "codex/a-dashboard-business-category",
+      "head": "4d93e083250f3ac3bceb5eefc802fd1d5d232753",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
