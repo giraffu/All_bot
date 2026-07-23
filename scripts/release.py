@@ -8606,12 +8606,59 @@ def _set_config_maintenance(args: argparse.Namespace, *, enabled: bool) -> None:
     )
 
 
+def _activate_staged_config_service(
+    args: argparse.Namespace,
+    snapshot: Mapping[str, Any],
+    service: str,
+) -> None:
+    """Roll one explicitly selected service onto an already-active projection."""
+
+    revision = str(snapshot.get("environment_revision", ""))
+    if not re.fullmatch(r"[0-9a-f]{64}", revision):
+        raise ReleaseError("staged config revision is unavailable")
+    revisions = snapshot.get("service_revisions")
+    if not isinstance(revisions, Mapping) or not revisions.get(service):
+        raise ReleaseError(f"staged service projection is unavailable: {service}")
+    try:
+        _config_apply_cloud(args, snapshot, {service})
+    except ReleaseError as activation_error:
+        recovery_errors: list[str] = []
+        try:
+            _remote_runtime_env_rollback(args, revision)
+        except ReleaseError as exc:
+            recovery_errors.append(str(exc))
+        try:
+            _restore_config_cloud(args, {service})
+        except ReleaseError as exc:
+            recovery_errors.append(str(exc))
+        if recovery_errors:
+            raise ReleaseError(
+                "staged config activation failed and recovery is incomplete"
+            ) from activation_error
+        raise activation_error
+
+
 def run_config_command(args: argparse.Namespace) -> int:
     if args.command == "config-apply":
         if not args.execute:
             raise ReleaseError("config-apply requires --execute")
         if args.env == "prod" and not args.confirm_prod:
             raise ReleaseError("production config-apply requires --confirm-prod")
+    activate_staged = bool(getattr(args, "activate_staged", False))
+    staged_service = str(getattr(args, "config_service", "") or "")
+    config_module = str(getattr(args, "config_module", "") or "")
+    if activate_staged:
+        if args.command != "config-apply" or not config_module or not staged_service:
+            raise ReleaseError(
+                "staged activation requires config-apply with --module and --service"
+            )
+        allowed = set(INDEPENDENT_MODULE_ENV_SERVICES[config_module])
+        if staged_service not in allowed:
+            raise ReleaseError(
+                f"staged service is outside module closure: {staged_service}"
+            )
+    elif staged_service:
+        raise ReleaseError("--service requires --activate-staged")
     _, _, inspected = _remote_runtime_env_snapshot(args)
     plan_document = {
         key: inspected[key]
@@ -8631,9 +8678,30 @@ def run_config_command(args: argparse.Namespace) -> int:
         if key in inspected
     }
     print(json.dumps(plan_document, ensure_ascii=False, indent=2, sort_keys=True))
+    if activate_staged:
+        if inspected.get("drift"):
+            raise ReleaseError(
+                "staged activation requires a drift-free active projection; "
+                "run scoped config-apply first"
+            )
+        _activate_staged_config_service(args, inspected, staged_service)
+        print(
+            json.dumps(
+                {
+                    "environment": args.env,
+                    "environment_revision": inspected.get("environment_revision"),
+                    "maintenance": False,
+                    "services": [staged_service],
+                    "status": "config-activated",
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     if args.command == "config-plan" or not inspected.get("drift"):
         return 0
-    config_module = str(getattr(args, "config_module", "") or "")
     affected = {
         str(name)
         for name in inspected.get("affected_services", [])
@@ -8971,6 +9039,20 @@ def build_parser() -> argparse.ArgumentParser:
         config.add_argument("--remote-env-file")
         config.add_argument("--execute", action="store_true")
         config.add_argument("--confirm-prod", action="store_true")
+        if command == "config-apply":
+            config.add_argument(
+                "--activate-staged",
+                action="store_true",
+                help=(
+                    "roll exactly one selected service onto an already-staged "
+                    "module projection without maintenance"
+                ),
+            )
+            config.add_argument(
+                "--service",
+                dest="config_service",
+                choices=tuple(sorted(CONFIG_SERVICE_TO_COMPOSE)),
+            )
     validate = subparsers.add_parser("validate-env")
     validate.add_argument("--env", choices=("test", "prod"), required=True)
     validate.add_argument("--env-file", required=True)
