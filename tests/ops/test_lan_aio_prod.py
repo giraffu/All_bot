@@ -2479,6 +2479,32 @@ def test_configure_registry_does_not_wait_for_stopped_candidate():
     assert ops.health_waits == []
 
 
+def test_configure_registry_updates_daemon_proxy_bypass(monkeypatch):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.input_text = ""
+
+        def _local(self, args, *, input_text=None, capture=False):
+            self.input_text = input_text or ""
+            return ""
+
+    monkeypatch.setenv("LAN_AIO_GPU_SUDO_PASSWORD", "dummy")
+    ops = RecordingOps()
+
+    ops._configure_registry_on_host("gpu226")
+
+    assert 'proxies = dict(data.get("proxies") or {})' in ops.input_text
+    assert 'proxies.get("no-proxy")' in ops.input_text
+    assert 'proxies["no-proxy"] = ",".join(no_proxy)' in ops.input_text
+    assert '("192.168.1.115", "192.168.1.115:5000")' in ops.input_text
+
+
 def test_configure_registry_waits_for_previously_running_candidate():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
