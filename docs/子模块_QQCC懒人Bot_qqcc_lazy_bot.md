@@ -272,6 +272,8 @@ python scripts/release.py promote --modules qqcc-bot --no-maintenance --confirm-
 
 `qqcc-bot` 是受控模块边界，只选择官方 Bot service；发布器自动验证唯一目标容器、已知 legacy 实例停止，并扫描启动窗口内的 Telegram polling conflict。migration 或共享/未知契约会在 mutation 前阻断并提示高级入口；待处理秘密轮换仅保留审计状态。
 
+如果 QQCC artifact 的旧 `source_sha` 到候选之间只夹带客服/Web 等其它模块的 migration，可在 clean main 策略的 `independent_non_target_migration_snapshots` 下为 `qqcc-bot` 与 `qqcc-config` 分别固定路径和内容 SHA256。高级发布器会记录 `reviewed-non-target-migration`，保持 `requires_db_upgrade=false`，不执行数据库备份/Alembic，也不扩大到非 QQCC 服务；任一文件新增或内容变化重新 fail closed。该能力只解决 Git 基线跨越造成的误阻断，不允许把 QQCC 自己依赖的 schema 伪装成非目标。
+
 只更新正式 QQCC Config Web 时，请求一个完整配置模块组，发布器固定展开为前后端两个 artifact：
 
 ```bash

@@ -264,6 +264,8 @@ python scripts/release.py promote --confirm-prod
 
 Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
 
+独立模块若跨过其它模块新增的 migration，默认仍 fail closed。只有 clean main 的 `deploy/release-policy.yml` 在 `independent_non_target_migration_snapshots` 中按模块、路径与内容 SHA256 精确审阅后，高级 `deploy --policy <clean-main-policy> --modules <...> --no-maintenance` 才把它记为非目标差异：`requires_db_upgrade=false`，不备份、不运行 Alembic，只滚动目标容器。任何未列文件、内容漂移、目标模块自身 migration、未知路径或共享契约仍恢复 strict。测试验收未写 `verified` 而用户明确接受无业务验收时，必须使用带 `--reason` 的 emergency 审计语义；main/CI、digest、配置、健康、事务回切和非目标证明不允许跳过。
+
 ### 4.2 专用 GPU 执行面运维
 
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
