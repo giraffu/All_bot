@@ -771,7 +771,6 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "i2i_pro",
         "scail2",
         "ltx_video",
-        "pornmaster_flux2_edit",
         "pornmaster_flux2_edit_bf16",
     ]
     assert profiles["i2i_pro"] == {
@@ -811,19 +810,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     assert profiles["ltx_video"]["active_count"] == 0
     assert profiles["ltx_video"]["pending_count"] == 0
     assert profiles["ltx_video"]["max_pending_wait_seconds"] is None
-    assert profiles["pornmaster_flux2_edit"]["label"] == "pornmaster_flux2 / 自由P图 v2"
-    assert profiles["pornmaster_flux2_edit"]["supported_task_types"] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-    ]
-    assert profiles["pornmaster_flux2_edit"]["autoscaler_enabled"] is True
-    assert profiles["pornmaster_flux2_edit"]["active_count"] == 2
-    assert profiles["pornmaster_flux2_edit"]["pending_count"] == 3
-    assert profiles["pornmaster_flux2_edit"]["max_pending_wait_seconds"] == 1200
-    assert (
-        profiles["pornmaster_flux2_edit"]["max_non_low_trust_pending_wait_seconds"]
-        == 1000
-    )
+    assert "pornmaster_flux2_edit" not in profiles
     assert profiles["pornmaster_flux2_edit_bf16"]["label"] == (
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
     )

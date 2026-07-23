@@ -136,17 +136,14 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-252-gpu1-wan22_video_v2"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu1-wan22_video_v2"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "maintenance_disabled"
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].host_port == 8191
-    assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_preflight_required is False
-    )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-        "character_reference_build",
+    assert "gpu-252-gpu1-pornmaster_flux2_edit" not in slots
+    assert slots["gpu-252-gpu1-img2img_lora"].enabled is True
+    assert slots["gpu-252-gpu1-img2img_lora"].phase == "catalog_ready"
+    assert slots["gpu-252-gpu1-img2img_lora"].retargetable is True
+    assert slots["gpu-252-gpu1-img2img_lora"].host_port == 8191
+    assert slots["gpu-252-gpu1-img2img_lora"].target_task_types == (
+        "img2img",
+        "img2img_lora",
     )
     assert slots["gpu-252-gpu1-ltx_t2v"].enabled is False
     assert slots["gpu-252-gpu1-ltx_t2v"].phase == "maintenance_disabled"
@@ -154,13 +151,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         "ltx_t2v",
         "ltx_t2v_ic",
     )
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].phase == "maintenance_disabled"
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-        "character_reference_build",
-    )
+    assert "gpu-252-gpu0-pornmaster_flux2_edit" not in slots
     assert slots["gpu-252-gpu0-ltx_t2v"].enabled is False
     assert slots["gpu-252-gpu0-ltx_t2v"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu0-ltx_t2v"].retargetable is False
@@ -174,7 +165,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
     )
     assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
+        slots["gpu-252-gpu1-img2img_lora"].gpu_device_id
         == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     )
     assert slots["gpu-226-gpu0-image_to_video"].enabled is True
@@ -188,9 +179,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-002-gpu1-image_to_video"].enabled is True
     assert slots["gpu-002-gpu1-image_to_video"].phase == "catalog_ready"
     assert slots["gpu-002-gpu1-image_to_video"].retargetable is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == "catalog_ready"
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].retargetable is True
+    assert "gpu-002-gpu1-pornmaster_flux2_edit" not in slots
     assert slots["gpu-177-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-177-gpu1-wan22_video_v2"].phase == "blocked_oom_32gb"
     assert slots["gpu-177-gpu1-wan22_video_v2"].retargetable is False
