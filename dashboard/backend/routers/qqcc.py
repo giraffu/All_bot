@@ -121,6 +121,19 @@ async def complete_qqcc_demo_generation(
     )
 
 
+async def load_qqcc_demo_generation_config() -> dict[str, Any]:
+    """Load generation config without retaining a request-scoped DB session."""
+
+    from src.database.core import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        payload = await load_qqcc_config_payload(
+            db,
+            include_preview_urls=False,
+        )
+    return payload["config"]
+
+
 @router.get("/config", response_model=QqccBotConfigResponse)
 async def get_qqcc_config(db: AsyncSession = Depends(get_db)):
     return await load_qqcc_config_payload(db)
@@ -221,17 +234,12 @@ async def submit_qqcc_scene_demo_generation(
     scene_kind: str,
     payload: QqccDemoGenerationRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
 ):
     try:
-        config_payload = (
-            await load_qqcc_config_payload(db, include_preview_urls=False)
-            if hasattr(db, "execute")
-            else None
-        )
+        config = await load_qqcc_demo_generation_config()
         submit_kwargs = {"scene_kind": scene_kind, "scene": payload.scene}
-        if config_payload:
-            submit_kwargs["config"] = config_payload["config"]
+        if config:
+            submit_kwargs["config"] = config
         result = await submit_qqcc_demo_generation(**submit_kwargs)
         generation_id = str(result.get("generation_id") or "")
         scene_id = str(payload.scene.get("id") or "")
