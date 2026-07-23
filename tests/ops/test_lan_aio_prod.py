@@ -1449,10 +1449,10 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
     )
     assert payload["ok"] is False
     assert port_check["ok"] is False
-        assert port_check["allowed_containers"] == [
-            "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod",
-            "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
-        ]
+    assert port_check["allowed_containers"] == [
+        "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod",
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+    ]
     assert port_check["unexpected_owners"] == [
         {
             "name": "rogue-gpu002-gpu1-owner",
