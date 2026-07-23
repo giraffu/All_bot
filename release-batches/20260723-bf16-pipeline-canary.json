@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "9371ecf43d42f45f1775e2a13d024acc05993405",
+  "batch": "20260723-bf16-pipeline-canary",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-bf16-pipeline-canary",
+  "members": [
+    {
+      "base_sha": "9371ecf43d42f45f1775e2a13d024acc05993405",
+      "branch": "codex/a-bf16-pipeline-canary",
+      "head": "7fdfba6b84848ba4f6b4f653a7c5fcb8284ed89d",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
