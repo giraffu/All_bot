@@ -193,6 +193,8 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 普通 streamlined 云测试部署在目标 health/API_BASE/polling smoke 成功后，自动按 artifact + exact digest 向 `current/history` 写入 `verified` evidence，并记录真实开始/完成时间和自动化来源。正式 standard 从 retained history 复用相同 artifact/digest，不要求全局 SHA 相同；direct 只校验 bundle full/passed。`verify-test` 保留作专项人工补充，仍校验时间顺序、未来时间、适用 smoke、SHA/digest、Web checksum 与测试运行态，禁止伪造时间或直接编辑状态。
 
+streamlined 的 Compose 运行契约以当前目标容器的 `com.docker.compose.project.working_dir` 与 `config_files` labels 为事实源：所有目标必须指向同一个受控 `/home/deploy/APP/All_bot-release/releases/<40位SHA>/deploy`，且文件集合必须精确为 cloud base + 当前环境 overlay。artifact `source_sha` 只表示镜像构建来源；独立模块多次晋级后它可能与当前 Compose checkout 不同，发布器不得拿它拼接 checkout 路径。标签不一致、越出受控根目录或契约文件缺失都会在 pull 前 fail closed。
+
 `scripts/classify_ci_change.py` 区分三类路径。纯 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理脚本为 `lightweight`：上游跳过全量模块测试，main 后继 modular workflow 不创建 bundle。仅包含 `ops/gpu_pool_controller/**` 与明确 RunPod/LAN operator/helper 的变更为 `operator`：上游只跑 `tests/ops tests/scripts`，不运行 PostgreSQL、Web、Dashboard 前端或其它 Python 分片；main 后继仍创建模块化 bundle，以便真实镜像输入变化得到不可变 artifact。LAN 宿主 helper 没有 artifact，最小更新模块为零；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖、业务代码、migration、Compose、运行配置、未知路径或混合变更仍为 `runtime`，恢复完整 CI 与对应 GPU attestation/canary。三类路径都必须经受保护 main，且都不自动部署测试/正式环境。
 
 管理后台是 owner-tools：QQCC Config 因已有专属测试实例而 auto 默认 standard，Dashboard 仍 auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 只声明 QQCC Config 前后端覆盖，Dashboard 不进入测试站；公共 base 继续用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。

@@ -7001,6 +7001,10 @@ def test_streamlined_cloud_deploy_pulls_and_recreates_only_target(monkeypatch):
     assert "git fetch" not in script
     assert "worktree add" not in script
     assert "nontarget" not in script
+    assert "/release-root/releases/" + "b" * 40 not in script
+    assert 'com.docker.compose.project.working_dir' in script
+    assert 'compose_checkout="${compose_working_dir%/deploy}"' in script
+    assert 'test "$target_working_dir" = "$compose_working_dir"' in script
     assert "ALLBOT_TARGET_ROLLBACK_VERIFIED" in script
     assert result["phase_timings_seconds"]["pull"] == pytest.approx(0.002)
     assert set(args.streamlined_runtime_services) == {"qqcc-config-backend"}

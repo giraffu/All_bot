@@ -4525,18 +4525,16 @@ def _deploy_cloud_streamlined(
         return
     if manifest.get("schema_version") != 2 or manifest.get("track") != "control-plane":
         raise ReleaseError("streamlined cloud deployment requires control-plane schema v2")
-    previous_sha = validate_full_sha(str(getattr(args, "previous_sha", "")))
     sha = validate_full_sha(str(manifest["git_sha"]))
-    checkout = f"{args.remote_checkout_root}/releases/{previous_sha}"
     release_dir = _cloud_release_dir(sha, "control-plane")
     env_file = args.remote_env_file or environment["env_file"]
     profile_flags = compose_profile_flags(services)
     compose = (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
-        f"--env-file {checkout}/deploy/env.defaults "
+        '--env-file "$compose_checkout/deploy/env.defaults" '
         f"--env-file {shlex.quote(env_file)} --env-file {release_dir}/release.env "
-        f"-f {checkout}/deploy/docker-compose-cloud-base.yml "
-        f"-f {checkout}/{environment['overlay']} {profile_flags}"
+        '-f "$compose_checkout/deploy/docker-compose-cloud-base.yml" '
+        f'-f "$compose_checkout/{environment["overlay"]}" {profile_flags}'
     )
     service_args = " ".join(shlex.quote(service) for service in services)
     artifacts = manifest.get("artifacts")
@@ -4572,6 +4570,7 @@ def _deploy_cloud_streamlined(
 
     release_payload = base64.b64encode(release_env.encode("utf-8")).decode("ascii")
     rollback_env = f"/tmp/allbot-target-rollback-{sha}.env"
+    compose_identity_lines: list[str] = []
     prepare_lines: list[str] = []
     verify_lines: list[str] = []
     rollback_verify_lines: list[str] = []
@@ -4594,6 +4593,22 @@ def _deploy_cloud_streamlined(
         quoted_oci = shlex.quote(oci)
         quoted_config_revision = shlex.quote(config_revision)
         config_name = compose_to_config.get(service)
+        compose_identity_lines.extend(
+            [
+                "target_ids=\"$(docker ps -q "
+                f"--filter label=com.docker.compose.project={shlex.quote(environment['project'])} "
+                f"--filter label=com.docker.compose.service={quoted_service})\"",
+                'test "$(printf \'%s\\n\' "$target_ids" | sed \'/^$/d\' | wc -l)" = 1',
+                'target_working_dir="$(docker inspect --format '
+                "'{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}' "
+                '"$target_ids")"',
+                'target_config_files="$(docker inspect --format '
+                "'{{index .Config.Labels \"com.docker.compose.project.config_files\"}}' "
+                '"$target_ids")"',
+                'test "$target_working_dir" = "$compose_working_dir"',
+                'test "$target_config_files" = "$compose_config_files"',
+            ]
+        )
         if config_name:
             projection = f"/var/lib/allbot/config/{args.env}/current/{config_name}.env"
             prepare_lines.extend(
@@ -4661,14 +4676,31 @@ def _deploy_cloud_streamlined(
             )
     rollback_compose = f'{compose} --env-file "$rollback_env"'
     completion_marker = f"ALLBOT_CLOUD_RELEASE_VERIFIED:{sha}"
+    checkout_pattern = (
+        "^"
+        + re.escape(args.remote_checkout_root.rstrip("/"))
+        + r"/releases/[0-9a-f]{40}/deploy$"
+    )
+    seed_service = shlex.quote(services[0])
     script = f"""set -eEuo pipefail
 config_started=$(date +%s%N)
 install -d -m 755 /var/lib/allbot/deployments/{shlex.quote(args.env)}
 exec 9> /var/lib/allbot/deployments/{shlex.quote(args.env)}/release.lock
 flock -n 9 || {{ echo 'another release transaction is active' >&2; exit 3; }}
-test -d {shlex.quote(checkout)}
 test -f {shlex.quote(env_file)}
 test "$(stat -c %a {shlex.quote(env_file)})" = 600
+seed_ids="$(docker ps -q --filter label=com.docker.compose.project={shlex.quote(environment['project'])} --filter label=com.docker.compose.service={seed_service})"
+test "$(printf '%s\\n' "$seed_ids" | sed '/^$/d' | wc -l)" = 1
+compose_working_dir="$(docker inspect --format '{{{{index .Config.Labels "com.docker.compose.project.working_dir"}}}}' "$seed_ids")"
+compose_config_files="$(docker inspect --format '{{{{index .Config.Labels "com.docker.compose.project.config_files"}}}}' "$seed_ids")"
+[[ "$compose_working_dir" =~ {checkout_pattern} ]]
+compose_checkout="${{compose_working_dir%/deploy}}"
+test -f "$compose_checkout/deploy/env.defaults"
+test -f "$compose_checkout/deploy/docker-compose-cloud-base.yml"
+test -f "$compose_checkout/{environment["overlay"]}"
+expected_config_files="$compose_checkout/deploy/docker-compose-cloud-base.yml,$compose_checkout/{environment["overlay"]}"
+test "$compose_config_files" = "$expected_config_files"
+{chr(10).join(compose_identity_lines)}
 install -d -m 755 {shlex.quote(release_dir)}
 printf %s {shlex.quote(release_payload)} | base64 -d > {shlex.quote(release_dir + '/release.env.tmp')}
 mv -f {shlex.quote(release_dir + '/release.env.tmp')} {shlex.quote(release_dir + '/release.env')}
