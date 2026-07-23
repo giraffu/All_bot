@@ -55,6 +55,7 @@ def load_contract(path: Path) -> dict[str, Any]:
     for service, config in value["services"].items():
         if not isinstance(config, Mapping):
             raise ContractError(f"{service} service environment contract is invalid")
+        _service_environments(config)
         _conditional_contract_keys(config)
     return value
 
@@ -72,6 +73,22 @@ def _is_external_key(contract: Mapping[str, Any], key: str) -> bool:
     return any(
         fnmatch.fnmatchcase(key, pattern) for pattern in _external_patterns(contract)
     )
+
+
+def _service_environments(config: Mapping[str, Any]) -> frozenset[str]:
+    raw = config.get("environments", ["test", "prod"])
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or any(value not in {"test", "prod"} for value in raw)
+        or len(set(raw)) != len(raw)
+    ):
+        raise ContractError("service environments contract is invalid")
+    return frozenset(str(value) for value in raw)
+
+
+def _service_available(config: Mapping[str, Any], environment: str) -> bool:
+    return environment in _service_environments(config)
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -200,11 +217,25 @@ def build_snapshot(
     configured = contract.get("services")
     if not isinstance(configured, Mapping):
         raise ContractError("service environment contract has no services")
-    selected = set(services or configured)
+    selected = set(services) if services is not None else {
+        str(name)
+        for name, config in configured.items()
+        if isinstance(config, Mapping) and _service_available(config, environment)
+    }
     unknown = sorted(selected - set(configured))
     if unknown:
         raise ContractError(
             "unknown service environment contract: " + ", ".join(unknown)
+        )
+    unavailable = sorted(
+        name
+        for name in selected
+        if not _service_available(configured[name], environment)
+    )
+    if unavailable:
+        raise ContractError(
+            f"service environment contract is unavailable in {environment}: "
+            + ", ".join(unavailable)
         )
     projections: dict[str, dict[str, str]] = {}
     revisions: dict[str, str] = {}
@@ -759,16 +790,9 @@ def main(argv: list[str] | None = None) -> int:
         validate_environment_semantics(args.environment, values)
         contract = load_contract(args.contract)
         requested_services = set(args.service)
-        if args.command == "inspect-target" and not requested_services:
-            raise ContractError("target inspection requires at least one service")
         active = load_active_state(args.root)
-        if args.command == "inspect-target":
-            if active is None:
-                raise ContractError("target service environment is not activated")
-            validate_target_projection_integrity(
-                args.root, active, requested_services
-            )
-        elif active is not None:
+        active_before = active
+        if args.command != "inspect-target" and active is not None:
             validate_active_projection_integrity(args.root, active)
         selected_services = set(requested_services)
         if (
@@ -784,8 +808,20 @@ def main(argv: list[str] | None = None) -> int:
             contract,
             args.environment,
             values,
-            services=selected_services or None,
+            services=(
+                selected_services
+                if args.command == "inspect-target" or requested_services
+                else None
+            ),
         )
+        if args.command == "inspect-target" and snapshot.projections:
+            if active is None:
+                raise ContractError("target service environment is not activated")
+            validate_target_projection_integrity(
+                args.root, active, snapshot.projections
+            )
+        elif args.command == "inspect-target" and active is not None:
+            validate_target_projection_integrity(args.root, active, ())
         if (
             args.command != "inspect-target"
             and requested_services
@@ -834,16 +870,33 @@ def main(argv: list[str] | None = None) -> int:
             if str(active_service_revisions.get(name, "")) != revision
         }
         effective_changed = changed - {SERVICE_CONTRACT_REVISION_KEY}
+        retired_services = (
+            sorted(
+                set(
+                    str(name)
+                    for name in active_before.get("service_revisions", {})
+                )
+                - set(snapshot.service_revisions)
+            )
+            if args.command != "inspect-target"
+            and isinstance(active_before, Mapping)
+            and isinstance(active_before.get("service_revisions"), Mapping)
+            else []
+        )
         if args.command == "inspect-target":
             # Global env and unrelated active revisions are intentionally outside
             # this read-only gate.  Only the requested projection may block the
             # rolling release.
-            summary["drift"] = bool(projection_drift)
-            summary["changed_keys"] = sorted(
+            target_changed_keys = {
                 key
                 for key in effective_changed
                 if affected_services(contract, {key}) & set(snapshot.projections)
-            )
+            }
+            summary["drift"] = bool(projection_drift or target_changed_keys)
+            summary["changed_keys"] = sorted(target_changed_keys)
+            effective_changed = target_changed_keys
+        else:
+            summary["drift"] = bool(summary["drift"] or retired_services)
         summary["affected_services"] = sorted(
             (affected_services(contract, effective_changed) & set(snapshot.projections))
             | projection_drift
@@ -851,6 +904,14 @@ def main(argv: list[str] | None = None) -> int:
         summary["unknown_keys"] = sorted(
             unknown_changed_keys(contract, effective_changed)
         )
+        summary["effective_environment_revision"] = (
+            str(active_before.get("environment_revision"))
+            if args.command == "inspect-target"
+            and isinstance(active_before, Mapping)
+            and active_before.get("environment_revision")
+            else snapshot.environment_revision
+        )
+        summary["retired_services"] = retired_services
         summary["present_keys"] = sorted(key for key, value in values.items() if value)
         summary["public_values"] = {
             key: values[key] for key in sorted(PUBLIC_CONFIG_KEYS) if key in values

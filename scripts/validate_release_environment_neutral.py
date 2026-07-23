@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from typing import Iterable, Mapping, Sequence
 
 
@@ -50,6 +51,10 @@ NON_RUNNABLE_IDENTITY_ARTIFACTS = {
     "python-worker-base",
     "qqcc-config-frontend",
 }
+APPLICATION_ROOTS = ("/app", "/opt/allbot", "/usr/src/app")
+PULL_TIMEOUT_SECONDS = 900
+INSPECTION_TIMEOUT_SECONDS = 180
+RUNTIME_IDENTITY_TIMEOUT_SECONDS = 120
 RUNTIME_SOURCE_FILES = (
     "config.py",
     "backend/app/config.py",
@@ -79,6 +84,39 @@ FORBIDDEN_RUNTIME_SOURCE = {
 
 class NeutralityError(RuntimeError):
     """A build or artifact contains environment-owned configuration."""
+
+
+def _run_command(
+    command: Sequence[str],
+    *,
+    label: str,
+    timeout: int,
+    text: bool = True,
+    stdout=None,
+) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            list(command),
+            text=text,
+            stdout=stdout if stdout is not None else subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise NeutralityError(f"{label} timed out") from exc
+
+
+def _timed_phase(artifacts: str, phase: str, operation):
+    print(f"neutrality-scan artifacts={artifacts} phase={phase} status=started")
+    started = time.monotonic()
+    result = operation()
+    duration = max(0.0, time.monotonic() - started)
+    print(
+        f"neutrality-scan artifacts={artifacts} phase={phase} "
+        f"status=passed duration_seconds={duration:.3f}"
+    )
+    return result
 
 
 def _read_json(path: Path, label: str) -> dict:
@@ -237,24 +275,35 @@ def validate_image_config(
             raise NeutralityError(
                 "image scan source SHA does not match the release index"
             )
-    for artifact_name, ref, track in sorted(
-        set(_release_image_artifacts(index_path, only_source_sha=only_source_sha))
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for artifact_name, ref, track in _release_image_artifacts(
+        index_path, only_source_sha=only_source_sha
     ):
-        pulled = subprocess.run(
-            ["docker", "pull", ref],
-            text=True,
-            capture_output=True,
-            check=False,
+        grouped.setdefault(ref, []).append((artifact_name, track))
+    for ref, records in sorted(grouped.items()):
+        records = sorted(set(records))
+        artifacts = ",".join(name for name, _track in records)
+        pulled = _timed_phase(
+            artifacts,
+            "pull",
+            lambda: _run_command(
+                ["docker", "pull", ref],
+                label="release image pull",
+                timeout=PULL_TIMEOUT_SECONDS,
+            ),
         )
         if pulled.returncode:
             raise NeutralityError(
                 "release image is unavailable for neutrality inspection"
             )
-        result = subprocess.run(
-            ["docker", "image", "inspect", ref],
-            text=True,
-            capture_output=True,
-            check=False,
+        result = _timed_phase(
+            artifacts,
+            "config",
+            lambda: _run_command(
+                ["docker", "image", "inspect", ref],
+                label="release image config inspection",
+                timeout=INSPECTION_TIMEOUT_SECONDS,
+            ),
         )
         if result.returncode:
             raise NeutralityError(
@@ -271,53 +320,76 @@ def validate_image_config(
                 raise NeutralityError(
                     f"release image Config.Env contains environment-owned key {key}"
                 )
-        _validate_image_filesystem(ref)
-        if _requires_runtime_identity(artifact_name, track=track):
-            _validate_image_runtime_identity(ref)
+        _timed_phase(
+            artifacts,
+            "filesystem",
+            lambda: _validate_image_filesystem(ref),
+        )
+        if any(
+            _requires_runtime_identity(artifact_name, track=track)
+            for artifact_name, track in records
+        ):
+            _timed_phase(
+                artifacts,
+                "runtime-identity",
+                lambda: _validate_image_runtime_identity(ref),
+            )
 
 
 def _validate_image_filesystem(ref: str) -> None:
-    created = subprocess.run(
-        ["docker", "create", ref], text=True, capture_output=True, check=False
+    created = _run_command(
+        ["docker", "create", ref],
+        label="release image container creation",
+        timeout=INSPECTION_TIMEOUT_SECONDS,
     )
     if created.returncode or not created.stdout.strip():
         raise NeutralityError("release image filesystem is unavailable for inspection")
     container_id = created.stdout.strip()
     try:
-        with tempfile.NamedTemporaryFile(suffix=".tar") as archive:
-            exported = subprocess.run(
-                ["docker", "export", "-o", archive.name, container_id],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            if exported.returncode:
-                raise NeutralityError(
-                    "release image filesystem is unavailable for inspection"
+        for root in APPLICATION_ROOTS:
+            with tempfile.NamedTemporaryFile(suffix=".tar") as archive:
+                copied = _run_command(
+                    ["docker", "cp", f"{container_id}:{root}/.", "-"],
+                    label="release image application filesystem inspection",
+                    timeout=INSPECTION_TIMEOUT_SECONDS,
+                    text=False,
+                    stdout=archive,
                 )
-            with tarfile.open(archive.name) as files:
-                forbidden = [
-                    member.name
-                    for member in files.getmembers()
-                    if member.isfile()
-                    and member.name.lstrip("/").startswith(
-                        ("app/", "opt/allbot/", "usr/src/app/")
+                if copied.returncode:
+                    stderr = (copied.stderr or b"").decode(
+                        "utf-8", errors="replace"
+                    ).lower()
+                    if "could not find the file" in stderr or "no such file" in stderr:
+                        continue
+                    raise NeutralityError(
+                        "release image filesystem is unavailable for inspection"
                     )
-                    and (
-                        Path(member.name).name.startswith(".env")
-                        or Path(member.name).suffix.lower() in {".pem", ".key"}
+                archive.flush()
+                try:
+                    with tarfile.open(archive.name) as files:
+                        forbidden = [
+                            member.name
+                            for member in files.getmembers()
+                            if member.isfile()
+                            and (
+                                Path(member.name).name.startswith(".env")
+                                or Path(member.name).suffix.lower()
+                                in {".pem", ".key"}
+                            )
+                        ]
+                except tarfile.TarError as exc:
+                    raise NeutralityError(
+                        "release image filesystem is unavailable for inspection"
+                    ) from exc
+                if forbidden:
+                    raise NeutralityError(
+                        "release image filesystem contains environment material"
                     )
-                ]
-            if forbidden:
-                raise NeutralityError(
-                    "release image filesystem contains environment material"
-                )
     finally:
-        subprocess.run(
+        _run_command(
             ["docker", "rm", "-f", container_id],
-            text=True,
-            capture_output=True,
-            check=False,
+            label="release image container cleanup",
+            timeout=INSPECTION_TIMEOUT_SECONDS,
         )
 
 
@@ -327,7 +399,7 @@ def _validate_image_runtime_identity(ref: str) -> None:
         "print(':'.join(resolve_runtime_environment()))"
     )
     for environment, bot_type in (("test", "TEST"), ("prod", "PROD")):
-        result = subprocess.run(
+        result = _run_command(
             [
                 "docker",
                 "run",
@@ -342,9 +414,8 @@ def _validate_image_runtime_identity(ref: str) -> None:
                 "-c",
                 script,
             ],
-            text=True,
-            capture_output=True,
-            check=False,
+            label="release image runtime identity inspection",
+            timeout=RUNTIME_IDENTITY_TIMEOUT_SECONDS,
         )
         if result.returncode or result.stdout.strip() != f"{environment}:{bot_type}":
             raise NeutralityError(

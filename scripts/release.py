@@ -4528,7 +4528,6 @@ started_at="$(docker inspect --format '{{{{.State.StartedAt}}}}' "$polling_id")"
         variable = expected_image_variables[service]
         revision_checks += (
             f'ref="${variable}"\n'
-            'docker pull "$ref" >/dev/null\n'
             'docker image inspect "$ref" >/dev/null\n'
             'test "$(docker image inspect --format '
             "'{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "
@@ -7753,6 +7752,22 @@ DASHBOARD_INITIAL_PROJECTION_LEGACY_KEYS = (
 )
 
 
+def _release_target_env_services(
+    environment: str, impact: ReleaseImpact
+) -> set[str]:
+    """Map only services that actually exist in the target environment."""
+
+    compose_to_config = {
+        compose_service: config_service
+        for config_service, compose_service in CONFIG_SERVICE_TO_COMPOSE.items()
+    }
+    return {
+        compose_to_config[service]
+        for service in cloud_services_for_release(environment, impact)
+        if service in compose_to_config
+    }
+
+
 def _runtime_env_service_options(args: argparse.Namespace) -> str:
     """Limit module operations to their machine-owned config closure."""
 
@@ -7770,9 +7785,7 @@ def _runtime_env_service_options(args: argparse.Namespace) -> str:
         for service in INDEPENDENT_MODULE_ENV_SERVICES.get(module, ())
     }
     target_services = getattr(args, "target_env_services", None)
-    if bool(getattr(args, "streamlined_candidate", False)) and isinstance(
-        target_services, (set, list, tuple)
-    ):
+    if isinstance(target_services, (set, list, tuple)):
         services.update(str(service) for service in target_services)
     return "".join(
         f" --service {shlex.quote(service)}" for service in sorted(services)
@@ -7800,11 +7813,8 @@ def _remote_runtime_env_snapshot(
         raise ReleaseError("runtime environment helper is unavailable") from exc
     service_options = _runtime_env_service_options(args)
     remote_operation = command
-    if (
-        command == "inspect"
-        and bool(getattr(args, "streamlined_candidate", False))
-        and service_options
-    ):
+    target_services = getattr(args, "target_env_services", None)
+    if command == "inspect" and isinstance(target_services, (set, list, tuple)):
         remote_operation = "inspect-target"
     remote_command = (
         f'python3 -c "$(printf %s {helper} | base64 -d)" {remote_operation} '
@@ -7843,7 +7853,12 @@ def _remote_runtime_env_snapshot(
         raise ReleaseError("remote environment summary is incomplete")
     values = {str(key): "present" for key in present if isinstance(key, str)}
     values.update({str(key): str(value) for key, value in public.items()})
-    return values, str(document["environment_revision"]), document
+    effective_revision = document.get(
+        "effective_environment_revision", document["environment_revision"]
+    )
+    if not re.fullmatch(r"[0-9a-f]{64}", str(effective_revision)):
+        raise ReleaseError("remote environment summary is invalid")
+    return values, str(effective_revision), document
 
 
 CONFIG_SERVICE_TO_COMPOSE = {
@@ -8087,11 +8102,13 @@ def run_config_command(args: argparse.Namespace) -> int:
             "environment",
             "environment_revision",
             "active_revision",
+            "effective_environment_revision",
             "contract_revision",
             "drift",
             "changed_keys",
             "affected_services",
             "unknown_keys",
+            "retired_services",
             "service_revisions",
         )
         if key in inspected
@@ -8106,6 +8123,11 @@ def run_config_command(args: argparse.Namespace) -> int:
         if isinstance(name, str)
     }
     if config_module:
+        retired_services = inspected.get("retired_services")
+        if isinstance(retired_services, list) and retired_services:
+            raise ReleaseError(
+                "scoped config activation requires full retired-service cleanup"
+            )
         allowed = set(INDEPENDENT_MODULE_ENV_SERVICES[config_module])
         if not affected or not affected <= allowed:
             raise ReleaseError(
@@ -8683,15 +8705,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             resolve_execution_profile(impact, manifest, {"drift": False}).name
             == "streamlined"
         )
-        compose_to_config = {
-            compose_service: config_service
-            for config_service, compose_service in CONFIG_SERVICE_TO_COMPOSE.items()
-        }
-        args.target_env_services = {
-            compose_to_config[service]
-            for service in impact.services
-            if service in compose_to_config
-        }
+        args.target_env_services = _release_target_env_services(args.env, impact)
         if (
             args.env == "test"
             and decision.risk_class == "owner-tools"
