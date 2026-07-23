@@ -1597,7 +1597,10 @@ class LanAioProdOps:
     ) -> dict[str, Any]:
         """Recreate one LAN slot from an exact release digest with local rollback."""
 
-        if slot.target_profile_id != resolved["profile"]:
+        release_profile = {
+            "img2img_lora": "img2img",
+        }.get(slot.target_profile_id, slot.target_profile_id)
+        if release_profile != resolved["profile"]:
             raise RuntimeError(
                 "release profile does not match selected LAN slot: "
                 f"{resolved['profile']} != {slot.target_profile_id}"
