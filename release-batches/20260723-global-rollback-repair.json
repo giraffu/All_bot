@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "8df48e6e1617e25ee2479b70a10c3a059d8a8ed5",
+  "batch": "20260723-global-rollback-repair",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-global-rollback-repair",
+  "members": [
+    {
+      "base_sha": "8df48e6e1617e25ee2479b70a10c3a059d8a8ed5",
+      "branch": "codex/a-repair-global-rollback-materials",
+      "head": "097fd99df9baf755bc027635f19049b1bbf0b20f",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}
