@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
