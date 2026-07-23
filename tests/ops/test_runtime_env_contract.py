@@ -746,6 +746,92 @@ def test_scoped_activation_updates_target_and_preserves_non_target_with_rollback
     assert qqcc_path.read_bytes() == old_qqcc
 
 
+def test_scoped_activation_preserves_retired_non_target_projections(
+    tmp_path, capsys
+):
+    module = _load_module()
+    values = _environment("prod")
+    legacy_contract = module.load_contract(CONTRACT_PATH)
+    legacy_contract["services"]["postgres"].pop("environments", None)
+    legacy_contract["services"]["redis"].pop("environments", None)
+    legacy_contract["services"]["qqcc-config-backend"]["required"].remove(
+        "API_TOKEN"
+    )
+    legacy_contract_path = tmp_path / "legacy-contract.json"
+    legacy_contract_path.write_text(
+        json.dumps(legacy_contract), encoding="utf-8"
+    )
+    env_file = tmp_path / "prod.env"
+    env_file.write_text(module._env_text(values), encoding="utf-8")
+    env_file.chmod(0o600)
+    root = tmp_path / "state"
+    common = [
+        "--environment",
+        "prod",
+        "--env-file",
+        str(env_file),
+        "--root",
+        str(root),
+    ]
+
+    assert (
+        module.main(
+            [
+                "activate",
+                *common,
+                "--contract",
+                str(legacy_contract_path),
+                "--service",
+                "postgres",
+                "--service",
+                "redis",
+                "--service",
+                "qqcc-config-backend",
+                "--service",
+                "qqcc-config-frontend",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    postgres_path = root / "current" / "postgres.env"
+    redis_path = root / "current" / "redis.env"
+    qqcc_path = root / "current" / "qqcc-config-backend.env"
+    before = {
+        "postgres": postgres_path.read_bytes(),
+        "redis": redis_path.read_bytes(),
+    }
+    assert b"API_TOKEN" not in qqcc_path.read_bytes()
+    current_common = [*common, "--contract", str(CONTRACT_PATH)]
+    target = [
+        "--service",
+        "qqcc-config-backend",
+        "--service",
+        "qqcc-config-frontend",
+    ]
+
+    assert module.main(["inspect", *current_common, *target]) == 0
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["affected_services"] == ["qqcc-config-backend"]
+    assert inspected["retired_services"] == []
+
+    assert module.main(["activate", *current_common, *target]) == 0
+    activated = json.loads(capsys.readouterr().out)
+    active = module.load_active_state(root)
+
+    assert active is not None
+    assert set(active["service_revisions"]) == {
+        "postgres",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "redis",
+    }
+    assert activated["retired_services"] == []
+    assert postgres_path.read_bytes() == before["postgres"]
+    assert redis_path.read_bytes() == before["redis"]
+    assert b"API_TOKEN=prod-api-token" in qqcc_path.read_bytes()
+
+
 def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
     module = _load_module()
     env_file = tmp_path / "prod.env"
