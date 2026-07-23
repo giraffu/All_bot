@@ -144,6 +144,8 @@ control-plane 代码发布无论 `streamlined` 还是 `strict`，都先按 test/
 
 main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Dashboard 把每个 RunPod profile 解析成精确 `image@sha256`。当本批次没有 GPU 输入变化时，模块化 CI 从目标 main 的全部祖先中选择最近的完整、不可变 main-channel GPU manifest，原样继承每项 digest、artifact source SHA、OCI revision 与模型证据；这只是控制面 pin 索引，不构建、不测试、不部署 GPU，也不把历史镜像改写成当前 SHA。环境中立门禁只扫描 artifact 自身构建 SHA 对应的新增镜像，并按 exact ref 聚合共享 profile；每个唯一镜像只 pull/config/filesystem 一次，文件树用停止容器的定向 `docker cp` 检查应用目录，不再 `docker export` 全部模型/系统层。继承镜像继续复用原构建 CI 证据，过滤 SHA 必须等于当前 release index SHA。若某 profile 的 catalog、`remote_workers/**` 或真实输入发生变化，历史基线不能满足它，仍须当前 main SHA 的专用 GPU attestation/canary；找不到完整可信祖先或出现 mutable/mismatch ref 时，main bundle 在发布前阻断。
 
+当 GPU catalog 删除退役 profile、导致旧 release bundle 的 profile 键集合不再等于当前 catalog 时，模块化 CI 可继续从 main 祖先的独立 `allbot-gpu-release-manifests:<full-sha>` 查找基线。该回退仍要求 manifest source SHA 等于祖先 tag、`completeness=complete`、`missing_artifacts=[]` 且 artifact 键与当前 catalog 完全一致；不接受分支外 SHA、mutable tag 或部分 manifest。
+
 ```bash
 scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
 scripts/release.py preflight --env test --track control-plane --sha <40-char-sha>
