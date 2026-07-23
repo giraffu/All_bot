@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "c15879358469c1e6449b50842d92ce96abbf8122",
+  "batch": "20260724-bf16-policy-gate",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-bf16-policy-gate",
+  "members": [
+    {
+      "base_sha": "c15879358469c1e6449b50842d92ce96abbf8122",
+      "branch": "codex/b-bf16-rollout-policy-gate",
+      "head": "7d29ce04818b2be40043dfb93a0876e55724bb68",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
