@@ -25,7 +25,11 @@ from .lan_aio_state import (
     assess_state_drift,
     catalog_sha256,
 )
-from .runtime import RuntimePlanner, RuntimeRenderOverrides
+from .runtime import (
+    BF16_LAN_PIPELINE_POLICY,
+    RuntimePlanner,
+    RuntimeRenderOverrides,
+)
 from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
 
@@ -1714,7 +1718,8 @@ class LanAioProdOps:
             f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
             "actual_revision=$(docker image inspect "
             f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
-            f'test "$actual_revision" = {revision}'
+            f'test "$actual_revision" = {revision}; '
+            f"{self._pipeline_runtime_contract_checks(slot, container)}"
         )
         self._ssh(slot.ssh_host, command)
 
@@ -1725,8 +1730,32 @@ class LanAioProdOps:
             slot.ssh_host,
             (
                 "set -euo pipefail; "
-                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}"
+                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
+                f"{self._pipeline_runtime_contract_checks(slot, container)}"
             ),
+        )
+
+    @staticmethod
+    def _pipeline_runtime_contract_checks(
+        slot: LanAioProdSlot,
+        container: str,
+    ) -> str:
+        if slot.target_profile_id != "pornmaster_flux2_edit_bf16":
+            return ":"
+        expected = (
+            f"PIPELINE_PROFILE_POLICY={BF16_LAN_PIPELINE_POLICY}",
+            "PIPELINE_MAX_RUNNING_TASKS=1",
+            "PIPELINE_MAX_CLAIMED_TASKS=2",
+            "PIPELINE_DELIVERY_CONCURRENCY=1",
+        )
+        checks = " ".join(
+            f"printf '%s\\n' \"$pipeline_env\" | grep -Fxq {shlex.quote(value)};"
+            for value in expected
+        )
+        return (
+            'pipeline_env="$(docker inspect -f '
+            "'{{range .Config.Env}}{{println .}}{{end}}' "
+            f'{container})"; {checks}'
         )
 
     def _exact_remote_image_ref(self, slot: LanAioProdSlot, image_ref: str) -> str:
