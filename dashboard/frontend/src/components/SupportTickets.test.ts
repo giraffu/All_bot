@@ -103,6 +103,7 @@ describe('SupportTickets', () => {
       '工单列表',
       '工单详情',
     ])
+    expect(scrollRegions.every(region => region.attributes('tabindex') === '0')).toBe(true)
 
     wrapper.unmount()
   })
