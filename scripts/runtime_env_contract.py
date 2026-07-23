@@ -510,6 +510,36 @@ def validate_active_projection_integrity(root: Path, active: Mapping[str, Any]) 
             raise ContractError("active service environment integrity check failed")
 
 
+def preserve_active_projections(
+    root: Path,
+    active: Mapping[str, Any],
+    snapshot: EnvironmentSnapshot,
+    services: Iterable[str],
+) -> EnvironmentSnapshot:
+    """Carry verified non-target projections through a scoped activation."""
+
+    active_revision = str(active["environment_revision"])
+    active_service_revisions = active["service_revisions"]
+    projections = dict(snapshot.projections)
+    service_revisions = dict(snapshot.service_revisions)
+    for service in sorted(set(services)):
+        revision = str(active_service_revisions[service])
+        path = root / active_revision / f"{service}.env"
+        projection = parse_env_text(path.read_text(encoding="utf-8"))
+        if projection.get("ALLBOT_CONFIG_REVISION") != revision:
+            raise ContractError("active service environment integrity check failed")
+        projections[service] = projection
+        service_revisions[service] = revision
+    return EnvironmentSnapshot(
+        environment=snapshot.environment,
+        environment_revision=snapshot.environment_revision,
+        contract_revision=snapshot.contract_revision,
+        projections=projections,
+        service_revisions=service_revisions,
+        key_hashes=snapshot.key_hashes,
+    )
+
+
 def validate_target_projection_integrity(
     root: Path,
     active: Mapping[str, Any],
@@ -795,6 +825,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command != "inspect-target" and active is not None:
             validate_active_projection_integrity(args.root, active)
         selected_services = set(requested_services)
+        preserved_services: set[str] = set()
         if (
             args.command != "inspect-target"
             and requested_services
@@ -803,7 +834,18 @@ def main(argv: list[str] | None = None) -> int:
             active_service_revisions = active.get("service_revisions")
             if not isinstance(active_service_revisions, Mapping):
                 raise ContractError("active service environment state is invalid")
-            selected_services.update(str(name) for name in active_service_revisions)
+            configured = contract["services"]
+            active_services = {str(name) for name in active_service_revisions}
+            rebuildable_services = {
+                name
+                for name in active_services
+                if name in configured
+                and _service_available(configured[name], args.environment)
+            }
+            selected_services.update(rebuildable_services)
+            preserved_services = (
+                active_services - rebuildable_services - requested_services
+            )
         snapshot = build_snapshot(
             contract,
             args.environment,
@@ -814,6 +856,13 @@ def main(argv: list[str] | None = None) -> int:
                 else None
             ),
         )
+        if preserved_services and isinstance(active, Mapping):
+            snapshot = preserve_active_projections(
+                args.root,
+                active,
+                snapshot,
+                preserved_services,
+            )
         if args.command == "inspect-target" and snapshot.projections:
             if active is None:
                 raise ContractError("target service environment is not activated")
