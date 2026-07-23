@@ -3606,11 +3606,32 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                     args.previous_state,
                     _read_artifact_state_history(args),
                 )
-        independent_release = resolve_independent_module_release(
-            policy,
-            requested_modules,
-            getattr(args, "previous_state", None),
+        previous_state = getattr(args, "previous_state", None)
+        repair_current_test_bundle = (
+            expanded_independent is not None
+            and expanded_independent[0] == "dashboard"
+            and args.command == "recover"
+            and bool(getattr(args, "repair_rollback_materials", False))
+            and args.env == "test"
+            and args.track == "control-plane"
+            and isinstance(previous_state, Mapping)
+            and previous_state.get("schema_version") == 2
+            and previous_state.get("track") == "control-plane"
+            and validate_full_sha(str(previous_state.get("git_sha", ""))) == sha
         )
+        if repair_current_test_bundle:
+            independent_release = IndependentModuleRelease(
+                name=expanded_independent[0],
+                artifacts=expanded_independent[1],
+                previous_sha=sha,
+                source_shas={sha},
+            )
+        else:
+            independent_release = resolve_independent_module_release(
+                policy,
+                requested_modules,
+                previous_state,
+            )
         if independent_release:
             if args.track != "control-plane":
                 raise ReleaseError(

@@ -4206,6 +4206,105 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
     assert impact.services == {"dashboard-backend", "dashboard-frontend"}
 
 
+def test_test_rollback_repair_accepts_current_bundle_without_dashboard_state(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@{digest}",
+            "digest": digest,
+            "source_sha": "b" * 40,
+            "oci_revision": "b" * 40,
+            "dependency_closure": [],
+        }
+        for name in {
+            "central-api",
+            "dashboard-backend",
+            "dashboard-frontend",
+        }
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "artifacts": {
+            "central-api": {
+                "digest": digest,
+                "source_sha": "b" * 40,
+            }
+        },
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="recover",
+        repair_rollback_materials=True,
+        modules=["dashboard"],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+    selected = []
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(module, "_read_current_state", lambda *_args, **_kwargs: state)
+    monkeypatch.setattr(module, "_read_artifact_state_history", lambda *_args: [])
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+
+    def fake_load(_path, *, sha, track, modules, select_all_when_empty):
+        selected.extend(modules)
+        return {
+            "schema_version": 2,
+            "source_sha": sha,
+            "git_sha": sha,
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": track,
+            "artifacts": artifacts,
+            "selected_artifacts": list(modules),
+        }
+
+    monkeypatch.setattr(module, "_load_v2_track", fake_load)
+
+    impact, manifest, previous_sha = module.build_plan(args)
+
+    assert previous_sha == FULL_SHA
+    assert set(selected) == {"dashboard-backend", "dashboard-frontend"}
+    assert set(manifest["selected_artifacts"]) == {
+        "dashboard-backend",
+        "dashboard-frontend",
+    }
+    assert impact.services == {"dashboard-backend", "dashboard-frontend"}
+
+
 @pytest.mark.parametrize(
     "module_name,changed_path,blocker",
     [
