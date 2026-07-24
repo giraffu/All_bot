@@ -60,7 +60,7 @@ def test_owner_config_update_is_optimistic_and_normalizes_unknown_fields():
     assert bot.config["main_menu_layout"]["buttons_per_row"] == 4
     assert bot.config["main_menu_layout"]["button_order"][:2] == [
         "main_bot_link",
-        "ai_draw",
+        "ai_draw_v2",
     ]
     assert "unknown" not in bot.config["main_buttons"]
     assert "unknown_section" not in bot.config

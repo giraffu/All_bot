@@ -443,6 +443,10 @@ def _normalize_main_menu_layout(raw: Any) -> dict[str, Any]:
     raw_button_order = raw.get("button_order")
     if isinstance(raw_button_order, list):
         for key in raw_button_order:
+            if key == "ai_draw":
+                key = "ai_draw_v2"
+            elif key == "video_edit":
+                key = "video_edit_v2"
             if (
                 isinstance(key, str)
                 and key in MAIN_MENU_BUTTON_ORDER

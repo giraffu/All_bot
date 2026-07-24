@@ -534,14 +534,14 @@ async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
 
     assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
     assert context.user_data["quick_image_data"] == {
-        "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
-        "cost": 2,
+        "mode": "free_edit_v2_5",
+        "cost": 3,
         "image_path": None,
         "scene_id": "soft_light",
         "scene_kind": "draw",
         "mode_name": "柔光写真",
         "prompt_override": "soft light prompt",
-        "engine": "free_edit_v2",
+        "engine": "free_edit_v2_5",
         "lora_name": "",
     }
     answer_mock.assert_awaited_once()
@@ -865,7 +865,7 @@ async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
     assert result == ConversationHandler.END
     assert len(scheduled) == 1
     await scheduled[0]
-    assert captured["task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    assert captured["task_type"] == "free_edit_v2_5"
     assert captured["images"] == ["/tmp/draw.png"]
     assert captured["prompt"] == "soft light prompt"
     assert context.bot_data["bot_client_type"] == "bot:qqcc"
@@ -941,7 +941,7 @@ async def test_qqcc_default_ai_draw_scene_uses_scene_prompt_with_free_edit(monke
     assert result == ConversationHandler.END
     assert len(scheduled) == 1
     await scheduled[0]
-    assert captured["task_type"] == MODE_EDIT
+    assert captured["task_type"] == "free_edit_v2_5"
     assert captured["images"] == ["/tmp/default-draw.png"]
     assert captured["prompt"] == QQCC_SCENE_PRESET_PROMPTS["undress"]
     load_prompts_mock.assert_not_called()
@@ -1036,7 +1036,7 @@ async def test_qqcc_ai_draw_scene_runs_postprocess_chain_before_final_result(
     result = await quick_image_fsm.receive_image(update, context)
 
     assert result == ConversationHandler.END
-    assert validate_submission.await_args.kwargs["cost"] == 4
+    assert validate_submission.await_args.kwargs["cost"] == 6
     assert len(scheduled) == 1
     await scheduled[0]
     assert calls[0]["prompt"] == "soft light prompt"
@@ -1056,7 +1056,7 @@ async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch
     captured = {}
     config = normalize_qqcc_config(
         {
-            "draw_scenes": [
+            "draw_scenes_v1": [
                 {
                     "id": "realistic",
                     "name": "逼真质感",
@@ -1114,8 +1114,9 @@ async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch
             "quick_image_data": {
                 "mode": MODE_IMG2IMG_LORA,
                 "cost": 2,
-                "image_path": None,
-                "scene_id": "realistic",
+                    "image_path": None,
+                    "scene_id": "realistic",
+                    "scene_version": "v1",
             },
         },
         bot=SimpleNamespace(),
