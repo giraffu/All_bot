@@ -651,6 +651,12 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
 
     handlers = [item[0] for item in added_handlers]
     assert handlers[0].__class__ is TypeHandler
+    assert any(
+        handler.__class__ is TypeHandler
+        and args == ()
+        and kwargs == {"group": 1000}
+        for handler, args, kwargs in added_handlers
+    )
     assert "quick-image" in handlers
     assert "quick-video" in handlers
     assert sum(isinstance(handler, CommandHandler) for handler in handlers) == 2
