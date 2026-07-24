@@ -111,11 +111,11 @@ def test_qqcc_main_menu_supports_one_to_four_buttons_per_row(buttons_per_row):
         "前往主bot",
         "快速换脸",
         "AI滤镜",
-        "AI视频",
-        "AI绘图V1",
         "AI绘图V2",
-        "AI动图V1",
+        "AI视频",
         "AI动图V2",
+        "AI绘图V1",
+        "AI动图V1",
     ]
     assert [len(row) for row in rows] == [
         min(buttons_per_row, len(flat) - offset)
@@ -137,8 +137,8 @@ def test_qqcc_main_menu_filters_hidden_buttons_before_chunking():
 
     assert rows == [
         ["前往主bot", "快速换脸", "AI滤镜"],
-        ["AI视频", "AI绘图V1", "AI绘图V2"],
-        ["AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI视频", "AI动图V2"],
+        ["AI绘图V1", "AI动图V1"],
     ]
 
 
