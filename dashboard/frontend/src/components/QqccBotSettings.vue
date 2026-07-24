@@ -42,7 +42,7 @@ type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
-type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
+type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
 type DemoMediaSlot = 'input' | 'output'
 type DemoUploadFile = File & { originFileObj?: File }
@@ -432,6 +432,7 @@ const drawEngineLabels: Record<DrawSceneEngine, string> = {
   free_edit: '自由P图',
   free_edit_v2: '自由P图v2',
   free_edit_v3: '自由P图v3',
+  free_edit_v2_5: '自由P图v2.5',
 }
 
 const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
@@ -643,7 +644,7 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
-  value === 'free_edit' || value === 'free_edit_v3' ? value : 'free_edit_v2'
+  value === 'free_edit' || value === 'free_edit_v2_5' || value === 'free_edit_v3' ? value : 'free_edit_v2'
 
 const normalizeDemoMedia = (
   raw: unknown,
@@ -1194,6 +1195,10 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     normalizeDrawPostprocessRefs(normalizedDrawScenes, merged.filter_scenes)
     merged.draw_scenes = normalizedDrawScenes
   }
+  // Versioned collections use the same validated scene shape.  Keep them in
+  // the draft even when the V2 compatibility projection above is displayed.
+  if (Array.isArray(raw.draw_scenes_v1)) merged.draw_scenes_v1 = raw.draw_scenes_v1 as DrawSceneConfig[]
+  if (Array.isArray(raw.draw_scenes_v2)) merged.draw_scenes_v2 = raw.draw_scenes_v2 as DrawSceneConfig[]
   if (Array.isArray(raw.video_scenes)) {
     merged.video_scenes = raw.video_scenes
       .map((scene, index) => {
@@ -1247,6 +1252,8 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
+  if (Array.isArray(raw.video_scenes_v1)) merged.video_scenes_v1 = raw.video_scenes_v1 as VideoSceneConfig[]
+  if (Array.isArray(raw.video_scenes_v2)) merged.video_scenes_v2 = raw.video_scenes_v2 as VideoSceneConfig[]
   if (Array.isArray(raw.ai_video_scenes)) {
     merged.ai_video_scenes = raw.ai_video_scenes
       .map((scene, index) => {

@@ -27,6 +27,7 @@ from src.services.qqcc_config_service import (
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
+    get_enabled_qqcc_video_scenes_v1,
     get_enabled_qqcc_ai_video_scenes,
     cache_qqcc_demo_telegram_file_ids,
     get_qqcc_copywriting_override,
@@ -301,7 +302,10 @@ def test_normalize_qqcc_main_menu_layout_falls_back_for_invalid_columns(
         "closeup_blowjob",
     ]
     assert config["video_scenes"][0]["duration"] == "5s"
-    assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    assert config["video_scenes_v1"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert config["draw_scenes_v1"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert config["draw_scenes_v2"][0]["engine"] == "free_edit_v2_5"
     assert config["video_scenes"][0]["lora_name"] == ""
     assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
     assert config["video_scenes"][0]["negative_prompt"] == ""
@@ -889,8 +893,12 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "quick_faceswap": True,
         "photo_edit": False,
         "ai_draw": True,
+        "ai_draw_v1": True,
+        "ai_draw_v2": True,
         "ai_filter": True,
         "video_edit": True,
+        "video_edit_v1": True,
+        "video_edit_v2": True,
         "ai_video": True,
         "market": True,
         "main_bot_link": True,
@@ -1039,7 +1047,8 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
     ]
     assert scenes[0]["prompt"] == "custom missionary prompt"
     assert scenes[0]["negative_prompt"] == ""
-    assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    assert get_enabled_qqcc_video_scenes_v1(config)[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert scenes[0]["lora_name"] == ""
     assert scenes[-1]["prompt"] == "custom closeup prompt"
     assert scenes[-1]["duration"] == "5s"

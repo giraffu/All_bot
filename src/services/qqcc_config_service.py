@@ -33,7 +33,7 @@ from src.services.qqcc_video_scene_chain_service import (
 )
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
-SCENE_PRESET_VERSION = 2
+SCENE_PRESET_VERSION = 1
 
 MAIN_BUTTON_KEYS = (
     "quick_undress",
@@ -1339,17 +1339,13 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     # collections are independently editable.
     legacy_draw_scenes = config["draw_scenes"]
     legacy_video_scenes = config["video_scenes"]
-    raw_draw_v2 = raw.get("draw_scenes_v2", legacy_draw_scenes)
-    raw_video_v2 = raw.get("video_scenes_v2", legacy_video_scenes)
-    config["draw_scenes_v2"] = _normalize_versioned_draw_scenes(
-        raw_draw_v2,
-        engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
-        raw_prompts=raw_prompts,
-        seed_presets=False,
-        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    migration_draw_source = _normalize_draw_scenes(raw.get("draw_scenes"), raw_prompts=raw_prompts, seed_presets=seed_scene_presets, allowed_filter_scene_ids=allowed_filter_scene_ids) if "draw_scenes" in raw else legacy_draw_scenes
+    config["draw_scenes_v2"] = (
+        _normalize_versioned_draw_scenes(raw["draw_scenes_v2"], engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5, raw_prompts=raw_prompts, seed_presets=False, allowed_filter_scene_ids=allowed_filter_scene_ids)
+        if "draw_scenes_v2" in raw else _force_scene_engine(migration_draw_source, engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5, draw=True)
     )
     config["draw_scenes_v1"] = _normalize_versioned_draw_scenes(
-        raw.get("draw_scenes_v1", legacy_draw_scenes),
+        raw.get("draw_scenes_v1", migration_draw_source),
         engine=DRAW_SCENE_ENGINE_FREE_EDIT,
         raw_prompts=raw_prompts,
         seed_presets=False,
@@ -1357,20 +1353,20 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     )
     v2_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v2"])
     v1_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v1"])
-    config["video_scenes_v2"] = _normalize_versioned_video_scenes(
-        raw_video_v2,
-        engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-        allowed_end_frame_draw_scene_ids=v2_draw_ids,
-        raw_prompts=raw_prompts,
-        seed_presets=False,
+    migration_video_source = _normalize_video_scenes(raw.get("video_scenes"), allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids, raw_prompts=raw_prompts, seed_presets=seed_scene_presets) if "video_scenes" in raw else legacy_video_scenes
+    config["video_scenes_v2"] = (
+        _normalize_versioned_video_scenes(raw["video_scenes_v2"], engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2, allowed_end_frame_draw_scene_ids=v2_draw_ids, raw_prompts=raw_prompts, seed_presets=False)
+        if "video_scenes_v2" in raw else _force_scene_engine(migration_video_source, engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2)
     )
     config["video_scenes_v1"] = _normalize_versioned_video_scenes(
-        raw.get("video_scenes_v1", legacy_video_scenes),
+        raw.get("video_scenes_v1", migration_video_source),
         engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         allowed_end_frame_draw_scene_ids=v1_draw_ids,
         raw_prompts=raw_prompts,
         seed_presets=False,
     )
+    normalize_qqcc_video_scene_links(config["video_scenes_v1"])
+    normalize_qqcc_video_scene_links(config["video_scenes_v2"])
     # Existing call sites and persisted callbacks continue to resolve V2.
     config["draw_scenes"] = config["draw_scenes_v2"]
     config["video_scenes"] = config["video_scenes_v2"]
@@ -1604,6 +1600,10 @@ def build_qqcc_config_options() -> dict[str, Any]:
             },
             {
                 "value": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                "supports_lora": False,
+            },
+            {
+                "value": DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
                 "supports_lora": False,
             },
             {
