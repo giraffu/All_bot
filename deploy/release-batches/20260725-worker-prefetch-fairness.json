@@ -1,6 +1,6 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "4835c9f486822ec6313ec4c4d7b4672c65dc7293",
+  "base_sha": "d65d590fac4d61d3a7240d0ce986a7a261591d45",
   "batch": "20260725-worker-prefetch-fairness",
   "container_build_trigger": "main-merge",
   "integration_branch": "codex/release-batch-20260725-worker-prefetch-fairness",
