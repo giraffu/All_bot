@@ -481,6 +481,34 @@ async def test_dequeue_task_respects_allowed_types_and_marks_task_running():
 
 
 @pytest.mark.asyncio
+async def test_dequeue_task_uses_priority_score_across_allowed_types():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    lower_priority_task = f"{manager.task_prefix}lower-priority"
+    higher_priority_task = f"{manager.task_prefix}higher-priority"
+
+    await redis.hset(
+        lower_priority_task,
+        mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING},
+    )
+    await redis.hset(
+        higher_priority_task,
+        mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING},
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"lower-priority": 20.0, "higher-priority": 10.0},
+    )
+
+    result = await manager.dequeue_task(
+        allowed_types=[TaskType.IMG2IMG, TaskType.LTX_VIDEO]
+    )
+
+    assert result == ("higher-priority", 10.0)
+    assert "lower-priority" in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
 async def test_dequeue_task_with_cancel_lock_marks_task_uncancellable_phase():
     redis = _FakeRedis()
     manager = QueueManager(redis)

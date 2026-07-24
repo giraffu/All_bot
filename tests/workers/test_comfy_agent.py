@@ -211,7 +211,7 @@ def test_agent_main_removes_debug_side_paths():
 
 
 @pytest.mark.asyncio
-async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatch):
+async def test_reserved_prefetch_considers_all_eligible_worker_types(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
     calls = []
@@ -233,22 +233,23 @@ async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatc
 
     agent._master_get = fake_master_get
     agent._prepare_task_inputs = fake_prepare_task_inputs
-    agent._prefetch_task_types = {"face_swap"}
+    agent._prefetch_task_types = {"face_swap", "img2img", "unsupported"}
 
-    await agent._prefetch_manager.prefetch_next_task_inputs(
-        task_type_filter="face_swap",
+    agent._prefetch_manager.schedule_prefetch(
+        current_task_type="face_swap",
         prefetch_enabled=True,
         prefetch_depth=1,
         cache_dir="/tmp/prefetch",
         reserve_task=True,
     )
+    await agent._prefetch_task
 
     assert calls == [
         (
             "/api/agent/task/pop",
             {
                 "agent_id": module.AGENT_ID,
-                "types": "face_swap",
+                "types": "face_swap,img2img",
                 "cancel_lock": "true",
             },
         )
@@ -261,6 +262,78 @@ async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatc
     assert reused == task
     assert agent._reserved_prefetch_task is None
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_remote_reserved_prefetch_considers_all_eligible_worker_types(
+    monkeypatch,
+):
+    module = load_agent_main_module(
+        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+    )
+    monkeypatch.setattr(module, "PREFETCH_ENABLED", True)
+    monkeypatch.setattr(module, "PREFETCH_DEPTH", 1)
+    monkeypatch.setattr(module, "PREFETCH_RESERVE_TASK", True)
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent._claim_lock = __import__("asyncio").Lock()
+    agent._executions = {}
+    agent._reserved_prefetch_task = None
+    agent._prefetch_cache = {}
+    agent._prefetch_task = None
+    agent._prefetch_task_types = {"face_swap", "img2img", "unsupported"}
+    agent._pipeline_task_types = {"all"}
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=2,
+        max_comfy_inflight=1,
+    )
+    calls = []
+    task = {"task_id": "task-next", "type": "img2img", "params": "{}"}
+
+    async def fake_master_get(path, *, params=None):
+        calls.append((path, params))
+        return SimpleNamespace(status_code=200, json=lambda: {"task": task})
+
+    async def fake_prepare_task_inputs(**_kwargs):
+        return None
+
+    agent.master_client = SimpleNamespace(get=fake_master_get)
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+
+    agent._schedule_prefetch(current_task_type="face_swap")
+    await agent._prefetch_task
+
+    assert calls == [
+        (
+            "/api/agent/task/pop",
+            {
+                "agent_id": module.AGENT_ID,
+                "types": "face_swap,img2img",
+                "cancel_lock": "true",
+            },
+        )
+    ]
+    assert agent._reserved_prefetch_task == task
+
+
+@pytest.mark.asyncio
+async def test_prefetch_skips_central_when_no_worker_type_is_eligible(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent._prefetch_task_types = {"unsupported"}
+
+    async def unexpected_master_get(*_args, **_kwargs):
+        raise AssertionError("Central must not be called without an eligible type")
+
+    agent._master_get = unexpected_master_get
+
+    await agent._prefetch_manager.prefetch_next_task_inputs(
+        prefetch_enabled=True,
+        prefetch_depth=1,
+        cache_dir="/tmp/prefetch",
+        reserve_task=True,
+    )
+
+    assert agent._reserved_prefetch_task is None
 
 
 @pytest.mark.asyncio
@@ -282,7 +355,6 @@ async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparat
     agent._prefetch_task_types = {"face_swap"}
 
     await agent._prefetch_manager.prefetch_next_task_inputs(
-        task_type_filter="face_swap",
         prefetch_enabled=True,
         prefetch_depth=1,
         cache_dir="/tmp/prefetch",
