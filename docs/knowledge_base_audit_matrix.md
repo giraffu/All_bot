@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-24：修复日常 `promote` 对 prod-only artifact 的不可满足测试门禁：`payment-api` 与 `paid-group-bot` 不存在于云测试拓扑，测试 planner 会拒绝为其构造运行 baseline，因此两者改用受保护 main CI + 不可变 digest 的 direct assurance，并继续强制正式健康、事务回滚和非目标证明；同一批次中测试环境实际存在的 `central-api`、`web-api`、`main-bot` 仍必须逐 artifact 命中 exact-digest main-channel 测试 evidence。不得通过伪造测试 state 或 skip gate 解决。
+>
 > 2026-07-24：正式主控制面定向升级补齐 main-bot 两类配置隔离：`REQUIRED_CHANNEL_ID` 成为签到频道同步的精确必填投影；懒人入口使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`，且只允许影响 main-bot，旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。当前三条 migration 以精确内容 SHA256 登记为五个核心目标模块的已审阅非目标快照；正式数据库已在单一 head `62d4a8f9c7e1` 时不得重复迁移，head 或 checksum 漂移必须阻断。本批次不修改或发布 Public Web、Dashboard、QQCC/私有 Bot、Support 或 GPU，`LTX_T2V_BACKEND_ENABLED` 继续关闭。
 >
 > 2026-07-24：QQCC Config 正式环境三个并发视频示范监视复现连接池耗尽：提交路由的 request-scoped DB session 会被 FastAPI 保留到 BackgroundTasks 结束，恰好占满 `pool_size=2 + max_overflow=1`，使配置 GET 返回 500、生成 POST 返回 503；数据库同时观测到 3 个 `idle in transaction`。现场仅向 Config Backend Gunicorn master 发送 HUP 生成新 worker，未重建容器、未开维护、未触碰其它服务；接口恢复后三个监视均完成自动写回。代码改为独立短会话读取场景快照并在注册监视前关闭，监视自身仅在终态写回时短暂取连接；API 行为回归直接断言后台监视开始时配置会话已经释放。

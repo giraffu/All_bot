@@ -6987,12 +6987,22 @@ def test_mixed_promote_assurance_is_resolved_per_artifact():
     module = _load_module()
 
     decisions = module.resolve_promote_artifact_assurance(
-        {"dashboard-backend", "dashboard-frontend", "qqcc-config-backend"}
+        {
+            "dashboard-backend",
+            "dashboard-frontend",
+            "payment-api",
+            "paid-group-bot",
+            "qqcc-config-backend",
+        }
     )
 
     assert decisions["dashboard-backend"]["strategy"] == "direct"
     assert decisions["dashboard-backend"]["assurance"] == "waived"
     assert decisions["dashboard-frontend"]["strategy"] == "direct"
+    assert decisions["payment-api"]["strategy"] == "direct"
+    assert decisions["payment-api"]["assurance"] == "waived"
+    assert decisions["paid-group-bot"]["strategy"] == "direct"
+    assert decisions["paid-group-bot"]["assurance"] == "waived"
     assert decisions["qqcc-config-backend"]["strategy"] == "standard"
     assert decisions["qqcc-config-backend"]["assurance"] == "tested"
 
@@ -7364,13 +7374,22 @@ def test_promote_mixed_strategy_queries_test_evidence_only_for_standard(monkeypa
     module = _load_module()
     dashboard_digest = "sha256:" + "1" * 64
     qqcc_digest = "sha256:" + "2" * 64
+    payment_digest = "sha256:" + "3" * 64
+    paid_group_digest = "sha256:" + "4" * 64
     manifest = {
         "schema_version": 2,
         "track": "control-plane",
         "git_sha": FULL_SHA,
-        "selected_artifacts": ["dashboard-backend", "qqcc-config-backend"],
+        "selected_artifacts": [
+            "dashboard-backend",
+            "paid-group-bot",
+            "payment-api",
+            "qqcc-config-backend",
+        ],
         "artifacts": {
             "dashboard-backend": {"digest": dashboard_digest},
+            "paid-group-bot": {"digest": paid_group_digest},
+            "payment-api": {"digest": payment_digest},
             "qqcc-config-backend": {"digest": qqcc_digest},
         },
     }
