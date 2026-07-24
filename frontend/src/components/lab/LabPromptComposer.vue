@@ -127,6 +127,8 @@ const compactUploadLabel = (label: string) => label
     </div>
 
     <div class="lab-composer__textarea-shell rounded-[20px] border p-3 sm:p-4">
+      <slot name="before-prompt" />
+
       <LabReferenceTray
         v-if="references.length > 0"
         :title="referenceTitle"

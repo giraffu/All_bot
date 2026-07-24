@@ -15,6 +15,7 @@ import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 import LabAdvancedOptionsPanel from '@/components/lab/LabAdvancedOptionsPanel.vue'
 import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
+import LtxT2VCharacterSelector from '@/components/lab/LtxT2VCharacterSelector.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
 
 const { t } = useI18n()
@@ -23,6 +24,7 @@ const {
   currentMode,
   currentModeId,
   prompt,
+  audioPrompt,
   displayedReferences,
   isSubmitting,
   currentTask,
@@ -64,6 +66,7 @@ const {
   resolution,
   videoDurationOptions,
   duration,
+  selectedCharacterId,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -132,6 +135,17 @@ const promptLockedHint = computed(() => (
         @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"
       >
+        <template v-if="currentModeId === 'ltx_t2v'" #before-prompt>
+          <div class="mb-3 space-y-3">
+            <LtxT2VCharacterSelector v-model="selectedCharacterId" />
+            <a-textarea
+              v-model:value="audioPrompt"
+              :maxlength="500"
+              :auto-size="{ minRows: 1, maxRows: 3 }"
+              :placeholder="t('characters.audio_prompt')"
+            />
+          </div>
+        </template>
         <template #advanced-panel="{ close }">
           <LabAdvancedOptionsPanel
             :mode="currentMode"
@@ -151,7 +165,7 @@ const promptLockedHint = computed(() => (
             :wan22-resolution-options="wan22ResolutionOptions"
             :selected-wan22-resolution-preset="wan22ResolutionPreset"
             :is-template-edit-settings-locked="isTemplateEditSettingsLocked"
-            :is-template-video-settings-locked="isTemplateVideoSettingsLocked"
+            :is-template-video-settings-locked="isTemplateVideoSettingsLocked || (currentModeId === 'ltx_t2v' && !!selectedCharacterId)"
             @update:selected-edit-lora="selectedEditLora = $event"
             @update:edit-lora-strength="customEditLoraStrength = $event"
             @update:selected-video-lora="selectedVideoLora = $event"

@@ -25,10 +25,13 @@ from src.handlers.fsm.quick_draw_callback_data import (
     QUICK_DRAW_SCENE_CALLBACK_PATTERN,
     QUICK_FILTER_SCENE_CALLBACK_PATTERN,
     parse_quick_draw_scene_callback_data,
+    parse_quick_draw_v1_scene_callback_data,
     parse_quick_filter_scene_callback_data,
 )
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
-from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task,
+)
 from src.services.permission_service import permission_service
 from src.services.qqcc_draw_chain_service import (
     QQCC_SCENE_KIND_DRAW,
@@ -44,17 +47,22 @@ from src.services.qqcc_config_service import (
     get_qqcc_filter_scene,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
+    project_qqcc_config_for_scene_version,
     render_qqcc_copywriting,
 )
 from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
+    is_qqcc_bot_context,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
+from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
-from src.services.wan22_video_v2_extension_service import download_output_file_to_fsm_temp
+from src.services.wan22_video_v2_extension_service import (
+    download_output_file_to_fsm_temp,
+)
 from src.services.quick_image_submission_service import (
     QQCC_AI_DRAW_TASK_TYPES,
     QuickImageSubmissionKind,
@@ -104,6 +112,19 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
 
 
+def _replace_pending_quick_video_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Clear only a pending video upload before a linked draw-scene switch."""
+    user_data = context.user_data
+    if not str(user_data.get("in_conversation") or "").startswith("QUICK_VIDEO_"):
+        return False
+    video_data = user_data.pop("quick_video_data", {})
+    user_data.pop("in_conversation", None)
+    cleanup_fsm_temp_files(
+        [video_data.get("image_path"), video_data.get("end_image_path")]
+    )
+    return True
+
+
 async def _load_qqcc_config_for_context(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> dict | None:
@@ -149,6 +170,8 @@ def _initialize_quick_image_context(
         "cost": cost,
         "image_path": None,
     }
+
+
 def _resolve_quick_image_start_message(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -234,7 +257,12 @@ async def _start_qqcc_image_scene(
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    cost = calculate_qqcc_draw_chain_cost(draw_chain)
+    fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
+    cost = (
+        fixed_credit_cost
+        if fixed_credit_cost is not None
+        else calculate_qqcc_draw_chain_cost(draw_chain)
+    )
     _initialize_quick_image_context(
         context,
         mode=mode,
@@ -261,10 +289,14 @@ async def _start_qqcc_image_scene(
         if scene_kind == QQCC_SCENE_KIND_FILTER
         else "ai_draw_scene_start"
     )
-    msg = render_qqcc_copywriting(
-        get_qqcc_copywriting_override(qqcc_config, copywriting_key),
-        scene["name"],
-    ) or msg
+    msg = (
+        render_qqcc_copywriting(
+            get_qqcc_copywriting_override(qqcc_config, copywriting_key),
+            scene["name"],
+            cost=cost,
+        )
+        or msg
+    )
 
     if query and query.message:
         private_bot_id = get_private_qqcc_bot_id(context)
@@ -272,7 +304,15 @@ async def _start_qqcc_image_scene(
         await send_qqcc_scene_demo_media(
             message=query.message,
             bot=context.bot,
-            scene_kind=scene_kind,
+            scene_kind=(
+                "draw_v1"
+                if str(
+                    context.user_data.get("qqcc_pending_scene_version")
+                    or context.user_data.get("quick_image_data", {}).get("scene_version")
+                    or ""
+                ) == "v1"
+                else scene_kind
+            ),
             scene=scene,
             **demo_kwargs,
         )
@@ -415,9 +455,8 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     message = update.message or update.edited_message
     query = update.callback_query
-    draw_scene_id = parse_quick_draw_scene_callback_data(
-        query.data if query else None
-    )
+    draw_scene_id = parse_quick_draw_scene_callback_data(query.data if query else None)
+    draw_v1_scene_id = parse_quick_draw_v1_scene_callback_data(query.data if query else None)
     filter_scene_id = parse_quick_filter_scene_callback_data(
         query.data if query else None
     )
@@ -437,6 +476,9 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
+    if (draw_scene_id or draw_v1_scene_id) and is_qqcc_bot_context(context):
+        _replace_pending_quick_video_context(context)
+
     if context.user_data.get("in_conversation"):
         msg = _t(context, "fsm.common.conflict")
         if query:
@@ -449,14 +491,25 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     mode = None
     route_key = GLOBAL_REVERSE_MAP.get(text)
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if draw_v1_scene_id and qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="draw", version="v1"
+        )
+        draw_scene_id = draw_v1_scene_id
     if draw_scene_id:
-        return await _start_qqcc_image_scene(
+        if draw_v1_scene_id:
+            context.user_data["qqcc_pending_scene_version"] = "v1"
+        result = await _start_qqcc_image_scene(
             update,
             context,
             qqcc_config=qqcc_config,
             scene_id=draw_scene_id,
             scene_kind=QQCC_SCENE_KIND_DRAW,
         )
+        if draw_v1_scene_id and result == QuickImageState.WAIT_IMAGE:
+            context.user_data["quick_image_data"]["scene_version"] = "v1"
+        context.user_data.pop("qqcc_pending_scene_version", None)
+        return result
     if filter_scene_id:
         return await _start_qqcc_image_scene(
             update,
@@ -510,6 +563,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     message = update.message
     fsm_data = context.user_data["quick_image_data"]
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config,
+            family="draw",
+            version=str(fsm_data.get("scene_version") or "v2"),
+        )
 
     submission_plan = build_quick_image_submission_plan(
         fsm_data=fsm_data,
@@ -540,7 +599,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         user_id=user_id,
     )
     if not fsm_data["image_path"]:
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return QuickImageState.WAIT_IMAGE
 
     image_path = fsm_data.pop("image_path", None)
@@ -560,7 +621,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             context=context,
         )
     except Exception as exc:
-        logger.error("Error in quick image FSM submission planning: %s", exc, exc_info=True)
+        logger.error(
+            "Error in quick image FSM submission planning: %s", exc, exc_info=True
+        )
         await robust_reply_text(
             message, _t(context, "fsm.quick_image.system_error", error_msg=str(exc))
         )

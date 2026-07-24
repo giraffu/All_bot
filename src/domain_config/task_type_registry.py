@@ -22,6 +22,9 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_LTX_VIDEO,
     MODE_LTX_VIDEO_FLF2V,
+    MODE_LTX_T2V,
+    MODE_LTX_T2V_IC,
+    MODE_CHARACTER_REFERENCE_BUILD,
     MODE_MASTURBATION,
     MODE_NAME_MAP,
     MODE_PENETRATION_STEP1,
@@ -205,7 +208,6 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         workflow_filename=(
             "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
         ),
-        runpod_profile="pornmaster_flux2_edit",
         is_generation=True,
         gallery_supported=True,
         cost=2,
@@ -216,7 +218,6 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         workflow_filename=(
             "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
         ),
-        runpod_profile="pornmaster_flux2_edit",
         is_generation=True,
         gallery_supported=True,
         cost=6,
@@ -467,6 +468,29 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         central_type="ltx_video_v2v_audio",
         workflow_filename="LTX 2.3 V2V Audio 6.1.json",
         is_video=True,
+    ),
+    MODE_LTX_T2V: _entry(
+        MODE_LTX_T2V,
+        central_type=MODE_LTX_T2V,
+        workflow_filename="LTX 2.3 Sulphur T2V.json",
+        is_generation=True,
+        is_video=True,
+        cost=10,
+    ),
+    MODE_LTX_T2V_IC: _entry(
+        MODE_LTX_T2V_IC,
+        central_type=MODE_LTX_T2V_IC,
+        workflow_filename="LTX 2.3 Sulphur Ingredients T2V.json",
+        is_generation=True,
+        is_video=True,
+        cost=12,
+    ),
+    MODE_CHARACTER_REFERENCE_BUILD: _entry(
+        MODE_CHARACTER_REFERENCE_BUILD,
+        central_type=MODE_CHARACTER_REFERENCE_BUILD,
+        workflow_filename="Character Reference Six Views.json",
+        is_generation=True,
+        cost=18,
     ),
     MODE_WAN22_VIDEO_V2: _entry(
         MODE_WAN22_VIDEO_V2,

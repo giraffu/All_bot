@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "3fb7a296d47ee4484108e6eeb783318044ac0a15",
+  "batch": "qqcc-config-scoped-activation-20260724",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-qqcc-config-scoped-activation-20260724",
+  "members": [
+    {
+      "base_sha": "3fb7a296d47ee4484108e6eeb783318044ac0a15",
+      "branch": "codex/a-fix-scoped-config-preserve-retired",
+      "head": "04acfebb817abbc66ca456cd37dcd6f11f628cf3",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

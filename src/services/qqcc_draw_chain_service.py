@@ -10,6 +10,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_FREE_EDIT_V2_5,
     TASK_COSTS,
 )
 from src.lora_catalog import get_lora_default_strength
@@ -17,9 +18,12 @@ from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     get_qqcc_draw_scene,
+    get_qqcc_draw_scene_v1,
     get_qqcc_filter_scene,
 )
+from src.services.qqcc_scene_billing_service import QqccSceneBillingState
 
 
 ProcessGenerationTask = Callable[..., Awaitable[tuple[bytes | None, str | None]]]
@@ -36,6 +40,7 @@ QQCC_ORIGINAL_FACE_SWAP_COST = 2
 QQCC_ORIGINAL_FACE_SWAP_PROMPT = "face swap"
 QQCC_CHAIN_CONTINUATION_BASE_PRIORITY = 100
 QQCC_SCENE_KIND_DRAW = "draw"
+QQCC_SCENE_KIND_DRAW_V1 = "draw_v1"
 QQCC_SCENE_KIND_FILTER = "filter"
 QQCC_SCENE_KIND_KEY = "_qqcc_scene_kind"
 
@@ -56,9 +61,15 @@ def is_qqcc_original_face_swap_enabled(scene: dict[str, object] | None) -> bool:
 
 def resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
     if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT:
-        return MODE_IMG2IMG_LORA if str(scene.get("lora_name") or "").strip() else MODE_EDIT
+        return (
+            MODE_IMG2IMG_LORA
+            if str(scene.get("lora_name") or "").strip()
+            else MODE_EDIT
+        )
     if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT_V3:
         return MODE_PORNMASTER_FLUX2_EDIT_BF16
+    if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT_V2_5:
+        return MODE_FREE_EDIT_V2_5
     return MODE_PORNMASTER_FLUX2_SINGLE_EDIT
 
 
@@ -100,10 +111,13 @@ def resolve_qqcc_draw_scene_chain(
         scene = get_qqcc_filter_scene(config, scene_id)
         return [_with_scene_kind(scene, QQCC_SCENE_KIND_FILTER)] if scene else []
 
+    lookup_draw_scene = (
+        get_qqcc_draw_scene_v1 if scene_kind == QQCC_SCENE_KIND_DRAW_V1 else get_qqcc_draw_scene
+    )
     chain: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     while scene_id and scene_id not in seen_ids:
-        scene = get_qqcc_draw_scene(config, scene_id)
+        scene = lookup_draw_scene(config, scene_id)
         if scene is None:
             break
         chain.append(_with_scene_kind(scene, QQCC_SCENE_KIND_DRAW))
@@ -168,6 +182,7 @@ async def execute_qqcc_draw_scene_chain(
     keep_initial_image: bool = False,
     download_final_output: bool = False,
     name_hint: str = "qqcc_draw_chain",
+    billing_state: QqccSceneBillingState | None = None,
 ) -> QQCCDrawChainResult:
     if not chain:
         return QQCCDrawChainResult()
@@ -180,7 +195,9 @@ async def execute_qqcc_draw_scene_chain(
         original_face_swap_enabled = is_qqcc_original_face_swap_enabled(draw_scene)
         original_needed_from_draw = (
             current_image_path == original_face_image_path
-            and any(is_qqcc_original_face_swap_enabled(scene) for scene in chain[index:])
+            and any(
+                is_qqcc_original_face_swap_enabled(scene) for scene in chain[index:]
+            )
         )
         original_needed_after_face_swap = keep_initial_image or any(
             is_qqcc_original_face_swap_enabled(scene) for scene in chain[index + 1 :]
@@ -207,9 +224,12 @@ async def execute_qqcc_draw_scene_chain(
                 (keep_initial_image and index == 0) or original_needed_from_draw
             ),
             "send_result": send_result,
+            "record_history": send_result,
             "allow_contribute": final_allow_contribute if send_result else False,
         }
         task_kwargs.update(build_qqcc_chain_task_controls(submitted_subtask_index))
+        if billing_state is not None:
+            task_kwargs.update(billing_state.allocate_task_billing())
         if send_result:
             task_kwargs["reply_markup"] = final_reply_markup
             if final_display_mode_name:
@@ -224,6 +244,8 @@ async def execute_qqcc_draw_scene_chain(
         submitted_subtask_index += 1
         if not output_file:
             return QQCCDrawChainResult()
+        if billing_state is not None:
+            billing_state.mark_task_succeeded()
 
         output_file = str(output_file)
         if is_last and not download_final_output and not original_face_swap_enabled:
@@ -252,6 +274,7 @@ async def execute_qqcc_draw_scene_chain(
                 ),
                 "cleanup": not original_needed_after_face_swap,
                 "send_result": face_swap_send_result,
+                "record_history": face_swap_send_result,
                 "allow_contribute": (
                     final_allow_contribute if face_swap_send_result else False
                 ),
@@ -260,13 +283,21 @@ async def execute_qqcc_draw_scene_chain(
             face_swap_kwargs.update(
                 build_qqcc_chain_task_controls(submitted_subtask_index)
             )
+            if (
+                billing_state is not None
+                and billing_state.fixed_credit_cost is not None
+            ):
+                face_swap_kwargs.pop("cost_override", None)
+                face_swap_kwargs.update(billing_state.allocate_task_billing())
             if face_swap_send_result:
                 face_swap_kwargs["reply_markup"] = final_reply_markup
                 face_swap_kwargs["result_task_type"] = task_type
                 face_swap_kwargs["result_prompt"] = str(draw_scene.get("prompt") or "")
                 face_swap_kwargs["result_input_image_indices"] = [1]
                 if final_display_mode_name:
-                    face_swap_kwargs["display_mode_name_override"] = final_display_mode_name
+                    face_swap_kwargs["display_mode_name_override"] = (
+                        final_display_mode_name
+                    )
                 if final_result_meta is not None:
                     face_swap_kwargs["result_meta"] = final_result_meta
 
@@ -281,6 +312,8 @@ async def execute_qqcc_draw_scene_chain(
                 cleanup_fsm_temp_files([face_swap_body_path])
             if not output_file:
                 return QQCCDrawChainResult()
+            if billing_state is not None:
+                billing_state.mark_task_succeeded()
 
             output_file = str(output_file)
             if is_last and not download_final_output:

@@ -1,0 +1,46 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "73532850d27292bf1fbf3af32a2768cec456ca47",
+  "batch": "20260722-all-slots-streamlined-release",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260722-all-slots-streamlined-release",
+  "members": [
+    {
+      "base_sha": "ca45b5f009c275eb849ac13fd95a8a9ff7e8d0cb",
+      "branch": "codex/a-qqcc-video-chain-ffmpeg-fix",
+      "head": "a6bf7440dc8e7b575115710d9698a334b2c95a38",
+      "slot": "A"
+    },
+    {
+      "base_sha": "abcda120f2976127c6b7cff64cde99c1ac5ad684",
+      "branch": "codex/a-streamline-release-promotion",
+      "head": "ddc31b11be68f0b15f68c7f8cfb8ae6cee996ce9",
+      "slot": "A"
+    },
+    {
+      "base_sha": "e0b2d7356884133f5f1cf2c99dd5f8a0b463e0f0",
+      "branch": "codex/b-ltx-t2v-ingredients",
+      "head": "900bff105376db96abead30f166a7ae953ffdaa9",
+      "slot": "B"
+    },
+    {
+      "base_sha": "c624d9d08b68c6d3e84526218366584edba8d111",
+      "branch": "codex/c-unify-ton-payment-frontend",
+      "head": "a90ce9a29bda5a59a5947eb07151aece627f36dc",
+      "slot": "C"
+    },
+    {
+      "base_sha": "ca45b5f009c275eb849ac13fd95a8a9ff7e8d0cb",
+      "branch": "codex/c-qqcc-scene-credit-cost",
+      "head": "d875a3176432a1930ff128ebc9ba016477e86856",
+      "slot": "C"
+    },
+    {
+      "base_sha": "c624d9d08b68c6d3e84526218366584edba8d111",
+      "branch": "codex/d-auto-test-integration-queue",
+      "head": "c01e9f8bd14ef99ad9702d35f35a3cef11b54b0e",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

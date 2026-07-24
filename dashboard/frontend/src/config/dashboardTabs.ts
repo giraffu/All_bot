@@ -34,6 +34,7 @@ export type DashboardTabKey =
   | 'gallery_reports'
   | 'referrals'
   | 'site_notice'
+  | 'support_tickets'
 
 export interface DashboardTabConfig {
   key: DashboardTabKey
@@ -170,6 +171,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     component: markRaw(defineAsyncComponent(() => import('../components/ReferralTable.vue'))),
     containerClass: BASE_CONTAINER_CLASS,
     scrollable: true,
+  },
+  {
+    key: 'support_tickets',
+    label: '客服工单',
+    icon: MessageOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/SupportTickets.vue'))),
+    containerClass: PANEL_CONTAINER_CLASS,
+    scrollable: false,
   },
   {
     key: 'site_notice',

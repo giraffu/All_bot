@@ -250,6 +250,10 @@ Bot presentation context 另有 `show_queue_status`，默认 `true`。QQCC AI绘
 
 QQCC `AI视频` 也复用 quick video plan：无尾帧引用时直接由 actor 参数入口提交 LTX I2V；有引用时把最终阶段记录为 durable continuation 的 `ltx_video` executor，以原始输入和当前尾帧提交 FLF2V。提交前按尾帧链加 LTX 时长统一核费，任一中间阶段失败不创建最终视频任务；私有 Bot checkpoint 继续保存原始输入、当前输出和 delivery 状态。
 
+QQCC `AI动图` / `AI视频` 的 `next_scene_id` 在 quick video plan 中解析为完整有序 `qqcc_chain_segments` 快照，主 Bot 计划始终为空。根场景 `credit_cost=null` 时，全链费用是各视频段与各自尾帧绘图链费用之和；根场景配置固定总价时只在首个真实任务用 `cost_override` 一次扣除，后续段、尾帧绘图和内部换脸全部 `deduct_quota=false`，被引用场景自己的价格不参与计算。自动拼接不产生 task type 或费用。第一段沿用普通队列，后续段 `base_priority=100`、`show_queue_status=false`、`user_cancel_allowed=false`。官方 runner 用每段返回视频提取下一首帧，并在后续失败时拼接成功前缀；固定价链同时按根价全额幂等退款。私有 continuation 把 Worker `last_frame` CAS 写为下一输入、保留视频引用，并持久化根计费锚点，最终 `delivery_pending` 执行同一拼接。最终 History 的 `_qqcc_video_scene_chain` 保存根场景、场景/任务顺序、计划/完成段数和 partial 标志；中间 History 只用于审计。
+
+尾帧提取与最终拼接依赖控制面运行镜像内的 `ffmpeg`、`ffprobe`，不依赖 Worker workflow。`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 四个真实消费者继承 `python-media-runtime-base`，发布 full-validation 对各最终 digest 执行双工具 smoke。runner 还必须区分 `generation` 与 `tail_frame` 失败阶段：已成功扣费并产出视频、但尾帧提取失败时，不得把该段误报为“生成失败”；成功前缀、失败任务退款和已成功任务计费规则保持不变。
+
 ### 6.5 QQCC 私有 Bot 的租户归属
 
 私有 Bot 复用同一 `process_and_submit_task(...)`、用户表、余额、会员和 Central/worker 执行链。发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
@@ -433,6 +437,8 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - `PREFETCH_RESERVE_TASK`
 - `PIPELINE_ENABLED`
 - `PIPELINE_MAX_RUNNING_TASKS`
+- `PIPELINE_MAX_CLAIMED_TASKS`
+- `PIPELINE_DELIVERY_CONCURRENCY`
 - `PIPELINE_TASK_TYPES`
 - `CANCEL_LOCK_ON_POP`
 - `RESULT_SPOOL_DIR`
@@ -459,7 +465,8 @@ Worker 拉到任务后会先处理输入：
 - 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间提前下载、规范化和上传同类型下一单输入。默认仍通过 relay/Central `/api/agent/task/peek` 只读观察候选，真实 `/pop` 后只有 `task_id` 命中缓存才复用。
 - `PREFETCH_RESERVE_TASK=true` 是单 Worker 一槽本地预接模式：预取协程改用现有原子 `/api/agent/task/pop?cancel_lock=true` 先接走一单并保存在 Worker 内存中，当前单结束后优先执行该预接单，不再访问 Central 抢第二次。多个 Worker 因此不会预拉同一任务；代价是预接单会提前进入 Central running，且短暂不可取消。该模式不要求修改 Central 服务。
 - `PREFETCH_CONSUME_WAIT_SECONDS` 只限制下一单开始时等待尚未完成的预取下载多久；缓存已完成时不等待。超时后会取消未完成的预取下载并对已经原子预接的任务走正常输入准备，不会再从 Central 接新任务。所有正式 LAN AIO Worker，以及统一 RunPod create request 后续新建的 cloud-test/cloud-prod Pod，默认使用深度 1、预接模式和 10 秒上限，`PREFETCH_TASK_TYPES` 自动跟随该 Worker 的 `SUPPORTED_TASK_TYPES`；预接任务等待前一单期间每 15 秒续一次 task heartbeat，但使用 `set_current=false`，不会覆盖当前执行任务。RunPod 该契约不反向更新已运行 Pod，且新 Pod 的 `deploy` Worker bundle 必须包含预接实现。
-- 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 running slot 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。默认每个 worker 最多持有 2 个 Central running 任务，pending 仍可取消，进入输入准备后不可取消。
+- 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 Comfy inflight 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。`PIPELINE_MAX_RUNNING_TASKS` 控制 Comfy preparing/queued/running 数，`PIPELINE_MAX_CLAIMED_TASKS` 是包含 execution、delivery 和 reserved prefetch 的硬上限，promote reserved task 只能做等量阶段转换，不能多占一单。`PIPELINE_DELIVERY_CONCURRENCY` 单独限制结果解析、物化、spool、上传和 complete 的并发；GPU 发出 `gpu_done` 后可立即让下一单进入计算，但当前任务仍保持 running，直到拿到交付槽、上传成功并收到 Central `/complete` 确认。
+- 有界重叠按 profile 分成两档。快速图片类 `img2img/img2img_lora`、`i2i_pro`、`pornmaster_flux2_edit_bf16` 使用 `PIPELINE_PROFILE_POLICY=image_claim3_comfy2_delivery1_v1`，有效 claimed/Comfy/delivery 上限为 `3/2/1`；媒体类 `image_to_video`、`ltx_video`、`scail2`、`wan22_video_v2` 使用 `media_claim2_comfy1_delivery1_v1`，有效上限为 `2/1/1`。媒体档始终只有一个 Comfy/GPU 执行槽，前一单进入 `gpu_done`/交付后才允许下一单开始计算。LAN render 与后续新建 RunPod create request 注入相同策略；存量 RunPod 不原地修改。数字环境仍固定写入回滚默认 `1/2/1`，旧 worker 忽略未知版本策略时保持串行。历史 `bf16_lan_claim3_comfy2_delivery1` 只作为已发布 BF16 镜像的兼容别名。
 
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。
 
@@ -504,8 +511,8 @@ Worker 执行流程：
 4. `wait_for_task_completion(...)` 以 WebSocket 终态为快路径，同时在提交后约 45 秒开始周期性探测 ComfyUI `/history/{prompt_id}`，约每 12 秒探测一次；若 history 已有结果，会立即设置完成态，避免半活 WebSocket 让 Worker 等满旧的固定窗口
 5. Worker 普通任务保留约 30 分钟硬超时，超时后先做最终 history 探测；若仍无结果则抛出 `TaskExecutionTimeoutError` 并按失败上报，避免超时后误进入成功收口。RunPod `wan22_video_v2` profile 默认使用约 10 分钟专属完成超时，timeout 时会 best-effort 调用 ComfyUI `/interrupt`，上报失败并退出 agent/container，让外层重启获得干净 ComfyUI 队列，避免继续接下一单叠在卡住的 prompt 后面
    - RunPod `wan22_video_v2` ComfyUI 启动 env 还默认带 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`；若日志停在 `WanTEModel prepared for dynamic VRAM loading` 后无采样进展，先核验该 env 是否在新 Pod 中生效，再继续排查 workflow、模型或 GPU 规格。
-6. 开启双槽 pipeline 时，当前任务 GPU 完成后会进入后台 finalizer；worker 可同时让下一单继续占用 ComfyUI/GPU 队列。WebSocket 事件按 `prompt_id -> TaskExecutionContext` 路由，heartbeat 会覆盖本地所有 running/finalizing context。
-7. finalizer 从 ComfyUI history 或 view API 取回结果文件
+6. 开启有界 pipeline 时，当前任务收到 `gpu_done` 后释放 Comfy inflight 并等待独立交付槽；worker 可同时让下一单继续占用 ComfyUI/GPU 队列。WebSocket 事件按 `prompt_id -> TaskExecutionContext` 路由，heartbeat 覆盖本地 preparing/queued/running/gpu_done/delivering context。
+7. 拿到交付槽后，finalizer 从 ComfyUI history 或 view API 取回结果文件
 8. `i2i_pro` 在上传前会对主结果做轻量质量闸门：若 ComfyUI success 但输出为纯黑/极暗图，或与参考输入过度相似，worker 会换 seed 重新提交一次；重试后仍退化则按失败上报，避免把黑图或近原图结果 `/complete` 给用户。
 9. 上传结果到当前 output bucket。云正式/云测试 worker 可先把结果写入本地 `RESULT_SPOOL_DIR`，再交给本地 relay sidecar 上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时继续由 worker 进程直接上传。
 10. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。无论是否使用 sidecar，都必须先拿到 R2/S3 put 成功确认，再 `/complete`。
@@ -741,6 +748,10 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - Web 最终可见性不仅取决于 Worker 执行成功，还取决于 monitor、history、result 公网地址和前端展示链是否完整
 
 ## 15. 推荐联读文件
+
+新增 LTX 文生视频与人物一致性任务的固定模型栈、人物所有权、计费、workflow
+和仅限 LAN 的发布边界，见
+`docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`。
 
 - `frontend/src/composables/useTaskStream.ts`
 - `frontend/src/stores/tasks.ts`

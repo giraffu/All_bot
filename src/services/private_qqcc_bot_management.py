@@ -8,8 +8,13 @@ from typing import Any
 from src.services.qqcc_config_service import (
     build_qqcc_config_options,
     normalize_qqcc_config,
+    validate_qqcc_scene_credit_costs,
+    validate_qqcc_scene_resolutions,
 )
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
+from src.services.qqcc_video_scene_chain_service import (
+    validate_qqcc_video_scene_chain_config,
+)
 
 
 class PrivateBotConfigVersionConflict(ValueError):
@@ -97,9 +102,7 @@ def _validate_draw_chain_depth(raw_config: dict[str, Any]) -> None:
     if not isinstance(raw_scenes, list):
         return
     next_scene_by_id = {
-        str(scene.get("id") or ""): str(
-            scene.get("postprocess_draw_scene_id") or ""
-        )
+        str(scene.get("id") or ""): str(scene.get("postprocess_draw_scene_id") or "")
         for scene in raw_scenes
         if isinstance(scene, dict) and scene.get("id")
     }
@@ -138,23 +141,23 @@ def validate_private_bot_config_limits(raw_config: dict[str, Any]) -> None:
         raw_scenes = raw_config.get(section, [])
         if not isinstance(raw_scenes, list):
             continue
-        if len(raw_scenes) > PRIVATE_BOT_CONFIG_MAX_SCENES_PER_KIND:
-            raise PrivateBotConfigLimitError(
-                "private Bot config contains too many scenes of one kind"
-            )
         scene_count += len(raw_scenes)
         for scene in raw_scenes:
             if not isinstance(scene, dict):
                 continue
-            if len(str(scene.get("name") or "")) > PRIVATE_BOT_CONFIG_MAX_SCENE_NAME_CHARS:
+            if (
+                len(str(scene.get("name") or ""))
+                > PRIVATE_BOT_CONFIG_MAX_SCENE_NAME_CHARS
+            ):
                 raise PrivateBotConfigLimitError("private Bot scene name is too long")
             for field in ("prompt", "negative_prompt"):
-                if len(str(scene.get(field) or "")) > PRIVATE_BOT_CONFIG_MAX_PROMPT_CHARS:
+                if (
+                    len(str(scene.get(field) or ""))
+                    > PRIVATE_BOT_CONFIG_MAX_PROMPT_CHARS
+                ):
                     raise PrivateBotConfigLimitError(
                         "private Bot scene prompt is too long"
                     )
-    if scene_count > PRIVATE_BOT_CONFIG_MAX_SCENES_TOTAL:
-        raise PrivateBotConfigLimitError("private Bot config contains too many scenes")
     _validate_draw_chain_depth(raw_config)
 
 
@@ -167,6 +170,9 @@ def update_private_bot_config_record(
     if int(expected_version) != int(bot.config_version):
         raise PrivateBotConfigVersionConflict("private Bot config version is stale")
     validate_private_bot_config_limits(raw_config)
+    validate_qqcc_scene_credit_costs(raw_config)
+    validate_qqcc_scene_resolutions(raw_config)
+    validate_qqcc_video_scene_chain_config(raw_config)
     normalized = normalize_qqcc_config(raw_config)
     _validate_media_scope(normalized, private_bot_id=int(bot.id))
     bot.config = normalized

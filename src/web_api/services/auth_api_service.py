@@ -87,6 +87,38 @@ async def login_telegram_payload(*, req) -> dict:
         ) from exc
 
 
+async def login_telegram_payment_payload(*, req) -> dict:
+    try:
+        init_data = req.initData
+        widget_data = (
+            req.model_dump(exclude_unset=True, exclude={"initData"})
+            if not init_data
+            else None
+        )
+        user, stats = await authenticate_and_get_user(
+            init_data=init_data,
+            widget_data=widget_data,
+        )
+        return build_auth_token_payload(
+            user=user,
+            stats=stats,
+            channel="telegram_payment",
+        )
+    except InvalidSignatureError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error during Telegram payment login: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error during authentication.",
+        ) from exc
+
+
 async def login_with_password_payload(*, req, request) -> dict:
     client_ip = extract_client_ip(request)
 

@@ -57,6 +57,7 @@ jobs:
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
       requires_full_ci: ${{ steps.classify.outputs.requires_full_ci }}
+      requires_release_ci: ${{ steps.classify.outputs.requires_release_ci }}
       requires_operator_ci: ${{ steps.classify.outputs.requires_operator_ci }}
       requires_release_bundle: ${{ steps.classify.outputs.requires_release_bundle }}
     steps:
@@ -111,7 +112,7 @@ jobs:
           - name: bots
             paths: >-
               tests/handlers tests/paid_group_guard_bot tests/qqcc_bot
-              tests/qqcc_private_bot
+              tests/qqcc_private_bot tests/support_bot
           - name: dashboard-analytics
             paths: tests/dashboard tests/local_analytics
           - name: web-workers-misc
@@ -155,6 +156,35 @@ jobs:
         run: >-
           timeout --signal=INT --kill-after=30s 10m
           python -m pytest -vv --maxfail=1 --durations=20 tests/ops tests/scripts
+
+  release-tooling-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.requires_release_ci == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JWT_SECRET_KEY: ci-test-only-not-for-runtime
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.20"
+          cache: pip
+      - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
+      - name: Run focused release tooling tests
+        run: >-
+          timeout --signal=INT --kill-after=30s 10m
+          python -m pytest -vv --maxfail=1 --durations=20
+          tests/ops/test_release_cli.py tests/ops/test_release_strategy.py
+          tests/ops/test_release_promotion_v2.py
+          tests/ops/test_runtime_env_contract.py
+          tests/ops/test_validate_upstream_ci_run.py
+          tests/ops/test_classify_ci_change.py
+          tests/ops/test_immutable_compose.py
+          tests/ops/test_release_environment_neutral.py
+          tests/ops/test_auto_integrate_handoffs.py
 
   postgres-integration-tests:
     needs: change-scope
@@ -254,6 +284,7 @@ jobs:
     needs:
       - change-scope
       - python-tests
+      - release-tooling-tests
       - operator-tests
       - postgres-integration-tests
       - web-tests
@@ -264,8 +295,10 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.change-scope.result }}
           REQUIRES_FULL_CI: ${{ needs.change-scope.outputs.requires_full_ci }}
+          REQUIRES_RELEASE_CI: ${{ needs.change-scope.outputs.requires_release_ci }}
           REQUIRES_OPERATOR_CI: ${{ needs.change-scope.outputs.requires_operator_ci }}
           PYTHON_RESULT: ${{ needs.python-tests.result }}
+          RELEASE_TOOLING_RESULT: ${{ needs.release-tooling-tests.result }}
           OPERATOR_RESULT: ${{ needs.operator-tests.result }}
           POSTGRES_RESULT: ${{ needs.postgres-integration-tests.result }}
           WEB_RESULT: ${{ needs.web-tests.result }}
@@ -281,6 +314,9 @@ jobs:
           fi
           if [ "$REQUIRES_OPERATOR_CI" = true ]; then
             [ "$OPERATOR_RESULT" = success ]
+          fi
+          if [ "$REQUIRES_RELEASE_CI" = true ]; then
+            [ "$RELEASE_TOOLING_RESULT" = success ]
           fi
 
   release:

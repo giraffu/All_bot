@@ -63,6 +63,8 @@ async def process_video_task_template(
     allow_cancel: bool = True,
     show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
+    deduct_quota: bool = True,
+    cost_override: int | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     if update is not None:
         actor = extract_actor_from_update(update)
@@ -181,6 +183,8 @@ async def process_video_task_template(
             ),
             is_video=True,
             source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+            cost_override=cost_override,
             base_priority=base_priority,
             allow_cancel=allow_cancel,
             show_queue_status=show_queue_status,
@@ -204,8 +208,9 @@ async def process_video_task_template(
             cleanup_paths=build_cleanup_paths(submit_images),
             task_label=f"{mode} task",
             failure_policy=BotTaskFailurePolicy(
-                unexpected_should_refund=lambda state: state.task_submitted
-                and state.actual_cost > 0,
+                unexpected_should_refund=lambda state: (
+                    state.task_submitted and state.actual_cost > 0
+                ),
                 unexpected_error_log_message=build_unexpected_error_log_message(
                     f"{mode} task"
                 ),

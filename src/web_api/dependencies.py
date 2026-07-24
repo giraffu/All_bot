@@ -54,7 +54,12 @@ async def get_bearer_token(token: str = Depends(oauth2_scheme)) -> str:
     )
 
 
-async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
+async def _get_authenticated_user_from_session(
+    db: AsyncSession,
+    token: str,
+    *,
+    allow_payment_session: bool = True,
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -64,6 +69,12 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
     payload = verify_token(token)
     if payload is None:
         raise credentials_exception
+
+    if not allow_payment_session and payload.get("channel") == "telegram_payment":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="支付会话仅可访问充值与本人支付订单",
+        )
 
     internal_id_str: str = payload.get("sub")
     if internal_id_str is None:
@@ -100,6 +111,20 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    return user
+
+
+async def _get_payment_user_from_session(db: AsyncSession, token: str) -> User:
+    return await _get_authenticated_user_from_session(db, token)
+
+
+async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
+    user = await _get_authenticated_user_from_session(
+        db,
+        token,
+        allow_payment_session=False,
+    )
+
     # Check dynamic permission (Persistent Privilege Check)
     from src.services.permission_service import permission_service
 
@@ -121,6 +146,12 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
         )
 
     return user
+
+
+async def get_payment_user(
+    db: AsyncSession = Depends(get_db), token: str = Depends(get_bearer_token)
+) -> User:
+    return await _get_payment_user_from_session(db, token)
 
 
 async def get_current_user(

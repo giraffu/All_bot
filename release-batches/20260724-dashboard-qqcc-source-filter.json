@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "61536ba27ee87f86ea223291a08fd52237bf2fc3",
+  "batch": "20260724-dashboard-qqcc-source-filter",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-dashboard-qqcc-source-filter",
+  "members": [
+    {
+      "base_sha": "61536ba27ee87f86ea223291a08fd52237bf2fc3",
+      "branch": "codex/c-dashboard-qqcc-source-filter",
+      "head": "9ab2fb7cc99a2505f8b4aa43f3c998cb033776e1",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

@@ -51,7 +51,7 @@ def test_python_bases_and_thin_targets_are_explicit():
     )
     assert "AS python-runtime-base" in runtime
     assert "ARG RUNTIME_BASE_IMAGE" in control
-    for target in (
+    targets = (
         "central-api",
         "web-api",
         "payment-api",
@@ -59,14 +59,16 @@ def test_python_bases_and_thin_targets_are_explicit():
         "qqcc-bot",
         "private-bot-worker",
         "paid-group-bot",
+        "support-bot",
         "dashboard-backend",
         "qqcc-config-backend",
-    ):
+    )
+    for target in targets:
         assert f"AS {target}" in control
         section = control.split(f"AS {target}", 1)[1]
         assert "ARG ALLBOT_GIT_SHA" in section
         assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in section
-    assert control.count("COPY config.py /app/config.py") == 9
+    assert control.count("COPY config.py /app/config.py") == len(targets)
     dashboard_section = control.split("AS dashboard-backend", 1)[1].split(
         "AS qqcc-config-backend", 1
     )[0]
@@ -110,6 +112,53 @@ def test_web_api_image_and_release_smoke_require_ffmpeg():
     )
     assert "web_ref=" in workflow
     assert 'docker run --rm --entrypoint ffmpeg "$web_ref" -version' in workflow
+
+
+def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools():
+    media_runtime = (ROOT / "deploy/docker/Dockerfile.media-runtime-base").read_text(
+        encoding="utf-8"
+    )
+    assert "AS python-media-runtime-base" in media_runtime
+    assert "apt-get install -y --no-install-recommends ffmpeg" in media_runtime
+
+    catalog = json.loads(
+        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
+    )["artifacts"]
+    media_base = catalog["python-media-runtime-base"]
+    assert media_base["base"] == "python-runtime-base"
+    assert media_base["dockerfile"] == "deploy/docker/Dockerfile.media-runtime-base"
+    for target in (
+        "qqcc-bot",
+        "private-bot-worker",
+        "dashboard-backend",
+        "qqcc-config-backend",
+    ):
+        assert catalog[target]["base"] == "python-media-runtime-base"
+    assert catalog["central-api"]["base"] == "python-runtime-base"
+    assert catalog["main-bot"]["base"] == "python-runtime-base"
+
+    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "qqcc_bot_ref=" in workflow
+    assert "private_bot_ref=" in workflow
+    assert "qqcc_config_backend_ref=" in workflow
+    assert (
+        'docker run --rm --entrypoint sh "$qqcc_bot_ref" '
+        "-c 'ffmpeg -version && ffprobe -version'"
+    ) in workflow
+    assert (
+        'docker run --rm --entrypoint sh "$private_bot_ref" '
+        "-c 'ffmpeg -version && ffprobe -version'"
+    ) in workflow
+    assert (
+        'docker run --rm --entrypoint sh "$backend_ref" '
+        "-c 'ffmpeg -version && ffprobe -version'"
+    ) in workflow
+    assert (
+        'docker run --rm --entrypoint sh "$qqcc_config_backend_ref" '
+        "-c 'ffmpeg -version && ffprobe -version'"
+    ) in workflow
 
 
 def test_dashboard_and_qqcc_frontends_are_separate_targets():

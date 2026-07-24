@@ -23,6 +23,7 @@ async def get_all_history(
     rating: Optional[int] = None,
     is_public: Optional[bool] = None,
     worker_id: Optional[str] = None,
+    source: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Get all history with pagination and multiple optional filters"""
@@ -34,6 +35,7 @@ async def get_all_history(
         rating=rating,
         is_public=is_public,
         worker_id=worker_id,
+        source=source,
         logger_override=logger,
     )
 

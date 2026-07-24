@@ -85,6 +85,73 @@ async def test_private_continuation_ltx_executor_resumes_with_original_and_curre
     }
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("executor", ["generation", "legacy_video"])
+async def test_private_video_executor_restores_aspect_policy_without_leaking_internal_kwarg(
+    executor,
+):
+    checkpoint = SimpleNamespace(
+        original_input_ref="durable/original.png",
+        current_output_ref="durable/tail.png",
+        chat_id=456,
+        telegram_user_id=123,
+        username="tester",
+        status_message_id=77,
+    )
+    stage = {
+        "executor": executor,
+        "input_mode": "original_current",
+        "task_kwargs": {
+            "task_type": "wan22_video_v2",
+            "_qqcc_aspect_ratio": "9:16",
+            "cleanup": True,
+        },
+    }
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-video",
+        stage_index=1,
+        submission_sequence=2,
+        registry_task_id="task-video",
+        executor_token="token",
+    )
+    generation_task = AsyncMock(return_value=(b"video", "results/video.mp4"))
+    legacy_task = AsyncMock(return_value=(b"video", "results/video.mp4"))
+    cleanup_calls = []
+
+    async def download_frame(*, output_file, suffix, name_hint):
+        del suffix, name_hint
+        return f"/tmp/{output_file.rsplit('/', 1)[-1]}"
+
+    def adapt_frame(path, *, aspect_ratio):
+        assert aspect_ratio == "9:16"
+        return path.replace(".png", "-portrait.png")
+
+    await execute_private_qqcc_continuation_stage_default(
+        checkpoint,
+        stage,
+        ref,
+        SimpleNamespace(),
+        process_generation_task_func=generation_task,
+        process_video_task_template_func=legacy_task,
+        download_video_frame_to_fsm_temp_func=download_frame,
+        adapt_video_frame_file_func=adapt_frame,
+        cleanup_temp_files_func=lambda paths: cleanup_calls.extend(paths),
+    )
+
+    task = generation_task if executor == "generation" else legacy_task
+    kwargs = task.await_args.kwargs
+    assert "_qqcc_aspect_ratio" not in kwargs
+    if executor == "generation":
+        assert kwargs["images"] == [
+            "/tmp/original-portrait.png",
+            "/tmp/tail-portrait.png",
+        ]
+    else:
+        assert kwargs["image_path"] == "/tmp/original-portrait.png"
+        assert kwargs["end_image_path"] == "/tmp/tail-portrait.png"
+    assert cleanup_calls == ["/tmp/original.png", "/tmp/tail.png"]
+
+
 class MemoryContinuationStore:
     def __init__(self):
         self.items: dict[str, PrivateQqccContinuationCheckpoint] = {}
@@ -137,7 +204,14 @@ class MemoryContinuationStore:
         self.items[chain_id] = checkpoint
         return checkpoint
 
-    async def record_completed_stage(self, *, ref, output_file, saved_inputs):
+    async def record_completed_stage(
+        self,
+        *,
+        ref,
+        output_file,
+        saved_inputs,
+        last_frame_output_file=None,
+    ):
         self.events.append(f"result:{ref.stage_index}")
         checkpoint = self.items[ref.chain_id]
         if checkpoint.next_stage_index > ref.stage_index:
@@ -153,16 +227,23 @@ class MemoryContinuationStore:
         delivery_required = bool(
             checkpoint.stages[ref.stage_index].get("delivery_required")
         )
+        is_video_segment = bool(
+            checkpoint.stages[ref.stage_index].get("qqcc_video_segment")
+        )
+        if is_video_segment and not last_frame_output_file:
+            raise PrivateQqccContinuationConflict("video segment needs last frame")
+        video_outputs = checkpoint.video_segment_output_refs
+        if is_video_segment:
+            video_outputs = (*video_outputs, str(output_file))
+        current_output = str(output_file)
+        if is_video_segment and not delivery_required:
+            current_output = str(last_frame_output_file)
         checkpoint = replace(
             checkpoint,
             status=(
                 "delivery_pending"
                 if delivery_required
-                else (
-                    "completed"
-                    if next_stage >= len(checkpoint.stages)
-                    else "ready"
-                )
+                else ("completed" if next_stage >= len(checkpoint.stages) else "ready")
             ),
             next_stage_index=(
                 checkpoint.next_stage_index if delivery_required else next_stage
@@ -177,7 +258,13 @@ class MemoryContinuationStore:
                 if ref.stage_index == 0 and saved_inputs
                 else checkpoint.original_input_durable
             ),
-            current_output_ref=str(output_file),
+            current_output_ref=current_output,
+            current_segment_start_ref=(
+                str(last_frame_output_file)
+                if is_video_segment
+                else checkpoint.current_segment_start_ref
+            ),
+            video_segment_output_refs=video_outputs,
             current_stage_index=(None if not delivery_required else ref.stage_index),
             current_submission_sequence=(
                 None if not delivery_required else ref.submission_sequence
@@ -200,7 +287,7 @@ class MemoryContinuationStore:
     ):
         checkpoint = self.items[chain_id]
         if (
-            checkpoint.status != "delivery_pending"
+            checkpoint.status not in {"delivery_pending", "partial_delivery_pending"}
             or checkpoint.current_stage_index != stage_index
             or checkpoint.current_registry_task_id != registry_task_id
             or chain_id not in self.locked
@@ -217,18 +304,20 @@ class MemoryContinuationStore:
         self.events.append(f"delivered:{ref.stage_index}")
         checkpoint = self.items[ref.chain_id]
         if (
-            checkpoint.status != "delivery_pending"
+            checkpoint.status not in {"delivery_pending", "partial_delivery_pending"}
             or checkpoint.current_stage_index != ref.stage_index
             or checkpoint.current_registry_task_id != ref.registry_task_id
             or checkpoint.current_executor_token != ref.executor_token
         ):
             raise PrivateQqccContinuationConflict("delivery mismatch")
-        next_stage = ref.stage_index + 1
+        next_stage = (
+            len(checkpoint.stages)
+            if checkpoint.status == "partial_delivery_pending"
+            else ref.stage_index + 1
+        )
         checkpoint = replace(
             checkpoint,
-            status=(
-                "completed" if next_stage >= len(checkpoint.stages) else "ready"
-            ),
+            status=("completed" if next_stage >= len(checkpoint.stages) else "ready"),
             next_stage_index=next_stage,
             current_stage_index=None,
             current_submission_sequence=None,
@@ -258,7 +347,12 @@ class MemoryContinuationStore:
     async def mark_failed(self, *, ref, error_code):
         checkpoint = self.items[ref.chain_id]
         if (
-            checkpoint.status != "running"
+            checkpoint.status
+            not in {
+                "running",
+                "delivery_pending",
+                "partial_delivery_pending",
+            }
             or checkpoint.current_stage_index != ref.stage_index
             or checkpoint.current_registry_task_id != ref.registry_task_id
             or checkpoint.current_executor_token != ref.executor_token
@@ -272,6 +366,34 @@ class MemoryContinuationStore:
         self.items[ref.chain_id] = checkpoint
         return checkpoint
 
+    async def mark_partial_delivery_pending(self, *, ref, error_code):
+        checkpoint = self.items[ref.chain_id]
+        if (
+            checkpoint.status != "running"
+            or checkpoint.current_stage_index != ref.stage_index
+            or checkpoint.current_registry_task_id != ref.registry_task_id
+            or checkpoint.current_executor_token != ref.executor_token
+            or not checkpoint.video_segment_output_refs
+        ):
+            raise PrivateQqccContinuationConflict("partial delivery fence mismatch")
+        checkpoint = replace(
+            checkpoint,
+            status="partial_delivery_pending",
+            error_code=error_code,
+            current_output_ref=checkpoint.video_segment_output_refs[-1],
+            current_executor_token=None,
+        )
+        self.items[ref.chain_id] = checkpoint
+        return checkpoint
+
+    async def mark_billing_refunded(self, *, chain_id):
+        checkpoint = replace(
+            self.items[chain_id],
+            billing_refund_completed=True,
+        )
+        self.items[chain_id] = checkpoint
+        return checkpoint
+
     async def acquire_lock(self, chain_id):
         if chain_id in self.locked:
             return None
@@ -280,11 +402,7 @@ class MemoryContinuationStore:
 
     async def renew_lock(self, chain_id, token):
         self.renew_count += 1
-        return (
-            self.renew_ok
-            and chain_id in self.locked
-            and token == "lock-token"
-        )
+        return self.renew_ok and chain_id in self.locked and token == "lock-token"
 
     async def release_lock(self, chain_id, token):
         if token:
@@ -415,6 +533,131 @@ def test_continuation_checkpoint_round_trip_preserves_queue_presentation_policy(
 
 
 @pytest.mark.asyncio
+async def test_fixed_price_continuation_persists_billing_anchor_and_refunds_once_after_later_failure(
+    monkeypatch,
+):
+    store = MemoryContinuationStore()
+    context = SimpleNamespace(lang="zh")
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=120)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=_stages(),
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=context,
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=400,
+            fixed_credit_cost=7,
+            store=store,
+        )
+
+    restored = continuation_service._checkpoint_from_json(
+        continuation_service._checkpoint_to_json(checkpoint)
+    )
+    assert restored.billing_id == restored.chain_id
+    assert restored.fixed_credit_cost == 7
+    assert restored.billing_actual_charged_cost == 7
+    assert restored.billing_root_task_id
+    assert restored.stages[0]["task_kwargs"]["cost_override"] == 7
+    assert restored.stages[1]["task_kwargs"]["deduct_quota"] is False
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    async def execute_stage(_checkpoint, _stage, ref, _context):
+        if ref.stage_index == 1:
+            raise RuntimeError("later stage failed")
+        await store.record_completed_stage(
+            ref=ref,
+            output_file="outputs/stage-0.png",
+            saved_inputs=["inputs/original.png"],
+        )
+        return b"image", "outputs/stage-0.png"
+
+    failed = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=store,
+        execute_stage_func=execute_stage,
+        refund_credits_func=refund,
+    )
+    repeated = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=context,
+        store=store,
+        execute_stage_func=execute_stage,
+        refund_credits_func=refund,
+    )
+
+    assert failed.status == "failed"
+    assert repeated.status == "failed"
+    refund.assert_awaited_once_with(
+        999,
+        7,
+        username="visitor",
+        task_type="refund_qqcc_scene_fixed_cost",
+        idempotency_key=f"qqcc_scene_refund:{checkpoint.chain_id}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_continuation_refunds_when_final_delivery_fails(monkeypatch):
+    store = MemoryContinuationStore()
+    context = SimpleNamespace(lang="zh")
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=121)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=[_stages()[1]],
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=context,
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=None,
+            fixed_credit_cost=9,
+            store=store,
+        )
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    async def execute_stage(_checkpoint, _stage, ref, _context):
+        await store.record_completed_stage(
+            ref=ref,
+            output_file="outputs/final.png",
+            saved_inputs=["inputs/original.png"],
+        )
+        return b"image", "outputs/final.png"
+
+    async def fail_delivery(*_args):
+        raise RuntimeError("telegram delivery failed")
+
+    with pytest.raises(RuntimeError, match="delivery failed"):
+        await resume_private_qqcc_continuation(
+            chain_id=checkpoint.chain_id,
+            context=context,
+            store=store,
+            execute_stage_func=execute_stage,
+            deliver_result_func=fail_delivery,
+            refund_credits_func=refund,
+        )
+
+    failed = await store.get(checkpoint.chain_id)
+    assert failed.status == "failed"
+    assert failed.billing_refund_completed is True
+    refund.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_continuation_checkpoint_rejects_cross_tenant_application_context():
     store = MemoryContinuationStore()
     scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=100)
@@ -478,9 +721,7 @@ async def test_two_stage_continuation_advances_durably_with_deterministic_sequen
             await store.record_completed_stage(
                 ref=ref,
                 output_file=output,
-                saved_inputs=(
-                    ["inputs/original.png"] if ref.stage_index == 0 else []
-                ),
+                saved_inputs=(["inputs/original.png"] if ref.stage_index == 0 else []),
             )
             return b"image", output
 
@@ -572,6 +813,103 @@ async def test_delivery_pending_recovery_sends_persisted_result_without_rerunnin
     assert completed.status == "completed"
     assert executed is False
     assert delivered_payloads == [b"persisted"]
+
+
+@pytest.mark.asyncio
+async def test_later_chain_failure_delivers_saved_prefix_once_without_rerunning(
+    monkeypatch,
+):
+    store = MemoryContinuationStore()
+    stages = [
+        {
+            "executor": "legacy_video",
+            "input_mode": "current",
+            "delivery_required": False,
+            "qqcc_video_segment": True,
+            "task_kwargs": {},
+        },
+        {
+            "executor": "legacy_video",
+            "input_mode": "current",
+            "delivery_required": True,
+            "qqcc_video_segment": True,
+            "task_kwargs": {
+                "_qqcc_chain_delivery": {
+                    "mode": "video",
+                    "segments": [{"scene_id": "a"}, {"scene_id": "b"}],
+                }
+            },
+        },
+    ]
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=205)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=stages,
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=SimpleNamespace(lang="zh"),
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=None,
+            store=store,
+        )
+    checkpoint = replace(
+        checkpoint,
+        next_stage_index=1,
+        next_submission_sequence=1,
+        current_output_ref="frames/segment-1-last.png",
+        current_segment_start_ref="frames/segment-1-last.png",
+        video_segment_output_refs=("outputs/segment-1.mp4",),
+    )
+    store.items[checkpoint.chain_id] = checkpoint
+
+    execution_count = 0
+    delivered = []
+
+    async def fail_second_segment(*_args):
+        nonlocal execution_count
+        execution_count += 1
+        raise RuntimeError("provider failed after refund")
+
+    async def deliver_result(delivery_checkpoint, stage, _ref, _context, media_bytes):
+        delivered.append(
+            (
+                delivery_checkpoint.status,
+                stage["task_kwargs"]["_qqcc_chain_delivery"]["mode"],
+                media_bytes,
+            )
+        )
+
+    monkeypatch.setattr(
+        continuation_service,
+        "_load_continuation_output_bytes",
+        AsyncMock(return_value=b"saved-prefix"),
+    )
+    completed = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=SimpleNamespace(lang="zh"),
+        store=store,
+        execute_stage_func=fail_second_segment,
+        deliver_result_func=deliver_result,
+    )
+
+    assert completed.status == "completed"
+    assert completed.error_code == "RuntimeError"
+    assert completed.video_segment_output_refs == ("outputs/segment-1.mp4",)
+    assert execution_count == 1
+    assert delivered == [("partial_delivery_pending", "video", b"saved-prefix")]
+
+    resumed = await resume_private_qqcc_continuation(
+        chain_id=checkpoint.chain_id,
+        context=SimpleNamespace(lang="zh"),
+        store=store,
+        execute_stage_func=fail_second_segment,
+        deliver_result_func=deliver_result,
+    )
+    assert resumed.status == "completed"
+    assert execution_count == 1
+    assert len(delivered) == 1
 
 
 @pytest.mark.asyncio
@@ -733,17 +1071,54 @@ async def test_ready_checkpoint_waits_for_previous_active_stage_cleanup():
     )
 
     assert (await store.get(checkpoint.chain_id)).status == "ready"
-    assert await list_private_qqcc_continuations_for_recovery(
-        active_registry_task_ids={"registry-old-stage"},
-        active_chain_ids={checkpoint.chain_id},
-        store=store,
-    ) == []
+    assert (
+        await list_private_qqcc_continuations_for_recovery(
+            active_registry_task_ids={"registry-old-stage"},
+            active_chain_ids={checkpoint.chain_id},
+            store=store,
+        )
+        == []
+    )
 
     recoverable = await list_private_qqcc_continuations_for_recovery(
         active_registry_task_ids=set(),
         active_chain_ids=set(),
         store=store,
     )
+    assert [item.chain_id for item in recoverable] == [checkpoint.chain_id]
+
+
+@pytest.mark.asyncio
+async def test_recovery_includes_partial_delivery_checkpoint():
+    store = MemoryContinuationStore()
+    scope = PrivateBotUpdateAdmissionScope(private_bot_id=7, update_id=207)
+    with activate_private_bot_update_scope(scope):
+        checkpoint = await create_private_qqcc_continuation(
+            stages=[_stages()[0]],
+            original_input_ref="inputs/original.png",
+            original_input_durable=True,
+            context=SimpleNamespace(lang="zh"),
+            chat_id=200,
+            telegram_user_id=300,
+            username="visitor",
+            status_message_id=None,
+            store=store,
+        )
+    store.items[checkpoint.chain_id] = replace(
+        checkpoint,
+        status="partial_delivery_pending",
+        current_stage_index=0,
+        current_submission_sequence=0,
+        current_registry_task_id="registry-partial",
+        current_executor_token="executor-partial",
+        current_output_ref="outputs/prefix.mp4",
+    )
+
+    recoverable = await list_private_qqcc_continuations_for_recovery(
+        active_registry_task_ids=set(),
+        store=store,
+    )
+
     assert [item.chain_id for item in recoverable] == [checkpoint.chain_id]
 
 
@@ -1060,7 +1435,9 @@ async def test_external_cancel_after_delivery_checkpoint_and_registry_cleanup_de
 
     checkpoint_advanced = asyncio.Event()
 
-    async def executor_advances_then_swallows_cancel(_checkpoint, _stage, ref, _context):
+    async def executor_advances_then_swallows_cancel(
+        _checkpoint, _stage, ref, _context
+    ):
         await store.record_completed_stage(
             ref=ref,
             output_file="outputs/final.png",

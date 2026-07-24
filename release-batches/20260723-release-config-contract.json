@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "c14bc4f70178cad717f75efab9e7366f645c2a0b",
+  "batch": "20260723-release-config-contract",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-release-config-contract",
+  "members": [
+    {
+      "base_sha": "c14bc4f70178cad717f75efab9e7366f645c2a0b",
+      "branch": "codex/a-repair-release-config-contract",
+      "head": "3008a66e3e6c915748ea6b794e3026943c3542c8",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

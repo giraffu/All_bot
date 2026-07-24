@@ -65,6 +65,9 @@ PORNMASTER_FLUX2_UNET_NODE_ID = "100"
 PORNMASTER_FLUX2_BF16_UNET_NAME = (
     "flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
 )
+LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
+LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
+LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -133,8 +136,12 @@ def _patch_wan22_lora(
         name = str(item["name"])
         strength = float(item["strength"])
         resolved_pair = resolve_wan22_lora_pair(name)
-        high_lora = resolved_pair[0] if resolved_pair else f"{name}_high_noise.safetensors"
-        low_lora = resolved_pair[1] if resolved_pair else f"{name}_low_noise.safetensors"
+        high_lora = (
+            resolved_pair[0] if resolved_pair else f"{name}_high_noise.safetensors"
+        )
+        low_lora = (
+            resolved_pair[1] if resolved_pair else f"{name}_low_noise.safetensors"
+        )
         high_node = workflow.get(WAN22_HIGH_LORA_NODE_ID)
         if isinstance(high_node, dict):
             high_node.setdefault("inputs", {})[f"lora_{slot_index}"] = {
@@ -183,13 +190,19 @@ def patch_img2img_workflow(
     text_encode_node_id = str(mapping.get("prompt", "3"))
 
     if "image2" not in params or not params["image2"]:
-        if text_encode_node_id in workflow and "inputs" in workflow[text_encode_node_id]:
+        if (
+            text_encode_node_id in workflow
+            and "inputs" in workflow[text_encode_node_id]
+        ):
             workflow[text_encode_node_id]["inputs"].pop("image2", None)
         workflow.pop(str(mapping.get("image2", "20")), None)
         workflow.pop("21", None)
 
     if "image3" not in params or not params["image3"]:
-        if text_encode_node_id in workflow and "inputs" in workflow[text_encode_node_id]:
+        if (
+            text_encode_node_id in workflow
+            and "inputs" in workflow[text_encode_node_id]
+        ):
             workflow[text_encode_node_id]["inputs"].pop("image3", None)
         workflow.pop(str(mapping.get("image3", "30")), None)
         workflow.pop("31", None)
@@ -414,6 +427,101 @@ def patch_ltx_video_v2v_audio_workflow(
             node_id=LTX_VIDEO_LOAD_VIDEO_NODE_ID,
             input_name=input_name,
             value=value,
+        )
+
+
+def _patch_ltx_t2v_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    unique_id: Any,
+    ingredients: bool,
+    **_: Any,
+) -> None:
+    if params.get("lora_name") or params.get("lora_items"):
+        raise ValueError("ltx_t2v uses a fixed LoRA stack and rejects additional LoRA")
+    duration = _resolve_ltx_duration_seconds(params)
+    if duration not in ({5} if ingredients else {5, 10, 15, 20}):
+        raise ValueError("invalid ltx_t2v duration")
+    # The workflow's fixed spatial upscaler doubles the latent dimensions.
+    # Keep the API contract expressed as final output size.
+    width, height = (384, 224) if ingredients else (640, 352)
+    for node_id in ("26:93", "26:65", "26:39"):
+        node = workflow.get(node_id)
+        if isinstance(node, dict):
+            node.setdefault("inputs", {})["width"] = width
+            node["inputs"]["height"] = height
+    for node_id in ("18",):
+        node = workflow.get(node_id)
+        if isinstance(node, dict):
+            node.setdefault("inputs", {})["Xi"] = duration
+            node["inputs"]["Xf"] = duration
+    loader = workflow.get("256")
+    if not isinstance(loader, dict):
+        raise ValueError("fixed LTX LoRA loader node 256 missing")
+    loader_inputs = loader.setdefault("inputs", {})
+    loader_inputs["lora_1"] = {
+        "on": True,
+        "lora": LTX_T2V_DISTILLED_LORA,
+        "strength": 0.5,
+    }
+    loader_inputs["lora_2"] = {
+        "on": True,
+        "lora": LTX_T2V_SULPHUR_LORA,
+        "strength": 1.0,
+    }
+    if ingredients:
+        ic_loader = workflow.get("271")
+        if not isinstance(ic_loader, dict):
+            raise ValueError("Ingredients loader node 271 missing")
+        ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
+        ic_loader["inputs"]["strength_model"] = 1.0
+        sheet = str(params.get("character_sheet") or "").strip()
+        if not sheet:
+            raise ValueError("Ingredients character sheet missing")
+        workflow["270"]["inputs"]["image"] = sheet
+    audio_prompt = str(params.get("audio_prompt") or "").strip()
+    if audio_prompt:
+        prompt_node = workflow.get("28")
+        prompt_node["inputs"]["text"] = (
+            f"{prompt_node['inputs'].get('text', '')}\n\n#Audio\n{audio_prompt}"
+        )
+    _set_ltx_output_prefixes(
+        workflow,
+        unique_id=unique_id,
+        output_task_prefix="ltx_t2v_ic" if ingredients else "ltx_t2v",
+    )
+
+
+def patch_ltx_t2v_workflow(workflow: dict[str, Any], **kwargs: Any) -> None:
+    _patch_ltx_t2v_workflow(workflow, ingredients=False, **kwargs)
+
+
+def patch_ltx_t2v_ic_workflow(workflow: dict[str, Any], **kwargs: Any) -> None:
+    _patch_ltx_t2v_workflow(workflow, ingredients=True, **kwargs)
+
+
+def patch_character_reference_build_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    unique_id: Any,
+    **_: Any,
+) -> None:
+    image_path = str(params.get("image") or "").strip()
+    if not image_path:
+        images = params.get("images") or []
+        image_path = str(images[0] if images else "").strip()
+    if not image_path:
+        raise ValueError("character reference source image missing")
+    for index in range(1, 7):
+        prefix = f"v{index}:"
+        workflow[prefix + "15"]["inputs"]["image"] = image_path
+        workflow[prefix + "28"]["inputs"]["noise_seed"] = int(
+            params.get("seed") or unique_id or 1
+        )
+        workflow[prefix + "201"]["inputs"]["filename_prefix"] = (
+            f"character_reference_view_{index:02d}_{unique_id or 'task'}"
         )
 
 
@@ -783,6 +891,9 @@ TASK_SPECIFIC_PATCHERS = {
     "ltx_video": patch_ltx_video_workflow,
     "ltx_video_flf2v": patch_ltx_video_flf2v_workflow,
     "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,
+    "ltx_t2v": patch_ltx_t2v_workflow,
+    "ltx_t2v_ic": patch_ltx_t2v_ic_workflow,
+    "character_reference_build": patch_character_reference_build_workflow,
     "video_insert": patch_image_to_video_workflow,
     "video_edit": patch_image_to_video_workflow,
     "image_to_video": patch_image_to_video_workflow,

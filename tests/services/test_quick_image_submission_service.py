@@ -30,7 +30,7 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-            "draw_scenes": [
+                "draw_scenes": [
                 {
                     "id": "soft_light",
                     "name": "柔光写真",
@@ -43,7 +43,7 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
 
     plan = build_quick_image_submission_plan(
         fsm_data={
-            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "mode": "free_edit_v2_5",
             "scene_id": "soft_light",
         },
         qqcc_config=config,
@@ -51,16 +51,16 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     )
 
     assert plan.kind == QuickImageSubmissionKind.DRAW_CHAIN
-    assert plan.mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-    assert plan.task_type == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-    assert plan.total_cost == 2
+    assert plan.mode == "free_edit_v2_5"
+    assert plan.task_type == "free_edit_v2_5"
+    assert plan.total_cost == 3
     assert plan.images == ["/tmp/input.png"]
     assert plan.display_mode_name == "柔光写真"
     assert plan.result_meta == {
         "_qqcc_regenerate": {
             "kind": "quick_image",
-            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
-            "scene_id": "soft_light",
+                "mode": "free_edit_v2_5",
+                "scene_id": "soft_light",
             "scene_kind": "draw",
             "display_mode_name": "柔光写真",
         }
@@ -93,9 +93,163 @@ def test_qqcc_free_edit_v3_scene_builds_bf16_plan_with_six_credit_cost():
         image_path="/tmp/input.png",
     )
 
-    assert plan.task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16
-    assert plan.total_cost == 6
+    assert plan.task_type == "free_edit_v2_5"
+    assert plan.total_cost == 3
     assert plan.images == ["/tmp/input.png"]
+
+
+def test_qqcc_draw_fixed_credit_cost_replaces_entire_nested_chain_cost():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root prompt",
+                    "credit_cost": 7,
+                    "original_face_swap_enabled": True,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {
+                    "id": "child",
+                    "name": "后处理",
+                    "prompt": "child prompt",
+                    "credit_cost": 99,
+                },
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.total_cost == 7
+    assert plan.fixed_credit_cost == 7
+    assert plan.billing_id
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_draw_chain_charges_first_real_task_only():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root prompt",
+                    "credit_cost": 7,
+                    "original_face_swap_enabled": True,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {"id": "child", "name": "后处理", "prompt": "child prompt"},
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    calls = []
+
+    async def process(**kwargs):
+        calls.append(kwargs)
+        return b"image", f"output-{len(calls)}.png"
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=1,
+        user_id=2,
+        username="tester",
+        status_msg_id=3,
+        process_generation_task_func=process,
+        download_output_file_to_fsm_temp_func=AsyncMock(return_value="/tmp/next.png"),
+    )
+
+    assert calls[0]["cost_override"] == 7
+    assert calls[0].get("deduct_quota", True) is True
+    assert calls[1]["deduct_quota"] is False
+    assert "cost_override" not in calls[1]
+    assert calls[2]["deduct_quota"] is False
+    assert "cost_override" not in calls[2]
+
+
+@pytest.mark.asyncio
+async def test_fixed_price_draw_chain_refunds_root_charge_when_later_stage_fails(
+    monkeypatch,
+):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "root",
+                    "name": "固定价绘图",
+                    "prompt": "root",
+                    "credit_cost": 7,
+                    "postprocess_draw_scene_id": "child",
+                },
+                {"id": "child", "name": "后处理", "prompt": "child"},
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "root",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    call_count = 0
+
+    async def process(**_kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("postprocess failed")
+        return b"image", "root-output.png"
+
+    refund = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "src.services.qqcc_scene_billing_service.resolve_internal_user_id",
+        AsyncMock(return_value=999),
+    )
+
+    with pytest.raises(RuntimeError, match="postprocess failed"):
+        await run_quick_image_submission_plan(
+            plan=plan,
+            context=SimpleNamespace(),
+            chat_id=1,
+            user_id=2,
+            username="tester",
+            status_msg_id=3,
+            process_generation_task_func=process,
+            download_output_file_to_fsm_temp_func=AsyncMock(
+                return_value="/tmp/next.png"
+            ),
+            refund_credits_func=refund,
+        )
+
+    refund.assert_awaited_once_with(
+        999,
+        7,
+        username="tester",
+        task_type="refund_qqcc_scene_fixed_cost",
+        idempotency_key=f"qqcc_scene_refund:{plan.billing_id}",
+    )
 
 
 @pytest.mark.asyncio
@@ -201,6 +355,7 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[0]["prompt"] == "soft light prompt"
     assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[0]["allow_contribute"] is False
     assert process_calls[0]["allow_cancel"] is True
     assert process_calls[0]["user_cancel_allowed"] is True
@@ -209,6 +364,7 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[1]["negative_prompt"] == "bad anatomy"
     assert process_calls[1]["images"] == ["/tmp/intermediate.png"]
     assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["record_history"] is True
     assert process_calls[1]["allow_contribute"] is False
     assert process_calls[1]["allow_cancel"] is False
     assert process_calls[1]["user_cancel_allowed"] is False
@@ -294,8 +450,10 @@ async def test_private_qqcc_draw_chain_uses_durable_continuation_before_dispatch
     assert create_checkpoint.await_args.kwargs["original_input_durable"] is True
     assert len(stages) == 2
     assert stages[0]["task_kwargs"]["send_result"] is False
+    assert stages[0]["task_kwargs"]["record_history"] is False
     assert stages[0]["task_kwargs"]["user_cancel_allowed"] is True
     assert stages[1]["task_kwargs"]["send_result"] is True
+    assert stages[1]["task_kwargs"]["record_history"] is True
     assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
     resume_checkpoint.assert_awaited_once()
     resume_kwargs = resume_checkpoint.await_args.kwargs
@@ -335,7 +493,7 @@ def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-            "draw_scenes": [
+            "draw_scenes_v1": [
                 {
                     "id": "realistic",
                     "name": "逼真质感",
@@ -348,7 +506,11 @@ def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
     )
 
     plan = build_quick_image_submission_plan(
-        fsm_data={"mode": MODE_IMG2IMG_LORA, "scene_id": "realistic"},
+            fsm_data={
+                "mode": MODE_IMG2IMG_LORA,
+                "scene_id": "realistic",
+                "scene_version": "v1",
+            },
         qqcc_config=config,
         image_path="/tmp/input.png",
     )
@@ -397,6 +559,37 @@ def test_qqcc_filter_scene_builds_draw_chain_plan_with_filter_scene_kind():
             "display_mode_name": "真实质感",
         }
     }
+
+
+def test_qqcc_filter_fixed_credit_cost_replaces_dynamic_cost():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                    "credit_cost": 5,
+                    "original_face_swap_enabled": True,
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "real_skin",
+            "scene_kind": "filter",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.total_cost == 5
+    assert plan.fixed_credit_cost == 5
+    assert plan.billing_id
 
 
 @pytest.mark.asyncio
@@ -451,11 +644,12 @@ async def test_run_qqcc_draw_scene_can_postprocess_with_filter_template():
     )
 
     assert [scene["id"] for scene in plan.draw_chain] == ["soft_light", "real_skin"]
-    assert plan.total_cost == 4
+    assert plan.total_cost == 5
     assert plan.display_mode_name == "柔光写真"
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "draw"
     assert process_calls[0]["prompt"] == "soft light prompt"
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[1]["prompt"] == "real skin prompt"
     assert process_calls[1]["negative_prompt"] == "plastic skin"
     assert process_calls[1]["send_result"] is True
@@ -504,7 +698,7 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
         downloaded.append(kwargs)
         return f"/tmp/download-{len(downloaded)}.png"
 
-    assert plan.total_cost == 6
+    assert plan.total_cost == 8
 
     await run_quick_image_submission_plan(
         plan=plan,
@@ -518,9 +712,9 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
     )
 
     assert [call["task_type"] for call in process_calls] == [
-        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "free_edit_v2_5",
         MODE_FACE_SWAP_V2,
-        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "free_edit_v2_5",
     ]
     assert [call["allow_cancel"] for call in process_calls] == [
         True,
@@ -544,10 +738,12 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
     assert "negative_prompt" not in process_calls[1]
     assert process_calls[1]["cost_override"] == 2
     assert process_calls[1]["send_result"] is False
+    assert process_calls[1]["record_history"] is False
     assert process_calls[2]["images"] == ["/tmp/download-2.png"]
     assert process_calls[2]["prompt"] == "polish prompt"
     assert process_calls[2]["negative_prompt"] == "bad anatomy"
     assert process_calls[2]["send_result"] is True
+    assert process_calls[2]["record_history"] is True
 
 
 @pytest.mark.asyncio
@@ -579,7 +775,7 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
         process_calls.append(kwargs)
         return b"image-bytes", f"output-{len(process_calls)}.png"
 
-    assert plan.total_cost == 4
+    assert plan.total_cost == 5
 
     await run_quick_image_submission_plan(
         plan=plan,
@@ -595,20 +791,22 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
     )
 
     assert [call["task_type"] for call in process_calls] == [
-        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "free_edit_v2_5",
         MODE_FACE_SWAP_V2,
     ]
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["record_history"] is False
     assert process_calls[0]["allow_cancel"] is True
     assert process_calls[0]["user_cancel_allowed"] is True
     assert process_calls[0]["base_priority"] == 0
     assert process_calls[0]["show_queue_status"] is True
     assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["record_history"] is True
     assert process_calls[1]["allow_cancel"] is False
     assert process_calls[1]["user_cancel_allowed"] is False
     assert process_calls[1]["base_priority"] == 100
     assert process_calls[1]["show_queue_status"] is False
-    assert process_calls[1]["result_task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    assert process_calls[1]["result_task_type"] == "free_edit_v2_5"
     assert process_calls[1]["result_prompt"] == "soft light prompt"
     assert process_calls[1]["result_input_image_indices"] == [1]
     assert process_calls[1]["allow_contribute"] is False

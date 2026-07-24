@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import User
-from src.web_api.dependencies import get_current_user, get_db
+from src.web_api.dependencies import get_db, get_payment_user
 from src.web_api.services.payment_api_service import (
     create_rmb_order_payload,
     create_ton_order_payload,
@@ -34,7 +34,7 @@ class CreateTonOrderRequest(BaseModel):
 async def create_order(
     req: CreateOrderRequest,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_payment_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -52,7 +52,7 @@ async def create_order(
 @router.post("/ton-orders")
 async def create_ton_order(
     req: CreateTonOrderRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_payment_user),
     db: AsyncSession = Depends(get_db),
 ):
     return await create_ton_order_payload(
@@ -65,7 +65,7 @@ async def create_ton_order(
 @router.get("/orders/{order_id}/status")
 async def get_order_status(
     order_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_payment_user),
     db: AsyncSession = Depends(get_db),
 ):
     """

@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "c624d9d08b68c6d3e84526218366584edba8d111",
+  "batch": "20260722-lan-recovery-final",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260722-lan-recovery-final",
+  "members": [
+    {
+      "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d",
+      "branch": "codex/a-lan-recover-missing-worker",
+      "head": "ab9a9eb8a631196b59f12c944e3365932faa1a32",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

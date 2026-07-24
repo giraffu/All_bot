@@ -431,8 +431,12 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}" in workflow
     assert "--previous-catalog" in workflow
     assert 'git show "${PREVIOUS_SHA}:deploy/release-artifacts-v2.json"' in workflow
-    assert "options: [build-only]" in workflow
-    assert "manual dispatch cannot claim full validation" in workflow
+    assert "options: [build-only, full]" in workflow
+    assert "manual full replay requires upstream_run_id" in workflow
+    assert (
+        "UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || "
+        "inputs.upstream_run_id }}" in workflow
+    )
     assert '--validation-mode "$VALIDATION_MODE"' in workflow
     assert "if: steps.source.outputs.validation_mode == 'full'" in workflow
     assert "validation_mode=full" in workflow
@@ -521,8 +525,13 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "  pull_request:\n" in workflow
     assert "python scripts/classify_ci_change.py" in workflow
     assert "needs.change-scope.outputs.requires_full_ci == 'true'" in workflow
+    assert "needs.change-scope.outputs.requires_release_ci == 'true'" in workflow
     assert "needs.change-scope.outputs.requires_operator_ci == 'true'" in workflow
+    assert "  release-tooling-tests:\n" in workflow
     assert "  operator-tests:\n" in workflow
+    assert (
+        "tests/ops/test_release_cli.py tests/ops/test_release_strategy.py" in workflow
+    )
     assert (
         "python -m pytest -vv --maxfail=1 --durations=20 tests/ops tests/scripts"
         in workflow
@@ -536,10 +545,13 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "github.event.workflow_run.conclusion == 'success'" in modular
     assert "github.event.workflow_run.event == 'push'" in modular
     assert "github.event.workflow_run.event == 'workflow_dispatch'" in modular
-    assert "python scripts/validate_upstream_ci_run.py" in modular
+    assert "ref: ${{ github.workflow_sha }}" in modular
+    assert "path: .release-tooling" in modular
+    assert "python .release-tooling/scripts/validate_upstream_ci_run.py" in modular
+    assert "rm -rf -- .release-tooling" in modular
     assert "actions: read" in modular
     assert "if: steps.source.outputs.validation_mode == 'full'" in modular
-    assert "manual dispatch cannot claim full validation" in modular
+    assert "manual full replay requires upstream_run_id" in modular
 
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():

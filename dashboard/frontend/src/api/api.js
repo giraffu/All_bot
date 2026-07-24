@@ -105,7 +105,15 @@ export const fetchUserFavorites = async (
     appendQueryParam(params, 'task_type', taskType)
   }))
 
-export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null, workerId = null) => {
+export const fetchHistoryAll = async (
+  page = 1,
+  pageSize = 20,
+  type = null,
+  rating = null,
+  isPublic = null,
+  workerId = null,
+  source = null,
+) => {
   return get(withQuery('/api/history/all', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
@@ -113,10 +121,23 @@ export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rati
     if (rating !== null) appendQueryParam(params, 'rating', rating)
     if (isPublic !== null) appendQueryParam(params, 'is_public', isPublic)
     if (workerId && workerId !== 'all') appendQueryParam(params, 'worker_id', workerId)
+    if (source && source !== 'all') appendQueryParam(params, 'source', source)
   }))
 }
 
 export const deleteUser = async (userId) => del(`/api/users/${userId}`)
+
+/** @param {{page?: number, pageSize?: number, status?: string | null, category?: string | null}} options */
+export const fetchSupportTickets = async ({ page = 1, pageSize = 30, status = null, category = null } = {}) =>
+  get(withQuery('/api/support-tickets', params => {
+    appendQueryParam(params, 'page', page)
+    appendQueryParam(params, 'page_size', pageSize)
+    appendQueryParam(params, 'status', status)
+    appendQueryParam(params, 'category', category)
+  }))
+export const fetchSupportTicket = async (ticketId) => get(`/api/support-tickets/${ticketId}`)
+export const updateSupportTicket = async (ticketId, payload) => api.patch(`/api/support-tickets/${ticketId}`, payload).then(unwrapData)
+export const replySupportTicket = async (ticketId, payload) => post(`/api/support-tickets/${ticketId}/reply`, payload)
 
 /**
  * @param {number} userId

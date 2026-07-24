@@ -21,9 +21,9 @@
 - `ALLBOT_ENV` 必填，`BOT_TYPE` 只能由它派生；运行代码禁止自动加载 `.env`、读取 `_TEST` 别名或使用秘密/环境身份默认值。Public Web 继续晋级同一 tar，并在部署时生成环境独立的 `allbot-runtime-config.js`。
 - 代码发布先从目标主机只读计算 env 与逐服务 revision。发现漂移必须先执行 `config-plan`/`config-apply`；配置契约变化或未知键影响全部服务并强制完整维护。首次投影切换备份数据库和原 env，失败恢复旧投影与旧 digest；恢复不完整时保留维护。
 - CI 检查构建上下文、运行源码、Dockerfile/Image Config.Env、镜像应用文件系统和 Web dist，并用同一 digest 分别解析 test/prod 哨兵身份。
-- 秘密轮换分两阶段完成。`credential-isolation-complete` 之前，每次正式快捷发布必须显式提交 `--accept-pending-secret-rotation --reason --approved-by`，风险接受写入发布状态；轮换完成后该豁免失效。
+- 已于 2026-07-22 修订：秘密轮换分两阶段完成，但其 pending 状态仅保留运行风险审计，不再阻断日常 `promote` 或要求额外接受参数。`credential-isolation-complete` 继续记录轮换完成证据；单人开发的 `--confirm-prod` 是实际生产执行的唯一确认。
 - `scripts/verify_remote_secret_isolation.py` 用同一随机 challenge 在 test/prod 目标机本地计算 HMAC，只传回键名与摘要比较结果；禁止复制或输出秘密原文。Agent Token 的实际轮换仍按测试 Worker→正式控制面→正式 Worker 顺序交给既有 GPU operator。
-- 轮换完成状态只能通过 `release.py credential-isolation-complete` 写入。命令要求一小时内生成的无值证据、全部目标健康、旧凭据已撤销、批准人、`--confirm-prod` 与 `--execute`，并在 test/prod 配置根保存不可变审计；不得手工创建状态 marker。
+- 轮换完成状态只能通过 `release.py credential-isolation-complete` 写入。命令要求一小时内生成的无值证据、全部目标健康、旧凭据已撤销、`--confirm-prod` 与 `--execute`，并在 test/prod 配置根保存不可变审计；不得手工创建状态 marker。
 - 首期只覆盖 control-plane 和 Public Web。LAN AIO/RunPod 继续使用单卡 operator/canary 流程。
 
 ## 后果

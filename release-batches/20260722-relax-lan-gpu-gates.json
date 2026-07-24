@@ -1,0 +1,16 @@
+{
+  "batch": "20260722-relax-lan-gpu-gates",
+  "base_ref": "origin/main",
+  "base_sha": "e0b2d7356884133f5f1cf2c99dd5f8a0b463e0f0",
+  "members": [
+    {
+      "slot": "B",
+      "branch": "codex/b-relax-lan-gpu-gates",
+      "head": "a0ae1bca6b7bd47055a490217662ef0427f1affd",
+      "base_sha": "6a1beb1cdbac6ed7be368a8f608f380a9b237a8d"
+    }
+  ],
+  "integration_branch": "codex/release-batch-20260722-relax-lan-gpu-gates",
+  "pr_base": "main",
+  "container_build_trigger": "main-merge"
+}

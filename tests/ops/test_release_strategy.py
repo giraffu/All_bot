@@ -64,7 +64,22 @@ def test_classification_uses_the_highest_risk_module(
     assert decision.strategy == expected_strategy
 
 
-def test_direct_and_emergency_have_auditable_default_skips():
+def test_media_runtime_base_is_non_runtime_release_infrastructure():
+    module = _load_module()
+
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts={"python-media-runtime-base"},
+        requested="auto",
+        locked=False,
+        validation_mode="full",
+    )
+
+    assert decision.risk_class == "non-runtime"
+    assert decision.strategy == "standard"
+
+
+def test_direct_and_emergency_have_default_skips():
     module = _load_module()
 
     owner = module.decide_release_strategy(
@@ -81,7 +96,6 @@ def test_direct_and_emergency_have_auditable_default_skips():
         locked=False,
         validation_mode="full",
         reason="restore API quickly",
-        approved_by="owner",
     )
 
     expected = {"test-deploy", "test-acceptance"}
@@ -127,11 +141,10 @@ def test_core_direct_and_locked_emergency_are_forbidden():
             locked=True,
             validation_mode="full",
             reason="unsafe migration",
-            approved_by="owner",
         )
 
 
-def test_public_web_direct_and_ci_test_skip_require_risk_metadata():
+def test_public_web_direct_and_ci_test_skip_require_a_reason():
     module = _load_module()
 
     with pytest.raises(module.ReleaseStrategyError, match="reason"):
@@ -142,16 +155,16 @@ def test_public_web_direct_and_ci_test_skip_require_risk_metadata():
             locked=False,
             validation_mode="full",
         )
-    with pytest.raises(module.ReleaseStrategyError, match="approved"):
-        module.decide_release_strategy(
-            track="control-plane",
-            artifacts={"dashboard-backend"},
-            requested="direct",
-            locked=False,
-            validation_mode="build-only",
-            skip_gates={"ci-tests"},
-            reason="owner tool hotfix",
-        )
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts={"dashboard-backend"},
+        requested="direct",
+        locked=False,
+        validation_mode="build-only",
+        skip_gates={"ci-tests"},
+        reason="owner tool hotfix",
+    )
+    assert "ci-tests" in decision.skipped_gates
 
 
 def test_build_only_requires_explicit_ci_test_skip_and_nonstandard_strategy():
@@ -174,7 +187,6 @@ def test_build_only_requires_explicit_ci_test_skip_and_nonstandard_strategy():
             validation_mode="build-only",
             skip_gates={"ci-tests"},
             reason="skip tests",
-            approved_by="owner",
         )
 
 

@@ -4,7 +4,7 @@ from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
-from config import WEBAPP_URL
+from config import build_ton_payment_mini_app_url
 from src.handlers.message_handler_common import get_reply_message
 from src.services.lazy_bot_entry_service import resolve_lazy_bot_url
 from src.services.main_bot_menu_runtime import (
@@ -76,7 +76,7 @@ async def build_back_to_main_payload(context) -> tuple[str, object]:
 
 
 def build_recharge_payload(context) -> tuple[str, InlineKeyboardMarkup]:
-    webapp_url = WEBAPP_URL or "https://pay.aivison.it.com/"
+    webapp_url = build_ton_payment_mini_app_url()
     keyboard = [
         [
             InlineKeyboardButton(

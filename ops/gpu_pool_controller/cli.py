@@ -33,6 +33,7 @@ from .runpod_split_video_canary import (
 )
 from .runpod_video_manifests import (
     create_model_r2_client_from_env,
+    prepare_wan22_video_v2_pruned_v11_manifest,
     prepare_split_video_manifests,
     prepare_wan22_lora5_manifests,
 )
@@ -410,6 +411,22 @@ def _cmd_runpod_wan22_lora5_manifests(args) -> int:
     )
     payload["env_file"] = env_file_info
     _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_wan22_v2_pruned_manifest(args) -> int:
+    env_file_info = load_env_file(getattr(args, "env_file", None))
+    bucket = args.bucket or RunPodSettings.from_env().model_bucket
+    if not bucket:
+        raise ValueError("RUNPOD_MODEL_BUCKET is required")
+    payload = prepare_wan22_video_v2_pruned_v11_manifest(
+        client=create_model_r2_client_from_env(),
+        bucket=bucket,
+        source_key=args.source_key,
+        execute=bool(args.execute),
+    )
+    payload["env_file"] = str(env_file_info.path) if env_file_info.path else None
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload.get("ok") else 2
 
 
@@ -822,6 +839,21 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_lora5_manifests.add_argument("--execute", action="store_true")
     runpod_lora5_manifests.set_defaults(func=_cmd_runpod_wan22_lora5_manifests)
 
+    runpod_v2_pruned_manifest = runpod_subparsers.add_parser(
+        "wan22-v2-pruned-manifest",
+        help="publish the immutable Wan22 v2 FP8-pruned SnatchKiss v11 manifest",
+    )
+    runpod_v2_pruned_manifest.add_argument(
+        "--env-file", type=Path, default=Path(".env.cloud.prod")
+    )
+    runpod_v2_pruned_manifest.add_argument("--bucket", default=None)
+    runpod_v2_pruned_manifest.add_argument(
+        "--source-key",
+        default="wan22_video_v2/2026-07-18-lora5/manifest.json",
+    )
+    runpod_v2_pruned_manifest.add_argument("--execute", action="store_true")
+    runpod_v2_pruned_manifest.set_defaults(func=_cmd_runpod_wan22_v2_pruned_manifest)
+
     runpod_prod_worker = runpod_subparsers.add_parser(
         "prod-worker",
         help="manual cloud-prod RunPod worker control",
@@ -865,7 +897,6 @@ def build_parser() -> argparse.ArgumentParser:
             "i2i_pro",
             "scail2",
             "ltx_video",
-            "pornmaster_flux2_edit",
             "pornmaster_flux2_edit_bf16",
         ),
         default=None,

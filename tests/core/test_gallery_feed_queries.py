@@ -1,6 +1,11 @@
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.dialects import postgresql
 
-from src.services.gallery_feed_queries import fetch_gallery_feed_page
+from src.services.gallery_feed_queries import (
+    build_gallery_feed_query,
+    fetch_gallery_feed_page,
+)
 
 
 class _ScalarResult:
@@ -30,6 +35,36 @@ class _FakeSession:
     async def execute(self, stmt):
         self.executed_statements.append(stmt)
         return next(self._results)
+
+
+def test_gallery_history_filter_hot_sort_is_valid_for_postgresql():
+    query = build_gallery_feed_query(
+        media_type=None,
+        task_type="video_group",
+        lora_model=None,
+        sort_by="absolute_likes",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    page_sql = str(
+        query.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    count_sql = str(
+        select(func.count())
+        .select_from(query.order_by(None).subquery())
+        .compile(dialect=postgresql.dialect())
+    )
+
+    assert "SELECT DISTINCT" in page_sql
+    assert "AS gallery_sort_score" in page_sql
+    assert "ORDER BY gallery_sort_score DESC" in page_sql
+    assert "ORDER BY" not in count_sql
 
 
 @pytest.mark.asyncio

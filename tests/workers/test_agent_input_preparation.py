@@ -3,7 +3,10 @@ import time
 
 import pytest
 
-from workers.comfy_agent.agent_input_preparation import process_single_input_asset
+from workers.comfy_agent.agent_input_preparation import (
+    prepare_task_inputs,
+    process_single_input_asset,
+)
 
 
 async def _noop_upload(**_kwargs):
@@ -16,6 +19,22 @@ def _never_normalize(_param_key, _object_name):
 
 def _identity_normalize(path):
     return path
+
+
+@pytest.mark.asyncio
+async def test_prepare_task_inputs_downloads_character_sheet_reference():
+    calls = []
+
+    async def process(**kwargs):
+        calls.append((kwargs["param_key"], kwargs["img_filename"]))
+
+    await prepare_task_inputs(
+        params={"character_sheet": "bucket/private-character.png"},
+        downloaded_input_paths=[],
+        process_single_input_asset_func=process,
+    )
+
+    assert calls == [("character_sheet", "bucket/private-character.png")]
 
 
 @pytest.mark.asyncio

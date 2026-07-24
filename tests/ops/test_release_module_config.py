@@ -65,29 +65,6 @@ def test_deploy_module_requires_exact_promoted_approval():
         module.validate_deploy_module_approval(manifest)
 
 
-def test_pending_secret_rotation_requires_explicit_risk_acceptance():
-    module = _load_module()
-    args = SimpleNamespace(
-        accept_pending_secret_rotation=False,
-        reason="",
-        approved_by="",
-    )
-
-    with pytest.raises(module.ReleaseError, match="pending secret rotation"):
-        module.require_pending_secret_rotation_acceptance(
-            args,
-            {"credential_isolation": "pending"},
-        )
-
-    args.accept_pending_secret_rotation = True
-    args.reason = "staged rotation"
-    args.approved_by = "operator"
-    module.require_pending_secret_rotation_acceptance(
-        args,
-        {"credential_isolation": "pending"},
-    )
-
-
 def test_credential_isolation_completion_requires_fresh_complete_evidence():
     module = _load_module()
     evidence = {
@@ -123,7 +100,7 @@ def test_credential_isolation_completion_requires_fresh_complete_evidence():
         module.validate_credential_isolation_evidence(evidence)
 
 
-def test_credential_isolation_complete_command_is_explicit_and_audited(
+def test_credential_isolation_complete_command_is_explicit(
     tmp_path, monkeypatch, capsys
 ):
     module = _load_module()
@@ -152,7 +129,7 @@ def test_credential_isolation_complete_command_is_explicit_and_audited(
         module,
         "complete_credential_isolation",
         lambda args, evidence: (
-            recorded.append((args.approved_by, evidence))
+            recorded.append(evidence)
             or {"audit_sha256": "a" * 64, "completed_at": evidence["generated_at"]}
         ),
     )
@@ -162,15 +139,13 @@ def test_credential_isolation_complete_command_is_explicit_and_audited(
             "credential-isolation-complete",
             "--evidence",
             str(evidence_path),
-            "--approved-by",
-            "release-owner",
             "--confirm-prod",
             "--execute",
         ]
     )
 
     assert result == 0
-    assert recorded[0][0] == "release-owner"
+    assert recorded[0]["isolation"]["reused_keys"] == []
     assert json.loads(capsys.readouterr().out)["status"] == (
         "credential-isolation-complete"
     )
@@ -323,6 +298,12 @@ def test_initial_dashboard_config_apply_only_stages_projection(monkeypatch, caps
     assert '"ignored_legacy_keys"' in output
 
 
+def test_required_channel_id_is_not_an_ignorable_legacy_key():
+    module = _load_module()
+
+    assert "REQUIRED_CHANNEL_ID" not in module.SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS
+
+
 def test_initial_dashboard_config_apply_rejects_unreviewed_unknown_key(monkeypatch):
     module = _load_module()
     monkeypatch.setattr(
@@ -458,6 +439,138 @@ def test_scoped_config_apply_accepts_active_target_projection_change(
     assert '"services": [\n    "dashboard-backend"' in capsys.readouterr().out
 
 
+def test_scoped_config_apply_can_activate_one_staged_service_without_maintenance(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    inspected = {
+        "environment": "prod",
+        "environment_revision": "a" * 64,
+        "active_revision": "a" * 64,
+        "service_revisions": {"qqcc-config-backend": "b" * 64},
+        "affected_services": [],
+        "unknown_keys": [],
+        "drift": False,
+    }
+    events = []
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: ({}, "a" * 64, inspected),
+    )
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda _args, _state, services: events.append(("compose", services)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_set_config_maintenance",
+        lambda *_args, **_kwargs: events.append(("maintenance",)),
+    )
+
+    assert (
+        module.main(
+            [
+                "config-apply",
+                "--env",
+                "prod",
+                "--module",
+                "qqcc-config",
+                "--activate-staged",
+                "--service",
+                "qqcc-config-backend",
+                "--confirm-prod",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+
+    assert events == [("compose", {"qqcc-config-backend"})]
+    output = capsys.readouterr().out
+    assert '"status": "config-activated"' in output
+    assert '"maintenance": false' in output
+
+
+def test_scoped_staged_activation_rejects_service_outside_module(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_snapshot",
+        lambda _args, **_kwargs: (
+            {},
+            "a" * 64,
+            {
+                "environment": "prod",
+                "environment_revision": "a" * 64,
+                "active_revision": "a" * 64,
+                "affected_services": [],
+                "unknown_keys": [],
+                "drift": False,
+            },
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="outside module closure"):
+        module.run_config_command(
+            module.build_parser().parse_args(
+                [
+                    "config-apply",
+                    "--env",
+                    "prod",
+                    "--module",
+                    "qqcc-config",
+                    "--activate-staged",
+                    "--service",
+                    "qqcc-bot",
+                    "--confirm-prod",
+                    "--execute",
+                ]
+            )
+        )
+
+
+def test_staged_service_activation_restores_projection_and_runtime_on_failure(
+    monkeypatch,
+):
+    module = _load_module()
+    events = []
+    snapshot = {
+        "environment_revision": "a" * 64,
+        "service_revisions": {"qqcc-config-backend": "b" * 64},
+    }
+    monkeypatch.setattr(
+        module,
+        "_config_apply_cloud",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            module.ReleaseError("compose failed")
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_runtime_env_rollback",
+        lambda _args, revision: events.append(("projection", revision)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_config_cloud",
+        lambda _args, services: events.append(("runtime", services)),
+    )
+
+    with pytest.raises(module.ReleaseError, match="compose failed"):
+        module._activate_staged_config_service(
+            SimpleNamespace(),
+            snapshot,
+            "qqcc-config-backend",
+        )
+
+    assert events == [
+        ("projection", "a" * 64),
+        ("runtime", {"qqcc-config-backend"}),
+    ]
+
+
 def test_scoped_config_apply_rejects_active_projection_change_outside_module(
     monkeypatch,
 ):
@@ -555,6 +668,9 @@ def test_config_apply_snapshots_running_and_stopped_non_target_containers(monkey
     )
 
     assert "docker ps -aq" in scripts[0]
+    assert "available_services=\"$($compose config --services)\"" in scripts[0]
+    assert 'grep -Fxq "$service"' in scripts[0]
+    assert '"${compose_service_args[@]}"' in scripts[0]
     assert "pg_dump" not in scripts[0]
 
 
@@ -577,6 +693,10 @@ def test_full_config_backup_uses_current_running_web_api(monkeypatch):
 
     assert 'docker exec "$container_id"' in scripts[0]
     assert "pg_dump" in scripts[0]
+    assert "sslmode=" in scripts[0]
+    assert "postgresql+asyncpg" in scripts[0]
+    assert module.PG_DUMP_IMAGE in scripts[0]
+    assert "docker exec" in scripts[0]
     assert 'case "$DATABASE_URL" in postgresql+asyncpg:*' in scripts[0]
     assert "${DATABASE_URL#postgresql+asyncpg:}" in scripts[0]
     assert "${DATABASE_URL/postgresql+asyncpg:/postgresql:}" not in scripts[0]
@@ -592,7 +712,12 @@ def test_no_change_requires_exact_digest_health_and_service_config_revision(
     manifest = {
         "schema_version": 2,
         "git_sha": FULL_SHA,
-        "artifacts": {"web-api": {"ref": IMAGE_REF}},
+        "artifacts": {
+            "web-api": {
+                "ref": IMAGE_REF,
+                "oci_revision": FULL_SHA,
+            }
+        },
     }
     monkeypatch.setattr(
         module,

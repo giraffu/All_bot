@@ -24,7 +24,7 @@ RELEASE_STRATEGY="direct"
 RELEASE_ROLLBACK_REF=""
 ROLLOUT_RESOLVER="${ROOT_DIR}/scripts/gpu_release_rollout.py"
 
-STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit pornmaster_flux2_edit_bf16)
+STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit_bf16)
 
 usage() {
   cat <<'USAGE'
@@ -50,8 +50,7 @@ Actions:
 Options:
   --profile <name>            Required for mutations. One of img2img,
                               image_to_video, wan22_video_v2, i2i_pro,
-                              scail2, ltx_video, pornmaster_flux2_edit,
-                              pornmaster_flux2_edit_bf16.
+                              scail2, ltx_video, pornmaster_flux2_edit_bf16.
   --slot <NN>                 Optional manual worker slot, for example 01.
   --count <N>                 Required for add.
   --desired <N>               Required for scale.
@@ -79,7 +78,7 @@ USAGE
 
 is_valid_profile() {
   case "$1" in
-    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16) return 0 ;;
+    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit_bf16) return 0 ;;
     *) return 1 ;;
   esac
 }

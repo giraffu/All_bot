@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "4a0939b898c3b93722942f7019e2c172a9942413",
+  "batch": "20260724-lan-registry-proxy",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-lan-registry-proxy",
+  "members": [
+    {
+      "base_sha": "4a0939b898c3b93722942f7019e2c172a9942413",
+      "branch": "codex/a-lan-registry-daemon-no-proxy",
+      "head": "5cdc36054c5f50714f46c2261bafd0660d8c7ac4",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

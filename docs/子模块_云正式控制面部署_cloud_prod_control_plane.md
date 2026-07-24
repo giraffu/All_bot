@@ -1,15 +1,22 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-20 日常正式发布统一使用 `python scripts/release.py promote --confirm-prod`。不带确认只输出精简预览；不传模块时自动选择最新 main bundle 中与正式实际运行态不一致的模块，部分发布才传 `--modules <逗号列表>`，固定 SHA 才传 `--sha <40位SHA>`。该门面内部完成 exact-digest 测试取证、配置闭包、目标健康、single polling、非目标证明和事务回滚，不再要求操作者重复 plan/preflight 或追加 `--execute`。migration、共享/未知契约、emergency、跳门禁和待处理秘密轮换会阻断并提示使用高级入口。旧 rsync/build 命令已从活跃 SOP 删除，历史只保留归档边界。
+> 2026-07-24：主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时配置计划/应用 fail closed，不再作为可忽略 legacy key。懒人入口正式使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，只投影给 main-bot；旧 `QQCC_LAZY_BOT_*` 仅作运行时兼容回退。下一次正式 main-bot 更新必须先用 `config-plan/config-apply --module main-bot` 刷新投影，再由受控发布事务重建 Bot。
+>
+> 2026-07-22：`promote` 增加内部 `streamlined|strict` 执行配置，CLI 不变。普通已知 schema-v2 main control-plane 模块在目标配置投影无漂移时走 streamlined：direct 只消费 bundle 内 `validation.mode=full/tests=passed`，standard 复用测试 history 中同 artifact + exact digest 的 verified evidence，不再重复查询 GitHub CI；只 inspect/替换目标容器，不准备完整 rollback checkout、不预拉旧镜像、不检查非目标启动时间。一次目标替换脚本持事务锁，从全部目标容器交叉核验同一个受控 Compose checkout（artifact `source_sha` 不作为 Compose SHA）、单次 pull、`up --no-deps --wait`、核对 digest/OCI/config/health/API_BASE/polling，并用主机已有旧 ref 做目标回切；只有回切失败才保留 maintenance/recovery transaction。migration、Compose/env、数据库/Redis、首次切换、未知或混合 strict 影响继续保留完整备份、Alembic、queue drain、维护和恢复能力。Dashboard 仅在 LAN runner 影响规则命中时探测 runner；未选择 Public Web 时不初始化 Wrangler/Pages。
+> 2026-07-20 日常正式发布统一使用 `python scripts/release.py promote --confirm-prod`。不带确认只输出精简预览；不传模块时自动选择最新 main bundle 中与正式实际运行态不一致的模块，部分发布才传 `--modules <逗号列表>`，固定 SHA 才传 `--sha <40位SHA>`。该门面内部完成 exact-digest 测试取证、配置闭包、目标健康、single polling 和执行配置对应的事务回滚，不再要求操作者重复 plan/preflight 或追加 `--execute`。strict 保留非目标证明与完整回滚；streamlined 仅触碰和证明目标服务。旧 rsync/build 命令已从活跃 SOP 删除，历史只保留归档边界。
 > 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
 2026-07-20 模块边界：`promote` 支持一个事务内组合 `central-api`、`web-api`、`payment-api`、`imgproxy`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker`、`paid-group-bot` 与 `public-web`。planner 对每个模块和 artifact 分别使用真实旧 digest/source SHA、策略和 blocker；配置闭包取模块并集，状态提交保留非目标混合版本。standard artifact 必须命中测试 history 的同名 exact digest，Dashboard direct 仅记录 `waived`。migration、未知共享 Compose/env、未审计跨模块契约和 snapshot 漂移仍 fail closed。
 
 2026-07-20 事务审计兼容：秘密隔离完成前的发布状态会持久记录 `pending_secret_rotation_acceptance`，下一次事务把旧 state 纳入回滚证据时必须保留该非敏感记录。journal 校验只对这一精确审计字段例外，字段内部仍递归禁止 token、secret、password 和 env-values；不得通过删除 current/history 审计记录来绕过校验。
 
-2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；运行时 helper 会把已激活服务加入同一验证快照，允许本次目标服务更新 revision，同时保证所有非目标 active 服务继续存在且 revision、投影字节和权限均不变。局部 apply 只替换或追加目标投影并更新配置状态，不调用 Compose、不重启容器、不进入维护；任何非目标 active 服务配置变化、未知键或影响集逃出目标闭包都会在写入前阻断。目标更新会保留不可变 activation history 和完整旧联合状态，供显式 rollback 恢复。完整 `config-plan` 仍用于查看未收敛服务，Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`，供 RunPod down/delete 的 Central agent control 使用；缺键在生成投影时直接失败，不允许恢复整份 prod env 注入。
+2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；局部 apply 仍验证并保留全部非目标 active 投影。2026-07-22 起，普通发布的只读门禁改用更窄的 target inspection：只构造并校验目标 projection 文件、权限、字节和 revision，忽略非目标 active state 中的未知历史名称或 drift；它绝不激活或改写配置。目标自身缺键、篡改或 revision 漂移仍阻断，并要求显式 `config-plan/config-apply --module`。完整 `config-plan/config-apply` 继续报告和处理全局 drift。Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`。
 
 2026-07-20 TON/Telegram 配置契约收口：`web-api` 必须投影 `TELEGRAM_API_BASE_URL`；当 `TON_PAYMENT_POLLING_ENABLED=true` 时，`web-api` 与 `main-bot` 条件必填并投影有效的 `VITE_MERCHANT_ADDRESS`。地址和 Telegram endpoint 只来自 `/etc/allbot/prod.env`，不得写入镜像或代码。该变更触及共享服务环境契约，必须走完整 control-plane CI、测试验收与维护式正式事务；缺键在任何容器替换前 fail closed。
+
+主 Bot 的频道资格检查还强制依赖 `REQUIRED_CHANNEL_ID`。该键只投影给 `main-bot`，缺失时必须在配置投影阶段阻断，不能让 `get_user_channel_status(...)` 的运行时兼容降级掩盖配置缺口；`CHANNEL_INVITE_LINK` 只负责用户展示，不能替代用于 Telegram `getChatMember` 的频道 ID。
+
+主 Bot 的懒人入口配置使用 `MAIN_BOT_LAZY_BOT_ENABLED`、`MAIN_BOT_LAZY_BOT_URL` / `MAIN_BOT_LAZY_BOT_USERNAME`，只允许影响 `main-bot`。正式 username 固定为 `@QQCC666_bot`，应解析为 `https://t.me/QQCC666_bot`；新命名空间任一键存在即整组优先，旧 `QQCC_LAZY_BOT_*` 仅在新键完全不存在时兼容回退。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
@@ -56,7 +63,7 @@
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
-不可变控制面镜像与日志还需满足以下运行契约：Web API 会在 `src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须包含 `ffmpeg`，模块化 release 的 full-validation smoke 必须在最终 digest 镜像中执行 `ffmpeg -version`；不能只因为主 Bot 镜像含有 ffmpeg 就视为 Web 已满足依赖。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用 `json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器按不可变发布流程重建后生效，不得通过远端手改 container HostConfig 代替仓库契约。
+不可变控制面镜像与日志还需满足以下运行契约：Web API 会在 `src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须包含 `ffmpeg`，模块化 release 的 full-validation smoke 必须在最终 digest 镜像中执行 `ffmpeg -version`。QQCC 多段视频还会在控制面执行尾帧探测、提取与拼接，`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可运行的 `python-media-runtime-base`，并在各自最终 digest 中同时执行 `ffmpeg -version` 与 `ffprobe -version`；不能只因为基础镜像、旧 `Dockerfile.qqcc` 或其它服务含有工具就视为依赖满足。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用 `json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器按不可变发布流程重建后生效，不得通过远端手改 container HostConfig 代替仓库契约。
 
 QQCC 私有 Bot 正式启用不是 QQCC 单 polling 热修：它涉及 Alembic、新共享 secret、Web API webhook、QQCC Config Backend/Frontend、官方 QQCC 申请入口、独立 worker 和公网 owner Host。必须走完整生产确认与迁移门禁，不能套用只替换 `qqcc-bot-prod` 的单服务脚本。生产顺序、env contract 和回滚见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。2026-07-12 已执行 migration、设置 `PRIVATE_QQCC_BOT_ENABLED=true`、启动 private profile、启用生产 webhook，并将 `private-bot.aivison.it.com` 接入现有 Tunnel；严格 validator、Host 隔离、owner/admin 公网行为和 worker heartbeat 已验证。safe deploy 的 `--allow-disabled` 仍只适用于 gate 关闭的未启用环境，不能替代启用态严格校验。
 
@@ -87,7 +94,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `MINIO_*` / `R2_*` | `user-data-prod` + `https://r2.aivison.it.com` | 正式新生成对象、Web 媒体、历史/Gallery 读取与 worker 结果上传事实源 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
 | `QQCC_BOT_TOKEN` | `.env.cloud.prod` 真实值 | `cloud-qqcc-bot-prod` 的独立 Telegram token；不得写入仓库、docs、日志或 `docker compose config` 输出，正式上线前若已暴露应轮换 |
-| `QQCC_LAZY_BOT_URL` / `QQCC_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 的 `懒人bot` 菜单跳转目标；优先使用 Telegram URL，未配置 URL 时可由合法 username 自动生成 `https://t.me/<username>` |
+| `MAIN_BOT_LAZY_BOT_ENABLED` / `MAIN_BOT_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 专属的 `懒人bot` 能力闸门和跳转目标；正式 username 为 `@QQCC666_bot`，只进入 `main-bot` 投影；旧 `QQCC_LAZY_BOT_*` 仅兼容回退 |
 | `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，正式 preflight 必须阻断 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
@@ -104,7 +111,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认清空阈值按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s`、autoscaler RunPod 最短生命周期 `1800s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容只在 `pending_count == 0` 时考虑，保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级清空阈值和 task duration 会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
-`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2`、`--profile ltx_video` 与 `--profile pornmaster_flux2_edit` 七条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
+`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video` 与 `pornmaster_flux2_edit_bf16`；旧 `pornmaster_flux2_edit` FP8 profile 已退役。真实创建或启用生产任务仍必须由用户明确确认并满足 RunPod 门禁。
 
 `prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`、`face_swap_v2` 指向 `face_swap_v2.json`；不得声明旧 `face_swap`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；生产 canary 会串行提交 `i2i_pro`、Web `txt2img` 与 `face_swap_v2` 三单，全部由 `runpod_prod_i2i_pro_manual_NN` 接单并出图后才可启用接正式队列。
 
@@ -112,7 +119,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `prod-worker --profile ltx_video` 使用 `runpod_prod_ltx_video_manual_NN` agent 和 `allbot-runpod-prod-ltx-video-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，`containerDiskInGb` 至少 `180`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<prod-tag>`，模型从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；云端 R2 该 manifest 当前为 10Eros v1.2-only，不包含旧 v1 正式回退。生产 profile 通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 默认指向三份 10Eros v1.2 workflow。旧无 `-v2` 包只保留为历史回滚来源，不允许登记新的 code/workflow revision。生产 canary 只提交一单 `ltx_video` 5s I2V，全部由 `runpod_prod_ltx_video_manual_NN` 接单并返回可播放 MP4 后，才可手动 enable 接正式高级图生视频订单。该 profile 不改变 LAN LTX AIO，也不覆盖老 `LTX 2.3 *.json` workflow。
 
-`prod-worker --profile pornmaster_flux2_edit` 使用 `runpod_prod_pornmaster_flux2_edit_manual_NN` agent 和 `allbot-runpod-prod-pornmaster-flux2-edit-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 4090,NVIDIA L40S,NVIDIA GeForce RTX 5090`，`containerDiskInGb` 至少 `120`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，镜像由 `.github/workflows/runpod_pornmaster_flux2_edit_profile_image.yml` 发布到 workflow-owned `ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:<prod-tag>`，模型从 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json` 同步。模型准备不得从本地上传大权重，优先用 `scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit` 在临时 RunPod 内从授权下载链接流式转存，再用 `scripts/publish_pornmaster_flux2_model_manifest.py` 发布 manifest。生产 canary 会串行提交 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit` 两单，全部由 `runpod_prod_pornmaster_flux2_edit_manual_NN` 接单并返回 image 后，才可手动 enable 接正式自由P图 v2 队列。Dashboard 可手动新增该 profile，也会通过 RunPod autoscaler 自动 add/down；默认估算为单任务 30 秒、清空阈值 30 分钟，可在 Dashboard 按实测调整。
+`prod-worker --profile pornmaster_flux2_edit`（FP8）已退役，Dashboard、autoscaler 和 CLI 均拒绝新建。当前只允许 `pornmaster_flux2_edit_bf16`，并同时声明单图与双图 BF16 内部类型。
 
 RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
 只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
@@ -263,6 +270,8 @@ python scripts/release.py promote --confirm-prod
 
 Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
 
+独立模块若跨过其它模块新增的 migration，默认仍 fail closed。只有 clean main 的 `deploy/release-policy.yml` 在 `independent_non_target_migration_snapshots` 中按模块、路径与内容 SHA256 精确审阅后，高级 `deploy --policy <clean-main-policy> --modules <...> --no-maintenance` 才把它记为非目标差异：`requires_db_upgrade=false`，不备份、不运行 Alembic，只滚动目标容器。任何未列文件、内容漂移、目标模块自身 migration、未知路径或共享契约仍恢复 strict。测试验收未写 `verified` 而用户明确接受无业务验收时，必须使用带 `--reason` 的 emergency 审计语义；main/CI、digest、配置、健康、事务回切和非目标证明不允许跳过。
+
 ### 4.2 专用 GPU 执行面运维
 
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
@@ -358,28 +367,7 @@ scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
 
 `prod-worker canary --profile scail2` 会提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个正式内部任务。若要强制两单命中 RunPod，应先等待 SCAIL-2 pending 清空，临时 disable `lan_aio_prod_gpu002_gpu0_scail2_01`，canary 完成后再恢复 LAN agent；其它正式 worker 与其它 RunPod profile 不在本操作范围内。
 
-正式 PornMaster Flux2 RunPod 模型转存与创建验收：
-
-```bash
-python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test
-# 确认 request 中 source URL 已脱敏、bucket/prefix/sha256/size 正确后，按用户确认打开门禁执行
-RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true RUNPOD_MAX_PODS_TOTAL=1 \
-python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test --execute --confirm-model-transfer
-
-python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test
-python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test --execute
-
-RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT=ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:<prod-tag> \
-python scripts/gpu_pool_controller.py runpod prod-worker render --profile pornmaster_flux2_edit --slot 01
-
-RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
-scripts/runpod_prod_ops.sh add --profile pornmaster_flux2_edit --count 1 --execute
-
-scripts/runpod_prod_ops.sh canary --profile pornmaster_flux2_edit --slot 01 --execute
-scripts/runpod_prod_ops.sh enable --profile pornmaster_flux2_edit --slot 01 --execute
-```
-
-`prod-worker canary --profile pornmaster_flux2_edit` 会提交 single-edit 与 multi-edit 两个正式内部任务。若要强制两单命中 RunPod，应先等待自由P图 v2 pending 清空，并临时 disable 对应 LAN PornMaster AIO agent；canary 完成后再恢复 LAN agent 或按容量计划手动 enable RunPod。
+旧 PornMaster Flux2 FP8 的模型转存、manifest 发布、RunPod 创建与 canary 命令均已退役；禁止从历史文档恢复。BF16 使用独立 profile、模型 manifest 与发布清单。
 
 ### 4.3 Agent control 与 Worker 边界
 

@@ -102,6 +102,8 @@ async def process_standard_generation_task(
             video_kwargs["display_mode_name_override"] = display_mode_name_override
         if result_meta is not None:
             video_kwargs["result_meta"] = result_meta
+        if cost_override is not None:
+            video_kwargs["cost_override"] = cost_override
         return await process_image_to_video_generation_task(**video_kwargs)
     if is_video and task_type == MODE_WAN22_VIDEO_V2:
         wan22_kwargs = {
@@ -136,6 +138,8 @@ async def process_standard_generation_task(
             wan22_kwargs["display_mode_name_override"] = display_mode_name_override
         if result_meta is not None:
             wan22_kwargs["result_meta"] = result_meta
+        if cost_override is not None:
+            wan22_kwargs["cost_override"] = cost_override
         return await process_wan22_video_v2_generation_task(**wan22_kwargs)
 
     resolution = 512

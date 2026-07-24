@@ -15,6 +15,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 | Wan22 / 旧 `image_to_video` / `video_insert` / `video_edit` | `docs/子模块_附加模型配置指南_comfy_models.md`、`.codex/skills/allbot-comfy-models/references/runtime-profiles.md` |
 | LTX 系列 LoRA 多选 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/lora_catalog.py`、`src/qqcc_ltx_lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/features/generation/buildGenerationTaskPayload.ts` |
 | SCAIL-2 视频生视频 | `docs/子模块_附加模型配置指南_comfy_models.md`、`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`src/domain_config/task_type_registry.py` |
+| LTX Sulphur 文生视频 / Ingredients 人物一致性 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`、`src/domain_config/ltx_t2v.py`、`workers/comfy_agent/workflow_task_patchers.py` |
 | RunPod / LAN AIO profile、远端 workflow 同步 | 本技能 + `allbot-ops-deployment` + `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
 | 任务生命周期、队列、扣费、前端交互 | 分别叠加 `allbot-task-engine`、`allbot-billing-auth`、`vue-best-practices` |
 
@@ -56,6 +57,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`。两个 engine 都接受最多 5 个有序 `{name,strength}`；QQCC options 来自 `src/wan22_explicit_lora_catalog.py` 的 49 组已下载 High/Low 条目及保守推荐强度。worker 提交前清空节点 `26`/`18` 的旧槽，再按稳定键解析真实 High/Low 相对路径写入 `lora_1..5`；旧后缀命名仍兼容。该多选配置只在 QQCC 官方/私有 Bot 暴露，主 Bot 菜单保持单模型边界。
 - QQCC `AI滤镜` 使用独立 `filter_scenes`，但 engine、LoRA、`negative_prompt` 与 `original_face_swap_enabled` 规则复用 AI绘图；滤镜场景自身不支持后处理链，只能作为直接单步入口或 `draw_scenes[].postprocess_filter_scene_id` 的终止模板。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用；不要新增 workflow、RunPod profile、模型 bundle 或数据库表。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
+- `ltx_t2v` / `ltx_t2v_ic` 使用独立 `ltx_t2v` profile，不得覆盖 `ltx_video` / 10Eros I2V。固定栈只能是官方 dev FP8 -> distilled 0.5 -> Sulphur 1.0，IC 再追加 Ingredients 1.0；禁止用户 LoRA。旧 `character_reference_build` 曾复用已退役的 PornMaster Flux2 FP8 profile；任务历史和 workflow 可保留，但在迁移到 BF16 或独立 profile 前不得映射到 worker pool、不得开放人物参考表入口。两层 feature flag 默认关闭，当前不得宣称人物参考表或 Sulphur T2V/Ingredients 运行时可用。
 - LTX 首尾帧 `ltx_video_flf2v` 的默认与 10Eros override workflow 必须开启时空 VAE 的 `last_frame_fix`，让末端 latent 通过临时重复帧获得完整解码上下文；`workers/` 与 `remote_workers/` 两侧必须同步，避免尾帧轻微形变或运行态漂移。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
 - QQCC `AI视频` 配置保存 `{path,strength}`，提交边界转换为 LTX 既有 `{name,strength}`；强度限制 `0.1..2.0`、步长 `0.05`。LTX I2V/FLF2V/V2V Audio 的非空 `negative_prompt` 映射到节点 `29.text`，但只有独立发布并验收对应 Worker mapping 后才可宣称生效；空白值必须在 Web/Bot/API 边界省略，不能覆盖工作流节点的内置默认文本。单独发布 QQCC 控制面不得为此触碰正式 LTX GPU runtime，主 Bot Telegram 高级 LTX 设置页仍不暴露负面提示词。
@@ -83,6 +85,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - 交付说明：列出触达的 task type、workflow 文件、模型目录、测试命令，以及是否仅更新云测试或已获准正式发布。
 
 ## 8. 交付要求
+
+QQCC 固定分辨率属于配置与提交参数边界：`video_scenes[].resolution` 为 `512p|720p|1024p`（缺失默认 `720p`），`ai_video_scenes[].resolution` 当前只允许 `1280x704`，AI动图 `1024p + 10s` 必须拒绝。不得借此扩展 workflow、Worker mapping、模型 profile、RunPod 或 LAN AIO；主 Bot 用户画质权限保持不变。
 
 - 修改后同步必要的 `/docs` 和 `docs/knowledge_base_audit_matrix.md`。
 - 如果技能体积再次接近 20KB，优先拆到 `references/` 或对应子模块文档，不继续堆正文。

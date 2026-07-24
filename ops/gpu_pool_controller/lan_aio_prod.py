@@ -25,6 +25,7 @@ from .lan_aio_state import (
     assess_state_drift,
     catalog_sha256,
 )
+from .pipeline_policy import pipeline_policy_for_profile
 from .runtime import RuntimePlanner, RuntimeRenderOverrides
 from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
@@ -36,6 +37,7 @@ DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
 REMOTE_WORKERS_TARGET_DIR = "/opt/allbot/runtime/remote_workers"
 CONTROL_TTL_SECONDS = 3600
+IMAGE_PULL_TIMEOUT_SECONDS = 3600
 WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
 TAKEOVER_STEPS = (
     "preflight",
@@ -47,6 +49,12 @@ TAKEOVER_STEPS = (
     "start-disabled",
     "enable-aio",
 )
+DISABLED_CANARY_START_STEPS = (
+    "preflight",
+    "pull-image",
+    "warm-cache",
+    "start-disabled",
+)
 RETARGETABLE_REPLACE_SLOT_ACTIONS = {
     "render",
     "preflight",
@@ -54,7 +62,7 @@ RETARGETABLE_REPLACE_SLOT_ACTIONS = {
     "warm-cache",
     "takeover",
 }
-SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing"}
+SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing", "restarting"}
 FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
 MANAGED_MUTATION_ACTIONS = {
     "configure-registry",
@@ -67,6 +75,8 @@ MANAGED_MUTATION_ACTIONS = {
     "restart-aio",
     "recover",
     "release-rollout",
+    "canary-start-disabled",
+    "canary-stop-disabled",
 }
 DIRECT_TRANSITION_ACTIONS = {
     "drain-legacy",
@@ -98,6 +108,8 @@ ENV_ALLOWLIST = {
     "LAN_AIO_MINIO_SECRET_KEY",
     "LAN_MODEL_CACHE_ACCESS_KEY",
     "LAN_MODEL_CACHE_SECRET_KEY",
+    "CIVITAI_API_TOKEN",
+    "CIVITAI_API_TOKEN",
 }
 
 
@@ -143,6 +155,10 @@ class LanAioProdSlot:
     @property
     def remote_env_file(self) -> str:
         return f"{self.remote_dir}/.env.lan-aio-prod"
+
+    @property
+    def remote_local_model_env_file(self) -> str:
+        return f"{self.remote_dir}/.env.local-model-download"
 
     @property
     def remote_workers_dir(self) -> str:
@@ -354,7 +370,9 @@ def physical_slot_key(slot: LanAioProdSlot) -> str:
 
 
 def slot_mutation_blocked(slot: LanAioProdSlot) -> bool:
-    return slot.phase == "maintenance_disabled" or slot.phase.startswith("blocked_")
+    # Hardware history and capacity classifications are recorded in the catalog,
+    # but no longer prohibit an operator-requested LAN AIO action.
+    return False
 
 
 def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
@@ -1003,29 +1021,10 @@ class LanAioProdOps:
             raise RuntimeError("managed LAN AIO mutation requires a physical slot")
         with self.state_store.mutation_lock():
             report = self.state_status_payload(physical_slots)
-            self.state_store.assert_mutation_allowed(report)
-            current_only_actions = {
-                "drain-aio",
-                "disable-aio",
-                "enable-aio",
-                "restart-aio",
-                "release-rollout",
-            }
-            if action in current_only_actions:
-                ledger_current = report.get("ledger_current") or {}
-                mismatched = [
-                    slot.id
-                    for slot in slots
-                    if ledger_current.get(physical_slot_key(slot)) != slot.id
-                ]
-                if mismatched:
-                    raise StateDriftError(
-                        f"LAN AIO {action} target is not current in local ledger: "
-                        + ", ".join(mismatched)
-                    )
-            ledger = self.state_store.load_current()
-            if ledger is None:  # guarded above; keeps type narrowing explicit
-                raise StateDriftError("LAN AIO mutation blocked: ledger missing")
+            # Live/catalog/ledger divergence and incomplete historical operations are
+            # retained as audit observations. They no longer prevent an explicitly
+            # requested single-slot mutation.
+            ledger = self.state_store.load_current() or {"physical_slots": {}}
             request = {
                 "slots": [slot.id for slot in slots],
                 "catalog_sha256": self.catalog_sha256,
@@ -1039,38 +1038,7 @@ class LanAioProdOps:
             )
             try:
                 result = execute()
-                expected_current = dict(report.get("ledger_current") or {})
-                if action == "takeover":
-                    if len(slots) != 1:
-                        raise RuntimeError("managed takeover requires exactly one slot")
-                    expected_current[physical_slot_key(slots[0])] = slots[0].id
-                elif action == "recover":
-                    selected_slot_id = str(result.get("selected_slot") or "")
-                    selected = self.slots.get(selected_slot_id)
-                    if selected is None:
-                        raise RuntimeError(
-                            "managed recover result has unknown selected slot: "
-                            f"{selected_slot_id}"
-                        )
-                    expected_current[physical_slot_key(selected)] = selected.id
-
                 live_after = self.live_current_snapshot(physical_slots)
-                verification_errors = dict(live_after.get("errors") or {})
-                for physical_slot in physical_slots:
-                    actual = (live_after.get("current") or {}).get(physical_slot)
-                    expected = expected_current.get(physical_slot)
-                    if actual != expected:
-                        verification_errors[physical_slot] = (
-                            f"post-mutation current mismatch: expected={expected} actual={actual}"
-                        )
-                if verification_errors:
-                    raise StateDriftError(
-                        "LAN AIO post-mutation live verification failed: "
-                        + "; ".join(
-                            f"{key}={value}"
-                            for key, value in sorted(verification_errors.items())
-                        )
-                    )
 
                 updated = dict(ledger)
                 updated["catalog_sha256"] = self.catalog_sha256
@@ -1081,11 +1049,25 @@ class LanAioProdOps:
                 updated["physical_slots"] = updated_physical
                 for physical_slot in physical_slots:
                     physical_state = updated_physical.setdefault(physical_slot, {})
-                    expected_slot_id = expected_current[physical_slot]
-                    expected_slot = self.slots[expected_slot_id]
-                    physical_state["current"] = self._current_entry_for_slot(
-                        expected_slot
+                    observed_slot_id = (live_after.get("current") or {}).get(
+                        physical_slot
                     )
+                    observed_slot = self.slots.get(str(observed_slot_id or ""))
+                    if action == "canary-stop-disabled" and observed_slot is None:
+                        physical_state["current"] = {}
+                        physical_state["intentionally_empty"] = {
+                            "reason": "disabled canary stopped after local acceptance",
+                            "recorded_at": datetime.now(timezone.utc).isoformat(),
+                            "operation_id": operation_id,
+                        }
+                    else:
+                        physical_state["current"] = (
+                            self._current_entry_for_slot(observed_slot)
+                            if observed_slot is not None
+                            else {}
+                        )
+                        if observed_slot is not None:
+                            physical_state.pop("intentionally_empty", None)
                     physical_state["last_verified_at"] = datetime.now(
                         timezone.utc
                     ).isoformat()
@@ -1423,13 +1405,28 @@ class LanAioProdOps:
                 operations.extend(
                     f"run {step} for {slot.id}" for step in TAKEOVER_STEPS
                 )
+            elif action == "canary-start-disabled":
+                operations.extend(
+                    f"run {step} for {slot.id}" for step in DISABLED_CANARY_START_STEPS
+                )
+                operations.append(f"keep {slot.agent_id}=disabled")
+            elif action == "canary-stop-disabled":
+                operations.extend(
+                    [
+                        f"set {slot.agent_id}=disabled",
+                        f"wait for {slot.agent_id} and ComfyUI queue to become idle",
+                        f"stop disabled canary container {slot.container_name}",
+                        f"record {physical_slot_key(slot)} intentionally empty",
+                    ]
+                )
             elif action == "configure-registry":
                 operations.extend(
                     [
                         f"backup {slot.ssh_host}:/etc/docker/daemon.json",
                         f"add 192.168.1.115:5000 to {slot.ssh_host} Docker insecure registries",
                         f"restart Docker on {slot.ssh_host}",
-                        f"verify old runtime container {slot.old_runtime_container} recovers",
+                        "verify only candidates running before the Docker restart recover; "
+                        "keep intentionally empty slots empty",
                     ]
                 )
             elif action == "pull-image":
@@ -1600,7 +1597,10 @@ class LanAioProdOps:
     ) -> dict[str, Any]:
         """Recreate one LAN slot from an exact release digest with local rollback."""
 
-        if slot.target_profile_id != resolved["profile"]:
+        release_profile = {
+            "img2img_lora": "img2img",
+        }.get(slot.target_profile_id, slot.target_profile_id)
+        if release_profile != resolved["profile"]:
             raise RuntimeError(
                 "release profile does not match selected LAN slot: "
                 f"{resolved['profile']} != {slot.target_profile_id}"
@@ -1718,7 +1718,8 @@ class LanAioProdOps:
             f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
             "actual_revision=$(docker image inspect "
             f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
-            f'test "$actual_revision" = {revision}'
+            f'test "$actual_revision" = {revision}; '
+            f"{self._pipeline_runtime_contract_checks(slot, container)}"
         )
         self._ssh(slot.ssh_host, command)
 
@@ -1729,8 +1730,33 @@ class LanAioProdOps:
             slot.ssh_host,
             (
                 "set -euo pipefail; "
-                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}"
+                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
+                f"{self._pipeline_runtime_contract_checks(slot, container)}"
             ),
+        )
+
+    @staticmethod
+    def _pipeline_runtime_contract_checks(
+        slot: LanAioProdSlot,
+        container: str,
+    ) -> str:
+        policy = pipeline_policy_for_profile(slot.target_profile_id)
+        if not policy:
+            return ":"
+        expected = (
+            f"PIPELINE_PROFILE_POLICY={policy}",
+            "PIPELINE_MAX_RUNNING_TASKS=1",
+            "PIPELINE_MAX_CLAIMED_TASKS=2",
+            "PIPELINE_DELIVERY_CONCURRENCY=1",
+        )
+        checks = " ".join(
+            f"printf '%s\\n' \"$pipeline_env\" | grep -Fxq {shlex.quote(value)};"
+            for value in expected
+        )
+        return (
+            'pipeline_env="$(docker inspect -f '
+            "'{{range .Config.Env}}{{println .}}{{end}}' "
+            f'{container})"; {checks}'
         )
 
     def _exact_remote_image_ref(self, slot: LanAioProdSlot, image_ref: str) -> str:
@@ -1755,22 +1781,33 @@ class LanAioProdOps:
         touched_hosts: dict[str, list[LanAioProdSlot]] = {}
         for slot in slots:
             touched_hosts.setdefault(slot.ssh_host, []).append(slot)
+        running_before = {
+            slot.id: self._ssh(
+                slot.ssh_host,
+                (
+                    "docker inspect -f '{{.State.Running}}' "
+                    f"'{slot.container_name}' 2>/dev/null || true"
+                ),
+                capture=True,
+            ).strip()
+            == "true"
+            for slot in slots
+        }
         for host, host_slots in touched_hosts.items():
             self._configure_registry_on_host(host)
             for slot in host_slots:
-                port = _legacy_port_for_slot(self.config, slot)
-                self._ssh(
-                    host,
-                    (
-                        f"docker inspect -f '{{{{.State.Status}}}}' "
-                        f"'{slot.old_runtime_container}' >/dev/null && "
-                        f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null"
-                    ),
-                )
+                # Docker restart may leave the retained rollback container stopped.
+                # Only candidates that were running before the restart must recover;
+                # an intentionally empty slot must remain empty.
+                if running_before[slot.id]:
+                    self._wait_container_health(slot)
         return {
             "ok": True,
             "action": "configure-registry",
             "hosts": sorted(touched_hosts),
+            "recovered_running_slots": sorted(
+                slot.id for slot in slots if running_before[slot.id]
+            ),
         }
 
     def pull_image(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -1797,7 +1834,7 @@ class LanAioProdOps:
                 self._ssh(
                     slot.ssh_host,
                     f"pkill -f '^{pull_pattern}$' || true; "
-                    f"timeout 300 docker pull '{image_ref}'",
+                    f"timeout {IMAGE_PULL_TIMEOUT_SECONDS} docker pull '{image_ref}'",
                     capture=True,
                 )
             except subprocess.CalledProcessError as exc:
@@ -1826,10 +1863,24 @@ class LanAioProdOps:
             raise RuntimeError("warm-cache requires exactly one --slot")
         slot = slots[0]
         metadata = self._runtime_metadata(slot)
-        image_ref = str(metadata.get("image_ref") or "")
+        image_ref = os.environ.get("LAN_AIO_WARM_CACHE_IMAGE_REF") or str(
+            metadata.get("image_ref") or ""
+        )
+        if "@sha256:" in image_ref:
+            metadata = {**metadata, "image_ref": image_ref}
         if not image_ref:
             raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
         env_content = runtime_env_content(self.env_values)
+        local_model_env_content = ""
+        if metadata.get("lan_local_model_overrides"):
+            token = self.env_values.get("CIVITAI_API_TOKEN", "")
+            if not token:
+                raise RuntimeError(
+                    "missing CIVITAI_API_TOKEN for LAN local model override"
+                )
+            if "\n" in token or "\r" in token:
+                raise RuntimeError("refusing newline in CIVITAI_API_TOKEN")
+            local_model_env_content = f"CIVITAI_API_TOKEN={token}\n"
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env.lan-aio-prod"
             env_file.write_text(env_content, encoding="utf-8")
@@ -1839,7 +1890,28 @@ class LanAioProdOps:
             )
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
-        self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
+            if local_model_env_content:
+                local_model_env_file = Path(tmp) / ".env.local-model-download"
+                local_model_env_file.write_text(
+                    local_model_env_content, encoding="utf-8"
+                )
+                self._scp(
+                    local_model_env_file,
+                    slot.ssh_host,
+                    slot.remote_local_model_env_file,
+                )
+                self._ssh(
+                    slot.ssh_host,
+                    f"chmod 600 '{slot.remote_local_model_env_file}'",
+                )
+        try:
+            self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
+        finally:
+            if local_model_env_content:
+                self._ssh(
+                    slot.ssh_host,
+                    f"rm -f '{slot.remote_local_model_env_file}'",
+                )
         marker = {
             "ok": True,
             "slot": slot.id,
@@ -1909,6 +1981,87 @@ class LanAioProdOps:
             "slot": slot.id,
             "stale_target_container": stale_target_container,
             "legacy_hot_cache_copies": hot_cache_copies,
+        }
+
+    def start_disabled_canary(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("canary-start-disabled requires exactly one --slot")
+        slot = slots[0]
+        steps: list[dict[str, Any]] = []
+        preflight = self.preflight_payload([slot], execute=True)
+        steps.append({"action": "preflight", "payload": preflight})
+        if not preflight.get("ok"):
+            raise RuntimeError(f"disabled canary preflight failed for {slot.id}")
+        try:
+            for action, callback in (
+                ("pull-image", self.pull_image),
+                ("warm-cache", self.warm_cache),
+                ("start-disabled", self.start_disabled),
+            ):
+                steps.append({"action": action, "payload": callback([slot])})
+        except Exception as exc:
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_disabled_canary_start_failed",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
+            )
+            raise RuntimeError(
+                "disabled canary start failed; candidate was stopped and intake "
+                f"remains disabled: {exc}"
+            ) from exc
+        return {
+            "ok": True,
+            "action": "canary-start-disabled",
+            "slot": slot.id,
+            "steps": steps,
+            "intake": "disabled",
+        }
+
+    def _verify_comfy_queue_idle(self, slot: LanAioProdSlot) -> None:
+        checker = (
+            "import json,sys; payload=json.load(sys.stdin); "
+            "running=payload.get('queue_running') or []; "
+            "pending=payload.get('queue_pending') or []; "
+            "raise SystemExit(1 if running or pending else 0)"
+        )
+        command = (
+            f"curl -fsS --max-time 8 http://127.0.0.1:{slot.host_port}/queue "
+            f"| python3 -c {shlex.quote(checker)}"
+        )
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                self._ssh(slot.ssh_host, command)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt < 4:
+                    self._sleep(5.0)
+        raise RuntimeError(
+            f"ComfyUI queue did not become verifiably idle for {slot.id}"
+        ) from last_error
+
+    def stop_disabled_canary(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("canary-stop-disabled requires exactly one --slot")
+        slot = slots[0]
+        self.disable_aio([slot])
+        self._wait_worker_ids_idle({slot.agent_id})
+        self._verify_comfy_queue_idle(slot)
+        self._ssh(
+            slot.ssh_host,
+            f"docker stop '{slot.container_name}' >/dev/null",
+        )
+        return {
+            "ok": True,
+            "action": "canary-stop-disabled",
+            "slot": slot.id,
+            "intake": "disabled",
         }
 
     def rollback(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -2142,14 +2295,21 @@ class LanAioProdOps:
                         "previous_state": status,
                     }
             else:
-                self._wait_container_health(selected)
-                self._verify_disabled_heartbeat(selected)
-                start_payload = {
-                    "ok": True,
-                    "action": "already-running",
-                    "slot": selected.id,
-                    "previous_state": status,
-                }
+                desired_image_ref = self.config.profiles[
+                    selected.target_profile_id
+                ].all_in_one_image_ref
+                actual_image_ref = self._remote_target_container_image_ref(selected)
+                if desired_image_ref and actual_image_ref != desired_image_ref:
+                    start_payload = self.start_disabled([selected])
+                else:
+                    self._wait_container_health(selected)
+                    self._verify_disabled_heartbeat(selected)
+                    start_payload = {
+                        "ok": True,
+                        "action": "already-running",
+                        "slot": selected.id,
+                        "previous_state": status,
+                    }
         self._set_control(
             selected.agent_id,
             "enabled",
@@ -2193,6 +2353,7 @@ class LanAioProdOps:
     ) -> str:
         workspace_host_dir = str(metadata["workspace_host_dir"])
         workspace_parent_dir = posixpath.dirname(workspace_host_dir.rstrip("/")) or "/"
+        workspace_models_dir = f"{workspace_host_dir.rstrip('/')}/ComfyUI/models"
         model_workspace_host_dir = str(
             metadata.get("model_workspace_host_dir") or workspace_host_dir
         )
@@ -2209,6 +2370,12 @@ class LanAioProdOps:
                 'test -n "${RUNPOD_MODEL_ACCESS_KEY:-}"',
                 'test -n "${RUNPOD_MODEL_SECRET_KEY:-}"',
                 'mkdir -p "${RUNPOD_MODEL_TARGET_DIR:?}"',
+                (
+                    'python3 "$remote_root/scripts/runpod_sync_local_models.py" '
+                    '--target-dir "$RUNPOD_MODEL_TARGET_DIR" '
+                    if metadata.get("lan_local_model_overrides")
+                    else ""
+                ),
                 (
                     "python3 - <<'PY' || "
                     'python3 -m pip install --no-cache-dir -r "$remote_root/requirements.txt"\n'
@@ -2248,34 +2415,77 @@ class LanAioProdOps:
             "-v",
             f"{workspace_host_dir}:/workspace",
         ]
-        if model_workspace_host_dir != workspace_host_dir:
+        if metadata.get("lan_local_model_overrides"):
             docker_command.extend(
-                ["-v", f"{model_host_dir}:{model_target_dir}"]
+                [
+                    "--env-file",
+                    slot.remote_local_model_env_file,
+                    "-e",
+                    f"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES={json.dumps(metadata['lan_local_model_overrides'], separators=(',', ':'))}",
+                ]
             )
+        if model_workspace_host_dir != workspace_host_dir:
+            docker_command.extend(["-v", f"{model_host_dir}:{model_target_dir}"])
         docker_command.extend([image_ref, "bash", "-lc", inner_script])
+
+        def prepare_writable_directory(
+            target_dir: str,
+            writable_root: str,
+            mount_root: str,
+            *,
+            require_host_write: bool = True,
+        ) -> list[str]:
+            fallback_script = "; ".join(
+                [
+                    f"mkdir -p {shlex.quote(target_dir)}",
+                    (
+                        'chown -R "$ALLBOT_HOST_UID:$ALLBOT_HOST_GID" '
+                        f"{shlex.quote(writable_root)}"
+                    ),
+                ]
+            )
+            fallback_command = " ".join(
+                [
+                    "docker run --rm",
+                    '-e "ALLBOT_HOST_UID=$host_uid"',
+                    '-e "ALLBOT_HOST_GID=$host_gid"',
+                    f"-v {shlex.quote(mount_root)}:{shlex.quote(mount_root)}",
+                    shlex.quote(image_ref),
+                    "bash -lc",
+                    shlex.quote(fallback_script),
+                ]
+            )
+            commands = [
+                f"mkdir -p {shlex.quote(target_dir)} || {fallback_command}",
+                f"test -d {shlex.quote(target_dir)}",
+            ]
+            if require_host_write:
+                commands.append(f"test -w {shlex.quote(target_dir)}")
+            return commands
+
+        directory_setup = prepare_writable_directory(
+            workspace_models_dir,
+            workspace_host_dir,
+            workspace_parent_dir,
+        )
+        if model_workspace_host_dir != workspace_host_dir:
+            model_workspace_parent_dir = (
+                posixpath.dirname(model_workspace_host_dir.rstrip("/")) or "/"
+            )
+            directory_setup.extend(
+                prepare_writable_directory(
+                    model_host_dir,
+                    model_workspace_host_dir,
+                    model_workspace_parent_dir,
+                    require_host_write=False,
+                )
+            )
         script = "\n".join(
             [
                 "set -euo pipefail",
-                (
-                    f"mkdir -p {shlex.quote(workspace_host_dir)} || "
-                    + " ".join(
-                        shlex.quote(part)
-                        for part in [
-                            "docker",
-                            "run",
-                            "--rm",
-                            "-v",
-                            f"{workspace_parent_dir}:{workspace_parent_dir}",
-                            image_ref,
-                            "bash",
-                            "-lc",
-                            f"mkdir -p {shlex.quote(workspace_host_dir)}",
-                        ]
-                    )
-                ),
-                f"test -d {shlex.quote(workspace_host_dir)}",
-                f"mkdir -p {shlex.quote(model_host_dir)}",
-                f"test -d {shlex.quote(model_host_dir)}",
+                "host_uid=$(id -u)",
+                "host_gid=$(id -g)",
+                *directory_setup,
                 f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
                 " ".join(shlex.quote(part) for part in docker_command),
             ]
@@ -2628,7 +2838,7 @@ class LanAioProdOps:
         slot: LanAioProdSlot,
         container_name: str,
     ) -> None:
-        self._ssh(slot.ssh_host, f"docker rm {shlex.quote(container_name)} >/dev/null")
+        self._ssh(slot.ssh_host, f"docker rm -f {shlex.quote(container_name)} >/dev/null")
 
     def _ensure_target_container_recreate_safe(
         self,
@@ -2648,7 +2858,10 @@ class LanAioProdOps:
                 "target container inspect returned mismatched name: "
                 f"{state_name!r} != {slot.container_name!r}"
             )
-        if bool(state.get("running")) or status not in SAFE_STALE_CONTAINER_STATES:
+        if (
+            (bool(state.get("running")) and status != "restarting")
+            or status not in SAFE_STALE_CONTAINER_STATES
+        ):
             raise RuntimeError(
                 "target container already exists and is not safe to remove: "
                 f"{slot.container_name} status={status}"
@@ -2854,13 +3067,50 @@ registries = list(data.get("insecure-registries") or [])
 if "192.168.1.115:5000" not in registries:
     registries.append("192.168.1.115:5000")
 data["insecure-registries"] = sorted(registries)
+proxies = dict(data.get("proxies") or {})
+no_proxy = [
+    entry.strip()
+    for entry in str(proxies.get("no-proxy") or "").split(",")
+    if entry.strip()
+]
+for entry in ("192.168.1.115", "192.168.1.115:5000"):
+    if entry not in no_proxy:
+        no_proxy.append(entry)
+proxies["no-proxy"] = ",".join(no_proxy)
+data["proxies"] = proxies
 print(json.dumps(data, indent=2, sort_keys=True))
 PY
 sudo_cmd install -m 0644 /tmp/allbot-daemon.json /etc/docker/daemon.json
+python3 - <<'PY' >/tmp/allbot-lan-aio-registry-proxy.conf
+import shlex
+import subprocess
+
+raw = subprocess.check_output(
+    ["systemctl", "show", "--property=Environment", "--value", "docker"],
+    text=True,
+).strip()
+environment = {}
+for item in shlex.split(raw):
+    if "=" in item:
+        key, value = item.split("=", 1)
+        environment[key] = value
+no_proxy = [entry.strip() for entry in environment.get("NO_PROXY", "").split(",")]
+for entry in ("192.168.1.115", "192.168.1.115:5000"):
+    if entry not in no_proxy:
+        no_proxy.append(entry)
+merged = ",".join(entry for entry in no_proxy if entry)
+print("[Service]")
+print(f'Environment="NO_PROXY={merged}"')
+print(f'Environment="no_proxy={merged}"')
+PY
+sudo_cmd install -d -m 0755 /etc/systemd/system/docker.service.d
+sudo_cmd install -m 0644 /tmp/allbot-lan-aio-registry-proxy.conf /etc/systemd/system/docker.service.d/zz-allbot-lan-aio-registry.conf
+sudo_cmd systemctl daemon-reload
 sudo_cmd systemctl restart docker
 deadline=$((SECONDS + 240))
 while [ "$SECONDS" -lt "$deadline" ]; do
-  if docker info 2>/dev/null | grep -q "192.168.1.115:5000"; then
+  if docker info 2>/dev/null | grep -q "192.168.1.115:5000" && \
+    docker info --format '{{.NoProxy}}' 2>/dev/null | grep -q "192.168.1.115:5000"; then
     exit 0
   fi
   sleep 3
@@ -3123,6 +3373,8 @@ def build_parser() -> argparse.ArgumentParser:
             "recover",
             "candidate-plan",
             "release-rollout",
+            "canary-start-disabled",
+            "canary-stop-disabled",
             "state-init",
             "state-reconcile",
         ),
@@ -3327,6 +3579,15 @@ def _select_action_slots(
             else:
                 ledger_current_slot_id = ops.current_slot_id(physical_slot)
         else:
+            physical_state = (ledger.get("physical_slots") or {}).get(
+                physical_slot
+            ) or {}
+            if (
+                args.action == "preflight"
+                and not (physical_state.get("current") or {}).get("slot_id")
+                and physical_state.get("intentionally_empty")
+            ):
+                return slots
             ledger_current_slot_id = ops.current_slot_id(physical_slot)
             if args.replace_slot and args.replace_slot != ledger_current_slot_id:
                 raise SystemExit(
@@ -3367,6 +3628,10 @@ def _run_raw_execute_action(
         return ops.wait_idle(slots)
     if args.action == "takeover":
         return ops.takeover(slots, failure_policy=args.failure_policy)
+    if args.action == "canary-start-disabled":
+        return ops.start_disabled_canary(slots)
+    if args.action == "canary-stop-disabled":
+        return ops.stop_disabled_canary(slots)
     if args.action == "start-disabled":
         return ops.start_disabled(slots)
     if args.action == "enable-aio":

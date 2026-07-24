@@ -28,17 +28,7 @@
 
 这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `remote_workers/src/workflow_mapping_validation.py`。
 
-模型 bundle 口径为 `pornmaster_flux2_edit_baseline/2026-06-27`，LAN cache prefix 为 `pornmaster_flux2_edit/2026-06-27`。需要的模型相对路径为：
-
-- `diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`
-- `text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`
-- `vae/flux2/full_encoder_small_decoder.safetensors`
-
-Qwen text encoder 复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 与 PornMaster 9B fp8 UNET 已导入 `/srv/allbot/model-registry/bundles/pornmaster_flux2_edit_baseline/2026-06-27/manifest.yml` 并记录 sha256。LAN cache 复核或更新入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后可执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute` 维护 LAN model cache。
-
-云端正式 RunPod 的模型准备不要走本地上传。使用 `scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit` 渲染三文件 batch，确认 dry-run 中 bucket、prefix、key、sha256、size 正确且 source URL 已脱敏；execute 还必须显式传入 `--confirm-model-transfer`，临时 RunPod 以 `python:3.11-slim` 从 Civitai/HuggingFace 链接流式 multipart 上传到 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/models/...`，完成后默认退出。Civitai 权限通过 RunPod secret `allbot_civitai_api_token` 或一次性下载 URL 提供，不能写入 batch 明文。转存完成后运行 `scripts/publish_pornmaster_flux2_model_manifest.py`，它会 HEAD 三个对象并要求 `ContentLength` 与 metadata `sha256` 匹配，再写 `pornmaster_flux2_edit/2026-06-27/manifest.json`。
-
-当前默认运行模型固定为 `V4_turbo_fp8`，因为两份 workflow 与 RunningHub 资源名都指向 `PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`，且 fp8 更适合标准 24GB RTX 4090 的稳定推理。Civitai 同页还有 `V4_turbo_bf16`，发布时间晚于 fp8、权重约 17.7GB，理论上量化损失更少，但会显著增加显存和加载压力；只有在 48GB 4090 或明确接受 CPU/offload 降速时，才建议另建 bf16 canary profile 测画质，不直接替换当前 fp8 默认 profile。
+旧 `pornmaster_flux2_edit_baseline/2026-06-27` FP8 bundle 及其本地导入、LAN 上传、R2 manifest 发布脚本均已退役。不得再用历史 workflow 或缓存恢复 FP8 worker；当前模型口径只维护 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`。
 
 LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点、FLUX.2 small-decoder VAE 兼容补丁与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
 
@@ -161,8 +151,13 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
+`video_scenes[].aspect_ratio` 的 `source / 9:16 / 16:9 / 1:1` 不是 Comfy workflow 参数。它由 `src/services/qqcc_video_frame_adapter.py` 和 QQCC Quick Video plan 在任务提交前裁剪首帧/尾帧，私有 continuation 的内部比例字段在调用现有任务入口前剥离。不得因此修改 `Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、分辨率档位或计费。
+
+`video_scenes[].next_scene_id` / `ai_video_scenes[].next_scene_id` 同样不是 workflow 参数。它由 QQCC scene-chain resolver、quick video runner、私有 durable continuation 与通用 ffmpeg 拼接器在 Bot/配置服务层处理；每段仍提交现有 Wan22/LTX task type。禁止为模板串联复制 workflow、增加 Worker patcher 字段、建立新 GPU profile 或把 QQCC 内部链元数据发送给 Central。
+
 - `AI动图` 的 `image_to_video` 与 `wan22_video_v2` 都接受最多 5 个有序 `{name,strength}`。QQCC Config options 从 `src/wan22_explicit_lora_catalog.py` 返回 49 个稳定键、编号中文标签与推荐强度；推荐值取本地 registry 同条目 High/Low 建议的较低者，以适配一个强度同时驱动两阶段。旧 `lora_name/lora_strength` 与七个旧键自动迁移并镜像首项。Vue 复用 AI视频的多选/逐项强度交互、支持搜索，切换 engine 不清空。
-- 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO、`image_to_video`、`wan22_video_v2` 均使用独立的 `2026-07-18-lora5` key，旧 6 月 key 不覆盖；三个新 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。
+- `wan22_video_v2` 的 R2 baseline 保持 `2026-07-18-lora5` manifest。LAN GPU-177 预热时从受控下载源取得 DaSiWa SnatchKiss v11 FP8-pruned High/Low（每个 `14,528,782,272` bytes），必须以声明的 SHA-256/大小校验后按同相对路径替换 baseline；不上传 v11 对象或 manifest 到 R2。RunPod 保持禁用的旧 manifest 回退，`image_to_video` 与兼容 `wan22_aio_video` 不变。
+- 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO 与 `image_to_video` 保持各自 `2026-07-18-lora5` key；v2 使用独立的 pruned key，旧 6 月 key 均不覆盖。所有候选 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
 - `AI视频` 使用独立 `ai_video_scenes`，底层首版固定 `ltx_video`。配置层 LoRA 结构是最多 3 个 `{path,strength}`，强度 `0.1..2.0`、步长 `0.05`；提交边界转换成 LTX 既有 `{name,strength}`。无尾帧引用走 I2V，有引用时复用同一绘图链生成尾帧后走 FLF2V。配置选项必须由 `build_qqcc_config_options()` 返回 LTX engine/catalog，前端不硬编码模型清单。
 - QQCC `AI视频` 的可选 LoRA 不等同于公开高级视频目录。公开入口继续只读取 `src/lora_catalog.py:LTX_VIDEO_LORA_OPTIONS`；QQCC Config 专用扩展目录位于 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占用于选项下发、保存白名单和推荐强度。2026-07-17 专用目录接入本机 `ltx23_explicit_lora_library/2026-07-17` 的 32 个已校验权重（其中 26 个不在公开目录），不得把它们合并回公共 catalog、主 Bot 或公共 Web。权重在本机模型仓库可用不代表 RunPod/LAN AIO manifest 已发布；正式生效仍需把相同相对路径同步到目标 LTX runtime 并完成单 LoRA smoke。

@@ -21,11 +21,15 @@ on:
         required: false
         default: ""
       validation_mode:
-        description: Manual dispatch only creates build-only artifacts; full is emitted by a successful upstream test workflow.
+        description: Full replay requires a verified upstream_run_id for the same source SHA.
         required: true
         type: choice
-        options: [build-only]
+        options: [build-only, full]
         default: build-only
+      upstream_run_id:
+        description: Successful Immutable control-plane release run ID required for a manual full replay.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -92,6 +96,7 @@ jobs:
           INPUT_SHA: ${{ inputs.source_sha }}
           INPUT_CHANNEL: ${{ inputs.release_channel }}
           INPUT_VALIDATION_MODE: ${{ inputs.validation_mode }}
+          INPUT_UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
         run: |
           set -euo pipefail
           sha="${EVENT_SHA:-${INPUT_SHA:-}}"
@@ -110,8 +115,14 @@ jobs:
               main) branch=main ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
-            if [ "$validation_mode" != build-only ]; then
-              echo "manual dispatch cannot claim full validation" >&2
+            if [ "$validation_mode" = full ] && \
+               [[ ! "${INPUT_UPSTREAM_RUN_ID:-}" =~ ^[0-9]+$ ]]; then
+              echo "manual full replay requires upstream_run_id" >&2
+              exit 2
+            fi
+            if [ "$validation_mode" != build-only ] && \
+               [ "$validation_mode" != full ]; then
+              echo "invalid manual validation mode" >&2
               exit 2
             fi
           fi
@@ -125,7 +136,8 @@ jobs:
           if [ -n "${EVENT_RUN_ID:-}" ]; then
             echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${EVENT_RUN_ID}" >> "$GITHUB_OUTPUT"
           else
-            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+            ci_run_id="${INPUT_UPSTREAM_RUN_ID:-$GITHUB_RUN_ID}"
+            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
@@ -141,6 +153,15 @@ jobs:
           set -euo pipefail
           git fetch --prune origin "$SOURCE_BRANCH"
           git merge-base --is-ancestor "$SOURCE_SHA" "origin/$SOURCE_BRANCH"
+      - name: Check out trusted release tooling
+        if: steps.source.outputs.validation_mode == 'full'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tooling
+          sparse-checkout: scripts/validate_upstream_ci_run.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Verify successful upstream test run
         if: steps.source.outputs.validation_mode == 'full'
         shell: bash
@@ -148,13 +169,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           SOURCE_BRANCH: ${{ steps.source.outputs.branch }}
-          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || inputs.upstream_run_id }}
         run: |
           set -euo pipefail
+          trap 'rm -rf -- .release-tooling' EXIT
           git fetch --prune origin "$SOURCE_BRANCH"
           main_sha="$(git rev-parse "origin/$SOURCE_BRANCH")"
           git merge-base --is-ancestor "$SOURCE_SHA" "$main_sha"
-          python scripts/validate_upstream_ci_run.py \
+          python .release-tooling/scripts/validate_upstream_ci_run.py \
             --repository "$GITHUB_REPOSITORY" \
             --run-id "$UPSTREAM_RUN_ID" \
             --expected-sha "$SOURCE_SHA" \
@@ -235,6 +257,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           BUNDLE_REPOSITORY: ${{ steps.source.outputs.bundle_repository }}
+          GPU_MANIFEST_REF: ${{ inputs.gpu_manifest_ref }}
         run: |
           set -euo pipefail
           tags_file="available-gpu-baseline-tags.txt"
@@ -277,6 +300,30 @@ jobs:
             break
           done < <(git rev-list --topo-order "${SOURCE_SHA}^")
           if [ -z "$baseline_manifest" ]; then
+            gpu_manifest_repository="${IMAGE_PREFIX}/allbot-gpu-release-manifests"
+            gpu_tags_file="available-gpu-manifest-tags.txt"
+            oras repo tags "$gpu_manifest_repository" > "$gpu_tags_file" || true
+            while IFS= read -r candidate; do
+              grep -Fxq "$candidate" "$gpu_tags_file" || continue
+              rm -rf gpu-baseline-standalone
+              mkdir -p gpu-baseline-standalone
+              oras pull "${gpu_manifest_repository}:${candidate}" \
+                -o gpu-baseline-standalone >/dev/null 2>&1 || continue
+              manifest="gpu-baseline-standalone/gpu-execution-manifest.json"
+              [ -f "$manifest" ] || continue
+              [ "$(jq -r '.source_sha' "$manifest")" = "$candidate" ] || continue
+              [ "$(jq -r '.completeness' "$manifest")" = complete ] || continue
+              [ "$(jq -c '.missing_artifacts' "$manifest")" = '[]' ] || continue
+              actual_profiles="$(jq -r '.artifacts | keys[]' "$manifest" | sort)"
+              [ "$actual_profiles" = "$expected_profiles" ] || continue
+              baseline_manifest="$manifest"
+              echo "sha=${candidate}" >> "$GITHUB_OUTPUT"
+              break
+            done < <(git rev-list --topo-order "${SOURCE_SHA}^")
+          fi
+          current_manifest_ref="${GPU_MANIFEST_REF:-${IMAGE_PREFIX}/allbot-gpu-release-manifests:${SOURCE_SHA}}"
+          if [ -z "$baseline_manifest" ] && \
+             ! oras manifest fetch "$current_manifest_ref" >/dev/null 2>&1; then
             echo "no complete main-channel GPU baseline exists in target ancestry" >&2
             exit 2
           fi
@@ -344,7 +391,10 @@ jobs:
           dashboard_ref="$(jq -r '.artifacts["dashboard-frontend"].ref' release-v2/control-plane-manifest.json)"
           qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
           backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_config_backend_ref="$(jq -r '.artifacts["qqcc-config-backend"].ref' release-v2/control-plane-manifest.json)"
           web_ref="$(jq -r '.artifacts["web-api"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_bot_ref="$(jq -r '.artifacts["qqcc-bot"].ref' release-v2/control-plane-manifest.json)"
+          private_bot_ref="$(jq -r '.artifacts["private-bot-worker"].ref' release-v2/control-plane-manifest.json)"
           backend_env=(
             -e ALLBOT_ENV=test
             -e BOT_TYPE=TEST
@@ -395,6 +445,10 @@ jobs:
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint python "${backend_env[@]}" "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
           docker run --rm --entrypoint ffmpeg "$web_ref" -version
+          docker run --rm --entrypoint sh "$backend_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$qqcc_config_backend_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$qqcc_bot_ref" -c 'ffmpeg -version && ffprobe -version'
+          docker run --rm --entrypoint sh "$private_bot_ref" -c 'ffmpeg -version && ffprobe -version'
 
       - name: Inspect release images and Web bytes for environment neutrality
         shell: bash

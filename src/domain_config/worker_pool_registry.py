@@ -32,10 +32,7 @@ _WORKER_POOL_PROFILES = (
         "ltx_video",
         ("ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"),
     ),
-    WorkerPoolProfile(
-        "pornmaster_flux2_edit",
-        ("pornmaster_flux2_single_edit", "pornmaster_flux2_multi_edit"),
-    ),
+    WorkerPoolProfile("ltx_t2v", ("ltx_t2v", "ltx_t2v_ic")),
     WorkerPoolProfile(
         "pornmaster_flux2_edit_bf16",
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_multi_edit_bf16"),

@@ -26,6 +26,7 @@ from dashboard.backend.routers import (
     referrals,
     runpod,
     site_notice,
+    support_tickets,
     stats,
     system,
     templates,
@@ -166,6 +167,7 @@ app.include_router(runpod.router)
 app.include_router(gallery.router)
 app.include_router(referrals.router)
 app.include_router(site_notice.router)
+app.include_router(support_tickets.router)
 
 
 def _build_auth_error_response(request: Request, detail: str):

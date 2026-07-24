@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "e65f22f389c6d24b14a7e373d5fb235b58729048",
+  "batch": "20260723-pg-dump-network",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260723-pg-dump-network",
+  "members": [
+    {
+      "base_sha": "e65f22f389c6d24b14a7e373d5fb235b58729048",
+      "branch": "codex/a-fix-strict-pg-dump-network",
+      "head": "eca844b524930f94675ded24d73fb90c835cd93e",
+      "slot": "A"
+    }
+  ],
+  "pr_base": "main"
+}

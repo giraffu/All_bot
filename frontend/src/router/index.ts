@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { LocationQueryRaw, RouteLocationNormalized, RouteLocationRaw, RouteRecordRaw } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
+import { getRuntimeFlag } from '@/config/runtime'
 import {
   confirmTemplateApplyClose,
   useTemplateApplyStore
@@ -54,6 +55,13 @@ const routes: RouteRecordRaw[] = [
         name: 'CustomFeatures',
         component: () => import('@/views/CustomFeatures.vue')
       },
+      ...(getRuntimeFlag('enable_ltx_t2v', false)
+        ? [{
+            path: 'characters',
+            name: 'Characters',
+            component: () => import('@/views/Characters.vue')
+          } satisfies RouteRecordRaw]
+        : []),
       {
         path: 'face-swap',
         name: 'FaceSwap',
@@ -115,7 +123,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'billing',
         name: 'Billing',
-        component: () => import('@/views/Billing.vue')
+        component: () => import('@/views/Billing.vue'),
+        meta: { allowsPaymentOnly: true }
       }
     ]
   },
@@ -130,7 +139,7 @@ const router = createRouter({
   routes
 })
 
-type RouteLaunchParams = Pick<RouteLocationNormalized, 'hash' | 'query'>
+type RouteLaunchParams = Pick<RouteLocationNormalized, 'fullPath' | 'hash' | 'query'>
 
 const hasTelegramLaunchParams = (to: RouteLaunchParams) => (
   to.hash.includes('tgWebApp')
@@ -138,10 +147,14 @@ const hasTelegramLaunchParams = (to: RouteLaunchParams) => (
 )
 
 const buildGuestLoginRedirect = (to: RouteLaunchParams): RouteLocationRaw => {
-  if (!hasTelegramLaunchParams(to)) return '/login'
+  const targetPath = to.fullPath.split('#', 1)[0]
+  const query: LocationQueryRaw = {
+    ...(hasTelegramLaunchParams(to) ? to.query as LocationQueryRaw : {}),
+    redirect: targetPath,
+  }
   return {
     path: '/login',
-    query: to.query as LocationQueryRaw,
+    query,
     hash: to.hash
   }
 }
@@ -151,6 +164,8 @@ router.beforeEach(async (to) => {
   const templateApplyStore = useTemplateApplyStore()
   const isAuthenticated = !!authStore.token
   const hasPermission = checkWebAccess(authStore.user)
+  const allowsPaymentOnly = to.meta.allowsPaymentOnly === true
+  const isPaymentSession = authStore.sessionPurpose === 'payment'
 
   if (templateApplyStore.visible) {
     if (to.meta.bypassTemplateApplyGuard) {
@@ -172,8 +187,14 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.meta.requiresAuth && (!isAuthenticated || !hasPermission)) {
-    if (isAuthenticated && !hasPermission) {
+  const cannotAccessProtectedRoute = (
+    isPaymentSession
+      ? !allowsPaymentOnly
+      : !hasPermission && !allowsPaymentOnly
+  )
+
+  if (to.meta.requiresAuth && (!isAuthenticated || cannotAccessProtectedRoute)) {
+    if (isAuthenticated && cannotAccessProtectedRoute) {
       import('ant-design-vue').then(({ message }) => {
         message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
       })
@@ -182,7 +203,12 @@ router.beforeEach(async (to) => {
     return buildGuestLoginRedirect(to)
   }
 
-  if (to.path === '/login' && isAuthenticated && hasPermission) {
+  if (
+    to.path === '/login'
+    && isAuthenticated
+    && hasPermission
+    && !isPaymentSession
+  ) {
     return '/profile'
   }
 

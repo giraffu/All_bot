@@ -10,6 +10,7 @@ import httpx
 import urllib3
 import websockets  # type: ignore
 from asgi_correlation_id import correlation_id
+
 try:
     import boto3  # type: ignore
     from boto3.s3.transfer import TransferConfig  # type: ignore
@@ -47,6 +48,11 @@ from agent_workflow_execution import (
 from comfy_client import ComfyClient
 from dotenv import load_dotenv
 from minio import Minio  # type: ignore
+from pipeline_slots import (
+    PipelineAdmission,
+    PipelineDeliveryGate,
+    resolve_pipeline_limits,
+)
 from PIL import Image, ImageOps, UnidentifiedImageError
 from scail2_face_swap_v10_pipeline import prepare_scail2_face_swap_v10_reference
 from workflow_patcher import WorkflowPatcher
@@ -120,8 +126,7 @@ MINIO_REGION = os.getenv("MINIO_REGION") or (
     "auto" if "r2.cloudflarestorage.com" in MINIO_ENDPOINT else "us-east-1"
 )
 MINIO_BOTO3_DOWNLOAD_ENABLED = (
-    os.getenv("MINIO_BOTO3_DOWNLOAD_ENABLED", "true").strip().lower()
-    in TRUE_ENV_VALUES
+    os.getenv("MINIO_BOTO3_DOWNLOAD_ENABLED", "true").strip().lower() in TRUE_ENV_VALUES
 )
 MINIO_DOWNLOAD_TIMEOUT_SECONDS = float(
     os.getenv("MINIO_DOWNLOAD_TIMEOUT_SECONDS", "300")
@@ -189,9 +194,32 @@ PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
     "yes",
     "on",
 }
-PIPELINE_MAX_RUNNING_TASKS = max(
+_PIPELINE_MAX_RUNNING_TASKS = max(
     1,
     int(os.getenv("PIPELINE_MAX_RUNNING_TASKS", "2")),
+)
+_PIPELINE_MAX_CLAIMED_TASKS = max(
+    _PIPELINE_MAX_RUNNING_TASKS,
+    int(
+        os.getenv(
+            "PIPELINE_MAX_CLAIMED_TASKS",
+            str(_PIPELINE_MAX_RUNNING_TASKS + (1 if PREFETCH_RESERVE_TASK else 0)),
+        )
+    ),
+)
+_PIPELINE_DELIVERY_CONCURRENCY = max(
+    1,
+    int(os.getenv("PIPELINE_DELIVERY_CONCURRENCY", "1")),
+)
+(
+    PIPELINE_MAX_RUNNING_TASKS,
+    PIPELINE_MAX_CLAIMED_TASKS,
+    PIPELINE_DELIVERY_CONCURRENCY,
+) = resolve_pipeline_limits(
+    policy=os.getenv("PIPELINE_PROFILE_POLICY", ""),
+    max_running_tasks=_PIPELINE_MAX_RUNNING_TASKS,
+    max_claimed_tasks=_PIPELINE_MAX_CLAIMED_TASKS,
+    delivery_concurrency=_PIPELINE_DELIVERY_CONCURRENCY,
 )
 PIPELINE_TASK_TYPES = os.getenv("PIPELINE_TASK_TYPES", "all")
 CANCEL_LOCK_ON_POP = os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in {
@@ -334,7 +362,11 @@ class ComfyAgent:
 
         self.s3_download_client = None
         self.s3_transfer_config = None
-        if MINIO_BOTO3_DOWNLOAD_ENABLED and boto3 is not None and BotoConfig is not None:
+        if (
+            MINIO_BOTO3_DOWNLOAD_ENABLED
+            and boto3 is not None
+            and BotoConfig is not None
+        ):
             try:
                 endpoint_url = (
                     f"{'https' if MINIO_SECURE else 'http'}://{MINIO_ENDPOINT}"
@@ -389,6 +421,14 @@ class ComfyAgent:
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
         self._reserved_prefetch_task: dict[str, Any] | None = None
+        self._claim_lock = asyncio.Lock()
+        self._pipeline_admission = PipelineAdmission(
+            max_claimed_tasks=PIPELINE_MAX_CLAIMED_TASKS,
+            max_comfy_inflight=PIPELINE_MAX_RUNNING_TASKS,
+        )
+        self._delivery_gate = PipelineDeliveryGate(
+            concurrency=PIPELINE_DELIVERY_CONCURRENCY,
+        )
         self._prefetch_task_types = {
             task_type.strip()
             for task_type in PREFETCH_TASK_TYPES.split(",")
@@ -409,10 +449,30 @@ class ComfyAgent:
     def _start_task_execution(
         self, *, task_id: str, task_type: str
     ) -> TaskExecutionContext:
-        execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
+        execution = self._executions.get(task_id)
+        if execution is None:
+            execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
+            self._executions[task_id] = execution
+        else:
+            execution.task_type = task_type
+            execution.phase = "preparing"
         self._active_execution = execution
-        self._executions[task_id] = execution
         return execution
+
+    def _register_claimed_task(
+        self,
+        task: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not task:
+            return task
+        task_id = str(task.get("task_id", ""))
+        if task_id and task_id not in self._executions:
+            self._executions[task_id] = TaskExecutionContext(
+                task_id=task_id,
+                task_type=str(task.get("type", "")),
+                phase="preparing",
+            )
+        return task
 
     def _register_prompt_execution(self, execution: TaskExecutionContext) -> None:
         if execution.prompt_id:
@@ -885,18 +945,39 @@ class ComfyAgent:
                 params = self._build_pop_params(pipeline=True)
                 if prefetch_types:
                     params["types"] = prefetch_types
-            response = await self.master_client.get(endpoint, params=params)
-            if response.status_code != 200:
-                logger.debug("Prefetch peek returned HTTP %s", response.status_code)
-                return
-            task = response.json().get("task")
-            if not task:
-                return
+                async with self._claim_lock:
+                    if not self._pipeline_admission.can_reserve_task(
+                        self._executions,
+                        self._reserved_prefetch_task,
+                    ):
+                        return
+                    response = await self.master_client.get(endpoint, params=params)
+                    if response.status_code != 200:
+                        logger.debug(
+                            "Prefetch pop returned HTTP %s",
+                            response.status_code,
+                        )
+                        return
+                    task = response.json().get("task")
+                    if not task:
+                        return
+                    task_id = str(task.get("task_id", ""))
+                    if task_id:
+                        self._reserved_prefetch_task = task
+            else:
+                response = await self.master_client.get(endpoint, params=params)
+                if response.status_code != 200:
+                    logger.debug(
+                        "Prefetch peek returned HTTP %s",
+                        response.status_code,
+                    )
+                    return
+                task = response.json().get("task")
+                if not task:
+                    return
 
             task_id = str(task.get("task_id", ""))
             task_type = str(task.get("type", ""))
-            if PREFETCH_RESERVE_TASK and task_id:
-                self._reserved_prefetch_task = task
             if not task_id or not self._should_prefetch_task_type(task_type):
                 return
 
@@ -926,6 +1007,11 @@ class ComfyAgent:
         if not PREFETCH_ENABLED:
             return
         if not self._should_prefetch_task_type(current_task_type):
+            return
+        if not self._pipeline_admission.can_reserve_task(
+            self._executions,
+            self._reserved_prefetch_task,
+        ):
             return
         if self._prefetch_task and not self._prefetch_task.done():
             return
@@ -1316,7 +1402,7 @@ class ComfyAgent:
         return False
 
     def _pipeline_enabled_for_task_type(self, task_type: str) -> bool:
-        if not PIPELINE_ENABLED or PIPELINE_MAX_RUNNING_TASKS <= 1:
+        if not PIPELINE_ENABLED or PIPELINE_MAX_CLAIMED_TASKS <= 1:
             return False
         if "all" in self._pipeline_task_types:
             return True
@@ -1344,21 +1430,56 @@ class ComfyAgent:
         return params
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
-        if self._reserved_prefetch_task is not None:
-            task = self._reserved_prefetch_task
-            self._reserved_prefetch_task = None
-            logger.info("Using locally reserved prefetched task %s", task.get("task_id"))
-            return task
-        response = await self.master_client.get(
-            "/api/agent/task/pop",
-            params=self._build_pop_params(pipeline=pipeline),
-        )
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("task")
-        if response.status_code != 404:
-            logger.warning(f"Unexpected response from master: {response.status_code}")
-        return None
+        if not pipeline:
+            async with self._claim_lock:
+                if self._reserved_prefetch_task is not None:
+                    task = self._reserved_prefetch_task
+                    self._reserved_prefetch_task = None
+                    logger.info(
+                        "Using locally reserved prefetched task %s",
+                        task.get("task_id"),
+                    )
+                    return task
+            response = await self.master_client.get(
+                "/api/agent/task/pop",
+                params=self._build_pop_params(pipeline=False),
+            )
+            if response.status_code == 200:
+                return response.json().get("task")
+            if response.status_code != 404:
+                logger.warning(
+                    "Unexpected response from master: %s",
+                    response.status_code,
+                )
+            return None
+
+        async with self._claim_lock:
+            if not self._pipeline_admission.can_take_task(
+                self._executions,
+                self._reserved_prefetch_task,
+            ):
+                return None
+            if self._reserved_prefetch_task is not None:
+                task = self._reserved_prefetch_task
+                self._register_claimed_task(task)
+                self._reserved_prefetch_task = None
+                logger.info(
+                    "Using locally reserved prefetched task %s",
+                    task.get("task_id"),
+                )
+                return task
+            response = await self.master_client.get(
+                "/api/agent/task/pop",
+                params=self._build_pop_params(pipeline=True),
+            )
+            if response.status_code == 200:
+                return self._register_claimed_task(response.json().get("task"))
+            if response.status_code != 404:
+                logger.warning(
+                    "Unexpected response from master: %s",
+                    response.status_code,
+                )
+            return None
 
     async def _prepare_and_submit_task(
         self,
@@ -1456,69 +1577,85 @@ class ComfyAgent:
                 await self.report_cancelled(task_id)
                 return
 
-            execution.phase = "finalizing"
+            execution.phase = "gpu_done"
             await self.report_status(
                 task_id,
                 "running",
-                execution_phase="finalizing",
+                execution_phase="gpu_done",
                 set_current=False,
             )
 
-            await resolve_execution_result_from_history(
-                comfy_client=self.comfy_client,
-                execution=execution,
-                task_type=task_type,
-                logger=logger,
-            )
-
-            if not execution.task_result:
-                raise Exception("Task completed but no result path found")
-
-            if not CANCEL_LOCK_ON_POP and await self.check_task_cancelled(task_id):
-                logger.info(
-                    f"Task {task_id} was cancelled during execution, skipping upload."
+            async with self._delivery_gate.slot():
+                execution.phase = "delivering"
+                await self.report_status(
+                    task_id,
+                    "running",
+                    execution_phase="delivering",
+                    set_current=False,
                 )
-                await self.report_cancelled(task_id)
-                return
 
-            try:
-                materialized_outputs = await materialize_task_outputs(
+                await resolve_execution_result_from_history(
                     comfy_client=self.comfy_client,
                     execution=execution,
                     task_type=task_type,
                     logger=logger,
                 )
-                if UPLOAD_SIDECAR_URL:
-                    spooled_outputs = await spool_materialized_outputs(
-                        outputs=materialized_outputs,
-                        spool_dir=RESULT_SPOOL_DIR,
-                        task_id=task_id,
-                        logger=logger,
-                    )
-                    extra_outputs_payload = await upload_spooled_outputs_via_sidecar(
-                        sidecar_url=UPLOAD_SIDECAR_URL,
-                        result_bucket=MINIO_RESULT_BUCKET,
-                        task_id=task_id,
-                        spooled_outputs=spooled_outputs,
-                        logger=logger,
-                    )
-                else:
-                    extra_outputs_payload = await upload_materialized_outputs(
-                        minio_client=self.minio_client,
-                        result_bucket=MINIO_RESULT_BUCKET,
-                        outputs=materialized_outputs,
-                        logger=logger,
-                    )
-            except Exception as e:
-                logger.error(f"Failed to fetch from ComfyUI or upload result: {e}")
-                raise Exception(f"Result processing failed: {e}")
 
-            await report_materialized_outputs(
-                report_complete_func=self.report_complete,
-                task_id=task_id,
-                result_path=execution.task_result,
-                extra_outputs_payload=extra_outputs_payload,
-            )
+                if not execution.task_result:
+                    raise Exception("Task completed but no result path found")
+
+                if not CANCEL_LOCK_ON_POP and await self.check_task_cancelled(task_id):
+                    logger.info(
+                        "Task %s was cancelled during execution, skipping upload.",
+                        task_id,
+                    )
+                    await self.report_cancelled(task_id)
+                    return
+
+                try:
+                    materialized_outputs = await materialize_task_outputs(
+                        comfy_client=self.comfy_client,
+                        execution=execution,
+                        task_type=task_type,
+                        logger=logger,
+                    )
+                    if UPLOAD_SIDECAR_URL:
+                        spooled_outputs = await spool_materialized_outputs(
+                            outputs=materialized_outputs,
+                            spool_dir=RESULT_SPOOL_DIR,
+                            task_id=task_id,
+                            logger=logger,
+                        )
+                        extra_outputs_payload = (
+                            await upload_spooled_outputs_via_sidecar(
+                                sidecar_url=UPLOAD_SIDECAR_URL,
+                                result_bucket=MINIO_RESULT_BUCKET,
+                                task_id=task_id,
+                                spooled_outputs=spooled_outputs,
+                                logger=logger,
+                            )
+                        )
+                    else:
+                        extra_outputs_payload = await upload_materialized_outputs(
+                            minio_client=self.minio_client,
+                            result_bucket=MINIO_RESULT_BUCKET,
+                            outputs=materialized_outputs,
+                            logger=logger,
+                        )
+                except Exception as e:
+                    logger.error(
+                        "Failed to fetch from ComfyUI or upload result: %s",
+                        e,
+                    )
+                    raise Exception(f"Result processing failed: {e}") from e
+
+                execution.phase = "reporting_complete"
+                await report_materialized_outputs(
+                    report_complete_func=self.report_complete,
+                    task_id=task_id,
+                    result_path=execution.task_result,
+                    extra_outputs_payload=extra_outputs_payload,
+                )
             self._record_task_success_for_health()
             logger.info(f"Task {task_id} completed successfully")
 
@@ -1538,6 +1675,7 @@ class ComfyAgent:
         finally:
             self._clear_task_execution(execution)
             self._cleanup_input_paths(execution.downloaded_input_paths)
+            self._schedule_prefetch(current_task_type=task_type)
         if exit_after_timeout:
             logger.error(
                 "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
@@ -1630,7 +1768,10 @@ class ComfyAgent:
                     self._comfy_poll_paused = False
 
                 if PIPELINE_ENABLED:
-                    if len(self._executions) >= PIPELINE_MAX_RUNNING_TASKS:
+                    if not self._pipeline_admission.can_take_task(
+                        self._executions,
+                        self._reserved_prefetch_task,
+                    ):
                         await asyncio.sleep(0.5)
                         continue
                     task = await self._pop_next_task(pipeline=True)
@@ -1674,6 +1815,27 @@ class ComfyAgent:
     async def shutdown(self):
         logger.info("Initiating graceful shutdown...")
         self.running = False
+        await self._cancel_prefetch_task()
+
+        reserved_task = self._reserved_prefetch_task
+        self._reserved_prefetch_task = None
+        reserved_task_id = str((reserved_task or {}).get("task_id", ""))
+        if reserved_task_id:
+            try:
+                await self.report_status(
+                    reserved_task_id,
+                    "failed",
+                    error=(
+                        "Agent was shut down while the task was reserved for "
+                        "prefetch. Task should be retried."
+                    ),
+                    set_current=False,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to report reserved task failure during shutdown: %s",
+                    e,
+                )
 
         # Return unfinished local tasks to Central as failed/interrupted.
         active_executions = self._heartbeat_executions()
@@ -1697,7 +1859,6 @@ class ComfyAgent:
             task.cancel()
         if self._execution_tasks:
             await asyncio.gather(*self._execution_tasks, return_exceptions=True)
-        await self._cancel_prefetch_task()
         self._discard_prefetch_cache(except_task_id=None)
 
         # Close HTTP clients

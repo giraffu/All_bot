@@ -80,7 +80,9 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
                     "prompt": "video prompt",
                     "negative_prompt": "video blur",
                     "duration": "5s",
+                    "resolution": "1024p",
                     "engine": "image_to_video",
+                    "aspect_ratio": "16:9",
                     "lora_name": "BreastGrow",
                 }
             ],
@@ -106,9 +108,10 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
         "src.services.qqcc_regeneration_service.download_history_input_file_to_fsm_temp",
         download_input,
     )
+    resolve_allowed = AsyncMock(return_value=["512p"])
     monkeypatch.setattr(
         "src.services.qqcc_regeneration_service.resolve_allowed_quick_video_resolutions",
-        AsyncMock(return_value=["512p", "720p"]),
+        resolve_allowed,
     )
 
     submission = await prepare_qqcc_regeneration_submission(
@@ -125,6 +128,9 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
     assert submission.plan.mode == MODE_IMAGE_TO_VIDEO
     assert submission.plan.default_prompt_text == "video prompt"
     assert submission.plan.allow_contribute is False
+    assert submission.plan.aspect_ratio == "16:9"
+    assert submission.plan.resolution == "1024p"
+    resolve_allowed.assert_not_awaited()
     assert submission.plan.result_meta == history.extra_outputs
     download_input.assert_awaited_once_with(
         history=history,

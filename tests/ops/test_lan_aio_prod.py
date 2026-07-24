@@ -101,13 +101,10 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
 def test_all_i2i_pro_lan_slots_keep_v1_and_v2_capacity_separate():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 
-    i2i_slots = [
-        slot for slot in slots.values() if slot.target_profile_id == "i2i_pro"
-    ]
+    i2i_slots = [slot for slot in slots.values() if slot.target_profile_id == "i2i_pro"]
     assert i2i_slots
     assert all(
-        slot.target_task_types
-        == ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2")
+        slot.target_task_types == ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2")
         for slot in i2i_slots
     )
     assert all("face_swap" not in slot.target_task_types for slot in i2i_slots)
@@ -139,20 +136,37 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-252-gpu1-wan22_video_v2"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu1-wan22_video_v2"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "maintenance_disabled"
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].retargetable is False
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].host_port == 8191
-    assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_preflight_required is False
+    assert "gpu-252-gpu1-pornmaster_flux2_edit" not in slots
+    assert slots["gpu-252-gpu1-img2img_lora"].enabled is True
+    assert slots["gpu-252-gpu1-img2img_lora"].phase == "catalog_ready"
+    assert slots["gpu-252-gpu1-img2img_lora"].retargetable is True
+    assert slots["gpu-252-gpu1-img2img_lora"].host_port == 8191
+    assert slots["gpu-252-gpu1-img2img_lora"].target_task_types == (
+        "img2img",
+        "img2img_lora",
     )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
+    assert slots["gpu-252-gpu1-ltx_t2v"].enabled is False
+    assert slots["gpu-252-gpu1-ltx_t2v"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu1-ltx_t2v"].target_task_types == (
+        "ltx_t2v",
+        "ltx_t2v_ic",
+    )
+    assert "gpu-252-gpu0-pornmaster_flux2_edit" not in slots
+    assert slots["gpu-252-gpu0-ltx_t2v"].enabled is False
+    assert slots["gpu-252-gpu0-ltx_t2v"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu0-ltx_t2v"].retargetable is False
+    assert slots["gpu-252-gpu0-ltx_t2v"].host_port == 8192
+    assert slots["gpu-252-gpu0-ltx_t2v"].target_task_types == (
+        "ltx_t2v",
+        "ltx_t2v_ic",
     )
     assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
-        == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
+        slots["gpu-252-gpu0-ltx_t2v"].gpu_device_id
+        == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
+    )
+    assert (
+        slots["gpu-252-gpu1-img2img_lora"].gpu_device_id
+        == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     )
     assert slots["gpu-226-gpu0-image_to_video"].enabled is True
     assert slots["gpu-226-gpu0-image_to_video"].phase == "catalog_ready"
@@ -165,9 +179,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-002-gpu1-image_to_video"].enabled is True
     assert slots["gpu-002-gpu1-image_to_video"].phase == "catalog_ready"
     assert slots["gpu-002-gpu1-image_to_video"].retargetable is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is True
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == "catalog_ready"
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].retargetable is True
+    assert "gpu-002-gpu1-pornmaster_flux2_edit" not in slots
     assert slots["gpu-177-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-177-gpu1-wan22_video_v2"].phase == "blocked_oom_32gb"
     assert slots["gpu-177-gpu1-wan22_video_v2"].retargetable is False
@@ -231,17 +243,17 @@ def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
     rendered = ops.render_compose(slot)
 
     assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
     assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
     assert (
-        "SUPPORTED_TASK_TYPES: pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+        "SUPPORTED_TASK_TYPES: img2img,img2img_lora"
     ) in rendered
-    assert "POOL_RUNTIME_PROFILE: pornmaster_flux2_edit" in rendered
-    assert "host_port: 8192" in rendered
+    assert "POOL_RUNTIME_PROFILE: img2img_lora" in rendered
+    assert "host_port: 8191" in rendered
     assert "--disable-dynamic-vram" not in rendered
     assert "cloud-test" not in rendered
     assert "user-data-test" not in rendered
@@ -322,6 +334,56 @@ def test_all_active_lan_aio_workers_reserve_and_prefetch_one_task(slot_id):
     assert environment["PREFETCH_CONSUME_WAIT_SECONDS"] == "10"
 
 
+def test_fast_image_lan_aio_uses_bounded_compute_and_delivery_pipeline():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["PIPELINE_ENABLED"] == "true"
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
+    assert environment["PIPELINE_TASK_TYPES"] == (
+        "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
+    )
+
+
+def test_i2i_lan_aio_uses_fast_image_pipeline_policy():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-i2i_pro"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert environment["PIPELINE_DELIVERY_CONCURRENCY"] == "1"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "image_claim3_comfy2_delivery1_v1"
+    )
+
+
 def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
     ops = LanAioProdOps(
         config_root=None,
@@ -329,13 +391,13 @@ def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
 
     payload = ops.dry_run_action("stop-old", [slot])
 
     assert payload["operations"] == [
-        "set lan_aio_prod_gpu252_gpu0_i2i_pro_01=disabled",
-        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod",
+        "set lan_aio_prod_gpu252_gpu1_i2i_pro_01=disabled",
+        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod",
     ]
 
 
@@ -559,7 +621,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
 
         def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
             self.remote_commands.append(command)
-            if "timeout 300 docker pull" in command:
+            if "timeout 3600 docker pull" in command:
                 raise subprocess.CalledProcessError(
                     1,
                     command,
@@ -589,9 +651,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
         "pkill -f '^docker\\ pull\\ "
         "192\\.168\\.1\\.115:5000/allbot/comfy\\-runpod\\-scail2"
         "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607$' "
-        "|| true; timeout 300 docker pull '"
-        + SCAIL2_BAKED_LAN_IMAGE
-        + "'"
+        "|| true; timeout 3600 docker pull '" + SCAIL2_BAKED_LAN_IMAGE + "'"
     ]
     assert ops.loaded == [
         (
@@ -685,6 +745,33 @@ def test_lan_aio_fleet_render_supports_gpu_177_ltx_profile():
     assert "host_port: 8191" in rendered
 
 
+def test_lan_aio_fleet_render_runs_ltx_t2v_from_baked_comfy_with_persistent_models():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-ltx_t2v"]
+    rendered = ops.render_compose(slot)
+
+    import yaml
+
+    compose = yaml.safe_load(rendered)
+    service = compose["services"][slot.container_name]
+    assert service["environment"]["COMFYUI_DIR"] == "/opt/ComfyUI"
+    assert service["environment"]["RUNPOD_MODEL_TARGET_DIR"] == ("/opt/ComfyUI/models")
+    assert (
+        "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/"
+        "ltx_t2v/workspace/ComfyUI/models:/opt/ComfyUI/models" in service["volumes"]
+    )
+    assert (
+        "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/"
+        "ltx-t2v-9ed3de73/workspace:/workspace" in service["volumes"]
+    )
+    assert "--reserve-vram 5" in service["environment"]["COMFY_EXTRA_ARGS"]
+
+
 def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
     ops = LanAioProdOps(
         config_root=None,
@@ -767,7 +854,7 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
 def test_lan_aio_prod_compose_assertion_rejects_test_storage():
     config = load_controller_config()
     slot = load_lan_aio_prod_slots(include_disabled=True)[
-        "gpu-252-gpu0-pornmaster_flux2_edit"
+        "gpu-252-gpu0-img2img_lora"
     ]
     rendered = RuntimePlanner(config).render_compose(
         slot.assignment_id,
@@ -1117,9 +1204,7 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
 
         def pull_image(self, slots):
             self.pulled_refs.append(
-                self.config.profiles[
-                    slots[0].target_profile_id
-                ].all_in_one_image_ref
+                self.config.profiles[slots[0].target_profile_id].all_in_one_image_ref
             )
             return {"ok": True}
 
@@ -1154,13 +1239,11 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
     ops = RecordingOps()
     slot = ops.slots["gpu-177-gpu0-image_to_video"]
     rollback_ref = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
-        + "9" * 64
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "9" * 64
     )
     resolved = {
         "profile": "image_to_video",
-        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
-        + "1" * 64,
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "1" * 64,
         "digest": "sha256:" + "1" * 64,
         "oci_revision": "a" * 40,
         "model_manifest_key": "image_to_video/release/manifest.json",
@@ -1172,11 +1255,67 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
 
     assert ops.verified_rollback_ref == rollback_ref
     expected_target_ref = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
-        + "1" * 64
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "1" * 64
     )
     assert ops.pulled_refs == [rollback_ref, expected_target_ref]
     assert ops.verified_target_ref == expected_target_ref
+
+
+def test_lan_release_rollout_accepts_img2img_artifact_for_lora_slot():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.verified_target_ref = None
+
+        def pull_image(self, slots):
+            return {"ok": True}
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            return None
+
+        def _wait_worker_ids_idle(self, agent_ids):
+            return None
+
+        def _write_remote_runtime_files(self, slot):
+            return None
+
+        def _remote_compose(self, slot, op):
+            return None
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_release_runtime(self, slot, resolved):
+            self.verified_target_ref = resolved["ref"]
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
+    rollback_ref = (
+        "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "9" * 64
+    )
+    resolved = {
+        "profile": "img2img",
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:" + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "img2img/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    result = ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+    assert result["ok"] is True
+    assert ops.verified_target_ref == (
+        "192.168.1.115:5000/allbot/comfy-runpod-img2img@sha256:" + "1" * 64
+    )
 
 
 @pytest.mark.parametrize(
@@ -1192,9 +1331,7 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
         ),
     ],
 )
-def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(
-    rollback_ref, error
-):
+def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(rollback_ref, error):
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -1204,8 +1341,7 @@ def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(
     slot = ops.slots["gpu-177-gpu0-image_to_video"]
     resolved = {
         "profile": "image_to_video",
-        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
-        + "1" * 64,
+        "ref": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "1" * 64,
         "digest": "sha256:" + "1" * 64,
         "oci_revision": "a" * 40,
         "model_manifest_key": "image_to_video/release/manifest.json",
@@ -1214,6 +1350,43 @@ def test_lan_release_rollout_rejects_unsafe_explicit_rollback_ref(
 
     with pytest.raises(RuntimeError, match=error):
         ops.release_rollout(slot, resolved, rollback_ref=rollback_ref)
+
+
+def test_bf16_release_and_rollback_verify_versioned_pipeline_contract():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[str] = []
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.commands.append(command)
+            return ""
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"]
+    digest = "sha256:" + "1" * 64
+    image_ref = f"192.168.1.115:5000/allbot/pornmaster@{digest}"
+
+    ops._verify_release_runtime(
+        slot,
+        {
+            "ref": image_ref,
+            "oci_revision": "a" * 40,
+        },
+    )
+    ops._verify_exact_runtime_ref(slot, image_ref)
+
+    assert len(ops.commands) == 2
+    for command in ops.commands:
+        assert "PIPELINE_PROFILE_POLICY=image_claim3_comfy2_delivery1_v1" in command
+        assert "PIPELINE_MAX_RUNNING_TASKS=1" in command
+        assert "PIPELINE_MAX_CLAIMED_TASKS=2" in command
+        assert "PIPELINE_DELIVERY_CONCURRENCY=1" in command
 
 
 def test_lan_aio_start_disabled_removes_safe_exited_target_container():
@@ -1323,7 +1496,7 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
             ]
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     payload = ops.preflight_payload([slot], execute=True)
 
@@ -1335,7 +1508,7 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
     assert port_check["ok"] is False
     assert port_check["allowed_containers"] == [
         "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod",
-        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod",
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
     ]
     assert port_check["unexpected_owners"] == [
         {
@@ -1368,7 +1541,7 @@ def test_lan_aio_status_lists_unexpected_host_port_owner():
             ]
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     lines = ops._remote_container_status(slot)
 
@@ -1440,7 +1613,7 @@ def test_lan_aio_start_disabled_refuses_lingering_host_port_owner():
             raise AssertionError("compose must not run while host port is occupied")
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     with pytest.raises(RuntimeError, match="host port 8191.*image_to_video-prod"):
         ops.start_disabled([slot])
@@ -1549,7 +1722,7 @@ def test_lan_aio_takeover_rolls_back_after_stop_old_failure_window():
             return {"ok": True, "recovery_status": "succeeded"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
 
     with pytest.raises(RuntimeError, match="recovery_status=succeeded"):
         ops.takeover([slot])
@@ -1721,7 +1894,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
             self.marker = marker
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
 
     result = ops.warm_cache([slot])
 
@@ -1742,8 +1915,55 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert "--publish" not in docker_run_line
     assert "AGENT_ID" not in docker_run_line
     assert ops.marker is not None
-    assert ops.marker["profile"] == "pornmaster_flux2_edit"
+    assert ops.marker["profile"] == "img2img_lora"
     assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
+
+
+def test_lan_local_model_token_uses_ephemeral_remote_env_file_not_command_line():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[str] = []
+            self.copies: list[tuple[str, str]] = []
+            self.env_values.update(
+                {
+                    "LAN_AIO_AGENT_SECRET_TOKEN": "test-token",
+                    "LAN_AIO_MINIO_ENDPOINT": "minio.example",
+                    "LAN_AIO_MINIO_ACCESS_KEY": "minio-access",
+                    "LAN_AIO_MINIO_SECRET_KEY": "minio-secret",
+                    "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+                    "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+                    "CIVITAI_API_TOKEN": "must-not-appear-in-command",
+                }
+            )
+
+        def _sync_remote_workers(self, slot) -> None:
+            return None
+
+        def _scp(self, source: Path, host: str, target: str) -> None:
+            self.copies.append((source.read_text(encoding="utf-8"), target))
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.commands.append(command)
+            return ""
+
+        def _write_cache_marker(self, slot, marker: dict[str, object]) -> None:
+            return None
+
+    ops = RecordingOps()
+    ops.warm_cache([ops.slots["gpu-177-gpu0-wan22_video_v2"]])
+
+    assert all("must-not-appear-in-command" not in command for command in ops.commands)
+    secret_copy = next(copy for copy in ops.copies if "CIVITAI_API_TOKEN=" in copy[0])
+    assert secret_copy[1].endswith("/.env.local-model-download")
+    assert any(
+        "rm -f" in command and secret_copy[1] in command for command in ops.commands
+    )
 
 
 def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
@@ -1791,11 +2011,31 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
     )
     assert (
         "mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
-        "scail2-b2587e56/workspace "
-        "|| docker run --rm -v "
+        "scail2-b2587e56/workspace/ComfyUI/models "
+        "|| docker run --rm"
+    ) in docker_command
+    assert (
+        "-v "
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2-b2587e56:"
         "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2-b2587e56 "
     ) in docker_command
+    assert "host_uid=$(id -u)" in docker_command
+    assert "host_gid=$(id -g)" in docker_command
+    assert "ALLBOT_HOST_UID=$host_uid" in docker_command
+    assert "ALLBOT_HOST_GID=$host_gid" in docker_command
+    assert (
+        'chown -R "$ALLBOT_HOST_UID:$ALLBOT_HOST_GID" '
+        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace"
+    ) in docker_command
+    assert (
+        "test -w /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace/ComfyUI/models"
+    ) in docker_command
+    assert (
+        "test -w /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2/workspace/ComfyUI/models"
+    ) not in docker_command
     assert (
         "-v /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/"
         "workspace/ComfyUI/models:/opt/ComfyUI/models"
@@ -1847,13 +2087,13 @@ def test_lan_aio_takeover_runs_single_slot_sequence():
             return {"ok": True, "action": "enable-aio"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     result = ops.takeover([slot])
 
     assert result["ok"] is True
     assert result["action"] == "takeover"
-    assert result["slot"] == "gpu-002-gpu1-pornmaster_flux2_edit"
+    assert result["slot"] == "gpu-002-gpu1-image_to_video"
     assert [step["action"] for step in result["steps"]] == [
         "preflight",
         "pull-image",
@@ -1874,6 +2114,121 @@ def test_lan_aio_takeover_runs_single_slot_sequence():
         "start-disabled",
         "enable-aio",
     ]
+
+
+def test_lan_aio_disabled_canary_start_never_enables_intake():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def preflight_payload(self, slots, *, execute: bool = False):
+            self.events.append(f"preflight:{execute}")
+            return {"ok": True, "action": "preflight"}
+
+        def pull_image(self, slots):
+            self.events.append("pull-image")
+            return {"ok": True, "action": "pull-image"}
+
+        def warm_cache(self, slots):
+            self.events.append("warm-cache")
+            return {"ok": True, "action": "warm-cache"}
+
+        def start_disabled(self, slots):
+            self.events.append("start-disabled")
+            return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
+
+        def enable_aio(self, slots):  # pragma: no cover - safety tripwire
+            raise AssertionError("disabled canary must never enable intake")
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-ltx_t2v"]
+
+    result = ops.start_disabled_canary([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "canary-start-disabled"
+    assert ops.events == [
+        "preflight:True",
+        "pull-image",
+        "warm-cache",
+        "start-disabled",
+    ]
+
+
+def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def disable_aio(self, slots):
+            self.events.append("disable-aio")
+            return {"ok": True, "action": "disable-aio"}
+
+        def _wait_worker_ids_idle(self, targets):
+            self.events.append("worker-idle")
+
+        def _verify_comfy_queue_idle(self, slot):
+            self.events.append("comfy-idle")
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            assert "docker stop" in command
+            self.events.append("docker-stop")
+            return ""
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-ltx_t2v"]
+
+    result = ops.stop_disabled_canary([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "canary-stop-disabled"
+    assert ops.events == [
+        "disable-aio",
+        "worker-idle",
+        "comfy-idle",
+        "docker-stop",
+    ]
+
+
+def test_lan_aio_disabled_canary_queue_check_retries_transient_failure():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.attempts = 0
+            self.sleeps: list[float] = []
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise subprocess.CalledProcessError(28, command)
+            return ""
+
+        def _sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+
+    ops = RecordingOps()
+
+    ops._verify_comfy_queue_idle(ops.slots["gpu-252-gpu1-ltx_t2v"])
+
+    assert ops.attempts == 2
+    assert ops.sleeps == [5.0]
 
 
 def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
@@ -1900,7 +2255,7 @@ def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
             return {"ok": True, "action": "pull-image"}
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     with pytest.raises(RuntimeError, match="preflight failed"):
         ops.takeover([slot])
@@ -1975,19 +2330,19 @@ def test_lan_aio_takeover_dry_run_shows_full_sequence():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+    slot = ops.slots["gpu-002-gpu1-image_to_video"]
 
     payload = ops.dry_run_action("takeover", [slot])
 
     assert payload["operations"][:8] == [
-        "run preflight for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run pull-image for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run warm-cache for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run drain-legacy for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run wait-idle for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run stop-old for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run start-disabled for gpu-002-gpu1-pornmaster_flux2_edit",
-        "run enable-aio for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run preflight for gpu-002-gpu1-image_to_video",
+        "run pull-image for gpu-002-gpu1-image_to_video",
+        "run warm-cache for gpu-002-gpu1-image_to_video",
+        "run drain-legacy for gpu-002-gpu1-image_to_video",
+        "run wait-idle for gpu-002-gpu1-image_to_video",
+        "run stop-old for gpu-002-gpu1-image_to_video",
+        "run start-disabled for gpu-002-gpu1-image_to_video",
+        "run enable-aio for gpu-002-gpu1-image_to_video",
     ]
 
 
@@ -2136,10 +2491,101 @@ def test_lan_aio_recovery_guard_accepts_explicit_slot_from_intentionally_empty_s
         operation_id="reconcile-empty",
     )
 
-    assert ops.recovery_guard_slot_id(
-        "gpu-252:gpu0",
-        selected_slot_id="gpu-252-gpu0-image_to_video",
-    ) == "gpu-252-gpu0-image_to_video"
+    assert (
+        ops.recovery_guard_slot_id(
+            "gpu-252:gpu0",
+            selected_slot_id="gpu-252-gpu0-image_to_video",
+        )
+        == "gpu-252-gpu0-image_to_video"
+    )
+
+
+def test_configure_registry_does_not_wait_for_stopped_candidate():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.configured_hosts: list[str] = []
+            self.health_waits: list[str] = []
+
+        def _ssh(self, host, command, *, capture=False):
+            assert "docker inspect" in command
+            return "false\n"
+
+        def _configure_registry_on_host(self, host):
+            self.configured_hosts.append(host)
+
+        def _wait_container_health(self, slot):
+            self.health_waits.append(slot.id)
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu0-i2i_pro"]
+
+    result = ops.configure_registry([slot])
+
+    assert result["ok"] is True
+    assert ops.configured_hosts == [slot.ssh_host]
+    assert ops.health_waits == []
+
+
+def test_configure_registry_updates_daemon_proxy_bypass(monkeypatch):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.input_text = ""
+
+        def _local(self, args, *, input_text=None, capture=False):
+            self.input_text = input_text or ""
+            return ""
+
+    monkeypatch.setenv("LAN_AIO_GPU_SUDO_PASSWORD", "dummy")
+    ops = RecordingOps()
+
+    ops._configure_registry_on_host("gpu226")
+
+    assert 'proxies = dict(data.get("proxies") or {})' in ops.input_text
+    assert 'proxies.get("no-proxy")' in ops.input_text
+    assert 'proxies["no-proxy"] = ",".join(no_proxy)' in ops.input_text
+    assert '("192.168.1.115", "192.168.1.115:5000")' in ops.input_text
+
+
+def test_configure_registry_waits_for_previously_running_candidate():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.health_waits: list[str] = []
+
+        def _ssh(self, host, command, *, capture=False):
+            assert "docker inspect" in command
+            return "true\n"
+
+        def _configure_registry_on_host(self, host):
+            return None
+
+        def _wait_container_health(self, slot):
+            self.health_waits.append(slot.id)
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu0-i2i_pro"]
+
+    result = ops.configure_registry([slot])
+
+    assert result["recovered_running_slots"] == [slot.id]
+    assert ops.health_waits == [slot.id]
 
 
 def test_lan_aio_restart_disables_restarts_and_reenables_slot():

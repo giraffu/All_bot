@@ -1,5 +1,6 @@
 from config import MINIO_TEMPLATE_BUCKET
 from dashboard.backend.presenters.storage_presenter_utils import build_storage_url
+from src.services.qqcc_regenerate_metadata import has_qqcc_regenerate_context
 
 
 def build_history_input_file_url(*, input_file: str | None, storage_service) -> str | None:
@@ -46,6 +47,7 @@ def build_history_item_payload(
     username: str | None = None,
     full_name: str | None = None,
     worker_id: str | None = None,
+    private_client_type: str | None = None,
 ) -> dict:
     item_dict = {column.name: getattr(history, column.name) for column in history.__table__.columns}
     if username is not None:
@@ -53,6 +55,12 @@ def build_history_item_payload(
     if full_name is not None:
         item_dict["full_name"] = full_name
     item_dict["worker_id"] = worker_id
+    if private_client_type:
+        item_dict["source"] = private_client_type
+    elif history.source == "bot" and has_qqcc_regenerate_context(
+        getattr(history, "extra_outputs", None)
+    ):
+        item_dict["source"] = "bot:qqcc"
 
     input_file_url = build_history_input_file_url(
         input_file=history.input_file,

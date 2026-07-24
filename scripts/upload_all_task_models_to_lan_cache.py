@@ -93,6 +93,18 @@ DEFAULT_BASE_TARGETS: tuple[TargetSpec, ...] = (
     ),
 )
 
+OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
+    TargetSpec(
+        name="ltx_t2v",
+        prefix="ltx_t2v/2026-07-22",
+        manifest_key="ltx_t2v/2026-07-22/manifest.json",
+        bundle_versions=(("ltx_t2v_runtime", "2026-07-22"),),
+    ),
+)
+TARGETS_BY_NAME = {
+    target.name: target for target in (*DEFAULT_BASE_TARGETS, *OPTIONAL_TARGETS)
+}
+
 
 def _bool_env(value: str | None, *, default: bool) -> bool:
     if value is None:
@@ -322,14 +334,15 @@ def build_target_manifests(
             existing_by_sha=existing_by_sha,
         )
 
-    aio = manifests[RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY]
-    split_manifests = split_wan22_aio_manifest(aio)
-    manifests[RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY] = split_manifests[
-        "image_to_video"
-    ]
-    manifests[RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY] = split_manifests[
-        "wan22_video_v2"
-    ]
+    aio = manifests.get(RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY)
+    if aio is not None:
+        split_manifests = split_wan22_aio_manifest(aio)
+        manifests[RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY] = split_manifests[
+            "image_to_video"
+        ]
+        manifests[RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY] = split_manifests[
+            "wan22_video_v2"
+        ]
     return dict(sorted(manifests.items()))
 
 
@@ -377,6 +390,7 @@ def upload_all_task_models(
     client,
     max_concurrency: int = 4,
     max_bandwidth_mbps: float | None = None,
+    targets: tuple[TargetSpec, ...] = DEFAULT_BASE_TARGETS,
 ) -> dict[str, Any]:
     registry = ModelRegistry(repo_root)
     bucket_exists = _head_bucket(client, bucket)
@@ -392,7 +406,9 @@ def upload_all_task_models(
         _load_existing_sha_index(client, bucket=bucket) if bucket_exists else {}
     )
     manifests = build_target_manifests(
-        registry=registry, existing_by_sha=existing_by_sha
+        registry=registry,
+        existing_by_sha=existing_by_sha,
+        targets=targets,
     )
     unique_entries = _unique_model_entries(manifests)
 
@@ -549,6 +565,7 @@ def upload_all_task_models(
         "bucket_exists": bucket_exists,
         "bucket_created": created_bucket,
         "shared_object_prefix": SHARED_OBJECT_PREFIX,
+        "targets": [target.name for target in targets],
         "existing_cached_unique_model_count": len(existing_by_sha),
         "target_unique_model_count": len(unique_entries),
         "target_unique_total_size_bytes": unique_model_total,
@@ -584,11 +601,25 @@ def main() -> int:
     parser.add_argument("--max-concurrency", type=int, default=4)
     parser.add_argument("--max-bandwidth-mbps", type=float, default=None)
     parser.add_argument("--create-bucket", action="store_true")
+    parser.add_argument(
+        "--target",
+        action="append",
+        choices=tuple(sorted(TARGETS_BY_NAME)),
+        help=(
+            "Upload only the named target; repeat for multiple targets. "
+            "Without this option the established base target set is used."
+        ),
+    )
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
 
     _load_lan_env_file(args.env_file)
     client = _lan_client(endpoint=args.endpoint)
+    targets = (
+        tuple(TARGETS_BY_NAME[name] for name in dict.fromkeys(args.target))
+        if args.target
+        else DEFAULT_BASE_TARGETS
+    )
     try:
         payload = upload_all_task_models(
             repo_root=args.repo_root,
@@ -598,6 +629,7 @@ def main() -> int:
             client=client,
             max_concurrency=args.max_concurrency,
             max_bandwidth_mbps=args.max_bandwidth_mbps,
+            targets=targets,
         )
     except Exception as exc:
         print(

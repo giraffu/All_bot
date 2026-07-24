@@ -14,6 +14,7 @@ from typing import Any, Callable
 from .providers.runpod import (
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+    RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
@@ -1758,6 +1759,19 @@ class RunPodProdWorkerRunner:
                 failures.append(
                     f"containerDiskInGb must be at least {min_disk} for ltx_video"
                 )
+        if spec["runpod_task_type"] == PROD_IMAGE_TO_VIDEO_TASK_TYPE:
+            min_disk = max(
+                int(
+                    getattr(target_settings, "container_disk_gb_image_to_video", 0)
+                ),
+                RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
+            )
+            rendered_disk = self._rendered_container_disk(body)
+            if rendered_disk < min_disk:
+                failures.append(
+                    "containerDiskInGb must be at least "
+                    f"{min_disk} for image_to_video"
+                )
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
             min_disk = int(
                 getattr(
@@ -2745,7 +2759,7 @@ def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
             "i2i_pro",
             "scail2",
             "ltx_video",
-            "pornmaster_flux2_edit",
+            "pornmaster_flux2_edit_bf16",
         )
     return (normalize_prod_worker_profile(profile),)
 

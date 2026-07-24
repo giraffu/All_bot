@@ -50,6 +50,26 @@ def test_leaf_change_rebuilds_only_modules_whose_input_closure_matches():
     assert "central-api" in plan.reuse
 
 
+def test_media_runtime_change_rebuilds_only_qqcc_media_consumers():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/docker/Dockerfile.media-runtime-base"],
+        has_previous=True,
+    )
+
+    assert plan.build == {
+        "python-media-runtime-base",
+        "qqcc-bot",
+        "private-bot-worker",
+        "dashboard-backend",
+        "qqcc-config-backend",
+    }
+    assert {"central-api", "web-api", "payment-api", "main-bot"} <= plan.reuse
+
+
 def test_gpu_control_operator_change_rebuilds_dashboard_but_not_gpu_images():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
@@ -217,13 +237,16 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
     assert catalog["pornmaster_flux2_edit_bf16"]["profile"][
         "model_manifest_key"
     ] == "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
-    assert catalog["pornmaster_flux2_edit"]["profile"]["task_types"] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
+    assert "pornmaster_flux2_edit" not in catalog
+    assert catalog["pornmaster_flux2_edit_bf16"]["profile"]["task_types"] == [
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert catalog["scail2"]["profile"]["task_types"] == [
         "scail2_action_transfer",
+        "scail2_action_transfer_long",
         "scail2_video_replacement",
+        "scail2_face_swap_v2",
     ]
     assert catalog["ltx_video"]["profile"]["task_types"] == [
         "ltx_video",

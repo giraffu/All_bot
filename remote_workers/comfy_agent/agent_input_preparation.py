@@ -31,11 +31,15 @@ async def _download_with_retries(
         try:
             if timeout_seconds and timeout_seconds > 0:
                 await asyncio.wait_for(
-                    asyncio.to_thread(download_input_func, img_filename, local_img_path),
+                    asyncio.to_thread(
+                        download_input_func, img_filename, local_img_path
+                    ),
                     timeout=timeout_seconds,
                 )
             else:
-                await asyncio.to_thread(download_input_func, img_filename, local_img_path)
+                await asyncio.to_thread(
+                    download_input_func, img_filename, local_img_path
+                )
             return
         except asyncio.TimeoutError as exc:
             last_error = exc
@@ -124,7 +128,9 @@ async def process_single_input_asset(
         params[param_key] = upload_name
     except Exception as exc:
         logger.error("Failed to process %s %s: %s", param_key, img_filename, exc)
-        raise RuntimeError(f"Failed to prepare {param_key} input '{img_filename}'") from exc
+        raise RuntimeError(
+            f"Failed to prepare {param_key} input '{img_filename}'"
+        ) from exc
 
 
 async def prepare_task_inputs(
@@ -176,7 +182,13 @@ async def prepare_task_inputs(
             await asyncio.gather(*legacy_tasks)
 
     other_tasks = []
-    for key in ["face_image", "body_image", "video", "end_image"]:
+    for key in [
+        "face_image",
+        "body_image",
+        "video",
+        "end_image",
+        "character_sheet",
+    ]:
         if key in params and params[key]:
             other_tasks.append(
                 process_single_input_asset_func(

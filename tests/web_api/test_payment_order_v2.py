@@ -226,6 +226,38 @@ async def test_create_ton_order_returns_order_v2_comment_when_enabled(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_successful_order_status_returns_safe_account_summary():
+    order = SimpleNamespace(
+        status="SUCCESS",
+        business_order_id="bo_paid_1",
+        order_id="ORDER:legacy",
+        internal_user_id=2002,
+    )
+    current_user = SimpleNamespace(
+        id=2002,
+        credits=106,
+        current_identity="内门弟子",
+        identity_expire_at=None,
+        user_group="凡人",
+    )
+    db = _FakeSession([order])
+
+    result = await payment_router.get_order_status(
+        "bo_paid_1",
+        current_user=current_user,
+        db=db,
+    )
+
+    assert result["data"]["status"] == "SUCCESS"
+    assert result["data"]["account"] == {
+        "credits": 106,
+        "current_identity": "内门弟子",
+        "identity_expire_at": None,
+        "user_group": "凡人",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_ton_order_uses_configured_ton_receiver(monkeypatch):
     db = _FakeSession([_build_plan()])
     current_user = SimpleNamespace(id=2002, telegram_id=12345)

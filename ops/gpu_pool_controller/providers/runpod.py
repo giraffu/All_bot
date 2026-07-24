@@ -18,6 +18,7 @@ from ..runpod_profile_catalog import (
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
+    RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
@@ -121,6 +122,7 @@ __all__ = (
     "RUNPOD_I2I_PRO_MODEL_PREFIX",
     "RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES",
     "RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES",
+    "RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB",
     "RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY",
     "RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX",
     "RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB",
@@ -401,6 +403,7 @@ class RunPodSettings:
     ] = RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS
     data_center_ids: tuple[str, ...] = ()
     container_disk_gb: int = 80
+    container_disk_gb_image_to_video: int = RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_video: int = RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_pornmaster_flux2_edit: int = (
         RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
@@ -640,6 +643,10 @@ class RunPodSettings:
             container_disk_gb=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB"),
                 default=80,
+            ),
+            container_disk_gb_image_to_video=_int_env(
+                os.getenv("RUNPOD_CONTAINER_DISK_GB_IMAGE_TO_VIDEO"),
+                default=RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
             ),
             container_disk_gb_ltx_video=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_LTX_VIDEO"),

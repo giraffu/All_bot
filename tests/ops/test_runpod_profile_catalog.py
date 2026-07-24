@@ -67,9 +67,6 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("ltx_video", "ltx_video"),
         ("ltx_video_flf2v", "ltx_video"),
         ("ltx_video_v2v_audio", "ltx_video"),
-        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
-        ("pornmaster_flux2_single_edit", "pornmaster_flux2_edit"),
-        ("pornmaster_flux2_multi_edit", "pornmaster_flux2_edit"),
         ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ],
 )
@@ -111,11 +108,6 @@ def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
             "allbot-runpod-prod-ltx-video-manual-01",
         ),
         (
-            "pornmaster_flux2_edit",
-            "runpod_prod_pornmaster_flux2_edit_manual_01",
-            "allbot-runpod-prod-pornmaster-flux2-edit-manual-01",
-        ),
-        (
             "pornmaster_flux2_edit_bf16",
             "runpod_prod_pornmaster_flux2_edit_bf16_manual_01",
             "allbot-runpod-prod-pornmaster-flux2-edit-bf16-manual-01",
@@ -155,17 +147,14 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "ltx_video_flf2v",
         "ltx_video_v2v_audio",
     ]
-    assert options["pornmaster_flux2_edit"] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-    ]
+    assert "pornmaster_flux2_edit" not in options
     assert options["pornmaster_flux2_edit_bf16"] == [
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]
 
 
-def test_pornmaster_flux2_profile_is_available_to_autoscaler():
+def test_pornmaster_flux2_fp8_profile_is_retired():
     worker_options = {
         str(option["profile"]): option
         for option in catalog.DASHBOARD_WORKER_PROFILE_OPTIONS
@@ -174,16 +163,10 @@ def test_pornmaster_flux2_profile_is_available_to_autoscaler():
         str(option["profile"]) for option in catalog.RUNPOD_AUTOSCALER_PROFILE_OPTIONS
     }
 
-    assert (
-        worker_options["pornmaster_flux2_edit"]["label"]
-        == "pornmaster_flux2 / 自由P图 v2"
-    )
-    assert worker_options["pornmaster_flux2_edit"]["supported_task_types"] == [
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-    ]
-    assert worker_options["pornmaster_flux2_edit"].get("autoscaler_enabled", True)
-    assert "pornmaster_flux2_edit" in autoscaler_profiles
+    assert "pornmaster_flux2_edit" not in worker_options
+    assert "pornmaster_flux2_edit" not in autoscaler_profiles
+    with pytest.raises(ValueError):
+        catalog.prod_worker_profile_for_task_type("pornmaster_flux2_single_edit")
 
 
 def test_pornmaster_flux2_bf16_profile_is_available_to_autoscaler():

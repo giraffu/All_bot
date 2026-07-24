@@ -76,6 +76,29 @@ profiles:
     model_prefix: ltx_video/2026-06-10
     model_manifest_key: ltx_video/2026-06-10/manifest.json
 
+  ltx_t2v:
+    runtime_profile: ltx_t2v
+    lan_workspace_key: ltx-t2v-9ed3de73
+    lan_model_workspace_key: ltx_t2v
+    task_types:
+      - ltx_t2v
+      - ltx_t2v_ic
+    model_bundles:
+      - ltx_t2v_runtime
+    required_nodes:
+      - Power Lora Loader (rgthree)
+      - LTXICLoRALoaderModelOnly
+      - LTXAddVideoICLoRAGuide
+      - DiffusionModelLoaderKJ
+      - VAELoaderKJ
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/LTX 2.3 Sulphur T2V.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043
+    model_prefix: ltx_t2v/2026-07-22
+    model_manifest_key: ltx_t2v/2026-07-22/manifest.json
+
   img2img_lora:
     runtime_profile: img2img_lora
     task_types:
@@ -114,28 +137,6 @@ profiles:
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro
     model_prefix: i2i_pro/2026-06-14-test
     model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
-
-  pornmaster_flux2_edit:
-    runtime_profile: pornmaster_flux2_edit
-    task_types:
-      - pornmaster_flux2_single_edit
-      - pornmaster_flux2_multi_edit
-    model_bundles:
-      - pornmaster_flux2_edit_baseline
-    required_nodes:
-      - UNETLoader
-      - CLIPLoader
-      - VAELoader
-      - ReferenceLatent
-      - EmptyFlux2LatentImage
-      - Flux2Scheduler
-      - SamplerCustomAdvanced
-    workflow: workers/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json
-    min_vram_gb: 24
-    image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
-    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
-    model_prefix: pornmaster_flux2_edit/2026-06-27
-    model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
 
   pornmaster_flux2_edit_bf16:
     runtime_profile: pornmaster_flux2_edit
@@ -205,6 +206,19 @@ profiles:
     all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
     model_prefix: wan22_video_v2/2026-07-18-lora5
     model_manifest_key: wan22_video_v2/2026-07-18-lora5/manifest.json
+    lan_local_model_overrides:
+      - relative_path: diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors
+        source_url: https://civitai.com/api/download/models/2953474?type=Model&format=SafeTensor&size=pruned&fp=fp8
+        source_token_env: CIVITAI_API_TOKEN
+        source_token_query_param: token
+        sha256: fa4202ea621725c57b0cbb84543bd6a5548de1d85c0c5a9f18db0bcf91202a54
+        size_bytes: 14528782272
+      - relative_path: diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors
+        source_url: https://civitai.com/api/download/models/2953485?type=Model&format=SafeTensor&size=pruned&fp=fp8
+        source_token_env: CIVITAI_API_TOKEN
+        source_token_query_param: token
+        sha256: 6e746571355bb589b966a72ed7a8717a09af0aeaf699391138e9788bace224d1
+        size_bytes: 14528782272
 
   wan22_aio_video:
     runtime_profile: wan22_aio_video

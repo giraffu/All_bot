@@ -80,6 +80,19 @@ services:
       <<: *python-health
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8043/api/health', timeout=5)"]
 
+  support-bot:
+    image: ${ALLBOT_SUPPORT_BOT_IMAGE:?release.env must pin ALLBOT_SUPPORT_BOT_IMAGE by digest}
+    restart: always
+    logging: *json-logging
+    env_file:
+      - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/support-bot.env
+        required: false
+        format: raw
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      TZ: Asia/Shanghai
+    command: ["python", "-m", "support_bot.main"]
+
   dashboard-frontend:
     profiles: [owner-tools]
     image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}

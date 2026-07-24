@@ -8,10 +8,11 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 
@@ -35,6 +36,8 @@ EXPECTED_PYTHON_SHARDS = (
 ALLOWED_UPSTREAM_EVENTS = frozenset({"push", "workflow_dispatch"})
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PYTHON_JOB_RE = re.compile(r"^python-tests \(([^,]+),")
+JOB_CONSISTENCY_ATTEMPTS = 7
+JOB_CONSISTENCY_RETRY_SECONDS = 5
 
 
 class CITrustError(RuntimeError):
@@ -84,8 +87,6 @@ def validate_upstream_run(
     ):
         if not FULL_SHA_RE.fullmatch(sha):
             raise CITrustError(f"{label} SHA must be a full lowercase commit SHA")
-    if expected_sha != expected_main_sha:
-        raise CITrustError("upstream source SHA is not the current protected main head")
     if expected_scope not in {"runtime", "operator"}:
         raise CITrustError("upstream change scope must be runtime or operator")
     if _repository_name(run) != expected_repository:
@@ -124,6 +125,7 @@ def validate_upstream_run(
         "run_id": run_id,
         "event": event,
         "head_sha": expected_sha,
+        "protected_main_sha": expected_main_sha,
         "scope": expected_scope,
         "successful_test_jobs": sorted(successful_jobs),
     }
@@ -174,6 +176,56 @@ def _fetch_run_and_jobs(
     return run, jobs
 
 
+def _is_retryable_consistency_error(exc: CITrustError) -> bool:
+    message = str(exc)
+    return message.startswith(
+        "upstream workflow is missing successful expected test jobs:"
+    ) or message == "upstream workflow did not complete successfully"
+
+
+def fetch_and_validate_upstream_run(
+    *,
+    fetch: Callable[
+        [], tuple[Mapping[str, Any], Sequence[Mapping[str, Any]]]
+    ],
+    expected_repository: str,
+    expected_sha: str,
+    expected_main_sha: str,
+    expected_scope: str = "runtime",
+    attempts: int = JOB_CONSISTENCY_ATTEMPTS,
+    retry_interval_seconds: float = JOB_CONSISTENCY_RETRY_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """Retry only GitHub job-list eventual consistency, then fail closed."""
+
+    if attempts < 1 or retry_interval_seconds < 0:
+        raise CITrustError("upstream consistency retry policy is invalid")
+    last_error: CITrustError | None = None
+    for attempt in range(1, attempts + 1):
+        run, jobs = fetch()
+        try:
+            return validate_upstream_run(
+                run,
+                jobs,
+                expected_repository=expected_repository,
+                expected_sha=expected_sha,
+                expected_main_sha=expected_main_sha,
+                expected_scope=expected_scope,
+            )
+        except CITrustError as exc:
+            last_error = exc
+            if attempt == attempts or not _is_retryable_consistency_error(exc):
+                raise
+            print(
+                "upstream job evidence is not consistent yet; "
+                f"retrying {attempt}/{attempts - 1}",
+                file=sys.stderr,
+            )
+            sleep(retry_interval_seconds)
+    assert last_error is not None
+    raise last_error
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True)
@@ -194,14 +246,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"missing GitHub token in {args.token_env}", file=sys.stderr)
         return 2
     try:
-        run, jobs = _fetch_run_and_jobs(
-            repository=args.repository,
-            run_id=args.run_id,
-            token=token,
-        )
-        summary = validate_upstream_run(
-            run,
-            jobs,
+        summary = fetch_and_validate_upstream_run(
+            fetch=lambda: _fetch_run_and_jobs(
+                repository=args.repository,
+                run_id=args.run_id,
+                token=token,
+            ),
             expected_repository=args.repository,
             expected_sha=args.expected_sha,
             expected_main_sha=args.expected_main_sha,

@@ -4,8 +4,10 @@ import json
 import re
 from typing import Any
 
+from .pipeline_policy import pipeline_environment_for_profile
 from .runpod_profile_catalog import (
     RUNPOD_I2I_PRO_CONTAINER_DISK_GB,
+    RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
     RUNPOD_LTX_VIDEO_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
@@ -169,13 +171,12 @@ class RunPodPodRequestBuilder:
             "i2i_pro",
             "scail2",
             "ltx_video",
-            "pornmaster_flux2_edit",
             "pornmaster_flux2_edit_bf16",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
                 "img2img/img2img_lora, image_to_video, wan22_video_v2, "
-                "i2i_pro, scail2, ltx_video, pornmaster_flux2_edit, and "
+                "i2i_pro, scail2, ltx_video, and "
                 "pornmaster_flux2_edit_bf16 profiles"
             )
         gpu_type_ids = self.gpu_type_ids_for(profile)
@@ -200,7 +201,6 @@ class RunPodPodRequestBuilder:
                 "i2i_pro",
                 "scail2",
                 "ltx_video",
-                "pornmaster_flux2_edit",
                 "pornmaster_flux2_edit_bf16",
             }
             and not image_name
@@ -267,6 +267,12 @@ class RunPodPodRequestBuilder:
         environment: str,
     ) -> int:
         del environment
+        if profile.task_type == "image_to_video":
+            return max(
+                self.settings.container_disk_gb,
+                self.settings.container_disk_gb_image_to_video,
+                RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
+            )
         if profile.task_type == "i2i_pro":
             return max(
                 self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB
@@ -373,6 +379,7 @@ class RunPodPodRequestBuilder:
             "PREFETCH_DEPTH": "1",
             "PREFETCH_TASK_TYPES": ",".join(env_config["supported_task_types"]),
             "PREFETCH_CONSUME_WAIT_SECONDS": "10",
+            **pipeline_environment_for_profile(profile.task_type),
         }
         if environment == "cloud-prod":
             env["AGENT_ID"] = env_config["agent_id"]
@@ -531,7 +538,7 @@ class RunPodPodRequestBuilder:
                 "RunPodProvider v0 only supports "
                 "img2img_lora/img2img/wan22_aio_video/image_to_video/"
                 "wan22_video_v2/i2i_pro/scail2/ltx_video/"
-                "pornmaster_flux2_edit/pornmaster_flux2_edit_bf16 profiles"
+                "pornmaster_flux2_edit_bf16 profiles"
             ) from exc
 
     def gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:

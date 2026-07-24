@@ -73,14 +73,22 @@ def build_ton_order_payload(
     }
 
 
-def build_order_status_payload(order) -> dict:
+def build_order_status_payload(order, *, account=None) -> dict:
+    data = {
+        "status": order.status,
+        "order_id": get_order_public_id(order),
+        "business_order_id": order.business_order_id,
+        "legacy_order_id": order.order_id,
+    }
+    if order.status == "SUCCESS" and account is not None:
+        data["account"] = {
+            "credits": account.credits,
+            "current_identity": account.current_identity,
+            "identity_expire_at": account.identity_expire_at,
+            "user_group": account.user_group,
+        }
     return {
         "code": 0,
         "message": "success",
-        "data": {
-            "status": order.status,
-            "order_id": get_order_public_id(order),
-            "business_order_id": order.business_order_id,
-            "legacy_order_id": order.order_id,
-        },
+        "data": data,
     }

@@ -16,6 +16,10 @@ from telegram.ext import (
 from qqcc_bot.callback_handler import handle_callback_query
 from qqcc_bot.commands import cancel, setup_commands, start
 from qqcc_bot.gallery_market import handle_qqcc_gallery_apply_media
+from qqcc_bot.polling_liveness import (
+    QqccPollingHeartbeatRequest,
+    QqccPollingLivenessWatchdog,
+)
 from qqcc_bot.private_bot_fsm import get_private_bot_provisioning_handler
 from qqcc_bot.prompt_handlers import handle_prompt
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
@@ -70,6 +74,12 @@ async def global_middleware(update: Update, context):
         logger=logger,
         callback_log_label="QQCC callback query",
     )
+
+
+async def mark_update_completed(update: Update, context):
+    watchdog = context.application.bot_data.get("polling_liveness_watchdog")
+    if watchdog is not None and update.update_id is not None:
+        watchdog.mark_update_completed(update.update_id)
 
 
 async def post_init(application):
@@ -140,6 +150,7 @@ def register_handlers(app, *, include_private_bot_provisioning: bool = True):
         )
     )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
+    app.add_handler(TypeHandler(Update, mark_update_completed), group=1000)
     app.add_error_handler(global_error_handler)
 
 
@@ -161,15 +172,25 @@ def build_application(
     setup_bot_commands: bool = True,
     request_connection_pool_size: int = 500,
     channel_membership_checker=None,
+    polling_liveness_watchdog: QqccPollingLivenessWatchdog | None = None,
 ):
     request = _build_request(connection_pool_size=request_connection_pool_size)
+    get_updates_request = request
+    if polling_liveness_watchdog is not None:
+        get_updates_request = QqccPollingHeartbeatRequest(
+            polling_liveness_watchdog,
+            connection_pool_size=request_connection_pool_size,
+            connect_timeout=60.0,
+            read_timeout=120.0,
+            write_timeout=120.0,
+        )
     app = (
         ApplicationBuilder()
         .token(token)
         .base_url(telegram_base_url or build_telegram_bot_base_url())
         .base_file_url(telegram_file_base_url or resolve_telegram_file_base_url())
         .request(request)
-        .get_updates_request(request)
+        .get_updates_request(get_updates_request)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
@@ -178,6 +199,8 @@ def build_application(
     app.bot_data["recover_tasks"] = recover_tasks
     app.bot_data["close_shared_redis_on_shutdown"] = close_shared_redis_on_shutdown
     app.bot_data["setup_bot_commands"] = setup_bot_commands
+    if polling_liveness_watchdog is not None:
+        app.bot_data["polling_liveness_watchdog"] = polling_liveness_watchdog
     app.bot_data["private_bot_provisioning_enabled"] = bool(
         include_private_bot_provisioning
     )
@@ -213,15 +236,21 @@ def main():
         "PRIVATE_QQCC_BOT_ENABLED",
         "false",
     ).strip().lower() in {"1", "true", "yes", "on"}
+    polling_watchdog = QqccPollingLivenessWatchdog()
     app = build_application(
         token,
         include_private_bot_provisioning=private_bot_enabled,
+        polling_liveness_watchdog=polling_watchdog,
     )
-    app.run_polling(
-        poll_interval=2.0,
-        timeout=30,
-        stop_signals=(signal.SIGINT, signal.SIGTERM, signal.SIGABRT),
-    )
+    polling_watchdog.start()
+    try:
+        app.run_polling(
+            poll_interval=2.0,
+            timeout=30,
+            stop_signals=(signal.SIGINT, signal.SIGTERM, signal.SIGABRT),
+        )
+    finally:
+        polling_watchdog.stop()
 
 
 if __name__ == "__main__":

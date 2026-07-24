@@ -62,6 +62,7 @@ sequenceDiagram
 - 不把旧字段名固定成唯一契约
 - Dashboard 大盘 stats 属于高成本查询，后端使用短 TTL 进程内缓存与 single-flight 合并并发请求；前端 stats 请求不得强制附加 `_t` 缓存击穿参数。
 - Dashboard 的灵石消耗统计以 `user_logs` 账本为准：生成任务负向流水计入消耗，`refund%` 退款流水抵扣消耗；`history` 仅用于成功生成量、类型分布与小时分布，不再用“视频 6 / 图片 2”硬编码反推灵石。
+- Dashboard 历史生成页通过既有数据推导展示来源，不给 `history` 新增列：`web` / `bot` 直接来自 `History.source`，官方懒人 Bot 由 `History.extra_outputs._qqcc_regenerate` 识别，用户私有懒人 Bot 再通过 `PrivateBotTaskSubmission.registry_task_id` 关联并显示精确 `bot:qqcc-private:<id>`。`GET /api/history/all` 的 `source` 支持 `web`、`bot`、`bot:qqcc`、`bot:qqcc-private` 和精确私有 Bot client type；私有账本已按保留策略清理的陈旧记录不能反推出租户 ID，应按剩余历史标记降级展示。
 - Worker 视图区分 `active_workers`、`healthy_workers` 与 `accepting_workers`：前者表示有 heartbeat，`healthy_workers` 表示 heartbeat 状态为 `idle/running`，`accepting_workers` 表示同时健康且 agent control 为 `enabled`、可接新单。
 - `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用；若 `healthy_workers > 0` 但 `accepting_workers=0`，应展示为“节点健康但接单关闭/维护中”。
 - Worker 卡片应展示 `error` / `quarantined`、`control_state`、`control_reason`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点或 `disabled/draining` 节点渲染为空闲可接单

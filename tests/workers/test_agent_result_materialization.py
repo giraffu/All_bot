@@ -3,6 +3,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
+import io
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,3 +68,26 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
     )
     assert outputs.extra_outputs["last_frame"].media_type == "image"
     assert outputs.extra_outputs["last_frame"].file_data == b"png-bytes"
+
+
+def _png(color):
+    output = io.BytesIO()
+    Image.new("RGB", (32, 32), color).save(output, format="PNG")
+    return output.getvalue()
+
+
+def test_character_reference_sheet_is_deterministic_three_by_two():
+    payload = materialization._compose_character_sheet(
+        [_png((i * 30, 0, 0)) for i in range(1, 7)]
+    )
+    with Image.open(io.BytesIO(payload)) as sheet:
+        assert sheet.size == (1536, 896)
+        assert sheet.getpixel((256, 224)) == (30, 0, 0)
+        assert sheet.getpixel((1280, 672)) == (180, 0, 0)
+
+
+def test_character_reference_sheet_rejects_missing_or_corrupt_views():
+    with pytest.raises(RuntimeError, match="exactly six"):
+        materialization._compose_character_sheet([_png("black")] * 5)
+    with pytest.raises(RuntimeError, match="corrupt"):
+        materialization._compose_character_sheet([b"broken"] + [_png("black")] * 5)

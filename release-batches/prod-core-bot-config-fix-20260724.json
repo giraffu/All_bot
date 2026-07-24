@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "768e4dbff21d17794127084a85e81205a5f0ada9",
+  "batch": "prod-core-bot-config-fix-20260724",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-prod-core-bot-config-fix-20260724",
+  "members": [
+    {
+      "base_sha": "768e4dbff21d17794127084a85e81205a5f0ada9",
+      "branch": "codex/c-prod-core-bot-config-fix",
+      "head": "3b32380d5c1a747f60b5b579f68acf62c9ac46be",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "external_patterns": ["ALLBOT_WORKER_*", "CLOUD_TEST_WORKER_*", "CLOUD_TEST_SHARED_AIO_*"],
   "shared_defaults": {
-    "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot"],
+    "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot", "support-bot"],
     "keys": ["DB_POOL_SIZE", "DB_MAX_OVERFLOW", "R2_MAX_POOL_CONNECTIONS", "R2_EXISTS_POSITIVE_TTL_SECONDS", "R2_EXISTS_NEGATIVE_TTL_SECONDS", "R2_EXISTS_CACHE_MAX_ENTRIES", "R2_HEAD_SEMAPHORE_LIMIT", "R2_HEAD_CONNECT_TIMEOUT_SECONDS", "R2_HEAD_READ_TIMEOUT_SECONDS", "R2_HEAD_MAX_ATTEMPTS", "POLL_INTERVAL", "POLL_TIMEOUT", "ENABLE_PUBLIC_SHARE", "ENABLE_FREE_EDIT_V2", "ENABLE_SCAIL2_LONG_ACTION_TRANSFER", "DAILY_LIMIT"]
   },
   "services": {
@@ -16,21 +16,28 @@
       "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "payment-api": {
+      "environments": ["prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
       "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-backend": {
-      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "AGENT_SECRET_TOKEN", "DASHBOARD_SECRET_KEY", "DASHBOARD_ADMIN_USERNAME", "DASHBOARD_ADMIN_PASSWORD_HASH"],
-      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "environments": ["prod"],
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "AGENT_SECRET_TOKEN", "DASHBOARD_SECRET_KEY", "DASHBOARD_ADMIN_USERNAME", "DASHBOARD_ADMIN_PASSWORD_HASH", "SUPPORT_BOT_TOKEN"],
+      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-frontend": {
+      "environments": ["prod"],
       "required": ["ALLBOT_ENV"],
       "patterns": []
     },
     "main-bot": {
-      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL", "DATABASE_URL", "REDIS_URL", "API_BASE", "API_TOKEN", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
-      "required_if": [{"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}}],
-      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "HUANYUY_*", "WEBAPP_*", "MINI_APP_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL", "REQUIRED_CHANNEL_ID", "DATABASE_URL", "REDIS_URL", "API_BASE", "API_TOKEN", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
+      "required_if": [
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
+        {"key": "MAIN_BOT_LAZY_BOT_ENABLED", "when": {"key": "ALLBOT_ENV", "equals": "prod"}},
+        {"key": "MAIN_BOT_LAZY_BOT_USERNAME", "when": {"key": "ALLBOT_ENV", "equals": "prod"}}
+      ],
+      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "HUANYUY_*", "WEBAPP_*", "MINI_APP_*", "MAIN_BOT_LAZY_BOT_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "qqcc-bot": {
       "enabled_if": {"key": "QQCC_BOT_TOKEN", "nonempty": true},
@@ -38,7 +45,7 @@
       "patterns": ["QQCC_*", "PRIVATE_QQCC_BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "ENABLE_*"]
     },
     "qqcc-config-backend": {
-      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "QQCC_CONFIG_SECRET_KEY", "QQCC_CONFIG_ADMIN_USERNAME", "QQCC_CONFIG_ADMIN_PASSWORD_HASH", "QQCC_CONFIG_ADMIN_HOST", "PRIVATE_QQCC_BOT_OWNER_HOST"],
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "API_TOKEN", "QQCC_CONFIG_SECRET_KEY", "QQCC_CONFIG_ADMIN_USERNAME", "QQCC_CONFIG_ADMIN_PASSWORD_HASH", "QQCC_CONFIG_ADMIN_HOST", "PRIVATE_QQCC_BOT_OWNER_HOST"],
       "patterns": ["QQCC_*", "PRIVATE_QQCC_BOT_*", "DATABASE_*", "REDIS_*", "JWT_*", "MINIO_*", "R2_*"]
     },
     "qqcc-config-frontend": {
@@ -51,15 +58,24 @@
       "patterns": ["PRIVATE_QQCC_BOT_*", "QQCC_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "JWT_*"]
     },
     "paid-group-bot": {
+      "environments": ["prod"],
       "enabled_if": {"key": "PAID_GROUP_BOT_TOKEN", "nonempty": true},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "PAID_GROUP_BOT_TOKEN", "PAID_GROUP_CHAT_ID", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
       "patterns": ["PAID_GROUP_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*"]
     },
+    "support-bot": {
+      "environments": ["prod"],
+      "enabled_if": {"key": "SUPPORT_BOT_TOKEN", "nonempty": true},
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "SUPPORT_BOT_TOKEN", "DATABASE_URL", "R2_ENDPOINT", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"],
+      "patterns": ["SUPPORT_BOT_*", "TELEGRAM_*", "DATABASE_*", "R2_*"]
+    },
     "postgres": {
+      "environments": ["test"],
       "required": ["ALLBOT_ENV"],
       "patterns": ["CLOUD_TEST_POSTGRES_*"]
     },
     "redis": {
+      "environments": ["test"],
       "required": ["ALLBOT_ENV"],
       "patterns": ["CLOUD_TEST_REDIS_*"]
     }

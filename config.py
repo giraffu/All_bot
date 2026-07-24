@@ -37,7 +37,6 @@ GROUP_ID = os.getenv("GROUP_ID")
 PROXY_URL = os.getenv("PROXY_URL")
 
 # TON Payment Configuration
-WEBAPP_URL = _get_env_value("WEBAPP_URL")
 MINI_APP_URL = _get_env_value("MINI_APP_URL")
 MINI_APP_VERSION = _get_env_value("MINI_APP_VERSION")
 
@@ -61,6 +60,26 @@ def build_versioned_mini_app_url(
         raise ValueError("MINI_APP_URL is required")
     resolved_version = MINI_APP_VERSION if version is None else version
     return append_version_query(resolved_base_url, resolved_version)
+
+
+def build_ton_payment_mini_app_url(
+    base_url: str | None = None,
+    version: str | None = None,
+) -> str:
+    resolved_base_url = base_url or MINI_APP_URL
+    if not resolved_base_url:
+        raise ValueError("MINI_APP_URL is required")
+
+    parsed = urlparse(resolved_base_url)
+    billing_path = f"{parsed.path.rstrip('/')}/billing"
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items.update({"method": "ton", "kind": "membership"})
+    resolved_version = MINI_APP_VERSION if version is None else version
+    if resolved_version:
+        query_items["v"] = resolved_version
+    return urlunparse(
+        parsed._replace(path=billing_path, query=urlencode(query_items))
+    )
 
 
 # --- Database Configuration ---
@@ -144,6 +163,9 @@ TXT2IMG_ENDPOINT = f"{API_BASE}/txt2img"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 LTX_VIDEO_FLF2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_flf2v"
 LTX_VIDEO_V2V_AUDIO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2v_audio"
+LTX_T2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v"
+LTX_T2V_IC_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v_ic"
+CHARACTER_REFERENCE_BUILD_ENDPOINT = f"{API_BASE}/api/v1/character_reference_build"
 WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
 SCAIL2_ACTION_TRANSFER_ENDPOINT = f"{API_BASE}/api/v1/scail2_action_transfer"
 SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT = f"{API_BASE}/api/v1/scail2_action_transfer_long"

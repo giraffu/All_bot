@@ -16,9 +16,10 @@ MODULE_PATH = ROOT / "workers" / "comfy_agent" / "agent_main.py"
 MODULE_DIR = str(MODULE_PATH.parent)
 
 
-def load_agent_main_module():
-    if MODULE_DIR not in sys.path:
-        sys.path.insert(0, MODULE_DIR)
+def load_agent_main_module(module_path=MODULE_PATH):
+    module_dir = str(module_path.parent)
+    if module_dir not in sys.path:
+        sys.path.insert(0, module_dir)
 
     if "websockets" not in sys.modules:
         websocket_state = SimpleNamespace(CLOSED="CLOSED")
@@ -61,11 +62,74 @@ def load_agent_main_module():
         sys.modules["PIL.ImageOps"] = imageops_module
         sys.modules["PIL.ImageStat"] = imagestat_module
 
-    spec = importlib.util.spec_from_file_location("test_agent_main_module", MODULE_PATH)
+    module_name = (
+        "test_remote_agent_main_module"
+        if "remote_workers" in module_path.parts
+        else "test_agent_main_module"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.asyncio
+async def test_remote_worker_promotes_reserved_claim_without_exceeding_limit():
+    module = load_agent_main_module(
+        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+    )
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent._claim_lock = __import__("asyncio").Lock()
+    agent._executions = {}
+    agent._reserved_prefetch_task = {
+        "task_id": "reserved-task",
+        "type": "pornmaster_flux2_edit_bf16",
+    }
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=3,
+        max_comfy_inflight=2,
+    )
+
+    task = await agent._pop_next_task(pipeline=True)
+
+    assert task["task_id"] == "reserved-task"
+    assert agent._reserved_prefetch_task is None
+    assert list(agent._executions) == ["reserved-task"]
+    assert agent._executions["reserved-task"].phase == "preparing"
+
+
+@pytest.mark.asyncio
+async def test_remote_worker_does_not_pop_fourth_claim():
+    module = load_agent_main_module(
+        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+    )
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent._claim_lock = __import__("asyncio").Lock()
+    agent._reserved_prefetch_task = None
+    agent._executions = {
+        task_id: module.TaskExecutionContext(
+            task_id=task_id,
+            task_type="pornmaster_flux2_edit_bf16",
+            phase=phase,
+        )
+        for task_id, phase in (
+            ("delivery", "delivering"),
+            ("gpu-done", "gpu_done"),
+            ("gpu", "running"),
+        )
+    }
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=3,
+        max_comfy_inflight=2,
+    )
+    agent.master_client = SimpleNamespace(
+        get=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Central pop must not be called at the claim limit")
+        )
+    )
+
+    assert await agent._pop_next_task(pipeline=True) is None
 
 
 class DummyAsyncClient:
@@ -161,7 +225,9 @@ async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatc
         calls.append((path, params))
         return SimpleNamespace(status_code=200, json=lambda: {"task": task})
 
-    async def fake_prepare_task_inputs(*, params, downloaded_input_paths, comfy_input_dir):
+    async def fake_prepare_task_inputs(
+        *, params, downloaded_input_paths, comfy_input_dir
+    ):
         params["image"] = "prefetched.png"
         downloaded_input_paths.append("/tmp/prefetched.png")
 
@@ -198,7 +264,9 @@ async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparation(monkeypatch):
+async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparation(
+    monkeypatch,
+):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
     task = {"task_id": "task-next", "type": "face_swap", "params": "{}"}

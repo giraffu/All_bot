@@ -58,10 +58,12 @@ from src.services.storage_presign import (
 )
 from src.services.storage_minio_objects import (
     async_object_exists as async_object_exists_impl,
+    async_object_size as async_object_size_impl,
     download_file as download_file_impl,
     get_file_bytes as get_file_bytes_impl,
     list_objects as list_objects_impl,
     object_exists as object_exists_impl,
+    object_size as object_size_impl,
     upload_bytes as upload_bytes_impl,
     upload_file as upload_file_impl,
 )
@@ -373,8 +375,8 @@ class StorageService:
             user_id,
             keep_recent,
             async_session_factory=AsyncSessionLocal,
-            async_delete_r2_objects_func=lambda service, object_names: service.async_delete_r2_objects(
-                object_names
+            async_delete_r2_objects_func=lambda service, object_names: (
+                service.async_delete_r2_objects(object_names)
             ),
         )
 
@@ -442,6 +444,22 @@ class StorageService:
 
     async def async_object_exists(self, bucket_name: str, object_name: str) -> bool:
         return await async_object_exists_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            logger=logger,
+        )
+
+    def object_size(self, bucket_name: str, object_name: str) -> int | None:
+        return object_size_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            logger=logger,
+        )
+
+    async def async_object_size(self, bucket_name: str, object_name: str) -> int | None:
+        return await async_object_size_impl(
             self,
             bucket_name=bucket_name,
             object_name=object_name,
@@ -526,7 +544,7 @@ class StorageService:
             object_name=object_name,
             public_domain=R2_PUBLIC_DOMAIN,
         )
-            
+
     def download_file(self, bucket_name: str, object_name: str, file_path: str):
         """将对象下载到本地文件."""
         download_file_impl(
@@ -558,7 +576,9 @@ class StorageService:
                 download=download,
             )
         except Exception as e:
-            logger.error(f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}")
+            logger.error(
+                f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}"
+            )
             return ""
 
     def get_presigned_put_url(

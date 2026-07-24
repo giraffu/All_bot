@@ -53,6 +53,12 @@ from src.services.qqcc_demo_generation_service import (
     get_qqcc_demo_generation,
     submit_qqcc_demo_generation,
 )
+from src.services.qqcc_video_scene_chain_service import QqccVideoSceneChainError
+from src.services.qqcc_config_service import (
+    QqccSceneCreditCostError,
+    QqccSceneResolutionError,
+    normalize_qqcc_config,
+)
 from src.services.redis_client import redis_client
 
 router = APIRouter(prefix="/api/private-bots", tags=["private-bots"])
@@ -114,9 +120,7 @@ async def _load_owner_bot(
     *,
     for_update: bool = False,
 ) -> PrivateQqccBot:
-    stmt = select(PrivateQqccBot).where(
-        PrivateQqccBot.owner_user_id == owner_user_id
-    )
+    stmt = select(PrivateQqccBot).where(PrivateQqccBot.owner_user_id == owner_user_id)
     if for_update:
         stmt = stmt.with_for_update()
     result = await db.execute(stmt)
@@ -166,6 +170,12 @@ async def update_owner_private_bot_config(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PrivateBotConfigLimitError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccSceneCreditCostError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccSceneResolutionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QqccVideoSceneChainError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.add(
         PrivateQqccBotAuditLog(
             private_bot=bot,
@@ -190,7 +200,9 @@ async def pause_owner_private_bot(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        bot = await build_private_qqcc_bot_lifecycle_service(db).pause(owner_user_id=owner_user_id)
+        bot = await build_private_qqcc_bot_lifecycle_service(db).pause(
+            owner_user_id=owner_user_id
+        )
     except (PrivateBotServiceError, PrivateBotCredentialError) as exc:
         raise _service_error(exc) from exc
     return build_private_bot_config_payload(bot)
@@ -202,7 +214,9 @@ async def resume_owner_private_bot(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        bot = await build_private_qqcc_bot_lifecycle_service(db).resume(owner_user_id=owner_user_id)
+        bot = await build_private_qqcc_bot_lifecycle_service(db).resume(
+            owner_user_id=owner_user_id
+        )
     except (PrivateBotServiceError, PrivateBotCredentialError) as exc:
         raise _service_error(exc) from exc
     return build_private_bot_config_payload(bot)
@@ -214,7 +228,9 @@ async def retry_owner_private_bot(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        bot = await build_private_qqcc_bot_lifecycle_service(db).retry(owner_user_id=owner_user_id)
+        bot = await build_private_qqcc_bot_lifecycle_service(db).retry(
+            owner_user_id=owner_user_id
+        )
     except (PrivateBotServiceError, PrivateBotCredentialError) as exc:
         raise _service_error(exc) from exc
     return build_private_bot_config_payload(bot)
@@ -283,17 +299,22 @@ async def submit_owner_private_bot_demo_generation(
 ):
     bot = await _load_owner_bot(db, owner_user_id)
     if not bot.admin_enabled:
-        raise HTTPException(status_code=409, detail="Private Bot is disabled by an administrator")
+        raise HTTPException(
+            status_code=409, detail="Private Bot is disabled by an administrator"
+        )
     try:
         return await submit_qqcc_demo_generation(
             scene_kind=scene_kind,
             scene=payload.scene,
             object_prefix=f"qqcc/private/{bot.id}/demo",
+            config=normalize_qqcc_config(bot.config or {}),
         )
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="Demo generation unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Demo generation unavailable"
+        ) from exc
 
 
 @router.get("/owner/demo-generation/{scene_kind}/{scene_id}/{generation_id}")
@@ -315,7 +336,9 @@ async def get_owner_private_bot_demo_generation(
     except QqccDemoGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="Demo generation unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Demo generation unavailable"
+        ) from exc
 
 
 @router.get("/admin")
@@ -384,8 +407,7 @@ async def list_private_bots_for_admin(
     )
     return {
         "items": [
-            build_private_bot_admin_summary(bot, owner)
-            for bot, owner in result.all()
+            build_private_bot_admin_summary(bot, owner) for bot, owner in result.all()
         ],
         "total": total,
         "page": page,

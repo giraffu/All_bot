@@ -8,9 +8,46 @@ from src.services.task_service_generation_image import process_standard_generati
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task,
 )
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task,
+)
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
 )
+
+
+@pytest.mark.asyncio
+async def test_wan22_v2_entrypoint_forwards_qqcc_lora_items(monkeypatch):
+    submit_aio = AsyncMock(return_value=(b"video-bytes", "task-wan22-v2"))
+    monkeypatch.setattr(
+        "src.services.task_service_generation_wan22.process_wan22_video_v2_aio_generation_task",
+        submit_aio,
+    )
+
+    result = await process_wan22_video_v2_generation_task(
+        context=SimpleNamespace(),
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="positive",
+        negative_prompt="negative",
+        images=["start.png"],
+        use_end_frame=False,
+        lora_name="wan22_explicit_005",
+        lora_strength=0.8,
+        lora_items=[
+            {"name": "wan22_explicit_005", "strength": 0.8},
+            {"name": "wan22_explicit_008", "strength": 1.0},
+        ],
+    )
+
+    assert result == (b"video-bytes", "task-wan22-v2")
+    assert submit_aio.await_args.kwargs["lora_name"] == "wan22_explicit_005"
+    assert submit_aio.await_args.kwargs["lora_strength"] == 0.8
+    assert submit_aio.await_args.kwargs["lora_items"] == [
+        {"name": "wan22_explicit_005", "strength": 0.8},
+        {"name": "wan22_explicit_008", "strength": 1.0},
+    ]
 
 
 @pytest.mark.asyncio
@@ -34,7 +71,9 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         fake_run_bot_task_application,
     )
 
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    context = SimpleNamespace(
+        user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+    )
     result = await process_image_to_video_generation_task(
         context=context,
         chat_id=123,
@@ -52,6 +91,8 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
             {"name": "Footjob", "strength": 1.4},
         ],
         cleanup=False,
+        deduct_quota=False,
+        cost_override=13,
     )
 
     assert result == (b"video-bytes", "task-image-to-video")
@@ -65,6 +106,8 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
     assert flow.request.inputs["duration"] == 8
     assert flow.request.inputs["extract_last_frame"] is True
     assert flow.billing.requested_duration == 8
+    assert flow.request.deduct_quota is False
+    assert flow.request.cost_override == 13
     assert flow.presentation.result_meta == {
         "wan22_resolution_preset": "standard",
         "wan22_duration_seconds": 8,
@@ -90,7 +133,9 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(monkeypatch):
+async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(
+    monkeypatch,
+):
     captured_kwargs = {}
 
     async def fake_process_wan22_video_v2_generation_task(**kwargs):
@@ -106,7 +151,9 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         fake_process_wan22_video_v2_generation_task,
     )
 
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    context = SimpleNamespace(
+        user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key
+    )
     result = await process_standard_generation_task(
         context=context,
         chat_id=123,
@@ -123,6 +170,8 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
             {"name": "BreastGrow", "strength": 0.75},
             {"name": "Footjob", "strength": 1.4},
         ],
+        deduct_quota=False,
+        cost_override=17,
         cleanup=False,
     )
 
@@ -134,3 +183,5 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         {"name": "BreastGrow", "strength": 0.75},
         {"name": "Footjob", "strength": 1.4},
     ]
+    assert captured_kwargs["deduct_quota"] is False
+    assert captured_kwargs["cost_override"] == 17

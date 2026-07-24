@@ -23,7 +23,7 @@ export const isScail2ModeId = (modeId: UnifiedLabModeId) => (
 )
 
 export const isLtxLabModeId = (modeId: UnifiedLabModeId) => (
-  modeId === 'ltx_video'
+  modeId === 'ltx_video' || modeId === 'ltx_t2v'
 )
 
 export const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
@@ -40,6 +40,7 @@ export type GetLabModeCostOptions = {
   resolution: string
   duration: string
   wan22ResolutionPreset: Wan22VideoV2ResolutionPreset
+  hasCharacter?: boolean
 }
 
 export const getLabModeCost = ({
@@ -48,6 +49,7 @@ export const getLabModeCost = ({
   resolution,
   duration,
   wan22ResolutionPreset,
+  hasCharacter = false,
 }: GetLabModeCostOptions) => {
   if (mode.id === 'edit') {
     return uploadedReferenceCount >= 2 ? 6 : 2
@@ -70,6 +72,7 @@ export const getLabModeCost = ({
   }
 
   if (isLtxLabModeId(mode.id)) {
+    if (mode.id === 'ltx_t2v' && hasCharacter) return 12
     let multiplier = 1
     if (duration === '10') multiplier = 2
     else if (duration === '15') multiplier = 3
@@ -106,7 +109,7 @@ export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {
   }
 
   if (isLtxLabModeId(modeId)) {
-    return 'lab.workbench.cost_hints.ltx_video'
+    return modeId === 'ltx_t2v' ? 'lab.workbench.cost_hints.ltx_t2v' : 'lab.workbench.cost_hints.ltx_video'
   }
 
   if (modeId === 'wan22_video_v2') {
