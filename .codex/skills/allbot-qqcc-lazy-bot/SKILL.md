@@ -51,7 +51,7 @@ QQCC Config Web 每个场景操作区支持从已上传的 input 示范直接生
 
 独立 QQCC Config Web 的底部“提示词覆盖”只展示 `快速换脸`（`prompts.face_swap`）。`快速自慰` / `快速脱衣` 和默认动图预设的提示词都在各自场景行里编辑，不能留空；后端仍保留 `prompts.undress` / `prompts.masturbation` / 旧动图 prompt 字段用于旧配置迁移兼容。
 
-`修仙市集` 是 QQCC 专用轻量 Gallery 入口，代码在 `qqcc_bot/gallery_market.py`，callback 前缀为 `qg:`。它只允许浏览 Web 当前可见分组投稿、点赞/点踩、一键应用和 Web 应用跳转，不提供留言，不复用旧主 Bot gallery 分类常量，不注册主 Bot 完整 gallery handler。普通可应用投稿的卡片应同时展示 `一键应用` 与 `Web应用`；视频换脸类模板只展示 `Web应用`；Wan22/LTX 多段拼接结果不展示任何应用入口。Bot caption 中的类型和 `#task.mode_*` 标签必须走当前语言的 task/tab 翻译，不能直接暴露内部变量名。媒体发送必须优先复用 `GalleryPost.telegram_file_id`，缺失/失效时走当前 Gallery R2/S3 URL resolver 下载当前作品并刷新 file_id；测试 Bot 不持久化新 file_id。
+`修仙市集` 是 QQCC 专用轻量 Gallery 入口，代码在 `qqcc_bot/gallery_market.py`，callback 前缀为 `qg:`。它只允许浏览精选的 Web 当前可见分组投稿、点赞/点踩、一键应用和 Web 应用跳转，不提供留言，不复用旧主 Bot gallery 分类常量，不注册主 Bot 完整 gallery handler。分类菜单隐藏 `txt2img` 与已关闭应用的 `i2i_draw`，自由 P 图版本入口使用 `free_edit_v2_5_group`，不展示旧 `free_edit_v2_group` v3 兼容分类。普通可应用投稿的卡片应同时展示 `一键应用` 与 `Web应用`；视频换脸类模板只展示 `Web应用`；Wan22/LTX 多段拼接结果不展示任何应用入口。Bot caption 中的类型和 `#task.mode_*` 标签必须走当前语言的 task/tab 翻译，不能直接暴露内部变量名。媒体发送必须优先复用 `GalleryPost.telegram_file_id`，缺失/失效时走当前 Gallery R2/S3 URL resolver 下载当前作品并刷新 file_id；测试 Bot 不持久化新 file_id。
 
 QQCC 市集 Bot 原生应用只承接安全的单图轻量模板，提交任务必须传 `source_post_id`、`allow_contribute=False` 并保持 `client_type=bot:qqcc`；复杂多图/多视频、SCAIL-2、LTX 首尾帧等模板的 `一键应用` callback 只能做 Web handoff，并给出 `/gallery?apply_source=gallery&apply_id=<post_id>` 深链，不得在 Bot 内强行复用视频/多素材。点击应用不得预增 `applied_count`。
 
