@@ -5,6 +5,7 @@ import copy
 import hashlib
 import logging
 import re
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -339,6 +340,37 @@ async def _send_demo_items(message, items: list[tuple[str, dict[str, Any], str]]
     return [sent]
 
 
+def _read_demo_media_from_r2(media: dict[str, Any], *, storage_service) -> BytesIO:
+    """Read a validated demo object for a Telegram upload fallback."""
+    if not storage_service.r2_client or not storage_service.r2_bucket:
+        raise RuntimeError("R2 storage is unavailable")
+    media_type = str(media.get("media_type") or "")
+    max_bytes = (
+        QQCC_DEMO_VIDEO_MAX_BYTES if media_type == "video" else QQCC_DEMO_IMAGE_MAX_BYTES
+    )
+    response = storage_service.r2_client.get_object(
+        Bucket=storage_service.r2_bucket,
+        Key=str(media["object_key"]),
+    )
+    body = response.get("Body") if isinstance(response, dict) else None
+    try:
+        content = body.read(max_bytes + 1) if body is not None else b""
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
+    mime_type = str(media.get("mime_type") or "").lower()
+    if (
+        not content
+        or len(content) > max_bytes
+        or not _matches_file_signature(content=content, mime_type=mime_type)
+    ):
+        raise QqccDemoMediaValidationError("Demo media could not be read safely")
+    upload = BytesIO(content)
+    upload.name = str(media.get("file_name") or "demo")
+    return upload
+
+
 async def send_qqcc_scene_demo_media(
     *,
     message,
@@ -348,6 +380,7 @@ async def send_qqcc_scene_demo_media(
     private_bot_id: int | None = None,
     preview_url_builder=build_qqcc_demo_preview_url,
     cache_file_ids_func=None,
+    storage_service=storage,
 ) -> bool:
     descriptors: list[tuple[str, dict[str, Any]]] = []
     for slot in ("input", "output"):
@@ -386,15 +419,62 @@ async def send_qqcc_scene_demo_media(
         items, sent_messages = await _attempt(prefer_cache=True)
     except Exception:
         if not has_cached_source:
-            logger.exception("Failed to send QQCC scene demo media from R2")
-            return False
-        logger.info("QQCC Telegram file_id cache missed; retrying demo media from R2")
+            logger.info("QQCC demo URL was rejected by Telegram; uploading from R2")
+        else:
+            logger.info("QQCC Telegram file_id cache missed; retrying demo media from R2")
+            try:
+                items, sent_messages = await _attempt(prefer_cache=False)
+            except Exception:
+                logger.info("QQCC demo URL retry was rejected by Telegram; uploading from R2")
+            else:
+                return await _cache_qqcc_demo_file_ids(
+                    items=items,
+                    sent_messages=sent_messages,
+                    bot_id=bot_id,
+                    scene_kind=scene_kind,
+                    scene=scene,
+                    private_bot_id=private_bot_id,
+                    cache_file_ids_func=cache_file_ids_func,
+                )
         try:
-            items, sent_messages = await _attempt(prefer_cache=False)
+            items = [
+                (
+                    slot,
+                    media,
+                    await asyncio.to_thread(
+                        _read_demo_media_from_r2,
+                        media,
+                        storage_service=storage_service,
+                    ),
+                )
+                for slot, media in descriptors
+            ]
+            sent_messages = await _send_demo_items(message, items)
         except Exception:
-            logger.exception("Failed to send QQCC scene demo media after cache fallback")
+            logger.exception("Failed to upload QQCC scene demo media from R2")
             return False
 
+    return await _cache_qqcc_demo_file_ids(
+        items=items,
+        sent_messages=sent_messages,
+        bot_id=bot_id,
+        scene_kind=scene_kind,
+        scene=scene,
+        private_bot_id=private_bot_id,
+        cache_file_ids_func=cache_file_ids_func,
+    )
+
+
+async def _cache_qqcc_demo_file_ids(
+    *,
+    items,
+    sent_messages,
+    bot_id: str,
+    scene_kind: str,
+    scene: dict[str, Any],
+    private_bot_id: int | None,
+    cache_file_ids_func,
+) -> bool:
     cache_updates = []
     for (slot, media, _source), sent_message in zip(items, sent_messages):
         file_id = _extract_telegram_file_id(

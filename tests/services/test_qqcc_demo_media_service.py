@@ -1,4 +1,5 @@
 import hashlib
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -339,6 +340,86 @@ async def test_video_scene_demo_album_contains_one_photo_and_one_video():
     assert sent is True
     assert isinstance(sent_media[0], InputMediaPhoto)
     assert isinstance(sent_media[1], InputMediaVideo)
+
+
+@pytest.mark.asyncio
+async def test_demo_media_falls_back_to_bot_upload_when_telegram_cannot_fetch_r2_url():
+    attempts = []
+    cache = AsyncMock()
+
+    async def _reply_media_group(*, media):
+        attempts.append(media)
+        if isinstance(media[0].media, str):
+            raise RuntimeError("Telegram cannot fetch the signed URL")
+        assert isinstance(media[0], InputMediaPhoto)
+        assert isinstance(media[1], InputMediaVideo)
+        assert not isinstance(media[0].media, str)
+        assert not isinstance(media[1].media, str)
+        return [
+            SimpleNamespace(photo=[SimpleNamespace(file_id="uploaded-photo")]),
+            SimpleNamespace(video=SimpleNamespace(file_id="uploaded-video")),
+        ]
+
+    storage_service = SimpleNamespace(
+        r2_client=SimpleNamespace(
+            get_object=lambda **_kwargs: {
+                "Body": BytesIO(
+                    b"\x00\x00\x00\x18ftypmp42demo"
+                    if _kwargs["Key"].endswith("/output")
+                    else b"\x89PNG\r\n\x1a\ndemo"
+                )
+            }
+        ),
+        r2_bucket="user-data",
+    )
+    scene = {
+        "id": "kiss",
+        "demo_input_media": {
+            "object_key": "qqcc/demo/video/kiss/input",
+            "media_type": "image",
+            "mime_type": "image/png",
+            "file_name": "input.png",
+            "content_sha256": hashlib.sha256(b"\x89PNG\r\n\x1a\ndemo").hexdigest(),
+        },
+        "demo_output_media": {
+            "object_key": "qqcc/demo/video/kiss/output",
+            "media_type": "video",
+            "mime_type": "video/mp4",
+            "file_name": "output.mp4",
+            "content_sha256": hashlib.sha256(b"\x00\x00\x00\x18ftypmp42demo").hexdigest(),
+        },
+    }
+
+    sent = await send_qqcc_scene_demo_media(
+        message=SimpleNamespace(reply_media_group=_reply_media_group),
+        bot=SimpleNamespace(id=123),
+        scene_kind="video",
+        scene=scene,
+        preview_url_builder=lambda _media: "https://r2.example/demo.png",
+        cache_file_ids_func=cache,
+        storage_service=storage_service,
+    )
+
+    assert sent is True
+    assert [item.media for item in attempts[0]] == [
+        "https://r2.example/demo.png",
+        "https://r2.example/demo.png",
+    ]
+    cache.assert_awaited_once()
+    assert cache.await_args.kwargs["updates"] == [
+        {
+            "slot": "input",
+            "object_key": "qqcc/demo/video/kiss/input",
+            "content_sha256": hashlib.sha256(b"\x89PNG\r\n\x1a\ndemo").hexdigest(),
+            "file_id": "uploaded-photo",
+        },
+        {
+            "slot": "output",
+            "object_key": "qqcc/demo/video/kiss/output",
+            "content_sha256": hashlib.sha256(b"\x00\x00\x00\x18ftypmp42demo").hexdigest(),
+            "file_id": "uploaded-video",
+        },
+    ]
 
 
 @pytest.mark.asyncio
