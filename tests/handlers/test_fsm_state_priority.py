@@ -1056,6 +1056,7 @@ async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch
     captured = {}
     config = normalize_qqcc_config(
         {
+            "main_buttons": {"ai_draw_v1": True},
             "draw_scenes_v1": [
                 {
                     "id": "realistic",

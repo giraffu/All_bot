@@ -70,7 +70,7 @@
     "deploy/env.schema.yml": "3cf3fbe9b87d62b38282142997af9b505947018ab10afaba96ee961a77528fca",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
     "src/qqcc_video_lora_catalog.py": "d019e33ce2978290f969473d5d43065a2a4ee825213b93c7c8264c94189816ae",
-    "src/services/qqcc_config_service.py": "c55e350203e4b796fdec31a9e19f47cb40599b45433b06ba9dc987094ae09f80",
+    "src/services/qqcc_config_service.py": "e644424020b9757768a6b49451173b9d879759b48df248d5c84caf90b1aab1d3",
     "src/wan22_explicit_lora_catalog.py": "aa8cccb89214890d317121f724cddf2ebc8bee63d94fa907290c0829fe4e53b1"
   },
   "independent_additive_migration_snapshots": {

@@ -333,12 +333,12 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "quick_undress": False,
         "quick_faceswap": True,
         "photo_edit": False,
-        "ai_draw": True,  # legacy compatibility; V2 is authoritative.
-        "ai_draw_v1": True,
+        "ai_draw": True,  # legacy compatibility; only V2 inherits this toggle.
+        "ai_draw_v1": False,
         "ai_draw_v2": True,
         "ai_filter": True,
-        "video_edit": True,  # legacy compatibility; V2 is authoritative.
-        "video_edit_v1": True,
+        "video_edit": True,  # legacy compatibility; only V2 inherits this toggle.
+        "video_edit_v1": False,
         "video_edit_v2": True,
         "ai_video": True,
         "market": True,
@@ -1305,19 +1305,18 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         default=defaults["main_buttons"],
         keys=MAIN_BUTTON_KEYS,
     )
-    # Historic admin payloads only had one button per family.  Treat those
-    # toggles as the V2 setting instead of accidentally re-enabling a feature
-    # while migrating the menu shape.
+    # Historic admin payloads only had one button per family.  They map only
+    # to V2; V1 remains hidden until its versioned toggle is explicitly set.
     raw_main_buttons = raw.get("main_buttons")
     if isinstance(raw_main_buttons, dict):
         if isinstance(raw_main_buttons.get("ai_draw"), bool):
-            for key in ("ai_draw_v1", "ai_draw_v2"):
-                if key not in raw_main_buttons:
-                    config["main_buttons"][key] = raw_main_buttons["ai_draw"]
+            if "ai_draw_v2" not in raw_main_buttons:
+                config["main_buttons"]["ai_draw_v2"] = raw_main_buttons["ai_draw"]
         if isinstance(raw_main_buttons.get("video_edit"), bool):
-            for key in ("video_edit_v1", "video_edit_v2"):
-                if key not in raw_main_buttons:
-                    config["main_buttons"][key] = raw_main_buttons["video_edit"]
+            if "video_edit_v2" not in raw_main_buttons:
+                config["main_buttons"]["video_edit_v2"] = raw_main_buttons[
+                    "video_edit"
+                ]
     config["main_menu_layout"] = _normalize_main_menu_layout(
         raw.get("main_menu_layout")
     )
