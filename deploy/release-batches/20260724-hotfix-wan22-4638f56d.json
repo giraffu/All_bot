@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "d33cbc13e788dd26d15da0aa31ab1fd2718c9ee8",
+  "batch": "20260724-hotfix-wan22-4638f56d",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-hotfix-wan22-4638f56d",
+  "members": [
+    {
+      "base_sha": "d33cbc13e788dd26d15da0aa31ab1fd2718c9ee8",
+      "branch": "codex/c-fix-qqcc-wan22-submit",
+      "head": "4638f56d1460a006bda2d07658bd035904582808",
+      "queued_at": "2026-07-24T13:03:27.169875+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
