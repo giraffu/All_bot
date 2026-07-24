@@ -2650,6 +2650,43 @@ def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
     assert "cloud-rollback-release-env-unavailable" in remote_scripts[0]
 
 
+def test_promote_cloud_preflight_uses_transaction_local_rollback_contract(
+    monkeypatch,
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            command="promote",
+            env="prod",
+            previous_sha=previous_sha,
+            remote_host="cloud-prod",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/prod.env",
+        ),
+        module.ReleaseImpact(
+            services={"dashboard-frontend"},
+            level="rolling",
+            matched_rules=["track:control-plane"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        _valid_prod_environment(),
+    )
+
+    assert blockers == []
+    assert f"/release-root/releases/{previous_sha}" not in remote_scripts[0]
+    assert "cloud-rollback-checkout-unavailable" not in remote_scripts[0]
+    assert "cloud-rollback-release-env-unavailable" not in remote_scripts[0]
+
+
 def test_prod_dashboard_preflight_requires_readable_lan_aio_runner_key(monkeypatch):
     module = _load_module()
     remote_scripts = []
