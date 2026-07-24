@@ -998,8 +998,14 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   return merged
 }
 
+const isVideoSceneKind = (kind: SceneConfigKind) =>
+  kind === 'video' || kind === 'video_v1'
+
+const isDrawSceneKind = (kind: SceneConfigKind) =>
+  kind === 'draw' || kind === 'draw_v1'
+
 const getEngineLabel = (kind: SceneConfigKind, engine: string) => {
-  if (kind === 'video') return videoEngineLabels[normalizeVideoEngine(engine)]
+  if (isVideoSceneKind(kind)) return videoEngineLabels[normalizeVideoEngine(engine)]
   if (kind === 'ai_video') return aiVideoEngineLabels[normalizeAiVideoEngine(engine)]
   return drawEngineLabels[normalizeDrawEngine(engine)]
 }
@@ -1032,7 +1038,7 @@ const activeEngineOptions = computed(() => {
   return modelOptions.draw_engines
 })
 const activeLoraOptions = computed(() =>
-  sceneConfig.kind === 'video'
+  isVideoSceneKind(sceneConfig.kind)
     ? modelOptions.video_lora_models
     : sceneConfig.kind === 'ai_video'
       ? modelOptions.ltx_video_lora_models
@@ -1899,7 +1905,9 @@ const openSceneConfig = (
         ? config.ai_video_scenes[index]
       : kind === 'filter'
         ? config.filter_scenes[index]
-        : config.draw_scenes[index]
+        : kind === 'draw_v1'
+          ? config.draw_scenes_v1[index]
+          : config.draw_scenes[index]
   if (!scene) return
   sceneConfig.kind = kind
   sceneConfig.index = index
@@ -1948,7 +1956,9 @@ const openSceneConfig = (
       ? normalizePostprocessFilterSceneId((scene as DrawSceneConfig).postprocess_filter_scene_id)
       : ''
   sceneConfig.original_face_swap_enabled =
-    kind !== 'video' && kind !== 'ai_video' ? (scene as DrawSceneConfig | FilterSceneConfig).original_face_swap_enabled === true : false
+    isDrawSceneKind(kind) || kind === 'filter'
+      ? (scene as DrawSceneConfig | FilterSceneConfig).original_face_swap_enabled === true
+      : false
   sceneConfig.open = true
 }
 
@@ -2559,7 +2569,7 @@ onMounted(() => {
             <a-form-item label="灵石消耗" class="mb-0">
               <a-input-number v-model:value="sceneConfig.credit_cost" :min="1" :step="1" :precision="0" placeholder="未配置/沿用旧规则" data-testid="scene-config-credit-cost" class="w-full" />
             </a-form-item>
-            <a-form-item v-if="sceneConfig.kind === 'video'" label="分辨率" class="mb-0">
+            <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="分辨率" class="mb-0">
               <a-select v-model:value="sceneConfig.resolution" data-testid="scene-config-resolution" :get-popup-container="getSceneSelectPopupContainer">
                 <a-select-option v-for="item in modelOptions.video_resolutions" :key="item.value" :value="item.value" :disabled="item.value === '1024p' && sceneConfig.duration === '10s'">{{ item.label }}</a-select-option>
               </a-select>
@@ -2569,7 +2579,7 @@ onMounted(() => {
                 <a-select-option v-for="item in modelOptions.ai_video_resolutions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
               </a-select>
             </a-form-item>
-            <a-form-item v-if="sceneConfig.kind === 'video'" label="时长" class="mb-0">
+            <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="时长" class="mb-0">
               <a-select v-model:value="sceneConfig.duration" data-testid="scene-config-duration" :get-popup-container="getSceneSelectPopupContainer">
                 <a-select-option v-for="item in durationOptions" :key="item" :value="item" :disabled="item === '10s' && sceneConfig.resolution === '1024p'">{{ item }}</a-select-option>
               </a-select>
@@ -2579,7 +2589,7 @@ onMounted(() => {
                 <a-select-option v-for="item in aiVideoDurationOptions" :key="item" :value="item">{{ item }}s</a-select-option>
               </a-select>
             </a-form-item>
-            <a-form-item v-if="sceneConfig.kind === 'video'" label="画面比例" class="mb-0">
+            <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="画面比例" class="mb-0">
               <a-select v-model:value="sceneConfig.aspect_ratio" data-testid="scene-video-aspect-ratio-select" :get-popup-container="getSceneSelectPopupContainer">
                 <a-select-option v-for="item in modelOptions.video_aspect_ratios" :key="item" :value="item">{{ videoAspectRatioLabels[item] }}</a-select-option>
               </a-select>
@@ -2606,7 +2616,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind !== 'video' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
+        <a-form-item v-if="!isVideoSceneKind(sceneConfig.kind) && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
             data-testid="scene-lora-select"
@@ -2623,7 +2633,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'video'" label="附加模型（最多 5 个）" class="mb-4">
+        <a-form-item v-if="isVideoSceneKind(sceneConfig.kind)" label="附加模型（最多 5 个）" class="mb-4">
           <a-select
             :value="sceneConfig.video_lora_items.map(item => item.name)"
             mode="multiple"
@@ -2673,7 +2683,7 @@ onMounted(() => {
           </div>
         </a-form-item>
         </section>
-        <section v-if="sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video'" class="scene-config-section" data-testid="scene-config-frame-section">
+        <section v-if="isVideoSceneKind(sceneConfig.kind) || sceneConfig.kind === 'ai_video'" class="scene-config-section" data-testid="scene-config-frame-section">
         <h3>首尾帧配置</h3>
         <a-form-item
           label="尾帧来源"
@@ -2737,10 +2747,10 @@ onMounted(() => {
           </div>
         </a-form-item>
         </section>
-        <section v-if="sceneConfig.kind === 'draw' || sceneConfig.kind === 'filter'" class="scene-config-section" data-testid="scene-config-postprocess-section">
+        <section v-if="isDrawSceneKind(sceneConfig.kind) || sceneConfig.kind === 'filter'" class="scene-config-section" data-testid="scene-config-postprocess-section">
         <h3>后处理配置</h3>
         <a-form-item
-          v-if="sceneConfig.kind === 'draw'"
+          v-if="isDrawSceneKind(sceneConfig.kind)"
           label="绘图后处理"
           class="mb-4"
         >
@@ -2761,7 +2771,7 @@ onMounted(() => {
           </a-select>
         </a-form-item>
         <a-form-item
-          v-if="sceneConfig.kind === 'draw'"
+          v-if="isDrawSceneKind(sceneConfig.kind)"
           label="滤镜后处理"
           class="mb-4"
         >
