@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "e06cb67311660456d5cbeb8eda5bd0cec0e6175a",
+  "batch": "dashboard-history-500-20260725",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-history-500-20260725",
+  "members": [
+    {
+      "base_sha": "e06cb67311660456d5cbeb8eda5bd0cec0e6175a",
+      "branch": "codex/d-fix-dashboard-history-500",
+      "head": "b70db6de2e98ed432d9b14a0b0296c340a784eb5",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

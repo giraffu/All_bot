@@ -144,7 +144,9 @@ class HistoryResponse(BaseModel):
     full_name: Optional[str] = None
     worker_id: Optional[str] = None
     input_file_url: Optional[str] = None
+    input_file_preview_url: Optional[str] = None
     output_file_url: Optional[str] = None
+    output_file_preview_url: Optional[str] = None
     source: str = "bot"
 
 

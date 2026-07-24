@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "7395ca2cf4865346d9b8f919796c394ac9821eb3",
+  "batch": "dashboard-media-preview-20260724",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-dashboard-media-preview-20260724",
+  "members": [
+    {
+      "base_sha": "7395ca2cf4865346d9b8f919796c394ac9821eb3",
+      "branch": "codex/c-dashboard-history-media-preview",
+      "head": "9bc5b06c0ddffad96900afc2f7b0a23d612b775f",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

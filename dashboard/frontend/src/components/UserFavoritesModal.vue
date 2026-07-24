@@ -124,6 +124,7 @@ const openUrl = (url) => {
                     v-if="item.media_url"
                     :file="buildMediaFileName(item)"
                     :url="item.media_url"
+                    :preview-url="item.thumbnail_url || ''"
                     label="原始媒体"
                     size="w-full h-44"
                   />

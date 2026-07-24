@@ -2,11 +2,13 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from config import MINIO_TEMPLATE_BUCKET
+from config import MINIO_BUCKET, MINIO_TEMPLATE_BUCKET
 from dashboard.backend.presenters import history_presenter
 from dashboard.backend.routers import history as history_router
 from dashboard.backend.services import history_service
+from src.database.models import History, User, WorkerLog
 
 
 class _FakeStorage:
@@ -40,12 +42,20 @@ class _FakeHistoryDb:
         self.total = total
         self.rows = list(rows)
         self.execute_calls = 0
+        self.rollback_calls = 0
+        self.expunge_all_calls = 0
 
     async def execute(self, _stmt):
         self.execute_calls += 1
         if self.execute_calls == 1:
             return _FakeScalarResult(self.total)
         return _FakeRowsResult(self.rows)
+
+    async def rollback(self):
+        self.rollback_calls += 1
+
+    def expunge_all(self):
+        self.expunge_all_calls += 1
 
 
 def _build_history(**overrides):
@@ -85,6 +95,10 @@ def test_build_history_item_payload_generates_storage_urls():
     assert result["worker_id"] == "worker-1"
     assert result["input_file_url"] == (
         f"url://{MINIO_TEMPLATE_BUCKET}/tpl/a.png|url://default/user/input.png"
+    )
+    assert result["input_file_preview_url"] == (
+        f"url://{MINIO_TEMPLATE_BUCKET}/tpl/a_thumb.webp|"
+        f"url://{MINIO_BUCKET}/user/input_thumb.webp"
     )
     assert result["output_file_url"] == "url://comfyui-temp/result.png"
 
@@ -137,11 +151,19 @@ async def test_get_all_history_payload_uses_presenter_for_items():
         rows=[(history, "tester", "Tester", "worker-1", None)],
     )
 
+    media_calls = []
+
+    async def resolve_media_urls(**kwargs):
+        media_calls.append((kwargs, db.rollback_calls))
+        assert db.expunge_all_calls == 1
+        return "url://r2/original.png", "url://r2/thumb.webp"
+
     result = await history_service.get_all_history_payload(
         db=db,
         page=1,
         page_size=20,
         storage_service=storage_service,
+        resolve_media_urls_func=resolve_media_urls,
     )
 
     assert result["total"] == 1
@@ -149,6 +171,59 @@ async def test_get_all_history_payload_uses_presenter_for_items():
     assert result["items"][0]["username"] == "tester"
     assert result["items"][0]["worker_id"] == "worker-1"
     assert result["items"][0]["input_file_url"].startswith("url://")
+    assert result["items"][0]["output_file_url"] == "url://r2/original.png"
+    assert result["items"][0]["output_file_preview_url"] == "url://r2/thumb.webp"
+    assert db.rollback_calls == 1
+    assert db.expunge_all_calls == 1
+    assert media_calls[0][1] == 1
+    assert media_calls[0][0]["r2_lookup_strategy"] == "s3_cached"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_releases_real_session_before_media_resolution():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        for model in (User, History, WorkerLog):
+            await connection.run_sync(model.__table__.create)
+        await connection.exec_driver_sql(
+            "CREATE TABLE private_bot_task_submissions "
+            "(registry_task_id VARCHAR(64), client_type VARCHAR(128))"
+        )
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(User(id=123, username="tester", full_name="Tester"))
+        db.add(
+            History(
+                user_id=123,
+                task_id="task-real-session",
+                type="img2img",
+                input_file="user/input.png",
+                output_file="result.png",
+                prompt="hello",
+                source="web",
+            )
+        )
+        await db.commit()
+
+        async def resolve_media_urls(**kwargs):
+            assert not db.in_transaction()
+            assert kwargs["task_id"] == "task-real-session"
+            return "url://r2/original.png", "url://r2/thumb.webp"
+
+        result = await history_service.get_all_history_payload(
+            db=db,
+            page=1,
+            page_size=1,
+            storage_service=_FakeStorage(),
+            resolve_media_urls_func=resolve_media_urls,
+        )
+
+    await engine.dispose()
+
+    assert result["total"] == 1
+    assert result["items"][0]["task_id"] == "task-real-session"
+    assert result["items"][0]["output_file_preview_url"] == "url://r2/thumb.webp"
 
 
 @pytest.mark.asyncio
@@ -168,10 +243,35 @@ async def test_get_all_history_payload_accepts_qqcc_source_filter():
         db=db,
         source="bot:qqcc",
         storage_service=storage_service,
+        resolve_media_urls_func=lambda **_kwargs: _resolved_media(),
     )
 
     assert result["total"] == 1
     assert result["items"][0]["source"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_payload_degrades_when_thumbnail_lookup_fails():
+    storage_service = _FakeStorage()
+    history = _build_history(output_file="folder/output.mp4", type="custom_video")
+    db = _FakeHistoryDb(
+        total=1,
+        rows=[(history, "tester", "Tester", "worker-1", None)],
+    )
+
+    async def failing_media_resolver(**_kwargs):
+        raise TimeoutError("R2 thumbnail lookup timed out")
+
+    result = await history_service.get_all_history_payload(
+        db=db,
+        storage_service=storage_service,
+        resolve_media_urls_func=failing_media_resolver,
+    )
+
+    assert result["items"][0]["output_file_url"] == (
+        "url://default/folder/output.mp4"
+    )
+    assert result["items"][0].get("output_file_preview_url") is None
 
 
 @pytest.mark.asyncio
@@ -204,15 +304,38 @@ async def test_get_user_history_payload_uses_presenter_for_items():
     db = _FakeRowsResult([(history, "worker-2", None)])
 
     class _FakeUserHistoryDb:
+        rollback_calls = 0
+        expunge_all_calls = 0
+
         async def execute(self, _stmt):
             return db
 
+        async def rollback(self):
+            self.rollback_calls += 1
+
+        def expunge_all(self):
+            self.expunge_all_calls += 1
+
+    user_db = _FakeUserHistoryDb()
+
+    async def resolve_media_urls(**_kwargs):
+        assert user_db.expunge_all_calls == 1
+        assert user_db.rollback_calls == 1
+        return "url://r2/output.png", "url://r2/output_thumb.webp"
+
     result = await history_service.get_user_history_payload(
         user_id=123,
-        db=_FakeUserHistoryDb(),
+        db=user_db,
         storage_service=storage_service,
+        resolve_media_urls_func=resolve_media_urls,
     )
 
     assert len(result) == 1
     assert result[0]["worker_id"] == "worker-2"
-    assert result[0]["output_file_url"] == "url://default/folder/output.png"
+    assert result[0]["output_file_url"] == "url://r2/output.png"
+    assert result[0]["output_file_preview_url"] == "url://r2/output_thumb.webp"
+    assert user_db.expunge_all_calls == 1
+
+
+async def _resolved_media():
+    return "url://r2/original.png", "url://r2/thumb.webp"

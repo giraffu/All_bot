@@ -1,5 +1,5 @@
 <script setup>
-import { getFileUrl, formatDate } from '../utils/helpers'
+import { formatDate } from '../utils/helpers'
 import MediaItem from './MediaItem.vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 
@@ -80,6 +80,7 @@ defineEmits(['close'])
                       :key="index"
                       :file="item.input_file.split('|')[index]"
                       :url="url"
+                      :preview-url="(item.input_file_preview_url || '').split('|')[index] || ''"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">无输入</div>
@@ -94,6 +95,7 @@ defineEmits(['close'])
                     <MediaItem 
                       :file="item.output_file"
                       :url="item.output_file_url"
+                      :preview-url="item.output_file_preview_url || ''"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">未完成</div>
