@@ -49,7 +49,7 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 
 `AI动图` 与 `AI视频` 场景还可通过 `next_scene_id` 选择同类型的下一个模板。每个场景只有一个后继，但可形成任意长度的线性链；后台过滤自身和会回到当前场景的候选，保存 API 也会拒绝缺失目标、自环和间接循环并返回循环路径。提交时迭代快照完整链，配置后续修改不影响运行中任务。上一段 Worker 产出的 `extra_outputs.last_frame` 是下一段首帧；每段仍使用自己的 prompt、时长、模型、LoRA、比例和尾帧绘图链。全部成功后按第一段画布对后续视频等比放大、居中裁剪并统一音视频格式后拼接；拼接免费。根场景未配置固定价时，官方后续段失败沿用现有分段退款且成功段保持计费；配置固定价时，后续任一阶段或最终投递失败都按根任务实际扣费全额幂等退款。私有 Bot 用 durable checkpoint 保存当前段、首帧、视频引用和根计费锚点，重启后不重复生成或扣费。后台“生成示例”使用 TTL 24 小时的 Redis checkpoint 推进完整链并只保存最终拼接草稿，始终不扣灵石。
 
-`video_scenes` 和 `ai_video_scenes` 可选填 `jump_draw_scene_id`，只能引用有效 `draw_scenes[].id`。后台在“首尾帧配置”中提供选择；点击对应动图/视频场景后，示范媒体和上传提示下会出现“先去 AI绘图生成”按钮，点击后进入目标绘图场景的单图上传流程。目标场景删除、失效或关闭 `main_buttons.ai_draw` 时，引用会在归一化时清空或运行时隐藏，既有视频流程不受影响。
+`video_scenes` 和 `ai_video_scenes` 可选填 `jump_draw_scene_id`，只能引用有效 `draw_scenes[].id`。后台在“首尾帧配置”中提供选择；点击对应动图/视频场景后，示范媒体和上传提示下会出现“先去 AI绘图生成”按钮，点击后进入目标绘图场景的单图上传流程。若用户正处于该 AI动图/AI视频的等待上传流程，点击按钮会只清理该待上传视频状态并立即进入绘图流程；其它进行中的交互仍保留原有冲突保护。目标场景删除、失效或关闭 `main_buttons.ai_draw` 时，引用会在归一化时清空或运行时隐藏。
 
 链式视频的尾帧提取、规格归一化和拼接发生在控制面媒体编排层，运行镜像必须同时提供 `ffmpeg` 与 `ffprobe`。官方 QQCC、私有 Bot continuation、QQCC Config 示例和 Private Owner 示例分别运行在 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend`，四者统一继承不可运行的 `python-media-runtime-base`；模块化 release 的 full-validation 必须对四个最终 digest 分别执行双工具 smoke，不能以旧 `Dockerfile.qqcc` 或其它服务含有工具替代验证。若某段已生成但尾帧处理失败，用户提示必须明确为“该段已生成，但尾帧处理失败”；只有生成任务本身失败时才显示“生成失败”。两类失败都只返回已完成前缀，不改变既有计费与退款语义。
 

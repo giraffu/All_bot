@@ -1032,6 +1032,104 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_qqcc_draw_scene_callback_replaces_pending_video_flow(monkeypatch):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "make_input",
+                    "name": "生成输入图",
+                    "prompt": "draw prompt",
+                }
+            ],
+        }
+    )
+    reply_text = AsyncMock()
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_text)
+    monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", AsyncMock())
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("make_input"),
+            message=callback_message,
+            answer=AsyncMock(),
+        ),
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "in_conversation": "QUICK_VIDEO_custom_video",
+            "quick_video_data": {"mode": "custom_video", "image_path": None},
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert "quick_video_data" not in context.user_data
+    assert context.user_data["in_conversation"].startswith("QUICK_IMAGE_")
+    assert context.user_data["quick_image_data"]["scene_id"] == "make_input"
+    reply_text.assert_awaited_once_with(
+        callback_message,
+        "fsm.quick_image.ai_draw_start",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_draw_scene_callback_keeps_non_video_conflict_protection(monkeypatch):
+    edit_text = AsyncMock()
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_edit_text", edit_text)
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("make_input"),
+            message=callback_message,
+            answer=AsyncMock(),
+        ),
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "in_conversation": "QUICK_IMAGE_edit",
+            "quick_image_data": {"mode": "edit", "image_path": None},
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.ConversationHandler.END
+    assert context.user_data["in_conversation"] == "QUICK_IMAGE_edit"
+    assert context.user_data["quick_image_data"]["mode"] == "edit"
+    edit_text.assert_awaited_once_with(
+        callback_message,
+        "fsm.common.conflict",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
 async def test_private_qqcc_scene_passes_trusted_tenant_id_to_demo_cache(monkeypatch):
     demo_sender = AsyncMock()
     monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", demo_sender)

@@ -50,6 +50,7 @@ from src.services.qqcc_config_service import (
 )
 from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
+    is_qqcc_bot_context,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
@@ -107,6 +108,19 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_image_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
+
+
+def _replace_pending_quick_video_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Clear only a pending video upload before a linked draw-scene switch."""
+    user_data = context.user_data
+    if not str(user_data.get("in_conversation") or "").startswith("QUICK_VIDEO_"):
+        return False
+    video_data = user_data.pop("quick_video_data", {})
+    user_data.pop("in_conversation", None)
+    cleanup_fsm_temp_files(
+        [video_data.get("image_path"), video_data.get("end_image_path")]
+    )
+    return True
 
 
 async def _load_qqcc_config_for_context(
@@ -450,6 +464,9 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         else:
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
+
+    if draw_scene_id and is_qqcc_bot_context(context):
+        _replace_pending_quick_video_context(context)
 
     if context.user_data.get("in_conversation"):
         msg = _t(context, "fsm.common.conflict")
