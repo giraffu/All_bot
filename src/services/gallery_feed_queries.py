@@ -222,15 +222,21 @@ def _apply_sort(query, *, sort_by: str):
             desc(GalleryPost.dislikes_count), desc(GalleryPost.created_at)
         )
     if sort_by == "absolute_likes":
+        sort_score = (
+            GalleryPost.likes_count - GalleryPost.dislikes_count
+        ).label("gallery_sort_score")
         return query.order_by(
-            desc(GalleryPost.likes_count - GalleryPost.dislikes_count),
+            desc(sort_score),
             desc(GalleryPost.created_at),
-        )
+        ).add_columns(sort_score)
     if sort_by == "absolute_dislikes":
+        sort_score = (
+            GalleryPost.dislikes_count - GalleryPost.likes_count
+        ).label("gallery_sort_score")
         return query.order_by(
-            desc(GalleryPost.dislikes_count - GalleryPost.likes_count),
+            desc(sort_score),
             desc(GalleryPost.created_at),
-        )
+        ).add_columns(sort_score)
     if sort_by == "applied":
         return query.order_by(
             desc(GalleryPost.applied_count), desc(GalleryPost.created_at)
@@ -321,7 +327,7 @@ async def fetch_gallery_feed_page(
         prompt_max_length=prompt_max_length,
     )
 
-    total_query = select(func.count()).select_from(query.subquery())
+    total_query = select(func.count()).select_from(query.order_by(None).subquery())
     total = (await session.execute(total_query)).scalar()
 
     offset = (page - 1) * size if page > 0 else 0

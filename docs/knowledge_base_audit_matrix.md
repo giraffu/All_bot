@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-24：QQCC 官方 polling 新增只作用于该进程的双信号 liveness watchdog：成功 `getUpdates` 空轮询保持静默期存活，轮询完成或已拉取 update 处理任一连续停滞 180 秒时以专用退出码触发目标容器自重启；私有 webhook Bot 不启用。同期修复共享 Gallery feed 在 History join + `DISTINCT` + 净赞/净踩计算排序下的 PostgreSQL 非法 SQL，并从 count 子查询移除排序。事实源为 `qqcc_bot/polling_liveness.py`、QQCC 入口、Gallery query service、focused tests、QQCC Skill/文档；本条只记录代码候选，不表示已部署 test/prod。
+>
 > 2026-07-24：修复日常 `promote` 对 prod-only artifact 的不可满足测试门禁：`payment-api` 与 `paid-group-bot` 不存在于云测试拓扑，测试 planner 会拒绝为其构造运行 baseline，因此两者改用受保护 main CI + 不可变 digest 的 direct assurance，并继续强制正式健康、事务回滚和非目标证明；同一批次中测试环境实际存在的 `central-api`、`web-api`、`main-bot` 仍必须逐 artifact 命中 exact-digest main-channel 测试 evidence。不得通过伪造测试 state 或 skip gate 解决。
 >
 > 2026-07-24：正式主控制面定向升级补齐 main-bot 两类配置隔离：`REQUIRED_CHANNEL_ID` 成为签到频道同步的精确必填投影；懒人入口使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`，且只允许影响 main-bot，旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。当前三条 migration 以精确内容 SHA256 登记为五个核心目标模块的已审阅非目标快照；正式数据库已在单一 head `62d4a8f9c7e1` 时不得重复迁移，head 或 checksum 漂移必须阻断。本批次不修改或发布 Public Web、Dashboard、QQCC/私有 Bot、Support 或 GPU，`LTX_T2V_BACKEND_ENABLED` 继续关闭。

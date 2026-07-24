@@ -4,6 +4,8 @@
 
 QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；正式使用 main-bot 专属 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`。旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。
 
+官方 polling 入口通过 `qqcc_bot.polling_liveness` 同时观测两类进度：Local Bot API `getUpdates` 成功完成，以及已拉取 update 经过全部 handler group 处理完成。任一进度连续 180 秒停滞时，独立 watchdog 线程以专用退出码终止 QQCC 进程，由容器 `restart: always` 只重建该服务；正常空轮询持续刷新 heartbeat，因此安静时段不会误重启。私有 Bot 使用 webhook worker，不启用这套 polling watchdog。
+
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
 主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
@@ -62,6 +64,8 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 示范文件写入 R2 确定性对象键 `qqcc/demo/<scene_kind>/<scene_id>/<input|output>`，同一槽位替换时覆盖原对象，不新增随机孤儿 key。媒体描述保存 `object_key`、`media_type`、`mime_type`、`file_name`、`content_sha256` 和按 Bot ID 划分的 `telegram_file_ids`；配置 Web 的 `preview_url` 是按请求生成的短签，不写入 checkpoint。Bot 第一次通过 R2 短签发送成功后写回当前 Bot 的 Telegram file_id，后续点击直接使用 file_id；缓存失效自动回退 R2 并刷新。替换文件时内容哈希变化，保存逻辑不会继承旧 file_id，避免继续展示旧示范。
 
 用户点击主菜单 `修仙市集` 后，QQCC Bot 使用专用 `qqcc_bot/gallery_market.py` 入口展示精选的 Web Gallery 可见类型投稿，不复用旧主 Bot 的 gallery 分类常量。callback 前缀为 `qg:`，支持分类、分页、点赞、点踩、一键应用和 Web 应用跳转；不提供留言入口。普通可应用投稿的卡片同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口；Bot caption 中的类型和 `#task.mode_*` 标签走当前语言翻译，不直接暴露内部变量名。当前分类为 `all`、`i2i_pro`、`edit_group`、`free_edit_v2_5_group`、`img2video_group`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`；不展示 `txt2img`、已关闭应用的 `i2i_draw` 或旧 `free_edit_v2_group` v3 兼容分类。
+
+市集与 Web 共用 `src/services/gallery_feed_queries.py`。需要 History 关联时查询会去重；按净赞或净踩排序的计算表达式必须作为稳定别名进入 PostgreSQL select-list，分页 count 子查询移除无意义的 `ORDER BY`，避免 `SELECT DISTINCT` 与计算排序组合导致整页加载失败。
 
 QQCC 市集代码按 Bot 层职责拆分：`qqcc_bot/gallery_market.py` 保留 `qg:` callback 注册、分页加载和兼容 facade；`qqcc_bot/gallery_market_view.py` 负责菜单/帖子按钮与 caption view；`qqcc_bot/gallery_market_interactions.py` 负责点赞/点踩 callback、计数替换和消息更新；`qqcc_bot/gallery_market_apply.py` 负责 apply session、图片下载、原生单图提交和失败清理。Web/Bot 共用 apply-context presenter seam 位于 `src/services/gallery_apply_context_presenter.py`；QQCC Bot 不再直接导入 `src.web_api.common.utils`。
 

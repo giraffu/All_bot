@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "0e87be4c7f648d37256d41f811ddd2ef0bc554b7",
+  "batch": "20260724-hotfix-qqcc-liveness-5c78556b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-hotfix-qqcc-liveness-5c78556b",
+  "members": [
+    {
+      "base_sha": "0e87be4c7f648d37256d41f811ddd2ef0bc554b7",
+      "branch": "codex/c-fix-qqcc-market-polling",
+      "head": "5c78556bbcb284a7c7018005b0cf13dcd463ce70",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
