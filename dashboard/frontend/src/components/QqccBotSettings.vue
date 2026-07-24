@@ -95,6 +95,7 @@ interface VideoSceneConfig extends SceneDemoFields {
   lora_strength: number
   lora_items: VideoLoraItem[]
   end_frame_draw_scene_id: string
+  jump_draw_scene_id?: string
   next_scene_id: string | null
   credit_cost: number | null
 }
@@ -119,6 +120,7 @@ interface AiVideoSceneConfig extends SceneDemoFields {
   engine: AiVideoSceneEngine
   lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
+  jump_draw_scene_id?: string
   next_scene_id: string | null
   credit_cost: number | null
 }
@@ -530,6 +532,7 @@ const sceneConfig = reactive({
   video_lora_items: [] as VideoLoraItem[],
   lora_items: [] as AiVideoLoraItem[],
   end_frame_draw_scene_id: '',
+  jump_draw_scene_id: '',
   next_scene_id: '',
   postprocess_draw_scene_id: '',
   postprocess_filter_scene_id: '',
@@ -1218,6 +1221,10 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          jump_draw_scene_id: normalizeEndFrameDrawSceneId(
+            scene?.jump_draw_scene_id,
+            merged.draw_scenes,
+          ),
           next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
             ? scene.next_scene_id.trim()
             : null,
@@ -1255,6 +1262,10 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
           end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
             scene?.end_frame_draw_scene_id,
+            merged.draw_scenes,
+          ),
+          jump_draw_scene_id: normalizeEndFrameDrawSceneId(
+            scene?.jump_draw_scene_id,
             merged.draw_scenes,
           ),
           next_scene_id: typeof scene?.next_scene_id === 'string' && scene.next_scene_id.trim()
@@ -1306,6 +1317,7 @@ const addVideoScene = () => {
     lora_strength: 1,
     lora_items: [],
     end_frame_draw_scene_id: '',
+    jump_draw_scene_id: '',
     next_scene_id: null,
     credit_cost: defaultSceneCreditCost('video'),
   })
@@ -1328,6 +1340,7 @@ const addAiVideoScene = () => {
     engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
     lora_items: [],
     end_frame_draw_scene_id: '',
+    jump_draw_scene_id: '',
     next_scene_id: null,
     credit_cost: defaultSceneCreditCost('ai_video'),
   })
@@ -1429,9 +1442,11 @@ const removeDrawScene = (index: number) => {
     if (scene.end_frame_draw_scene_id === removed.id) {
       scene.end_frame_draw_scene_id = ''
     }
+    if (scene.jump_draw_scene_id === removed.id) scene.jump_draw_scene_id = ''
   })
   config.ai_video_scenes.forEach((scene) => {
     if (scene.end_frame_draw_scene_id === removed.id) scene.end_frame_draw_scene_id = ''
+    if (scene.jump_draw_scene_id === removed.id) scene.jump_draw_scene_id = ''
   })
   config.draw_scenes.forEach((scene) => {
     if (scene.postprocess_draw_scene_id === removed.id) {
@@ -1688,6 +1703,7 @@ const buildPayload = (): QqccBotConfig => {
   payload.draw_scenes = normalizedDrawScenes
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
+      const { jump_draw_scene_id: rawJumpDrawSceneId, ...videoScene } = scene
       const engine = normalizeVideoEngine(scene.engine)
       const loraItems = normalizeVideoLoraItems(
         scene.lora_items,
@@ -1695,7 +1711,7 @@ const buildPayload = (): QqccBotConfig => {
         scene.lora_strength,
       )
       return {
-        ...scene,
+        ...videoScene,
         id: scene.id.trim(),
         name: scene.name.trim(),
         prompt: scene.prompt.trim(),
@@ -1709,6 +1725,9 @@ const buildPayload = (): QqccBotConfig => {
           scene.end_frame_draw_scene_id,
           payload.draw_scenes,
         ),
+        ...(normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes)
+          ? { jump_draw_scene_id: normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes) }
+          : {}),
         next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
           ? scene.next_scene_id.trim()
           : null,
@@ -1716,8 +1735,10 @@ const buildPayload = (): QqccBotConfig => {
     })
     .filter((scene) => scene.name || scene.prompt)
   payload.ai_video_scenes = payload.ai_video_scenes
-    .map((scene) => ({
-      ...scene,
+    .map((scene) => {
+      const { jump_draw_scene_id: rawJumpDrawSceneId, ...aiVideoScene } = scene
+      return {
+      ...aiVideoScene,
       id: scene.id.trim(),
       name: scene.name.trim(),
       prompt: scene.prompt.trim(),
@@ -1729,10 +1750,14 @@ const buildPayload = (): QqccBotConfig => {
         scene.end_frame_draw_scene_id,
         payload.draw_scenes,
       ),
+      ...(normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes)
+        ? { jump_draw_scene_id: normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes) }
+        : {}),
       next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim()
         ? scene.next_scene_id.trim()
         : null,
-    }))
+      }
+    })
     .filter((scene) => scene.name || scene.prompt)
   return payload
 }
@@ -1791,6 +1816,10 @@ const openSceneConfig = (
     kind === 'video' || kind === 'ai_video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).end_frame_draw_scene_id)
       : ''
+  sceneConfig.jump_draw_scene_id =
+    kind === 'video' || kind === 'ai_video'
+      ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).jump_draw_scene_id)
+      : ''
   sceneConfig.next_scene_id =
     kind === 'video' || kind === 'ai_video'
       ? (scene as VideoSceneConfig | AiVideoSceneConfig).next_scene_id || ''
@@ -1818,6 +1847,7 @@ const closeSceneConfig = () => {
   sceneConfig.video_lora_items = []
   sceneConfig.aspect_ratio = 'source'
   sceneConfig.end_frame_draw_scene_id = ''
+  sceneConfig.jump_draw_scene_id = ''
   sceneConfig.next_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
@@ -1852,6 +1882,7 @@ const confirmSceneConfig = () => {
     scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
       sceneConfig.end_frame_draw_scene_id,
     )
+    scene.jump_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.jump_draw_scene_id)
     scene.next_scene_id = sceneConfig.next_scene_id || null
   } else if (sceneConfig.kind === 'ai_video') {
     const scene = config.ai_video_scenes[sceneConfig.index]
@@ -1864,6 +1895,7 @@ const confirmSceneConfig = () => {
     scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
       sceneConfig.end_frame_draw_scene_id,
     )
+    scene.jump_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.jump_draw_scene_id)
     scene.next_scene_id = sceneConfig.next_scene_id || null
   } else if (sceneConfig.kind === 'draw') {
     const scene = config.draw_scenes[sceneConfig.index]
@@ -2521,6 +2553,20 @@ onMounted(() => {
               {{ item.name || item.id }}
             </a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item label="示例输入跳转至 AI绘图场景" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.jump_draw_scene_id"
+            data-testid="scene-jump-draw-scene-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option v-for="item in activeEndFrameDrawOptions" :key="item.id" :value="item.id">
+              {{ item.name || item.id }}
+            </a-select-option>
+          </a-select>
+          <div class="mt-2 text-xs text-slate-500">Bot 会在该场景的示例下展示跳转按钮，用户可进入所选 AI绘图场景生成输入图。</div>
         </a-form-item>
         <a-form-item
           label="自动拼接下一个模板"

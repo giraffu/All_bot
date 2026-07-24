@@ -38,6 +38,7 @@ from src.handlers.fsm.quick_video_callback_data import (
     parse_quick_video_scene_callback_data,
     parse_quick_ai_video_scene_callback_data,
 )
+from src.handlers.fsm.quick_draw_callback_data import QUICK_DRAW_SCENE_CALLBACK_PATTERN
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
@@ -47,6 +48,7 @@ from src.services.qqcc_config_service import (
     get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     get_qqcc_ai_video_scene,
+    get_qqcc_draw_scene,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
@@ -143,6 +145,8 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path"), fsm_data.get("end_image_path")])
+    draw_fsm_data = context.user_data.pop("quick_image_data", {})
+    cleanup_fsm_temp_files([draw_fsm_data.get("image_path")])
 
 
 async def _load_qqcc_config_for_context(
@@ -492,11 +496,58 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             scene=scene,
             **demo_kwargs,
         )
-    await robust_reply_text(reply_message, msg, parse_mode="Markdown")
+    reply_markup = None
+    if scene is not None and qqcc_config is not None:
+        jump_scene = get_qqcc_draw_scene(
+            qqcc_config, str(scene.get("jump_draw_scene_id") or "")
+        )
+        if jump_scene is not None and is_qqcc_main_button_enabled(qqcc_config, "ai_draw"):
+            from src.handlers.fsm.quick_draw_callback_data import (
+                build_quick_draw_scene_callback_data,
+            )
+
+            reply_markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(
+                    f"先去 AI绘图生成「{jump_scene['name']}」",
+                    callback_data=build_quick_draw_scene_callback_data(jump_scene["id"]),
+                )]]
+            )
+    await robust_reply_text(
+        reply_message, msg, reply_markup=reply_markup, parse_mode="Markdown"
+    )
+    return QuickVideoState.WAIT_IMAGE
+
+
+async def jump_to_qqcc_draw_scene(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Replace a pending video upload with the selected QQCC draw-scene flow."""
+    from src.handlers.fsm.quick_image_fsm import _start_qqcc_image_scene
+    from src.handlers.fsm.quick_draw_callback_data import parse_quick_draw_scene_callback_data
+    from src.services.qqcc_draw_chain_service import QQCC_SCENE_KIND_DRAW
+
+    query = update.callback_query
+    scene_id = parse_quick_draw_scene_callback_data(query.data if query else None)
+    config = await _load_qqcc_config_for_context(context)
+    await _start_qqcc_image_scene(
+        update,
+        context,
+        qqcc_config=config,
+        scene_id=scene_id,
+        scene_kind=QQCC_SCENE_KIND_DRAW,
+    )
+    # The video ConversationHandler remains the active owner of the next image,
+    # so delegate that image to the initialized draw flow below.
     return QuickVideoState.WAIT_IMAGE
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.user_data.get("quick_image_data"):
+        from src.handlers.fsm.quick_image_fsm import receive_image as receive_quick_image
+
+        context.user_data.pop("quick_video_data", None)
+        return await receive_quick_image(update, context)
+
     user_id = update.effective_user.id
     message = update.message
     fsm_data = context.user_data["quick_video_data"]
@@ -823,6 +874,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
         ],
         states={
             QuickVideoState.WAIT_IMAGE: [
+                CallbackQueryHandler(
+                    jump_to_qqcc_draw_scene,
+                    pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+                ),
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

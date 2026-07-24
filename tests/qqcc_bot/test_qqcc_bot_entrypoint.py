@@ -2180,12 +2180,16 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
             "copywriting": {
                 "video_scene_start": "已选择【{butten}】，请发送原图。",
             },
+            "draw_scenes": [
+                {"id": "make_input", "name": "生成输入图", "prompt": "draw prompt"}
+            ],
             "video_scenes": [
                 {
                     "id": "kiss",
                     "name": "亲吻",
                     "prompt": "kissing prompt",
                     "duration": "8s",
+                    "jump_draw_scene_id": "make_input",
                     "demo_input_media": {
                         "object_key": "qqcc/demo/video/kiss/input",
                         "media_type": "image",
@@ -2261,6 +2265,9 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     )
     reply_mock.assert_awaited_once()
     assert reply_mock.await_args.args[1] == "已选择【亲吻】，请发送原图。"
+    jump_button = reply_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert jump_button.text == "先去 AI绘图生成「生成输入图」"
+    assert jump_button.callback_data == "qdraw_scene:make_input"
 
 
 @pytest.mark.asyncio
