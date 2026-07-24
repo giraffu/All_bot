@@ -1627,13 +1627,13 @@ describe('QqccBotSettings', () => {
     expect(softLightScene.lora_name).toBe('')
   })
 
-  it('configures draw and filter scenes to use free edit v3 without lora', async () => {
+  it('keeps V2 draw fixed on free edit v2.5 while filters may use free edit v3', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
     await wrapper.get('[data-testid="config-draw-scene-2"]').trigger('click')
-    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('自由P图v3')
-    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v3')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('自由P图v2.5')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v2_5')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
 
     await wrapper.get('[data-testid="config-filter-scene-0"]').trigger('click')

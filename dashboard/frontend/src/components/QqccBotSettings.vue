@@ -1010,13 +1010,27 @@ const normalizeSceneCreditCost = (raw: unknown): number | null =>
 const getSceneSelectPopupContainer = (triggerNode: HTMLElement) =>
   triggerNode.parentElement || document.body
 
-const activeEngineOptions = computed(() =>
-  sceneConfig.kind === 'video'
-    ? modelOptions.video_engines
-    : sceneConfig.kind === 'ai_video'
-      ? modelOptions.ai_video_engines
-      : modelOptions.draw_engines
-)
+const fixedEngineOption = (options: Array<{ value: string }>, value: string) =>
+  options.filter(item => item.value === value).length > 0
+    ? options.filter(item => item.value === value)
+    : [{ value, label: getEngineLabel(value === 'image_to_video' || value === 'wan22_video_v2' ? 'video' : 'draw', value) }]
+
+const activeEngineOptions = computed(() => {
+  if (sceneConfig.kind === 'video_v1') {
+    return fixedEngineOption(modelOptions.video_engines, 'image_to_video')
+  }
+  if (sceneConfig.kind === 'video') {
+    return fixedEngineOption(modelOptions.video_engines, 'wan22_video_v2')
+  }
+  if (sceneConfig.kind === 'ai_video') return modelOptions.ai_video_engines
+  if (sceneConfig.kind === 'draw_v1') {
+    return fixedEngineOption(modelOptions.draw_engines, 'free_edit')
+  }
+  if (sceneConfig.kind === 'draw') {
+    return fixedEngineOption(modelOptions.draw_engines, 'free_edit_v2_5')
+  }
+  return modelOptions.draw_engines
+})
 const activeLoraOptions = computed(() =>
   sceneConfig.kind === 'video'
     ? modelOptions.video_lora_models
@@ -1086,15 +1100,16 @@ const activeVideoSceneChainPreview = computed(() => {
   return names.join(' → ')
 })
 const activePostprocessDrawOptions = computed(() => {
-  const sourceScene = config.draw_scenes[sceneConfig.index]
-  if (sceneConfig.kind !== 'draw' || !sourceScene) return []
-  return config.draw_scenes.filter(
+  const drawScenes = sceneConfig.kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes
+  const sourceScene = drawScenes[sceneConfig.index]
+  if ((sceneConfig.kind !== 'draw' && sceneConfig.kind !== 'draw_v1') || !sourceScene) return []
+  return drawScenes.filter(
     (scene) =>
       scene.id.trim() &&
       scene.name.trim() &&
       scene.prompt.trim() &&
       scene.id !== sourceScene.id &&
-      !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id),
+      !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id, drawScenes),
   )
 })
 const activePostprocessFilterOptions = computed(() =>
