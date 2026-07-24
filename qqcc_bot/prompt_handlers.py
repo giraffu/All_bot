@@ -9,6 +9,8 @@ from qqcc_bot.keyboards import (
     get_qqcc_main_bot_link_keyboard,
     get_qqcc_main_menu_keyboard,
     get_qqcc_video_edit_inline_keyboard,
+    get_qqcc_video_v1_inline_keyboard,
+    get_qqcc_draw_v1_inline_keyboard,
     get_qqcc_ai_video_inline_keyboard,
 )
 from qqcc_bot.commands import resolve_main_bot_url
@@ -150,6 +152,13 @@ async def handle_video_edit_menu(update, context, text: str = None):
     )
 
 
+async def handle_video_v1_menu(update, context, text: str = None):
+    config = await _load_menu_config(context)
+    if not (is_qqcc_global_enabled(config) and is_qqcc_main_button_enabled(config, "video_edit_v1")):
+        return await _reply_feature_disabled(update, context, config)
+    return await _reply_payload(update, context, "🎬 **AI动图V1**\n请选择动图场景：", get_qqcc_video_v1_inline_keyboard(context.lang, config))
+
+
 async def handle_ai_video_menu(update, context, text: str = None):
     config = await _load_menu_config(context)
     if not _can_open_ai_video_menu(config):
@@ -174,6 +183,13 @@ async def handle_ai_draw_menu(update, context, text: str = None):
         or context.t("system.ai_draw_hint"),
         get_qqcc_draw_edit_inline_keyboard(context.lang, config),
     )
+
+
+async def handle_ai_draw_v1_menu(update, context, text: str = None):
+    config = await _load_menu_config(context)
+    if not (is_qqcc_global_enabled(config) and is_qqcc_main_button_enabled(config, "ai_draw_v1")):
+        return await _reply_feature_disabled(update, context, config)
+    return await _reply_payload(update, context, "🎨 **AI绘图V1**\n请选择绘图场景：", get_qqcc_draw_v1_inline_keyboard(context.lang, config))
 
 
 async def handle_ai_filter_menu(update, context, text: str = None):
@@ -230,8 +246,10 @@ async def handle_open_main_bot(update, context, text: str = None):
 QQCC_PROMPT_ROUTES = {
     "menu.photo_edit": handle_photo_edit_menu,
     "qqcc.menu.ai_draw": handle_ai_draw_menu,
+    "qqcc.menu.ai_draw_v1": handle_ai_draw_v1_menu,
     "qqcc.menu.ai_filter": handle_ai_filter_menu,
     "menu.video_edit": handle_video_edit_menu,
+    "qqcc.menu.video_edit_v1": handle_video_v1_menu,
     "qqcc.menu.ai_video": handle_ai_video_menu,
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,

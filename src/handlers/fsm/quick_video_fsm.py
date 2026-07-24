@@ -36,6 +36,7 @@ from src.handlers.fsm.quick_video_callback_data import (
     QUICK_VIDEO_MODE_KEYS,
     parse_quick_video_mode_callback_data,
     parse_quick_video_scene_callback_data,
+    parse_quick_video_v1_scene_callback_data,
     parse_quick_ai_video_scene_callback_data,
 )
 from src.handlers.fsm.quick_draw_callback_data import QUICK_DRAW_SCENE_CALLBACK_PATTERN
@@ -256,6 +257,9 @@ def _resolve_quick_video_entry(
         scene_id = parse_quick_video_scene_callback_data(query.data)
         if scene_id:
             return None, "", getattr(query, "message", None), None, scene_id, "video"
+        scene_id = parse_quick_video_v1_scene_callback_data(query.data)
+        if scene_id:
+            return None, "", getattr(query, "message", None), None, scene_id, "video_v1"
         route_key = parse_quick_video_mode_callback_data(query.data)
         mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
         mode_name = _strip_menu_prefix(_t(context, route_key)) if route_key else ""
@@ -425,6 +429,9 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if scene_kind == "video_v1" and qqcc_config is not None:
+        qqcc_config = {**qqcc_config, "video_scenes": qqcc_config.get("video_scenes_v1", [])}
+        scene_kind = "video"
     if qqcc_config is None and (mode or route_key or scene_id):
         await reply_with_lazy_bot_payload(
             update,

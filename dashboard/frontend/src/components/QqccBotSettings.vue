@@ -165,8 +165,12 @@ interface QqccBotConfig {
     durations: Record<DurationKey, boolean>
   }
   video_scenes: VideoSceneConfig[]
+  video_scenes_v1: VideoSceneConfig[]
+  video_scenes_v2: VideoSceneConfig[]
   ai_video_scenes: AiVideoSceneConfig[]
   draw_scenes: DrawSceneConfig[]
+  draw_scenes_v1: DrawSceneConfig[]
+  draw_scenes_v2: DrawSceneConfig[]
   filter_scenes: FilterSceneConfig[]
   prompts: Record<PromptKey, string>
   copywriting: Record<CopywritingKey, string>
@@ -326,8 +330,12 @@ const emptyConfig = (): QqccBotConfig => ({
     },
   },
   video_scenes: [],
+  video_scenes_v1: [],
+  video_scenes_v2: [],
   ai_video_scenes: [],
   draw_scenes: [],
+  draw_scenes_v1: [],
+  draw_scenes_v2: [],
   filter_scenes: [],
   prompts: {
     undress: '',
