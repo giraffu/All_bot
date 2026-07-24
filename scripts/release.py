@@ -3246,7 +3246,11 @@ if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*
             "|| echo cloud-legacy-archive-unavailable\n"
         )
     previous_sha = str(getattr(args, "previous_sha", "") or "")
-    if not initial and FULL_SHA_RE.fullmatch(previous_sha):
+    if (
+        getattr(args, "command", None) != "promote"
+        and not initial
+        and FULL_SHA_RE.fullmatch(previous_sha)
+    ):
         previous_release_envs = _cloud_release_env_candidates(
             previous_sha,
             str(manifest.get("track"))

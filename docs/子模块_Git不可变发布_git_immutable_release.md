@@ -221,6 +221,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - RunPod `image_to_video` / `wan22_video_v2` 的生产请求构造器只允许兼容旧 RIFE tag，或同一 canonical GHCR 仓库的完整 SHA256 digest ref；`rollout-release` 和 exact rollback 不能被 tag-only allowlist 阻断，也不得因此放宽为任意 tag 或仓库。
 - schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
 - 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按本次已确认的维护模式执行“云控制面 → Pages → 状态提交”：默认维护模式在 mutation 前建立生成维护并在成功提交后解除；经用户明确选择且 planner 允许的无维护模式全程不写维护 marker。首次正式切换仍强制同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，不能关闭，也不操作任何 GPU Worker 容器。
+- `promote` 的回滚合约按本次目标服务逐项读取线上旧 image ref、OCI revision 与配置 revision，并写入事务专用 rollback env；因此独立模块的当前 artifact 来自多个历史 SHA 时，不要求伪造一个全局旧 checkout/release.env。普通 `deploy`/`rollback` 仍必须验证其精确旧 SHA 的不可变 checkout 与 release.env。
 - 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
 - 回滚命令读取旧 release manifest/Web tar，不重建；v2 从缓存中的 `release-v2/release-index.json` 与 `public-web-dist.tgz` 取材。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
