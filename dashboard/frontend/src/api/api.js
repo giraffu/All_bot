@@ -105,7 +105,15 @@ export const fetchUserFavorites = async (
     appendQueryParam(params, 'task_type', taskType)
   }))
 
-export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null, workerId = null) => {
+export const fetchHistoryAll = async (
+  page = 1,
+  pageSize = 20,
+  type = null,
+  rating = null,
+  isPublic = null,
+  workerId = null,
+  source = null,
+) => {
   return get(withQuery('/api/history/all', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
@@ -113,6 +121,7 @@ export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rati
     if (rating !== null) appendQueryParam(params, 'rating', rating)
     if (isPublic !== null) appendQueryParam(params, 'is_public', isPublic)
     if (workerId && workerId !== 'all') appendQueryParam(params, 'worker_id', workerId)
+    if (source && source !== 'all') appendQueryParam(params, 'source', source)
   }))
 }
 
