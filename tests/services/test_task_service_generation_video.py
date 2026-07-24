@@ -8,9 +8,46 @@ from src.services.task_service_generation_image import process_standard_generati
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task,
 )
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task,
+)
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
 )
+
+
+@pytest.mark.asyncio
+async def test_wan22_v2_entrypoint_forwards_qqcc_lora_items(monkeypatch):
+    submit_aio = AsyncMock(return_value=(b"video-bytes", "task-wan22-v2"))
+    monkeypatch.setattr(
+        "src.services.task_service_generation_wan22.process_wan22_video_v2_aio_generation_task",
+        submit_aio,
+    )
+
+    result = await process_wan22_video_v2_generation_task(
+        context=SimpleNamespace(),
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="positive",
+        negative_prompt="negative",
+        images=["start.png"],
+        use_end_frame=False,
+        lora_name="wan22_explicit_005",
+        lora_strength=0.8,
+        lora_items=[
+            {"name": "wan22_explicit_005", "strength": 0.8},
+            {"name": "wan22_explicit_008", "strength": 1.0},
+        ],
+    )
+
+    assert result == (b"video-bytes", "task-wan22-v2")
+    assert submit_aio.await_args.kwargs["lora_name"] == "wan22_explicit_005"
+    assert submit_aio.await_args.kwargs["lora_strength"] == 0.8
+    assert submit_aio.await_args.kwargs["lora_items"] == [
+        {"name": "wan22_explicit_005", "strength": 0.8},
+        {"name": "wan22_explicit_008", "strength": 1.0},
+    ]
 
 
 @pytest.mark.asyncio
