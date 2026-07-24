@@ -147,7 +147,7 @@ def is_qqcc_quick_image_mode_enabled(config: dict[str, Any], mode: str) -> bool:
         return is_qqcc_main_button_enabled(config, "quick_faceswap")
     if mode in QQCC_AI_DRAW_TASK_TYPES:
         return is_qqcc_main_button_enabled(
-            config, "ai_draw"
+            config, "ai_draw_v2"
         ) and has_enabled_qqcc_draw_scenes(config)
     return False
 

@@ -221,6 +221,10 @@ def test_qqcc_video_fixed_credit_cost_ignores_resolution_and_tail_scene_price():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {
+                "video_edit": False,
+                "video_edit_v2": True,
+            },
             "video_scenes": [
                 {
                     "id": "fixed-video",
@@ -262,6 +266,10 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {
+                "video_edit": False,
+                "video_edit_v2": True,
+            },
             "video_scenes": [
                 {
                     "id": "v2_scene",
