@@ -27,19 +27,26 @@ def _button_callbacks(markup):
     return [[button.callback_data for button in row] for row in markup.inline_keyboard]
 
 
-def test_market_tabs_align_with_web_visible_types_without_txt2img():
+def test_market_tabs_hide_obsolete_types_and_label_free_edit_v2_5():
     task_types = [tab.task_type for tab in gallery_market.QQCC_MARKET_TABS]
     labels = _button_texts(
         gallery_market.build_qqcc_gallery_market_menu_markup(
-            context=SimpleNamespace(t=lambda key, **_kwargs: key)
+            context=SimpleNamespace(
+                t=lambda key, **_kwargs: {
+                    "qqcc.market.tabs.free_edit_v2_5_group": "自由P图 v2.5",
+                }.get(key, key)
+            )
         )
     )
 
     assert "txt2img" not in task_types
+    assert MODE_I2I_DRAW not in task_types
     assert "edit_group" in task_types
-    assert "free_edit_v2_group" in task_types
+    assert "free_edit_v2_5_group" in task_types
+    assert "free_edit_v2_group" not in task_types
     assert "img2video_group" in task_types
     assert labels[0] == ["qqcc.market.tabs.all", "qqcc.market.tabs.i2i_pro"]
+    assert "自由P图 v2.5" in [label for row in labels for label in row]
 
 
 def test_market_post_markup_shows_one_click_and_web_for_applyable_posts(monkeypatch):
