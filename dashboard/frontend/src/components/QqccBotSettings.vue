@@ -24,8 +24,12 @@ type MainButtonKey =
   | 'quick_faceswap'
   | 'photo_edit'
   | 'ai_draw'
+  | 'ai_draw_v1'
+  | 'ai_draw_v2'
   | 'ai_filter'
   | 'video_edit'
+  | 'video_edit_v1'
+  | 'video_edit_v2'
   | 'ai_video'
   | 'market'
   | 'main_bot_link'
@@ -43,7 +47,7 @@ type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
-type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
+type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
 type DemoMediaSlot = 'input' | 'output'
 type DemoUploadFile = File & { originFileObj?: File }
 type PromptKey =
@@ -363,9 +367,11 @@ const emptyConfig = (): QqccBotConfig => ({
 
 const mainButtonOptions: Array<{ key: MainMenuButtonKey; label: string }> = [
   { key: 'quick_faceswap', label: '快速换脸' },
-  { key: 'ai_draw', label: 'AI绘图' },
+  { key: 'ai_draw_v1', label: 'AI绘图V1' },
+  { key: 'ai_draw_v2', label: 'AI绘图V2' },
   { key: 'ai_filter', label: 'AI滤镜' },
-  { key: 'video_edit', label: 'AI动图' },
+  { key: 'video_edit_v1', label: 'AI动图V1' },
+  { key: 'video_edit_v2', label: 'AI动图V2' },
   { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
   { key: 'private_bot', label: '私有bot' },
@@ -513,15 +519,19 @@ const mainMenuLayoutMode = computed({
   },
 })
 const orderedMainButtonOptions = computed(() =>
-  config.main_menu_layout.button_order.map((key) => mainButtonOptionsByKey[key]),
+  config.main_menu_layout.button_order
+    .map((key) => mainButtonOptionsByKey[key])
+    .filter((item): item is { key: MainMenuButtonKey; label: string } => Boolean(item)),
 )
 const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
 const scenePageSize = 5
-const activeSceneTab = ref<SceneConfigKind>('video')
+const activeSceneTab = ref<SceneConfigKind>('video_v1')
 const scenePages = reactive<Record<SceneConfigKind, number>>({
   video: 1,
+  video_v1: 1,
   ai_video: 1,
   draw: 1,
+  draw_v1: 1,
   filter: 1,
 })
 const sceneCounter = ref(0)
@@ -2131,9 +2141,20 @@ onMounted(() => {
       </div>
 
       <a-tabs v-model:active-key="activeSceneTab" class="scene-tabs">
+        <a-tab-pane key="video_v1">
+          <template #tab><span data-testid="scene-tab-video-v1">AI动图V1 <span class="scene-tab-count">{{ config.video_scenes_v1.length }}</span></span></template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar"><span class="text-sm text-slate-500">V1 固定使用图生视频；可编辑场景文案。</span></div>
+            <div v-for="(scene, index) in config.video_scenes_v1" :key="`v1-${scene.id}`" class="scene-row grid gap-3 border-b border-slate-100 py-3 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)]">
+              <a-input v-model:value="scene.name" :data-testid="`video-v1-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`video-v1-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`video-v1-scene-negative-prompt-${index}`" />
+            </div>
+          </div>
+        </a-tab-pane>
         <a-tab-pane key="video">
           <template #tab>
-            <span data-testid="scene-tab-video">AI动图 <span class="scene-tab-count">{{ config.video_scenes.length }}</span></span>
+            <span data-testid="scene-tab-video">AI动图V2 <span class="scene-tab-count">{{ config.video_scenes.length }}</span></span>
           </template>
           <div class="scene-pane">
             <div class="scene-pane-toolbar">
@@ -2269,9 +2290,20 @@ onMounted(() => {
           </div>
         </a-tab-pane>
 
+        <a-tab-pane key="draw_v1">
+          <template #tab><span data-testid="scene-tab-draw-v1">AI绘图V1 <span class="scene-tab-count">{{ config.draw_scenes_v1.length }}</span></span></template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar"><span class="text-sm text-slate-500">V1 固定使用自由P图；可编辑场景文案。</span></div>
+            <div v-for="(scene, index) in config.draw_scenes_v1" :key="`draw-v1-${scene.id}`" class="scene-row grid gap-3 border-b border-slate-100 py-3 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)]">
+              <a-input v-model:value="scene.name" :data-testid="`draw-v1-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`draw-v1-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`draw-v1-scene-negative-prompt-${index}`" />
+            </div>
+          </div>
+        </a-tab-pane>
         <a-tab-pane key="draw">
           <template #tab>
-            <span data-testid="scene-tab-draw">AI绘图 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
+            <span data-testid="scene-tab-draw">AI绘图V2 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
           </template>
           <div class="scene-pane">
             <div class="scene-pane-toolbar">

@@ -483,7 +483,11 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     route_key = GLOBAL_REVERSE_MAP.get(text)
     qqcc_config = await _load_qqcc_config_for_context(context)
     if draw_v1_scene_id and qqcc_config is not None:
-        qqcc_config = {**qqcc_config, "draw_scenes": qqcc_config.get("draw_scenes_v1", [])}
+        qqcc_config = {
+            **qqcc_config,
+            "draw_scenes": qqcc_config.get("draw_scenes_v1", []),
+            "main_buttons": {**qqcc_config["main_buttons"], "ai_draw": qqcc_config["main_buttons"].get("ai_draw_v1", False)},
+        }
         context.user_data["qqcc_scene_version"] = "v1"
         draw_scene_id = draw_v1_scene_id
     if draw_scene_id:
@@ -548,7 +552,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     fsm_data = context.user_data["quick_image_data"]
     qqcc_config = await _load_qqcc_config_for_context(context)
     if context.user_data.get("qqcc_scene_version") == "v1" and qqcc_config is not None:
-        qqcc_config = {**qqcc_config, "draw_scenes": qqcc_config.get("draw_scenes_v1", [])}
+        qqcc_config = {**qqcc_config, "draw_scenes": qqcc_config.get("draw_scenes_v1", []), "main_buttons": {**qqcc_config["main_buttons"], "ai_draw": qqcc_config["main_buttons"].get("ai_draw_v1", False)}}
 
     submission_plan = build_quick_image_submission_plan(
         fsm_data=fsm_data,

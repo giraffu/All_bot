@@ -89,7 +89,7 @@ def _main_menu_keyboard(context, config):
 def _can_open_video_menu(config: dict) -> bool:
     return (
         is_qqcc_global_enabled(config)
-        and is_qqcc_main_button_enabled(config, "video_edit")
+        and is_qqcc_main_button_enabled(config, "video_edit_v2")
         and has_enabled_qqcc_video_scenes(config)
     )
 
@@ -105,7 +105,7 @@ def _can_open_ai_video_menu(config: dict) -> bool:
 def _can_open_ai_draw_menu(config: dict) -> bool:
     return (
         is_qqcc_global_enabled(config)
-        and is_qqcc_main_button_enabled(config, "ai_draw")
+        and is_qqcc_main_button_enabled(config, "ai_draw_v2")
         and has_enabled_qqcc_draw_scenes(config)
     )
 

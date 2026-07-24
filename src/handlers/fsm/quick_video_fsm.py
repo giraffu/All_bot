@@ -430,7 +430,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     qqcc_config = await _load_qqcc_config_for_context(context)
     if scene_kind == "video_v1" and qqcc_config is not None:
-        qqcc_config = {**qqcc_config, "video_scenes": qqcc_config.get("video_scenes_v1", [])}
+        qqcc_config = {**qqcc_config, "video_scenes": qqcc_config.get("video_scenes_v1", []), "main_buttons": {**qqcc_config["main_buttons"], "video_edit": qqcc_config["main_buttons"].get("video_edit_v1", False)}}
         scene_kind = "video"
     if qqcc_config is None and (mode or route_key or scene_id):
         await reply_with_lazy_bot_payload(

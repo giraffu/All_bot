@@ -669,9 +669,11 @@ describe('QqccBotSettings', () => {
       buttons_per_row: 2,
       button_order: [
         'quick_faceswap',
-        'ai_draw',
+        'ai_draw_v1',
+        'ai_draw_v2',
         'ai_filter',
-        'video_edit',
+        'video_edit_v1',
+        'video_edit_v2',
         'market',
         'ai_video',
         'private_bot',

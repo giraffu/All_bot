@@ -36,7 +36,7 @@ def _can_show_quick_faceswap(config: dict) -> bool:
 
 def _can_show_ai_draw(config: dict) -> bool:
     return (
-        is_qqcc_main_button_enabled(config, "ai_draw")
+        is_qqcc_main_button_enabled(config, "ai_draw_v2")
         and has_enabled_qqcc_draw_scenes(config)
     )
 
@@ -54,7 +54,7 @@ def _can_show_ai_filter(config: dict) -> bool:
 
 def _can_show_video_edit(config: dict) -> bool:
     return (
-        is_qqcc_main_button_enabled(config, "video_edit")
+        is_qqcc_main_button_enabled(config, "video_edit_v2")
         and has_enabled_qqcc_video_scenes(config)
     )
 

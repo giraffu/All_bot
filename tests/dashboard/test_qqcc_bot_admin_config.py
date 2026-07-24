@@ -90,10 +90,12 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_menu_layout"] == {
         "buttons_per_row": None,
         "button_order": [
-            "quick_faceswap",
-            "ai_draw",
-            "ai_filter",
-            "video_edit",
+                "quick_faceswap",
+                "ai_draw_v1",
+                "ai_draw_v2",
+                "ai_filter",
+                "video_edit_v1",
+                "video_edit_v2",
             "ai_video",
             "market",
             "private_bot",
@@ -272,11 +274,13 @@ def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
     assert config["main_menu_layout"] == {
         "buttons_per_row": 3,
         "button_order": [
-            "market",
-            "quick_faceswap",
-            "ai_draw",
-            "ai_filter",
-            "video_edit",
+                "market",
+                "quick_faceswap",
+                "ai_draw_v1",
+                "ai_draw_v2",
+                "ai_filter",
+                "video_edit_v1",
+                "video_edit_v2",
             "ai_video",
             "private_bot",
             "main_bot_link",
@@ -1096,7 +1100,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "8s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1112,7 +1116,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "10s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1128,7 +1132,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "5s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1196,7 +1200,7 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     )
 
     video_scenes = get_enabled_qqcc_video_scenes(config)
-    assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
     assert video_scenes[0]["lora_name"] == "wan22_explicit_077"
     assert video_scenes[0]["lora_strength"] == 0.7
     assert video_scenes[0]["lora_items"] == [
@@ -1210,20 +1214,20 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
         {"name": "wan22_explicit_077", "strength": 0.7}
     ]
     assert video_scenes[1]["negative_prompt"] == ""
-    assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
     assert video_scenes[2]["lora_name"] == ""
     assert video_scenes[2]["lora_items"] == []
     assert video_scenes[2]["negative_prompt"] == ""
 
     draw_scenes = get_enabled_qqcc_draw_scenes(config)
     draw_scenes_by_id = {scene["id"]: scene for scene in draw_scenes}
-    assert draw_scenes_by_id["old_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
-    assert draw_scenes_by_id["old_draw"]["lora_name"] == "qwen/YARN_1.0.safetensors"
+    assert draw_scenes_by_id["old_draw"]["engine"] == "free_edit_v2_5"
+    assert draw_scenes_by_id["old_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["old_draw"]["negative_prompt"] == ""
-    assert draw_scenes_by_id["v2_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["v2_draw"]["engine"] == "free_edit_v2_5"
     assert draw_scenes_by_id["v2_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["v2_draw"]["negative_prompt"] == ""
-    assert draw_scenes_by_id["bad_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["bad_draw"]["engine"] == "free_edit_v2_5"
     assert draw_scenes_by_id["bad_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["bad_draw"]["negative_prompt"] == ""
 
