@@ -67,7 +67,7 @@
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
     "deploy/docker-compose-test.yml": "dfdd39495a0d609e5218b44a4050332328a521b72be3f0fb47ed9fe05c4d4722",
     "deploy/env.defaults": "382e4b02a05a9b042418d5e70add2985697543f49eda0fd2a9222aee95da4192",
-    "deploy/env.schema.yml": "0706942a7ed19a399fa67b3ebf1b74dfb4981e3e60a7a79812cbc31ff6ad802f",
+    "deploy/env.schema.yml": "3cf3fbe9b87d62b38282142997af9b505947018ab10afaba96ee961a77528fca",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
     "src/qqcc_video_lora_catalog.py": "d019e33ce2978290f969473d5d43065a2a4ee825213b93c7c8264c94189816ae",
     "src/services/qqcc_config_service.py": "aeb0e2054dbbe309127f906e5cb43921f03259ae0aa6e3b8ea49c4e07133da70",
@@ -80,6 +80,31 @@
     }
   },
   "independent_non_target_migration_snapshots": {
+    "central-api": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
+      "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",
+      "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py": "2cf08996c2ad341d1df5ec707b629c0a4f3dc2f99d0cf77b91bf125f3e2c959d"
+    },
+    "web-api": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
+      "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",
+      "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py": "2cf08996c2ad341d1df5ec707b629c0a4f3dc2f99d0cf77b91bf125f3e2c959d"
+    },
+    "payment-api": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
+      "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",
+      "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py": "2cf08996c2ad341d1df5ec707b629c0a4f3dc2f99d0cf77b91bf125f3e2c959d"
+    },
+    "main-bot": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
+      "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",
+      "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py": "2cf08996c2ad341d1df5ec707b629c0a4f3dc2f99d0cf77b91bf125f3e2c959d"
+    },
+    "paid-group-bot": {
+      "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2",
+      "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py": "3cf7be6858c3b3bf72f72657bfbe2a99ece797d51610a4d0b2a2d64f0f209f96",
+      "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py": "2cf08996c2ad341d1df5ec707b629c0a4f3dc2f99d0cf77b91bf125f3e2c959d"
+    },
     "support-platform": {
       "migrations/versions/62d4a8f9c7e1_add_character_references.py": "864808512a86433ab5adc1fc936ce7d9eabc163d3ad978759caddddfe2a62fd2"
     },

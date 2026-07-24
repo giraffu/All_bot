@@ -3312,6 +3312,10 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
     unknown = updater.affected_services(policy, {"NEW_UNMAPPED_CONFIG"})
 
     assert {"bot", "qqcc-bot", "qqcc-private-bot-worker"} <= known
+    assert updater.affected_services(
+        policy,
+        {"REQUIRED_CHANNEL_ID", "MAIN_BOT_LAZY_BOT_USERNAME"},
+    ) == {"bot"}
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
 
 
@@ -4702,6 +4706,73 @@ def test_support_platform_policy_pins_character_migration_as_non_target(monkeypa
     )
 
     assert reviewed == {path}
+
+
+def test_prod_core_modules_allow_only_current_pinned_non_target_migrations(monkeypatch):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    module_names = {
+        "central-api",
+        "web-api",
+        "payment-api",
+        "main-bot",
+        "paid-group-bot",
+    }
+    paths = {
+        "migrations/versions/62d4a8f9c7e1_add_character_references.py",
+        "migrations/versions/e7f8a9b0c1d2_add_support_tickets.py",
+        "migrations/versions/f8a9b0c1d2e3_add_support_business_category.py",
+    }
+    selection = module.IndependentModuleRelease(
+        name="+".join(sorted(module_names)),
+        artifacts={
+            "central-api",
+            "web-api",
+            "payment-api",
+            "main-bot",
+            "paid-group-bot",
+        },
+        previous_sha="b" * 40,
+    )
+
+    def fake_run(args, **_kwargs):
+        path = args[-1].split(":", 1)[1]
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=(ROOT / path).read_text(),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    module.validate_independent_release_paths(
+        policy,
+        selection,
+        paths,
+        target_sha=FULL_SHA,
+    )
+    assert (
+        module.reviewed_non_target_migration_paths(
+            policy,
+            selection,
+            paths,
+            target_sha=FULL_SHA,
+        )
+        == paths
+    )
+
+    for module_name in module_names:
+        policy["independent_non_target_migration_snapshots"][module_name][
+            next(iter(paths))
+        ] = "0" * 64
+    with pytest.raises(module.ReleaseError, match="database-migrations"):
+        module.validate_independent_release_paths(
+            policy,
+            selection,
+            paths,
+            target_sha=FULL_SHA,
+        )
 
 
 def test_support_platform_allows_reviewed_additive_and_non_target_migrations_together(
