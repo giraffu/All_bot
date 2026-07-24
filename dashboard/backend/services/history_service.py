@@ -108,6 +108,7 @@ async def get_all_history_payload(
         total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
         result = await db.execute(stmt.offset(offset).limit(page_size))
         rows = list(result)
+        db.expunge_all()
         await db.rollback()
 
         media_results = await asyncio.gather(
@@ -169,6 +170,7 @@ async def get_user_history_payload(
         )
         result = await db.execute(stmt)
         rows = list(result)
+        db.expunge_all()
         await db.rollback()
         media_results = await asyncio.gather(
             *(
