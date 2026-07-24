@@ -121,9 +121,9 @@ async def clone_qqcc_v2_demo_media_to_v1(
                 if not isinstance(media, dict):
                     continue
                 source_key = str(media.get("object_key") or "")
-                expected_source = f"qqcc/demo/{source_kind}/{target_scene['id']}/{slot}"
+                source_prefix = f"qqcc/demo/{source_kind}/{target_scene['id']}/"
                 destination_key = f"qqcc/demo/{target_kind}/{target_scene['id']}/{slot}"
-                if source_key != expected_source:
+                if not source_key.startswith(source_prefix):
                     continue
                 copies[source_key] = destination_key
                 target_scene[f"demo_{slot}_media"] = {

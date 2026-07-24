@@ -43,7 +43,7 @@ async def run(*, backup_path: Path, apply: bool) -> None:
             ),
             encoding="utf-8",
         )
-        migrated = await clone_qqcc_v2_demo_media_to_v1(normalize_qqcc_config(raw))
+        migrated = normalize_qqcc_config(raw)
         summary = {
             "video_v1": len(migrated["video_scenes_v1"]),
             "video_v2": len(migrated["video_scenes_v2"]),
@@ -53,6 +53,7 @@ async def run(*, backup_path: Path, apply: bool) -> None:
         print(json.dumps(summary, ensure_ascii=False))
         if not apply:
             return
+        migrated = await clone_qqcc_v2_demo_media_to_v1(migrated)
         checkpoint.value = migrated
         await db.commit()
 

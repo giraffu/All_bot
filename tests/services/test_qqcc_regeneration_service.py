@@ -124,14 +124,19 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
 
     assert submission.kind == "quick_video"
     assert submission.display_mode_name == "模型动图"
-    assert submission.plan.kind == QuickVideoSubmissionKind.LEGACY_VIDEO
-    assert submission.plan.mode == MODE_IMAGE_TO_VIDEO
+    assert submission.plan.kind == QuickVideoSubmissionKind.WAN22_VIDEO_V2
+    assert submission.plan.mode == "wan22_video_v2"
     assert submission.plan.default_prompt_text == "video prompt"
     assert submission.plan.allow_contribute is False
     assert submission.plan.aspect_ratio == "16:9"
     assert submission.plan.resolution == "1024p"
     resolve_allowed.assert_not_awaited()
-    assert submission.plan.result_meta == history.extra_outputs
+    assert submission.plan.result_meta == {
+        "_qqcc_regenerate": {
+            **history.extra_outputs["_qqcc_regenerate"],
+            "mode": "wan22_video_v2",
+        }
+    }
     download_input.assert_awaited_once_with(
         history=history,
         index=0,

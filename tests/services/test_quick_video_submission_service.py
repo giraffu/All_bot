@@ -159,7 +159,7 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-            "video_scenes": [
+            "video_scenes_v1": [
                 {
                     "id": "lora_scene",
                     "name": "模型动图",
@@ -184,6 +184,7 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
             "scene_id": "lora_scene",
             "resolution": "720p",
             "duration": "5s",
+            "scene_version": "v1",
         },
         qqcc_config=config,
         allowed_resolutions=["512p"],
@@ -229,7 +230,7 @@ def test_qqcc_video_fixed_credit_cost_ignores_resolution_and_tail_scene_price():
                     "end_frame_draw_scene_id": "tail",
                 }
             ],
-            "draw_scenes": [
+            "draw_scenes_v1": [
                 {
                     "id": "tail",
                     "name": "尾帧",
@@ -430,7 +431,7 @@ def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
 async def test_fixed_price_direct_video_passes_cost_override_to_entrypoint():
     config = normalize_qqcc_config(
         {
-            "video_scenes": [
+            "video_scenes_v1": [
                 {
                     "id": "fixed",
                     "name": "固定价动图",
@@ -447,6 +448,7 @@ async def test_fixed_price_direct_video_passes_cost_override_to_entrypoint():
             "scene_id": "fixed",
             "resolution": "720p",
             "duration": "5s",
+            "scene_version": "v1",
         },
         qqcc_config=config,
         allowed_resolutions=["720p"],
@@ -536,21 +538,23 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-            "draw_scenes": [
+            "draw_scenes_v1": [
                 {
                     "id": "tail_pose",
                     "name": "尾帧姿势",
                     "prompt": "tail prompt",
                     "negative_prompt": "tail bad anatomy",
                     "original_face_swap_enabled": True,
+                    "credit_cost": 3,
                 },
                 {
                     "id": "tail_polish",
                     "name": "尾帧精修",
                     "prompt": "tail polish prompt",
+                    "credit_cost": 3,
                 },
             ],
-            "video_scenes": [
+            "video_scenes_v1": [
                 {
                     "id": "tail_video",
                     "name": "首尾动图",
@@ -563,7 +567,7 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
             ],
         }
     )
-    tail_pose = config["draw_scenes"][0]
+    tail_pose = config["draw_scenes_v1"][0]
     tail_pose["postprocess_draw_scene_id"] = "tail_polish"
 
     plan = build_quick_video_submission_plan(
@@ -572,6 +576,7 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
             "scene_id": "tail_video",
             "resolution": "512p",
             "duration": "5s",
+            "scene_version": "v1",
         },
         qqcc_config=config,
         allowed_resolutions=["512p"],
@@ -585,7 +590,7 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     ]
     assert plan.tail_draw_chain[0]["negative_prompt"] == "tail bad anatomy"
     assert plan.negative_prompt == "video blur"
-    assert plan.total_cost == 26
+    assert plan.total_cost == 20
     assert plan.allow_contribute is False
     assert plan.result_meta == {
         "_qqcc_regenerate": {
@@ -601,7 +606,6 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
 @pytest.mark.parametrize(
     ("video_engine", "expected_executor"),
     [
-        ("image_to_video", "legacy_video"),
         ("wan22_video_v2", "generation"),
     ],
 )
@@ -724,11 +728,12 @@ async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
             "scene_id": "lora_scene",
             "resolution": "720p",
             "duration": "5s",
+            "scene_version": "v1",
         },
         qqcc_config=normalize_qqcc_config(
             {
                 "scene_preset_version": SCENE_PRESET_VERSION,
-                "video_scenes": [
+                "video_scenes_v1": [
                     {
                         "id": "lora_scene",
                         "name": "模型动图",
@@ -1058,14 +1063,15 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
     plan = build_quick_video_submission_plan(
         fsm_data={
             "mode": MODE_CUSTOM_VIDEO,
-            "scene_id": "tail_video",
-            "resolution": "512p",
-            "duration": "5s",
+                "scene_id": "tail_video",
+                "resolution": "512p",
+                "duration": "5s",
+                "scene_version": "v1",
         },
         qqcc_config=normalize_qqcc_config(
             {
                 "scene_preset_version": SCENE_PRESET_VERSION,
-                "draw_scenes": [
+                    "draw_scenes_v1": [
                     {
                         "id": "tail_pose",
                         "name": "尾帧姿势",
@@ -1073,7 +1079,7 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
                         "negative_prompt": "tail blur",
                     }
                 ],
-                "video_scenes": [
+                    "video_scenes_v1": [
                     {
                         "id": "tail_video",
                         "name": "首尾动图",
@@ -1352,7 +1358,12 @@ async def test_run_qqcc_video_scene_chain_passes_each_tail_frame_and_stitches_on
         allowed_resolutions=["720p"],
     )
     legacy = AsyncMock(return_value=(b"segment-one", "history/one.mp4"))
-    wan = AsyncMock(return_value=(b"segment-two", "history/two.mp4"))
+    wan = AsyncMock(
+        side_effect=[
+            (b"segment-one", "history/one.mp4"),
+            (b"segment-two", "history/two.mp4"),
+        ]
+    )
     extract = AsyncMock(return_value=b"png-tail")
     stitch = AsyncMock(return_value=b"stitched")
     persist = AsyncMock(return_value={"task_id": "chain-result"})
@@ -1373,8 +1384,9 @@ async def test_run_qqcc_video_scene_chain_passes_each_tail_frame_and_stitches_on
     )
 
     assert result == {"task_id": "chain-result"}
-    assert legacy.await_args.kwargs["send_result"] is False
-    assert legacy.await_args.kwargs.get("show_queue_status", True) is True
+    legacy.assert_not_awaited()
+    assert wan.await_args_list[0].kwargs["send_result"] is False
+    assert wan.await_args_list[0].kwargs.get("show_queue_status", True) is True
     assert wan.await_args.kwargs["send_result"] is False
     assert wan.await_args.kwargs["show_queue_status"] is False
     assert wan.await_args.kwargs["base_priority"] == 100
@@ -1431,7 +1443,10 @@ async def test_run_qqcc_video_scene_chain_returns_successful_prefix_on_later_fai
             return_value=(b"one", "history/one.mp4")
         ),
         process_generation_task_func=AsyncMock(
-            side_effect=RuntimeError("segment failed")
+            side_effect=[
+                (b"one", "history/one.mp4"),
+                RuntimeError("segment failed"),
+            ]
         ),
         extract_video_last_frame_func=AsyncMock(return_value=b"png-tail"),
         stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
@@ -1474,7 +1489,7 @@ async def test_run_qqcc_video_scene_chain_reports_tail_frame_failure_after_succe
         image_path="/tmp/input.png",
         status_msg_id=77,
         process_video_task_template_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
-        process_generation_task_func=second_segment,
+        process_generation_task_func=AsyncMock(return_value=(b"one", "history/one.mp4")),
         extract_video_last_frame_func=AsyncMock(side_effect=RuntimeError("ffmpeg missing")),
         stitch_video_segments_func=AsyncMock(side_effect=lambda items: items[0]),
         persist_chain_result_func=persist,
