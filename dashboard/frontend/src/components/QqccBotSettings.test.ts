@@ -202,6 +202,35 @@ const getButtonByTestId = (wrapper: ReturnType<typeof mountSettings>, testId: st
   return button
 }
 
+const versionedSceneConfigResponse = () => ({
+  key: 'qqcc_lazy_bot_config:v1',
+  updated_at: null,
+  config: {
+    global_enabled: true,
+    video_scenes: [{
+      id: 'video_v2', name: '动图 V2', prompt: 'video v2', negative_prompt: '',
+      duration: '5s', resolution: '720p', engine: 'wan22_video_v2',
+      aspect_ratio: 'source', lora_name: '', end_frame_draw_scene_id: '', credit_cost: 20,
+    }],
+    video_scenes_v1: [{
+      id: 'video_v1', name: '动图 V1', prompt: 'video v1', negative_prompt: '',
+      duration: '5s', resolution: '720p', engine: 'image_to_video',
+      aspect_ratio: 'source', lora_name: '', end_frame_draw_scene_id: '', credit_cost: 6,
+    }],
+    draw_scenes: [{
+      id: 'draw_v2', name: '绘图 V2', prompt: 'draw v2', negative_prompt: '',
+      engine: 'free_edit_v2_5', lora_name: '', postprocess_draw_scene_id: '',
+      postprocess_filter_scene_id: '', original_face_swap_enabled: false, credit_cost: 8,
+    }],
+    draw_scenes_v1: [{
+      id: 'draw_v1', name: '绘图 V1', prompt: 'draw v1', negative_prompt: '',
+      engine: 'free_edit', lora_name: '', postprocess_draw_scene_id: '',
+      postprocess_filter_scene_id: '', original_face_swap_enabled: false, credit_cost: 2,
+    }],
+    filter_scenes: [],
+  },
+})
+
 describe('QqccBotSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -1177,6 +1206,48 @@ describe('QqccBotSettings', () => {
       { name: 'Cunilingus', strength: 0.9 },
       { name: 'Footjob', strength: 1.4 },
     ])
+  })
+
+  it('shows the complete video editor for V1 while fixing its engine to image-to-video', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce(versionedSceneConfigResponse())
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-v1-scene-0"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="scene-config-resolution"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-config-duration"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-video-aspect-ratio-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-video-lora-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scene-config-frame-section"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="scene-engine-select"]').text()).toContain('图生视频')
+    expect(
+      (wrapper.get('[data-testid="scene-engine-select"]').element as HTMLSelectElement).value,
+    ).toBe('image_to_video')
+    expect(
+      (wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value,
+    ).toBe('6')
+  })
+
+  it('shows the complete draw editor for V1 while fixing its engine to free edit', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce(versionedSceneConfigResponse())
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-v1-scene-0"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="scene-config-postprocess-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-postprocess-filter-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-original-face-swap-switch"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="scene-engine-select"]').text()).toContain('自由P图')
+    expect(
+      (wrapper.get('[data-testid="scene-engine-select"]').element as HTMLSelectElement).value,
+    ).toBe('free_edit')
+    expect(
+      (wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value,
+    ).toBe('2')
   })
 
   it('shows complete Wan22 model help without changing the selected strength', async () => {
