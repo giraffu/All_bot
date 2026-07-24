@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { fetchHistoryAll, fetchWorkerList } from '../api/api'
-import { getFileUrl, formatDate } from '../utils/helpers'
+import { formatDate } from '../utils/helpers'
 import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
 import {
   HISTORY_SOURCE_OPTIONS,
@@ -355,6 +355,7 @@ onMounted(() => {
                   :key="index"
                   :file="record.input_file.split('|')[index]"
                   :url="url"
+                  :preview-url="(record.input_file_preview_url || '').split('|')[index] || ''"
                   size="w-16 h-16"
                 />
              </template>
@@ -369,6 +370,7 @@ onMounted(() => {
               <MediaItem 
                 :file="record.output_file"
                 :url="record.output_file_url"
+                :preview-url="record.output_file_preview_url || ''"
                 size="w-16 h-16"
               />
             </template>

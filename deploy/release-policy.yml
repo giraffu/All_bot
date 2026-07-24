@@ -59,7 +59,7 @@
     }
   },
   "independent_contract_snapshots": {
-    "dashboard/backend/schemas.py": "faf5d0b244fd291ff8be8740eb89a24595d3e8a79ab8005d1aef699fdf69b741",
+    "dashboard/backend/schemas.py": "9f8c5b677b4dd48de07b2ad18085458ddb04b9809c33e3d4d7f57825afe4f76b",
     "deploy/docker-compose-cloud-base.yml": "ef198bb409d6bbcf6af13c495d259a134160b454debea667808a82bd63ccbcdf",
     "deploy/docker-compose-cloud-prod.overlay.yml": "ac60528a56ca426b66661372c6902de086fccab9ef089fb8c24e4e11690f4dfe",
     "deploy/docker-compose-cloud-prod.yml": "18c86d514f5ec38a56f52d3e5e3ea13e478c970e5526eea01ba7657567da360e",
