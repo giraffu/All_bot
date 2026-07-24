@@ -108,9 +108,12 @@ class MarketTab:
 QQCC_MARKET_TABS: tuple[MarketTab, ...] = (
     MarketTab("all", None, "qqcc.market.tabs.all"),
     MarketTab("i2ip", MODE_I2I_PRO, "qqcc.market.tabs.i2i_pro"),
-    MarketTab("i2id", MODE_I2I_DRAW, "qqcc.market.tabs.i2i_draw"),
     MarketTab("edit", "edit_group", "qqcc.market.tabs.edit_group"),
-    MarketTab("freev2", "free_edit_v2_group", "qqcc.market.tabs.free_edit_v2_group"),
+    MarketTab(
+        "freev2",
+        "free_edit_v2_5_group",
+        "qqcc.market.tabs.free_edit_v2_5_group",
+    ),
     MarketTab("i2v", "img2video_group", "qqcc.market.tabs.img2video_group"),
     MarketTab("ltx", MODE_LTX_VIDEO, "qqcc.market.tabs.ltx_video"),
     MarketTab("wan22", MODE_WAN22_VIDEO_V2, "qqcc.market.tabs.wan22_video_v2"),

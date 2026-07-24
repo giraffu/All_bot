@@ -1,0 +1,16 @@
+{
+  "batch": "qqcc-market-refresh-20260724",
+  "base_ref": "origin/main",
+  "base_sha": "3d389515897973c9beb473ad641787fc0b1d9c18",
+  "members": [
+    {
+      "slot": "C",
+      "branch": "codex/c-qqcc-market-menu-refresh",
+      "head": "adc77b664eda64f8f2e5bdcc8204b226c770cd0b",
+      "base_sha": "3d389515897973c9beb473ad641787fc0b1d9c18"
+    }
+  ],
+  "integration_branch": "codex/release-batch-qqcc-market-refresh-20260724",
+  "pr_base": "main",
+  "container_build_trigger": "main-merge"
+}
