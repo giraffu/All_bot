@@ -3,6 +3,11 @@ import { ref, onMounted } from 'vue'
 import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { getFileUrl, formatDate } from '../utils/helpers'
 import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
+import {
+  HISTORY_SOURCE_OPTIONS,
+  getHistorySourceColor,
+  getHistorySourceLabel,
+} from '../constants/historySources'
 import MediaItem from './MediaItem.vue'
 import { 
   UserOutlined,
@@ -20,7 +25,9 @@ const selectedTypes = ref([])
 const selectedRating = ref(null)
 const selectedPublic = ref(null)
 const selectedWorker = ref(null)
+const selectedSource = ref(null)
 const workerOptions = ref([{ label: '全部节点', value: null }])
+const sourceOptions = HISTORY_SOURCE_OPTIONS
 
 const typeOptions = TASK_TYPE_OPTIONS
 
@@ -42,7 +49,15 @@ const loadData = async (page = 1) => {
   loading.value = true
   try {
     const typeParam = selectedTypes.value.length > 0 ? selectedTypes.value.join(',') : null
-    const data = await fetchHistoryAll(page, pageSize.value, typeParam, selectedRating.value, selectedPublic.value, selectedWorker.value)
+    const data = await fetchHistoryAll(
+      page,
+      pageSize.value,
+      typeParam,
+      selectedRating.value,
+      selectedPublic.value,
+      selectedWorker.value,
+      selectedSource.value,
+    )
     history.value = data.items
     total.value = data.total
     currentPage.value = page
@@ -74,6 +89,7 @@ const resetFilters = () => {
   selectedRating.value = null
   selectedPublic.value = null
   selectedWorker.value = null
+  selectedSource.value = null
   loadData(1)
 }
 
@@ -95,19 +111,19 @@ const columns = [
     title: '类型',
     dataIndex: 'type',
     key: 'type',
-    width: 120,
+    width: 170,
   },
   {
     title: '来源',
     dataIndex: 'source',
     key: 'source',
-    width: 80,
+    width: 180,
   },
   {
     title: '生成节点',
     dataIndex: 'worker_id',
     key: 'worker_id',
-    width: 120,
+    width: 190,
   },
   {
     title: '输入内容',
@@ -209,7 +225,8 @@ onMounted(() => {
               <span class="text-gray-500 text-xs font-medium">节点:</span>
               <a-select
                 v-model:value="selectedWorker"
-                style="width: 120px"
+                data-testid="history-worker-filter"
+                style="width: 190px"
                 placeholder="全部节点"
                 @change="handleFilterChange"
                 :options="workerOptions"
@@ -221,8 +238,25 @@ onMounted(() => {
               />
             </div>
 
+            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+
+            <!-- Source Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">来源:</span>
+              <a-select
+                v-model:value="selectedSource"
+                data-testid="history-source-filter"
+                style="width: 180px"
+                placeholder="全部来源"
+                @change="handleFilterChange"
+                :options="sourceOptions"
+                size="small"
+                class="custom-select"
+              />
+            </div>
+
             <a-button 
-              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null"
+              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null || selectedSource !== null"
               size="small" 
               type="text" 
               danger 
@@ -283,21 +317,30 @@ onMounted(() => {
 
         <!-- Type -->
         <template v-else-if="column.key === 'type'">
-          <a-tag :color="record.type === 'image' ? 'blue' : 'orange'">
+          <a-tag
+            :color="record.type === 'image' ? 'blue' : 'orange'"
+            class="max-w-[155px] overflow-hidden text-ellipsis whitespace-nowrap"
+            :title="getTaskTypeLabel(record.type)"
+          >
             {{ getTaskTypeLabel(record.type) }}
           </a-tag>
         </template>
 
         <!-- Source -->
         <template v-else-if="column.key === 'source'">
-          <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="text-xs w-14 text-center">
-            {{ record.source === 'web' ? 'Web' : 'Bot' }}
+          <a-tag :color="getHistorySourceColor(record.source)" class="text-xs whitespace-nowrap text-center">
+            {{ getHistorySourceLabel(record.source) }}
           </a-tag>
         </template>
 
         <!-- Worker ID -->
         <template v-else-if="column.key === 'worker_id'">
-          <a-tag v-if="record.worker_id" color="purple" class="text-xs">
+          <a-tag
+            v-if="record.worker_id"
+            color="purple"
+            class="text-xs max-w-[175px] overflow-hidden text-ellipsis whitespace-nowrap"
+            :title="record.worker_id"
+          >
             {{ record.worker_id }}
           </a-tag>
           <span v-else class="text-xs text-gray-400">-</span>

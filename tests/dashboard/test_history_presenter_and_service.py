@@ -5,6 +5,7 @@ import pytest
 
 from config import MINIO_TEMPLATE_BUCKET
 from dashboard.backend.presenters import history_presenter
+from dashboard.backend.routers import history as history_router
 from dashboard.backend.services import history_service
 
 
@@ -88,11 +89,53 @@ def test_build_history_item_payload_generates_storage_urls():
     assert result["output_file_url"] == "url://comfyui-temp/result.png"
 
 
+@pytest.mark.parametrize(
+    ("history_source", "extra_outputs", "private_client_type", "expected"),
+    [
+        ("web", None, None, "web"),
+        ("bot", None, None, "bot"),
+        (
+            "bot",
+            {"_qqcc_regenerate": {"kind": "quick_image", "mode": "face_swap"}},
+            None,
+            "bot:qqcc",
+        ),
+        (
+            "bot",
+            {"_qqcc_regenerate": {"kind": "quick_image", "mode": "face_swap"}},
+            "bot:qqcc-private:17",
+            "bot:qqcc-private:17",
+        ),
+    ],
+)
+def test_build_history_item_payload_resolves_bot_source_without_history_schema_change(
+    history_source,
+    extra_outputs,
+    private_client_type,
+    expected,
+):
+    history = _build_history(
+        source=history_source,
+        extra_outputs=extra_outputs,
+    )
+
+    result = history_presenter.build_history_item_payload(
+        history=history,
+        private_client_type=private_client_type,
+        storage_service=_FakeStorage(),
+    )
+
+    assert result["source"] == expected
+
+
 @pytest.mark.asyncio
 async def test_get_all_history_payload_uses_presenter_for_items():
     storage_service = _FakeStorage()
     history = _build_history()
-    db = _FakeHistoryDb(total=1, rows=[(history, "tester", "Tester", "worker-1")])
+    db = _FakeHistoryDb(
+        total=1,
+        rows=[(history, "tester", "Tester", "worker-1", None)],
+    )
 
     result = await history_service.get_all_history_payload(
         db=db,
@@ -109,10 +152,56 @@ async def test_get_all_history_payload_uses_presenter_for_items():
 
 
 @pytest.mark.asyncio
+async def test_get_all_history_payload_accepts_qqcc_source_filter():
+    storage_service = _FakeStorage()
+    history = _build_history(
+        extra_outputs={
+            "_qqcc_regenerate": {"kind": "quick_image", "mode": "face_swap"}
+        }
+    )
+    db = _FakeHistoryDb(
+        total=1,
+        rows=[(history, "tester", "Tester", "worker-1", None)],
+    )
+
+    result = await history_service.get_all_history_payload(
+        db=db,
+        source="bot:qqcc",
+        storage_service=storage_service,
+    )
+
+    assert result["total"] == 1
+    assert result["items"][0]["source"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
+async def test_get_all_history_router_forwards_source_filter(monkeypatch):
+    captured = {}
+
+    async def fake_get_all_history_payload(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "total": 0}
+
+    monkeypatch.setattr(
+        history_router,
+        "get_all_history_payload",
+        fake_get_all_history_payload,
+    )
+
+    result = await history_router.get_all_history(
+        source="bot:qqcc-private",
+        db=object(),
+    )
+
+    assert result == {"items": [], "total": 0}
+    assert captured["source"] == "bot:qqcc-private"
+
+
+@pytest.mark.asyncio
 async def test_get_user_history_payload_uses_presenter_for_items():
     storage_service = _FakeStorage()
     history = _build_history(output_file="folder/output.png")
-    db = _FakeRowsResult([(history, "worker-2")])
+    db = _FakeRowsResult([(history, "worker-2", None)])
 
     class _FakeUserHistoryDb:
         async def execute(self, _stmt):
