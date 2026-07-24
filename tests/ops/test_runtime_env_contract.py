@@ -45,6 +45,8 @@ def _environment(environment: str) -> dict[str, str]:
         "TELEGRAM_API_BASE_URL": f"https://telegram-api-{suffix}.example.com",
         "TELEGRAM_FILE_BASE_URL": f"https://telegram-file-{suffix}.example.com",
         "REQUIRED_CHANNEL_ID": "-1001234567890",
+        "MAIN_BOT_LAZY_BOT_ENABLED": "true",
+        "MAIN_BOT_LAZY_BOT_USERNAME": "@QQCC666_bot",
         "QQCC_BOT_TOKEN": f"{suffix}-qqcc-token",
         "JWT_SECRET_KEY": f"{suffix}-jwt-secret",
         "DASHBOARD_SECRET_KEY": f"{suffix}-dashboard-secret",
@@ -247,6 +249,16 @@ def test_main_bot_projection_includes_required_channel_id_only_for_main_bot():
         for service, projection in snapshot.projections.items()
         if service != "main-bot"
     )
+    assert snapshot.projections["main-bot"]["MAIN_BOT_LAZY_BOT_ENABLED"] == "true"
+    assert (
+        snapshot.projections["main-bot"]["MAIN_BOT_LAZY_BOT_USERNAME"]
+        == "@QQCC666_bot"
+    )
+    assert all(
+        "MAIN_BOT_LAZY_BOT_USERNAME" not in projection
+        for service, projection in snapshot.projections.items()
+        if service != "main-bot"
+    )
 
 
 def test_main_bot_projection_rejects_missing_required_channel_id():
@@ -257,6 +269,50 @@ def test_main_bot_projection_rejects_missing_required_channel_id():
 
     with pytest.raises(module.ContractError, match="REQUIRED_CHANNEL_ID"):
         module.build_snapshot(contract, "prod", values, services={"main-bot"})
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    ["MAIN_BOT_LAZY_BOT_ENABLED", "MAIN_BOT_LAZY_BOT_USERNAME"],
+)
+def test_prod_main_bot_projection_requires_dedicated_lazy_bot_config(missing_key):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    del values[missing_key]
+
+    with pytest.raises(module.ContractError, match=missing_key):
+        module.build_snapshot(contract, "prod", values, services={"main-bot"})
+
+
+def test_main_bot_lazy_config_only_impacts_main_bot():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    changed_keys = {
+        "MAIN_BOT_LAZY_BOT_ENABLED",
+        "MAIN_BOT_LAZY_BOT_USERNAME",
+    }
+
+    assert module.affected_services(contract, changed_keys) == {"main-bot"}
+    assert module.unknown_changed_keys(contract, changed_keys) == set()
+
+
+def test_main_bot_lazy_config_keeps_non_target_projection_bytes_and_revisions():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    before_values = _environment("prod")
+    after_values = dict(before_values)
+    after_values["MAIN_BOT_LAZY_BOT_USERNAME"] = "@QQCC777_bot"
+
+    before = module.build_snapshot(contract, "prod", before_values)
+    after = module.build_snapshot(contract, "prod", after_values)
+
+    assert before.service_revisions["main-bot"] != after.service_revisions["main-bot"]
+    assert before.projections.keys() == after.projections.keys()
+    for service in before.projections.keys() - {"main-bot"}:
+        assert before.projections[service] == after.projections[service]
+        assert before.service_revisions[service] == after.service_revisions[service]
 
 
 def test_missing_required_service_key_fails_closed_without_value_disclosure():

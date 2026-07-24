@@ -1,6 +1,6 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-23：主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时配置计划/应用 fail closed，不再作为可忽略 legacy key。服务契约变更合入后，下一次正式 main-bot 更新必须先用 `config-plan/config-apply --module main-bot` 刷新投影，再由受控发布事务重建 Bot；代码提交本身不修改生产配置或现有用户状态。
+> 2026-07-24：主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时配置计划/应用 fail closed，不再作为可忽略 legacy key。懒人入口正式使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，只投影给 main-bot；旧 `QQCC_LAZY_BOT_*` 仅作运行时兼容回退。下一次正式 main-bot 更新必须先用 `config-plan/config-apply --module main-bot` 刷新投影，再由受控发布事务重建 Bot。
 >
 > 2026-07-22：`promote` 增加内部 `streamlined|strict` 执行配置，CLI 不变。普通已知 schema-v2 main control-plane 模块在目标配置投影无漂移时走 streamlined：direct 只消费 bundle 内 `validation.mode=full/tests=passed`，standard 复用测试 history 中同 artifact + exact digest 的 verified evidence，不再重复查询 GitHub CI；只 inspect/替换目标容器，不准备完整 rollback checkout、不预拉旧镜像、不检查非目标启动时间。一次目标替换脚本持事务锁，从全部目标容器交叉核验同一个受控 Compose checkout（artifact `source_sha` 不作为 Compose SHA）、单次 pull、`up --no-deps --wait`、核对 digest/OCI/config/health/API_BASE/polling，并用主机已有旧 ref 做目标回切；只有回切失败才保留 maintenance/recovery transaction。migration、Compose/env、数据库/Redis、首次切换、未知或混合 strict 影响继续保留完整备份、Alembic、queue drain、维护和恢复能力。Dashboard 仅在 LAN runner 影响规则命中时探测 runner；未选择 Public Web 时不初始化 Wrangler/Pages。
 > 2026-07-20 日常正式发布统一使用 `python scripts/release.py promote --confirm-prod`。不带确认只输出精简预览；不传模块时自动选择最新 main bundle 中与正式实际运行态不一致的模块，部分发布才传 `--modules <逗号列表>`，固定 SHA 才传 `--sha <40位SHA>`。该门面内部完成 exact-digest 测试取证、配置闭包、目标健康、single polling 和执行配置对应的事务回滚，不再要求操作者重复 plan/preflight 或追加 `--execute`。strict 保留非目标证明与完整回滚；streamlined 仅触碰和证明目标服务。旧 rsync/build 命令已从活跃 SOP 删除，历史只保留归档边界。
@@ -15,6 +15,8 @@
 2026-07-20 TON/Telegram 配置契约收口：`web-api` 必须投影 `TELEGRAM_API_BASE_URL`；当 `TON_PAYMENT_POLLING_ENABLED=true` 时，`web-api` 与 `main-bot` 条件必填并投影有效的 `VITE_MERCHANT_ADDRESS`。地址和 Telegram endpoint 只来自 `/etc/allbot/prod.env`，不得写入镜像或代码。该变更触及共享服务环境契约，必须走完整 control-plane CI、测试验收与维护式正式事务；缺键在任何容器替换前 fail closed。
 
 主 Bot 的频道资格检查还强制依赖 `REQUIRED_CHANNEL_ID`。该键只投影给 `main-bot`，缺失时必须在配置投影阶段阻断，不能让 `get_user_channel_status(...)` 的运行时兼容降级掩盖配置缺口；`CHANNEL_INVITE_LINK` 只负责用户展示，不能替代用于 Telegram `getChatMember` 的频道 ID。
+
+主 Bot 的懒人入口配置使用 `MAIN_BOT_LAZY_BOT_ENABLED`、`MAIN_BOT_LAZY_BOT_URL` / `MAIN_BOT_LAZY_BOT_USERNAME`，只允许影响 `main-bot`。正式 username 固定为 `@QQCC666_bot`，应解析为 `https://t.me/QQCC666_bot`；新命名空间任一键存在即整组优先，旧 `QQCC_LAZY_BOT_*` 仅在新键完全不存在时兼容回退。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
@@ -92,7 +94,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `MINIO_*` / `R2_*` | `user-data-prod` + `https://r2.aivison.it.com` | 正式新生成对象、Web 媒体、历史/Gallery 读取与 worker 结果上传事实源 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
 | `QQCC_BOT_TOKEN` | `.env.cloud.prod` 真实值 | `cloud-qqcc-bot-prod` 的独立 Telegram token；不得写入仓库、docs、日志或 `docker compose config` 输出，正式上线前若已暴露应轮换 |
-| `QQCC_LAZY_BOT_URL` / `QQCC_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 的 `懒人bot` 菜单跳转目标；优先使用 Telegram URL，未配置 URL 时可由合法 username 自动生成 `https://t.me/<username>` |
+| `MAIN_BOT_LAZY_BOT_ENABLED` / `MAIN_BOT_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 专属的 `懒人bot` 能力闸门和跳转目标；正式 username 为 `@QQCC666_bot`，只进入 `main-bot` 投影；旧 `QQCC_LAZY_BOT_*` 仅兼容回退 |
 | `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，正式 preflight 必须阻断 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |

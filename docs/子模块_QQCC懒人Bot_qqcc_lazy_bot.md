@@ -2,7 +2,7 @@
 
 ## 1. 范围与定位
 
-QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；`QQCC_LAZY_BOT_ENABLED` 控制入口显示/解析，跳转目标由 `QQCC_LAZY_BOT_URL` 或 `QQCC_LAZY_BOT_USERNAME` 配置。
+QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；正式使用 main-bot 专属 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`。旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
@@ -250,7 +250,7 @@ QQCC Config Web 只面向 Tailscale/受控入口或 Cloudflare Access 保护入�
 
 QQCC 跳转主 Bot 按钮优先读取 `QQCC_MAIN_BOT_URL`，可配置为 `https://t.me/<main-bot-username>` 或带 `start` 参数的 Telegram deeplink；未配置 URL 时会尝试 `QQCC_MAIN_BOT_USERNAME` 并自动拼成 `https://t.me/<username>`。两者都未配置时，菜单仍可显示 `前往主bot`，但点击后只提示主 Bot 入口暂未配置。
 
-主业务 Bot 跳转 QQCC 懒人 Bot 使用独立反向配置：`QQCC_LAZY_BOT_ENABLED=false` 可隐藏新菜单并关闭旧入口；缺失或为真时菜单正常显示，优先读取 `QQCC_LAZY_BOT_URL`，未配置时读取 `QQCC_LAZY_BOT_USERNAME` 并自动生成 `https://t.me/<username>`。两者都未配置时，主 Bot 的 `懒人bot` 菜单只提示入口暂未配置。2026-07-12 正式环境按用户要求保留可见菜单，但不配置 URL/username，因此不能跳转。
+主业务 Bot 跳转 QQCC 懒人 Bot 使用独立反向配置：`MAIN_BOT_LAZY_BOT_ENABLED=false` 可隐藏新菜单并关闭旧入口；缺失或为真时菜单正常显示，优先读取 `MAIN_BOT_LAZY_BOT_URL`，未配置时读取 `MAIN_BOT_LAZY_BOT_USERNAME` 并自动生成 `https://t.me/<username>`。新命名空间任一键存在即整组优先，只有完全不存在时才回退旧 `QQCC_LAZY_BOT_*`；两组都没有目标时只提示入口暂未配置。正式配置固定指向 `@QQCC666_bot`，且这些 `MAIN_BOT_*` 键只进入 `main-bot` 投影，不得改变 QQCC、私有 Bot 或管理面配置 revision。
 
 QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。compose 中必须显式设置 `TON_PAYMENT_POLLING_ENABLED=false`。
 

@@ -53,6 +53,33 @@ def test_build_lazy_bot_payload_can_build_from_username(monkeypatch):
     assert reply_markup.inline_keyboard[0][0].url == "https://t.me/QQCC666_bot"
 
 
+def test_build_lazy_bot_payload_prefers_main_bot_specific_config(monkeypatch):
+    monkeypatch.setenv("MAIN_BOT_LAZY_BOT_ENABLED", "true")
+    monkeypatch.setenv("MAIN_BOT_LAZY_BOT_USERNAME", "@QQCC666_bot")
+    monkeypatch.setenv("QQCC_LAZY_BOT_URL", "https://t.me/LegacyWrongBot")
+    monkeypatch.setenv("QQCC_LAZY_BOT_USERNAME", "@LegacyWrongBot")
+
+    _message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert reply_markup.inline_keyboard[0][0].url == "https://t.me/QQCC666_bot"
+
+
+def test_build_lazy_bot_payload_honors_main_bot_specific_disable(monkeypatch):
+    monkeypatch.setenv("MAIN_BOT_LAZY_BOT_ENABLED", "false")
+    monkeypatch.setenv("MAIN_BOT_LAZY_BOT_USERNAME", "@QQCC666_bot")
+    monkeypatch.setenv("QQCC_LAZY_BOT_ENABLED", "true")
+    monkeypatch.setenv("QQCC_LAZY_BOT_URL", "https://t.me/LegacyWrongBot")
+
+    message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert message == "translated:system.lazy_bot_link_unavailable"
+    assert reply_markup is None
+
+
 def test_build_lazy_bot_payload_handles_missing_config(monkeypatch):
     monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
     monkeypatch.delenv("QQCC_LAZY_BOT_USERNAME", raising=False)

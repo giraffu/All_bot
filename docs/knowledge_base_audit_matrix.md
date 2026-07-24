@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-24：正式主控制面定向升级补齐 main-bot 两类配置隔离：`REQUIRED_CHANNEL_ID` 成为签到频道同步的精确必填投影；懒人入口使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`，且只允许影响 main-bot，旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。当前三条 migration 以精确内容 SHA256 登记为五个核心目标模块的已审阅非目标快照；正式数据库已在单一 head `62d4a8f9c7e1` 时不得重复迁移，head 或 checksum 漂移必须阻断。本批次不修改或发布 Public Web、Dashboard、QQCC/私有 Bot、Support 或 GPU，`LTX_T2V_BACKEND_ENABLED` 继续关闭。
+>
 > 2026-07-24：QQCC Config 正式环境三个并发视频示范监视复现连接池耗尽：提交路由的 request-scoped DB session 会被 FastAPI 保留到 BackgroundTasks 结束，恰好占满 `pool_size=2 + max_overflow=1`，使配置 GET 返回 500、生成 POST 返回 503；数据库同时观测到 3 个 `idle in transaction`。现场仅向 Config Backend Gunicorn master 发送 HUP 生成新 worker，未重建容器、未开维护、未触碰其它服务；接口恢复后三个监视均完成自动写回。代码改为独立短会话读取场景快照并在注册监视前关闭，监视自身仅在终态写回时短暂取连接；API 行为回归直接断言后台监视开始时配置会话已经释放。
 >
 > 2026-07-24：QQCC Config 场景示范生成改为服务端完成监视自动回写：提交响应后即使浏览器关闭或停止轮询，后台仍在 24 小时窗口内等待 Central 终态并重试瞬时异常；完成后以 checkpoint 行锁只更新目标场景的 `demo_output_media`，GET 轮询保留幂等兜底，前端只有收到 `config_saved=true` 才提示自动保存，不再要求再次点击“保存”。配置 Web 的图片示范继续点击放大，视频输入/输出缩略图新增键盘可达的大播放器弹窗。object key allowlist、Bot 发送缓存、任务类型、计费、workflow、Worker/GPU 与数据库结构不变；发布范围仅 `qqcc-config`，不要求 QQCC Bot 更新。
