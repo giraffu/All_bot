@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "d65d590fac4d61d3a7240d0ce986a7a261591d45",
+  "batch": "20260725-worker-prefetch-fairness",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260725-worker-prefetch-fairness",
+  "members": [
+    {
+      "base_sha": "2b8e26bdfe9c4e4fab9b6b378d119c652de812bb",
+      "branch": "codex/c-remove-worker-type-affinity",
+      "head": "5dc8ddf80ef81b3e30d28b31f7ad5449c361689d",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

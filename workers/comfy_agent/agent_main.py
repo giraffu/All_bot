@@ -838,13 +838,8 @@ class ComfyAgent:
             task_type=task_type,
         )
 
-    async def _prefetch_next_task_inputs(
-        self,
-        *,
-        task_type_filter: str | None = None,
-    ) -> None:
+    async def _prefetch_next_task_inputs(self) -> None:
         await self._prefetch_manager.prefetch_next_task_inputs(
-            task_type_filter=task_type_filter,
             prefetch_enabled=PREFETCH_ENABLED,
             prefetch_depth=PREFETCH_DEPTH,
             cache_dir=PREFETCH_CACHE_DIR,

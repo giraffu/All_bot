@@ -31,6 +31,15 @@ class AgentPrefetchManager:
             return False
         return task_type in self.agent._prefetch_task_types
 
+    def eligible_prefetch_types(self) -> str:
+        pop_types = self.agent._build_pop_params(pipeline=True).get("types", "")
+        eligible_types = {
+            task_type.strip()
+            for task_type in pop_types.split(",")
+            if task_type.strip()
+        } & self.agent._prefetch_task_types
+        return ",".join(sorted(eligible_types))
+
     def cleanup_input_paths(self, paths: list[str]) -> None:
         for path in paths:
             try:
@@ -94,7 +103,6 @@ class AgentPrefetchManager:
     async def prefetch_next_task_inputs(
         self,
         *,
-        task_type_filter: str | None,
         prefetch_enabled: bool,
         prefetch_depth: int,
         cache_dir: str,
@@ -105,21 +113,17 @@ class AgentPrefetchManager:
         if self.agent._prefetch_cache:
             return
 
-        params = {"limit": prefetch_depth}
-        if task_type_filter and task_type_filter in self.agent._prefetch_task_types:
-            prefetch_types = task_type_filter
-        else:
-            prefetch_types = ",".join(sorted(self.agent._prefetch_task_types))
-        if prefetch_types:
-            params["types"] = prefetch_types
+        prefetch_types = self.eligible_prefetch_types()
+        if not prefetch_types:
+            return
+        params = {"limit": prefetch_depth, "types": prefetch_types}
 
         try:
             endpoint = "/api/agent/task/peek"
             if reserve_task:
                 endpoint = "/api/agent/task/pop"
                 params = self.agent._build_pop_params(pipeline=True)
-                if prefetch_types:
-                    params["types"] = prefetch_types
+                params["types"] = prefetch_types
             response = await self.agent._master_get(endpoint, params=params)
             if response.status_code != 200:
                 self.logger.debug("Prefetch peek returned HTTP %s", response.status_code)
@@ -184,7 +188,6 @@ class AgentPrefetchManager:
             return
         self.agent._prefetch_task = asyncio.create_task(
             self.prefetch_next_task_inputs(
-                task_type_filter=current_task_type,
                 prefetch_enabled=prefetch_enabled,
                 prefetch_depth=prefetch_depth,
                 cache_dir=cache_dir,
