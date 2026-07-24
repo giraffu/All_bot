@@ -21,6 +21,7 @@ from src.services.qqcc_config_service import (
     SCENE_PRESET_VERSION,
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
@@ -108,7 +109,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "name": "快速自慰",
             "prompt": QQCC_SCENE_PRESET_PROMPTS["masturbation"],
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -120,7 +121,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "name": "快速脱衣",
             "prompt": QQCC_SCENE_PRESET_PROMPTS["undress"],
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1600,7 +1601,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "柔光写真",
             "prompt": "make it cinematic",
             "negative_prompt": "low detail",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1612,7 +1613,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "重复 id",
             "prompt": "duplicate prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1624,7 +1625,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "安全 id",
             "prompt": "safe id prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1831,7 +1832,7 @@ def test_normalize_qqcc_config_preserves_free_edit_v3_for_draw_and_filter_scenes
         }
     )
 
-    assert config["draw_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
+    assert config["draw_scenes"][0]["engine"] == "free_edit_v2_5"
     assert config["filter_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
     assert config["draw_scenes"][0]["lora_name"] == ""
     assert config["filter_scenes"][0]["lora_name"] == ""
@@ -2241,7 +2242,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "duration": "8s",
                 "resolution": "720p",
                 "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
@@ -2307,8 +2308,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "name": "柔光写真",
             "prompt": "custom draw prompt",
             "negative_prompt": "bad anatomy",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
-            "lora_name": "qwen/YARN_1.0.safetensors",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
+            "lora_name": "",
             "postprocess_draw_scene_id": "anime",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": True,
@@ -2319,7 +2320,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "name": "动漫风",
             "prompt": "anime style prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",

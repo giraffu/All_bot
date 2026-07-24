@@ -20,6 +20,7 @@ from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     get_qqcc_draw_scene,
+    get_qqcc_draw_scene_v1,
     get_qqcc_filter_scene,
 )
 from src.services.qqcc_scene_billing_service import QqccSceneBillingState
@@ -39,6 +40,7 @@ QQCC_ORIGINAL_FACE_SWAP_COST = 2
 QQCC_ORIGINAL_FACE_SWAP_PROMPT = "face swap"
 QQCC_CHAIN_CONTINUATION_BASE_PRIORITY = 100
 QQCC_SCENE_KIND_DRAW = "draw"
+QQCC_SCENE_KIND_DRAW_V1 = "draw_v1"
 QQCC_SCENE_KIND_FILTER = "filter"
 QQCC_SCENE_KIND_KEY = "_qqcc_scene_kind"
 
@@ -109,10 +111,13 @@ def resolve_qqcc_draw_scene_chain(
         scene = get_qqcc_filter_scene(config, scene_id)
         return [_with_scene_kind(scene, QQCC_SCENE_KIND_FILTER)] if scene else []
 
+    lookup_draw_scene = (
+        get_qqcc_draw_scene_v1 if scene_kind == QQCC_SCENE_KIND_DRAW_V1 else get_qqcc_draw_scene
+    )
     chain: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     while scene_id and scene_id not in seen_ids:
-        scene = get_qqcc_draw_scene(config, scene_id)
+        scene = lookup_draw_scene(config, scene_id)
         if scene is None:
             break
         chain.append(_with_scene_kind(scene, QQCC_SCENE_KIND_DRAW))

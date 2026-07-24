@@ -59,7 +59,7 @@ class _BytesUpload:
 def _validate_request(
     *, scene_kind: str, scene: dict[str, Any], object_prefix: str
 ) -> tuple[str, str, str]:
-    if scene_kind not in {"draw", "filter", "video", "ai_video"}:
+    if scene_kind not in {"draw", "draw_v1", "filter", "video", "video_v1", "ai_video"}:
         raise QqccDemoGenerationError("Unsupported scene kind")
     scene_id = str(scene.get("id") or "").strip()
     prompt = str(scene.get("prompt") or "").strip()
@@ -129,7 +129,7 @@ async def _submit_scene(
     negative = str(scene.get("negative_prompt") or "")
     engine = str(scene.get("engine") or "")
     lora_name = str(scene.get("lora_name") or "").strip()
-    if scene_kind in {"draw", "filter"}:
+    if scene_kind in {"draw", "draw_v1", "filter"}:
         if engine == DRAW_SCENE_ENGINE_FREE_EDIT:
             if lora_name:
                 return await image_service_instance.submit_img2img_lora_task(
@@ -220,7 +220,7 @@ async def submit_qqcc_demo_generation(
     if not _GENERATION_ID_PATTERN.fullmatch(generation_id):
         raise QqccDemoGenerationError("Invalid generation id")
     scene_chain = [scene]
-    if scene_kind in {"video", "ai_video"} and config is not None:
+    if scene_kind in {"video", "video_v1", "ai_video"} and config is not None:
         resolved = list(
             resolve_qqcc_video_scene_chain(
                 config,
@@ -238,7 +238,7 @@ async def submit_qqcc_demo_generation(
     )
     content = await asyncio.to_thread(_read_r2_bytes, storage_service, r2_input_key)
     aspect_ratio = normalize_qqcc_video_aspect_ratio(scene.get("aspect_ratio"))
-    if scene_kind == "video" and aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
+    if scene_kind in {"video", "video_v1"} and aspect_ratio != QQCC_VIDEO_ASPECT_SOURCE:
         content = await asyncio.to_thread(
             adapt_qqcc_video_frame_bytes,
             content,
@@ -306,7 +306,7 @@ async def get_qqcc_demo_generation(
 ) -> dict[str, Any]:
     if not _GENERATION_ID_PATTERN.fullmatch(generation_id):
         raise QqccDemoGenerationError("Invalid generation id")
-    if scene_kind not in {"draw", "filter", "video", "ai_video"} or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
+    if scene_kind not in {"draw", "draw_v1", "filter", "video", "video_v1", "ai_video"} or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
         raise QqccDemoGenerationError("Invalid scene")
     redis_conn = redis_instance or redis_client.redis
     try:
@@ -334,7 +334,7 @@ async def get_qqcc_demo_generation(
     if state != "done":
         return {"generation_id": generation_id, "status": state}
 
-    is_video = scene_kind in {"video", "ai_video"}
+    is_video = scene_kind in {"video", "video_v1", "ai_video"}
     content = (
         await image_service_instance.download_video_result(generation_id)
         if is_video

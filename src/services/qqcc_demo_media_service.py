@@ -14,7 +14,9 @@ from telegram import InputMediaPhoto, InputMediaVideo
 
 logger = logging.getLogger(__name__)
 
-QQCC_DEMO_SCENE_KINDS = frozenset({"draw", "filter", "video", "ai_video"})
+QQCC_DEMO_SCENE_KINDS = frozenset(
+    {"draw", "draw_v1", "filter", "video", "video_v1", "ai_video"}
+)
 QQCC_DEMO_SLOTS = frozenset({"input", "output"})
 QQCC_DEMO_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
 QQCC_DEMO_VIDEO_MIME_TYPES = frozenset({"video/mp4"})
@@ -42,7 +44,16 @@ async def clone_qqcc_config_demo_media_for_private_bot(
     media_to_copy: dict[str, str] = {}
     private_prefix = f"qqcc/private/{int(private_bot_id)}/demo/"
 
-    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+    for section in (
+        "video_scenes_v1",
+        "video_scenes_v2",
+        "video_scenes",
+        "ai_video_scenes",
+        "draw_scenes_v1",
+        "draw_scenes_v2",
+        "draw_scenes",
+        "filter_scenes",
+    ):
         for scene in cloned.get(section, []):
             for field in ("demo_input_media", "demo_output_media"):
                 media = scene.get(field)
@@ -68,6 +79,63 @@ async def clone_qqcc_config_demo_media_for_private_bot(
         raise RuntimeError("R2 storage is unavailable")
 
     for source_key, destination_key in media_to_copy.items():
+        await asyncio.to_thread(
+            storage_service.r2_client.copy_object,
+            Bucket=storage_service.r2_bucket,
+            Key=destination_key,
+            CopySource={"Bucket": storage_service.r2_bucket, "Key": source_key},
+        )
+        storage_service.mark_r2_object_exists(destination_key)
+    return cloned
+
+
+async def clone_qqcc_v2_demo_media_to_v1(
+    config: dict[str, Any], *, storage_service=storage
+) -> dict[str, Any]:
+    """Copy official V2 demo objects into the independent V1 namespace.
+
+    This is intentionally an explicit migration operation, rather than a
+    normalizer side effect: configuration reads must remain pure and an R2
+    copy must never happen on a Bot request.
+    """
+
+    cloned = copy.deepcopy(config)
+    copies: dict[str, str] = {}
+    for source_section, target_section, source_kind, target_kind in (
+        ("video_scenes_v2", "video_scenes_v1", "video", "video_v1"),
+        ("draw_scenes_v2", "draw_scenes_v1", "draw", "draw_v1"),
+    ):
+        source_by_id = {
+            str(scene.get("id") or ""): scene
+            for scene in cloned.get(source_section, [])
+            if isinstance(scene, dict)
+        }
+        for target_scene in cloned.get(target_section, []):
+            if not isinstance(target_scene, dict):
+                continue
+            source_scene = source_by_id.get(str(target_scene.get("id") or ""))
+            if not source_scene:
+                continue
+            for slot in ("input", "output"):
+                media = source_scene.get(f"demo_{slot}_media")
+                if not isinstance(media, dict):
+                    continue
+                source_key = str(media.get("object_key") or "")
+                expected_source = f"qqcc/demo/{source_kind}/{target_scene['id']}/{slot}"
+                destination_key = f"qqcc/demo/{target_kind}/{target_scene['id']}/{slot}"
+                if source_key != expected_source:
+                    continue
+                copies[source_key] = destination_key
+                target_scene[f"demo_{slot}_media"] = {
+                    **media,
+                    "object_key": destination_key,
+                    "telegram_file_ids": {},
+                }
+    if not copies:
+        return cloned
+    if not storage_service.r2_client or not storage_service.r2_bucket:
+        raise RuntimeError("R2 storage is unavailable")
+    for source_key, destination_key in copies.items():
         await asyncio.to_thread(
             storage_service.r2_client.copy_object,
             Bucket=storage_service.r2_bucket,
@@ -127,7 +195,7 @@ async def delete_qqcc_private_bot_demo_media(
 def resolve_qqcc_demo_media_type(*, scene_kind: str, slot: str) -> str:
     if scene_kind not in QQCC_DEMO_SCENE_KINDS or slot not in QQCC_DEMO_SLOTS:
         raise QqccDemoMediaValidationError("Unsupported scene kind or demo slot")
-    return "video" if scene_kind in {"video", "ai_video"} and slot == "output" else "image"
+    return "video" if scene_kind in {"video", "video_v1", "ai_video"} and slot == "output" else "image"
 
 
 def build_qqcc_demo_object_key(

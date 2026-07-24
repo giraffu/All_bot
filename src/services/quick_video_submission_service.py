@@ -28,12 +28,15 @@ from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_ai_video_scenes,
     get_enabled_qqcc_video_scenes,
+    get_enabled_qqcc_video_scenes_v1,
     get_qqcc_ai_video_scene,
     get_qqcc_draw_scene,
     get_qqcc_video_scene,
+    get_qqcc_video_scene_v1,
     has_enabled_qqcc_video_scenes,
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
+    project_qqcc_config_for_scene_version,
 )
 from src.services.qqcc_draw_chain_service import (
     QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
@@ -305,11 +308,13 @@ def resolve_qqcc_video_scene_from_fsm_data(
     config: dict[str, Any],
     fsm_data: dict[str, Any],
 ) -> dict[str, Any] | None:
-    scene = get_qqcc_video_scene(config, fsm_data.get("scene_id"))
+    is_v1 = str(fsm_data.get("scene_version") or "") == "v1"
+    lookup = get_qqcc_video_scene_v1 if is_v1 else get_qqcc_video_scene
+    scene = lookup(config, fsm_data.get("scene_id"))
     if scene is not None:
         return scene
     legacy_scene_id = QUICK_VIDEO_MODE_CONFIG_KEYS.get(fsm_data.get("mode") or "")
-    return get_qqcc_video_scene(config, legacy_scene_id)
+    return lookup(config, legacy_scene_id)
 
 
 def resolve_qqcc_ai_video_scene_from_fsm_data(
@@ -358,10 +363,16 @@ def _normalize_allowed_quick_video_settings(
 def _resolve_qqcc_video_end_frame_draw_scene(
     config: dict[str, Any],
     scene: dict[str, Any] | None,
+    *,
+    scene_version: str | None = None,
 ) -> dict[str, Any] | None:
     if not scene:
         return None
     draw_scene_id = str(scene.get("end_frame_draw_scene_id") or "").strip()
+    if scene_version == "v1":
+        from src.services.qqcc_config_service import get_qqcc_draw_scene_v1
+
+        return get_qqcc_draw_scene_v1(config, draw_scene_id)
     return get_qqcc_draw_scene(config, draw_scene_id)
 
 
@@ -579,8 +590,10 @@ def build_quick_video_submission_plan(
 
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
     if (
-        not is_qqcc_main_button_enabled(qqcc_config, "video_edit")
-        or not has_enabled_qqcc_video_scenes(qqcc_config)
+        not is_qqcc_main_button_enabled(
+            qqcc_config, "video_edit_v1" if fsm_data.get("scene_version") == "v1" else "video_edit"
+        )
+        or not (get_enabled_qqcc_video_scenes_v1(qqcc_config) if fsm_data.get("scene_version") == "v1" else has_enabled_qqcc_video_scenes(qqcc_config))
         or scene is None
     ):
         return QuickVideoSubmissionReject(
@@ -592,7 +605,11 @@ def build_quick_video_submission_plan(
     resolution = str(scene.get("resolution") or "720p")
 
     chain_config = dict(qqcc_config)
-    chain_config["video_scenes"] = get_enabled_qqcc_video_scenes(qqcc_config)
+    chain_config["video_scenes"] = (
+        get_enabled_qqcc_video_scenes_v1(qqcc_config)
+        if fsm_data.get("scene_version") == "v1"
+        else get_enabled_qqcc_video_scenes(qqcc_config)
+    )
     chain_scenes = resolve_qqcc_video_scene_chain(
         chain_config,
         scene_kind="video",
@@ -611,9 +628,20 @@ def build_quick_video_submission_plan(
         for chain_scene in chain_scenes
     )
 
-    tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+    tail_config = project_qqcc_config_for_scene_version(
+        qqcc_config,
+        family="draw",
+        version="v1" if fsm_data.get("scene_version") == "v1" else "v2",
+    )
+    tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(
+        tail_config, scene, scene_version=fsm_data.get("scene_version")
+    )
     tail_draw_chain = (
-        resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
+        resolve_qqcc_draw_scene_chain(
+            tail_config,
+            tail_draw_scene,
+            scene_kind="draw_v1" if fsm_data.get("scene_version") == "v1" else "draw",
+        )
         if tail_draw_scene is not None
         else []
     )

@@ -22,6 +22,7 @@ from src.constants import (
 from src.lora_catalog import get_lora_default_strength
 from src.services.qqcc_config_service import (
     get_qqcc_draw_scene,
+    get_qqcc_draw_scene_v1,
     get_qqcc_filter_scene,
     has_enabled_qqcc_draw_scenes,
     has_enabled_qqcc_filter_scenes,
@@ -30,6 +31,7 @@ from src.services.qqcc_config_service import (
 )
 from src.services.qqcc_draw_chain_service import (
     QQCC_SCENE_KIND_DRAW,
+    QQCC_SCENE_KIND_DRAW_V1,
     QQCC_SCENE_KIND_FILTER,
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
@@ -405,8 +407,13 @@ def _build_qqcc_draw_chain_plan(
     if scene_kind == QQCC_SCENE_KIND_FILTER:
         scene = get_qqcc_filter_scene(qqcc_config, fsm_data.get("scene_id"))
     else:
-        scene_kind = QQCC_SCENE_KIND_DRAW
-        scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
+        is_v1 = str(fsm_data.get("scene_version") or "") == "v1"
+        scene_kind = QQCC_SCENE_KIND_DRAW_V1 if is_v1 else QQCC_SCENE_KIND_DRAW
+        scene = (
+            get_qqcc_draw_scene_v1(qqcc_config, fsm_data.get("scene_id"))
+            if is_v1
+            else get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
+        )
     if scene is None:
         return QuickImageSubmissionReject(
             QuickImageSubmissionRejectReason.FEATURE_DISABLED
@@ -426,7 +433,12 @@ def _build_qqcc_draw_chain_plan(
     if scene_kind == QQCC_SCENE_KIND_FILTER:
         enabled = is_qqcc_quick_filter_mode_enabled(qqcc_config, mode)
     else:
-        enabled = is_qqcc_quick_image_mode_enabled(qqcc_config, mode)
+        enabled = (
+            mode in QQCC_AI_DRAW_TASK_TYPES
+            and is_qqcc_main_button_enabled(qqcc_config, "ai_draw_v1")
+            if scene_kind == QQCC_SCENE_KIND_DRAW_V1
+            else is_qqcc_quick_image_mode_enabled(qqcc_config, mode)
+        )
     if not enabled:
         return QuickImageSubmissionReject(
             QuickImageSubmissionRejectReason.FEATURE_DISABLED
