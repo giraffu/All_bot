@@ -16,7 +16,8 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **主 Bot 自由P图版本面板**：现有自由P图选择面板同时提供 v2.5、v3 与附加模型。v2.5 callback 进入 `free_edit_v2_5`：第一张图后可直接发提示词按 3 灵石提交，也可继续上传第二张并切为 7 灵石；第三张必须在下载前原地拒绝。旧 `editlora_free_edit_v2` callback 必须继续兼容并进入 v3 的单图 5 灵石 BF16→换脸链路，v3 第二张图同样不得下载。
 - **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；`cleanup_fsm_user_data(...)` 除了清理 `*_data` 内路径，也会清理随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；Telegram Local API / Poll 兼容 / 语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
-- **主 Bot 运行时菜单配置**：`src/services/main_bot_menu_config_service.py` 以 `runtime_checkpoints/main_bot_menu_config:v1` 保存主菜单排序、每行 1–4 个按钮及主/二级菜单显隐；`main_bot_menu_runtime.py` 在每次发送新键盘前加载配置，失败时回退完整默认菜单。该配置只影响 Reply Keyboard 展示，不得移除 prompt route、FSM entrypoint、旧按钮或手工文本兼容；`QQCC_LAZY_BOT_ENABLED` 等既有能力闸门仍优先。
+- **签到频道成员同步**：主 Bot 签到先检查避难所群，再用 `REQUIRED_CHANNEL_ID` 查询宗门频道并同步 `is_channel_member` / 修为；该键必须由 `main-bot` 逐服务投影精确提供，`CHANNEL_INVITE_LINK` 只负责展示，不能替代 Telegram `getChatMember` 所需的频道 ID。运行时保留未知状态兼容，但发布契约必须在缺键时 fail closed。
+- **主 Bot 运行时菜单配置**：`src/services/main_bot_menu_config_service.py` 以 `runtime_checkpoints/main_bot_menu_config:v1` 保存主菜单排序、每行 1–4 个按钮及主/二级菜单显隐；`main_bot_menu_runtime.py` 在每次发送新键盘前加载配置，失败时回退完整默认菜单。该配置只影响 Reply Keyboard 展示，不得移除 prompt route、FSM entrypoint、旧按钮或手工文本兼容；`MAIN_BOT_LAZY_BOT_ENABLED` 等既有能力闸门仍优先，旧 `QQCC_LAZY_BOT_*` 只作整组兼容回退。
 - **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，订阅目标群 `chat_join_request` 与普通 `message` update；入群资格只读查订单/修为，普通消息只做轻量群管理（非管理员链接、违禁词、结构化日志），不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。
 - **QQCC 懒人 Bot**：`qqcc_bot/` 是独立简化 polling 服务，只注册 quick image/video FSM 和最小菜单；修改它时必须叠加 `allbot-qqcc-lazy-bot`。
 - **QQCC 私有 Bot 申请**：`qqcc_bot/private_bot_fsm.py` 只注册在官方 QQCC。收到 token 后必须先尽力删除原消息，禁止回显、日志或审计 metadata；验证成功即自动开通，无审核，一个 owner 只能绑定一个 Telegram Bot。私有 Application 不展示申请入口。
