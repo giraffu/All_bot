@@ -1358,6 +1358,43 @@ def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
     assert video_scenes[1]["end_frame_draw_scene_id"] == ""
 
 
+def test_normalize_qqcc_config_keeps_only_valid_video_to_draw_jump_targets():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {"id": "make_input", "name": "生成输入图", "prompt": "draw prompt"}
+            ],
+            "video_scenes": [
+                {
+                    "id": "jump_ok",
+                    "name": "可跳转动图",
+                    "prompt": "video prompt",
+                    "jump_draw_scene_id": "make_input",
+                },
+                {
+                    "id": "jump_missing",
+                    "name": "失效跳转",
+                    "prompt": "video prompt",
+                    "jump_draw_scene_id": "deleted_scene",
+                },
+            ],
+            "ai_video_scenes": [
+                {
+                    "id": "ai_jump_ok",
+                    "name": "可跳转视频",
+                    "prompt": "video prompt",
+                    "jump_draw_scene_id": "make_input",
+                }
+            ],
+        }
+    )
+
+    assert config["video_scenes"][0]["jump_draw_scene_id"] == "make_input"
+    assert "jump_draw_scene_id" not in config["video_scenes"][1]
+    assert config["ai_video_scenes"][0]["jump_draw_scene_id"] == "make_input"
+
+
 def test_normalize_qqcc_config_validates_draw_postprocess_reference():
     config = normalize_qqcc_config(
         {

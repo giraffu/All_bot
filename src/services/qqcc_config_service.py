@@ -728,6 +728,10 @@ def _normalize_video_scene(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
+        "jump_draw_scene_id": _normalize_end_frame_draw_scene_id(
+            raw_scene.get("jump_draw_scene_id"),
+            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        ),
         "next_scene_id": (
             str(raw_scene.get("next_scene_id")).strip()
             if isinstance(raw_scene.get("next_scene_id"), str)
@@ -741,6 +745,8 @@ def _normalize_video_scene(
         scene_kind="video",
         output_media_type="video",
     )
+    if not scene["jump_draw_scene_id"]:
+        scene.pop("jump_draw_scene_id")
     return scene
 
 
@@ -848,6 +854,10 @@ def _normalize_ai_video_scene(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
+        "jump_draw_scene_id": _normalize_end_frame_draw_scene_id(
+            raw_scene.get("jump_draw_scene_id"),
+            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        ),
         "next_scene_id": (
             str(raw_scene.get("next_scene_id")).strip()
             if isinstance(raw_scene.get("next_scene_id"), str)
@@ -861,6 +871,8 @@ def _normalize_ai_video_scene(
         scene_kind="ai_video",
         output_media_type="video",
     )
+    if not scene["jump_draw_scene_id"]:
+        scene.pop("jump_draw_scene_id")
     return scene
 
 
