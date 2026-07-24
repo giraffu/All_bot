@@ -10,7 +10,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
 
-Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_row=null` 表示继续使用升级前的固定分行，因此未配置的官方或私有 Bot 上线后不会改变菜单；设为 `1..4` 后，Bot 先按现有开关、全局 gate、场景有效性和官方/私有上下文过滤按钮，再按 `button_order` 排序并统一分行。隐藏项不占空位，但配置中保留原排序位置，重新开启或补齐有效场景后回到该位置。排序只接受 `quick_faceswap` / `ai_draw` / `ai_filter` / `video_edit` / `ai_video` / `market` / `private_bot` / `main_bot_link`；未知、重复和旧兼容 key 被丢弃，缺失的有效 key 按默认顺序追加。官方与每个私有 Bot 通过各自现有配置 JSON 独立保存，不新增数据库表。
+Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_row=null` 表示继续使用升级前固定分行的行数与每行按钮数量，因此未调整顺序的官方或私有 Bot 上线后不会改变菜单；此模式也会按 `button_order` 填充各行。设为 `1..4` 后，Bot 先按现有开关、全局 gate、场景有效性和官方/私有上下文过滤按钮，再按 `button_order` 排序并统一分行。隐藏项不占空位，但配置中保留原排序位置，重新开启或补齐有效场景后回到该位置。排序只接受 `quick_faceswap` / `ai_draw_v1` / `ai_draw_v2` / `ai_filter` / `video_edit_v1` / `video_edit_v2` / `ai_video` / `market` / `private_bot` / `main_bot_link`；未知、重复和旧兼容 key 被丢弃，缺失的有效 key 按默认顺序追加。官方与每个私有 Bot 通过各自现有配置 JSON 独立保存，不新增数据库表。
 
 ## 2. 功能边界
 
@@ -95,7 +95,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
 - `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`, `private_bot`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染；`private_bot` 只控制官方 QQCC 申请/管理入口，默认开启且不跟随 `global_enabled`
-- `main_menu_layout`: `{ buttons_per_row, button_order }`；`buttons_per_row` 仅允许 `null` 或整数 `1..4`，`null` 保持旧固定分行；`button_order` 只保留可渲染主菜单 key 且自动去重/补齐。独立配置 Web 选择统一列数后才解锁上移/下移，关闭按钮仍保留排序位置
+- `main_menu_layout`: `{ buttons_per_row, button_order }`；`buttons_per_row` 仅允许 `null` 或整数 `1..4`，`null` 保持旧固定分行的行容量；`button_order` 只保留可渲染主菜单 key 且自动去重/补齐。独立配置 Web 在兼容布局和统一列数下都可上移/下移，关闭按钮仍保留排序位置
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。

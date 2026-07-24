@@ -1449,7 +1449,6 @@ const moveScene = (
 }
 
 const moveMainMenuButton = (index: number, offset: -1 | 1) => {
-  if (config.main_menu_layout.buttons_per_row === null) return
   const targetIndex = index + offset
   const order = config.main_menu_layout.button_order
   if (index < 0 || index >= order.length || targetIndex < 0 || targetIndex >= order.length) {
@@ -2147,7 +2146,7 @@ onMounted(() => {
               <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 class="text-sm font-semibold text-slate-800">主菜单</h3>
-                  <p class="mt-1 text-xs text-slate-500">选择统一列数后，可调整所有按钮的显示顺序。</p>
+                  <p class="mt-1 text-xs text-slate-500">可调整所有按钮的显示顺序；沿用现有布局时保持当前每行按钮数量。</p>
                 </div>
                 <a-select
                   v-model:value="mainMenuLayoutMode"
@@ -2180,7 +2179,7 @@ onMounted(() => {
                     />
                     <a-button
                       size="small"
-                      :disabled="config.main_menu_layout.buttons_per_row === null || index === 0"
+                      :disabled="index === 0"
                       :data-testid="`move-main-menu-button-up-${item.key}`"
                       :title="`上移${item.label}`"
                       :aria-label="`上移${item.label}`"
@@ -2190,7 +2189,7 @@ onMounted(() => {
                     </a-button>
                     <a-button
                       size="small"
-                      :disabled="config.main_menu_layout.buttons_per_row === null || index === orderedMainButtonOptions.length - 1"
+                      :disabled="index === orderedMainButtonOptions.length - 1"
                       :data-testid="`move-main-menu-button-down-${item.key}`"
                       :title="`下移${item.label}`"
                       :aria-label="`下移${item.label}`"

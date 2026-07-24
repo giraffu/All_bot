@@ -64,6 +64,34 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
     assert get_text("menu.video_edit", "zh") == "🎬 视频创作"
 
 
+def test_qqcc_legacy_main_menu_applies_custom_order_without_changing_row_sizes():
+    config = normalize_qqcc_config(
+        {
+            "main_menu_layout": {
+                "buttons_per_row": None,
+                "button_order": [
+                    "market",
+                    "quick_faceswap",
+                    "ai_draw_v2",
+                    "video_edit_v2",
+                    "private_bot",
+                    "main_bot_link",
+                ],
+            },
+        }
+    )
+
+    rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+
+    assert rows == [
+        ["修仙市集"],
+        ["快速换脸", "AI绘图V2"],
+        ["AI动图V2"],
+        ["私有bot"],
+        ["前往主bot"],
+    ]
+
+
 def _config_with_all_main_menu_entries(*, buttons_per_row: int):
     return normalize_qqcc_config(
         {

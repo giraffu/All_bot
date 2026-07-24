@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "4835c9f486822ec6313ec4c4d7b4672c65dc7293",
+  "batch": "20260724-194619-d40f23f1",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260724-194619-d40f23f1",
+  "members": [
+    {
+      "base_sha": "4835c9f486822ec6313ec4c4d7b4672c65dc7293",
+      "branch": "codex/c-qqcc-menu-reorder-buttons",
+      "head": "d40f23f1eb54039f5544552b7aca702594be6e17",
+      "queued_at": "2026-07-24T19:39:35.876896+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
