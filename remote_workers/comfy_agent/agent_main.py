@@ -864,6 +864,15 @@ class ComfyAgent:
             return False
         return task_type in self._prefetch_task_types
 
+    def _eligible_prefetch_types(self) -> str:
+        pop_types = self._build_pop_params(pipeline=True).get("types", "")
+        eligible_types = {
+            task_type.strip()
+            for task_type in pop_types.split(",")
+            if task_type.strip()
+        } & self._prefetch_task_types
+        return ",".join(sorted(eligible_types))
+
     def _cleanup_input_paths(self, paths: list[str]) -> None:
         for path in paths:
             try:
@@ -920,31 +929,23 @@ class ComfyAgent:
         logger.info("Using prefetched inputs for task %s", task_id)
         return cached
 
-    async def _prefetch_next_task_inputs(
-        self,
-        *,
-        task_type_filter: str | None = None,
-    ) -> None:
+    async def _prefetch_next_task_inputs(self) -> None:
         if not PREFETCH_ENABLED or PREFETCH_DEPTH <= 0:
             return
         if self._prefetch_cache:
             return
 
-        params = {"limit": PREFETCH_DEPTH}
-        if task_type_filter and task_type_filter in self._prefetch_task_types:
-            prefetch_types = task_type_filter
-        else:
-            prefetch_types = ",".join(sorted(self._prefetch_task_types))
-        if prefetch_types:
-            params["types"] = prefetch_types
+        prefetch_types = self._eligible_prefetch_types()
+        if not prefetch_types:
+            return
+        params = {"limit": PREFETCH_DEPTH, "types": prefetch_types}
 
         try:
             endpoint = "/api/agent/task/peek"
             if PREFETCH_RESERVE_TASK:
                 endpoint = "/api/agent/task/pop"
                 params = self._build_pop_params(pipeline=True)
-                if prefetch_types:
-                    params["types"] = prefetch_types
+                params["types"] = prefetch_types
                 async with self._claim_lock:
                     if not self._pipeline_admission.can_reserve_task(
                         self._executions,
@@ -1016,7 +1017,7 @@ class ComfyAgent:
         if self._prefetch_task and not self._prefetch_task.done():
             return
         self._prefetch_task = asyncio.create_task(
-            self._prefetch_next_task_inputs(task_type_filter=current_task_type)
+            self._prefetch_next_task_inputs()
         )
 
     async def report_heartbeat(self):
