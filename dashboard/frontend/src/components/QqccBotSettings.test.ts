@@ -650,23 +650,22 @@ describe('QqccBotSettings', () => {
     }
   })
 
-  it('keeps legacy menu layout until columns are selected and saves reordered hidden buttons', async () => {
+  it('allows reordering in the legacy menu layout and saves the new order', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
     const layoutSelect = wrapper.get('[data-testid="main-menu-buttons-per-row"]')
     expect((layoutSelect.element as HTMLSelectElement).value).toBe('legacy')
     expect(getButtonByTestId(wrapper, 'move-main-menu-button-up-quick_faceswap').props('disabled')).toBe(true)
-    expect(getButtonByTestId(wrapper, 'move-main-menu-button-down-quick_faceswap').props('disabled')).toBe(true)
+    expect(getButtonByTestId(wrapper, 'move-main-menu-button-down-quick_faceswap').props('disabled')).toBe(false)
 
-    await layoutSelect.setValue('2')
     await getButtonByTestId(wrapper, 'move-main-menu-button-up-market').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     expect(payload.main_menu_layout).toEqual({
-      buttons_per_row: 2,
+      buttons_per_row: null,
       button_order: [
         'quick_faceswap',
         'ai_draw_v1',

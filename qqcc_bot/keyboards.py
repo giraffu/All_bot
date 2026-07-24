@@ -139,6 +139,7 @@ def _get_visible_qqcc_main_menu_buttons(
 
 def _build_legacy_qqcc_main_menu_rows(
     visible_buttons: dict[str, str],
+    button_order: list[str],
 ) -> list[list[str]]:
     keyboard: list[list[str]] = []
     quick_faceswap = visible_buttons.get("quick_faceswap")
@@ -157,7 +158,17 @@ def _build_legacy_qqcc_main_menu_rows(
         label = visible_buttons.get(key)
         if label:
             keyboard.append([label])
-    return keyboard
+
+    row_sizes = [len(row) for row in keyboard]
+    ordered_buttons = [
+        visible_buttons[key] for key in button_order if key in visible_buttons
+    ]
+    reordered_keyboard: list[list[str]] = []
+    offset = 0
+    for row_size in row_sizes:
+        reordered_keyboard.append(ordered_buttons[offset : offset + row_size])
+        offset += row_size
+    return reordered_keyboard
 
 
 def get_qqcc_main_menu_keyboard(
@@ -175,7 +186,10 @@ def get_qqcc_main_menu_keyboard(
     layout = config["main_menu_layout"]
     buttons_per_row = layout["buttons_per_row"]
     if buttons_per_row is None:
-        keyboard = _build_legacy_qqcc_main_menu_rows(visible_buttons)
+        keyboard = _build_legacy_qqcc_main_menu_rows(
+            visible_buttons,
+            layout["button_order"],
+        )
     else:
         ordered_buttons = [
             visible_buttons[key]
