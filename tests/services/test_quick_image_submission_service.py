@@ -30,7 +30,11 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-                "draw_scenes": [
+            "main_buttons": {
+                "ai_draw": False,
+                "ai_draw_v2": True,
+            },
+            "draw_scenes": [
                 {
                     "id": "soft_light",
                     "name": "柔光写真",

@@ -175,10 +175,18 @@ async def _reply_qqcc_feature_disabled(
         await robust_reply_text(message, text, parse_mode="Markdown")
 
 
-def _is_qqcc_quick_video_mode_enabled(config: dict, mode: str | None) -> bool:
+def _is_qqcc_quick_video_mode_enabled(
+    config: dict,
+    mode: str | None,
+    *,
+    scene_version: str = "v2",
+) -> bool:
     return bool(
         mode
-        and is_qqcc_main_button_enabled(config, "video_edit")
+        and is_qqcc_main_button_enabled(
+            config,
+            "video_edit_v1" if scene_version == "v1" else "video_edit_v2",
+        )
         and has_enabled_qqcc_video_scenes(config)
     )
 
@@ -462,7 +470,10 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         feature_enabled = (
             is_qqcc_main_button_enabled(qqcc_config, "ai_video")
             if scene_kind == "ai_video"
-            else is_qqcc_main_button_enabled(qqcc_config, "video_edit")
+            else is_qqcc_main_button_enabled(
+                qqcc_config,
+                "video_edit_v1" if scene_version == "v1" else "video_edit_v2",
+            )
         )
         if not feature_enabled or scene is None:
             await _reply_qqcc_feature_disabled(update, context)
@@ -523,13 +534,15 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         jump_scene = get_qqcc_draw_scene(
             draw_config, str(scene.get("jump_draw_scene_id") or "")
         )
-        if jump_scene is not None and is_qqcc_main_button_enabled(draw_config, "ai_draw"):
+        is_v1 = quick_video_data.get("scene_version") == "v1"
+        draw_button_key = "ai_draw_v1" if is_v1 else "ai_draw_v2"
+        if jump_scene is not None and is_qqcc_main_button_enabled(
+            draw_config, draw_button_key
+        ):
             from src.handlers.fsm.quick_draw_callback_data import (
                 build_quick_draw_scene_callback_data,
                 build_quick_draw_v1_scene_callback_data,
             )
-
-            is_v1 = quick_video_data.get("scene_version") == "v1"
 
             reply_markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(
@@ -607,7 +620,11 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             not (
                 _is_qqcc_ai_video_mode_enabled(qqcc_config, mode)
                 if scene_kind == "ai_video"
-                else _is_qqcc_quick_video_mode_enabled(qqcc_config, mode)
+                else _is_qqcc_quick_video_mode_enabled(
+                    qqcc_config,
+                    mode,
+                    scene_version=str(fsm_data.get("scene_version") or "v2"),
+                )
             )
             or qqcc_scene is None
         ):
@@ -687,7 +704,11 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if qqcc_config is not None:
         qqcc_scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
         if (
-            not _is_qqcc_quick_video_mode_enabled(qqcc_config, fsm_data.get("mode"))
+            not _is_qqcc_quick_video_mode_enabled(
+                qqcc_config,
+                fsm_data.get("mode"),
+                scene_version=str(fsm_data.get("scene_version") or "v2"),
+            )
             or qqcc_scene is None
         ):
             await _reply_qqcc_feature_disabled(update, context)

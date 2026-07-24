@@ -1012,6 +1012,10 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {
+                "ai_draw": False,
+                "ai_draw_v2": True,
+            },
             "copywriting": {
                 "ai_draw_scene_start": "已选择【{butten}】，请发送原图。",
             },
@@ -2327,6 +2331,10 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {
+                "video_edit": False,
+                "video_edit_v2": True,
+            },
             "copywriting": {
                 "video_scene_start": "已选择【{butten}】，请发送原图。",
             },

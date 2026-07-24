@@ -591,7 +591,10 @@ def build_quick_video_submission_plan(
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
     if (
         not is_qqcc_main_button_enabled(
-            qqcc_config, "video_edit_v1" if fsm_data.get("scene_version") == "v1" else "video_edit"
+            qqcc_config,
+            "video_edit_v1"
+            if fsm_data.get("scene_version") == "v1"
+            else "video_edit_v2",
         )
         or not (get_enabled_qqcc_video_scenes_v1(qqcc_config) if fsm_data.get("scene_version") == "v1" else has_enabled_qqcc_video_scenes(qqcc_config))
         or scene is None

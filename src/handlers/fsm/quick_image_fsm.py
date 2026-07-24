@@ -214,6 +214,7 @@ async def _start_qqcc_image_scene(
     qqcc_config: dict | None,
     scene_id: str | None,
     scene_kind: str,
+    scene_version: str = "v2",
 ) -> int:
     query = update.callback_query
     if query:
@@ -222,7 +223,11 @@ async def _start_qqcc_image_scene(
             cache_time=2,
         )
 
-    main_button_key = "ai_filter" if scene_kind == QQCC_SCENE_KIND_FILTER else "ai_draw"
+    main_button_key = (
+        "ai_filter"
+        if scene_kind == QQCC_SCENE_KIND_FILTER
+        else ("ai_draw_v1" if scene_version == "v1" else "ai_draw_v2")
+    )
     if qqcc_config is None or not is_qqcc_main_button_enabled(
         qqcc_config, main_button_key
     ):
@@ -505,6 +510,7 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             qqcc_config=qqcc_config,
             scene_id=draw_scene_id,
             scene_kind=QQCC_SCENE_KIND_DRAW,
+            scene_version="v1" if draw_v1_scene_id else "v2",
         )
         if draw_v1_scene_id and result == QuickImageState.WAIT_IMAGE:
             context.user_data["quick_image_data"]["scene_version"] = "v1"
