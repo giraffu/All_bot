@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from config import MINIO_TEMPLATE_BUCKET
+from config import MINIO_BUCKET, MINIO_TEMPLATE_BUCKET
 from dashboard.backend.presenters import history_presenter
 from dashboard.backend.routers import history as history_router
 from dashboard.backend.services import history_service
@@ -92,7 +92,7 @@ def test_build_history_item_payload_generates_storage_urls():
     )
     assert result["input_file_preview_url"] == (
         f"url://{MINIO_TEMPLATE_BUCKET}/tpl/a_thumb.webp|"
-        "url://bot-data/user/input_thumb.webp"
+        f"url://{MINIO_BUCKET}/user/input_thumb.webp"
     )
     assert result["output_file_url"] == "url://comfyui-temp/result.png"
 
