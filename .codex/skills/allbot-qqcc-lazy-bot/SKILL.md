@@ -51,7 +51,7 @@ QQCC Config Web 每个场景操作区支持从已上传的 input 示范直接生
 
 独立 QQCC Config Web 的底部“提示词覆盖”只展示 `快速换脸`（`prompts.face_swap`）。`快速自慰` / `快速脱衣` 和默认动图预设的提示词都在各自场景行里编辑，不能留空；后端仍保留 `prompts.undress` / `prompts.masturbation` / 旧动图 prompt 字段用于旧配置迁移兼容。
 
-`修仙市集` 是 QQCC 专用轻量 Gallery 入口，代码在 `qqcc_bot/gallery_market.py`，callback 前缀为 `qg:`。它只允许浏览精选的 Web 当前可见分组投稿、点赞/点踩、一键应用和 Web 应用跳转，不提供留言，不复用旧主 Bot gallery 分类常量，不注册主 Bot 完整 gallery handler。分类菜单隐藏 `txt2img` 与已关闭应用的 `i2i_draw`，自由 P 图版本入口使用 `free_edit_v2_5_group`，不展示旧 `free_edit_v2_group` v3 兼容分类。普通可应用投稿的卡片应同时展示 `一键应用` 与 `Web应用`；视频换脸类模板只展示 `Web应用`；Wan22/LTX 多段拼接结果不展示任何应用入口。Bot caption 中的类型和 `#task.mode_*` 标签必须走当前语言的 task/tab 翻译，不能直接暴露内部变量名。媒体发送必须优先复用 `GalleryPost.telegram_file_id`，缺失/失效时走当前 Gallery R2/S3 URL resolver 下载当前作品并刷新 file_id；测试 Bot 不持久化新 file_id。
+`修仙市集` 是 QQCC 专用轻量 Gallery 入口，代码在 `qqcc_bot/gallery_market.py`，callback 前缀为 `qg:`。它只允许浏览精选的 Web 当前可见分组投稿、点赞/点踩、一键应用和 Web 应用跳转，不提供留言，不复用旧主 Bot gallery 分类常量，不注册主 Bot 完整 gallery handler。分类菜单隐藏 `txt2img` 与已关闭应用的 `i2i_draw`，自由 P 图版本入口使用 `free_edit_v2_5_group`，不展示旧 `free_edit_v2_group` v3 兼容分类。普通可应用投稿的卡片应同时展示 `一键应用` 与 `Web应用`；视频换脸类模板只展示 `Web应用`；Wan22/LTX 多段拼接结果不展示任何应用入口。Bot caption 中的类型和 `#task.mode_*` 标签必须走当前语言的 task/tab 翻译，不能直接暴露内部变量名。媒体发送必须优先复用 `GalleryPost.telegram_file_id`，缺失/失效时走当前 Gallery R2/S3 URL resolver 下载当前作品并刷新 file_id；测试 Bot 不持久化新 file_id。共享 Gallery feed 的 History 关联查询必须保持 PostgreSQL `DISTINCT` 与计算排序兼容；`absolute_likes` / `absolute_dislikes` 的计算值要进入 select-list，count 子查询必须移除 `ORDER BY`。
 
 QQCC 市集 Bot 原生应用只承接安全的单图轻量模板，提交任务必须传 `source_post_id`、`allow_contribute=False` 并保持 `client_type=bot:qqcc`；复杂多图/多视频、SCAIL-2、LTX 首尾帧等模板的 `一键应用` callback 只能做 Web handoff，并给出 `/gallery?apply_source=gallery&apply_id=<post_id>` 深链，不得在 Bot 内强行复用视频/多素材。点击应用不得预增 `applied_count`。
 
@@ -126,7 +126,7 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - 可选主 Bot 跳转：`QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME`
 - 主 Bot 跳转 QQCC：`MAIN_BOT_LAZY_BOT_ENABLED` 控制是否显示/解析入口，URL 使用 `MAIN_BOT_LAZY_BOT_URL` 或 `MAIN_BOT_LAZY_BOT_USERNAME`；新命名空间任一键存在时整组优先，旧 `QQCC_LAZY_BOT_*` 只作兼容回退
 
-官方 QQCC 服务用对应 token polling；private worker 只用同一个环境对应 token 做统一频道会员检查，绝不能由此启动第二个 polling。用户私有 token 仍逐租户从数据库解密。
+官方 QQCC 服务用对应 token polling；private worker 只用同一个环境对应 token 做统一频道会员检查，绝不能由此启动第二个 polling。用户私有 token 仍逐租户从数据库解密。官方入口使用 `qqcc_bot.polling_liveness` 中独立于 asyncio 事件循环的线程 watchdog：成功完成的 `getUpdates` 轮询负责 heartbeat，拉取到的 update 只有在全部 handler group 完成后才确认；任一信号连续 180 秒停滞时进程以专用退出码终止，由目标容器的 `restart: always` 仅重启 QQCC Bot。空闲时成功返回的空轮询会刷新 heartbeat，不能因没有用户消息误重启；私有 webhook Application 不启用该 watchdog。
 
 用户私有 Bot token 不进入 compose env：数据库只保存版本化 AES-GCM ciphertext、key version 与 HMAC 指纹；管理员永远不能读取明文。运行环境必须通过 ignored env/secret store 提供 `PRIVATE_QQCC_BOT_TOKEN_KEYRING`、`PRIVATE_QQCC_BOT_TOKEN_ACTIVE_KEY_VERSION`、`PRIVATE_QQCC_BOT_TOKEN_FINGERPRINT_KEY`、`PRIVATE_QQCC_BOT_FORBIDDEN_BOT_IDS`、`PRIVATE_QQCC_BOT_OWNER_JWT_SECRET`、`PRIVATE_QQCC_BOT_WEBHOOK_BASE_URL`、`PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL`、`PRIVATE_QQCC_BOT_OWNER_HOST` 与 `QQCC_CONFIG_ADMIN_HOST`。AES/JWT/fingerprint 必须是独立 32-byte Base64URL key，owner JWT 也不得复用 QQCC/主 JWT/Dashboard secret；用 `scripts/validate_private_qqcc_bot_env.py` 做发布前检查。forbidden ID 列表缺失/非法必须 fail closed，管理后端不得通过接收官方 token 来替代显式 ID 列表。官方 QQCC 容器必须同时注入 owner WebApp URL 与 owner Host，ticket 只追加到 URL fragment。
 
