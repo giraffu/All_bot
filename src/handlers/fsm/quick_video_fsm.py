@@ -36,6 +36,7 @@ from src.handlers.fsm.quick_video_callback_data import (
     QUICK_VIDEO_MODE_KEYS,
     parse_quick_video_mode_callback_data,
     parse_quick_video_scene_callback_data,
+    parse_quick_video_v1_scene_callback_data,
     parse_quick_ai_video_scene_callback_data,
 )
 from src.handlers.fsm.quick_draw_callback_data import QUICK_DRAW_SCENE_CALLBACK_PATTERN
@@ -53,6 +54,7 @@ from src.services.qqcc_config_service import (
     has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
+    project_qqcc_config_for_scene_version,
     render_qqcc_copywriting,
 )
 from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
@@ -256,6 +258,9 @@ def _resolve_quick_video_entry(
         scene_id = parse_quick_video_scene_callback_data(query.data)
         if scene_id:
             return None, "", getattr(query, "message", None), None, scene_id, "video"
+        scene_id = parse_quick_video_v1_scene_callback_data(query.data)
+        if scene_id:
+            return None, "", getattr(query, "message", None), None, scene_id, "video_v1"
         route_key = parse_quick_video_mode_callback_data(query.data)
         mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
         mode_name = _strip_menu_prefix(_t(context, route_key)) if route_key else ""
@@ -425,6 +430,12 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
+    scene_version = "v1" if scene_kind == "video_v1" else "v2"
+    if scene_kind == "video_v1" and qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="video", version=scene_version
+        )
+        scene_kind = "video"
     if qqcc_config is None and (mode or route_key or scene_id):
         await reply_with_lazy_bot_payload(
             update,
@@ -463,6 +474,8 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             include_prompt_details=True,
             scene_kind=scene_kind,
         )
+        if scene_kind == "video":
+            quick_video_data["scene_version"] = scene_version
         mode_name = str(quick_video_data["mode_name"])
 
     if not mode or not reply_message:
@@ -492,24 +505,40 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await send_qqcc_scene_demo_media(
             message=reply_message,
             bot=context.bot,
-            scene_kind=scene_kind,
+            scene_kind=(
+                "video_v1"
+                if quick_video_data.get("scene_version") == "v1"
+                else scene_kind
+            ),
             scene=scene,
             **demo_kwargs,
         )
     reply_markup = None
     if scene is not None and qqcc_config is not None:
-        jump_scene = get_qqcc_draw_scene(
-            qqcc_config, str(scene.get("jump_draw_scene_id") or "")
+        draw_config = project_qqcc_config_for_scene_version(
+            qqcc_config,
+            family="draw",
+            version=str(quick_video_data.get("scene_version") or "v2"),
         )
-        if jump_scene is not None and is_qqcc_main_button_enabled(qqcc_config, "ai_draw"):
+        jump_scene = get_qqcc_draw_scene(
+            draw_config, str(scene.get("jump_draw_scene_id") or "")
+        )
+        if jump_scene is not None and is_qqcc_main_button_enabled(draw_config, "ai_draw"):
             from src.handlers.fsm.quick_draw_callback_data import (
                 build_quick_draw_scene_callback_data,
+                build_quick_draw_v1_scene_callback_data,
             )
+
+            is_v1 = quick_video_data.get("scene_version") == "v1"
 
             reply_markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(
-                    f"先去 AI绘图生成「{jump_scene['name']}」",
-                    callback_data=build_quick_draw_scene_callback_data(jump_scene["id"]),
+                    f"先去 AI绘图{'V1' if is_v1 else 'V2'}生成「{jump_scene['name']}」",
+                    callback_data=(
+                        build_quick_draw_v1_scene_callback_data(jump_scene["id"])
+                        if is_v1
+                        else build_quick_draw_scene_callback_data(jump_scene["id"])
+                    ),
                 )]]
             )
     await robust_reply_text(
@@ -523,12 +552,21 @@ async def jump_to_qqcc_draw_scene(
 ) -> int:
     """Replace a pending video upload with the selected QQCC draw-scene flow."""
     from src.handlers.fsm.quick_image_fsm import _start_qqcc_image_scene
-    from src.handlers.fsm.quick_draw_callback_data import parse_quick_draw_scene_callback_data
+    from src.handlers.fsm.quick_draw_callback_data import (
+        parse_quick_draw_scene_callback_data,
+        parse_quick_draw_v1_scene_callback_data,
+    )
     from src.services.qqcc_draw_chain_service import QQCC_SCENE_KIND_DRAW
 
     query = update.callback_query
-    scene_id = parse_quick_draw_scene_callback_data(query.data if query else None)
+    callback_data = query.data if query else None
+    scene_id = (
+        parse_quick_draw_v1_scene_callback_data(callback_data)
+        or parse_quick_draw_scene_callback_data(callback_data)
+    )
     config = await _load_qqcc_config_for_context(context)
+    if parse_quick_draw_v1_scene_callback_data(callback_data):
+        config = project_qqcc_config_for_scene_version(config, family="draw", version="v1") if config else config
     await _start_qqcc_image_scene(
         update,
         context,
@@ -553,6 +591,10 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     fsm_data = context.user_data["quick_video_data"]
     mode = fsm_data.get("mode")
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+        )
     qqcc_scene = None
     if qqcc_config is not None:
         scene_kind = str(fsm_data.get("scene_kind") or "video")
@@ -637,6 +679,10 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+        )
     qqcc_scene = None
     if qqcc_config is not None:
         qqcc_scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
@@ -742,6 +788,10 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="video", version=str(fsm_data.get("scene_version") or "v2")
+        )
     plan = build_quick_video_submission_plan(
         fsm_data=fsm_data,
         qqcc_config=qqcc_config,

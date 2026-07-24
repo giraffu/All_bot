@@ -24,8 +24,12 @@ type MainButtonKey =
   | 'quick_faceswap'
   | 'photo_edit'
   | 'ai_draw'
+  | 'ai_draw_v1'
+  | 'ai_draw_v2'
   | 'ai_filter'
   | 'video_edit'
+  | 'video_edit_v1'
+  | 'video_edit_v2'
   | 'ai_video'
   | 'market'
   | 'main_bot_link'
@@ -42,8 +46,8 @@ type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
 type AiVideoSceneEngine = 'ltx_video'
-type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
-type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
+type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
+type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
 type DemoMediaSlot = 'input' | 'output'
 type DemoUploadFile = File & { originFileObj?: File }
 type PromptKey =
@@ -165,8 +169,12 @@ interface QqccBotConfig {
     durations: Record<DurationKey, boolean>
   }
   video_scenes: VideoSceneConfig[]
+  video_scenes_v1: VideoSceneConfig[]
+  video_scenes_v2: VideoSceneConfig[]
   ai_video_scenes: AiVideoSceneConfig[]
   draw_scenes: DrawSceneConfig[]
+  draw_scenes_v1: DrawSceneConfig[]
+  draw_scenes_v2: DrawSceneConfig[]
   filter_scenes: FilterSceneConfig[]
   prompts: Record<PromptKey, string>
   copywriting: Record<CopywritingKey, string>
@@ -278,8 +286,12 @@ const emptyConfig = (): QqccBotConfig => ({
     quick_faceswap: false,
     photo_edit: false,
     ai_draw: false,
+    ai_draw_v1: false,
+    ai_draw_v2: false,
     ai_filter: false,
     video_edit: false,
+    video_edit_v1: false,
+    video_edit_v2: false,
     ai_video: false,
     market: false,
     main_bot_link: false,
@@ -326,8 +338,12 @@ const emptyConfig = (): QqccBotConfig => ({
     },
   },
   video_scenes: [],
+  video_scenes_v1: [],
+  video_scenes_v2: [],
   ai_video_scenes: [],
   draw_scenes: [],
+  draw_scenes_v1: [],
+  draw_scenes_v2: [],
   filter_scenes: [],
   prompts: {
     undress: '',
@@ -355,9 +371,11 @@ const emptyConfig = (): QqccBotConfig => ({
 
 const mainButtonOptions: Array<{ key: MainMenuButtonKey; label: string }> = [
   { key: 'quick_faceswap', label: '快速换脸' },
-  { key: 'ai_draw', label: 'AI绘图' },
+  { key: 'ai_draw_v1', label: 'AI绘图V1' },
+  { key: 'ai_draw_v2', label: 'AI绘图V2' },
   { key: 'ai_filter', label: 'AI滤镜' },
-  { key: 'video_edit', label: 'AI动图' },
+  { key: 'video_edit_v1', label: 'AI动图V1' },
+  { key: 'video_edit_v2', label: 'AI动图V2' },
   { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
   { key: 'private_bot', label: '私有bot' },
@@ -424,6 +442,7 @@ const drawEngineLabels: Record<DrawSceneEngine, string> = {
   free_edit: '自由P图',
   free_edit_v2: '自由P图v2',
   free_edit_v3: '自由P图v3',
+  free_edit_v2_5: '自由P图v2.5',
 }
 
 const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
@@ -504,15 +523,19 @@ const mainMenuLayoutMode = computed({
   },
 })
 const orderedMainButtonOptions = computed(() =>
-  config.main_menu_layout.button_order.map((key) => mainButtonOptionsByKey[key]),
+  config.main_menu_layout.button_order
+    .map((key) => mainButtonOptionsByKey[key])
+    .filter((item): item is { key: MainMenuButtonKey; label: string } => Boolean(item)),
 )
 const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
 const scenePageSize = 5
-const activeSceneTab = ref<SceneConfigKind>('video')
+const activeSceneTab = ref<SceneConfigKind>('video_v1')
 const scenePages = reactive<Record<SceneConfigKind, number>>({
   video: 1,
+  video_v1: 1,
   ai_video: 1,
   draw: 1,
+  draw_v1: 1,
   filter: 1,
 })
 const sceneCounter = ref(0)
@@ -600,11 +623,17 @@ function paginateScenes<T>(scenes: T[], page: number) {
 const paginatedVideoScenes = computed(() =>
   paginateScenes(config.video_scenes, scenePages.video),
 )
+const paginatedVideoV1Scenes = computed(() =>
+  paginateScenes(config.video_scenes_v1, scenePages.video_v1),
+)
 const paginatedAiVideoScenes = computed(() =>
   paginateScenes(config.ai_video_scenes, scenePages.ai_video),
 )
 const paginatedDrawScenes = computed(() =>
   paginateScenes(config.draw_scenes, scenePages.draw),
+)
+const paginatedDrawV1Scenes = computed(() =>
+  paginateScenes(config.draw_scenes_v1, scenePages.draw_v1),
 )
 const paginatedFilterScenes = computed(() =>
   paginateScenes(config.filter_scenes, scenePages.filter),
@@ -612,8 +641,10 @@ const paginatedFilterScenes = computed(() =>
 
 const getSceneCount = (kind: SceneConfigKind) => {
   if (kind === 'video') return config.video_scenes.length
+  if (kind === 'video_v1') return config.video_scenes_v1.length
   if (kind === 'ai_video') return config.ai_video_scenes.length
   if (kind === 'draw') return config.draw_scenes.length
+  if (kind === 'draw_v1') return config.draw_scenes_v1.length
   return config.filter_scenes.length
 }
 
@@ -635,7 +666,7 @@ const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
 const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
-  value === 'free_edit' || value === 'free_edit_v3' ? value : 'free_edit_v2'
+  value === 'free_edit' || value === 'free_edit_v2_5' || value === 'free_edit_v3' ? value : 'free_edit_v2'
 
 const normalizeDemoMedia = (
   raw: unknown,
@@ -648,7 +679,7 @@ const normalizeDemoMedia = (
   const { kind, sceneId, slot } = options
   if (!raw || typeof raw !== 'object') return undefined
   const media = raw as Partial<SceneDemoMedia>
-  const expectedMediaType = (kind === 'video' || kind === 'ai_video') && slot === 'output' ? 'video' : 'image'
+  const expectedMediaType = (kind === 'video' || kind === 'video_v1' || kind === 'ai_video') && slot === 'output' ? 'video' : 'image'
   const allowedPrefixes = (props.demoMediaObjectPrefixes?.length
     ? props.demoMediaObjectPrefixes
     : ['qqcc/demo'])
@@ -689,7 +720,7 @@ const normalizeDemoMedia = (
 }
 
 const engineSupportsLora = (kind: SceneConfigKind, engine: string) => {
-  const engines = kind === 'video'
+  const engines = kind === 'video' || kind === 'video_v1'
     ? modelOptions.video_engines
     : kind === 'ai_video'
       ? modelOptions.ai_video_engines
@@ -707,7 +738,7 @@ const normalizeLoraName = (
   const { kind, engine } = options
   if (!engineSupportsLora(kind, engine)) return ''
   const loraName = typeof raw === 'string' ? raw : ''
-  const loras = kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
+  const loras = kind === 'video' || kind === 'video_v1' ? modelOptions.video_lora_models : modelOptions.image_lora_models
   return loras.some((item) => item.value === loraName) ? loraName : ''
 }
 
@@ -979,13 +1010,27 @@ const normalizeSceneCreditCost = (raw: unknown): number | null =>
 const getSceneSelectPopupContainer = (triggerNode: HTMLElement) =>
   triggerNode.parentElement || document.body
 
-const activeEngineOptions = computed(() =>
-  sceneConfig.kind === 'video'
-    ? modelOptions.video_engines
-    : sceneConfig.kind === 'ai_video'
-      ? modelOptions.ai_video_engines
-      : modelOptions.draw_engines
-)
+const fixedEngineOption = (options: Array<{ value: string }>, value: string) =>
+  options.filter(item => item.value === value).length > 0
+    ? options.filter(item => item.value === value)
+    : [{ value, label: getEngineLabel(value === 'image_to_video' || value === 'wan22_video_v2' ? 'video' : 'draw', value) }]
+
+const activeEngineOptions = computed(() => {
+  if (sceneConfig.kind === 'video_v1') {
+    return fixedEngineOption(modelOptions.video_engines, 'image_to_video')
+  }
+  if (sceneConfig.kind === 'video') {
+    return fixedEngineOption(modelOptions.video_engines, 'wan22_video_v2')
+  }
+  if (sceneConfig.kind === 'ai_video') return modelOptions.ai_video_engines
+  if (sceneConfig.kind === 'draw_v1') {
+    return fixedEngineOption(modelOptions.draw_engines, 'free_edit')
+  }
+  if (sceneConfig.kind === 'draw') {
+    return fixedEngineOption(modelOptions.draw_engines, 'free_edit_v2_5')
+  }
+  return modelOptions.draw_engines
+})
 const activeLoraOptions = computed(() =>
   sceneConfig.kind === 'video'
     ? modelOptions.video_lora_models
@@ -997,13 +1042,15 @@ const activeEngineSupportsLora = computed(() =>
   engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
 )
 const activeEndFrameDrawOptions = computed(() =>
-  config.draw_scenes.filter(
+  (sceneConfig.kind === 'video_v1' ? config.draw_scenes_v1 : config.draw_scenes).filter(
     (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
   )
 )
 const videoScenesForKind = (kind: SceneConfigKind) =>
   kind === 'video'
     ? config.video_scenes
+    : kind === 'video_v1'
+      ? config.video_scenes_v1
     : kind === 'ai_video'
       ? config.ai_video_scenes
       : []
@@ -1053,15 +1100,16 @@ const activeVideoSceneChainPreview = computed(() => {
   return names.join(' → ')
 })
 const activePostprocessDrawOptions = computed(() => {
-  const sourceScene = config.draw_scenes[sceneConfig.index]
-  if (sceneConfig.kind !== 'draw' || !sourceScene) return []
-  return config.draw_scenes.filter(
+  const drawScenes = sceneConfig.kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes
+  const sourceScene = drawScenes[sceneConfig.index]
+  if ((sceneConfig.kind !== 'draw' && sceneConfig.kind !== 'draw_v1') || !sourceScene) return []
+  return drawScenes.filter(
     (scene) =>
       scene.id.trim() &&
       scene.name.trim() &&
       scene.prompt.trim() &&
       scene.id !== sourceScene.id &&
-      !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id),
+      !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id, drawScenes),
   )
 })
 const activePostprocessFilterOptions = computed(() =>
@@ -1186,6 +1234,10 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     normalizeDrawPostprocessRefs(normalizedDrawScenes, merged.filter_scenes)
     merged.draw_scenes = normalizedDrawScenes
   }
+  // Versioned collections use the same validated scene shape.  Keep them in
+  // the draft even when the V2 compatibility projection above is displayed.
+  if (Array.isArray(raw.draw_scenes_v1)) merged.draw_scenes_v1 = raw.draw_scenes_v1 as DrawSceneConfig[]
+  if (Array.isArray(raw.draw_scenes_v2)) merged.draw_scenes_v2 = raw.draw_scenes_v2 as DrawSceneConfig[]
   if (Array.isArray(raw.video_scenes)) {
     merged.video_scenes = raw.video_scenes
       .map((scene, index) => {
@@ -1239,6 +1291,8 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
+  if (Array.isArray(raw.video_scenes_v1)) merged.video_scenes_v1 = raw.video_scenes_v1 as VideoSceneConfig[]
+  if (Array.isArray(raw.video_scenes_v2)) merged.video_scenes_v2 = raw.video_scenes_v2 as VideoSceneConfig[]
   if (Array.isArray(raw.ai_video_scenes)) {
     merged.ai_video_scenes = raw.ai_video_scenes
       .map((scene, index) => {
@@ -1303,15 +1357,16 @@ const createVideoSceneId = () => {
 const defaultSceneCreditCost = (kind: SceneConfigKind) =>
   normalizeSceneCreditCost(modelOptions.default_scene_credit_costs[kind])
 
-const addVideoScene = () => {
-  config.video_scenes.push({
+const addVideoScene = (kind: 'video' | 'video_v1' = 'video') => {
+  const scenes = kind === 'video_v1' ? config.video_scenes_v1 : config.video_scenes
+  scenes.push({
     id: createVideoSceneId(),
     name: '',
     prompt: '',
     negative_prompt: '',
     duration: '5s',
     resolution: modelOptions.default_video_resolution,
-    engine: normalizeVideoEngine(modelOptions.default_video_engine),
+    engine: kind === 'video_v1' ? 'image_to_video' : 'wan22_video_v2',
     aspect_ratio: 'source',
     lora_name: '',
     lora_strength: 1,
@@ -1319,9 +1374,9 @@ const addVideoScene = () => {
     end_frame_draw_scene_id: '',
     jump_draw_scene_id: '',
     next_scene_id: null,
-    credit_cost: defaultSceneCreditCost('video'),
+    credit_cost: defaultSceneCreditCost(kind),
   })
-  showScenePageContaining('video', config.video_scenes.length - 1)
+  showScenePageContaining(kind, scenes.length - 1)
 }
 
 const createAiVideoSceneId = () => {
@@ -1367,6 +1422,15 @@ const removeVideoScene = (index: number) => {
   normalizeScenePage('video')
 }
 
+const removeVersionedVideoScene = (kind: 'video' | 'video_v1', index: number) => {
+  const scenes = kind === 'video_v1' ? config.video_scenes_v1 : config.video_scenes
+  const [removed] = scenes.splice(index, 1)
+  if (removed) scenes.forEach(scene => {
+    if (scene.next_scene_id === removed.id) scene.next_scene_id = null
+  })
+  normalizeScenePage(kind)
+}
+
 const moveScene = (
   kind: SceneConfigKind,
   scenes: Array<{ id: string }>,
@@ -1405,20 +1469,21 @@ const createFilterSceneId = () => {
   return `filter_${Date.now().toString(36)}_${filterSceneCounter.value}`
 }
 
-const addDrawScene = () => {
-  config.draw_scenes.push({
+const addDrawScene = (kind: 'draw' | 'draw_v1' = 'draw') => {
+  const scenes = kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes
+  scenes.push({
     id: createDrawSceneId(),
     name: '',
     prompt: '',
     negative_prompt: '',
-    engine: normalizeDrawEngine(modelOptions.default_draw_engine),
+    engine: kind === 'draw_v1' ? 'free_edit' : 'free_edit_v2_5',
     lora_name: '',
     postprocess_draw_scene_id: '',
     postprocess_filter_scene_id: '',
     original_face_swap_enabled: false,
-    credit_cost: defaultSceneCreditCost('draw'),
+    credit_cost: defaultSceneCreditCost(kind),
   })
-  showScenePageContaining('draw', config.draw_scenes.length - 1)
+  showScenePageContaining(kind, scenes.length - 1)
 }
 
 const addFilterScene = () => {
@@ -1456,6 +1521,21 @@ const removeDrawScene = (index: number) => {
   normalizeScenePage('draw')
 }
 
+const removeVersionedDrawScene = (kind: 'draw' | 'draw_v1', index: number) => {
+  const scenes = kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes
+  const videos = kind === 'draw_v1' ? config.video_scenes_v1 : config.video_scenes
+  const [removed] = scenes.splice(index, 1)
+  if (!removed) return
+  videos.forEach(scene => {
+    if (scene.end_frame_draw_scene_id === removed.id) scene.end_frame_draw_scene_id = ''
+    if (scene.jump_draw_scene_id === removed.id) scene.jump_draw_scene_id = ''
+  })
+  scenes.forEach(scene => {
+    if (scene.postprocess_draw_scene_id === removed.id) scene.postprocess_draw_scene_id = ''
+  })
+  normalizeScenePage(kind)
+}
+
 const removeFilterScene = (index: number) => {
   const [removed] = config.filter_scenes.splice(index, 1)
   if (!removed) return
@@ -1469,13 +1549,15 @@ const removeFilterScene = (index: number) => {
 
 const getSceneByKind = (kind: SceneConfigKind, index: number) => {
   if (kind === 'video') return config.video_scenes[index]
+  if (kind === 'video_v1') return config.video_scenes_v1[index]
   if (kind === 'ai_video') return config.ai_video_scenes[index]
   if (kind === 'draw') return config.draw_scenes[index]
+  if (kind === 'draw_v1') return config.draw_scenes_v1[index]
   return config.filter_scenes[index]
 }
 
 const getDemoMediaAccept = (kind: SceneConfigKind, slot: DemoMediaSlot) =>
-  (kind === 'video' || kind === 'ai_video') && slot === 'output'
+  (kind === 'video' || kind === 'video_v1' || kind === 'ai_video') && slot === 'output'
     ? 'video/mp4,.mp4'
     : 'image/png,image/jpeg,.png,.jpg,.jpeg'
 
@@ -1513,7 +1595,7 @@ const validateDemoUploadFile = (
   slot: DemoMediaSlot,
   file: File,
 ) => {
-  const isVideo = (kind === 'video' || kind === 'ai_video') && slot === 'output'
+  const isVideo = (kind === 'video' || kind === 'video_v1' || kind === 'ai_video') && slot === 'output'
   const allowedTypes = isVideo ? ['video/mp4'] : ['image/png', 'image/jpeg']
   const maxBytes = (isVideo ? 50 : 10) * 1024 * 1024
   if (!allowedTypes.includes(file.type)) {
@@ -1639,8 +1721,10 @@ const validateFilterScenes = () =>
 const validateSceneCreditCosts = () =>
   [
     ...config.video_scenes,
+    ...config.video_scenes_v1,
     ...config.ai_video_scenes,
     ...config.draw_scenes,
+    ...config.draw_scenes_v1,
     ...config.filter_scenes,
   ].every(
     scene => scene.credit_cost === null
@@ -1701,6 +1785,18 @@ const buildPayload = (): QqccBotConfig => {
     .filter((scene) => scene.name || scene.prompt)
   normalizeDrawPostprocessRefs(normalizedDrawScenes, payload.filter_scenes)
   payload.draw_scenes = normalizedDrawScenes
+  payload.draw_scenes_v1 = payload.draw_scenes_v1
+    .map((scene) => ({
+      ...scene,
+      id: scene.id.trim(), name: scene.name.trim(), prompt: scene.prompt.trim(),
+      negative_prompt: scene.negative_prompt.trim(), engine: 'free_edit' as DrawSceneEngine,
+      lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw_v1', engine: 'free_edit' }),
+      postprocess_draw_scene_id: typeof scene.postprocess_draw_scene_id === 'string' ? scene.postprocess_draw_scene_id.trim() : '',
+      postprocess_filter_scene_id: typeof scene.postprocess_filter_scene_id === 'string' ? scene.postprocess_filter_scene_id.trim() : '',
+      original_face_swap_enabled: scene.original_face_swap_enabled === true,
+    }))
+    .filter(scene => scene.name || scene.prompt)
+  normalizeDrawPostprocessRefs(payload.draw_scenes_v1, payload.filter_scenes)
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
       const { jump_draw_scene_id: rawJumpDrawSceneId, ...videoScene } = scene
@@ -1734,6 +1830,22 @@ const buildPayload = (): QqccBotConfig => {
       }
     })
     .filter((scene) => scene.name || scene.prompt)
+  payload.video_scenes_v1 = payload.video_scenes_v1
+    .map((scene) => {
+      const { jump_draw_scene_id: rawJumpDrawSceneId, ...videoScene } = scene
+      const loraItems = normalizeVideoLoraItems(scene.lora_items, scene.lora_name, scene.lora_strength)
+      return {
+        ...videoScene, id: scene.id.trim(), name: scene.name.trim(), prompt: scene.prompt.trim(),
+        negative_prompt: scene.negative_prompt.trim(), engine: 'image_to_video' as VideoSceneEngine,
+        aspect_ratio: normalizeVideoAspectRatio(scene.aspect_ratio), lora_name: loraItems[0]?.name || '',
+        lora_strength: loraItems[0]?.strength ?? 1, lora_items: loraItems,
+        end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(scene.end_frame_draw_scene_id, payload.draw_scenes_v1),
+        ...(normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes_v1)
+          ? { jump_draw_scene_id: normalizeEndFrameDrawSceneId(rawJumpDrawSceneId, payload.draw_scenes_v1) } : {}),
+        next_scene_id: typeof scene.next_scene_id === 'string' && scene.next_scene_id.trim() ? scene.next_scene_id.trim() : null,
+      }
+    })
+    .filter(scene => scene.name || scene.prompt)
   payload.ai_video_scenes = payload.ai_video_scenes
     .map((scene) => {
       const { jump_draw_scene_id: rawJumpDrawSceneId, ...aiVideoScene } = scene
@@ -1766,8 +1878,10 @@ const applyResponse = (payload: QqccBotConfigResponse) => {
   Object.assign(modelOptions, mergeOptions(payload.options))
   Object.assign(config, mergeConfig(payload.config))
   normalizeScenePage('video')
+  normalizeScenePage('video_v1')
   normalizeScenePage('ai_video')
   normalizeScenePage('draw')
+  normalizeScenePage('draw_v1')
   normalizeScenePage('filter')
   configKey.value = payload.key || ''
   updatedAt.value = payload.updated_at || null
@@ -1780,6 +1894,8 @@ const openSceneConfig = (
   const scene =
     kind === 'video'
       ? config.video_scenes[index]
+      : kind === 'video_v1'
+        ? config.video_scenes_v1[index]
       : kind === 'ai_video'
         ? config.ai_video_scenes[index]
       : kind === 'filter'
@@ -1789,20 +1905,20 @@ const openSceneConfig = (
   sceneConfig.kind = kind
   sceneConfig.index = index
   sceneConfig.credit_cost = normalizeSceneCreditCost(scene.credit_cost)
-  sceneConfig.duration = kind === 'video' || kind === 'ai_video'
+  sceneConfig.duration = kind === 'video' || kind === 'video_v1' || kind === 'ai_video'
     ? (scene as VideoSceneConfig | AiVideoSceneConfig).duration
     : '5s'
-  sceneConfig.resolution = kind === 'video'
+  sceneConfig.resolution = kind === 'video' || kind === 'video_v1'
     ? (scene as VideoSceneConfig).resolution
     : kind === 'ai_video'
       ? (scene as AiVideoSceneConfig).resolution
       : modelOptions.default_video_resolution
   sceneConfig.engine = scene.engine
-  sceneConfig.aspect_ratio = kind === 'video'
+  sceneConfig.aspect_ratio = kind === 'video' || kind === 'video_v1'
     ? normalizeVideoAspectRatio((scene as VideoSceneConfig).aspect_ratio)
     : 'source'
   sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
-  sceneConfig.video_lora_items = kind === 'video'
+  sceneConfig.video_lora_items = kind === 'video' || kind === 'video_v1'
     ? normalizeVideoLoraItems(
         (scene as VideoSceneConfig).lora_items,
         (scene as VideoSceneConfig).lora_name,
@@ -1813,23 +1929,23 @@ const openSceneConfig = (
     ? normalizeAiVideoLoraItems((scene as AiVideoSceneConfig).lora_items)
     : []
   sceneConfig.end_frame_draw_scene_id =
-    kind === 'video' || kind === 'ai_video'
+    kind === 'video' || kind === 'video_v1' || kind === 'ai_video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).end_frame_draw_scene_id)
       : ''
   sceneConfig.jump_draw_scene_id =
-    kind === 'video' || kind === 'ai_video'
+    kind === 'video' || kind === 'video_v1' || kind === 'ai_video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).jump_draw_scene_id)
       : ''
   sceneConfig.next_scene_id =
-    kind === 'video' || kind === 'ai_video'
+    kind === 'video' || kind === 'video_v1' || kind === 'ai_video'
       ? (scene as VideoSceneConfig | AiVideoSceneConfig).next_scene_id || ''
       : ''
   sceneConfig.postprocess_draw_scene_id =
-    kind === 'draw'
+    kind === 'draw' || kind === 'draw_v1'
       ? normalizePostprocessDrawSceneId((scene as DrawSceneConfig).postprocess_draw_scene_id, index)
       : ''
   sceneConfig.postprocess_filter_scene_id =
-    kind === 'draw'
+    kind === 'draw' || kind === 'draw_v1'
       ? normalizePostprocessFilterSceneId((scene as DrawSceneConfig).postprocess_filter_scene_id)
       : ''
   sceneConfig.original_face_swap_enabled =
@@ -1855,7 +1971,7 @@ const closeSceneConfig = () => {
 }
 
 const onSceneEngineChange = () => {
-  if (sceneConfig.kind !== 'video' && !activeEngineSupportsLora.value) {
+  if (sceneConfig.kind !== 'video' && sceneConfig.kind !== 'video_v1' && !activeEngineSupportsLora.value) {
     sceneConfig.lora_name = ''
     sceneConfig.lora_items = []
   }
@@ -1863,14 +1979,14 @@ const onSceneEngineChange = () => {
 
 const confirmSceneConfig = () => {
   if (sceneConfig.index < 0) return
-  if (sceneConfig.kind === 'video') {
-    const scene = config.video_scenes[sceneConfig.index]
+  if (sceneConfig.kind === 'video' || sceneConfig.kind === 'video_v1') {
+    const scene = (sceneConfig.kind === 'video_v1' ? config.video_scenes_v1 : config.video_scenes)[sceneConfig.index]
     if (!scene) return
     if (sceneConfig.resolution === '1024p' && sceneConfig.duration === '10s') {
       message.error('AI动图不支持 1024p + 10s，请调整分辨率或时长')
       return
     }
-    const engine = normalizeVideoEngine(sceneConfig.engine)
+    const engine = sceneConfig.kind === 'video_v1' ? 'image_to_video' : 'wan22_video_v2'
     scene.credit_cost = normalizeSceneCreditCost(sceneConfig.credit_cost)
     scene.duration = sceneConfig.duration as DurationKey
     scene.resolution = sceneConfig.resolution as ResolutionKey
@@ -1897,10 +2013,10 @@ const confirmSceneConfig = () => {
     )
     scene.jump_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.jump_draw_scene_id)
     scene.next_scene_id = sceneConfig.next_scene_id || null
-  } else if (sceneConfig.kind === 'draw') {
-    const scene = config.draw_scenes[sceneConfig.index]
+  } else if (sceneConfig.kind === 'draw' || sceneConfig.kind === 'draw_v1') {
+    const scene = (sceneConfig.kind === 'draw_v1' ? config.draw_scenes_v1 : config.draw_scenes)[sceneConfig.index]
     if (!scene) return
-    const engine = normalizeDrawEngine(sceneConfig.engine)
+    const engine = sceneConfig.kind === 'draw_v1' ? 'free_edit' : 'free_edit_v2_5'
     const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
       sceneConfig.postprocess_draw_scene_id,
       sceneConfig.index,
@@ -2116,9 +2232,22 @@ onMounted(() => {
       </div>
 
       <a-tabs v-model:active-key="activeSceneTab" class="scene-tabs">
+        <a-tab-pane key="video_v1">
+          <template #tab><span data-testid="scene-tab-video-v1">AI动图V1 <span class="scene-tab-count">{{ config.video_scenes_v1.length }}</span></span></template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar"><span class="text-sm text-slate-500">V1 固定使用图生视频；场景、尾帧、跳转与示范素材均独立维护。</span><a-button data-testid="add-video-v1-scene" @click="addVideoScene('video_v1')"><template #icon><PlusOutlined /></template>添加场景</a-button></div>
+            <div v-for="{ scene, index } in paginatedVideoV1Scenes" :key="`v1-${scene.id}`" class="scene-row grid gap-3 border-b border-slate-100 py-3 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]">
+              <a-input v-model:value="scene.name" :data-testid="`video-v1-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`video-v1-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`video-v1-scene-negative-prompt-${index}`" />
+              <div class="scene-action-cell"><div class="scene-management-actions"><a-button class="scene-icon-button" :disabled="index === 0" @click="moveScene('video_v1', config.video_scenes_v1, index, -1)"><template #icon><UpOutlined /></template></a-button><a-button class="scene-icon-button" :disabled="index === config.video_scenes_v1.length - 1" @click="moveScene('video_v1', config.video_scenes_v1, index, 1)"><template #icon><DownOutlined /></template></a-button><a-button class="scene-icon-button" :data-testid="`config-video-v1-scene-${index}`" @click="openSceneConfig('video_v1', index)"><template #icon><SettingOutlined /></template></a-button><a-button danger class="scene-icon-button" @click="removeVersionedVideoScene('video_v1', index)"><template #icon><DeleteOutlined /></template></a-button></div><div class="scene-demo-button-group"><a-upload :show-upload-list="false" :accept="getDemoMediaAccept('video_v1', 'input')" :before-upload="(file: File) => uploadSceneDemo('video_v1', index, 'input', file)"><a-button size="small">输入示范</a-button></a-upload><a-upload :show-upload-list="false" :accept="getDemoMediaAccept('video_v1', 'output')" :before-upload="(file: File) => uploadSceneDemo('video_v1', index, 'output', file)"><a-button size="small">输出示范</a-button></a-upload></div></div>
+            </div>
+            <div v-if="config.video_scenes_v1.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div><div v-else class="scene-pagination-bar"><span>共 {{ config.video_scenes_v1.length }} 个场景</span><a-pagination v-model:current="scenePages.video_v1" :total="config.video_scenes_v1.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" /></div>
+          </div>
+        </a-tab-pane>
         <a-tab-pane key="video">
           <template #tab>
-            <span data-testid="scene-tab-video">AI动图 <span class="scene-tab-count">{{ config.video_scenes.length }}</span></span>
+            <span data-testid="scene-tab-video">AI动图V2 <span class="scene-tab-count">{{ config.video_scenes.length }}</span></span>
           </template>
           <div class="scene-pane">
             <div class="scene-pane-toolbar">
@@ -2254,9 +2383,22 @@ onMounted(() => {
           </div>
         </a-tab-pane>
 
+        <a-tab-pane key="draw_v1">
+          <template #tab><span data-testid="scene-tab-draw-v1">AI绘图V1 <span class="scene-tab-count">{{ config.draw_scenes_v1.length }}</span></span></template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar"><span class="text-sm text-slate-500">V1 固定使用自由P图；后处理与示范素材独立维护。</span><a-button data-testid="add-draw-v1-scene" @click="addDrawScene('draw_v1')"><template #icon><PlusOutlined /></template>添加场景</a-button></div>
+            <div v-for="{ scene, index } in paginatedDrawV1Scenes" :key="`draw-v1-${scene.id}`" class="scene-row grid gap-3 border-b border-slate-100 py-3 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px]">
+              <a-input v-model:value="scene.name" :data-testid="`draw-v1-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`draw-v1-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`draw-v1-scene-negative-prompt-${index}`" />
+              <div class="scene-action-cell"><div class="scene-management-actions"><a-button class="scene-icon-button" :disabled="index === 0" @click="moveScene('draw_v1', config.draw_scenes_v1, index, -1)"><template #icon><UpOutlined /></template></a-button><a-button class="scene-icon-button" :disabled="index === config.draw_scenes_v1.length - 1" @click="moveScene('draw_v1', config.draw_scenes_v1, index, 1)"><template #icon><DownOutlined /></template></a-button><a-button class="scene-icon-button" :data-testid="`config-draw-v1-scene-${index}`" @click="openSceneConfig('draw_v1', index)"><template #icon><SettingOutlined /></template></a-button><a-button danger class="scene-icon-button" @click="removeVersionedDrawScene('draw_v1', index)"><template #icon><DeleteOutlined /></template></a-button></div><div class="scene-demo-button-group"><a-upload :show-upload-list="false" :accept="getDemoMediaAccept('draw_v1', 'input')" :before-upload="(file: File) => uploadSceneDemo('draw_v1', index, 'input', file)"><a-button size="small">输入示范</a-button></a-upload><a-upload :show-upload-list="false" :accept="getDemoMediaAccept('draw_v1', 'output')" :before-upload="(file: File) => uploadSceneDemo('draw_v1', index, 'output', file)"><a-button size="small">输出示范</a-button></a-upload></div></div>
+            </div>
+            <div v-if="config.draw_scenes_v1.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div><div v-else class="scene-pagination-bar"><span>共 {{ config.draw_scenes_v1.length }} 个场景</span><a-pagination v-model:current="scenePages.draw_v1" :total="config.draw_scenes_v1.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" /></div>
+          </div>
+        </a-tab-pane>
         <a-tab-pane key="draw">
           <template #tab>
-            <span data-testid="scene-tab-draw">AI绘图 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
+            <span data-testid="scene-tab-draw">AI绘图V2 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
           </template>
           <div class="scene-pane">
             <div class="scene-pane-toolbar">

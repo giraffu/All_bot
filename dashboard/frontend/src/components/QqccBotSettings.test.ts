@@ -669,9 +669,11 @@ describe('QqccBotSettings', () => {
       buttons_per_row: 2,
       button_order: [
         'quick_faceswap',
-        'ai_draw',
+        'ai_draw_v1',
+        'ai_draw_v2',
         'ai_filter',
-        'video_edit',
+        'video_edit_v1',
+        'video_edit_v2',
         'market',
         'ai_video',
         'private_bot',
@@ -727,7 +729,7 @@ describe('QqccBotSettings', () => {
         negative_prompt: 'video bad hands',
         duration: '10s',
         resolution: '720p',
-        engine: 'image_to_video',
+        engine: 'wan22_video_v2',
         aspect_ratio: '9:16',
         lora_name: 'BreastGrow',
         lora_strength: 0.7,
@@ -887,7 +889,7 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].name).toBe('转身')
     expect(payload.video_scenes[0].prompt).toBe('turn around')
     expect(payload.video_scenes[0].negative_prompt).toBe('motion blur')
-    expect(payload.video_scenes[0].engine).toBe('image_to_video')
+    expect(payload.video_scenes[0].engine).toBe('wan22_video_v2')
     expect(payload.video_scenes[0].aspect_ratio).toBe('source')
     expect(payload.video_scenes[0].lora_name).toBe('')
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
@@ -986,7 +988,7 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes[2].name).toBe('赛博风')
     expect(payload.draw_scenes[2].prompt).toBe('cyber style')
     expect(payload.draw_scenes[2].negative_prompt).toBe('bad anatomy')
-    expect(payload.draw_scenes[2].engine).toBe('free_edit_v2')
+    expect(payload.draw_scenes[2].engine).toBe('free_edit_v2_5')
     expect(payload.draw_scenes[2].lora_name).toBe('')
     expect(payload.draw_scenes[2].postprocess_draw_scene_id).toBe('')
     expect(payload.draw_scenes[2].postprocess_filter_scene_id).toBe('')
@@ -1621,17 +1623,17 @@ describe('QqccBotSettings', () => {
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
-    expect(softLightScene.engine).toBe('free_edit')
-    expect(softLightScene.lora_name).toBe('qwen/YARN_1.0.safetensors')
+    expect(softLightScene.engine).toBe('free_edit_v2_5')
+    expect(softLightScene.lora_name).toBe('')
   })
 
-  it('configures draw and filter scenes to use free edit v3 without lora', async () => {
+  it('keeps V2 draw fixed on free edit v2.5 while filters may use free edit v3', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
     await wrapper.get('[data-testid="config-draw-scene-2"]').trigger('click')
-    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('自由P图v3')
-    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v3')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('自由P图v2.5')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v2_5')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
 
     await wrapper.get('[data-testid="config-filter-scene-0"]').trigger('click')
@@ -1641,7 +1643,7 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
-    expect(payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light').engine).toBe('free_edit_v3')
+    expect(payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light').engine).toBe('free_edit_v2_5')
     expect(payload.filter_scenes[0].engine).toBe('free_edit_v3')
     expect(payload.filter_scenes[0].lora_name).toBe('')
   })

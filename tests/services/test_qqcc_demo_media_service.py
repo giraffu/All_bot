@@ -8,6 +8,7 @@ from telegram import InputMediaPhoto, InputMediaVideo
 
 from src.services.qqcc_demo_media_service import (
     clone_qqcc_config_demo_media_for_private_bot,
+    clone_qqcc_v2_demo_media_to_v1,
     delete_qqcc_private_bot_demo_media,
     send_qqcc_scene_demo_media,
     upload_qqcc_demo_media,
@@ -22,6 +23,43 @@ class _Upload:
 
     async def read(self, _size: int) -> bytes:
         return self._content
+
+
+@pytest.mark.asyncio
+async def test_v2_demo_media_migration_copies_generated_media_to_v1_namespace():
+    copied = []
+    storage_service = SimpleNamespace(
+        r2_client=SimpleNamespace(copy_object=lambda **kwargs: copied.append(kwargs)),
+        r2_bucket="user-data",
+        mark_r2_object_exists=lambda _key: None,
+    )
+    config = {
+        "video_scenes_v2": [
+            {
+                "id": "scene-a",
+                "demo_output_media": {
+                    "object_key": "qqcc/demo/video/scene-a/generated/output.mp4",
+                    "media_type": "video",
+                    "telegram_file_ids": {"1": "stale"},
+                },
+            }
+        ],
+        "video_scenes_v1": [{"id": "scene-a"}],
+        "draw_scenes_v2": [],
+        "draw_scenes_v1": [],
+    }
+
+    migrated = await clone_qqcc_v2_demo_media_to_v1(
+        config, storage_service=storage_service
+    )
+
+    assert migrated["video_scenes_v1"][0]["demo_output_media"] == {
+        "object_key": "qqcc/demo/video_v1/scene-a/output",
+        "media_type": "video",
+        "telegram_file_ids": {},
+    }
+    assert copied[0]["CopySource"]["Key"] == "qqcc/demo/video/scene-a/generated/output.mp4"
+    assert copied[0]["Key"] == "qqcc/demo/video_v1/scene-a/output"
 
 
 @pytest.mark.asyncio

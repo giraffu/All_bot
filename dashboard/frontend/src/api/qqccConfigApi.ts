@@ -68,7 +68,7 @@ const fileToBase64 = async (file: File) => {
 }
 
 export const uploadQqccDemoMedia = async (
-  sceneKind: 'video' | 'ai_video' | 'draw' | 'filter',
+  sceneKind: 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter',
   sceneId: string,
   slot: 'input' | 'output',
   file: File,

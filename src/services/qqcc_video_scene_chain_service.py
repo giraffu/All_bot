@@ -5,6 +5,7 @@ from typing import Any
 
 QQCC_VIDEO_SCENE_SECTIONS = {
     "video": "video_scenes",
+    "video_v1": "video_scenes_v1",
     "ai_video": "ai_video_scenes",
 }
 

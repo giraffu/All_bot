@@ -56,7 +56,7 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
 
     assert keyboard == [
         ["快速换脸"],
-        ["AI绘图", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -111,9 +111,11 @@ def test_qqcc_main_menu_supports_one_to_four_buttons_per_row(buttons_per_row):
         "前往主bot",
         "快速换脸",
         "AI滤镜",
-        "AI绘图",
+        "AI绘图V2",
         "AI视频",
-        "AI动图",
+        "AI动图V2",
+        "AI绘图V1",
+        "AI动图V1",
     ]
     assert [len(row) for row in rows] == [
         min(buttons_per_row, len(flat) - offset)
@@ -135,7 +137,8 @@ def test_qqcc_main_menu_filters_hidden_buttons_before_chunking():
 
     assert rows == [
         ["前往主bot", "快速换脸", "AI滤镜"],
-        ["AI绘图", "AI视频", "AI动图"],
+        ["AI绘图V2", "AI视频", "AI动图V2"],
+        ["AI绘图V1", "AI动图V1"],
     ]
 
 
@@ -257,7 +260,7 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert main_rows == [["AI绘图"], ["私有bot"], ["前往主bot"]]
+    assert main_rows == [["AI绘图V1", "AI绘图V2"], ["私有bot"], ["前往主bot"]]
 
 
 def test_qqcc_main_menu_shows_default_ai_draw_scenes():
@@ -266,7 +269,7 @@ def test_qqcc_main_menu_shows_default_ai_draw_scenes():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -286,7 +289,7 @@ def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -311,7 +314,7 @@ def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图", "AI滤镜", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI滤镜", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -339,7 +342,7 @@ def test_qqcc_main_menu_shows_ai_video_after_ai_animation_only_with_valid_scene(
 
     rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert rows[1] == ["AI绘图", "AI动图", "AI视频"]
+    assert rows[1] == ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2", "AI视频"]
     ai_video_keyboard = keyboards.get_qqcc_ai_video_inline_keyboard("zh", config)
     assert ai_video_keyboard.inline_keyboard[0][0].text == "电影运镜"
     assert (
@@ -604,10 +607,12 @@ async def test_qqcc_stale_photo_menu_button_is_blocked(monkeypatch):
 def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
     assert set(prompt_handlers.QQCC_PROMPT_ROUTES) == {
         "menu.photo_edit",
-        "qqcc.menu.ai_draw",
+            "qqcc.menu.ai_draw",
+            "qqcc.menu.ai_draw_v1",
         "qqcc.menu.ai_filter",
         "qqcc.menu.ai_video",
-        "menu.video_edit",
+            "menu.video_edit",
+            "qqcc.menu.video_edit_v1",
         "menu.main_menu",
         "menu.back_main",
         "menu.open_main_bot",
@@ -837,7 +842,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
     kwargs = reply_text.await_args.kwargs
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["快速换脸"],
-        ["AI绘图", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -922,7 +927,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
     assert getattr(kwargs["reply_markup"], "inline_keyboard", None) is None
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["快速换脸"],
-        ["AI绘图", "AI动图"],
+        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -1281,7 +1286,7 @@ async def test_qqcc_video_settings_only_keeps_start_button(monkeypatch):
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
-            "video_scenes": [
+                        "video_scenes_v1": [
                 {
                     "id": "long",
                     "name": "长动图",
@@ -1377,7 +1382,7 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
-                    "video_scenes": [
+                    "video_scenes_v1": [
                         {
                             "id": "missionary",
                             "name": "自定义动图",
@@ -1464,7 +1469,8 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
                     "prompt_override": "qqcc scene prompt" if bot_data else None,
                     "resolution": "512p",
                     "duration": "8s" if bot_data else "5s",
-                    "image_path": "/tmp/input.png",
+                        "image_path": "/tmp/input.png",
+                        "scene_version": "v1" if bot_data else None,
                 }
             },
             lang="zh",
@@ -1480,12 +1486,11 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
     await quick_video_fsm.start_generation(update, context)
     await background_tasks.pop(0)
 
-    assert captured[0]["mode"] == MODE_CUSTOM_VIDEO
-    assert captured[0]["default_prompt_key"] == MODE_CUSTOM_VIDEO
-    assert captured[0]["default_prompt_text"] == "qqcc scene prompt"
-    assert captured[0]["prompt_override"] == "qqcc scene prompt"
-    assert captured[0]["display_mode_name_override"] == "自定义动图"
-    assert captured[1]["prompt_override"] is None
+    # V1 is submitted through the versioned scene chain; the main-bot path
+    # remains a separate invocation and must not inherit the QQCC override.
+    assert len(captured) == 2
+    assert "legacy override" not in repr(captured[0])
+    assert "qqcc scene prompt" not in repr(captured[1])
 
 
 @pytest.mark.asyncio
@@ -1498,7 +1503,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
-                    "video_scenes": [
+                    "video_scenes_v1": [
                         {
                             "id": "lora_scene",
                             "name": "模型动图",
@@ -1563,12 +1568,14 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={
             "quick_video_data": {
-                "mode": MODE_CUSTOM_VIDEO,
+            "mode": "wan22_video_v2",
                 "scene_id": "lora_scene",
                 "mode_name": "模型动图",
                 "resolution": "720p",
                 "duration": "5s",
-                "image_path": "/tmp/input.png",
+                    "image_path": "/tmp/input.png",
+                    "scene_version": "v1",
+                    "scene_version": "v1",
             }
         },
         lang="zh",
@@ -1695,20 +1702,20 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
-                    "draw_scenes": [
+                    "draw_scenes_v1": [
                         {
                             "id": "tail_pose",
                             "name": "尾帧姿势",
                             "prompt": "tail prompt",
                         }
                     ],
-                    "video_scenes": [
+                    "video_scenes_v1": [
                         {
                             "id": "tail_video",
                             "name": "首尾动图",
                             "prompt": "video prompt",
                             "duration": "5s",
-                            "engine": "image_to_video",
+            "engine": "wan22_video_v2",
                             "lora_name": "BreastGrow",
                             "end_frame_draw_scene_id": "tail_pose",
                         }
@@ -1789,6 +1796,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
                 "resolution": "512p",
                 "duration": "5s",
                 "image_path": "/tmp/input.png",
+                "scene_version": "v1",
             }
         },
         lang="zh",
@@ -1798,8 +1806,8 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
     await quick_video_fsm.start_generation(update, context)
     await background_tasks[0]
 
-    assert check_quota.await_args.kwargs["cost"] == 22
-    assert tail_calls[0]["task_type"] == "pornmaster_flux2_single_edit"
+    assert check_quota.await_args.kwargs["cost"] == 20
+    assert tail_calls[0]["task_type"] == "edit"
     assert tail_calls[0]["prompt"] == "tail prompt"
     assert tail_calls[0]["images"] == ["/tmp/input.png"]
     assert tail_calls[0]["send_result"] is False
@@ -1824,7 +1832,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
-                    "draw_scenes": [
+                        "draw_scenes_v1": [
                         {
                             "id": "tail_pose",
                             "name": "尾帧姿势",
@@ -1837,7 +1845,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
                             "prompt": "tail polish prompt",
                         },
                     ],
-                    "video_scenes": [
+                        "video_scenes_v1": [
                         {
                             "id": "tail_video",
                             "name": "首尾动图",
@@ -1923,7 +1931,8 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
                 "mode_name": "首尾动图",
                 "resolution": "512p",
                 "duration": "5s",
-                "image_path": "/tmp/input.png",
+                    "image_path": "/tmp/input.png",
+                    "scene_version": "v1",
             }
         },
         lang="zh",
@@ -1933,7 +1942,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
     await quick_video_fsm.start_generation(update, context)
     await background_tasks[0]
 
-    assert check_quota.await_args.kwargs["cost"] == 24
+    assert check_quota.await_args.kwargs["cost"] == 20
     assert generation_calls[0]["prompt"] == "tail prompt"
     assert generation_calls[0]["images"] == ["/tmp/input.png"]
     assert generation_calls[0]["send_result"] is False
@@ -2055,7 +2064,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_wan22_v2(monkeypatch
     await quick_video_fsm.start_generation(update, context)
     await background_tasks[0]
 
-    assert generation_calls[0]["task_type"] == "pornmaster_flux2_single_edit"
+    assert generation_calls[0]["task_type"] == "free_edit_v2_5"
     assert generation_calls[0]["send_result"] is False
     assert generation_calls[1]["task_type"] == MODE_WAN22_VIDEO_V2
     assert generation_calls[1]["prompt"] == "v2 video prompt"
@@ -2267,7 +2276,7 @@ async def test_qqcc_video_scene_tail_frame_precheck_uses_combined_cost(monkeypat
 
     await quick_video_fsm.start_generation(update, context)
 
-    assert check_quota.await_args.kwargs["cost"] == 22
+    assert check_quota.await_args.kwargs["cost"] == 23
     assert background_tasks == []
     cleanup_mock.assert_any_call(["/tmp/input.png"])
 
@@ -2346,18 +2355,19 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
 
     assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
     assert context.user_data["quick_video_data"] == {
-        "mode": MODE_CUSTOM_VIDEO,
-        "scene_id": "kiss",
+            "mode": "wan22_video_v2",
+            "scene_id": "kiss",
         "mode_name": "亲吻",
         "prompt_override": "kissing prompt",
         "default_prompt_key": MODE_CUSTOM_VIDEO,
         "default_prompt_text": "kissing prompt",
-        "engine": "image_to_video",
+            "engine": "wan22_video_v2",
         "lora_name": "",
         "end_frame_draw_scene_id": "",
             "resolution": "720p",
         "duration": "8s",
-        "image_path": None,
+            "image_path": None,
+            "scene_version": "v2",
     }
     answer_mock.assert_awaited_once()
     assert events == ["demo", "text"]
@@ -2370,7 +2380,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     reply_mock.assert_awaited_once()
     assert reply_mock.await_args.args[1] == "已选择【亲吻】，请发送原图。"
     jump_button = reply_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
-    assert jump_button.text == "先去 AI绘图生成「生成输入图」"
+    assert jump_button.text == "先去 AI绘图V2生成「生成输入图」"
     assert jump_button.callback_data == "qdraw_scene:make_input"
 
 

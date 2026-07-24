@@ -21,12 +21,14 @@ from src.services.qqcc_config_service import (
     SCENE_PRESET_VERSION,
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
+    get_enabled_qqcc_video_scenes_v1,
     get_enabled_qqcc_ai_video_scenes,
     cache_qqcc_demo_telegram_file_ids,
     get_qqcc_copywriting_override,
@@ -89,10 +91,12 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_menu_layout"] == {
         "buttons_per_row": None,
         "button_order": [
-            "quick_faceswap",
-            "ai_draw",
-            "ai_filter",
-            "video_edit",
+                "quick_faceswap",
+                "ai_draw_v1",
+                "ai_draw_v2",
+                "ai_filter",
+                "video_edit_v1",
+                "video_edit_v2",
             "ai_video",
             "market",
             "private_bot",
@@ -105,7 +109,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "name": "快速自慰",
             "prompt": QQCC_SCENE_PRESET_PROMPTS["masturbation"],
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -117,7 +121,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "name": "快速脱衣",
             "prompt": QQCC_SCENE_PRESET_PROMPTS["undress"],
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -271,11 +275,13 @@ def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
     assert config["main_menu_layout"] == {
         "buttons_per_row": 3,
         "button_order": [
-            "market",
-            "quick_faceswap",
-            "ai_draw",
-            "ai_filter",
-            "video_edit",
+                "market",
+                "quick_faceswap",
+                "ai_draw_v1",
+                "ai_draw_v2",
+                "ai_filter",
+                "video_edit_v1",
+                "video_edit_v2",
             "ai_video",
             "private_bot",
             "main_bot_link",
@@ -301,7 +307,10 @@ def test_normalize_qqcc_main_menu_layout_falls_back_for_invalid_columns(
         "closeup_blowjob",
     ]
     assert config["video_scenes"][0]["duration"] == "5s"
-    assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    assert config["video_scenes_v1"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert config["draw_scenes_v1"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert config["draw_scenes_v2"][0]["engine"] == "free_edit_v2_5"
     assert config["video_scenes"][0]["lora_name"] == ""
     assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
     assert config["video_scenes"][0]["negative_prompt"] == ""
@@ -889,8 +898,12 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "quick_faceswap": True,
         "photo_edit": False,
         "ai_draw": True,
+        "ai_draw_v1": True,
+        "ai_draw_v2": True,
         "ai_filter": True,
         "video_edit": True,
+        "video_edit_v1": True,
+        "video_edit_v2": True,
         "ai_video": True,
         "market": True,
         "main_bot_link": True,
@@ -1039,7 +1052,8 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
     ]
     assert scenes[0]["prompt"] == "custom missionary prompt"
     assert scenes[0]["negative_prompt"] == ""
-    assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    assert get_enabled_qqcc_video_scenes_v1(config)[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert scenes[0]["lora_name"] == ""
     assert scenes[-1]["prompt"] == "custom closeup prompt"
     assert scenes[-1]["duration"] == "5s"
@@ -1087,7 +1101,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "8s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1103,7 +1117,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "10s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1119,7 +1133,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
                 "duration": "5s",
                 "resolution": "720p",
             "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "lora_strength": 1.0,
             "lora_items": [],
@@ -1187,7 +1201,7 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     )
 
     video_scenes = get_enabled_qqcc_video_scenes(config)
-    assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
     assert video_scenes[0]["lora_name"] == "wan22_explicit_077"
     assert video_scenes[0]["lora_strength"] == 0.7
     assert video_scenes[0]["lora_items"] == [
@@ -1201,20 +1215,20 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
         {"name": "wan22_explicit_077", "strength": 0.7}
     ]
     assert video_scenes[1]["negative_prompt"] == ""
-    assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
     assert video_scenes[2]["lora_name"] == ""
     assert video_scenes[2]["lora_items"] == []
     assert video_scenes[2]["negative_prompt"] == ""
 
     draw_scenes = get_enabled_qqcc_draw_scenes(config)
     draw_scenes_by_id = {scene["id"]: scene for scene in draw_scenes}
-    assert draw_scenes_by_id["old_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
-    assert draw_scenes_by_id["old_draw"]["lora_name"] == "qwen/YARN_1.0.safetensors"
+    assert draw_scenes_by_id["old_draw"]["engine"] == "free_edit_v2_5"
+    assert draw_scenes_by_id["old_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["old_draw"]["negative_prompt"] == ""
-    assert draw_scenes_by_id["v2_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["v2_draw"]["engine"] == "free_edit_v2_5"
     assert draw_scenes_by_id["v2_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["v2_draw"]["negative_prompt"] == ""
-    assert draw_scenes_by_id["bad_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["bad_draw"]["engine"] == "free_edit_v2_5"
     assert draw_scenes_by_id["bad_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["bad_draw"]["negative_prompt"] == ""
 
@@ -1587,7 +1601,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "柔光写真",
             "prompt": "make it cinematic",
             "negative_prompt": "low detail",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1599,7 +1613,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "重复 id",
             "prompt": "duplicate prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1611,7 +1625,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "name": "安全 id",
             "prompt": "safe id prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": "free_edit_v2_5",
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",
@@ -1818,7 +1832,7 @@ def test_normalize_qqcc_config_preserves_free_edit_v3_for_draw_and_filter_scenes
         }
     )
 
-    assert config["draw_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
+    assert config["draw_scenes"][0]["engine"] == "free_edit_v2_5"
     assert config["filter_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
     assert config["draw_scenes"][0]["lora_name"] == ""
     assert config["filter_scenes"][0]["lora_name"] == ""
@@ -2228,7 +2242,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "duration": "8s",
                 "resolution": "720p",
                 "aspect_ratio": "source",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
             "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
@@ -2294,8 +2308,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "name": "柔光写真",
             "prompt": "custom draw prompt",
             "negative_prompt": "bad anatomy",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
-            "lora_name": "qwen/YARN_1.0.safetensors",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
+            "lora_name": "",
             "postprocess_draw_scene_id": "anime",
             "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": True,
@@ -2306,7 +2320,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "name": "动漫风",
             "prompt": "anime style prompt",
             "negative_prompt": "",
-            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
             "postprocess_filter_scene_id": "",

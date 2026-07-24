@@ -25,6 +25,7 @@ from src.handlers.fsm.quick_draw_callback_data import (
     QUICK_DRAW_SCENE_CALLBACK_PATTERN,
     QUICK_FILTER_SCENE_CALLBACK_PATTERN,
     parse_quick_draw_scene_callback_data,
+    parse_quick_draw_v1_scene_callback_data,
     parse_quick_filter_scene_callback_data,
 )
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
@@ -46,6 +47,7 @@ from src.services.qqcc_config_service import (
     get_qqcc_filter_scene,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
+    project_qqcc_config_for_scene_version,
     render_qqcc_copywriting,
 )
 from src.services.qqcc_runtime_context import (
@@ -302,7 +304,15 @@ async def _start_qqcc_image_scene(
         await send_qqcc_scene_demo_media(
             message=query.message,
             bot=context.bot,
-            scene_kind=scene_kind,
+            scene_kind=(
+                "draw_v1"
+                if str(
+                    context.user_data.get("qqcc_pending_scene_version")
+                    or context.user_data.get("quick_image_data", {}).get("scene_version")
+                    or ""
+                ) == "v1"
+                else scene_kind
+            ),
             scene=scene,
             **demo_kwargs,
         )
@@ -446,6 +456,7 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     message = update.message or update.edited_message
     query = update.callback_query
     draw_scene_id = parse_quick_draw_scene_callback_data(query.data if query else None)
+    draw_v1_scene_id = parse_quick_draw_v1_scene_callback_data(query.data if query else None)
     filter_scene_id = parse_quick_filter_scene_callback_data(
         query.data if query else None
     )
@@ -465,7 +476,7 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
-    if draw_scene_id and is_qqcc_bot_context(context):
+    if (draw_scene_id or draw_v1_scene_id) and is_qqcc_bot_context(context):
         _replace_pending_quick_video_context(context)
 
     if context.user_data.get("in_conversation"):
@@ -480,14 +491,25 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     mode = None
     route_key = GLOBAL_REVERSE_MAP.get(text)
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if draw_v1_scene_id and qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config, family="draw", version="v1"
+        )
+        draw_scene_id = draw_v1_scene_id
     if draw_scene_id:
-        return await _start_qqcc_image_scene(
+        if draw_v1_scene_id:
+            context.user_data["qqcc_pending_scene_version"] = "v1"
+        result = await _start_qqcc_image_scene(
             update,
             context,
             qqcc_config=qqcc_config,
             scene_id=draw_scene_id,
             scene_kind=QQCC_SCENE_KIND_DRAW,
         )
+        if draw_v1_scene_id and result == QuickImageState.WAIT_IMAGE:
+            context.user_data["quick_image_data"]["scene_version"] = "v1"
+        context.user_data.pop("qqcc_pending_scene_version", None)
+        return result
     if filter_scene_id:
         return await _start_qqcc_image_scene(
             update,
@@ -541,6 +563,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     message = update.message
     fsm_data = context.user_data["quick_image_data"]
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None:
+        qqcc_config = project_qqcc_config_for_scene_version(
+            qqcc_config,
+            family="draw",
+            version=str(fsm_data.get("scene_version") or "v2"),
+        )
 
     submission_plan = build_quick_image_submission_plan(
         fsm_data=fsm_data,
