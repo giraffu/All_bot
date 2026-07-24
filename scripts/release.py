@@ -94,6 +94,8 @@ PLAN_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 PROMOTE_DIRECT_ARTIFACTS = {
     "dashboard-backend",
     "dashboard-frontend",
+    "paid-group-bot",
+    "payment-api",
     "support-bot",
 }
 REQUIRED_IMAGES = {
