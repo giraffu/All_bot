@@ -1,5 +1,6 @@
 QUICK_VIDEO_MODE_CALLBACK_PREFIX = "qvid_mode:"
 QUICK_VIDEO_SCENE_CALLBACK_PREFIX = "qvid_scene:"
+QUICK_VIDEO_V1_SCENE_CALLBACK_PREFIX = "qvidv1_scene:"
 QUICK_AI_VIDEO_SCENE_CALLBACK_PREFIX = "qaivid_scene:"
 
 QUICK_VIDEO_MODE_KEYS = (
@@ -11,7 +12,7 @@ QUICK_VIDEO_MODE_KEYS = (
 )
 
 QUICK_VIDEO_ENTRY_CALLBACK_PATTERN = (
-    r"^(?:qvid_scene:[A-Za-z0-9_-]{1,32}|"
+    r"^(?:qvid_scene:[A-Za-z0-9_-]{1,32}|qvidv1_scene:[A-Za-z0-9_-]{1,32}|"
     r"qaivid_scene:[A-Za-z0-9_-]{1,32}|"
     r"qvid_mode:menu\.video_edit_"
     r"(?:missionary|doggy|blowjob|undress_tongue|closeup_blowjob))$"
@@ -20,6 +21,10 @@ QUICK_VIDEO_ENTRY_CALLBACK_PATTERN = (
 
 def build_quick_video_scene_callback_data(scene_id: str) -> str:
     return f"{QUICK_VIDEO_SCENE_CALLBACK_PREFIX}{scene_id}"
+
+
+def build_quick_video_v1_scene_callback_data(scene_id: str) -> str:
+    return f"{QUICK_VIDEO_V1_SCENE_CALLBACK_PREFIX}{scene_id}"
 
 
 def build_quick_ai_video_scene_callback_data(scene_id: str) -> str:
@@ -42,6 +47,15 @@ def parse_quick_video_scene_callback_data(data: str | None) -> str | None:
     if not scene_id or len(scene_id) > 32:
         return None
     if not all(char.isalnum() or char in {"_", "-"} for char in scene_id):
+        return None
+    return scene_id
+
+
+def parse_quick_video_v1_scene_callback_data(data: str | None) -> str | None:
+    if not data or not data.startswith(QUICK_VIDEO_V1_SCENE_CALLBACK_PREFIX):
+        return None
+    scene_id = data[len(QUICK_VIDEO_V1_SCENE_CALLBACK_PREFIX) :]
+    if not scene_id or len(scene_id) > 32 or not all(char.isalnum() or char in {"_", "-"} for char in scene_id):
         return None
     return scene_id
 

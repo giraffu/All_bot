@@ -3,16 +3,20 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from src.handlers.fsm.quick_draw_callback_data import (
     build_quick_filter_scene_callback_data,
     build_quick_draw_scene_callback_data,
+    build_quick_draw_v1_scene_callback_data,
 )
 from src.handlers.fsm.quick_video_callback_data import (
     build_quick_ai_video_scene_callback_data,
     build_quick_video_scene_callback_data,
+    build_quick_video_v1_scene_callback_data,
 )
 from src.i18n.translator import get_text
 from src.services.qqcc_config_service import (
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
+    get_enabled_qqcc_video_scenes_v1,
+    get_enabled_qqcc_draw_scenes_v1,
     get_enabled_qqcc_ai_video_scenes,
     has_enabled_qqcc_draw_scenes,
     has_enabled_qqcc_filter_scenes,
@@ -37,6 +41,10 @@ def _can_show_ai_draw(config: dict) -> bool:
     )
 
 
+def _can_show_ai_draw_v1(config: dict) -> bool:
+    return is_qqcc_main_button_enabled(config, "ai_draw_v1") and bool(get_enabled_qqcc_draw_scenes_v1(config))
+
+
 def _can_show_ai_filter(config: dict) -> bool:
     return (
         is_qqcc_main_button_enabled(config, "ai_filter")
@@ -49,6 +57,10 @@ def _can_show_video_edit(config: dict) -> bool:
         is_qqcc_main_button_enabled(config, "video_edit")
         and has_enabled_qqcc_video_scenes(config)
     )
+
+
+def _can_show_video_edit_v1(config: dict) -> bool:
+    return is_qqcc_main_button_enabled(config, "video_edit_v1") and bool(get_enabled_qqcc_video_scenes_v1(config))
 
 
 def _can_show_ai_video(config: dict) -> bool:
@@ -76,8 +88,13 @@ def _get_visible_qqcc_main_menu_buttons(
             global_enabled and _can_show_quick_faceswap(config),
         ),
         (
-            "ai_draw",
-            get_text("qqcc.menu.ai_draw", lang),
+            "ai_draw_v1",
+            "AI绘图V1",
+            global_enabled and _can_show_ai_draw_v1(config),
+        ),
+        (
+            "ai_draw_v2",
+            "AI绘图V2",
             global_enabled and _can_show_ai_draw(config),
         ),
         (
@@ -86,8 +103,13 @@ def _get_visible_qqcc_main_menu_buttons(
             global_enabled and _can_show_ai_filter(config),
         ),
         (
-            "video_edit",
-            get_text("qqcc.menu.video_edit", lang),
+            "video_edit_v1",
+            "AI动图V1",
+            global_enabled and _can_show_video_edit_v1(config),
+        ),
+        (
+            "video_edit_v2",
+            "AI动图V2",
             global_enabled and _can_show_video_edit(config),
         ),
         (
@@ -125,7 +147,7 @@ def _build_legacy_qqcc_main_menu_rows(
 
     feature_row = [
         visible_buttons[key]
-        for key in ("ai_draw", "ai_filter", "video_edit", "ai_video")
+        for key in ("ai_draw_v1", "ai_draw_v2", "ai_filter", "video_edit_v1", "video_edit_v2", "ai_video")
         if key in visible_buttons
     ]
     if feature_row:
@@ -195,6 +217,15 @@ def get_qqcc_video_edit_inline_keyboard(
     return InlineKeyboardMarkup(keyboard)
 
 
+def get_qqcc_video_v1_inline_keyboard(lang: str, config: dict | None = None) -> InlineKeyboardMarkup:
+    config = normalize_qqcc_config(config)
+    buttons = [
+        InlineKeyboardButton(scene["name"], callback_data=build_quick_video_v1_scene_callback_data(scene["id"]))
+        for scene in get_enabled_qqcc_video_scenes_v1(config)
+    ]
+    return InlineKeyboardMarkup([buttons[index : index + 3] for index in range(0, len(buttons), 3)])
+
+
 def get_qqcc_ai_video_inline_keyboard(
     lang: str,
     config: dict | None = None,
@@ -226,6 +257,15 @@ def get_qqcc_draw_edit_inline_keyboard(
     ]
     keyboard = [buttons[index : index + 3] for index in range(0, len(buttons), 3)]
     return InlineKeyboardMarkup(keyboard)
+
+
+def get_qqcc_draw_v1_inline_keyboard(lang: str, config: dict | None = None) -> InlineKeyboardMarkup:
+    config = normalize_qqcc_config(config)
+    buttons = [
+        InlineKeyboardButton(scene["name"], callback_data=build_quick_draw_v1_scene_callback_data(scene["id"]))
+        for scene in get_enabled_qqcc_draw_scenes_v1(config)
+    ]
+    return InlineKeyboardMarkup([buttons[index : index + 3] for index in range(0, len(buttons), 3)])
 
 
 def get_qqcc_filter_edit_inline_keyboard(

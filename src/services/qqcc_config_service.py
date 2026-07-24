@@ -33,15 +33,19 @@ from src.services.qqcc_video_scene_chain_service import (
 )
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
-SCENE_PRESET_VERSION = 1
+SCENE_PRESET_VERSION = 2
 
 MAIN_BUTTON_KEYS = (
     "quick_undress",
     "quick_faceswap",
     "photo_edit",
     "ai_draw",
+    "ai_draw_v1",
+    "ai_draw_v2",
     "ai_filter",
     "video_edit",
+    "video_edit_v1",
+    "video_edit_v2",
     "ai_video",
     "market",
     "main_bot_link",
@@ -89,9 +93,11 @@ VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
 DRAW_SCENE_ENGINE_FREE_EDIT_V3 = "free_edit_v3"
+DRAW_SCENE_ENGINE_FREE_EDIT_V2_5 = "free_edit_v2_5"
 DRAW_SCENE_ENGINE_KEYS = (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
 )
 DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
@@ -155,7 +161,7 @@ def _normalize_scene_credit_cost(raw_cost: Any) -> int | None:
 def validate_qqcc_scene_credit_costs(raw_config: Any) -> None:
     if not isinstance(raw_config, dict):
         return
-    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "video_scenes_v1", "video_scenes_v2", "ai_video_scenes", "draw_scenes", "draw_scenes_v1", "draw_scenes_v2", "filter_scenes"):
         raw_scenes = raw_config.get(section)
         if not isinstance(raw_scenes, list):
             continue
@@ -325,9 +331,13 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "quick_undress": False,
         "quick_faceswap": True,
         "photo_edit": False,
-        "ai_draw": True,
+        "ai_draw": True,  # legacy compatibility; V2 is authoritative.
+        "ai_draw_v1": True,
+        "ai_draw_v2": True,
         "ai_filter": True,
-        "video_edit": True,
+        "video_edit": True,  # legacy compatibility; V2 is authoritative.
+        "video_edit_v1": True,
+        "video_edit_v2": True,
         "ai_video": True,
         "market": True,
         "main_bot_link": True,
@@ -365,8 +375,12 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         },
     },
     "video_scenes": _default_video_scenes(),
+    "video_scenes_v1": _default_video_scenes(),
+    "video_scenes_v2": _default_video_scenes(),
     "ai_video_scenes": [],
     "draw_scenes": _default_draw_scenes(),
+    "draw_scenes_v1": _default_draw_scenes(),
+    "draw_scenes_v2": _default_draw_scenes(),
     "filter_scenes": [],
     "prompts": {
         "undress": "",
@@ -1166,6 +1180,56 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return scenes
 
 
+def _force_scene_engine(
+    scenes: list[dict[str, Any]], *, engine: str, draw: bool = False
+) -> list[dict[str, Any]]:
+    """Return a versioned scene set with the requested base engine.
+
+    Version migration deliberately retains prompts, media metadata and relation ids.
+    The ids are resolved inside their own versioned collection at runtime.
+    """
+    copied = deepcopy(scenes)
+    for scene in copied:
+        scene["engine"] = engine
+        if draw and engine != DRAW_SCENE_ENGINE_FREE_EDIT:
+            scene["lora_name"] = ""
+    return copied
+
+
+def _normalize_versioned_video_scenes(
+    raw_scenes: Any,
+    *,
+    engine: str,
+    allowed_end_frame_draw_scene_ids: frozenset[str],
+    raw_prompts: dict[str, Any],
+    seed_presets: bool,
+) -> list[dict[str, Any]]:
+    scenes = _normalize_video_scenes(
+        raw_scenes,
+        allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        raw_prompts=raw_prompts,
+        seed_presets=seed_presets,
+    )
+    return _force_scene_engine(scenes, engine=engine)
+
+
+def _normalize_versioned_draw_scenes(
+    raw_scenes: Any,
+    *,
+    engine: str,
+    raw_prompts: dict[str, Any],
+    seed_presets: bool,
+    allowed_filter_scene_ids: frozenset[str],
+) -> list[dict[str, Any]]:
+    scenes = _normalize_draw_scenes(
+        raw_scenes,
+        raw_prompts=raw_prompts,
+        seed_presets=seed_presets,
+        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    )
+    return _force_scene_engine(scenes, engine=engine, draw=True)
+
+
 def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     """Return the effective QQCC config with unknown keys removed."""
 
@@ -1269,6 +1333,47 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         raw.get("ai_video_scenes"),
         allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
     )
+
+    # v2 is the compatibility projection of the historic collections.  A v1
+    # collection is seeded once from that exact effective content, then both
+    # collections are independently editable.
+    legacy_draw_scenes = config["draw_scenes"]
+    legacy_video_scenes = config["video_scenes"]
+    raw_draw_v2 = raw.get("draw_scenes_v2", legacy_draw_scenes)
+    raw_video_v2 = raw.get("video_scenes_v2", legacy_video_scenes)
+    config["draw_scenes_v2"] = _normalize_versioned_draw_scenes(
+        raw_draw_v2,
+        engine=DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
+        raw_prompts=raw_prompts,
+        seed_presets=False,
+        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    )
+    config["draw_scenes_v1"] = _normalize_versioned_draw_scenes(
+        raw.get("draw_scenes_v1", legacy_draw_scenes),
+        engine=DRAW_SCENE_ENGINE_FREE_EDIT,
+        raw_prompts=raw_prompts,
+        seed_presets=False,
+        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    )
+    v2_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v2"])
+    v1_draw_ids = frozenset(str(scene.get("id") or "") for scene in config["draw_scenes_v1"])
+    config["video_scenes_v2"] = _normalize_versioned_video_scenes(
+        raw_video_v2,
+        engine=VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+        allowed_end_frame_draw_scene_ids=v2_draw_ids,
+        raw_prompts=raw_prompts,
+        seed_presets=False,
+    )
+    config["video_scenes_v1"] = _normalize_versioned_video_scenes(
+        raw.get("video_scenes_v1", legacy_video_scenes),
+        engine=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+        allowed_end_frame_draw_scene_ids=v1_draw_ids,
+        raw_prompts=raw_prompts,
+        seed_presets=False,
+    )
+    # Existing call sites and persisted callbacks continue to resolve V2.
+    config["draw_scenes"] = config["draw_scenes_v2"]
+    config["video_scenes"] = config["video_scenes_v2"]
     normalize_qqcc_video_scene_links(config["video_scenes"])
     normalize_qqcc_video_scene_links(config["ai_video_scenes"])
 
@@ -1287,6 +1392,10 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
 
 def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_qqcc_config(config).get("video_scenes", [])
+
+
+def get_enabled_qqcc_video_scenes_v1(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return normalize_qqcc_config(config).get("video_scenes_v1", [])
 
 
 def has_enabled_qqcc_video_scenes(config: dict[str, Any]) -> bool:
@@ -1327,6 +1436,10 @@ def get_qqcc_ai_video_scene(
 
 def get_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_qqcc_config(config).get("draw_scenes", [])
+
+
+def get_enabled_qqcc_draw_scenes_v1(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return normalize_qqcc_config(config).get("draw_scenes_v1", [])
 
 
 def has_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> bool:
@@ -1587,7 +1700,7 @@ def _merge_qqcc_demo_telegram_caches(
     config: dict[str, Any],
     existing_config: dict[str, Any],
 ) -> None:
-    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "video_scenes_v1", "video_scenes_v2", "ai_video_scenes", "draw_scenes", "draw_scenes_v1", "draw_scenes_v2", "filter_scenes"):
         existing_by_id = {
             str(scene.get("id") or ""): scene
             for scene in existing_config.get(section, [])

@@ -10,6 +10,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_FREE_EDIT_V2_5,
     TASK_COSTS,
 )
 from src.lora_catalog import get_lora_default_strength
@@ -17,6 +18,7 @@ from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V3,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2_5,
     get_qqcc_draw_scene,
     get_qqcc_filter_scene,
 )
@@ -64,6 +66,8 @@ def resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
         )
     if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT_V3:
         return MODE_PORNMASTER_FLUX2_EDIT_BF16
+    if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT_V2_5:
+        return MODE_FREE_EDIT_V2_5
     return MODE_PORNMASTER_FLUX2_SINGLE_EDIT
 
 
