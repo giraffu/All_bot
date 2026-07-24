@@ -83,7 +83,11 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_buttons"]["quick_faceswap"] is True
     assert config["main_buttons"]["photo_edit"] is False
     assert config["main_buttons"]["ai_draw"] is True
+    assert config["main_buttons"]["ai_draw_v1"] is False
+    assert config["main_buttons"]["ai_draw_v2"] is True
     assert config["main_buttons"]["ai_filter"] is True
+    assert config["main_buttons"]["video_edit_v1"] is False
+    assert config["main_buttons"]["video_edit_v2"] is True
     assert config["main_buttons"]["ai_video"] is True
     assert config["ai_video_scenes"] == []
     assert config["main_buttons"]["private_bot"] is True
@@ -898,11 +902,11 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "quick_faceswap": True,
         "photo_edit": False,
         "ai_draw": True,
-        "ai_draw_v1": True,
+        "ai_draw_v1": False,
         "ai_draw_v2": True,
         "ai_filter": True,
         "video_edit": True,
-        "video_edit_v1": True,
+        "video_edit_v1": False,
         "video_edit_v2": True,
         "ai_video": True,
         "market": True,
@@ -940,6 +944,41 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         )
         == "prompts ini fallback"
     )
+
+
+@pytest.mark.parametrize("legacy_enabled", [False, True])
+def test_legacy_generation_toggles_only_control_v2(legacy_enabled):
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {
+                "ai_draw": legacy_enabled,
+                "video_edit": legacy_enabled,
+            }
+        }
+    )
+
+    assert config["main_buttons"]["ai_draw_v1"] is False
+    assert config["main_buttons"]["ai_draw_v2"] is legacy_enabled
+    assert config["main_buttons"]["video_edit_v1"] is False
+    assert config["main_buttons"]["video_edit_v2"] is legacy_enabled
+
+
+def test_explicit_v1_generation_toggles_are_preserved():
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {
+                "ai_draw": False,
+                "ai_draw_v1": True,
+                "video_edit": False,
+                "video_edit_v1": True,
+            }
+        }
+    )
+
+    assert config["main_buttons"]["ai_draw_v1"] is True
+    assert config["main_buttons"]["ai_draw_v2"] is False
+    assert config["main_buttons"]["video_edit_v1"] is True
+    assert config["main_buttons"]["video_edit_v2"] is False
 
 
 @pytest.mark.parametrize("aspect_ratio", ["source", "9:16", "16:9", "1:1"])

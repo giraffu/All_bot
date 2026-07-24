@@ -159,6 +159,7 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {"video_edit_v1": True},
             "video_scenes_v1": [
                 {
                     "id": "lora_scene",
@@ -431,6 +432,7 @@ def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
 async def test_fixed_price_direct_video_passes_cost_override_to_entrypoint():
     config = normalize_qqcc_config(
         {
+            "main_buttons": {"video_edit_v1": True},
             "video_scenes_v1": [
                 {
                     "id": "fixed",
@@ -538,6 +540,7 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {"video_edit_v1": True},
             "draw_scenes_v1": [
                 {
                     "id": "tail_pose",
@@ -733,6 +736,7 @@ async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
         qqcc_config=normalize_qqcc_config(
             {
                 "scene_preset_version": SCENE_PRESET_VERSION,
+                "main_buttons": {"video_edit_v1": True},
                 "video_scenes_v1": [
                     {
                         "id": "lora_scene",
@@ -1071,6 +1075,7 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
         qqcc_config=normalize_qqcc_config(
             {
                 "scene_preset_version": SCENE_PRESET_VERSION,
+                "main_buttons": {"video_edit_v1": True},
                     "draw_scenes_v1": [
                     {
                         "id": "tail_pose",

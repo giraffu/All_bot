@@ -56,7 +56,7 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
 
     assert keyboard == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -68,6 +68,12 @@ def _config_with_all_main_menu_entries(*, buttons_per_row: int):
     return normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {
+                "ai_draw_v1": True,
+                "ai_draw_v2": True,
+                "video_edit_v1": True,
+                "video_edit_v2": True,
+            },
             "main_menu_layout": {
                 "buttons_per_row": buttons_per_row,
                 "button_order": [
@@ -260,7 +266,7 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert main_rows == [["AI绘图V1", "AI绘图V2"], ["私有bot"], ["前往主bot"]]
+    assert main_rows == [["AI绘图V2"], ["私有bot"], ["前往主bot"]]
 
 
 def test_qqcc_main_menu_shows_default_ai_draw_scenes():
@@ -269,7 +275,7 @@ def test_qqcc_main_menu_shows_default_ai_draw_scenes():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -289,7 +295,7 @@ def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -314,7 +320,7 @@ def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
 
     assert main_rows == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI滤镜", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI滤镜", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -342,7 +348,7 @@ def test_qqcc_main_menu_shows_ai_video_after_ai_animation_only_with_valid_scene(
 
     rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert rows[1] == ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2", "AI视频"]
+    assert rows[1] == ["AI绘图V2", "AI动图V2", "AI视频"]
     ai_video_keyboard = keyboards.get_qqcc_ai_video_inline_keyboard("zh", config)
     assert ai_video_keyboard.inline_keyboard[0][0].text == "电影运镜"
     assert (
@@ -842,7 +848,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
     kwargs = reply_text.await_args.kwargs
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -927,7 +933,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
     assert getattr(kwargs["reply_markup"], "inline_keyboard", None) is None
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["快速换脸"],
-        ["AI绘图V1", "AI绘图V2", "AI动图V1", "AI动图V2"],
+        ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
         ["私有bot"],
         ["前往主bot"],
@@ -1382,6 +1388,7 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
+                    "main_buttons": {"video_edit_v1": True},
                     "video_scenes_v1": [
                         {
                             "id": "missionary",
@@ -1503,6 +1510,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
+                    "main_buttons": {"video_edit_v1": True},
                     "video_scenes_v1": [
                         {
                             "id": "lora_scene",
@@ -1573,10 +1581,9 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
                 "mode_name": "模型动图",
                 "resolution": "720p",
                 "duration": "5s",
-                    "image_path": "/tmp/input.png",
-                    "scene_version": "v1",
-                    "scene_version": "v1",
-            }
+                        "image_path": "/tmp/input.png",
+                        "scene_version": "v1",
+                }
         },
         lang="zh",
         t=lambda key, **_kwargs: key,
@@ -1702,6 +1709,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
+                    "main_buttons": {"video_edit_v1": True},
                     "draw_scenes_v1": [
                         {
                             "id": "tail_pose",
@@ -1832,6 +1840,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
         AsyncMock(
             return_value=normalize_qqcc_config(
                 {
+                    "main_buttons": {"video_edit_v1": True},
                         "draw_scenes_v1": [
                         {
                             "id": "tail_pose",

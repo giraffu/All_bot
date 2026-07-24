@@ -493,6 +493,7 @@ def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {"ai_draw_v1": True},
             "draw_scenes_v1": [
                 {
                     "id": "realistic",
