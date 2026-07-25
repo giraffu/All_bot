@@ -704,6 +704,21 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
     assert len(error_handlers) == 1
 
 
+def test_quick_video_wait_image_allows_switching_to_another_scene():
+    handler = quick_video_fsm.get_quick_video_fsm_handler()
+
+    matching_handlers = [
+        state_handler
+        for state_handler in handler.states[quick_video_fsm.QuickVideoState.WAIT_IMAGE]
+        if isinstance(state_handler, CallbackQueryHandler)
+        and state_handler.pattern is not None
+        and state_handler.pattern.match("qvid_scene:scene_mrtp210m_4")
+    ]
+
+    assert len(matching_handlers) == 1
+    assert matching_handlers[0].callback is quick_video_fsm.start_quick_video
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("callback_data", ["submit_gallery_task-1", "public_share"])
 async def test_qqcc_publish_callbacks_are_blocked_before_shared_handlers(

@@ -946,6 +946,10 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
         states={
             QuickVideoState.WAIT_IMAGE: [
                 CallbackQueryHandler(
+                    start_quick_video,
+                    pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
+                ),
+                CallbackQueryHandler(
                     jump_to_qqcc_draw_scene,
                     pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
                 ),
