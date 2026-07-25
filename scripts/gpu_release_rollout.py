@@ -22,6 +22,7 @@ PROFILE_IMAGE_ENV = {
     "image_to_video": "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
     "wan22_video_v2": "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
     "i2i_pro": "RUNPOD_IMAGE_NAME_I2I_PRO",
+    "face_swap": "RUNPOD_IMAGE_NAME_FACE_SWAP",
     "scail2": "RUNPOD_IMAGE_NAME_SCAIL2",
     "ltx_video": "RUNPOD_IMAGE_NAME_LTX_VIDEO",
     "pornmaster_flux2_edit": "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
