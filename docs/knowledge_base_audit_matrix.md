@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-25：为 gpu-252 故障卡测试新增独立、默认禁用且不可 retarget 的 `face_swap` execution profile。独立 artifact/镜像名为 `allbot-gpu-face-swap`，模型前缀为 `face_swap_v2/2026-07-25`（3 文件、18,079,673,146 bytes）；Central 的 `face_swap` 和 `face_swap_v2` 均由该 profile 显式执行 `face_swap_v2.json`。本轮没有上传模型、构建/推送镜像或修改 gpu-252 运行态。
+
 > 2026-07-25：Worker 有界预接移除当前任务类型黏性。主 Worker bundle 与 `remote_workers` 统一把候选类型收口为 `SUPPORTED_TASK_TYPES`、`PREFETCH_TASK_TYPES` 和 pipeline 类型交集，再交给 Central 按既有队列 score 跨类型选择；预接深度、claimed/Comfy/delivery 上限、取消锁、reserved heartbeat 与输入下载重叠均保持。focused tests 覆盖主/远程 bundle 的跨类型请求和 Central 跨类型 score 顺序。本条仅记录代码与知识库候选，不表示已构建 GPU artifact 或部署 test/prod。
 >
 > 2026-07-24：QQCC 官方 polling 新增只作用于该进程的双信号 liveness watchdog：成功 `getUpdates` 空轮询保持静默期存活，轮询完成或已拉取 update 处理任一连续停滞 180 秒时以专用退出码触发目标容器自重启；私有 webhook Bot 不启用。同期修复共享 Gallery feed 在 History join + `DISTINCT` + 净赞/净踩计算排序下的 PostgreSQL 非法 SQL，并从 count 子查询移除排序。事实源为 `qqcc_bot/polling_liveness.py`、QQCC 入口、Gallery query service、focused tests、QQCC Skill/文档；本条只记录代码候选，不表示已部署 test/prod。

@@ -475,6 +475,29 @@ def test_model_importer_i2i_pro_spec_uses_multitask_overrides():
     assert "bfs_head_v1_flux-klein_9b_step3750_rank64.safetensors" not in values
 
 
+def test_model_importer_face_swap_profile_uses_only_v2_workflow_models():
+    workflow_dir = Path("workers/comfy_agent/workflows")
+    spec = FIRST_WAVE_BUNDLES["face_swap_v2_baseline"]
+    refs = extract_references_for_task_types(
+        workflow_dir,
+        spec.task_types,
+        workflow_overrides=spec.workflow_overrides,
+    )
+    values = {ref.value for ref in refs}
+
+    assert spec.profiles == ("face_swap",)
+    assert spec.task_types == ("face_swap", "face_swap_v2")
+    assert spec.workflow_overrides == {
+        "face_swap": "face_swap_v2.json",
+        "face_swap_v2": "face_swap_v2.json",
+    }
+    assert values == {
+        "qwen_3_8b_fp8mixed.safetensors",
+        "flux2-vae.safetensors",
+        "DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors",
+    }
+
+
 def test_model_importer_face_i2i_t2i_spec_uses_runtime_overrides_for_face_and_t2i():
     workflow_dir = Path("workers/comfy_agent/workflows")
     spec = FIRST_WAVE_BUNDLES["face_i2i_t2i_baseline"]

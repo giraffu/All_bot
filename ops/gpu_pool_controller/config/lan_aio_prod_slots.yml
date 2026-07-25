@@ -260,6 +260,29 @@ slots:
     rollout_order: 32
     notes: Maintenance-disabled LTX 2.3 Sulphur T2V/Ingredients candidate. Local LAN validation only; never enable production intake and restore the physical slot to intentionally empty after acceptance.
 
+  - id: gpu-252-gpu1-face_swap
+    enabled: false
+    phase: maintenance_disabled
+    retargetable: false
+    assignment_id: lan-252-8189-worker-05
+    target_profile_id: face_swap
+    target_task_types:
+      - face_swap
+      - face_swap_v2
+    gpu_index: 1
+    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: false
+    agent_id: lan_aio_prod_gpu252_gpu1_face_swap_01
+    container_name: allbot-lan-aio-gpu-252-gpu1-face_swap-prod
+    legacy_worker_id: lan_aio_prod_gpu252_gpu1_img2img_lora_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-img2img_lora-prod
+    old_local_agent_container: ""
+    remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-face-swap
+    rollout_order: 34
+    notes: Maintenance-disabled diagnostic candidate for the gpu-252 GPU1 card that reproduced Xid 119/154. Both face_swap task types intentionally execute face_swap_v2.json. Never enable intake until the card is reset, an immutable image digest and model manifest exist, and a workload-specific canary passes.
+
   - id: gpu-252-gpu1-i2i_pro
     enabled: true
     phase: prod_enabled

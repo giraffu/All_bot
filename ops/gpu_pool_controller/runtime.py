@@ -9,6 +9,7 @@ from typing import Any
 from .config_loader import ControllerConfig
 from .pipeline_policy import pipeline_environment_for_profile
 from .runpod_profile_catalog import (
+    RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
 )
@@ -52,6 +53,7 @@ LAN_AIO_LTX_T2V_ENV = {
     "COMFYUI_DIR": "/opt/ComfyUI",
 }
 LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
+    "face_swap": RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
