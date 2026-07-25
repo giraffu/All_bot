@@ -158,4 +158,5 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 
 - 研发阶段默认只报告云测试验证结果，不声称已发布正式。
 - 正式发布总结必须说明：测试环境验证、用户确认、本次维护模式请求/默认值/实际值、实际更新服务、迁移状态、验证命令结果和回滚入口。
+- 定向 `release_artifact` 复用上一 bundle 中已验证的 digest-pinned base，只重建目标 artifact；不得重建共享 base 后让其它复用模块留下 stale base digest。
 - 若修改部署入口、compose、worker workflow、RunPod profile、R2/legacy 媒体策略、agent control 或运维脚本，同步更新相关 docs/skills，并调用 `allbot-kb-auto-updater`。

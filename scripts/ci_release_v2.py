@@ -268,7 +268,7 @@ def main() -> int:
         "--release-artifact",
         action="append",
         default=[],
-        help="Build only this control-plane artifact and its required bases.",
+        help="Build only this control-plane artifact against inherited dependencies.",
     )
     parser.add_argument(
         "--validation-mode",
