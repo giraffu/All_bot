@@ -1,7 +1,7 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
 > 2026-07-25：为 gpu-252 故障卡准备了独立 `face_swap` profile、GPU artifact `allbot-gpu-face-swap` 和模型前缀 `face_swap_v2/2026-07-25`。该执行池声明 `face_swap,face_swap_v2`，两个任务都固定执行 `face_swap_v2.json`。模型清单为 3 文件、`18,079,673,146` bytes（约 16.84 GiB）。gpu-252 候选固定故障卡 UUID 与端口 8191，保持 `maintenance_disabled`、不可 retarget；本次未构建/推送镜像、未上传模型或启用运行态。
-
+>
 > 2026-07-18 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。main 的 GPU 输入变化必须先发布同 SHA 完整 OCI profile manifest，LAN registry 只允许保 digest 复制，不得现场重建。
 
 ## 1. 目标与范围
