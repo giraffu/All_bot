@@ -95,6 +95,12 @@ DEFAULT_BASE_TARGETS: tuple[TargetSpec, ...] = (
 
 OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     TargetSpec(
+        name="face_swap",
+        prefix="face_swap_v2/2026-07-25",
+        manifest_key="face_swap_v2/2026-07-25/manifest.json",
+        bundle_versions=(("face_swap_v2_baseline", "2026-07-25"),),
+    ),
+    TargetSpec(
         name="ltx_t2v",
         prefix="ltx_t2v/2026-07-22",
         manifest_key="ltx_t2v/2026-07-22/manifest.json",

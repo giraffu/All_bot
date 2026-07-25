@@ -108,6 +108,16 @@ def _touch_blob(registry: ModelRegistry, sha256: str) -> None:
     path.write_bytes(b"model")
 
 
+def test_face_swap_model_cache_target_is_independent_and_opt_in():
+    module = _load_module()
+    target = module.TARGETS_BY_NAME["face_swap"]
+
+    assert target not in module.DEFAULT_BASE_TARGETS
+    assert target.prefix == "face_swap_v2/2026-07-25"
+    assert target.manifest_key == "face_swap_v2/2026-07-25/manifest.json"
+    assert target.bundle_versions == (("face_swap_v2_baseline", "2026-07-25"),)
+
+
 def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
     shas = {name: str(index) * 64 for index, name in enumerate("abcdefghijkl", start=1)}
     _write_manifest(

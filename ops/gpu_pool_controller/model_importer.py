@@ -141,6 +141,17 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
             "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
         },
     ),
+    "face_swap_v2_baseline": BundleImportSpec(
+        bundle="face_swap_v2_baseline",
+        version="2026-07-25",
+        profiles=("face_swap",),
+        source_node_id="gpu-226",
+        task_types=("face_swap", "face_swap_v2"),
+        workflow_overrides={
+            "face_swap": "face_swap_v2.json",
+            "face_swap_v2": "face_swap_v2.json",
+        },
+    ),
     "wan22_video_v2_baseline": BundleImportSpec(
         bundle="wan22_video_v2_baseline",
         version="2026-06-10",
