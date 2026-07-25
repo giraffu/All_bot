@@ -133,6 +133,10 @@ def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
     assert "SUPPORTED_TASK_TYPES: face_swap,face_swap_v2" in rendered
     assert "POOL_RUNTIME_PROFILE: face_swap" in rendered
     assert (
+        "/srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/"
+        "i2i_pro/workspace/ComfyUI/models:/workspace/ComfyUI/models"
+    ) in rendered
+    assert (
         'TASK_TYPE_WORKFLOW_OVERRIDES: '
         '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
     ) in rendered
@@ -2186,6 +2190,56 @@ def test_lan_aio_disabled_canary_start_never_enables_intake():
         "pull-image",
         "warm-cache",
         "start-disabled",
+    ]
+
+
+def test_lan_aio_release_disabled_canary_uses_exact_digest_and_stays_disabled():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def start_disabled_canary(self, slots):
+            profile = self.config.profiles[slots[0].target_profile_id]
+            self.events.append(f"canary:{profile.all_in_one_image_ref}")
+            return {
+                "ok": True,
+                "action": "canary-start-disabled",
+                "slot": slots[0].id,
+                "intake": "disabled",
+            }
+
+        def _verify_release_runtime(self, slot, resolved):
+            self.events.append(f"verify:{resolved['ref']}")
+
+        def enable_aio(self, slots):  # pragma: no cover - safety tripwire
+            raise AssertionError("release disabled canary must never enable intake")
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-face_swap"]
+    digest = "sha256:" + "1" * 64
+    resolved = {
+        "profile": "face_swap",
+        "ref": "ghcr.io/giraffu/allbot-gpu-face-swap@" + digest,
+        "digest": digest,
+        "model_manifest_key": "face_swap_v2/release/manifest.json",
+        "oci_revision": "a" * 40,
+    }
+
+    result = ops.start_release_disabled_canary(slot, resolved)
+
+    assert result["ok"] is True
+    assert result["action"] == "release-canary-start-disabled"
+    assert result["intake"] == "disabled"
+    assert result["target_ref"] == resolved["ref"]
+    assert ops.events == [
+        f"canary:{resolved['ref']}",
+        f"verify:{resolved['ref']}",
     ]
 
 

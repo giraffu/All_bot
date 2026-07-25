@@ -2022,6 +2022,61 @@ class LanAioProdOps:
             "intake": "disabled",
         }
 
+    def start_release_disabled_canary(
+        self,
+        slot: LanAioProdSlot,
+        resolved: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Start one exact release digest for validation without enabling intake."""
+
+        release_profile = {
+            "img2img_lora": "img2img",
+        }.get(slot.target_profile_id, slot.target_profile_id)
+        if release_profile != resolved["profile"]:
+            raise RuntimeError(
+                "release profile does not match selected LAN slot: "
+                f"{resolved['profile']} != {slot.target_profile_id}"
+            )
+        old_profile = self.config.profiles[slot.target_profile_id]
+        target_ref = str(resolved["ref"])
+        target_profile = replace(
+            old_profile,
+            all_in_one_image_ref=target_ref,
+            image_ref=target_ref,
+            model_manifest_key=str(
+                resolved.get("model_manifest_key") or old_profile.model_manifest_key
+            ),
+        )
+        self.config.profiles[slot.target_profile_id] = target_profile
+        try:
+            canary = self.start_disabled_canary([slot])
+            self._verify_release_runtime(slot, resolved)
+        except Exception as exc:
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_release_disabled_canary_failed",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
+            )
+            raise RuntimeError(
+                "release disabled canary failed; candidate was stopped and intake "
+                f"remains disabled: {exc}"
+            ) from exc
+        return {
+            "ok": True,
+            "action": "release-canary-start-disabled",
+            "slot": slot.id,
+            "target_ref": target_ref,
+            "digest": resolved["digest"],
+            "oci_revision": resolved["oci_revision"],
+            "intake": "disabled",
+            "canary": canary,
+        }
+
     def _verify_comfy_queue_idle(self, slot: LanAioProdSlot) -> None:
         checker = (
             "import json,sys; payload=json.load(sys.stdin); "
@@ -3659,6 +3714,51 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
         return _handle_state_action(args, ops)
     if args.action == "recover":
         return _handle_recover(args, ops)
+    if args.action == "canary-start-disabled" and any(
+        (args.release_index, args.sha, args.profile)
+    ):
+        if not args.slot or not args.release_index or not args.sha or not args.profile:
+            raise SystemExit(
+                "release canary-start-disabled requires --slot, --profile, "
+                "--release-index and --sha"
+            )
+        slot = ops.select_slots(args.slot, include_disabled=True)[0]
+        resolved = resolve_gpu_artifact(
+            args.release_index,
+            source_sha=args.sha,
+            profile=args.profile,
+            strategy=args.strategy,
+        )
+        if not args.execute:
+            plan = rollout_plan(resolved, slot=slot.id, operator="lan")
+            plan.update(
+                {
+                    "action": "release-canary-start-disabled",
+                    "intake": "disabled",
+                    "steps": [
+                        "preflight selected slot",
+                        "pull exact target digest",
+                        "warm exact model manifest",
+                        "start target digest while disabled",
+                        "verify actual digest, OCI revision and runtime contract",
+                        "leave selected slot disabled for workload canary",
+                    ],
+                }
+            )
+            _print_json_payload(plan)
+            return 0
+        operation_id = args.operation_id or _new_operation_id(
+            "release-canary-start-disabled"
+        )
+        _print_json_payload(
+            ops.execute_managed_mutation(
+                action="release-canary-start-disabled",
+                slots=[slot],
+                operation_id=operation_id,
+                execute=lambda: ops.start_release_disabled_canary(slot, resolved),
+            )
+        )
+        return 0
     if args.action == "release-rollout":
         if not args.slot or not args.release_index or not args.sha or not args.profile:
             raise SystemExit(
