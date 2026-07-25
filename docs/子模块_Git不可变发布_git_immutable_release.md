@@ -270,3 +270,5 @@ scripts/release.py rollback --env test --track test-execution --to <old-sha> --m
 归档 `origin/main`/`origin/deploy` tag、stabilization PR、GHCR 权限、主机 bootstrap、env 原子迁移、测试回滚演练、Pages 自动构建关闭和首次生产切换均是外部 mutation，必须分别确认。测试 Pages 已于 2026-07-14 使用独立最小 Pages token 关闭 production/preview 自动部署；正式 Pages 仍未修改。本机 DNS/Tunnel Account Token 对 Pages API 返回 403，不能冒充 Pages 发布凭据。
 
 定向 `release_artifact` 复用上一 bundle 中已验证、digest-pinned 的共享 base，只重建目标 artifact；不得重建共享 base 后让其它复用模块留下 stale base digest。
+
+定向任务若在镜像推送后、bundle 组装前失败，同 SHA 重试可复用 registry 中的现有 tag，但必须先读取镜像配置并核对 `org.opencontainers.image.revision` 精确等于目标 SHA，再解析 digest；revision 缺失或不匹配继续 fail closed，禁止覆盖不可变 tag。
