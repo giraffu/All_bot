@@ -84,7 +84,8 @@ jobs:
   release:
     needs: change-scope
     if: >-
-      needs.change-scope.outputs.requires_release_bundle == 'true' &&
+      (needs.change-scope.outputs.requires_release_bundle == 'true' ||
+      (github.event_name == 'workflow_dispatch' && inputs.release_artifact != '')) &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       (github.event.workflow_run.event == 'push' ||
