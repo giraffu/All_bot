@@ -265,6 +265,20 @@ def test_wan22_github_workflow_defaults_to_lan_proven_base_and_comfyui_ref():
     assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" in workflow
 
 
+def test_face_swap_github_workflow_publishes_dedicated_revision_pinned_image():
+    workflow = Path(".github/workflows/runpod_face_swap_profile_image.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "IMAGE_NAME: allbot-gpu-face-swap" in workflow
+    assert "--profile face_swap" in workflow
+    assert "ALLBOT_GIT_SHA: ${{ github.sha }}" in workflow
+    assert "io.allbot.runpod.agent-revision" in workflow
+    assert "io.allbot.runpod.workflow-revision" in workflow
+    assert "face_swap_v2/2026-07-25/manifest.json" in workflow
+    assert "docker manifest inspect" in workflow
+
+
 def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(tmp_path):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
