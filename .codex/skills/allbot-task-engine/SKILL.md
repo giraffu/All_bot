@@ -5,6 +5,8 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 
 # AllBot 任务引擎与调度
 
+> 2026-07-25：新增隔离的 `face_swap` execution profile 候选。它可承接 Central 的 `face_swap` 与 `face_swap_v2` 两个既有任务类型，但 Worker runtime 必须将二者都覆盖到 `face_swap_v2.json`；这不合并业务类型、不改计费/退款，也不允许 `i2i_pro` 重新声明 V1。
+
 本技能是任务提交、排队、执行、回流和清理的轻量入口。正文保留稳定入口、红线和排障路由；长链路细节以 `/docs` 为事实源，避免技能调用时被截断。
 
 ## 1. 先读什么

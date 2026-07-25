@@ -22,7 +22,7 @@ SMOKE="true"
 
 default_base_image_for_profile() {
     case "$1" in
-        i2i_pro)
+        i2i_pro|face_swap)
             printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
             ;;
         pornmaster_flux2_edit)
@@ -36,7 +36,7 @@ default_base_image_for_profile() {
 
 default_comfyui_ref_for_profile() {
     case "$1" in
-        i2i_pro)
+        i2i_pro|face_swap)
             printf '%s\n' "16cd8d8a8f5f16ce7e5f929fdba9f783990254ea"
             ;;
         scail2)
@@ -60,7 +60,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
+  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, face_swap, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -178,6 +178,9 @@ case "$PROFILE" in
     i2i_pro)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-i2i-pro:local}"
         ;;
+    face_swap)
+        IMAGE_REF="${IMAGE_REF:-allbot/gpu-face-swap:local}"
+        ;;
     pornmaster_flux2_edit)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-pornmaster-flux2-edit:local}"
         ;;
@@ -247,7 +250,7 @@ elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
     cp -a remote_workers "${cleanup_dir}/remote_workers"
     dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
+elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "face_swap" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     cp -a remote_workers "${cleanup_dir}/remote_workers"

@@ -1,5 +1,7 @@
 # 子模块: 局域网 GPU 节点资源与运维 (LAN GPU Resource Ops)
 
+> 2026-07-25：catalog 新增 `gpu-252-gpu1-face_swap` 硬件诊断候选，固定故障卡 UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7` 与 host 8191。候选保持 `enabled=false`、`maintenance_disabled`、`retargetable=false`，同时声明 `face_swap,face_swap_v2` 并把两者都执行为 V2 workflow。只有在主机复位、独立镜像精确 digest、模型 manifest 和真实换脸 canary 全部通过后，才可另行申请生产启用。
+
 ## 1. 目标与范围
 
 本文档记录武汉局域网 GPU 节点的硬件资源、容器布局、ComfyUI 实例、模型挂载、生产 worker 对应关系和安全运维边界。它用于后续研发、模型更新、ComfyUI 排障、worker 灰度和容量规划。

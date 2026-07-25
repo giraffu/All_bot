@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f2486d24c5c198a967d3241f67e1ac67c50d72cc",
+  "batch": "face-swap-v2-20260725",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-face-swap-v2-20260725",
+  "members": [
+    {
+      "base_sha": "f2486d24c5c198a967d3241f67e1ac67c50d72cc",
+      "branch": "codex/c-gpu252-face-swap-v2-profile",
+      "head": "47d828dc4b3b10c92c2450801facdba63224830f",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

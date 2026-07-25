@@ -256,6 +256,14 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
     assert catalog["img2img"]["profile"]["model_manifest_key"] == (
         "img2img_lora/2026-06-10/manifest.json"
     )
+    assert catalog["face_swap"]["image"] == "allbot-gpu-face-swap"
+    assert catalog["face_swap"]["profile"]["task_types"] == [
+        "face_swap",
+        "face_swap_v2",
+    ]
+    assert catalog["face_swap"]["profile"]["model_manifest_key"] == (
+        "face_swap_v2/2026-07-25/manifest.json"
+    )
     assert catalog["image_to_video"]["profile"]["model_manifest_key"] == (
         "image_to_video/2026-07-18-lora5/manifest.json"
     )

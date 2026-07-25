@@ -110,6 +110,34 @@ def test_all_i2i_pro_lan_slots_keep_v1_and_v2_capacity_separate():
     assert all("face_swap" not in slot.target_task_types for slot in i2i_slots)
 
 
+def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+
+    slot = slots["gpu-252-gpu1-face_swap"]
+    assert slot.enabled is False
+    assert slot.phase == "maintenance_disabled"
+    assert slot.retargetable is False
+    assert slot.target_profile_id == "face_swap"
+    assert slot.target_task_types == ("face_swap", "face_swap_v2")
+    assert slot.gpu_device_id == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
+    assert slot.host_port == 8191
+    assert slot.agent_id == "lan_aio_prod_gpu252_gpu1_face_swap_01"
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    rendered = ops.render_compose(slot)
+    assert "SUPPORTED_TASK_TYPES: face_swap,face_swap_v2" in rendered
+    assert "POOL_RUNTIME_PROFILE: face_swap" in rendered
+    assert (
+        'TASK_TYPE_WORKFLOW_OVERRIDES: '
+        '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
+    ) in rendered
+
+
 def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 

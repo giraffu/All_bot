@@ -105,6 +105,13 @@ RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES = json.dumps(
     },
     separators=(",", ":"),
 )
+RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "face_swap": "face_swap_v2.json",
+        "face_swap_v2": "face_swap_v2.json",
+    },
+    separators=(",", ":"),
+)
 RUNPOD_SCAIL2_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
     "NVIDIA GeForce RTX 4090",

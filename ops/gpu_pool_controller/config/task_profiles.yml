@@ -138,6 +138,28 @@ profiles:
     model_prefix: i2i_pro/2026-06-14-test
     model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
 
+  face_swap:
+    runtime_profile: face_swap
+    task_types:
+      - face_swap
+      - face_swap_v2
+    model_bundles:
+      - face_swap_v2_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/face_swap_v2.json
+    min_vram_gb: 32
+    image_ref: ghcr.io/giraffu/allbot-gpu-face-swap:pending
+    all_in_one_image_ref: ghcr.io/giraffu/allbot-gpu-face-swap:pending
+    model_prefix: face_swap_v2/2026-07-25
+    model_manifest_key: face_swap_v2/2026-07-25/manifest.json
+
   pornmaster_flux2_edit_bf16:
     runtime_profile: pornmaster_flux2_edit
     task_types:

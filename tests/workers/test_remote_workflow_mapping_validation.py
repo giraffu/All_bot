@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from ops.gpu_pool_controller.runpod_profile_catalog import (
+    RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_TASK_PROFILES,
@@ -25,6 +26,7 @@ BAKED_PROFILE_DOCKERFILES = tuple(
     ROOT / "remote_workers/docker/runpod_profiles" / profile / "Dockerfile"
     for profile in (
         "img2img_lora",
+        "face_swap",
         "i2i_pro",
         "wan22_aio_video",
         "scail2",
@@ -47,6 +49,7 @@ EXPECTED_REMOTE_WORKFLOW_DRIFTS = {
     "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json",
 }
 PROFILE_WORKFLOW_OVERRIDES = {
+    "face_swap": json.loads(RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES),
     "i2i_pro": json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
     "ltx_video": json.loads(RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES),
 }
@@ -189,6 +192,24 @@ def test_remote_worker_resolves_i2i_pro_task_type_workflow_overrides(monkeypatch
     )
     mappings = validation.validate_workflow_directory(str(REMOTE_WORKFLOW_DIR))
     assert {"face_swap_v2", "t2i-pornmaster-turbo", "i2i_pro"}.issubset(mappings)
+
+
+def test_face_swap_profile_routes_v1_and_v2_to_v2_workflow(monkeypatch):
+    validation = _load_remote_validation_module()
+    overrides = json.loads(RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES)
+
+    assert overrides == {
+        "face_swap": "face_swap_v2.json",
+        "face_swap_v2": "face_swap_v2.json",
+    }
+
+    monkeypatch.setenv(
+        validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
+        RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
+    )
+
+    assert validation.resolve_workflow_filename("face_swap") == "face_swap_v2.json"
+    assert validation.resolve_workflow_filename("face_swap_v2") == "face_swap_v2.json"
 
 
 @pytest.mark.parametrize("task_type", ["video_insert", "video_edit"])

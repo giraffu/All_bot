@@ -1,5 +1,7 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
+> 2026-07-25：专属 `face_swap` Worker profile 不改变上游 API、计费、退款或业务任务类型。Central 仍保留 `face_swap` 与 `face_swap_v2`；仅在该执行池内，两种任务都通过显式 workflow override 运行 `face_swap_v2.json`。通用 V1 Worker 和 `i2i_pro` 的既有能力声明保持不变。
+
 ## 1. 目标与适用场景
 
 本文档用于说明当前系统中“生成任务”从前端发起，到 Web API 提交，到 `task_core` 派发，再到底层 Central API / Queue / Worker / ComfyUI 执行，以及状态回流、结果持久化、历史查询的完整链路。
