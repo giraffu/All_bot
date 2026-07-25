@@ -204,6 +204,29 @@ def _validate_manifest(
             _validate_gpu_profile(name, artifact)
 
 
+def load_gpu_manifest(
+    path: Path,
+    *,
+    expected_sha: str,
+    require_complete: bool = True,
+) -> dict[str, Any]:
+    """Load one standalone GPU manifest with the same artifact validation as an index."""
+
+    expected_sha = _validate_sha(expected_sha, field="expected_sha")
+    manifest = _read_object(path.resolve())
+    _validate_manifest(
+        manifest,
+        track="gpu-execution",
+        expected_sha=expected_sha,
+    )
+    if require_complete and (
+        manifest.get("completeness", "complete") != "complete"
+        or manifest.get("missing_artifacts")
+    ):
+        raise ManifestV2Error("standalone GPU manifest must be complete")
+    return manifest
+
+
 def load_release_index(path: Path, *, expected_sha: str) -> LoadedRelease:
     expected_sha = _validate_sha(expected_sha, field="expected_sha")
     path = path.resolve()

@@ -49,7 +49,7 @@ python scripts/lan_aio_fleet_prod_ops.py render --slot <slot> --include-disabled
 python scripts/lan_aio_fleet_prod_ops.py preflight --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py pull-image --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disabled --execute
-python scripts/lan_aio_fleet_prod_ops.py canary-start-disabled --slot <slot> --profile <profile> --release-index <release-index.json> --sha <full-sha> --strategy direct|standard --include-disabled --execute
+python scripts/lan_aio_fleet_prod_ops.py canary-start-disabled --slot <slot> --profile <profile> --release-index <release-index.json|complete-gpu-manifest.json> --sha <full-sha> --strategy direct|standard --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
@@ -85,7 +85,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时报告；容器、Central 与 ComfyUI 健康验证仍必须执行。
 - `takeover/recover/restart-aio/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续显式单 slot mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
-- 只做本地验收且禁止 intake 的候选必须使用成对的 `canary-start-disabled` / `canary-stop-disabled`。对 release artifact 必须同时传 `--profile/--release-index/--sha`，helper 从 index 解析精确 digest，执行 preflight、pull、warm-cache、disabled heartbeat、实际 image/OCI revision/runtime contract 校验后仍保持 Central control disabled；不带 release 参数只用于 catalog 已经固定精确镜像的候选。后者同时等待 worker 与 Comfy `/queue` 为空，停止精确候选容器并把物理槽原子恢复为 `intentionally_empty`。不得用 `recover/takeover` 替代，因为它们成功后会 enable intake。
+- 只做本地验收且禁止 intake 的候选必须使用成对的 `canary-start-disabled` / `canary-stop-disabled`。对 release artifact 必须同时传 `--profile/--release-index/--sha`；`--release-index` 可指向完整三轨 index 或 `completeness=complete` 且同 SHA 的独立 GPU manifest，helper 解析精确 digest，执行 preflight、pull、warm-cache、disabled heartbeat、实际 image/OCI revision/runtime contract 校验后仍保持 Central control disabled。不得用 incomplete GPU manifest，也不得用 `recover/takeover` 替代，因为后两者成功后会 enable intake。
 - ledger 明确记录 `intentionally_empty` 时，允许对同一物理槽的指定候选执行只读 `preflight --execute`，用于读取逐项门禁；该例外不扩展到 pull、warm-cache 或其它 mutation。`configure-registry` 必须同时维护 daemon `insecure-registries` / `proxies.no-proxy` 与 systemd `NO_PROXY/no_proxy`，保留既有代理端点；重启 Docker 后只等待重启前已运行的候选恢复，本来停止的候选必须保持停止。
 
 ## 4. 标准流程
