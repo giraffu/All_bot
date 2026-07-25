@@ -30,6 +30,12 @@ on:
         description: Successful Immutable control-plane release run ID required for a manual full replay.
         required: false
         default: ""
+      release_artifact:
+        description: Optional built control-plane artifact for a module-scoped replay.
+        required: false
+        type: choice
+        options: ["", qqcc-bot]
+        default: ""
 
 permissions:
   contents: read
@@ -154,12 +160,14 @@ jobs:
           git fetch --prune origin "$SOURCE_BRANCH"
           git merge-base --is-ancestor "$SOURCE_SHA" "origin/$SOURCE_BRANCH"
       - name: Check out trusted release tooling
-        if: steps.source.outputs.validation_mode == 'full'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
           path: .release-tooling
-          sparse-checkout: scripts/validate_upstream_ci_run.py
+          sparse-checkout: |
+            scripts/validate_upstream_ci_run.py
+            scripts/ci_release_v2.py
+            scripts/release_artifacts_v2.py
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Verify successful upstream test run
@@ -172,7 +180,6 @@ jobs:
           UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || inputs.upstream_run_id }}
         run: |
           set -euo pipefail
-          trap 'rm -rf -- .release-tooling' EXIT
           git fetch --prune origin "$SOURCE_BRANCH"
           main_sha="$(git rev-parse "origin/$SOURCE_BRANCH")"
           git merge-base --is-ancestor "$SOURCE_SHA" "$main_sha"
@@ -342,8 +349,12 @@ jobs:
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
           TRUSTED_CI_RUN: ${{ steps.source.outputs.ci_run }}
           VALIDATION_MODE: ${{ steps.source.outputs.validation_mode }}
+          RELEASE_ARTIFACT: ${{ inputs.release_artifact }}
         run: |
           set -euo pipefail
+          cp .release-tooling/scripts/ci_release_v2.py scripts/ci_release_v2.py
+          cp .release-tooling/scripts/release_artifacts_v2.py scripts/release_artifacts_v2.py
+          rm -rf -- .release-tooling
           args=(
             --sha "$SOURCE_SHA"
             --ci-run "$TRUSTED_CI_RUN"
@@ -356,6 +367,9 @@ jobs:
           )
           if [ "$RELEASE_CHANNEL" = main ]; then
             args+=(--require-complete-gpu)
+          fi
+          if [ -n "$RELEASE_ARTIFACT" ]; then
+            args+=(--release-artifact "$RELEASE_ARTIFACT")
           fi
           gpu_manifest=""
           manifest_ref="${GPU_MANIFEST_REF:-${IMAGE_PREFIX}/allbot-gpu-release-manifests:${SOURCE_SHA}}"

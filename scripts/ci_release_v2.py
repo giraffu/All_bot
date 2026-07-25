@@ -19,11 +19,21 @@ from typing import Any, Mapping
 
 try:
     from scripts.assemble_release_v2 import assemble
-    from scripts.release_artifacts_v2 import build_matrix, load_catalog, plan_builds
+    from scripts.release_artifacts_v2 import (
+        build_matrix,
+        load_catalog,
+        plan_builds,
+        plan_selected_builds,
+    )
     from scripts.release_manifest_v2 import load_release_index
 except ModuleNotFoundError:
     from assemble_release_v2 import assemble  # type: ignore[no-redef]
-    from release_artifacts_v2 import build_matrix, load_catalog, plan_builds  # type: ignore[no-redef]
+    from release_artifacts_v2 import (  # type: ignore[no-redef]
+        build_matrix,
+        load_catalog,
+        plan_builds,
+        plan_selected_builds,
+    )
     from release_manifest_v2 import load_release_index  # type: ignore[no-redef]
 
 
@@ -255,6 +265,12 @@ def main() -> int:
     parser.add_argument("--gpu-baseline-manifest", type=Path)
     parser.add_argument("--require-complete-gpu", action="store_true")
     parser.add_argument(
+        "--release-artifact",
+        action="append",
+        default=[],
+        help="Build only this control-plane artifact and its required bases.",
+    )
+    parser.add_argument(
         "--validation-mode",
         choices=("full", "build-only"),
         default="full",
@@ -272,12 +288,19 @@ def main() -> int:
         if args.previous_catalog and args.previous_catalog.is_file()
         else None
     )
-    plan = plan_builds(
-        catalog,
-        changed,
-        has_previous=has_previous,
-        previous_catalog=previous_catalog,
-    )
+    if args.release_artifact:
+        plan = plan_selected_builds(
+            catalog,
+            args.release_artifact,
+            has_previous=has_previous,
+        )
+    else:
+        plan = plan_builds(
+            catalog,
+            changed,
+            has_previous=has_previous,
+            previous_catalog=previous_catalog,
+        )
     gpu_builds = {
         name for name in plan.build
         if catalog[name]["track"] == "gpu-execution"

@@ -67,6 +67,57 @@ def _expand_bases(
     return result
 
 
+def _include_required_bases(
+    catalog: Mapping[str, Mapping[str, Any]], selected: set[str]
+) -> set[str]:
+    result = set(selected)
+    pending = list(selected)
+    while pending:
+        base = catalog[pending.pop()].get("base")
+        if base and base not in result:
+            result.add(base)
+            pending.append(base)
+    return result
+
+
+def plan_selected_builds(
+    catalog: Mapping[str, Mapping[str, Any]],
+    selected: Iterable[str],
+    *,
+    has_previous: bool,
+) -> BuildPlan:
+    """Build an explicit control-plane artifact scope and its required bases."""
+
+    requested = set(selected)
+    if not has_previous:
+        raise ArtifactPlanError("selected release scope requires a previous bundle")
+    unknown = requested - set(catalog)
+    if unknown:
+        raise ArtifactPlanError(
+            "selected release scope contains unknown artifacts: "
+            + ", ".join(sorted(unknown))
+        )
+    invalid = {
+        name
+        for name in requested
+        if catalog[name].get("track") != "control-plane"
+        or catalog[name].get("kind") == "external-image"
+    }
+    if invalid:
+        raise ArtifactPlanError(
+            "selected release scope must contain built control-plane artifacts: "
+            + ", ".join(sorted(invalid))
+        )
+    build = _include_required_bases(catalog, requested)
+    owned = {
+        name
+        for name, artifact in catalog.items()
+        if artifact.get("kind") != "external-image"
+    }
+    external = set(catalog) - owned
+    return BuildPlan(build=build, reuse=owned - build, resolve=external)
+
+
 def plan_builds(
     catalog: Mapping[str, Mapping[str, Any]],
     changed_paths: Iterable[str],
