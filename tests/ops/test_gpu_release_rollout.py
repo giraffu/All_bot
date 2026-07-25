@@ -96,6 +96,36 @@ def test_direct_rollout_resolves_exact_attested_digest(tmp_path):
     assert "whole-host restart" in plan["forbidden"]
 
 
+def test_direct_rollout_accepts_complete_standalone_gpu_manifest(tmp_path):
+    index_path = _bundle(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    gpu_path = tmp_path / index["manifests"]["gpu-execution"]
+
+    module = _load_module()
+    resolved = module.resolve_gpu_artifact(
+        gpu_path, source_sha=SHA, profile="i2i_pro", strategy="direct"
+    )
+
+    assert resolved["ref"].endswith("@" + resolved["digest"])
+    assert resolved["profile"] == "i2i_pro"
+
+
+def test_direct_rollout_rejects_incomplete_standalone_gpu_manifest(tmp_path):
+    index_path = _bundle(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    gpu_path = tmp_path / index["manifests"]["gpu-execution"]
+    gpu = json.loads(gpu_path.read_text(encoding="utf-8"))
+    gpu["completeness"] = "incomplete"
+    gpu["missing_artifacts"] = ["face_swap"]
+    gpu_path.write_text(json.dumps(gpu), encoding="utf-8")
+
+    module = _load_module()
+    with pytest.raises(module.GPURolloutError, match="must be complete"):
+        module.resolve_gpu_artifact(
+            gpu_path, source_sha=SHA, profile="i2i_pro", strategy="direct"
+        )
+
+
 def test_face_swap_profile_has_dedicated_rollout_image_env():
     module = _load_module()
 

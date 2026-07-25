@@ -10,10 +10,18 @@ import re
 from typing import Any
 
 try:
-    from scripts.release_manifest_v2 import load_release_index, select_artifacts
+    from scripts.release_manifest_v2 import (
+        load_gpu_manifest,
+        load_release_index,
+        select_artifacts,
+    )
     from scripts.release_strategy import validate_gpu_artifact_assurance
 except ModuleNotFoundError:  # direct script execution
-    from release_manifest_v2 import load_release_index, select_artifacts  # type: ignore[no-redef]
+    from release_manifest_v2 import (  # type: ignore[no-redef]
+        load_gpu_manifest,
+        load_release_index,
+        select_artifacts,
+    )
     from release_strategy import validate_gpu_artifact_assurance  # type: ignore[no-redef]
 
 
@@ -47,10 +55,17 @@ def resolve_gpu_artifact(
     if not FULL_SHA_RE.fullmatch(source_sha):
         raise GPURolloutError("GPU rollout source SHA must be a full Git SHA")
     try:
-        release = load_release_index(index_path, expected_sha=source_sha)
-        artifact = dict(select_artifacts(release, "gpu-execution", [profile])[profile])
+        document = json.loads(index_path.read_text(encoding="utf-8"))
+        if isinstance(document, dict) and document.get("track") == "gpu-execution":
+            manifest = load_gpu_manifest(index_path, expected_sha=source_sha)
+            artifact = dict(manifest["artifacts"][profile])
+        else:
+            release = load_release_index(index_path, expected_sha=source_sha)
+            artifact = dict(
+                select_artifacts(release, "gpu-execution", [profile])[profile]
+            )
         validate_gpu_artifact_assurance(strategy, {profile: artifact})
-    except (KeyError, RuntimeError) as exc:
+    except (KeyError, OSError, json.JSONDecodeError, RuntimeError) as exc:
         raise GPURolloutError(str(exc)) from exc
     if artifact.get("source_sha") != source_sha:
         raise GPURolloutError("GPU profile was not built from the requested release SHA")
