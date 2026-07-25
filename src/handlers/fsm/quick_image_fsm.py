@@ -28,6 +28,9 @@ from src.handlers.fsm.quick_draw_callback_data import (
     parse_quick_draw_v1_scene_callback_data,
     parse_quick_filter_scene_callback_data,
 )
+from src.handlers.fsm.quick_video_callback_data import (
+    QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
+)
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
@@ -113,15 +116,35 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
 
 
 def _replace_pending_quick_video_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Clear only a pending video upload before a linked draw-scene switch."""
+    """Clear only a pending video upload before a QQCC scene switch."""
     user_data = context.user_data
     if not str(user_data.get("in_conversation") or "").startswith("QUICK_VIDEO_"):
         return False
     video_data = user_data.pop("quick_video_data", {})
     user_data.pop("in_conversation", None)
     cleanup_fsm_temp_files(
-        [video_data.get("image_path"), video_data.get("end_image_path")]
+        [
+            video_data.get("image_path") if isinstance(video_data, dict) else None,
+            video_data.get("end_image_path") if isinstance(video_data, dict) else None,
+        ]
     )
+    return True
+
+
+def _replace_pending_quick_image_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Clear only a pending image upload before a QQCC scene switch."""
+    user_data = context.user_data
+    if not str(user_data.get("in_conversation") or "").startswith("QUICK_IMAGE_"):
+        return False
+    image_data = user_data.get("quick_image_data", {})
+    if not isinstance(image_data, dict) or image_data.get("scene_kind") not in {
+        QQCC_SCENE_KIND_DRAW,
+        QQCC_SCENE_KIND_FILTER,
+    }:
+        return False
+    user_data.pop("quick_image_data", None)
+    user_data.pop("in_conversation", None)
+    cleanup_fsm_temp_files([image_data.get("image_path")])
     return True
 
 
@@ -481,7 +504,10 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
-    if (draw_scene_id or draw_v1_scene_id) and is_qqcc_bot_context(context):
+    if (
+        draw_scene_id or draw_v1_scene_id or filter_scene_id
+    ) and is_qqcc_bot_context(context):
+        _replace_pending_quick_image_context(context)
         _replace_pending_quick_video_context(context)
 
     if context.user_data.get("in_conversation"):
@@ -564,10 +590,39 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return QuickImageState.WAIT_IMAGE
 
 
+async def switch_to_qqcc_video_scene(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Replace a pending image upload with the selected QQCC video flow."""
+    from src.handlers.fsm.quick_video_fsm import start_quick_video
+    from src.handlers.conversation_states import QuickVideoState
+
+    _replace_pending_quick_image_context(context)
+    result = await start_quick_video(update, context)
+    if result == QuickVideoState.WAIT_IMAGE:
+        # The image ConversationHandler remains the active owner of the next
+        # upload, so receive_image delegates to the initialized video flow.
+        return QuickImageState.WAIT_IMAGE
+    return ConversationHandler.END
+
+
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if str(context.user_data.get("in_conversation") or "").startswith(
+        "QUICK_VIDEO_"
+    ) and context.user_data.get("quick_video_data"):
+        from src.handlers.fsm.quick_video_fsm import receive_image as receive_quick_video
+
+        image_data = context.user_data.pop("quick_image_data", {})
+        cleanup_fsm_temp_files([image_data.get("image_path")])
+        return await receive_quick_video(update, context)
+
     user_id = update.effective_user.id
     message = update.message
-    fsm_data = context.user_data["quick_image_data"]
+    fsm_data = context.user_data.get("quick_image_data")
+    if not isinstance(fsm_data, dict) or not fsm_data:
+        await robust_reply_text(message, _t(context, "fsm.common.expired_cleaned"))
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
     qqcc_config = await _load_qqcc_config_for_context(context)
     if qqcc_config is not None:
         qqcc_config = project_qqcc_config_for_scene_version(
@@ -737,6 +792,18 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
         ],
         states={
             QuickImageState.WAIT_IMAGE: [
+                CallbackQueryHandler(
+                    start_quick_image,
+                    pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+                ),
+                CallbackQueryHandler(
+                    start_quick_image,
+                    pattern=QUICK_FILTER_SCENE_CALLBACK_PATTERN,
+                ),
+                CallbackQueryHandler(
+                    switch_to_qqcc_video_scene,
+                    pattern=QUICK_VIDEO_ENTRY_CALLBACK_PATTERN,
+                ),
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

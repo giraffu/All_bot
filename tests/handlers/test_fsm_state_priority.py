@@ -32,6 +32,9 @@ from src.handlers.fsm.quick_draw_callback_data import (
     build_quick_draw_scene_callback_data,
     build_quick_filter_scene_callback_data,
 )
+from src.handlers.fsm.quick_video_callback_data import (
+    build_quick_video_scene_callback_data,
+)
 from src.services.qqcc_config_service import (
     QQCC_SCENE_PRESET_PROMPTS,
     normalize_qqcc_config,
@@ -604,6 +607,286 @@ async def test_qqcc_ai_filter_scene_callback_waits_for_image(monkeypatch):
     answer_mock.assert_awaited_once()
     reply_mock.assert_awaited_once()
     assert "真实质感" in reply_mock.await_args.args[1]
+
+
+def test_qqcc_quick_image_wait_image_routes_scene_reselection_and_video_switch():
+    handler = quick_image_fsm.get_quick_image_fsm_handler()
+    callbacks = [
+        state_handler
+        for state_handler in handler.states[quick_image_fsm.QuickImageState.WAIT_IMAGE]
+        if isinstance(state_handler, CallbackQueryHandler)
+    ]
+
+    draw_handlers = [
+        state_handler
+        for state_handler in callbacks
+        if state_handler.pattern is not None
+        and state_handler.pattern.match("qdraw_scene:soft_light")
+    ]
+    filter_handlers = [
+        state_handler
+        for state_handler in callbacks
+        if state_handler.pattern is not None
+        and state_handler.pattern.match("qfilter_scene:real_skin")
+    ]
+    video_handlers = [
+        state_handler
+        for state_handler in callbacks
+        if state_handler.pattern is not None
+        and state_handler.pattern.match("qvid_scene:doggy")
+    ]
+
+    assert len(draw_handlers) == 1
+    assert draw_handlers[0].callback is quick_image_fsm.start_quick_image
+    assert len(filter_handlers) == 1
+    assert filter_handlers[0].callback is quick_image_fsm.start_quick_image
+    assert len(video_handlers) == 1
+    assert video_handlers[0].callback is quick_image_fsm.switch_to_qqcc_video_scene
+
+
+@pytest.mark.asyncio
+async def test_qqcc_quick_image_scene_reselection_replaces_pending_upload(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    cleanup_mock = Mock()
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {"id": "old", "name": "旧场景", "prompt": "old"},
+                {"id": "new", "name": "新场景", "prompt": "new"},
+            ]
+        }
+    )
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_image_fsm, "cleanup_fsm_temp_files", cleanup_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("new"),
+            message=SimpleNamespace(chat_id=10001),
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
+        user_data={
+            "in_conversation": "QUICK_IMAGE_free_edit_v2_5",
+            "quick_image_data": {
+                "scene_id": "old",
+                "scene_kind": "draw",
+                "image_path": "/tmp/old-quick-image.png",
+            },
+        },
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert context.user_data["quick_image_data"]["scene_id"] == "new"
+    assert context.user_data["in_conversation"].startswith("QUICK_IMAGE_")
+    cleanup_mock.assert_called_once_with(["/tmp/old-quick-image.png"])
+    answer_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_quick_video_scene_reselection_replaces_pending_upload(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    cleanup_mock = Mock()
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "old",
+                    "name": "旧动图",
+                    "prompt": "old",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
+                {
+                    "id": "new",
+                    "name": "新动图",
+                    "prompt": "new",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
+            ]
+        }
+    )
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_video_scene_callback_data("new"),
+            message=SimpleNamespace(chat_id=10001),
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
+        user_data={
+            "in_conversation": "QUICK_VIDEO_wan22_video_v2",
+            "quick_video_data": {
+                "scene_id": "old",
+                "image_path": "/tmp/old-quick-video.png",
+                "end_image_path": "/tmp/old-quick-video-end.png",
+            },
+        },
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert context.user_data["quick_video_data"]["scene_id"] == "new"
+    assert context.user_data["in_conversation"].startswith("QUICK_VIDEO_")
+    cleanup_mock.assert_called_once_with(
+        ["/tmp/old-quick-video.png", "/tmp/old-quick-video-end.png"]
+    )
+    answer_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_pending_image_can_switch_to_video_scene(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    cleanup_mock = Mock()
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {"id": "draw", "name": "绘图", "prompt": "draw"},
+            ],
+            "video_scenes": [
+                {
+                    "id": "video",
+                    "name": "动图",
+                    "prompt": "video",
+                    "duration": "5s",
+                    "engine": "wan22_video_v2",
+                },
+            ],
+        }
+    )
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_image_fsm, "cleanup_fsm_temp_files", cleanup_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_video_scene_callback_data("video"),
+            message=SimpleNamespace(chat_id=10001),
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
+        user_data={
+            "in_conversation": "QUICK_IMAGE_free_edit_v2_5",
+            "quick_image_data": {
+                "scene_id": "draw",
+                "scene_kind": "draw",
+                "image_path": "/tmp/pending-draw.png",
+            },
+        },
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.switch_to_qqcc_video_scene(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert "quick_image_data" not in context.user_data
+    assert context.user_data["quick_video_data"]["scene_id"] == "video"
+    assert context.user_data["in_conversation"].startswith("QUICK_VIDEO_")
+    cleanup_mock.assert_called_once_with(["/tmp/pending-draw.png"])
+    answer_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("fsm_module", "conversation_tag"),
+    [
+        (quick_image_fsm, "QUICK_IMAGE_free_edit_v2_5"),
+        (quick_video_fsm, "QUICK_VIDEO_wan22_video_v2"),
+    ],
+)
+async def test_qqcc_quick_media_missing_state_expires_without_download_or_quota(
+    monkeypatch,
+    fsm_module,
+    conversation_tag,
+):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    get_file_mock = AsyncMock()
+    monkeypatch.setattr(fsm_module, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(fsm_module.permission_service, "check_quota", quota_mock)
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="image-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=message,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        user_data={"in_conversation": conversation_tag},
+        lang="zh",
+    )
+
+    result = await fsm_module.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert "状态已失效" in reply_mock.await_args.args[1]
+    assert "in_conversation" not in context.user_data
+    quota_mock.assert_not_awaited()
+    get_file_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
