@@ -224,3 +224,52 @@ def test_module_scoped_workflow_does_not_treat_historical_gpu_diff_as_rebuild():
         "github.event_name == 'workflow_dispatch' && inputs.release_artifact != ''"
         in workflow
     )
+
+
+def test_scoped_retry_reuses_exact_revision_image(monkeypatch):
+    module = _load_module()
+    sha = "a" * 40
+    digest = "sha256:" + "1" * 64
+    monkeypatch.setattr(module, "_registry_ref_exists", lambda _ref: True)
+    monkeypatch.setattr(module, "_digest", lambda _ref: digest)
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda _command: json.dumps(
+            {"org.opencontainers.image.revision": sha}
+        ),
+    )
+
+    result = module._build_image(
+        name="qqcc-bot",
+        metadata={"image": "allbot-qqcc-bot", "dependency_closure": []},
+        source_sha=sha,
+        image_prefix="ghcr.io/giraffu",
+        results={},
+        allow_existing=True,
+    )
+
+    assert result["digest"] == digest
+    assert result["source_sha"] == sha
+
+
+def test_scoped_retry_rejects_existing_image_from_another_revision(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "_registry_ref_exists", lambda _ref: True)
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda _command: json.dumps(
+            {"org.opencontainers.image.revision": "b" * 40}
+        ),
+    )
+
+    with pytest.raises(module.CIReleaseError, match="revision does not match"):
+        module._build_image(
+            name="qqcc-bot",
+            metadata={"image": "allbot-qqcc-bot"},
+            source_sha="a" * 40,
+            image_prefix="ghcr.io/giraffu",
+            results={},
+            allow_existing=True,
+        )

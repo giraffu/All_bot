@@ -218,10 +218,37 @@ def _build_image(
     source_sha: str,
     image_prefix: str,
     results: dict[str, dict[str, Any]],
+    allow_existing: bool = False,
 ) -> dict[str, Any]:
     tag = f"{image_prefix}/{metadata['image']}:{source_sha}"
     if _registry_ref_exists(tag):
-        raise CIReleaseError(f"immutable image tag already exists: {tag}")
+        if not allow_existing:
+            raise CIReleaseError(f"immutable image tag already exists: {tag}")
+        raw_labels = _run(
+            [
+                "docker", "buildx", "imagetools", "inspect", tag,
+                "--format", "{{json .Image.Config.Labels}}",
+            ]
+        )
+        try:
+            labels = json.loads(raw_labels)
+        except json.JSONDecodeError as exc:
+            raise CIReleaseError(f"existing image labels are invalid: {tag}") from exc
+        if not isinstance(labels, Mapping) or labels.get(
+            "org.opencontainers.image.revision"
+        ) != source_sha:
+            raise CIReleaseError(f"existing image revision does not match: {tag}")
+        digest = _digest(tag)
+        base = metadata.get("base")
+        return {
+            "kind": "image",
+            "ref": f"{image_prefix}/{metadata['image']}@{digest}",
+            "digest": digest,
+            "source_sha": source_sha,
+            "oci_revision": source_sha,
+            "dependency_closure": metadata.get("dependency_closure", []),
+            **({"base_image_digest": results[base]["digest"]} if base else {}),
+        }
     command = [
         "docker", "buildx", "build", "--push", "-f", metadata["dockerfile"],
         "--build-arg", f"ALLBOT_GIT_SHA={source_sha}", "--tag", tag,
@@ -394,6 +421,7 @@ def main() -> int:
                 source_sha=args.sha,
                 image_prefix=args.image_prefix,
                 results=results,
+                allow_existing=bool(args.release_artifact),
             )
         results[name] = result
         _write_result(results_dir / f"{name}.json", result)
