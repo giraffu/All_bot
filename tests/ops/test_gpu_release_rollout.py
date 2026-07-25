@@ -96,6 +96,12 @@ def test_direct_rollout_resolves_exact_attested_digest(tmp_path):
     assert "whole-host restart" in plan["forbidden"]
 
 
+def test_face_swap_profile_has_dedicated_rollout_image_env():
+    module = _load_module()
+
+    assert module.PROFILE_IMAGE_ENV["face_swap"] == "RUNPOD_IMAGE_NAME_FACE_SWAP"
+
+
 def test_standard_rollout_rejects_attestation_without_canary(tmp_path):
     module = _load_module()
     with pytest.raises(module.GPURolloutError, match="business canary"):
