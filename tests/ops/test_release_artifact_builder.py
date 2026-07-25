@@ -283,7 +283,7 @@ def test_catalog_is_json_and_every_artifact_has_one_track():
     )
 
 
-def test_selected_control_plane_artifact_builds_only_it_and_its_base():
+def test_selected_control_plane_artifact_reuses_its_existing_base():
     module = _load_module()
     catalog = {
         "python-base": {"track": "control-plane", "kind": "image"},
@@ -303,8 +303,8 @@ def test_selected_control_plane_artifact_builds_only_it_and_its_base():
 
     plan = module.plan_selected_builds(catalog, {"qqcc-bot"}, has_previous=True)
 
-    assert plan.build == {"python-base", "qqcc-bot"}
-    assert plan.reuse == {"web-api", "face-swap"}
+    assert plan.build == {"qqcc-bot"}
+    assert plan.reuse == {"python-base", "web-api", "face-swap"}
     assert plan.resolve == {"postgres"}
 
 
