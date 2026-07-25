@@ -220,3 +220,7 @@ def test_module_scoped_workflow_does_not_treat_historical_gpu_diff_as_rebuild():
     assert "release_artifact" in workflow
     assert '--release-artifact "$RELEASE_ARTIFACT"' in workflow
     assert 'if [ -n "$RELEASE_ARTIFACT" ]; then' in workflow
+    assert (
+        "github.event_name == 'workflow_dispatch' && inputs.release_artifact != ''"
+        in workflow
+    )
