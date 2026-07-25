@@ -210,3 +210,13 @@ def test_main_bundle_refuses_incomplete_gpu_release_but_candidate_can_defer_it()
     module._require_gpu_release_ready("test-candidate", {"i2i_pro"})
     with pytest.raises(module.CIReleaseError, match="main GPU release is incomplete"):
         module._require_gpu_release_ready("main", {"i2i_pro"})
+
+
+def test_module_scoped_workflow_does_not_treat_historical_gpu_diff_as_rebuild():
+    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "release_artifact" in workflow
+    assert '--release-artifact "$RELEASE_ARTIFACT"' in workflow
+    assert 'if [ -n "$RELEASE_ARTIFACT" ]; then' in workflow

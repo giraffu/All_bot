@@ -50,7 +50,9 @@ def test_release_tooling_changes_run_only_the_focused_release_gate():
             "docs/子模块_Git不可变发布_git_immutable_release.md",
             "scripts/auto_integrate_handoffs.py",
             "scripts/classify_ci_change.py",
+            "scripts/ci_release_v2.py",
             "scripts/release.py",
+            "scripts/release_artifacts_v2.py",
             "scripts/runtime_env_contract.py",
             "scripts/validate_upstream_ci_run.py",
             "tests/ops/test_release_cli.py",
@@ -64,8 +66,10 @@ def test_release_tooling_changes_run_only_the_focused_release_gate():
     assert decision.requires_release_bundle is False
     assert decision.release_paths == (
         "scripts/auto_integrate_handoffs.py",
+        "scripts/ci_release_v2.py",
         "scripts/classify_ci_change.py",
         "scripts/release.py",
+        "scripts/release_artifacts_v2.py",
         "scripts/runtime_env_contract.py",
         "scripts/validate_upstream_ci_run.py",
     )

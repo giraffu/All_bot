@@ -29,7 +29,9 @@ LIGHTWEIGHT_PATTERNS = (
 RELEASE_TOOLING_PATTERNS = (
     "scripts/auto_integrate_handoffs.py",
     "scripts/classify_ci_change.py",
+    "scripts/ci_release_v2.py",
     "scripts/release.py",
+    "scripts/release_artifacts_v2.py",
     "scripts/runtime_env_contract.py",
     "scripts/validate_upstream_ci_run.py",
 )

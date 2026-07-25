@@ -3,6 +3,8 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "release_artifacts_v2.py"
@@ -279,3 +281,39 @@ def test_catalog_is_json_and_every_artifact_has_one_track():
         value["track"] in {"control-plane", "test-execution", "gpu-execution"}
         for value in raw["artifacts"].values()
     )
+
+
+def test_selected_control_plane_artifact_builds_only_it_and_its_base():
+    module = _load_module()
+    catalog = {
+        "python-base": {"track": "control-plane", "kind": "image"},
+        "qqcc-bot": {
+            "track": "control-plane",
+            "kind": "image",
+            "base": "python-base",
+        },
+        "web-api": {
+            "track": "control-plane",
+            "kind": "image",
+            "base": "python-base",
+        },
+        "face-swap": {"track": "gpu-execution", "kind": "image"},
+        "postgres": {"track": "control-plane", "kind": "external-image"},
+    }
+
+    plan = module.plan_selected_builds(catalog, {"qqcc-bot"}, has_previous=True)
+
+    assert plan.build == {"python-base", "qqcc-bot"}
+    assert plan.reuse == {"web-api", "face-swap"}
+    assert plan.resolve == {"postgres"}
+
+
+def test_selected_release_scope_rejects_gpu_artifacts():
+    module = _load_module()
+    catalog = {
+        "qqcc-bot": {"track": "control-plane", "kind": "image"},
+        "face-swap": {"track": "gpu-execution", "kind": "image"},
+    }
+
+    with pytest.raises(module.ArtifactPlanError, match="control-plane"):
+        module.plan_selected_builds(catalog, {"face-swap"}, has_previous=True)
