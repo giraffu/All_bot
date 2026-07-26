@@ -1,13 +1,17 @@
+import asyncio
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from src.services import qqcc_runtime_context
 from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     is_qqcc_bot_context,
     is_private_qqcc_bot_context,
     load_qqcc_config_for_context,
+    run_qqcc_interaction_io,
 )
 
 
@@ -55,3 +59,29 @@ async def test_private_qqcc_context_fails_closed_when_tenant_config_is_unavailab
 
     with pytest.raises(RuntimeError, match="db down"):
         await load_qqcc_config_for_context(context)
+
+
+@pytest.mark.asyncio
+async def test_qqcc_interaction_io_cancels_hung_telegram_request(monkeypatch):
+    cancelled = asyncio.Event()
+
+    async def hung_request():
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(
+        qqcc_runtime_context,
+        "QQCC_INTERACTION_IO_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    result = await run_qqcc_interaction_io(
+        hung_request(),
+        operation="scene_upload_prompt",
+        logger=logging.getLogger(__name__),
+    )
+
+    assert result is None
+    assert cancelled.is_set()

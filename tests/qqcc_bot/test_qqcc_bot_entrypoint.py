@@ -1089,6 +1089,11 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
     events = []
     demo_sender = AsyncMock(side_effect=lambda **_kwargs: events.append("demo"))
     reply_text = AsyncMock(side_effect=lambda *_args, **_kwargs: events.append("text"))
+
+    async def await_interaction_io(awaitable, **_kwargs):
+        return await awaitable
+
+    interaction_io = AsyncMock(side_effect=await_interaction_io)
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
@@ -1122,6 +1127,11 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
     )
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_text)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "run_qqcc_interaction_io",
+        interaction_io,
+    )
     monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", demo_sender)
     monkeypatch.setattr(
         quick_image_fsm,
@@ -1151,6 +1161,8 @@ async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
 
     assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
     assert events == ["demo", "text"]
+    interaction_io.assert_awaited_once()
+    assert interaction_io.await_args.kwargs["operation"] == "quick_image_scene_prompt"
     demo_sender.assert_awaited_once_with(
         message=callback_message,
         bot=context.bot,
@@ -1534,6 +1546,16 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+
+    async def await_interaction_io(awaitable, **_kwargs):
+        return await awaitable
+
+    interaction_io = AsyncMock(side_effect=await_interaction_io)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "run_qqcc_interaction_io",
+        interaction_io,
+    )
     background_tasks = []
 
     def fake_process_video_task_template(**kwargs):
@@ -1610,6 +1632,8 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
     assert len(captured) == 2
     assert "legacy override" not in repr(captured[0])
     assert "qqcc scene prompt" not in repr(captured[1])
+    interaction_io.assert_awaited_once()
+    assert interaction_io.await_args.kwargs["operation"] == "quick_video_submit_status"
 
 
 @pytest.mark.asyncio
@@ -2407,6 +2431,11 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     events = []
     reply_mock = AsyncMock(side_effect=lambda *_args, **_kwargs: events.append("text"))
     demo_sender = AsyncMock(side_effect=lambda **_kwargs: events.append("demo"))
+
+    async def await_interaction_io(awaitable, **_kwargs):
+        return await awaitable
+
+    interaction_io = AsyncMock(side_effect=await_interaction_io)
     answer_mock = AsyncMock()
     config = normalize_qqcc_config(
         {
@@ -2447,6 +2476,11 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "run_qqcc_interaction_io",
+        interaction_io,
+    )
     monkeypatch.setattr(quick_video_fsm, "send_qqcc_scene_demo_media", demo_sender)
     monkeypatch.setattr(
         quick_video_fsm,
@@ -2496,6 +2530,8 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     }
     answer_mock.assert_awaited_once()
     assert events == ["demo", "text"]
+    interaction_io.assert_awaited_once()
+    assert interaction_io.await_args.kwargs["operation"] == "quick_video_scene_prompt"
     demo_sender.assert_awaited_once_with(
         message=callback_message,
         bot=context.bot,

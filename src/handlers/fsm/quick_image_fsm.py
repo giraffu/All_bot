@@ -57,6 +57,7 @@ from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     is_qqcc_bot_context,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
+    run_qqcc_interaction_io,
 )
 from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
 from src.services.fsm_temp_file_service import (
@@ -344,7 +345,11 @@ async def _start_qqcc_image_scene(
             scene=scene,
             **demo_kwargs,
         )
-        await robust_reply_text(query.message, msg, parse_mode="Markdown")
+        await run_qqcc_interaction_io(
+            robust_reply_text(query.message, msg, parse_mode="Markdown"),
+            operation="quick_image_scene_prompt",
+            logger=logger,
+        )
     else:
         message = update.message or update.edited_message
         if message:
