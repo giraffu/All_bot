@@ -7,6 +7,7 @@ from src.core.task_core import (
     ConcurrencyLimitError,
     CoreDomainError,
     InsufficientCreditsError,
+    QueueCapacityError,
 )
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
@@ -183,3 +184,25 @@ async def test_create_generation_task_maps_service_errors_to_http(
 
     assert exc_info.value.status_code == status_code
     assert detail in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_create_generation_task_exposes_queue_capacity_reason_for_frontend_i18n():
+    request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
+    current_user = type("User", (), {"id": 123, "username": "tester"})()
+
+    with patch(
+        "src.web_api.routers.tasks.submit_generation_task",
+        new=AsyncMock(side_effect=QueueCapacityError("queue full")),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await tasks_router.create_generation_task(
+                request,
+                current_user=current_user,
+            )
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.detail == {
+        "code": "GENERATION_QUEUE_FULL",
+        "detail": "queue full",
+    }

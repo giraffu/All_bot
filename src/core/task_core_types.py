@@ -159,3 +159,9 @@ class InsufficientCreditsError(CoreDomainError):
 
 class ConcurrencyLimitError(CoreDomainError):
     pass
+
+
+class QueueCapacityError(ConcurrencyLimitError):
+    """The target worker pool rejected a low-tier submission for capacity."""
+
+    pass

@@ -4,6 +4,7 @@ import router from '@/router'
 import { message } from 'ant-design-vue'
 import i18n from '@/i18n'
 import { getRuntimeConfig } from '@/config/runtime'
+import { getRateLimitFallbackKey } from './errorMessages'
 
 const api = axios.create({
   baseURL: getRuntimeConfig('api_base_url', '/api'),
@@ -102,7 +103,9 @@ api.interceptors.response.use(
     } else if (status === 402) {
       message.warning(resolveApiErrorMessage(data, t('api.insufficient_balance')))
     } else if (status === 429) {
-      message.warning(resolveApiErrorMessage(data, t('api.too_many_tasks')))
+      message.warning(
+        resolveApiErrorMessage(data, t(getRateLimitFallbackKey(error.config?.url)))
+      )
     } else if (status === 422) {
       // Handle Pydantic validation errors
       let errMsg = t('api.validation_error', { msg: 'Invalid parameters' })
