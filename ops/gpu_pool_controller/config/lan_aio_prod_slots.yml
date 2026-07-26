@@ -225,7 +225,7 @@ slots:
       - img2img
       - img2img_lora
     gpu_index: 1
-    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
+    gpu_device_id: GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6
     host_port: 8191
     legacy_health_port: 8191
     legacy_preflight_required: false
@@ -236,7 +236,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-img2img-lora
     rollout_order: 32
-    notes: Production candidate for img2img and img2img_lora on the currently empty gpu-252 GPU1 replacement card. It is pinned to UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 and may be activated through the single-slot fleet helper after an immutable release digest is available.
+    notes: Production candidate for img2img and img2img_lora on the currently empty gpu-252 GPU1 replacement card. It is pinned to the 2026-07-26 replacement UUID GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6 and may be activated only through the single-slot fleet helper.
 
   - id: gpu-252-gpu1-ltx_t2v
     enabled: false
@@ -296,7 +296,7 @@ slots:
       - face_swap_v2
       - face_swap
     gpu_index: 1
-    gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
+    gpu_device_id: GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6
     host_port: 8191
     legacy_health_port: 8191
     legacy_preflight_required: false
@@ -307,7 +307,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-i2i-pro
     rollout_order: 33
-    notes: Production i2i_pro worker for the RMA replacement gpu-252 GPU1 card, pinned to new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The old repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent. On 2026-07-17 the 4 GiB CUDA memory touch and short FP16 compute smoke, canonical image verification, render, preflight, six-file model warm-cache, container health, disabled heartbeat, required ComfyUI node/model checks, and enable-aio gates all passed without Xid under the user's explicit production authorization.
+    notes: Production i2i_pro worker candidate for the gpu-252 GPU1 card replaced again on 2026-07-26, pinned to UUID GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6 on host port 8191. The removed UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 had reproduced Xid 119/154 and must not be reused. Activation of this new card still requires the single-slot operator health, disabled-heartbeat, ComfyUI node/model, and workload checks.
 
   - id: gpu-002-gpu0-scail2
     enabled: true

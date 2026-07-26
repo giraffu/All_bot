@@ -72,7 +72,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     )
     assert (
         slots["gpu-252-gpu1-i2i_pro"].gpu_device_id
-        == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
+        == "GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6"
     )
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
         "lan_aio_prod_gpu002_gpu0_scail2_01"
@@ -226,7 +226,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     )
     assert (
         slots["gpu-252-gpu1-img2img_lora"].gpu_device_id
-        == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
+        == "GPU-3ac886ce-23af-8c9a-4509-3577e5e1fac6"
     )
     assert slots["gpu-226-gpu0-image_to_video"].enabled is True
     assert slots["gpu-226-gpu0-image_to_video"].phase == "catalog_ready"
