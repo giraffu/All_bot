@@ -85,3 +85,66 @@ describe('LAN AIO cards', () => {
     fleet.state.stale = false
   })
 })
+
+describe('deployment workspace', () => {
+  it('switches tabs, filters prod-only modules, and requires a plan confirmation', async () => {
+    const catalog = {
+      modules: {
+        'central-api': { artifacts: ['central-api'] },
+        dashboard: { artifacts: ['dashboard-backend', 'dashboard-frontend'] },
+      },
+      environments: {
+        test: {
+          label: '测试环境',
+          modules: ['central-api'],
+          maintenance_supported: true,
+        },
+        prod: {
+          label: '正式环境',
+          modules: ['central-api', 'dashboard'],
+          maintenance_supported: true,
+        },
+      },
+    }
+    const candidate = {
+      main_sha: 'a'.repeat(40),
+      deployable_sha: 'a'.repeat(40),
+      scope: 'runtime',
+      ci: { status: 'completed', conclusion: 'success', run_id: 41 },
+      bundle: { status: 'ready' },
+      build: null,
+      blockers: [],
+    }
+    const environment = {
+      environment: 'test',
+      current_sha: 'b'.repeat(40),
+      maintenance: { enabled: false, owner: null, can_disable: false },
+      active_transaction: null,
+      config_drift: false,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const body = url.includes('security/csrf')
+          ? { csrf_token: 'x' }
+          : url.includes('deployments/catalog')
+            ? catalog
+            : url.includes('releases/candidate')
+              ? candidate
+              : url.includes('environments/test/status')
+                ? environment
+                : fleet
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(body) })
+      }),
+    )
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.get('[data-tab="deploy"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('模块构建部署')
+    expect(wrapper.text()).toContain('central-api')
+    expect(wrapper.text()).not.toContain('dashboard-backend')
+    expect(wrapper.text()).toContain('可信 bundle 已就绪')
+    expect(wrapper.get('[data-action="create-plan"]').attributes('disabled')).toBeUndefined()
+  })
+})
