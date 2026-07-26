@@ -5,12 +5,22 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+FROM ghcr.io/oras-project/oras:v1.3.2@sha256:46c55ba0eac848ade573594ef23fa5b1784227f151dab6eac38de2afd0b9c382 AS oras
+
 FROM ghcr.io/giraffu/allbot-dashboard-backend@sha256:92f533feae2b8aa22aa14cf19d6ded1dce857ffd80e52809cd57f92f995f6e4b AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app:/workspace \
     HOME=/home/app
 WORKDIR /app
+RUN sed -i \
+      -e 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' \
+      -e 's|http://deb.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+      /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates git gh \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=oras /bin/oras /usr/local/bin/oras
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid 1000 --create-home app
 COPY __init__.py /app/lan_resource_manager/__init__.py
@@ -18,6 +28,9 @@ COPY backend/ /app/lan_resource_manager/backend/
 COPY --from=frontend /build/dist /app/lan_resource_manager/frontend/dist
 COPY ssh_config /home/app/.ssh/config
 RUN install -d -o app -g app -m 700 /data \
+    && install -d -o app -g app -m 770 /runner \
+    && install -d -o app -g app -m 700 /home/app/.config/allbot \
+    && install -d -o app -g app -m 700 /home/app/.cache/allbot/releases \
     && chown -R app:app /app/lan_resource_manager /home/app \
     && chmod 700 /home/app/.ssh \
     && chmod 600 /home/app/.ssh/config

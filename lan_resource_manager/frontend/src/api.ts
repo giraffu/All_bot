@@ -1,4 +1,11 @@
-import type { Fleet, Operation } from './types'
+import type {
+  DeploymentCatalog,
+  DeploymentPlan,
+  EnvironmentStatus,
+  Fleet,
+  Operation,
+  ReleaseCandidate,
+} from './types'
 
 let csrfToken = ''
 
@@ -45,3 +52,41 @@ export const switchProfile = (
   )
 export const getOperation = (id: string) =>
   json<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`)
+
+export const getDeploymentCatalog = () =>
+  json<DeploymentCatalog>('/api/v1/deployments/catalog')
+export const getReleaseCandidate = () =>
+  json<ReleaseCandidate>('/api/v1/releases/candidate')
+export const getEnvironmentStatus = (environment: 'test' | 'prod') =>
+  json<EnvironmentStatus>(`/api/v1/environments/${environment}/status`)
+export const startTrustedBuild = (payload: {
+  expected_main_sha: string
+  confirmation: string
+}) => json<Operation>('/api/v1/releases/builds', mutation(payload))
+export const createDeploymentPlan = (payload: {
+  environment: 'test' | 'prod'
+  module: string
+  candidate_sha: string
+  maintenance: 'planner' | 'rolling'
+}) => json<DeploymentPlan>('/api/v1/deployment-plans', mutation(payload))
+export const executeDeploymentPlan = (
+  planId: string,
+  confirmation: string,
+) =>
+  json<Operation>(
+    `/api/v1/deployment-plans/${encodeURIComponent(planId)}/execute`,
+    mutation({ confirmation }),
+  )
+export const setMaintenance = (
+  environment: 'test' | 'prod',
+  payload: {
+    enabled: boolean
+    expected_enabled: boolean
+    reason: string
+    confirmation: string
+  },
+) =>
+  json<Operation>(
+    `/api/v1/environments/${environment}/maintenance`,
+    mutation(payload),
+  )

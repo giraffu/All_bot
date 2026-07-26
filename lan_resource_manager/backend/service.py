@@ -19,12 +19,13 @@ class FleetService:
         settings: Settings,
         operator: OperatorPort,
         store: OperationStore,
+        runtime_lock: asyncio.Lock | None = None,
     ):
         self.settings = settings
         self.operator = operator
         self.store = store
         self._task: asyncio.Task | None = None
-        self._lock = asyncio.Lock()
+        self._lock = runtime_lock or asyncio.Lock()
 
     async def fleet(self) -> dict[str, Any]:
         catalog, ledger = await asyncio.gather(
@@ -120,12 +121,14 @@ class FleetService:
                 "captured_at": captured_at,
                 "stale": stale,
             },
-            "active_operation": self.store.active(),
+            "active_operation": self.store.active(
+                kinds={"refresh", "switch", "deploy", "maintenance"}
+            ),
         }
 
     async def start_refresh(self) -> dict:
         async with self._lock:
-            active = self.store.active()
+            active = self.store.active(kind="refresh")
             if active:
                 return active
             operation_id = f"refresh-{uuid.uuid4().hex[:12]}"
@@ -160,7 +163,9 @@ class FleetService:
         request: SwitchRequest,
     ) -> dict:
         async with self._lock:
-            if self.store.active():
+            if self.store.active(
+                kinds={"refresh", "switch", "deploy", "maintenance"}
+            ):
                 raise HTTPException(409, detail="operation_in_progress")
             catalog = await self.operator.list_slots()
             physical_slot = f"{node_id}:gpu{gpu_index}"

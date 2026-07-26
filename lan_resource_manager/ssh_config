@@ -22,6 +22,22 @@ Host allbot-gpu-002 gpu-002
     IdentityFile /run/secrets/lan_gpu_ops_key
     IdentitiesOnly yes
 
+Host allbot-do-sgp1-control
+    HostName 159.223.39.217
+    User deploy
+    IdentityFile /run/secrets/cloud_deploy_key
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /run/secrets/known_hosts
+
+Host allbot-do-sgp1-test-control
+    HostName 168.144.128.133
+    User deploy
+    IdentityFile /run/secrets/cloud_deploy_key
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /run/secrets/known_hosts
+
 Host *
     BatchMode yes
     ConnectTimeout 10

@@ -1,10 +1,10 @@
-# LAN AIO 本地资源管理平台
+# AllBot 本地资源管理平台
 
 ## 1. 定位
 
 `lan_resource_manager/` 是只发布到本地主服务器 LAN 地址的 FastAPI + Vue 3
-独立子项目。它把 Git catalog、XDG ledger 和低频 live status 汇总为物理 GPU
-视图，并把明确确认的稳定候选切换翻译为既有单卡 operator 命令。
+独立子项目。页面分为 LAN AIO 与模块构建部署两个 Tab；所有写操作都经精确确认和
+既有 operator/release facade，不承载第二套运维实现。
 
 它不替代 `scripts/lan_aio_fleet_prod_ops.py`，也不恢复云 Dashboard 已移除的 slot
 管理 API。catalog、ledger、live 与 helper history 继续是唯一事实源。
@@ -17,6 +17,13 @@
 - `POST /api/v1/physical-slots/{node_id}/{gpu_index}/switches`：接收目标 slot、
   页面看到的 current 和手工输入的目标 profile。
 - `GET /api/v1/operations/{id}` 与 `/events`：读取结构化阶段或通过 SSE 跟踪。
+- `GET /api/v1/deployments/catalog`、`/releases/candidate` 与
+  `/environments/{env}/status`：读取模块、可信候选、当前部署和维护状态。
+- `POST /api/v1/releases/builds`：只触发当前 main 的可信上游构建链，同 SHA 幂等。
+- `POST /api/v1/deployment-plans` 与 `/{plan_id}/execute`：服务端保管短效 token 的
+  两阶段单模块部署。
+- `POST /api/v1/environments/{env}/maintenance`：以预期状态、原因和完整确认文字
+  更新平台 owner 的生成维护。
 
 全量 status 可能持续数十秒，因此首屏不等待 live SSH；超过默认 180 秒的 snapshot
 标记为 stale 并禁止切换。
@@ -60,3 +67,26 @@ Playwright 桌面/移动截图验收。
 若容器在 switch 中退出，平台本地 operation 在下次启动标记为 `interrupted`；真实
 收口状态以 XDG history/current 和 helper status 为准。不得由平台猜测续跑或自动
 recover。
+
+## 6. 可信构建、部署与维护
+
+- runner 查询远端 main、提交变更 scope、上游 CI 与
+  `allbot-release-v2:<full-sha>`。缺可信 CI 时 dispatch
+  `control-plane-release.yml`；已有同 SHA 成功 CI 时只用固定
+  `source_sha/release_channel=main/validation_mode=full/upstream_run_id` 补跑
+  modular workflow，禁止 build-only。lightweight 或 release-tooling main 不需要
+  新 bundle，部署候选沿 main 历史选择最近不可变 bundle。
+- `GET /api/v1/deployments/catalog` 从 release policy 返回完整模块组，并按环境拓扑
+  过滤；每次计划只接受一个模块。服务端保存 `release.py plan` 的短效 token，浏览器
+  只看到安全预览。
+- 执行阶段重新核对候选 SHA，固定调用 `release.py deploy --track control-plane
+  --modules <one> --plan-token ... --execute`；正式环境附加 `--confirm-prod`。
+- `scripts/release_maintenance.py` 只管理 test/prod 固定 state root 的
+  `GENERATION_MAINTENANCE`。平台 owner metadata 与活动 transaction 共同决定是否
+  可解除，不写 `/app/MAINTENANCE`。
+- CI 构建使用独立并发通道；LAN 切换、部署和维护共享 runtime mutation gate。
+  runner/Web 重启不会重放 mutation，GitHub build 仍可从外部 run 状态继续观察。
+
+Web 与 runner 使用同一只读镜像但不同容器。Web 只挂 LAN operator 所需材料和 Unix
+socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、只读根文件系统、
+drop all capabilities、`no-new-privileges` 且无 Docker Socket。

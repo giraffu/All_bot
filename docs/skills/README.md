@@ -18,7 +18,7 @@
 | `allbot-cloudflare-ops` | Cloudflare Account API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名、本地分析平台与管理后台公网访问 | 配置或排障 Cloudflare 公网入口、Token 轮换、Access allowlist、Tunnel public hostname、Pages/R2 账号级能力时 |
 | `allbot-local-analytics-prompt-semantics` | 本地数据分析平台提示词词义分析、词元分类、指定词元、同义映射、删除表、自由P图拆解、tokens-only 物化与模板候选槽位口径 | 审查/治理提示词词元、处理高频未覆盖词元、合并映射、软删除无效词、年龄人群发现标签、自由P图拆解筛选或模板候选语义槽位时 |
 | `allbot-lan-aio-operator` | LAN AIO fleet state、slot catalog、单物理 GPU takeover/recover/restart、镜像拉取、模型热缓存、drift 检查 | 查看或切换局域网 GPU 节点 LAN AIO 当前类型、缓存候选、阻断 profile 或执行受控单卡切换时 |
-| `allbot-lan-resource-manager` | `lan_resource_manager/` 的 FastAPI/Vue、LAN bind/CIDR/CSRF、catalog-ledger-live 聚合和稳定候选网页切换 | 开发或排障本地 LAN AIO 资源管理页面、API、Compose 与安全门禁时 |
+| `allbot-lan-resource-manager` | `lan_resource_manager/` 的 FastAPI/Vue、LAN AIO、可信 main 构建、模块部署、生成维护、Unix runner 与 LAN 安全门禁 | 开发或排障本地资源管理页面、构建/部署 API、Compose、凭据隔离与安全门禁时 |
 | `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Worker/remote_workers workflow 映射校验、SCAIL-2 视频生视频模型与 workflow | 修改附加模型、工作流映射、Bot 菜单参数或 RunPod/LAN Comfy profile 时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |
 | `allbot-kb-auto-updater` | 评估代码现状对知识库的影响并同步更新 docs/skills/memory | 代码新增功能、重构、接口变更后 |
