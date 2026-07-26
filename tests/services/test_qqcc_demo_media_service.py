@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from io import BytesIO
 from types import SimpleNamespace
@@ -6,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from telegram import InputMediaPhoto, InputMediaVideo
 
+from src.services import qqcc_demo_media_service
 from src.services.qqcc_demo_media_service import (
     clone_qqcc_config_demo_media_for_private_bot,
     clone_qqcc_v2_demo_media_to_v1,
@@ -344,6 +346,43 @@ async def test_send_demo_media_reuses_bot_specific_telegram_file_ids():
         "cached-input-photo",
         "cached-output-photo",
     ]
+
+
+@pytest.mark.asyncio
+async def test_send_demo_media_timeout_degrades_without_blocking_scene_prompt(
+    monkeypatch,
+):
+    send_cancelled = False
+
+    async def _reply_photo(*, photo):
+        nonlocal send_cancelled
+        try:
+            await asyncio.Event().wait()
+        finally:
+            send_cancelled = True
+
+    monkeypatch.setattr(
+        qqcc_demo_media_service,
+        "QQCC_DEMO_MEDIA_SEND_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    sent = await send_qqcc_scene_demo_media(
+        message=SimpleNamespace(reply_photo=_reply_photo),
+        bot=SimpleNamespace(id=123),
+        scene_kind="draw",
+        scene={
+            "id": "portrait",
+            "demo_input_media": {
+                "object_key": "qqcc/demo/draw/portrait/input",
+                "media_type": "image",
+                "telegram_file_ids": {"123": "cached-photo"},
+            },
+        },
+    )
+
+    assert sent is False
+    assert send_cancelled is True
 
 
 @pytest.mark.asyncio
