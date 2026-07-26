@@ -179,7 +179,7 @@ class ReleaseRunner:
                     "--env",
                     environment,
                 ],
-                timeout=15,
+                timeout=30,
             )
         if action == "start_build":
             sha = payload.get("expected_main_sha")
