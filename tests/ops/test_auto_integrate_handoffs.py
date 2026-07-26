@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -135,6 +136,133 @@ def test_systemd_worker_can_only_run_the_test_only_coordinator():
     assert "run-once --execute" in service
     assert "prod" not in service.lower()
     assert "OnUnitInactiveSec=1m" in timer
+
+
+def test_modular_release_accepts_a_fail_closed_published_replay(tmp_path):
+    module = _load_module()
+    sha = "b" * 40
+    calls: list[list[str]] = []
+
+    def run_func(args, *, cwd, text, capture_output, check):
+        calls.append(list(args))
+        if args[:4] == [
+            "gh",
+            "run",
+            "list",
+            "--workflow",
+        ]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=json.dumps(
+                    [{"status": "completed", "conclusion": "failure"}]
+                ),
+                stderr="",
+            )
+        if args[:2] == ["oras", "pull"]:
+            bundle_dir = Path(args[args.index("-o") + 1]) / "release-v2"
+            bundle_dir.mkdir(parents=True)
+            payloads = {
+                "release-index.json": {
+                    "source_sha": sha,
+                    "release_channel": "main",
+                    "source_ref": "refs/heads/main",
+                    "ci_run": "https://github.com/giraffu/All_bot/actions/runs/123",
+                },
+                "control-plane-manifest.json": {"source_sha": sha},
+                "test-execution-manifest.json": {"source_sha": sha},
+                "gpu-execution-manifest.json": {
+                    "source_sha": sha,
+                    "completeness": "complete",
+                    "missing_artifacts": [],
+                },
+            }
+            for name, payload in payloads.items():
+                (bundle_dir / name).write_text(
+                    json.dumps(payload), encoding="utf-8"
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:3] == ["gh", "run", "view"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=json.dumps(
+                    {
+                        "status": "completed",
+                        "conclusion": "success",
+                        "headSha": sha,
+                    }
+                ),
+                stderr="",
+            )
+        raise AssertionError(args)
+
+    coordinator = module.Coordinator(
+        tmp_path,
+        module.IntegrationQueue(tmp_path / "queue"),
+        run_func=run_func,
+    )
+
+    coordinator._wait_workflow("modular-release-v2.yml", sha, timeout_seconds=1)
+
+    assert any(call[:2] == ["oras", "pull"] for call in calls)
+
+
+def test_modular_release_replay_rejects_a_bundle_for_another_sha(tmp_path):
+    module = _load_module()
+    sha = "b" * 40
+
+    def run_func(args, *, cwd, text, capture_output, check):
+        if args[:2] == ["oras", "pull"]:
+            bundle_dir = Path(args[args.index("-o") + 1]) / "release-v2"
+            bundle_dir.mkdir(parents=True)
+            for name in (
+                "release-index.json",
+                "control-plane-manifest.json",
+                "test-execution-manifest.json",
+                "gpu-execution-manifest.json",
+            ):
+                payload = {"source_sha": "c" * 40}
+                if name == "release-index.json":
+                    payload.update(
+                        {
+                            "release_channel": "main",
+                            "source_ref": "refs/heads/main",
+                            "ci_run": (
+                                "https://github.com/giraffu/All_bot/actions/runs/123"
+                            ),
+                        }
+                    )
+                if name == "gpu-execution-manifest.json":
+                    payload.update(
+                        {"completeness": "complete", "missing_artifacts": []}
+                    )
+                (bundle_dir / name).write_text(
+                    json.dumps(payload), encoding="utf-8"
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=json.dumps(
+                [{"status": "completed", "conclusion": "failure"}]
+            ),
+            stderr="",
+        )
+
+    coordinator = module.Coordinator(
+        tmp_path,
+        module.IntegrationQueue(tmp_path / "queue"),
+        run_func=run_func,
+    )
+
+    with pytest.raises(
+        module.IntegrationQueueError,
+        match="modular-release-v2.yml failed",
+    ):
+        coordinator._wait_workflow(
+            "modular-release-v2.yml", sha, timeout_seconds=1
+        )
 
 
 def test_queue_reuses_the_repository_change_scope_policy():
