@@ -1,0 +1,47 @@
+Host allbot-gpu-226 gpu-226
+    HostName 192.168.1.226
+    User ubantu
+    IdentityFile /run/secrets/lan_gpu_ops_key
+    IdentitiesOnly yes
+
+Host allbot-gpu-177 gpu-177
+    HostName 192.168.1.177
+    User ubantui
+    IdentityFile /run/secrets/lan_gpu_ops_key
+    IdentitiesOnly yes
+
+Host allbot-gpu-252 gpu-252
+    HostName 192.168.1.252
+    User user
+    IdentityFile /run/secrets/lan_gpu_ops_key
+    IdentitiesOnly yes
+
+Host allbot-gpu-002 gpu-002
+    HostName 192.168.1.2
+    User chuzeyu
+    IdentityFile /run/secrets/lan_gpu_ops_key
+    IdentitiesOnly yes
+
+Host allbot-do-sgp1-control
+    HostName 159.223.39.217
+    User deploy
+    IdentityFile /run/secrets/cloud_deploy_key
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /run/secrets/known_hosts
+
+Host allbot-do-sgp1-test-control
+    HostName 168.144.128.133
+    User deploy
+    IdentityFile /run/secrets/cloud_deploy_key
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /run/secrets/known_hosts
+
+Host *
+    BatchMode yes
+    ConnectTimeout 10
+    ServerAliveInterval 15
+    ServerAliveCountMax 2
+    StrictHostKeyChecking accept-new
+    UserKnownHostsFile /run/secrets/known_hosts

@@ -38,6 +38,7 @@
 - [子模块: GPU 算力资源池控制器 (GPU Pool Controller)](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
 - [GitHub 分支保护与热点回归门禁](./docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md)
 - [Git + 不可变镜像发布](./docs/子模块_Git不可变发布_git_immutable_release.md)
+- [AllBot 本地资源管理平台](./docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md)
 - [子模块：LTX 2.3 Sulphur 文生视频与 Ingredients 人物一致性](./docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md)
 - [子模块: QQCC 懒人 Bot (QQCC Lazy Bot)](./docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md)
 - [子模块: QQCC 用户私有 Bot 平台 (QQCC Private Bot Platform)](./docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md)

@@ -41,6 +41,7 @@
 | **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
 | **本地分析提示词词义治理** | `allbot-local-analytics-prompt-semantics` | 提示词词元分类、指定词元、同义映射、删除表、tokens-only 物化、模板候选槽位口径 |
 | **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
+| **本地资源管理平台** | `allbot-lan-resource-manager` | 开发 `lan_resource_manager/` 的 LAN AIO、可信 main 构建、模块部署、生成维护、runner 隔离与局域网安全边界 |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
 | **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
 | **测试驱动研发** | `allbot-tdd` | 通过 public facade / API / FSM / provider dependencies seam 做行为测试，一次一个 vertical slice |
