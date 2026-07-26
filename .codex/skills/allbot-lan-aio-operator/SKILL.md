@@ -99,7 +99,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 1. 读 XDG `current.yml` 找目标 `node_id + gpu_index`；首次迁移才读 legacy seed。
 2. 跑 `list --include-disabled` 和 `status --include-disabled`；确认 `state.status=passed`。
 3. 对目标端口查 `/queue`、`/system_stats`。
-4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。若目标物理槽因故障隔离而明确保持停机，且 live 探测成功证明没有任何 running catalog container，可额外传精确 `--physical-slot <node>:gpuN` 把该槽记录为 `intentionally_empty`；该参数不能忽略 SSH/探测错误，也不能放宽其它物理槽的唯一 live 要求。若目标应恢复产能，继续使用精确单槽 `recover`，不得借空槽收口跳过恢复门禁。
+4. 对照 ledger：current profile、agent、container、host port、cache state 必须一致；不一致时停止，确认 live 后显式 `state-reconcile --reason ... --execute`，不得静默覆盖。若目标物理槽因故障隔离或换卡而明确保持停机，且 live 探测成功证明没有任何 running catalog container，可额外传精确 `--physical-slot <node>:gpuN` 把该槽记录为 `intentionally_empty`；该 scoped 入口只探测和更新目标物理槽，保留其它槽账本与未完成 operation，不能用无关节点 SSH 故障阻断目标收口，也不能忽略目标自身的 SSH/探测错误。若目标应恢复产能，继续使用精确单槽 `recover`，不得借空槽收口跳过恢复门禁。
 
 ### 新增候选
 

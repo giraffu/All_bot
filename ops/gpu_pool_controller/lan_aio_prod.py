@@ -1251,11 +1251,14 @@ class LanAioProdOps:
                 "state-reconcile empty physical slot is absent from current.yml: "
                 + ", ".join(sorted(unknown_empty))
             )
+        inspection_slots = allowed_empty or physical_slots
         with self.state_store.mutation_lock():
-            unfinished = self.state_store.unfinished_operations()
-            live = self.live_current_snapshot(physical_slots)
+            unfinished = self.state_store.unfinished_operations(
+                inspection_slots if allowed_empty else None
+            )
+            live = self.live_current_snapshot(inspection_slots)
             errors = dict(live.get("errors") or {})
-            for physical_slot in physical_slots:
+            for physical_slot in inspection_slots:
                 if (
                     not (live.get("current") or {}).get(physical_slot)
                     and physical_slot not in effective_allowed_empty
@@ -1280,7 +1283,7 @@ class LanAioProdOps:
             self.state_store.begin_operation(
                 operation_id,
                 action="state-reconcile",
-                physical_slots=sorted(physical_slots),
+                physical_slots=sorted(inspection_slots),
                 request={
                     "reason": reason,
                     "live_current": live["current"],
