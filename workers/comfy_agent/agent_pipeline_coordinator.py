@@ -169,13 +169,6 @@ class AgentPipelineCoordinator:
                 downloaded_input_paths=downloaded_input_paths,
             )
 
-        await self.agent._maybe_prepare_scail2_face_swap_v10_reference(
-            task_id=task_id,
-            task_type=task_type,
-            params=params,
-            downloaded_input_paths=downloaded_input_paths,
-        )
-
         await submit_task_workflow_func(
             task_id=task_id,
             task_type=task_type,

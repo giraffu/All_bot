@@ -8,6 +8,11 @@ from fastapi import HTTPException
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
+from src.services.scail2_face_swap_pipeline_service import (
+    cleanup_scail2_face_swap_first_frame,
+    prepare_scail2_face_swap_first_frame,
+)
 from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -36,6 +41,7 @@ async def submit_generation_task(
     get_balance: Callable[[int], Awaitable[int]],
     logger=None,
 ) -> TaskGenerateResponse:
+    scail2_first_frame_to_cleanup = None
     try:
         if is_maintenance_mode():
             raise CoreDomainError("系统维护中，生成任务暂时不可提交，请稍后再试。")
@@ -93,6 +99,7 @@ async def submit_generation_task(
         correlation_id.set(task_id)
 
         free_edit_v3_metadata = None
+        scail2_face_swap_metadata = None
         if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE:
             free_edit_v3_metadata = {
                 "_web_free_edit_v3": {
@@ -101,6 +108,29 @@ async def submit_generation_task(
                     "stage": "bf16",
                     "stage2_task_type": "face_swap_v2",
                     "original_image": images[0],
+                    "final_allow_contribute": not is_template,
+                }
+            }
+        elif req.task_type == SCAIL2_FACE_SWAP_V2_TASK_TYPE:
+            if len(images) != 2:
+                raise CoreDomainError("视频换脸需要上传参考图片和驱动视频。")
+            first_frame = await prepare_scail2_face_swap_first_frame(
+                internal_user_id=current_user.id,
+                registry_task_id=task_id,
+                motion_video_path=images[1],
+            )
+            inputs["_scail2_face_swap_first_frame"] = first_frame
+            scail2_first_frame_to_cleanup = first_frame
+            scail2_face_swap_metadata = {
+                "_web_scail2_face_swap_v2": {
+                    "version": 1,
+                    "kind": SCAIL2_FACE_SWAP_V2_TASK_TYPE,
+                    "stage": "face_swap_v2",
+                    "first_frame": first_frame,
+                    "original_reference": images[0],
+                    "motion_video": images[1],
+                    "duration": inputs.get("duration", 5),
+                    "normal_priority": req.priority,
                     "final_allow_contribute": not is_template,
                 }
             }
@@ -124,8 +154,9 @@ async def submit_generation_task(
                 else None
             ),
             user_cancel_allowed=True,
-            registry_metadata=free_edit_v3_metadata,
+            registry_metadata=free_edit_v3_metadata or scail2_face_swap_metadata,
         )
+        scail2_first_frame_to_cleanup = None
 
         balance = await get_balance(current_user.id)
         return TaskGenerateResponse(
@@ -136,6 +167,10 @@ async def submit_generation_task(
             balance_remaining=balance,
         )
     except Exception as exc:
+        if scail2_first_frame_to_cleanup:
+            await cleanup_scail2_face_swap_first_frame(
+                scail2_first_frame_to_cleanup
+            )
         if logger is not None:
             logger.error("Task submission error: %s", exc, exc_info=True)
         raise

@@ -15,6 +15,7 @@ from app.main_t2i_wiring import T2IWiring
 from app.models import (
     FaceSwapRequest,
     Scail2ActionTransferLongRequest,
+    Scail2FaceSwapRequest,
     Scail2VideoRequest,
     TaskType,
     VideoLoraRequest,
@@ -644,6 +645,34 @@ def test_face_swap_v2_reuses_face_swap_request_contract():
         "face_swap_v2",
         "create_face_swap_v2_task",
     )
+
+
+def test_scail2_face_swap_route_requires_preprocessed_reference():
+    specs_by_path = {
+        path: request_model
+        for path, request_model, _task_key, _endpoint_name in (
+            main_simple_task_routes.SIMPLE_TASK_ROUTE_SPECS
+        )
+    }
+    assert specs_by_path["/api/v1/scail2_face_swap_v2"] is Scail2FaceSwapRequest
+
+    with pytest.raises(ValidationError):
+        Scail2FaceSwapRequest(
+            task_id="task-1",
+            image="swapped-first-frame.png",
+            video="motion.mp4",
+            prompt="keep scene",
+            reference_preprocessed=False,
+        )
+
+    request = Scail2FaceSwapRequest(
+        task_id="task-1",
+        image="swapped-first-frame.png",
+        video="motion.mp4",
+        prompt="keep scene",
+        reference_preprocessed=True,
+    )
+    assert request.reference_preprocessed is True
 
 
 @pytest.mark.asyncio

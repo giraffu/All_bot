@@ -27,6 +27,7 @@ from src.services.task_service_generation_wan22 import (
 )
 from src.services.task_service_message_support import translate_context_text
 from src.services.task_service_support import get_acceleration_notice
+from src.services.task_service_types import BotTaskRuntimeState
 
 
 async def process_standard_generation_task(
@@ -64,6 +65,7 @@ async def process_standard_generation_task(
     result_input_image_indices: list[int] | None = None,
     display_mode_name_override: str | None = None,
     result_meta: dict[str, Any] | None = None,
+    runtime_state: BotTaskRuntimeState | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
@@ -232,5 +234,6 @@ async def process_standard_generation_task(
             images=images,
             cleanup=cleanup,
             entrypoint_name="process_generation_task",
+            runtime_state=runtime_state,
         )
     )

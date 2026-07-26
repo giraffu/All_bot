@@ -813,6 +813,7 @@ class APIClient:
         negative_prompt: str = " ",
         length: int = 5,
         priority: int = 0,
+        reference_preprocessed: bool = False,
     ) -> str:
         endpoint_by_type = {
             SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_ENDPOINT,
@@ -835,6 +836,8 @@ class APIClient:
             "length": length,
             "priority": priority,
         }
+        if task_type == SCAIL2_FACE_SWAP_V2_TASK_TYPE:
+            data["reference_preprocessed"] = reference_preprocessed
         logger.info(
             "Submitting %s task. Prompt: %s, Duration: %ss, Priority: %s",
             task_type,

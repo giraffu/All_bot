@@ -392,6 +392,30 @@ async def test_submit_face_swap_selects_version_endpoint(
 
 
 @pytest.mark.asyncio
+async def test_submit_scail2_face_swap_marks_reference_preprocessed(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=httpx.Response(200, json={"task_id": "stage2-video"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    result = await client.submit_scail2_video_task(
+        "stage2-video",
+        task_type="scail2_face_swap_v2",
+        reference_image_path="swapped-frame.png",
+        motion_video_path="motion.mp4",
+        prompt="keep scene",
+        length=5,
+        priority=7,
+        reference_preprocessed=True,
+    )
+
+    assert result == "stage2-video"
+    assert request.await_args.kwargs["json"]["reference_preprocessed"] is True
+    assert request.await_args.kwargs["json"]["priority"] == 7
+
+
+@pytest.mark.asyncio
 async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(

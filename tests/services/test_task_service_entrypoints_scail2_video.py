@@ -159,6 +159,7 @@ async def test_process_scail2_video_task_uses_default_prompt_when_empty(monkeypa
         prompt="",
         duration=5,
         message_id=789,
+        reference_preprocessed=True,
     )
 
     flow = captured["flow"]

@@ -883,11 +883,9 @@ def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
     assert workflow_overrides["scail2_face_swap_v2"] == (
         "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json"
     )
-    assert environment["SCAIL2_FACE_SWAP_V10_ENABLED"] == "true"
-    assert environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"] == (
-        "http://192.168.1.226:8188"
-    )
-    assert environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW"] == "face_swap_v2.json"
+    assert "SCAIL2_FACE_SWAP_V10_ENABLED" not in environment
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" not in environment
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW" not in environment
 
 
 def test_ltx_video_workflow_uses_baked_sageattention():

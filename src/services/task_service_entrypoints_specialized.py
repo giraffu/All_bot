@@ -40,6 +40,9 @@ from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
 from src.services.ltx_video_extension_service import normalize_ltx_video_chain_task_ids
+from src.services.scail2_face_swap_pipeline_service import (
+    process_bot_scail2_face_swap_pipeline,
+)
 
 
 async def process_ltx_video_task_for_actor(
@@ -262,6 +265,16 @@ async def process_scail2_video_task(
     message_id: int = None,
     cleanup: bool = True,
     source_post_id: Optional[int] = None,
+    reference_preprocessed: bool = False,
+    history_reference_image_path: str | None = None,
+    deduct_quota: bool = True,
+    cost_override: int | None = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
+    send_result: bool = True,
+    record_history: bool = True,
+    task_id_override: str | None = None,
 ):
     if task_type not in {
         MODE_SCAIL2_ACTION_TRANSFER,
@@ -285,6 +298,27 @@ async def process_scail2_video_task(
     )
     normalized_prompt = normalize_scail2_positive_prompt(public_task_type, prompt)
     cost = get_scail2_cost(duration_seconds, strict=True, task_type=public_task_type)
+    if (
+        public_task_type == MODE_SCAIL2_FACE_SWAP_V2
+        and not reference_preprocessed
+    ):
+        return await process_bot_scail2_face_swap_pipeline(
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            reference_image_path=reference_image_path,
+            motion_video_path=motion_video_path,
+            prompt=normalized_prompt,
+            duration=duration_seconds,
+            message_id=message_id,
+            cleanup=cleanup,
+            source_post_id=source_post_id,
+            normal_priority=base_priority,
+            cost=cost,
+            process_scail2_stage_func=process_scail2_video_task,
+        )
     resolution = f"{SCAIL2_FIXED_WIDTH}x{SCAIL2_FIXED_HEIGHT}"
     mode_name_key = MODE_NAME_MAP[public_task_type]
     mode_name = translate_context_text(context, mode_name_key)
@@ -320,16 +354,17 @@ async def process_scail2_video_task(
             context, "task.status_cancelled_refunded", cost="{cost}"
         ),
     )
+    submit_images = [reference_image_path, motion_video_path]
+    if history_reference_image_path:
+        submit_images.append(history_reference_image_path)
     inputs = build_task_inputs(
         prompt=normalized_prompt,
-        images=(
-            [reference_image_path, motion_video_path]
-            if reference_image_path and motion_video_path
-            else []
-        ),
+        images=submit_images if reference_image_path and motion_video_path else [],
         resolution=resolution,
         duration=duration_seconds,
         negative_prompt=normalize_scail2_negative_prompt(None),
+        reference_preprocessed=reference_preprocessed,
+        history_reference_image=history_reference_image_path,
     )
     billing_args = resolve_video_billing_args(
         is_video=True,
@@ -351,6 +386,17 @@ async def process_scail2_video_task(
             prompt=normalized_prompt,
             is_video=True,
             source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+            cost_override=cost_override,
+            base_priority=base_priority,
+            user_cancel_allowed=user_cancel_allowed,
+            allow_cancel=allow_cancel,
+            send_result=send_result,
+            record_history=record_history,
+            result_input_image_indices=(
+                [2, 1] if history_reference_image_path else None
+            ),
+            task_id_override=task_id_override,
             message_spec=message_spec,
             submitted_status_builder=build_translated_cost_status_builder(
                 context,
@@ -365,7 +411,11 @@ async def process_scail2_video_task(
             requested_duration=billing_args["requested_duration"],
             cleanup=cleanup,
             cleanup_paths=build_cleanup_paths(
-                [reference_image_path, motion_video_path]
+                [
+                    reference_image_path,
+                    motion_video_path,
+                    history_reference_image_path,
+                ]
             ),
             runtime_state=runtime_state,
             task_label="scail2 video task",

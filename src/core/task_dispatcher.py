@@ -989,15 +989,22 @@ class Scail2VideoStrategy(BaseTaskStrategy):
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if "images" in inputs and isinstance(inputs.get("images"), list):
-            return inputs["images"][:2]
+            limit = 3 if inputs.get("history_reference_image") else 2
+            return inputs["images"][:limit]
         return [inputs.get("image"), inputs.get("video")]
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         saved_images = _get_saved_input_images(inputs)
         submission = _build_scail2_submission_context(inputs, task_type=self.task_type)
         duration_seconds = submission.duration_seconds
+        history_reference = str(inputs.get("history_reference_image") or "").strip()
+        history_saved_inputs = (
+            [saved_images[2], saved_images[1]]
+            if history_reference and len(saved_images) >= 3
+            else saved_images[:2]
+        )
         return {
-            "saved_inputs": saved_images,
+            "saved_inputs": history_saved_inputs,
             "requested_duration": duration_seconds,
             "scail2_duration_seconds": duration_seconds,
             "scail2_frame_count": get_scail2_frame_count(
@@ -1020,20 +1027,36 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         if not submission.reference_image_path or not submission.motion_video_path:
             raise CoreDomainError("SCAIL-2 任务需要同时上传参考图片和驱动视频。")
 
+        first_frame = str(
+            inputs.get("_scail2_face_swap_first_frame") or ""
+        ).strip()
+        if self.task_type == MODE_SCAIL2_FACE_SWAP_V2 and first_frame:
+            return await image_service.submit_face_swap_task(
+                task_id,
+                face_image_path=submission.reference_image_path,
+                body_image_path=first_frame,
+                priority=100,
+                task_type=MODE_FACE_SWAP_V2,
+            )
+
         execution_task_type = resolve_scail2_execution_task_type(
             self.task_type,
             submission.duration_seconds,
         )
-        return await image_service.submit_scail2_video_task(
-            task_id,
-            task_type=execution_task_type,
-            reference_image_path=submission.reference_image_path,
-            motion_video_path=submission.motion_video_path,
-            prompt=submission.prompt,
-            negative_prompt=submission.negative_prompt,
-            length=submission.duration_seconds,
-            priority=priority,
-        )
+        submit_kwargs = {
+            "task_type": execution_task_type,
+            "reference_image_path": submission.reference_image_path,
+            "motion_video_path": submission.motion_video_path,
+            "prompt": submission.prompt,
+            "negative_prompt": submission.negative_prompt,
+            "length": submission.duration_seconds,
+            "priority": priority,
+        }
+        if self.task_type == MODE_SCAIL2_FACE_SWAP_V2:
+            submit_kwargs["reference_preprocessed"] = bool(
+                inputs.get("reference_preprocessed")
+            )
+        return await image_service.submit_scail2_video_task(task_id, **submit_kwargs)
 
 
 def _build_default_image_strategy(

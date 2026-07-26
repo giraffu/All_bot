@@ -59,6 +59,50 @@ def _build_free_edit_v3_record(*, stage: str = "bf16") -> dict:
     return record
 
 
+def _build_scail2_face_swap_record(*, stage: str = "face_swap_v2") -> dict:
+    record = _build_record(
+        registry_task_id="logical-video",
+        backend_task_id=(
+            "logical-video" if stage == "face_swap_v2" else "stage2-video"
+        ),
+        cost=40,
+    )
+    record["submission_context"].update(
+        {
+            "task_type": "scail2_face_swap_v2",
+            "is_video_task": True,
+            "prompt": "keep original scene",
+            "saved_inputs": [
+                "123/input_images/reference.png",
+                "123/input_images/motion.mp4",
+            ],
+            "metadata": {},
+            "final_priority": 7,
+            "video_request": {
+                "requested_duration": 5,
+                "billing_resolution": "512x896",
+            },
+        }
+    )
+    record["continuation"] = {
+        "version": 1,
+        "kind": "scail2_face_swap_v2",
+        "stage": stage,
+        "stage2_backend_task_id": "stage2-video",
+        "original_reference": "123/input_images/reference.png",
+        "motion_video": "123/input_images/motion.mp4",
+        "duration": 5,
+        "normal_priority": 7,
+        "stage1_result_path": (
+            "123/output_images/swapped-first-frame.png"
+            if stage != "face_swap_v2"
+            else None
+        ),
+        "final_allow_contribute": True,
+    }
+    return record
+
+
 def _mock_finalizer_lock(monkeypatch, token: str | None = "lock-token"):
     acquire_mock = AsyncMock(return_value=token)
     release_mock = AsyncMock()
@@ -624,3 +668,74 @@ async def test_free_edit_v3_stage1_without_result_refunds_root_task(monkeypatch)
         logger_override=task_web_finalizer.logger,
     )
     remove.assert_awaited_once_with("logical-v3")
+
+
+@pytest.mark.asyncio
+async def test_scail2_face_swap_stage2_uses_normal_priority_and_preprocessed_contract(
+    monkeypatch,
+):
+    record = _build_scail2_face_swap_record()
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    add_record = AsyncMock()
+    transition_registry = AsyncMock()
+    submit_scail2 = AsyncMock(return_value="stage2-video")
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(
+            side_effect=[
+                {
+                    "status": "done",
+                    "result_path": "123/output_images/swapped-first-frame.png",
+                },
+                None,
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "submit_scail2_video_task",
+        submit_scail2,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        add_record,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.TaskRegistry,
+        "transition_backend_task",
+        transition_registry,
+    )
+
+    assert (
+        await task_web_finalizer.process_pending_web_finalizer("logical-video")
+        is True
+    )
+    submit_scail2.assert_awaited_once_with(
+        "stage2-video",
+        task_type="scail2_face_swap_v2",
+        reference_image_path="123/output_images/swapped-first-frame.png",
+        motion_video_path="123/input_images/motion.mp4",
+        prompt="keep original scene",
+        negative_prompt=" ",
+        length=5,
+        priority=7,
+        reference_preprocessed=True,
+    )
+    transition_registry.assert_awaited_once_with(
+        "logical-video",
+        backend_task_id="stage2-video",
+        task_type="scail2_face_swap_v2",
+        saved_input_images=[
+            "123/input_images/reference.png",
+            "123/input_images/motion.mp4",
+        ],
+        allow_contribute=True,
+        user_cancel_allowed=False,
+        status="pending",
+    )
+    assert add_record.await_args_list[-1].args[1]["continuation"]["stage"] == (
+        "scail2"
+    )

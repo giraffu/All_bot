@@ -352,6 +352,113 @@ async def test_web_generate_submits_free_edit_v3_as_one_five_credit_logical_task
 
 
 @pytest.mark.asyncio
+async def test_web_scail2_face_swap_prepares_first_frame_and_persists_continuation(
+    monkeypatch,
+):
+    process_task = AsyncMock(return_value={"task_id": "logical-video", "cost": 40})
+    prepare_first_frame = AsyncMock(
+        return_value="123/pipeline_inputs/logical-video_first_frame.png"
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_task,
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "prepare_scail2_face_swap_first_frame",
+        prepare_first_frame,
+    )
+    monkeypatch.setattr(
+        tasks_router.quota_manager,
+        "get_credits",
+        AsyncMock(return_value=60),
+    )
+
+    response = await tasks_router.create_generation_task(
+        TaskGenerateRequest(
+            task_type="scail2_face_swap_v2",
+            inputs={
+                "images": [
+                    "123/input_images/reference.png",
+                    "123/input_images/motion.mp4",
+                ],
+                "duration": 5,
+            },
+            prompt="keep the original scene",
+            priority=7,
+        ),
+        current_user=_build_current_user(),
+    )
+
+    assert response.task_id == "logical-video"
+    submit_kwargs = process_task.await_args.kwargs
+    generated_task_id = submit_kwargs["task_id"]
+    prepare_first_frame.assert_awaited_once_with(
+        internal_user_id=123,
+        registry_task_id=generated_task_id,
+        motion_video_path="123/input_images/motion.mp4",
+    )
+    assert submit_kwargs["base_priority"] == 7
+    assert submit_kwargs["inputs"]["_scail2_face_swap_first_frame"] == (
+        "123/pipeline_inputs/logical-video_first_frame.png"
+    )
+    assert submit_kwargs["registry_metadata"]["_web_scail2_face_swap_v2"] == {
+        "version": 1,
+        "kind": "scail2_face_swap_v2",
+        "stage": "face_swap_v2",
+        "first_frame": "123/pipeline_inputs/logical-video_first_frame.png",
+        "original_reference": "123/input_images/reference.png",
+        "motion_video": "123/input_images/motion.mp4",
+        "duration": 5,
+        "normal_priority": 7,
+        "final_allow_contribute": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_web_scail2_face_swap_cleans_hidden_frame_when_submission_fails(
+    monkeypatch,
+):
+    hidden_frame = "123/pipeline_inputs/logical-video_first_frame.png"
+    cleanup_first_frame = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        task_submission_service,
+        "prepare_scail2_face_swap_first_frame",
+        AsyncMock(return_value=hidden_frame),
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "cleanup_scail2_face_swap_first_frame",
+        cleanup_first_frame,
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        AsyncMock(side_effect=RuntimeError("submission failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="submission failed"):
+        await task_submission_service.submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type="scail2_face_swap_v2",
+                inputs={
+                    "images": [
+                        "123/input_images/reference.png",
+                        "123/input_images/motion.mp4",
+                    ],
+                    "duration": 5,
+                },
+                prompt="keep the original scene",
+            ),
+            current_user=_build_current_user(),
+            get_balance=AsyncMock(return_value=60),
+        )
+
+    cleanup_first_frame.assert_awaited_once_with(hidden_frame)
+
+
+@pytest.mark.asyncio
 async def test_web_generate_submits_free_edit_v25_as_one_three_credit_stage(
     monkeypatch,
 ):

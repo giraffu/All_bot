@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock
 
 import pytest
@@ -22,6 +23,7 @@ from src.constants import (
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
 )
+from src.core import task_dispatcher
 from src.core.task_core_types import CoreDomainError
 from src.core.task_dispatcher import (
     BaseVideoStrategy,
@@ -617,6 +619,43 @@ async def test_scail2_face_swap_v2_keeps_default_prompt_constraints(monkeypatch)
     prompt = submit_mock.await_args.kwargs["prompt"]
     assert prompt.startswith(SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT)
     assert "Additional user guidance: 替换" in prompt
+
+
+@pytest.mark.asyncio
+async def test_scail2_face_swap_v2_dispatches_prepared_first_frame_to_v2_at_priority_100(
+    monkeypatch,
+):
+    submit_face_swap = AsyncMock(return_value="root-task")
+    monkeypatch.setattr(
+        task_dispatcher,
+        "_get_dispatch_image_service",
+        lambda: SimpleNamespace(submit_face_swap_task=submit_face_swap),
+    )
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_FACE_SWAP_V2)
+
+    result = await strategy.submit_task(
+        "root-task",
+        {
+            "saved_input_images": [
+                "123/input_images/reference.png",
+                "123/input_images/motion.mp4",
+            ],
+            "_scail2_face_swap_first_frame": (
+                "123/pipeline_inputs/root-task_first_frame.png"
+            ),
+            "duration": 5,
+        },
+        priority=7,
+    )
+
+    assert result == "root-task"
+    submit_face_swap.assert_awaited_once_with(
+        "root-task",
+        face_image_path="123/input_images/reference.png",
+        body_image_path="123/pipeline_inputs/root-task_first_frame.png",
+        priority=100,
+        task_type=MODE_FACE_SWAP_V2,
+    )
 
 
 @pytest.mark.asyncio

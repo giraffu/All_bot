@@ -25,6 +25,7 @@ class BotTaskSubmissionContext:
     base_priority: int = 0
     user_cancel_allowed: bool = True
     recovery_metadata: dict[str, Any] = field(default_factory=dict)
+    task_id_override: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ class BotTaskRequestContext:
     cost_override: Optional[int] = None
     base_priority: int = 0
     user_cancel_allowed: bool = True
+    task_id_override: Optional[str] = None
 
 
 @dataclass(frozen=True)

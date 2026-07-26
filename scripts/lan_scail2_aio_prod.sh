@@ -29,9 +29,6 @@ REMOTE_COMPOSE_FILE="${REMOTE_DIR}/docker-compose.yml"
 REMOTE_ENV_FILE="${REMOTE_DIR}/.env.lan-scail2-prod"
 SCAIL2_PROD_SUPPORTED_TASK_TYPES="${SCAIL2_PROD_SUPPORTED_TASK_TYPES:-scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2}"
 SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES="${SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES:-{\"scail2_action_transfer\":\"SCAIL-2_Animation_multi-char_audio.api.json\",\"scail2_action_transfer_long\":\"SCAIL-2_Animation_WAN-Context-Windows.api.json\",\"scail2_video_replacement\":\"SCAIL-2_Replacement_audio.api.json\",\"scail2_face_swap_v2\":\"SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json\"}}"
-SCAIL2_PROD_FACE_SWAP_V10_ENABLED="${SCAIL2_PROD_FACE_SWAP_V10_ENABLED:-true}"
-SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL:-http://192.168.1.226:8188}"
-SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW:-face_swap_v2.json}"
 
 usage() {
   cat <<'USAGE'
@@ -208,10 +205,7 @@ patch_scail2_prod_overrides() {
   local file="$1"
   python3 - "$file" "$CONTAINER_NAME" \
     "$SCAIL2_PROD_SUPPORTED_TASK_TYPES" \
-    "$SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES" \
-    "$SCAIL2_PROD_FACE_SWAP_V10_ENABLED" \
-    "$SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" \
-    "$SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW" <<'PY'
+    "$SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -221,9 +215,6 @@ path = Path(sys.argv[1])
 container_name = sys.argv[2]
 supported_task_types = sys.argv[3]
 workflow_overrides = sys.argv[4]
-face_swap_enabled = sys.argv[5]
-face_swap_api_url = sys.argv[6]
-face_swap_workflow = sys.argv[7]
 
 required_tasks = {
     "scail2_action_transfer",
@@ -251,13 +242,6 @@ if overrides != required_overrides:
     raise SystemExit(
         "SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must match the verified audio/context-window/v10 mapping"
     )
-if face_swap_enabled.strip().lower() != "true":
-    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_ENABLED must stay true for prod v10")
-if not face_swap_api_url.strip():
-    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL is required")
-if face_swap_workflow.strip() != "face_swap_v2.json":
-    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW must be face_swap_v2.json")
-
 compose = yaml.safe_load(path.read_text()) or {}
 service = compose.get("services", {}).get(container_name)
 if not isinstance(service, dict):
@@ -267,17 +251,9 @@ environment["SUPPORTED_TASK_TYPES"] = supported_task_types
 environment["TASK_TYPE_WORKFLOW_OVERRIDES"] = json.dumps(
     overrides, ensure_ascii=False, separators=(",", ":")
 )
-environment["SCAIL2_FACE_SWAP_V10_ENABLED"] = "true"
-environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"] = face_swap_api_url
-environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW"] = face_swap_workflow
 runtime = compose.setdefault("x-allbot-runtime", {})
 runtime["prod_scail2_supported_task_types"] = sorted(required_tasks)
 runtime["prod_scail2_workflow_overrides"] = overrides
-runtime["prod_scail2_face_swap_v10"] = {
-    "enabled": True,
-    "face_swap_comfy_api_url": face_swap_api_url,
-    "face_swap_workflow": face_swap_workflow,
-}
 path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
 PY
 }
@@ -291,8 +267,6 @@ assert_prod_compose() {
   grep -q "SCAIL-2_Animation_WAN-Context-Windows.api.json" "$file"
   grep -q "SCAIL-2_Replacement_audio.api.json" "$file"
   grep -q "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json" "$file"
-  grep -q "SCAIL2_FACE_SWAP_V10_ENABLED: 'true'" "$file"
-  grep -q "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW: face_swap_v2.json" "$file"
   grep -q "MINIO_RESULT_BUCKET: user-data-prod" "$file"
   grep -q "RUNPOD_MODEL_PREFIX: scail2/2026-06-17-test" "$file"
   grep -q "production_port_unchanged: true" "$file"
