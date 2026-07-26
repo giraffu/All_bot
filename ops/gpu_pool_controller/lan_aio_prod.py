@@ -2160,6 +2160,24 @@ class LanAioProdOps:
         )
         self._ssh(
             slot.ssh_host,
+            f"docker update --restart=no '{slot.container_name}' >/dev/null",
+        )
+        restart_policy = self._ssh(
+            slot.ssh_host,
+            (
+                "docker inspect -f "
+                "'{{.HostConfig.RestartPolicy.Name}}' "
+                f"'{slot.container_name}'"
+            ),
+            capture=True,
+        )
+        if restart_policy.strip() != "no":
+            raise RuntimeError(
+                "quarantined container restart policy is not disabled: "
+                f"{slot.container_name}"
+            )
+        self._ssh(
+            slot.ssh_host,
             (
                 "timeout 45 docker stop --time 15 "
                 f"'{slot.container_name}' >/dev/null"

@@ -2319,6 +2319,12 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
             raise AssertionError("fault isolation must not depend on dead Comfy")
 
         def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            if "docker update --restart=no" in command:
+                self.events.append("disable-restart")
+                return ""
+            if ".HostConfig.RestartPolicy.Name" in command:
+                self.events.append("verify-restart-disabled")
+                return "no\n"
             if "docker stop" in command:
                 self.events.append("docker-stop")
                 return ""
@@ -2340,6 +2346,8 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
     }
     assert ops.events == [
         "persistent-disable",
+        "disable-restart",
+        "verify-restart-disabled",
         "docker-stop",
         "verify-stopped",
     ]
