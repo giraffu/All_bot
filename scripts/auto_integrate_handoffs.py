@@ -286,6 +286,87 @@ class Coordinator:
     def _git(self, *args: str, cwd: Path | None = None) -> str:
         return self._run(["git", *args], cwd=cwd)
 
+    def _published_modular_bundle_is_attested(self, sha: str) -> bool:
+        """Accept a protected full replay whose trigger SHA differs from its source.
+
+        Manual modular replays run trusted release tooling from the current main
+        ref while packaging an older, still-main-reachable source SHA.  In that
+        case GitHub's run head is the tooling SHA, so the immutable bundle and its
+        exact-SHA upstream CI run are the fail-closed attestation.
+        """
+
+        bundle_ref = f"ghcr.io/giraffu/allbot-release-v2:{sha}"
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="allbot-modular-release-attestation-"
+            ) as temporary:
+                output = Path(temporary)
+                self._run(["oras", "pull", bundle_ref, "-o", str(output)])
+                release_dir = output / "release-v2"
+                payloads = {
+                    name: json.loads(
+                        (release_dir / name).read_text(encoding="utf-8")
+                    )
+                    for name in (
+                        "release-index.json",
+                        "control-plane-manifest.json",
+                        "test-execution-manifest.json",
+                        "gpu-execution-manifest.json",
+                    )
+                }
+        except (
+            IntegrationQueueError,
+            OSError,
+            json.JSONDecodeError,
+            TypeError,
+        ):
+            return False
+
+        if any(
+            not isinstance(payload, Mapping)
+            or payload.get("source_sha") != sha
+            for payload in payloads.values()
+        ):
+            return False
+        release_index = payloads["release-index.json"]
+        gpu_manifest = payloads["gpu-execution-manifest.json"]
+        if (
+            release_index.get("release_channel") != "main"
+            or release_index.get("source_ref") != "refs/heads/main"
+            or gpu_manifest.get("completeness") != "complete"
+            or gpu_manifest.get("missing_artifacts") not in (None, [])
+        ):
+            return False
+        match = re.fullmatch(
+            r"https://github\.com/giraffu/All_bot/actions/runs/([0-9]+)",
+            str(release_index.get("ci_run", "")),
+        )
+        if match is None:
+            return False
+        try:
+            upstream = json.loads(
+                self._run(
+                    [
+                        "gh",
+                        "run",
+                        "view",
+                        match.group(1),
+                        "--repo",
+                        "giraffu/All_bot",
+                        "--json",
+                        "status,conclusion,headSha",
+                    ]
+                )
+            )
+        except (IntegrationQueueError, json.JSONDecodeError):
+            return False
+        return (
+            isinstance(upstream, Mapping)
+            and upstream.get("status") == "completed"
+            and upstream.get("conclusion") == "success"
+            and upstream.get("headSha") == sha
+        )
+
     def _wait_workflow(self, workflow: str, sha: str, timeout_seconds: int = 7200) -> None:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
@@ -300,6 +381,11 @@ class Coordinator:
                 run = runs[0]
                 if run.get("status") == "completed":
                     if run.get("conclusion") != "success":
+                        if (
+                            workflow == "modular-release-v2.yml"
+                            and self._published_modular_bundle_is_attested(sha)
+                        ):
+                            return
                         raise IntegrationQueueError(f"{workflow} failed for {sha}")
                     return
             time.sleep(20)
