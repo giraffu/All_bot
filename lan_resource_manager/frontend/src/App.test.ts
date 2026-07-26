@@ -147,4 +147,43 @@ describe('deployment workspace', () => {
     expect(wrapper.text()).toContain('可信 bundle 已就绪')
     expect(wrapper.get('[data-action="create-plan"]').attributes('disabled')).toBeUndefined()
   })
+
+  it('keeps trusted release data visible when environment SSH is unavailable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const ok = !url.includes('environments/test/status')
+        const body = url.includes('security/csrf')
+          ? { csrf_token: 'x' }
+          : url.includes('deployments/catalog')
+            ? {
+                modules: { 'central-api': { artifacts: ['central-api'] } },
+                environments: {
+                  test: { label: '测试环境', modules: ['central-api'], maintenance_supported: true },
+                  prod: { label: '正式环境', modules: ['central-api'], maintenance_supported: true },
+                },
+              }
+            : url.includes('releases/candidate')
+              ? {
+                  main_sha: 'a'.repeat(40),
+                  deployable_sha: 'a'.repeat(40),
+                  scope: 'runtime',
+                  ci: { conclusion: 'success' },
+                  bundle: { status: 'ready' },
+                  blockers: [],
+                }
+              : url.endsWith('/fleet')
+                ? fleet
+                : { detail: 'environment_status_unavailable' }
+        return Promise.resolve({ ok, status: ok ? 200 : 502, json: () => Promise.resolve(body) })
+      }),
+    )
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.get('[data-tab="deploy"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('可信 bundle 已就绪')
+    expect(wrapper.text()).toContain('central-api')
+    expect(wrapper.text()).toContain('environment_status_unavailable')
+  })
 })

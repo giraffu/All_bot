@@ -88,6 +88,21 @@ def test_plan_and_deploy_commands_are_fixed(tmp_path):
     assert "--services" not in deploy
 
 
+def test_environment_status_has_a_short_read_timeout(tmp_path):
+    captured = []
+
+    async def fake_run(command, **kwargs):
+        captured.append((command, kwargs))
+        return {"environment": "test"}
+
+    runner = ReleaseRunner(tmp_path, run_json=fake_run)
+    result = asyncio.run(
+        runner.dispatch("environment_status", {"environment": "test"})
+    )
+    assert result == {"environment": "test"}
+    assert captured[0][1]["timeout"] == 15
+
+
 def test_deploy_rejects_non_catalog_module_before_subprocess(tmp_path):
     runner = ReleaseRunner(tmp_path)
     with pytest.raises(RunnerError, match="invalid_module"):
@@ -160,6 +175,52 @@ def test_latest_bundle_follows_main_history(tmp_path):
     runner._run = fake_run
     result = asyncio.run(runner._latest_deployable_sha("a" * 40))
     assert result == "b" * 40
+
+
+def test_github_runs_are_filtered_without_new_cli_commit_flag(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        return (
+            '[{"databaseId":1,"headSha":"'
+            + "b" * 40
+            + '"},{"databaseId":2,"headSha":"'
+            + "a" * 40
+            + '"}]'
+        )
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    result = asyncio.run(runner._gh_runs("workflow.yml", "a" * 40))
+    assert [item["databaseId"] for item in result] == [2]
+    assert "--commit" not in commands[0]
+
+
+def test_candidate_resolves_main_through_authenticated_github_api(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["gh", "api", "repos/giraffu/All_bot/git/ref/heads/main"]:
+            return "a" * 40 + "\n"
+        if command[:3] == ["gh", "run", "list"]:
+            return "[]"
+        raise AssertionError(f"unexpected command: {command}")
+
+    async def ready(_sha):
+        return True
+
+    async def scope(_sha):
+        return "runtime"
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    runner._bundle_ready = ready
+    runner._change_scope = scope
+    result = asyncio.run(runner._candidate())
+    assert result["main_sha"] == "a" * 40
+    assert all(command[0] != "git" for command in commands)
 
 
 def test_compose_separates_web_and_runner_credentials():
