@@ -5,12 +5,13 @@ from urllib.parse import urlparse
 
 import httpx
 from asgi_correlation_id import correlation_id
-from telegram import File, Poll, Update
+from telegram import ChatMemberRestricted, File, Poll, Update
 from telegram.ext import ContextTypes
 from telegram.request import HTTPXRequest
 
 _ORIGINAL_DOWNLOAD_TO_DRIVE = File.download_to_drive
 _ORIGINAL_POLL_DE_JSON = Poll.de_json
+_ORIGINAL_CHAT_MEMBER_RESTRICTED_DE_JSON = ChatMemberRestricted.de_json
 _PATCHES_INSTALLED = False
 
 
@@ -104,8 +105,20 @@ def install_telegram_runtime_patches(
             data["members_only"] = False
         return _ORIGINAL_POLL_DE_JSON(data, bot)
 
+    @classmethod
+    def de_json_with_reaction_permission_default(cls, data, bot=None):
+        if (
+            hasattr(cls, "can_react_to_messages")
+            and isinstance(data, dict)
+            and "can_react_to_messages" not in data
+        ):
+            data = dict(data)
+            data["can_react_to_messages"] = bool(data.get("can_send_messages", False))
+        return _ORIGINAL_CHAT_MEMBER_RESTRICTED_DE_JSON(data, bot)
+
     File.download_to_drive = custom_download_to_drive
     Poll.de_json = de_json_with_members_only_default
+    ChatMemberRestricted.de_json = de_json_with_reaction_permission_default
     _PATCHES_INSTALLED = True
 
 
