@@ -1,0 +1,31 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "6ac1999085b3e1960b053e5c1ab1f08528a04056",
+  "batch": "20260726-163459-357233d4",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260726-163459-357233d4",
+  "members": [
+    {
+      "base_sha": "0984b08eeddf7ef491bafcf7ebb8d0369438b57a",
+      "branch": "codex/d-qqcc-file-download-timeout",
+      "head": "357233d4084abbc6260e364c5516e08ff3b7502a",
+      "queued_at": "2026-07-26T15:24:04.249855+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "8121bdcbc92105bbbb81e7e425284280f72260cb",
+      "branch": "codex/d-qqcc-worker-compose-gate-fix",
+      "head": "956cb61ac3420f9b280b1a1bad23077fd8a0600c",
+      "queued_at": "2026-07-26T15:40:39.839652+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "13a697e1f2bf8ced9dd69f28e18def9549db0098",
+      "branch": "codex/d-qqcc-gallery-download-timeout",
+      "head": "e9cc2294b8682590d6d606e3879967e491a3d48f",
+      "queued_at": "2026-07-26T16:21:28.919870+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
