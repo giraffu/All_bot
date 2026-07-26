@@ -20,6 +20,7 @@ from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
+from src.services.qqcc_runtime_context import run_qqcc_interaction_io
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.task_service_generation_image import process_standard_generation_task
@@ -84,17 +85,27 @@ async def download_market_apply_image(
     if not file_id:
         await robust_reply_text(message, _t(context, "qqcc.market.invalid_image"))
         return None
-    try:
+
+    async def download() -> str:
         telegram_file = await context.bot.get_file(file_id)
         return await download_telegram_file_to_fsm_temp(
             telegram_file=telegram_file,
             suffix=".png",
             name_hint="qqcc_gallery_apply",
         )
+
+    try:
+        image_path = await run_qqcc_interaction_io(
+            download(),
+            operation="gallery_apply_download",
+            logger=logger,
+        )
+        if image_path:
+            return image_path
     except Exception:
         logger.exception("Failed to download QQCC market apply image.")
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
-        return None
+    await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+    return None
 
 
 async def submit_qqcc_gallery_apply_session(

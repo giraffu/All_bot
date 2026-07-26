@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
-from qqcc_bot import gallery_market
+from qqcc_bot import gallery_market, gallery_market_apply
 from src.constants import (
     MODE_FREE_EDIT_V2_5,
     MODE_I2I_DRAW,
@@ -381,6 +381,43 @@ async def test_gallery_apply_media_without_session_is_silent(monkeypatch):
     await gallery_market.handle_qqcc_gallery_apply_media(update, context)
 
     reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_download_uses_bounded_qqcc_interaction_io(monkeypatch):
+    async def simulate_timeout(awaitable, **_kwargs):
+        awaitable.close()
+        return None
+
+    interaction_io = AsyncMock(side_effect=simulate_timeout)
+    reply_text = AsyncMock()
+    get_file = AsyncMock()
+    monkeypatch.setattr(
+        gallery_market_apply,
+        "run_qqcc_interaction_io",
+        interaction_io,
+        raising=False,
+    )
+    monkeypatch.setattr(gallery_market_apply, "robust_reply_text", reply_text)
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(
+            photo=[SimpleNamespace(file_id="gallery-photo")],
+            document=None,
+        )
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file),
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await gallery_market_apply.download_market_apply_image(update, context)
+
+    assert result is None
+    interaction_io.assert_awaited_once()
+    assert interaction_io.await_args.kwargs["operation"] == "gallery_apply_download"
+    get_file.assert_not_awaited()
+    reply_text.assert_awaited_once()
+    assert reply_text.await_args.args[1] == "fsm.common.download_image_failed"
 
 
 @pytest.mark.asyncio
