@@ -229,7 +229,16 @@ def test_deployment_commands(
     if not FULL_SHA_RE.fullmatch(sha):
         raise IntegrationQueueError("test deployment requires an exact main SHA")
     release = str(checkout / "scripts" / "release.py")
-    common = ["--env", "test", "--track", "control-plane", "--sha", sha]
+    common = [
+        "--env",
+        "test",
+        "--track",
+        "control-plane",
+        "--bundle-repository",
+        "ghcr.io/giraffu/allbot-release-v2",
+        "--sha",
+        sha,
+    ]
     deploy = ["python", release, "deploy", *common]
     if plan_token is not None:
         if not PLAN_TOKEN_RE.fullmatch(plan_token):

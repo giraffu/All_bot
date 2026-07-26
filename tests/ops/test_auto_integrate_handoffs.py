@@ -85,6 +85,11 @@ def test_test_deployment_commands_are_fixed_to_test_and_exact_sha(tmp_path):
     assert commands[1][-3:] == ["--sha", sha, "--execute"]
     flattened = " ".join(part for command in commands for part in command)
     assert "--env test" in flattened
+    assert all(
+        "--bundle-repository ghcr.io/giraffu/allbot-release-v2"
+        in " ".join(command)
+        for command in commands
+    )
     assert "preflight" not in flattened
     assert "prod" not in flattened
     assert "promote" not in flattened
