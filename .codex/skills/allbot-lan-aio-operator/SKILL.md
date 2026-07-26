@@ -84,6 +84,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 与 OOM/Xid 记录仅作为 catalog 审计信息，不阻断显式 slot 操作。
 - profile 的最低显存与实际显存只作为 canary 遥测，不构成启动或接单门禁。
 - helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时报告；容器、Central 与 ComfyUI 健康验证仍必须执行。
+- LAN 节点冷启动确需通过本地主 VPN 下载公开依赖时，只允许在本机受限 env 中显式设置 `LAN_AIO_HTTP_PROXY`、`LAN_AIO_HTTPS_PROXY` 与 `LAN_AIO_NO_PROXY`；operator 将其映射为目标容器的大小写 proxy 变量。代理值不得写入 Git catalog、Compose 或日志，默认未配置时运行行为不变。
 - `takeover/recover/restart-aio/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续显式单 slot mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。
 - GPU/Comfy 已失联、标准 queue-idle 门禁无法执行时，只允许对 Central 明确为 `quarantined|error` 且 `current_task_id/current_task_type` 均为空，或 agent 已注销但 control 已明确为 `disabled` 的单 slot 使用 `isolate-quarantined`。该动作写无 TTL 的 disabled control，先把目标容器 restart policy 固定为 `no` 并复核，再停止目标容器、验证 stopped 并把物理槽记为 intentionally-empty；即使 GPU reset-required 导致 stop 失败，已验证的 `restart=no` 仍保证下次主机启动不会自动拉起该容器。状态不满足时拒绝，不能借此强杀运行中任务或跳过普通 canary stop。

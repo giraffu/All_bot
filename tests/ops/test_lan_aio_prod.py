@@ -12,6 +12,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     load_lan_aio_prod_slots,
     main as lan_aio_main,
     patch_baked_remote_workers,
+    runtime_env_content,
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
@@ -302,6 +303,51 @@ def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
     assert "PYTHONPATH: /opt/allbot/runtime/remote_workers" in rendered
     assert "remote_workers_bundle:" in rendered
     assert "mode: baked_immutable_artifact" in rendered
+
+
+def test_lan_aio_fleet_render_passes_explicit_runtime_proxy():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    ops.env_values.update(
+        {
+            "LAN_AIO_HTTP_PROXY": "http://192.168.1.115:7890",
+            "LAN_AIO_HTTPS_PROXY": "http://192.168.1.115:7890",
+            "LAN_AIO_NO_PROXY": "127.0.0.1,localhost,192.168.1.115",
+        }
+    )
+    slot = ops.slots["gpu-252-gpu0-image_to_video"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["HTTP_PROXY"] == "${LAN_AIO_HTTP_PROXY}"
+    assert environment["HTTPS_PROXY"] == "${LAN_AIO_HTTPS_PROXY}"
+    assert environment["NO_PROXY"] == "${LAN_AIO_NO_PROXY}"
+
+
+def test_lan_aio_runtime_env_includes_only_explicit_proxy_values():
+    values = {
+        "LAN_AIO_AGENT_SECRET_TOKEN": "agent-token",
+        "LAN_AIO_MINIO_ENDPOINT": "http://192.168.1.115:9000",
+        "LAN_AIO_MINIO_ACCESS_KEY": "access",
+        "LAN_AIO_MINIO_SECRET_KEY": "secret",
+        "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+        "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+        "LAN_AIO_HTTPS_PROXY": "http://192.168.1.115:7890",
+        "LAN_AIO_NO_PROXY": "127.0.0.1,localhost,192.168.1.115",
+    }
+
+    content = runtime_env_content(values)
+
+    assert "LAN_AIO_HTTP_PROXY=" not in content
+    assert "LAN_AIO_HTTPS_PROXY=http://192.168.1.115:7890\n" in content
+    assert "LAN_AIO_NO_PROXY=127.0.0.1,localhost,192.168.1.115\n" in content
 
 
 def test_lan_aio_fleet_render_uses_stable_gpu_device_id_for_gpu_252():
