@@ -97,11 +97,13 @@ RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES = (
     "i2i_pro",
     "t2i-pornmaster-turbo",
     "face_swap_v2",
+    "face_swap",
 )
 RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES = json.dumps(
     {
         "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
         "face_swap_v2": "face_swap_v2.json",
+        "face_swap": "face_swap_v2.json",
     },
     separators=(",", ":"),
 )
@@ -307,11 +309,12 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
     },
     {
         "profile": "i2i_pro",
-        "label": "i2i_pro / txt2img / face_swap_v2",
+        "label": "i2i_pro / txt2img / face_swap_v2 / face_swap",
         "supported_task_types": [
             "i2i_pro",
             "t2i-pornmaster-turbo",
             "face_swap_v2",
+            "face_swap",
         ],
     },
     {

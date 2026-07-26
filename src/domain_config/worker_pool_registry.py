@@ -17,7 +17,7 @@ _WORKER_POOL_PROFILES = (
     WorkerPoolProfile("wan22_video_v2", ("wan22_video_v2",)),
     WorkerPoolProfile(
         "i2i_pro",
-        ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2"),
+        ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2", "face_swap"),
     ),
     WorkerPoolProfile(
         "scail2",

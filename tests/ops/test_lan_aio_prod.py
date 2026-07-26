@@ -55,6 +55,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     )
     assert (
         slots["gpu-252-gpu0-i2i_pro"].gpu_device_id
@@ -67,6 +68,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     )
     assert (
         slots["gpu-252-gpu1-i2i_pro"].gpu_device_id
@@ -94,22 +96,23 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     )
     assert slots["gpu-226-gpu0-i2i_pro"].agent_id == (
         "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
     )
 
 
-def test_all_i2i_pro_lan_slots_keep_v1_and_v2_capacity_separate():
+def test_all_i2i_pro_lan_slots_accept_legacy_and_v2_face_swap():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 
     i2i_slots = [slot for slot in slots.values() if slot.target_profile_id == "i2i_pro"]
     assert i2i_slots
     assert all(
-        slot.target_task_types == ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2")
+        slot.target_task_types
+        == ("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2", "face_swap")
         for slot in i2i_slots
     )
-    assert all("face_swap" not in slot.target_task_types for slot in i2i_slots)
 
 
 def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
@@ -142,6 +145,29 @@ def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
         'TASK_TYPE_WORKFLOW_OVERRIDES: '
         '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
     ) in rendered
+
+
+def test_gpu002_i2i_pro_renders_legacy_face_swap_through_v2_workflow():
+    import yaml
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-002-gpu1-i2i_pro"]
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    expected_types = "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"
+    assert environment["SUPPORTED_TASK_TYPES"] == expected_types
+    assert environment["PREFETCH_TASK_TYPES"] == expected_types
+    assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
+        '{"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json",'
+        '"face_swap_v2":"face_swap_v2.json",'
+        '"face_swap":"face_swap_v2.json"}'
+    )
 
 
 def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():

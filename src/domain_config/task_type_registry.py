@@ -257,6 +257,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         MODE_FACE_SWAP,
         central_type=MODE_FACE_SWAP,
         workflow_filename="face_swap.json",
+        runpod_profile="i2i_pro",
         is_generation=True,
         apply_input_reuse_supported=True,
         cost=1,
