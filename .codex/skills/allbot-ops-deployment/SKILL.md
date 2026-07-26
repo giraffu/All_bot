@@ -19,6 +19,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 | 云正式整体不可用、本地接管 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` |
 | RunPod、GPU worker、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`references/runpod-lan-runtime.md` |
 | LAN AIO 当前态、缓存态、候选切换、单卡 takeover/recover/restart | `allbot-lan-aio-operator`、`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`、`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` |
+| 本地资源管理平台的可信构建、模块部署、生成维护 | `allbot-lan-resource-manager`、`lan_resource_manager/README.md`、`docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` |
 | 局域网 GPU 登录、节点资源、ComfyUI | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`、`docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` |
 | cloud-prod shadow 同步、R2 shadow、完整合并桶 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`、`docs/子模块_系统资源与容量画像_resource_inventory.md` |
 | R2 可见热集审计、legacy 媒体补齐 | `docs/子模块_社区与存储_gallery_storage.md`、对应 `scripts/*r2* --help` |
@@ -79,6 +80,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
 - RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-release`。release rollout 必须传 release index/full SHA/profile/单 slot，先 disabled 验证 exact digest/heartbeat；失败恢复旧 exact image 并停止。
 - GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、Git catalog 与 XDG 本地 state ledger 操作；普通 profile 切换不写仓库。gpu-002 SCAIL-2 正式 slot0 也必须先声明在 catalog 里让 operator 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
+- 本地资源管理平台的部署 Tab 只能把一个完整独立模块翻译为 `release.py plan/deploy`，构建恢复只能重跑当前 main 的可信上游 workflow。云凭据只进入隔离 Unix runner；局域网 Web 无登录时必须保留逐次完整确认、来源 IP 审计、CIDR/Host/Origin/JSON/CSRF 与 mutation 限速。
 
 ## 3. 高压红线
 

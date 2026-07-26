@@ -9,6 +9,7 @@ from lan_resource_manager.backend.config import Settings
 from lan_resource_manager.backend.main import create_app
 from lan_resource_manager.backend.operator import parse_last_json
 from lan_resource_manager.backend.operator import CliLanAioOperator
+from lan_resource_manager.backend.store import OperationStore
 
 
 SLOT = {
@@ -89,6 +90,101 @@ class FakeOperator:
         return {"ok": True}
 
 
+class FakeReleaseOperator:
+    def __init__(self):
+        self.builds = []
+        self.plans = []
+        self.executions = []
+        self.maintenance_calls = []
+
+    async def catalog(self):
+        return {
+            "environments": {
+                "test": {"modules": ["central-api", "web-api", "main-bot"]},
+                "prod": {
+                    "modules": [
+                        "central-api",
+                        "web-api",
+                        "main-bot",
+                        "dashboard",
+                    ]
+                },
+            },
+            "modules": {
+                "central-api": {"artifacts": ["central-api"]},
+                "web-api": {"artifacts": ["web-api"]},
+                "main-bot": {"artifacts": ["main-bot"]},
+                "dashboard": {
+                    "artifacts": ["dashboard-backend", "dashboard-frontend"]
+                },
+            },
+        }
+
+    async def candidate(self):
+        return {
+            "main_sha": "a" * 40,
+            "deployable_sha": "a" * 40,
+            "scope": "runtime",
+            "ci": {"status": "completed", "conclusion": "success", "run_id": 41},
+            "bundle": {"status": "ready"},
+            "build": None,
+            "blockers": [],
+        }
+
+    async def environment_status(self, environment):
+        return {
+            "environment": environment,
+            "current_sha": "b" * 40,
+            "maintenance": {
+                "enabled": False,
+                "owner": None,
+                "can_disable": False,
+            },
+            "active_transaction": None,
+            "config_drift": False,
+        }
+
+    async def start_build(self, expected_main_sha):
+        self.builds.append(expected_main_sha)
+        return {"run_id": 42, "status": "queued", "reused": False}
+
+    async def build_status(self, sha):
+        return {
+            "sha": sha,
+            "ci": {"status": "completed", "conclusion": "success"},
+            "build": {"status": "completed", "conclusion": "success"},
+            "bundle": {"status": "ready"},
+        }
+
+    async def plan(self, environment, module, sha, maintenance):
+        self.plans.append((environment, module, sha, maintenance))
+        return {
+            "status": "passed",
+            "git_sha": sha,
+            "modules": [module],
+            "artifacts": {module: {"digest": "sha256:" + "c" * 64}},
+            "maintenance_required": module == "main-bot",
+            "blockers": [],
+            "plan_token": "server-secret-plan-token",
+            "plan_token_expires_at": "2099-01-01T00:00:00+00:00",
+        }
+
+    async def deploy(self, **kwargs):
+        self.executions.append(kwargs)
+        return {"status": "succeeded"}
+
+    async def set_maintenance(self, **kwargs):
+        self.maintenance_calls.append(kwargs)
+        return {
+            "environment": kwargs["environment"],
+            "maintenance": {
+                "enabled": kwargs["enabled"],
+                "owner": "lan-resource-manager" if kwargs["enabled"] else None,
+                "can_disable": kwargs["enabled"],
+            },
+        }
+
+
 def settings(tmp_path: Path):
     return Settings(
         allbot_root=tmp_path,
@@ -103,8 +199,12 @@ def settings(tmp_path: Path):
     )
 
 
-def client(tmp_path: Path, operator: FakeOperator):
-    app = create_app(settings(tmp_path), operator)
+def client(
+    tmp_path: Path,
+    operator: FakeOperator,
+    release_operator: FakeReleaseOperator | None = None,
+):
+    app = create_app(settings(tmp_path), operator, release_operator)
     result = TestClient(app, client=("127.0.0.1", 50000))
     result.__enter__()
     csrf = result.get("/api/v1/security/csrf").json()["csrf_token"]
@@ -262,3 +362,120 @@ def test_cli_adapter_constructs_only_transactional_switch_commands(tmp_path):
     assert captured[1][0] == "recover"
     assert "--physical-slot" in captured[1]
     assert "state-reconcile" not in " ".join(captured[0] + captured[1])
+
+
+def test_deployment_catalog_and_environment_status_are_exposed(tmp_path):
+    http, _ = client(tmp_path, FakeOperator(), FakeReleaseOperator())
+    catalog = http.get("/api/v1/deployments/catalog").json()
+    assert "dashboard" not in catalog["environments"]["test"]["modules"]
+    assert "dashboard" in catalog["environments"]["prod"]["modules"]
+    status = http.get("/api/v1/environments/test/status").json()
+    assert status["maintenance"]["enabled"] is False
+
+
+def test_deployment_plan_keeps_operator_token_server_side(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    response = http.post(
+        "/api/v1/deployment-plans",
+        json={
+            "environment": "test",
+            "module": "central-api",
+            "candidate_sha": "a" * 40,
+            "maintenance": "planner",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201
+    assert response.headers["x-request-id"].startswith("lrm-")
+    payload = response.json()
+    assert "plan_token" not in payload
+    assert payload["candidate_sha"] == "a" * 40
+    stored = (
+        tmp_path / "data" / "deployment-plans" / f"{payload['plan_id']}.json"
+    ).read_text()
+    assert "server-secret-plan-token" in stored
+    assert '"source_ip": "127.0.0.1"' in stored
+    assert '"request_id": "lrm-' in stored
+
+
+def test_deployment_execute_requires_exact_confirmation(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    plan = http.post(
+        "/api/v1/deployment-plans",
+        json={
+            "environment": "prod",
+            "module": "central-api",
+            "candidate_sha": "a" * 40,
+            "maintenance": "planner",
+        },
+        headers=headers,
+    ).json()
+    bad = http.post(
+        f"/api/v1/deployment-plans/{plan['plan_id']}/execute",
+        json={"confirmation": "wrong"},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+    expected = f"PROD central-api {'a' * 40}"
+    accepted = http.post(
+        f"/api/v1/deployment-plans/{plan['plan_id']}/execute",
+        json={"confirmation": expected},
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    operation = wait_operation(http, accepted.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert release.executions[0]["confirm_prod"] is True
+
+
+def test_build_rejects_stale_main_and_accepts_exact_confirmation(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    stale = http.post(
+        "/api/v1/releases/builds",
+        json={"expected_main_sha": "b" * 40, "confirmation": f"BUILD {'b' * 40}"},
+        headers=headers,
+    )
+    assert stale.status_code == 409
+    accepted = http.post(
+        "/api/v1/releases/builds",
+        json={"expected_main_sha": "a" * 40, "confirmation": f"BUILD {'a' * 40}"},
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    assert wait_operation(http, accepted.json()["operation_id"])["status"] == "succeeded"
+    assert release.builds == ["a" * 40]
+
+
+def test_maintenance_uses_expected_state_and_confirmation(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    response = http.post(
+        "/api/v1/environments/test/maintenance",
+        json={
+            "enabled": True,
+            "expected_enabled": False,
+            "reason": "release window",
+            "confirmation": "TEST MAINTENANCE ON",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 202
+    assert wait_operation(http, response.json()["operation_id"])["status"] == "succeeded"
+    assert release.maintenance_calls[0]["reason"] == "release window"
+
+
+def test_restart_resumes_build_observation_but_interrupts_runtime_mutation(tmp_path):
+    store = OperationStore(tmp_path)
+    store.create("build-one", kind="build", request={"sha": "a" * 40})
+    store.update("build-one", status="running", external_run_id=42)
+    store.create("deploy-one", kind="deploy", request={"sha": "a" * 40})
+    store.update("deploy-one", status="running")
+
+    restarted = OperationStore(tmp_path)
+
+    assert restarted.get("build-one")["status"] == "queued"
+    assert restarted.get("build-one")["external_run_id"] == 42
+    assert restarted.get("deploy-one")["status"] == "interrupted"

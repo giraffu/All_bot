@@ -16,7 +16,9 @@ class Settings:
     allowed_networks: tuple[str, ...]
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
+    release_runner_socket: Path = Path("/run/lan-resource-manager/release-runner.sock")
     live_stale_seconds: int = 180
+    mutation_rate_limit_per_minute: int = 30
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,7 +73,16 @@ class Settings:
                 ).split(",")
                 if item.strip()
             ),
+            release_runner_socket=Path(
+                os.environ.get(
+                    "RESOURCE_MANAGER_RELEASE_RUNNER_SOCKET",
+                    "/run/lan-resource-manager/release-runner.sock",
+                )
+            ),
             live_stale_seconds=int(
                 os.environ.get("RESOURCE_MANAGER_LIVE_STALE_SECONDS", "180")
+            ),
+            mutation_rate_limit_per_minute=int(
+                os.environ.get("RESOURCE_MANAGER_MUTATION_RATE_LIMIT", "30")
             ),
         )

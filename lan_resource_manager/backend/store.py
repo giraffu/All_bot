@@ -30,12 +30,20 @@ class OperationStore:
             if operation.get("status") not in {
                 str(status) for status in TERMINAL_OPERATION_STATUSES
             }:
-                operation.update(
-                    status=OperationStatus.INTERRUPTED,
-                    stage="interrupted",
-                    finished_at=utc_now(),
-                    updated_at=utc_now(),
-                )
+                if operation.get("kind") == "build":
+                    operation.update(
+                        status=OperationStatus.QUEUED,
+                        stage="resuming-build-observation",
+                        finished_at=None,
+                        updated_at=utc_now(),
+                    )
+                else:
+                    operation.update(
+                        status=OperationStatus.INTERRUPTED,
+                        stage="interrupted",
+                        finished_at=utc_now(),
+                        updated_at=utc_now(),
+                    )
                 changed = True
         if changed:
             self._save()
@@ -83,12 +91,34 @@ class OperationStore:
         operation = self.operations.get(operation_id)
         return dict(operation) if operation else None
 
-    def active(self) -> dict | None:
+    def active(
+        self,
+        *,
+        kind: str | None = None,
+        kinds: set[str] | None = None,
+        request_value: str | None = None,
+    ) -> dict | None:
         terminals = {str(status) for status in TERMINAL_OPERATION_STATUSES}
         for operation in reversed(list(self.operations.values())):
-            if operation.get("status") not in terminals:
-                return dict(operation)
+            if operation.get("status") in terminals:
+                continue
+            if kind and operation.get("kind") != kind:
+                continue
+            if kinds and operation.get("kind") not in kinds:
+                continue
+            if request_value and request_value not in (operation.get("request") or {}).values():
+                continue
+            return dict(operation)
         return None
+
+    def active_all(self, *, kind: str | None = None) -> list[dict[str, Any]]:
+        terminals = {str(status) for status in TERMINAL_OPERATION_STATUSES}
+        return [
+            dict(operation)
+            for operation in self.operations.values()
+            if operation.get("status") not in terminals
+            and (kind is None or operation.get("kind") == kind)
+        ]
 
     def save_snapshot(self, payload: dict[str, Any]) -> None:
         self._atomic_json(self.snapshot_path, payload)

@@ -1,12 +1,12 @@
 ---
 name: "allbot-lan-resource-manager"
-description: "开发和维护本地主服务器的 LAN AIO 资源管理平台。修改 lan_resource_manager 的 FastAPI/Vue、Compose、局域网访问控制、状态聚合或网页单卡切换时必须使用。"
+description: "开发和维护本地主服务器资源管理平台。修改 lan_resource_manager 的 FastAPI/Vue、LAN AIO、可信 main 构建、模块部署、生成维护、隔离 runner、Compose 或局域网访问控制时必须使用。"
 ---
 
-# AllBot LAN AIO Resource Manager
+# AllBot Local Resource Manager
 
-本技能覆盖 `lan_resource_manager/`。平台是现有 LAN AIO operator 的受限本地 UI，
-不是第二套 fleet 实现。
+本技能覆盖 `lan_resource_manager/`。平台同时提供受限 LAN AIO UI 与不可变模块发布
+UI，不实现第二套 fleet 或 release engine。
 
 ## 必读入口
 
@@ -29,13 +29,29 @@ description: "开发和维护本地主服务器的 LAN AIO 资源管理平台。
   挂载 Docker Socket或暴露 env/密钥/原始命令输出。
 - 无登录不等于无保护：必须保留 LAN CIDR、精确 bind IP、Trusted Host、Origin、
   JSON 与 CSRF 门禁。
-- 容器重启后把本地未完成 UI operation 标记为 `interrupted`，只展示 operator
-  ledger/history 的事实，不自动 recover 或续跑。
+- 容器重启后把未完成的 LAN/部署/维护 mutation 标记为 `interrupted`，只展示
+  operator ledger/history 的事实，不自动 recover 或续跑；GitHub build 可按原
+  SHA/run ID 恢复只读观察，但不得重复 dispatch。
+- 构建只允许当前远端 main 精确 SHA；缺可信 CI 时 dispatch
+  `control-plane-release.yml`，已有同 SHA 成功 CI 时可带固定 `main/full` 参数与
+  上游 run ID 补跑 modular workflow。禁止 build-only 包。lightweight 或
+  release-tooling main 不构建 bundle，部署候选沿 main 历史选择最近不可变 bundle。
+- 部署只允许 `deploy/release-policy.yml` 中一个完整独立模块组，并固定
+  `release.py plan -> deploy`、短效 plan token、目标环境和精确 SHA。禁止
+  `--skip-gate`、emergency、自由 service、config apply、rollback/recover 或 GPU
+  execution。
+- Web 容器不得读取云 SSH、GitHub/GHCR 或 Pages 凭据。所有发布命令必须经过独立
+  Unix socket runner 的动作和参数白名单；runner 同样不得挂载 Docker Socket。
+- 手动维护只管理 `/var/lib/allbot/<env>/runtime/GENERATION_MAINTENANCE`。只允许
+  平台解除自身 owner metadata 建立的维护；活动/恢复事务或未知 owner 必须阻断。
+- 构建不会自动部署。测试与正式部署均须重新生成计划并输入
+  `TEST|PROD <module> <full-sha>`；正式执行仍固定 `--confirm-prod`。
 
 ## 最小验证
 
 ```bash
 python -m pytest -q lan_resource_manager/tests
+python -m pytest -q tests/scripts/test_release_maintenance.py
 cd lan_resource_manager/frontend
 npm ci
 npm test
