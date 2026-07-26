@@ -109,8 +109,20 @@ ENV_ALLOWLIST = {
     "LAN_AIO_MINIO_SECRET_KEY",
     "LAN_MODEL_CACHE_ACCESS_KEY",
     "LAN_MODEL_CACHE_SECRET_KEY",
+    "LAN_AIO_HTTP_PROXY",
+    "LAN_AIO_HTTPS_PROXY",
+    "LAN_AIO_NO_PROXY",
     "CIVITAI_API_TOKEN",
     "CIVITAI_API_TOKEN",
+}
+
+LAN_AIO_RUNTIME_PROXY_ENV = {
+    "HTTP_PROXY": "LAN_AIO_HTTP_PROXY",
+    "http_proxy": "LAN_AIO_HTTP_PROXY",
+    "HTTPS_PROXY": "LAN_AIO_HTTPS_PROXY",
+    "https_proxy": "LAN_AIO_HTTPS_PROXY",
+    "NO_PROXY": "LAN_AIO_NO_PROXY",
+    "no_proxy": "LAN_AIO_NO_PROXY",
 }
 
 
@@ -421,6 +433,13 @@ def runtime_env_content(values: dict[str, str]) -> str:
         if "\n" in value or "\r" in value:
             raise RuntimeError(f"refusing newline in runtime env value {key}")
         lines.append(f"{key}={value}")
+    for key in sorted(set(LAN_AIO_RUNTIME_PROXY_ENV.values())):
+        value = values.get(key)
+        if not value:
+            continue
+        if "\n" in value or "\r" in value:
+            raise RuntimeError(f"refusing newline in runtime env value {key}")
+        lines.append(f"{key}={value}")
     return "\n".join(lines) + "\n"
 
 
@@ -495,7 +514,11 @@ class LanAioProdOps:
                 gpu_device_id=slot.gpu_device_id,
             ),
         )
-        rendered = patch_baked_remote_workers(rendered, slot)
+        rendered = patch_baked_remote_workers(
+            rendered,
+            slot,
+            env_values=self.env_values,
+        )
         assert_prod_compose(rendered, slot)
         return rendered
 
@@ -3422,7 +3445,12 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         return str(completed.stdout or "")
 
 
-def patch_baked_remote_workers(rendered: str, slot: LanAioProdSlot) -> str:
+def patch_baked_remote_workers(
+    rendered: str,
+    slot: LanAioProdSlot,
+    *,
+    env_values: dict[str, str] | None = None,
+) -> str:
     try:
         import yaml  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -3435,6 +3463,9 @@ def patch_baked_remote_workers(rendered: str, slot: LanAioProdSlot) -> str:
     environment["RUNPOD_REMOTE_WORKER_ROOT"] = REMOTE_WORKERS_TARGET_DIR
     environment["PYTHONPATH"] = REMOTE_WORKERS_TARGET_DIR
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    for runtime_key, source_key in LAN_AIO_RUNTIME_PROXY_ENV.items():
+        if env_values and env_values.get(source_key):
+            environment[runtime_key] = f"${{{source_key}}}"
     volumes = service.setdefault("volumes", [])
     volumes[:] = [
         value
