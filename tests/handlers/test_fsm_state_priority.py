@@ -890,6 +890,99 @@ async def test_qqcc_quick_media_missing_state_expires_without_download_or_quota(
 
 
 @pytest.mark.asyncio
+async def test_qqcc_quick_image_download_uses_bounded_interaction_io(monkeypatch):
+    async def simulate_timeout(awaitable, **_kwargs):
+        awaitable.close()
+        return None
+
+    interaction_mock = AsyncMock(side_effect=simulate_timeout)
+    get_file_mock = AsyncMock()
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "run_qqcc_interaction_io",
+        interaction_mock,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        bot_data={"bot_client_type": "bot:qqcc"},
+    )
+
+    result = await quick_image_fsm._download_quick_image_input(
+        context=context,
+        file_id="photo-file-id",
+        user_id=12345,
+    )
+
+    assert result is None
+    interaction_mock.assert_awaited_once()
+    assert interaction_mock.await_args.kwargs["operation"] == "quick_image_download"
+    get_file_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_quick_video_download_uses_bounded_interaction_io(monkeypatch):
+    async def simulate_timeout(awaitable, **_kwargs):
+        awaitable.close()
+        return None
+
+    interaction_mock = AsyncMock(side_effect=simulate_timeout)
+    get_file_mock = AsyncMock()
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "run_qqcc_interaction_io",
+        interaction_mock,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        bot_data={"bot_client_type": "bot:qqcc"},
+    )
+
+    result = await quick_video_fsm._download_quick_video_input(
+        context=context,
+        file_id="photo-file-id",
+    )
+
+    assert result is None
+    interaction_mock.assert_awaited_once()
+    assert interaction_mock.await_args.kwargs["operation"] == "quick_video_download"
+    get_file_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_main_bot_quick_image_download_does_not_use_qqcc_budget(
+    tmp_path, monkeypatch
+):
+    interaction_mock = AsyncMock()
+    download_mock = AsyncMock(return_value=str(tmp_path / "image.png"))
+    get_file_mock = AsyncMock(return_value=SimpleNamespace())
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "run_qqcc_interaction_io",
+        interaction_mock,
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "download_telegram_file_to_fsm_temp",
+        download_mock,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        bot_data={"bot_client_type": "bot:main"},
+    )
+
+    result = await quick_image_fsm._download_quick_image_input(
+        context=context,
+        file_id="photo-file-id",
+        user_id=12345,
+    )
+
+    assert result == str(tmp_path / "image.png")
+    get_file_mock.assert_awaited_once_with("photo-file-id")
+    download_mock.assert_awaited_once()
+    interaction_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_qqcc_ai_draw_deleted_scene_callback_is_blocked(monkeypatch):
     edit_mock = AsyncMock()
     answer_mock = AsyncMock()

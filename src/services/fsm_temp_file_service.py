@@ -41,7 +41,15 @@ async def download_telegram_file_to_fsm_temp(
     temp_dir = _ensure_fsm_temp_dir(base_dir)
     file_name = f"{uuid.uuid4()}_{name_hint or 'fsm'}{suffix}"
     local_path = os.path.join(temp_dir, file_name)
-    await telegram_file.download_to_drive(local_path)
+    try:
+        await telegram_file.download_to_drive(local_path)
+    except BaseException:
+        # asyncio.wait_for cancels the download coroutine on timeout. Remove
+        # any bytes already written so a stalled Telegram transfer cannot
+        # leave orphaned FSM files behind.
+        with contextlib.suppress(OSError):
+            os.remove(local_path)
+        raise
     return local_path
 
 
