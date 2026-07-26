@@ -149,6 +149,7 @@ slots:
       - i2i_pro
       - t2i-pornmaster-turbo
       - face_swap_v2
+      - face_swap
     gpu_index: 0
     gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
     host_port: 8192
@@ -161,7 +162,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu0-i2i-pro
     rollout_order: 24
-    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8192; the current runtime must be drained before that rollout. SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates.
+    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, face_swap_v2, and legacy face_swap (both face swap types execute face_swap_v2.json) on host port 8192; the current runtime must be drained before that rollout. SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates.
 
   - id: gpu-252-gpu1-wan22_video_v2
     enabled: false
@@ -293,6 +294,7 @@ slots:
       - i2i_pro
       - t2i-pornmaster-turbo
       - face_swap_v2
+      - face_swap
     gpu_index: 1
     gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
     host_port: 8191
@@ -368,6 +370,7 @@ slots:
       - i2i_pro
       - t2i-pornmaster-turbo
       - face_swap_v2
+      - face_swap
     gpu_index: 1
     host_port: 8191
     legacy_health_port: 8191
@@ -379,7 +382,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-i2i-pro
     rollout_order: 40
-    notes: Active production gpu-002 GPU1 i2i_pro runtime after the 2026-07-17 controlled takeover from image_to_video. Its next immutable release rollout must replace the legacy face_swap intake with face_swap_v2 while retaining i2i_pro and t2i-pornmaster-turbo; the live runtime remains unchanged until that rollout. Preflight, image pull, six-file model cache, natural task drain, disabled startup, Docker health, disabled heartbeat and enable gates passed.
+    notes: Active production gpu-002 GPU1 i2i_pro runtime after the 2026-07-17 controlled takeover from image_to_video. Its next immutable release rollout adds legacy face_swap intake while retaining i2i_pro, t2i-pornmaster-turbo, and face_swap_v2; both face swap types execute face_swap_v2.json. The live runtime remains unchanged until that rollout. Preflight, image pull, six-file model cache, natural task drain, disabled startup, Docker health, disabled heartbeat and enable gates passed.
 
   - id: gpu-177-gpu1-ltx_video
     enabled: true
@@ -622,6 +625,7 @@ slots:
       - i2i_pro
       - t2i-pornmaster-turbo
       - face_swap_v2
+      - face_swap
     gpu_index: 0
     host_port: 8190
     legacy_health_port: 8190
@@ -633,4 +637,4 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-i2i-pro
     rollout_order: 106
-    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8190; the current runtime must be drained before that rollout. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
+    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, face_swap_v2, and legacy face_swap (both face swap types execute face_swap_v2.json) on host port 8190; the current runtime must be drained before that rollout. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.

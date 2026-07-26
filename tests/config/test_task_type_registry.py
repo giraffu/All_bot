@@ -76,6 +76,16 @@ def test_registry_matches_runpod_profile_supported_task_types():
         assert entry.execution_type in profile.supported_task_types
 
 
+def test_legacy_face_swap_keeps_v1_business_contract_on_i2i_pro_capacity():
+    assert get_task_cost("face_swap") == 1
+    assert get_workflow_filename("face_swap") == "face_swap.json"
+    assert get_runpod_profile("face_swap") == "i2i_pro"
+
+    assert get_task_cost("face_swap_v2") == 2
+    assert get_workflow_filename("face_swap_v2") == "face_swap_v2.json"
+    assert get_runpod_profile("face_swap_v2") == "i2i_pro"
+
+
 def test_registry_matches_gallery_and_apply_capability_lists():
     gallery_supported = {
         entry.task_type
@@ -309,7 +319,7 @@ def test_registry_query_helpers_cover_key_task_type_relationships():
             "execution": "face_swap",
             "central": "face_swap",
             "workflow": "face_swap.json",
-            "runpod": None,
+            "runpod": "i2i_pro",
             "video": False,
             "cost": 1,
             "gallery": False,

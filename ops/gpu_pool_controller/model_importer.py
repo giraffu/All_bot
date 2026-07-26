@@ -135,9 +135,15 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
         version="2026-06-14-test",
         profiles=("i2i_pro",),
         source_node_id="gpu-226",
-        task_types=("i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2"),
+        task_types=(
+            "i2i_pro",
+            "t2i-pornmaster-turbo",
+            "face_swap_v2",
+            "face_swap",
+        ),
         workflow_overrides={
             "face_swap_v2": "face_swap_v2.json",
+            "face_swap": "face_swap_v2.json",
             "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
         },
     ),

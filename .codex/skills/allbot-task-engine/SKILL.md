@@ -5,7 +5,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 
 # AllBot 任务引擎与调度
 
-> 2026-07-25：新增隔离的 `face_swap` execution profile 候选。它可承接 Central 的 `face_swap` 与 `face_swap_v2` 两个既有任务类型，但 Worker runtime 必须将二者都覆盖到 `face_swap_v2.json`；这不合并业务类型、不改计费/退款，也不允许 `i2i_pro` 重新声明 V1。
+> 2026-07-26：`i2i_pro` execution profile 新增兼容接取 legacy `face_swap`，但必须按 worker override 执行 `face_swap_v2.json`；独立 `face_swap` profile 同样可承接两个类型并执行 V2。业务类型、计费和退款不合并，`worker_remote_02` 继续保留 V1 workflow，因此同一 legacy 队列实际使用 V1/V2 取决于接单 worker。
 
 本技能是任务提交、排队、执行、回流和清理的轻量入口。正文保留稳定入口、红线和排障路由；长链路细节以 `/docs` 为事实源，避免技能调用时被截断。
 
@@ -81,8 +81,8 @@ QQCC 私有 Bot 不改变这条生成主链。访客按自己的 `internal_user_
 - Wan22 AIO Bot 扩展/重生成/拼接链覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2，必须保留 `wan22_prev_task_id`、`wan22_chain_task_ids`、`extra_outputs.last_frame` 和 stitch 语义；Bot 扩展/重生成 seed 与拼接链 histories 恢复优先改 `src/services/wan22_video_v2_extension_service.py` 并补 focused tests。
 - Bot 高级视频入口的提交计划事实源是 `src/services/advanced_video_submission_service.py`；`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只做 Telegram 编排和额度检查。LTX Bot payload 的分辨率、时长和模式必须显式传给 `process_ltx_video_task(...)`，不要借用 `context.user_data` 顶层键桥接后台任务参数。修改旧图生视频/Wan22 v2/LTX Bot payload 时优先覆盖该 service 的 focused tests，再跑 handler 回归。
 - SCAIL-2 用户侧任务类型包括 `scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`；内部仍保留 `scail2_action_transfer_long` 执行类型承接动作迁移 10/15/20s。公开动作迁移允许 5/8/10/15/20s，业务/History 仍记 `scail2_action_transfer`；dispatcher 按时长选择短 workflow 或隐藏 Context Windows workflow。时长、成本、驱动视频大小、默认 prompt、History type 长度和 LAN/RunPod 承接差异都必须按文档核对。
-- 图片换脸执行类型必须分流：旧 `face_swap` 固定使用 `face_swap.json`、默认成本 1，只由旧 V1 容量（正式启用容量为 `worker_remote_02`）承接；新 `face_swap_v2` 使用 `face_swap_v2.json`、默认成本 2，并归属 `i2i_pro` runtime profile。快速/随机换脸继续提交 V1；自由P图 v3 第二阶段和 QQCC 原脸恢复提交 V2，但组合业务不得因内部 V2 再次扣费。
-- `i2i_pro` 是 RunPod runtime profile，同时也是既有幻想换脸业务类型。profile 可承接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2` 等执行映射，workflow override 要跟随 worker 配置；幻想换脸仍提交 `i2i_pro` 并按 6 灵石计费，不能机械改成双图契约的 `face_swap_v2`。
+- 图片换脸业务类型继续分流：旧 `face_swap` 的注册表 workflow 固定 `face_swap.json`、默认成本 1；`worker_remote_02` 仍按 V1 执行，而 `i2i_pro`/独立 `face_swap` execution profile 接到同一类型时通过 worker override 执行 `face_swap_v2.json`。新 `face_swap_v2` 默认成本 2。快速/随机换脸继续提交 legacy 类型；自由P图 v3 第二阶段和 QQCC 原脸恢复提交 V2，但组合业务不得因内部 V2 再次扣费。
+- `i2i_pro` 是 RunPod runtime profile，同时也是既有幻想换脸业务类型。profile 承接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`face_swap`；两个 face swap 类型都必须 override 到 `face_swap_v2.json`。幻想换脸仍提交 `i2i_pro` 并按 6 灵石计费，不能机械改成双图契约的 `face_swap_v2`。
 
 ## 6. 排障路由
 

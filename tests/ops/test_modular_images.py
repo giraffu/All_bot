@@ -100,6 +100,18 @@ def test_private_bot_worker_image_contains_its_qqcc_runtime_dependency():
     assert "qqcc_bot/**" in catalog["artifacts"]["private-bot-worker"]["inputs"]
 
 
+def test_i2i_pro_gpu_release_contract_includes_legacy_face_swap():
+    catalog = json.loads(
+        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
+    )
+    assert catalog["artifacts"]["i2i_pro"]["profile"]["task_types"] == [
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+        "face_swap",
+    ]
+
+
 def test_web_api_image_and_release_smoke_require_ffmpeg():
     control = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
         encoding="utf-8"

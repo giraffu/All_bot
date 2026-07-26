@@ -260,18 +260,20 @@ RUNPOD_USE_TEMPLATE_I2I_PRO=false
 RUNPOD_IMAGE_NAME_I2I_PRO=ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>
 RUNPOD_MODEL_PREFIX_I2I_PRO=i2i_pro/2026-06-14-test
 RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO=i2i_pro/2026-06-14-test/manifest.json
-RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap_v2":"face_swap_v2.json"}
+RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap_v2":"face_swap_v2.json","face_swap":"face_swap_v2.json"}
 RUNPOD_CONTAINER_DISK_GB=120
 RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
 RUNPOD_COMFY_KJNODES_ENABLED=false
 ```
 
-The `i2i_pro` RunPod runtime can support three execution types from one Pod:
-`i2i_pro`, `t2i-pornmaster-turbo` (Web `txt2img`), and `face_swap_v2`. The profile
-must render `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2` and
+The `i2i_pro` RunPod runtime supports four execution types from one Pod:
+`i2i_pro`, `t2i-pornmaster-turbo` (Web `txt2img`), `face_swap_v2`, and legacy
+`face_swap`. The profile must render
+`SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap` and
 `TASK_TYPE_WORKFLOW_OVERRIDES` so text-to-image uses
-`txt2img_from_i2i_pro.json` and V2 face swap uses `face_swap_v2.json`. Old
-`face_swap` V1 stays on its legacy worker and must not be declared by this profile. These files
+`txt2img_from_i2i_pro.json` and both face swap types use `face_swap_v2.json`.
+The legacy public type and one-credit price remain unchanged; `worker_remote_02`
+continues to execute `face_swap.json`. These files
 must exist under `remote_workers/comfy_agent/workflows/`; updating only the
 main `workers/` tree is not enough for RunPod.
 

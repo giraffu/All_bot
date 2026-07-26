@@ -697,6 +697,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "txt2img-task": {"task_type": "txt2img"},
         "i2i-task": {"task_type": "i2i_pro"},
         "face-swap-task": {"task_type": "face_swap_v2"},
+        "legacy-face-swap-task": {"task_type": "face_swap"},
         "scail2-action-task": {"task_type": "scail2_action_transfer"},
         "scail2-face-swap-task": {"task_type": "scail2_face_swap_v2"},
         "pornmaster-single-task": {"task_type": "pornmaster_flux2_single_edit"},
@@ -716,6 +717,13 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "max_non_low_trust_pending_wait_seconds": 700,
             "oldest_pending_task_id": "pending-face-swap",
             "oldest_pending_created_at": 1782050000.0,
+        },
+        "face_swap": {
+            "pending_count": 2,
+            "max_pending_wait_seconds": 850,
+            "max_non_low_trust_pending_wait_seconds": 650,
+            "oldest_pending_task_id": "pending-legacy-face-swap",
+            "oldest_pending_created_at": 1782050050.0,
         },
         "scail2_video_replacement": {
             "pending_count": 2,
@@ -775,23 +783,26 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     ]
     assert profiles["i2i_pro"] == {
         "profile": "i2i_pro",
-        "label": "i2i_pro / txt2img / face_swap_v2",
+        "label": "i2i_pro / txt2img / face_swap_v2 / face_swap",
         "supported_task_types": [
             "i2i_pro",
             "t2i-pornmaster-turbo",
             "face_swap_v2",
+            "face_swap",
         ],
         "autoscaler_enabled": True,
-        "active_count": 3,
-        "pending_count": 5,
+        "active_count": 4,
+        "pending_count": 7,
         "active_count_by_task_type": {
             "i2i_pro": 1,
             "t2i-pornmaster-turbo": 1,
             "face_swap_v2": 1,
+            "face_swap": 1,
         },
         "pending_count_by_task_type": {
             "t2i-pornmaster-turbo": 2,
             "face_swap_v2": 3,
+            "face_swap": 2,
         },
         "max_pending_wait_seconds": 901,
         "max_non_low_trust_pending_wait_seconds": 700,
