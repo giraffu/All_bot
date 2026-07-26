@@ -271,7 +271,10 @@ class LanAioStateStore:
         )
         return payload
 
-    def unfinished_operations(self) -> list[str]:
+    def unfinished_operations(
+        self,
+        physical_slots: set[str] | None = None,
+    ) -> list[str]:
         if not self.history_dir.exists():
             return []
         unfinished = []
@@ -279,9 +282,17 @@ class LanAioStateStore:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                unfinished.append(path.stem)
+                if physical_slots is None:
+                    unfinished.append(path.stem)
                 continue
-            if payload.get("status") == "in_progress":
+            operation_slots = set(payload.get("physical_slots") or ())
+            if (
+                payload.get("status") == "in_progress"
+                and (
+                    physical_slots is None
+                    or bool(operation_slots & physical_slots)
+                )
+            ):
                 unfinished.append(path.stem)
         return unfinished
 

@@ -727,6 +727,73 @@ def test_state_reconcile_can_record_one_explicitly_empty_physical_slot(
     assert report["status"] == "passed"
 
 
+def test_state_reconcile_explicit_empty_is_scoped_to_target_physical_slot(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+
+        def live_current_snapshot(self, physical_slots):
+            assert physical_slots == {"gpu-252:gpu1"}
+            return {
+                "current": {"gpu-252:gpu1": None},
+                "errors": {},
+                "observations": {},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-002:gpu0": {
+                    "current": {"slot_id": "gpu-002-gpu0-scail2"}
+                },
+                "gpu-252:gpu1": {"current": {}},
+            },
+        },
+        operation_id="bootstrap",
+    )
+    ops.state_store.begin_operation(
+        "unrelated-gpu002-operation",
+        action="restart-aio",
+        physical_slots=["gpu-002:gpu0"],
+        request={},
+    )
+
+    result = ops.reconcile_state_from_live(
+        operation_id="reconcile-new-gpu252-card",
+        reason="operator confirmed replacement gpu1 is empty",
+        allow_empty_physical_slots={"gpu-252:gpu1"},
+    )
+
+    assert result["live_current"] == {"gpu-252:gpu1": None}
+    current = ops.state_store.load_current()
+    assert current is not None
+    assert current["physical_slots"]["gpu-002:gpu0"]["current"]["slot_id"] == (
+        "gpu-002-gpu0-scail2"
+    )
+    assert current["physical_slots"]["gpu-252:gpu1"]["intentionally_empty"][
+        "operation_id"
+    ] == "reconcile-new-gpu252-card"
+    unrelated = json.loads(
+        (
+            tmp_path
+            / "state"
+            / "history"
+            / "unrelated-gpu002-operation.json"
+        ).read_text()
+    )
+    assert unrelated["status"] == "in_progress"
+
+
 def test_state_reconcile_preserves_an_existing_intentionally_empty_sibling(
     tmp_path: Path,
 ):
