@@ -155,7 +155,12 @@ def register_handlers(app, *, include_private_bot_provisioning: bool = True):
 
 
 def _build_request(*, connection_pool_size: int = 500):
-    return build_telegram_httpx_request(connection_pool_size=connection_pool_size)
+    return build_telegram_httpx_request(
+        connection_pool_size=connection_pool_size,
+        connect_timeout=10.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+    )
 
 
 def build_application(

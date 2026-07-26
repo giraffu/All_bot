@@ -14,6 +14,8 @@ from telegram import InputMediaPhoto, InputMediaVideo
 
 logger = logging.getLogger(__name__)
 
+QQCC_DEMO_MEDIA_SEND_TIMEOUT_SECONDS = 15.0
+
 QQCC_DEMO_SCENE_KINDS = frozenset(
     {"draw", "draw_v1", "filter", "video", "video_v1", "ai_video"}
 )
@@ -439,7 +441,7 @@ def _read_demo_media_from_r2(media: dict[str, Any], *, storage_service) -> Bytes
     return upload
 
 
-async def send_qqcc_scene_demo_media(
+async def _send_qqcc_scene_demo_media(
     *,
     message,
     bot,
@@ -531,6 +533,42 @@ async def send_qqcc_scene_demo_media(
         private_bot_id=private_bot_id,
         cache_file_ids_func=cache_file_ids_func,
     )
+
+
+async def send_qqcc_scene_demo_media(
+    *,
+    message,
+    bot,
+    scene_kind: str,
+    scene: dict[str, Any],
+    private_bot_id: int | None = None,
+    preview_url_builder=build_qqcc_demo_preview_url,
+    cache_file_ids_func=None,
+    storage_service=storage,
+) -> bool:
+    """Send optional scene media without blocking the QQCC update channel."""
+    try:
+        return await asyncio.wait_for(
+            _send_qqcc_scene_demo_media(
+                message=message,
+                bot=bot,
+                scene_kind=scene_kind,
+                scene=scene,
+                private_bot_id=private_bot_id,
+                preview_url_builder=preview_url_builder,
+                cache_file_ids_func=cache_file_ids_func,
+                storage_service=storage_service,
+            ),
+            timeout=QQCC_DEMO_MEDIA_SEND_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "QQCC demo media send timed out scene_kind=%s timeout_seconds=%.1f; "
+            "continuing with text prompt",
+            scene_kind,
+            QQCC_DEMO_MEDIA_SEND_TIMEOUT_SECONDS,
+        )
+        return False
 
 
 async def _cache_qqcc_demo_file_ids(

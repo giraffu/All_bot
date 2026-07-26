@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -719,6 +720,20 @@ def test_quick_video_wait_image_allows_switching_to_another_scene():
     assert matching_handlers[0].callback is quick_video_fsm.start_quick_video
 
 
+def test_qqcc_interactive_request_timeouts_leave_margin_before_watchdog(monkeypatch):
+    request = object()
+    builder = MagicMock(return_value=request)
+    monkeypatch.setattr(qqcc_main, "build_telegram_httpx_request", builder)
+
+    assert qqcc_main._build_request(connection_pool_size=17) is request
+    builder.assert_called_once_with(
+        connection_pool_size=17,
+        connect_timeout=10.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("callback_data", ["submit_gallery_task-1", "public_share"])
 async def test_qqcc_publish_callbacks_are_blocked_before_shared_handlers(
@@ -757,6 +772,56 @@ async def test_qqcc_publish_callbacks_are_blocked_before_shared_handlers(
         show_alert=True,
     )
     ensure_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_shared_callback_timeout_releases_single_update_channel(monkeypatch):
+    route_cancelled = asyncio.Event()
+
+    async def hanging_route(_update, _context):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            route_cancelled.set()
+
+    safe_answer = AsyncMock()
+    monkeypatch.setattr(callback_handler, "safe_answer_query", safe_answer)
+    monkeypatch.setattr(
+        callback_handler.permission_service,
+        "ensure_user",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(callback_handler.router, "SORTED_ROUTES", ("qhang:",))
+    monkeypatch.setattr(
+        callback_handler.router,
+        "CALLBACK_ROUTES",
+        {"qhang:": hanging_route},
+    )
+    monkeypatch.setattr(
+        callback_handler,
+        "QQCC_CALLBACK_HANDLER_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    query = SimpleNamespace(data="qhang:1")
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(
+            id=123,
+            username="tester",
+            full_name="Tester",
+            language_code="zh",
+        ),
+    )
+
+    await callback_handler.handle_callback_query(update, SimpleNamespace())
+
+    assert route_cancelled.is_set()
+    safe_answer.assert_awaited_once_with(
+        query,
+        text="处理超时，请重试",
+        show_alert=True,
+    )
 
 
 @pytest.mark.asyncio

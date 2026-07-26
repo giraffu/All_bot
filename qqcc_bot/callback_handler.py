@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 
 from telegram import Update
@@ -18,6 +20,9 @@ from src.services.permission_service import permission_service
 from src.utils import safe_answer_query
 
 logger = logging.getLogger("qqcc_bot.callback")
+
+QQCC_CALLBACK_HANDLER_TIMEOUT_SECONDS = 45.0
+QQCC_CALLBACK_TIMEOUT_NOTICE_SECONDS = 5.0
 
 QQCC_REQUIRED_CALLBACK_PREFIXES = (
     "noop",
@@ -71,7 +76,27 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     for prefix in router.SORTED_ROUTES:
         if data.startswith(prefix):
-            return await router.CALLBACK_ROUTES[prefix](update, context)
+            try:
+                return await asyncio.wait_for(
+                    router.CALLBACK_ROUTES[prefix](update, context),
+                    timeout=QQCC_CALLBACK_HANDLER_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "QQCC callback handler timed out prefix=%s timeout_seconds=%.1f",
+                    prefix,
+                    QQCC_CALLBACK_HANDLER_TIMEOUT_SECONDS,
+                )
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(
+                        safe_answer_query(
+                            query,
+                            text="处理超时，请重试",
+                            show_alert=True,
+                        ),
+                        timeout=QQCC_CALLBACK_TIMEOUT_NOTICE_SECONDS,
+                    )
+                return None
 
     logger.warning("Unmatched QQCC callback data: %s", data)
     await safe_answer_query(query)
