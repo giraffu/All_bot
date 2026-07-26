@@ -412,13 +412,23 @@ async def _download_quick_image_input(
     file_id: str,
     user_id: int,
 ) -> str | None:
-    try:
+    async def download() -> str:
         new_file = await context.bot.get_file(file_id)
         return await download_telegram_file_to_fsm_temp(
             telegram_file=new_file,
             suffix=".png",
             name_hint="quick_image",
         )
+
+    try:
+        download_awaitable = download()
+        if is_qqcc_bot_context(context):
+            return await run_qqcc_interaction_io(
+                download_awaitable,
+                operation="quick_image_download",
+                logger=logger,
+            )
+        return await download_awaitable
     except Exception as exc:
         logger.error("Error downloading image for FSM user %s: %s", user_id, exc)
         return None

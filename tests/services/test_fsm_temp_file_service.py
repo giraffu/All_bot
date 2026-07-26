@@ -1,3 +1,7 @@
+import asyncio
+
+import pytest
+
 from src.services import fsm_temp_file_service
 
 
@@ -58,3 +62,31 @@ def test_cleanup_fsm_user_data_removes_fsm_state_and_temp_files(tmp_path, monkey
 
 def test_cleanup_fsm_user_data_handles_empty_user_data():
     assert fsm_temp_file_service.cleanup_fsm_user_data(None) == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_telegram_download_removes_partial_file(tmp_path):
+    download_started = asyncio.Event()
+
+    class SlowTelegramFile:
+        async def download_to_drive(self, local_path):
+            with open(local_path, "wb") as file_handle:
+                file_handle.write(b"partial")
+            download_started.set()
+            await asyncio.Event().wait()
+
+    task = asyncio.create_task(
+        fsm_temp_file_service.download_telegram_file_to_fsm_temp(
+            telegram_file=SlowTelegramFile(),
+            suffix=".png",
+            name_hint="qqcc-timeout",
+            base_dir=str(tmp_path),
+        )
+    )
+    await download_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert list(tmp_path.iterdir()) == []

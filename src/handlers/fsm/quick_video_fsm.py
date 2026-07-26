@@ -610,6 +610,29 @@ async def jump_to_qqcc_draw_scene(
     return ConversationHandler.END
 
 
+async def _download_quick_video_input(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    file_id: str,
+) -> str | None:
+    async def download() -> str:
+        new_file = await context.bot.get_file(file_id)
+        return await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="quick_video",
+        )
+
+    download_awaitable = download()
+    if is_qqcc_bot_context(context):
+        return await run_qqcc_interaction_io(
+            download_awaitable,
+            operation="quick_video_download",
+            logger=logger,
+        )
+    return await download_awaitable
+
+
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if str(context.user_data.get("in_conversation") or "").startswith(
         "QUICK_IMAGE_"
@@ -668,12 +691,15 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return QuickVideoState.WAIT_IMAGE
 
     try:
-        new_file = await context.bot.get_file(file_id)
-        local_path = await download_telegram_file_to_fsm_temp(
-            telegram_file=new_file,
-            suffix=".png",
-            name_hint="quick_video",
+        local_path = await _download_quick_video_input(
+            context=context,
+            file_id=file_id,
         )
+        if not local_path:
+            await robust_reply_text(
+                message, _t(context, "fsm.common.download_image_failed")
+            )
+            return QuickVideoState.WAIT_IMAGE
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
