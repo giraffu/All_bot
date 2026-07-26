@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from dashboard.backend.schemas import RunPodScaleItem
 from dashboard.backend.services.runpod_admin_commands import (
     RunPodAdminCommandBuilder,
+    RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
 )
 
 
@@ -16,17 +17,7 @@ def _release_profile_pins(monkeypatch):
     pins = {
         image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
         for index, image_env in enumerate(
-            sorted(
-                {
-                    "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
-                    "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
-                    "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
-                    "RUNPOD_IMAGE_NAME_I2I_PRO",
-                    "RUNPOD_IMAGE_NAME_SCAIL2",
-                    "RUNPOD_IMAGE_NAME_LTX_VIDEO",
-                    "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
-                }
-            ),
+            sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
             start=1,
         )
     }
@@ -317,14 +308,11 @@ def test_operation_env_pins_release_profile_images_over_stale_container_env(
 ):
     builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
     pins = {
-        "RUNPOD_IMAGE_NAME_IMG2IMG_LORA": "ghcr.io/giraffu/img2img@sha256:" + "1" * 64,
-        "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO": "ghcr.io/giraffu/i2v@sha256:" + "2" * 64,
-        "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2": "ghcr.io/giraffu/wan22@sha256:" + "3" * 64,
-        "RUNPOD_IMAGE_NAME_I2I_PRO": "ghcr.io/giraffu/i2i@sha256:" + "4" * 64,
-        "RUNPOD_IMAGE_NAME_SCAIL2": "ghcr.io/giraffu/scail2@sha256:" + "5" * 64,
-        "RUNPOD_IMAGE_NAME_LTX_VIDEO": "ghcr.io/giraffu/ltx@sha256:" + "6" * 64,
-        "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT": "ghcr.io/giraffu/pornmaster@sha256:"
-        + "7" * 64,
+        image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
+        for index, image_env in enumerate(
+            sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
+            start=1,
+        )
     }
     monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
     for image_env in pins:
