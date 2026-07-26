@@ -456,6 +456,17 @@ def test_model_importer_i2i_pro_baseline_resolves_six_workflow_models():
 def test_model_importer_i2i_pro_spec_uses_multitask_overrides():
     workflow_dir = Path("workers/comfy_agent/workflows")
     spec = FIRST_WAVE_BUNDLES["i2i_pro_baseline"]
+    assert spec.task_types == (
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+        "face_swap",
+    )
+    assert spec.workflow_overrides == {
+        "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
+        "face_swap_v2": "face_swap_v2.json",
+        "face_swap": "face_swap_v2.json",
+    }
     refs = extract_references_for_task_types(
         workflow_dir,
         spec.task_types,

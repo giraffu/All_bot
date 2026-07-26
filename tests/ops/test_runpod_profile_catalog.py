@@ -61,6 +61,7 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("i2i_pro", "i2i_pro"),
         ("t2i-pornmaster-turbo", "i2i_pro"),
         ("face_swap_v2", "i2i_pro"),
+        ("face_swap", "i2i_pro"),
         ("scail2", "scail2"),
         ("scail2_action_transfer", "scail2"),
         ("scail2_video_replacement", "scail2"),
@@ -137,6 +138,7 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     ]
     assert options["scail2"] == [
         "scail2_action_transfer",
@@ -152,6 +154,20 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]
+
+
+def test_i2i_pro_routes_both_face_swap_types_to_v2_workflow():
+    assert catalog.RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES == (
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+        "face_swap",
+    )
+    assert catalog.RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES == (
+        '{"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json",'
+        '"face_swap_v2":"face_swap_v2.json",'
+        '"face_swap":"face_swap_v2.json"}'
+    )
 
 
 def test_pornmaster_flux2_fp8_profile_is_retired():

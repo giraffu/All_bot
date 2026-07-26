@@ -1,6 +1,6 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
-> 2026-07-25：专属 `face_swap` Worker profile 不改变上游 API、计费、退款或业务任务类型。Central 仍保留 `face_swap` 与 `face_swap_v2`；仅在该执行池内，两种任务都通过显式 workflow override 运行 `face_swap_v2.json`。通用 V1 Worker 和 `i2i_pro` 的既有能力声明保持不变。
+> 2026-07-26：`i2i_pro` 与专属 `face_swap` Worker profile 都可承接 Central 的 `face_swap` 与 `face_swap_v2`，并通过显式 workflow override 将两者运行到 `face_swap_v2.json`。上游 API、计费、退款和业务类型不变，通用 V1 `worker_remote_02` 继续运行 `face_swap.json`。
 
 ## 1. 目标与适用场景
 
@@ -449,7 +449,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
 - Worker 存活但 `SUPPORTED_TASK_TYPES` 不匹配，任务依然不会被接单
-- RunPod `i2i_pro` worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2` 与 `POOL_RUNTIME_PROFILE=i2i_pro`，并设置 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap_v2":"face_swap_v2.json"}`；不得声明旧 `face_swap`。cloud-test canary 会临时禁用同环境中支持这些执行类型的非 RunPod worker，结束后必须恢复。
+- RunPod `i2i_pro` worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap` 与 `POOL_RUNTIME_PROFILE=i2i_pro`，并设置 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap_v2":"face_swap_v2.json","face_swap":"face_swap_v2.json"}`。legacy `face_swap` 的公开类型、1 灵石计费和 Central 队列不变；实际执行 V1/V2 由接单 worker 决定。cloud-test canary 会临时禁用同环境中支持这些执行类型的非 RunPod worker，结束后必须恢复。
 - RunPod `scail2` worker 必须声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 `POOL_RUNTIME_PROFILE=scail2`；cloud-test canary 会临时禁用同环境中支持这两个执行类型的非 RunPod worker（通常是 `cloud_worker_test_08`），结束后必须恢复。云测试 LAN worker8 可额外声明 `scail2_action_transfer_long` 并指向 context-window API workflow，但该类型不进入正式 RunPod profile。云正式可使用 gpu-002 slot0 LAN AIO agent `lan_aio_prod_gpu002_gpu0_scail2_01`，也可使用手动正式 RunPod `runpod_prod_scail2_manual_NN` 并行接单；正式 RunPod 必须写 `user-data-prod` 且模型只从 `allbot-model-cache` 同步。
 - RunPod `ltx_video` worker 必须声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 与 `POOL_RUNTIME_PROFILE=ltx_video`；正式 RunPod 使用 `runpod_prod_ltx_video_manual_NN`、`user-data-prod`、`allbot-model-cache/ltx_video/2026-06-10/manifest.json` 和 10Eros v1.2 workflow override，canary 完成后仍保持 disabled，手动 enable 后才接高级图生视频订单。
 - `image_to_video` 是旧图生视频 `custom_video` / `video_lora` 与 Telegram 懒人动图的执行面类型；生产 worker 接入新链路时必须支持 `image_to_video`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应被当作新任务能力扩展方向。
@@ -484,7 +484,7 @@ Worker 拉到任务后会先处理输入：
 
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
-- RunPod profile 镜像必须把 `remote_workers/` 烘焙到 `/opt/allbot/runtime/remote_workers`，并以镜像 label/manifest 固定 agent 与 workflow revision；Pod 启动不访问 AllBot Git 分支。当 `i2i_pro` profile 同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap_v2` 时，baked bundle 的 `workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 workflows 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 同理内置 replacement/audio/context-window/v10 workflow；只更新本地主 `workers/` 或只更新 `remote_workers/` 而未重建对应 profile digest 都不会影响后续 Pod。
+- RunPod profile 镜像必须把 `remote_workers/` 烘焙到 `/opt/allbot/runtime/remote_workers`，并以镜像 label/manifest 固定 agent 与 workflow revision；Pod 启动不访问 AllBot Git 分支。当 `i2i_pro` profile 同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap_v2/face_swap` 时，baked bundle 的 `workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 workflows 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 同理内置 replacement/audio/context-window/v10 workflow；只更新本地主 `workers/` 或只更新 `remote_workers/` 而未重建对应 profile digest 都不会影响后续 Pod。
 - `face_swap_v2` 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 对 V1/V2 都只写入 `face_image -> 2`、`body_image -> 3`。i2i_pro Worker 仅声明 V2；旧 `face_swap` 继续读取 `face_swap.json`，正式启用容量由 `worker_remote_02` 保持，不修改其环境、workflow 或模型。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow

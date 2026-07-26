@@ -229,6 +229,7 @@ def test_build_matrix_contains_base_before_descendants_and_profile_metadata():
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     ]
 
 

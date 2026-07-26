@@ -121,6 +121,7 @@ profiles:
       - i2i_pro
       - t2i-pornmaster-turbo
       - face_swap_v2
+      - face_swap
     model_bundles:
       - i2i_pro_baseline
     required_nodes:
