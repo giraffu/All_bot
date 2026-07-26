@@ -17,6 +17,7 @@ MEDIA_PIPELINE_PROFILES = frozenset(
     {
         "image_to_video",
         "ltx_video",
+        "ltx_t2v",
         "scail2",
         "wan22_video_v2",
     }

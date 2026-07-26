@@ -25,6 +25,10 @@ from .providers.runpod import (
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
+    RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_T2V_MODEL_PREFIX,
+    RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
@@ -37,6 +41,7 @@ from .providers.runpod import (
     RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
@@ -89,6 +94,7 @@ PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
+PROD_LTX_T2V_TASK_TYPE = "ltx_t2v"
 PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
 PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
@@ -1738,6 +1744,8 @@ class RunPodProdWorkerRunner:
     ) -> tuple[str, ...]:
         if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE:
             return target_settings.gpu_type_ids_ltx_video
+        if spec["runpod_task_type"] == PROD_LTX_T2V_TASK_TYPE:
+            return target_settings.gpu_type_ids_ltx_t2v
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
             return target_settings.gpu_type_ids_pornmaster_flux2_edit
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
@@ -1758,6 +1766,16 @@ class RunPodProdWorkerRunner:
             if rendered_disk < min_disk:
                 failures.append(
                     f"containerDiskInGb must be at least {min_disk} for ltx_video"
+                )
+        if spec["runpod_task_type"] == PROD_LTX_T2V_TASK_TYPE:
+            min_disk = max(
+                int(getattr(target_settings, "container_disk_gb_ltx_t2v", 0)),
+                RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
+            )
+            rendered_disk = self._rendered_container_disk(body)
+            if rendered_disk < min_disk:
+                failures.append(
+                    f"containerDiskInGb must be at least {min_disk} for ltx_t2v"
                 )
         if spec["runpod_task_type"] == PROD_IMAGE_TO_VIDEO_TASK_TYPE:
             min_disk = max(
@@ -2392,6 +2410,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_SCAIL2_TASK_TYPE
     if profile_key == "ltx_video":
         return PROD_LTX_VIDEO_TASK_TYPE
+    if profile_key == "ltx_t2v":
+        return PROD_LTX_T2V_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit":
         return PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit_bf16":
@@ -2516,6 +2536,22 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.task_type_workflow_overrides_ltx_video
                 or RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
             ),
+        }
+    if profile_key == "ltx_t2v":
+        return {
+            "runpod_task_type": PROD_LTX_T2V_TASK_TYPE,
+            "runtime_profile": "ltx_t2v",
+            "supported_task_types": RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_ltx_t2v or RUNPOD_LTX_T2V_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_ltx_t2v
+                or RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+            "workflow_overrides": "",
         }
     if profile_key == "pornmaster_flux2_edit":
         return {
@@ -2759,6 +2795,7 @@ def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
             "i2i_pro",
             "scail2",
             "ltx_video",
+            "ltx_t2v",
             "pornmaster_flux2_edit_bf16",
         )
     return (normalize_prod_worker_profile(profile),)

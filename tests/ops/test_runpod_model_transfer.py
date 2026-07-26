@@ -39,6 +39,7 @@ def _args(**overrides):
         "civitai_token_secret_ref": "{{ RUNPOD_SECRET_allbot_civitai_api_token }}",
         "pornmaster_flux2_edit": False,
         "pornmaster_flux2_edit_bf16": False,
+        "ltx_t2v": False,
         "confirm_model_transfer": False,
     }
     values.update(overrides)
@@ -114,6 +115,22 @@ def test_pornmaster_flux2_edit_bf16_batch_streams_exact_cloud_artifacts(monkeypa
     )
     assert "3025484" not in rendered
     assert "huggingface.co" not in rendered
+
+
+def test_ltx_t2v_batch_streams_only_two_public_large_files_without_source_token():
+    module = _load_module()
+
+    items = module._load_transfer_items(_args(ltx_t2v=True))
+
+    assert len(items) == 2
+    assert {item["relative_path"] for item in items} == {
+        "diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors",
+        "loras/ltx2.3/sulphur_lora_rank_768.safetensors",
+    }
+    assert all(
+        item["key"].startswith("ltx_t2v/2026-07-22/models/") for item in items
+    )
+    assert all("source_token_env" not in item for item in items)
 
 
 def test_single_transfer_mode_stays_compatible():

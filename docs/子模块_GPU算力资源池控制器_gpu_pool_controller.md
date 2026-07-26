@@ -887,6 +887,15 @@ LTX 正式 RunPod 是 `ltx_video` profile，面向高级图生视频三种执行
 只提交一单 5s I2V MP4 验收，完成后保持 worker `disabled`；确认产物后再手动
 `enable --profile ltx_video --slot NN --execute` 放开接单。
 
+LTX 文生视频使用完全独立的 `ltx_t2v` profile，只声明
+`ltx_t2v,ltx_t2v_ic`，不得与上述 `ltx_video`/10Eros 混池。cloud-test 创建请求
+固定 `RUNPOD_IMAGE_NAME_LTX_T2V`、单一 RTX 5090、180GB container disk、至少
+100GB volume、baked entrypoint、`media_claim2_comfy1_delivery1_v1` 和
+`ltx_t2v/2026-07-22/manifest.json`，template 永久关闭。canary 创建后先写
+disabled control，只在普通 Sulphur 5s 与 Ingredients 5s 两单期间临时 enabled，
+最后恢复 disabled 并删除 Pod。正式手动 profile 仅登记 render/up/down 能力，
+`autoscaler_enabled=false`；没有明确生产授权时不得创建或启用正式 Pod。
+
 单 profile 创建模板：
 
 ```bash

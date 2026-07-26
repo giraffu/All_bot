@@ -14,6 +14,7 @@
 - BF16 profile 同时承接 `pornmaster_flux2_edit_bf16` 与 `pornmaster_flux2_multi_edit_bf16`：分别复用 PornMaster single/multiple-edit API workflow，并由 BF16 patcher 切换 UNet 节点 100/9；不可变 prod Dashboard overlay 必须注入 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT`，镜像 smoke 必须检查两份 workflow、mapping 与解析表同时存在。
 - `pornmaster_flux2_edit_bf16` 是 RTX 4090 profile，仅声明同名任务、固定 `--lowvram`、独立 model manifest；已纳入 Dashboard autoscaler，按同一套 add/down/restart/enable、锁定跳过、最短生命周期和冷却规则管理，默认单任务 30 秒、清空阈值 30 分钟。用临时分支验证 workflow 时要显式设置 `RUNPOD_BOOTSTRAP_GIT_BRANCH`，不是 `ALLBOT_RUNPOD_GIT_BRANCH`；创建后还必须从 RunPod Pod env 反查实际 `ALLBOT_RUNPOD_GIT_BRANCH`。
 - 模型仓库已有源下载链接时，优先在云控制机/transfer Pod 流式写 R2；已存在的公用模型对象使用 R2 server-side multipart copy，禁止先下到本地再上传。
+- `ltx_t2v` cloud-test canary 是独立 disabled profile，只承接 `ltx_t2v,ltx_t2v_ic`，固定 5090、180GB container disk、至少 100GB volume、禁用 template 和固定 manifest。必须先取得受保护 main 同一完整 SHA 的 `allbot-gpu-ltx-t2v` attestation/exact digest；transfer Pod 只传公开 dev FP8/Sulphur，Ingredients 从本地 registry 上传。两单 canary 后 disable/drain/delete，确认无 orphan/multipart；不得顺带创建正式 Pod、开启 autoscaler 或 feature flag。
 
 ## LAN AIO
 - LAN AIO 操作应按单 slot 执行，禁止跨节点批量启用。
