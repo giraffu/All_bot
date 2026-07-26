@@ -53,7 +53,12 @@ def _status(
         "img2img": ["img2img", "img2img_lora"],
         "image_to_video": ["image_to_video"],
         "wan22_video_v2": ["wan22_video_v2"],
-        "i2i_pro": ["i2i_pro", "t2i-pornmaster-turbo", "face_swap_v2"],
+        "i2i_pro": [
+            "i2i_pro",
+            "t2i-pornmaster-turbo",
+            "face_swap_v2",
+            "face_swap",
+        ],
         "scail2": ["scail2_action_transfer", "scail2_video_replacement"],
         "ltx_video": ["ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"],
         "pornmaster_flux2_edit": [
@@ -165,7 +170,7 @@ def _runpod_worker(
         "img2img": "img2img,img2img_lora",
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
-        "i2i_pro": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2",
+        "i2i_pro": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap",
         "scail2": "scail2_action_transfer,scail2_video_replacement",
         "ltx_video": "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio",
         "pornmaster_flux2_edit": (
@@ -1188,7 +1193,7 @@ async def test_autoscaler_scales_down_idle_runpod_when_local_capacity_remains():
         status_payload=_status(profile="i2i_pro", pending=0, wait=None),
         workers_payload=_workers(
             _runpod_worker("i2i_pro", "01"),
-            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2"),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"),
         ),
         operations_payload={"operations": []},
         start_delete_func=start_delete,
@@ -1277,7 +1282,7 @@ async def test_autoscaler_skips_locked_runpod_scale_down_candidate():
         workers_payload=_workers(
             _runpod_worker("i2i_pro", "01"),
             _runpod_worker("i2i_pro", "02", runpod_locked=True),
-            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2"),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"),
         ),
         operations_payload={"operations": []},
         start_delete_func=start_delete,
@@ -1306,7 +1311,7 @@ async def test_autoscaler_holds_when_all_idle_runpod_candidates_are_locked():
         status_payload=_status(profile="i2i_pro", pending=0, wait=None),
         workers_payload=_workers(
             _runpod_worker("i2i_pro", "01", runpod_locked=True),
-            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2"),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"),
         ),
         operations_payload={"operations": []},
         start_delete_func=start_delete,
@@ -1418,7 +1423,7 @@ async def test_autoscaler_holds_scale_down_for_autoscaler_minimum_lifetime():
         status_payload=_status(profile="i2i_pro", pending=0, wait=None),
         workers_payload=_workers(
             _runpod_worker("i2i_pro", "01"),
-            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2"),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"),
         ),
         operations_payload={
             "operations": [
