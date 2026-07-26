@@ -2285,7 +2285,7 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
     ]
 
 
-@pytest.mark.parametrize("worker_status", ["quarantined", "error"])
+@pytest.mark.parametrize("worker_status", ["quarantined", "error", None])
 def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
     worker_status,
 ):
@@ -2300,6 +2300,8 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
             self.events: list[str] = []
 
         def _system_workers(self):
+            if worker_status is None:
+                return []
             return [
                 {
                     "agent_id": "lan_aio_prod_gpu252_gpu1_img2img_lora_01",
@@ -2308,6 +2310,10 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
                     "current_task_type": None,
                 }
             ]
+
+        def _control_state(self, agent_id):
+            assert agent_id == "lan_aio_prod_gpu252_gpu1_img2img_lora_01"
+            return "disabled"
 
         def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
             assert agent_id == "lan_aio_prod_gpu252_gpu1_img2img_lora_01"
