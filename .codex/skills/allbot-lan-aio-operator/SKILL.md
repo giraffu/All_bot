@@ -79,6 +79,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 历史 LAN 镜像若由 tar 导入、旧 tag 没有 `RepoDigests`，只能在独立核验当前 tag 的 registry digest 后传 `--rollback-ref <same-repo@sha256:...>`；helper 拒绝 mutable 或跨仓库回滚引用，不能用该参数自由指定运行镜像。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
 - 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。
+- `lan_resource_manager/` 是本地主 operator 的受限 UI adapter，不属于 Dashboard API。它只允许状态一致时切换 `catalog_ready + enabled + retargetable` 候选，最终仍调用本 helper 的单卡 `takeover/recover`；开发该平台时继续加载 `allbot-lan-resource-manager`。
 - 不 reboot GPU 主机，不 restart Docker daemon，除非用户明确要求维护窗口。
 - 切换前必须确认当前 slot 无 running task；等待自然空闲，不强杀任务。
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 与 OOM/Xid 记录仅作为 catalog 审计信息，不阻断显式 slot 操作。
