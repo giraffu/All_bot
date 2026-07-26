@@ -15,6 +15,9 @@ from src.core.task_status_mapper import (
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.redis_client import redis_client
+from src.services.scail2_face_swap_pipeline_service import (
+    cleanup_scail2_face_swap_first_frame,
+)
 from src.services.task_registry import TaskRegistry
 from src.services.task_web_terminal_finalization import (
     finalize_monitored_web_task_cancellation_default,
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 FREE_EDIT_V3_CONTINUATION_KIND = "free_edit_v3"
 FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 FREE_EDIT_V3_STAGE2_TASK_TYPE = "face_swap_v2"
+SCAIL2_FACE_SWAP_CONTINUATION_KIND = "scail2_face_swap_v2"
 
 
 def _free_edit_v3_stage2_task_id(registry_task_id: str) -> str:
@@ -35,6 +39,15 @@ def _free_edit_v3_stage2_task_id(registry_task_id: str) -> str:
         uuid.uuid5(
             uuid.NAMESPACE_URL,
             f"allbot:web-free-edit-v3:{registry_task_id}:face-swap",
+        )
+    )
+
+
+def _scail2_face_swap_stage2_task_id(registry_task_id: str) -> str:
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"allbot:web-scail2-face-swap:{registry_task_id}:video",
         )
     )
 
@@ -113,6 +126,32 @@ async def enqueue_pending_web_finalizer(
                 continuation_marker.get("final_allow_contribute", True)
             ),
         }
+    scail2_marker = serialized_context["metadata"].get(
+        "_web_scail2_face_swap_v2"
+    )
+    if isinstance(scail2_marker, dict):
+        video_request = serialized_context.get("video_request") or {}
+        continuation = {
+            "version": int(scail2_marker.get("version", 1)),
+            "kind": SCAIL2_FACE_SWAP_CONTINUATION_KIND,
+            "stage": "face_swap_v2",
+            "stage2_backend_task_id": _scail2_face_swap_stage2_task_id(
+                registry_task_id
+            ),
+            "first_frame": scail2_marker.get("first_frame"),
+            "original_reference": scail2_marker.get("original_reference"),
+            "motion_video": scail2_marker.get("motion_video"),
+            "duration": int(
+                scail2_marker.get("duration")
+                or video_request.get("requested_duration")
+                or 5
+            ),
+            "normal_priority": int(serialized_context.get("final_priority", 0)),
+            "stage1_result_path": None,
+            "final_allow_contribute": bool(
+                scail2_marker.get("final_allow_contribute", True)
+            ),
+        }
     await redis_client.add_pending_web_finalizer(
         registry_task_id,
         {
@@ -133,6 +172,15 @@ def _is_free_edit_v3_record(record: dict[str, Any]) -> bool:
         isinstance(continuation, dict)
         and continuation.get("version") == 1
         and continuation.get("kind") == FREE_EDIT_V3_CONTINUATION_KIND
+    )
+
+
+def _is_scail2_face_swap_record(record: dict[str, Any]) -> bool:
+    continuation = record.get("continuation")
+    return bool(
+        isinstance(continuation, dict)
+        and continuation.get("version") == 1
+        and continuation.get("kind") == SCAIL2_FACE_SWAP_CONTINUATION_KIND
     )
 
 
@@ -191,6 +239,69 @@ async def _resume_free_edit_v3_face_swap(
             raise RuntimeError("Face swap backend changed the deterministic task ID")
 
     continuation["stage"] = "face_swap"
+    await redis_client.add_pending_web_finalizer(registry_task_id, next_record)
+
+
+async def _resume_scail2_face_swap_video(
+    record: dict[str, Any],
+    *,
+    stage1_result_path: str | None = None,
+) -> None:
+    next_record = copy.deepcopy(record)
+    continuation = next_record["continuation"]
+    if stage1_result_path:
+        continuation["stage1_result_path"] = stage1_result_path
+    swapped_reference = continuation.get("stage1_result_path")
+    original_reference = continuation.get("original_reference")
+    motion_video = continuation.get("motion_video")
+    if not swapped_reference or not original_reference or not motion_video:
+        raise ValueError("SCAIL-2 face-swap continuation is missing a stage input")
+
+    registry_task_id = next_record["registry_task_id"]
+    stage2_backend_task_id = continuation["stage2_backend_task_id"]
+    final_allow_contribute = bool(continuation.get("final_allow_contribute", True))
+    normal_priority = int(continuation.get("normal_priority", 0))
+    duration = int(continuation.get("duration") or 5)
+    submission_context = next_record["submission_context"]
+    metadata = submission_context.setdefault("metadata", {})
+    negative_prompt = str(metadata.get("scail2_negative_prompt") or " ")
+    prompt = str(submission_context.get("prompt") or "")
+
+    continuation["stage"] = "scail2_dispatching"
+    next_record["backend_task_id"] = stage2_backend_task_id
+    submission_context["task_type"] = SCAIL2_FACE_SWAP_CONTINUATION_KIND
+    submission_context["saved_inputs"] = [original_reference, motion_video]
+    submission_context["allow_contribute"] = final_allow_contribute
+    metadata.pop("_web_scail2_face_swap_v2", None)
+
+    await redis_client.add_pending_web_finalizer(registry_task_id, next_record)
+    await TaskRegistry.transition_backend_task(
+        registry_task_id,
+        backend_task_id=stage2_backend_task_id,
+        task_type=SCAIL2_FACE_SWAP_CONTINUATION_KIND,
+        saved_input_images=[original_reference, motion_video],
+        allow_contribute=final_allow_contribute,
+        user_cancel_allowed=False,
+        status="pending",
+    )
+
+    existing_stage2 = await image_service.get_task_status(stage2_backend_task_id)
+    if existing_stage2 is None:
+        submitted_task_id = await image_service.submit_scail2_video_task(
+            stage2_backend_task_id,
+            task_type=SCAIL2_FACE_SWAP_CONTINUATION_KIND,
+            reference_image_path=swapped_reference,
+            motion_video_path=motion_video,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            length=duration,
+            priority=normal_priority,
+            reference_preprocessed=True,
+        )
+        if submitted_task_id != stage2_backend_task_id:
+            raise RuntimeError("SCAIL-2 backend changed the deterministic task ID")
+
+    continuation["stage"] = "scail2"
     await redis_client.add_pending_web_finalizer(registry_task_id, next_record)
 
 
@@ -266,6 +377,10 @@ async def _finalize_terminal_record(
     )
 
     async def _remove_record() -> None:
+        if _is_scail2_face_swap_record(record):
+            await cleanup_scail2_face_swap_first_frame(
+                record.get("continuation", {}).get("first_frame")
+            )
         await redis_client.remove_pending_web_finalizer(registry_task_id)
 
     submission = record.get("submission_context") or {}
@@ -323,6 +438,12 @@ async def process_pending_web_finalizer(
         ):
             await _resume_free_edit_v3_face_swap(record)
             return True
+        if (
+            _is_scail2_face_swap_record(record)
+            and record["continuation"].get("stage") == "scail2_dispatching"
+        ):
+            await _resume_scail2_face_swap_video(record)
+            return True
 
         backend_task_id = record.get("backend_task_id")
         if not backend_task_id:
@@ -354,6 +475,28 @@ async def process_pending_web_finalizer(
                 )
                 return True
             await _resume_free_edit_v3_face_swap(
+                record,
+                stage1_result_path=status_data.get("result_path"),
+            )
+            return True
+        if (
+            _is_scail2_face_swap_record(record)
+            and record["continuation"].get("stage") == "face_swap_v2"
+            and normalize_backend_status(status_data.get("status"))
+            == BACKEND_STATUS_DONE
+        ):
+            if not status_data.get("result_path"):
+                await _finalize_terminal_record(
+                    record,
+                    {
+                        "status": "error",
+                        "error_msg": (
+                            "Face-swap stage completed without a result path"
+                        ),
+                    },
+                )
+                return True
+            await _resume_scail2_face_swap_video(
                 record,
                 stage1_result_path=status_data.get("result_path"),
             )

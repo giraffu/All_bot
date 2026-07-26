@@ -170,6 +170,7 @@ def build_bot_task_flow_context(
     runtime_state: Optional[BotTaskRuntimeState] = None,
     failure_policy: Optional[BotTaskFailurePolicy] = None,
     cleanup_files_func=cleanup_task_files,
+    task_id_override: str | None = None,
 ) -> BotTaskFlowContext:
     if runtime_state is None:
         runtime_state = BotTaskRuntimeState()
@@ -200,6 +201,7 @@ def build_bot_task_flow_context(
             cost_override=cost_override,
             base_priority=base_priority,
             user_cancel_allowed=user_cancel_allowed,
+            task_id_override=task_id_override,
         ),
         presentation=BotTaskPresentationContext(
             message_spec=message_spec,

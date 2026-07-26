@@ -2,6 +2,9 @@ import contextlib
 import logging
 
 from src.constants import MODE_NAME_MAP
+from src.core.billing_core import get_user_priority_and_identity
+from src.core.task_status_mapper import BACKEND_STATUS_DONE, normalize_backend_status
+from src.domain_config.scail2_video import normalize_scail2_negative_prompt
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
 from src.services.task_service_message_support import (
@@ -19,7 +22,14 @@ from src.services.task_service_types import (
 )
 from src.services.private_qqcc_bot_service import parse_private_bot_client_type
 from src.services.task_recovery_contract import (
+    build_bot_task_recovery_contract,
     normalize_bot_task_recovery_contract,
+)
+from src.services.task_registry import TaskRegistry
+from src.services.scail2_face_swap_pipeline_service import (
+    BOT_SCAIL2_FACE_SWAP_CONTINUATION_KEY,
+    build_bot_scail2_stage2_task_id,
+    cleanup_scail2_face_swap_first_frame,
 )
 from src.services.private_qqcc_continuation_service import (
     activate_private_qqcc_continuation_task,
@@ -156,6 +166,113 @@ async def _handle_recovered_task_completion(*, completion: BotTaskCompletionCont
     return await complete_monitored_bot_task(completion=completion)
 
 
+def _get_bot_scail2_face_swap_continuation(
+    recovery_contract: dict | None,
+) -> dict | None:
+    if not isinstance(recovery_contract, dict):
+        return None
+    result_meta = recovery_contract.get("result_meta")
+    if not isinstance(result_meta, dict):
+        return None
+    continuation = result_meta.get(BOT_SCAIL2_FACE_SWAP_CONTINUATION_KEY)
+    if not isinstance(continuation, dict) or continuation.get("version") != 1:
+        return None
+    return continuation
+
+
+async def _resume_recovered_bot_scail2_face_swap(
+    *,
+    registry_task_id: str,
+    task_data: dict,
+    recovery_contract: dict,
+    continuation: dict,
+    final_info: dict,
+) -> dict | None:
+    if normalize_backend_status(final_info.get("status")) != BACKEND_STATUS_DONE:
+        return None
+    swapped_reference = final_info.get("result_path") or final_info.get("output")
+    saved_inputs = list(task_data.get("saved_input_images") or [])
+    reference_index = int(continuation.get("reference_input_index", 1))
+    motion_index = int(continuation.get("motion_video_input_index", 2))
+    if (
+        not swapped_reference
+        or reference_index >= len(saved_inputs)
+        or motion_index >= len(saved_inputs)
+    ):
+        return None
+
+    original_reference = saved_inputs[reference_index]
+    motion_video = saved_inputs[motion_index]
+    duration = int(continuation.get("duration") or 5)
+    prompt = str(continuation.get("prompt") or task_data.get("prompt") or "")
+    base_priority = int(continuation.get("normal_priority") or 0)
+    user_priority, _identity, _group = await get_user_priority_and_identity(
+        int(task_data["user_id"])
+    )
+    final_priority = min(base_priority + int(user_priority), 100)
+    stage2_backend_task_id = build_bot_scail2_stage2_task_id(registry_task_id)
+    final_metadata = build_bot_task_recovery_contract(
+        send_result=True,
+        delete_status=True,
+        allow_contribute=bool(task_data.get("allow_contribute", True)),
+        record_history=True,
+        result_task_type="scail2_face_swap_v2",
+        result_prompt=prompt,
+        completion_caption=recovery_contract.get("completion_caption"),
+        language_code=recovery_contract.get("language_code"),
+        show_queue_status=True,
+    )
+    await TaskRegistry.transition_backend_task(
+        registry_task_id,
+        backend_task_id=stage2_backend_task_id,
+        task_type="scail2_face_swap_v2",
+        saved_input_images=[original_reference, motion_video],
+        allow_contribute=bool(task_data.get("allow_contribute", True)),
+        user_cancel_allowed=False,
+        status="pending",
+        task_updates={
+            "is_video": True,
+            "prompt": prompt,
+            "billing_resolution": "512x896",
+            "requested_duration": duration,
+            "metadata": final_metadata,
+        },
+    )
+    existing_stage2 = await image_service.get_task_status(stage2_backend_task_id)
+    if existing_stage2 is None:
+        submitted_id = await image_service.submit_scail2_video_task(
+            stage2_backend_task_id,
+            task_type="scail2_face_swap_v2",
+            reference_image_path=swapped_reference,
+            motion_video_path=motion_video,
+            prompt=prompt,
+            negative_prompt=normalize_scail2_negative_prompt(None),
+            length=duration,
+            priority=final_priority,
+            reference_preprocessed=True,
+        )
+        if submitted_id != stage2_backend_task_id:
+            raise RuntimeError("SCAIL-2 backend changed the deterministic task ID")
+    await cleanup_scail2_face_swap_first_frame(saved_inputs[0])
+
+    updated = dict(task_data)
+    updated.update(
+        {
+            "backend_task_id": stage2_backend_task_id,
+            "task_type": "scail2_face_swap_v2",
+            "saved_input_images": [original_reference, motion_video],
+            "is_video": True,
+            "prompt": prompt,
+            "billing_resolution": "512x896",
+            "requested_duration": duration,
+            "user_cancel_allowed": False,
+            "status": "pending",
+            "metadata": final_metadata,
+        }
+    )
+    return updated
+
+
 async def run_recovered_task(*, registry_task_id: str, task_data: dict, application) -> bool:
     bot = application.bot
     user_id = task_data.get("user_id")
@@ -207,6 +324,24 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
     )
     if not final_info:
         return False
+
+    scail2_continuation = _get_bot_scail2_face_swap_continuation(
+        recovery_contract
+    )
+    if scail2_continuation is not None:
+        resumed_task_data = await _resume_recovered_bot_scail2_face_swap(
+            registry_task_id=registry_task_id,
+            task_data=task_data,
+            recovery_contract=recovery_contract,
+            continuation=scail2_continuation,
+            final_info=final_info,
+        )
+        if resumed_task_data is not None:
+            return await run_recovered_task(
+                registry_task_id=registry_task_id,
+                task_data=resumed_task_data,
+                application=application,
+            )
 
     if private_bot_id is not None and (
         recovery_contract is None

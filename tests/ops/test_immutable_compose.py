@@ -261,8 +261,8 @@ def test_worker_compose_covers_all_test_slots_and_runtime_contracts():
 
     worker_08 = services["worker-08"]["environment"]
     assert "TASK_TYPE_WORKFLOW_OVERRIDES" in worker_08
-    assert "SCAIL2_FACE_SWAP_V10_ENABLED" in worker_08
-    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" in worker_08
+    assert "SCAIL2_FACE_SWAP_V10_ENABLED" not in worker_08
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" not in worker_08
 
     dormant_worker = services["worker-05"]["environment"]
     for key in (

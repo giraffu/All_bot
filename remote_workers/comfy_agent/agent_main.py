@@ -54,7 +54,6 @@ from pipeline_slots import (
     resolve_pipeline_limits,
 )
 from PIL import Image, ImageOps, UnidentifiedImageError
-from scail2_face_swap_v10_pipeline import prepare_scail2_face_swap_v10_reference
 from workflow_patcher import WorkflowPatcher
 
 # Load environment variables
@@ -250,24 +249,6 @@ WAN22_VIDEO_V2_EXIT_ON_TIMEOUT = (
 )
 WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE = int(
     os.getenv("WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE", "75")
-)
-SCAIL2_FACE_SWAP_V10_ENABLED = (
-    os.getenv("SCAIL2_FACE_SWAP_V10_ENABLED", "false").strip().lower()
-    in TRUE_ENV_VALUES
-)
-SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL = os.getenv(
-    "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL",
-    "",
-).rstrip("/")
-SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW = os.getenv(
-    "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW",
-    "face_swap_v2.json",
-)
-SCAIL2_FACE_SWAP_V10_TIMEOUT_SECONDS = float(
-    os.getenv("SCAIL2_FACE_SWAP_V10_TIMEOUT_SECONDS", "600")
-)
-SCAIL2_FACE_SWAP_V10_POLL_INTERVAL_SECONDS = float(
-    os.getenv("SCAIL2_FACE_SWAP_V10_POLL_INTERVAL_SECONDS", "2")
 )
 
 USER_INPUT_ERROR_MARKERS = (
@@ -811,43 +792,6 @@ class ComfyAgent:
             params=params,
             downloaded_input_paths=downloaded_input_paths,
             process_single_input_asset_func=process_with_input_dir,
-        )
-
-    async def _maybe_prepare_scail2_face_swap_v10_reference(
-        self,
-        *,
-        task_id: str,
-        task_type: str,
-        params: dict[str, Any],
-        downloaded_input_paths: list[str],
-    ) -> None:
-        if task_type != "scail2_face_swap_v2" or not SCAIL2_FACE_SWAP_V10_ENABLED:
-            return
-        if not SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL:
-            raise RuntimeError(
-                "SCAIL2_FACE_SWAP_V10_ENABLED requires "
-                "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"
-            )
-
-        await self.report_status(
-            task_id,
-            "running",
-            execution_phase="preparing_v10_face_swap",
-        )
-        await prepare_scail2_face_swap_v10_reference(
-            task_id=task_id,
-            params=params,
-            downloaded_input_paths=downloaded_input_paths,
-            comfy_input_dir=COMFY_INPUT_DIR,
-            workflows_dir=self.patcher.workflows_dir,
-            patcher=self.patcher,
-            primary_comfy_client=self.comfy_client,
-            face_swap_comfy_api_url=SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL,
-            face_swap_workflow_filename=SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW,
-            client_id=f"agent_{AGENT_ID}_v10",
-            logger=logger,
-            timeout_seconds=SCAIL2_FACE_SWAP_V10_TIMEOUT_SECONDS,
-            poll_interval_seconds=SCAIL2_FACE_SWAP_V10_POLL_INTERVAL_SECONDS,
         )
 
     @staticmethod
@@ -1534,13 +1478,6 @@ class ComfyAgent:
                 params=params,
                 downloaded_input_paths=downloaded_input_paths,
             )
-
-        await self._maybe_prepare_scail2_face_swap_v10_reference(
-            task_id=task_id,
-            task_type=task_type,
-            params=params,
-            downloaded_input_paths=downloaded_input_paths,
-        )
 
         await submit_task_workflow(
             task_id=task_id,

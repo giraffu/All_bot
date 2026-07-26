@@ -158,7 +158,7 @@ async def submit_bot_task(
     delivery_context: dict | None = None,
 ) -> tuple[str, str, list[str]]:
     private_submission_key = next_private_bot_submission_key()
-    task_id = (
+    task_id = submission.task_id_override or (
         str(uuid.uuid5(uuid.NAMESPACE_URL, private_submission_key))
         if private_submission_key
         else str(uuid.uuid4())
@@ -901,6 +901,7 @@ async def run_bot_task_application(
             flow=flow,
             client_type=client_type,
         ),
+        task_id_override=getattr(request, "task_id_override", None),
     )
 
     try:

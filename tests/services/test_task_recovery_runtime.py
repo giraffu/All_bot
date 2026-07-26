@@ -110,6 +110,89 @@ async def test_handle_recovered_task_completion_delegates_to_complete_monitored_
 
 
 @pytest.mark.asyncio
+async def test_resume_recovered_scail2_face_swap_transitions_root_before_dispatch(
+    monkeypatch,
+):
+    transition = AsyncMock()
+    get_status = AsyncMock(return_value=None)
+    submit = AsyncMock(return_value="stage2-id")
+    monkeypatch.setattr(
+        task_recovery_runtime,
+        "build_bot_scail2_stage2_task_id",
+        lambda _registry_id: "stage2-id",
+    )
+    monkeypatch.setattr(
+        task_recovery_runtime,
+        "get_user_priority_and_identity",
+        AsyncMock(return_value=(4, "外门弟子", "外门弟子")),
+    )
+    monkeypatch.setattr(
+        task_recovery_runtime.TaskRegistry,
+        "transition_backend_task",
+        transition,
+    )
+    monkeypatch.setattr(
+        task_recovery_runtime.image_service,
+        "get_task_status",
+        get_status,
+    )
+    monkeypatch.setattr(
+        task_recovery_runtime.image_service,
+        "submit_scail2_video_task",
+        submit,
+    )
+    cleanup = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        task_recovery_runtime,
+        "cleanup_scail2_face_swap_first_frame",
+        cleanup,
+    )
+
+    updated = await task_recovery_runtime._resume_recovered_bot_scail2_face_swap(
+        registry_task_id="root-task",
+        task_data={
+            "user_id": 123,
+            "allow_contribute": True,
+            "saved_input_images": [
+                "hidden-frame.png",
+                "reference.png",
+                "motion.mp4",
+            ],
+        },
+        recovery_contract={
+            "completion_caption": "done",
+            "language_code": "zh",
+        },
+        continuation={
+            "version": 1,
+            "duration": 5,
+            "prompt": "keep scene",
+            "normal_priority": 7,
+            "reference_input_index": 1,
+            "motion_video_input_index": 2,
+        },
+        final_info={"status": "done", "result_path": "swapped-frame.png"},
+    )
+
+    transition.assert_awaited_once()
+    submit.assert_awaited_once_with(
+        "stage2-id",
+        task_type="scail2_face_swap_v2",
+        reference_image_path="swapped-frame.png",
+        motion_video_path="motion.mp4",
+        prompt="keep scene",
+        negative_prompt=task_recovery_runtime.normalize_scail2_negative_prompt(None),
+        length=5,
+        priority=11,
+        reference_preprocessed=True,
+    )
+    assert updated["backend_task_id"] == "stage2-id"
+    assert updated["saved_input_images"] == ["reference.png", "motion.mp4"]
+    assert updated["user_cancel_allowed"] is False
+    cleanup.assert_awaited_once_with("hidden-frame.png")
+
+
+@pytest.mark.asyncio
 async def test_run_recovered_task_uses_local_monitor_and_completion(monkeypatch):
     monitor_mock = AsyncMock(return_value={"status": "done"})
     build_completion = MagicMock(return_value="completion-context")
