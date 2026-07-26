@@ -256,6 +256,16 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
         "ltx_video_flf2v",
         "ltx_video_v2v_audio",
     ]
+    assert catalog["ltx_t2v"]["track"] == "gpu-execution"
+    assert catalog["ltx_t2v"]["dockerfile"].endswith(
+        "runpod_profiles/ltx_t2v/Dockerfile"
+    )
+    assert catalog["ltx_t2v"]["profile"] == {
+        "task_types": ["ltx_t2v", "ltx_t2v_ic"],
+        "model_manifest_key": "ltx_t2v/2026-07-22/manifest.json",
+        "target_gpu": ["NVIDIA GeForce RTX 5090"],
+        "startup_args": ["--reserve-vram", "5"],
+    }
     assert catalog["img2img"]["profile"]["model_manifest_key"] == (
         "img2img_lora/2026-06-10/manifest.json"
     )

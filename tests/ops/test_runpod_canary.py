@@ -15,6 +15,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX,
     EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY,
     EXPECTED_LTX_VIDEO_MODEL_PREFIX,
+    EXPECTED_LTX_T2V_GPU_TYPE_IDS,
+    EXPECTED_LTX_T2V_IMAGE_REF_PREFIX,
+    EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY,
+    EXPECTED_LTX_T2V_MODEL_PREFIX,
     EXPECTED_SCAIL2_GPU_TYPE_IDS,
     EXPECTED_SCAIL2_IMAGE_REF_PREFIX,
     EXPECTED_SCAIL2_MODEL_MANIFEST_KEY,
@@ -40,6 +44,7 @@ from ops.gpu_pool_controller.runpod_canary import (
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
 )
@@ -59,6 +64,9 @@ PUBLIC_SCAIL2_GHCR_IMAGE = (
 )
 PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:20260622-ltx-test"
+)
+PUBLIC_LTX_T2V_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-gpu-ltx-t2v:fb080aa9400e56a627834b8c54a4fb4e76e9eb3b"
 )
 
 
@@ -172,6 +180,13 @@ class FakeRunPodProvider:
                 if self.settings.use_template_ltx_video
                 else ""
             )
+        elif task_type == "ltx_t2v":
+            image_name = PUBLIC_LTX_T2V_GHCR_IMAGE
+            supported_task_types = ",".join(RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES)
+            model_prefix = EXPECTED_LTX_T2V_MODEL_PREFIX
+            model_manifest_key = EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_LTX_T2V_GPU_TYPE_IDS)
+            template_id = ""
         else:
             image_name = PUBLIC_GHCR_IMAGE
             supported_task_types = "img2img,img2img_lora"
@@ -421,6 +436,29 @@ def test_runpod_canary_ltx_video_dry_run_preflights_with_profile_specific_render
     )
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
+
+
+def test_runpod_canary_ltx_t2v_dry_run_preflights_disabled_profile():
+    provider = FakeRunPodProvider()
+    payload = RunPodCanaryRunner(
+        provider,
+        RunPodCanaryOptions(task_type="ltx_t2v", execute=False, quiet=True),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"].startswith(EXPECTED_LTX_T2V_IMAGE_REF_PREFIX)
+    assert payload["render"]["gpu_type_ids"] == list(EXPECTED_LTX_T2V_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["model_prefix"] == EXPECTED_LTX_T2V_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY
+    assert any(
+        "submit ltx_t2v and ltx_t2v_ic 5s Web tasks serially" in step
+        for step in payload["would_execute"]
+    )
+    assert provider.create_calls == 0
 
 
 def test_runpod_canary_execute_requires_explicit_runpod_gates():
@@ -726,6 +764,30 @@ def test_ltx_video_canary_task_case_submits_i2v_5s_video_task():
         "ltx_mode": "i2v",
         "seed": 20260622,
     }
+
+
+def test_ltx_t2v_canary_task_cases_lock_plain_and_ingredients_contracts():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="ltx_t2v", quiet=True),
+    )
+
+    cases = runner._task_cases("user-data-test/web_uploads/3/character-sheet.png")
+
+    assert [case["label"] for case in cases] == [
+        "ltx_t2v_sulphur_5s",
+        "ltx_t2v_ic_ingredients_5s",
+    ]
+    plain = cases[0]["payload"]
+    assert plain["task_type"] == "ltx_t2v"
+    assert plain["inputs"]["resolution"] == "1280x704"
+    assert plain["inputs"]["duration"] == 5
+    assert "character_sheet" not in plain["inputs"]
+    ingredients = cases[1]["payload"]
+    assert ingredients["task_type"] == "ltx_t2v_ic"
+    assert ingredients["inputs"]["resolution"] == "768x448"
+    assert ingredients["inputs"]["duration"] == 5
+    assert ingredients["inputs"]["character_sheet"].endswith("character-sheet.png")
 
 
 def test_i2i_pro_canary_task_case_submits_existing_task_type():

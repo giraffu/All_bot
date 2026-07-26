@@ -1,5 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-26：`ltx_t2v` 新增独立 RunPod cloud-test disabled canary/operator 契约：只承接 `ltx_t2v,ltx_t2v_ic`，固定 `ltx_t2v/2026-07-22/manifest.json`、RTX 5090、180GB container disk、至少 100GB volume、baked entrypoint 与媒体并发策略；`gpu-execution` 登记独立 `allbot-gpu-ltx-t2v` artifact，正式手动 profile 仅作代码能力且 autoscaler 关闭。转存批次只允许公开 dev FP8/Sulphur 进入单一 transfer Pod，Ingredients/复用文件从本地 content-addressed registry 上传；目标 agent 仅在两条 canary 期间临时启用并在清理前恢复 disabled。正式入口、正式 Pod、生产 Worker 和两层 feature flag 继续关闭。本条记录代码候选；真实 R2/RunPod 验收仍须等待受保护 main 同 SHA attestation/exact digest 后写入 XDG 运行证据。
+>
 > 2026-07-26：`i2i_pro` execution profile 扩为 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，两个 face swap 类型都通过 worker override 执行 `face_swap_v2.json`；legacy `face_swap` 的公开类型、Central 队列、History、1 灵石计费和注册表默认 `face_swap.json` 均不变，`worker_remote_02` 继续保留 V1，形成按接单 worker 决定实际 workflow 的 V1/V2 并行。LAN catalog、RunPod profile/request、Dashboard autoscaler、模型导入与 GPU release contract 已同步；本条代码候选需先由受保护 main 产出同 SHA GPU artifact，再只滚动 GPU002 GPU1。现有 RunPod 不修改、不重启、不测试，未来新建 i2i_pro Pod 使用四任务与完整三项 override。
 >
 > 2026-07-25：为 gpu-252 故障卡测试新增独立、默认禁用且不可 retarget 的 `face_swap` execution profile。独立 artifact/镜像名为 `allbot-gpu-face-swap`，模型前缀为 `face_swap_v2/2026-07-25`（3 文件、18,079,673,146 bytes）；Central 的 `face_swap` 和 `face_swap_v2` 均由该 profile 显式执行 `face_swap_v2.json`。本轮没有上传模型、构建/推送镜像或修改 gpu-252 运行态。
