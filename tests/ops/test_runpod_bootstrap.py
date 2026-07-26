@@ -279,6 +279,23 @@ def test_face_swap_github_workflow_publishes_dedicated_revision_pinned_image():
     assert "docker manifest inspect" in workflow
 
 
+def test_ltx_t2v_github_workflow_builds_exact_main_revision_without_models():
+    workflow = Path(
+        ".github/workflows/runpod_ltx_t2v_profile_image.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "source_sha:" in workflow
+    assert "git merge-base --is-ancestor" in workflow
+    assert "IMAGE_NAME: allbot-gpu-ltx-t2v" in workflow
+    assert "--profile ltx_t2v" in workflow
+    assert "ALLBOT_GIT_SHA: ${{ inputs.source_sha }}" in workflow
+    assert "org.opencontainers.image.revision" in workflow
+    assert "io.allbot.runpod.agent-revision" in workflow
+    assert "io.allbot.runpod.workflow-revision" in workflow
+    assert "ltx_t2v/2026-07-22/manifest.json" in workflow
+    assert "docker manifest inspect" in workflow
+
+
 def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(tmp_path):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
