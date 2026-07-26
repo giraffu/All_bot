@@ -779,6 +779,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "ltx_t2v",
         "pornmaster_flux2_edit_bf16",
     ]
     assert profiles["i2i_pro"] == {

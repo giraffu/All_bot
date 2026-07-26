@@ -13,6 +13,9 @@ from dashboard.backend.services.runpod_operation_store import (
     InMemoryRunPodOperationStore,
 )
 from dashboard.backend.services import runpod_admin_service
+from dashboard.backend.services.runpod_admin_commands import (
+    RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -20,17 +23,7 @@ def _clear_runpod_admin_operations(monkeypatch):
     pins = {
         image_env: f"ghcr.io/giraffu/profile-{index}@sha256:" + str(index) * 64
         for index, image_env in enumerate(
-            sorted(
-                {
-                    "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
-                    "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
-                    "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
-                    "RUNPOD_IMAGE_NAME_I2I_PRO",
-                    "RUNPOD_IMAGE_NAME_SCAIL2",
-                    "RUNPOD_IMAGE_NAME_LTX_VIDEO",
-                    "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
-                }
-            ),
+            sorted(RUNPOD_RELEASE_PROFILE_IMAGE_ENVS),
             start=1,
         )
     }
@@ -90,12 +83,18 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "ltx_t2v",
         "pornmaster_flux2_edit_bf16",
     ]
     assert payload["profiles"][0]["supported_task_types"] == [
         "img2img",
         "img2img_lora",
     ]
+    ltx_t2v = next(
+        item for item in payload["profiles"] if item["profile"] == "ltx_t2v"
+    )
+    assert ltx_t2v["supported_task_types"] == ["ltx_t2v", "ltx_t2v_ic"]
+    assert ltx_t2v["autoscaler_enabled"] is False
     pornmaster_bf16 = payload["profiles"][-1]
     assert pornmaster_bf16["label"] == (
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
