@@ -5030,6 +5030,19 @@ def test_checked_in_independent_contract_snapshots_match_current_files():
     assert mismatches == {}
 
 
+def test_worker_only_compose_is_an_independent_contract_snapshot():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+
+    assert (
+        policy["independent_contract_snapshots"][
+            "deploy/docker-compose-worker-base.yml"
+        ]
+        == hashlib.sha256(
+            (ROOT / "deploy/docker-compose-worker-base.yml").read_bytes()
+        ).hexdigest()
+    )
+
+
 def test_checked_in_support_migration_snapshots_match_current_files():
     policy = _load_module().load_structured_file(POLICY_PATH)
     snapshots = policy["independent_additive_migration_snapshots"][

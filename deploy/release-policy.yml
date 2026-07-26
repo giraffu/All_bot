@@ -66,6 +66,7 @@
     "deploy/docker-compose-cloud-test.overlay.yml": "04ec278eb785f67b132fc4d9813ee8f9bc213d1270e1020acee937b76722d2b7",
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
     "deploy/docker-compose-test.yml": "dfdd39495a0d609e5218b44a4050332328a521b72be3f0fb47ed9fe05c4d4722",
+    "deploy/docker-compose-worker-base.yml": "7da07a7fe280684c28d245ddce604b41bec712388e33c7e9211bf534c4b4d1a8",
     "deploy/env.defaults": "382e4b02a05a9b042418d5e70add2985697543f49eda0fd2a9222aee95da4192",
     "deploy/env.schema.yml": "3cf3fbe9b87d62b38282142997af9b505947018ab10afaba96ee961a77528fca",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
