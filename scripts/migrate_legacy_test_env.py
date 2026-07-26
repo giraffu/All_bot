@@ -311,15 +311,6 @@ def migrate_values(
             values[prefix + "TASK_TYPE_WORKFLOW_OVERRIDES"] = worker_values[
                 workflow_key
             ]
-    if "08" in slots:
-        for suffix in (
-            "FACE_SWAP_V10_ENABLED",
-            "FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL",
-            "FACE_SWAP_V10_FACE_SWAP_WORKFLOW",
-        ):
-            source = f"CLOUD_TEST_WORKER_08_{suffix}"
-            if source in worker_values:
-                values[f"ALLBOT_WORKER_08_{suffix}"] = worker_values[source]
     return values
 
 

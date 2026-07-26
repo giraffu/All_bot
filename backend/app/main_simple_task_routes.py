@@ -10,6 +10,7 @@ from app.models import (
     LtxVideoV2VAudioRequest,
     LtxT2VRequest,
     Scail2ActionTransferLongRequest,
+    Scail2FaceSwapRequest,
     Scail2VideoRequest,
     TaskResponse,
     TaskType,
@@ -229,7 +230,7 @@ SIMPLE_TASK_ROUTE_SPECS = (
     ),
     (
         "/api/v1/scail2_face_swap_v2",
-        Scail2VideoRequest,
+        Scail2FaceSwapRequest,
         "scail2_face_swap_v2",
         "create_scail2_face_swap_v2_task",
     ),

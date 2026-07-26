@@ -16,6 +16,7 @@ from src.services.task_service_message_support import (
     translate_context_text,
 )
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskFlowContext
+from src.services.task_service_types import BotTaskRuntimeState
 
 
 async def resolve_internal_user_id(user_id: int, username: Optional[str]) -> int:
@@ -142,6 +143,7 @@ def build_generation_flow_context(
     images: list[str],
     cleanup: bool,
     entrypoint_name: str,
+    runtime_state: BotTaskRuntimeState | None = None,
 ) -> BotTaskFlowContext:
     failure_policy = BotTaskFailurePolicy(
         unexpected_error_log_message=build_unexpected_error_log_message(entrypoint_name),
@@ -182,4 +184,5 @@ def build_generation_flow_context(
         cleanup_files_func=cleanup_task_files,
         task_label=entrypoint_name,
         failure_policy=failure_policy,
+        runtime_state=runtime_state,
     )

@@ -56,7 +56,7 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     assert values["ALLBOT_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         '{"scail2":"x.json"}'
     )
-    assert values["ALLBOT_WORKER_08_FACE_SWAP_V10_ENABLED"] == "true"
+    assert "ALLBOT_WORKER_08_FACE_SWAP_V10_ENABLED" not in values
     assert values["CONTROL_SECRET"] == "cloud-authoritative"
     assert values["QQCC_CONFIG_ADMIN_HOST"] == "qqcc-admin-test.aivison.it.com"
     assert values["PRIVATE_QQCC_BOT_OWNER_HOST"] == (

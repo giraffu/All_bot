@@ -199,6 +199,7 @@ class ImageService:
         negative_prompt: str = " ",
         length: int = 5,
         priority: int = 0,
+        reference_preprocessed: bool = False,
     ) -> str:
         return await api_client.submit_scail2_video_task(
             task_id,
@@ -209,6 +210,7 @@ class ImageService:
             negative_prompt=negative_prompt,
             length=length,
             priority=priority,
+            reference_preprocessed=reference_preprocessed,
         )
 
     async def submit_task(

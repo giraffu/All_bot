@@ -20,6 +20,10 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
+    RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_T2V_MODEL_PREFIX,
+    RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
@@ -35,6 +39,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
@@ -65,6 +70,7 @@ PUBLIC_SCAIL2_GHCR_IMAGE = (
 PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 )
+PUBLIC_LTX_T2V_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX + "main-sha"
 PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE = (
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
     + "20260701-pornmaster-flux2-edit"
@@ -357,6 +363,7 @@ def _settings(**overrides) -> RunPodSettings:
         "image_name_i2i_pro": PUBLIC_I2I_PRO_GHCR_IMAGE,
         "image_name_scail2": PUBLIC_SCAIL2_GHCR_IMAGE,
         "image_name_ltx_video": PUBLIC_LTX_VIDEO_GHCR_IMAGE,
+        "image_name_ltx_t2v": PUBLIC_LTX_T2V_GHCR_IMAGE,
         "image_name_pornmaster_flux2_edit": PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
     }
@@ -779,6 +786,40 @@ def test_prod_worker_render_ltx_video_uses_v12_profile_defaults():
     assert payload["render"]["sshd_enabled"] == "false"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_ltx_t2v_is_registered_but_disabled_by_default():
+    agent_id = prod_agent_id_from_slot("01", profile="ltx_t2v")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_ltx_t2v=PUBLIC_LTX_T2V_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_ltx_t2v=RUNPOD_LTX_T2V_MODEL_PREFIX,
+            model_manifest_key_ltx_t2v=RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+        )
+    )
+    payload = RunPodProdWorkerRunner(
+        provider,
+        RunPodProdWorkerOptions(
+            action="render",
+            profile="ltx_t2v",
+            task_type="ltx_t2v",
+            agent_id=agent_id,
+            quiet=True,
+        ),
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "ltx_t2v"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-ltx-t2v-manual-01"
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "ltx_t2v"
+    assert payload["render"]["model_manifest_key"] == RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+    assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_T2V_CONTAINER_DISK_GB
+    assert provider.create_calls == 0
 
 
 def test_prod_worker_render_pornmaster_flux2_edit_bf16_isolated_on_4090():

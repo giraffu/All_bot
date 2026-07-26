@@ -59,6 +59,7 @@ application = (
 - `HTTPXRequest(proxy=None, connect_timeout=60, read_timeout=120, write_timeout=120, connection_pool_size=500)`；
 - `File.download_to_drive` 本地文件代理 patch；
 - `Poll.de_json` 对旧 update 缺失 `members_only` 的兼容；
+- `ChatMemberRestricted.de_json` 对旧 Local Bot API payload 缺失可选 `can_react_to_messages` 的兼容；缺失时按 Bot API 语义继承 `can_send_messages`，避免 PTB 解析失败后 polling offset 被同一条 update 永久阻塞；
 - Bot middleware 中 correlation id、语言缓存与 `context.t` 注入。
 
 ## 4. 接口定义 (网络契约)

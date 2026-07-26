@@ -6,6 +6,7 @@ from src.core.task_core import (
     ConcurrencyLimitError,
     CoreDomainError,
     InsufficientCreditsError,
+    QueueCapacityError,
 )
 from src.database.models import User
 from src.quota import QuotaManager
@@ -49,6 +50,11 @@ async def create_generation_task(
             get_balance=quota_manager.get_credits,
             logger=logger,
         )
+    except QueueCapacityError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "GENERATION_QUEUE_FULL", "detail": str(exc)},
+        ) from exc
     except ConcurrencyLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except InsufficientCreditsError as exc:

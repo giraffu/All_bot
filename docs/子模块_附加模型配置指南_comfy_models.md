@@ -232,14 +232,14 @@ SCAIL-2 当前是正式可用的视频生视频能力。用户侧只展示三个
 动作迁移的业务/History task type 始终是 `scail2_action_transfer`；dispatcher 按时长决定执行面：
 `5s/8s` 走旧动作迁移 workflow，`10s/15s/20s` 走隐藏执行类型 `scail2_action_transfer_long`
 和 Context Windows workflow。正式 RunPod `scail2` profile 仍只保持动作迁移/视频换人两任务。
-`scail2_face_swap_v2` 使用 SCAIL-2 FaceSwap v10 first-frame image-swap + replacement audio 方案：
+`scail2_face_swap_v2` 使用 Central 标准两阶段组合任务 + SCAIL-2 replacement audio 方案：
 
 | task type | 用户能力 | API workflow | 关键模式 |
 | :--- | :--- | :--- | :--- |
 | `scail2_action_transfer` | 动作迁移 | `SCAIL-2_Animation_multi-char_audio.api.json` | `replacement_mode=false` |
 | `scail2_action_transfer_long` | 隐藏执行路由（动作迁移 10/15/20s） | `SCAIL-2_Animation_WAN-Context-Windows.api.json` | `replacement_mode=false`，不作为用户入口 |
 | `scail2_video_replacement` | 视频换人 | `SCAIL-2_Replacement_audio.api.json` | `replacement_mode=true` |
-| `scail2_face_swap_v2` | 视频换脸 v10 two-stage | `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json` | `replacement_mode=true` |
+| `scail2_face_swap_v2` | 视频换脸两阶段 | `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json` | `replacement_mode=true`，仅接受 `reference_preprocessed=true` |
 
 Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
 `remote_workers/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
@@ -285,10 +285,10 @@ audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVid
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
 `src/workflow_mapping_validation.py`、`remote_workers/src/workflow_mapping_validation.py` 与
 `remote_workers/comfy_agent/workflows/`。
-视频换脸 v10 是两阶段方案，不把 Flux2 图片换脸模型混装进 SCAIL-2 runtime。其首帧图片预处理使用 V2 语义，并包含在视频任务总价中、不额外扣费：
-worker 先从驱动视频抽第一帧，调用配置的图片换脸 V2 Comfy API 执行 `face_swap_v2.json`
-把用户参考脸换到该首帧，再把“换脸后的首帧”作为 `LoadImage 58` 提交给
-`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 workflow
+视频换脸是 Central 两阶段方案，不把图片换脸模型混装进 SCAIL-2 runtime。共享首帧准备服务先从本地文件或对象存储视频抽取首帧并保存隐藏对象；第一阶段以固定优先级 100 向 `i2i_pro` 提交标准 `face_swap_v2`，人脸参考图做人脸来源、驱动首帧做 body。第一阶段结果不写 History/Gallery。continuation 必须先持久化派发意图、切换 TaskRegistry，再用确定性 backend ID 按根任务原始正常优先级提交第二阶段；内部请求必须带 `reference_preprocessed=true`，缺失或 false 由 Central 拒绝。第二阶段不可取消、不扣费，最终只写一条 `scail2_face_swap_v2` 视频记录。
+
+SCAIL-2 Worker 只把“换脸后的首帧”作为 `LoadImage 58` 提交给
+`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`，不得加载 `face_swap_v2.json`、创建辅助 ComfyClient 或访问外部 8188。该 workflow
 本体复用视频换人的 `human` track / replacement 喂法，`101.reference_image` 仍是 `58`，
 `101.reference_image_mask` 与 `101.pose_video_mask` 均来自 `SCAIL2ColoredMask 107`。
 目标是让参考图只提供脸部身份，让衣服、身体、背景和构图主要来自驱动视频首帧与驱动视频本身。

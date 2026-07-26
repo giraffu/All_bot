@@ -319,6 +319,19 @@ class Scail2VideoRequest(_Scail2VideoRequestBase):
             raise ValueError("SCAIL-2 only supports 5s or 8s duration.") from exc
 
 
+class Scail2FaceSwapRequest(Scail2VideoRequest):
+    reference_preprocessed: bool
+
+    @field_validator("reference_preprocessed")
+    @classmethod
+    def validate_reference_preprocessed(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError(
+                "SCAIL-2 face swap requires a preprocessed reference frame."
+            )
+        return value
+
+
 class Scail2ActionTransferLongRequest(_Scail2VideoRequestBase):
     @field_validator("length")
     @classmethod

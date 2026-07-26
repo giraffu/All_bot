@@ -14,7 +14,7 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **FSM 黑盒退出机制**：在任何文字接收入口，优先用 `is_global_menu_command(...)` 判断是否应退出当前流程，而不是散落硬编码菜单判断。
 - **Callback 注册路由**：回调处理依赖 `register_callback` 前缀注册、长度降序匹配与统一 `safe_answer_query` 兜底，修改 callback 拆分时必须维护这套契约。
 - **主 Bot 自由P图版本面板**：现有自由P图选择面板同时提供 v2.5、v3 与附加模型。v2.5 callback 进入 `free_edit_v2_5`：第一张图后可直接发提示词按 3 灵石提交，也可继续上传第二张并切为 7 灵石；第三张必须在下载前原地拒绝。旧 `editlora_free_edit_v2` callback 必须继续兼容并进入 v3 的单图 5 灵石 BF16→换脸链路，v3 第二张图同样不得下载。
-- **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；`cleanup_fsm_user_data(...)` 除了清理 `*_data` 内路径，也会清理随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；Telegram Local API / Poll 兼容 / 语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。
+- **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；`cleanup_fsm_user_data(...)` 除了清理 `*_data` 内路径，也会清理随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；Telegram Local API / Poll / `ChatMemberRestricted` 旧 payload 兼容与语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。旧 payload 缺少可选 `can_react_to_messages` 时必须按 Bot API 语义回退到 `can_send_messages`，避免单条成员状态 update 阻塞整个 polling offset。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
 - **签到频道成员同步**：主 Bot 签到先检查避难所群，再用 `REQUIRED_CHANNEL_ID` 查询宗门频道并同步 `is_channel_member` / 修为；该键必须由 `main-bot` 逐服务投影精确提供，`CHANNEL_INVITE_LINK` 只负责展示，不能替代 Telegram `getChatMember` 所需的频道 ID。运行时保留未知状态兼容，但发布契约必须在缺键时 fail closed。
 - **主 Bot 运行时菜单配置**：`src/services/main_bot_menu_config_service.py` 以 `runtime_checkpoints/main_bot_menu_config:v1` 保存主菜单排序、每行 1–4 个按钮及主/二级菜单显隐；`main_bot_menu_runtime.py` 在每次发送新键盘前加载配置，失败时回退完整默认菜单。该配置只影响 Reply Keyboard 展示，不得移除 prompt route、FSM entrypoint、旧按钮或手工文本兼容；`MAIN_BOT_LAZY_BOT_ENABLED` 等既有能力闸门仍优先，旧 `QQCC_LAZY_BOT_*` 只作整组兼容回退。

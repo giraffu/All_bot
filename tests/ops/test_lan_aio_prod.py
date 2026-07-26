@@ -170,6 +170,34 @@ def test_gpu002_i2i_pro_renders_legacy_face_swap_through_v2_workflow():
     )
 
 
+def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+
+    slot = slots["gpu-252-gpu1-face_swap"]
+    assert slot.enabled is False
+    assert slot.phase == "maintenance_disabled"
+    assert slot.retargetable is False
+    assert slot.target_profile_id == "face_swap"
+    assert slot.target_task_types == ("face_swap", "face_swap_v2")
+    assert slot.gpu_device_id == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
+    assert slot.host_port == 8191
+    assert slot.agent_id == "lan_aio_prod_gpu252_gpu1_face_swap_01"
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    rendered = ops.render_compose(slot)
+    assert "SUPPORTED_TASK_TYPES: face_swap,face_swap_v2" in rendered
+    assert "POOL_RUNTIME_PROFILE: face_swap" in rendered
+    assert (
+        'TASK_TYPE_WORKFLOW_OVERRIDES: '
+        '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
+    ) in rendered
+
+
 def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 
@@ -909,11 +937,9 @@ def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
     assert workflow_overrides["scail2_face_swap_v2"] == (
         "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json"
     )
-    assert environment["SCAIL2_FACE_SWAP_V10_ENABLED"] == "true"
-    assert environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"] == (
-        "http://192.168.1.226:8188"
-    )
-    assert environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW"] == "face_swap_v2.json"
+    assert "SCAIL2_FACE_SWAP_V10_ENABLED" not in environment
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" not in environment
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW" not in environment
 
 
 def test_ltx_video_workflow_uses_baked_sageattention():

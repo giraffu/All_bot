@@ -9,9 +9,11 @@
 - `ltx_t2v_ic`：文生同步音视频 + 私有人物参考表 + Ingredients；
 - `character_reference_build`：从本人上传源图生成六视图参考表。
 
-本阶段仅允许本地 LAN 验收。后端 `LTX_T2V_BACKEND_ENABLED` 和 Web runtime
-flag `enable_ltx_t2v` 默认均为关闭；不得部署共享 test/prod，不创建 RunPod
-template，也不得把本地 registry 镜像当作 GHCR 正式 artifact。
+本阶段允许已授权的 cloud-test disabled canary，并继续支持本地 LAN 验收。后端
+`LTX_T2V_BACKEND_ENABLED` 和 Web runtime flag `enable_ltx_t2v` 默认均为关闭；
+不得开放正式用户、创建正式 Pod 或启用 autoscaler。RunPod 使用独立
+`ltx_t2v` profile，只接受 `ltx_t2v,ltx_t2v_ic`，禁止 template，首轮只接受
+32GB RTX 5090；不得把本地 registry 镜像当作 GHCR artifact。
 
 ## 2. 固定模型栈
 
@@ -54,6 +56,12 @@ python scripts/upload_all_task_models_to_lan_cache.py \
 `models/by-sha256/<sha[:2]>/<sha>`；manifest 只有在全部对象 HEAD 的大小和 SHA
 metadata 都通过后才发布。
 
+cloud-test 的 R2 bundle 固定为 `ltx_t2v/2026-07-22/manifest.json`。临时
+model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，Ingredients
+及复用文件必须从本地已校验 content-addressed registry 上传；任何 gated
+凭据不得进入 Pod、batch 或日志。10/10 对象通过 size、SHA256 metadata 与 HEAD
+之前不得发布 manifest，失败后必须清理 Pod 和 multipart upload。
+
 2026-07-22 本地发布验收已确认：复用 7 个共享 blob，新上传 3 个 blob、
 `40,722,210,544` bytes；10/10 对象 HEAD 验证通过，manifest SHA256 为
 `e9f35a43c75bc539f4fe6d5545da267907ac483fca88de02cf0a4d6c897e2ca8`。
@@ -78,6 +86,17 @@ baseline；只有第 2 组完整 Sulphur T2V 和第 4 组完整 Sulphur + Ingred
 均产出可播放、带音轨 MP4，目标栈才通过。
 
 镜像入口：
+
+- RunPod：`remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile`，发布为
+  `gpu-execution` 的 `allbot-gpu-ltx-t2v` 不可变 artifact；镜像必须核对 OCI
+  revision、agent、两份 workflow、46 节点和 Ingredients loader/guide，并拒绝
+  baked 模型权重。
+- 创建请求固定 baked entrypoint、`media_claim2_comfy1_delivery1_v1`、
+  `containerDiskInGb=180`、volume 至少 100GB、固定模型 manifest 和单一 5090。
+- `runpod canary --task-type ltx_t2v` 创建的 cloud-test worker 以 disabled
+  control 进入，只在串行普通 Sulphur 与 Ingredients canary 期间临时 enabled，
+  结束后再次 disabled、drain 并删除。本节描述已实现的 operator 契约；真实
+  RunPod 黄金路径证据须以 main 同 SHA artifact 与本机 XDG state 为准。
 
 - `remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile`；
 - `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。

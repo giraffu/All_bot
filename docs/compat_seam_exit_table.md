@@ -25,6 +25,7 @@
 | `src/web_api/common/__init__.py` | 纯 re-export 包壳 | 无业务引用 | 仓库内调用方均直接引用 `src.web_api.common.utils` | 已删除，`common` 包不再保留空壳入口 |
 | `src/core/task_core_service_providers.py` 中未调用的 getter wrapper | 历史 provider 细粒度透传符号 | 无业务引用 | 全仓确认无静态调用方 | 已删除，保留真实 capability builder 与运行时入口 |
 | `src/context.py:trace_id_ctx` | 旧 trace context 变量 | 无业务引用；实际 trace 语义使用 `asgi_correlation_id.correlation_id` | `rg "trace_id_ctx"` 确认无动态引用 | 已删除，保留正在使用的 `user_id_ctx` |
+| RunPod LTX T2V template 兼容键 `use_template_ltx_t2v` / `template_id_ltx_t2v` | 曾可能把 LTX T2V Pod 绑定到可漂移 template | 无运行时调用方，仅保留创建请求的拒绝回归 fixture | 独立 profile 从首版即固定 baked entrypoint，创建请求持续拒绝 template 键 | 已拒绝，不建立兼容面 |
 
 ## 已在本轮下沉的默认装配
 
@@ -87,6 +88,7 @@
 | 主 Bot 懒人入口 `QQCC_LAZY_BOT_*` 配置回退 | 兼容尚未迁移到 main-bot 专属 `MAIN_BOT_LAZY_BOT_*` 的旧环境；新命名空间任一键存在即整组优先，避免宽泛 `QQCC_*` 投影改变 QQCC/私有 Bot/管理面 | `src/services/lazy_bot_entry_service.py`、旧正式/测试 env 与已生成的历史 main-bot 投影 | 正式与测试宿主均已写入专属键，受支持回滚点不再依赖旧键，且一个完整发布观察窗口内未出现旧命名空间回退；删除时保留专属键优先、禁用、非法 username 与非目标投影字节不变回归 | `配置迁移及历史回滚观察完成后` |
 | Web owner `/result` 的 R2 公网 miss 图片短签回退 | 公网 HEAD 未命中时，图片仍可从当前 R2/S3 object key 生成短签 URL；视频保持 `pending_result`，且两者都禁止回退 legacy MinIO URL | `src/web_api/services/task_result_service.py`、`R2PublicProbeService`、Storage R2 presign 与 owner result 回归 | R2 公网域名具备可观测的稳定可用性，标准 key warmup 在支持窗口内持续命中，且正式/测试 owner result 指标确认图片短签回退流量清零；删除时保留公网 miss 不产生 legacy URL 的门禁 | `R2 公网交付稳定并完成回退流量观察后` |
 | 用户可见 task type / operation 的 legacy alias 展示归一层 | 把 registry 历史 alias、执行阶段类型及旧账本 operation 归一到稳定 `display_key`，避免 Web/Bot 向用户泄漏内部原始值 | Web 历史、任务详情、用户主页、Gallery、Bot 结果与灵石流水展示 | 历史数据迁移为稳定公开类型，所有在支持期内的客户端只消费公开展示 key，并确认旧 alias/operation 观测清零；Dashboard 与协议诊断值不随展示层删除 | `历史数据迁移和客户端观察完成后` |
+| 图片换脸 legacy `face_swap` 业务类型与 worker workflow override | 保持快速/随机换脸、旧 History 和旧队列的 1 灵石业务语义；`i2i_pro` worker 可将其执行 workflow override 到 V2，但不得改变计费或公开类型 | task registry、dispatcher、`worker_remote_02`、`i2i_pro`/专属 face-swap profile、历史与退款链路 | 旧入口和队列不再提交 `face_swap`，历史展示与退款已完成迁移，所有执行池只接 canonical V2 类型；删除时同步移除 override 与 legacy workflow | `旧入口、队列和历史观察清零后` |
 
 ## 冗余清理候选
 

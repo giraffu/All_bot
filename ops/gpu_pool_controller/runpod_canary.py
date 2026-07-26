@@ -27,13 +27,19 @@ from .providers.runpod import (
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_T2V_GPU_TYPE_IDS,
+    RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_T2V_MODEL_PREFIX,
+    RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
+    RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
     RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_GPU_TYPE_IDS,
@@ -80,6 +86,8 @@ EXPECTED_SCAIL2_MODEL_PREFIX = RUNPOD_SCAIL2_MODEL_PREFIX
 EXPECTED_SCAIL2_MODEL_MANIFEST_KEY = RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
 EXPECTED_LTX_VIDEO_MODEL_PREFIX = RUNPOD_LTX_VIDEO_MODEL_PREFIX
 EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY = RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+EXPECTED_LTX_T2V_MODEL_PREFIX = RUNPOD_LTX_T2V_MODEL_PREFIX
+EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY = RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
@@ -90,6 +98,7 @@ EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = (
 )
 EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX
+EXPECTED_LTX_T2V_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX
 DEFAULT_CONTROL_HOST = "100.82.124.91"
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
@@ -98,6 +107,7 @@ EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
 EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 EXPECTED_SCAIL2_GPU_TYPE_IDS = RUNPOD_SCAIL2_GPU_TYPE_IDS
 EXPECTED_LTX_VIDEO_GPU_TYPE_IDS = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
+EXPECTED_LTX_T2V_GPU_TYPE_IDS = RUNPOD_LTX_T2V_GPU_TYPE_IDS
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 PROD_MANUAL_POD_NAME_PREFIXES = (
@@ -107,6 +117,7 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
+    RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
 )
 SCAIL2_SAMPLE_REFERENCE_URL = (
     "https://i.gyazo.com/567acaf722ca9e839ec7cb834c1ed344/max_size/1200.jpg"
@@ -223,6 +234,18 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         worker_disable_summary=(
             "temporarily disable cloud-test workers supporting ltx_video, "
             "ltx_video_flf2v, or ltx_video_v2v_audio"
+        ),
+    ),
+    "ltx_t2v": RunPodCanaryProfileSpec(
+        task_type="ltx_t2v",
+        image_ref_prefix=EXPECTED_LTX_T2V_IMAGE_REF_PREFIX,
+        supported_task_types=RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+        model_prefix=EXPECTED_LTX_T2V_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_LTX_T2V_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_LTX_T2V_GPU_TYPE_IDS,
+        task_summary="submit ltx_t2v and ltx_t2v_ic 5s Web tasks serially",
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting ltx_t2v or ltx_t2v_ic"
         ),
     ),
 }
@@ -530,6 +553,7 @@ class RunPodCanaryRunner:
         }
         pod_id: str | None = None
         worker_controls: list[dict[str, Any]] = []
+        target_agent_id: str | None = None
         pod_reused = False
         try:
             self._validate_static_options()
@@ -563,9 +587,35 @@ class RunPodCanaryRunner:
                 summary["pod"] = pod_summary
                 self._wait_pod_readiness(pod_id, summary)
                 runpod_worker = self._wait_runpod_worker(pod_id, summary)
+                target_agent_id = str(runpod_worker.get("agent_id") or "")
+
+                if (
+                    RUNPOD_TASK_PROFILES[self.options.task_type].task_type
+                    == "ltx_t2v"
+                    and not pod_reused
+                ):
+                    self._set_agent_control(
+                        target_agent_id,
+                        "disabled",
+                        reason="runpod_ltx_t2v_default_disabled",
+                        ttl_seconds=self.options.control_ttl_seconds,
+                    )
+                    summary["target_agent_control"] = {
+                        "agent_id": target_agent_id,
+                        "initial_state": "disabled",
+                    }
 
                 if self.options.disable_workers:
                     worker_controls = self._disable_test_workers(summary)
+
+                if summary.get("target_agent_control"):
+                    self._set_agent_control(
+                        target_agent_id,
+                        "enabled",
+                        reason="runpod_ltx_t2v_canary",
+                        ttl_seconds=self.options.control_ttl_seconds,
+                    )
+                    summary["target_agent_control"]["canary_state"] = "enabled"
 
                 test_input = self._resolve_canary_inputs(summary)
                 summary["test_input"] = test_input
@@ -588,6 +638,7 @@ class RunPodCanaryRunner:
                     pod_id=pod_id,
                     pod_reused=pod_reused,
                     worker_controls=worker_controls,
+                    target_agent_id=target_agent_id,
                 )
         return self._finish(summary)
 
@@ -929,9 +980,30 @@ class RunPodCanaryRunner:
         pod_id: str | None,
         pod_reused: bool,
         worker_controls: list[dict[str, Any]],
+        target_agent_id: str | None,
     ) -> None:
         cleanup = summary.setdefault("cleanup", {})
         cleanup_errors: list[str] = []
+        if target_agent_id and summary.get("target_agent_control") and not pod_reused:
+            try:
+                self._set_agent_control(
+                    target_agent_id,
+                    "disabled",
+                    reason="runpod_ltx_t2v_canary_complete",
+                    ttl_seconds=self.options.control_ttl_seconds,
+                )
+                cleanup["target_agent_disable"] = {
+                    "agent_id": target_agent_id,
+                    "ok": True,
+                }
+            except Exception as exc:
+                cleanup_errors.append(
+                    f"disable target {target_agent_id}: {redact_text(str(exc))}"
+                )
+                cleanup["target_agent_disable"] = {
+                    "agent_id": target_agent_id,
+                    "ok": False,
+                }
         if worker_controls:
             for control in worker_controls:
                 agent_id = str(control.get("agent_id") or "")

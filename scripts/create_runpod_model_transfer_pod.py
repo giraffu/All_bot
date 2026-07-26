@@ -68,6 +68,39 @@ PORNMASTER_FLUX2_EDIT_BF16_TRANSFERS = (
         "size_bytes": 249519092,
     },
 )
+LTX_T2V_PREFIX = "ltx_t2v/2026-07-22"
+LTX_T2V_TRANSFERS = (
+    {
+        "source_url": (
+            "https://huggingface.co/Lightricks/LTX-2.3-fp8/resolve/"
+            "1d756cd27fa11c0896c4dfee093cd1bf36c7f7a1/"
+            "ltx-2.3-22b-dev-fp8.safetensors"
+        ),
+        "key": (
+            f"{LTX_T2V_PREFIX}/models/diffusion_models/LTX 2.3/"
+            "ltx-2.3-22b-dev-fp8.safetensors"
+        ),
+        "relative_path": (
+            "diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+        ),
+        "sha256": "28606c5b5a06ce56f896d4dfcb20f212739e07a68fbe48e53638188449d26450",
+        "size_bytes": 29145431166,
+    },
+    {
+        "source_url": (
+            "https://huggingface.co/SulphurAI/Sulphur-2-base/resolve/"
+            "875e886e556b955d21149316fd631cc121db6cc1/"
+            "sulphur_lora_rank_768.safetensors"
+        ),
+        "key": (
+            f"{LTX_T2V_PREFIX}/models/loras/ltx2.3/"
+            "sulphur_lora_rank_768.safetensors"
+        ),
+        "relative_path": "loras/ltx2.3/sulphur_lora_rank_768.safetensors",
+        "sha256": "b7151fc78066457a38153f3f1c899851c667527aa2108e39a7f4be3e3b5e4f2d",
+        "size_bytes": 10268001040,
+    },
+)
 
 
 def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +147,10 @@ def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_transfer_items(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if getattr(args, "ltx_t2v", False):
+        if getattr(args, "batch_file", None):
+            raise ValueError("--ltx-t2v cannot be combined with --batch-file")
+        return [_normalise_transfer_item(item) for item in LTX_T2V_TRANSFERS]
     if getattr(args, "pornmaster_flux2_edit_bf16", False):
         if getattr(args, "batch_file", None):
             raise ValueError(
@@ -523,6 +560,14 @@ def main() -> int:
             "direct-to-R2 transfer batch."
         ),
     )
+    parser.add_argument(
+        "--ltx-t2v",
+        action="store_true",
+        help=(
+            "Use the built-in two-file public LTX 2.3 dev FP8 and Sulphur "
+            "direct-to-R2 transfer batch; gated Ingredients is never sent to the Pod."
+        ),
+    )
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument("--bucket", default="allbot-model-cache")
     parser.add_argument("--key", default=DEFAULT_KEY)
@@ -565,7 +610,15 @@ def main() -> int:
 
     _load_env_file(args.env_file)
     if not args.gpu_type_ids:
-        args.gpu_type_ids = ["NVIDIA GeForce RTX 4090", "NVIDIA L40S", "NVIDIA GeForce RTX 5090"]
+        args.gpu_type_ids = (
+            ["NVIDIA GeForce RTX 5090"]
+            if args.ltx_t2v
+            else [
+                "NVIDIA GeForce RTX 4090",
+                "NVIDIA L40S",
+                "NVIDIA GeForce RTX 5090",
+            ]
+        )
     api_key = os.getenv("RUNPOD_API_KEY", "")
     if not api_key and args.execute:
         print(json.dumps({"ok": False, "error": "missing_RUNPOD_API_KEY"}, indent=2))
@@ -575,6 +628,8 @@ def main() -> int:
     dry_run = _bool_env(os.getenv("RUNPOD_DRY_RUN"), default=True)
     autoscaler_enabled = _bool_env(os.getenv("RUNPOD_AUTOSCALER_ENABLED"), default=False)
     max_pods_total = _int_env(os.getenv("RUNPOD_MAX_PODS_TOTAL"), default=1)
+    if args.ltx_t2v:
+        max_pods_total = 1
 
     if args.delete_pod_id:
         guard_reasons = _delete_guard_reasons(

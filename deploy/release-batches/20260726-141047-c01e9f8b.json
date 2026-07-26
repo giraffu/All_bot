@@ -1,0 +1,334 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "fb080aa9400e56a627834b8c54a4fb4e76e9eb3b",
+  "batch": "20260726-141047-c01e9f8b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260726-141047-c01e9f8b",
+  "members": [
+    {
+      "base_sha": "c01e9f8bd14ef99ad9702d35f35a3cef11b54b0e",
+      "branch": "codex/d-auto-test-integration-queue",
+      "head": "c01e9f8bd14ef99ad9702d35f35a3cef11b54b0e",
+      "slot": "D"
+    },
+    {
+      "base_sha": "c14bc4f70178cad717f75efab9e7366f645c2a0b",
+      "branch": "codex/a-main-bot-unresponsive",
+      "head": "48f21b467f85dc3d214c218eede11f8f79bae853",
+      "slot": "A"
+    },
+    {
+      "base_sha": "4fc6f48a5899850e485ffe79ec80b09d9d5d25c3",
+      "branch": "codex/a-narrow-qqcc-migration-scope",
+      "head": "4fc6f48a5899850e485ffe79ec80b09d9d5d25c3",
+      "slot": "A"
+    },
+    {
+      "base_sha": "d07df2b0b80931d23fda1f5f3c74c1f1a63e35e6",
+      "branch": "codex/a-support-ticket-drafts",
+      "head": "93969ed7e826527c20385e0916a8e605b8e5938a",
+      "slot": "A"
+    },
+    {
+      "base_sha": "1e522f7cc56620b0e626cbb38c4e043fb49a9e27",
+      "branch": "codex/a-dashboard-business-category",
+      "head": "4d93e083250f3ac3bceb5eefc802fd1d5d232753",
+      "slot": "A"
+    },
+    {
+      "base_sha": "5229ffa67e4d97e5f05402678583501e08fa76c0",
+      "branch": "codex/a-wan22-lora-help",
+      "head": "5229ffa67e4d97e5f05402678583501e08fa76c0",
+      "slot": "A"
+    },
+    {
+      "base_sha": "9371ecf43d42f45f1775e2a13d024acc05993405",
+      "branch": "codex/a-clarify-task-queue-full",
+      "head": "0aff2cd4ff8cf85f7ae7f714d02003f4ad1a172c",
+      "slot": "A"
+    },
+    {
+      "base_sha": "9371ecf43d42f45f1775e2a13d024acc05993405",
+      "branch": "codex/a-bf16-pipeline-canary",
+      "head": "7fdfba6b84848ba4f6b4f653a7c5fcb8284ed89d",
+      "slot": "A"
+    },
+    {
+      "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+      "branch": "codex/b-bf16-pipeline-rollback-safe",
+      "head": "834b866565b713f8333ac31606ec6f1063feb892",
+      "slot": "B"
+    },
+    {
+      "base_sha": "a4fb6470a429161c3b136cf9b9d9ab55b81756a1",
+      "branch": "codex/a-fix-qqcc-demo-generation",
+      "head": "c2551b1d01f66eec6b94c890a659b34503fa688e",
+      "slot": "A"
+    },
+    {
+      "base_sha": "3fb7a296d47ee4484108e6eeb783318044ac0a15",
+      "branch": "codex/a-fix-scoped-config-preserve-retired",
+      "head": "04acfebb817abbc66ca456cd37dcd6f11f628cf3",
+      "slot": "A"
+    },
+    {
+      "base_sha": "c15879358469c1e6449b50842d92ce96abbf8122",
+      "branch": "codex/b-bf16-rollout-policy-gate",
+      "head": "7d29ce04818b2be40043dfb93a0876e55724bb68",
+      "slot": "B"
+    },
+    {
+      "base_sha": "4a0939b898c3b93722942f7019e2c172a9942413",
+      "branch": "codex/a-lan-registry-daemon-no-proxy",
+      "head": "5cdc36054c5f50714f46c2261bafd0660d8c7ac4",
+      "slot": "A"
+    },
+    {
+      "base_sha": "8631d20d41db8701e5485fd2b4a11bbb840222d8",
+      "branch": "codex/a-gpu-pipeline-all-profiles",
+      "head": "703f2c518bc9f755ff82485b28a4bcd6a56ea5e7",
+      "slot": "A"
+    },
+    {
+      "base_sha": "cd8ce53a4b8b93448be2eaef24db43e4af239bba",
+      "branch": "codex/a-gpu-manifest-baseline-fallback",
+      "head": "cd8ce53a4b8b93448be2eaef24db43e4af239bba",
+      "slot": "A"
+    },
+    {
+      "base_sha": "df071ffd29c04c00178c3d3767b777908c0f6a2c",
+      "branch": "codex/a-replay-full-release-after-gpu-manifest",
+      "head": "6aa1892cbcc195f5aeb435ca983a297a03684230",
+      "slot": "A"
+    },
+    {
+      "base_sha": "c0974fa274dc409e6439902d641b26ffdb2611bf",
+      "branch": "codex/a-replay-full-release-after-gpu-manifest-v2",
+      "head": "c0974fa274dc409e6439902d641b26ffdb2611bf",
+      "slot": "A"
+    },
+    {
+      "base_sha": "2f21fcadbce506c1f508aad45fc6d21f3bcc06cd",
+      "branch": "codex/c-qqcc-monitor-db-pool",
+      "head": "2f21fcadbce506c1f508aad45fc6d21f3bcc06cd",
+      "slot": "C"
+    },
+    {
+      "base_sha": "9d58ee5d31a6da889354806aea1d74127ef5ae58",
+      "branch": "codex/b-qqcc-video-demo-regression",
+      "head": "1b2ea30b2489873235120eb84aec752629b23d86",
+      "slot": "B"
+    },
+    {
+      "base_sha": "6a7b11d7184f423812997175bdac4777a43cd96f",
+      "branch": "codex/b-qqcc-jump-draw-auto-switch",
+      "head": "ac9fe7a5e21cc7d818aa961c86ab10d642f34a15",
+      "slot": "B"
+    },
+    {
+      "base_sha": "3b32380d5c1a747f60b5b579f68acf62c9ac46be",
+      "branch": "codex/c-prod-core-bot-config-fix",
+      "head": "3b32380d5c1a747f60b5b579f68acf62c9ac46be",
+      "slot": "C"
+    },
+    {
+      "base_sha": "bfcca48ac3a2ec6e05576953b6f94246be591a31",
+      "branch": "codex/c-prod-only-promotion-assurance",
+      "head": "bfcca48ac3a2ec6e05576953b6f94246be591a31",
+      "slot": "C"
+    },
+    {
+      "base_sha": "61536ba27ee87f86ea223291a08fd52237bf2fc3",
+      "branch": "codex/c-dashboard-qqcc-source-filter",
+      "head": "9ab2fb7cc99a2505f8b4aa43f3c998cb033776e1",
+      "slot": "C"
+    },
+    {
+      "base_sha": "7395ca2cf4865346d9b8f919796c394ac9821eb3",
+      "branch": "codex/d-qqcc-scene-v1-v2",
+      "head": "708165896361f11f4507081d739492c23f75fc70",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9113c920a71f4cce32f8cbb79b83bf4703f5a2f8",
+      "branch": "codex/c-qqcc-v1-v2-ui-tests",
+      "head": "9113c920a71f4cce32f8cbb79b83bf4703f5a2f8",
+      "slot": "C"
+    },
+    {
+      "base_sha": "5dc8ddf80ef81b3e30d28b31f7ad5449c361689d",
+      "branch": "codex/c-remove-worker-type-affinity",
+      "head": "5dc8ddf80ef81b3e30d28b31f7ad5449c361689d",
+      "slot": "C"
+    },
+    {
+      "base_sha": "f2486d24c5c198a967d3241f67e1ac67c50d72cc",
+      "branch": "codex/c-gpu252-face-swap-v2-profile",
+      "head": "47d828dc4b3b10c92c2450801facdba63224830f",
+      "slot": "C"
+    },
+    {
+      "base_sha": "304423daf68a375be9299773bec25577c4ad033a",
+      "branch": "codex/c-face-swap-build-workflow",
+      "head": "304423daf68a375be9299773bec25577c4ad033a",
+      "slot": "C"
+    },
+    {
+      "base_sha": "1694e8082d448c2e6056c2c3f17e1cf12c449762",
+      "branch": "codex/c-qqcc-callback-route-fix",
+      "head": "19c69231b9cc63d76d3a7a1c9afbcecc824a9ed0",
+      "slot": "C"
+    },
+    {
+      "base_sha": "ae7141fea982bfefce071edd77cf21f1a3623bfa",
+      "branch": "codex/c-decouple-control-plane-gpu-manifest",
+      "head": "ae7141fea982bfefce071edd77cf21f1a3623bfa",
+      "slot": "C"
+    },
+    {
+      "base_sha": "6a6086afd946314e193adf955eae5027a619b250",
+      "branch": "codex/c-qqcc-module-reuse-base",
+      "head": "6a6086afd946314e193adf955eae5027a619b250",
+      "slot": "C"
+    },
+    {
+      "base_sha": "0b7760a7f6366d33c7bd211b3b0dfc006266d4e9",
+      "branch": "codex/d-scoped-replay-entry-gate",
+      "head": "0b7760a7f6366d33c7bd211b3b0dfc006266d4e9",
+      "slot": "D"
+    },
+    {
+      "base_sha": "43290220b468d549a3c4dec1049143c3d9d7f1ea",
+      "branch": "codex/c-face-swap-rollout-profile-map",
+      "head": "ddc843f2360f98303ac6dcd0c8a2115a599b7cdd",
+      "slot": "C"
+    },
+    {
+      "base_sha": "c396668e75e85e5736e8dc2c53055640398cc605",
+      "branch": "codex/c-scoped-replay-idempotent-image",
+      "head": "c396668e75e85e5736e8dc2c53055640398cc605",
+      "slot": "C"
+    },
+    {
+      "base_sha": "f4b10faf4622e5820040009bab5e1d07defb714a",
+      "branch": "codex/c-face-swap-disabled-release-canary",
+      "head": "f4b10faf4622e5820040009bab5e1d07defb714a",
+      "slot": "C"
+    },
+    {
+      "base_sha": "b6dfb61558d7b7a3720c752691dbcb150e84016b",
+      "branch": "codex/c-gpu-manifest-direct-canary",
+      "head": "b6dfb61558d7b7a3720c752691dbcb150e84016b",
+      "slot": "C"
+    },
+    {
+      "base_sha": "d5d229f30884fa787c64c91a2ce205c5fdb54537",
+      "branch": "codex/d-quarantined-lan-slot-isolation",
+      "head": "d5d229f30884fa787c64c91a2ce205c5fdb54537",
+      "slot": "D"
+    },
+    {
+      "base_sha": "1073c16856ef40caa8f9a9c7c3db266e7737bf52",
+      "branch": "codex/d-quarantined-isolation-managed-gate",
+      "head": "1073c16856ef40caa8f9a9c7c3db266e7737bf52",
+      "slot": "D"
+    },
+    {
+      "base_sha": "6c77d7ffbcd033a1699c7ee6c0f542bd1901f761",
+      "branch": "codex/d-faulted-lan-error-isolation",
+      "head": "6c77d7ffbcd033a1699c7ee6c0f542bd1901f761",
+      "slot": "D"
+    },
+    {
+      "base_sha": "3bfcee18c72fc385b72e7f22e30214a1d91a38a2",
+      "branch": "codex/d-quarantined-disable-restart-policy",
+      "head": "3bfcee18c72fc385b72e7f22e30214a1d91a38a2",
+      "slot": "D"
+    },
+    {
+      "base_sha": "e06d9082dc7de8c88a97d9c8e5ae0c238c668bd4",
+      "branch": "codex/d-isolate-disabled-missing-worker",
+      "head": "e06d9082dc7de8c88a97d9c8e5ae0c238c668bd4",
+      "slot": "D"
+    },
+    {
+      "base_sha": "88037bdd387ec44896931901d04f9359032de0a3",
+      "branch": "codex/d-lan-aio-runtime-proxy",
+      "head": "88037bdd387ec44896931901d04f9359032de0a3",
+      "slot": "D"
+    },
+    {
+      "base_sha": "b434cadbcd1b400ecb8e3fad9762b06d63b83b7e",
+      "branch": "codex/d-lan-aio-recover-recreate-config",
+      "head": "b434cadbcd1b400ecb8e3fad9762b06d63b83b7e",
+      "slot": "D"
+    },
+    {
+      "base_sha": "c14bd56dfdcd0fe00e6ccc6bd655a1ef616b3cdb",
+      "branch": "codex/f-i2i-pro-legacy-face-swap",
+      "head": "c14bd56dfdcd0fe00e6ccc6bd655a1ef616b3cdb",
+      "slot": "F"
+    },
+    {
+      "base_sha": "c0b638af785774503be4e389ed49fe522deb25eb",
+      "branch": "codex/d-lan-resource-manager",
+      "head": "de4bc2a610e3d81b57a5d25c2df3210104cb94b6",
+      "slot": "D"
+    },
+    {
+      "base_sha": "c0b638af785774503be4e389ed49fe522deb25eb",
+      "branch": "codex/e-video-faceswap-stages",
+      "head": "b60701c440e79b77a9032c731a11c35a21341069",
+      "slot": "E"
+    },
+    {
+      "base_sha": "25fd577f8f48ab2f4dd74817eea6fbcbf5598ffc",
+      "branch": "codex/d-resource-manager-deploy-tab",
+      "head": "585183d1d346952e4bd3b891b8ff07bdee0a40e2",
+      "slot": "D"
+    },
+    {
+      "base_sha": "25fd577f8f48ab2f4dd74817eea6fbcbf5598ffc",
+      "branch": "codex/d-resource-manager-ci-fix",
+      "head": "245d96191d2b64b96c212121015063cde0dee7d3",
+      "slot": "D"
+    },
+    {
+      "base_sha": "17d66ecc7696bbe120e914fb18278beaed328ac4",
+      "branch": "codex/d-resource-manager-doc-index",
+      "head": "17d66ecc7696bbe120e914fb18278beaed328ac4",
+      "slot": "D"
+    },
+    {
+      "base_sha": "1c39e417b308e30afe8fa6cc3bfa143831b5ca26",
+      "branch": "codex/d-resource-manager-runner-timeout",
+      "head": "1c39e417b308e30afe8fa6cc3bfa143831b5ca26",
+      "slot": "D"
+    },
+    {
+      "base_sha": "6d0decef7ec36e205009e043239b0e38343ecea5",
+      "branch": "codex/d-resource-manager-env-status-timeout",
+      "head": "6d0decef7ec36e205009e043239b0e38343ecea5",
+      "slot": "D"
+    },
+    {
+      "base_sha": "26c43a2b94014e4eb6f68cfa0e6a9e6feec0088c",
+      "branch": "codex/d-gpu252-replacement-card-uuid",
+      "head": "26c43a2b94014e4eb6f68cfa0e6a9e6feec0088c",
+      "slot": "D"
+    },
+    {
+      "base_sha": "de4a4c0aaa531915f31d61bbdca892f83386c8ef",
+      "branch": "codex/d-scoped-lan-state-reconcile",
+      "head": "de4a4c0aaa531915f31d61bbdca892f83386c8ef",
+      "slot": "D"
+    },
+    {
+      "base_sha": "fb080aa9400e56a627834b8c54a4fb4e76e9eb3b",
+      "branch": "codex/d-ltx-t2v-runpod-canary",
+      "head": "4f392e6bac9a96defd96f7afe9b7d80847100fd2",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

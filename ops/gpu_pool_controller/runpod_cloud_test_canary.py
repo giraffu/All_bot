@@ -78,6 +78,8 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.i2i_pro_task_cases(image_object_key)
         if profile.task_type == "ltx_video":
             return self.ltx_video_task_cases(image_object_key)
+        if profile.task_type == "ltx_t2v":
+            return self.ltx_t2v_task_cases(image_object_key)
         return self.img2img_task_cases(image_object_key)
 
     def img2img_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
@@ -194,6 +196,41 @@ class RunPodCloudTestCanaryCaseBuilder:
                     "priority": 0,
                 },
             }
+        ]
+
+    def ltx_t2v_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        base_inputs = {
+            "duration": 5,
+            "duration_seconds": 5,
+            "seed": 20260722,
+        }
+        return [
+            {
+                "label": "ltx_t2v_sulphur_5s",
+                "expected_central_task_type": "ltx_t2v",
+                "payload": {
+                    "task_type": "ltx_t2v",
+                    "inputs": {**base_inputs, "resolution": "1280x704"},
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "ltx_t2v_ic_ingredients_5s",
+                "expected_central_task_type": "ltx_t2v_ic",
+                "payload": {
+                    "task_type": "ltx_t2v_ic",
+                    "inputs": {
+                        **base_inputs,
+                        "resolution": "768x448",
+                        "character_sheet": image_object_key,
+                    },
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            },
         ]
 
     def i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:

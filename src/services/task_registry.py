@@ -61,6 +61,7 @@ class TaskRegistry:
         allow_contribute: bool,
         user_cancel_allowed: bool,
         status: str,
+        task_updates: dict | None = None,
     ) -> None:
         """Persist a logical task's move to a non-cancellable backend stage."""
         tasks = await redis_client.get_active_tasks_strict()
@@ -77,6 +78,21 @@ class TaskRegistry:
                 "status": status,
             }
         )
+        if task_updates:
+            allowed_updates = {
+                "is_video",
+                "prompt",
+                "billing_resolution",
+                "requested_duration",
+                "metadata",
+            }
+            task_data.update(
+                {
+                    key: value
+                    for key, value in task_updates.items()
+                    if key in allowed_updates
+                }
+            )
         metadata = task_data.get("metadata")
         if isinstance(metadata, dict):
             metadata = dict(metadata)
