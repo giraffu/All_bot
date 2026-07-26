@@ -2144,9 +2144,10 @@ class LanAioProdOps:
             ),
             None,
         )
-        if not worker or worker.get("status") != "quarantined":
+        if not worker or worker.get("status") not in {"quarantined", "error"}:
             raise RuntimeError(
-                f"isolate-quarantined requires quarantined worker {slot.agent_id}"
+                "isolate-quarantined requires quarantined/error worker "
+                f"{slot.agent_id}"
             )
         if worker.get("current_task_id") or worker.get("current_task_type"):
             raise RuntimeError(

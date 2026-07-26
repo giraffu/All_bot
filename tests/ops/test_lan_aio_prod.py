@@ -2285,7 +2285,10 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
     ]
 
 
-def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue():
+@pytest.mark.parametrize("worker_status", ["quarantined", "error"])
+def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue(
+    worker_status,
+):
     class RecordingOps(LanAioProdOps):
         def __init__(self):
             super().__init__(
@@ -2300,7 +2303,7 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue():
             return [
                 {
                     "agent_id": "lan_aio_prod_gpu252_gpu1_img2img_lora_01",
-                    "status": "quarantined",
+                    "status": worker_status,
                     "current_task_id": None,
                     "current_task_type": None,
                 }
