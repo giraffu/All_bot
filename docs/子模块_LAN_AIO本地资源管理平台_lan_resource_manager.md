@@ -76,6 +76,10 @@ recover。
   `source_sha/release_channel=main/validation_mode=full/upstream_run_id` 补跑
   modular workflow，禁止 build-only。lightweight 或 release-tooling main 不需要
   新 bundle，部署候选沿 main 历史选择最近不可变 bundle。
+- main 身份固定由已认证 `gh api` 读取；Actions run 使用兼容旧版 GitHub CLI 的
+  run list 后在 runner 内按 `headSha` 精确过滤，不使用匿名 `git ls-remote` 或
+  `gh --commit`。catalog、candidate 与环境 SSH 状态在前端独立收敛；单个环境 SSH
+  不可达时显示脱敏 blocker，但不清空已成功读取的 main、bundle 和模块目录。
 - `GET /api/v1/deployments/catalog` 从 release policy 返回完整模块组，并按环境拓扑
   过滤；每次计划只接受一个模块。服务端保存 `release.py plan` 的短效 token，浏览器
   只看到安全预览。

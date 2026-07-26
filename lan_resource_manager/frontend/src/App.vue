@@ -110,22 +110,25 @@ async function loadFleet() {
   }
 }
 async function loadDeployment() {
-  try {
-    const [nextCatalog, nextCandidate, nextStatus] = await Promise.all([
-      getDeploymentCatalog(),
-      getReleaseCandidate(),
-      getEnvironmentStatus(environment.value),
-    ])
-    catalog.value = nextCatalog
-    releaseCandidate.value = nextCandidate
-    environmentStatus.value = nextStatus
-    if (!availableModules.value.includes(moduleName.value)) {
-      moduleName.value = availableModules.value[0] ?? ''
-    }
-    message.value = ''
-  } catch (error) {
-    message.value = error instanceof Error ? error.message : '部署状态读取失败'
+  const results = await Promise.allSettled([
+    getDeploymentCatalog(),
+    getReleaseCandidate(),
+    getEnvironmentStatus(environment.value),
+  ])
+  if (results[0].status === 'fulfilled') catalog.value = results[0].value
+  if (results[1].status === 'fulfilled') releaseCandidate.value = results[1].value
+  if (results[2].status === 'fulfilled') {
+    environmentStatus.value = results[2].value
+  } else {
+    environmentStatus.value = null
   }
+  if (!availableModules.value.includes(moduleName.value)) {
+    moduleName.value = availableModules.value[0] ?? ''
+  }
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason instanceof Error ? result.reason.message : '部署状态读取失败')
+  message.value = errors.join(' · ')
 }
 function watchOperation(value: Operation) {
   operation.value = value

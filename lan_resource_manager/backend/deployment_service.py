@@ -63,15 +63,30 @@ class DeploymentService:
                 )
 
     async def catalog(self):
-        return await self.operator.catalog()
+        try:
+            return await self.operator.catalog()
+        except ReleaseOperatorError as exc:
+            raise HTTPException(
+                502, detail="release_catalog_unavailable"
+            ) from exc
 
     async def candidate(self):
-        return await self.operator.candidate()
+        try:
+            return await self.operator.candidate()
+        except ReleaseOperatorError as exc:
+            raise HTTPException(
+                502, detail="release_candidate_unavailable"
+            ) from exc
 
     async def environment_status(self, environment: str):
         if environment not in {"test", "prod"}:
             raise HTTPException(404, detail="environment_not_found")
-        return await self.operator.environment_status(environment)
+        try:
+            return await self.operator.environment_status(environment)
+        except ReleaseOperatorError as exc:
+            raise HTTPException(
+                502, detail="environment_status_unavailable"
+            ) from exc
 
     async def create_plan(
         self, request: DeploymentPlanRequest, source_ip: str, request_id: str

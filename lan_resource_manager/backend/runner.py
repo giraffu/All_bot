@@ -179,7 +179,7 @@ class ReleaseRunner:
                     "--env",
                     environment,
                 ],
-                timeout=60,
+                timeout=15,
             )
         if action == "start_build":
             sha = payload.get("expected_main_sha")
@@ -276,10 +276,8 @@ class ReleaseRunner:
                 workflow,
                 "--branch",
                 "main",
-                "--commit",
-                sha,
                 "--limit",
-                "10",
+                "50",
                 "--json",
                 "databaseId,status,conclusion,headSha,url,event",
             ],
@@ -289,7 +287,11 @@ class ReleaseRunner:
             value = json.loads(output)
         except json.JSONDecodeError as exc:
             raise RunnerError("github_response_invalid") from exc
-        return value if isinstance(value, list) else []
+        return (
+            [item for item in value if item.get("headSha") == sha]
+            if isinstance(value, list)
+            else []
+        )
 
     async def _bundle_ready(self, sha: str) -> bool:
         process = await asyncio.create_subprocess_exec(
@@ -363,14 +365,15 @@ class ReleaseRunner:
     async def _candidate(self) -> dict[str, Any]:
         output = await self._run(
             [
-                "git",
-                "ls-remote",
-                "https://github.com/giraffu/All_bot.git",
-                "refs/heads/main",
+                "gh",
+                "api",
+                "repos/giraffu/All_bot/git/ref/heads/main",
+                "--jq",
+                ".object.sha",
             ],
             timeout=60,
         )
-        main_sha = output.split()[0] if output.split() else ""
+        main_sha = output.strip()
         if not SHA_RE.fullmatch(main_sha):
             raise RunnerError("main_sha_unavailable")
         ci_runs, modular_runs, bundle_ready, scope = await asyncio.gather(

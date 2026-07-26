@@ -36,12 +36,16 @@ UI，不实现第二套 fleet 或 release engine。
   `control-plane-release.yml`，已有同 SHA 成功 CI 时可带固定 `main/full` 参数与
   上游 run ID 补跑 modular workflow。禁止 build-only 包。lightweight 或
   release-tooling main 不构建 bundle，部署候选沿 main 历史选择最近不可变 bundle。
+  runner 必须通过已认证 `gh api` 解析 main，并从兼容的 run list 按 `headSha`
+  过滤；不得依赖容器内匿名 `git ls-remote` 或特定新版 `gh --commit` 参数。
 - 部署只允许 `deploy/release-policy.yml` 中一个完整独立模块组，并固定
   `release.py plan -> deploy`、短效 plan token、目标环境和精确 SHA。禁止
   `--skip-gate`、emergency、自由 service、config apply、rollback/recover 或 GPU
   execution。
 - Web 容器不得读取云 SSH、GitHub/GHCR 或 Pages 凭据。所有发布命令必须经过独立
   Unix socket runner 的动作和参数白名单；runner 同样不得挂载 Docker Socket。
+  远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
+  继续局部展示，不得让一个环境探测清空整个部署页。
 - 手动维护只管理 `/var/lib/allbot/<env>/runtime/GENERATION_MAINTENANCE`。只允许
   平台解除自身 owner metadata 建立的维护；活动/恢复事务或未知 owner 必须阻断。
 - 构建不会自动部署。测试与正式部署均须重新生成计划并输入
