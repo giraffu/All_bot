@@ -4,7 +4,7 @@
 
 QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；正式使用 main-bot 专属 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`。旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。
 
-官方 polling 入口通过 `qqcc_bot.polling_liveness` 同时观测两类进度：Local Bot API `getUpdates` 成功完成，以及已拉取 update 经过全部 handler group 处理完成。任一进度连续 180 秒停滞时，独立 watchdog 线程以专用退出码终止 QQCC 进程，由容器 `restart: always` 只重建该服务；正常空轮询持续刷新 heartbeat，因此安静时段不会误重启。watchdog 是最后防线，不是正常的交互恢复机制：官方 QQCC callback 共享路由有 45 秒总预算；可选示范媒体发送，以及场景上传提示、视频提交状态等非关键 Telegram I/O 分别有 15 秒总预算。quick image/video 与修仙市集一键应用的用户图片接收，其 `get_file`、Telegram 文件下载和 FSM 临时文件落盘也共用一个 15 秒 QQCC 总预算；超时取消或下载异常会删除可能已写入的半文件、提示下载失败并保持当前上传状态，用户可直接重试。后一类超时只记录 operation，不记录用户/token/消息正文，并继续进入等待图片状态或创建后台生成任务，避免单个慢请求占住官方单 update 通道直到 watchdog 重启。交互预算只作用于 QQCC 上下文，不改变主 Bot 行为。私有 Bot 使用 webhook worker，不启用 polling watchdog，但复用 QQCC 上下文的非关键交互预算。
+官方 polling 入口通过 `qqcc_bot.polling_liveness` 同时观测两类进度：Local Bot API `getUpdates` 成功完成，以及已拉取 update 经过全部 handler group 处理完成。任一进度连续 180 秒停滞时，独立 watchdog 线程以专用退出码终止 QQCC 进程，由容器 `restart: always` 只重建该服务；正常空轮询持续刷新 heartbeat，因此安静时段不会误重启。watchdog 是最后防线，不是正常的交互恢复机制：官方 QQCC callback 共享路由有 45 秒总预算；可选示范媒体发送，以及场景上传提示、视频提交状态等非关键 Telegram I/O 分别有 15 秒总预算。quick image/video 与修仙市集一键应用的用户图片接收，其 `get_file`、Telegram 文件下载和 FSM 临时文件落盘也共用一个 15 秒 QQCC 总预算；超时取消或下载异常会删除可能已写入的半文件、提示下载失败并保持当前上传状态，用户可直接重试。市集一键应用下载成功后只在当前 update 内完成受限接收，完整生成与终态监视由受管后台任务继续；后台异常仍清理临时文件并提示用户，media handler 不同步等待数分钟的任务终态。后一类超时只记录 operation，不记录用户/token/消息正文，并继续进入等待图片状态或创建后台生成任务，避免单个慢请求占住官方单 update 通道直到 watchdog 重启。交互预算只作用于 QQCC 上下文，不改变主 Bot 行为。私有 Bot 使用 webhook worker，不启用 polling watchdog，但复用 QQCC 上下文的非关键交互预算。
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
@@ -160,7 +160,7 @@ AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata�
 - `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集 facade，负责 `qg:` callback 注册、分页加载、Gallery file_id 缓存发送和 Web handoff。
 - `qqcc_bot/gallery_market_view.py`：市集菜单、帖子 caption、互动/apply 按钮 view-model。
 - `qqcc_bot/gallery_market_interactions.py`：点赞/点踩 callback 与 caption 计数更新。
-- `qqcc_bot/gallery_market_apply.py`：轻量一键应用 session、图片下载、原生单图提交和失败临时文件清理。
+- `qqcc_bot/gallery_market_apply.py`：轻量一键应用 session、受限图片下载、受管后台原生单图提交和失败临时文件清理。
 - `qqcc_bot/regeneration_callback.py`：QQCC `qqcc_regenerate:<task_id>` callback，负责从本人 History 准备同功能重生成、额度检查、后台启动和失败临时文件清理；不要把重生成逻辑写回 FSM。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、QQCC 市集等必要 callback 注册模块，并在导入后校验 QQCC 必需 callback prefix manifest；旧投稿/公开分享 callback 在这里直接拒绝，不进入共享 Gallery 投稿或公开处理。
 - `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` / `qfilter_scene:<id>` 进入 AI绘图或 AI滤镜单图提交流程；FSM 只负责 Telegram 状态、图片接收、额度检查和回复。主 Bot 的旧 `快速脱衣` / `快速自慰` / `快速换脸` / `AI滤镜` 文本入口只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。

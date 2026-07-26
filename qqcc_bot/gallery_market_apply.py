@@ -211,10 +211,37 @@ async def submit_qqcc_gallery_apply_session(
     raise ValueError(f"Unsupported QQCC gallery apply task type: {task_type}")
 
 
+async def run_qqcc_gallery_apply_submission(
+    *,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    image_path: str,
+    session: dict,
+    submit_session_func,
+    cleanup_temp_files_func,
+    reply_text_func,
+) -> None:
+    try:
+        await submit_session_func(
+            update=update,
+            context=context,
+            image_path=image_path,
+            session=session,
+        )
+    except Exception:
+        logger.exception("Failed to submit QQCC market apply task.")
+        cleanup_temp_files_func([image_path])
+        await reply_text_func(
+            update.effective_message,
+            _t(context, "qqcc.market.apply_submit_failed"),
+        )
+
+
 async def handle_qqcc_gallery_apply_media(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
+    create_background_task_func,
     download_image_func=download_market_apply_image,
     submit_session_func=submit_qqcc_gallery_apply_session,
     cleanup_temp_files_func=cleanup_fsm_temp_files,
@@ -234,16 +261,24 @@ async def handle_qqcc_gallery_apply_media(
     if not image_path:
         return None
 
+    context.user_data.pop(QQCC_GALLERY_APPLY_SESSION_KEY, None)
+    submission = run_qqcc_gallery_apply_submission(
+        update=update,
+        context=context,
+        image_path=image_path,
+        session=session,
+        submit_session_func=submit_session_func,
+        cleanup_temp_files_func=cleanup_temp_files_func,
+        reply_text_func=reply_text_func,
+    )
     try:
-        context.user_data.pop(QQCC_GALLERY_APPLY_SESSION_KEY, None)
-        await submit_session_func(
-            update=update,
-            context=context,
-            image_path=image_path,
-            session=session,
-        )
-    except Exception:
-        logger.exception("Failed to submit QQCC market apply task.")
+        create_background_task_func(context, submission)
+    except BaseException:
+        submission.close()
+        logger.exception("Failed to start QQCC market apply task.")
         cleanup_temp_files_func([image_path])
-        await reply_text_func(message, _t(context, "qqcc.market.apply_submit_failed"))
+        await reply_text_func(
+            message,
+            _t(context, "qqcc.market.apply_submit_failed"),
+        )
     return None

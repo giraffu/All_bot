@@ -72,6 +72,7 @@ from src.services.wan22_video_v2_extension_service import (
     is_wan22_stitched_result,
 )
 from src.utils import (
+    create_background_task,
     robust_delete_message,
     robust_reply_text,
     robust_send_message,
@@ -650,4 +651,5 @@ async def handle_qqcc_gallery_apply_media(
         cleanup_temp_files_func=cleanup_fsm_temp_files,
         reply_text_func=robust_reply_text,
         is_session_expired_func=is_qqcc_gallery_apply_session_expired,
+        create_background_task_func=create_background_task,
     )
