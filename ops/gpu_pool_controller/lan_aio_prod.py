@@ -2144,12 +2144,20 @@ class LanAioProdOps:
             ),
             None,
         )
-        if not worker or worker.get("status") not in {"quarantined", "error"}:
+        if worker is None:
+            if self._control_state(slot.agent_id) != "disabled":
+                raise RuntimeError(
+                    "isolate-quarantined requires disabled control for missing worker "
+                    f"{slot.agent_id}"
+                )
+        elif worker.get("status") not in {"quarantined", "error"}:
             raise RuntimeError(
                 "isolate-quarantined requires quarantined/error worker "
                 f"{slot.agent_id}"
             )
-        if worker.get("current_task_id") or worker.get("current_task_type"):
+        if worker and (
+            worker.get("current_task_id") or worker.get("current_task_type")
+        ):
             raise RuntimeError(
                 f"isolate-quarantined refuses active task on {slot.agent_id}"
             )
