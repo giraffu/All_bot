@@ -62,6 +62,7 @@ from src.services.qqcc_runtime_context import (
     get_private_qqcc_bot_id,
     is_qqcc_bot_context,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
+    run_qqcc_interaction_io,
 )
 from src.services.qqcc_scene_billing_service import resolve_qqcc_scene_fixed_credit_cost
 from src.services.quick_video_submission_service import (
@@ -579,9 +580,17 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     ),
                 )]]
             )
-    await robust_reply_text(
+    reply_awaitable = robust_reply_text(
         reply_message, msg, reply_markup=reply_markup, parse_mode="Markdown"
     )
+    if is_qqcc_bot_context(context):
+        await run_qqcc_interaction_io(
+            reply_awaitable,
+            operation="quick_video_scene_prompt",
+            logger=logger,
+        )
+    else:
+        await reply_awaitable
     return QuickVideoState.WAIT_IMAGE
 
 
@@ -873,14 +882,30 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     status_message = query.message if query is not None else None
     if status_message is not None:
-        await robust_edit_text(
+        status_awaitable = robust_edit_text(
             status_message, _t(context, "fsm.quick_video.submit", cost=plan.total_cost)
         )
+        if is_qqcc_bot_context(context):
+            await run_qqcc_interaction_io(
+                status_awaitable,
+                operation="quick_video_submit_status",
+                logger=logger,
+            )
+        else:
+            await status_awaitable
     else:
-        status_message = await robust_reply_text(
+        status_awaitable = robust_reply_text(
             update.message,
             _t(context, "fsm.quick_video.submit", cost=plan.total_cost),
         )
+        if is_qqcc_bot_context(context):
+            status_message = await run_qqcc_interaction_io(
+                status_awaitable,
+                operation="quick_video_submit_status",
+                logger=logger,
+            )
+        else:
+            status_message = await status_awaitable
 
     create_background_task(
         context,

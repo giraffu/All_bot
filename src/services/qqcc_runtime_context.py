@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, TypeVar
 
 from src.services.qqcc_config_service import (
     load_runtime_qqcc_config,
@@ -10,7 +11,9 @@ from src.services.qqcc_config_service import (
 
 QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
 QQCC_PRIVATE_BOT_CLIENT_TYPE_PREFIX = "bot:qqcc-private:"
+QQCC_INTERACTION_IO_TIMEOUT_SECONDS = 15.0
 LoadQQCCConfigFunc = Callable[[], Awaitable[dict[str, Any]]]
+InteractionResult = TypeVar("InteractionResult")
 
 
 def get_qqcc_bot_data(context: Any) -> dict[str, Any]:
@@ -45,6 +48,27 @@ def is_qqcc_bot_context(context: Any) -> bool:
         bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE
         or is_private_qqcc_bot_context(context)
     )
+
+
+async def run_qqcc_interaction_io(
+    awaitable: Awaitable[InteractionResult],
+    *,
+    operation: str,
+    logger: logging.Logger,
+) -> InteractionResult | None:
+    """Bound non-critical QQCC Telegram I/O so one update cannot stall polling."""
+    try:
+        return await asyncio.wait_for(
+            awaitable,
+            timeout=QQCC_INTERACTION_IO_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "QQCC interaction I/O timed out operation=%s timeout_seconds=%.1f",
+            operation,
+            QQCC_INTERACTION_IO_TIMEOUT_SECONDS,
+        )
+        return None
 
 
 async def load_qqcc_config_for_context(
