@@ -88,7 +88,7 @@ def test_plan_and_deploy_commands_are_fixed(tmp_path):
     assert "--services" not in deploy
 
 
-def test_environment_status_has_a_short_read_timeout(tmp_path):
+def test_environment_status_allows_slow_read_only_remote_probe(tmp_path):
     captured = []
 
     async def fake_run(command, **kwargs):
@@ -100,7 +100,7 @@ def test_environment_status_has_a_short_read_timeout(tmp_path):
         runner.dispatch("environment_status", {"environment": "test"})
     )
     assert result == {"environment": "test"}
-    assert captured[0][1]["timeout"] == 15
+    assert captured[0][1]["timeout"] == 30
 
 
 def test_deploy_rejects_non_catalog_module_before_subprocess(tmp_path):
