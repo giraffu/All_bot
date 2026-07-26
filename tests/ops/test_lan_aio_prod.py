@@ -2284,6 +2284,63 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
     ]
 
 
+def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def _system_workers(self):
+            return [
+                {
+                    "agent_id": "lan_aio_prod_gpu252_gpu1_img2img_lora_01",
+                    "status": "quarantined",
+                    "current_task_id": None,
+                    "current_task_type": None,
+                }
+            ]
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            assert agent_id == "lan_aio_prod_gpu252_gpu1_img2img_lora_01"
+            assert state == "disabled"
+            assert ttl_seconds is None
+            self.events.append("persistent-disable")
+
+        def _verify_comfy_queue_idle(self, slot):  # pragma: no cover - tripwire
+            raise AssertionError("fault isolation must not depend on dead Comfy")
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            if "docker stop" in command:
+                self.events.append("docker-stop")
+                return ""
+            assert "docker inspect" in command
+            self.events.append("verify-stopped")
+            return "false\n"
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-img2img_lora"]
+
+    result = ops.isolate_quarantined([slot])
+
+    assert result == {
+        "ok": True,
+        "action": "isolate-quarantined",
+        "slot": "gpu-252-gpu1-img2img_lora",
+        "intake": "disabled",
+        "container": "stopped",
+    }
+    assert ops.events == [
+        "persistent-disable",
+        "docker-stop",
+        "verify-stopped",
+    ]
+
+
 def test_lan_aio_disabled_canary_queue_check_retries_transient_failure():
     class RecordingOps(LanAioProdOps):
         def __init__(self):

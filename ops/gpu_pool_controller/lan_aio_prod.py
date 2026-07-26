@@ -1053,10 +1053,17 @@ class LanAioProdOps:
                         physical_slot
                     )
                     observed_slot = self.slots.get(str(observed_slot_id or ""))
-                    if action == "canary-stop-disabled" and observed_slot is None:
+                    if action in {
+                        "canary-stop-disabled",
+                        "isolate-quarantined",
+                    } and observed_slot is None:
                         physical_state["current"] = {}
                         physical_state["intentionally_empty"] = {
-                            "reason": "disabled canary stopped after local acceptance",
+                            "reason": (
+                                "fault-quarantined runtime isolated"
+                                if action == "isolate-quarantined"
+                                else "disabled canary stopped after local acceptance"
+                            ),
                             "recorded_at": datetime.now(timezone.utc).isoformat(),
                             "operation_id": operation_id,
                         }
@@ -2117,6 +2124,63 @@ class LanAioProdOps:
             "action": "canary-stop-disabled",
             "slot": slot.id,
             "intake": "disabled",
+        }
+
+    def isolate_quarantined(
+        self,
+        slots: list[LanAioProdSlot],
+    ) -> dict[str, Any]:
+        """Persistently disable and stop one fault-quarantined idle runtime."""
+
+        if len(slots) != 1:
+            raise RuntimeError("isolate-quarantined requires exactly one --slot")
+        slot = slots[0]
+        worker = next(
+            (
+                item
+                for item in self._system_workers()
+                if item.get("agent_id") == slot.agent_id
+            ),
+            None,
+        )
+        if not worker or worker.get("status") != "quarantined":
+            raise RuntimeError(
+                f"isolate-quarantined requires quarantined worker {slot.agent_id}"
+            )
+        if worker.get("current_task_id") or worker.get("current_task_type"):
+            raise RuntimeError(
+                f"isolate-quarantined refuses active task on {slot.agent_id}"
+            )
+        self._set_control(
+            slot.agent_id,
+            "disabled",
+            "lan_aio_quarantined_fault_isolation",
+        )
+        self._ssh(
+            slot.ssh_host,
+            (
+                "timeout 45 docker stop --time 15 "
+                f"'{slot.container_name}' >/dev/null"
+            ),
+        )
+        running = self._ssh(
+            slot.ssh_host,
+            (
+                f"docker inspect -f '{{{{.State.Running}}}}' "
+                f"'{slot.container_name}'"
+            ),
+            capture=True,
+        )
+        if running.strip().lower() != "false":
+            raise RuntimeError(
+                f"quarantined container did not stop: {slot.container_name}"
+            )
+        return {
+            "ok": True,
+            "action": "isolate-quarantined",
+            "slot": slot.id,
+            "intake": "disabled",
+            "container": "stopped",
         }
 
     def rollback(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -3430,6 +3494,7 @@ def build_parser() -> argparse.ArgumentParser:
             "release-rollout",
             "canary-start-disabled",
             "canary-stop-disabled",
+            "isolate-quarantined",
             "state-init",
             "state-reconcile",
         ),
@@ -3687,6 +3752,8 @@ def _run_raw_execute_action(
         return ops.start_disabled_canary(slots)
     if args.action == "canary-stop-disabled":
         return ops.stop_disabled_canary(slots)
+    if args.action == "isolate-quarantined":
+        return ops.isolate_quarantined(slots)
     if args.action == "start-disabled":
         return ops.start_disabled(slots)
     if args.action == "enable-aio":
