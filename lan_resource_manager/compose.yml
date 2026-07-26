@@ -1,0 +1,64 @@
+services:
+  lan-resource-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    image: allbot/lan-resource-manager:local
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - python
+      - -m
+      - uvicorn
+      - lan_resource_manager.backend.main:app
+      - --host
+      - "${RESOURCE_MANAGER_BIND_IP:-192.168.1.115}"
+      - --port
+      - "${RESOURCE_MANAGER_PORT:-8096}"
+      - --workers
+      - "1"
+      - --no-access-log
+    environment:
+      ALLBOT_ROOT: /workspace
+      LAN_AIO_STATE_DIR: /state
+      RESOURCE_MANAGER_DATA_DIR: /data
+      LAN_AIO_PROD_ENV_FILE: /run/secrets/cloud-prod.env
+      LAN_AIO_AIO_ENV_FILE: /dev/null
+      LAN_AIO_MODEL_ENV_FILE: /run/secrets/lan-model-cache.env
+      RESOURCE_MANAGER_ALLOWED_NETWORKS: "${RESOURCE_MANAGER_ALLOWED_NETWORKS:-192.168.1.0/24,127.0.0.0/8}"
+      RESOURCE_MANAGER_ALLOWED_HOSTS: "${RESOURCE_MANAGER_ALLOWED_HOSTS:-192.168.1.115,localhost,127.0.0.1}"
+      RESOURCE_MANAGER_ALLOWED_ORIGINS: "${RESOURCE_MANAGER_ALLOWED_ORIGINS:-http://192.168.1.115:8096}"
+      RESOURCE_MANAGER_LIVE_STALE_SECONDS: "${RESOURCE_MANAGER_LIVE_STALE_SECONDS:-180}"
+    volumes:
+      - "${ALLBOT_ROOT:-..}:/workspace:ro"
+      - "${LAN_AIO_STATE_DIR:-/home/hfy/.local/state/allbot/lan-aio}:/state"
+      - "lan-resource-manager-data:/data"
+      - "${LAN_AIO_PROD_ENV_FILE:-../.env.cloud.prod}:/run/secrets/cloud-prod.env:ro"
+      - "${LAN_AIO_MODEL_ENV_FILE:-../.env.lan.model-cache}:/run/secrets/lan-model-cache.env:ro"
+      - "${LAN_GPU_SSH_KEY:-/home/hfy/.ssh/allbot_lan_gpu_ops_20260608_ed25519}:/run/secrets/lan_gpu_ops_key:ro"
+      - "${LAN_GPU_KNOWN_HOSTS:-/home/hfy/.ssh/known_hosts}:/run/secrets/known_hosts:ro"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /home/app/.cache:size=16m,uid=1000,gid=1000,mode=0700
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://${RESOURCE_MANAGER_BIND_IP:-192.168.1.115}:${RESOURCE_MANAGER_PORT:-8096}/api/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+
+volumes:
+  lan-resource-manager-data:

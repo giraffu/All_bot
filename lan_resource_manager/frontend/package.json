@@ -1,0 +1,25 @@
+{
+  "name": "allbot-lan-resource-manager",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "vue": "^3.5.24"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/test-utils": "^2.4.10",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^7.2.4",
+    "vue-tsc": "^3.3.3",
+    "vitest": "^4.1.6"
+  }
+}
