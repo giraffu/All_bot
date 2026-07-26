@@ -2445,25 +2445,11 @@ class LanAioProdOps:
                         "target container exists but is not safe to start: "
                         f"{selected.container_name} status={status}"
                     )
-                desired_image_ref = self.config.profiles[
-                    selected.target_profile_id
-                ].all_in_one_image_ref
-                actual_image_ref = self._remote_target_container_image_ref(selected)
-                if desired_image_ref and actual_image_ref != desired_image_ref:
-                    start_payload = self.start_disabled([selected])
-                else:
-                    self._ssh(
-                        selected.ssh_host,
-                        f"docker start '{selected.container_name}' >/dev/null",
-                    )
-                    self._wait_container_health(selected)
-                    self._verify_disabled_heartbeat(selected)
-                    start_payload = {
-                        "ok": True,
-                        "action": "docker-start",
-                        "slot": selected.id,
-                        "previous_state": status,
-                    }
+                # Recreate stopped candidates through the managed compose path.
+                # Image equality does not prove that environment, mounts, ports,
+                # or other runtime configuration still matches the current
+                # catalog and operator inputs.
+                start_payload = self.start_disabled([selected])
             else:
                 desired_image_ref = self.config.profiles[
                     selected.target_profile_id

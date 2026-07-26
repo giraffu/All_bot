@@ -2672,6 +2672,64 @@ def test_lan_aio_recover_recreates_exited_candidate_with_stale_image():
     )
 
 
+def test_lan_aio_recover_recreates_exited_candidate_with_current_image():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.started_disabled_slots: list[str] = []
+            self.ssh_commands: list[str] = []
+
+        def _set_control(self, *args, **kwargs):
+            return None
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.ssh_commands.append(command)
+            return ""
+
+        def _remote_target_container_state(self, slot):
+            return {
+                "exists": True,
+                "name": slot.container_name,
+                "status": "exited",
+                "running": False,
+            }
+
+        def _remote_target_container_image_ref(self, slot):
+            return self.config.profiles[
+                slot.target_profile_id
+            ].all_in_one_image_ref
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+        def start_disabled(self, slots):
+            self.started_disabled_slots.extend(slot.id for slot in slots)
+            return {"ok": True, "action": "start-disabled", "slot": slots[0].id}
+
+    ops = RecordingOps()
+
+    result = ops.recover_physical_slot(
+        physical_slot="gpu-252:gpu0",
+        prefer="candidate",
+        selected_slot_id="gpu-252-gpu0-image_to_video",
+    )
+
+    assert result["start"]["action"] == "start-disabled"
+    assert ops.started_disabled_slots == ["gpu-252-gpu0-image_to_video"]
+    assert not any(
+        "docker start 'allbot-lan-aio-gpu-252-gpu0-image_to_video-prod'" in command
+        for command in ops.ssh_commands
+    )
+
+
 def test_lan_aio_recovery_guard_accepts_explicit_slot_from_intentionally_empty_state(
     tmp_path: Path,
 ):

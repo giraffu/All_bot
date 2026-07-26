@@ -104,7 +104,7 @@ Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime sc
 
 LAN AIO 当前态、候选和缓存状态不在本文或 Git 维护静态 slot 表。先读 `${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled`；只有 live、ledger、Git catalog 三方一致且没有未完成 operation 才允许 mutation。确认 drift 后用带原因的 `state-reconcile --execute` 收口，禁止静默覆盖。故障隔离后明确保持停机的物理卡，可在 live 成功证明没有运行 catalog 容器时追加精确 `--physical-slot <node>:gpuN`，将 current 收口为带原因和 operation ID 的 `intentionally_empty`；SSH/探测错误、其它卡歧义或未来出现新容器仍会 fail closed。
 
-fleet helper 的普通切换只允许事务化 `takeover`，异常恢复只允许精确 `recover`；`drain-legacy/stop-old/start-disabled/rollback` 仍是内部 phase 名称，但不再允许单独 `--execute`。下文若描述这些名称，均表示 takeover 内部顺序，不是独立操作入口。
+fleet helper 的普通切换只允许事务化 `takeover`，异常恢复只允许精确 `recover`；`drain-legacy/stop-old/start-disabled/rollback` 仍是内部 phase 名称，但不再允许单独 `--execute`。下文若描述这些名称，均表示 takeover 内部顺序，不是独立操作入口。`recover` 遇到已停止候选时始终通过 managed compose 重建并重新验收；即使 image digest 未变化，也不能直接 `docker start`，因为本地主受限 env、挂载、端口或其它运行配置可能已经更新。
 
 LAN AIO 容器冷启动若需通过本地主 VPN 获取公开依赖，只能在本地主受限 env 中配置 `LAN_AIO_HTTP_PROXY`、`LAN_AIO_HTTPS_PROXY` 与 `LAN_AIO_NO_PROXY`；operator 会同时映射大小写 proxy 变量到目标容器。LAN registry、Central、MinIO 与节点地址必须保留在 `NO_PROXY`，代理端点不得硬编码进 Git catalog 或 Compose；未配置时保持原有直连行为。
 
