@@ -77,6 +77,7 @@ MANAGED_MUTATION_ACTIONS = {
     "release-rollout",
     "canary-start-disabled",
     "canary-stop-disabled",
+    "isolate-quarantined",
 }
 DIRECT_TRANSITION_ACTIONS = {
     "drain-legacy",

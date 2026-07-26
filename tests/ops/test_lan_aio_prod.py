@@ -7,6 +7,7 @@ import pytest
 from ops.gpu_pool_controller.config_loader import load_controller_config
 from ops.gpu_pool_controller.lan_aio_prod import (
     LanAioProdOps,
+    MANAGED_MUTATION_ACTIONS,
     assert_prod_compose,
     load_lan_aio_prod_slots,
     main as lan_aio_main,
@@ -2339,6 +2340,10 @@ def test_lan_aio_quarantined_slot_isolation_stops_without_comfy_queue():
         "docker-stop",
         "verify-stopped",
     ]
+
+
+def test_lan_aio_quarantined_isolation_is_a_managed_mutation():
+    assert "isolate-quarantined" in MANAGED_MUTATION_ACTIONS
 
 
 def test_lan_aio_disabled_canary_queue_check_retries_transient_failure():
