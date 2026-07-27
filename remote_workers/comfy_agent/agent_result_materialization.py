@@ -181,11 +181,8 @@ def _compose_character_sheet(images: list[bytes]) -> bytes:
     for index, payload in enumerate(images):
         try:
             with Image.open(io.BytesIO(payload)) as source:
-                tile = ImageOps.pad(
-                    source.convert("RGB"),
-                    (512, 448),
-                    method=Image.Resampling.LANCZOS,
-                    color="black",
+                tile = ImageOps.fit(
+                    source.convert("RGB"), (512, 448), method=Image.Resampling.LANCZOS
                 )
         except Exception as exc:
             raise RuntimeError(
