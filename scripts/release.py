@@ -6147,16 +6147,7 @@ def _rollback_cloud_stack(
     if transaction.get("execution_profile") == "streamlined":
         if bool(getattr(args, "streamlined_cloud_rolled_back", False)):
             return
-        failure_detail = str(transaction.get("failure_detail") or "")
-        if failure_detail.startswith(
-            (
-                "streamlined cloud deployment requires ",
-                "streamlined release artifacts are unavailable",
-                "streamlined target artifact is invalid:",
-                "streamlined target identity is invalid:",
-                "streamlined target config is unavailable:",
-            )
-        ):
+        if _is_streamlined_pre_mutation_failure(transaction):
             # These checks run locally before the remote replacement script is
             # invoked, so there is no target mutation to compensate.
             return
@@ -6451,6 +6442,23 @@ def _clear_transaction_maintenance(
     _remote_shell(host, script, execute=args.execute)
 
 
+def _is_streamlined_pre_mutation_failure(
+    transaction: Mapping[str, Any],
+) -> bool:
+    if transaction.get("execution_profile") != "streamlined":
+        return False
+    failure_detail = str(transaction.get("failure_detail") or "")
+    return failure_detail.startswith(
+        (
+            "streamlined cloud deployment requires ",
+            "streamlined release artifacts are unavailable",
+            "streamlined target artifact is invalid:",
+            "streamlined target identity is invalid:",
+            "streamlined target config is unavailable:",
+        )
+    )
+
+
 def verify_deploy_module_no_change(
     args: argparse.Namespace,
     impact: ReleaseImpact,
@@ -6716,16 +6724,30 @@ def _validate_recovered_stack(
                         f"recovered artifact identity is incorrect: {artifact_name}"
                     )
         elif previous.get("kind") == "legacy":
-            track = (
-                str(transaction["track"])
-                if transaction.get("track") in RELEASE_TRACKS
-                else None
-            )
-            snapshot = (
-                _cloud_release_dir(str(transaction["target_sha"]), track)
-                + "/legacy-cloud-running.txt"
-            )
-            script = f"""set -euo pipefail
+            if _is_streamlined_pre_mutation_failure(transaction):
+                project = ENVIRONMENT[args.env]["project"]
+                services = " ".join(
+                    shlex.quote(item) for item in sorted(selected_cloud)
+                )
+                script = f"""set -euo pipefail
+for service in {services}; do
+  ids="$(docker ps -q --filter label=com.docker.compose.project={shlex.quote(project)} --filter label=com.docker.compose.service="$service")"
+  test "$(printf '%s\\n' "$ids" | sed '/^$/d' | wc -l)" = 1
+  health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}' "$ids")"
+  [ "$health" = healthy ] || [ "$health" = running ]
+done
+"""
+            else:
+                track = (
+                    str(transaction["track"])
+                    if transaction.get("track") in RELEASE_TRACKS
+                    else None
+                )
+                snapshot = (
+                    _cloud_release_dir(str(transaction["target_sha"]), track)
+                    + "/legacy-cloud-running.txt"
+                )
+                script = f"""set -euo pipefail
 source_file={shlex.quote(snapshot)}
 [ -s "$source_file" ] || source_file={shlex.quote(snapshot + ".recovered")}
 test -s "$source_file"

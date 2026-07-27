@@ -7469,6 +7469,43 @@ def test_streamlined_pre_mutation_failure_needs_no_target_rollback():
     )
 
 
+def test_streamlined_pre_mutation_recovery_validates_unchanged_compose_stack(
+    monkeypatch,
+):
+    module = _load_module()
+    scripts = []
+    monkeypatch.setattr(
+        module,
+        "filter_enabled_cloud_services",
+        lambda *_args: ({"central-api", "imgproxy"}, set()),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: scripts.append((host, script, execute)),
+    )
+    args = SimpleNamespace(env="test", remote_host="cloud-test")
+    transaction = {
+        "execution_profile": "streamlined",
+        "failure_detail": "streamlined target artifact is invalid: imgproxy",
+        "attempted_stages": ["cloud"],
+        "previous": {"kind": "legacy"},
+    }
+
+    module._validate_recovered_stack(
+        args,
+        module.ReleaseImpact(services={"central-api", "imgproxy"}),
+        transaction,
+        {},
+    )
+
+    assert len(scripts) == 1
+    assert scripts[0][0] == "cloud-test"
+    assert "com.docker.compose.project=allbot-test" in scripts[0][1]
+    assert "central-api imgproxy" in scripts[0][1]
+    assert scripts[0][2] is True
+
+
 def test_streamlined_preflight_skips_cloud_and_full_rollback_checks(tmp_path):
     module = _load_module()
     called = []
