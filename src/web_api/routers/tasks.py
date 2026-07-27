@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -38,6 +39,7 @@ def _is_operator_canary_authorized(candidate: str | None) -> bool:
     expected = os.getenv("AGENT_SECRET_TOKEN", "")
     return bool(
         expected
+        and isinstance(candidate, str)
         and candidate
         and hmac.compare_digest(candidate.encode(), expected.encode())
     )
@@ -54,10 +56,12 @@ async def cancel_pending_task(
 async def create_generation_task(
     req: TaskGenerateRequest,
     current_user: User = Depends(get_current_user),
-    operator_canary_token: str | None = Header(
-        default=None,
-        alias="X-AllBot-Cloud-Test-Canary-Token",
-    ),
+    operator_canary_token: Annotated[
+        str | None,
+        Header(
+            alias="X-AllBot-Cloud-Test-Canary-Token",
+        ),
+    ] = None,
 ):
     """
     Submit a generation task (image/video).
