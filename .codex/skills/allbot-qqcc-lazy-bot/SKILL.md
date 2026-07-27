@@ -94,11 +94,11 @@ QQCC 懒人 Bot 配置已从主 Dashboard 剥离为独立 QQCC Config Web。主 
 
 ### QQCC AI动图输入比例边界
 
-`video_scenes[].aspect_ratio` 只作用 QQCC `AI动图`。`source` 原样直通；其它值由 `src/services/qqcc_video_frame_adapter.py` 在提交前做 JPEG/PNG 校验、EXIF 方向归一和最大内接精确整数比例居中裁剪，不拉伸、不补边、不扩图、不主动放大。单首帧旧/v2 提交适配后的首图；尾帧链先用适配首图绘制，再适配最终尾图。私有 durable continuation 将比例保存为 QQCC 内部 stage 参数，在最终 executor 对 `original/current` 应用后必须剥离；后台示例生成在上传 Central 临时输入前适配 R2 bytes。适配失败必须清理 FSM 临时文件、提示图片处理失败，并在调用任务入口和扣费前停止。
+`video_scenes[].aspect_ratio` 只作用 QQCC `AI动图`。`source` 原样直通；其它值由 `src/services/qqcc_video_frame_adapter.py` 在提交前做 JPEG/PNG 校验与 EXIF 方向归一，再调用通用 `smart_image_aspect_service`：预计保留面积低于 55% 时直接使用暗化模糊背景补边；其余先由媒体运行时的 YuNet 识别人脸安全框，能完整容纳时做焦点裁剪，多人安全框装不下、检测器缺失/失败时补边；成功检测但无人脸时使用 SmartCrop 显著性裁剪，依赖异常才回到居中裁剪。禁止拉伸人物，任何不确定检测不得强行裁头。单首帧旧/v2 提交适配后的首图；尾帧链先用适配首图绘制，再适配最终尾图。私有 durable continuation 将比例保存为 QQCC 内部 stage 参数，在最终 executor 对 `original/current` 应用后必须剥离；后台示例生成在上传 Central 临时输入前适配 R2 bytes。适配失败必须清理 FSM 临时文件、提示图片处理失败，并在调用任务入口和扣费前停止。
 
 QQCC 视频模板串联属于 Bot 编排层，不是 Comfy workflow 嵌套或比例开关。全链费用在首段提交前汇总；第一段沿用普通队列/取消，后续段固定 continuation 优先级且不可单独取消。官方 Bot 在内存中收集已完成段并生成最终 History；私有 Bot checkpoint 保存场景快照、当前首帧和各段视频引用，最终 `delivery_pending` 拼接后投递。后续段失败时官方 Bot 返回已成功前缀，失败任务沿用现有退款幂等；拼接本身不扣费。后台示例用 24 小时 Redis checkpoint 执行同一完整链。
 
-链式视频媒体处理的运行时依赖必须落在真实消费者镜像，不得只修改已退出模块化发布路径的 legacy Dockerfile。`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 统一继承 `python-media-runtime-base`，full-validation 必须分别在四个最终 digest 中执行 `ffmpeg -version` 与 `ffprobe -version`。尾帧处理发生在某段成功之后；此处失败应提示“该段已生成，但尾帧处理失败”，不得误报为该段生成失败，也不得改变成功段计费或失败任务退款语义。
+链式视频与智能画幅处理的运行时依赖必须落在真实消费者镜像，不得只修改已退出模块化发布路径的 legacy Dockerfile。`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 统一继承 `python-media-runtime-base`；该基础层固定 ffmpeg/ffprobe、OpenCV headless、SmartCrop 和带 SHA-256 校验的 YuNet ONNX。full-validation 必须分别在四个最终 digest 中执行双媒体工具 smoke，并验证 `cv2` / `smartcrop` 可导入和模型文件存在。尾帧处理发生在某段成功之后；此处失败应提示“该段已生成，但尾帧处理失败”，不得误报为该段生成失败，也不得改变成功段计费或失败任务退款语义。
 
 这不是 Comfy workflow 比例开关。不得修改主 Bot、固定 `1280x704` 的 `AI视频`、`Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、画质档位或计费；比例字段不得进入 Central/Worker payload。重新生成及 AI绘图结果的“生成动图”必须从当前场景重建同一 Quick Video plan，自然读取最新比例。
 
