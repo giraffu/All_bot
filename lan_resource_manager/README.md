@@ -1,8 +1,9 @@
 # AllBot 本地资源管理平台
 
 仅供本地主服务器局域网使用的资源控制面。`LAN AIO 资源管理` Tab 合并 Git
-catalog、XDG ledger 和 live status；`模块构建部署` Tab 只消费可信 main bundle，
-通过隔离 runner 调用既有不可变发布器。
+catalog、XDG ledger 和 live status；`模块构建部署` Tab 管理 A–H handoff
+集成/安全对齐、可信 main bundle 与模块化测试部署，通过隔离 runner 调用既有
+协调器和不可变发布器。
 
 ## 安全边界
 
@@ -20,6 +21,16 @@ catalog、XDG ledger 和 live status；`模块构建部署` Tab 只消费可信 
   bundle，并沿 main 历史使用最近的不可变部署候选。
 - 每次只部署 `release-policy.yml` 的一个完整模块组，先生成短效计划，再输入
   `TEST|PROD <module> <40位SHA>`；构建成功不会自动部署。
+- 全部集成固定使用测试专用 coordinator；全部对齐只刷新 clean 且已被 main 包含的
+  槽；测试全模块部署逐个调用既有 `plan -> deploy`。三者均无正式批量发布能力。
+- 失败批次必须按界面给出的 `RETRY <batch>` 精确确认后原批重试；runner 的临时
+  worktree 与短效 plan 使用持久 release cache volume，并配置固定审计提交身份，避免受容器小容量
+  `/tmp` 或宿主 Git 全局配置限制。
+- `GPU BUILD <main-sha>` 可恢复因 GPU attestation 缺失而失败的 bundle：只构建缺失
+  的 8 个实际镜像，形成 9-profile 完整 manifest 并重放 bundle；不会创建 Pod、
+  部署正式环境或进入维护。
+- `TEST CONFIG <main-sha>` 固定以当前 main 执行 test `config-plan -> config-apply`，
+  原子收敛阻断部署的配置投影漂移；没有 prod 参数，也不调用手动维护入口。
 - 手动维护只阻止新生成请求，未知 owner、活动事务或 recovery 状态只能由宿主 CLI
   收口。
 - 启动和刷新只读，不会自动切换、recover 或 reconcile。
@@ -43,10 +54,13 @@ docker compose --env-file .env -f compose.yml up -d --build
 巡检通常需要约 30–60 秒。若显示只读保护，使用宿主 operator CLI 检查 drift，
 不要修改平台代码或账本绕过。
 
-若要启用构建/部署功能，另外配置 `.env` 中 runner 专用的 test/prod env、云 SSH
-key、GitHub Actions token、GHCR read config 与 Pages token 路径。保持默认
-`/dev/null` 时部署 Tab 会 fail closed，但 LAN AIO 功能仍可用。不要把凭据复制到
-Web 容器 environment。
+页面右上角问号打开 `/help.html`，给出从 handoff、全部集成、槽位对齐、测试
+全模块部署到不可变正式候选就绪的操作顺序和 blocker 处理方式。
+
+若要启用构建/部署与集成功能，另外配置 `.env` 中 runner 专用的 test/prod env、
+云 SSH key、GitHub Actions token、Git push SSH key、GHCR read config 与 Pages
+token 路径。runner 只对 Git common dir、A–H 与 XDG queue 使用精确写挂载；Web
+容器仍不接触这些凭据和写挂载。保持默认 `/dev/null` 时对应能力 fail closed。
 
 停止平台不会停止任何 GPU runtime：
 

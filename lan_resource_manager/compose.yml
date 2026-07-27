@@ -89,15 +89,27 @@ services:
       HOME: /home/app
       GITHUB_ACTIONS_TOKEN_FILE: /run/secrets/github-actions.token
       DOCKER_CONFIG: /run/secrets/docker
+      INTEGRATION_QUEUE_ROOT: /home/hfy/.local/state/allbot/ai-integration-queue
+      WORKSPACE_LOCK_PATH: /home/hfy/.local/state/allbot/ai-workspaces.lock
+      TMPDIR: /home/app/.cache/allbot/releases
+      GIT_AUTHOR_NAME: AllBot Integration Coordinator
+      GIT_AUTHOR_EMAIL: integration-bot@allbot.local
+      GIT_COMMITTER_NAME: AllBot Integration Coordinator
+      GIT_COMMITTER_EMAIL: integration-bot@allbot.local
+      GIT_SSH_COMMAND: "ssh -i /run/secrets/github_git_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/known_hosts"
     volumes:
       - "${ALLBOT_ROOT:-..}:/workspace:ro"
+      - "/home/hfy/APP/All_bot:/home/hfy/APP/All_bot"
+      - "/home/hfy/APP/All_bot-workspaces:/home/hfy/APP/All_bot-workspaces"
+      - "/home/hfy/.local/state/allbot:/home/hfy/.local/state/allbot"
       - "lan-resource-manager-runner:/runner"
-      - "lan-resource-manager-release-cache:/home/app/.cache/allbot/releases"
+      - "lan-resource-manager-release-cache:/home/app/.cache/allbot"
       - "${CLOUD_DEPLOY_TEST_ENV_FILE:-/dev/null}:/home/app/.config/allbot/test.env:ro"
       - "${CLOUD_DEPLOY_PROD_ENV_FILE:-/dev/null}:/home/app/.config/allbot/prod.env:ro"
       - "${CLOUD_DEPLOY_SSH_KEY:-/dev/null}:/run/secrets/cloud_deploy_key:ro"
       - "${CLOUD_DEPLOY_KNOWN_HOSTS:-/home/hfy/.ssh/known_hosts}:/run/secrets/known_hosts:ro"
       - "${GITHUB_ACTIONS_TOKEN_FILE:-/dev/null}:/run/secrets/github-actions.token:ro"
+      - "${GITHUB_GIT_SSH_KEY:-/home/hfy/.ssh/allbot_github_ed25519}:/run/secrets/github_git_key:ro"
       - "${GHCR_READ_CONFIG_FILE:-/dev/null}:/run/secrets/docker/config.json:ro"
       - "${CLOUDFLARE_PAGES_TOKEN_FILE:-/dev/null}:/home/app/.config/allbot/cloudflare-pages.token:ro"
     tmpfs:

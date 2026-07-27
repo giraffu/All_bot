@@ -3907,7 +3907,14 @@ def build_plan(
     dependencies = _resolve_release_dependencies(dependencies)
     sha = validate_full_sha(args.sha)
     manifest_path = dependencies.resolve_manifest_path(
-        args, allow_fetch=args.command in {"plan", "deploy-module", "promote"}
+        args,
+        allow_fetch=(
+            args.command in {"plan", "deploy-module", "promote"}
+            or (
+                args.command == "recover"
+                and bool(getattr(args, "repair_rollback_materials", False))
+            )
+        ),
     )
     manifest_document = dependencies.read_json(manifest_path)
     policy = (
@@ -3946,19 +3953,6 @@ def build_plan(
         expanded_independent = expand_independent_module_request(
             policy, requested_modules
         )
-        if expanded_independent and isinstance(args.previous_state, Mapping):
-            required_artifacts = expanded_independent[1]
-            current_artifacts = args.previous_state.get("artifacts")
-            missing_baselines = (
-                required_artifacts
-                if not isinstance(current_artifacts, Mapping)
-                else required_artifacts - set(current_artifacts)
-            )
-            if missing_baselines and not args.state_file:
-                args.previous_state = recover_artifact_current_state(
-                    args.previous_state,
-                    _read_artifact_state_history(args),
-                )
         previous_state = getattr(args, "previous_state", None)
         repair_current_test_bundle = (
             expanded_independent is not None
@@ -3972,6 +3966,24 @@ def build_plan(
             and previous_state.get("track") == "control-plane"
             and validate_full_sha(str(previous_state.get("git_sha", ""))) == sha
         )
+        if expanded_independent and isinstance(args.previous_state, Mapping):
+            required_artifacts = expanded_independent[1]
+            current_artifacts = args.previous_state.get("artifacts")
+            missing_baselines = (
+                required_artifacts
+                if not isinstance(current_artifacts, Mapping)
+                else required_artifacts - set(current_artifacts)
+            )
+            if (
+                missing_baselines
+                and not args.state_file
+                and not repair_current_test_bundle
+            ):
+                args.previous_state = recover_artifact_current_state(
+                    args.previous_state,
+                    _read_artifact_state_history(args),
+                )
+        previous_state = getattr(args, "previous_state", None)
         if repair_current_test_bundle:
             independent_release = IndependentModuleRelease(
                 name=expanded_independent[0],
@@ -5650,6 +5662,13 @@ def verify_pages_canonical_deployment(
     ).get("result")
     if not isinstance(deployments, list):
         raise ReleaseError("Pages production deployment list is invalid")
+    project = _pages_api_request(args, "GET", project_path).get("result")
+    canonical = (
+        project.get("canonical_deployment") if isinstance(project, Mapping) else None
+    )
+    if not isinstance(canonical, Mapping) or not canonical.get("id"):
+        raise ReleaseError("Pages canonical deployment is unavailable")
+    canonical_id = str(canonical["id"])
     deployment: Mapping[str, Any] | None = None
     for candidate in deployments:
         if not isinstance(candidate, Mapping):
@@ -5658,24 +5677,19 @@ def verify_pages_canonical_deployment(
         metadata = trigger.get("metadata") if isinstance(trigger, Mapping) else None
         stage = candidate.get("latest_stage")
         if (
-            candidate.get("environment") == "production"
+            str(candidate.get("id")) == canonical_id
+            and candidate.get("environment") == "production"
             and isinstance(metadata, Mapping)
             and metadata.get("branch") == target["branch"]
             and metadata.get("commit_hash") == sha
             and isinstance(stage, Mapping)
             and stage.get("status") == "success"
         ):
-            deployment = candidate
-            break
-    if deployment is None or not deployment.get("id"):
-        raise ReleaseError("matching successful Pages production deployment is missing")
-    deployment_id = str(deployment["id"])
-    project = _pages_api_request(args, "GET", project_path).get("result")
-    canonical = (
-        project.get("canonical_deployment") if isinstance(project, Mapping) else None
-    )
-    if not isinstance(canonical, Mapping) or str(canonical.get("id")) != deployment_id:
+                deployment = candidate
+                break
+    if deployment is None:
         raise ReleaseError("Pages canonical deployment does not match the new release")
+    deployment_id = str(deployment["id"])
 
     _verify_canonical_pages_runtime(args, sha, runtime_revision)
     return {
@@ -5762,6 +5776,18 @@ def _deploy_web(
             "runtime_config_revision": runtime_revision,
             "deployment_url": "",
         }
+    try:
+        existing = verify_pages_canonical_deployment(args, sha, runtime_revision)
+    except ReleaseError:
+        existing = None
+    if existing is not None:
+        return {
+            "project": target["project"],
+            "branch": target["branch"],
+            "runtime_config_revision": runtime_revision,
+            **existing,
+            "reused_existing": True,
+        }
     with tempfile.TemporaryDirectory(prefix="allbot-web-release-") as temp_dir:
         dist = _extract_web_artifact(artifact, Path(temp_dir))
         (dist / "allbot-runtime-config.js").write_text(
@@ -5800,7 +5826,8 @@ def _deploy_web(
             check=False,
         )
         if result.returncode != 0:
-            raise ReleaseError("Cloudflare Pages deployment failed")
+            detail = _safe_failure_detail(result.stderr or result.stdout or "npx failed")
+            raise ReleaseError(f"Cloudflare Pages deployment failed: {detail}")
         deadline = time.monotonic() + getattr(args, "pages_verify_timeout_seconds", 180)
         while True:
             try:

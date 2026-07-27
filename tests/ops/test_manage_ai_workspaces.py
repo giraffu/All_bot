@@ -418,3 +418,46 @@ def test_batch_plan_rejects_a_head_that_moved_after_handoff(tmp_path):
 
     with pytest.raises(module.WorkspaceError, match="handoff head"):
         manager.plan_batch("july-release", [member])
+
+
+def test_align_merged_parks_only_clean_merged_slots(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    branch = manager.assign("A", "merged-task")
+    slot_a = workspace_root / "A"
+    (slot_a / "merged.txt").write_text("merged\n", encoding="utf-8")
+    _git("add", "merged.txt", cwd=slot_a)
+    _git(
+        "-c",
+        "user.name=AllBot Tests",
+        "-c",
+        "user.email=tests@example.com",
+        "commit",
+        "-m",
+        "merged",
+        cwd=slot_a,
+    )
+    head = _git("rev-parse", "HEAD", cwd=slot_a)
+    _git("push", "-u", "origin", branch, cwd=slot_a)
+    _git("fetch", "origin", branch, cwd=repo)
+    _git("merge", "--no-ff", "--no-edit", head, cwd=repo)
+    _git("push", "origin", "main", cwd=repo)
+
+    slot_b = workspace_root / "B"
+    (slot_b / "local-only.txt").write_text("keep me\n", encoding="utf-8")
+
+    result = manager.align_merged()
+
+    rows = {row["slot"]: row for row in result["slots"]}
+    assert rows["A"]["status"] == "aligned"
+    assert rows["A"]["branch"] is None
+    assert rows["B"]["status"] == "blocked_dirty"
+    assert (slot_b / "local-only.txt").read_text(encoding="utf-8") == "keep me\n"
+    assert result["main_sha"] == _git("rev-parse", "origin/main", cwd=repo)

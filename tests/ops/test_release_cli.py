@@ -3293,15 +3293,23 @@ def test_test_and_prod_web_use_same_pages_deployer(
         )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        module,
-        "verify_pages_canonical_deployment",
-        lambda *_args, **_kwargs: {
+    verification_calls = []
+
+    def fake_verify(*_args, **_kwargs):
+        verification_calls.append(True)
+        if len(verification_calls) == 1:
+            raise module.ReleaseError("matching deployment is not present yet")
+        return {
             "deployment_id": "deployment-id",
             "environment": "production",
             "canonical_url": module.WEB_PAGES_TARGETS[environment]["canonical_url"],
             "canonical_verified": True,
-        },
+        }
+
+    monkeypatch.setattr(
+        module,
+        "verify_pages_canonical_deployment",
+        fake_verify,
         raising=False,
     )
     args = SimpleNamespace(
@@ -3358,6 +3366,123 @@ def test_pages_deployer_rejects_unlocked_wrangler_version(tmp_path, monkeypatch)
 
     with pytest.raises(module.ReleaseError, match="exact and lockfile-matched"):
         module._pinned_wrangler_version()
+
+
+def test_pages_deployer_reports_redacted_command_failure(tmp_path, monkeypatch):
+    module = _load_module()
+    artifact = tmp_path / "web-dist.tgz"
+    source = tmp_path / "source" / "dist"
+    source.mkdir(parents=True)
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    with tarfile.open(artifact, "w:gz") as archive:
+        archive.add(source, arcname="dist")
+    manifest = _manifest()
+    manifest["web_artifact_sha256"] = module.hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    runtime_path = tmp_path / "web-runtime-config.yml"
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "https://api-test.example.com/api"},
+                "prod": {"api_base_url": "https://api.example.com/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="npm error token=do-not-leak\nnpm error cache directory missing",
+        ),
+    )
+    args = SimpleNamespace(
+        skip_web=False,
+        web_artifact=str(artifact),
+        bundle_cache=str(tmp_path),
+        execute=True,
+        env="test",
+        cloudflare_token_file=str(token_file),
+        cloudflare_account_id="account-id",
+        web_runtime_config=str(runtime_path),
+    )
+
+    with pytest.raises(
+        module.ReleaseError,
+        match="Cloudflare Pages deployment failed: npm error cache directory missing",
+    ) as error:
+        module._deploy_web(args, manifest)
+
+    assert "do-not-leak" not in str(error.value)
+
+
+def test_pages_deployer_reuses_matching_canonical_deployment(tmp_path, monkeypatch):
+    module = _load_module()
+    artifact = tmp_path / "web-dist.tgz"
+    source = tmp_path / "source" / "dist"
+    source.mkdir(parents=True)
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    with tarfile.open(artifact, "w:gz") as archive:
+        archive.add(source, arcname="dist")
+    manifest = _manifest()
+    manifest["web_artifact_sha256"] = module.hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    runtime_path = tmp_path / "web-runtime-config.yml"
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "https://api-test.example.com/api"},
+                "prod": {"api_base_url": "https://api.example.com/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_pages_canonical_deployment",
+        lambda *_args, **_kwargs: {
+            "deployment_id": "existing-deployment",
+            "environment": "production",
+            "canonical_url": module.WEB_PAGES_TARGETS["test"]["canonical_url"],
+            "canonical_verified": True,
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "matching canonical Pages must not be redeployed"
+        ),
+    )
+    args = SimpleNamespace(
+        skip_web=False,
+        web_artifact=str(artifact),
+        bundle_cache=str(tmp_path),
+        execute=True,
+        env="test",
+        cloudflare_token_file=str(token_file),
+        cloudflare_account_id="account-id",
+        web_runtime_config=str(runtime_path),
+    )
+
+    result = module._deploy_web(args, manifest)
+
+    assert result["deployment_id"] == "existing-deployment"
+    assert result["canonical_verified"] is True
+    assert result["reused_existing"] is True
 
 
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
@@ -5451,6 +5576,50 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
     assert requests[0].get_header("User-agent") == "AllBotReleaseVerifier/1.0"
 
 
+def test_pages_verifier_selects_canonical_when_same_sha_has_multiple_deployments(
+    monkeypatch,
+):
+    module = _load_module()
+    sha = "b" * 40
+    deployments = [
+        {
+            "id": "newer-noncanonical",
+            "environment": "production",
+            "deployment_trigger": {
+                "metadata": {"branch": "main", "commit_hash": sha}
+            },
+            "latest_stage": {"status": "success"},
+        },
+        {
+            "id": "canonical-id",
+            "environment": "production",
+            "deployment_trigger": {
+                "metadata": {"branch": "main", "commit_hash": sha}
+            },
+            "latest_stage": {"status": "success"},
+        },
+    ]
+
+    def fake_api(_args, _method, path, **_kwargs):
+        if path.endswith("/deployments?env=production"):
+            return {"success": True, "result": deployments}
+        return {
+            "success": True,
+            "result": {"canonical_deployment": {"id": "canonical-id"}},
+        }
+
+    monkeypatch.setattr(module, "_pages_api_request", fake_api)
+    monkeypatch.setattr(
+        module, "_verify_canonical_pages_runtime", lambda *_args: None
+    )
+
+    result = module.verify_pages_canonical_deployment(
+        SimpleNamespace(env="prod"), sha, "c" * 64
+    )
+
+    assert result["deployment_id"] == "canonical-id"
+
+
 @pytest.mark.parametrize(
     ("canonical_id", "content_type", "runtime_sha", "message"),
     [
@@ -6298,6 +6467,112 @@ def test_rollback_material_repair_expands_disabled_test_owner_module_to_full_bas
     assert calls[1][1].services == {"central-api"}
     assert calls[1][2] is full_manifest
     assert '"running_services_changed": false' in capsys.readouterr().out
+
+
+def test_current_test_dashboard_repair_does_not_require_missing_module_history(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    dashboard_artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + digit * 64,
+            "digest": "sha256:" + digit * 64,
+            "source_sha": FULL_SHA,
+            "oci_revision": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name, digit in (
+            ("dashboard-backend", "1"),
+            ("dashboard-frontend", "2"),
+        )
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="recover",
+        modules=["dashboard"],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+        control_plane_repair_fast_track=False,
+        repair_test_data_services=False,
+        repair_rollback_materials=True,
+    )
+
+    manifest_fetch = []
+    monkeypatch.setattr(
+        module,
+        "_resolve_manifest_path",
+        lambda *_args, **kwargs: (
+            manifest_fetch.append(kwargs["allow_fetch"]) or tmp_path / "index"
+        ),
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+
+    def resolve_previous(received, **_kwargs):
+        received.previous_state = {
+            "schema_version": 2,
+            "track": "control-plane",
+            "git_sha": FULL_SHA,
+            "artifacts": {
+                "central-api": {"digest": "sha256:" + "3" * 64}
+            },
+        }
+        return FULL_SHA
+
+    monkeypatch.setattr(module, "_resolve_previous_sha", resolve_previous)
+    monkeypatch.setattr(
+        module,
+        "_read_artifact_state_history",
+        lambda _args: pytest.fail("current bundle repair must not scan history"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_load_v2_track",
+        lambda *_args, **_kwargs: {
+            "schema_version": 2,
+            "source_sha": FULL_SHA,
+            "git_sha": FULL_SHA,
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": "control-plane",
+            "artifacts": dashboard_artifacts,
+            "selected_artifacts": sorted(dashboard_artifacts),
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "load_release_index",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            index={
+                "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+                "release_channel": "main",
+                "source_ref": "refs/heads/main",
+            },
+            manifests={
+                "control-plane": {"artifacts": dashboard_artifacts},
+                "gpu-execution": {"artifacts": {}},
+            },
+        ),
+    )
+
+    impact, _manifest, previous_sha = module.build_plan(args)
+
+    assert previous_sha == FULL_SHA
+    assert manifest_fetch == [True]
+    assert set(impact.services) == {"dashboard-backend", "dashboard-frontend"}
 
 
 def test_disabled_test_owner_rollback_repair_rejects_recorded_digest_mismatch(

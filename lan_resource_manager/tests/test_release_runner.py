@@ -233,3 +233,260 @@ def test_compose_separates_web_and_runner_credentials():
     assert "/var/run/docker.sock" not in compose
     assert "CLOUD_DEPLOY_SSH_KEY" in runner
     assert "GITHUB_ACTIONS_TOKEN" in runner
+    assert "GITHUB_GIT_SSH_KEY" in runner
+    assert "All_bot-workspaces" in runner
+    assert "/home/hfy/.local/state/allbot" in runner
+    assert "GIT_AUTHOR_NAME" in runner
+    assert "GIT_AUTHOR_EMAIL" in runner
+    assert "GIT_COMMITTER_NAME" in runner
+    assert "GIT_COMMITTER_EMAIL" in runner
+    assert "TMPDIR" in runner
+    assert "lan-resource-manager-release-cache:/home/app/.cache/allbot" in runner
+
+
+def test_integration_actions_are_fixed_and_require_exact_confirmation(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == [
+            "gh",
+            "api",
+            "repos/giraffu/All_bot/git/ref/heads/main",
+        ]:
+            return "a" * 40 + "\n"
+        return '{"status":"completed"}'
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    with pytest.raises(RunnerError, match="confirmation_mismatch"):
+        asyncio.run(
+            runner.dispatch(
+                "integrate_all",
+                {"expected_main_sha": "a" * 40, "confirmation": "yes"},
+            )
+        )
+
+    result = asyncio.run(
+        runner.dispatch(
+            "integrate_all",
+            {
+                "expected_main_sha": "a" * 40,
+                "confirmation": f"INTEGRATE {'a' * 40}",
+            },
+        )
+    )
+    assert result == {"status": "completed"}
+    assert any("auto_integrate_handoffs.py" in part for part in commands[-1])
+    assert "--queue-root" in commands[-1]
+    assert "integrate-all" in commands[-1]
+    assert "--execute" in commands[-1]
+    assert all("--confirm-prod" not in command for command in commands)
+
+
+def test_align_workspaces_uses_only_the_fixed_manager_action(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "gh":
+            return "a" * 40 + "\n"
+        return '{"main_sha":"' + "a" * 40 + '","slots":[]}'
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    result = asyncio.run(
+        runner.dispatch(
+            "align_workspaces",
+            {
+                "expected_main_sha": "a" * 40,
+                "confirmation": f"ALIGN {'a' * 40}",
+            },
+        )
+    )
+    assert result["main_sha"] == "a" * 40
+    assert commands[:1] == [
+        [
+            "gh",
+            "api",
+            "repos/giraffu/All_bot/git/ref/heads/main",
+            "--jq",
+            ".object.sha",
+        ],
+    ]
+    assert commands[1][:2] == [
+        __import__("sys").executable,
+        str(tmp_path / "scripts/manage_ai_workspaces.py"),
+    ]
+    assert "--lock-path" in commands[1]
+    assert commands[1][-1] == "align-merged"
+
+
+def test_retry_integration_requeues_one_exact_batch_then_resumes(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        return '{"status":"completed"}'
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    result = asyncio.run(
+        runner.dispatch(
+            "retry_integration",
+            {
+                "batch": "20260727-161018-68941719",
+                "confirmation": "RETRY 20260727-161018-68941719",
+            },
+        )
+    )
+    assert result == {"status": "completed"}
+    assert "retry-failed" in commands[0]
+    assert commands[0][-2:] == ["--batch", "20260727-161018-68941719"]
+    assert "integrate-all" in commands[1]
+    assert "--execute" in commands[1]
+    assert all("--confirm-prod" not in command for command in commands)
+
+
+def test_gpu_release_build_uses_only_fixed_prepare_script_and_no_prod(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "gh":
+            return "a" * 40 + "\n"
+        return '{"status":"ready","production_deployed":false}'
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    result = asyncio.run(
+        runner.dispatch(
+            "prepare_gpu_release",
+            {
+                "expected_main_sha": "a" * 40,
+                "confirmation": f"GPU BUILD {'a' * 40}",
+            },
+        )
+    )
+
+    assert result["status"] == "ready"
+    assert "prepare_gpu_release_v2.py" in commands[-1][1]
+    assert "--execute" in commands[-1]
+    assert all("--confirm-prod" not in command for command in commands)
+
+
+def test_test_config_sync_uses_fixed_test_only_script(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "gh":
+            return "a" * 40 + "\n"
+        return '{"status":"applied","environment":"test","production_changed":false}'
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    result = asyncio.run(
+        runner.dispatch(
+            "sync_test_config",
+            {
+                "expected_main_sha": "a" * 40,
+                "confirmation": f"TEST CONFIG {'a' * 40}",
+            },
+        )
+    )
+
+    assert result["environment"] == "test"
+    assert "sync_test_release_config.py" in commands[-1][1]
+    assert "--execute" in commands[-1]
+    assert all("--confirm-prod" not in command for command in commands)
+
+
+def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "ssh":
+            return (
+                '{"schema_version":2,"track":"control-plane",'
+                f'"git_sha":"{"b" * 40}","artifacts":{{}}}}'
+            )
+        return (
+            '{"status":"rollback-materials-ready","environment":"test",'
+            '"runtime_changed":false}'
+        )
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    sha = "b" * 40
+    result = asyncio.run(
+        runner.dispatch(
+            "repair_test_rollback",
+            {
+                "expected_current_sha": sha,
+                "confirmation": f"REPAIR TEST ROLLBACK {sha}",
+            },
+        )
+    )
+
+    state_command, command = commands
+    assert result["runtime_changed"] is False
+    assert state_command[0] == "ssh"
+    assert "current.json" in state_command[-1]
+    assert command[command.index("--bundle-repository") + 1] == (
+        "ghcr.io/giraffu/allbot-release-v2"
+    )
+    assert command[1].endswith("scripts/release.py")
+    assert command[2:6] == ["recover", "--env", "test", "--track"]
+    assert "--repair-rollback-materials" in command
+    assert "--execute" in command
+    assert "--modules" in command
+    assert command[command.index("--modules") + 1] == "dashboard"
+    assert "--confirm-prod" not in command
+    assert "--state-file" in command
+    assert not Path(command[command.index("--state-file") + 1]).exists()
+
+
+def test_long_release_actions_have_a_bounded_eight_hour_socket_budget():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "backend"
+        / "release_operator.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"prepare_gpu_release"' in source
+    assert '"retry_integration"' in source
+    assert "30000" in source
+
+
+def test_runner_creates_its_tmpdir_inside_the_writable_cache_volume():
+    source = (
+        Path(__file__).resolve().parents[1] / "backend" / "runner.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'os.environ.get("TMPDIR"' in source
+    assert ".mkdir(parents=True, exist_ok=True)" in source
+
+
+def test_runner_image_contains_digest_pinned_node_and_npx_for_pages():
+    dockerfile = (
+        Path(__file__).resolve().parents[1] / "Dockerfile"
+    ).read_text(encoding="utf-8")
+
+    assert "node:22-bookworm-slim@sha256:" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/bin/node" in dockerfile
+    assert "npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
+    assert "NPM_CONFIG_CACHE=/home/app/.cache/allbot/npm" in dockerfile
+    assert "XDG_CONFIG_HOME=/home/app/.cache/allbot/config" in dockerfile
+
+
+def test_runner_ssh_retries_transient_cloud_connection_failures():
+    config = (
+        Path(__file__).resolve().parents[1] / "ssh_config"
+    ).read_text(encoding="utf-8")
+
+    assert "ConnectTimeout 20" in config
+    assert "ConnectionAttempts 4" in config
+    assert "ServerAliveInterval 20" in config
+    assert "ServerAliveCountMax 3" in config

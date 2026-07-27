@@ -122,11 +122,28 @@ describe('deployment workspace', () => {
       active_transaction: null,
       config_drift: false,
     }
+    const integration = {
+      main_sha: 'a'.repeat(40),
+      queue: {
+        pending: [{ id: 'one', status: 'pending', branch: 'codex/a-task', head: 'c'.repeat(40) }],
+        running: [],
+        failed: [{ id: 'failed-batch', status: 'failed', error: 'checkout failed' }],
+      },
+      slots: Array.from({ length: 8 }, (_, index) => ({
+        slot: String.fromCharCode(65 + index),
+        branch: null,
+        head: 'a'.repeat(40),
+        clean: true,
+        at_base: true,
+      })),
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
         const body = url.includes('security/csrf')
           ? { csrf_token: 'x' }
+          : url.includes('integration/status')
+            ? integration
           : url.includes('deployments/catalog')
             ? catalog
             : url.includes('releases/candidate')
@@ -145,6 +162,15 @@ describe('deployment workspace', () => {
     expect(wrapper.text()).toContain('central-api')
     expect(wrapper.text()).not.toContain('dashboard-backend')
     expect(wrapper.text()).toContain('可信 bundle 已就绪')
+    expect(wrapper.text()).toContain('1待集成 handoff')
+    expect(wrapper.text()).toContain('8/8已对齐槽位')
+    expect(wrapper.get('.help-link').attributes('href')).toBe('/help.html')
+    expect(wrapper.text()).toContain('失败批次 failed-batch')
+    expect(wrapper.find('[data-action="retry-integration"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="deploy-all-test"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="gpu-release-build"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="test-config-sync"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="test-rollback-repair"]').exists()).toBe(true)
     expect(wrapper.get('[data-action="create-plan"]').attributes('disabled')).toBeUndefined()
   })
 

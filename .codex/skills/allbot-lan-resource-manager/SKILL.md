@@ -5,8 +5,9 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
 
 # AllBot Local Resource Manager
 
-本技能覆盖 `lan_resource_manager/`。平台同时提供受限 LAN AIO UI 与不可变模块发布
-UI，不实现第二套 fleet 或 release engine。
+本技能覆盖 `lan_resource_manager/`。平台同时提供受限 LAN AIO UI、A–H
+集成/对齐 UI 与不可变模块发布 UI，不实现第二套 fleet、integration coordinator
+或 release engine。
 
 ## 必读入口
 
@@ -40,16 +41,44 @@ UI，不实现第二套 fleet 或 release engine。
   过滤；不得依赖容器内匿名 `git ls-remote` 或特定新版 `gh --commit` 参数。
 - 部署只允许 `deploy/release-policy.yml` 中一个完整独立模块组，并固定
   `release.py plan -> deploy`、短效 plan token、目标环境和精确 SHA。禁止
-  `--skip-gate`、emergency、自由 service、config apply、rollback/recover 或 GPU
-  execution。
+  `--skip-gate`、emergency、自由 service、任意 config apply、rollback/recover
+  或 GPU execution。唯一 recover 例外是测试环境当前精确 SHA 的
+  `--repair-rollback-materials`：必须由固定 dashboard 兼容入口核对实际运行
+  digest，且不得 pull/up/stop/restart、进入维护或改 deployment state。
 - Web 容器不得读取云 SSH、GitHub/GHCR 或 Pages 凭据。所有发布命令必须经过独立
   Unix socket runner 的动作和参数白名单；runner 同样不得挂载 Docker Socket。
+  runner 镜像必须内置 digest-pinned Node 22 与 npm/npx，供发布器按前端 lockfile
+  的精确 Wrangler 版本上传测试 Pages；npm cache 必须指向 runner 已有的精确可写
+  release-cache volume，XDG config 同样不得回落到只读 home；不得依赖宿主 Node
+  或临时安装系统包。Pages mutation 前必须先校验 canonical SHA 与 runtime
+  revision；同 SHA 多条记录时必须按 canonical deployment ID 选定记录。完全
+  匹配时复用现有成功部署，保证中断重试幂等。
+  固定 SSH config 对同一 allowlisted 云主机最多尝试 4 次建连，并保留 bounded
+  connect/server-alive 超时；不得因重试扩大 host、key 或环境范围。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
   继续局部展示，不得让一个环境探测清空整个部署页。
 - 手动维护只管理 `/var/lib/allbot/<env>/runtime/GENERATION_MAINTENANCE`。只允许
   平台解除自身 owner metadata 建立的维护；活动/恢复事务或未知 owner 必须阻断。
+- 开发槽集成只允许固定调用 `auto_integrate_handoffs.py integrate-all --execute`：
+  可收敛已被新 main 包含的 pending，以及被更新 main 超越的旧
+  `deploying-test` 失败；冲突、CI、构建和当前 main 测试失败继续 fail closed。
+  修复失败原因后只能以 `RETRY <batch>` 精确确认重试一个既有失败批次。
+  集成没有 prod 参数。对齐只允许 `manage_ai_workspaces.py align-merged`，dirty、
+  未初始化或尚未被 main 包含的槽必须原样保留并显示 blocker。
+- 测试全模块部署只遍历 release policy 中 test 可用的完整独立模块组，逐模块执行
+  `plan -> deploy`；任一失败停止并保留已完成事务。不得泛化为 prod bulk deploy。
+- GPU 正式候选准备只允许当前 main 和 `GPU BUILD <sha>`，固定调用
+  `prepare_gpu_release_v2.py` 补齐 exact-SHA 镜像、attested manifest 与 bundle；
+  不得创建 Pod、部署 prod、伪造 canary-verified 或覆盖不可变 tag。
+- 测试配置漂移只允许 `TEST CONFIG <sha>`，固定调用
+  `sync_test_release_config.py` 的 test `config-plan -> config-apply`；不得暴露 env
+  选择、prod confirmation 或手动维护动作。
+- 测试回滚材料修复只允许 `REPAIR TEST ROLLBACK <current-sha>`，先从测试状态重新
+  确认 current SHA，再固定调用 test control-plane 的 dashboard
+  `recover --repair-rollback-materials --execute` 兼容入口；不得提供 prod 对称入口。
 - 构建不会自动部署。测试与正式部署均须重新生成计划并输入
   `TEST|PROD <module> <full-sha>`；正式执行仍固定 `--confirm-prod`。
+- 页面问号固定打开 `/help.html`，覆盖完整流程、就绪判定和安全边界。
 
 ## 最小验证
 
