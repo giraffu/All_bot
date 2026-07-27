@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -212,6 +213,41 @@ class ReleaseRunner:
                 raise RunnerError("invalid_sha")
             if payload.get("confirmation") != f"REPAIR TEST ROLLBACK {sha}":
                 raise RunnerError("confirmation_mismatch")
+            raw_state = await self._run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "allbot-do-sgp1-test-control",
+                    "cat /var/lib/allbot/deployments/test/control-plane/current.json",
+                ],
+                timeout=60,
+            )
+            try:
+                state = json.loads(raw_state)
+            except json.JSONDecodeError as exc:
+                raise RunnerError("test_deployment_state_invalid") from exc
+            if (
+                not isinstance(state, dict)
+                or state.get("git_sha") != sha
+                or state.get("schema_version") != 2
+                or state.get("track") != "control-plane"
+            ):
+                raise RunnerError("test_environment_changed")
+            temp_root = Path(os.environ.get("TMPDIR", "/tmp"))
+            temp_root.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=temp_root,
+                prefix="test-control-state-",
+                suffix=".json",
+                delete=False,
+            ) as handle:
+                json.dump(state, handle, sort_keys=True)
+                handle.write("\n")
+                state_file = Path(handle.name)
+            state_file.chmod(0o600)
             common = [
                 "--env",
                 "test",
@@ -223,20 +259,25 @@ class ReleaseRunner:
                 "dashboard",
                 "--bundle-repository",
                 "ghcr.io/giraffu/allbot-release-v2",
+                "--state-file",
+                str(state_file),
             ]
-            return parse_last_json(
-                await self._run(
-                    [
-                        sys.executable,
-                        str(self.release),
-                        "recover",
-                        *common,
-                        "--repair-rollback-materials",
-                        "--execute",
-                    ],
-                    timeout=3600,
+            try:
+                return parse_last_json(
+                    await self._run(
+                        [
+                            sys.executable,
+                            str(self.release),
+                            "recover",
+                            *common,
+                            "--repair-rollback-materials",
+                            "--execute",
+                        ],
+                        timeout=3600,
+                    )
                 )
-            )
+            finally:
+                state_file.unlink(missing_ok=True)
         if action == "integration_status":
             main_sha = await self._remote_main_sha()
             workspace_output = await self._run(
