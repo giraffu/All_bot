@@ -19,7 +19,7 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 | Compose 与一般恢复 | `docs/子模块_运维指南与容器管理_ops_deployment.md` |
 | 并发 handoff、main 批次和共享测试站 | `allbot-concurrent-workspaces` |
 | 本地正式灾备 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` |
-| GPU Pool、RunPod、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`references/runpod-lan-runtime.md` |
+| GPU Pool、RunPod、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`；SSH 接入与 runtime 细节见 `references/runpod-lan-runtime.md` |
 | LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
 | 本地资源管理平台 | `allbot-lan-resource-manager` |
 | R2/legacy 媒体 | `allbot-gallery-storage` |
@@ -52,6 +52,11 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
   test-execution 或 strict artifact 使整个事务进入 strict。
 - `plan_token` 只能复用短时间内相同 SHA/参数/输入 checksum 的只读证据；
   execute 前仍重新核对目标配置 revision 和健康。
+- `scripts/release.py` 是兼容 CLI 门面；不可变命令/计划与显式 I/O seam 在
+  `scripts/release_contracts.py`，schema-v2 纯请求策略在
+  `scripts/release_planning.py`。新增 planning/target/recovery 测试优先注入
+  `ReleaseDependencies`，不要继续把 `_run`、`_remote_shell`、`_read_json`
+  等私有函数固化为测试接口。
 
 ## 3. 配置与秘密
 
@@ -103,6 +108,9 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 - RunPod create/start/stop/restart/delete/scale 必须同时满足真实运行开关、
   `--execute` 和生产确认。Dashboard autoscaler 也必须消费当前 release
   index 的完整 profile digest pin，不能使用 mutable tag。
+- 测试 Web 人工验收使用 cloud-test operator 与 `runpod_test_*` agent；Dashboard
+  不部署到测试站，后台手动 profile 不能作为创建测试 Pod 的旁路。测试开关必须
+  通过 service env/public runtime config 契约投射，prod 值保持关闭。
 - LAN AIO 的 current profile、cache marker、验证时间和实时映射属于 XDG
   ledger/运行态，不写 Git。任何 mutation 先由 live + ledger + catalog
   仲裁，精确到一个 physical slot。

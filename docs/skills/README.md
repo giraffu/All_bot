@@ -36,7 +36,10 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
   高压红线和最小验证。
 - 专项 `docs/` 维护当前业务契约、架构和 SOP。
 - `docs/domain/CONTEXT.md` 只作为 glossary。
-- `docs/knowledge_base_audit_matrix.md` 一份活跃资料一行，不追加 changelog。
+- `docs/knowledge_base_audit_matrix.md` 一份活跃资料一行，分节表示责任域，
+  顶部记录静态复核日期和归档入口；不登记 archive 行或追加 changelog。
+- `docs/compat_seam_exit_table.md` 只登记尚存兼容层和有价值 seam，并写明
+  责任域、运行时调用方、退出信号和最近静态复核日期。
 - 事故、上线记录、迁移证据、canary、一次性 ID 和运行态进入
   `docs/archive/`、`docs/release_evidence/` 或 `logs/`。
 
@@ -54,5 +57,5 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 - 新增 Skill 时同步 `.codex/skills`、`AGENTS.md`、本索引和审计矩阵。
 - 入口、对象名、异常、超时、双 ID、provider/dependencies 或测试 seam
   变化时，同步领域 Skill 和专项文档。
-- 运行 `python scripts/doc_quality_checker.py` 验证路由覆盖、矩阵登记、内部
-  链接、日期化运行态和体积预算；尺寸不再手工抄入本文件。
+- 运行 `python scripts/doc_quality_checker.py` 验证路由覆盖、矩阵登记、当前/
+  历史边界、canonical 路径、内部链接、日期化运行态和体积预算。

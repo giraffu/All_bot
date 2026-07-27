@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE_PREFIX = "docs/archive/"
+RELEASE_BATCH_PREFIX = "deploy/release-batches/"
 THIS_FILE = Path(__file__).resolve()
 
 RETIRED_MARKERS = (
@@ -38,7 +39,11 @@ def _tracked_text_files() -> list[Path]:
     )
     paths = []
     for raw_path in result.stdout.decode().split("\0"):
-        if not raw_path or raw_path.startswith(ARCHIVE_PREFIX):
+        if (
+            not raw_path
+            or raw_path.startswith(ARCHIVE_PREFIX)
+            or raw_path.startswith(RELEASE_BATCH_PREFIX)
+        ):
             continue
         path = ROOT / raw_path
         if path == THIS_FILE or not path.is_file():

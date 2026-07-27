@@ -796,7 +796,7 @@ def test_ltx_t2v_canary_task_cases_lock_plain_and_ingredients_contracts():
 
     assert [case["label"] for case in cases] == [
         "ltx_t2v_sulphur_5s",
-        "ltx_t2v_ic_ingredients_5s",
+        "ltx_t2v_ic_ingredients_20s_multiscene",
     ]
     plain = cases[0]["payload"]
     assert plain["task_type"] == "ltx_t2v"
@@ -806,8 +806,11 @@ def test_ltx_t2v_canary_task_cases_lock_plain_and_ingredients_contracts():
     ingredients = cases[1]["payload"]
     assert ingredients["task_type"] == "ltx_t2v_ic"
     assert ingredients["inputs"]["resolution"] == "768x448"
-    assert ingredients["inputs"]["duration"] == 5
+    assert ingredients["inputs"]["duration"] == 20
+    assert ingredients["inputs"]["duration_seconds"] == 20
     assert ingredients["inputs"]["character_sheet"].endswith("character-sheet.png")
+    assert "adult Asian woman" in ingredients["prompt"]
+    assert "Hard cut at 15s" in ingredients["prompt"]
 
 
 def test_i2i_pro_canary_task_case_submits_existing_task_type():

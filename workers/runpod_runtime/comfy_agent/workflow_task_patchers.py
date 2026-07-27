@@ -441,8 +441,9 @@ def _patch_ltx_t2v_workflow(
     if params.get("lora_name") or params.get("lora_items"):
         raise ValueError("ltx_t2v uses a fixed LoRA stack and rejects additional LoRA")
     duration = _resolve_ltx_duration_seconds(params)
-    if duration not in ({5} if ingredients else {5, 10, 15, 20}):
+    if duration not in {5, 10, 15, 20}:
         raise ValueError("invalid ltx_t2v duration")
+    generation_duration = duration + 1 if ingredients else duration
     # The workflow's fixed spatial upscaler doubles the latent dimensions.
     # Keep the API contract expressed as final output size.
     width, height = (384, 224) if ingredients else (640, 352)
@@ -454,8 +455,8 @@ def _patch_ltx_t2v_workflow(
     for node_id in ("18",):
         node = workflow.get(node_id)
         if isinstance(node, dict):
-            node.setdefault("inputs", {})["Xi"] = duration
-            node["inputs"]["Xf"] = duration
+            node.setdefault("inputs", {})["Xi"] = generation_duration
+            node["inputs"]["Xf"] = generation_duration
     loader = workflow.get("256")
     if not isinstance(loader, dict):
         raise ValueError("fixed LTX LoRA loader node 256 missing")
@@ -480,6 +481,12 @@ def _patch_ltx_t2v_workflow(
         if not sheet:
             raise ValueError("Ingredients character sheet missing")
         workflow["270"]["inputs"]["image"] = sheet
+        guide = workflow.get("272")
+        if not isinstance(guide, dict):
+            raise ValueError("Ingredients guide node 272 missing")
+        # Keep the identity sheet outside the delivered time range. The result
+        # materializer removes the final one-second guide buffer fail-closed.
+        guide.setdefault("inputs", {})["frame_idx"] = -1
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
         prompt_node = workflow.get("28")

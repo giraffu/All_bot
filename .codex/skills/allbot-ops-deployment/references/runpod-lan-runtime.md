@@ -16,6 +16,43 @@
 - 模型仓库已有源下载链接时，优先在云控制机/transfer Pod 流式写 R2；已存在的公用模型对象使用 R2 server-side multipart copy，禁止先下到本地再上传。
 - `ltx_t2v` cloud-test canary 是独立 disabled profile，只承接 `ltx_t2v,ltx_t2v_ic`，固定 5090、180GB container disk、至少 100GB volume、禁用 template 和固定 manifest。必须先取得受保护 main 同一完整 SHA 的 `allbot-gpu-ltx-t2v` attestation/exact digest；transfer Pod 只传公开 dev FP8/Sulphur，Ingredients 从本地 registry 上传。两单 canary 后 disable/drain/delete，确认无 orphan/multipart；不得顺带创建正式 Pod、开启 autoscaler 或 feature flag。
 
+### Dashboard 提供的 Pod SSH
+
+- 连接参数只取自当次 RunPod Pod 页面：优先使用 `ssh.runpod.io` 的代理用户名；直连 TCP 地址/端口只在代理连续失败时作为后备。不要把 Pod ID、临时 IP、端口或现场状态写入 Git。
+- 本机使用专用 RunPod debug 私钥。只读取文件名和权限来定位 `~/.ssh/allbot_runpod_debug_*`，不输出私钥内容；找不到或匹配不唯一时停止并请求操作员确认。
+- 代理连接必须强制分配 PTY（`ssh -tt`）。该网关有时会在认证或 Pod shell 建立阶段短暂失败；用 `BatchMode=yes`、有限连接超时和最多三次重试。三次均失败才报告失败，不要跳过代理直接改 Pod 状态。
+- 有些 RunPod 代理会忽略 SSH 尾随的远程命令。需要非交互式只读检查时，把命令通过标准输入送入该 PTY shell，并以 `exit` 收尾；先设置显式 `PATH`，因为容器的交互 shell 可能没有常规命令路径。
+
+```bash
+# RUNPOD_GATEWAY_USER 来自当次 Pod 页面；不要把它、Pod IP 或端口写入文档。
+mapfile -t RUNPOD_SSH_KEYS < <(
+  find ~/.ssh -maxdepth 1 -type f -name 'allbot_runpod_debug_*' ! -name '*.pub' -perm 600
+)
+test "${#RUNPOD_SSH_KEYS[@]}" -eq 1 || exit 2
+RUNPOD_SSH_KEY="${RUNPOD_SSH_KEYS[0]}"
+
+# 代理不转发尾随命令时，命令由 stdin 送入交互 PTY；每次诊断都重试三次。
+runpod_proxy_commands() {
+  local attempt ssh_status
+  for attempt in 1 2 3; do
+    printf '%s\n' "$@" 'exit' | ssh -tt -o BatchMode=yes -o ConnectTimeout=20 \
+      -i "$RUNPOD_SSH_KEY" "$RUNPOD_GATEWAY_USER@ssh.runpod.io"
+    ssh_status=${PIPESTATUS[1]}
+    test "$ssh_status" -eq 0 && return 0
+    test "$attempt" -eq 3 && return "$ssh_status"
+    sleep 2
+  done
+}
+
+runpod_proxy_commands \
+  'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+  'df -hT' \
+  'curl -fsS --max-time 5 http://127.0.0.1:8188/queue'
+```
+
+- SSH 成功后先只读核对 `df -hT`、ComfyUI `/queue`、`/system_stats`、Agent/relay 进程和目标目录占用；任何清理、重启、停用或 provider 操作仍须遵守主技能的生产授权与单 slot 边界。
+- 代理通道不支持 SCP/SFTP。直连 TCP 若被拒绝，记录为网络/Pod 运行态信号；不要反复尝试错误私钥，也不要为了恢复 SSH 重启或释放 Pod。
+
 ## LAN AIO
 - LAN AIO 操作应按单 slot 执行，禁止跨节点批量启用。
 - 标准接管顺序：preflight -> registry/镜像准备 -> start disabled -> 验证 disabled heartbeat -> enable -> drain/观察 -> stop old。

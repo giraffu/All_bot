@@ -52,6 +52,15 @@ try:
         validate_gpu_artifact_assurance,
     )
     from scripts.gpu_release_rollout import PROFILE_IMAGE_ENV
+    from scripts.release_contracts import (
+        ReleaseCommand,
+        ReleaseDependencies,
+        ReleasePlan,
+    )
+    from scripts.release_planning import (
+        PlanValidationError,
+        validate_v2_plan_request,
+    )
 except ModuleNotFoundError:  # direct ``python scripts/release.py`` execution
     from release_artifacts_v2 import (  # type: ignore[no-redef]
         load_catalog,
@@ -72,6 +81,15 @@ except ModuleNotFoundError:  # direct ``python scripts/release.py`` execution
         validate_gpu_artifact_assurance,
     )
     from gpu_release_rollout import PROFILE_IMAGE_ENV  # type: ignore[no-redef]
+    from release_contracts import (  # type: ignore[no-redef]
+        ReleaseCommand,
+        ReleaseDependencies,
+        ReleasePlan,
+    )
+    from release_planning import (  # type: ignore[no-redef]
+        PlanValidationError,
+        validate_v2_plan_request,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -312,6 +330,7 @@ PUBLIC_WEB_RUNTIME_FIELDS = {
     "enable_free_edit_v2",
     "enable_free_edit_v3",
     "enable_scail2_long_action_transfer",
+    "enable_ltx_t2v",
 }
 
 
@@ -3858,12 +3877,39 @@ def runtime_drift_artifacts(
     return selected
 
 
-def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any], str]:
+def default_release_dependencies() -> ReleaseDependencies:
+    """Build production adapters lazily so legacy monkeypatches remain effective."""
+
+    return ReleaseDependencies(
+        resolve_manifest_path=_resolve_manifest_path,
+        read_json=_read_json,
+        resolve_previous_sha=_resolve_previous_sha,
+        load_release_index=load_release_index,
+        load_v2_track=_load_v2_track,
+        run=_run,
+        remote_shell=_remote_shell,
+        sleep=time.sleep,
+        current_pages_deployment_id=_current_pages_deployment_id,
+    )
+
+
+def _resolve_release_dependencies(
+    dependencies: ReleaseDependencies | None,
+) -> ReleaseDependencies:
+    return dependencies or default_release_dependencies()
+
+
+def build_plan(
+    args: argparse.Namespace,
+    *,
+    dependencies: ReleaseDependencies | None = None,
+) -> tuple[ReleaseImpact, dict[str, Any], str]:
+    dependencies = _resolve_release_dependencies(dependencies)
     sha = validate_full_sha(args.sha)
-    manifest_path = _resolve_manifest_path(
+    manifest_path = dependencies.resolve_manifest_path(
         args, allow_fetch=args.command in {"plan", "deploy-module", "promote"}
     )
-    manifest_document = _read_json(manifest_path)
+    manifest_document = dependencies.read_json(manifest_path)
     policy = (
         load_promote_policy(Path(args.policy), sha)
         if getattr(args, "command", None) == "promote"
@@ -3871,59 +3917,18 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     )
     validate_release_policy_environment(policy, args.env)
     if manifest_document.get("schema_version") == 2:
-        requested_modules = _split_services(args.modules)
-        requested_services = _split_services(args.services)
-        test_data_repair = bool(getattr(args, "repair_test_data_services", False))
-        if test_data_repair:
-            if args.env != "test" or args.track != "control-plane":
-                raise ReleaseError(
-                    "test data service repair is only available for the test control-plane"
-                )
-            if args.command not in {"plan", "preflight", "deploy"}:
-                raise ReleaseError(
-                    "test data service repair is only available for plan, preflight, or deploy"
-                )
-            if requested_modules or requested_services != {"postgres", "redis"}:
-                raise ReleaseError(
-                    "test data service repair requires exactly postgres and redis services"
-                )
-        dashboard_fast_track = bool(getattr(args, "dashboard_fast_track", False))
-        repair_fast_track = bool(
-            getattr(args, "control_plane_repair_fast_track", False)
-        )
-        if dashboard_fast_track:
-            if args.env != "prod" or args.track != "control-plane":
-                raise ReleaseError(
-                    "dashboard fast-track is only available for the production control-plane"
-                )
-            if args.command not in {"plan", "preflight", "deploy", "rollback"}:
-                raise ReleaseError(
-                    "dashboard fast-track is only available for plan, preflight, deploy, or rollback"
-                )
-            if requested_modules or requested_services or args.from_sha:
-                raise ReleaseError(
-                    "dashboard fast-track does not accept module, service, or from-SHA overrides"
-                )
-        if repair_fast_track:
-            if args.env != "prod" or args.track != "control-plane":
-                raise ReleaseError(
-                    "control-plane repair fast-track is only available for the production control-plane"
-                )
-            if args.command not in {"plan", "preflight", "deploy"}:
-                raise ReleaseError(
-                    "control-plane repair fast-track is only available for plan, preflight, or deploy"
-                )
-            if (
-                requested_modules
-                or requested_services
-                or args.from_sha
-                or getattr(args, "dashboard_fast_track", False)
-            ):
-                raise ReleaseError(
-                    "control-plane repair fast-track does not accept module, service, from-SHA, or other fast-track overrides"
-                )
-        if requested_services and args.track != "control-plane":
-            raise ReleaseError("--services is only an alias for control-plane modules")
+        try:
+            request = validate_v2_plan_request(
+                args,
+                split_services=_split_services,
+            )
+        except PlanValidationError as exc:
+            raise ReleaseError(str(exc)) from exc
+        requested_modules = set(request.requested_modules)
+        requested_services = set(request.requested_services)
+        test_data_repair = request.test_data_repair
+        dashboard_fast_track = request.dashboard_fast_track
+        repair_fast_track = request.control_plane_repair_fast_track
         service_to_artifact = {
             service: artifact for artifact, service in CONTROL_ARTIFACT_SERVICE.items()
         }
@@ -3937,7 +3942,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         requested_modules.update(
             service_to_artifact.get(name, name) for name in requested_services
         )
-        previous_sha = _resolve_previous_sha(args, track_scoped=True)
+        previous_sha = dependencies.resolve_previous_sha(args, track_scoped=True)
         expanded_independent = expand_independent_module_request(
             policy, requested_modules
         )
@@ -4067,7 +4072,9 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         elif args.track == "test-execution" and "worker" in planned_impact.services:
             computed_modules = {"worker-agent", "worker-relay"}
         try:
-            release_bundle = load_release_index(manifest_path, expected_sha=sha)
+            release_bundle = dependencies.load_release_index(
+                manifest_path, expected_sha=sha
+            )
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
         if not dashboard_fast_track and not independent_release:
@@ -4100,7 +4107,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             computed_modules.update(runtime_drift_modules)
         if not independent_release:
             requested_modules.update(computed_modules)
-        manifest = _load_v2_track(
+        manifest = dependencies.load_v2_track(
             manifest_path,
             sha=sha,
             track=args.track,
@@ -4215,7 +4222,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         verify_git_release(sha)
     if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
-    previous_sha = _resolve_previous_sha(args)
+    previous_sha = dependencies.resolve_previous_sha(args)
     changed_paths: list[str] = []
     if previous_sha:
         changed_paths = git_changed_paths(previous_sha, sha)
@@ -4252,6 +4259,17 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     )
     scope_release_impact(args.env, impact, requested=requested)
     return impact, manifest, previous_sha or ""
+
+
+def plan_release(
+    args: argparse.Namespace,
+    *,
+    dependencies: ReleaseDependencies | None = None,
+) -> ReleasePlan:
+    """Return the stable immutable projection of the legacy planning result."""
+
+    impact, manifest, previous_sha = build_plan(args, dependencies=dependencies)
+    return ReleasePlan.from_legacy(impact, manifest, previous_sha)
 
 
 def scope_release_impact(
@@ -4514,9 +4532,12 @@ def _deploy_cloud_streamlined(
     manifest: Mapping[str, Any],
     release_env: str,
     environment_values: Mapping[str, str],
+    *,
+    dependencies: ReleaseDependencies | None = None,
 ) -> Mapping[str, Any] | None:
     """Replace only selected services and roll them back from local image refs."""
 
+    dependencies = _resolve_release_dependencies(dependencies)
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     selected, _ = filter_enabled_cloud_services(
@@ -4774,9 +4795,9 @@ rm -f "$rollback_env"
 printf '%s\\n' {shlex.quote(completion_marker)}
 """
     if not args.execute:
-        _remote_shell(host, script, execute=False)
+        dependencies.remote_shell(host, script, execute=False)
         return
-    result = _run(
+    result = dependencies.run(
         ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
         input_text=script,
         check=False,
@@ -4821,11 +4842,19 @@ def _deploy_cloud(
     manifest: Mapping[str, Any],
     release_env: str,
     environment_values: Mapping[str, str],
+    *,
+    dependencies: ReleaseDependencies | None = None,
 ) -> Mapping[str, Any] | None:
+    dependencies = _resolve_release_dependencies(dependencies)
     profile = getattr(args, "execution_profile", None)
     if isinstance(profile, ExecutionProfile) and profile.name == "streamlined":
         return _deploy_cloud_streamlined(
-            args, impact, manifest, release_env, environment_values
+            args,
+            impact,
+            manifest,
+            release_env,
+            environment_values,
+            dependencies=dependencies,
         )
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
@@ -5201,7 +5230,7 @@ progress_done migration
         )
     if args.execute:
         # Compose must never observe a partially written release contract.
-        _run(
+        dependencies.run(
             [
                 "ssh",
                 "-o",
@@ -5220,7 +5249,7 @@ progress_done migration
         print(
             f"[dry-run] install non-secret release.env on {host}:{release_dir}/release.env"
         )
-    remote_output = _remote_shell(host, script, execute=args.execute)
+    remote_output = dependencies.remote_shell(host, script, execute=args.execute)
     if args.execute and completion_marker not in remote_output.splitlines():
         raise ReleaseError("cloud release completion marker is missing")
     timings: dict[str, float] = {}
@@ -6661,7 +6690,10 @@ def _validate_recovered_stack(
     impact: ReleaseImpact,
     transaction: Mapping[str, Any],
     environment_values: Mapping[str, str],
+    *,
+    dependencies: ReleaseDependencies | None = None,
 ) -> None:
+    dependencies = _resolve_release_dependencies(dependencies)
     previous = transaction.get("previous")
     if not isinstance(previous, Mapping):
         raise ReleaseError("transaction previous stack is invalid")
@@ -6789,7 +6821,7 @@ for service in {services}; do
 done
 """
         if script is not None:
-            _remote_shell(host, script, execute=True)
+            dependencies.remote_shell(host, script, execute=True)
         non_target_snapshot = previous.get("non_target_snapshot_path")
         if isinstance(non_target_snapshot, str):
             non_target_script = f"""set -euo pipefail
@@ -6800,12 +6832,12 @@ while IFS=$'\t' read -r container_id image started_at; do
   test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$container_id")" = "$started_at"
 done < {shlex.quote(non_target_snapshot)}
 """
-            _remote_shell(host, non_target_script, execute=True)
+            dependencies.remote_shell(host, non_target_script, execute=True)
     if args.env == "test" and "worker" in attempted and "worker" in impact.services:
         port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
         if (
             not port.isdigit()
-            or _run(
+            or dependencies.run(
                 [
                     "curl",
                     "-fsS",
@@ -6832,7 +6864,7 @@ done < {shlex.quote(non_target_snapshot)}
         )
         deadline = time.monotonic() + 180
         while True:
-            response = _run(
+            response = dependencies.run(
                 ["curl", "-fsS", "--max-time", "10", f"{central}/system/workers"],
                 check=False,
             )
@@ -6857,10 +6889,13 @@ done < {shlex.quote(non_target_snapshot)}
                 break
             if time.monotonic() >= deadline:
                 raise ReleaseError("recovered Worker heartbeat verification failed")
-            time.sleep(5)
+            dependencies.sleep(5)
     if "pages" in attempted and "web-static" in impact.services:
         expected = previous.get("pages_deployment_id")
-        if not expected or _current_pages_deployment_id(args) != str(expected):
+        if (
+            not expected
+            or dependencies.current_pages_deployment_id(args) != str(expected)
+        ):
             raise ReleaseError("recovered Pages canonical deployment is incorrect")
         previous_state = previous.get("state")
         web = (
@@ -9125,206 +9160,218 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_standalone_command(args: argparse.Namespace) -> int | None:
+    """Run commands that never enter the release planning transaction."""
+
+    if args.command in {"config-plan", "config-apply"}:
+        return run_config_command(args)
+    if args.command == "validate-env":
+        values = parse_env_file(Path(args.env_file))
+        revision = validate_environment(
+            load_structured_file(Path(args.schema)),
+            args.env,
+            values,
+        )
+        print(f"environment contract ok; config_revision={revision}")
+        return 0
+    if args.command == "verify-test":
+        _mark_test_verified(args)
+        return 0
+    if args.command != "credential-isolation-complete":
+        return None
+    if not args.execute or not args.confirm_prod:
+        raise ReleaseError(
+            "credential isolation completion requires --execute and --confirm-prod"
+        )
+    try:
+        raw_evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseError("credential isolation evidence is invalid") from exc
+    if not isinstance(raw_evidence, Mapping):
+        raise ReleaseError("credential isolation evidence is invalid")
+    evidence = validate_credential_isolation_evidence(raw_evidence)
+    result = complete_credential_isolation(args, evidence)
+    print(
+        json.dumps(
+            {
+                "status": "credential-isolation-complete",
+                **result,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _prepare_release_command(args: argparse.Namespace) -> None:
+    """Normalize daily promotion and module-release arguments before planning."""
+
+    if args.command == "promote":
+        requested = _split_services(args.modules)
+        if not args.sha:
+            args.sha = resolve_latest_promote_candidate(args.bundle_repository)
+        configured = load_promote_policy(
+            Path(args.policy), validate_full_sha(args.sha)
+        ).get("independent_modules", {})
+        allowed = set(configured) if isinstance(configured, Mapping) else set()
+        unknown = sorted(requested - allowed)
+        if unknown:
+            raise ReleaseError("unknown promote modules: " + ", ".join(unknown))
+        if not requested:
+            modules, runtime = resolve_automatic_promote_modules(args)
+            args.modules = modules
+            args.promote_runtime_artifacts = runtime
+            args.promote_live_no_change = not modules
+        args.execute = bool(args.confirm_prod)
+    if args.command != "deploy-module":
+        return
+    if args.env != "prod" or args.track != "control-plane":
+        raise ReleaseError(
+            "deploy-module is restricted to the production control-plane"
+        )
+    if not args.modules or args.services or args.from_sha:
+        raise ReleaseError(
+            "deploy-module requires --module and does not accept service or baseline overrides"
+        )
+    if args.dashboard_fast_track or args.control_plane_repair_fast_track:
+        raise ReleaseError("deploy-module does not accept legacy fast-track modes")
+    if not args.sha:
+        args.sha = resolve_latest_protected_main_sha()
+
+
+def _run_recover_command(args: argparse.Namespace) -> int | None:
+    """Run the isolated recovery workflow, or decline non-recovery commands."""
+
+    if args.command != "recover":
+        return None
+    if args.repair_rollback_materials:
+        if args.transaction:
+            raise ReleaseError(
+                "rollback material repair cannot be combined with transaction recovery"
+            )
+        if not args.sha:
+            raise ReleaseError("rollback material repair requires --sha")
+        if not args.execute or (args.env == "prod" and not args.confirm_prod):
+            raise ReleaseError(
+                "rollback material repair requires --execute; production also "
+                "requires --confirm-prod"
+            )
+        if (
+            args.skip_git_checks
+            or args.skip_ci_checks
+            or args.skip_env_checks
+            or args.skip_gate
+        ):
+            raise ReleaseError(
+                "rollback material repair does not allow skipped verification gates"
+            )
+        if not args.modules or args.services:
+            raise ReleaseError(
+                "rollback material repair requires one independent --modules group"
+            )
+        impact, manifest, previous_sha = build_plan(args)
+        if previous_sha != manifest.get("git_sha"):
+            raise ReleaseError(
+                "rollback material repair SHA is not the deployed module baseline"
+            )
+        if impact.requires_db_upgrade or impact.blockers or impact.unknown_paths:
+            raise ReleaseError(
+                "rollback material repair requires a clean independent module boundary"
+            )
+        verify_operator_worktree_clean(
+            source_ref=str(manifest.get("source_ref", "refs/heads/main")),
+            environment=args.env,
+            command=args.command,
+        )
+        if args.track == "control-plane":
+            environment_values, config_revision, _ = _remote_runtime_env_snapshot(args)
+        else:
+            environment_values, config_revision = _validate_local_env(args)
+        impact, manifest = _expand_disabled_test_owner_rollback_baseline(
+            args, impact, manifest, environment_values
+        )
+        verify_release_ci(manifest, str(manifest["git_sha"]))
+        release_env = render_track_release_env(
+            manifest,
+            config_revision,
+            service_env_root=f"/var/lib/allbot/config/{args.env}/current",
+            allow_legacy_missing_dashboard_profile_pins=True,
+        )
+        _materialize_cloud_rollback_materials(
+            args,
+            impact,
+            manifest,
+            release_env,
+            environment_values,
+        )
+        print(
+            json.dumps(
+                {
+                    "environment": args.env,
+                    "git_sha": manifest["git_sha"],
+                    "services": sorted(impact.services),
+                    "status": "rollback-materials-ready",
+                    "running_services_changed": False,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if not args.transaction:
+        raise ReleaseError("recover requires --transaction")
+    transaction_id = validate_full_sha(args.transaction)
+    if not args.execute:
+        raise ReleaseError("recover requires --execute")
+    if args.env == "prod" and not args.confirm_prod:
+        raise ReleaseError("production recover requires --confirm-prod")
+    if args.track == "control-plane":
+        environment_values, _, runtime_snapshot = _remote_runtime_env_snapshot(args)
+        args.runtime_env_snapshot = runtime_snapshot
+    else:
+        environment_values, _ = _validate_local_env(args)
+    transaction = _read_transaction_journal(args, transaction_id)
+    services = transaction.get("services")
+    if not isinstance(services, list):
+        raise ReleaseError("transaction services are invalid")
+    impact = ReleaseImpact(
+        services=services,
+        level=str(transaction.get("level", "maintenance")),
+        matched_rules=["transaction-recovery"],
+    )
+    dependencies = _recovery_dependencies(
+        args, impact, transaction, environment_values
+    )
+    recover_release_transaction(transaction, dependencies)
+    print(
+        json.dumps(
+            {
+                "transaction_id": transaction_id,
+                "status": transaction["status"],
+                "phase": transaction["phase"],
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def _main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    command = ReleaseCommand.from_argv(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(command.argv)
     command_started = time.monotonic()
     args.pre_transaction_timings = {}
     transaction: dict[str, Any] | None = None
     try:
-        if args.command in {"config-plan", "config-apply"}:
-            return run_config_command(args)
-        if args.command == "validate-env":
-            values = parse_env_file(Path(args.env_file))
-            revision = validate_environment(
-                load_structured_file(Path(args.schema)),
-                args.env,
-                values,
-            )
-            print(f"environment contract ok; config_revision={revision}")
-            return 0
-        if args.command == "verify-test":
-            _mark_test_verified(args)
-            return 0
-        if args.command == "credential-isolation-complete":
-            if not args.execute or not args.confirm_prod:
-                raise ReleaseError(
-                    "credential isolation completion requires --execute and --confirm-prod"
-                )
-            try:
-                raw_evidence = json.loads(
-                    Path(args.evidence).read_text(encoding="utf-8")
-                )
-            except (OSError, json.JSONDecodeError) as exc:
-                raise ReleaseError("credential isolation evidence is invalid") from exc
-            if not isinstance(raw_evidence, Mapping):
-                raise ReleaseError("credential isolation evidence is invalid")
-            evidence = validate_credential_isolation_evidence(raw_evidence)
-            result = complete_credential_isolation(args, evidence)
-            print(
-                json.dumps(
-                    {
-                        "status": "credential-isolation-complete",
-                        **result,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                    sort_keys=True,
-                )
-            )
-            return 0
-        if args.command == "promote":
-            requested = _split_services(args.modules)
-            if not args.sha:
-                args.sha = resolve_latest_promote_candidate(args.bundle_repository)
-            configured = load_promote_policy(
-                Path(args.policy), validate_full_sha(args.sha)
-            ).get("independent_modules", {})
-            allowed = set(configured) if isinstance(configured, Mapping) else set()
-            unknown = sorted(requested - allowed)
-            if unknown:
-                raise ReleaseError(
-                    "unknown promote modules: " + ", ".join(unknown)
-                )
-            if not requested:
-                modules, runtime = resolve_automatic_promote_modules(args)
-                args.modules = modules
-                args.promote_runtime_artifacts = runtime
-                args.promote_live_no_change = not modules
-            args.execute = bool(args.confirm_prod)
-        if args.command == "deploy-module":
-            if args.env != "prod" or args.track != "control-plane":
-                raise ReleaseError(
-                    "deploy-module is restricted to the production control-plane"
-                )
-            if not args.modules or args.services or args.from_sha:
-                raise ReleaseError(
-                    "deploy-module requires --module and does not accept service or baseline overrides"
-                )
-            if args.dashboard_fast_track or args.control_plane_repair_fast_track:
-                raise ReleaseError(
-                    "deploy-module does not accept legacy fast-track modes"
-                )
-            if not args.sha:
-                args.sha = resolve_latest_protected_main_sha()
-        if args.command == "recover":
-            if args.repair_rollback_materials:
-                if args.transaction:
-                    raise ReleaseError(
-                        "rollback material repair cannot be combined with transaction recovery"
-                    )
-                if not args.sha:
-                    raise ReleaseError("rollback material repair requires --sha")
-                if not args.execute or (args.env == "prod" and not args.confirm_prod):
-                    raise ReleaseError(
-                        "rollback material repair requires --execute; production also "
-                        "requires --confirm-prod"
-                    )
-                if (
-                    args.skip_git_checks
-                    or args.skip_ci_checks
-                    or args.skip_env_checks
-                    or args.skip_gate
-                ):
-                    raise ReleaseError(
-                        "rollback material repair does not allow skipped verification gates"
-                    )
-                if not args.modules or args.services:
-                    raise ReleaseError(
-                        "rollback material repair requires one independent --modules group"
-                    )
-                impact, manifest, previous_sha = build_plan(args)
-                if previous_sha != manifest.get("git_sha"):
-                    raise ReleaseError(
-                        "rollback material repair SHA is not the deployed module baseline"
-                    )
-                if (
-                    impact.requires_db_upgrade
-                    or impact.blockers
-                    or impact.unknown_paths
-                ):
-                    raise ReleaseError(
-                        "rollback material repair requires a clean independent module boundary"
-                    )
-                verify_operator_worktree_clean(
-                    source_ref=str(manifest.get("source_ref", "refs/heads/main")),
-                    environment=args.env,
-                    command=args.command,
-                )
-                if args.track == "control-plane":
-                    environment_values, config_revision, _ = (
-                        _remote_runtime_env_snapshot(args)
-                    )
-                else:
-                    environment_values, config_revision = _validate_local_env(args)
-                impact, manifest = _expand_disabled_test_owner_rollback_baseline(
-                    args, impact, manifest, environment_values
-                )
-                verify_release_ci(manifest, str(manifest["git_sha"]))
-                release_env = render_track_release_env(
-                    manifest,
-                    config_revision,
-                    service_env_root=f"/var/lib/allbot/config/{args.env}/current",
-                    allow_legacy_missing_dashboard_profile_pins=True,
-                )
-                _materialize_cloud_rollback_materials(
-                    args,
-                    impact,
-                    manifest,
-                    release_env,
-                    environment_values,
-                )
-                print(
-                    json.dumps(
-                        {
-                            "environment": args.env,
-                            "git_sha": manifest["git_sha"],
-                            "services": sorted(impact.services),
-                            "status": "rollback-materials-ready",
-                            "running_services_changed": False,
-                        },
-                        sort_keys=True,
-                    )
-                )
-                return 0
-            if not args.transaction:
-                raise ReleaseError("recover requires --transaction")
-            transaction_id = validate_full_sha(args.transaction)
-            if not args.execute:
-                raise ReleaseError("recover requires --execute")
-            if args.env == "prod" and not args.confirm_prod:
-                raise ReleaseError("production recover requires --confirm-prod")
-            if args.track == "control-plane":
-                environment_values, _, runtime_snapshot = (
-                    _remote_runtime_env_snapshot(args)
-                )
-                args.runtime_env_snapshot = runtime_snapshot
-            else:
-                environment_values, _ = _validate_local_env(args)
-            transaction = _read_transaction_journal(args, transaction_id)
-            services = transaction.get("services")
-            if not isinstance(services, list):
-                raise ReleaseError("transaction services are invalid")
-            impact = ReleaseImpact(
-                services=services,
-                level=str(transaction.get("level", "maintenance")),
-                matched_rules=["transaction-recovery"],
-            )
-            dependencies = _recovery_dependencies(
-                args, impact, transaction, environment_values
-            )
-            recover_release_transaction(transaction, dependencies)
-            print(
-                json.dumps(
-                    {
-                        "transaction_id": transaction_id,
-                        "status": transaction["status"],
-                        "phase": transaction["phase"],
-                    },
-                    sort_keys=True,
-                )
-            )
-            return 0
+        standalone_result = _run_standalone_command(args)
+        if standalone_result is not None:
+            return standalone_result
+        _prepare_release_command(args)
+        recover_result = _run_recover_command(args)
+        if recover_result is not None:
+            return recover_result
         if args.command == "rollback" and args.to:
             if args.sha and args.sha != args.to:
                 raise ReleaseError("rollback --sha and --to must identify the same SHA")

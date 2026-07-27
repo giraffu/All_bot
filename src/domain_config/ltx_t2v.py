@@ -15,7 +15,7 @@ LTX_T2V_IC_HEIGHT = 448
 LTX_T2V_FPS = 24
 LTX_T2V_ALLOWED_DURATIONS = (5, 10, 15, 20)
 LTX_T2V_COST_BY_DURATION = {5: 10, 10: 20, 15: 30, 20: 40}
-LTX_T2V_IC_COST = 12
+LTX_T2V_IC_COST_BY_DURATION = {5: 12, 10: 24, 15: 36, 20: 48}
 CHARACTER_REFERENCE_BUILD_COST = 18
 
 DISTILLED_LORA_NAME = "ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
@@ -56,11 +56,17 @@ def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
     duration = _duration(inputs.get("duration", inputs.get("length", 5)))
     character_sheet = str(inputs.get("character_sheet") or "").strip() or None
     if task_type == LTX_T2V_IC_TASK_TYPE:
-        if duration != 5:
-            raise LtxT2VValidationError("人物一致性文生视频当前仅支持 5 秒。")
+        if duration not in LTX_T2V_ALLOWED_DURATIONS:
+            raise LtxT2VValidationError(
+                "人物一致性文生视频时长必须为 5、10、15 或 20 秒。"
+            )
         if not character_sheet:
             raise LtxT2VValidationError("人物一致性文生视频缺少已就绪的人物参考表。")
-        width, height, cost = LTX_T2V_IC_WIDTH, LTX_T2V_IC_HEIGHT, LTX_T2V_IC_COST
+        width, height, cost = (
+            LTX_T2V_IC_WIDTH,
+            LTX_T2V_IC_HEIGHT,
+            LTX_T2V_IC_COST_BY_DURATION[duration],
+        )
     elif task_type == LTX_T2V_TASK_TYPE:
         if character_sheet:
             raise LtxT2VValidationError("普通文生视频不得携带人物参考表。")

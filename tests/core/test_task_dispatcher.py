@@ -206,27 +206,23 @@ def test_ltx_t2v_costs_follow_duration(duration, expected_cost):
     )
 
 
-def test_ltx_t2v_ic_is_fixed_to_five_seconds_and_twelve_credits():
+@pytest.mark.parametrize(
+    ("duration", "expected_cost"),
+    [(5, 12), (10, 24), (15, 36), (20, 48)],
+)
+def test_ltx_t2v_ic_uses_supported_duration_costs(duration, expected_cost):
     strategy = StrategyFactory.get_strategy("ltx_t2v_ic")
 
     assert (
         strategy.get_cost(
             {
-                "duration": 5,
+                "duration": duration,
                 "resolution": "768x448",
                 "character_sheet": "bucket/character.png",
             }
         )
-        == 12
+        == expected_cost
     )
-    with pytest.raises(CoreDomainError, match="仅支持 5 秒"):
-        strategy.get_cost(
-            {
-                "duration": 10,
-                "resolution": "768x448",
-                "character_sheet": "bucket/character.png",
-            }
-        )
 
 
 @pytest.mark.asyncio

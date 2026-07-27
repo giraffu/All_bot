@@ -3180,6 +3180,7 @@ def test_web_runtime_config_is_public_versioned_and_environment_specific(tmp_pat
                     "api_base_url": "https://api-test.example.com/api",
                     "telegram_bot_username": "test_bot",
                     "enable_free_edit_v3": True,
+                    "enable_ltx_t2v": True,
                 },
                 "prod": {
                     "api_base_url": "https://api.example.com/api",
@@ -3200,6 +3201,7 @@ def test_web_runtime_config_is_public_versioned_and_environment_specific(tmp_pat
     assert values["api_base_url"] == "https://api-test.example.com/api"
     assert values["telegram_bot_username"] == "test_bot"
     assert values["enable_free_edit_v3"] is True
+    assert values["enable_ltx_t2v"] is True
     assert len(revision) == 64
     assert "api-test.example.com" in script
     assert FULL_SHA in script
@@ -3224,6 +3226,20 @@ def test_web_runtime_config_rejects_unknown_or_secret_fields(tmp_path):
         module.ReleaseError, match="unsupported public Web runtime fields"
     ):
         module.load_web_runtime_config(config_path, "test")
+
+
+def test_checked_in_web_runtime_config_enables_ltx_only_in_test():
+    module = _load_module()
+
+    test_values, _ = module.load_web_runtime_config(
+        ROOT / "frontend/runtime-config.yml", "test"
+    )
+    prod_values, _ = module.load_web_runtime_config(
+        ROOT / "frontend/runtime-config.yml", "prod"
+    )
+
+    assert test_values["enable_ltx_t2v"] is True
+    assert prod_values["enable_ltx_t2v"] is False
 
 
 @pytest.mark.parametrize(
@@ -3357,6 +3373,9 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
         policy,
         {"REQUIRED_CHANNEL_ID", "MAIN_BOT_LAZY_BOT_USERNAME"},
     ) == {"bot"}
+    assert updater.affected_services(
+        policy, {"LTX_T2V_BACKEND_ENABLED"}
+    ) == {"web-api"}
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
 
 

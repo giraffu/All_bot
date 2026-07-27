@@ -18,12 +18,10 @@ import {
   scaleRunPodCapacity,
   terminateRunPodOperation,
 } from '../api/api'
-
-type RunPodProfile = {
-  profile: string
-  label: string
-  supported_task_types: string[]
-}
+import {
+  RUNPOD_FALLBACK_PROFILES,
+  type RunPodProfile,
+} from '../utils/runpodProfiles'
 
 type ScaleRow = {
   profile: string
@@ -93,61 +91,12 @@ const emit = defineEmits<{
   changed: []
 }>()
 
-const fallbackProfiles: RunPodProfile[] = [
-  {
-    profile: 'img2img',
-    label: 'img2img / img2img_lora',
-    supported_task_types: ['img2img', 'img2img_lora'],
-  },
-  {
-    profile: 'image_to_video',
-    label: 'image_to_video',
-    supported_task_types: ['image_to_video', 'video_insert', 'video_edit'],
-  },
-  {
-    profile: 'wan22_video_v2',
-    label: 'wan22_video_v2',
-    supported_task_types: ['wan22_video_v2'],
-  },
-  {
-    profile: 'i2i_pro',
-    label: 'i2i_pro / txt2img / face_swap_v2',
-    supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap_v2'],
-  },
-  {
-    profile: 'scail2',
-    label: 'scail2 / 视频生视频',
-    supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
-  },
-  {
-    profile: 'ltx_video',
-    label: 'ltx_video / 高级图生视频',
-    supported_task_types: ['ltx_video', 'ltx_video_flf2v', 'ltx_video_v2v_audio'],
-  },
-  {
-    profile: 'pornmaster_flux2_edit',
-    label: 'pornmaster_flux2 / 自由P图 v2',
-    supported_task_types: [
-      'pornmaster_flux2_single_edit',
-      'pornmaster_flux2_multi_edit',
-    ],
-  },
-  {
-    profile: 'pornmaster_flux2_edit_bf16',
-    label: 'pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池',
-    supported_task_types: [
-      'pornmaster_flux2_edit_bf16',
-      'pornmaster_flux2_multi_edit_bf16',
-    ],
-  },
-]
-
 const open = ref(false)
 const submitting = ref(false)
 const autoscalerLoading = ref(false)
 const autoscalerControlSubmitting = ref(false)
 const terminatingOperationIds = ref<Set<string>>(new Set())
-const profiles = ref<RunPodProfile[]>(fallbackProfiles)
+const profiles = ref<RunPodProfile[]>(RUNPOD_FALLBACK_PROFILES)
 const operations = ref<RunPodOperation[]>([])
 const autoscaler = ref<RunPodAutoscalerPayload | null>(null)
 const rows = ref<ScaleRow[]>([

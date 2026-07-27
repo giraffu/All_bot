@@ -94,6 +94,13 @@ def test_case_builder_preserves_profile_payloads(tmp_path):
         "i2i_pro",
         "txt2img",
         "face_swap_v2",
+        "face_swap",
+    ]
+    assert [case["expected_central_task_type"] for case in i2i_cases] == [
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+        "face_swap",
     ]
     scail2_cases = builder.scail2_task_cases(
         {"reference_image_key": "reference.jpg", "motion_video_key": "motion.mp4"}
@@ -267,6 +274,43 @@ def test_executor_rejects_central_task_type_mismatch(tmp_path):
         )
 
 
+def test_executor_rejects_task_popped_by_another_worker(tmp_path):
+    config = _config(tmp_path)
+
+    def http_json(method, url, **kwargs):
+        if url == "https://web.example/tasks/generate":
+            return {"task_id": "task-stolen"}
+        if url == "https://central.example/status/task-stolen":
+            return {"status": "done", "task_type": "img2img"}
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    executor = RunPodProdWorkerCanaryExecutor(
+        config,
+        http_json_func=http_json,
+        http_request_func=lambda *args, **kwargs: {"status": 200, "raw": b""},
+        web_auth_headers_func=lambda: {"Authorization": "Bearer web"},
+        fetch_workers_func=lambda: [
+            {
+                "agent_id": "runpod_prod_img2img_manual_02",
+                "current_task_id": "task-stolen",
+                "current_task_type": "img2img",
+                "status": "running",
+            }
+        ],
+        sleep_func=lambda seconds: None,
+        phase_func=lambda *args: None,
+    )
+
+    with pytest.raises(
+        RunPodProdWorkerCanaryError,
+        match="popped by runpod_prod_img2img_manual_02",
+    ):
+        executor.run_task_case(
+            RunPodProdWorkerCanaryCaseBuilder(config).img2img_task_case("ref.png"),
+            {},
+        )
+
+
 def test_executor_downloads_video_and_last_frame(tmp_path):
     config = _config(tmp_path, profile="wan22_video_v2", task_type="wan22_video_v2")
 
@@ -299,7 +343,14 @@ def test_executor_downloads_video_and_last_frame(tmp_path):
         http_json_func=http_json,
         http_request_func=http_request,
         web_auth_headers_func=lambda: {"Authorization": "Bearer web"},
-        fetch_workers_func=lambda: [],
+        fetch_workers_func=lambda: [
+            {
+                "agent_id": config.agent_id,
+                "current_task_id": "task-video",
+                "current_task_type": "wan22_video_v2",
+                "status": "running",
+            }
+        ],
         sleep_func=lambda seconds: None,
         phase_func=lambda *args: None,
     )

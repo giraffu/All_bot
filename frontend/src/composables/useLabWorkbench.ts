@@ -285,7 +285,6 @@ export function useLabWorkbench() {
   watch(selectedCharacterId, (characterId) => {
     if (currentMode.value.id !== 'ltx_t2v') return
     resolution.value = characterId ? '768x448' : '1280x704'
-    if (characterId) duration.value = '5'
   })
 
   watch(

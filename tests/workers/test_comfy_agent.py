@@ -14,6 +14,14 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "workers" / "comfy_agent" / "agent_main.py"
 MODULE_DIR = str(MODULE_PATH.parent)
+WORKFLOW_EXECUTION_PATHS = (
+    ROOT / "workers" / "comfy_agent" / "agent_workflow_execution.py",
+    ROOT
+    / "workers"
+    / "runpod_runtime"
+    / "comfy_agent"
+    / "agent_workflow_execution.py",
+)
 
 
 def load_agent_main_module(module_path=MODULE_PATH):
@@ -66,6 +74,22 @@ def load_agent_main_module(module_path=MODULE_PATH):
         "test_runpod_agent_main_module"
         if "runpod_runtime" in module_path.parts
         else "test_agent_main_module"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_workflow_execution_module(module_path: Path):
+    module_dir = str(module_path.parent)
+    if module_dir not in sys.path:
+        sys.path.insert(0, module_dir)
+    module_name = (
+        "test_runpod_agent_workflow_execution"
+        if "runpod_runtime" in module_path.parts
+        else "test_agent_workflow_execution"
     )
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
@@ -208,6 +232,98 @@ def test_agent_main_removes_debug_side_paths():
     assert ".dbg/wan22-video-output.env" not in content
     assert "http://127.0.0.1:7777/event" not in content
     assert "exec(" not in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", WORKFLOW_EXECUTION_PATHS)
+async def test_scail2_face_swap_worker_rejects_unprepared_reference_before_comfy(
+    module_path,
+):
+    module = load_workflow_execution_module(module_path)
+
+    class UnexpectedPatcher:
+        def load_workflow(self, _task_type):
+            raise AssertionError("workflow must not load before stage-one completion")
+
+    class UnexpectedComfyClient:
+        async def queue_prompt(self, *_args, **_kwargs):
+            raise AssertionError("ComfyUI must not receive an unprepared SCAIL task")
+
+    async def unexpected_async_call(*_args, **_kwargs):
+        raise AssertionError("execution must fail before contacting ComfyUI")
+
+    with pytest.raises(ValueError, match="reference_preprocessed=true"):
+        await module.submit_task_workflow(
+            task_id="stage2-task",
+            task_type="scail2_face_swap_v2",
+            params={
+                "image": "raw-reference.png",
+                "video": "motion.mp4",
+            },
+            execution=SimpleNamespace(prompt_id=None),
+            patcher=UnexpectedPatcher(),
+            comfy_client=UnexpectedComfyClient(),
+            wait_for_comfy_ready_func=unexpected_async_call,
+            report_status_func=unexpected_async_call,
+            agent_id="scail-worker",
+            logger=logging.getLogger("test"),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", WORKFLOW_EXECUTION_PATHS)
+async def test_scail2_face_swap_worker_accepts_only_preprocessed_stage_two(
+    module_path,
+):
+    module = load_workflow_execution_module(module_path)
+    calls = []
+
+    class Patcher:
+        def load_workflow(self, task_type):
+            calls.append(("load", task_type))
+            return {"node": {"inputs": {}}}
+
+        def patch_workflow(self, task_type, workflow, params):
+            calls.append(("patch", task_type, params["reference_preprocessed"]))
+            return workflow
+
+    class ComfyClient:
+        async def queue_prompt(self, _workflow, client_id):
+            calls.append(("queue", client_id))
+            return "prompt-1"
+
+    async def wait_for_comfy_ready(*, operation):
+        calls.append(("ready", operation))
+
+    async def report_status(task_id, status):
+        calls.append(("status", task_id, status))
+
+    execution = SimpleNamespace(prompt_id=None)
+    await module.submit_task_workflow(
+        task_id="stage2-task",
+        task_type="scail2_face_swap_v2",
+        params={
+            "image": "swapped-first-frame.png",
+            "video": "motion.mp4",
+            "reference_preprocessed": True,
+        },
+        execution=execution,
+        patcher=Patcher(),
+        comfy_client=ComfyClient(),
+        wait_for_comfy_ready_func=wait_for_comfy_ready,
+        report_status_func=report_status,
+        agent_id="scail-worker",
+        logger=logging.getLogger("test"),
+    )
+
+    assert execution.prompt_id == "prompt-1"
+    assert calls == [
+        ("load", "scail2_face_swap_v2"),
+        ("patch", "scail2_face_swap_v2", True),
+        ("ready", "submitting task stage2-task"),
+        ("queue", "agent_scail-worker"),
+        ("status", "stage2-task", "running"),
+    ]
 
 
 @pytest.mark.asyncio
