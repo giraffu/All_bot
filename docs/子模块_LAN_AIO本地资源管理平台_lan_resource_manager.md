@@ -112,6 +112,8 @@ Node，也不会在运行时 apt 安装工具。`NPM_CONFIG_CACHE` 固定落到 
 Pages 阶段在上传前先同时核对 canonical deployment 的 commit SHA、成功状态以及
 公开 runtime config revision；三者匹配就复用该不可变部署并记录
 `reused_existing`，使“Pages 已成功但本地进程随后中断”的重试不会重复 mutation。
+同 SHA 存在多次历史上传时，以项目当前 canonical deployment ID 选定记录，不能取
+部署列表中第一条同 SHA 记录后反向猜测 canonical。
 runner 的固定 SSH config 对同一 allowlisted 云主机使用 20 秒 connect timeout、
 最多 4 次 connection attempts，以及 20 秒 server-alive/3 次失联上限。该重试只吸收
 瞬时网络抖动，不改变目标 host、用户、密钥、known_hosts 或环境授权；全部尝试失败仍

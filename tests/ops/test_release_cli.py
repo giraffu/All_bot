@@ -5576,6 +5576,50 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
     assert requests[0].get_header("User-agent") == "AllBotReleaseVerifier/1.0"
 
 
+def test_pages_verifier_selects_canonical_when_same_sha_has_multiple_deployments(
+    monkeypatch,
+):
+    module = _load_module()
+    sha = "b" * 40
+    deployments = [
+        {
+            "id": "newer-noncanonical",
+            "environment": "production",
+            "deployment_trigger": {
+                "metadata": {"branch": "main", "commit_hash": sha}
+            },
+            "latest_stage": {"status": "success"},
+        },
+        {
+            "id": "canonical-id",
+            "environment": "production",
+            "deployment_trigger": {
+                "metadata": {"branch": "main", "commit_hash": sha}
+            },
+            "latest_stage": {"status": "success"},
+        },
+    ]
+
+    def fake_api(_args, _method, path, **_kwargs):
+        if path.endswith("/deployments?env=production"):
+            return {"success": True, "result": deployments}
+        return {
+            "success": True,
+            "result": {"canonical_deployment": {"id": "canonical-id"}},
+        }
+
+    monkeypatch.setattr(module, "_pages_api_request", fake_api)
+    monkeypatch.setattr(
+        module, "_verify_canonical_pages_runtime", lambda *_args: None
+    )
+
+    result = module.verify_pages_canonical_deployment(
+        SimpleNamespace(env="prod"), sha, "c" * 64
+    )
+
+    assert result["deployment_id"] == "canonical-id"
+
+
 @pytest.mark.parametrize(
     ("canonical_id", "content_type", "runtime_sha", "message"),
     [
