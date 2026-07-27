@@ -519,6 +519,7 @@ def test_reconcile_merged_moves_stale_pending_and_superseded_test_failure(tmp_pa
     result = queue.reconcile_merged(
         current_main="d" * 40,
         is_ancestor=lambda head, _main: head in {merged["head"], "c" * 40},
+        superseding_bundle_ready=True,
     )
 
     assert result["merged_pending"] == [merged["head"]]
@@ -532,3 +533,29 @@ def test_reconcile_merged_moves_stale_pending_and_superseded_test_failure(tmp_pa
     )
     assert completed["status"] == "superseded"
     assert completed["superseded_by_main"] == "d" * 40
+
+
+def test_reconcile_keeps_test_failure_when_newer_main_has_no_bundle(tmp_path):
+    module = _load_module()
+    queue = module.IntegrationQueue(tmp_path / "queue")
+    failed_path = queue.failed / "old-test-failure.json"
+    module._atomic_json(
+        failed_path,
+        {
+            "batch": "old-test-failure",
+            "status": "failed",
+            "stage": "deploying-test",
+            "main_sha": "c" * 40,
+            "members": [],
+            "path": str(failed_path),
+        },
+    )
+
+    result = queue.reconcile_merged(
+        current_main="d" * 40,
+        is_ancestor=lambda _head, _main: True,
+        superseding_bundle_ready=False,
+    )
+
+    assert result["superseded_failed"] == []
+    assert failed_path.is_file()

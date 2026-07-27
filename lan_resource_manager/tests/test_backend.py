@@ -95,6 +95,7 @@ class FakeReleaseOperator:
         self.builds = []
         self.gpu_builds = []
         self.test_config_syncs = []
+        self.test_rollback_repairs = []
         self.plans = []
         self.executions = []
         self.maintenance_calls = []
@@ -168,6 +169,15 @@ class FakeReleaseOperator:
             "source_sha": kwargs["expected_main_sha"],
             "environment": "test",
             "production_changed": False,
+        }
+
+    async def repair_test_rollback(self, **kwargs):
+        self.test_rollback_repairs.append(kwargs)
+        return {
+            "status": "rollback-materials-ready",
+            "git_sha": kwargs["expected_current_sha"],
+            "environment": "test",
+            "runtime_changed": False,
         }
 
     async def build_status(self, sha):
@@ -609,6 +619,41 @@ def test_test_config_sync_is_exact_sha_and_never_targets_prod(tmp_path):
         {
             "expected_main_sha": sha,
             "confirmation": f"TEST CONFIG {sha}",
+        }
+    ]
+
+
+def test_test_rollback_repair_is_bound_to_live_test_sha(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    current_sha = "b" * 40
+    stale = http.post(
+        "/api/v1/environments/test/rollback-repair",
+        json={
+            "expected_current_sha": "a" * 40,
+            "confirmation": f"REPAIR TEST ROLLBACK {'a' * 40}",
+        },
+        headers=headers,
+    )
+    assert stale.status_code == 409
+
+    accepted = http.post(
+        "/api/v1/environments/test/rollback-repair",
+        json={
+            "expected_current_sha": current_sha,
+            "confirmation": f"REPAIR TEST ROLLBACK {current_sha}",
+        },
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    operation = wait_operation(http, accepted.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert operation["result"]["environment"] == "test"
+    assert operation["result"]["runtime_changed"] is False
+    assert release.test_rollback_repairs == [
+        {
+            "expected_current_sha": current_sha,
+            "confirmation": f"REPAIR TEST ROLLBACK {current_sha}",
         }
     ]
 

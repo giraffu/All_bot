@@ -6300,6 +6300,112 @@ def test_rollback_material_repair_expands_disabled_test_owner_module_to_full_bas
     assert '"running_services_changed": false' in capsys.readouterr().out
 
 
+def test_current_test_dashboard_repair_does_not_require_missing_module_history(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    dashboard_artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + digit * 64,
+            "digest": "sha256:" + digit * 64,
+            "source_sha": FULL_SHA,
+            "oci_revision": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name, digit in (
+            ("dashboard-backend", "1"),
+            ("dashboard-frontend", "2"),
+        )
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="recover",
+        modules=["dashboard"],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+        control_plane_repair_fast_track=False,
+        repair_test_data_services=False,
+        repair_rollback_materials=True,
+    )
+
+    manifest_fetch = []
+    monkeypatch.setattr(
+        module,
+        "_resolve_manifest_path",
+        lambda *_args, **kwargs: (
+            manifest_fetch.append(kwargs["allow_fetch"]) or tmp_path / "index"
+        ),
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+
+    def resolve_previous(received, **_kwargs):
+        received.previous_state = {
+            "schema_version": 2,
+            "track": "control-plane",
+            "git_sha": FULL_SHA,
+            "artifacts": {
+                "central-api": {"digest": "sha256:" + "3" * 64}
+            },
+        }
+        return FULL_SHA
+
+    monkeypatch.setattr(module, "_resolve_previous_sha", resolve_previous)
+    monkeypatch.setattr(
+        module,
+        "_read_artifact_state_history",
+        lambda _args: pytest.fail("current bundle repair must not scan history"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_load_v2_track",
+        lambda *_args, **_kwargs: {
+            "schema_version": 2,
+            "source_sha": FULL_SHA,
+            "git_sha": FULL_SHA,
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": "control-plane",
+            "artifacts": dashboard_artifacts,
+            "selected_artifacts": sorted(dashboard_artifacts),
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "load_release_index",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            index={
+                "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+                "release_channel": "main",
+                "source_ref": "refs/heads/main",
+            },
+            manifests={
+                "control-plane": {"artifacts": dashboard_artifacts},
+                "gpu-execution": {"artifacts": {}},
+            },
+        ),
+    )
+
+    impact, _manifest, previous_sha = module.build_plan(args)
+
+    assert previous_sha == FULL_SHA
+    assert manifest_fetch == [True]
+    assert set(impact.services) == {"dashboard-backend", "dashboard-frontend"}
+
+
 def test_disabled_test_owner_rollback_repair_rejects_recorded_digest_mismatch(
     monkeypatch,
 ):

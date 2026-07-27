@@ -131,3 +131,12 @@ workflow 时才复用。该入口不创建 RunPod/LAN Pod、不部署 prod，也
 当前 main checkout 执行 test `config-plan` 后再执行原子 `config-apply --execute`。
 该动作只用于收敛发布前已检测到的 test 配置投影漂移，不接受环境参数、不附加
 `--confirm-prod`，也不调用手动维护入口。
+
+`POST /api/v1/environments/test/rollback-repair` 只接受
+`REPAIR TEST ROLLBACK <current-sha>`。Web 提交前重新读取测试状态并要求 current SHA
+完全相同；runner 固定调用 test/control-plane/dashboard 的
+`recover --repair-rollback-materials --execute` 兼容入口。该 repair 模式可按精确
+SHA 拉取旧不可变 bundle，再由发布器核对完整 bundle、
+current artifact 和运行容器 digest，只原子物化 checkout 与非敏感 `release.env` 并
+执行 `compose config -q`；不拉镜像、不替换或重启容器、不写维护标记及 deployment
+state。平台不存在正式环境对称入口。

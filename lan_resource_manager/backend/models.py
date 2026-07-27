@@ -50,6 +50,11 @@ class TestConfigSyncRequest(BaseModel):
     confirmation: str = Field(min_length=1, max_length=100)
 
 
+class TestRollbackRepairRequest(BaseModel):
+    expected_current_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    confirmation: str = Field(min_length=1, max_length=120)
+
+
 class DeploymentPlanRequest(BaseModel):
     environment: Literal["test", "prod"]
     module: str = Field(pattern=r"^[a-z0-9-]{1,80}$")

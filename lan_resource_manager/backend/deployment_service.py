@@ -22,6 +22,7 @@ from .models import (
     OperationStatus,
     RetryIntegrationRequest,
     TestConfigSyncRequest,
+    TestRollbackRepairRequest,
 )
 from .release_operator import ReleaseOperatorError, ReleaseOperatorPort
 from .store import OperationStore, utc_now
@@ -112,6 +113,7 @@ class DeploymentService:
                 "integration-retry",
                 "gpu-release-build",
                 "test-config-sync",
+                "test-rollback-repair",
                 "workspace-align",
             }
         )
@@ -256,6 +258,64 @@ class DeploymentService:
                     stage="failed",
                     error_code=str(exc)[:120]
                     or "test_config_sync_failed",
+                )
+
+    async def start_test_rollback_repair(
+        self,
+        request: TestRollbackRepairRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        phrase = f"REPAIR TEST ROLLBACK {request.expected_current_sha}"
+        if request.confirmation != phrase:
+            raise HTTPException(422, detail="confirmation_mismatch")
+        status = await self.operator.environment_status("test")
+        if status.get("current_sha") != request.expected_current_sha:
+            raise HTTPException(409, detail="test_environment_changed")
+        if not self._runtime_available() or self.store.active(kind="build"):
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"test-rollback-repair-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="test-rollback-repair",
+            request={
+                "sha": request.expected_current_sha,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._repair_test_rollback(
+                operation_id, request.expected_current_sha
+            )
+        )
+        return operation
+
+    async def _repair_test_rollback(self, operation_id: str, sha: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="repairing-test-rollback-materials",
+                )
+                result = await self.operator.repair_test_rollback(
+                    expected_current_sha=sha,
+                    confirmation=f"REPAIR TEST ROLLBACK {sha}",
+                )
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="test-rollback-materials-ready",
+                    result=result,
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120]
+                    or "test_rollback_repair_failed",
                 )
 
     async def _integration(self, operation_id: str, sha: str):

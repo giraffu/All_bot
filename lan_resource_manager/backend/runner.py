@@ -50,6 +50,7 @@ ALLOWED_ACTIONS = {
     "integration_status",
     "prepare_gpu_release",
     "sync_test_config",
+    "repair_test_rollback",
     "retry_integration",
 }
 
@@ -200,6 +201,37 @@ class ReleaseRunner:
                         str(self.root),
                         "--source-sha",
                         sha,
+                        "--execute",
+                    ],
+                    timeout=3600,
+                )
+            )
+        if action == "repair_test_rollback":
+            sha = payload.get("expected_current_sha")
+            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+                raise RunnerError("invalid_sha")
+            if payload.get("confirmation") != f"REPAIR TEST ROLLBACK {sha}":
+                raise RunnerError("confirmation_mismatch")
+            common = [
+                "--env",
+                "test",
+                "--track",
+                "control-plane",
+                "--sha",
+                sha,
+                "--modules",
+                "dashboard",
+                "--bundle-repository",
+                "ghcr.io/giraffu/allbot-release-v2",
+            ]
+            return parse_last_json(
+                await self._run(
+                    [
+                        sys.executable,
+                        str(self.release),
+                        "recover",
+                        *common,
+                        "--repair-rollback-materials",
                         "--execute",
                     ],
                     timeout=3600,

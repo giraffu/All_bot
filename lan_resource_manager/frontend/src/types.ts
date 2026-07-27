@@ -39,6 +39,7 @@ export interface Operation {
     | 'build'
     | 'gpu-release-build'
     | 'test-config-sync'
+    | 'test-rollback-repair'
     | 'deploy'
     | 'deploy-all-test'
     | 'maintenance'

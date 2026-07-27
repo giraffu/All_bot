@@ -23,6 +23,7 @@ from .models import (
     MaintenanceRequest,
     RetryIntegrationRequest,
     TestConfigSyncRequest,
+    TestRollbackRepairRequest,
     SwitchRequest,
     TERMINAL_OPERATION_STATUSES,
 )
@@ -161,6 +162,15 @@ def create_app(
     ):
         source_ip = request.client.host if request.client else "unknown"
         return await deployment.start_test_config_sync(
+            payload, source_ip, request.state.request_id
+        )
+
+    @app.post("/api/v1/environments/test/rollback-repair", status_code=202)
+    async def test_rollback_repair(
+        payload: TestRollbackRepairRequest, request: Request
+    ):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_test_rollback_repair(
             payload, source_ip, request.state.request_id
         )
 

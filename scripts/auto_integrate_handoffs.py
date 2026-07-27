@@ -227,6 +227,7 @@ class IntegrationQueue:
         *,
         current_main: str,
         is_ancestor,
+        superseding_bundle_ready: bool,
     ) -> dict[str, list[str]]:
         """Remove queue blockers already superseded by a newer protected main.
 
@@ -269,6 +270,7 @@ class IntegrationQueue:
                 or not FULL_SHA_RE.fullmatch(failed_main)
                 or failed_main == current_main
                 or not is_ancestor(failed_main, current_main)
+                or not superseding_bundle_ready
             ):
                 continue
             destination = self.completed / f"reconciled-{source.name}"
@@ -795,6 +797,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reconciled = queue.reconcile_merged(
                     current_main=current_main,
                     is_ancestor=is_ancestor,
+                    superseding_bundle_ready=(
+                        coordinator._published_modular_bundle_is_attested(
+                            current_main
+                        )
+                    ),
                 )
                 completed_batches = []
                 while True:

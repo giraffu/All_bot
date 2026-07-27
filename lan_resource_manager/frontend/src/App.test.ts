@@ -170,6 +170,7 @@ describe('deployment workspace', () => {
     expect(wrapper.find('[data-action="deploy-all-test"]').exists()).toBe(true)
     expect(wrapper.find('[data-action="gpu-release-build"]').exists()).toBe(true)
     expect(wrapper.find('[data-action="test-config-sync"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="test-rollback-repair"]').exists()).toBe(true)
     expect(wrapper.get('[data-action="create-plan"]').attributes('disabled')).toBeUndefined()
   })
 

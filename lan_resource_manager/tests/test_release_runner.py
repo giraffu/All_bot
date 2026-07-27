@@ -402,6 +402,43 @@ def test_test_config_sync_uses_fixed_test_only_script(tmp_path):
     assert all("--confirm-prod" not in command for command in commands)
 
 
+def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp_path):
+    commands = []
+
+    async def fake_run(command, **_kwargs):
+        commands.append(command)
+        return (
+            '{"status":"rollback-materials-ready","environment":"test",'
+            '"runtime_changed":false}'
+        )
+
+    runner = ReleaseRunner(tmp_path)
+    runner._run = fake_run
+    sha = "b" * 40
+    result = asyncio.run(
+        runner.dispatch(
+            "repair_test_rollback",
+            {
+                "expected_current_sha": sha,
+                "confirmation": f"REPAIR TEST ROLLBACK {sha}",
+            },
+        )
+    )
+
+    command = commands[-1]
+    assert result["runtime_changed"] is False
+    assert command[command.index("--bundle-repository") + 1] == (
+        "ghcr.io/giraffu/allbot-release-v2"
+    )
+    assert command[1].endswith("scripts/release.py")
+    assert command[2:6] == ["recover", "--env", "test", "--track"]
+    assert "--repair-rollback-materials" in command
+    assert "--execute" in command
+    assert "--modules" in command
+    assert command[command.index("--modules") + 1] == "dashboard"
+    assert "--confirm-prod" not in command
+
+
 def test_long_release_actions_have_a_bounded_eight_hour_socket_budget():
     source = (
         Path(__file__).resolve().parents[1]

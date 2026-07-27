@@ -19,6 +19,7 @@ class ReleaseOperatorPort(Protocol):
     async def start_build(self, expected_main_sha: str) -> dict[str, Any]: ...
     async def prepare_gpu_release(self, **kwargs: Any) -> dict[str, Any]: ...
     async def sync_test_config(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def repair_test_rollback(self, **kwargs: Any) -> dict[str, Any]: ...
     async def plan(
         self, environment: str, module: str, sha: str, maintenance: str
     ) -> dict[str, Any]: ...
@@ -86,6 +87,9 @@ class UnixReleaseOperator:
 
     async def sync_test_config(self, **kwargs):
         return await self._call("sync_test_config", kwargs)
+
+    async def repair_test_rollback(self, **kwargs):
+        return await self._call("repair_test_rollback", kwargs)
 
     async def plan(self, environment, module, sha, maintenance):
         return await self._call(

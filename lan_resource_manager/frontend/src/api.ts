@@ -73,6 +73,14 @@ export const syncTestConfig = (payload: {
   confirmation: string
 }) =>
   json<Operation>('/api/v1/environments/test/config-sync', mutation(payload))
+export const repairTestRollback = (payload: {
+  expected_current_sha: string
+  confirmation: string
+}) =>
+  json<Operation>(
+    '/api/v1/environments/test/rollback-repair',
+    mutation(payload),
+  )
 export const createDeploymentPlan = (payload: {
   environment: 'test' | 'prod'
   module: string

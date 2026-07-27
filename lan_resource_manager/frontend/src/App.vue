@@ -13,6 +13,7 @@ import {
   initializeSecurity,
   integrateAll,
   refreshFleet,
+  repairTestRollback,
   retryIntegration,
   setMaintenance,
   startTrustedBuild,
@@ -50,6 +51,7 @@ const deployConfirmation = ref('')
 const buildConfirmation = ref('')
 const gpuBuildConfirmation = ref('')
 const testConfigConfirmation = ref('')
+const testRollbackConfirmation = ref('')
 const maintenanceReason = ref('')
 const maintenanceConfirmation = ref('')
 const integrationStatus = ref<IntegrationStatus | null>(null)
@@ -86,6 +88,9 @@ const gpuBuildPhrase = computed(
 )
 const testConfigPhrase = computed(
   () => `TEST CONFIG ${releaseCandidate.value?.main_sha ?? ''}`,
+)
+const testRollbackPhrase = computed(
+  () => `REPAIR TEST ROLLBACK ${environmentStatus.value?.current_sha ?? ''}`,
 )
 const deployPhrase = computed(() => {
   if (!plan.value) return ''
@@ -319,6 +324,18 @@ async function runTestConfigSync() {
     testConfigConfirmation.value = ''
   } catch (error) {
     message.value = error instanceof Error ? error.message : '测试配置同步失败'
+  }
+}
+async function repairTestRollbackMaterials() {
+  if (!environmentStatus.value?.current_sha) return
+  try {
+    watchOperation(await repairTestRollback({
+      expected_current_sha: environmentStatus.value.current_sha,
+      confirmation: testRollbackConfirmation.value,
+    }))
+    testRollbackConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '测试回滚材料修复失败'
   }
 }
 async function deployAllTest() {
@@ -574,6 +591,14 @@ onBeforeUnmount(() => eventSource?.close())
           <button data-action="test-config-sync" class="primary"
             :disabled="!releaseCandidate || testConfigConfirmation !== testConfigPhrase || Boolean(operation)"
             @click="runTestConfigSync">同步测试环境配置</button>
+        </div>
+        <div v-if="environment === 'test' && environmentStatus?.current_sha"
+          class="confirm-stack config-sync-action">
+          <p class="muted">若全模块部署提示回滚 checkout/release.env 缺失，可为当前测试 SHA 补齐不可变回滚材料；仅核对 digest 并写入材料，不拉镜像、不重启服务、不改部署状态。</p>
+          <label>输入 <code>{{ testRollbackPhrase }}</code><input v-model="testRollbackConfirmation" /></label>
+          <button data-action="test-rollback-repair" class="primary"
+            :disabled="testRollbackConfirmation !== testRollbackPhrase || Boolean(operation)"
+            @click="repairTestRollbackMaterials">修复当前测试回滚材料</button>
         </div>
         <div class="form-grid">
           <label>独立模块

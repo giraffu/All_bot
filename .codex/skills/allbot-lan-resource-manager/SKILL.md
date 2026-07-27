@@ -41,8 +41,10 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   过滤；不得依赖容器内匿名 `git ls-remote` 或特定新版 `gh --commit` 参数。
 - 部署只允许 `deploy/release-policy.yml` 中一个完整独立模块组，并固定
   `release.py plan -> deploy`、短效 plan token、目标环境和精确 SHA。禁止
-  `--skip-gate`、emergency、自由 service、config apply、rollback/recover 或 GPU
-  execution。
+  `--skip-gate`、emergency、自由 service、任意 config apply、rollback/recover
+  或 GPU execution。唯一 recover 例外是测试环境当前精确 SHA 的
+  `--repair-rollback-materials`：必须由固定 dashboard 兼容入口核对实际运行
+  digest，且不得 pull/up/stop/restart、进入维护或改 deployment state。
 - Web 容器不得读取云 SSH、GitHub/GHCR 或 Pages 凭据。所有发布命令必须经过独立
   Unix socket runner 的动作和参数白名单；runner 同样不得挂载 Docker Socket。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
@@ -63,6 +65,9 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
 - 测试配置漂移只允许 `TEST CONFIG <sha>`，固定调用
   `sync_test_release_config.py` 的 test `config-plan -> config-apply`；不得暴露 env
   选择、prod confirmation 或手动维护动作。
+- 测试回滚材料修复只允许 `REPAIR TEST ROLLBACK <current-sha>`，先从测试状态重新
+  确认 current SHA，再固定调用 test control-plane 的 dashboard
+  `recover --repair-rollback-materials --execute` 兼容入口；不得提供 prod 对称入口。
 - 构建不会自动部署。测试与正式部署均须重新生成计划并输入
   `TEST|PROD <module> <full-sha>`；正式执行仍固定 `--confirm-prod`。
 - 页面问号固定打开 `/help.html`，覆盖完整流程、就绪判定和安全边界。
