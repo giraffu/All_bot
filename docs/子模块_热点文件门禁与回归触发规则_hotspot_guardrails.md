@@ -18,21 +18,12 @@
 - `.github/workflows/hotspot_regression_gate.yml`
 - `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md`
 
-## 2. 当前阶段快照
+历史阶段与日期化质量快照已移至
+[`docs/archive/knowledge-base-cleanup-20260727/hotspot_guardrails_phase_history.md`](archive/knowledge-base-cleanup-20260727/hotspot_guardrails_phase_history.md)。
 
-截至本轮收口，阶段推进状态如下：
+## 2. 热点文件
 
-- 阶段 1：基本完成，重复胶水、最薄公共状态组件、后端 fallback/session 样板已完成一轮清理
-- 阶段 2：主体完成，`Gallery`、`MyFavorites`、`MySubmissions` 与生成页工作台公共结构已收口
-- 阶段 3：基本完成，`message_handler.py`、`users.py`、`gallery.py`、`tasks.py` 已完成主要薄控制器收口
-- 阶段 4：本轮完成收口，历史 `bot_task_service.py` compat 壳已下线，`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
-- 阶段 7：第二批主体完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组；但 router guard 仍未完全并入共享关闭协议，workflow 对部分新热点文件的 path 触发也仍有缺口
-- 2026-06-03 质量基线：未发现 Critical 级架构阻断，但 Worker 执行编排、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房 composable 和 workflow 资产双源已进入下一批重点治理队列
-- 2026-06-18 复核：未发现 Critical/High 级架构阻断，Core Isolation 成立；最新报告为 `logs/code_analysis_report_20260618_0306.md`。当前热点关注 `workers/comfy_agent/agent_main.py`、`dashboard/backend/services/runpod_admin_service.py`、`src/web_api/services/task_submission_service.py` 与仍未完全收口的前端生成/练功房重复逻辑。
-
-## 3. 热点文件
-
-### 3.1 任务主链路
+### 2.1 任务主链路
 
 - Bot 分域 entrypoint 文件簇
 - `src/services/task_service_entrypoints.py`
@@ -67,13 +58,13 @@
 - `workers/comfy_agent/agent_result_reporting.py`
 - `src/services/tg_task_runtime.py`
 
-### 3.2 Web 接入层
+### 2.2 Web 接入层
 
 - `src/web_api/routers/users.py`
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/services/language_runtime_service.py`
-- `src/core/user_core_bindings.py`
+- `src/user_core_bindings.py`
 - `src/services/user_persistence_service.py`
 - `src/web_api/routers/gallery.py`
 - `src/web_api/services/gallery_service_queries.py`
@@ -83,7 +74,7 @@
 - `src/web_api/services/gallery_response_builder.py`
 - `src/web_api/services/wan22_history_chain_service.py`
 - `src/core/gallery_core.py`
-- `src/core/gallery_core_dependencies.py`
+- `src/gallery_core_dependencies.py`
 - `src/services/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
@@ -98,7 +89,7 @@
 - `src/handlers/message_handler_runtime.py`
 - `src/handlers/message_handler_prompt.py`
 
-### 3.3 前端公共壳层
+### 2.3 前端公共壳层
 
 - `frontend/src/views/Gallery.vue`
 - `frontend/src/views/MyFavorites.vue`
@@ -117,7 +108,7 @@
 - `frontend/src/router/index.ts`
 - `dashboard/frontend/src/App.vue`
 
-### 3.4 统一生成工作台热点
+### 2.4 统一生成工作台热点
 
 - `frontend/src/views/CustomFeatures.vue`
 - `frontend/src/features/generation/labModeConfig.ts`
@@ -127,7 +118,7 @@
 
 旧独立生成页面已收口为兼容重定向，生成入口统一进入练功房。新增生成能力时，优先扩展 `labModeConfig`、payload builder 与 composable，不要恢复独立页面复制状态块。
 
-### 3.5 workflow 资产热点
+### 2.5 workflow 资产热点
 
 - `workers/comfy_agent/workflows/*`
 - `workers/comfy_agent/workflows/mappings.json`
@@ -137,9 +128,9 @@
 
 当前 workflow 资产事实源为 `workers/comfy_agent/workflows`。修改 workflow JSON 或 mappings 时，必须确认目标 Worker 会加载该 task type，并同步复核 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与 patcher 硬编码节点。
 
-## 4. 回归触发规则
+## 3. 回归触发规则
 
-### 4.1 修改任务主链路 facade 或 support
+### 3.1 修改任务主链路 facade 或 support
 
 适用文件：
 
@@ -166,7 +157,7 @@ pytest \
 
 如果改动涉及任务提交、取消、状态字段、completion/finalize seam，升级为执行“任务黄金路径最小必跑集”。
 
-### 4.2 修改 `backend/app/main.py`、`backend/app/queue_manager.py`、`src/core/task_core.py` 或 `src/core/task_core_submission.py`
+### 3.2 修改 `backend/app/main.py`、`backend/app/queue_manager.py`、`src/core/task_core.py` 或 `src/core/task_core_submission.py`
 
 至少执行“任务黄金路径完整集”：
 
@@ -197,7 +188,7 @@ pytest \
 - `backend/app` 只承接执行面、中控、worker/agent 协议；不要把新的用户侧接口接到这里
 - 若 PR 同时修改 `src/web_api` 入口文件与 `backend/app` 入口文件，评审时必须显式说明该改动为何不属于入口漂移
 
-### 4.3 修改 `tasks` Web API 入口
+### 3.3 修改 `tasks` Web API 入口
 
 适用文件：
 
@@ -219,7 +210,7 @@ pytest \
 
 如果改动同时触及任务状态字段、terminal payload 或历史兜底，补跑“任务黄金路径最小必跑集”。
 
-### 4.4 修改 `users` Web API
+### 3.4 修改 `users` Web API
 
 适用文件：
 
@@ -228,7 +219,7 @@ pytest \
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/services/language_runtime_service.py`
 - `src/services/user_persistence_service.py`
-- `src/core/user_core_bindings.py`
+- `src/user_core_bindings.py`
 
 至少执行：
 
@@ -243,7 +234,7 @@ pytest \
   tests/web_api/test_users_affiliate_redeem_router.py
 ```
 
-### 4.5 修改 `gallery` Web API
+### 3.5 修改 `gallery` Web API
 
 适用文件：
 
@@ -253,7 +244,7 @@ pytest \
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
 - `src/core/gallery_core.py`
-- `src/core/gallery_core_dependencies.py`
+- `src/gallery_core_dependencies.py`
 - `src/services/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
@@ -280,7 +271,7 @@ pytest \
 - `user_persistence_service.py` 中 `id == tg_id` 的旧双 ID 兼容分支属于待退出 seam；新增逻辑不得继续依赖该分支作为主路径。
 - Gallery/MyLibrary 共享列表逻辑优先进入共享 composable（如 `useMyLibraryPostBrowser.ts`），不要再把分页、详情、评论、模板应用重复拼回页面组件。
 
-### 4.6 修改 Telegram `message_handler` 入口
+### 3.6 修改 Telegram `message_handler` 入口
 
 适用文件：
 
@@ -308,7 +299,7 @@ pytest \
   tests/handlers/test_message_handler_prompt.py
 ```
 
-### 4.7 修改前端公共壳层
+### 3.7 修改前端公共壳层
 
 适用文件：
 
@@ -356,7 +347,7 @@ cd frontend && pnpm vitest run \
 - `useTemplateApplyCloseProtocol.ts` 已属于应纳入同组门禁的共享协议文件；在 workflow path 规则补齐前，修改该文件时应手动执行 `frontend-shared`
 - `useLabWorkbench.ts` 是练功房主状态热点；在 workflow path 规则补齐前，修改该文件时也应手动执行 `frontend-shared`，并按 Wan22 链路风险补跑 `src/features/generation/wan22Chain.test.ts` 与 `src/views/CustomFeatures.test.ts`
 
-### 4.8 修改 dashboard App 壳层
+### 3.8 修改 dashboard App 壳层
 
 适用文件：
 
@@ -369,7 +360,7 @@ cd dashboard/frontend && npm exec -- vitest run \
   src/App.test.js
 ```
 
-### 4.9 修改 Worker / Wan22 链式视频 / Bot runtime
+### 3.9 修改 Worker / Wan22 链式视频 / Bot runtime
 
 适用文件：
 
@@ -402,7 +393,7 @@ pytest \
 - Wan22 整链拼接涉及查询、上传、历史写入、字段继承与响应构造，修改后要同时覆盖 Web 历史、Gallery 展示、前端链路恢复与 Bot 回调。
 - `tg_task_runtime.monitor_task_progress` 涉及 Telegram 队列态、运行态、终态与取消按钮刷新，修改后不得只跑单个 handler 测试。
 
-### 4.10 修改 workflow JSON / mappings
+### 3.10 修改 workflow JSON / mappings
 
 适用文件：
 
@@ -426,7 +417,7 @@ pytest \
 - 当前自动 workflow path 尚未完整覆盖 Worker workflow 资产；修改 workflow 资产时不能只依赖 GitHub Actions 自动触发。
 - workflow 变更必须落在 `workers/comfy_agent/workflows`，并在变更说明里写清目标 Worker、task type 与必要的 focused tests。
 
-## 5. 热点文件修改约束
+## 4. 热点文件修改约束
 
 - 新逻辑优先进 `service`、`presenter`、`composable`、`support helper`，不要直接堆进 `router`、`handler`、`page`
 - 新增 helper 前，优先补 focused test，再移动主流程代码
@@ -435,7 +426,7 @@ pytest \
 - 若只是为了兼容测试或 monkeypatch seam 而保留 facade wrapper，应在说明里明确标注“兼容壳”
 - 新增 `compat` / `legacy` / `alias` 标记时，必须同步更新 `docs/compat_seam_exit_table.md`，写明删除前置条件与预计退出阶段。
 
-## 6. CI 门禁入口
+## 5. CI 门禁入口
 
 当前已提供两层统一入口：
 
@@ -456,36 +447,9 @@ pytest \
 
 - 本文的“热点文件清单”以当前代码结构为准；workflow 的 `paths` 配置若仍使用粗粒度 glob 或旧文件名，应视为待同步项，而不是反向收窄文档口径
 
-## 7. 当前缺口
+## 6. 当前缺口
 
 - 当前热点门禁已补齐 dashboard App 独立分组，但 branch protection 的 required checks 清单仍需在仓库设置侧正式固化
 - 页面家族已补到“列表切换 + 详情弹层 + 模板工作台”关键组合流，但仍未覆盖更重的跨页面端到端场景
 - workflow `paths` 仍有少量与当前代码结构不一致的地方：Bot 分域 entrypoint、Worker 执行链路、Wan22 链式拼接、workflow 双目录资产与 `useLabWorkbench.ts` 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
 - `frontend-shared` 当前实际已默认执行模板应用状态流测试，但文档早先的“两段式补跑”口径已不再适用，后续应统一按单一分组理解
-
-## 8. 阶段 7 第一批收尾标志
-
-满足以下条件时，可认为阶段 7 第一批完成：
-
-- 已形成明确的热点文件清单
-- 已形成“改哪类文件就跑哪组测试”的最小规则
-- 已把任务主链路回归与非任务热点回归区分开
-- 已明确当前仍未覆盖的治理缺口，供下一批继续处理
-
-## 9. 阶段 7 第二批收尾标志
-
-满足以下条件时，可认为阶段 7 第二批完成：
-
-- 共享详情弹层、页面壳层与工作台壳层已进入 focused tests，且大部分已进入热点门禁
-- 至少存在 1 组“列表切换 + 详情弹层 + 模板工作台”的组合回归
-- `dashboard/frontend/src/App.vue` 已具备最小可用回归基线
-- workflow 已按 Python、主站 Frontend、Dashboard Frontend 拆分热点执行入口
-- 与模板应用关闭共享协议、gallery 拆分 service 对应的 path 触发缺口已被明确记录，未再混入“已完成”口径
-
-## 10. 下一批建议
-
-阶段 7 主体完成后，后续治理建议保留三类长期项：
-
-1. 在仓库设置里固化 required checks / branch protection
-2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 Bot 分域 entrypoint、Worker 执行链路、Wan22 链式拼接、workflow 资产与练功房主 composable
-3. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量

@@ -122,7 +122,8 @@ sequenceDiagram
 - 好友搜索支持按 TG `username`（可带 `@`）或 `full_name` 昵称片段模糊匹配，返回公开用户摘要与 `is_following`，并排除当前用户自己。
 - 用户公开主页响应以 `posts: { items,total,page,size,pages }` 作为公开投稿分页主字段，`recent_posts` 仅保留为当前页 items 的兼容字段；公开投稿统计和分页必须使用同一组可见性条件，避免统计数大于实际可翻页内容。
 - 用户公开主页里的作品详情必须复用 Gallery 详情的提示词解锁逻辑，不能因为入口来自个人主页而隐藏 `prompt_unlockable` 的解锁入口。
-- Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
+- Gallery feed 查询拼装以 `src/services/gallery_feed_queries.py` 为 canonical
+  入口；新增列表条件继续放在 service 层，避免 core 直连 SQL 细节。
 - Gallery 前端分组中，旧自由P图使用 `edit_group`，只包含 `edit` / `quick_image` / `img2img_lora`；`free_edit_v2_5_group` 只查询新的逻辑 History 类型 `free_edit_v2_5`；`free_edit_v3_group` 包含 `pornmaster_flux2_edit_bf16` 以及历史 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`。`free_edit_v2_group` 仅作为旧客户端查询别名解析到 v3 集合，不重分类既有 History。
 - v2.5 与 v3 普通结果均允许投稿。一键应用必须锁定原 prompt、隐藏 LoRA且不返回/复用原图；v2.5 apply-context 按投稿 History 原输入数返回 `required_image_count=1|2`，要求重新上传等量图片，单图模板扣 3 灵石、双图模板扣 7 灵石；v3 模板仍重新上传恰好 1 张并按既有 BF16→原脸恢复链路扣 5 灵石。两类模板派生任务均写 `allow_contribute=false`，禁止递归投稿；QQCC 市集遇到 v2.5 时只显示正确名称并交给 Web 应用，不新增 QQCC 原生生成入口。
 - LTX 高级图生视频只保留 `ltx_video` 一个 Gallery 展示/筛选入口；历史或执行别名 `ltx_video_flf2v` 必须 canonical 到 `ltx_video`，投稿允许该别名但不新增展示 tab，筛选时同时查询两种 `History.type`。

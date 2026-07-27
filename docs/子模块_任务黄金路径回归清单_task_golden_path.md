@@ -4,7 +4,7 @@
 
 本清单用于保护 AllBot 任务主链路在重构期间的外部行为不漂移，覆盖以下高风险区域：
 
-- Bot entrypoint / flow 子模块（已不再经过 `src/services/bot_task_service.py` compat 壳）
+- Bot entrypoint / flow 子模块与公开 task application facade
 - `backend/app/main.py` 与 `backend/app/main_t2i_wiring.py` 的中控任务创建入口
 - `backend/app/queue_manager.py` 的排队、取消、zombie 清理与 worker 视图
 - `src/web_api/routers/tasks.py` 及对应 API service / SSE stream 路径
