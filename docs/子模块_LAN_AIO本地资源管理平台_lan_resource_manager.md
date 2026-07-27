@@ -139,4 +139,6 @@ workflow 时才复用。该入口不创建 RunPod/LAN Pod、不部署 prod，也
 SHA 拉取旧不可变 bundle，再由发布器核对完整 bundle、
 current artifact 和运行容器 digest，只原子物化 checkout 与非敏感 `release.env` 并
 执行 `compose config -q`；不拉镜像、不替换或重启容器、不写维护标记及 deployment
-state。平台不存在正式环境对称入口。
+state。runner 在调用前通过固定测试 SSH 再读取一次当前 control-plane state，校验
+schema/track/SHA 后以 0600 临时 `--state-file` 绑定本次恢复，完成后删除；不会为
+Dashboard 缺失项遍历历史文件。平台不存在正式环境对称入口。

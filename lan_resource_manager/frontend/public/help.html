@@ -42,7 +42,7 @@
     <li><strong>失败阻断</strong>：冲突、CI、构建或测试部署失败。修复原因后，在失败卡片输入界面给出的 <code>RETRY &lt;batch&gt;</code>，从同一批次安全重试；只有被更新 main 安全超越的旧测试失败会自动收敛。</li>
     <li><strong>bundle 待构建</strong>：输入 <code>BUILD &lt;main-sha&gt;</code>。平台只接受当前远端 main 和完整可信 CI，不生成 build-only 包。</li>
     <li><strong>配置漂移</strong>：输入 <code>TEST CONFIG &lt;main-sha&gt;</code>，平台先生成计划，再原子同步测试环境配置投影；该入口没有正式环境参数，也不会手动进入维护。</li>
-    <li><strong>回滚材料缺失</strong>：输入 <code>REPAIR TEST ROLLBACK &lt;current-sha&gt;</code>。平台只接受测试环境当前精确 SHA，由受控 recover 拉取并验证旧不可变 bundle，再核对已记录与运行容器 digest，补齐 checkout 和非敏感 <code>release.env</code>；不拉运行镜像、不重启服务、不改部署状态。</li>
+    <li><strong>回滚材料缺失</strong>：输入 <code>REPAIR TEST ROLLBACK &lt;current-sha&gt;</code>。平台再次读取测试 control-plane 当前 state 并锁定精确 SHA，由受控 recover 拉取并验证旧不可变 bundle，再核对已记录与运行容器 digest，补齐 checkout 和非敏感 <code>release.env</code>；不拉运行镜像、不重启服务、不改部署状态。</li>
   </ul>
 
   <h2>测试环境全部模块</h2>

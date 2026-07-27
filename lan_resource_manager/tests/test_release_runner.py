@@ -407,6 +407,11 @@ def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp
 
     async def fake_run(command, **_kwargs):
         commands.append(command)
+        if command[0] == "ssh":
+            return (
+                '{"schema_version":2,"track":"control-plane",'
+                f'"git_sha":"{"b" * 40}","artifacts":{{}}}}'
+            )
         return (
             '{"status":"rollback-materials-ready","environment":"test",'
             '"runtime_changed":false}'
@@ -425,8 +430,10 @@ def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp
         )
     )
 
-    command = commands[-1]
+    state_command, command = commands
     assert result["runtime_changed"] is False
+    assert state_command[0] == "ssh"
+    assert "current.json" in state_command[-1]
     assert command[command.index("--bundle-repository") + 1] == (
         "ghcr.io/giraffu/allbot-release-v2"
     )
@@ -437,6 +444,8 @@ def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp
     assert "--modules" in command
     assert command[command.index("--modules") + 1] == "dashboard"
     assert "--confirm-prod" not in command
+    assert "--state-file" in command
+    assert not Path(command[command.index("--state-file") + 1]).exists()
 
 
 def test_long_release_actions_have_a_bounded_eight_hour_socket_budget():
