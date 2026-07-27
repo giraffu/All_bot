@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "341e0a752da5ac6a6a5101b8847cb9cb74af529b",
+  "batch": "20260727-113120-312cce4b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-113120-312cce4b",
+  "members": [
+    {
+      "base_sha": "341e0a752da5ac6a6a5101b8847cb9cb74af529b",
+      "branch": "codex/b-fix-runpod-canary-central-transient-retry",
+      "head": "312cce4b2389228705bbc82c55c6471ce61d2aae",
+      "queued_at": "2026-07-27T10:44:16.114115+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}

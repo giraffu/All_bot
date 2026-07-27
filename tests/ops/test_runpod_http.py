@@ -106,6 +106,24 @@ def test_http_json_returns_allowlisted_error_payload():
     assert payload == {"missing": True, "_status": 404}
 
 
+def test_http_request_exposes_rejected_status_without_parsing_message():
+    def urlopen(request, *, timeout):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            502,
+            "bad gateway",
+            {},
+            io.BytesIO(b""),
+        )
+
+    client = RunPodHttpClient(urlopen_func=urlopen)
+
+    with pytest.raises(RunPodHttpError) as exc_info:
+        client.request("GET", "https://api.example/system/workers")
+
+    assert exc_info.value.http_status == 502
+
+
 def test_http_json_rejects_invalid_json_without_leaking_query():
     def urlopen(request, *, timeout):
         return FakeResponse(200, b"not-json")

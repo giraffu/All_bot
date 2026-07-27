@@ -100,9 +100,10 @@ class RunPodHttpClient:
             raw = exc.read()
             text = raw.decode("utf-8", errors="replace")
             if status not in expected_statuses and status not in allow_statuses:
-                raise self._error(
+                raise self._status_error(
                     f"{method} {safe_url(url)} returned HTTP {status}: "
-                    f"{redact_text(text[:500])}"
+                    f"{redact_text(text[:500])}",
+                    status,
                 ) from exc
         except urllib.error.URLError as exc:
             raise self._error(
@@ -110,11 +111,17 @@ class RunPodHttpClient:
                 f"{redact_text(str(exc.reason))}"
             ) from exc
         if status not in expected_statuses and status not in allow_statuses:
-            raise self._error(
+            raise self._status_error(
                 f"{method} {safe_url(url)} returned HTTP {status}: "
-                f"{redact_text(text[:500])}"
+                f"{redact_text(text[:500])}",
+                status,
             )
         return {"status": status, "text": text, "raw": raw}
 
     def _error(self, message: str) -> Exception:
         return self._error_type(message)
+
+    def _status_error(self, message: str, status: int) -> Exception:
+        error = self._error(message)
+        setattr(error, "http_status", status)
+        return error
