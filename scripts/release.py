@@ -5662,6 +5662,13 @@ def verify_pages_canonical_deployment(
     ).get("result")
     if not isinstance(deployments, list):
         raise ReleaseError("Pages production deployment list is invalid")
+    project = _pages_api_request(args, "GET", project_path).get("result")
+    canonical = (
+        project.get("canonical_deployment") if isinstance(project, Mapping) else None
+    )
+    if not isinstance(canonical, Mapping) or not canonical.get("id"):
+        raise ReleaseError("Pages canonical deployment is unavailable")
+    canonical_id = str(canonical["id"])
     deployment: Mapping[str, Any] | None = None
     for candidate in deployments:
         if not isinstance(candidate, Mapping):
@@ -5670,24 +5677,19 @@ def verify_pages_canonical_deployment(
         metadata = trigger.get("metadata") if isinstance(trigger, Mapping) else None
         stage = candidate.get("latest_stage")
         if (
-            candidate.get("environment") == "production"
+            str(candidate.get("id")) == canonical_id
+            and candidate.get("environment") == "production"
             and isinstance(metadata, Mapping)
             and metadata.get("branch") == target["branch"]
             and metadata.get("commit_hash") == sha
             and isinstance(stage, Mapping)
             and stage.get("status") == "success"
         ):
-            deployment = candidate
-            break
-    if deployment is None or not deployment.get("id"):
-        raise ReleaseError("matching successful Pages production deployment is missing")
-    deployment_id = str(deployment["id"])
-    project = _pages_api_request(args, "GET", project_path).get("result")
-    canonical = (
-        project.get("canonical_deployment") if isinstance(project, Mapping) else None
-    )
-    if not isinstance(canonical, Mapping) or str(canonical.get("id")) != deployment_id:
+                deployment = candidate
+                break
+    if deployment is None:
         raise ReleaseError("Pages canonical deployment does not match the new release")
+    deployment_id = str(deployment["id"])
 
     _verify_canonical_pages_runtime(args, sha, runtime_revision)
     return {
