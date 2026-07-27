@@ -141,7 +141,7 @@ def test_oversized_skill_and_changelog_matrix_fail(tmp_path: Path) -> None:
     result = _run(tmp_path)
 
     assert result.returncode == 1
-    assert "Skill 超过 20000 bytes" in result.stdout
+    assert "Skill 超过 16000 bytes" in result.stdout
     assert "审计矩阵包含逐日流水" in result.stdout
 
 
@@ -157,3 +157,61 @@ def test_broken_internal_markdown_link_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "Markdown 链接目标不存在" in result.stdout
+
+
+def test_dated_runtime_fact_in_skill_fails(tmp_path: Path) -> None:
+    _valid_fixture(tmp_path)
+    skill = tmp_path / ".codex/skills/sample-skill/SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "\n2026-07-27 已上线某个临时 Pod，当前地址固定不变。\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "Skill 包含日期化运行态" in result.stdout
+
+
+def test_context_packet_skill_requires_doc_route_and_validation(
+    tmp_path: Path,
+) -> None:
+    _valid_fixture(tmp_path)
+    _write(
+        tmp_path,
+        ".codex/skills/allbot-task-engine/SKILL.md",
+        "---\nname: allbot-task-engine\ndescription: task\n---\n"
+        "# Task Engine\n\nOnly prose, without routing or checks.\n",
+    )
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8") + "\n`allbot-task-engine`\n",
+        encoding="utf-8",
+    )
+    index = tmp_path / "docs/skills/README.md"
+    index.write_text(
+        index.read_text(encoding="utf-8")
+        + "\n`allbot-task-engine`\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "缺少按需文档路由" in result.stdout
+    assert "缺少最小验证" in result.stdout
+
+
+def test_oversized_active_doc_fails(tmp_path: Path) -> None:
+    _valid_fixture(tmp_path)
+    _write(
+        tmp_path,
+        "docs/system_architecture_report.md",
+        "# Architecture\n\n" + ("stable contract\n" * 6_000),
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "活跃文档超过单文件预算" in result.stdout

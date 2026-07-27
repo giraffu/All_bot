@@ -7,9 +7,16 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 
 本技能用于维护 AllBot 的知识体系与代码现状一致。当核心门面、运行时依赖、状态流、接口 I/O、测试策略或技能边界发生变化时，应优先用本技能同步 `docs/`、`.codex/skills/` 与项目记忆。
 
+目标不是让每层都“完整”，而是形成低 token 的导航 interface：
+`AGENTS.md → 命中 Skill → 代码/测试事实源 → 一篇命中专题文档`。普通任务不预读
+审计矩阵、全部 docs 或 archive。
+
 ## 1. 模块核心能力
 - **现状扫描优先**：优先基于代码现状、关键入口、公开 facade、provider/dependencies 边界判断知识是否失真；必要时再结合 `git diff` 或用户提供的片段。
 - **技能失真识别**：当 `SKILL.md` 主张与代码入口冲突时，先更新技能，再继续开发，避免旧技能误导后续改动。
+- **上下文预算治理**：Skill 只保留触发、按需路由、稳定 seam、红线和最小
+  验证；日期、IP/邮箱 allowlist、当前部署结果、数量快照和一次性 canary
+  进入运行态、evidence 或 archive。
 - **结构一致性维护**：确保 `AGENTS.md`、`.codex/skills/`、`docs/` 与项目记忆在高层路由、入口文件、异常类型、超时值、双 ID 语义等关键点上一致。
 - **核对矩阵维护**：全量或跨模块知识库校准时，同步维护 `docs/knowledge_base_audit_matrix.md`，记录每篇实时文档/Skill 的事实源、状态和处理结果；归档材料只标注归档边界，不重写历史证据。
 - **领域词汇维护**：当术语含义被澄清、重命名或出现冲突时，同步更新 `docs/domain/CONTEXT.md`；该文件只写词汇含义，不写实现细节。
@@ -33,6 +40,7 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 1. **局部接口/参数调整**：
    - 优先更新对应 `/docs/` 技术文档。
    - 若触发强边界约束或技能主张变化，同步更新相应 `SKILL.md`。
+   - 价格、枚举、节点 ID 或部署清单已有代码事实源时，不再复制完整清单到 Skill。
 2. **核心门面 / provider / 状态流重构**：
    - 优先同步 `docs/` 架构文档与回归清单。
    - 同步更新相关技能文档中的主入口、异常类型、超时值、测试要求。
@@ -50,10 +58,13 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 - 当测试策略已迁移到显式 `dependencies` / `*_func` seam，知识文档也必须同步更新，不能继续鼓励旧的模块级 patch 方式。
 - 若说明依赖运行时 provider 注册，必须在文档中写明“入口负责注册，core 不自动注册”。
 - `SKILL.md` 应优先记录稳定入口、触发边界、红线与最小验证要求；一次性 Pod ID、任务 ID、失败尝试流水账、真实密钥值和长篇现场日志不应沉淀到技能正文。
+- 领域 `SKILL.md` 应提供任务到专项文档的按需路由；不要用“阅读整个 docs
+  目录”作为路由。只在一次任务确实跨层时组合多篇。
 - `docs/domain/CONTEXT.md` 只能作为 glossary 使用，不应变成 spec、runbook、事故记录或实现设计草稿。
 - `docs/knowledge_base_audit_matrix.md` 应记录事实源与处理状态，不替代具体模块 SOP；若状态依赖远端运行态探测但本轮未探测，必须写明“需人工运行态复核”。
 - ADR 必须说明 context、decision、alternatives、consequences；缺少真实替代方案时不要新增 ADR。
 - 最终总结必须包含 Changelog，列出修改文件与原因。
+- 运行 `python scripts/doc_quality_checker.py`；不得通过提高预算掩盖新增冗余。
 
 ## 5. 使用示例 (最佳实践)
 当开发者完成一轮核心重构后，可直接要求：

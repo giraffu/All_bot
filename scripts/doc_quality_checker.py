@@ -27,12 +27,34 @@ DATED_CHANGELOG_RE = re.compile(
     r"^>\s*20\d{2}-\d{2}-\d{2}.*(?:本轮|修复|新增|上线|部署|同步)",
     re.MULTILINE,
 )
+DATED_SKILL_FACT_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+DOC_ROUTE_RE = re.compile(r"`docs/[^`\s]+\.md`")
+VALIDATION_RE = re.compile(
+    r"(?:最小验证|测试要求|验证清单|Validation Commands|交付格式)",
+    re.IGNORECASE,
+)
 
-MAX_SKILL_BYTES = 20_000
+MAX_SKILL_BYTES = 16_000
 MAX_SKILL_LINE_LENGTH = 1_000
-MAX_TOTAL_SKILL_BYTES = 180_000
+MAX_TOTAL_SKILL_BYTES = 140_000
 MAX_MATRIX_BYTES = 35_000
-MAX_ACTIVE_DOC_BYTES = 1_050_000
+MAX_ACTIVE_DOC_BYTES = 1_000_000
+MAX_ACTIVE_DOC_FILE_BYTES = 75_000
+
+CONTEXT_PACKET_SKILLS = {
+    "allbot-billing-auth",
+    "allbot-cloudflare-ops",
+    "allbot-comfy-models",
+    "allbot-concurrent-workspaces",
+    "allbot-gallery-storage",
+    "allbot-lan-aio-operator",
+    "allbot-lan-resource-manager",
+    "allbot-local-analytics-prompt-semantics",
+    "allbot-ops-deployment",
+    "allbot-qqcc-lazy-bot",
+    "allbot-task-engine",
+    "allbot-tg-fsm",
+}
 
 
 def read_text(path: Path) -> str:
@@ -83,9 +105,15 @@ def verify_active_docs(root: Path, errors: list[str]) -> None:
 
     total_bytes = 0
     for path in docs:
-        total_bytes += path.stat().st_size
+        size = path.stat().st_size
+        total_bytes += size
         text = read_text(path)
         rel = relative(path, root)
+        if size > MAX_ACTIVE_DOC_FILE_BYTES:
+            errors.append(
+                "活跃文档超过单文件预算: "
+                f"{rel} ({size} > {MAX_ACTIVE_DOC_FILE_BYTES} bytes)"
+            )
         if not text.strip():
             errors.append(f"文档为空: {rel}")
             continue
@@ -167,12 +195,27 @@ def verify_skill_routes(root: Path, errors: list[str]) -> None:
                 f"Skill 超过 {MAX_SKILL_BYTES} bytes: "
                 f"{relative(path, root)} ({size})"
             )
-        max_line = max((len(line) for line in read_text(path).splitlines()), default=0)
+        text = read_text(path)
+        max_line = max((len(line) for line in text.splitlines()), default=0)
         if max_line > MAX_SKILL_LINE_LENGTH:
             errors.append(
                 f"Skill 存在超长行: {relative(path, root)} "
                 f"({max_line} > {MAX_SKILL_LINE_LENGTH})"
             )
+        if DATED_SKILL_FACT_RE.search(text):
+            errors.append(
+                "Skill 包含日期化运行态；请迁入专项文档、evidence 或 archive: "
+                f"{relative(path, root)}"
+            )
+        if skill_name in CONTEXT_PACKET_SKILLS:
+            if not DOC_ROUTE_RE.search(text):
+                errors.append(
+                    f"领域 Skill 缺少按需文档路由: {relative(path, root)}"
+                )
+            if not VALIDATION_RE.search(text):
+                errors.append(
+                    f"领域 Skill 缺少最小验证: {relative(path, root)}"
+                )
 
     if total_bytes > MAX_TOTAL_SKILL_BYTES:
         errors.append(

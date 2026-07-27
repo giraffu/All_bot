@@ -1,94 +1,98 @@
 ---
 name: "allbot-comfy-models"
-description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、Bot 菜单参数透传与 ComfyUI 工作流动态注入。当新增或修改 AI 生成模型时，必须调用本技能。"
+description: "处理图生图/图生视频附加模型、ComfyUI workflow、Bot/Web 参数透传与 Worker 动态注入。新增或修改生成模型时必须调用。"
 ---
 
-# AllBot ComfyUI 模型与工作流配置
+# AllBot ComfyUI 模型与工作流
 
-本技能是模型、工作流和参数透传的轻量入口。正文只保留当前真实入口、不可越过的边界和验收要求；节点级细节按需读取文档或 reference，避免技能触发时正文被截断。
+本 Skill 是模型与 workflow 的 context packet。用户可见 task type、具体模型清单、
+节点 ID、LoRA 数量、当前 canary/profile 状态会变化，只从代码、workflow JSON、
+manifest 和专项文档读取，不在此维护快照。
 
-## 1. 先读什么
+涉及任务生命周期叠加 `allbot-task-engine`；修改价格叠加
+`allbot-billing-auth`；修改 Bot FSM 叠加 `allbot-tg-fsm`；发布 GPU artifact
+叠加 `allbot-ops-deployment` 与相应 operator。
 
-| 场景 | 必读材料 |
-| :--- | :--- |
-| 图生图 LoRA / ControlNet / img2img 参数透传 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/handlers/fsm/edit_image_fsm.py`、`workers/comfy_agent/workflow_patcher.py` |
-| Wan22 / 旧 `image_to_video` / `video_insert` / `video_edit` | `docs/子模块_附加模型配置指南_comfy_models.md`、`.codex/skills/allbot-comfy-models/references/runtime-profiles.md` |
-| LTX 系列 LoRA 多选 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/lora_catalog.py`、`src/qqcc_ltx_lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/features/generation/buildGenerationTaskPayload.ts` |
-| SCAIL-2 视频生视频 | `docs/子模块_附加模型配置指南_comfy_models.md`、`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`src/domain_config/task_type_registry.py` |
-| LTX Sulphur 文生视频 / Ingredients 人物一致性 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`、`src/domain_config/ltx_t2v.py`、`workers/comfy_agent/workflow_task_patchers.py` |
-| RunPod / LAN AIO profile、远端 workflow 同步 | 本技能 + `allbot-ops-deployment` + `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
-| 任务生命周期、队列、扣费、前端交互 | 分别叠加 `allbot-task-engine`、`allbot-billing-auth`、`vue-best-practices` |
+## 1. 按需阅读
+
+| 场景 | 先读 |
+| --- | --- |
+| task type、workflow 映射、LoRA/ControlNet 注入 | `docs/子模块_附加模型配置指南_comfy_models.md` |
+| LTX 文生视频/人物一致性 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` |
+| 用户提交到 Worker 结果回流 | `docs/子模块_生成任务全链路_task_full_chain.md` |
+| GPU profile、artifact、RunPod/LAN | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
+| QQCC 场景/选项 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` |
+| 不可变发布 | `docs/子模块_Git不可变发布_git_immutable_release.md` |
+
+只读命中场景。修改节点前必须重新打开当前 workflow JSON；文档中的节点 ID 仅是
+导航提示。
 
 ## 2. 稳定事实源
 
-- Comfy workflow 事实源只在 `workers/comfy_agent/workflows/`。旧 `backend/workflows/` 已退出，不要新增或回填。
-- RunPod 镜像同步用 `remote_workers/comfy_agent/...`；新增/修改远端 workflow、entrypoint、requirements 或环境变量时，同时检查远端模板和镜像构建路径。
-- Central 不挂载、不复制、不校验 workflow JSON。Central 只分发任务；workflow 存在性由 Worker Agent 启动映射和运行时 patcher 负责兜底。
-- Worker Agent 和 ComfyUI Runtime 是两层：Agent 选 workflow、下载素材、调用 ComfyUI API、回传结果；Runtime 只加载模型并执行 JSON 图。
-- 模型同步只能写运行时配置约定的 `ComfyUI/models/...` 子目录。不要把模型塞进 `custom_nodes`、workflow 目录或代码目录。
-- 同一个用户可见入口可能共享一个执行 workflow。修改 UI 文案或 task type 前，先核对 `src/domain_config/task_type_registry.py`、worker mapping 和 patcher。
-- `free_edit_v2_5` 是用户可见/History 逻辑类型：单图 alias 到既有 `pornmaster_flux2_edit_bf16`，双图 alias 到内部 `pornmaster_flux2_multi_edit_bf16`。双图执行复用 multiple-images workflow 的节点 `17.image` / `29.image` 并把节点 `9.unet_name` 切到现有 BF16 权重；两种内部类型与自由P图 v3 共用模型和 RunPod/LAN profile。v2.5 单阶段直出，v3 才续接图片换脸，禁止复制 workflow、模型或 GPU profile。
-- `image_to_video`、`video_insert`、`video_edit` 当前共享 `Wan22AioV82.json`，依赖 `patch_image_to_video_workflow()` 按 task type 注入差异；不要为三者复制分叉 workflow。
-- 图片换脸的业务任务类型仍分 V1 `face_swap` 与 V2 `face_swap_v2`。通用 V1 `worker_remote_02` 继续使用 `face_swap.json`；`i2i_pro` 与专属 `face_swap` execution profile 均可声明两种任务类型，但必须通过 per-task overrides 将二者都执行为 `face_swap_v2.json`。不得因此修改 remote02 的旧 workflow、模型或环境。
-- 自由P图 v3 的第二阶段和 QQCC `original_face_swap_enabled` 内部原脸恢复使用 `face_swap_v2`；快速/随机换脸仍使用 `face_swap`。SCAIL-2 视频换脸由 Central 组合任务先以优先级 100 提交标准 `face_swap_v2`，再按根任务正常优先级提交带 `reference_preprocessed=true` 的 SCAIL-2 replacement 阶段；Worker 禁止再创建辅助 ComfyClient 或直连外部 8188。
-- `model-import-plan` 必须跟随 runtime override。不要只改本地 `ComfyUI/models`，却遗漏 RunPod / LAN profile 的模型路径和启动映射。
+- 用户能力和参数：task registry/domain config、Bot/Web schema 与 presenter。
+- task type → workflow/profile：Worker registry、workflow resolver、release
+  artifact catalog 和 focused tests。
+- 节点、输入名和默认值：`workers/comfy_agent/workflows/*.json` 及对应
+  patcher；禁止凭记忆编辑。
+- 模型是否可运行：目标 profile 的模型 manifest、镜像内 workflow checksum、
+  运行时只读探测和 canary evidence。控制面出现选项不等于 GPU 已可加载。
+- 价格、History 类型、扣费退款：billing/task 领域事实源；workflow override
+  不能改变业务类型或价格。
 
-## 3. 修改流程
+## 3. 分层与复用
 
-1. 先判断这是“新增用户可见能力”还是“已有能力追加参数/模型”。能复用现有 task type 和执行 profile 时，不要新增 task type。
-2. 更新入口层参数：Bot FSM、Web payload builder、前端表单、`src/lora_catalog.py` 或配置文件应传递同一份结构化字段。
-3. 后端只做参数归一、校验和透传。不要在 `src/core/` 引入 Telegram `Update`、FastAPI `Request` 或 ComfyUI HTTP 细节。
-4. 在 `workers/comfy_agent/workflows/` 放置或更新 JSON，并在 worker mapping / patcher 中声明路由。远端运行态要同步 `remote_workers`。
-5. 对 profile、模型、workflow 有影响时，同步 GPU Pool / RunPod / LAN AIO 文档和运维技能。
-6. 补 focused tests，至少覆盖 payload 字段、task type 映射、patcher 注入和关键失败分支。
+- 优先复用现有用户 task type、执行 profile、workflow 和 patch seam。只有
+  用户语义、资源隔离或发布生命周期确实不同才新增类型/profile。
+- Bot/Web 只收集和校验参数；domain config 规范化；Worker patcher 把参数写入
+  workflow；ComfyUI 只执行 JSON。不要在多个入口复制节点逻辑。
+- 用户可见逻辑类型可以 alias 到内部执行类型；alias 不得改写 History、价格、
+  refund identity 或 Gallery 分类。
+- 多阶段任务只有一个根业务身份和一次扣费。预处理/换脸/续接阶段使用内部执行
+  ID 与 continuation checkpoint，不对用户暴露，也不二次扣费。
+- 多个 task type 共享 workflow 时，在 patcher 按类型注入差异，不复制 JSON。
+- 主 Bot、QQCC 和管理后台可有不同选项 catalog；私有选项不得泄漏到公开
+  catalog，兼容字段只读解析，不作为新入口。
+- `workers/` 与 `remote_workers/` 的 workflow/mapping/checksum 必须保持发布
+  契约要求的一致；不要只改本地 Worker。
 
-## 4. 图生图附加模型边界
+## 4. 修改流程
 
-- LoRA、ControlNet 等附加模型参数应作为结构化 payload 从 UI/FSM 一路透传到 worker，不要靠 prompt 拼接表达业务语义。
-- Bot 菜单和 Web 表单的可选项要来自同一份 catalog 或可推导的配置；避免两端静态选项漂移。
-- workflow patcher 应只负责把已校验参数注入 ComfyUI JSON，不承担扣费、鉴权或用户权限判断。
-- 新增 ControlNet/LoRA 时，核对模型文件名、ComfyUI 节点 loader 类型、strength/weight 默认值和空值行为。
-- 图生图改动通常需要覆盖：FSM 黑盒退出、Web payload builder、worker patcher、任务提交成功后的结果回流。
+1. 明确用户语义、输入/输出、价格归属、执行 profile 和资源要求。
+2. 搜索 registry、schema、presenter、submission、Worker mapping、patcher、
+   workflow、manifest、History/Gallery 和 tests 的所有调用点。
+3. 先补参数拒绝、默认值、patch 结果、错误收口和 alias 身份的行为测试。
+4. 修改 workflow 前保存结构化 diff；逐个核对 node class、input key、模型
+   相对路径和输出节点，禁止按显示标题猜 node ID。
+5. 同步 Bot/Web/QQCC schema 与 i18n；服务端必须再次校验，不依赖前端菜单。
+6. 若模型或 workflow 进入 artifact，更新 checksum/manifest/profile，走同
+   SHA 构建和 canary；代码合入本身不代表模型已在运行节点生效。
 
-## 5. 视频与 AIO profile 边界
+## 5. 高压红线
 
-- Wan22 AIO 是当前 `image_to_video`、`video_insert`、`video_edit` 的主执行面。常见关键节点包括 LoRA loader、正负 prompt、首尾图、RIFE、视频保存和尺寸节点；节点 ID 以文档为准，修改前必须重新打开 workflow JSON 核对。
-- QQCC 场景负面提示词只走已有 workflow 参数映射：Qwen 自由P图 `img2img`/`img2img_lora` 写 `4.prompt`；PornMaster Flux2 single/multiple edit 写 `254.text` / `49.text`；Wan22 视频写 `2371.value`。空值保持既有空负向或 Wan22 默认负向归一，不新增 task type、profile 或模型目录。
-- QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`。两个 engine 都接受最多 5 个有序 `{name,strength}`；QQCC options 来自 `src/wan22_explicit_lora_catalog.py` 的 49 组已下载 High/Low 条目及保守推荐强度。worker 提交前清空节点 `26`/`18` 的旧槽，再按稳定键解析真实 High/Low 相对路径写入 `lora_1..5`；旧后缀命名仍兼容。该多选配置只在 QQCC 官方/私有 Bot 暴露，主 Bot 菜单保持单模型边界。
-- QQCC `AI动图` 的 `aspect_ratio` 仍是提交前输入适配，不进入 Central/Worker。通用 `smart_image_aspect_service` 使用 55% 保留面积门槛、YuNet 人脸安全框、SmartCrop 无人脸兜底和暗化模糊补边；检测依赖缺失/失败、多人安全框装不下或比例变化过大时必须补边，不得退回可能裁头的硬裁剪。OpenCV/SmartCrop/YuNet 只进入 `python-media-runtime-base`，不得因此修改 Wan22 workflow、patcher、模型 profile 或 GPU runtime。
-- QQCC `AI滤镜` 使用独立 `filter_scenes`，但 engine、LoRA、`negative_prompt` 与 `original_face_swap_enabled` 规则复用 AI绘图；滤镜场景自身不支持后处理链，只能作为直接单步入口或 `draw_scenes[].postprocess_filter_scene_id` 的终止模板。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用；不要新增 workflow、RunPod profile、模型 bundle 或数据库表。
-- LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
-- `ltx_t2v` / `ltx_t2v_ic` 使用独立 `ltx_t2v` profile，不得覆盖 `ltx_video` / 10Eros I2V。固定栈只能是官方 dev FP8 -> distilled 0.5 -> Sulphur 1.0，IC 再追加 Ingredients 1.0；禁止用户 LoRA。cloud-test 支持 disabled canary：固定 `ltx_t2v/2026-07-22/manifest.json`、仅 32GB RTX 5090、禁用 template，目标 agent 只在普通/IC 两单期间临时 enabled，结束后恢复 disabled 并删除 Pod；正式入口、正式 Pod、autoscaler 和两层 feature flag 继续关闭。Ingredients gated 凭据不得进入 transfer Pod。旧 `character_reference_build` 曾复用已退役的 PornMaster Flux2 FP8 profile；任务历史和 workflow 可保留，但在迁移到 BF16 或独立 profile 前不得映射到 worker pool、不得开放人物参考表入口。
-- LTX 首尾帧 `ltx_video_flf2v` 的默认与 10Eros override workflow 必须开启时空 VAE 的 `last_frame_fix`，让末端 latent 通过临时重复帧获得完整解码上下文；`workers/` 与 `remote_workers/` 两侧必须同步，避免尾帧轻微形变或运行态漂移。
-- LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
-- QQCC `AI视频` 配置保存 `{path,strength}`，提交边界转换为 LTX 既有 `{name,strength}`；强度限制 `0.1..2.0`、步长 `0.05`。LTX I2V/FLF2V/V2V Audio 的非空 `negative_prompt` 映射到节点 `29.text`，但只有独立发布并验收对应 Worker mapping 后才可宣称生效；空白值必须在 Web/Bot/API 边界省略，不能覆盖工作流节点的内置默认文本。单独发布 QQCC 控制面不得为此触碰正式 LTX GPU runtime，主 Bot Telegram 高级 LTX 设置页仍不暴露负面提示词。
-- QQCC 管理后台专用 LTX 选项必须写入 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占合并、校验和下发；不要写入公开 `LTX_VIDEO_LORA_OPTIONS`。2026-07-17 的专用库包含 32 个已校验 LoRA，其中 26 个不在公开目录。控制面可配置不等于 GPU 可加载：目标 RunPod/LAN AIO manifest 未同步并 smoke 前，不得宣称正式生效。
-- LTX Bot 扩展 seed 与完成拼接链路恢复由 `src/services/ltx_video_extension_service.py` 负责；这只影响 Bot 入口层 histories/last_frame/context 准备，不改变 LTX workflow、worker mapping、RunPod profile 或模型目录。
-- Wan22 AIO Bot 链路扩展、重生成与完成拼接准备由 `src/services/wan22_video_v2_extension_service.py` 负责，覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2；这只影响 Bot 入口层 histories/last_frame/input/context 准备，不改变 `Wan22AioV82.json`、worker mapping、RunPod profile 或模型目录。
-- 主 Bot 高级视频 FSM 的提交 payload 事实源是 `src/services/advanced_video_submission_service.py`：它只做 Bot 入口层提交计划、分辨率/时长归一、首尾帧和 LTX LoRA/链路字段透传，不改变 worker workflow、RunPod profile 或模型目录。
-- 主 Bot 高级视频设置面板事实源是 `src/services/advanced_video_settings_view_service.py`：它只生成 Telegram view-model/keyboards 与费用展示，仍不改变 Wan22/LTX workflow、worker mapping、RunPod profile 或模型目录。
-- SCAIL-2 是独立视频生视频 profile，用户入口和执行 profile 要保持映射清晰。用户侧只展示 `scail2_action_transfer` 动作迁移，支持 5/8/10/15/20s；dispatcher 会把 10/15/20s 隐式送到内部执行类型 `scail2_action_transfer_long` 和 Context Windows workflow。`scail2_action_transfer_long` 不作为 Bot/Web 入口，也不进入正式 RunPod profile。涉及成本、时长、尺寸或首帧抽取时，同时检查 task registry、billing 配置和 GPU Pool 文档。
-- workflow 里的节点 ID 是高风险事实。不要凭记忆改 `node_id`，必须读取当前 JSON；文档中的 ID 只作为导航提示。
+- 不把本地绝对模型路径、凭据、下载 URL、一次性 Pod/agent ID、当前 GPU 数量
+  或 canary 结果写入 Skill/Git。
+- 不把模型文件提交 Git；manifest 只记录可审计来源、相对路径、checksum 和
+  目标 profile 所需元数据。
+- 不用 mutable tag、现场 build、rsync 源码或 bind mount 覆盖正式镜像代码。
+- 未经明确授权，不创建/启用 RunPod，不切换 LAN slot，不修改生产 profile 或
+  feature flag。
+- 节点缺失、模型路径不匹配、目标 profile 不支持或 manifest 不完整时 fail
+  closed；不要静默忽略用户参数或回退到另一模型。
+- 参数数量、强度、分辨率、时长与输入张数必须由服务端/domain config 校验；
+  Worker 仍做防御性校验。
+- workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
+  的终态与退款语义。
 
-## 6. 运行态与部署红线
+## 6. 最小验证
 
-- 本地开发、云测试、云正式、RunPod 和 LAN AIO 的 workflow/model 资产可能来自不同同步路径。改动任何 workflow 或模型文件后，必须说明哪些运行态已同步、哪些只是本地准备。
-- 测试优先：功能研发、联调、缺陷修复和配置调整默认先更新云测试控制面。正式环境发布必须得到用户明确确认。
-- RunPod/LAN AIO 镜像或启动脚本调整时，叠加 `allbot-ops-deployment`，并检查 profile 级环境变量、模型挂载、健康检查和 worker 注册。
-- 不要把一次性 Pod ID、临时公网 URL、手工任务 ID 写进技能正文；这类材料进入 `logs/` 或 `docs/archive/`。
-
-## 7. 验证清单
-
-- 结构检查：workflow JSON 可解析，worker mapping 指向存在的文件，patcher 找得到目标节点。
-- 行为测试：新增或变更参数至少覆盖 Bot/Web payload 到 worker patcher 的一条黄金路径。
-- 兼容测试：旧 payload 空字段、legacy LoRA 字段、无附加模型场景仍能提交。
-- 运行态检查：涉及 RunPod/LAN AIO 时，确认 `remote_workers`、模型目录、profile 环境变量和启动日志。
-- 交付说明：列出触达的 task type、workflow 文件、模型目录、测试命令，以及是否仅更新云测试或已获准正式发布。
-
-## 8. 交付要求
-
-QQCC 固定分辨率属于配置与提交参数边界：`video_scenes[].resolution` 为 `512p|720p|1024p`（缺失默认 `720p`），`ai_video_scenes[].resolution` 当前只允许 `1280x704`，AI动图 `1024p + 10s` 必须拒绝。不得借此扩展 workflow、Worker mapping、模型 profile、RunPod 或 LAN AIO；主 Bot 用户画质权限保持不变。
-
-- 修改后同步必要的 `/docs` 和 `docs/knowledge_base_audit_matrix.md`。
-- 如果技能体积再次接近 20KB，优先拆到 `references/` 或对应子模块文档，不继续堆正文。
-- 最终回复必须说明：改了哪些模型/工作流入口、如何验证、是否需要部署同步，以及是否存在未触达的运行态。
+- Registry/schema：新旧 payload、默认值、非法数量/强度/分辨率/时长拒绝。
+- Patcher：使用真实 workflow fixture，断言目标节点、模型路径、输入顺序、
+  清空旧槽和非目标节点不变。
+- Identity：alias/multi-stage 保持业务 task type、History、价格和根退款键。
+- Worker：本地与 remote mapping/checksum 一致，缺 workflow/model fail
+  closed，上传与 complete 顺序正确。
+- UI/Bot：菜单、i18n、schema、服务端复验和跨入口隔离。
+- Artifact：完整 SHA、digest/checksum、OCI revision、目标 manifest 和
+  disabled canary；只有实际执行最小任务后才能声明目标 profile 可用。
+- 交付列出修改的 registry/workflow/profile/docs/tests，并区分“代码已就绪”
+  “artifact 已构建”“测试已 canary”“生产已启用”。

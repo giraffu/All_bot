@@ -32,7 +32,8 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 ## 分层约定
 
 - `AGENTS.md` 只维护全局路由、授权和工作区规则。
-- `SKILL.md` 只维护触发边界、稳定入口、高压红线、按需阅读和最小验证。
+- `SKILL.md` 是 context packet，只维护触发边界、按任务文档路由、稳定入口、
+  高压红线和最小验证。
 - 专项 `docs/` 维护当前业务契约、架构和 SOP。
 - `docs/domain/CONTEXT.md` 只作为 glossary。
 - `docs/knowledge_base_audit_matrix.md` 一份活跃资料一行，不追加 changelog。
@@ -41,13 +42,17 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 
 ## 维护门禁
 
-- 单个 Skill 小于 20 KB，优先保持 12–15 KB；超出时把低频细节下沉到
-  reference 或专项文档。
+- 单个 Skill 小于 16 KB，全部 Skills 合计小于 140 KB；超出时把低频细节
+  下沉到专项文档，不通过拆成自动加载的 reference 规避预算。
+- 活跃专题文档单篇小于 75 KB、合计小于 1 MB。大文档优先改善 Skill 的按需
+  路由；只有职责确实可独立加载时才拆分，避免制造重复索引。
 - 避免超过 1000 字符的规则行；拆成可扫描的短条目。
-- Skill 中不写日期流水、真实秘密、固定 Pod/任务 ID、实时 worker 数量或
-  已被取代的 SOP。
+- Skill 中不写 ISO 日期流水、真实秘密、固定 Pod/任务 ID、邮箱/IP allowlist、
+  实时 worker 数量、当前部署结果或已被取代的 SOP。
+- 领域 Skill 必须至少路由一篇专项文档，并有最小验证/测试清单。运行态先读
+  声明式配置和实时 API，不能相信 Skill 中的快照。
 - 新增 Skill 时同步 `.codex/skills`、`AGENTS.md`、本索引和审计矩阵。
 - 入口、对象名、异常、超时、双 ID、provider/dependencies 或测试 seam
   变化时，同步领域 Skill 和专项文档。
 - 运行 `python scripts/doc_quality_checker.py` 验证路由覆盖、矩阵登记、内部
-  链接和体积预算；尺寸不再手工抄入本文件，避免审计值失真。
+  链接、日期化运行态和体积预算；尺寸不再手工抄入本文件。
