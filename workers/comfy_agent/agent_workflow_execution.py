@@ -9,6 +9,21 @@ class TaskExecutionTimeoutError(TimeoutError):
     """Raised when ComfyUI does not produce history output before the hard deadline."""
 
 
+def validate_task_execution_contract(
+    *,
+    task_type: str,
+    params: dict[str, Any],
+) -> None:
+    if (
+        task_type == "scail2_face_swap_v2"
+        and params.get("reference_preprocessed") is not True
+    ):
+        raise ValueError(
+            "scail2_face_swap_v2 requires reference_preprocessed=true; "
+            "complete the face_swap_v2 stage before dispatching SCAIL-2"
+        )
+
+
 async def submit_task_workflow(
     *,
     task_id: str,
@@ -22,6 +37,7 @@ async def submit_task_workflow(
     agent_id: str,
     logger,
 ) -> None:
+    validate_task_execution_contract(task_type=task_type, params=params)
     workflow = patcher.load_workflow(task_type)
     if not workflow:
         raise ValueError(f"Workflow for {task_type} not found")

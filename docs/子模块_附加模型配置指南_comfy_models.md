@@ -285,7 +285,7 @@ audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVid
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
 `src/workflow_mapping_validation.py`、`workers/runpod_runtime/src/workflow_mapping_validation.py` 与
 `workers/runpod_runtime/comfy_agent/workflows/`。
-视频换脸是 Central 两阶段方案，不把图片换脸模型混装进 SCAIL-2 runtime。共享首帧准备服务先从本地文件或对象存储视频抽取首帧并保存隐藏对象；第一阶段以固定优先级 100 向 `i2i_pro` 提交标准 `face_swap_v2`，人脸参考图做人脸来源、驱动首帧做 body。第一阶段结果不写 History/Gallery。continuation 必须先持久化派发意图、切换 TaskRegistry，再用确定性 backend ID 按根任务原始正常优先级提交第二阶段；内部请求必须带 `reference_preprocessed=true`，缺失或 false 由 Central 拒绝。第二阶段不可取消、不扣费，最终只写一条 `scail2_face_swap_v2` 视频记录。
+视频换脸是 Central 两阶段方案，不把图片换脸模型混装进 SCAIL-2 runtime。共享首帧准备服务先从本地文件或对象存储视频抽取首帧并保存隐藏对象；第一阶段以固定优先级 100 向 `i2i_pro` 提交标准 `face_swap_v2`，人脸参考图做人脸来源、驱动首帧做 body。第一阶段结果不写 History/Gallery。continuation 必须先持久化派发意图、切换 TaskRegistry，再用确定性 backend ID 按根任务原始正常优先级提交第二阶段；内部请求必须带 `reference_preprocessed=true`，缺失或 false 由 Central 拒绝。普通 Worker 与 RunPod/LAN baked runtime 的 `agent_workflow_execution` 还会在加载 workflow、接触 ComfyUI 前重复校验该标记，防止错误控制面任务占用 SCAIL 算力。第二阶段不可取消、不扣费，最终只写一条 `scail2_face_swap_v2` 视频记录。
 
 SCAIL-2 Worker 只把“换脸后的首帧”作为 `LoadImage 58` 提交给
 `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`，不得加载 `face_swap_v2.json`、创建辅助 ComfyClient 或访问外部 8188。该 workflow
