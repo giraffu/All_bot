@@ -133,7 +133,6 @@ graph TD
 
 ### 1.3 云正式生产口径
 
-
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务。2026-07-12 已执行 QQCC 私有 Bot migration 并显式启动 `cloud-qqcc-private-bot-worker-prod`（`qqcc-private-bots` profile），生产 webhook 复用 `api.aivison.it.com`，owner WebApp 使用公开 `private-bot.aivison.it.com`；后续默认 compose 操作仍须显式保留该 profile。
 - `web.aivison.it.com` 由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API，`rmb.aivison.it.com` 回源云 Payment API。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
