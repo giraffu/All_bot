@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "ca70f79893905e7e71e8da0273bc59e8483620b5",
+  "batch": "20260727-215659-df503cc0",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-215659-df503cc0",
+  "members": [
+    {
+      "base_sha": "ca70f79893905e7e71e8da0273bc59e8483620b5",
+      "branch": "codex/c-runner-trailing-json",
+      "head": "df503cc024033b54dda7ffea48bfc4cec71556d0",
+      "queued_at": "2026-07-27T21:56:49.215171+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
