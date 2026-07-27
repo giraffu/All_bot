@@ -3907,7 +3907,14 @@ def build_plan(
     dependencies = _resolve_release_dependencies(dependencies)
     sha = validate_full_sha(args.sha)
     manifest_path = dependencies.resolve_manifest_path(
-        args, allow_fetch=args.command in {"plan", "deploy-module", "promote"}
+        args,
+        allow_fetch=(
+            args.command in {"plan", "deploy-module", "promote"}
+            or (
+                args.command == "recover"
+                and bool(getattr(args, "repair_rollback_materials", False))
+            )
+        ),
     )
     manifest_document = dependencies.read_json(manifest_path)
     policy = (
@@ -3946,19 +3953,6 @@ def build_plan(
         expanded_independent = expand_independent_module_request(
             policy, requested_modules
         )
-        if expanded_independent and isinstance(args.previous_state, Mapping):
-            required_artifacts = expanded_independent[1]
-            current_artifacts = args.previous_state.get("artifacts")
-            missing_baselines = (
-                required_artifacts
-                if not isinstance(current_artifacts, Mapping)
-                else required_artifacts - set(current_artifacts)
-            )
-            if missing_baselines and not args.state_file:
-                args.previous_state = recover_artifact_current_state(
-                    args.previous_state,
-                    _read_artifact_state_history(args),
-                )
         previous_state = getattr(args, "previous_state", None)
         repair_current_test_bundle = (
             expanded_independent is not None
@@ -3972,6 +3966,24 @@ def build_plan(
             and previous_state.get("track") == "control-plane"
             and validate_full_sha(str(previous_state.get("git_sha", ""))) == sha
         )
+        if expanded_independent and isinstance(args.previous_state, Mapping):
+            required_artifacts = expanded_independent[1]
+            current_artifacts = args.previous_state.get("artifacts")
+            missing_baselines = (
+                required_artifacts
+                if not isinstance(current_artifacts, Mapping)
+                else required_artifacts - set(current_artifacts)
+            )
+            if (
+                missing_baselines
+                and not args.state_file
+                and not repair_current_test_bundle
+            ):
+                args.previous_state = recover_artifact_current_state(
+                    args.previous_state,
+                    _read_artifact_state_history(args),
+                )
+        previous_state = getattr(args, "previous_state", None)
         if repair_current_test_bundle:
             independent_release = IndependentModuleRelease(
                 name=expanded_independent[0],

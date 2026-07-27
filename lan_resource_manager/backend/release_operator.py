@@ -17,11 +17,18 @@ class ReleaseOperatorPort(Protocol):
     async def build_status(self, sha: str) -> dict[str, Any]: ...
     async def environment_status(self, environment: str) -> dict[str, Any]: ...
     async def start_build(self, expected_main_sha: str) -> dict[str, Any]: ...
+    async def prepare_gpu_release(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def sync_test_config(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def repair_test_rollback(self, **kwargs: Any) -> dict[str, Any]: ...
     async def plan(
         self, environment: str, module: str, sha: str, maintenance: str
     ) -> dict[str, Any]: ...
     async def deploy(self, **kwargs: Any) -> dict[str, Any]: ...
     async def set_maintenance(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def integration_status(self) -> dict[str, Any]: ...
+    async def integrate_all(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def retry_integration(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def align_workspaces(self, **kwargs: Any) -> dict[str, Any]: ...
 
 
 class UnixReleaseOperator:
@@ -31,6 +38,12 @@ class UnixReleaseOperator:
         self.socket_path = settings.release_runner_socket
 
     async def _call(self, action: str, payload: dict[str, Any] | None = None) -> dict:
+        timeout = (
+            30000
+            if action
+            in {"integrate_all", "retry_integration", "prepare_gpu_release"}
+            else 7500
+        )
         try:
             reader, writer = await asyncio.open_unix_connection(self.socket_path)
             writer.write(
@@ -38,7 +51,7 @@ class UnixReleaseOperator:
                 + b"\n"
             )
             await writer.drain()
-            raw = await asyncio.wait_for(reader.readline(), timeout=7500)
+            raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
             writer.close()
             await writer.wait_closed()
         except (OSError, TimeoutError) as exc:
@@ -69,6 +82,15 @@ class UnixReleaseOperator:
     async def start_build(self, expected_main_sha):
         return await self._call("start_build", {"expected_main_sha": expected_main_sha})
 
+    async def prepare_gpu_release(self, **kwargs):
+        return await self._call("prepare_gpu_release", kwargs)
+
+    async def sync_test_config(self, **kwargs):
+        return await self._call("sync_test_config", kwargs)
+
+    async def repair_test_rollback(self, **kwargs):
+        return await self._call("repair_test_rollback", kwargs)
+
     async def plan(self, environment, module, sha, maintenance):
         return await self._call(
             "plan",
@@ -85,3 +107,15 @@ class UnixReleaseOperator:
 
     async def set_maintenance(self, **kwargs):
         return await self._call("set_maintenance", kwargs)
+
+    async def integration_status(self):
+        return await self._call("integration_status")
+
+    async def integrate_all(self, **kwargs):
+        return await self._call("integrate_all", kwargs)
+
+    async def retry_integration(self, **kwargs):
+        return await self._call("retry_integration", kwargs)
+
+    async def align_workspaces(self, **kwargs):
+        return await self._call("align_workspaces", kwargs)

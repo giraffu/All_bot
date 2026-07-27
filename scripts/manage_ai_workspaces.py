@@ -379,6 +379,60 @@ class WorkspaceManager:
             self._fetch_base()
             self._git("switch", "--detach", self.base_ref, cwd=path)
 
+    def align_merged(self) -> dict[str, Any]:
+        """Park merged task branches and refresh clean detached slots.
+
+        Dirty workspaces and branches not yet contained by main are reported and
+        left byte-for-byte untouched.
+        """
+
+        with self._workspace_lock():
+            self._fetch_base()
+            main_sha = self._git("rev-parse", self.base_ref)
+            registered = self._registered_worktrees()
+            rows: list[dict[str, Any]] = []
+            for slot in SLOTS:
+                path = self._path(slot)
+                if path not in registered or not path.is_dir():
+                    rows.append({"slot": slot, "status": "blocked_uninitialized"})
+                    continue
+                branch = self._git("branch", "--show-current", cwd=path) or None
+                head = self._git("rev-parse", "HEAD", cwd=path)
+                if self._git("status", "--porcelain", cwd=path):
+                    rows.append(
+                        {
+                            "slot": slot,
+                            "status": "blocked_dirty",
+                            "branch": branch,
+                            "head": head,
+                        }
+                    )
+                    continue
+                if branch and self._run(
+                    ["git", "merge-base", "--is-ancestor", head, self.base_ref],
+                    cwd=path,
+                    check=False,
+                ).returncode:
+                    rows.append(
+                        {
+                            "slot": slot,
+                            "status": "blocked_unmerged",
+                            "branch": branch,
+                            "head": head,
+                        }
+                    )
+                    continue
+                self._git("switch", "--detach", self.base_ref, cwd=path)
+                rows.append(
+                    {
+                        "slot": slot,
+                        "status": "aligned",
+                        "branch": None,
+                        "head": main_sha,
+                    }
+                )
+            return {"main_sha": main_sha, "slots": rows}
+
 
 def write_batch_plan(path: Path, plan: Mapping[str, Any]) -> None:
     """Persist one frozen batch plan without allowing replacement."""
@@ -436,6 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("park", "refresh"):
         child = subparsers.add_parser(name)
         child.add_argument("--slot", required=True)
+    subparsers.add_parser("align-merged")
     return parser
 
 
@@ -492,9 +547,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "park":
             manager.park(args.slot)
             result = {"slot": args.slot.upper(), "status": "parked"}
-        else:
+        elif args.command == "refresh":
             manager.refresh(args.slot)
             result = {"slot": args.slot.upper(), "status": "refreshed"}
+        else:
+            result = manager.align_merged()
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except WorkspaceError as exc:

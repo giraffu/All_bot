@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AllBot 本地资源管理平台使用帮助</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "PingFang SC", sans-serif; background: #070b13; color: #eaf2ff; }
+    body { margin: 0; }
+    main { width: min(900px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+    h1 { font-size: clamp(32px, 6vw, 52px); margin-bottom: 8px; }
+    h2 { margin-top: 34px; color: #8bb2ff; }
+    p, li { color: #a7b4c9; line-height: 1.75; }
+    code { color: #83adff; background: #101a2a; border-radius: 6px; padding: 2px 6px; overflow-wrap: anywhere; }
+    .notice { padding: 16px; border: 1px solid #76532c; border-radius: 12px; background: rgba(176, 116, 43, .09); }
+    .flow { display: grid; gap: 9px; padding: 18px; border: 1px solid #20304a; border-radius: 14px; background: #0c1421; }
+    a { color: #8bb2ff; }
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="/">← 返回本地资源管理平台</a></p>
+  <h1>使用帮助</h1>
+  <p>本页面说明如何在不使用 AI agent 的情况下，通过“模块构建部署”完成开发槽集成、main 构建、测试部署与正式容器准备。</p>
+  <p class="notice">平台不会直接发布正式环境。正式环境页只提供单模块受控入口；每次正式执行仍需独立确认。本轮推荐停在“不可变 bundle 已就绪”。</p>
+
+  <h2>推荐完整流程</h2>
+  <div class="flow">
+    <span>1. 开发者在 A–H 槽提交、推送并 handoff</span>
+    <span>2. 打开“模块构建部署”，刷新状态</span>
+    <span>3. 输入页面显示的 <code>INTEGRATE &lt;main-sha&gt;</code>，点击“合并全部开发槽代码”</span>
+    <span>4. 等待批次 PR、main CI、不可变 bundle 和自动测试部署完成</span>
+    <span>5. 输入 <code>ALIGN &lt;main-sha&gt;</code>，对齐全部安全开发槽</span>
+    <span>6. 如需完整确认，输入 <code>TEST ALL &lt;bundle-sha&gt;</code>，部署测试环境全部模块</span>
+    <span>7. 确认“可信 bundle 已就绪”，即可作为以后正式环境部署候选；不要在本流程点击正式执行</span>
+  </div>
+
+  <h2>状态与阻断</h2>
+  <ul>
+    <li><strong>脏工作区</strong>：槽内有未提交文件。平台不会提交、覆盖或删除，需开发者先处理。</li>
+    <li><strong>待合入</strong>：槽仍在分支上且 head 尚未被 main 包含。先完成 push/handoff 和集成。</li>
+    <li><strong>失败阻断</strong>：冲突、CI、构建或测试部署失败。修复原因后，在失败卡片输入界面给出的 <code>RETRY &lt;batch&gt;</code>，从同一批次安全重试；只有被更新 main 安全超越的旧测试失败会自动收敛。</li>
+    <li><strong>bundle 待构建</strong>：输入 <code>BUILD &lt;main-sha&gt;</code>。平台只接受当前远端 main 和完整可信 CI，不生成 build-only 包。</li>
+    <li><strong>配置漂移</strong>：输入 <code>TEST CONFIG &lt;main-sha&gt;</code>，平台先生成计划，再原子同步测试环境配置投影；该入口没有正式环境参数，也不会手动进入维护。</li>
+    <li><strong>回滚材料缺失</strong>：输入 <code>REPAIR TEST ROLLBACK &lt;current-sha&gt;</code>。平台只接受测试环境当前精确 SHA，由受控 recover 拉取并验证旧不可变 bundle，再核对已记录与运行容器 digest，补齐 checkout 和非敏感 <code>release.env</code>；不拉运行镜像、不重启服务、不改部署状态。</li>
+  </ul>
+
+  <h2>测试环境全部模块</h2>
+  <p>若 main bundle 因 GPU attestation 缺失而阻断，可输入 <code>GPU BUILD &lt;main-sha&gt;</code>。“准备全部 GPU 正式候选容器”会并行触发 8 个实际镜像构建，以同一 main SHA 形成 9-profile 完整 manifest，再重放模块 bundle。操作可从已经存在且具有成功 exact-SHA workflow 的镜像继续，不重复覆盖不可变 tag；它只准备容器，不创建 RunPod/LAN Pod，也不部署正式环境。</p>
+  <p>“部署测试环境全部模块”只遍历发布策略中适用于 test 的完整独立模块组。每个模块都重新执行 <code>release.py plan → deploy</code>，使用短效 token、精确 SHA、digest 与配置门禁。任一模块失败即停止；已完成模块保留事务证据，修复后可幂等重跑。</p>
+
+  <h2>正式容器准备完成的判定</h2>
+  <ul>
+    <li>远端 main 为完整 40 位 SHA，受保护 CI 成功。</li>
+    <li>页面显示“可信 bundle 已就绪”。</li>
+    <li>bundle 中所有命中 artifact 都是 digest-pinned，并记录 OCI revision/checksum。</li>
+    <li>测试环境适用模块已更新并通过发布器 smoke/evidence。</li>
+  </ul>
+
+  <h2>安全边界</h2>
+  <p>平台不提供自由 shell、自由 service、跳门禁、正式环境回滚/恢复、任意配置 apply、GPU 节点批量操作或 Docker Socket。测试回滚材料修复是固定、无运行态变更的受控动作。Web 进程不读取 GitHub、云 SSH、GHCR 或 Pages 凭据；写操作由隔离 runner 的固定动作白名单执行并记录来源。</p>
+</main>
+</body>
+</html>
