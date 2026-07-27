@@ -57,15 +57,20 @@ def redact_error(value: str) -> str:
 
 def parse_last_json(value: str) -> dict[str, Any]:
     decoder = json.JSONDecoder()
+    candidates: list[tuple[int, int, dict[str, Any]]] = []
     for index, char in enumerate(value):
         if char != "{":
+            continue
+        if any(start < index < end for start, end, _ in candidates):
             continue
         try:
             candidate, end = decoder.raw_decode(value[index:])
         except json.JSONDecodeError:
             continue
-        if isinstance(candidate, dict) and not value[index + end :].strip():
-            return candidate
+        if isinstance(candidate, dict):
+            candidates.append((index, index + end, candidate))
+    if candidates:
+        return candidates[-1][2]
     raise OperatorError("operator did not return a JSON payload")
 
 
