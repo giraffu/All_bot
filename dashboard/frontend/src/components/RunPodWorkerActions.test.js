@@ -165,6 +165,26 @@ describe('RunPodWorkerActions', () => {
     expect(apiMocks.pauseLanAioWorker).not.toHaveBeenCalled()
   })
 
+  it('shows RunPod lifecycle actions for LTX T2V workers', async () => {
+    const agentId = 'runpod_prod_ltx_t2v_manual_01'
+    const wrapper = mountActions({
+      agent_id: agentId,
+      runtime_profile: 'ltx_t2v',
+      status: 'idle',
+    })
+
+    expect(wrapper.text()).toContain('暂停')
+    expect(wrapper.text()).toContain('重启')
+    expect(wrapper.text()).toContain('锁定')
+    expect(wrapper.text()).toContain('删除')
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.pauseRunPodWorker).toHaveBeenCalledWith(agentId)
+    expect(apiMocks.pauseLanAioWorker).not.toHaveBeenCalled()
+  })
+
   it('locks RunPod workers from the card action', async () => {
     const agentId = 'runpod_prod_wan22_video_v2_manual_03'
     const wrapper = mountActions({

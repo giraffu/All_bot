@@ -77,6 +77,9 @@ manifest 和专项文档读取，不在此维护快照。
 - 不用 mutable tag、现场 build、rsync 源码或 bind mount 覆盖正式镜像代码。
 - 未经明确授权，不创建/启用 RunPod，不切换 LAN slot，不修改生产 profile 或
   feature flag。
+- `ltx_t2v` 的测试 Web/后端可在 cloud-test 显式开启并连接专用测试 worker；
+  Dashboard 只登记独立手动 profile。prod Web、正式 Pod 与 autoscaler 默认关闭，
+  不得因测试开关或后台可见性自动晋级。
 - 节点缺失、模型路径不匹配、目标 profile 不支持或 manifest 不完整时 fail
   closed；不要静默忽略用户参数或回退到另一模型。
 - 参数数量、强度、分辨率、时长与输入张数必须由服务端/domain config 校验；

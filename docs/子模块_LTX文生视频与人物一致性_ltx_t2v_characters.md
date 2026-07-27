@@ -9,9 +9,10 @@
 - `ltx_t2v_ic`：文生同步音视频 + 私有人物参考表 + Ingredients；
 - `character_reference_build`：从本人上传源图生成六视图参考表。
 
-本阶段允许已授权的 cloud-test disabled canary，并继续支持本地 LAN 验收。后端
-`LTX_T2V_BACKEND_ENABLED` 和 Web runtime flag `enable_ltx_t2v` 默认均为关闭；
-不得开放正式用户、创建正式 Pod 或启用 autoscaler。RunPod 使用独立
+本阶段允许已授权的 cloud-test disabled canary、测试 Web 人工验收，并继续支持
+本地 LAN 验收。后端 `LTX_T2V_BACKEND_ENABLED` 默认关闭，由云测试环境显式开启；
+Web runtime flag `enable_ltx_t2v` 只在 test 为 `true`，prod 固定为 `false`。
+不得开放正式用户、未经单次授权创建正式 Pod 或启用 autoscaler。RunPod 使用独立
 `ltx_t2v` profile，只接受 `ltx_t2v,ltx_t2v_ic`，禁止 template，首轮只接受
 32GB RTX 5090；不得把本地 registry 镜像当作 GHCR artifact。
 
@@ -97,6 +98,9 @@ baseline；只有第 2 组完整 Sulphur T2V 和第 4 组完整 Sulphur + Ingred
   control 进入，只在串行普通 Sulphur 与 Ingredients canary 期间临时 enabled，
   结束后再次 disabled、drain 并删除。本节描述已实现的 operator 契约；真实
   RunPod 黄金路径证据须以 main 同 SHA artifact 与本机 XDG state 为准。
+- Dashboard 的手动 RunPod 管理列表登记 `ltx_t2v / Sulphur + Ingredients`；
+  新建后仍默认 disabled，可执行开启、暂停、重启、锁定和删除。该入口只登记
+  正式手动池能力，不代表获准创建正式 Pod，且该 profile 不进入 autoscaler。
 
 - `workers/runpod_profiles/ltx_t2v/Dockerfile`；
 - `workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。
@@ -152,7 +156,7 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 
 ## 6. Web 与验收
 
-开启本地 flags 后，`/characters` 提供创建、状态轮询、重试、重命名、软删除和
+测试 Web 发布后，`/characters` 提供创建、状态轮询、重试、重命名、软删除和
 预览。统一工作台的“文生视频”可清空人物选择：无人物提交 `ltx_t2v`；有人物
 自动提交 `ltx_t2v_ic` 并锁定规格和价格。视觉 prompt 与可选 audio prompt
 分别进入任务输入，默认生成同步音频。
@@ -177,8 +181,19 @@ python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled \
 再停止候选并原子恢复 ledger 的 `intentionally_empty`。低层 `start-disabled`、手工
 Docker 或成功后会开启 intake 的 `recover/takeover` 都不能用于这类验收。
 
-代码/容器 smoke 通过不等于 LAN 全链路通过；运行结果必须单独记录。RunPod、
-GHCR、autoscaler/canary 与共享环境发布属于下一阶段授权。
+代码/容器 smoke 通过不等于 LAN 或 RunPod 全链路通过；运行结果必须单独记录。
+cloud-test RunPod canary 与测试 Web 人工验收已支持；生产 Web、正式 RunPod 和
+autoscaler 仍属于单独授权边界。
+
+测试人工验收使用同一套发布和任务链，不增加旁路：
+
+1. main 同 SHA 的 control-plane/public-web 发布到 test；
+2. 云测试 host 显式设置 `LTX_T2V_BACKEND_ENABLED=true`，prod 保持默认 false；
+3. 通过专用 operator 创建 `runpod_test_ltx_t2v_*`，确认 disabled heartbeat 后
+   人工 enable；不得用 Dashboard 的正式手动池命令创建测试 Pod；
+4. 从 `https://web-cf-test.aivison.it.com` 登录，分别提交普通 T2V、创建人物参考表
+   和 IC T2V；任务必须由目标测试 agent 接取并回流 `user-data-test`；
+5. 人工测试结束后 disable、drain、删除测试 Pod，并确认 Central 无活动任务。
 
 ### 6.1 2026-07-22 LAN 运行结果
 
