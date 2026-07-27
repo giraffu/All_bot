@@ -822,6 +822,7 @@ def test_i2i_pro_canary_task_case_submits_existing_task_type():
         "i2i_pro_single_image",
         "txt2img_from_i2i_pro",
         "face_swap_v2_from_i2i_pro",
+        "face_swap_from_i2i_pro",
     ]
     payload = cases[0]["payload"]
     assert payload["task_type"] == "i2i_pro"
@@ -841,6 +842,13 @@ def test_i2i_pro_canary_task_case_submits_existing_task_type():
         "user-data-test/web_uploads/3/example.png",
     ]
     assert cases[2]["expected_central_task_type"] == "face_swap_v2"
+    legacy_face_swap_payload = cases[3]["payload"]
+    assert legacy_face_swap_payload["task_type"] == "face_swap"
+    assert legacy_face_swap_payload["inputs"]["images"] == [
+        "user-data-test/web_uploads/3/example.png",
+        "user-data-test/web_uploads/3/example.png",
+    ]
+    assert cases[3]["expected_central_task_type"] == "face_swap"
 
 
 def test_scail2_canary_task_cases_submit_two_5s_video_to_video_tasks():
