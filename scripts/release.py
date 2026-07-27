@@ -3762,7 +3762,12 @@ def _read_current_state(
         if not isinstance(state, dict):
             raise ReleaseError("remote deployment state is invalid")
         return state
-    return None
+    if (
+        result.returncode == 1
+        and "No such file or directory" in result.stderr
+    ):
+        return None
+    raise ReleaseError("remote deployment state is unavailable")
 
 
 def _read_artifact_state_history(args: argparse.Namespace) -> list[dict[str, Any]]:
