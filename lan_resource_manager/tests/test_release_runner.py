@@ -467,3 +467,13 @@ def test_runner_creates_its_tmpdir_inside_the_writable_cache_volume():
 
     assert 'os.environ.get("TMPDIR"' in source
     assert ".mkdir(parents=True, exist_ok=True)" in source
+
+
+def test_runner_image_contains_digest_pinned_node_and_npx_for_pages():
+    dockerfile = (
+        Path(__file__).resolve().parents[1] / "Dockerfile"
+    ).read_text(encoding="utf-8")
+
+    assert "node:22-bookworm-slim@sha256:" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/bin/node" in dockerfile
+    assert "npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
