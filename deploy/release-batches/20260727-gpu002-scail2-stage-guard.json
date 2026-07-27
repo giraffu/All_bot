@@ -1,0 +1,16 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "96b6258aa9fe0cc08d032f5654d78945e41d3a29",
+  "batch": "20260727-gpu002-scail2-stage-guard",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-gpu002-scail2-stage-guard",
+  "members": [
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/c-scail2-two-stage-pipeline",
+      "head": "2f7ed508fee68c4145c2e24c76a58a8e453bb5ec",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
