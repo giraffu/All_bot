@@ -97,7 +97,9 @@ class FakeReleaseOperator:
         self.test_config_syncs = []
         self.test_rollback_repairs = []
         self.plans = []
+        self.test_module_plans = []
         self.executions = []
+        self.test_module_executions = []
         self.maintenance_calls = []
         self.integration_calls = []
         self.integration_retry_calls = []
@@ -203,6 +205,19 @@ class FakeReleaseOperator:
 
     async def deploy(self, **kwargs):
         self.executions.append(kwargs)
+        return {"status": "succeeded"}
+
+    async def plan_test_modules(self, modules, sha):
+        self.test_module_plans.append((modules, sha))
+        return {
+            "status": "passed",
+            "git_sha": sha,
+            "modules": modules,
+            "plan_token": "server-secret-plan-token",
+        }
+
+    async def deploy_test_modules(self, **kwargs):
+        self.test_module_executions.append(kwargs)
         return {"status": "succeeded"}
 
     async def set_maintenance(self, **kwargs):
@@ -695,7 +710,7 @@ def test_failed_integration_batch_can_be_retried_with_exact_confirmation(tmp_pat
     ]
 
 
-def test_deploy_all_test_modules_runs_each_catalog_module_without_prod(tmp_path):
+def test_deploy_all_test_modules_runs_one_atomic_catalog_release_without_prod(tmp_path):
     release = FakeReleaseOperator()
     http, headers = client(tmp_path, FakeOperator(), release)
     response = http.post(
@@ -709,13 +724,23 @@ def test_deploy_all_test_modules_runs_each_catalog_module_without_prod(tmp_path)
     assert response.status_code == 202
     operation = wait_operation(http, response.json()["operation_id"])
     assert operation["status"] == "succeeded"
-    assert [call[1] for call in release.plans] == [
+    assert release.test_module_plans == [
+        (["central-api", "web-api", "main-bot"], "a" * 40)
+    ]
+    assert release.test_module_executions == [
+        {
+            "modules": ["central-api", "web-api", "main-bot"],
+            "sha": "a" * 40,
+            "plan_token": "server-secret-plan-token",
+        }
+    ]
+    assert release.plans == []
+    assert release.executions == []
+    assert operation["result"]["completed_modules"] == [
         "central-api",
         "web-api",
         "main-bot",
     ]
-    assert all(call["environment"] == "test" for call in release.executions)
-    assert all(call["confirm_prod"] is False for call in release.executions)
 
 
 def test_restart_resumes_build_observation_but_interrupts_runtime_mutation(tmp_path):
