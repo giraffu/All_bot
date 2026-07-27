@@ -3846,6 +3846,13 @@ def _read_artifact_state_history(args: argparse.Namespace) -> list[dict[str, Any
 def _resolve_previous_sha(
     args: argparse.Namespace, *, track_scoped: bool = False
 ) -> str | None:
+    if (
+        args.from_sha
+        and getattr(args, "skip_env_checks", False)
+        and not args.state_file
+    ):
+        args.previous_state = None
+        return validate_full_sha(args.from_sha)
     state = _read_current_state(args, track_scoped=track_scoped)
     args.previous_state = state
     if args.from_sha:
