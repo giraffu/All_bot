@@ -65,7 +65,8 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   可收敛已被新 main 包含的 pending，以及被更新 main 超越的旧
   `deploying-test` 失败；冲突、CI、构建和当前 main 测试失败继续 fail closed。
   `lightweight` 与 `release-tooling` 在 main CI 通过后完成批次，不等待不存在的
-  modular bundle，也不部署共享 test；runtime/operator 保持既有 bundle 流程。
+  modular bundle，也不部署共享 test；从旧 `deploying-test` 失败恢复时仍必须应用
+  同一 scope 规则。runtime/operator 保持既有 bundle 流程。
   修复失败原因后只能以 `RETRY <batch>` 精确确认重试一个既有失败批次。
   集成没有 prod 参数。对齐只允许 `manage_ai_workspaces.py align-merged`，dirty、
   未初始化或尚未被 main 包含的槽必须原样保留并显示 blocker。
