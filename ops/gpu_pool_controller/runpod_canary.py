@@ -813,13 +813,22 @@ class RunPodCanaryRunner:
         while time.monotonic() <= deadline:
             try:
                 workers = self._fetch_workers()
-            except TimeoutError as exc:
+            except (TimeoutError, RunPodCanaryError) as exc:
+                http_status = getattr(exc, "http_status", None)
+                if not isinstance(exc, TimeoutError) and http_status not in {
+                    502,
+                    503,
+                    504,
+                }:
+                    raise
                 transient_error_count += 1
                 last_fetch_error = redact_text(str(exc))
                 summary["runpod_worker_fetch"] = {
                     "transient_error_count": transient_error_count,
                     "last_error": last_fetch_error,
                 }
+                if http_status is not None:
+                    summary["runpod_worker_fetch"]["last_http_status"] = http_status
                 self._sleep(self.options.poll_interval_seconds)
                 continue
             last_workers = workers
