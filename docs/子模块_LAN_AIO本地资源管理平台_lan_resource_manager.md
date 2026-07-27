@@ -121,7 +121,9 @@ Pages 阶段在上传前先同时核对 canonical deployment 的 commit SHA、�
 runner 的固定 SSH config 对同一 allowlisted 云主机使用 20 秒 connect timeout、
 最多 4 次 connection attempts，以及 20 秒 server-alive/3 次失联上限。该重试只吸收
 瞬时网络抖动，不改变目标 host、用户、密钥、known_hosts 或环境授权；全部尝试失败仍
-让事务 fail closed 并进入原发布器补偿。
+让事务 fail closed 并进入原发布器补偿。planner 读取远端 `current.json` 时，只有
+远端明确返回文件不存在才视为尚无部署状态；SSH 超时、鉴权或其它读取失败统一报告
+“远端部署状态不可用”，不得降级成首次部署或缺失 schema-v2 基线。
 
 integration 复用 release runner 的动作白名单。runner 对 Git common dir、A–H
 worktree root 与 XDG integration queue 只有精确 bind mount；Web 不挂载这些写路径。
