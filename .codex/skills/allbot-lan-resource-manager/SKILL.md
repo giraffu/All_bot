@@ -50,7 +50,8 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   runner 镜像必须内置 digest-pinned Node 22 与 npm/npx，供发布器按前端 lockfile
   的精确 Wrangler 版本上传测试 Pages；npm cache 必须指向 runner 已有的精确可写
   release-cache volume，XDG config 同样不得回落到只读 home；不得依赖宿主 Node
-  或临时安装系统包。
+  或临时安装系统包。Pages mutation 前必须先校验 canonical SHA 与 runtime
+  revision；完全匹配时复用现有成功部署，保证中断重试幂等。
   固定 SSH config 对同一 allowlisted 云主机最多尝试 4 次建连，并保留 bounded
   connect/server-alive 超时；不得因重试扩大 host、key 或环境范围。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
