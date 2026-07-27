@@ -103,6 +103,9 @@ recover。
 Web 与 runner 使用同一只读镜像但不同容器。Web 只挂 LAN operator 所需材料和 Unix
 socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、只读根文件系统、
 drop all capabilities、`no-new-privileges` 且无 Docker Socket。
+镜像从 digest-pinned Node 22 stage 只复制 `node` 与 npm/npx；发布测试 Pages 时仍由
+`release.py` 读取前端 lockfile 的精确 Wrangler 版本。这样隔离 runner 不依赖宿主
+Node，也不会在运行时 apt 安装工具。
 
 integration 复用 release runner 的动作白名单。runner 对 Git common dir、A–H
 worktree root 与 XDG integration queue 只有精确 bind mount；Web 不挂载这些写路径。

@@ -7,6 +7,8 @@ RUN npm run build
 
 FROM ghcr.io/oras-project/oras:v1.3.2@sha256:46c55ba0eac848ade573594ef23fa5b1784227f151dab6eac38de2afd0b9c382 AS oras
 
+FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS node-runtime
+
 FROM ghcr.io/giraffu/allbot-dashboard-backend@sha256:92f533feae2b8aa22aa14cf19d6ded1dce857ffd80e52809cd57f92f995f6e4b AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,6 +23,10 @@ RUN sed -i \
     && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates git gh \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=oras /bin/oras /usr/local/bin/oras
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid 1000 --create-home app
 COPY __init__.py /app/lan_resource_manager/__init__.py
