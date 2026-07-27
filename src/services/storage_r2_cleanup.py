@@ -7,7 +7,7 @@ from sqlalchemy import select
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
+    build_flat_r2_compatibility_key,
     build_thumbnail_object_name,
     get_media_type_from_history,
     resolve_storage_object,
@@ -77,8 +77,8 @@ def build_history_r2_cleanup_keys(
         for key in {
             build_history_r2_media_key(task_id, output_file),
             build_history_r2_thumbnail_key(task_id, media_type),
-            build_legacy_r2_key(object_name),
-            build_legacy_r2_key(thumb_object_name),
+            build_flat_r2_compatibility_key(object_name),
+            build_flat_r2_compatibility_key(thumb_object_name),
         }
         if key
     }

@@ -10,13 +10,9 @@
     "build:release": "vue-tsc -b && vite build --mode release",
     "build:cf-prod": "vue-tsc -b && vite build --mode cf-prod",
     "build:cf-test": "vue-tsc -b && vite build --mode cf-test",
-    "build:edge-test": "vue-tsc -b && vite build --mode edge-test",
     "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest",
-    "preview": "vite preview",
-    "deploy": "npm run deploy:edge-prod",
-    "deploy:edge-prod": "sh ./scripts/deploy-edge-prod.sh",
-    "deploy:edge-test": "sh ./scripts/deploy-edge-test.sh"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",

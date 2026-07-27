@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Import legacy/cold media into a local complete MinIO bucket.
+"""Import cold media into a local complete MinIO bucket.
 
-The legacy buckets contain non-standard MinIO StorageClass metadata such as
+Older cold buckets can contain non-standard MinIO StorageClass metadata such as
 ARCHIVE_18T. A plain S3-to-S3 copy can preserve that system metadata and make
 the target MinIO reject PutObject/CopyObject with InvalidStorageClass. This
 tool streams object bytes and writes them to the target without StorageClass.
@@ -96,8 +96,8 @@ def local_config(values: dict[str, str]) -> S3Config:
 
 
 def cold_config(values: dict[str, str]) -> S3Config:
-    access_key = values.get("COLD_MINIO_ACCESS_KEY") or values.get("LEGACY_MINIO_ACCESS_KEY")
-    secret_key = values.get("COLD_MINIO_SECRET_KEY") or values.get("LEGACY_MINIO_SECRET_KEY")
+    access_key = values.get("COLD_MINIO_ACCESS_KEY")
+    secret_key = values.get("COLD_MINIO_SECRET_KEY")
     if not access_key or not secret_key:
         raise SystemExit("Cold MinIO credentials are missing.")
     return S3Config(

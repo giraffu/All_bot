@@ -37,7 +37,7 @@
 | 层级 | 承担功能 | 入口 |
 | :--- | :--- | :--- |
 | 云控制面 | `cloud-central-api-prod`、Web API、Payment、Dashboard、Bot、imgproxy | `ssh allbot-do-sgp1-control` |
-| 本地主服务器 | `cloud-prod-worker-relay`、本地 `cloud-prod-comfy-agent-1..7` compose、结果 spool、legacy MinIO/Postgres/Redis 保留；线上实际 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod | 本机 `/home/hfy/APP/All_bot` |
+| 本地主服务器 | `cloud-prod-worker-relay`、本地 `cloud-prod-comfy-agent-1..7` compose、结果 spool、离线 R2 shadow 与 Postgres/Redis；线上实际 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod | 本机 `/home/hfy/APP/All_bot` |
 | GPU 节点 | ComfyUI 推理、模型文件、输入输出缓存、DCGM/node exporter | `allbot-gpu-226/177/252/002` |
 
 生产 worker 容器不在 GPU 节点上；它们在本地主服务器运行，通过局域网 HTTP/WS 调用各 GPU 节点的 ComfyUI。

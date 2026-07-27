@@ -107,7 +107,6 @@ Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地
 [
   {
     "AllowedOrigins": [
-      "https://web-test.aivison.it.com",
       "https://web.aivison.it.com",
       "https://web-cf-test.aivison.it.com",
       "https://allbot-web-cf-test.pages.dev"
@@ -147,13 +146,13 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 - `bot-test` 使用 `--profile bot`；启动前确认本地主服务器或其它位置没有同测试 token polling 实例。
 - `qqcc-bot-test` 使用 `--profile qqcc-bot`；没有独立 `QQCC_BOT_TOKEN_TEST` 时必须保持停止。
 
-维护式整栈更新仍保留，但只在涉及迁移、跨服务契约、控制面多服务联动、边缘 Web 发布、需要排空队列验证，或用户明确要求维护窗口时使用：
+维护式整栈更新仍保留，但只在涉及迁移、跨服务契约、控制面多服务联动、需要排空队列验证，或用户明确要求维护窗口时使用：
 
 ```bash
 scripts/update_cloud_test_with_maintenance.sh --execute
 ```
 
-该脚本会写入生成维护标记、等待 Central Redis `comfy:queue:pending` 与 `comfy:queue:running` 清空、同步代码/env、执行 `scripts/safe_deploy_cloud_test.sh` 重建控制面、按需重建测试 Bot/QQCC Bot，并默认发布 `web-test.aivison.it.com` 静态前端。普通测试更新不要为提速而使用 `--skip-drain` 绕过维护式流程，直接走上面的目标 service 重建。
+该脚本会写入生成维护标记、等待 Central Redis `comfy:queue:pending` 与 `comfy:queue:running` 清空、同步代码/env、执行 `scripts/safe_deploy_cloud_test.sh` 重建控制面并按需重建测试 Bot/QQCC Bot。公共 Web 由不可变 release CLI 发布到 Cloudflare Pages。
 
 常用参数：
 
@@ -161,7 +160,6 @@ scripts/update_cloud_test_with_maintenance.sh --execute
 - `--qqcc-bot-mode start|skip|stop|auto`：默认 `auto`，只在 QQCC Bot 原本运行时重建并启动；`start` 仍要求远端 `.env.cloud.test` 配置 `QQCC_BOT_TOKEN_TEST`。
 - `--env-file FILE`：指定要同步到远端 `.env.cloud.test` 的本地测试环境文件，默认读取仓库根目录 `.env.cloud.test`。
 - `--skip-env-sync`：不更新远端 `.env.cloud.test`，仅使用远端现有环境文件。
-- `--skip-edge-web`：只更新控制面，不发布边缘测试 Web 静态站。
 - `--keep-maintenance`：部署成功后仍保持 Web/Bot 生成维护，便于人工验收后再手动解除。
 - `--skip-drain`：维护式脚本的紧急参数；普通快速测试更新不走维护式脚本，因此不需要该参数。
 
@@ -204,26 +202,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 ./scripts/start_cloud_worker_test.sh
 ```
 
-公网测试 Web 入口继续使用边缘 VPS 的 `web-test.aivison.it.com`，不直接暴露云端 Vite 端口。当前形态是：
-
-```text
-web-test.aivison.it.com
-  -> Tailscale 内的 web VPS 100.88.57.122
-  -> /root/dist-test 静态前端
-  -> /api/ 反代到云端测试 Web API
-```
-
-当前 `/api/` upstream 为云测试 Tailscale Web API `http://100.82.124.91:8001`。
-测试静态站的 `index.html` 和 SPA fallback 必须设置重新校验缓存头，避免浏览器继续使用旧入口 HTML；哈希化的 `assets/*` 文件可按文件名缓存。
-
-发布静态前端：
-
-```bash
-cd frontend
-npm run deploy:edge-test
-```
-
-VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`，修改后必须执行 `nginx -t && nginx -s reload`。仓库模板为根目录 `all_bot_nginx_web_test.conf`。
+公网测试 Web 入口固定为 Cloudflare Pages `web-cf-test.aivison.it.com`，浏览器通过 `api-cf-test.aivison.it.com` 调用云测试 Web API。发布只走不可变 release CLI，不直接同步静态目录。
 
 ## 4. 数据库初始化策略
 
@@ -252,7 +231,7 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 
 ## 5. 服务与端口
 
-所有入口服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接暴露公网。若临时设置 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须同时配置源 IP 白名单，只允许边缘 VPS 和本地主服务器访问测试 API 端口。
+所有入口服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接暴露公网。
 
 | 服务 | 容器名 | 本机端口 | 用途 |
 | :--- | :--- | :--- | :--- |
@@ -373,13 +352,7 @@ docker compose --env-file .env.cloud.test \
 - 云端 Web API 容器实际生效：`MINIO_ENDPOINT=<R2 endpoint host>`、`MINIO_BUCKET=user-data-test`、`MINIO_SECURE=true`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。
 - 云端 Web API 使用 R2 预签名 URL 读写烟测通过，预签名 host 为 R2 S3 endpoint，读取状态 200。
 - `https://r2-test.aivison.it.com` 已验证可读取新写入 Web 视频结果，例如 `history/<task_id>/original.mp4` 返回 200；云测试 Web owner 视频结果依赖该公网域名完成 `/api/tasks/{task_id}/result` 成功态返回。
-- R2 `user-data-test` 已配置 Web 直传 CORS。2026-07-14 为不可变 Pages 测试站补齐 `https://web-cf-test.aivison.it.com` 与 `https://allbot-web-cf-test.pages.dev`，并继续保留 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`；四个 Origin 的 `OPTIONS` 预检均返回 204。以 `https://web-cf-test.aivison.it.com` Origin 执行的真实预签名 `PUT` 与后续 `HEAD` 均返回 200、响应回显精确 `Access-Control-Allow-Origin`，烟测对象随后已删除。更新桶策略时必须保留这四个 Origin 及 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`，避免前端再次出现 `Network error during upload`。
-
-2026-06-09 边缘测试 Web 切换结果：
-
-- VPS Nginx `web-test.aivison.it.com` 只影响测试静态站和测试 `/api/`，不得修改正式 `web.aivison.it.com`。
-- `/api/` upstream 已切到云测试 Tailscale Web API `http://100.82.124.91:8001`。
-- 公网 eth0 测试端口已由 `allbot-cloud-test-firewall.service` drop。
+- R2 `user-data-test` 已配置 Web 直传 CORS。允许正式 Pages、测试 Pages 自定义域及测试 Pages 默认域；策略保持 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`。
 
 2026-06-09 云端测试容器口径：
 

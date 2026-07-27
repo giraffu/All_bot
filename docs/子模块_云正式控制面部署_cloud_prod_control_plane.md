@@ -26,18 +26,17 @@
 
 截至 2026-06-18，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / 手动 RunPod 备用池”的运行口径。
 
-当前 legacy 运行事实与目标切换边界：
+当前运行事实：
 
 - 云控制面 Droplet：`allbot-do-sgp1-control`，运行目录 `/home/deploy/APP/All_bot`。
 - 云控制面规格：DigitalOcean SGP1 Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD。
 - 云端 compose：`deploy/docker-compose-cloud-prod.yml`。
 - 本地 GPU worker compose：`workers/docker-compose-cloud-prod-worker.yml`。
 - 正式对象存储事实源：Cloudflare R2 `user-data-prod`。
-- 本地 MinIO：只作为 legacy 迁移补齐、人工回滚、旧外链排障和本地热数据保留，不再是新生成结果或正式 Web/Dashboard 运行时读路径的公开事实源。
+- 本地 MinIO：只保存 R2 shadow 与离线备份，不参与正式 Web/Dashboard 运行时读写。
 - 本地 shadow 同步：本地主服务器可通过 `scripts/sync_cloud_prod_to_local_shadow.py` 每日把云正式 PostgreSQL 全量快照恢复为 `bot_db_prod_shadow`；R2 `user-data-prod` 到本地 MinIO `user-data-prod-shadow` 的媒体桶镜像由 `R2_BUCKET_SYNC_ENABLED` 单独控制，当前可按数据库-only timer 关闭。该副本只供灾备预热和后续只读分析，不会让本地服务自动切库。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
-- 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留到 legacy MinIO 的只读代理，但正式应用不再生成该域名 URL。
-- Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。历史 `web-cf-test`/`api-cf-test` 仅作为 canary/归档语义，不再是迁移待办。
+- Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`；测试入口使用 `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`。
 - 当前容量判断口径：本地 compose 声明 `cloud-prod-comfy-agent-1..7`，但实际线上 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 `active_workers=13`、`healthy_workers=13`、`error_workers=0`、`quarantined_workers=0`；该数字只代表当时运行态，不写成固定长期容量。
 
 ## 2. 服务分布
@@ -182,22 +181,20 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 
 历史 `cloud-prod-comfy-agent-3` / `192.168.1.177:8189` 曾用于 `ltx_video,image_to_video`，并在 2026-06-08 补齐过 `socksio` / `FL_RIFE` 环境。2026-06-20 后该旧链路已退役删除；当前 gpu-177 的 LTX 正式入口是 `lan_aio_prod_gpu177_gpu1_ltx_video_01` / AIO `8191`。
 
-worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
+worker 只写入 R2 `user-data-prod`。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
 
 无法接入 Tailscale 的旧远程 GPU 服务器可使用根目录 `remote_workers/` 的独立 venv 包接入：远程主机只需 sparse-checkout 该目录，即可启动本机 `remote_relay` 与 bundled `comfy_agent`；如仍保留旧 agent，则把旧 agent 的 `MASTER_API_URL` 指向 `127.0.0.1:8013`。该路径要求使用独立 Cloudflare Tunnel worker 专用域名回源云 Central `:8003`，不得复用 `api.aivison.it.com`，并需继续使用 R2 `user-data-prod` 写路径。2026-06-12 正式云机已新增独立 `cloudflared-runpod-prod.service`，使用 root-only token file，回源 `http://100.107.220.127:8003`，作为 RunPod production worker Central connector；已有 `cloudflared-worker-central.service` 仍保持运行，`https://worker-central.aivison.it.com/health` 当前可直接访问正式 Central。
 
 GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*` 只替换本地主服务器上的 worker 容器，不会自动重启 GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI。GPU 节点硬件、容器、模型挂载和单容器运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
-### 2.3 边缘入口
+### 2.3 公网入口
 
 - `web.aivison.it.com`：静态前端由 Cloudflare Pages 项目 `allbot-web-prod` 承接，生产前端调用 `https://api.aivison.it.com/api`。
 - `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
 - `worker-central.aivison.it.com`：远程 worker / RunPod worker 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。RunPod-Prod 独立 tunnel 若使用新 hostname，需在 Cloudflare Public Hostname 中绑定到 `cloudflared-runpod-prod.service` 对应 tunnel。
 - `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
-- `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，仅用于人工回滚、旧外链和迁移补齐排障；正式 Web/Dashboard 运行时不应生成该域名 URL。
 - 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。QQCC 懒人 Bot 配置已剥离到独立 `http://100.107.220.127:8088/`，后端为 `8045`，使用 `QQCC_CONFIG_*` 独立后台账号。若需要公网管理域名，必须通过 Cloudflare Tunnel 回源对应前端地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086`/`8043`/`8088`/`8045` 直接暴露到公网。
-- `web-test.aivison.it.com`：独立云测试环境的公网 Web 入口，由 Web/Nginx VPS 提供静态站并反代云测试 Web API `100.82.124.91:8001`。
-- `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：历史 canary 入口；若保留，仍不得复用本地主服务器 RMB tunnel。
+- `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：云测试 Pages 与 API Tunnel 入口，不得复用本地主服务器 RMB tunnel。
 
 ## 3. 运行态与性能口径
 
@@ -236,21 +233,19 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 
 ### 3.4 Web 卡顿与负载判读
 
-2026-06-08 17:10 巡检确认，云正式 Web 卡顿不应直接等同于云 Droplet 负载打满。排查时先拆成五段：
+2026-06-08 17:10 巡检确认，云正式 Web 卡顿不应直接等同于云 Droplet 负载打满。排查时拆成四段：
 
 1. 云机内部：`http://100.107.220.127:8000/api/health`、`http://100.107.220.127:8003/system/status`、`http://100.107.220.127:8043/api/health`
-2. Web 边缘到云 Web API：在 `100.88.57.122` 上 curl `http://100.107.220.127:8000/api/health`
-3. 公网域名：从本地主服务器或用户侧 curl `https://api.aivison.it.com/api/health`，并验证 `https://web.aivison.it.com` Pages 静态站 200；管理后台若已配置受保护域名，还要验证 Access 登录后可访问 Dashboard Frontend
-4. 结果/媒体依赖：统计 `cloud-web-api-prod` 的 `Timed out resolving web result R2 URL` 与 `Unexpected object_exists failure`
-5. 生成队列：统计 Central Redis pending/running、pending 最老等待时间、`queue_by_type` 与 heartbeat TTL
+2. 公网域名：从本地主服务器或用户侧 curl `https://api.aivison.it.com/api/health`，并验证 `https://web.aivison.it.com` Pages 静态站 200；管理后台若已配置受保护域名，还要验证 Access 登录后可访问 Dashboard Frontend
+3. 结果/媒体依赖：统计 `cloud-web-api-prod` 的 `Timed out resolving web result R2 URL` 与 `Unexpected object_exists failure`
+4. 生成队列：统计 Central Redis pending/running、pending 最老等待时间、`queue_by_type` 与 heartbeat TTL
 
-参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s；管理后台云端前端可省掉本地主服务器静态资源和本地网关到云端的额外链路。若云内正常但公网慢，优先查 Cloudflare Tunnel/Access、运营商链路、前端串行请求和 R2 公开域名/短签，而不是先重建 Web API。历史边缘 VPS 到云约 0.5s 的基线只适用于回滚或 `web-test`/`assets` 排障。
+参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s。若云内正常但公网慢，优先查 Cloudflare Tunnel/Access、运营商链路、前端串行请求和 R2 公开域名/短签，而不是先重建 Web API。
 
 常见日志信号：
 
 - `cloud-web-api-prod` 高频 `Timed out resolving web result R2 URL`：结果页或历史详情可能卡在 R2 URL 探测，应优先做短超时、缓存或 `pending_result` 快速返回。
-- Web 边缘 499 高频集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history`：通常是用户端等待过久主动断开。
-- `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：只影响人工回滚、旧外链或迁移排障链路；优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，同时确认正式 Web/Dashboard 响应没有返回 `assets` URL。
+- 499 高频集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history`：通常是用户端等待过久主动断开。
 - `cloud-dashboard-backend-prod` 高频 `Circuit Breaker is OPEN`：管理后台观测或外部余额接口降级，不代表 Central 任务调度一定失败。
 
 ## 4. 发布与专项运维
@@ -379,7 +374,7 @@ Central agent control、正式 Worker 镜像和 GPU runtime 必须分别通过�
 
 正式 Web/API 已完成切换。日常维护只需要确认 Pages 项目、Tunnel connector 和 CORS allowlist 仍与正式域名一致。
 
-Cloudflare Pages 正式 Web 发布细节以 `docs/子模块_边缘节点运维指南_edge_node_ops.md` 的“发布与回滚”小节为准。当前 Pages 构建会使用 Node 24 / npm 10（2026-06-28 实测 `npm@10.9.2`），前端 lockfile 变更发布前必须用 `npx -y npm@10.9.2 ci --progress=false` 和 `npx -y npm@10.9.2 run build:cf-prod` 验证；若 Pages 报 `Missing: @emnapi/runtime@1.11.1 from lock file`，用同版本 npm 执行 `install --package-lock-only` 刷新 `frontend/package-lock.json` 后再提交。
+Cloudflare Pages 正式 Web 发布细节以 `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` 为准。当前 Pages 构建会使用 Node 24 / npm 10（2026-06-28 实测 `npm@10.9.2`），前端 lockfile 变更发布前必须用 `npx -y npm@10.9.2 ci --progress=false` 和 `npx -y npm@10.9.2 run build:cf-prod` 验证；若 Pages 报 `Missing: @emnapi/runtime@1.11.1 from lock file`，用同版本 npm 执行 `install --package-lock-only` 刷新 `frontend/package-lock.json` 后再提交。
 
 历史 canary 流程已经归档到 `docs/archive/2026-06-cloud-migration/`；以下原则仍有效：
 
@@ -391,7 +386,7 @@ Cloudflare Pages 正式 Web 发布细节以 `docs/子模块_边缘节点运维�
 bash scripts/check_cloudflare_canary.sh
 ```
 
-2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为人工回滚、旧外链和 legacy 迁移排障入口。
+2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。
 
 ### 4.5 本地云正式 worker 更新
 
@@ -446,7 +441,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连；默认保留 `R2_SYNC_BWLIMIT=20M`，并用 `R2_SYNC_TRANSFERS=8` / `R2_SYNC_CHECKERS=16` 改善小对象吞吐。
 - 对象同步使用 `rclone/rclone` 工具容器；`R2_BUCKET_SYNC_ENABLED=true` 时把 R2 `user-data-prod` 增量同步到本地 MinIO 纯镜像桶 `user-data-prod-shadow`，云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。若设为 `false`，每日任务只做数据库 dump/restore 与 Redis 摘要，不执行生产媒体桶镜像；`remote_r2` 数据库 dump 仍会使用 R2 `__shadow-transfer` 临时前缀传输 dump/sha256。
 - 启用媒体桶镜像时，首次 seed 空的 `user-data-prod-shadow` 或长时间卡在全桶 `sync --fast-list` 清单阶段，可手动追加 `--seed-r2-shadow-with-copy`，先用 `rclone copy --no-traverse` 可重入地填充 R2 shadow；timer 日常运行不应长期启用该模式，仍以 `sync + quarantine` 捕获云端删除/覆盖。
-- 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到完整合并桶 `user-data-complete-shadow`，不从 R2 下载第二遍，也不会删除完整桶内 legacy-only 对象。数据库-only timer 应同时设置 `R2_BUCKET_SYNC_ENABLED=false` 与 `COMPLETE_MEDIA_SYNC_ENABLED=false`。`bot-data` / `comfyui-temp` 等旧本地桶只用于一次性手动补齐，执行时显式追加 `--include-legacy-media-import` 或临时设置 `COMPLETE_MEDIA_IMPORT_LEGACY=true`；timer 日常运行应保持 legacy import 关闭，避免每天重复扫描历史大桶。
+- 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到离线核验桶 `user-data-complete-shadow`，不从 R2 下载第二遍。数据库-only timer 应同时设置 `R2_BUCKET_SYNC_ENABLED=false` 与 `COMPLETE_MEDIA_SYNC_ENABLED=false`。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
 - 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析白名单表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。链路不再生成语义场景、相似边、近重复族或图谱。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
@@ -485,7 +480,7 @@ Web、Payment、Dashboard、QQCC Config 验证：
 - QQCC Config Web 使用独立账号登录，能加载并保存 `qqcc_lazy_bot_config:v1`；主 Dashboard 不再出现 `懒人Bot配置` 入口。
 - Dashboard Backend 必须有可用 `REDIS_URL` 或 `DASHBOARD_RUNPOD_OPERATION_REDIS_URL`，用于持久化 RunPod operation store；生产不应依赖进程内 memory store 追踪 operation。
 - Dashboard Backend 启动入口必须调用 `ensure_billing_core_providers_registered()`；退款、强制终止和资产类管理接口会进入 billing core，若只注册 task core provider，会出现 `Billing core providers 未注册`。
-- Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker；若响应仍出现 `assets.aivison.it.com`，按 legacy 退出回归缺陷处理。
+- Web 卡顿专项需记录云内与公网两段延迟，并统计 499、Web R2 result timeout、Dashboard circuit breaker。
 
 ### 5.2 Worker
 
@@ -508,8 +503,8 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - Alembic 当前 head 应与仓库 migration head 一致。
 - Gallery/History 热路径索引必须存在，尤其是 `ix_gallery_posts_active_created_at_id`、`ix_history_task_id`、`ix_history_user_id_id_desc`、`ix_user_interactions_user_action_post`。
 - 新生成对象写入 R2 `user-data-prod`。
-- 旧历史媒体的正式应用读路径应通过 R2 或当前 R2/S3 短签读取；`assets.aivison.it.com` 只作为人工回滚、旧外链和迁移补漏排障入口。
-- 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json`、MinIO `user-data-prod-shadow` 抽样对象；若启用完整合并桶，还要抽查 `user-data-complete-shadow` 中 R2 新对象和 legacy 旧对象是否都可读。不要把 shadow 验收当作云正式服务已经切到本地。
+- 历史媒体与新媒体都通过 R2 公网域名或当前 R2/S3 短签读取。
+- 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json` 与 MinIO `user-data-prod-shadow` 抽样对象。不要把 shadow 验收当作云正式服务已经切到本地。
 
 ## 6. 回滚与事故处理
 

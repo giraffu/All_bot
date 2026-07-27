@@ -15,7 +15,7 @@
 
 ## 2. 主服务器
 
-当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、云正式 shadow DB/MinIO 副本、测试/开发辅助容器和运维工具。
+当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI、云正式 shadow DB/R2 副本、测试/开发辅助容器和运维工具。
 
 | 项目 | 当前事实 |
 | :--- | :--- |
@@ -65,8 +65,8 @@
 
 - `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
-- 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据保留，不再是正式 Web/Dashboard 运行时 fallback。
-- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、R2 纯镜像 MinIO `user-data-prod-shadow`、完整合并桶 `user-data-complete-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由 `allbot-do-sgp1-control` 在云机执行并经 R2 临时前缀 HTTPS 中转回本地，不依赖本地主公网/VPN 出口作为托管数据库 trusted source。完整桶每日只从本地 R2 shadow 非破坏式 copy；legacy MinIO 旧桶只做一次性手动导入。该副本用于灾备预热和只读分析，不是云正式服务运行时 fallback，也不会自动接管本地正式写入口。
+- 公开媒体与新生成对象统一使用 Cloudflare R2 `user-data-prod`；本地 MinIO 只保存离线历史数据和 R2 shadow，不参与线上读取。
+- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、R2 纯镜像 MinIO `user-data-prod-shadow`、完整合并桶 `user-data-complete-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由云机执行并经 R2 临时前缀中转回本地。该副本用于灾备预热和只读分析，不会自动接管线上写入口。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
@@ -95,7 +95,7 @@
 - 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
 - 测试对象存储事实源为 R2 `user-data-test`，公网读取域名 `https://r2-test.aivison.it.com`。
 - 本地主服务器运行 `cloud-comfy-agent-test-1..8`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
-- 公网测试 Web 入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 静态站 `/root/dist-test` 反代到云测试 Web API `100.82.124.91:8001`。
+- 公网测试 Web 入口是 Cloudflare Pages `web-cf-test.aivison.it.com`，API 通过 `api-cf-test.aivison.it.com` 回源云测试 Web API。
 
 ### 2.3 云正式负载巡检快照
 
@@ -224,7 +224,7 @@ ComfyUI 版本快照：
 - 主服务器位于中国武汉，电信家庭千兆内网环境。
 - 主服务器主网卡为 1GbE；本地 GPU 节点通过 `192.168.1.0/24` 内网访问。
 - ComfyUI 内网探测多数在几十毫秒内返回，但仍可能出现单节点端口瞬时慢响应。
-- 公网入口依赖 Cloudflare、海外 VPS、Tailscale/Cloudflare Tunnel/FRP 等链路，不应把武汉家庭宽带作为唯一公网入口。
+- 公网入口依赖 Cloudflare Pages、Tunnel 和 Tailscale，不应把武汉家庭宽带作为唯一公网入口。
 - Telegram API 访问通过代理/海外节点链路，HTTPS 可达但链路延迟明显高于普通内网 API。
 
 当前云侧与边缘事实：
@@ -232,22 +232,15 @@ ComfyUI 版本快照：
 - 前端静态资源、部分公开分发能力与域名解析依赖 Cloudflare。
 - 正式 Web 静态站由 Cloudflare Pages 承接；正式 Web API 与 RMB 支付入口由 Cloudflare Tunnel 回源云控制面。
 - R2 `user-data-prod` 是正式新对象写入与公开媒体分发事实源。
-- MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 旧外链、人工回滚和迁移排障入口，正式应用不再生成该域名 URL。
-- Web/API 的海外访问路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md) 与 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
+- 本地 MinIO 不承接正式新写入或公网读取。
+- Web/API 的公网路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md)。
 
-### 边缘 VPS
-
-当前海外边缘层至少包含两台 VPS。详细运维 SOP 见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
+### Telegram Local API VPS
 
 | 节点 | 入口 | 资源快照 | 当前职责 | 风险 |
 | :--- | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘；2026-06-18 快照约 32G 已用、6.2G 可用，使用率约 84% | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本；`nginx` 与 `tailscaled` active | 根盘仍低于 20% 可用；`docker` 命令未安装，不要声称已检查容器状态；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 `8081/8082` 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
 
-边缘容量判断：
-
-- Web 边缘根盘低于 10% 可用时，不建议发布新静态资源、扩大 Nginx cache 或新增大日志调试。
-- `assets.aivison.it.com` 根路径返回 403 不代表具体旧外链/人工回滚对象不可读；验收该链路必须测试真实 object URL。正式 Web/Dashboard 响应不应再返回该域名。
 - Telegram Local API 节点如果 SSH 不可用，发生 8081/8082 故障时只能做公网端口判断，无法快速查看容器日志和挂载目录，应优先补齐 SSH key 管理。
 
 ## 6. 数据存储快照
@@ -298,7 +291,7 @@ shadow 同步只记录 Redis/Valkey `INFO memory` 与 `DBSIZE` 摘要，不恢�
 
 ### MinIO
 
-MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。2026-06-24 起新增可选 R2 shadow 同步：`R2_BUCKET_SYNC_ENABLED=true` 时，`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象，禁止硬删替代 quarantine；数据库-only timer 可设 `R2_BUCKET_SYNC_ENABLED=false` 跳过该媒体桶镜像。2026-06-25 起可启用 `user-data-complete-shadow` 作为完整合并备份桶：每日从本地 `user-data-prod-shadow` 非破坏式 copy，不重复从 R2 拉取；`bot-data` / `comfyui-temp` 只在一次性手动补齐时用 `--ignore-existing` 导入，避免每日任务重复扫描 legacy 大桶。
+MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，历史快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 仅作离线历史数据和 R2 shadow。`R2_BUCKET_SYNC_ENABLED=true` 时，`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象。
 
 | 桶/目录 | 当前体积 | 备注 |
 | :--- | ---: | :--- |
@@ -309,18 +302,18 @@ MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照�
 | `bot-data-test` | 266MB | 测试输入桶 |
 | `comfyui-input` | 17MB | 旧/兼容输入目录 |
 | `user-data-prod-shadow` | 待首次同步后采集 | R2 `user-data-prod` 的本地 shadow 副本 |
-| `user-data-complete-shadow` | 待首次合并后采集 | R2 shadow + legacy MinIO 的完整合并备份桶；日常只 copy shadow，legacy 只手动首导 |
+| `user-data-complete-shadow` | 待首次合并后采集 | R2 shadow 的完整离线备份桶 |
 | `user-data-prod-shadow-quarantine` | 待首次同步后采集 | rclone `--backup-dir` quarantine 桶，按 timestamp 保留旧对象 |
 
-MinIO 是主服务器历史数据与内存占用大户之一。规划清理时应先确认 R2 命中率、可见热集补齐状态和 legacy 旧外链/人工回滚访问量，再逐步缩短本地热数据生命周期。
+MinIO 是主服务器历史数据占用大户之一。规划清理时应先确认 R2 完整性和 shadow 保留策略，再逐步缩短离线历史数据生命周期。
 
 ## 7. 当前容量判断
 
 当前系统瓶颈顺序大致为：
 
 1. GPU 任务吞吐与视频任务长尾耗时。
-2. 公网/Cloudflare/Web 边缘到云控制面的链路延迟，以及前端多接口串行等待。
-3. R2 result URL 探测、R2 公开域名/短签耗时，以及 legacy `assets.aivison.it.com` 旧外链/人工回滚链路的边缘缓存/磁盘压力。
+2. 公网 Cloudflare 到云控制面的链路延迟，以及前端多接口串行等待。
+3. R2 result URL 探测、R2 公开域名/短签耗时。
 4. 云控制面到本地 GPU/ComfyUI 的 Tailscale/内网链路稳定性，以及本地 GPU 节点短暂停顿。
 5. Dashboard stats/外部接口熔断与托管 Valkey/PostgreSQL 连接池压力。
 6. ComfyUI 本地 `input/output/temp` 会继续随视频任务快速增长，若缺少定期巡检，远端 GPU 节点仍可能再次磁盘吃紧。
@@ -343,7 +336,7 @@ MinIO 是主服务器历史数据与内存占用大户之一。规划清理时�
 
 - `hostnamectl`、`lscpu`、`free -h`、`df -hT`
 - `docker ps`、`docker stats --no-stream`
-- 云内、Web 边缘到云、公网域名三段 API 延迟
+- 云内、Tunnel 与公网域名 API 延迟
 - Postgres 数据库大小、表大小、近 1/7/30 天活跃与历史量
 - 本地 `bot_db_prod_shadow` 最新 manifest、dump sha256、Alembic 版本和关键表行数
 - Redis `INFO memory`、`INFO keyspace`、Central pending/running/heartbeat
@@ -351,7 +344,7 @@ MinIO 是主服务器历史数据与内存占用大户之一。规划清理时�
 - MinIO 桶大小与最近 7 天出入站量
 - MinIO `user-data-prod-shadow` 与 `user-data-prod-shadow-quarantine` 桶大小、最近一次 rclone 同步日志和抽样对象 size/etag
 - 所有 ComfyUI `/system_stats` 与 Dashboard GPU 监控
-- Cloudflare/R2 命中率、R2 result timeout、MinIO 回源量、边缘 VPS 499/502/504 错误率
+- Cloudflare/R2 命中率与 R2 result timeout
 - 各 GPU 节点磁盘剩余空间，尤其是 `192.168.1.177`
 - GPU 节点上 `comfy0`/`comfy1` 的 GPU 绑定、模型目录和 `inst0`/`inst1` 挂载是否仍与 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` 一致
 

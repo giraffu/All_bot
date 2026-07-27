@@ -291,10 +291,10 @@ async def test_get_task_result_uses_r2_s3_presign_for_image_after_public_miss(
     )
     r2_presign = MagicMock(return_value="https://r2-s3.example/presigned.png")
     monkeypatch.setattr(task_result_service, "build_r2_presigned_url", r2_presign)
-    legacy_presign = MagicMock(
-        side_effect=AssertionError("legacy/current storage fallback must not be used")
+    storage_presign = MagicMock(
+        side_effect=AssertionError("secondary storage path must not be used")
     )
-    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", legacy_presign)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", storage_presign)
 
     response = await tasks_router.get_task_result(
         "task-1",
@@ -304,12 +304,11 @@ async def test_get_task_result_uses_r2_s3_presign_for_image_after_public_miss(
 
     assert response["status"] == "success"
     assert response["result_url"] == "https://r2-s3.example/presigned.png"
-    assert "assets.aivison.it.com" not in response["result_url"]
     r2_presign.assert_called_once_with(
         "history/task-1/original.png",
         expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
     )
-    legacy_presign.assert_not_called()
+    storage_presign.assert_not_called()
 
 
 @pytest.mark.asyncio

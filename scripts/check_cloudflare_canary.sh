@@ -5,7 +5,6 @@ API_URL="${API_URL:-https://api-cf-test.aivison.it.com}"
 WEB_ORIGIN="${WEB_ORIGIN:-https://web-cf-test.aivison.it.com}"
 WEB_URL="${WEB_URL:-https://web-cf-test.aivison.it.com}"
 CLOUD_WEB_URL="${CLOUD_WEB_URL:-http://100.107.220.127:8000}"
-LEGACY_ASSETS_URL="${LEGACY_ASSETS_URL:-https://assets.aivison.it.com}"
 
 curl_timing() {
   local label="$1"
@@ -30,6 +29,3 @@ curl -sS -o /dev/null \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: authorization,content-type" \
   "${API_URL}/api/health"
-
-echo "== legacy assets domain =="
-curl_timing "assets-root" "${LEGACY_ASSETS_URL}/"

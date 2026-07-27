@@ -177,14 +177,13 @@ sequenceDiagram
 ### 4.9 媒体 URL 策略
 
 - History、收藏、Gallery 等集合响应不在热路径对每个媒体做公网 `HEAD` 探测；统一使用 `storage.async_r2_object_exists(...)` 已有的进程内正/负缓存与 singleflight，R2 S3 key 命中时优先返回 R2 S3 短签 URL，预签不可用时才退回公网 URL。History `extra_outputs` 必须显式传入 `s3_cached` 列表策略，禁止隐式退回公网探测。
-- Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。不得把旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 读取恢复成 Bot 浏览主路径。
+- Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。
 - R2 key 候选顺序为标准历史 key、原始 object key、raw `output_file`、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`；若历史值本身包含 `bot-data/...` 且 R2 曾按该 raw 前缀镜像，也会继续探测 raw 路径，兼容迁移期多种对象位置。
-- 正式 Web/Dashboard 运行时已退出 legacy MinIO 回源：默认 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false`，R2 miss 后只返回当前 R2/S3 短签、空值或 `pending_result`，不得生成 `assets.aivison.it.com` URL。legacy MinIO 只保留给迁移脚本、人工回滚和旧外链排障，新生成数据仍写入 R2。
-- Web owner `/api/tasks/{id}/result` 是保留公网快速探测的延迟敏感路径。每个 Web worker 由 `R2PublicProbeService` 复用一个 `httpx.AsyncClient` 连接池，按规范化 object key singleflight，并缓存公网命中 60 秒、404 5 秒；同 key 并发请求在缓存窗口内只发一个公网 HEAD。公网 miss 但 R2 S3 命中时，图片可返回 R2 S3 短签，视频继续 `pending_result`；两者都不得生成 legacy `assets` URL。
-- `input_file_url` 只生成当前 R2/S3 短签；旧输入图需要在禁用 legacy 前通过迁移脚本补齐到 R2，保障 Gallery apply-context 和历史模板应用可用。
-- 缩略图也有独立的 R2 key 选择逻辑，不再是“简单拼接后缀”即可概括的模型。迁移脚本可先从 legacy 复制已有原文件、缩略图与 `input_file`，再用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图；legacy 源批量生成受保护拦截。
+- 正式 Web/Dashboard 运行时只使用 R2：R2 miss 后返回当前 R2/S3 短签、空值或 `pending_result`，新生成数据写入 R2。
+- Web owner `/api/tasks/{id}/result` 是保留公网快速探测的延迟敏感路径。每个 Web worker 由 `R2PublicProbeService` 复用一个 `httpx.AsyncClient` 连接池，按规范化 object key singleflight，并缓存公网命中 60 秒、404 5 秒；同 key 并发请求在缓存窗口内只发一个公网 HEAD。公网 miss 但 R2 S3 命中时，图片可返回 R2 S3 短签，视频继续 `pending_result`。
+- `input_file_url` 只生成当前 R2/S3 短签。
+- 缩略图有独立的 R2 key 选择逻辑。迁移脚本可用 `--source-storage current --generate-missing-thumbnails` 从 R2 原文件生成缺失缩略图。
 - Web API 在历史、用户历史和 Gallery 响应构造中会尽量先释放只读数据库事务，再进行对象存储 URL 解析、R2 探测、短签生成或缩略图处理。新增读路径时不要在 DB 事务内等待慢对象存储。
-- legacy 退出前的可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`；若本轮只迁移 Gallery 投稿、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，不迁移每用户最近 8 条历史，追加 `--skip-per-user-recent-history` 并使用独立 cursor；补齐后再用 `--source-storage current --generate-missing-thumbnails --apply` 生成缺失缩略图。
 - R2 可见热集缺失核对使用只读脚本 `scripts/audit_visible_hotset_r2_objects.py`。默认审计范围为“Web 可见热集”：每用户最近 8 条可见历史、全部 Gallery 投稿、History 收藏、Gallery like/apply 关联 active posts、prompt unlock 关联 active posts；默认对象范围为历史原文件、标准缩略图和本地 `input_file`。脚本同时检查运行时 R2 候选 key（标准 `history/{task_id}/...`、原始 object key、raw `output_file`、旧 basename）和标准 key，因此报告能区分“用户运行时会 R2 miss”与“标准 key 未补齐但 fallback key 可命中”。
 - 云正式只读审计示例：
 
@@ -231,7 +230,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序、LTX 首尾帧标签与 SCAIL-2 展示/复用语义分离
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝；`i2i_draw` Web 一键应用禁用字段与 apply-context 400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态、多条 `History.is_public` 和作者 pending 举报状态同步
-- Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback 与对象存储慢响应场景。
+- Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、缩略图路径与对象存储慢响应场景。
 - Telegram file_id 缓存需要覆盖已缓存不下载、file_id 失效后从当前 Gallery R2/S3 URL 刷新、测试 Bot 不写回缓存。
 
 ## 7. 文档维护口径

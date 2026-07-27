@@ -53,23 +53,14 @@ def _load_env_file_from_argv(argv: list[str]) -> None:
             os.environ[key] = value.strip().strip("'\"")
 
 
-def _enable_legacy_storage_for_migration(argv: list[str]) -> None:
-    source_storage = _find_argv_value(argv, "--source-storage")
-    hotset_profile = _find_argv_value(argv, "--hotset-profile")
-    if source_storage == "legacy" or (hotset_profile and source_storage != "current"):
-        os.environ["LEGACY_MINIO_READ_FALLBACK_ENABLED"] = "true"
-
-
 _load_env_file_from_argv(sys.argv)
-_enable_legacy_storage_for_migration(sys.argv)
 
 from src.core.media_paths import (  # noqa: E402
+    build_flat_r2_compatibility_key,
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
     build_storage_r2_object_key,
     get_media_type_from_history,
-    resolve_legacy_storage_object,
     resolve_storage_object,
 )
 from src.core.media_processor import generate_and_upload_thumbnail  # noqa: E402
@@ -89,10 +80,10 @@ logger = logging.getLogger(__name__)
 ResolveSourceObjectFunc = Callable[[str], tuple[str, str]]
 
 HOTSET_PROFILE_CLOUD_PROD_LAG_FIX = "cloud-prod-lag-fix"
-HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY = "web-visible-retire-legacy"
+HOTSET_PROFILE_WEB_VISIBLE = "web-visible"
 HOTSET_PROFILES = [
     HOTSET_PROFILE_CLOUD_PROD_LAG_FIX,
-    HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY,
+    HOTSET_PROFILE_WEB_VISIBLE,
 ]
 HOTSET_SOURCE_LIMITS = {
     "gallery_latest": 300,
@@ -246,12 +237,12 @@ def build_history_r2_candidate(
     media_r2_key = (
         build_history_r2_media_key(task_id, output_file)
         if task_id
-        else build_legacy_r2_key(output_file)
+        else build_flat_r2_compatibility_key(output_file)
     )
     thumbnail_r2_key = (
         build_history_r2_thumbnail_key(task_id, media_type)
         if task_id
-        else build_legacy_r2_key(thumbnail_file)
+        else build_flat_r2_compatibility_key(thumbnail_file)
     )
 
     return HistoryR2Candidate(
@@ -625,7 +616,7 @@ async def collect_cloud_prod_lag_fix_history_ids(
     return selected, source_counts
 
 
-async def collect_web_visible_retire_legacy_history_ids(
+async def collect_web_visible_history_ids(
     session,
     *,
     recent_limit: int = 8,
@@ -1227,7 +1218,6 @@ def write_backfill_report(
     report_dir: Path,
     summary: BackfillSummary,
     results: list[CandidateResult],
-    source_storage: Literal["current", "legacy"],
     media_only: bool,
     include_input_files: bool,
     generate_missing_thumbnails: bool,
@@ -1265,7 +1255,7 @@ def write_backfill_report(
     ]
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source_storage": source_storage,
+        "source_storage": "current",
         "media_only": media_only,
         "include_input_files": include_input_files,
         "generate_missing_thumbnails": generate_missing_thumbnails,
@@ -1284,7 +1274,7 @@ def write_backfill_report(
         "",
         f"- generated_at: `{payload['generated_at']}`",
         f"- mode: `{summary.mode}`",
-        f"- source_storage: `{source_storage}`",
+        f"- source_storage: `{payload['source_storage']}`",
         f"- scanned: `{summary.scanned}`",
         f"- media_only: `{media_only}`",
         f"- include_input_files: `{include_input_files}`",
@@ -1435,16 +1425,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--skip-per-user-recent-history",
         action="store_true",
         help=(
-            "web-visible-retire-legacy 热集不采集每用户最近 N 条历史，"
+            "web-visible 热集不采集每用户最近 N 条历史，"
             "仅保留 Gallery/收藏/互动/提示词解锁相关历史。"
-        ),
-    )
-    parser.add_argument(
-        "--source-storage",
-        choices=["current", "legacy"],
-        default=None,
-        help=(
-            "对象复制源。云正式热集模式默认 legacy；非热集模式默认 current。"
         ),
     )
     parser.add_argument(
@@ -1452,7 +1434,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         choices=HOTSET_PROFILES,
         help=(
             "启用固定热集候选采集模式；cloud-prod-lag-fix 用于云正式非全量预热，"
-            "web-visible-retire-legacy 用于 legacy 退出前的 Web 可见热集。"
+            "web-visible 用于 Web 可见热集的 R2 完整性修复。"
         ),
     )
     parser.add_argument(
@@ -1533,7 +1515,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--generate-missing-thumbnails",
         action="store_true",
-        help="当源缩略图不存在但原文件存在时生成缩略图；legacy 批量预热默认不启用。",
+        help="当源缩略图不存在但原文件存在时生成缩略图。",
     )
     parser.add_argument(
         "--concurrency",
@@ -1554,10 +1536,6 @@ async def run_backfill(args) -> BackfillSummary:
         raise RuntimeError("R2 client 未初始化，无法执行回填。")
     storage._ensure_r2_async_primitives()
 
-    source_storage: Literal["current", "legacy"] = (
-        args.source_storage
-        or ("legacy" if args.hotset_profile else "current")
-    )
     if args.concurrency is not None:
         effective_concurrency = args.concurrency
     elif args.hotset_profile:
@@ -1568,19 +1546,6 @@ async def run_backfill(args) -> BackfillSummary:
     resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object
     async_object_exists_func = storage.async_object_exists
     async_copy_to_r2_func = storage.async_copy_to_r2
-
-    if source_storage == "legacy":
-        if args.generate_missing_thumbnails:
-            raise RuntimeError(
-                "legacy 源批量预热暂不支持生成缺失缩略图；请先复制已有缩略图，"
-                "再单独安排缩略图生成批次。"
-            )
-        has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
-        if not callable(has_legacy_storage) or not has_legacy_storage():
-            raise RuntimeError("LEGACY_MINIO_* 未配置，无法从 legacy MinIO 预热。")
-        resolve_source_object_func = resolve_legacy_storage_object
-        async_object_exists_func = storage.async_legacy_object_exists
-        async_copy_to_r2_func = storage.async_copy_legacy_to_r2
 
     hotset_selection: HotsetSelection | None = None
     cursor_file: Path | None = None
@@ -1601,9 +1566,9 @@ async def run_backfill(args) -> BackfillSummary:
                 default_cursor_name = (
                     f"media_hotset_{args.hotset_profile}_{args.hotset_wave}_cursor.json"
                 )
-            elif args.hotset_profile == HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY:
+            elif args.hotset_profile == HOTSET_PROFILE_WEB_VISIBLE:
                 selected_ids, source_counts = (
-                    await collect_web_visible_retire_legacy_history_ids(
+                    await collect_web_visible_history_ids(
                         session,
                         recent_limit=args.recent_limit,
                         include_per_user_recent=(
@@ -1657,10 +1622,9 @@ async def run_backfill(args) -> BackfillSummary:
         )
 
     logger.info(
-        "Collected %s history rows for R2 scan. visible_scope=%s source_storage=%s hotset=%s",
+        "Collected %s history rows for R2 scan. visible_scope=%s hotset=%s",
         len(candidates),
         args.visible_scope,
-        source_storage,
         args.hotset_profile or "",
     )
     results = await process_history_r2_candidates(
@@ -1702,7 +1666,6 @@ async def run_backfill(args) -> BackfillSummary:
             report_dir=args.report_dir,
             summary=summary,
             results=results,
-            source_storage=source_storage,
             media_only=args.media_only,
             include_input_files=args.include_input_files,
             generate_missing_thumbnails=args.generate_missing_thumbnails,

@@ -69,7 +69,7 @@
 - [子模块: 系统资源与容量画像 (Resource Inventory)](./docs/子模块_系统资源与容量画像_resource_inventory.md)
 - [子模块: 网络暴露与代理穿透 (Network & Proxy)](./docs/子模块_网络暴露与代理穿透_network_proxy.md)
 - [子模块: 计费与支付核心 (Billing & Payment)](./docs/子模块_计费与支付_billing_payment.md)
-- [子模块: 边缘节点资源与运维 (Edge Node Ops)](./docs/子模块_边缘节点运维指南_edge_node_ops.md)
+- [子模块: Cloudflare 公网入口与账号管理](./docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md)
 - [子模块: 运维指南与容器管理 (Ops & Deployment)](./docs/子模块_运维指南与容器管理_ops_deployment.md)
 - [子模块: 附加模型部署与配置指南 (ComfyUI Add-on Models)](./docs/子模块_附加模型配置指南_comfy_models.md)
 - [首次可信 Release 准备记录](./docs/子模块_首次可信发布准备_first_trusted_release.md)

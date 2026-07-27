@@ -56,7 +56,7 @@ _load_env_file_from_argv(sys.argv)
 from scripts.backfill_history_r2_objects import (  # noqa: E402
     InputFileCandidate,
     build_history_r2_candidate,
-    collect_web_visible_retire_legacy_history_ids,
+    collect_web_visible_history_ids,
 )
 from src.core.media_urls import (  # noqa: E402
     build_r2_media_key_candidates,
@@ -899,7 +899,7 @@ async def async_main(args: argparse.Namespace) -> tuple[Path, Path, Path]:
         raise RuntimeError("R2 client 未初始化，无法审计 R2 对象。")
 
     async with AsyncSessionLocal() as session:
-        history_ids, source_counts = await collect_web_visible_retire_legacy_history_ids(
+        history_ids, source_counts = await collect_web_visible_history_ids(
             session,
             recent_limit=args.recent_limit,
             include_per_user_recent=not args.skip_per_user_recent_history,

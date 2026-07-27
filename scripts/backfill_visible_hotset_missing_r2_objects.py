@@ -577,24 +577,10 @@ class MinioSource:
 
 def build_minio_sources(args: argparse.Namespace) -> list[MinioSource]:
     sources: list[MinioSource] = []
-    legacy_endpoint = args.legacy_minio_endpoint or os.getenv("LEGACY_MINIO_ENDPOINT")
-    legacy_access = os.getenv("LEGACY_MINIO_ACCESS_KEY")
-    legacy_secret = os.getenv("LEGACY_MINIO_SECRET_KEY")
-    if legacy_endpoint and legacy_access and legacy_secret:
-        sources.append(
-            MinioSource(
-                name="legacy-hot",
-                endpoint=legacy_endpoint,
-                access_key=legacy_access,
-                secret_key=legacy_secret,
-                secure=_parse_bool(os.getenv("LEGACY_MINIO_SECURE"), default=False),
-            )
-        )
-
     cold_endpoint = args.cold_minio_endpoint or os.getenv("COLD_MINIO_ENDPOINT")
     if cold_endpoint:
-        cold_access = os.getenv("COLD_MINIO_ACCESS_KEY") or legacy_access
-        cold_secret = os.getenv("COLD_MINIO_SECRET_KEY") or legacy_secret
+        cold_access = os.getenv("COLD_MINIO_ACCESS_KEY")
+        cold_secret = os.getenv("COLD_MINIO_SECRET_KEY")
         if cold_access and cold_secret:
             sources.append(
                 MinioSource(
@@ -909,7 +895,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "从 R2 审计缺失附录中筛选社区强可见对象，并从 R2 fallback/"
-            "legacy MinIO/冷 MinIO 补齐到正式 R2。默认 dry-run。"
+            "其它 R2 桶或冷 MinIO 补齐到正式 R2。默认 dry-run。"
         )
     )
     parser.add_argument("--env-file", type=Path)
@@ -963,13 +949,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="逗号分隔的 MinIO 源桶候选。",
     )
     parser.add_argument(
-        "--legacy-minio-endpoint",
-        help="覆盖热 legacy MinIO endpoint；本地主机补数时可用 127.0.0.1:9000 避免绕 Tailscale。",
-    )
-    parser.add_argument(
         "--cold-minio-endpoint",
         default="192.168.1.88:9001",
-        help="冷 MinIO endpoint；凭据默认复用 COLD_MINIO_* 或 LEGACY_MINIO_*。",
+        help="冷 MinIO endpoint；凭据只从 COLD_MINIO_* 读取。",
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--concurrency", type=int, default=8)

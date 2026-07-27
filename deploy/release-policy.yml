@@ -62,7 +62,7 @@
     "dashboard/backend/schemas.py": "9f8c5b677b4dd48de07b2ad18085458ddb04b9809c33e3d4d7f57825afe4f76b",
     "deploy/docker-compose-cloud-base.yml": "ef198bb409d6bbcf6af13c495d259a134160b454debea667808a82bd63ccbcdf",
     "deploy/docker-compose-cloud-prod.overlay.yml": "ac60528a56ca426b66661372c6902de086fccab9ef089fb8c24e4e11690f4dfe",
-    "deploy/docker-compose-cloud-prod.yml": "18c86d514f5ec38a56f52d3e5e3ea13e478c970e5526eea01ba7657567da360e",
+    "deploy/docker-compose-cloud-prod.yml": "483455e8d80fe1e6367c6ab9e78d0616fc5db14689e3330ddd5d49094e040d8c",
     "deploy/docker-compose-cloud-test.overlay.yml": "04ec278eb785f67b132fc4d9813ee8f9bc213d1270e1020acee937b76722d2b7",
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
     "deploy/docker-compose-test.yml": "dfdd39495a0d609e5218b44a4050332328a521b72be3f0fb47ed9fe05c4d4722",

@@ -305,7 +305,6 @@ WEB_PAGES_TARGETS = {
 }
 PUBLIC_WEB_RUNTIME_FIELDS = {
     "api_base_url",
-    "storage_url",
     "imgproxy_url",
     "telegram_bot_username",
     "tonconnect_manifest_url",
@@ -8263,13 +8262,6 @@ SCOPED_PROJECTION_REVIEWED_LEGACY_KEYS = frozenset(
     {
         "ALLBOT_ENV_FILE",
         "FILE_BOT_TOKEN",
-        "LEGACY_MINIO_ACCESS_KEY",
-        "LEGACY_MINIO_BUCKET",
-        "LEGACY_MINIO_ENDPOINT",
-        "LEGACY_MINIO_PUBLIC_URL",
-        "LEGACY_MINIO_RESULT_BUCKET",
-        "LEGACY_MINIO_SECRET_KEY",
-        "LEGACY_MINIO_SECURE",
         "TZ",
     }
 )

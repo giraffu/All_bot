@@ -63,8 +63,6 @@ def test_parser_defaults_to_dry_run_and_requires_execute_for_mutation():
 
     assert parser.parse_args([]).execute is False
     assert parser.parse_args(["--execute"]).execute is True
-    assert parser.parse_args([]).include_legacy_media_import is False
-    assert parser.parse_args(["--include-legacy-media-import"]).include_legacy_media_import is True
     assert parser.parse_args([]).seed_r2_shadow_with_copy is False
     assert parser.parse_args(["--seed-r2-shadow-with-copy"]).seed_r2_shadow_with_copy is True
 
@@ -203,33 +201,6 @@ def test_complete_media_sync_copies_shadow_to_complete_without_destructive_sync(
     assert all("--backup-dir" not in line for line in complete_lines)
     assert "--ignore-existing" not in "\n".join(complete_lines)
     assert not config.backup_dir.exists()
-
-
-def test_complete_media_legacy_import_is_manual_and_preserves_existing_objects(
-    tmp_path,
-    capsys,
-):
-    config = build_config(
-        tmp_path,
-        COMPLETE_MEDIA_SYNC_ENABLED="true",
-        COMPLETE_MEDIA_IMPORT_LEGACY="true",
-        LOCAL_MINIO_COMPLETE_BUCKET="user-data-complete-shadow",
-        COMPLETE_MEDIA_LEGACY_BUCKETS="bot-data,comfyui-temp",
-    )
-
-    runner = sync.run_shadow_sync(config, execute=False)
-
-    commands = "\n".join(runner.commands)
-    assert (
-        "rclone copy localminio:bot-data localminio:user-data-complete-shadow "
-        "--ignore-existing"
-    ) in commands
-    assert (
-        "rclone copy localminio:comfyui-temp localminio:user-data-complete-shadow "
-        "--ignore-existing"
-    ) in commands
-    assert "rclone sync localminio:bot-data" not in commands
-    assert "rclone delete localminio:user-data-complete-shadow" not in commands
 
 
 def test_long_manual_timestamp_uses_compact_previous_database_name(tmp_path):
@@ -637,20 +608,9 @@ def test_postgres_and_redis_passwords_are_not_passed_as_process_arguments(tmp_pa
             "REMOTE_DUMP_SSH_HOST is required",
         ),
         (
-            {"COMPLETE_MEDIA_IMPORT_LEGACY": "true"},
-            "COMPLETE_MEDIA_SYNC_ENABLED must be true",
-        ),
-        (
             {
                 "COMPLETE_MEDIA_SYNC_ENABLED": "true",
                 "LOCAL_MINIO_COMPLETE_BUCKET": "user-data-prod-shadow",
-            },
-            "complete media bucket must be different",
-        ),
-        (
-            {
-                "COMPLETE_MEDIA_SYNC_ENABLED": "true",
-                "LOCAL_MINIO_COMPLETE_BUCKET": "bot-data",
             },
             "complete media bucket must be different",
         ),

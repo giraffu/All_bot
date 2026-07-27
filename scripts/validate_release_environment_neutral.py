@@ -40,7 +40,6 @@ PUBLIC_SENTINELS = (
     "api-cf-test.aivison.it.com",
     "api.aivison.it.com",
     "r2-test.aivison.it.com",
-    "assets.aivison.it.com",
     "testAIvison_bot",
     "AIVision1111_bot",
 )
