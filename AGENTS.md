@@ -93,9 +93,16 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 
 ## 5. 知识库分层
 
+- **最小上下文协议**：
+  1. 只选命中场景的最少 Skill；完整读取这些 Skill。
+  2. 先检查 Skill 指向的代码入口、配置和 focused tests。
+  3. 只打开“按需阅读”表中命中的文档；跨层改动才组合多篇。
+  4. `knowledge_base_audit_matrix.md` 只用于全量校准，archive/evidence 只用于
+     追溯，不作为普通开发的预读上下文。
+  5. 已足以定位 interface、事实源、红线和验证项时停止扩展上下文。
 - `AGENTS.md`：全局路由、授权和工作区规则。
 - `.codex/skills/*/SKILL.md`：触发条件、稳定入口、高压红线、按需阅读和最小
-  验证；单个 Skill 必须小于 20 KB。
+  验证；单个 Skill 必须小于 16 KB，且不写日期化运行态。
 - `docs/子模块_*.md` 与 `docs/business/`：当前架构、业务契约和可执行 SOP。
 - `docs/domain/CONTEXT.md`：只记录共享术语，不写实现或事故。
 - `docs/adr/`：难逆、非显然且有真实替代方案的架构决策；Superseded ADR
@@ -114,17 +121,10 @@ python scripts/doc_quality_checker.py
 若新增 Skill，同步 Skill 文件、本路由、`docs/skills/README.md` 和审计矩阵。
 若入口、异常、超时、ID、provider 或测试 seam 变化，同步对应专项文档。
 
-## 6. 文档入口
+## 6. 治理入口
 
 - 系统总览：`docs/system_architecture_report.md`
 - 知识库矩阵：`docs/knowledge_base_audit_matrix.md`
 - 共享词汇：`docs/domain/CONTEXT.md`
-- 生成主链：`docs/子模块_生成任务全链路_task_full_chain.md`
-- 不可变发布：`docs/子模块_Git不可变发布_git_immutable_release.md`
-- 并发工作区：`docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
-- 云测试/正式：`docs/子模块_云测试控制面部署_cloud_test_control_plane.md`、
-  `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`
-- GPU/LAN：`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、
-  `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`
 
-其它资料由 Skill 路由按需读取，不在此重复目录清单。
+普通研发和运维不从本清单继续展开；由命中的 Skill 路由专题资料。

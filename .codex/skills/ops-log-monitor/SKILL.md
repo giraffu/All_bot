@@ -1,65 +1,83 @@
 ---
-name: "ops-log-monitor"
-description: "Monitors system logs across environments, analyzes exceptions, and generates incident reports. Invoke when user asks to monitor logs, check errors, or troubleshoot bugs."
+name: ops-log-monitor
+description: "监控多环境日志、分析异常并生成 incident 报告。用户要求查日志、监控错误或排障线上问题时使用。"
 ---
 
-# Ops Log Monitor & Bug Troubleshooter
+# AllBot 日志监控与排障
 
-This skill is designed to automatically execute system log monitoring, anomaly detection, and deep analysis without cluttering the conversation with raw logs.
+日志采集只读、最小范围、全程脱敏。容器名、主机/IP、worker 集合、域名和 SSH
+可用性属于运行态：先由部署文档、release state、Central/provider 和只读发现
+得到，不能依赖 Skill 中的历史快照。
 
-若日志分析指向代码缺陷、需要修复或需要验证根因，继续加载 `allbot-diagnosing-bugs`，先建立可复现反馈环再改代码；本技能本身只做观察、聚合、归因和报告。
+同时加载 `allbot-diagnosing-bugs` 建立可复现反馈环；涉及 test/prod、容器或
+远端环境时加载 `allbot-ops-deployment`。日志分析本身不授权修复、重启、部署、
+改数据库或清理队列。
 
-## Workflow Instructions
+## 1. 按需阅读
 
-When invoked to perform log monitoring or bug troubleshooting, strictly follow these steps:
+| 故障面 | 先读 |
+| --- | --- |
+| 云 test/prod 控制面 | 对应云控制面文档 |
+| Compose、发布、回滚 | `docs/子模块_运维指南与容器管理_ops_deployment.md` |
+| 任务、Central、Worker | `docs/子模块_生成任务全链路_task_full_chain.md` |
+| GPU/RunPod/LAN | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
+| Telegram 文件/API | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` |
+| 媒体/R2/Gallery | `docs/子模块_社区与存储_gallery_storage.md` |
 
-### 1. 日志采集与监控（静默执行）
-- **执行采集脚本**：优先在项目根目录运行预置脚本 `bash collect_logs.sh 15`（15 代表提取过去 15 分钟的日志，可根据用户要求的时长调整参数）。
-- **脚本缺失时的等价采集**：若当前仓库没有 `collect_logs.sh`，不要停止排障；直接使用只读命令采集目标容器最近 15-30 分钟日志，并用 `grep`/Python 做脱敏聚合。云正式当前重点容器为 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-tg-bot-prod`、`cloud-dashboard-backend-prod`、`cloud-payment-api-prod`、`cloud-imgproxy-prod`。本地 Docker 日志只覆盖 `cloud-prod-worker-relay` 与当前运行中的 `cloud-prod-comfy-agent-*`；线上 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod，必须通过 Central `/system/workers` 发现完整 agent 集合。
-- **读取过滤数据**：脚本会自动采集目标容器（如 `tg-bot`, `web-api` 等）的日志，并提取所有的 ERROR、WARN、Exception 等异常写入临时文件。若使用等价采集，请只保留聚合后的计数、类别、端点和脱敏示例，不要在对话或报告中输出原始 presigned URL、密钥、Token 或大段日志。
-- **排查外部入口与 Telegram Local API 节点**：当涉及网络层、跨域（CORS）、文件上传失败（413 Payload Too Large）或请求根本未到达后端时，先分别核对 Cloudflare Pages/Tunnel/R2 的请求状态和云控制面日志；Telegram 文件链路异常时再检查下列 Local API 节点：
-  - **Telegram Local API 节点** (`69.63.220.115`)：当出现 `telegram.error.TimedOut`、大文件下载 404/403 等异常时，先执行 `nc -vz -w 5 69.63.220.115 8081` 与 `nc -vz -w 5 69.63.220.115 8082`。当前主服务器未配置该节点可用 SSH key；只有补齐 SSH 后，才执行 `ssh root@69.63.220.115 "docker logs --tail 100 tg-local-api"` 或检查 HTTP 文件服务器日志，不能在未登录时声称已检查容器日志。
-- **排查后端数据库慢查询与连接池**：当出现 `110 Connection timed out` 且后端日志无明显应用报错时，**必须**排查 PostgreSQL 连接池是否被耗尽。使用 `docker exec -i postgres-server psql -U postgres -d bot_db -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"` 检查 `idle in transaction` 的数量。若发现大量卡死进程，可使用 `ALTER SYSTEM SET idle_in_transaction_session_timeout = '60000';` 进行熔断恢复，并配置 `log_min_duration_statement = '1000'` 追踪慢查询。
-- **执行要求**：在此期间仅做观察与分析，**绝对不要修改任何代码**。请不要在对话窗口中打印原始的日志流。
+只读命中的一行，再用部署声明和实时发现确定实际目标集合。
 
-#### 1.1 云正式 Web 卡顿与负载巡检顺序
-当用户反馈正式 Web 卡顿、生成排队、Dashboard 卡顿或“云端负载高”时，按下面顺序拆解，不要只看单一容器 CPU：
+## 2. 反馈环
 
-1. **云控制面基础资源**：`ssh allbot-do-sgp1-control 'uptime; free -h; df -hT -x tmpfs -x devtmpfs /; docker ps; docker stats --no-stream ...'`。若云内 `100.107.220.127:8000/8003/8043` 毫秒级返回，而公网域名秒级返回，优先检查 Cloudflare/公网链路而非应用 CPU。
-2. **延迟分段**：正式 Web 使用 Cloudflare Pages；至少测三段：云机内部 `http://100.107.220.127:8000/api/health`、公网 API `https://api.aivison.it.com/api/health`、Pages 静态站 `https://web.aivison.it.com`。`https://web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不是 API 健康检查。公网异常时继续查 Cloudflare Tunnel、运营商链路、R2 公开域名/短签和前端串行请求。
-3. **Central 队列事实**：用 `/system/status` 与 `/system/workers` 看 `queue_size`、`queue_by_type`、`healthy_workers`、`error_workers`、`quarantined_workers`、`workers_by_status`。同时从 Central Redis 聚合 `comfy:queue:pending`、`comfy:queue:running` 与 `comfy:task_heartbeat:*` TTL；pending 最老等待时间比单看 `queue_size` 更能解释用户体感。
-4. **GPU 实际利用率**：逐台执行 `nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,utilization.memory,power.draw,temperature.gpu --format=csv,noheader,nounits`，并按 Central `/system/workers` 里的目标 worker 映射检查对应 ComfyUI `/queue`、LAN AIO runtime 或 RunPod worker 状态。显存高但 GPU 利用率低可能是模型常驻、加载、等待、后处理或 IO，不等同于“卡死”。
-5. **Web 结果和媒体链路**：统计 `cloud-web-api-prod` 中 `Timed out resolving web result R2 URL`、`Unexpected object_exists failure`，并抽样确认历史、Gallery、apply-context 响应均使用当前 R2/S3 URL。
-6. **Dashboard 卡顿**：统计 `cloud-dashboard-backend-prod` 的 `Circuit Breaker is OPEN`、外部余额接口失败和 stats 慢查询。Dashboard 卡顿不应直接等同于 Central 调度故障。
-7. **公网 4xx/5xx**：结合 Cloudflare 请求状态和云控制面目标容器的限量日志，统计 499、500、502、504 及高频端点；不要全量扫描大日志。
-8. **数据库和 Redis**：PostgreSQL 看 `pg_stat_activity` 的 state、`idle in transaction`、`active > 30s`、未授予锁；Redis 看 `used_memory_human`、`connected_clients`、`blocked_clients`、`instantaneous_ops_per_sec` 与 keyspace。托管库/Valkey 不要输出真实连接串。
+1. 定义症状、环境、时间窗、用户影响、预期/实际结果和可观察成功条件。
+2. 取得 release SHA/config revision、trace/task/user 的脱敏关联键。
+3. 先复现或测量一个窄路径，记录基线；无法复现时明确证据限制。
+4. 按请求入口 → core/service → Central/queue → Worker/provider → storage/result
+   顺序关联，避免只盯最后一条异常。
+5. 每次只验证一个假设，保留可重复命令和前后对照。
 
-#### 1.2 云正式常见判读口径
-- `active_workers` / `healthy_workers` 与当次预期容量一致且 `error_workers=0`、`quarantined_workers=0`：worker 总体在线；若 pending 增长，多半是容量/耗时或任务类型分布问题。不要把固定 7 个 worker 当成云正式唯一健康标准。
-- `running_scard` 大于 7 不一定异常：pipeline 允许 worker 同时处于 ComfyUI running/queued/finalizing；需要结合 heartbeat TTL 判断是否僵尸。
-- `Task result not set via WS, checking history` 通常是 worker 的 ComfyUI history 补偿路径，不应按 ERROR 处理。
-- Web API 大量 R2 result timeout + 公网 499：用户结果页可能等不及断开，优先优化结果探测超时、缓存和 `pending_result` 快速返回。
-- 云控制面根盘低于 10% 可用时是 P1 运维风险；不要扩大 cache 或开启大日志调试。
+## 3. 采集规则
 
-### 2. 日志综合分析
-采集结束后，基于临时日志数据进行以下多维分析：
-1. **异常检测**：精准识别所有 ERROR、WARN、Exception、StackTrace、超时、重试、状态码非200等异常信号。
-2. **频率统计**：按分钟粒度统计各类异常的出现次数，为趋势折线图准备数据。
-3. **链路追踪**：利用 TraceId 等标识，对同一请求在 `bot → web api → 后端中控api` 之间的调用链进行关联，定位首次出错的节点。
-4. **根因归类**：将发现的问题按“配置错误、依赖服务故障、代码逻辑缺陷、资源瓶颈、网络抖动、权限/鉴权失败”六大类进行归档。
-5. **影响评估**：评估并定级每类问题对线上用户、测试流程、系统稳定性的影响级别（P0/P1/P2）。
-6. **解决方案**：针对每类根因提供可执行的修复或缓解措施（包括：参数调优、降级策略、重试机制、告警阈值调整、代码后续改动建议）。**注：此处仅做文字描述，禁止直接实施代码修改。**
-7. **延迟拆段**：Web 卡顿报告必须区分云内处理耗时、Cloudflare 到云耗时、用户公网域名耗时、R2 媒体/短签耗时和 GPU 队列等待，不要把所有慢都归为“服务器负载高”。
+- 优先现有 structured logs、trace ID、metrics、health、Central worker/status、
+  release state 和只读 DB/Redis 查询。
+- 先取 15–30 分钟或用户给定窗口；只有证据表明需要时扩大。避免全量
+  `docker logs`、journal 或数据库 dump。
+- 发现目标集合：从 compose/release manifest、`docker ps`、service manager、
+  Central/provider 获取；不要写死 worker 数或只检查本地 compose。
+- 延迟按客户端/边缘 → origin/API → DB/Redis → Central/Worker → object
+  storage 分段测量，分别记录 DNS/TLS/TTFB/总时长。
+- Telegram 文件故障先验证 API/file endpoint 连通与响应；SSH 不可用时只能
+  报告未检查远端容器，不能猜测。
+- 命令输出进入临时目录或内存，只保留聚合、时间、计数、错误类与脱敏样本。
 
-### 3. 报告生成与无痕清理（核心要求）
-- **生成报告**：输出一份 Markdown 格式的分析报告，必须包含以下模块：
-  - 监控时间范围与日志源列表
-  - 异常总览表（异常类型、出现次数、首次/末次时间、影响接口）
-  - 趋势图（必须使用 inline Mermaid 语法绘制折线图）
-  - 调用链追踪示例（以文本形式粘贴关键 TraceId 与各节点耗时截图/片段）
-  - 根因与解决方案对照表
-  - 后续行动清单（责任人、优先级、截止时间）
-- **保存文件**：将报告命名为 `log_analysis_report_<yyyyMMdd_HHmm>.md`，使用 UTF-8 编码，写入到项目根目录的 `logs/` 文件夹下（若目录不存在请自动创建）。此文件无需提交 Git。
-- **清理中间产物**：**强制要求**在报告成功写入磁盘后，立即通过 shell 命令彻底删除步骤1中产生的所有临时日志文件、数据切片或缓存记录。
-- **安全检查**：报告写入后必须检查是否包含 `X-Amz`、`Signature`、`Credential`、真实数据库密码、Bot token、JWT secret 或 `.env.cloud.prod` 内容；发现则立即重写为脱敏聚合。
-- **最终输出**：向用户回复时，仅需提示“报告已生成完毕”，给出文件的绝对路径，并简要总结报告中的 P0/P1 级核心结论即可。**严禁输出任何监控过程的中间产物或大段原始日志。**
+## 4. 脱敏与授权红线
+
+- 不输出 env、compose 展开、Authorization、JWT、Bot token、agent secret、
+  DB/Redis URL、R2 key、预签 URL、cookie 或请求正文中的私密媒体/提示词。
+- 用户 ID、task ID、IP、邮箱等只保留定位所需最短形式；报告不复制大段原始
+  日志。
+- 只读排障不得执行 restart、scale、delete、retry、cancel、queue cleanup、
+  数据修复、Cloudflare/GPU mutation 或发布。
+- 不长期启用 debug 日志，不在高频循环加入无界打印，不把现场秘密写入测试或
+  Git。
+- 若需要插桩或修复，先报告假设与证据，再按用户授权进入代码任务和相应 Skill。
+
+## 5. 分析与报告
+
+按 `Critical/High/Medium/Low` 汇总：
+
+- 时间范围、环境、release/config 身份和实际采集源；
+- 症状时间线、影响面、关键计数/延迟分位数；
+- 已证实根因、支持/反证、仍待验证的假设；
+- 安全的修复建议、回归 seam、回滚条件和需要额外授权的 mutation。
+
+报告保存到 `logs/incident_report_<yyyyMMdd_HHmm>.md`，不提交 Git。成功写入后
+删除原始日志、临时脚本、切片和缓存；最终只给报告路径、关键指标和 Critical
+风险，不在对话贴长日志。
+
+## 6. 最小验证
+
+- 实际采集目标与当前 release/compose/Central 发现一致。
+- 时间窗、时区、trace/task 关联和日志丢失范围清楚。
+- secret 扫描通过，报告样本已脱敏，临时产物已删除。
+- 根因有可重复反馈环；只有相关性时明确标为假设。
+- 未授权期间没有任何外部 mutation；建议的修复与回归测试尚未被描述成已执行。

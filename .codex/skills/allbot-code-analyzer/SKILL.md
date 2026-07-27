@@ -7,6 +7,9 @@ description: "执行全局代码静态分析与质量评估任务。当用户要
 
 此技能专为修仙主题工作台（All_Bot）量身定制。当你收到用户关于“代码静态分析”、“质量评估”、“检测死代码/坏味道”、“架构审查”等请求时，必须严格遵守以下步骤与规范进行操作，**保证静默执行、只读不写，且强制清理临时文件**。
 
+报告口径与工具选择按需读取
+`docs/子模块_代码静态分析与质量评估规范_code_quality.md`。
+
 进行架构审查时，叠加 `allbot-codebase-design` 的 module / interface / seam / adapter / depth / leverage / locality 词汇，避免只用“分层不好”“耦合高”等模糊描述。
 
 ## Workflow Instructions

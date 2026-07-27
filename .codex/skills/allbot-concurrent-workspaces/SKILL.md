@@ -5,6 +5,14 @@ description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handof
 
 # AllBot 并发工作区与单批次集成
 
+按任务读取：
+
+- 功能槽位 claim/handoff：
+  `docs/并发AI自动接单使用指南_auto_workspace_claim.md`
+- 批次、main PR、自动测试发布：
+  `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
+- 不可变 artifact 与正式晋级：`docs/子模块_Git不可变发布_git_immutable_release.md`
+
 ## 1. 主目录自动接单
 
 用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时：
