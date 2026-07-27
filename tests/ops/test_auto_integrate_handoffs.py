@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -80,6 +81,7 @@ def test_test_deployment_commands_are_fixed_to_test_and_exact_sha(tmp_path):
 
     commands = module.test_deployment_commands(tmp_path, sha)
 
+    assert all(command[0] == sys.executable for command in commands)
     assert [command[2] for command in commands] == ["plan", "deploy"]
     assert all(command[-1] in {sha, "--execute"} for command in commands)
     assert commands[1][-3:] == ["--sha", sha, "--execute"]
