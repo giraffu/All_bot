@@ -503,41 +503,31 @@ class DeploymentService:
         self, operation_id: str, sha: str, modules: list[str]
     ):
         async with self.runtime_lock:
-            completed: list[str] = []
             try:
-                for module in modules:
-                    self.store.update(
-                        operation_id,
-                        status=OperationStatus.RUNNING,
-                        stage=f"planning-{module}",
-                    )
-                    plan = await self.operator.plan(
-                        "test", module, sha, "planner"
-                    )
-                    token = plan.get("plan_token")
-                    if not token:
-                        raise ReleaseOperatorError(
-                            f"release_plan_missing_token:{module}"
-                        )
-                    self.store.update(
-                        operation_id,
-                        status=OperationStatus.RUNNING,
-                        stage=f"deploying-{module}",
-                    )
-                    await self.operator.deploy(
-                        environment="test",
-                        module=module,
-                        sha=sha,
-                        maintenance="planner",
-                        plan_token=token,
-                        confirm_prod=False,
-                    )
-                    completed.append(module)
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="planning-all-test-modules",
+                )
+                plan = await self.operator.plan_test_modules(modules, sha)
+                token = plan.get("plan_token")
+                if not token:
+                    raise ReleaseOperatorError("release_plan_missing_token:test-all")
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="deploying-all-test-modules",
+                )
+                await self.operator.deploy_test_modules(
+                    modules=modules,
+                    sha=sha,
+                    plan_token=token,
+                )
                 self.store.update(
                     operation_id,
                     status=OperationStatus.SUCCEEDED,
                     stage="all-test-modules-deployed",
-                    result={"completed_modules": completed},
+                    result={"completed_modules": modules},
                 )
             except Exception as exc:
                 self.store.update(
@@ -545,7 +535,7 @@ class DeploymentService:
                     status=OperationStatus.FAILED,
                     stage="failed",
                     error_code=str(exc)[:120] or "bulk_test_deploy_failed",
-                    result={"completed_modules": completed},
+                    result={"completed_modules": []},
                 )
 
     async def create_plan(

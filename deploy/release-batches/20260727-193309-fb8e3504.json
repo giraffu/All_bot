@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "d66f3b94971f0a8ba1682627181f20a11b4b455c",
+  "batch": "20260727-193309-fb8e3504",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-193309-fb8e3504",
+  "members": [
+    {
+      "base_sha": "d66f3b94971f0a8ba1682627181f20a11b4b455c",
+      "branch": "codex/d-atomic-bulk-test-module-deploy",
+      "head": "fb8e350453f730e4c8c9ae7375c9c0e192820933",
+      "queued_at": "2026-07-27T19:33:06.754766+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

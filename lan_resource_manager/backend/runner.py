@@ -45,6 +45,8 @@ ALLOWED_ACTIONS = {
     "start_build",
     "plan",
     "deploy",
+    "plan_test_modules",
+    "deploy_test_modules",
     "set_maintenance",
     "integrate_all",
     "align_workspaces",
@@ -130,25 +132,48 @@ class ReleaseRunner:
             raise RunnerError("rolling_only_for_prod")
         return environment, module, sha, maintenance
 
+    def _test_modules(self) -> list[str]:
+        modules = self._policy_modules()
+        result = []
+        for name, config in modules.items():
+            services = {
+                ARTIFACT_SERVICE.get(artifact, artifact)
+                for artifact in config["artifacts"]
+            }
+            if services <= TEST_SERVICES:
+                result.append(name)
+        return sorted(result)
+
+    def _validate_test_modules(self, payload: dict[str, Any]) -> tuple[list[str], str]:
+        modules = payload.get("modules")
+        sha = payload.get("sha")
+        if (
+            not isinstance(modules, list)
+            or not modules
+            or not all(
+                isinstance(module, str)
+                and re.fullmatch(r"[a-z0-9-]{1,80}", module)
+                for module in modules
+            )
+            or len(modules) != len(set(modules))
+            or set(modules) != set(self._test_modules())
+        ):
+            raise RunnerError("invalid_test_modules")
+        if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+            raise RunnerError("invalid_sha")
+        return sorted(modules), sha
+
     async def dispatch(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         if action not in ALLOWED_ACTIONS:
             raise RunnerError("unsupported_action")
         if action == "catalog":
             modules = self._policy_modules()
-            test_modules = []
-            for name, config in modules.items():
-                services = {
-                    ARTIFACT_SERVICE.get(artifact, artifact)
-                    for artifact in config["artifacts"]
-                }
-                if services <= TEST_SERVICES:
-                    test_modules.append(name)
             return {
                 "modules": modules,
                 "environments": {
                     "test": {
                         "label": "测试环境",
-                        "modules": sorted(test_modules),
+                        "modules": self._test_modules(),
                         "maintenance_supported": True,
                     },
                     "prod": {
@@ -511,6 +536,27 @@ class ReleaseRunner:
                 if payload.get("confirm_prod") is not True:
                     raise RunnerError("production_confirmation_required")
                 command.append("--confirm-prod")
+            return await self.run_json(command, timeout=7500)
+        if action in {"plan_test_modules", "deploy_test_modules"}:
+            modules, sha = self._validate_test_modules(payload)
+            command = [
+                sys.executable,
+                str(self.release),
+                "plan" if action == "plan_test_modules" else "deploy",
+                "--env",
+                "test",
+                "--track",
+                "control-plane",
+            ]
+            for module in modules:
+                command.extend(["--modules", module])
+            command.extend(["--sha", sha])
+            if action == "plan_test_modules":
+                return await self.run_json(command, timeout=900)
+            token = payload.get("plan_token")
+            if not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
+                raise RunnerError("invalid_plan_token")
+            command.extend(["--plan-token", token, "--execute"])
             return await self.run_json(command, timeout=7500)
         environment = payload.get("environment")
         if environment not in ENVIRONMENTS:

@@ -24,6 +24,10 @@ class ReleaseOperatorPort(Protocol):
         self, environment: str, module: str, sha: str, maintenance: str
     ) -> dict[str, Any]: ...
     async def deploy(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def plan_test_modules(
+        self, modules: list[str], sha: str
+    ) -> dict[str, Any]: ...
+    async def deploy_test_modules(self, **kwargs: Any) -> dict[str, Any]: ...
     async def set_maintenance(self, **kwargs: Any) -> dict[str, Any]: ...
     async def integration_status(self) -> dict[str, Any]: ...
     async def integrate_all(self, **kwargs: Any) -> dict[str, Any]: ...
@@ -104,6 +108,14 @@ class UnixReleaseOperator:
 
     async def deploy(self, **kwargs):
         return await self._call("deploy", kwargs)
+
+    async def plan_test_modules(self, modules, sha):
+        return await self._call(
+            "plan_test_modules", {"modules": modules, "sha": sha}
+        )
+
+    async def deploy_test_modules(self, **kwargs):
+        return await self._call("deploy_test_modules", kwargs)
 
     async def set_maintenance(self, **kwargs):
         return await self._call("set_maintenance", kwargs)

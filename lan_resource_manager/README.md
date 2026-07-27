@@ -22,7 +22,8 @@ catalog、XDG ledger 和 live status；`模块构建部署` Tab 管理 A–H han
 - 每次只部署 `release-policy.yml` 的一个完整模块组，先生成短效计划，再输入
   `TEST|PROD <module> <40位SHA>`；构建成功不会自动部署。
 - 全部集成固定使用测试专用 coordinator；全部对齐只刷新 clean 且已被 main 包含的
-  槽；测试全模块部署逐个调用既有 `plan -> deploy`。三者均无正式批量发布能力。
+  槽；测试全模块部署把 policy 中 test 模块精确全集组成一次原子
+  `plan -> deploy`。三者均无正式批量发布能力。
 - 失败批次必须按界面给出的 `RETRY <batch>` 精确确认后原批重试；runner 的临时
   worktree 与短效 plan 使用持久 release cache volume，并配置固定审计提交身份，避免受容器小容量
   `/tmp` 或宿主 Git 全局配置限制。
