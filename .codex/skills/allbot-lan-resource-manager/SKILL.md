@@ -68,7 +68,9 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
 - 测试全模块部署只接受 release policy 中 test 可用模块组的精确全集，并以重复
   `--modules` 组成一次原子 `plan -> deploy`；这样共享 migration/config contract
   在完整集合内统一判断，不得逐模块用陈旧 artifact source SHA 重放全局 blocker。
-  不得接受子集、任意 service 或泛化为 prod bulk deploy。
+  远端 artifact history 必须一次受限批量读取，禁止按历史条目反复新建 SSH。
+  test catalog 中尚无运行基线的 artifact 必须由 policy 显式列入
+  `initial_artifacts`；不得接受子集、任意 service 或泛化为 prod bulk deploy。
 - GPU 正式候选准备只允许当前 main 和 `GPU BUILD <sha>`，固定调用
   `prepare_gpu_release_v2.py` 补齐 exact-SHA 镜像、attested manifest 与 bundle；
   不得创建 Pod、部署 prod、伪造 canary-verified 或覆盖不可变 tag。
