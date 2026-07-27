@@ -3776,9 +3776,7 @@ def _read_artifact_state_history(args: argparse.Namespace) -> list[dict[str, Any
             for path in local.iterdir()
             if path.is_file() and re.fullmatch(r"[0-9a-f]{40}\.json", path.name)
         ]
-
-        def read_state(path: str) -> dict[str, Any]:
-            return _read_json(Path(path))
+        return [_read_json(Path(path)) for _, path in sorted(entries)]
     else:
         host = args.remote_host or ENVIRONMENT[args.env]["host"]
         listing = _run(
@@ -3809,29 +3807,35 @@ def _read_artifact_state_history(args: argparse.Namespace) -> list[dict[str, Any
             ):
                 raise ReleaseError("deployment artifact history path is invalid")
             entries.append((mtime, path))
-
-        def read_state(path: str) -> dict[str, Any]:
-            result = _run(
-                [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    host,
-                    f"cat {shlex.quote(path)}",
-                ],
-                check=False,
-            )
-            if result.returncode != 0:
-                raise ReleaseError("deployment artifact history is unavailable")
+        ordered_paths = [path for _, path in sorted(entries)]
+        if not ordered_paths:
+            return []
+        remote_command = (
+            "set -e; for path in "
+            + " ".join(shlex.quote(path) for path in ordered_paths)
+            + '; do cat "$path"; printf \'\\0\'; done'
+        )
+        result = _run(
+            ["ssh", "-o", "BatchMode=yes", host, remote_command],
+            check=False,
+        )
+        if result.returncode != 0:
+            raise ReleaseError("deployment artifact history is unavailable")
+        raw_states = result.stdout.split("\0")
+        if raw_states[-1:] == [""]:
+            raw_states.pop()
+        if len(raw_states) != len(ordered_paths):
+            raise ReleaseError("deployment artifact history is incomplete")
+        history: list[dict[str, Any]] = []
+        for raw_state in raw_states:
             try:
-                value = json.loads(result.stdout)
+                value = json.loads(raw_state)
             except json.JSONDecodeError as exc:
                 raise ReleaseError("deployment artifact history is invalid") from exc
             if not isinstance(value, dict):
                 raise ReleaseError("deployment artifact history is invalid")
-            return value
-
-    return [read_state(path) for _, path in sorted(entries)]
+            history.append(value)
+        return history
 
 
 def _resolve_previous_sha(

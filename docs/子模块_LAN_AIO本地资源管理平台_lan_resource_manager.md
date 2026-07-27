@@ -34,7 +34,9 @@ operator/integration/release facade，不承载第二套运维实现。
 - `POST /api/v1/environments/test/deploy-all`：确认 `TEST ALL <full-sha>` 后，把
   test catalog 的精确模块全集组成一次原子 plan/deploy；拒绝子集与 prod。共享
   migration/config blocker 以完整集合判断，避免某个旧 artifact source SHA 让
-  无关的单模块计划重复承接已提交的全局迁移。
+  无关的单模块计划重复承接已提交的全局迁移。远端 artifact history 用一次
+  allowlisted SSH 批量读取并逐条 JSON 校验，不随历史数量线性增加 SSH 建连；
+  `private-bot-worker` 由 policy 明确标为允许首次部署的 initial artifact。
 
 全量 status 可能持续数十秒，因此首屏不等待 live SSH；超过默认 180 秒的 snapshot
 标记为 stale 并禁止切换。

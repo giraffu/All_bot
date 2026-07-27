@@ -44,7 +44,8 @@
       "artifacts": ["qqcc-config-backend", "qqcc-config-frontend"]
     },
     "private-bot-worker": {
-      "artifacts": ["private-bot-worker"]
+      "artifacts": ["private-bot-worker"],
+      "initial_artifacts": ["private-bot-worker"]
     },
     "paid-group-bot": {
       "artifacts": ["paid-group-bot"]
