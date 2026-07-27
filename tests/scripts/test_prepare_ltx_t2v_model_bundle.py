@@ -64,4 +64,6 @@ def test_ltx_t2v_dockerfiles_keep_weights_external_and_pin_runtime():
     assert "LTXICLoRALoaderModelOnly" in ltx
     assert "LTXAddVideoICLoRAGuide" in ltx
     assert 'find "${comfyui_dir}/models" -type f -name "*.safetensors"' in ltx
+    assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in pornmaster
+    assert "from shared.image_aspect import adapt_image_to_aspect" in pornmaster
     assert 'find "$(cat /opt/allbot-comfyui-dir)/models"' in pornmaster

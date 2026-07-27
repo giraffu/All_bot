@@ -115,16 +115,20 @@ ID、状态与时间戳。资产只能由 owner 访问，不可投稿；每人�
 `POST /api/characters/build` 只接受当前用户
 `web_uploads/{internal_user_id}/...` 下不超过 20 MiB 的 PNG/JPEG/WebP。PornMaster
 FP8 在一个 workflow 中生成固定六视图，worker 要求六个输出标记完整且唯一，
-然后用 Pillow 按以下顺序确定性拼成黑底 `1536x896` PNG：
+然后用 Pillow 按以下顺序确定性拼成 `1536x896` PNG：
 
 1. 正脸近照；2. 3/4 脸；3. 正面半身；
 4. 全身正面；5. 全身侧面；6. 全身背面。
 
-每个视图按原宽高比缩放并以黑色补边到 `512x448`，禁止用居中 cover
-裁剪；竖幅人物必须完整保留头顶与脚部。六个格子再按固定 3x2 顺序拼接。该
-修复当前只进入正式 `workers/` 事实源；已退役且禁止映射的远端 PornMaster FP8
-人物构建 profile 不随 LTX cloud-test 镜像发布，迁移到 BF16 或独立 profile 时
-必须同步该物化行为并重新执行人物表 canary。
+每个视图统一复用 QQCC AI 动图的
+`shared.image_aspect.adapt_image_to_aspect`：比例变化不安全或没有可靠焦点检测时，
+使用模糊背景填充并完整缩放前景，再等比落到 `512x448`；禁止另写居中 cover
+裁剪。竖幅人物必须完整保留头顶与脚部，六个格子再按固定 3x2 顺序拼接。
+`src.services.smart_image_aspect_service` 只保留兼容 facade，控制面与
+`workers/runpod_runtime` 的比例安全策略以 `shared/image_aspect.py` 为唯一事实源。
+PornMaster 人物构建镜像必须显式打包该共享模块，目录迁移后的真实 RunPod runtime
+测试必须覆盖极端竖图，防止旧 `ImageOps.fit` 回归。修复后的 artifact 和新人物表
+未完成 canary 前，旧参考表不得作为 IC 人物一致性验收证据。
 
 子图只作 worker 临时材料，不单独上传。终态 finalizer 幂等把人物更新为
 `ready` 或 `failed`；构建任务进入本人 History，但固定

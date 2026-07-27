@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 from agent_result_assets import (
     LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES,
@@ -175,14 +175,20 @@ def _character_view_assets(
 
 
 def _compose_character_sheet(images: list[bytes]) -> bytes:
+    from shared.image_aspect import adapt_image_to_aspect
+
     if len(images) != 6:
         raise RuntimeError("character reference sheet requires exactly six views")
     canvas = Image.new("RGB", (1536, 896), "black")
     for index, payload in enumerate(images):
         try:
             with Image.open(io.BytesIO(payload)) as source:
-                tile = ImageOps.fit(
-                    source.convert("RGB"), (512, 448), method=Image.Resampling.LANCZOS
+                adaptation = adapt_image_to_aspect(
+                    source,
+                    aspect=(8, 7),
+                )
+                tile = adaptation.image.resize(
+                    (512, 448), Image.Resampling.LANCZOS
                 )
         except Exception as exc:
             raise RuntimeError(
