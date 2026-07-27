@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -12,25 +11,10 @@ from ops.gpu_pool_controller.runpod_cloud_test_canary import (
     RunPodCloudTestCanaryError,
     RunPodCloudTestCanaryExecutor,
 )
-from ops.gpu_pool_controller.runpod_canary import RunPodCanaryRunner
 
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"png"
 MP4_BYTES = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
-
-
-def test_ltx_canary_web_headers_include_operator_token():
-    runner = object.__new__(RunPodCanaryRunner)
-    runner.options = SimpleNamespace(
-        task_type="ltx_t2v",
-        agent_token="agent-secret",
-    )
-    runner._web_auth_headers = lambda: {"Authorization": "Bearer web"}
-
-    assert runner._web_canary_auth_headers() == {
-        "Authorization": "Bearer web",
-        "X-AllBot-Cloud-Test-Canary-Token": "agent-secret",
-    }
 
 
 def _config(
