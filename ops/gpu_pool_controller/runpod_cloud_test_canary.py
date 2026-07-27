@@ -276,6 +276,21 @@ class RunPodCloudTestCanaryCaseBuilder:
                     "priority": 0,
                 },
             },
+            {
+                "label": "face_swap_from_i2i_pro",
+                "expected_central_task_type": "face_swap",
+                "payload": {
+                    "task_type": "face_swap",
+                    "inputs": {
+                        "images": [image_object_key, image_object_key],
+                        "target_image": image_object_key,
+                        "face_image": image_object_key,
+                    },
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            },
         ]
 
     def scail2_task_cases(self, test_input: dict[str, str]) -> list[dict[str, Any]]:
