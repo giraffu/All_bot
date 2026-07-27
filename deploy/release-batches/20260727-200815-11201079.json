@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "e7287cc8623663b599cdf4c46da0c849eaa2c7c1",
+  "batch": "20260727-200815-11201079",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-200815-11201079",
+  "members": [
+    {
+      "base_sha": "d66f3b94971f0a8ba1682627181f20a11b4b455c",
+      "branch": "codex/d-batch-release-history-and-initial-worker",
+      "head": "112010790630fc58a7ebb4cf70a250cf7b5373a4",
+      "queued_at": "2026-07-27T19:50:49.752537+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
