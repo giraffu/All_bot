@@ -2233,6 +2233,8 @@ def test_ci_plan_can_skip_runtime_env_but_deploy_cannot(tmp_path):
     manifest = tmp_path / "release.json"
     manifest.write_text(json.dumps(_manifest(head_sha)), encoding="utf-8")
     missing_env = tmp_path / "missing.env"
+    state_file = tmp_path / "current.json"
+    state_file.write_text(json.dumps({"git_sha": head_sha}), encoding="utf-8")
     common = [
         "--env",
         "test",
@@ -2244,6 +2246,8 @@ def test_ci_plan_can_skip_runtime_env_but_deploy_cannot(tmp_path):
         head_sha,
         "--env-file",
         str(missing_env),
+        "--state-file",
+        str(state_file),
         "--skip-git-checks",
         "--skip-ci-checks",
         "--skip-env-checks",
@@ -5094,6 +5098,35 @@ def test_promote_uses_the_candidate_policy_not_the_callers_checkout(monkeypatch)
 
     assert module.load_promote_policy(policy_path, FULL_SHA) == candidate_policy
     assert module.load_promote_policy(policy_path, FULL_SHA) != local_policy
+
+
+def test_release_ssh_multiplexing_is_opt_in_after_mux_transport_failure(monkeypatch):
+    module = _load_module()
+    observed = []
+    monkeypatch.delenv("ALLBOT_RELEASE_SSH_MULTIPLEXING", raising=False)
+    monkeypatch.setattr(
+        module,
+        "_main",
+        lambda _argv: observed.append(module._SSH_CONTROL_PATH) or 0,
+    )
+
+    assert module.main([]) == 0
+    assert observed == [None]
+
+
+def test_release_ssh_multiplexing_can_be_explicitly_enabled(monkeypatch):
+    module = _load_module()
+    observed = []
+    monkeypatch.setenv("ALLBOT_RELEASE_SSH_MULTIPLEXING", "true")
+    monkeypatch.setattr(
+        module,
+        "_main",
+        lambda _argv: observed.append(module._SSH_CONTROL_PATH) or 0,
+    )
+
+    assert module.main([]) == 0
+    assert len(observed) == 1
+    assert observed[0] is not None
 
 
 def test_dashboard_module_runtime_snapshot_validates_only_dashboard_services(

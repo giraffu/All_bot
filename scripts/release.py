@@ -9706,12 +9706,22 @@ def _main(argv: Sequence[str] | None = None) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one release command with process-scoped SSH connection reuse."""
+    """Run one release command with optional process-scoped SSH reuse.
+
+    Multiplexing is opt-in because a stale mux can leave otherwise healthy
+    release transactions blocked on small state reads/writes. Independent SSH
+    sessions are slower but preserve the transaction's fail-closed behavior.
+    """
 
     global _SSH_CONTROL_PATH
     global _SSH_CONTROL_HOSTS
+    multiplexing_enabled = os.getenv(
+        "ALLBOT_RELEASE_SSH_MULTIPLEXING", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
     with tempfile.TemporaryDirectory(prefix="allbot-release-ssh-") as directory:
-        _SSH_CONTROL_PATH = str(Path(directory) / "control-%C")
+        _SSH_CONTROL_PATH = (
+            str(Path(directory) / "control-%C") if multiplexing_enabled else None
+        )
         _SSH_CONTROL_HOSTS = set()
         try:
             return _main(argv)
