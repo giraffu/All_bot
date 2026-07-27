@@ -66,7 +66,8 @@ PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:20260622-ltx-test"
 )
 PUBLIC_LTX_T2V_GHCR_IMAGE = (
-    "ghcr.io/giraffu/allbot-gpu-ltx-t2v:fb080aa9400e56a627834b8c54a4fb4e76e9eb3b"
+    "ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:"
+    "83a5f8c1ccafcd146cd73545643b39b64d6d94a5a077cfdf5a0338f381c24f15"
 )
 
 
@@ -447,7 +448,7 @@ def test_runpod_canary_ltx_t2v_dry_run_preflights_disabled_profile():
     ).run()
 
     assert payload["ok"] is True
-    assert payload["render"]["imageName"].startswith(EXPECTED_LTX_T2V_IMAGE_REF_PREFIX)
+    assert payload["render"]["imageName"] == PUBLIC_LTX_T2V_GHCR_IMAGE
     assert payload["render"]["gpu_type_ids"] == list(EXPECTED_LTX_T2V_GPU_TYPE_IDS)
     assert payload["render"]["supported_task_types"] == ",".join(
         RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES
@@ -459,6 +460,25 @@ def test_runpod_canary_ltx_t2v_dry_run_preflights_disabled_profile():
         for step in payload["would_execute"]
     )
     assert provider.create_calls == 0
+
+
+def test_runpod_canary_ltx_t2v_rejects_mutable_image_tag():
+    class TaggedLtxProvider(FakeRunPodProvider):
+        def render_create_pod_request(self, **kwargs):
+            payload = super().render_create_pod_request(**kwargs)
+            payload["json"]["imageName"] = (
+                EXPECTED_LTX_T2V_IMAGE_REF_PREFIX + "mutable-tag"
+            )
+            return payload
+
+    payload = RunPodCanaryRunner(
+        TaggedLtxProvider(),
+        RunPodCanaryOptions(task_type="ltx_t2v", execute=False, quiet=True),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is False
+    assert "exact sha256 digest" in payload["error"]
 
 
 def test_runpod_canary_execute_requires_explicit_runpod_gates():
