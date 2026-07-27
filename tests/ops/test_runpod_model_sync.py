@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 
-MODULE_PATH = Path("remote_workers/scripts/runpod_sync_models_from_r2.py")
-LOCAL_SYNC_MODULE_PATH = Path("remote_workers/scripts/runpod_sync_local_models.py")
+MODULE_PATH = Path("workers/runpod_runtime/scripts/runpod_sync_models_from_r2.py")
+LOCAL_SYNC_MODULE_PATH = Path("workers/runpod_runtime/scripts/runpod_sync_local_models.py")
 
 
 def _load_module(path: Path = MODULE_PATH):

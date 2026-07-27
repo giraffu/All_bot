@@ -21,7 +21,7 @@ A-H 并行开发
 
 纯非运行时与发布工具变更不进入上述运行时发布链。classifier 将 docs/Skills/tests/治理元数据归为 `lightweight`，将 `release.py`、配置契约、CI run 校验、classifier 和自动集成协调器归为 `release-tooling`；后者只运行发布专项回归。两者均可用单独受保护 main PR，不创建 release bundle，也不部署环境。任一运行时、migration、Compose、运行配置、白名单外执行器或未知路径都会恢复完整链路。
 
-GPU controller/RunPod/LAN helper 另有 `operator` 聚焦 scope：只有全部非轻量路径均命中明确 operator allowlist 时，PR/main 才只跑 `tests/ops tests/scripts`；main 后继 modular workflow 仍创建不可变 bundle，并由 artifact planner 决定零模块（LAN 宿主 helper）或仅 `dashboard-backend`（镜像内置 controller/rollout）。它不构建 GPU artifact、不自动部署环境；`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、Dockerfile/模型基础依赖或混合业务变更仍按 `runtime` 走完整链路。
+GPU controller/RunPod/LAN helper 另有 `operator` 聚焦 scope：只有全部非轻量路径均命中明确 operator allowlist 时，PR/main 才只跑 `tests/ops tests/scripts`；main 后继 modular workflow 仍创建不可变 bundle，并由 artifact planner 决定零模块（LAN 宿主 helper）或仅 `dashboard-backend`（镜像内置 controller/rollout）。它不构建 GPU artifact、不自动部署环境；`workers/runpod_runtime/**`、`workers/runpod_profiles/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、Dockerfile/模型基础依赖或混合业务变更仍按 `runtime` 走完整链路。
 
 ## 2. 固定目录和职责
 

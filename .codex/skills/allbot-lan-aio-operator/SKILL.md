@@ -7,7 +7,7 @@ description: "本地主服务器 LAN AIO 运维操作员。管理局域网 GPU �
 
 GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `scripts/copy_canonical_image_to_lan_registry.sh` 做保 digest 复制与复核。禁止为同一 release/profile 在 LAN 现场重新 build。
 
-正式 profile 镜像已烘焙 `/opt/allbot/runtime/remote_workers`；operator 不再把仓库 `remote_workers` 打包/同步到 GPU 主机，也不得用 host bind mount 覆盖镜像内代码。
+正式 profile 镜像已烘焙 `/opt/allbot/runtime/runpod_worker`；`workers/runpod_runtime/` 只能通过不可变 GPU artifact 构建进入目标主机，operator 不得同步源码或用 host bind mount 覆盖镜像内代码。
 
 本技能用于在本地主服务器上稳定管理 LAN AIO。它只记录操作规则和事实源路由，不把频繁变化的 GPU 当前态硬编码进技能正文。
 
@@ -32,7 +32,7 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 - GPU↔LAN 当前映射、cache marker、最近验证时间以及 RunPod 当前数量都是易变运行态，只写 XDG ledger、provider/operation store 或后台观测，不写 Git，不因漂移触发代码发布。
 - 仅修改 `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` 这类宿主 helper 时，CI 使用聚焦的 `operator` scope；它不构建或部署任何 control-plane/GPU artifact，合入后仍须在获授权的单槽操作中显式使用新 helper。
 - 修改 `ops/gpu_pool_controller/**`、`scripts/gpu_pool_controller.py`、`scripts/gpu_release_rollout.py` 或 `scripts/runpod_prod_ops.sh` 时，同样只跑 operator 测试，但可信 main bundle 最多重建 `dashboard-backend`；不会因此构建、canary 或替换 GPU 镜像，也不会改动现有 Pod/LAN 容器。
-- 修改 `remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、GPU Dockerfile、模型 manifest 或真实 GPU 基础依赖时，必须恢复全量 CI、同 SHA artifact attestation，并按策略执行 canary/operator；不得借 operator scope 规避。
+- 修改 `workers/runpod_runtime/**`、`workers/runpod_profiles/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、GPU Dockerfile、模型 manifest 或真实 GPU 基础依赖时，必须恢复全量 CI、同 SHA artifact attestation，并按策略执行 canary/operator；不得借 operator scope 规避。
 
 ## 2. 固定命令
 

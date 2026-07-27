@@ -121,8 +121,9 @@ instead of the workflow that actually receives tasks. The current
 `i2i_pro_baseline` covers `i2i_pro`, `t2i-pornmaster-turbo` via
 `txt2img_from_i2i_pro.json`, and both `face_swap_v2` and legacy `face_swap` via
 `face_swap_v2.json` with the same six Flux2/Z-Image model files. The legacy
-business task remains distinct; `worker_remote_02` continues to execute
-`face_swap.json`.
+business task remains distinct for pricing and history, while every current
+LAN/RunPod execution profile maps both face-swap task types to
+`face_swap_v2.json`.
 
 LAN model cache uses the dedicated MinIO service at `192.168.1.115:9010` with
 bucket `allbot-model-cache`; do not reuse runtime `user-data-*` buckets.

@@ -57,7 +57,7 @@
 
 - **Worker Agent**：从 Central 拉取任务、准备输入、调用 ComfyUI、上传结果并回报状态的进程。
 - **ComfyUI Runtime**：实际加载模型并执行 workflow 的运行时，可以是宿主机、LAN AIO 或 RunPod 容器。
-- **workflow 事实源**：测试执行链以 `workers/comfy_agent/workflows` 为准；正式 GPU profile 使用镜像中烘焙的 `remote_workers` bundle，不允许主机源码覆盖。
+- **workflow 事实源**：测试执行链以 `workers/comfy_agent/workflows` 为准；正式 GPU profile 使用镜像中烘焙的 `workers/runpod_runtime` bundle，不允许主机源码覆盖。
 - **LAN AIO**：局域网 GPU 上的 all-in-one runtime 形态，将 ComfyUI、relay/agent 和模型同步收在受控容器链路里。
 - **LAN AIO catalog**：Git 中稳定声明可管理物理卡、端口、候选 profile、不可变产物与阻断策略的允许集合，不表示当前运行 profile。
 - **LAN AIO state ledger**：本地主 operator 保存的 last-known current/cache/验证与 operation 审计；必须与 live 和 catalog 一致，不能在 live 不可达时单独授权 mutation。

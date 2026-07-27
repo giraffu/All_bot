@@ -35,7 +35,7 @@
 | `api-cf-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` / `6d129e6e-8f4a-4003-b0bc-60565910b2b9` | 云测试 Web API `http://100.82.124.91:8001` | 2026-07-14 已从错误的正式回源修正为测试回源 |
 | `api.aivison.it.com` | Tunnel `allbot-cloud-web-api` / `07da3d9e-c610-41c8-ac71-71da8753a46e` | 云正式 Web API `http://100.107.220.127:8000` | Web API 自身鉴权，不启用 Access 登录页 |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `http://100.107.220.127:8021` | 支付回调/结果页语义，切换走 RMB 脚本 |
-| `worker-central.aivison.it.com` | Cloudflare Tunnel | 远程 worker / RunPod 专用 Central | 不启用 Access 登录页；依赖 agent secret 与 WAF/rate limit |
+| `worker-central.aivison.it.com` | Cloudflare Tunnel | RunPod 专用 Central | 不启用 Access 登录页；依赖 agent secret 与 WAF/rate limit |
 | `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 云测试 worker 专用 Central | 不启用 Access 登录页；依赖测试 agent secret |
 | `qqcc-admin-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` / `6d129e6e-8f4a-4003-b0bc-60565910b2b9` + Access app `qqcc-admin-test` / `93c6a382-dcf5-498e-b702-6a21184fb753` | 云测试 QQCC Config Frontend `http://100.82.124.91:8088` | Access policy `qqcc-test-admin` / `4d1990fd-0c4f-45eb-8f2b-eeecf2b3d717` 仅允许 `cv1347968277@gmail.com` |
 | `qqcc-admin.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28` + Access app `qqcc-admin` / `7fbb3a9a-7156-46b5-857c-1b7e5d97c7fe` | QQCC 懒人 Bot 管理后台公网入口 | Access policy `qqcc` allow `cv1347968277@gmail.com` |

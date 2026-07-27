@@ -69,7 +69,7 @@
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
 - 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot。生产按 artifact digest 与风险策略晋级：管理面默认 direct，公共 Web 可显式 direct，核心链路默认 standard、显式 emergency 才旁路；migration 与部署契约始终 standard。所有策略仍保留 main 血缘、不可变产物、配置、健康、事务与回滚门禁。
-- 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
+- 云正式执行池由本地 worker compose、LAN AIO 与 RunPod 构成。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 worker 数量当成验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 媒体只使用当前 R2/S3 URL；R2 miss 后只允许短签、空值或 `pending_result`，worker 只写 R2。
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
@@ -170,7 +170,7 @@
   - 现象：`runpod_prod_ltx_video_manual_NN` heartbeat 进入 `error` / unhealthy，或 canary/正式任务未产出有效 MP4。
   - 处理：先 `disable` 停接，确认无当前任务后优先 `down --profile ltx_video --slot NN --execute` 删除重建；恢复时重新 `up/add`、等待 disabled heartbeat、跑一单 `canary --profile ltx_video` 5s I2V MP4，确认产物后再 enable。不要把模型临时打入正在运行的 LAN LTX AIO 容器来修 RunPod；RunPod 只认 GHCR 镜像 + `allbot-model-cache/ltx_video/2026-06-10/manifest.json` + v1.2 workflow override。
 - LTX 正式 LAN AIO workflow bundle 过旧
-  - 现象：`lan_aio_prod_gpu177_gpu1_ltx_video_01` heartbeat 正常但 `remote_workers` 缺少 10Eros v1.2 workflow，或容器 env 缺少 `TASK_TYPE_WORKFLOW_OVERRIDES`。
+  - 现象：`lan_aio_prod_gpu177_gpu1_ltx_video_01` heartbeat 正常但镜像内 RunPod runtime 缺少 10Eros v1.2 workflow，或容器 env 缺少 `TASK_TYPE_WORKFLOW_OVERRIDES`。
   - 处理：在正式生成维护开启且队列为空时，只对 `gpu-177-gpu1-ltx_video` 执行 `scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-177-gpu1-ltx_video --execute`，确认 disabled heartbeat、AIO `/object_info`、v1.2 workflow 文件和模型文件后再 `enable-aio`。不要批量重启 GPU 节点，不要通过 RunPod 脚本修 LAN AIO。
 
 ## 6. 文档维护口径

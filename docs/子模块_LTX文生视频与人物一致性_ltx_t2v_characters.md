@@ -76,7 +76,7 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 - `workers/comfy_agent/workflows/LTX 2.3 Sulphur Ingredients T2V.json`；
 - `workers/comfy_agent/workflows/Character Reference Six Views.json`。
 
-`remote_workers/` 保持镜像内副本同步。两张 LTX 图均为 API-format、双阶段、
+`workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format、双阶段、
 同步音频输出；T2V 是 `1280x704` 和 `24 * seconds + 1` 帧，IC 第一版锁定
 `768x448 / 121 frames / 24fps`。候选 ComfyUI 使用 `--reserve-vram 5`。
 
@@ -87,7 +87,7 @@ baseline；只有第 2 组完整 Sulphur T2V 和第 4 组完整 Sulphur + Ingred
 
 镜像入口：
 
-- RunPod：`remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile`，发布为
+- RunPod：`workers/runpod_profiles/ltx_t2v/Dockerfile`，发布为
   `gpu-execution` 的 `allbot-gpu-ltx-t2v` 不可变 artifact；镜像必须核对 OCI
   revision、agent、两份 workflow、46 节点和 Ingredients loader/guide，并拒绝
   baked 模型权重。
@@ -98,8 +98,8 @@ baseline；只有第 2 组完整 Sulphur T2V 和第 4 组完整 Sulphur + Ingred
   结束后再次 disabled、drain 并删除。本节描述已实现的 operator 契约；真实
   RunPod 黄金路径证据须以 main 同 SHA artifact 与本机 XDG state 为准。
 
-- `remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile`；
-- `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。
+- `workers/runpod_profiles/ltx_t2v/Dockerfile`；
+- `workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。
 
 LTX 镜像固定 ComfyUI revision `7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1`
 和 ComfyUI-LTXVideo revision `aceeae9635f6d493f2893ba3c411a1c36031788a`。

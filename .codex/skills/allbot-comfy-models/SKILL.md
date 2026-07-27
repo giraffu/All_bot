@@ -52,8 +52,9 @@ manifest 和专项文档读取，不在此维护快照。
 - 多个 task type 共享 workflow 时，在 patcher 按类型注入差异，不复制 JSON。
 - 主 Bot、QQCC 和管理后台可有不同选项 catalog；私有选项不得泄漏到公开
   catalog，兼容字段只读解析，不作为新入口。
-- `workers/` 与 `remote_workers/` 的 workflow/mapping/checksum 必须保持发布
-  契约要求的一致；不要只改本地 Worker。
+- `workers/comfy_agent/` 与 `workers/runpod_runtime/` 的
+  workflow/mapping/checksum 必须保持发布契约要求的一致；不要只改测试执行
+  Worker 或正式 GPU runtime。
 
 ## 4. 修改流程
 

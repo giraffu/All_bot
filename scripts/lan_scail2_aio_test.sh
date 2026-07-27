@@ -347,7 +347,7 @@ build_image() {
   log "building ${IMAGE_REF}"
   docker build \
     "${build_args[@]}" \
-    -f "${ROOT_DIR}/remote_workers/docker/runpod_profiles/scail2/Dockerfile" \
+    -f "${ROOT_DIR}/workers/runpod_profiles/scail2/Dockerfile" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
     --label "allbot.runpod.profile=scail2" \
@@ -464,7 +464,7 @@ YAML
   ssh "$SSH_HOST" "mkdir -p '${WORKSPACE}/scail2-workflows' '${WORKSPACE}/ComfyUI/input' '${WORKSPACE}/ComfyUI/output' 2>/dev/null || docker run --rm -v '${profiles_root}:/profiles' yanwk/comfyui-boot:cu128-slim bash -lc 'mkdir -p /profiles/scail2/workspace/scail2-workflows /profiles/scail2/workspace/ComfyUI/input /profiles/scail2/workspace/ComfyUI/output && chown -R $(id -u):$(id -g) /profiles/scail2'"
   scp "${tmp}/docker-compose.yml" "${SSH_HOST}:${REMOTE_DIR}/docker-compose.yml" >/dev/null
   scp "${tmp}/.env" "${SSH_HOST}:${REMOTE_DIR}/.env" >/dev/null
-  (cd "${ROOT_DIR}/remote_workers/comfy_agent/workflows" && tar -cf - SCAIL-2_*.json) | \
+  (cd "${ROOT_DIR}/workers/runpod_runtime/comfy_agent/workflows" && tar -cf - SCAIL-2_*.json) | \
     ssh "$SSH_HOST" "tar -C '${WORKSPACE}/scail2-workflows' -xf -"
   rm -rf "$tmp"
 }

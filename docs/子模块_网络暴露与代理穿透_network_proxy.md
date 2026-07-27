@@ -11,8 +11,8 @@ AllBot 的 Web 静态站统一由 Cloudflare Pages 承载，API、支付、Worke
 | `api.aivison.it.com` | Cloudflare Tunnel | 云正式 Web API `100.107.220.127:8000` |
 | `api-cf-test.aivison.it.com` | Cloudflare Tunnel | 云测试 Web API `100.82.124.91:8001` |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `100.107.220.127:8021` |
-| `worker-central.aivison.it.com` | Cloudflare Tunnel | 正式远程 Worker Central |
-| `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 测试远程 Worker Central |
+| `worker-central.aivison.it.com` | Cloudflare Tunnel | 正式 RunPod Central |
+| `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 测试 RunPod Central |
 | `qqcc-admin.aivison.it.com` | Tunnel + Access | 正式 QQCC 管理后台 |
 | `qqcc-admin-test.aivison.it.com` | Tunnel + Access | 测试 QQCC 管理后台 |
 | `private-bot.aivison.it.com` | Cloudflare Tunnel | 私有 Bot owner WebApp |

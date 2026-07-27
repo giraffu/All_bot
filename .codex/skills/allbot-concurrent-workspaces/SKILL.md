@@ -65,7 +65,7 @@ python scripts/manage_ai_workspaces.py batch-plan \
 - 任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会 fail closed 为 `runtime`，恢复完整 CI、main bundle 与按需测试链路；
 - 轻量路径仍要求本任务运行与改动相称的 focused tests 或文档检查，且不放宽 main 禁止 direct push/force-push。
 
-GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `ops/gpu_pool_controller/**` 或明确列出的 RunPod/LAN helper allowlist 时，分类为 `operator`：PR/main 只跑 `tests/ops tests/scripts`，但 main 后继 modular workflow 仍创建 bundle。LAN 宿主 helper 没有运行 artifact；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。它不授权共享环境或 GPU mutation，也不放宽真实 `remote_workers/**`、GPU artifact/profile/Dockerfile/模型依赖的完整 CI、attestation/canary 门禁。
+GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `ops/gpu_pool_controller/**` 或明确列出的 RunPod/LAN helper allowlist 时，分类为 `operator`：PR/main 只跑 `tests/ops tests/scripts`，但 main 后继 modular workflow 仍创建 bundle。LAN 宿主 helper 没有运行 artifact；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。它不授权共享环境或 GPU mutation，也不放宽真实 `workers/runpod_runtime/**`、`workers/runpod_profiles/**`、GPU artifact/profile/Dockerfile/模型依赖的完整 CI、attestation/canary 门禁。
 
 ## 4. 测试环境与正式发布
 

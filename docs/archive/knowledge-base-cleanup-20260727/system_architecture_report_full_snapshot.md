@@ -126,7 +126,6 @@ graph TD
 - **核心领域与调度**
   - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。
   - 真实默认装配已下沉到 provider/dependencies、submission、web-monitor、runtime 等子模块。
-  - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，生产算力由本地 worker compose、LAN AIO agent、`remote_workers` 与手动 RunPod 备用池按当次运维目标共同接入。判断当前容量必须以 Central `/system/workers` 的实时快照为准，不再写死为“本地 7 个 worker”。
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
   - 后端运行时数据库明确以 PostgreSQL 为唯一支持方言；schema、Alembic migration、seed SQL 和 shadow 同步脚本允许使用 PostgreSQL 专有能力，详见 `docs/adr/0001-postgresql-only-runtime.md`。
@@ -134,10 +133,8 @@ graph TD
 
 ### 1.3 云正式生产口径
 
-2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / LAN AIO / remote_workers / 手动 RunPod 备用池”：
 
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务。2026-07-12 已执行 QQCC 私有 Bot migration 并显式启动 `cloud-qqcc-private-bot-worker-prod`（`qqcc-private-bots` profile），生产 webhook 复用 `api.aivison.it.com`，owner WebApp 使用公开 `private-bot.aivison.it.com`；后续默认 compose 操作仍须显式保留该 profile。
-- `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
 - `web.aivison.it.com` 由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API，`rmb.aivison.it.com` 回源云 Payment API。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
@@ -289,9 +286,7 @@ sequenceDiagram
 
 - 2026-06-27 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md`、`/docs` 与 `docs/knowledge_base_audit_matrix.md` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
-- RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 核心三路由 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及云正式手动备用 worker。`prod-worker --profile i2i_pro` 声明 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`；两个 face swap 类型都执行 `face_swap_v2.json`，旧 `worker_remote_02` 仍执行 V1。`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式 RunPod 新增/暂停/删除入口和 autoscaler；autoscaler 通过现有 operation store、Redis leader lease、profile 清空阈值、静态 task duration、预计清空时间和 RunPod 门禁调用 `add` / `down`，不直接操作本地 worker，也不代表线上固定常驻容量。
 - `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
-- 2026-07-11 全仓静态复核：Alembic 单 head 为 `2d8b6f1a9c03`；`pytest --collect-only -q` 收集 2240 个测试；Ruff 零告警；文档结构检查通过。Radon 扫描 5335 个 Python block，平均圈复杂度 3.49，其中 41 个 block 复杂度不低于 21；Symilar 对非测试 Python 的 8 行窗口估计重复率为 4.45%，主要来自 `workers/` 与 `remote_workers/` 双 bundle；未确认高置信死代码。
 - 当前主要风险集中在长期维护成本：`local_analytics_platform/app/prompt_vectors.py::_refresh_prompt_token_stats_unindexed`、`src/services/qqcc_draw_chain_service.py::execute_qqcc_draw_scene_chain`、本地分析 prompt 大路由、Dashboard RunPod 自动扩缩服务、双 worker bundle 漂移，以及 core 基础设施依赖尚未完全移出。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。

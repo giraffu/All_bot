@@ -67,7 +67,7 @@
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
 - 公开媒体与新生成对象统一使用 Cloudflare R2 `user-data-prod`；本地 MinIO 只保存离线历史数据和 R2 shadow，不参与线上读取。
 - 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、R2 纯镜像 MinIO `user-data-prod-shadow`、完整合并桶 `user-data-complete-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由云机执行并经 R2 临时前缀中转回本地。该副本用于灾备预热和只读分析，不会自动接管线上写入口。
-- 本地 7 张 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
+- 本地 GPU 和 ComfyUI 不迁移；本地 worker compose、LAN AIO 与 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
 ### 2.2 云测试控制面 Droplet
@@ -106,7 +106,7 @@
 | 云 Droplet CPU/内存 | `nproc=8`，内存约 15GiB，available 约 10GiB | 控制面 CPU/RAM 未打满 |
 | 云 Droplet 磁盘 | 309G 总量，约 125G 已用，185G 可用 | 使用率约 41%，仍有余量 |
 | 云控制面容器 | Central/Web/Payment/Dashboard/QQCC Config/imgproxy/Bot 均 `Up` 且关键服务健康；`visible-hotset-input-backfill-cloud` 为一次性补齐任务容器 | 控制面主服务正常，临时任务不写成长期常驻服务 |
-| Central 队列 | `queue_size=49`，`active_workers=13`，`healthy_workers=13`，`error_workers=0`，`quarantined_workers=0` | 容量由本地 worker、LAN AIO、remote workers 与手动 RunPod 混合构成，不按固定 7 个判断 |
+| Central 队列 | 读取 `/system/status` 与 `/system/workers` | 容量由本地 worker、LAN AIO 与 RunPod 构成，不按固定数量判断 |
 | 队列类型分布 | `img2img=19`、`img2img_lora=15`、`face_swap=8`、`scail2_video_replacement=2`、`t2i-pornmaster-turbo=2`、`face_video=1`、`i2i_pro=1`、`wan22_video_v2=1` | 排队主要受任务类型和对应 worker 数影响 |
 | 托管 PostgreSQL 连接池预算 | 可用连接按 `100 - 3 reserved = 97` 估算；本轮配置目标峰值约 `73` | 保留约 24 条给迁移、排障、后台任务和抖动 |
 | 托管 Valkey/Redis | used_memory 约 61.95MB，connected_clients 约 91，blocked/rejected/evicted 均为 0 | 暂未见 Redis 打满 |
@@ -147,7 +147,7 @@
 - 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
 - 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod`
 - 本地正式 worker compose：`cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`；这是本地 compose 声明，不等于每个容器都必须长期运行
-- 正式弹性/灰度算力：LAN AIO agent、`remote_workers` 与手动 RunPod worker 可按运维目标接入 Central；2026-06-18 快照中 Central 看到 13 个 healthy active workers
+- 正式弹性/灰度算力：LAN AIO agent 与 RunPod worker 可按运维目标接入 Central
 - 本地 legacy 与 shadow 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback；`bot_db_prod_shadow`、`user-data-prod-shadow`、`user-data-complete-shadow` 是云正式每日 shadow/备份副本，不应继续作为正式写入事实源，除非进入本地正式灾备并人工停同步、确认 RPO 后切写入口
 
 测试/辅助服务类型：
@@ -318,14 +318,14 @@ MinIO 是主服务器历史数据占用大户之一。规划清理时应先确�
 5. Dashboard stats/外部接口熔断与托管 Valkey/PostgreSQL 连接池压力。
 6. ComfyUI 本地 `input/output/temp` 会继续随视频任务快速增长，若缺少定期巡检，远端 GPU 节点仍可能再次磁盘吃紧。
 
-当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份；GPU 侧优先按任务类型增减 LAN AIO / RunPod / remote worker，而不是默认全量替换本地 7 张物理 GPU。
+当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份；GPU 侧优先按任务类型增减 LAN AIO / RunPod，而不是默认全量替换本地物理 GPU。
 
 推荐容量策略：
 
 - 控制面云化：Bot/Web/Payment/Central/Dashboard 已迁到云 VM，后续重点是规格升级、拆分 Dashboard 或引入第二控制面节点。
 - 数据面分层：Postgres/Valkey 已采用云侧口径；R2 承接公开媒体分发和新对象写入。
 - 本地 shadow 副本：每日同步只用于灾备预热和只读分析，不改变正式服务事实源；灾备写入前必须停 shadow timer 并确认 manifest/RPO。
-- 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，本地 worker/relay、LAN AIO 与远程 worker 通过 Central worker 协议接入。
+- 本地 GPU 保留：本地 worker、LAN AIO 与 RunPod 通过 Central worker 协议接入。
 - 云 GPU 弹性：手动 RunPod 只在队列积压或单类任务爆发时临时拉起，不建议 24/7 常驻替代本地 GPU；具体 profile/slot 数只进入运维日志，不写成长期容量事实。
 - MinIO 生命周期：生产热结果保留有限天数，长期公开访问走 R2，定期清理测试桶和临时桶。
 - Web 体验优化：优先减少首屏/结果页串行 API 等待，R2 result 探测失败时快速返回 `pending_result` 或缓存快照，降低用户端 499。
