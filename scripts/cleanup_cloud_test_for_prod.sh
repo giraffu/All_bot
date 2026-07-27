@@ -617,7 +617,7 @@ echo "Local production containers still running:"
 print_production_local_status
 
 if [ "$EXECUTE" = "true" ]; then
-    log "Cloud test runtime retired. R2 user-data-test and web-test edge static site were left untouched."
+    log "Cloud test runtime retired. R2 user-data-test was left untouched."
 else
     log "Dry-run complete. Re-run with --execute to retire cloud test runtime."
 fi

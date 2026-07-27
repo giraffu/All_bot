@@ -127,7 +127,7 @@
 延迟拆分基线：
 
 - 云机内部访问 `100.107.220.127:8000/8003/8043/8045` 通常为 5-40ms。
-- Web 边缘 VPS 到云 Web API 约 0.51-0.55s；该基线主要用于 `assets`/回滚/`web-test` 排障，不代表当前正式 Pages 主路径。
+- Web 公网时延应按 Cloudflare Pages、Tunnel/API 与 R2 媒体链路分别测量；已退役节点的旧延迟基线不再作为当前排障依据。
 - 本地主服务器经公网访问 `api.aivison.it.com` API 约 0.3-0.7s；旧 `web.aivison.it.com/api` 不再作为 API 健康检查入口。
 - 本地主服务器到云 Central Tailscale 约 0.7-2.1s。
 

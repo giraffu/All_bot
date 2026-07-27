@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -9,11 +10,12 @@ ARCHIVE_PREFIX = "docs/archive/"
 THIS_FILE = Path(__file__).resolve()
 
 RETIRED_MARKERS = (
-    "web-test" + ".aivison.it.com",
-    "assets" + ".aivison.it.com",
-    "154.17" + ".30.113",
-    "100.88" + ".57.122",
-    "LEGACY_" + "MINIO_",
+    re.compile(r"\bweb-" + r"test\b", re.IGNORECASE),
+    re.compile(r"\bWEB" + r"VPS\b", re.IGNORECASE),
+    re.compile(re.escape("assets" + ".aivison.it.com"), re.IGNORECASE),
+    re.compile(re.escape("154.17" + ".30.113")),
+    re.compile(re.escape("100.88" + ".57.122")),
+    re.compile(r"\bLEGACY_" + r"MINIO_", re.IGNORECASE),
 )
 
 RETIRED_FILES = (
@@ -23,6 +25,7 @@ RETIRED_FILES = (
     "frontend/.env.edge-test",
     "frontend/scripts/deploy-edge-prod.sh",
     "frontend/scripts/deploy-edge-test.sh",
+    "safe_deploy_test.sh",
 )
 
 
@@ -57,6 +60,6 @@ def test_active_repository_has_no_retired_web_vps_contracts() -> None:
         except UnicodeDecodeError:
             continue
         for marker in RETIRED_MARKERS:
-            if marker in content:
-                matches.append(f"{path.relative_to(ROOT)}: {marker}")
+            if marker.search(content):
+                matches.append(f"{path.relative_to(ROOT)}: {marker.pattern}")
     assert matches == []

@@ -520,4 +520,4 @@ docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker
 ssh allbot-do-sgp1-test-control 'cd /home/deploy/APP/All_bot && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile bot stop bot-test && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile qqcc-bot stop qqcc-bot-test'
 ```
 
-旧本地测试 compose 和 `safe_deploy_test.sh` 仅作为历史迁移/人工取证材料保留。若必须短时启动，应另起临时排障计划，确认不会抢占测试 token、GPU、Redis 队列、对象桶或边缘 `web-test` 入口，结束后立即停止并保留数据。
+旧本地测试部署入口已删除，不得恢复为共享测试环境或人工回退路径；历史迁移证据仅保存在 `docs/archive/`。
