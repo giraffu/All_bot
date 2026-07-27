@@ -55,7 +55,7 @@ def test_failed_batch_blocks_later_work_until_operator_requeues_it(tmp_path):
     queue = module.IntegrationQueue(tmp_path / "queue")
     queue.enqueue(_handoff("A", "first", queued_at="2026-07-22T01:00:00+00:00"))
     batch = queue.freeze_pending()
-    queue.update_batch(batch, stage="waiting-main-ci", main_sha="b" * 40)
+    queue.update_batch(batch, stage="deploying-test", main_sha="b" * 40)
     queue.fail_batch(batch, "CI failed")
     queue.enqueue(_handoff("B", "second", queued_at="2026-07-22T02:00:00+00:00"))
 
@@ -68,11 +68,66 @@ def test_failed_batch_blocks_later_work_until_operator_requeues_it(tmp_path):
 
     retried = queue.retry_batch(batch["batch"])
     assert retried["status"] == "running"
-    assert retried["stage"] == "waiting-main-ci"
+    assert retried["stage"] == "deploying-test"
     assert retried["main_sha"] == "b" * 40
     assert "error" not in retried
     assert Path(retried["path"]).parent.name == "running"
     assert not list((tmp_path / "queue" / "failed").glob("*.json"))
+
+
+def test_main_ci_retry_absorbs_pending_forward_fix_into_new_pr_attempt(tmp_path):
+    module = _load_module()
+    queue = module.IntegrationQueue(tmp_path / "queue")
+    original = _handoff("A", "first", queued_at="2026-07-22T01:00:00+00:00")
+    forward_fix = _handoff("B", "fix", queued_at="2026-07-22T02:00:00+00:00")
+    queue.enqueue(original)
+    batch = queue.freeze_pending()
+    queue.update_batch(
+        batch,
+        stage="waiting-main-ci",
+        branch="codex/release-batch-original",
+        pr_url="https://github.com/giraffu/All_bot/pull/1",
+        batch_head="b" * 40,
+        main_sha="c" * 40,
+        scope="runtime",
+    )
+    queue.fail_batch(
+        batch,
+        "modular-release-v2.yml failed for " + ("c" * 40),
+    )
+    queue.enqueue(forward_fix)
+
+    retried = queue.retry_batch(batch["batch"])
+
+    assert retried["stage"] == "queued"
+    assert [member["head"] for member in retried["members"]] == [
+        original["head"],
+        forward_fix["head"],
+    ]
+    assert retried["branch"].endswith(f"-retry-{forward_fix['head'][:8]}")
+    for field in ("pr_url", "batch_head", "main_sha", "scope"):
+        assert field not in retried
+    assert not list(queue.pending.glob("*.json"))
+
+
+def test_test_deploy_retry_does_not_absorb_pending_handoff(tmp_path):
+    module = _load_module()
+    queue = module.IntegrationQueue(tmp_path / "queue")
+    original = _handoff("A", "first", queued_at="2026-07-22T01:00:00+00:00")
+    pending = _handoff("B", "later", queued_at="2026-07-22T02:00:00+00:00")
+    queue.enqueue(original)
+    batch = queue.freeze_pending()
+    queue.update_batch(batch, stage="deploying-test", main_sha="c" * 40)
+    queue.fail_batch(batch, "test deployment failed")
+    queue.enqueue(pending)
+
+    retried = queue.retry_batch(batch["batch"])
+
+    assert retried["stage"] == "deploying-test"
+    assert [member["head"] for member in retried["members"]] == [
+        original["head"]
+    ]
+    assert (queue.pending / f"{pending['head']}.json").is_file()
 
 
 def test_queued_batch_retry_resets_automation_owned_local_branch(tmp_path):
