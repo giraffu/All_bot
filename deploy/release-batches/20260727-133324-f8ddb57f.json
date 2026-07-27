@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "38d4c9b2563d2308cb1187cf7e6d8eda47617571",
+  "batch": "20260727-133324-f8ddb57f",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-133324-f8ddb57f",
+  "members": [
+    {
+      "base_sha": "38d4c9b2563d2308cb1187cf7e6d8eda47617571",
+      "branch": "codex/b-runpod-i2i-pro-face-swap-v2",
+      "head": "f8ddb57f62fff4ac765773ad285bca1b04003baa",
+      "queued_at": "2026-07-27T13:32:19.851624+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
