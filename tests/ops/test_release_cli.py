@@ -442,7 +442,7 @@ def test_gpu_runtime_change_blocks_the_normal_release_path():
 
     impact = module.plan_changed_paths(
         policy,
-        ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+        ["workers/runpod_runtime/comfy_agent/workflow_task_patchers.py"],
     )
 
     assert impact.blockers == {"gpu-runtime-release-required"}
@@ -560,7 +560,7 @@ def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     monkeypatch.setattr(
         module,
         "git_changed_paths",
-        lambda *_args: ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+        lambda *_args: ["workers/runpod_runtime/comfy_agent/workflow_task_patchers.py"],
     )
     monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
     monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: manifest)
@@ -1101,7 +1101,7 @@ def test_qqcc_control_plane_policy_limits_release_to_qqcc_runtime_closure():
     [
         "frontend/src/App.vue",
         "workers/comfy_agent/workflows/mappings.json",
-        "remote_workers/comfy_agent/workflows/mappings.json",
+        "workers/runpod_runtime/comfy_agent/workflows/mappings.json",
         "scripts/test_train_release.py",
     ],
 )
@@ -1135,7 +1135,7 @@ def test_qqcc_test_reconcile_policy_ignores_only_audited_test_train_drift():
             "src/services/qqcc_config_service.py",
             "AGENTS.md",
             "frontend/src/features/generation/labModeConfig.ts",
-            "remote_workers/comfy_agent/workflows/mappings.json",
+            "workers/runpod_runtime/comfy_agent/workflows/mappings.json",
             "scripts/release.py",
             "scripts/test_train_release.py",
             "src/quota.py",

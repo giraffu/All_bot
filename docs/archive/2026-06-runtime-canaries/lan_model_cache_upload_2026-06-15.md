@@ -98,7 +98,6 @@ Central worker. The runtime container provides ComfyUI; the test worker
 
 - Workflow source: `https://comfyui.nomadoor.net/en/basic-workflows/scail-2/`
 - Workflow files staged under both `workers/comfy_agent/workflows/` and
-  `remote_workers/comfy_agent/workflows/`:
   - `SCAIL-2_Animation.json`
   - `SCAIL-2_Replacement.json`
   - `SCAIL-2_Animation_multi-char.json`
@@ -131,7 +130,6 @@ Verification performed:
 - Updated the LoRA `relative_path` to the workflow dropdown path
   `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
   while reusing the existing sha256 object.
-- Validated worker workflow mappings for both local and remote worker workflow
   directories, including the two SCAIL-2 API workflows.
 - LAN AIO runtime helper: `scripts/lan_scail2_aio_test.sh`; container
   `allbot-lan-aio-gpu-002-gpu0-scail2-test` uses the same LAN manifest, exposes

@@ -264,8 +264,8 @@ assert_prod_compose() {
     echo "Refusing compose containing cloud-test/user-data-test" >&2
     exit 2
   fi
-  if grep -q "host_mount_current_bundle\\|/remote_workers:" "$file"; then
-    echo "Refusing production compose with host-mounted remote_workers" >&2
+  if grep -q "host_mount_current_bundle\\|:/opt/allbot/runtime/runpod_worker" "$file"; then
+    echo "Refusing production compose with a host-mounted RunPod worker runtime" >&2
     exit 2
   fi
 }
@@ -676,7 +676,7 @@ run_start_heartbeat() {
   slot_config "$SLOT"
   if [ "$MODE" != "execute" ]; then
     echo "[dry-run] Would render prod compose and copy it to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
-    echo "[dry-run] Would use the remote_workers revision baked into the profile image"
+    echo "[dry-run] Would use the RunPod worker runtime baked into the profile image"
     echo "[dry-run] Would generate a redacted runtime env file from ${PROD_ENV_FILE}, ${MODEL_ENV_FILE}, ${AIO_ENV_FILE}"
     control_agent "$TEMP_AGENT_ID" "disabled" "lan_aio_prod_heartbeat_only" "$CONTROL_TTL"
     echo "[dry-run] Would run docker compose up -d for ${CONTAINER_NAME}"

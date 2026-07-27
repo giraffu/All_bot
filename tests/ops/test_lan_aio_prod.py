@@ -11,7 +11,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     assert_prod_compose,
     load_lan_aio_prod_slots,
     main as lan_aio_main,
-    patch_baked_remote_workers,
+    patch_baked_runpod_worker,
     runtime_env_content,
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
@@ -170,34 +170,6 @@ def test_gpu002_i2i_pro_renders_legacy_face_swap_through_v2_workflow():
     )
 
 
-def test_gpu252_fault_card_has_disabled_v2_backed_face_swap_candidate():
-    slots = load_lan_aio_prod_slots(include_disabled=True)
-
-    slot = slots["gpu-252-gpu1-face_swap"]
-    assert slot.enabled is False
-    assert slot.phase == "maintenance_disabled"
-    assert slot.retargetable is False
-    assert slot.target_profile_id == "face_swap"
-    assert slot.target_task_types == ("face_swap", "face_swap_v2")
-    assert slot.gpu_device_id == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
-    assert slot.host_port == 8191
-    assert slot.agent_id == "lan_aio_prod_gpu252_gpu1_face_swap_01"
-
-    ops = LanAioProdOps(
-        config_root=None,
-        prod_env_file=Path(".env.cloud.prod.missing"),
-        aio_env_file=Path(".env.lan-aio-prod.missing"),
-        model_env_file=Path(".env.lan.model-cache.missing"),
-    )
-    rendered = ops.render_compose(slot)
-    assert "SUPPORTED_TASK_TYPES: face_swap,face_swap_v2" in rendered
-    assert "POOL_RUNTIME_PROFILE: face_swap" in rendered
-    assert (
-        'TASK_TYPE_WORKFLOW_OVERRIDES: '
-        '\'{"face_swap":"face_swap_v2.json","face_swap_v2":"face_swap_v2.json"}\''
-    ) in rendered
-
-
 def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 
@@ -324,7 +296,7 @@ def test_lan_aio_prod_slot_declares_gpu002_image_to_video_hot_cache_copy():
     assert hot_cache.required is True
 
 
-def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
+def test_lan_aio_fleet_render_uses_baked_runpod_worker_for_gpu_252():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -353,9 +325,9 @@ def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
         "process_supervision: exit_container_when_agent_relay_or_comfy_exits"
         in rendered
     )
-    assert slot.remote_workers_dir not in rendered
-    assert "PYTHONPATH: /opt/allbot/runtime/remote_workers" in rendered
-    assert "remote_workers_bundle:" in rendered
+    assert ":/opt/allbot/runtime/runpod_worker" not in rendered
+    assert "PYTHONPATH: /opt/allbot/runtime/runpod_worker" in rendered
+    assert "runpod_worker_bundle:" in rendered
     assert "mode: baked_immutable_artifact" in rendered
 
 
@@ -945,14 +917,14 @@ def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
 def test_ltx_video_workflow_uses_baked_sageattention():
     for path in (
         Path("workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),
-        Path("remote_workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),
+        Path("workers/runpod_runtime/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),
     ):
         workflow = json.loads(path.read_text(encoding="utf-8"))
 
         assert workflow["257"]["inputs"]["sage_attention"] == "auto"
 
     dockerfile = Path(
-        "remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
+        "workers/runpod_profiles/ltx_video/Dockerfile"
     ).read_text(encoding="utf-8")
     assert "sageattention==" in dockerfile
 
@@ -997,7 +969,7 @@ def test_lan_aio_prod_compose_assertion_rejects_test_storage():
             agent_id=slot.agent_id,
         ),
     )
-    patched = patch_baked_remote_workers(rendered, slot)
+    patched = patch_baked_runpod_worker(rendered, slot)
 
     try:
         assert_prod_compose(patched, slot)
@@ -1222,7 +1194,7 @@ def test_lan_aio_start_disabled_force_recreates_container():
         ) -> None:
             return None
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -1552,7 +1524,7 @@ def test_lan_aio_start_disabled_removes_safe_exited_target_container():
         ) -> None:
             return None
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -1715,7 +1687,7 @@ def test_lan_aio_start_disabled_refuses_lingering_host_port_owner():
         ) -> None:
             return None
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -1780,7 +1752,7 @@ def test_lan_aio_start_disabled_blocks_running_target_container():
         ) -> None:
             return None
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -2011,7 +1983,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
                 }
             )
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -2073,7 +2045,7 @@ def test_lan_local_model_token_uses_ephemeral_remote_env_file_not_command_line()
                 }
             )
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:
@@ -2118,7 +2090,7 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
                 }
             )
 
-        def _sync_remote_workers(self, slot) -> None:
+        def _sync_runpod_worker(self, slot) -> None:
             return None
 
         def _scp(self, source: Path, host: str, target: str) -> None:

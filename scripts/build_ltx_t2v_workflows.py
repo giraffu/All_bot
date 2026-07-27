@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / "workers/comfy_agent/workflows"
-REMOTE = ROOT / "remote_workers/comfy_agent/workflows"
+REMOTE = ROOT / "workers/runpod_runtime/comfy_agent/workflows"
 VALIDATION = ROOT / "ops/gpu_pool_controller/validation_workflows/ltx_t2v"
 
 T2V_NAME = "LTX 2.3 Sulphur T2V.json"

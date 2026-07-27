@@ -53,10 +53,10 @@ def test_ltx_t2v_manifest_matches_download_script_and_uses_gated_token():
 
 def test_ltx_t2v_dockerfiles_keep_weights_external_and_pin_runtime():
     ltx = (
-        ROOT / "remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile"
+        ROOT / "workers/runpod_profiles/ltx_t2v/Dockerfile"
     ).read_text()
     pornmaster = (
-        ROOT / "remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
+        ROOT / "workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
     ).read_text()
 
     assert "7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in ltx

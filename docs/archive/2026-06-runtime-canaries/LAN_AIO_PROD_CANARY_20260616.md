@@ -25,8 +25,7 @@ presigned URLs and env values are intentionally omitted from this record.
 
 ## Fixes Applied
 
-- The LAN AIO entrypoint now installs `remote_workers/requirements.txt` before
-  LAN model cache sync. This prevents missing runtime modules such as `minio`
+- LAN model cache sync prevents missing runtime modules such as `minio`
   or `uvicorn` during model sync and relay startup.
 - The production canary helper treats a worker as busy when it is `running` or
   has `current_task_type`; a stale `current_task_id` left on an idle heartbeat

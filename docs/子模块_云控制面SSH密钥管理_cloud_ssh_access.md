@@ -155,7 +155,7 @@ DigitalOcean Basic Regular `$96/mo` Droplet 的页面规格为 `8 vCPU / 16GB RA
 - Postgres 使用托管数据库或外部数据库，不在这台 Droplet 上长期自托管生产库。
 - Redis/Valkey 使用托管服务或外部 Redis，不在这台 Droplet 上承载完整生产 Redis。
 - MinIO 不迁到这台 Droplet；公开媒体走 Cloudflare R2，本地 MinIO 只作为武汉热缓存。
-- 本地 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前容量必须以 `/system/workers` 为准，不写死为 7 个本地 worker。
+- 本地 GPU 和 ComfyUI 不迁移；本地 worker compose、LAN AIO 与 RunPod 都通过 Central worker 协议接入。当前容量必须以 `/system/workers` 为准，不写死为固定数量。
 - `web-api`、Dashboard backend、imgproxy 的 worker/concurrency 需要按 8 vCPU 与 PostgreSQL 连接池预算控制，不照搬主服务器的宽松配置。
 - 云端运行目录为 `/home/deploy/APP/All_bot`；日常热修应先备份被覆盖文件，不能假设远端目录一定是完整 Git 工作区。
 

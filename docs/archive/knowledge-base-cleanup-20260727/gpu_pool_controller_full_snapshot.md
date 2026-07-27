@@ -2,7 +2,6 @@
 
 > 2026-07-25：为 gpu-252 故障卡准备了独立 `face_swap` profile、GPU artifact `allbot-gpu-face-swap` 和模型前缀 `face_swap_v2/2026-07-25`。该执行池声明 `face_swap,face_swap_v2`，两个任务都固定执行 `face_swap_v2.json`。模型清单为 3 文件、`18,079,673,146` bytes（约 16.84 GiB）。gpu-252 候选固定故障卡 UUID 与端口 8191，保持 `maintenance_disabled`、不可 retarget；本次未构建/推送镜像、未上传模型或启用运行态。
 >
-> 2026-07-18 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。main 的 GPU 输入变化必须先发布同 SHA 完整 OCI profile manifest，LAN registry 只允许保 digest 复制，不得现场重建。
 
 ## 1. 目标与范围
 
@@ -41,7 +40,6 @@
 - RunPod 手动正式备用池日常入口：`scripts/runpod_prod_ops.sh`
 - GPU release digest/证据解析：`scripts/gpu_release_rollout.py`
 - RunPod split video manifest：`ops/gpu_pool_controller/runpod_video_manifests.py`
-- RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`
 
 默认边界：
 
@@ -58,7 +56,6 @@
 | RunPod 当前/期望数量、Pod 生命周期 | Dashboard operation store、provider API、Central heartbeat | 不产生 Git 变更 | 无 | 每次 mutation 使用既有运行时授权门禁 |
 | LAN 主机 helper/candidate 工具 | `scripts/lan_aio_*.py`、`scripts/lan_aio_*.sh`、`scripts/lan_*_aio_*.sh` | `operator`：仅 `tests/ops tests/scripts` | 无运行 artifact | 无镜像 attestation/canary；实际操作仍需单槽授权 |
 | Dashboard 内置 GPU controller/rollout | `ops/gpu_pool_controller/**`、精确 controller/rollout 脚本 | `operator`：仅 `tests/ops tests/scripts` | 最多 `dashboard-backend` | 不构建、不替换 GPU runtime |
-| Worker/workflow、GPU release artifact/profile、Dockerfile、模型 manifest 或基础依赖 | `remote_workers/**`、`deploy/release-artifacts-v2.json` 与真实 GPU 构建输入 | 完整 CI | 受影响 GPU artifact | 保留同 SHA attestation、canary 和专用 operator |
 
 `operator` scope 只有在全部非轻量路径都属于明确 operator allowlist 时成立；与业务 runtime、migration、Compose、运行配置或未知路径混合会恢复完整 CI。模块化 workflow 仍会为 operator main SHA 创建 bundle，但 artifact planner 只重建真实输入命中的模块：LAN 主机 helper 全部复用，控制器代码只重建 Dashboard Backend。运行态漂移不应通过编辑 catalog“对齐”，否则既丢失现实仲裁，也会制造无意义发布。
 
@@ -157,8 +154,6 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:v2-47c1219f-i2ipro` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro`，两端 manifest digest 均为 `sha256:a56620158da13c561e077511ebd310eb93de8821218da92c908df63f040b6495`；它是新候选/后续单槽切换的 profile catalog 默认值，不自动重启仍运行旧 digest 的槽位。
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`
-- `remote_workers/docker/runpod_profiles/scail2/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`
-- `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile` 仅继续服务 `pornmaster_flux2_edit_bf16`；旧 FP8 profile、模型 bundle 和专用运维脚本已经退役，不能再创建新 worker。
 
 注意：旧 `20260613-wan22aio-lanbase-ab9b7ea` Wan22 镜像不能被假定已 baked `rife49.pth`，只应作为回滚/热缓存场景。当前稳定新 tag `20260619-wan22aio-rife-bcf3ebd` 已 baked `rife49.pth`、`runpod_bootstrap_from_git.sh`，并通过构建 smoke 检查 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径。
 
@@ -235,13 +230,6 @@ scripts/lan_runpod_aio_prod_canary.sh --action restore --slot slot0 --dry-run
 ```
 
 生产灰度只允许 `gpu-002` 两个固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`，profile `img2img_lora`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`，profile `image_to_video`。生产执行必须先将目标 legacy worker 置为 `draining` 并等待当前任务自然完成；不要用强制重启代替 drain。生产 helper 会拒绝 test Central URL，并在启动前校验 compose 不含 `cloud-test` / `user-data-test`。slot1 `start-heartbeat --execute` 会从 gpu-002 宿主机旧 `inst1` 缓存预置 `rife49.pth` 到 AIO 内两个 RIFE 查找路径；缺失该热缓存时应停止放量，不让 FL_RIFE 后处理回退到 HuggingFace。
-
-`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，必须停止灰度并从新 release index 选择重建后的 digest；生产禁止挂载宿主机源码修补。
-
-旧 helper 的 repo `remote_workers` 同步/host mount 方式已废止。正式 LAN AIO compose 固定使用镜像内 `/opt/allbot/runtime/remote_workers`；模型仍由镜像内同步脚本按 manifest 写入 workspace。若 baked revision 不满足 release attestation，必须重建 canonical image，禁止用主机文件覆盖修补。
-
-GPU profile Dockerfile 在复制 `remote_workers` 后必须设置 `PYTHONPATH=/opt/allbot/runtime/remote_workers` 并真实导入 `comfy_agent.workflow_task_patchers`，把 remote compatibility module 缺符号等闭包漂移提前阻断在镜像构建阶段。仓库根目录测试能导入主 `src`、或镜像中相关文件存在，都不能替代这个 baked bundle import smoke。
-
 Central 可能在 worker 已回到 `idle` 后保留上一单的 `current_task_id`。生产 helper 的等待空闲逻辑以 `status == running` 或存在 `current_task_type` 作为忙碌信号；单独的陈旧 `current_task_id` 不应阻断 drain/restore 后续步骤。
 
 gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --execute`，再 `wait-idle --slot both --execute`，确认 legacy worker 与原 `8188/8189` 队列自然清空后，分别对 slot0/slot1 执行 `enable-canary --execute`。这会把 `cloud_prod_worker_06/07` 置为 disabled，并 enable `lan_aio_prod_gpu002_gpu0_img2img_lora_01` / `lan_aio_prod_gpu002_gpu1_image_to_video_01` 接新单。原 gpu-002 `comfy0/comfy1` 和本地主服务器 `cloud-prod-comfy-agent-6/7` 默认继续运行作为热回滚基线，不删除、不重建；AIO 稳定并完成验收后，如需释放资源只执行 `docker stop comfy0 comfy1` 与 `docker stop cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7`。回滚时先 `docker start comfy0 comfy1`，再启动 `cloud-prod-comfy-agent-6/7`，最后执行 `restore --slot slot0|slot1 --execute` 恢复 legacy worker。
@@ -270,7 +258,6 @@ LAN `release-rollout` 默认从当前镜像的 `RepoDigests` 固化精确回滚�
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`face_swap`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | `i2i_pro` LAN profile 接取两个 face swap 类型时均执行 V2；旧 `worker_remote_02` 保留 V1，形成按接单 worker 决定 workflow 的并行路由。当前容量以当次 XDG ledger、live helper 与 Central 心跳观测；历史 blocked/maintenance 仅作审计，不限制显式操作 |
 | LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及新增候选 | 候选 slot 不自动接单；AI operator/CLI 仍须明确指定或推断同服务器当前运行目标，但 `maintenance_disabled` / `blocked_*` 不再拒绝显式 takeover/recover |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | 无固定口径 | `i2i_pro` 已由 `gpu-252` GPU0 LAN AIO 正式接单；新增 profile 仍按 slot/state/live 三方仲裁 |
@@ -346,9 +333,6 @@ SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的视频生视频能力：正式 LAN 
 测试 LAN runtime 是独立于 Central 接单层的 ComfyUI runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 当前 AIO 不动。测试容器不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync、Nomadoor UI workflow、业务 API workflow 和样例素材。
 
 云正式 slot0 runtime 使用 `scripts/lan_scail2_aio_prod.sh`，同样占用 gpu-002 GPU0/`8190:8188`，但会注册正式 agent `lan_aio_prod_gpu002_gpu0_scail2_01`，容器名为 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，并由 runtime-render 的 `scail2` profile 生成 cloud-prod all-in-one compose 后在 helper 内覆盖为四任务正式 LAN 配置。该 helper 只触达旧 slot0 AIO agent `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 与旧 slot0 容器 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`，不会重建 `cloud-prod-comfy-agent-1..7`，不会创建/启停 RunPod，不会操作 slot1/`8191`。验收必须覆盖 `/system_stats`、`/object_info`、模型枚举、正式环境/桶、四任务 workflow override，并确认 compose 不含 `SCAIL2_FACE_SWAP_V10_*` 或外部图片换脸地址后，才执行 `enable --execute`。
-
-SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`，正式 AIO 当前固定 LAN tag 为 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`。该镜像基于 `yanwk/comfyui-boot:cu128-slim`，使用包含 ComfyUI PR `Comfy-Org/ComfyUI#14373` 后的版本，并 baked `remote_workers/requirements.txt` 中的 FastAPI/MinIO/uvicorn/websockets 等 worker 运行依赖。它必须在 `/object_info` 暴露 `WanSCAILToVideo`、`SCAIL2ColoredMask`、`SAM3_VideoTrack`、`WanContextWindowsManual`、`VHS_LoadVideo`、`VHS_VideoCombine`。模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步到 `/workspace/ComfyUI/models`；runtime-render 会把 baked ComfyUI 的 `models` 目录链接到该同步目录，验收还要确认主模型、SAM、CLIP Vision、Wan VAE、UMT5 和 LightX2V LoRA 都在 `/object_info` 枚举中。LoRA 路径必须是 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，否则 Nomadoor workflow 的 LoRA dropdown 无法解析。
-
 Web/Bot 测试业务接入不把测试 ComfyUI 容器本身注册成 worker：测试容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层 `cloud_worker_test_08` 可指向 `http://192.168.1.2:8190` 并声明四类 SCAIL-2 task type；视频换脸只执行收到的已预处理参考首帧，不跨 runtime 调用图片换脸。云正式 LAN 业务接单层由 `lan_aio_prod_gpu002_gpu0_scail2_01` 承接四类 SCAIL-2 正式任务并写正式 Central 与 `user-data-prod`；手动正式 RunPod `runpod_prod_scail2_manual_NN` 仍只作为动作迁移/视频换人的两任务备用容量。
 
 SCAIL-2 也支持独立 RunPod profile，不复用 `gpu-002/8190`。`RUNPOD_TASK_PROFILES["scail2"]` 渲染为 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、`containerDiskInGb=120`，模型桶固定 `allbot-model-cache`。cloud-test agent prefix 是 `runpod_test_scail2`，用户输入/结果桶是 `user-data-test`；cloud-prod 手动池 agent 是 `runpod_prod_scail2_manual_NN`，Pod 名称是 `allbot-runpod-prod-scail2-manual-NN`，用户输入/结果桶必须是 `user-data-prod`。镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`，Dockerfile 保留 LAN entrypoint 作为默认 CMD，但 RunPod create JSON 通过 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]` 启动 bootstrap。模型转存入口是 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test --execute`，默认 dry-run，只写 `allbot-model-cache/scail2/2026-06-17-test/models/...` 与 manifest，不写 `user-data-test` 或 `user-data-prod`。
@@ -432,7 +416,6 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。
 `video_basic` 不再作为独立对外任务或主 manifest 口径；GPU Pool Controller 中新增 canonical `image_to_video` profile，`video_basic` profile 仅保留 legacy 兼容命名，实际 workflow 与模型 manifest 均对齐 `image_to_video`。
-`i2i_pro` 是现有 ComfyUI runtime profile；其中 Web 文生图仍提交 `txt2img`，Central 执行面记录为 `t2i-pornmaster-turbo`，worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`。`face_swap_v2` 与 legacy `face_swap` 都由该 profile override 到 `face_swap_v2.json`；legacy 公开类型、Central 队列和 1 灵石计费不变，旧 `worker_remote_02` 继续读取 `face_swap.json`，因此实际 V1/V2 由接单 worker 决定。
 `wan22_video_v2` RunPod split profile 默认渲染 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`，用于规避 cu128 ComfyUI 0.21.x 的 DynamicVRAM/comfy-aimdo 在 `WanTEModel` 动态加载阶段卡住；如需临时实验其它 Comfy 启动参数，可用 `RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS` 覆盖，并必须重新创建目标 Pod 才会生效。
 
 手动正式 profile：
@@ -454,7 +437,6 @@ digest、baked revision、模型 manifest checksum 与回滚 digest；最后一�
 `--publish-ref ghcr.io/giraffu/allbot-gpu-release-manifests:<full-sha>` 发布完整 OCI manifest。
 main modular release 自动读取该 ref；任一本轮重建 profile 缺失或仍是旧 `source_sha` 都会在
 release bundle 发布前阻断。`i2i_pro` 的 canonical task types 固定为
-`i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，两个 face swap 类型都 override 到 V2；旧 `worker_remote_02` 仍保留 V1。
 
 ## 6. 真实执行门禁
 
@@ -959,14 +941,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 ## 10. 镜像、模型与 workflow 口径
 
 - `workers/comfy_agent/workflows` 是 workflow 运行时事实源；Central API 不维护 workflow 副本。
-- Wan22 共享 RunPod 镜像构建入口仍在 `remote_workers/docker/runpod_profiles/wan22_aio_video/`，这是镜像目录名，不表示运行时继续使用 AIO profile。
 - 当前 split video profile 复用 Wan22 GHCR image，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。`image_to_video` / `wan22_video_v2` 不再继承 legacy `RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO` 或 `RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO`；默认直接渲染带 RIFE 的 `imageName`，cloud-prod `prod-worker` 会拒绝旧 tag 或 template。
-- Wan22 新镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe`、`rife49.pth` 后处理小权重、`runpod_bootstrap_from_git.sh` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。`rife49.pth` 由 `FL_RIFE` 运行期读取，不属于可在线下载的普通缓存；RunPod bootstrap/entrypoint 会在启动 ComfyUI 前运行 `remote_workers/scripts/ensure_wan22_rife_cache.py`，缺失时 exit 75。
-- `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型。i2i_pro LAN/RunPod 候选通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap_v2` 与 legacy `face_swap` 都指向该 workflow；旧 `worker_remote_02` 继续使用 `face_swap.json`。候选配置进入 Git 不代表线上 Worker 已切换，发布前后都要以 Central 实时心跳核验。
-- `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
-- RunPod `i2i_pro` 四任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。不可变镜像必须固定完整三项 override，其中 `face_swap_v2` 与 `face_swap` 都映射到 V2；不得现场热修改源码、env 或 workflow 规避发布门禁。存量 Pod 本轮不修改，未来新建 Pod 才采用该契约。
-- `scail2` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/scail2/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`。镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`，不得 baked 任何 `.safetensors` 模型权重。模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`，LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`。正式 RunPod `scail2` profile 只接 `scail2_action_transfer,scail2_video_replacement`，结果写 `user-data-prod`；cloud-test RunPod profile 结果写 `user-data-test`。
-- `ltx_video` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/ltx_video/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<tag>`，发布 workflow 为 `.github/workflows/runpod_ltx_video_profile_image.yml`。旧无 `-v2` 包未授权当前仓库 Actions 写入，只能作为历史回滚来源，不能承接新 SHA。Dockerfile 默认从可公网拉取的 Wan22 GHCR 节点源复制所需 custom nodes，不依赖 LAN registry；镜像只 baked LTX custom nodes、shim、bootstrap 与运行依赖，不 baked `.safetensors`。模型 manifest 固定为 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，云端 R2 当前只包含 10Eros v1.2 所需权重，正式 RunPod profile 默认通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 使用三份 10Eros v1.2 workflow；老 `LTX 2.3 *.json` 和 LAN AIO 默认行为仍保留为独立入口，但不作为新 RunPod 回退路径。默认与 10Eros 的 FLF2V workflow 都必须保持时空 VAE `last_frame_fix=true`，并在 `workers/remote_workers` 同步发布，避免 LAN AIO 与 RunPod 的首尾帧末端解码行为漂移。
 - `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。这 6 个文件同时覆盖 `i2i_pro.json`、`txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`；本地主模型 registry 的 import spec 已按这两个 runtime overrides 生成 manifest，不再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：
@@ -980,7 +955,6 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 | `vae/z_image/ae.safetensors` | `335,304,388` |
 | `unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors` | `12,309,878,608` |
 
-- `remote_workers/scripts/runpod_sync_models_from_r2.py` 支持 `.partial` 断点续传、有限重试和进度日志；已经创建的 Pod 不会热更新 `dockerStartCmd`，需删除重建。Dashboard/CLI 新增 RunPod 前可先用 `prod-worker render` 核对 `docker_start_cmd`，避免创建出 `dockerStartCmd=null` 的旧入口 Pod。
 - 不要直接 `docker commit` 局域网成功的 ComfyUI 容器作为发布镜像；成功内容主要来自 volume/bind mount，commit 会漏 custom nodes/models/workflows，且可能混入运行残留。
 - `img2img_lora` public GHCR 镜像只有同时具备可执行 `/opt/allbot/runpod_baked_runtime_entrypoint.sh`、非空 OCI/agent/workflow revision 标签并完成真实任务 canary 才可进入 Dashboard pin；2026-06-12 legacy tag 的历史 canary 不能证明它满足后续 baked runtime 启动契约。新 profile 也不能继承 img2img 的结论，必须单独准备模型 manifest、custom nodes、系统依赖和真实 Web canary。
 

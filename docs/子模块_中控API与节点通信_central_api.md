@@ -96,7 +96,7 @@ sequenceDiagram
 - `complete/failed/cancelled` 终态回报只记录 task 的 `worker_id`，并用 compare-and-clear 清理 agent `current_task_id`：只有当前指针仍等于该 task 时才清除，避免旧任务后台 complete 抹掉新任务展示。
 - Worker 等待 ComfyUI 结果时，WebSocket 终态不是唯一信号；当 WS 未及时设置结果时，worker 会按策略探测 `/history/{prompt_id}` 收口。日志里的 `Task result not set via WS, checking history` 通常解释为 ComfyUI/worker 本地执行链路的短暂停顿，不等同于 Central 状态接口慢。
 - 云正式 worker 可在本地主机通过 `workers/local_relay/relay_main.py` 访问 Central。该 relay 透明代理 `pop/check/peek/complete/heartbeat/task_heartbeat`，保留 query/body 新字段；对非终态 `running` status 做本地快速 ACK 和最新值合并转发；`complete`、`failed`、`cancelled`、`pop`、`check` 必须同步转发成功后才返回。relay 同时提供本地上传 sidecar，worker 只有在 R2/S3 put 成功后才调用 `/complete`，因此 Central 仍是唯一队列事实源。relay `/health` 只表示进程存活，`/ready` 会短超时检查 Central `/health`、HTTP client、上传 client 与 pending status 数量，watchdog 应以 `/ready` 判定 relay 是否需要精确恢复；若 `/ready` 返回 404，表示当前运行 relay 尚未升级到新版，只记录 `relay_ready_endpoint_missing`，不触发重启循环。
-- 非 Tailscale 远程 Windows GPU 节点使用 `remote_workers/` 独立 venv 包时，bundled `remote_relay` 也必须遵守同样的同步转发与 sidecar 上传确认语义；差异仅在于 relay 的上游 Central 地址是 worker 专用 Cloudflare Tunnel 域名。
+- RunPod 镜像内的 `runpod_relay` 遵守同一同步转发与 sidecar 上传确认语义，上游 Central 使用 RunPod 专用 Cloudflare Tunnel 域名。
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求
@@ -121,7 +121,7 @@ sequenceDiagram
   - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
   - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频与 Telegram 懒人动图新提交最终会排队为 `image_to_video`；LTX 高级图生视频当前用户入口会排队为 `ltx_video` 或 `ltx_video_flf2v`，`ltx_video_v2v_audio` 仅作为历史/队列兼容执行面保留；legacy `video_insert` / `video_edit` 只应作为旧队列兼容 alias，必须和 `image_to_video` 使用同一 workflow/mapping/patcher；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，并将两个 face swap 类型都 override 到 `face_swap_v2.json`
   - SCAIL-2 测试环境可以由 `cloud_worker_test_08` 声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2` 并指向 gpu-002 LAN AIO runtime `http://192.168.1.2:8190`，也可以由 RunPod `scail2` profile 的 `runpod_test_scail2_*` worker 接单；RunPod canary 会临时 disable 同环境支持 SCAIL-2 的非 RunPod worker，结束后必须恢复。云正式 LAN slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2` 并写正式桶 `user-data-prod`；手动正式 RunPod `runpod_prod_scail2_manual_NN` 仍只声明 `scail2_action_transfer,scail2_video_replacement`，不得重建无关 `cloud-prod-comfy-agent-1..7`
-  - LTX 高级图生视频正式可由 LAN AIO `lan_aio_prod_gpu177_gpu1_ltx_video_01` 或手动正式 RunPod `runpod_prod_ltx_video_manual_NN` 接单；两者都必须声明 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，写 `user-data-prod`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 使用 10Eros v1.2 workflow。canary 结束后 RunPod worker 保持 disabled，手动 enable 后才参与调度；LAN AIO 由 `lan_aio_fleet_prod_ops.py start-disabled` 同步 `remote_workers` 并渲染同一份 v1.2 override。
+  - LTX 高级图生视频正式可由 LAN AIO `lan_aio_prod_gpu177_gpu1_ltx_video_01` 或手动正式 RunPod `runpod_prod_ltx_video_manual_NN` 接单；两者都必须声明 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，写 `user-data-prod`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 使用 10Eros v1.2 workflow。canary 结束后 RunPod worker 保持 disabled，手动 enable 后才参与调度；LAN AIO 只消费镜像内烘焙的同一份 v1.2 runtime。
   - 目标 worker 是否设置了 `TASK_TYPE_WORKFLOW_OVERRIDES`，导致同一 task type 在测试/canary worker 上读取不同 workflow JSON
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务

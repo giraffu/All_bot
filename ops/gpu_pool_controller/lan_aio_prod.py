@@ -35,7 +35,7 @@ DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
 DEFAULT_WEB_HEALTH_URL = "https://api.aivison.it.com/api/health"
 DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
-REMOTE_WORKERS_TARGET_DIR = "/opt/allbot/runtime/remote_workers"
+RUNPOD_WORKER_TARGET_DIR = "/opt/allbot/runtime/runpod_worker"
 CONTROL_TTL_SECONDS = 3600
 IMAGE_PULL_TIMEOUT_SECONDS = 3600
 WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
@@ -172,11 +172,6 @@ class LanAioProdSlot:
     @property
     def remote_local_model_env_file(self) -> str:
         return f"{self.remote_dir}/.env.local-model-download"
-
-    @property
-    def remote_workers_dir(self) -> str:
-        return f"{self.remote_dir}/remote_workers"
-
 
 def _load_yaml(path: Path) -> Any:
     try:
@@ -514,7 +509,7 @@ class LanAioProdOps:
                 gpu_device_id=slot.gpu_device_id,
             ),
         )
-        rendered = patch_baked_remote_workers(
+        rendered = patch_baked_runpod_worker(
             rendered,
             slot,
             env_values=self.env_values,
@@ -1472,7 +1467,7 @@ class LanAioProdOps:
                 operations.extend(
                     [
                         f"render runtime metadata for {slot.id}",
-                        "use remote_workers baked into the exact profile image",
+                        "use the RunPod worker runtime baked into the exact profile image",
                         f"copy model-cache env to {slot.ssh_host}:{slot.remote_env_file}",
                         f"docker run --rm without ports or agent for {slot.target_profile_id}",
                         f"sync {slot.target_profile_id} manifest models into the slot workspace",
@@ -1483,7 +1478,7 @@ class LanAioProdOps:
                 operations.extend(
                     [
                         f"render compose for {slot.id}",
-                        "use remote_workers baked into the exact profile image",
+                        "use the RunPod worker runtime baked into the exact profile image",
                         f"copy env/compose to {slot.ssh_host}:{slot.remote_dir}",
                         f"set {slot.agent_id}=disabled",
                         f"docker compose up -d {slot.container_name}",
@@ -2523,26 +2518,26 @@ class LanAioProdOps:
         inner_script = "\n".join(
             [
                 "set -euo pipefail",
-                f"remote_root={shlex.quote(REMOTE_WORKERS_TARGET_DIR)}",
+                f"worker_root={shlex.quote(RUNPOD_WORKER_TARGET_DIR)}",
                 'export RUNPOD_MODEL_ACCESS_KEY="${RUNPOD_MODEL_ACCESS_KEY:-${LAN_MODEL_CACHE_ACCESS_KEY:-}}"',
                 'export RUNPOD_MODEL_SECRET_KEY="${RUNPOD_MODEL_SECRET_KEY:-${LAN_MODEL_CACHE_SECRET_KEY:-}}"',
                 'test -n "${RUNPOD_MODEL_ACCESS_KEY:-}"',
                 'test -n "${RUNPOD_MODEL_SECRET_KEY:-}"',
                 'mkdir -p "${RUNPOD_MODEL_TARGET_DIR:?}"',
                 (
-                    'python3 "$remote_root/scripts/runpod_sync_local_models.py" '
+                    'python3 "$worker_root/scripts/runpod_sync_local_models.py" '
                     '--target-dir "$RUNPOD_MODEL_TARGET_DIR" '
                     if metadata.get("lan_local_model_overrides")
                     else ""
                 ),
                 (
                     "python3 - <<'PY' || "
-                    'python3 -m pip install --no-cache-dir -r "$remote_root/requirements.txt"\n'
+                    'python3 -m pip install --no-cache-dir -r "$worker_root/requirements.txt"\n'
                     "import minio\n"
                     "PY"
                 ),
                 (
-                    'python3 "$remote_root/scripts/runpod_sync_models_from_r2.py" '
+                    'python3 "$worker_root/scripts/runpod_sync_models_from_r2.py" '
                     '--bucket "$RUNPOD_MODEL_BUCKET" '
                     '--prefix "$RUNPOD_MODEL_PREFIX" '
                     '--target-dir "$RUNPOD_MODEL_TARGET_DIR"'
@@ -2570,7 +2565,7 @@ class LanAioProdOps:
             "-e",
             "RUNPOD_MODEL_SECURE=false",
             "-e",
-            f"RUNPOD_REMOTE_WORKER_ROOT={REMOTE_WORKERS_TARGET_DIR}",
+            f"RUNPOD_WORKER_ROOT={RUNPOD_WORKER_TARGET_DIR}",
             "-v",
             f"{workspace_host_dir}:/workspace",
         ]
@@ -3434,7 +3429,7 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         return str(completed.stdout or "")
 
 
-def patch_baked_remote_workers(
+def patch_baked_runpod_worker(
     rendered: str,
     slot: LanAioProdSlot,
     *,
@@ -3449,8 +3444,8 @@ def patch_baked_remote_workers(
     if not isinstance(service, dict):
         raise RuntimeError(f"compose service not found: {slot.container_name}")
     environment = service.setdefault("environment", {})
-    environment["RUNPOD_REMOTE_WORKER_ROOT"] = REMOTE_WORKERS_TARGET_DIR
-    environment["PYTHONPATH"] = REMOTE_WORKERS_TARGET_DIR
+    environment["RUNPOD_WORKER_ROOT"] = RUNPOD_WORKER_TARGET_DIR
+    environment["PYTHONPATH"] = RUNPOD_WORKER_TARGET_DIR
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     for runtime_key, source_key in LAN_AIO_RUNTIME_PROXY_ENV.items():
         if env_values and env_values.get(source_key):
@@ -3459,12 +3454,12 @@ def patch_baked_remote_workers(
     volumes[:] = [
         value
         for value in volumes
-        if not str(value).startswith(f"{slot.remote_workers_dir}:")
+        if not str(value).endswith(f":{RUNPOD_WORKER_TARGET_DIR}")
     ]
     runtime = compose.setdefault("x-allbot-runtime", {})
-    runtime["remote_workers_bundle"] = {
+    runtime["runpod_worker_bundle"] = {
         "source": "image",
-        "target": REMOTE_WORKERS_TARGET_DIR,
+        "target": RUNPOD_WORKER_TARGET_DIR,
         "mode": "baked_immutable_artifact",
     }
     return _dump_yaml(compose)

@@ -274,8 +274,8 @@ assert_prod_compose() {
     echo "Refusing compose containing cloud-test/user-data-test" >&2
     exit 2
   fi
-  if grep -q "host_mount_current_bundle\\|/remote_workers:" "$file"; then
-    echo "Refusing production compose with host-mounted remote_workers" >&2
+  if grep -q "host_mount_current_bundle\\|:/opt/allbot/runtime/runpod_worker" "$file"; then
+    echo "Refusing production compose with a host-mounted RunPod worker runtime" >&2
     exit 2
   fi
 }
@@ -566,7 +566,7 @@ run_restart_disabled() {
   tmp_env="$(mktemp)"
   render_compose_to "$tmp_compose"
   if [ "$MODE" != "execute" ]; then
-    echo "[dry-run] Would use the remote_workers revision baked into the profile image"
+    echo "[dry-run] Would use the RunPod worker runtime baked into the profile image"
     echo "[dry-run] Would write compose to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
     echo "[dry-run] Would recreate ${CONTAINER_NAME} and keep ${TEMP_AGENT_ID} disabled"
     rm -f "$tmp_compose" "$tmp_env"

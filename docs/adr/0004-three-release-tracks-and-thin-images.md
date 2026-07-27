@@ -18,8 +18,8 @@ schema v1 将多个控制面进程装入 `allbot-app`、将 Agent/Relay 装入�
 - Python 使用不含业务源码的 `allbot-python-runtime-base`；测试 Agent 另有 `allbot-python-worker-base`。每个控制面服务、Agent、Relay 和两套前端分别产生不可变镜像。Public Web 仍是一份带 SHA256 的 tar。
 - artifact 保存自己的 source SHA、OCI revision、digest、base digest 与依赖闭包。未变化 artifact 可复用旧 digest；base digest 变化强制重建所有后代。
 - 正式逐模块晋级只接受 main-channel promotion bundle 所绑定批准记录中同 track、同名、同 digest 的 artifact；证据可继承未变化 artifact。共享协议、迁移或依赖分析可以扩大原子集合，显式选择不能缩小它。（证据状态由 ADR 0006/0007 细化。）
-- Agent/Relay 只属于测试执行链。正式 legacy Relay 是否下线由只读运行态审计决定，不由控制面 release 隐式处理。
-- RunPod/LAN profile 镜像烘焙 `remote_workers` agent 和 workflow，并写 agent/workflow revision label；启动时不再 clone AllBot 分支。模型继续外置，但 GPU manifest 固定 object key、size 与 SHA256。
+- 通用 Agent/Relay 只属于测试执行链；正式 LAN/RunPod 使用镜像内的 worker runtime 与 RunPod-local relay。
+- RunPod/LAN profile 镜像烘焙 `workers/runpod_runtime` agent 和 workflow，并写 agent/workflow revision label；启动时不再 clone AllBot 分支。模型继续外置，但 GPU manifest 固定 object key、size 与 SHA256。
 - 每个变化的 GPU profile 必须有 artifact attestation，至少包含真实镜像 digest、baked revisions 与 model checksum；standard 仍要求独立业务 canary 覆盖 Central task type、输入下载、输出上传、终态回流和回滚演练，direct 可显式豁免业务 canary。（由 ADR 0006 取代原“全部必须 canary”的结论。）
 
 ## Alternatives Considered

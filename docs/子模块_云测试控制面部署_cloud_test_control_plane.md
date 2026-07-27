@@ -92,14 +92,14 @@ PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 
 Cloudflare R2 页面里显示的 `cfat_...` API token 只用于 Cloudflare API，不是 S3 access key；云测试 `.env.cloud.test` 和知识库都不保存该 token。实际 S3 客户端只使用 access key id / secret access key / endpoint / bucket。
 
-RunPod 云测试远程 worker 使用独立 worker Central 域名 `worker-central-test.aivison.it.com`，回源云测试 Central `http://100.82.124.91:8004`。2026-06-11 已在 `allbot-do-sgp1-test-control` 安装 `cloudflared` 2026.6.0，并以 Cloudflare Tunnel `RunPod-test` token 安装 systemd 服务 `cloudflared.service`；服务已能连接 Cloudflare。该 tunnel 已配置 Published application / Public hostname：
+RunPod 云测试 worker 使用独立 Central 域名 `worker-central-test.aivison.it.com`，回源云测试 Central `http://100.82.124.91:8004`。该 tunnel 使用 token-based systemd 服务，排障时不得输出完整 token。
 
 ```text
 Hostname: worker-central-test.aivison.it.com
 Service:  http://100.82.124.91:8004
 ```
 
-验收：`https://worker-central-test.aivison.it.com/health` 返回 Central API OK，`/system/status` 可读云测试队列状态。该域名只供 remote worker / RunPod Pod 访问 Central agent API，不得复用 `api.aivison.it.com`，也不要开启会拦截 worker 请求的 Cloudflare Access 登录页；先依赖 `AGENT_SECRET_TOKEN` 鉴权，并在 Cloudflare 侧加 WAF/rate limit。`cloudflared.service` 由 token-based install 创建，`systemctl status cloudflared` 可能显示 tunnel token，排障时不得把完整输出贴入文档或聊天。
+验收：`https://worker-central-test.aivison.it.com/health` 返回 Central API OK，`/system/status` 可读云测试队列状态。该域名只供 RunPod 访问 Central agent API，不得复用 `api.aivison.it.com`，也不要开启会拦截 worker 请求的 Cloudflare Access 登录页；先依赖 `AGENT_SECRET_TOKEN` 鉴权，并在 Cloudflare 侧加 WAF/rate limit。`cloudflared.service` 由 token-based install 创建，`systemctl status cloudflared` 可能显示 tunnel token，排障时不得把完整输出贴入文档或聊天。
 
 Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地址，再由浏览器直接 `PUT` 到 R2 S3 endpoint。R2 `user-data-test` 桶必须配置 CORS，否则前端会显示 `Network error during upload`：
 
@@ -311,7 +311,7 @@ docker compose --env-file .env.cloud.test \
 
 2026-06-14 RunPod `i2i_pro` 云测试 Web 端验收口径：
 
-- `i2i_pro` 是 RunPod runtime profile，可同时支持执行面 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2` 与 legacy `face_swap`；两个 face swap 类型都执行 `face_swap_v2.json`，旧 `worker_remote_02` 仍保留 V1。
+- `i2i_pro` 是 RunPod runtime profile，可同时支持执行面 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2` 与 legacy `face_swap`；两个 face swap 类型都执行 `face_swap_v2.json`。
 - 验收必须通过测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 串行提交 `i2i_pro`、Web `txt2img`、`face_swap_v2` 三单，不能只做 worker 直测。
 - RunPod env 需渲染为 `RUNPOD_TASK_TYPE=i2i_pro`、`SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`、`POOL_RUNTIME_PROFILE=i2i_pro`、`AGENT_ID` 前缀 `runpod_test_i2i_pro`，并带 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap_v2":"face_swap_v2.json","face_swap":"face_swap_v2.json"}`。
 - 模型 manifest 使用 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，六个模型文件总计约 `36.11 GiB`；首次 canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`。

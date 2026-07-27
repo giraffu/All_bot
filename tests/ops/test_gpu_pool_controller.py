@@ -178,11 +178,11 @@ def test_runpod_all_in_one_profiles_use_declared_exact_or_lan_images():
     assert f"image: {i2i_pro}" in rendered
     assert f"POOL_IMAGE_REF: {i2i_pro}" in rendered
     assert "RUNPOD_MODEL_MANIFEST_KEY: i2i_pro/2026-06-14-test/manifest.json" in rendered
-    assert "RUNPOD_REMOTE_WORKER_ROOT: /opt/allbot/remote_workers" in rendered
+    assert "RUNPOD_WORKER_ROOT: /opt/allbot/runpod_worker" in rendered
     assert "runpod_sync_models_from_r2.py" in rendered
     assert "ln -s" in rendered
     assert "scripts/runpod_entrypoint.sh" in rendered
-    assert "/health#g" in rendered
+    assert "sed -i" not in rendered
 
 
 def test_runpod_all_in_one_render_supports_cloud_prod_scail2_slot0():

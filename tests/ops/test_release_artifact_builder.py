@@ -136,7 +136,7 @@ def test_gpu_worker_change_rebuilds_gpu_images_but_not_dashboard():
 
     plan = module.plan_builds(
         catalog,
-        ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+        ["workers/runpod_runtime/comfy_agent/workflow_task_patchers.py"],
         has_previous=True,
     )
 

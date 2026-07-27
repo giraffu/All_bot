@@ -13,7 +13,7 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 | 用户入口 | Telegram/Web 交互、认证、输入收集、展示 | `src/bot_main.py`、`src/web_api/main.py`、`qqcc_bot/main.py` |
 | 业务编排 | 任务、计费、用户、Gallery 的公开 facade | `src/core/`、`src/services/` |
 | 执行控制面 | 队列、Worker 协议、状态和调度 | `backend/app/` |
-| 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | `workers/`、`remote_workers/` |
+| 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | 测试执行 `workers/comfy_agent/`；正式 LAN/RunPod `workers/runpod_runtime/` |
 | 管理与运维 | Dashboard、不可变发布、GPU/LAN/RunPod operator | `dashboard/`、`scripts/release.py`、`ops/` |
 
 正式与测试环境消费相同的不可变 artifact；数据库、Redis、token、bucket、域名

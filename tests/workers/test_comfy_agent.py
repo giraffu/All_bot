@@ -63,8 +63,8 @@ def load_agent_main_module(module_path=MODULE_PATH):
         sys.modules["PIL.ImageStat"] = imagestat_module
 
     module_name = (
-        "test_remote_agent_main_module"
-        if "remote_workers" in module_path.parts
+        "test_runpod_agent_main_module"
+        if "runpod_runtime" in module_path.parts
         else "test_agent_main_module"
     )
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -75,9 +75,9 @@ def load_agent_main_module(module_path=MODULE_PATH):
 
 
 @pytest.mark.asyncio
-async def test_remote_worker_promotes_reserved_claim_without_exceeding_limit():
+async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit():
     module = load_agent_main_module(
-        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
     )
     agent = module.ComfyAgent.__new__(module.ComfyAgent)
     agent._claim_lock = __import__("asyncio").Lock()
@@ -100,9 +100,9 @@ async def test_remote_worker_promotes_reserved_claim_without_exceeding_limit():
 
 
 @pytest.mark.asyncio
-async def test_remote_worker_does_not_pop_fourth_claim():
+async def test_runpod_worker_does_not_pop_fourth_claim():
     module = load_agent_main_module(
-        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
     )
     agent = module.ComfyAgent.__new__(module.ComfyAgent)
     agent._claim_lock = __import__("asyncio").Lock()
@@ -265,11 +265,11 @@ async def test_reserved_prefetch_considers_all_eligible_worker_types(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_remote_reserved_prefetch_considers_all_eligible_worker_types(
+async def test_runpod_reserved_prefetch_considers_all_eligible_worker_types(
     monkeypatch,
 ):
     module = load_agent_main_module(
-        ROOT / "remote_workers" / "comfy_agent" / "agent_main.py"
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
     )
     monkeypatch.setattr(module, "PREFETCH_ENABLED", True)
     monkeypatch.setattr(module, "PREFETCH_DEPTH", 1)

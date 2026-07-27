@@ -354,7 +354,7 @@
     },
     {
       "name": "gpu-runtime",
-      "patterns": ["remote_workers/**"],
+      "patterns": ["workers/runpod_runtime/**", "workers/runpod_profiles/**"],
       "level": "maintenance",
       "services": [],
       "blockers": ["gpu-runtime-release-required"]

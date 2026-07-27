@@ -37,7 +37,7 @@
 | 层级 | 承担功能 | 入口 |
 | :--- | :--- | :--- |
 | 云控制面 | `cloud-central-api-prod`、Web API、Payment、Dashboard、Bot、imgproxy | `ssh allbot-do-sgp1-control` |
-| 本地主服务器 | `cloud-prod-worker-relay`、本地 `cloud-prod-comfy-agent-1..7` compose、结果 spool、离线 R2 shadow 与 Postgres/Redis；线上实际 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod | 本机 `/home/hfy/APP/All_bot` |
+| 本地主服务器 | 本地 worker compose、结果 spool、离线 R2 shadow 与 Postgres/Redis；线上执行池还包含 LAN AIO 与 RunPod | 本机 `/home/hfy/APP/All_bot` |
 | GPU 节点 | ComfyUI 推理、模型文件、输入输出缓存、DCGM/node exporter | `allbot-gpu-226/177/252/002` |
 
 生产 worker 容器不在 GPU 节点上；它们在本地主服务器运行，通过局域网 HTTP/WS 调用各 GPU 节点的 ComfyUI。
@@ -58,7 +58,7 @@
 - 2026-06-08 已清理各 GPU 节点 ComfyUI 旧素材，`192.168.1.177` 从高风险的约 `14G` 可用恢复；2026-06-18 快照可用约 `243G`，已回升到约 73% 使用率，模型下载和大视频压测前应重点复查。
 - ComfyUI `input/output/temp` 仍会随视频任务快速增长；每次模型下载、Docker pull/build 或大视频压测前都要重新检查 `df -h`。
 - `192.168.1.226` 与 `192.168.1.252` 曾观察到 swap 使用较高，排查慢响应时要同时看内存压力、ComfyUI 任务和 Docker stats。
-- 2026-06-18 03:06 云正式 Central 快照为 `queue_size=49`、`active_workers=13`、`healthy_workers=13`、`error_workers=0`、`quarantined_workers=0`。13 个 worker 是当时本地 agent、LAN AIO、`remote_workers` 与手动 RunPod 的混合运行态，不代表固定长期容量。
+- Central 中的 worker 数量是本地 agent、LAN AIO 与 RunPod 的当次运行态，不代表固定长期容量。
 - GPU 利用率要和显存、ComfyUI `/queue`、worker heartbeat 一起看。显存高但 GPU 利用率低可能是模型常驻、加载、等待、后处理或 IO；单看 `memory.used` 不能判断“算力拉满”。
 
 ## 4. 本地主服务器 Worker 容器
@@ -378,7 +378,7 @@ LAN RunPod 化一体容器试点：
 
 Dashboard 不再提供生产 `LAN AIO 管理` slot 面板，也不再暴露 profile/slot 列表、候选切换、恢复、巡检或 warm-cache API。Dashboard 只从 `/api/system/workers` 展示 LAN AIO worker 状态和当前任务，并在 Worker 卡片保留 `暂停/开启/重启` 基础操作；后端只检查 catalog 稳定阻断，本地主 helper 再以 ledger/live 确认该 agent 是 current。日常稳定候选可从本地主 `lan_resource_manager/` 二次确认发起，但平台最终仍调用 `scripts/lan_aio_fleet_prod_ops.py`；blocked/maintenance 候选、`render`、`preflight`、`pull-image`、`warm-cache`、retarget、reconcile、canary 与恢复排障继续由本地主 AI operator/CLI、Git catalog 和 XDG ledger 执行。
 
-生产灰度入口为 `scripts/lan_runpod_aio_prod_canary.sh`，只允许 gpu-002 固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`。生产灰度必须使用 `--environment cloud-prod` 渲染出的 compose，写入 `user-data-prod`，并在启动前确认 compose 不含 `cloud-test` / `user-data-test`。首次拉取 LAN mirror 前需要维护窗口配置 Docker insecure registry `192.168.1.115:5000`，该操作会重启 Docker，必须先将 `cloud_prod_worker_06/07` 置为 `draining` 并等 `8188/8189` 队列清空。heartbeat-only 成功标准不是容器健康，而是 Central 能看到临时 agent 在 `disabled` control 下无 `current_task_type` 且 status 非 `running`，并携带 `node_id=gpu-002`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；Central 若残留旧 `current_task_id` 但 worker 已 `idle` 且无 `current_task_type`，不视为正在运行。缺任一项都应视为镜像或 remote_workers bundle 不可控，不能进入 `enable-canary`。helper 只使用 profile 镜像中烘焙的 `remote_workers` revision，并拒绝宿主机源码挂载；模型仍按 manifest 同步到 `/workspace/ComfyUI/models`，slot1 `image_to_video` 启动后还必须从宿主机 `/data/comfy/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth`（或共享模型 fallback `/data/comfy/models/upscale_models/rife49.pth`）预置到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处 RIFE 缓存路径，不能在正式任务后处理阶段访问 HuggingFace。达到目标接单数后先 `drain-temp --execute`，再等任务终态并 `restore --execute`。
+生产灰度入口为 `scripts/lan_runpod_aio_prod_canary.sh`，只允许 gpu-002 固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`。生产灰度必须使用 `--environment cloud-prod` 渲染出的 compose，写入 `user-data-prod`，并在启动前确认 compose 不含 `cloud-test` / `user-data-test`。heartbeat-only 成功标准不是容器健康，而是 Central 能看到临时 agent 在 `disabled` control 下无 `current_task_type` 且 status 非 `running`，并携带 `node_id=gpu-002`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`。helper 只使用 profile 镜像中烘焙的 `workers/runpod_runtime` revision，并拒绝宿主机源码挂载；模型仍按 manifest 同步到 `/workspace/ComfyUI/models`。达到目标接单数后先 `drain-temp --execute`，再等任务终态并 `restore --execute`。
 
 2026-06-16 已完成 slot1 生产灰度：`image_to_video`、`video_insert`、`video_edit` 均由临时 agent `lan_aio_prod_gpu002_gpu1_image_to_video_01` 接单并以 canonical `image_to_video` 执行成功。灰度结束后必须恢复 `cloud_prod_worker_07`，停止 AIO 容器，保留原 `comfy1` / `8189` 作为生产基线。
 

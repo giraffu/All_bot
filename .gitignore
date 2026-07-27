@@ -22,7 +22,6 @@ __pycache__/
 venv/
 ENV/
 env/
-!remote_workers/env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -134,7 +133,6 @@ local_analytics_platform/.env.*
 !.env.lan.model-cache.example
 !.env.lan-aio-test.example
 !.env.lan-aio-prod.example
-!remote_workers/env/*.env.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/
