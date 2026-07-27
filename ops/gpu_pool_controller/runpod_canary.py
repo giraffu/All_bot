@@ -808,8 +808,20 @@ class RunPodCanaryRunner:
         )
         deadline = time.monotonic() + self.options.worker_timeout_seconds
         last_workers: list[dict[str, Any]] = []
+        transient_error_count = 0
+        last_fetch_error = ""
         while time.monotonic() <= deadline:
-            workers = self._fetch_workers()
+            try:
+                workers = self._fetch_workers()
+            except TimeoutError as exc:
+                transient_error_count += 1
+                last_fetch_error = redact_text(str(exc))
+                summary["runpod_worker_fetch"] = {
+                    "transient_error_count": transient_error_count,
+                    "last_error": last_fetch_error,
+                }
+                self._sleep(self.options.poll_interval_seconds)
+                continue
             last_workers = workers
             worker = _find_runpod_worker(
                 workers,
@@ -828,21 +840,24 @@ class RunPodCanaryRunner:
                     )
                     return worker
             self._sleep(self.options.poll_interval_seconds)
+        diagnostics: dict[str, Any] = {
+            "expected_agent_id": expected_agent_id,
+            "runpod_workers": [
+                _worker_summary(worker)
+                for worker in last_workers
+                if str(worker.get("agent_id") or "").startswith(
+                    f"{profile.agent_id_prefix}_"
+                )
+            ],
+        }
+        if transient_error_count:
+            diagnostics["worker_fetch"] = {
+                "transient_error_count": transient_error_count,
+                "last_error": last_fetch_error,
+            }
         raise RunPodCanaryError(
             "runpod worker heartbeat timeout: "
-            + json.dumps(
-                {
-                    "expected_agent_id": expected_agent_id,
-                    "runpod_workers": [
-                        _worker_summary(worker)
-                        for worker in last_workers
-                        if str(worker.get("agent_id") or "").startswith(
-                            f"{profile.agent_id_prefix}_"
-                        )
-                    ],
-                },
-                ensure_ascii=False,
-            )
+            + json.dumps(diagnostics, ensure_ascii=False)
         )
 
     def _disable_test_workers(self, summary: dict[str, Any]) -> list[dict[str, Any]]:

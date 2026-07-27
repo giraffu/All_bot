@@ -945,6 +945,44 @@ def test_wan22_canary_waits_for_profile_specific_runpod_worker():
     assert summary["runpod_worker"]["runtime_profile"] is None
 
 
+def test_ltx_t2v_canary_retries_transient_worker_fetch_timeout():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="ltx_t2v", quiet=True),
+        sleep_func=lambda _seconds: None,
+    )
+    attempts = iter(
+        [
+            TimeoutError("The read operation timed out"),
+            [
+                {
+                    "agent_id": "runpod_test_ltx_t2v_pod-1",
+                    "types": "ltx_t2v,ltx_t2v_ic",
+                    "status": "idle",
+                    "provider": "runpod",
+                }
+            ],
+        ]
+    )
+
+    def fetch_workers():
+        result = next(attempts)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    runner._fetch_workers = fetch_workers  # type: ignore[method-assign]
+    summary = {}
+
+    worker = runner._wait_runpod_worker("pod-1", summary)
+
+    assert worker["agent_id"] == "runpod_test_ltx_t2v_pod-1"
+    assert summary["runpod_worker_fetch"]["transient_error_count"] == 1
+    assert summary["runpod_worker_fetch"]["last_error"] == (
+        "The read operation timed out"
+    )
+
+
 def test_wan22_canary_disables_only_matching_cloud_test_non_runpod_workers():
     runner = RunPodCanaryRunner(
         FakeRunPodProvider(),
