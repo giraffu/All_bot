@@ -64,7 +64,7 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_Git不可变发布_git_immutable_release.md` | artifact、测试、晋级、回滚 | release.py、catalog、policy、tests | current | 发布变更/执行 |
+| `docs/子模块_Git不可变发布_git_immutable_release.md` | artifact、测试、晋级、回滚 | release.py 兼容门面、release contracts/planning、catalog、policy、tests | current | 发布变更/执行 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | Compose 与一般运维 | deploy compose、release scripts | current | 容器运维 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与 SOP | test overlay/env contract、release state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与 SOP | prod overlay/env contract、release state | runtime-verification-required | 正式环境 |
