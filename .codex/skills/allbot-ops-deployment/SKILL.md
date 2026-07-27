@@ -19,7 +19,7 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 | Compose 与一般恢复 | `docs/子模块_运维指南与容器管理_ops_deployment.md` |
 | 并发 handoff、main 批次和共享测试站 | `allbot-concurrent-workspaces` |
 | 本地正式灾备 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` |
-| GPU Pool、RunPod、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`references/runpod-lan-runtime.md` |
+| GPU Pool、RunPod、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`；SSH 接入与 runtime 细节见 `references/runpod-lan-runtime.md` |
 | LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
 | 本地资源管理平台 | `allbot-lan-resource-manager` |
 | R2/legacy 媒体 | `allbot-gallery-storage` |

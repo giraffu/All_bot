@@ -51,6 +51,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 
 - 先读取 provider 状态、operation store、Central worker 和目标 profile
   release pin，再决定 status/add/down/restart/rollout。
+- Pod 内诊断优先使用 Dashboard 提供的 `ssh.runpod.io` 代理入口；连接、有限重试、
+  PTY 与标准输入命令模板见 `allbot-ops-deployment` 的
+  `references/runpod-lan-runtime.md`。当次 Pod 页面是用户名和直连端口的事实源，
+  不把临时连接信息写入 Git。
 - 真实 create/start/stop/restart/delete/scale 同时要求运行开关、`--execute`
   和用户明确的生产确认。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、
