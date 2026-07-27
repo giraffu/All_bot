@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "88f14b81d55839efbfe8956274e0319776291cda",
+  "batch": "20260727-081022-5cab0a5c",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-081022-5cab0a5c",
+  "members": [
+    {
+      "base_sha": "88f14b81d55839efbfe8956274e0319776291cda",
+      "branch": "codex/b-runpod-canary-heartbeat-retry",
+      "head": "5cab0a5c60be9f1729873e34e6363261d88bf449",
+      "queued_at": "2026-07-27T08:09:32.079974+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
