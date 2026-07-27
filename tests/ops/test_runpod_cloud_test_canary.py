@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,10 +12,25 @@ from ops.gpu_pool_controller.runpod_cloud_test_canary import (
     RunPodCloudTestCanaryError,
     RunPodCloudTestCanaryExecutor,
 )
+from ops.gpu_pool_controller.runpod_canary import RunPodCanaryRunner
 
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"png"
 MP4_BYTES = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
+
+
+def test_ltx_canary_web_headers_include_operator_token():
+    runner = object.__new__(RunPodCanaryRunner)
+    runner.options = SimpleNamespace(
+        task_type="ltx_t2v",
+        agent_token="agent-secret",
+    )
+    runner._web_auth_headers = lambda: {"Authorization": "Bearer web"}
+
+    assert runner._web_canary_auth_headers() == {
+        "Authorization": "Bearer web",
+        "X-AllBot-Cloud-Test-Canary-Token": "agent-secret",
+    }
 
 
 def _config(
@@ -75,7 +91,9 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
 
     scail2_cases = RunPodCloudTestCanaryCaseBuilder(
         _config(tmp_path, task_type="scail2")
-    ).task_cases({"reference_image_key": "reference.jpg", "motion_video_key": "motion.mp4"})
+    ).task_cases(
+        {"reference_image_key": "reference.jpg", "motion_video_key": "motion.mp4"}
+    )
     assert [case["expected_central_task_type"] for case in scail2_cases] == [
         "scail2_action_transfer",
         "scail2_video_replacement",
@@ -137,9 +155,7 @@ def test_executor_success_downloads_result_and_pop_evidence(tmp_path):
             }
         ],
         sleep_func=lambda seconds: None,
-        phase_func=lambda summary, name, status, details: phases.append(
-            (name, status)
-        ),
+        phase_func=lambda summary, name, status, details: phases.append((name, status)),
     )
 
     result = executor.run_task_case(
@@ -216,11 +232,14 @@ def test_executor_skips_optional_download_when_disabled(tmp_path):
         phase_func=lambda *args: None,
     )
 
-    assert executor.download_result_if_requested(
-        label="img",
-        task_id="task-1",
-        result_url="https://cdn.example/result.png",
-    ) == {}
+    assert (
+        executor.download_result_if_requested(
+            label="img",
+            task_id="task-1",
+            result_url="https://cdn.example/result.png",
+        )
+        == {}
+    )
 
 
 def test_split_download_validates_mp4_and_last_frame_png(tmp_path):
@@ -231,7 +250,9 @@ def test_split_download_validates_mp4_and_last_frame_png(tmp_path):
         web_auth_headers_func=lambda: {},
         fetch_workers_func=lambda: [],
         fetch_result_bytes_func=lambda url: (
-            (PNG_BYTES, "public_url") if url.endswith(".png") else (MP4_BYTES, "public_url")
+            (PNG_BYTES, "public_url")
+            if url.endswith(".png")
+            else (MP4_BYTES, "public_url")
         ),
         sleep_func=lambda seconds: None,
         phase_func=lambda *args: None,

@@ -1,6 +1,8 @@
+import hmac
 import logging
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from src.core.task_core import (
     ConcurrencyLimitError,
@@ -32,13 +34,30 @@ logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
 
 
+def _is_operator_canary_authorized(candidate: str | None) -> bool:
+    expected = os.getenv("AGENT_SECRET_TOKEN", "")
+    return bool(
+        expected
+        and candidate
+        and hmac.compare_digest(candidate.encode(), expected.encode())
+    )
+
+
 @router.delete("/cancel/{task_id}")
-async def cancel_pending_task(task_id: str, current_user: User = Depends(get_current_user)):
+async def cancel_pending_task(
+    task_id: str, current_user: User = Depends(get_current_user)
+):
     return await cancel_pending_task_payload(task_id=task_id, user_id=current_user.id)
+
 
 @router.post("/generate", response_model=TaskGenerateResponse)
 async def create_generation_task(
-    req: TaskGenerateRequest, current_user: User = Depends(get_current_user)
+    req: TaskGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    operator_canary_token: str | None = Header(
+        default=None,
+        alias="X-AllBot-Cloud-Test-Canary-Token",
+    ),
 ):
     """
     Submit a generation task (image/video).
@@ -49,6 +68,9 @@ async def create_generation_task(
             current_user=current_user,
             get_balance=quota_manager.get_credits,
             logger=logger,
+            operator_canary_authorized=_is_operator_canary_authorized(
+                operator_canary_token
+            ),
         )
     except QueueCapacityError as exc:
         raise HTTPException(
@@ -67,9 +89,9 @@ async def create_generation_task(
 
 @router.get("/{task_id}/result", response_model=TaskResultResponse)
 async def get_task_result(
-    task_id: str, 
+    task_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get task generation result directly.
