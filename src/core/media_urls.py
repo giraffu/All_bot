@@ -1,7 +1,7 @@
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
+    build_flat_r2_compatibility_key,
     build_storage_r2_object_key,
     resolve_storage_object,
 )
@@ -31,7 +31,7 @@ def build_r2_media_key_candidates(
         candidates.append(build_history_r2_media_key(task_id, output_file))
     candidates.append(build_storage_r2_object_key(output_file))
     candidates.append(output_file)
-    candidates.append(build_legacy_r2_key(output_file))
+    candidates.append(build_flat_r2_compatibility_key(output_file))
 
     seen = set()
     return [key for key in candidates if key and not (key in seen or seen.add(key))]
@@ -55,7 +55,7 @@ def build_r2_thumbnail_info(
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     candidates.append(build_storage_r2_object_key(thumb_file))
     candidates.append(thumb_file)
-    candidates.append(build_legacy_r2_key(thumb_file))
+    candidates.append(build_flat_r2_compatibility_key(thumb_file))
 
     seen = set()
     deduped = [key for key in candidates if key and not (key in seen or seen.add(key))]

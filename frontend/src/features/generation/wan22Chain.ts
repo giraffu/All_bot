@@ -1,5 +1,5 @@
 import type { HistoryItem } from '@/types/gallery'
-import { buildStorageFileUrl } from '@/utils/storageUrl'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 import {
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
@@ -109,7 +109,7 @@ const buildLastFrameAsset = (
   }
   return {
     key,
-    preview: lastFrame?.url || buildStorageFileUrl(key),
+    preview: lastFrame?.url || resolveMediaUrl(key),
     name: `第 ${segmentIndex} 段尾帧`,
     locked: true,
     lockedLabel,
@@ -126,7 +126,7 @@ const buildEndFrameAsset = (record: HistoryItem): Wan22ChainPrefillAsset | null 
   }
   return {
     key: endKey,
-    preview: record.input_file_urls?.[1] || buildStorageFileUrl(endKey),
+    preview: record.input_file_urls?.[1] || resolveMediaUrl(endKey),
     name: '终止帧',
   }
 }

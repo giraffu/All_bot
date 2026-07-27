@@ -1,4 +1,4 @@
-import { buildStorageFileUrl } from '@/utils/storageUrl'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 export const isVideoFile = (path: string, mediaType?: string): boolean => {
   if (mediaType) {
@@ -28,7 +28,10 @@ export const getFileUrl = (path: string, postId?: number | string): string => {
     return ''
   }
 
-  const url = buildStorageFileUrl(path)
+  const url = resolveMediaUrl(path)
+  if (!url) {
+    return ''
+  }
 
   if (!postId || url.includes('X-Amz-Signature') || /[?&]v=/.test(url)) {
     return url

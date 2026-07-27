@@ -258,5 +258,5 @@ wait_for_http_ready "云测试 Web API" "http://${CLOUD_TEST_HEALTH_HOST}:8001/a
 echo "✅ 云端测试控制面部署完成。"
 echo "👉 查看服务: ${COMPOSE_CMD[*]} --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps"
 echo "👉 Dashboard 与 QQCC Config 管理面已从云测试环境移除。"
-echo "👉 公网测试 Web 已迁移到 web-test.aivison.it.com 的边缘 VPS；Web 前端 dev 容器默认不启动。"
+echo "👉 公网测试 Web 由 Cloudflare Pages 的 web-cf-test.aivison.it.com 承载；Web 前端 dev 容器默认不启动。"
 echo "👉 不要启动 bot-test，除非你已经停止本地 tg-bot-test。"

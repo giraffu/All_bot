@@ -1,11 +1,6 @@
 from pathlib import Path
 
-from config import (
-    LEGACY_MINIO_BUCKET,
-    LEGACY_MINIO_RESULT_BUCKET,
-    MINIO_BUCKET,
-    MINIO_RESULT_BUCKET,
-)
+from config import MINIO_BUCKET, MINIO_RESULT_BUCKET
 from src.constants import VIDEO_TASK_TYPES
 
 
@@ -15,7 +10,7 @@ _VIDEO_TASK_TYPE_SET = {task_type.lower() for task_type in VIDEO_TASK_TYPES}
 def resolve_storage_object(
     output_file: str,
 ) -> tuple[str, str]:
-    legacy_bucket_aliases = {
+    compatibility_bucket_aliases = {
         "bot-data": MINIO_BUCKET,
         "comfyui-temp": MINIO_RESULT_BUCKET,
     }
@@ -25,7 +20,7 @@ def resolve_storage_object(
     }
 
     for bucket_name, resolved_bucket in {
-        **legacy_bucket_aliases,
+        **compatibility_bucket_aliases,
         **current_bucket_aliases,
     }.items():
         prefix = f"{bucket_name}/"
@@ -36,23 +31,6 @@ def resolve_storage_object(
         return MINIO_RESULT_BUCKET, output_file
 
     return MINIO_BUCKET, output_file
-
-
-def resolve_legacy_storage_object(output_file: str) -> tuple[str, str]:
-    legacy_bucket_aliases = {
-        "bot-data": LEGACY_MINIO_BUCKET,
-        "comfyui-temp": LEGACY_MINIO_RESULT_BUCKET,
-    }
-
-    for bucket_name, resolved_bucket in legacy_bucket_aliases.items():
-        prefix = f"{bucket_name}/"
-        if output_file.startswith(prefix):
-            return resolved_bucket, output_file[len(prefix) :]
-
-    if "/" not in output_file:
-        return LEGACY_MINIO_RESULT_BUCKET, output_file
-
-    return LEGACY_MINIO_BUCKET, output_file
 
 
 def get_media_type_from_history(history_type: str | None) -> str:
@@ -89,5 +67,5 @@ def build_storage_r2_object_key(output_file: str) -> str:
     return object_name
 
 
-def build_legacy_r2_key(object_name: str) -> str:
+def build_flat_r2_compatibility_key(object_name: str) -> str:
     return object_name.split("/")[-1]

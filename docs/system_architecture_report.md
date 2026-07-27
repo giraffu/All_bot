@@ -29,7 +29,6 @@ graph TD
     subgraph Edge[边缘与网络层]
         CFPAGES[Cloudflare Pages]
         CFTUNNEL[Cloudflare Tunnel]
-        WEBVPS[Web/Nginx VPS: assets / web-test / rollback]
         TGAPI[Telegram Local API / 文件服务]
         VLAN[Tailscale]
     end
@@ -65,7 +64,7 @@ graph TD
     subgraph Infra[基础设施]
         PG[(托管 PostgreSQL)]
         REDIS[(托管 Valkey / Redis)]
-        MINIO[(本地 legacy MinIO)]
+        SHADOWSTORE[(本地 R2 shadow)]
         R2[(Cloudflare R2 user-data-prod)]
     end
 
@@ -132,8 +131,7 @@ graph TD
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
   - 后端运行时数据库明确以 PostgreSQL 为唯一支持方言；schema、Alembic migration、seed SQL 和 shadow 同步脚本允许使用 PostgreSQL 专有能力，详见 `docs/adr/0001-postgresql-only-runtime.md`。
-  - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据备份，不再是正式 Web/Dashboard 运行时 fallback。
-  - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 人工回滚/旧外链入口、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
+  - 新生成对象统一写入 R2 `user-data-prod`；本地对象存储只保存 R2 shadow/灾备副本，不参与正式 Web/Dashboard 运行时读取。
 
 ### 1.3 云正式生产口径
 
@@ -141,13 +139,13 @@ graph TD
 
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务。2026-07-12 已执行 QQCC 私有 Bot migration 并显式启动 `cloud-qqcc-private-bot-worker-prod`（`qqcc-private-bots` profile），生产 webhook 复用 `api.aivison.it.com`，owner WebApp 使用公开 `private-bot.aivison.it.com`；后续默认 compose 操作仍须显式保留该 profile。
 - `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
-- `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
+- `web.aivison.it.com` 由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API，`rmb.aivison.it.com` 回源云 Payment API。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
 
 - 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动，私有 Bot worker 也必须通过 `qqcc-private-bots` profile 显式启动。本地主服务器的 `workers/docker-compose-cloud-worker-test.yml` 声明 `cloud-comfy-agent-test-1..8`，默认常驻只保留 test-1 与 test-8，其余测试 worker 只在 smoke/canary 窗口按需启用；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
-- 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
+- 云测试 Web 公网入口是 Cloudflare Pages `web-cf-test.aivison.it.com`，API 经 `api-cf-test.aivison.it.com` Tunnel 回源云测试 Web API `100.82.124.91:8001`。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
 ---
@@ -244,7 +242,7 @@ sequenceDiagram
 - **任务调度与节点通信**
   - task core facade、provider/capability、Web monitor、runtime cleanup、QueueManager、Central API、Workers。
 - **对象存储与媒体交付**
-  - R2 正式写入、legacy MinIO 迁移补齐/人工回滚、结果 URL 生命周期。
+  - R2 正式写入、短签/公网 URL 与结果生命周期。
 - **交互状态机与回调路由**
   - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
 - **本地经营与提示词分析**

@@ -23,12 +23,11 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **媒体 URL 策略**：
   - QQCC 场景示范媒体使用 R2 确定性 key `qqcc/demo/<scene_kind>/<scene_id>/<slot>` 覆盖写，配置保存内容哈希与按 Bot ID 划分的 Telegram file_id 缓存；替换文件时内容哈希变化必须让旧 file_id 失效。配置 Web 预览 URL 只能按需短签生成，不能持久化过期 URL。
   - R2 key 候选顺序为标准 `history/{task_id}/original.ext`、原始 object key、raw `output_file`（兼容 `bot-data/...` 前缀镜像）、旧 basename。
-  - 正式 Web/Dashboard 运行时已退出 legacy MinIO 回源：默认 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false`，R2 miss 后只能返回当前 R2/S3 短签、空值或 `pending_result`，不得生成 `assets.aivison.it.com` URL。
-  - legacy MinIO 只保留给迁移脚本、人工回滚和旧外链排障；新数据仍写 R2，worker 不得写 legacy MinIO。
+  - 正式 Web/Dashboard 媒体只从当前 R2/S3 返回短签、公网 URL、空值或 `pending_result`；运行时代码不保留本地对象存储回源。
   - web/bot 新成功历史都应预热标准 R2 原文件和缩略图，只有 web 来源执行用户历史 R2 cache prune。
   - 云正式 worker 可通过本地上传 sidecar 把 `/app/spool` 结果上传 R2，但仍必须等待 R2/S3 put 成功后才调用 Central `/complete`。
   - Gallery 列表热路径不得对每条媒体做公网 `HEAD`；R2 S3 命中时优先返回 R2 S3 短签 URL，避免 `R2_PUBLIC_DOMAIN` 自定义域名 miss 导致前端空白，预签不可用时才退回公网 URL。
-  - Telegram Gallery 浏览优先复用 `GalleryPost.telegram_file_id` 秒发缓存；缓存缺失或失效时只下载当前作品的 Gallery R2/S3 URL 并刷新 file_id，测试 Bot 不写回。不得恢复旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 主路径。
+  - Telegram Gallery 浏览优先复用 `GalleryPost.telegram_file_id` 秒发缓存；缓存缺失或失效时只下载当前作品的 Gallery R2/S3 URL 并刷新 file_id，测试 Bot 不写回。
   - 列表页缩略图 R2 miss 后应快速返回空值，不做深度探测。
   - History、收藏、Gallery 等集合路径统一走已有 R2 S3 existence cache/singleflight 和短签，不得逐条公网 HEAD；History extra outputs 必须显式使用列表策略。
   - Dashboard History 集合的输出媒体必须分别返回原件 URL 与缩略图 URL；列表图片只加载缩略图，视频列表不挂载原视频，无缩略图时显示占位符，点击后才在当前页弹窗加载原视频。输入媒体可返回不探测 existence 的文件级缩略图候选，缩略图缺失时图片降级原图、视频降级占位符。媒体解析前必须结束 SQL 只读事务。
@@ -38,7 +37,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
   - 若只迁移 Gallery 投稿、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，可追加 `--skip-per-user-recent-history` 并使用独立 cursor，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
 - **R2 可见热集审计**：只读排查 Web 可见热集在 R2 中还缺什么时，使用 `scripts/audit_visible_hotset_r2_objects.py --env-file .env.cloud.prod --recent-limit 8 --report-dir logs`。默认范围包含每用户最近 8 条可见历史、全部 Gallery post、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，并默认审计原文件、缩略图和本地 `input_file`。报告会同时区分“运行时 R2 全候选缺失”和“标准 `history/{task_id}/...` key 缺失但 fallback key 命中”，并在 `logs/` 生成 JSON、Markdown 概要和 CSV 缺失附录；脚本只做 R2 `HEAD` 与 DB 只读查询，不上传、不删除、不改 cursor。全量生产审计默认用 `--db-batch-size 1000` 分批读取 History 详情，`--concurrency` 同时控制 R2 HEAD semaphore 与线程池 worker，`--progress-interval` 输出进度，避免大热集黑盒长跑；若只看社区强可见、不含最近 8 条，可追加 `--skip-per-user-recent-history`。
 - **Web 读路径性能边界**：历史、用户历史、Gallery 响应构造在慢对象存储/R2 探测/短签生成前应释放只读数据库事务；新增列表或详情读路径时，不要在 DB 事务内等待对象存储探测。云正式已补 Gallery/History 热路径索引，新增查询条件前先确认索引命中。
-- **云测试/R2 直连 CORS**：`.env.cloud.test` 可将 `MINIO_*` 兼容变量全部指向 R2 S3 endpoint 与 `user-data-test` 桶；当前云测试应保持 `MINIO_PUBLIC_URL=`，并设置 `R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频 `/result` 依赖 R2 公网 URL，`R2_PUBLIC_DOMAIN` 缺失会停在 99% / `pending_result`；若公开域名临时返回 403，图片可走短签 fallback，视频必须优先修复公开域名或实现受控 fallback。旧测试 MinIO 对象镜像到 R2 桶根路径，不能额外加旧桶名前缀，否则历史 `output_file` 无法命中。Web 参考图/视频上传会由浏览器直传 R2；`user-data-test` 桶当前必须同时允许 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`、不可变 Pages 测试自定义域 `https://web-cf-test.aivison.it.com` 与其默认域 `https://allbot-web-cf-test.pages.dev`。策略保持 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`。新增或切换 Web Origin 时必须先更新桶 CORS，再用该 Origin 做预检和真实预签名 PUT/HEAD；否则前端会报 `Network error during upload`。
+- **云测试/R2 直连 CORS**：`.env.cloud.test` 可将 `MINIO_*` 兼容变量全部指向 R2 S3 endpoint 与 `user-data-test` 桶；当前云测试应保持 `MINIO_PUBLIC_URL=`，并设置 `R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频 `/result` 依赖 R2 公网 URL，`R2_PUBLIC_DOMAIN` 缺失会停在 99% / `pending_result`；若公开域名临时返回 403，图片可走短签 fallback，视频必须优先修复公开域名或实现受控 fallback。Web 参考图/视频上传会由浏览器直传 R2；`user-data-test` 桶只允许 `https://web.aivison.it.com`、测试 Pages 自定义域 `https://web-cf-test.aivison.it.com` 与其默认域 `https://allbot-web-cf-test.pages.dev`。策略保持 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`。
 - **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
 
 ## 2. 输入输出规范

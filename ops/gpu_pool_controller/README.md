@@ -125,7 +125,7 @@ business task remains distinct; `worker_remote_02` continues to execute
 `face_swap.json`.
 
 LAN model cache uses the dedicated MinIO service at `192.168.1.115:9010` with
-bucket `allbot-model-cache`; do not reuse legacy MinIO or `user-data-*` buckets.
+bucket `allbot-model-cache`; do not reuse runtime `user-data-*` buckets.
 Use a redacted loader for `.env.lan.model-cache`. The all-task helper builds
 canonical manifests on top of a shared object pool:
 

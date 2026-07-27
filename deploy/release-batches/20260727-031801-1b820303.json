@@ -1,0 +1,24 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "49d8014a641ecb866036a24973843885bdf711b7",
+  "batch": "20260727-031801-1b820303",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-031801-1b820303",
+  "members": [
+    {
+      "base_sha": "1c25ee45fde60643cae8f7c68a56f7d3861e4120",
+      "branch": "codex/d-accept-ltx-t2v-exact-digest-canary",
+      "head": "1b820303558a74e6fbea502b3956e7d305cd2077",
+      "queued_at": "2026-07-27T02:53:15.637264+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "1c25ee45fde60643cae8f7c68a56f7d3861e4120",
+      "branch": "codex/e-retire-web-vps-legacy-edge",
+      "head": "381977bdf2cc6f8b95943a44cb96bcebcc666e82",
+      "queued_at": "2026-07-27T03:14:59.797901+00:00",
+      "slot": "E"
+    }
+  ],
+  "pr_base": "main"
+}

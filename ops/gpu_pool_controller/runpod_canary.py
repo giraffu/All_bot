@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import struct
 import sys
 import time
@@ -1122,16 +1123,25 @@ class RunPodCanaryRunner:
         failures: list[str] = []
         image_name = str(body.get("imageName") or "")
         template_id = str(body.get("templateId") or "")
+        digest_prefix = spec.image_ref_prefix.removesuffix(":") + "@sha256:"
+        uses_canonical_digest = bool(
+            re.fullmatch(re.escape(digest_prefix) + r"[0-9a-f]{64}", image_name)
+        )
+        uses_public_image = image_name.startswith(
+            spec.image_ref_prefix
+        ) or uses_canonical_digest
         if template_id and not spec.allow_template_id:
             failures.append("templateId must be empty for baked GHCR canary")
-        if image_name and not image_name.startswith(spec.image_ref_prefix):
+        if image_name and not uses_public_image:
             failures.append(
                 f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
             )
-        if not template_id and not image_name.startswith(spec.image_ref_prefix):
+        if not template_id and not uses_public_image:
             failures.append(
                 f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
             )
+        if spec.task_type == "ltx_t2v" and not uses_canonical_digest:
+            failures.append("ltx_t2v imageName must use an exact sha256 digest")
         if (
             spec.expected_gpu_type_ids
             and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids

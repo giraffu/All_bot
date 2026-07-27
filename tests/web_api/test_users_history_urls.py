@@ -165,7 +165,7 @@ async def test_resolve_history_media_urls_prefers_r2_thumbnail(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_resolve_history_media_urls_uses_legacy_r2_media_key_when_history_key_misses(
+async def test_resolve_history_media_urls_uses_flat_r2_compatibility_key_when_history_key_misses(
     monkeypatch,
 ):
     get_presigned_url = MagicMock(return_value="minio-original-url")
@@ -255,42 +255,6 @@ async def test_resolve_history_media_urls_falls_back_to_minio_thumbnail(monkeypa
     assert output_url == "minio-original-url"
     assert thumbnail_url == "minio-thumb-url"
     assert get_presigned_url.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_resolve_history_media_urls_does_not_use_legacy_storage(monkeypatch):
-    get_presigned_url = MagicMock(return_value="current-storage-url")
-
-    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
-    monkeypatch.setattr(
-        media_presenter,
-        "get_first_r2_url_if_exists",
-        AsyncMock(side_effect=["", ""]),
-    )
-    monkeypatch.setattr(
-        media_presenter.storage,
-        "async_object_exists",
-        AsyncMock(return_value=False),
-    )
-    monkeypatch.setattr(
-        media_presenter.storage,
-        "get_legacy_presigned_url",
-        MagicMock(side_effect=AssertionError("legacy storage must not be used")),
-    )
-
-    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
-        task_id="task-1",
-        output_file="123/output_images/task-1.png",
-        history_type="image",
-        r2_lookup_strategy="public_probe",
-    )
-
-    assert output_url == "current-storage-url"
-    assert thumbnail_url == ""
-    get_presigned_url.assert_called_once_with(
-        "123/output_images/task-1.png",
-        bucket=MINIO_BUCKET,
-    )
 
 
 @pytest.mark.asyncio

@@ -65,8 +65,6 @@ class ShadowSyncConfig:
     r2_shadow_seed_with_copy: bool = False
     complete_media_sync_enabled: bool = False
     local_minio_complete_bucket: str = "user-data-complete-shadow"
-    complete_media_import_legacy: bool = False
-    complete_media_legacy_buckets: tuple[str, ...] = ("bot-data", "comfyui-temp")
     cloud_redis_url: str | None = None
     cloud_worker_redis_url: str | None = None
     cloud_db_tunnel_ssh_host: str | None = None
@@ -259,20 +257,10 @@ def bool_value(values: dict[str, str], key: str, default: bool) -> bool:
     raise ShadowSyncError(f"{key} must be a boolean")
 
 
-def csv_tuple(values: dict[str, str], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    raw = values.get(key)
-    if raw is None or raw.strip() == "":
-        return default
-    return tuple(item.strip() for item in raw.split(",") if item.strip())
-
-
 def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
     values = merged_env_file_values(args.env_file)
     timestamp = args.timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_root = Path(values.get("SHADOW_SYNC_BACKUP_ROOT", str(DEFAULT_BACKUP_ROOT)))
-    include_legacy_media_import = bool(
-        getattr(args, "include_legacy_media_import", False)
-    )
     seed_r2_shadow_with_copy = bool(
         getattr(args, "seed_r2_shadow_with_copy", False)
     )
@@ -314,15 +302,6 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
         local_minio_complete_bucket=values.get(
             "LOCAL_MINIO_COMPLETE_BUCKET",
             "user-data-complete-shadow",
-        ),
-        complete_media_import_legacy=(
-            bool_value(values, "COMPLETE_MEDIA_IMPORT_LEGACY", False)
-            or include_legacy_media_import
-        ),
-        complete_media_legacy_buckets=csv_tuple(
-            values,
-            "COMPLETE_MEDIA_LEGACY_BUCKETS",
-            ("bot-data", "comfyui-temp"),
         ),
         cloud_redis_url=optional(values, "CLOUD_PROD_REDIS_URL"),
         cloud_worker_redis_url=optional(values, "CLOUD_PROD_WORKER_REDIS_URL"),
@@ -469,10 +448,6 @@ def validate_config(config: ShadowSyncConfig) -> None:
         raise ShadowSyncError("local shadow bucket must not reuse the R2 production bucket name")
     if config.local_minio_shadow_bucket == config.local_minio_quarantine_bucket:
         raise ShadowSyncError("shadow and quarantine buckets must be different")
-    if config.complete_media_import_legacy and not config.complete_media_sync_enabled:
-        raise ShadowSyncError(
-            "COMPLETE_MEDIA_SYNC_ENABLED must be true when legacy media import is requested"
-        )
     if config.complete_media_sync_enabled:
         if not config.local_minio_complete_bucket:
             raise ShadowSyncError("LOCAL_MINIO_COMPLETE_BUCKET must not be empty")
@@ -483,14 +458,11 @@ def validate_config(config: ShadowSyncConfig) -> None:
         conflicting_buckets = {
             config.local_minio_shadow_bucket,
             config.local_minio_quarantine_bucket,
-            *config.complete_media_legacy_buckets,
         }
         if config.local_minio_complete_bucket in conflicting_buckets:
             raise ShadowSyncError(
-                "local complete media bucket must be different from shadow, quarantine, and legacy source buckets"
+                "local complete media bucket must be different from shadow and quarantine buckets"
             )
-        if config.complete_media_import_legacy and not config.complete_media_legacy_buckets:
-            raise ShadowSyncError("COMPLETE_MEDIA_LEGACY_BUCKETS must not be empty")
     if config.cloud_db_tunnel_ssh_host:
         parsed_cloud = parsed_url(config.normalized_cloud_database_url)
         if not parsed_cloud.hostname:
@@ -1268,16 +1240,6 @@ def run_complete_media_sync(config: ShadowSyncConfig, runner: CommandRunner) -> 
         f"localminio:{complete_bucket} "
         f"{rclone_copy_common_flags(config)}",
     ]
-    if config.complete_media_import_legacy:
-        for source_bucket in config.complete_media_legacy_buckets:
-            lines.append(
-                "rclone copy "
-                f"localminio:{shlex.quote(source_bucket)} "
-                f"localminio:{complete_bucket} "
-                "--ignore-existing "
-                f"{rclone_copy_common_flags(config)}"
-            )
-
     runner.run(
         docker_cmd(
             RCLONE_IMAGE,
@@ -1398,10 +1360,7 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
                 if config.complete_media_sync_enabled
                 else None
             ),
-            "legacy_import": config.complete_media_import_legacy,
-            "legacy_buckets": list(config.complete_media_legacy_buckets),
             "daily_mode": "shadow_copy_without_delete",
-            "legacy_mode": "manual_copy_ignore_existing",
         },
         "dump_sha256": dump_sha256,
         "dump_file": str(config.dump_path),
@@ -1496,8 +1455,6 @@ def log_preflight(config: ShadowSyncConfig, *, execute: bool) -> None:
                     if config.complete_media_sync_enabled
                     else None
                 ),
-                "complete_media_import_legacy": config.complete_media_import_legacy,
-                "complete_media_legacy_buckets": list(config.complete_media_legacy_buckets),
                 "local_analytics_preserve_on_shadow_sync": (
                     config.local_analytics_preserve_on_shadow_sync
                 ),
@@ -1557,14 +1514,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timestamp",
         help="override timestamp for tests or one-off recovery runs",
-    )
-    parser.add_argument(
-        "--include-legacy-media-import",
-        action="store_true",
-        help=(
-            "one-off complete bucket backfill from local legacy MinIO buckets; "
-            "daily timer should normally leave this off"
-        ),
     )
     parser.add_argument(
         "--seed-r2-shadow-with-copy",

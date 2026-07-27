@@ -17,7 +17,7 @@ description: "处理 AllBot Cloudflare 账号自动化、API Token、DNS、Tunne
 | 公网入口拓扑、Tailscale、Nginx/VPS、灾备回源 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` |
 | 本地数据分析平台公网入口 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` |
 | 云正式 Web/API/RMB/worker tunnel | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`、`allbot-ops-deployment` |
-| Pages 发布、边缘 VPS、legacy 静态回滚 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` |
+| Pages 发布与自定义域 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` |
 
 若操作会改变生产公网入口、Access 策略、DNS、Tunnel 回源或 Pages 发布，叠加 `allbot-ops-deployment`。若更新 docs/skills，叠加 `allbot-kb-auto-updater`。
 
