@@ -1,15 +1,29 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "4c264b04120938bdc1c481d4a4e6a7463d1b94fd",
+  "base_sha": "df0772b4087633f58a9de8ec57f62050876ead59",
   "batch": "20260727-210744-fe72840b",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260727-210744-fe72840b",
+  "integration_branch": "codex/release-batch-20260727-210744-fe72840b-retry-cf2b0d31",
   "members": [
     {
       "base_sha": "4c264b04120938bdc1c481d4a4e6a7463d1b94fd",
       "branch": "codex/d-preserve-runner-error-tail",
       "head": "fe72840b409f7693b7344a326babc84575f46200",
       "queued_at": "2026-07-27T21:07:32.820661+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "df0772b4087633f58a9de8ec57f62050876ead59",
+      "branch": "codex/d-offline-plan-skip-remote-state",
+      "head": "4d981e7693e751dbf7106b101b22730a524e42c6",
+      "queued_at": "2026-07-27T21:15:57.390184+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "df0772b4087633f58a9de8ec57f62050876ead59",
+      "branch": "codex/d-absorb-forward-fix-on-ci-retry",
+      "head": "cf2b0d31662616743e735e0cd6460de92d8f5019",
+      "queued_at": "2026-07-27T21:19:13.371100+00:00",
       "slot": "D"
     }
   ],
