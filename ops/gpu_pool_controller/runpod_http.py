@@ -13,6 +13,9 @@ class RunPodHttpError(ValueError):
     pass
 
 
+DEFAULT_USER_AGENT = "AllBot-RunPod-Operator/1"
+
+
 def safe_url(url: str) -> str:
     parsed = urllib.parse.urlsplit(url)
     return urllib.parse.urlunsplit(parsed._replace(query="", fragment=""))
@@ -78,11 +81,14 @@ class RunPodHttpClient:
     ) -> dict[str, Any]:
         if params:
             url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
+        request_headers = dict(headers or {})
+        if not any(key.lower() == "user-agent" for key in request_headers):
+            request_headers["User-Agent"] = DEFAULT_USER_AGENT
         request = urllib.request.Request(
             url,
             data=body,
             method=method,
-            headers=headers or {},
+            headers=request_headers,
         )
         try:
             with self._urlopen(request, timeout=30) as response:
