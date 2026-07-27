@@ -23,6 +23,7 @@ import {
   updateRunPodAutoscalerSettings,
 } from '../api/api'
 import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
+import { isRunPodManualAgentId } from '../utils/runpodProfiles'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
 import WorkerHistoryModal from './WorkerHistoryModal.vue'
@@ -132,9 +133,6 @@ const lowTrustPendingTotals = computed(() => {
   }
 })
 
-const RUNPOD_AGENT_ID_PATTERN =
-  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16)_manual_\d+$/
-
 const isTruthyFlag = (value) =>
   value === true || value === 1 || value === '1' || value === 'true' || value === 'True'
 
@@ -147,7 +145,7 @@ const splitWorkerTypes = (worker) =>
 const isRunPodServerWorker = (worker) => {
   const provider = String(worker.provider || '').toLowerCase()
   const agentId = String(worker.agent_id || '')
-  return provider === 'runpod' || RUNPOD_AGENT_ID_PATTERN.test(agentId)
+  return provider === 'runpod' || isRunPodManualAgentId(agentId)
 }
 
 const supportsRunPodProfile = (worker, profile) => {

@@ -312,6 +312,7 @@ PUBLIC_WEB_RUNTIME_FIELDS = {
     "enable_free_edit_v2",
     "enable_free_edit_v3",
     "enable_scail2_long_action_transfer",
+    "enable_ltx_t2v",
 }
 
 
