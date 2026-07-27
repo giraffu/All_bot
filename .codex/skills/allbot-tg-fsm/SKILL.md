@@ -1,106 +1,114 @@
 ---
 name: "allbot-tg-fsm"
-description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由注册、临时文件下载清理与语言切换同步。开发或修改 Bot 对话流和文件处理时必须调用本技能。"
+description: "处理 Telegram FSM、全局菜单退出、callback 注册、更新并发、临时文件、语言同步与独立 Bot 边界。"
 ---
 
-# AllBot Telegram 交互状态机 (TG FSM)
+# AllBot Telegram FSM
 
-本技能定义 Telegram Bot 特有的复杂交互逻辑，覆盖多步 FSM、主菜单打断、callback 注册路由、文件下载/清理与语言切换的运行时约束。
+修改 Bot 对话流、callback、菜单、文件下载/清理、polling runtime 或语言切换
+时必须加载本技能。卡死/转圈/下载失败叠加 `allbot-diagnosing-bugs`，行为
+改动叠加 `allbot-tdd`，QQCC 叠加 `allbot-qqcc-lazy-bot`。
 
-涉及 FSM 卡死、callback 转圈、文件下载失败或语言路由异常时，叠加 `allbot-diagnosing-bugs`；新增对话流或修复回归时，叠加 `allbot-tdd` 通过 handler / callback focused tests 锁定行为。
+## 1. 按需阅读
 
-## 1. 模块功能描述
-- **多语言精准路由**：FSM 入口仍可使用 `I18nFilter`，但全局菜单识别已扩展为 `menu_route_registry + prompt_router + GLOBAL_REVERSE_MAP + is_global_menu_command(...)` 组合。
-- **FSM 黑盒退出机制**：在任何文字接收入口，优先用 `is_global_menu_command(...)` 判断是否应退出当前流程，而不是散落硬编码菜单判断。
-- **Callback 注册路由**：回调处理依赖 `register_callback` 前缀注册、长度降序匹配与统一 `safe_answer_query` 兜底，修改 callback 拆分时必须维护这套契约。
-- **主 Bot 自由P图版本面板**：现有自由P图选择面板同时提供 v2.5、v3 与附加模型。v2.5 callback 进入 `free_edit_v2_5`：第一张图后可直接发提示词按 3 灵石提交，也可继续上传第二张并切为 7 灵石；第三张必须在下载前原地拒绝。旧 `editlora_free_edit_v2` callback 必须继续兼容并进入 v3 的单图 5 灵石 BF16→换脸链路，v3 第二张图同样不得下载。
-- **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；`cleanup_fsm_user_data(...)` 除了清理 `*_data` 内路径，也会清理随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；Telegram Local API / Poll / `ChatMemberRestricted` 旧 payload 兼容与语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。旧 payload 缺少可选 `can_react_to_messages` 时必须按 Bot API 语义回退到 `can_send_messages`，避免单条成员状态 update 阻塞整个 polling offset。
-- **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
-- **签到频道成员同步**：主 Bot 签到先检查避难所群，再用 `REQUIRED_CHANNEL_ID` 查询宗门频道并同步 `is_channel_member` / 修为；该键必须由 `main-bot` 逐服务投影精确提供，`CHANNEL_INVITE_LINK` 只负责展示，不能替代 Telegram `getChatMember` 所需的频道 ID。运行时保留未知状态兼容，但发布契约必须在缺键时 fail closed。
-- **主 Bot 运行时菜单配置**：`src/services/main_bot_menu_config_service.py` 以 `runtime_checkpoints/main_bot_menu_config:v1` 保存主菜单排序、每行 1–4 个按钮及主/二级菜单显隐；`main_bot_menu_runtime.py` 在每次发送新键盘前加载配置，失败时回退完整默认菜单。该配置只影响 Reply Keyboard 展示，不得移除 prompt route、FSM entrypoint、旧按钮或手工文本兼容；`MAIN_BOT_LAZY_BOT_ENABLED` 等既有能力闸门仍优先，旧 `QQCC_LAZY_BOT_*` 只作整组兼容回退。
-- **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，订阅目标群 `chat_join_request` 与普通 `message` update；入群资格只读查订单/修为，普通消息只做轻量群管理（非管理员链接、违禁词、结构化日志），不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。
-- **QQCC 懒人 Bot**：`qqcc_bot/` 是独立简化 polling 服务，只注册 quick image/video FSM 和最小菜单；修改它时必须叠加 `allbot-qqcc-lazy-bot`。
-- **QQCC 私有 Bot 申请**：`qqcc_bot/private_bot_fsm.py` 只注册在官方 QQCC。收到 token 后必须先尽力删除原消息，禁止回显、日志或审计 metadata；验证成功即自动开通，无审核，一个 owner 只能绑定一个 Telegram Bot。私有 Application 不展示申请入口。
-- **QQCC 私有 Bot 会员检查**：租户 Application 不得用自己的 Bot 查询官方 QQCC 频道；private worker 注入进程共享的官方 QQCC membership checker，只做成员查询、不启动 polling，进程内对同用户 singleflight，Redis 在租户间共享正向 60 秒、负向 5 秒缓存。
-- **QQCC 场景示范媒体**：`qdraw_scene:*` / `qfilter_scene:*` / `qvid_scene:*` / `qaivid_scene:*` 进入 FSM 时，先调用 `qqcc_demo_media_service` 发送场景输入/输出示范媒体，再发送上传素材文字提示。发送优先使用与当前 Bot ID 对应的 Telegram `file_id`；无缓存或缓存失效时使用 R2 短签并回写新 file_id。示范发送失败只能降级为文字提示，不得卡住 callback 或阻断 FSM。
-- **已迁移主 Bot 旧懒人入口**：主 Bot 不得恢复旧懒人入口任务提交；旧 `menu.video_edit` / `menu.video_edit_*`、`qqcc.menu.ai_draw`、`qqcc.menu.ai_filter`、`qqcc.menu.quick_faceswap`、`快速脱衣` / `快速自慰` 和主 Bot `qvid_*` 残留入口只能回复 QQCC 懒人 Bot inline 跳转或入口未配置提示。QQCC Bot 自身 `qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 和旧 `qvid_mode:*` 兼容不受影响。
-- **Quick Image 提交 service**：`quick_image_fsm.py` 与 `random_faceswap_again` callback 只负责 Telegram 状态流转、图片路径读取、额度检查、用户回复和清理；quick image 的提交计划、随机换脸模板过滤、QQCC AI绘图/AI滤镜场景 engine 分支、`draw -> draw...` / `draw -> filter` / 单步 `filter` 链与执行 payload 统一放在 `src/services/quick_image_submission_service.py`。旧 `WAIT_UNDRESS_METHOD` / 旧脱衣方式 callback 已清理，`i2i_draw` 只作为兼容 payload 保留。
-- **Quick Video 提交 / 设置 seam**：`quick_video_fsm.py` 只负责 Telegram 状态流转、设置面板展示、额度检查、用户回复和清理；quick video 的提交计划、QQCC 场景 engine 分支、尾帧绘图链、执行 payload 以及 `set_res_*` / `set_dur_*` callback 状态归一统一放在 `src/services/quick_video_submission_service.py`。旧图生视频提交时由 plan 显式向 `process_video_task_template(...)` 传入 `resolution` / `duration`，不要再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 做桥接。后续改 AI动图提交或设置逻辑应优先改该 service 并补 service focused tests。
-- **QQCC AI视频复用 seam**：`qaivid_scene:*` 继续使用 quick video FSM，不新增 ConversationHandler；场景选择后跳过分辨率/时长面板，收一张图即按固定 LTX plan 提交。LTX 深层提交入口使用 actor 参数 service，Telegram `Update` 只留在兼容 wrapper。
-- **QQCC 场景价格展示**：场景 `credit_cost` 非空时，进入文案、额度预检、提交状态和 AI动图各画质按钮统一显示该根场景固定总价，画质切换不得回显旧动态价格；空值继续沿用既有动态/分段计算。重生成必须按当前配置重建 plan 后再取价。
-- **高级视频提交 service**：主 Bot `image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只负责 Telegram 状态流转、素材接收、额度检查、用户回复和清理；旧图生视频/Wan22 v2/LTX 的提交计划、首尾帧 payload、分辨率/时长归一、LTX LoRA 多选和扩展链上下文统一放在 `src/services/advanced_video_submission_service.py`。LTX 提交必须由 plan 显式向 `process_ltx_video_task(...)` 传入 `resolution` / `duration` / `ltx_mode`，不要再通过 `context.user_data["ltx_video_resolution"]` / `ltx_video_duration` / `ltx_video_mode` 做后台任务参数桥接。该 service 不新增 task type、workflow 或 QQCC 能力。
-- **高级视频设置 view service**：主 Bot 旧图生视频、Wan22 v2 与 LTX 的同屏设置面板 view-model/keyboards 和 settings callback data 到 `fsm_data` 的解析回写统一放在 `src/services/advanced_video_settings_view_service.py`；FSM wrapper 只处理 callback 状态并发送或编辑 Telegram 消息。修改设置按钮、费用展示、设置 callback 语义或 LTX 扩展直接续写提示时优先改该 service 并补 focused tests，不在 handler 里复制键盘拼装。
-- **LTX 扩展/拼接 service**：`ltx_video_fsm.py` 的扩展入口和 `handlers/callbacks/ltx_video_callbacks.py` 的完成拼接 callback 只负责 Telegram 层交互；历史归属校验、`_ltx_context` 合并、尾帧下载、扩展 FSM seed 与完整拼接链 histories 加载统一放在 `src/services/ltx_video_extension_service.py`。
-- **Wan22 AIO 链路扩展/重生成/拼接 service**：旧图生视频 `custom_video` / `video_lora` 与图生视频 v2 共用这套 Bot 链路。`wan22_video_v2_fsm.py` 的扩展/重生成入口和 `handlers/callbacks/wan22_video_v2_callbacks.py` 的重生成/完成拼接 callback 只负责 Telegram 层交互与任务启动；历史归属校验、`_wan22_context` 合并、上一段尾帧/当前段输入图下载、FSM seed 与完整拼接链 histories 加载统一放在 `src/services/wan22_video_v2_extension_service.py`。
+| 场景 | 必读事实源 |
+| --- | --- |
+| 主 Bot FSM、菜单、callback、文件 | `docs/子模块_交互状态机_fsm_handlers.md` |
+| Telegram Local API/file endpoint | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` |
+| QQCC 官方/私有 Bot | `allbot-qqcc-lazy-bot` |
+| 付费群审核 Bot | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` |
+| 任务提交与 continuation | `allbot-task-engine` |
 
-## 2. 输入输出规范
-### FSM 状态流转
-- **入口**：优先使用 `I18nFilter(...)` 或统一菜单路由，而不是硬编码中文正则；FSM-only 菜单 key、特殊翻译覆盖和旧键盘文案 alias 必须维护在 `src/handlers/menu_route_registry.py`。
-- **状态处理**：文字输入分支必须优先经过 `is_global_menu_command(...)` 黑盒退出判断。
-- **超时**：当前主 FSM 通常以 `300` 秒 `conversation_timeout` 为基线；若改动超时值，必须同步文档与测试。
-- **退出**：显式返回 `ConversationHandler.END`，并清理 `user_data` / 临时文件。
+具体功能按钮、历史 callback、模型和任务类型枚举只保留在专项文档及代码路由，
+不复制成长 Skill。
 
-### Callback Query
-- **输入**：注册前缀、query data、上下文状态
-- **输出**：对应 handler 返回值与必要的 `query.answer()` / `safe_answer_query(...)`
-- **红线**：任何 callback handler 都不能遗漏应答，否则客户端会持续转圈。
+## 2. 稳定 seam
 
-## 3. 使用示例 (最佳实践)
-```python
-async def receive_prompt(update, context):
-    text = (update.message.text or "").strip()
-    if is_global_menu_command(text):
-        return await unexpected_input(update, context)
+- 全局菜单识别由 `menu_route_registry`、prompt router、reverse map 和
+  `is_global_menu_command(...)` 组合完成。任何文字接收状态先经过统一黑盒
+  退出判断，不能散落硬编码中文菜单。
+- callback 使用前缀注册、长度降序匹配与统一 `safe_answer_query(...)`
+  兜底。拆分模块时主入口必须导入注册子模块；每个 callback 都要应答。
+- 临时文件统一通过 `src/services/fsm_temp_file_service.py` 下载和清理；
+  `cleanup_fsm_user_data(...)` 覆盖嵌套路径、顶层缓存、正常结束、取消、
+  超时和异常。
+- Telegram Local API/Poll/旧 payload 兼容与语言注入集中在
+  `src/services/telegram_runtime_bootstrap.py`，主 Bot 与 QQCC 共用 bootstrap，
+  但不共用 handler 集。
+- 主 Bot 更新通过 `PerUserUpdateProcessor` 保证同用户严格串行、不同用户
+  有界并发；禁止退回 PTB 全局单通道或无键 `concurrent_updates(True)`。
+  QQCC 官方 Bot 的并发边界按其专项技能执行。
+- 语言切换同时更新数据库和 Redis 缓存，不能只替换当前键盘文案。
 
-    # 继续处理正常输入
-    ...
+## 3. FSM 与 service 分层
 
+- handler/FSM 负责 Telegram 状态、素材接收、额度提示、消息和清理；输入
+  归一、提交计划、payload、历史恢复与扩展链放 application service。
+- quick image 计划位于 `quick_image_submission_service.py`；quick video
+  位于 `quick_video_submission_service.py`。
+- 主 Bot 高级视频计划位于 `advanced_video_submission_service.py`，设置
+  view-model/callback 解析位于 `advanced_video_settings_view_service.py`。
+- LTX 扩展/拼接历史准备位于 `ltx_video_extension_service.py`；Wan22
+  扩展/重生成/拼接位于 `wan22_video_v2_extension_service.py`。
+- Telegram `Update` 不进入 core。FSM 把平台输入转换为内部 request/context，
+  再调用公开 task application/facade。
+- 提交参数由 plan 显式传入 actor/application service，不能借用顶层
+  `context.user_data` 作为后台任务隐式参数桥。
 
-def build_handler() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[MessageHandler(I18nFilter("menu.custom_video"), start_fsm)],
-        states={
-            WAITING_PROMPT: [
-                MessageHandler((filters.TEXT | filters.COMMAND), receive_prompt),
-            ],
-            ConversationHandler.TIMEOUT: [
-                MessageHandler(filters.ALL, timeout_conversation),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_conversation)],
-        conversation_timeout=300,
-    )
-```
+## 4. 对话与文件不变量
 
-## 4. 核心红线
-- Web API 严禁直接消费 Telegram 表示层逻辑；Bot 任务提交通常走 `bot_task_service` / 各 FSM entrypoint / `run_bot_task_application(...)`。
-- 付费群审核 Bot 必须和主业务 Bot token 隔离；同一个 token 不得同时被两个 polling 进程使用。
-- QQCC Bot 必须和主业务 Bot token 隔离，且不能导入 `src.bot_main` 或注册主 Bot 的高级/支付/gallery handler。
-- 用户私有 Bot 必须使用 Telegram webhook；不能用相同 token 启动 polling。Webhook update 由 Web API 快速入 Redis stream，再由 private worker 将 update 交给对应 QQCC Application；同一 Bot update 顺序处理。
-- private worker 读取环境对应 `QQCC_BOT_TOKEN` / `QQCC_BOT_TOKEN_TEST` 只授权统一频道会员查询，不能因此注册官方 handler 或启动第二个 `getUpdates`；租户只接收 checker callable，不能拿到官方 token/Bot 对象。
-- FSM 内不得依赖硬编码菜单词做全局退出判断，必须走统一菜单路由。
-- 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
-- 主 Bot 与 QQCC Bot 共享 `src/services/telegram_runtime_bootstrap.py`，但 QQCC 仍只注册 quick image/video、QQCC market 和最小 callback；不要为了复用 bootstrap 引入主 Bot handler 集。
-- callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。
-- 主 Bot 和 QQCC Bot 注册 ConversationHandler 时不得启用 PTB 无键全局并发 `concurrent_updates(True)`。主 Bot 必须通过 `src/services/telegram_update_processor.py` 的 `PerUserUpdateProcessor` 保证同一 Telegram 用户严格串行、不同用户有界并发；QQCC 官方 Bot 当前仍保持单通道。付费群审核 Bot 不注册 FSM，可继续保持全局并发。
-- SCAIL-2 Bot 的“视频生视频”二级菜单支持测试 Bot 与正式 Bot，但正式展示必须跟随 SCAIL-2 正式 runtime 发布闸门；`scail2_video_fsm` 收集参考图、驱动视频、可选正向提示词和 5s/8s 时长，正向提示词可通过 inline button 跳过并由 domain config 默认值补齐，负面提示词使用默认值，驱动视频上限 40MB。旧 `face_video_fsm.py` 已退出 Bot 层并被删除；主 Bot 的 `视频换脸` 菜单和 `/video_swap` 均由 `scail2_video_fsm` 接管，非 Bot 层 `face_video` 历史任务类型、Gallery 展示和 worker 兼容不因此删除。正式发布维护窗口内，Bot 生成 FSM 应尊重 `/app/GENERATION_MAINTENANCE` 或全局 `/app/MAINTENANCE`，提示维护并停止新提交。
-- 旧图生视频与图生视频 v2 的普通入口设置面板不再展示“确定/确认上传”按钮。`image_to_video_fsm.py` 在附加模型/帧模式/分辨率/时长面板直接接收起始图片，发送图片即确认设置；首尾帧模式随后收终止图片。`wan22_video_v2_fsm.py` 在单图/首尾帧、分辨率和时长面板同样直接接收起始帧图片；旧 `i2v_setup_confirm` / `wan22v2_setup_confirm` callback 仅保留兼容已发出的旧消息。
-- LTX 高级图生视频 FSM 当前用户侧只开放两种模式：单首帧、首尾帧。普通入口先选最多 3 个 LoRA，然后在同屏设置面板选择 `ltx_mode`、清晰度和时长；该面板不再展示“确定，上传素材”按钮，用户直接发送起始帧图片即确认当前设置并进入素材步骤。单首帧收 1 张起始图后要求提示词，首尾帧收 `image_path` 后继续收 `end_image_path` 并提交 `ltx_mode=flf2v`；素材收完后直接要求发送提示词，不再二次展示清晰度/时长按钮。历史/底层兼容仍可识别或拒绝 `ltx_mode=v2v_audio`，但 Bot 层不再注册 `ltx_mode_v2v_audio` callback、`WAIT_VIDEO` 状态或视频上传 handler；旧已发按钮会走全局未知 callback 兜底。结果消息存在 `extra_outputs.last_frame` 预期时展示“扩展生成”按钮，callback 前缀为 `ltx_extend`；点击后必须校验历史归属、下载尾帧到 FSM 临时目录，并作为下一段 LTX 起始帧进入扩展设置面板。扩展设置面板不展示确认按钮：直接续写时用户发送提示词进入提示词确认，添加终止帧时用户发送图片即写入 `end_image_path` 并提交 `ltx_mode=flf2v`；旧 `ltx_setup_confirm` callback 仅保留兼容已发出的旧消息。续段必须携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，由 Bot 完成落库写入 `extra_outputs._ltx_context`。Bot 结果从第二段起必须展示“完成拼接”按钮，callback 前缀为 `ltx_stitch_chain`，由全局 callback router 校验历史归属并拼接整条链；拼接结果只作为整链结果，不再展示扩展按钮。退出、超时、提交结束、`/cancel` 和全局异常兜底必须经 `cleanup_fsm_user_data(...)` / FSM cleanup 清理 `image_path`、`end_image_path`、`images` 等临时文件。
+- FSM 入口优先使用 `I18nFilter` 或统一菜单路由；FSM-only key、特殊翻译和
+  旧键盘 alias 维护在 `menu_route_registry.py`。
+- 每个状态显式返回下一状态或 `ConversationHandler.END`。当前常用 timeout
+  基线是 300 秒；改变时同步测试和专项文档。
+- 主菜单在任意 FSM 内都能安全打断，并给出明确回复；退出必须清理 `user_data`
+  和已下载文件。
+- callback 即使拒绝、过期或未知也必须快速 answer，避免客户端持续转圈。
+- 文件下载失败、取消或超时时清理已写入的半文件，并保留可安全重试的状态。
+  大文件不得长时间阻塞 update handler。
+- 长时间生成/监视通过受控 background task 脱离 Telegram update；后台失败
+  仍要清理临时文件并通知用户，不能在 media handler 同步等终态。
+- 菜单显隐只影响展示，不能删除仍需兼容的 prompt route、旧消息 callback
+  或安全 fail-closed 入口。
 
-## 5. 边界条件处理
-- **`user_data` 残留**：FSM 正常结束、异常退出、超时三种场景都要清理临时状态。
-- **主菜单打断**：若用户在 FSM 中点击主菜单，应退出当前流程并返回明确提示，避免卡死。
-- **大文件处理**：若仍使用 Local API / Monkey Patch 路径，需保证 HTTP 下载失败时有清晰错误日志与用户提示。
-- **PTB Warning**：`ConversationHandler` 参数若会触发框架级 warning，应先确认是否属于既有契约，再决定改运行时配置还是测试显式处理预期 warning。
+## 5. Bot 隔离
 
-## 6. 测试要求
+- 主业务 Bot、QQCC Bot、付费群审核 Bot 使用不同 token；相同 token 不能由
+  两个 polling 进程同时使用。
+- QQCC 只注册 quick image/video、QQCC market 和最小 callback，不导入主
+  Bot 高级、支付或完整 Gallery handler。私有 QQCC 使用 webhook，不 polling。
+- private worker 中的官方 QQCC token 只授权频道会员 checker，不注册官方
+  handler、不启动 `getUpdates`，租户只拿 callable。
+- 私有 Bot 申请 token 消息先尽力删除；不得回显、记录或放入审计 metadata。
+- 付费群审核 Bot 只处理目标群 join request 与轻量消息治理，不接入生成 FSM
+  或复用主 Bot token。
+- 主 Bot 旧 QQCC/懒人入口只跳转当前 QQCC 地址或提示未配置，不恢复旧生成
+  行为；QQCC 自身 callback 兼容由 `allbot-qqcc-lazy-bot` 管理。
 
-- 覆盖主 Bot 菜单配置默认值/归一化/API 持久化、主菜单排序与分行、主/二级显隐、返回按钮固定、能力闸门优先、读取失败回退，以及隐藏按钮的旧文本路由仍可用。
-- 覆盖 FSM 意外菜单拦截与超时退出。
-- 覆盖 callback 路由注册与未命中前缀的统一兜底。
-- 主 Bot Update Processor 回归必须覆盖同用户不重叠、不同用户可并发、全局并发上限和等待任务取消后不阻塞后续 Update；入口测试必须禁止退回 `concurrent_updates(True)` 或 PTB 默认单通道。
-- 覆盖临时文件下载/清理服务的行为契约。
-- 覆盖 `paid_group_guard_bot` 的资格命中、未命中保留待审/拒绝、目标群过滤、消息删除 dry-run、管理员豁免、链接白名单和违禁词行为。
-- 当 FSM 使用 PTB 已知 warning 配置时，测试应显式说明该 warning 是否属于预期行为。
-- 私有 Application 回归必须证明频道资格查询来自官方 checker、租户 Bot 不被调用，并覆盖正/负缓存与并发 singleflight。
-- QQCC quick video 的分辨率/时长由当前场景配置固定：AI动图上传后只显示摘要和开始按钮，旧 `set_res_*` / `set_dur_*` 不得覆盖；AI视频收图即按场景 `1280x704` 提交。重新生成、结果续作和多段链不得读取历史画质或用户权限。该规则不改变非 QQCC 主 Bot 的设置面板与等级权限。
+## 6. 维护与运行时红线
+
+- Bot 生成入口在维护 marker 生效时停止新提交并提示用户；不自行清除 marker。
+- 主 Bot 频道成员同步必须使用 `REQUIRED_CHANNEL_ID`，展示链接不能替代
+  `getChatMember` 所需 ID；缺配置由发布契约 fail closed。
+- callback route、ConversationHandler 顺序和 fallback 是公开交互契约。
+  新增前缀先检查冲突和注册顺序，不依赖偶然 import side effect。
+- 不在 FSM 中复制计费、任务类型、workflow、R2 或数据库事务逻辑；需要新
+  seam 时先用 `allbot-codebase-design` 判断职责位置。
+- 不把历史按钮兼容理解为继续开放产品能力。旧入口应兼容路由或明确拒绝，
+  不能静默提交不同任务。
+
+## 7. 最小验证
+
+- 全局菜单：任意状态打断、明确回复、END 与临时文件清理。
+- callback：注册导入、前缀优先级、正常/拒绝/未知均 answer。
+- 并发：同用户不重叠、不同用户可并发、全局上限、取消等待任务后不阻塞
+  后续 update。
+- 文件：下载成功、超时、异常、半文件和所有退出路径清理。
+- service seam：handler 只做 Telegram 编排，payload/设置/历史由对应 service；
+  plan 参数显式传递。
+- Bot 隔离：token、handler 集、polling/webhook、官方 checker callable。
+- 菜单配置与 i18n：默认/归一化、排序分行、显隐、能力 gate、读取失败回退、
+  旧文本仍安全路由。
+- 任务：提交成功、额度不足、维护、不可取消 continuation、完成/失败展示。
+- 交付说明触达 Bot、入口、状态/callback、临时文件、任务/计费影响和 focused
+  tests；不把代码或本地测试描述成线上已生效。

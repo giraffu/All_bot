@@ -4,11 +4,19 @@ on:
   push:
     paths:
       - 'docs/**/*.md'
+      - '.codex/skills/**'
+      - 'AGENTS.md'
       - 'README.md'
+      - 'scripts/doc_quality_checker.py'
+      - 'tests/scripts/test_doc_quality_checker.py'
   pull_request:
     paths:
       - 'docs/**/*.md'
+      - '.codex/skills/**'
+      - 'AGENTS.md'
       - 'README.md'
+      - 'scripts/doc_quality_checker.py'
+      - 'tests/scripts/test_doc_quality_checker.py'
 
 jobs:
   lint-and-sync:
@@ -43,6 +51,7 @@ jobs:
       - name: Run Quality Checker
         run: |
           python scripts/doc_quality_checker.py
+          python -m pytest -q tests/scripts/test_doc_quality_checker.py
 
       - name: Auto-Sync Index to README
         run: |

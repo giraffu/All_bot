@@ -1,17 +1,16 @@
 # 双入口职责矩阵
 
-更新时间: 2026-06-10
-
 ## 1. 目的
 
-本文档用于明确 `backend/app` 与 `src/web_api` 的长期职责边界，作为 P0-1 的独立交付物。目标不是重复系统总览，而是提供后续评审可以直接引用的模块级职责矩阵。
+本文档明确 `backend/app` 与 `src/web_api` 的长期职责，并合并仍需关注的双入口
+重叠能力。已完成的旧 inventory 保存在 `docs/archive/`。
 
 ## 2. 判定原则
 
 - `src/web_api` 是主 Web/BFF 入口：承接用户侧认证、任务提交、历史、广场、用户中心、支付展示面接口。
 - `backend/app` 是执行面 / 中控入口：承接 QueueManager、Worker 通信、backend 执行态、系统任务视图与中控专用接口。
 - 新增 Web/BFF 用户能力默认进入 `src/web_api`；只有确属中控执行面或 worker 协议的能力才进入 `backend/app`。
-- 两个入口若暂时存在重叠能力，必须在 inventory 中标明其性质与迁移条件。
+- 两个入口若暂时存在重叠能力，必须在本文标明性质与退出条件。
 
 ## 3. 入口职责矩阵
 
@@ -57,7 +56,7 @@
 
 - 不要在 `backend/app` 新增普通 Web/BFF 用户功能。
 - 不要让 `src/web_api` 直接承担 worker 协议、QueueManager 内部状态机或 backend 执行面职责。
-- 不要让两个入口都定义同一用户功能的长期主路径；如确有兼容残留，必须写入 inventory。
+- 不要让两个入口都定义同一用户功能的长期主路径；兼容残留写入本文。
 
 ### 4.4 跨入口 provider 注册补充
 
@@ -66,18 +65,23 @@
 - Dashboard Backend 的退款、强制终止、资产调整等管理接口会进入 billing core；不能只注册 task core provider。
 - `paid_group_guard_bot/main.py` 只读查询 `users` / `orders` 做付费群入群资格判断，并通过共享文件读取群管理配置、写入删除日志；不调用 billing core 履约或资产变更逻辑，因此不需要 billing provider 注册。
 
-## 5. 冻结规则建议
+## 5. 当前重叠能力
 
-在 P0-2 完成前，评审时可先采用以下临时规则：
+| 能力 | 性质 | 稳定归属 | 保留条件 |
+| --- | --- | --- | --- |
+| 任务创建 | 调用方不同 | 用户入口归 Web；执行面专用创建归 Central | Central route 仅服务执行面协议 |
+| 任务取消 | ID/权限不同 | 用户取消归 Web/core；backend best-effort cancel 归 Central | 文档与代码明确区分双 ID |
+| 状态与结果 | 展示语义不同 | 用户 stream/result/history 归 Web；执行状态归 Central | Web 不直接暴露 backend 状态语义 |
+| 系统状态 | 聚合层不同 | worker/queue 底座归 Central；管理展示归 Dashboard | Dashboard 只消费稳定管理 service |
+| 鉴权 | 身份主体不同 | Agent token 归 Central；用户 JWT/TG/password 归 Web | 不抽象成一个宽泛 auth module |
 
-- 新增用户面 API 默认进入 `src/web_api`。
-- `backend/app` 只允许：
-  - 修复中控执行面问题
-  - 中控职责内的小范围重构
-  - 既有中控接口的 wiring 收口
-- 若需要在 `backend/app` 新增接口，必须先说明它为什么不属于 `src/web_api`。
+这些能力“名称相似”不代表应该强行合并。新重叠点先判断调用方、ID、错误、
+副作用和权限，再决定是合理 adapter 还是重复业务。
 
-## 6. 后续动作
+## 6. 评审规则
 
-- 与《双入口重复能力 inventory》配套使用。
-- 后续若补 `backend/app` 冻结区规则，可直接引用本矩阵的“目标归属”列。
+- 新增用户 API 默认进入 `src/web_api`。
+- `backend/app` 新接口必须证明属于 Worker/Central 协议或执行状态。
+- provider 由应用入口注册；core 不自动装配。
+- 测试若必须跨入口 patch 私有函数，应先检查是否缺少公开 service/provider seam。
+- 兼容层退出统一记录在 `docs/compat_seam_exit_table.md`。

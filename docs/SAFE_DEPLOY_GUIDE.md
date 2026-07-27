@@ -1,17 +1,24 @@
 # AllBot 发布入口
 
-截至 2026-07-13，代码发布的唯一受支持入口是 Git SHA + 不可变镜像发布器：
+代码发布只支持受保护 main 的完整 Git SHA、不可变 release bundle 和
+digest-pinned artifact。日常入口：
 
 ```bash
-scripts/release.py plan --env test --sha <full-sha>
-scripts/release.py deploy --env test --sha <full-sha> --execute
-scripts/release.py deploy --env prod --sha <full-sha> --execute --confirm-prod
-scripts/release.py rollback --env test|prod --to <full-sha> --execute
+# 无 mutation 预览
+python scripts/release.py promote [--modules <modules>] [--sha <full-sha>]
+
+# 用户明确确认正式发布后，在同一候选增加
+python scripts/release.py promote [--modules <modules>] [--sha <full-sha>] \
+  --confirm-prod
 ```
 
-完整契约、配置变更、测试验收、生产晋级与回滚流程见
-`docs/子模块_Git不可变发布_git_immutable_release.md`。
+测试部署、严格 migration、配置收敛、回滚与恢复的完整命令和门禁只以
+`docs/子模块_Git不可变发布_git_immutable_release.md` 及 `release.py --help`
+为准。
 
-旧 `update_cloud_*` 同步脚本已经 fail closed；`safe_deploy_cloud_test.sh` 与 `migrate_local_test_to_cloud_containers.sh` 也已退役并固定退出，旧 cloud-test compose 仅作历史取证，不能作为回滚或新代码发布入口。正式与测试控制面都只能消费不可变候选/晋级 bundle；真实环境变量只保存在 `/etc/allbot/test.env` 与 `/etc/allbot/prod.env`，代码发布不得修改或同步它们。
+禁止旧同步脚本、rsync、现场 build、源码 bind mount、mutable tag 和自由
+Compose。代码发布不修改 `/etc/allbot/test.env` 或 `/etc/allbot/prod.env`；
+配置变化走独立 `config-plan/config-apply` 授权。
 
-本地主服务器的旧 `safe_deploy.sh` 仅保留给云正式整体故障时的临时灾备，必须按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 单独授权执行。
+本地 `safe_deploy.sh` 仅用于云正式整体故障时的受控灾备，必须按
+`docs/子模块_本地正式灾备切换_local_prod_fallback.md` 单独授权。
