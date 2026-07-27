@@ -5812,7 +5812,8 @@ def _deploy_web(
             check=False,
         )
         if result.returncode != 0:
-            raise ReleaseError("Cloudflare Pages deployment failed")
+            detail = _safe_failure_detail(result.stderr or result.stdout or "npx failed")
+            raise ReleaseError(f"Cloudflare Pages deployment failed: {detail}")
         deadline = time.monotonic() + getattr(args, "pages_verify_timeout_seconds", 180)
         while True:
             try:

@@ -105,7 +105,10 @@ socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、�
 drop all capabilities、`no-new-privileges` 且无 Docker Socket。
 镜像从 digest-pinned Node 22 stage 只复制 `node` 与 npm/npx；发布测试 Pages 时仍由
 `release.py` 读取前端 lockfile 的精确 Wrangler 版本。这样隔离 runner 不依赖宿主
-Node，也不会在运行时 apt 安装工具。
+Node，也不会在运行时 apt 安装工具。`NPM_CONFIG_CACHE` 固定落到 runner 专用的
+`/home/app/.cache/allbot/npm`，`XDG_CONFIG_HOME` 固定到同一 volume 的 `config`
+子目录；只读 home 不承担 npm cache 或 Wrangler log/config 写入。Pages 命令失败时
+只返回最后一条经统一脱敏和长度限制的诊断，不得回显 token 或完整环境。
 runner 的固定 SSH config 对同一 allowlisted 云主机使用 20 秒 connect timeout、
 最多 4 次 connection attempts，以及 20 秒 server-alive/3 次失联上限。该重试只吸收
 瞬时网络抖动，不改变目标 host、用户、密钥、known_hosts 或环境授权；全部尝试失败仍

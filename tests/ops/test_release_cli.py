@@ -3360,6 +3360,62 @@ def test_pages_deployer_rejects_unlocked_wrangler_version(tmp_path, monkeypatch)
         module._pinned_wrangler_version()
 
 
+def test_pages_deployer_reports_redacted_command_failure(tmp_path, monkeypatch):
+    module = _load_module()
+    artifact = tmp_path / "web-dist.tgz"
+    source = tmp_path / "source" / "dist"
+    source.mkdir(parents=True)
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    with tarfile.open(artifact, "w:gz") as archive:
+        archive.add(source, arcname="dist")
+    manifest = _manifest()
+    manifest["web_artifact_sha256"] = module.hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    runtime_path = tmp_path / "web-runtime-config.yml"
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "https://api-test.example.com/api"},
+                "prod": {"api_base_url": "https://api.example.com/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="npm error token=do-not-leak\nnpm error cache directory missing",
+        ),
+    )
+    args = SimpleNamespace(
+        skip_web=False,
+        web_artifact=str(artifact),
+        bundle_cache=str(tmp_path),
+        execute=True,
+        env="test",
+        cloudflare_token_file=str(token_file),
+        cloudflare_account_id="account-id",
+        web_runtime_config=str(runtime_path),
+    )
+
+    with pytest.raises(
+        module.ReleaseError,
+        match="Cloudflare Pages deployment failed: npm error cache directory missing",
+    ) as error:
+        module._deploy_web(args, manifest)
+
+    assert "do-not-leak" not in str(error.value)
+
+
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
     module = _load_module()
     updater = _load_config_updater()
