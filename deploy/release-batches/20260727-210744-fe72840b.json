@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "4c264b04120938bdc1c481d4a4e6a7463d1b94fd",
+  "batch": "20260727-210744-fe72840b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-210744-fe72840b",
+  "members": [
+    {
+      "base_sha": "4c264b04120938bdc1c481d4a4e6a7463d1b94fd",
+      "branch": "codex/d-preserve-runner-error-tail",
+      "head": "fe72840b409f7693b7344a326babc84575f46200",
+      "queued_at": "2026-07-27T21:07:32.820661+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
