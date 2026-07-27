@@ -69,6 +69,7 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_KEY": f"{suffix}-payment-key",
         "HUANYUY_GATEWAY": f"https://gateway-{suffix}.example.com",
         "HUANYUY_SITENAME": f"AllBot {suffix}",
+        "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "UNRELATED_OPERATOR_SECRET": "must-not-enter-containers",
     }
 
@@ -101,6 +102,12 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         "https://telegram-api-prod.example.com"
     )
     assert "PAID_GROUP_BOT_TOKEN" not in web
+    assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
+    assert all(
+        "LTX_T2V_BACKEND_ENABLED" not in projection
+        for service, projection in snapshot.projections.items()
+        if service != "web-api"
+    )
     assert bot["BOT_TOKEN"] == "prod-bot-token"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
     assert dashboard_backend["SUPPORT_BOT_TOKEN"] == "prod-support-token"
@@ -112,6 +119,15 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         "ALLBOT_CONFIG_REVISION",
         "ALLBOT_ENV",
     }
+
+
+def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(
+        contract, {"LTX_T2V_BACKEND_ENABLED"}
+    ) == {"web-api"}
 
 
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])

@@ -39,6 +39,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   证据；不能重新标记旧镜像冒充当前 SHA 构建。
 - LAN registry 只镜像 canonical digest；禁止在 LAN 主机现场 build 同一
   release/profile。
+- Dashboard 手动池 profile catalog 包含独立 `ltx_t2v`，对应
+  `ltx_t2v,ltx_t2v_ic`。创建后的 worker 默认 disabled，支持开启、暂停、重启、
+  锁定和删除；该 profile 的 `autoscaler_enabled=false`，不会被自动扩缩容。
 - release index 必须包含 Dashboard/autoscaler 需要的完整 profile pin 集。
   mutable tag、缺 profile、冲突 digest 或 incomplete manifest 一律 fail closed。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked

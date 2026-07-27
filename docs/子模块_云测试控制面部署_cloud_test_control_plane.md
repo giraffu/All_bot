@@ -309,6 +309,21 @@ docker compose --env-file .env.cloud.test \
 - 合格结果应同时满足：RunPod worker 接单、Central `task_type=wan22_video_v2`、终态 `done`、Web result `success`、MP4 与 `extra_outputs.last_frame` 均可下载。
 - 验收结束后必须恢复临时禁用的云测试 worker，删除 RunPod Pod，并确认 `list-pods` / `reconcile-managed-pods` 的 managed count 为 0。
 
+2026-07-27 RunPod `ltx_t2v` 测试 Web 人工验收口径：
+
+- 公共测试 Web 的 runtime config 固定 `enable_ltx_t2v=true`，正式 Web 固定
+  `false`；云测试 Web API 通过受审计配置显式设置
+  `LTX_T2V_BACKEND_ENABLED=true`。该 key 只影响 `web-api`，不得投射到其它服务。
+- Dashboard 不部署在测试站。Dashboard 中的 `ltx_t2v` 项只用于登记正式手动池
+  能力；测试 Pod 必须通过 cloud-test RunPod operator 创建，禁止复用正式 agent
+  前缀或开启 autoscaler。
+- 测试 worker 使用 `runpod_test_ltx_t2v_*`，任务类型仅
+  `ltx_t2v,ltx_t2v_ic`。人工测试开始前先验证 disabled heartbeat、模型 manifest、
+  Comfy 健康和目标 agent 归属，再显式 enable。
+- 人工从 `https://web-cf-test.aivison.it.com` 完成普通文生视频、人物参考表和
+  Ingredients 人物一致性提交；结果只写 `user-data-test`。结束后必须 disable、
+  drain、删除 Pod；若需要跨时段保留，必须记录 owner、到期时间和手动池禁用状态。
+
 2026-06-14 RunPod `i2i_pro` 云测试 Web 端验收口径：
 
 - `i2i_pro` 是 RunPod runtime profile，可同时支持执行面 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2` 与 legacy `face_swap`；两个 face swap 类型都执行 `face_swap_v2.json`。

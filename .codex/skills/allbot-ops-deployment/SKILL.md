@@ -103,6 +103,9 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 - RunPod create/start/stop/restart/delete/scale 必须同时满足真实运行开关、
   `--execute` 和生产确认。Dashboard autoscaler 也必须消费当前 release
   index 的完整 profile digest pin，不能使用 mutable tag。
+- 测试 Web 人工验收使用 cloud-test operator 与 `runpod_test_*` agent；Dashboard
+  不部署到测试站，后台手动 profile 不能作为创建测试 Pod 的旁路。测试开关必须
+  通过 service env/public runtime config 契约投射，prod 值保持关闭。
 - LAN AIO 的 current profile、cache marker、验证时间和实时映射属于 XDG
   ledger/运行态，不写 Git。任何 mutation 先由 live + ledger + catalog
   仲裁，精确到一个 physical slot。
