@@ -13,7 +13,9 @@ FROM ghcr.io/giraffu/allbot-dashboard-backend@sha256:92f533feae2b8aa22aa14cf19d6
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app:/workspace \
-    HOME=/home/app
+    HOME=/home/app \
+    NPM_CONFIG_CACHE=/home/app/.cache/allbot/npm \
+    XDG_CONFIG_HOME=/home/app/.cache/allbot/config
 WORKDIR /app
 RUN sed -i \
       -e 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' \

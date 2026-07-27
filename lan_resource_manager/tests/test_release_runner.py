@@ -477,6 +477,8 @@ def test_runner_image_contains_digest_pinned_node_and_npx_for_pages():
     assert "node:22-bookworm-slim@sha256:" in dockerfile
     assert "COPY --from=node-runtime /usr/local/bin/node" in dockerfile
     assert "npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
+    assert "NPM_CONFIG_CACHE=/home/app/.cache/allbot/npm" in dockerfile
+    assert "XDG_CONFIG_HOME=/home/app/.cache/allbot/config" in dockerfile
 
 
 def test_runner_ssh_retries_transient_cloud_connection_failures():
