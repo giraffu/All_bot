@@ -332,8 +332,10 @@ def test_integration_actions_are_fixed_and_require_exact_confirmation(tmp_path):
     assert all("--confirm-prod" not in command for command in commands)
 
 
-def test_align_workspaces_uses_only_the_fixed_manager_action(tmp_path):
+def test_align_workspaces_uses_only_the_fixed_manager_action(tmp_path, monkeypatch):
     commands = []
+    writable_repo = tmp_path / "writable-repo"
+    monkeypatch.setenv("WORKSPACE_REPO_ROOT", str(writable_repo))
 
     async def fake_run(command, **_kwargs):
         commands.append(command)
@@ -366,6 +368,7 @@ def test_align_workspaces_uses_only_the_fixed_manager_action(tmp_path):
         __import__("sys").executable,
         str(tmp_path / "scripts/manage_ai_workspaces.py"),
     ]
+    assert commands[1][commands[1].index("--repo") + 1] == str(writable_repo)
     assert "--lock-path" in commands[1]
     assert commands[1][-1] == "align-merged"
 
