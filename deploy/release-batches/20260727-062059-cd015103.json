@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "1f6b350fd51db2afa148fd36623c4f9676c9d6bd",
+  "batch": "20260727-062059-cd015103",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-062059-cd015103",
+  "members": [
+    {
+      "base_sha": "1f6b350fd51db2afa148fd36623c4f9676c9d6bd",
+      "branch": "codex/d-ltx-t2v-cloud-test-canary-auth",
+      "head": "cd015103955a58bf9b2b0384c5c186922d342a1f",
+      "queued_at": "2026-07-27T05:58:37.462926+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
