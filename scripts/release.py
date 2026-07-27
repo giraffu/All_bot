@@ -4559,12 +4559,22 @@ def _deploy_cloud_streamlined(
     for service in services:
         artifact_name = service_to_artifact.get(service, service)
         artifact = artifacts.get(artifact_name)
-        if not isinstance(artifact, Mapping) or artifact.get("kind") != "image":
+        if not isinstance(artifact, Mapping) or artifact.get("kind") not in {
+            "image",
+            "external-image",
+        }:
             raise ReleaseError(f"streamlined target artifact is invalid: {artifact_name}")
         ref = str(artifact.get("ref", ""))
         oci = str(artifact.get("oci_revision", ""))
         variable = CONTROL_ARTIFACT_ENV.get(artifact_name, "")
-        if not DIGEST_IMAGE_RE.fullmatch(ref) or not variable or not FULL_SHA_RE.fullmatch(oci):
+        if (
+            not DIGEST_IMAGE_RE.fullmatch(ref)
+            or not variable
+            or (
+                artifact.get("kind") == "image"
+                and not FULL_SHA_RE.fullmatch(oci)
+            )
+        ):
             raise ReleaseError(f"streamlined target identity is invalid: {artifact_name}")
         config_name = compose_to_config.get(service)
         config_revision = str(service_revisions.get(config_name, "")) if config_name else ""
@@ -4641,20 +4651,22 @@ def _deploy_cloud_streamlined(
                 f"printf '%s=%s\\n' {quoted_variable} \"$old_ref\" >> \"$rollback_env\"",
             ]
         )
-        verify_lines.extend(
-            [
+        service_verify_lines = [
                 f'new_id="$({compose} ps -q {quoted_service})"',
                 'test "$(printf \'%s\\n\' "$new_id" | sed \'/^$/d\' | wc -l)" = 1',
                 'new_ref="$(docker inspect --format \'{{.Config.Image}}\' "$new_id")"',
                 f'test "$new_ref" = "${{{variable}}}"',
-                'new_oci="$(docker image inspect --format \'{{index .Config.Labels "org.opencontainers.image.revision"}}\' "$new_ref")"',
-                f'test "$new_oci" = {quoted_oci}',
                 'new_health="$(docker inspect --format \'{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}\' "$new_id")"',
                 'test "$new_health" = healthy -o "$new_health" = running',
                 'new_started="$(docker inspect --format \'{{.State.StartedAt}}\' "$new_id")"',
                 f"printf 'ALLBOT_RUNTIME\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' {quoted_artifact} {quoted_service} \"$new_id\" \"$new_ref\" \"$new_health\" \"$new_started\"",
+        ]
+        if oci:
+            service_verify_lines[4:4] = [
+                'new_oci="$(docker image inspect --format \'{{index .Config.Labels "org.opencontainers.image.revision"}}\' "$new_ref")"',
+                f'test "$new_oci" = {quoted_oci}',
             ]
-        )
+        verify_lines.extend(service_verify_lines)
         if config_revision:
             verify_lines.extend(
                 [
@@ -6134,6 +6146,19 @@ def _rollback_cloud_stack(
 ) -> None:
     if transaction.get("execution_profile") == "streamlined":
         if bool(getattr(args, "streamlined_cloud_rolled_back", False)):
+            return
+        failure_detail = str(transaction.get("failure_detail") or "")
+        if failure_detail.startswith(
+            (
+                "streamlined cloud deployment requires ",
+                "streamlined release artifacts are unavailable",
+                "streamlined target artifact is invalid:",
+                "streamlined target identity is invalid:",
+                "streamlined target config is unavailable:",
+            )
+        ):
+            # These checks run locally before the remote replacement script is
+            # invoked, so there is no target mutation to compensate.
             return
         raise ReleaseError("streamlined target rollback was not verified")
     environment = ENVIRONMENT[args.env]

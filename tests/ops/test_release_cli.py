@@ -7415,6 +7415,60 @@ def test_streamlined_cloud_failure_records_verified_target_rollback(monkeypatch)
     assert args.streamlined_cloud_rolled_back is True
 
 
+def test_streamlined_cloud_accepts_digest_pinned_external_image(monkeypatch):
+    module = _load_module()
+    scripts = []
+    digest = "sha256:" + "4" * 64
+    args = SimpleNamespace(
+        env="test",
+        execute=False,
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        runtime_env_snapshot={"service_revisions": {}},
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda _host, script, *, execute: scripts.append(script) or "",
+    )
+
+    module._deploy_cloud_streamlined(
+        args,
+        module.ReleaseImpact(services={"imgproxy"}),
+        {
+            "schema_version": 2,
+            "track": "control-plane",
+            "git_sha": FULL_SHA,
+            "artifacts": {
+                "imgproxy": {
+                    "kind": "external-image",
+                    "ref": f"docker.io/example/imgproxy@{digest}",
+                }
+            },
+        },
+        f"ALLBOT_IMGPROXY_IMAGE=docker.io/example/imgproxy@{digest}\n",
+        {},
+    )
+
+    assert len(scripts) == 1
+    assert "pull imgproxy" in scripts[0]
+    assert "org.opencontainers.image.revision" not in scripts[0]
+
+
+def test_streamlined_pre_mutation_failure_needs_no_target_rollback():
+    module = _load_module()
+    module._rollback_cloud_stack(
+        SimpleNamespace(streamlined_cloud_rolled_back=False),
+        module.ReleaseImpact(services={"imgproxy"}),
+        {
+            "execution_profile": "streamlined",
+            "failure_detail": "streamlined target artifact is invalid: imgproxy",
+        },
+        {},
+    )
+
+
 def test_streamlined_preflight_skips_cloud_and_full_rollback_checks(tmp_path):
     module = _load_module()
     called = []
