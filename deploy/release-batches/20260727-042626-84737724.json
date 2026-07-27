@@ -1,0 +1,38 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "292678c086fe57b9ae9125fa518366cdc64a6c09",
+  "batch": "20260727-042626-84737724",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-042626-84737724",
+  "members": [
+    {
+      "base_sha": "49d8014a641ecb866036a24973843885bdf711b7",
+      "branch": "codex/e-retire-web-vps-ssh-key",
+      "head": "84737724b66007ceb066d890480a813572c921ca",
+      "queued_at": "2026-07-27T03:18:51.112997+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "49d8014a641ecb866036a24973843885bdf711b7",
+      "branch": "codex/d-smart-video-frame-crop",
+      "head": "cace46e7bb956244507dabefe01601c44ba764e4",
+      "queued_at": "2026-07-27T03:19:30.699588+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "292678c086fe57b9ae9125fa518366cdc64a6c09",
+      "branch": "codex/d-remove-residual-web-vps-references",
+      "head": "14d969fe06fe4768f60b331609f5c12f343f7f61",
+      "queued_at": "2026-07-27T03:47:44.939046+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "292678c086fe57b9ae9125fa518366cdc64a6c09",
+      "branch": "codex/d-runpod-http-user-agent",
+      "head": "38d04b29daed2e4c6222fff7233abba6fb637b29",
+      "queued_at": "2026-07-27T04:25:48.531904+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

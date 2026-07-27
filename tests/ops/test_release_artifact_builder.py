@@ -52,13 +52,21 @@ def test_leaf_change_rebuilds_only_modules_whose_input_closure_matches():
     assert "central-api" in plan.reuse
 
 
-def test_media_runtime_change_rebuilds_only_qqcc_media_consumers():
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "deploy/docker/Dockerfile.media-runtime-base",
+        "deploy/docker/media-intelligence-requirements.txt",
+        "deploy/docker/YUNET_LICENSE.txt",
+    ],
+)
+def test_media_runtime_change_rebuilds_only_qqcc_media_consumers(changed_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
 
     plan = module.plan_builds(
         catalog,
-        ["deploy/docker/Dockerfile.media-runtime-base"],
+        [changed_path],
         has_previous=True,
     )
 

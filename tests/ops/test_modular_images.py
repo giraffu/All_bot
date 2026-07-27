@@ -132,6 +132,14 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
     )
     assert "AS python-media-runtime-base" in media_runtime
     assert "apt-get install -y --no-install-recommends ffmpeg" in media_runtime
+    assert "media-intelligence-requirements.txt" in media_runtime
+    assert "face_detection_yunet_2023mar.onnx" in media_runtime
+    assert "YUNET_LICENSE.txt" in media_runtime
+    assert (
+        "sha256:8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+        in media_runtime
+    )
+    assert "media.githubusercontent.com/media/opencv/opencv_zoo/" in media_runtime
 
     catalog = json.loads(
         (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
@@ -139,6 +147,10 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
     media_base = catalog["python-media-runtime-base"]
     assert media_base["base"] == "python-runtime-base"
     assert media_base["dockerfile"] == "deploy/docker/Dockerfile.media-runtime-base"
+    assert (
+        "deploy/docker/media-intelligence-requirements.txt"
+        in media_base["inputs"]
+    )
     for target in (
         "qqcc-bot",
         "private-bot-worker",
@@ -171,6 +183,12 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
         'docker run --rm --entrypoint sh "$qqcc_config_backend_ref" '
         "-c 'ffmpeg -version && ffprobe -version'"
     ) in workflow
+    assert (
+        'for media_ref in "$backend_ref" "$qqcc_config_backend_ref" '
+        '"$qqcc_bot_ref" "$private_bot_ref"; do'
+    ) in workflow
+    assert "import cv2, smartcrop" in workflow
+    assert "/opt/allbot/models/face_detection_yunet_2023mar.onnx" in workflow
 
 
 def test_dashboard_and_qqcc_frontends_are_separate_targets():

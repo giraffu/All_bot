@@ -146,7 +146,7 @@
 | 云测试入口 | `scripts/release.py plan\|deploy --env test --sha <full-sha>`；代码/env rsync、现场 build 与源码 bind mount 均禁止 |
 | 云正式入口 | `release.py deploy --env prod --strategy auto\|standard\|direct\|emergency` 按模块风险和 artifact digest 判门禁；管理面/执行面默认 direct，公共 Web 可显式 direct，核心仅 emergency 可旁路，migration/共享契约/未知路径永久 standard；`--dashboard-fast-track` 仅为兼容别名 |
 | 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`；`R2_BUCKET_SYNC_ENABLED=true` 时把 R2 `user-data-prod` 镜像到本地 `user-data-prod-shadow` 并用 quarantine 保留被覆盖对象；本地对象桶只供离线灾备核验，不参与应用回源；脚本持有 `.shadow-sync.lock` 防并发 |
-| 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
+| 本地灾备脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；旧本地测试部署入口已删除 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
 
 ## 2. 总览与索引文档
@@ -276,11 +276,10 @@
 
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
-| `docs/archive/2026-06-cloud-migration/README.md` | 归档索引 | 归档确认 | 已明确“不作为当前 SOP” |
-| `docs/archive/2026-06-cloud-migration/正式云环境切换前准备清单.md` | 历史迁云记录 | 归档确认 | 不重写历史证据 |
-| `docs/archive/2026-06-cloud-migration/子模块_Cloudflare_Pages与API_Tunnel测试入口迁移_runbook.md` | 历史 runbook | 归档确认 | 不重写历史证据 |
+| `docs/archive/2026-06-cloud-migration/README.md` | 归档索引 | 已精简 | 删除旧 Web 节点迁移手册与切换清单，只保留仍有复盘价值的两份业务问题记录 |
 | `docs/archive/2026-06-cloud-migration/变更说明_web历史原视频R2优先链路.md` | 历史变更说明 | 归档确认 | 不重写历史证据 |
 | `docs/archive/2026-06-cloud-migration/问题分析_web老任务恢复导致无效状态轮询.md` | 历史问题分析 | 归档确认 | 不重写历史证据 |
+| `docs/archive/2026-07-web-vps-retirement.md` | 退役审计 | 归档确认 | 只保留两段退役结论，具体旧配置和操作步骤由 Git 历史承载 |
 | `docs/archive/2026-06-runtime-canaries/README.md` | 归档索引 | 归档确认 | 已明确“不作为当前 SOP 或容量事实源” |
 | `docs/archive/2026-06-runtime-canaries/LAN_AIO_PROD_CANARY_20260616.md` | 一次性 canary | 归档确认 | 不重写历史证据 |
 | `docs/archive/2026-06-runtime-canaries/lan_model_cache_upload_2026-06-15.md` | 一次性模型上传记录 | 归档确认 | 不重写历史证据 |
@@ -326,7 +325,7 @@
 | `.codex/skills/*/references/*.md` | 对应 Skill | 已核对 | reference 文件保持作为按需深读材料 |
 | `.codex/skills/*/agents/openai.yaml` | 子代理配置 | 已核对 | 配置文件不作为长期业务知识正文 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` / `docs/子模块_附加模型配置指南_comfy_models.md` / `.codex/skills/allbot-qqcc-lazy-bot` / `allbot-comfy-models` / `allbot-tg-fsm` / `allbot-task-engine` | `ai_video_scenes` 配置与 Config Web、quick video FSM/service、actor LTX entrypoint、private continuation、LTX request/API/worker mappings | 已修正 | 2026-07-16 新增默认空的 QQCC `AI视频`：入口紧随 AI动图，固定 LTX `1280x704`、5/10/15/20s、最多 3 个 `{path,strength}` LoRA、可选尾帧绘图链、官方/私有演示媒体和最新配置重新生成；私有尾帧链增加 durable `ltx_video` executor，结果隐藏 LTX 扩展/拼接。Web LTX 练功房与模板应用新增负面提示词；I2V/FLF2V/V2V Audio 非空负向映射节点 `29.text`，空白字段完全省略以保留 workflow 默认；Telegram 高级 LTX 设置不变。本轮无数据库表、task type、workflow JSON、模型资产或部署变更。 |
-| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` / `docs/子模块_附加模型配置指南_comfy_models.md` / `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_config_service.py`、`qqcc_video_frame_adapter.py`、Quick Video plan/runner、private durable executor、QQCC demo generation、Config Vue | 已修正 | 2026-07-22 新增 QQCC `video_scenes[].aspect_ratio`：`source / 9:16 / 16:9 / 1:1`，由 QQCC 输入适配器在提交前做 EXIF 归一与居中裁剪；官方单帧/尾帧、私有恢复、示例生成和最新配置重生成统一。内部比例不进入 Central/Worker；主 Bot、AI视频、Wan22 workflow/patcher/profile、费用与画质档位不变，无 migration 或部署。 |
+| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` / `docs/子模块_附加模型配置指南_comfy_models.md` / `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` / `.codex/skills/allbot-comfy-models/SKILL.md` / `.codex/skills/allbot-ops-deployment/SKILL.md` | `qqcc_video_frame_adapter.py`、`smart_image_aspect_service.py`、`yunet_face_detector.py`、SmartCrop adapter、Quick Video plan/runner、private durable executor、QQCC demo generation、`python-media-runtime-base` 与 full-validation smoke | 已修正，未部署 | 2026-07-22 新增 QQCC `video_scenes[].aspect_ratio`，2026-07-27 将居中硬裁升级为可复用智能适配：低于 55% 保留面积、多人人脸安全框装不下、YuNet 缺失/失败均使用完整前景与暗化模糊背景补边；安全比例使用 YuNet 焦点裁剪，无人脸使用 SmartCrop 显著性裁剪。OpenCV/SmartCrop 与 SHA-256 锁定的官方 YuNet 模型只进入媒体控制面基础镜像，四个最终消费者执行导入/模型 smoke。官方单帧/尾帧、私有恢复、示例生成和最新配置重生成继续统一；比例不进入 Central/Worker，主 Bot、AI视频、Wan22 workflow/patcher/profile、GPU runtime、费用与画质档位不变，无 migration。 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` / `docs/子模块_附加模型配置指南_comfy_models.md` / `docs/子模块_Git不可变发布_git_immutable_release.md` / `.codex/skills/allbot-qqcc-lazy-bot` / `allbot-comfy-models` | `src/qqcc_ltx_lora_catalog.py`、`src/services/qqcc_config_service.py`、`src/lora_catalog.py`、`deploy/release-policy.yml`、QQCC Config Web 动态选项、quick video submission service | 已修正 | 2026-07-17 新增 QQCC Config 独占 LTX LoRA 目录：接入本机校验库 32 项，其中 26 项不在公开目录；后台选项、保存白名单和缺省强度读取专用目录，懒人 Bot 继续转换为 `{name,strength}` 提交。公开主 Bot/Web catalog 保持不变。两份 QQCC 目录/配置文件已纳入内容 SHA256 固定的同组独立发布 snapshot，只有内容完全匹配时才允许分别执行 `qqcc-config` 两服务与 `qqcc-bot` 单服务 rolling 事务，后续漂移立即 fail closed。模型已在本机 registry 备齐，但 RunPod/LAN AIO manifest 与正式 GPU runtime 未同步，需独立发布和 smoke 后才能宣称运行时生效。 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` / `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | `ops/gpu_pool_controller/lan_aio_prod.py`、`tests/ops/test_lan_aio_prod.py` | 已修正 | 2026-07-24 同步 LAN registry 代理绕过事实源：`configure-registry` 同时维护 daemon `insecure-registries` / `proxies.no-proxy` 与 systemd `NO_PROXY/no_proxy`，保留既有代理端点，防止 Docker daemon 将局域网 registry 请求误送到本机代理；重启恢复范围仍仅限原先运行的候选。 |
 

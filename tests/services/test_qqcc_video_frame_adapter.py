@@ -8,6 +8,19 @@ from src.services.qqcc_video_frame_adapter import (
     adapt_qqcc_video_frame_bytes,
     adapt_qqcc_video_frame_file,
 )
+from src.services.smart_image_aspect_service import FocusRegion
+
+
+def _no_faces(_image):
+    return []
+
+
+def _center_crop(_image, crop_size):
+    width, height = _image.size
+    crop_width, crop_height = crop_size
+    left = (width - crop_width) // 2
+    top = (height - crop_height) // 2
+    return left, top, left + crop_width, top + crop_height
 
 
 def _image_bytes(size: tuple[int, int], *, image_format: str = "PNG") -> bytes:
@@ -19,12 +32,12 @@ def _image_bytes(size: tuple[int, int], *, image_format: str = "PNG") -> bytes:
 @pytest.mark.parametrize(
     ("source_size", "aspect_ratio", "expected_size"),
     [
-        ((400, 300), "9:16", (162, 288)),
-        ((300, 400), "16:9", (288, 162)),
+        ((400, 300), "9:16", (225, 400)),
+        ((300, 400), "16:9", (400, 225)),
         ((401, 300), "1:1", (300, 300)),
     ],
 )
-def test_adapt_bytes_center_crops_to_exact_ratio_without_upscaling(
+def test_adapt_bytes_pads_extreme_changes_and_crops_safe_changes(
     source_size: tuple[int, int],
     aspect_ratio: str,
     expected_size: tuple[int, int],
@@ -32,6 +45,8 @@ def test_adapt_bytes_center_crops_to_exact_ratio_without_upscaling(
     adapted = adapt_qqcc_video_frame_bytes(
         _image_bytes(source_size),
         aspect_ratio=aspect_ratio,
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
     )
 
     with Image.open(BytesIO(adapted)) as image:
@@ -66,6 +81,8 @@ def test_adapt_file_writes_managed_png_copy(tmp_path):
         str(source),
         aspect_ratio="1:1",
         output_dir=str(tmp_path),
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
     )
 
     assert result != str(source)
@@ -74,19 +91,24 @@ def test_adapt_file_writes_managed_png_copy(tmp_path):
         assert image.size == (300, 300)
 
 
-def test_center_crop_uses_the_middle_of_the_source_image():
-    source = Image.new("RGB", (10, 4))
-    for x in range(10):
+def test_saliency_fallback_can_choose_the_middle_of_the_source_image():
+    source = Image.new("RGB", (6, 4))
+    for x in range(6):
         for y in range(4):
             source.putpixel((x, y), (x * 20, 0, 0))
     content = BytesIO()
     source.save(content, format="PNG")
 
-    adapted = adapt_qqcc_video_frame_bytes(content.getvalue(), aspect_ratio="1:1")
+    adapted = adapt_qqcc_video_frame_bytes(
+        content.getvalue(),
+        aspect_ratio="1:1",
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
+    )
 
     with Image.open(BytesIO(adapted)) as image:
-        assert image.getpixel((0, 0)) == (60, 0, 0)
-        assert image.getpixel((3, 0)) == (120, 0, 0)
+        assert image.getpixel((0, 0)) == (20, 0, 0)
+        assert image.getpixel((3, 0)) == (80, 0, 0)
 
 
 def test_exif_orientation_is_applied_before_cropping():
@@ -99,6 +121,8 @@ def test_exif_orientation_is_applied_before_cropping():
     adapted = adapt_qqcc_video_frame_bytes(
         content.getvalue(),
         aspect_ratio="9:16",
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
     )
 
     with Image.open(BytesIO(adapted)) as image:
@@ -109,9 +133,16 @@ def test_reapplying_the_same_ratio_is_content_idempotent():
     first = adapt_qqcc_video_frame_bytes(
         _image_bytes((400, 300)),
         aspect_ratio="16:9",
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
     )
 
-    second = adapt_qqcc_video_frame_bytes(first, aspect_ratio="16:9")
+    second = adapt_qqcc_video_frame_bytes(
+        first,
+        aspect_ratio="16:9",
+        focus_detector=_no_faces,
+        saliency_cropper=_center_crop,
+    )
 
     assert second == first
 
@@ -134,3 +165,23 @@ def test_invalid_file_does_not_leave_a_derived_temp_file(tmp_path):
 def test_invalid_image_is_rejected(content: bytes):
     with pytest.raises(QqccVideoFrameAdaptationError):
         adapt_qqcc_video_frame_bytes(content, aspect_ratio="9:16")
+
+
+def test_face_detector_moves_a_safe_crop_up_to_preserve_the_head():
+    source = Image.new("RGB", (300, 400), "black")
+    for x in range(120, 180):
+        for y in range(5, 65):
+            source.putpixel((x, y), (255, 0, 0))
+    content = BytesIO()
+    source.save(content, format="PNG")
+
+    adapted = adapt_qqcc_video_frame_bytes(
+        content.getvalue(),
+        aspect_ratio="1:1",
+        focus_detector=lambda _: [FocusRegion(120, 5, 180, 65)],
+        saliency_cropper=_center_crop,
+    )
+
+    with Image.open(BytesIO(adapted)) as image:
+        assert image.size == (300, 300)
+        assert image.getpixel((150, 5)) == (255, 0, 0)

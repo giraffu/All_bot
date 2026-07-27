@@ -27,7 +27,7 @@
   - 重建 dashboard
   - 发布生产 Web 静态站到 Cloudflare Pages
 - `safe_deploy.sh` 到此结束，不会顺带重建测试环境；它不代表当前云正式控制面的发布入口。
-- `safe_deploy_test.sh` 不再作为推荐入口。若历史排障必须短时恢复旧本地隔离测试栈，应另起临时计划，先确认它不会抢占测试 Bot token、GPU、Redis 队列、对象桶或边缘测试站；完成后立即停止并保留数据。
+- 旧本地测试部署入口已删除；云测试只通过不可变 release 流程维护，不提供恢复旧本地隔离测试栈的人工回退入口。
 
 ## 2.1 当前默认发布策略
 
@@ -107,7 +107,7 @@
 ## 4. 服务重建注意事项
 
 - 所有自有服务只运行 release manifest 中的 digest-pinned 镜像；目标机不得现场 build。
-- QQCC 链式视频的尾帧探测与拼接由控制面执行；`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。模块化 full-validation 对四个最终 digest 分别执行 `ffmpeg` / `ffprobe` smoke；修改该窄基础层只重建真实 descendants，不得把所有控制面服务无差别卷入重建。
+- QQCC 链式视频的尾帧探测、拼接与智能画幅适配由控制面执行；`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。该层除 ffmpeg/ffprobe 外固定 OpenCV headless、SmartCrop 和按 SHA-256 校验的 YuNet ONNX。模块化 full-validation 对四个最终 digest 分别执行双媒体工具 smoke，并验证 `cv2` / `smartcrop` 导入和模型存在；修改该窄基础层或媒体智能依赖清单只重建真实 descendants，不得把所有控制面服务无差别卷入重建。
 - Dashboard、QQCC Config 或 Bot 的单模块发布由影响 planner 选择完整消费者，并在发布后核对目标健康与非目标容器启动时间不变。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。

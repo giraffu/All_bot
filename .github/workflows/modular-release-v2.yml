@@ -464,6 +464,9 @@ jobs:
           docker run --rm --entrypoint sh "$qqcc_config_backend_ref" -c 'ffmpeg -version && ffprobe -version'
           docker run --rm --entrypoint sh "$qqcc_bot_ref" -c 'ffmpeg -version && ffprobe -version'
           docker run --rm --entrypoint sh "$private_bot_ref" -c 'ffmpeg -version && ffprobe -version'
+          for media_ref in "$backend_ref" "$qqcc_config_backend_ref" "$qqcc_bot_ref" "$private_bot_ref"; do
+            docker run --rm --entrypoint python "$media_ref" -c 'from pathlib import Path; import cv2, smartcrop; assert Path("/opt/allbot/models/face_detection_yunet_2023mar.onnx").is_file()'
+          done
 
       - name: Inspect release images and Web bytes for environment neutrality
         shell: bash
