@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "37220580df28d28f61583502ccab14bf79f42097",
+  "batch": "20260727-203219-8470b3b4",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-203219-8470b3b4",
+  "members": [
+    {
+      "base_sha": "37220580df28d28f61583502ccab14bf79f42097",
+      "branch": "codex/d-fail-closed-remote-state-read",
+      "head": "8470b3b4347ae1a1e219fc10657455aee6c1b198",
+      "queued_at": "2026-07-27T20:31:33.143799+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
