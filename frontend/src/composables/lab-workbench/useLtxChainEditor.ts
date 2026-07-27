@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue'
 import { stitchLtxHistoryChain } from '@/api/gallery'
 import type { UnifiedLabModeId } from '@/features/generation/labModeConfig'
 import type { TaskRecord } from '@/types/gallery'
-import { buildStorageFileUrl } from '@/utils/storageUrl'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 import type { TranslateFn, UploadedReference } from './types'
 
 const reusableOutputPrefixes = ['comfyui-temp/', 'bot-data/', 'bot-data-test/', 'history/', 'template:']
@@ -115,7 +115,7 @@ export function useLtxChainEditor({
     currentModeId.value = 'ltx_video'
     uploadedReferences.value = [{
       key,
-      preview: url || buildStorageFileUrl(key),
+      preview: url || resolveMediaUrl(key),
       name: t('lab.workbench.ltx_extension_start_frame_name'),
       locked: true,
       lockedLabel: t('lab.workbench.ltx_locked_start_frame'),

@@ -26,7 +26,6 @@ This script:
 This script does NOT:
   - touch production local containers or production Redis/PostgreSQL/MinIO
   - delete the R2 user-data-test bucket
-  - change or reload web-test.aivison.it.com edge Nginx
   - start cloud production services or cloud-tg-bot-prod
 EOF
 }

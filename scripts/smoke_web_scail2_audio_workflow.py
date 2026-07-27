@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 DEFAULT_ENV_FILE = ROOT / ".env.cloud.test"
 DEFAULT_OUTPUT_ROOT = ROOT / "logs" / "scail2_audio_workflow_smoke"
-DEFAULT_API_BASE_URL = "https://web-test.aivison.it.com/api"
+DEFAULT_API_BASE_URL = "https://api-cf-test.aivison.it.com/api"
 DEFAULT_PASSWORD = "scail2-audio-smoke-password"
 DEFAULT_USER_ID = 920260620001
 DEFAULT_USERNAME = "scail2_audio_smoke"

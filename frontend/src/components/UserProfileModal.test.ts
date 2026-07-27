@@ -234,7 +234,7 @@ describe('UserProfileModal', () => {
             id: 1,
             task_id: 'task-page-1',
             thumbnail_url: '',
-            media_url: 'media-page-1.jpg',
+            media_url: 'https://r2.example/media-page-1.jpg',
             prompt: 'masked ****',
             prompt_unlocked: false,
             prompt_unlockable: true,

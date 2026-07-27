@@ -105,35 +105,6 @@ wait_for_http_ready() {
     return 1
 }
 
-deploy_prod_web_to_edge_vps() {
-    local frontend_dir="$ROOT_DIR/frontend"
-    local prod_web_url="${PROD_WEB_URL:-https://web.aivison.it.com}"
-
-    if [ ! -d "$frontend_dir" ]; then
-        echo "❌ 未找到前端目录: $frontend_dir"
-        return 1
-    fi
-
-    if ! command -v npm >/dev/null 2>&1; then
-        echo "❌ 未找到 npm，无法执行生产 Web 发布。"
-        echo "👉 请先安装 Node.js/npm，或手动执行 frontend/scripts/deploy-edge-prod.sh。"
-        return 1
-    fi
-
-    if [ ! -f "$frontend_dir/scripts/deploy-edge-prod.sh" ]; then
-        echo "❌ 未找到生产 Web 发布脚本: $frontend_dir/scripts/deploy-edge-prod.sh"
-        return 1
-    fi
-
-    echo "9️⃣ 构建并发布生产 Web 静态站到边缘 VPS..."
-    (
-        cd "$frontend_dir"
-        npm run deploy:edge-prod
-    )
-    wait_for_http_ready "边缘 VPS 生产 Web" "$prod_web_url" 24 5
-    echo "✅ 边缘 VPS 生产 Web 发布完成。"
-}
-
 restart_prod_dashboard_frontend_only() {
     echo "🔁 单独重建生产 Dashboard 前端..."
     remove_compose_service_containers "dashboard-frontend"
@@ -338,9 +309,6 @@ cd "$ROOT_DIR"
 wait_for_http_ready "Dashboard Backend" "http://127.0.0.1:8043/api/health"
 wait_for_http_ready "Dashboard Frontend" "http://127.0.0.1:8085"
 echo "✅ Dashboard 服务重建完成。"
-
-# ==============================================================================
-deploy_prod_web_to_edge_vps
 
 # ==============================================================================
 DEPLOY_SUCCEEDED=1

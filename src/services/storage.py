@@ -1,20 +1,11 @@
 import asyncio
 import logging
-from types import SimpleNamespace
 
 import boto3
 from botocore.config import Config as BotoConfig
 import urllib3
 
 from config import (
-    LEGACY_MINIO_ACCESS_KEY,
-    LEGACY_MINIO_BUCKET,
-    LEGACY_MINIO_ENDPOINT,
-    LEGACY_MINIO_PUBLIC_URL,
-    LEGACY_MINIO_READ_FALLBACK_ENABLED,
-    LEGACY_MINIO_RESULT_BUCKET,
-    LEGACY_MINIO_SECRET_KEY,
-    LEGACY_MINIO_SECURE,
     MINIO_ACCESS_KEY,
     MINIO_BUCKET,
     MINIO_ENDPOINT,
@@ -148,8 +139,6 @@ class StorageService:
 
     def _init_client(self):
         self._init_r2_runtime_state()
-        self.legacy_client = None
-        self.legacy_public_client = None
         try:
             self._minio_http_client = urllib3.PoolManager(
                 maxsize=100,
@@ -205,8 +194,6 @@ class StorageService:
             self.client = None
             self.public_client = None
 
-        self._init_legacy_minio_client()
-
         # Initialize Cloudflare R2 client
         try:
             if R2_ENDPOINT and R2_ACCESS_KEY and R2_SECRET_KEY:
@@ -248,48 +235,6 @@ class StorageService:
             self.r2_client = None
             self.r2_head_client = None
 
-    def _init_legacy_minio_client(self):
-        if not LEGACY_MINIO_READ_FALLBACK_ENABLED:
-            return
-        if not (
-            LEGACY_MINIO_ENDPOINT
-            and LEGACY_MINIO_ACCESS_KEY
-            and LEGACY_MINIO_SECRET_KEY
-        ):
-            return
-
-        try:
-            self._legacy_minio_http_client = urllib3.PoolManager(
-                maxsize=32,
-                num_pools=32,
-                retries=False,
-            )
-            legacy_buckets = build_configured_bucket_names(
-                LEGACY_MINIO_BUCKET,
-                LEGACY_MINIO_RESULT_BUCKET,
-            )
-            self.legacy_client = build_minio_client(
-                endpoint=LEGACY_MINIO_ENDPOINT,
-                access_key=LEGACY_MINIO_ACCESS_KEY,
-                secret_key=LEGACY_MINIO_SECRET_KEY,
-                secure=LEGACY_MINIO_SECURE,
-                bucket_names=legacy_buckets,
-                http_client=self._legacy_minio_http_client,
-            )
-            if LEGACY_MINIO_PUBLIC_URL:
-                self.legacy_public_client = build_public_minio_client(
-                    public_url=LEGACY_MINIO_PUBLIC_URL,
-                    access_key=LEGACY_MINIO_ACCESS_KEY,
-                    secret_key=LEGACY_MINIO_SECRET_KEY,
-                    bucket_names=legacy_buckets,
-                    http_client=self._legacy_minio_http_client,
-                )
-            logger.info("Legacy MinIO read-only fallback initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize legacy MinIO client: {e}")
-            self.legacy_client = None
-            self.legacy_public_client = None
-
     def _sync_upload_to_r2(
         self, bucket_name: str, object_name: str, r2_object_name: str = None
     ):
@@ -310,50 +255,6 @@ class StorageService:
             object_name=object_name,
             r2_object_name=r2_object_name,
             logger=logger,
-        )
-
-    def _sync_copy_legacy_to_r2(
-        self,
-        bucket_name: str,
-        object_name: str,
-        r2_object_name: str = None,
-    ) -> bool:
-        if not self.legacy_client or not self.r2_client or not self.r2_bucket:
-            return False
-
-        target_name = r2_object_name or object_name
-        response = None
-        try:
-            response = self.legacy_client.get_object(bucket_name, object_name)
-            self.r2_client.upload_fileobj(response, self.r2_bucket, target_name)
-            self.mark_r2_object_exists(target_name)
-            return True
-        except Exception as exc:
-            logger.error(
-                "Failed to copy legacy object %s/%s to R2 %s/%s: %s",
-                bucket_name,
-                object_name,
-                self.r2_bucket,
-                target_name,
-                exc,
-            )
-            return False
-        finally:
-            if response is not None:
-                response.close()
-                response.release_conn()
-
-    async def async_copy_legacy_to_r2(
-        self,
-        bucket_name: str,
-        object_name: str,
-        r2_object_name: str = None,
-    ) -> bool:
-        return await asyncio.to_thread(
-            self._sync_copy_legacy_to_r2,
-            bucket_name,
-            object_name,
-            r2_object_name,
         )
 
     def _sync_delete_r2_object(self, object_name: str) -> bool:
@@ -465,64 +366,6 @@ class StorageService:
             object_name=object_name,
             logger=logger,
         )
-
-    def has_legacy_storage_configured(self) -> bool:
-        return bool(self.legacy_client)
-
-    def legacy_object_exists(self, bucket_name: str, object_name: str) -> bool:
-        if not self.legacy_client:
-            return False
-        legacy_service = SimpleNamespace(client=self.legacy_client)
-        return object_exists_impl(
-            legacy_service,
-            bucket_name=bucket_name,
-            object_name=object_name,
-            logger=logger,
-        )
-
-    async def async_legacy_object_exists(
-        self,
-        bucket_name: str,
-        object_name: str,
-    ) -> bool:
-        return await asyncio.to_thread(
-            self.legacy_object_exists,
-            bucket_name,
-            object_name,
-        )
-
-    def get_legacy_presigned_url(
-        self,
-        object_name: str,
-        expires_hours: float = 1,
-        bucket: str = None,
-        download: bool = False,
-    ) -> str:
-        if not self.legacy_client:
-            return ""
-        if not bucket:
-            bucket = LEGACY_MINIO_BUCKET
-
-        try:
-            legacy_service = SimpleNamespace(
-                client=self.legacy_client,
-                public_client=self.legacy_public_client,
-            )
-            return generate_presigned_get_url(
-                legacy_service,
-                bucket_name=bucket,
-                object_name=object_name,
-                expires_hours=expires_hours,
-                download=download,
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to generate legacy presigned URL for %s in %s: %s",
-                object_name,
-                bucket,
-                e,
-            )
-            return ""
 
     def _r2_object_exists_with_cache_hint(self, object_name: str) -> tuple[bool, bool]:
         return r2_object_exists_with_cache_hint_impl(self, object_name, logger=logger)

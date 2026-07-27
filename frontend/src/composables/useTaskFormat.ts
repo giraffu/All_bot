@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import i18n from '@/i18n'
-import { buildStorageFileUrl } from '@/utils/storageUrl'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 import { resolveTaskTypeLabel } from '@/utils/taskTypePresentation'
 
 export function useTaskFormat() {
@@ -13,7 +13,7 @@ export function useTaskFormat() {
   const getTypeLabel = (type: string) => resolveTaskTypeLabel(type, t, te)
 
   const getFileUrl = (path: string) => {
-    return buildStorageFileUrl(path)
+    return resolveMediaUrl(path)
   }
 
   const isVideoFile = (path: string) => {

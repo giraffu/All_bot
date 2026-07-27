@@ -113,7 +113,6 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://web.aivison.it.com",
-        "https://web-test.aivison.it.com",
         "https://web-cf-test.aivison.it.com",
         "https://allbot-web-cf-test.pages.dev",
         "https://allbot-web-prod.pages.dev",

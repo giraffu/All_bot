@@ -9,7 +9,7 @@ from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
     build_input_file_candidates,
     collect_cloud_prod_lag_fix_history_ids,
-    collect_web_visible_retire_legacy_history_ids,
+    collect_web_visible_history_ids,
     process_history_r2_candidate,
     process_history_r2_candidates,
     select_hotset_batch,
@@ -58,19 +58,19 @@ def test_build_history_r2_candidate_prefers_history_namespace_keys():
     assert candidate.thumbnail_source_object == "123/output_images/task-1_thumb.jpg"
 
 
-def test_build_history_r2_candidate_falls_back_to_legacy_keys_without_task_id():
+def test_build_history_r2_candidate_uses_flat_compatibility_keys_without_task_id():
     candidate = build_history_r2_candidate(
         history_id=2,
         user_id=22,
-        username="legacy-user",
+        username="compat-user",
         task_id=None,
         history_type="txt2img",
-        output_file="123/output_images/legacy.png",
+        output_file="123/output_images/compat.png",
     )
 
     assert candidate.media_type == "image"
-    assert candidate.media_r2_key == "legacy.png"
-    assert candidate.thumbnail_r2_key == "legacy_thumb.webp"
+    assert candidate.media_r2_key == "compat.png"
+    assert candidate.thumbnail_r2_key == "compat_thumb.webp"
 
 
 def test_build_input_file_candidates_skips_external_urls_and_dedupes():
@@ -114,7 +114,7 @@ async def test_collect_cloud_prod_lag_fix_history_ids_dedupes_in_priority_order(
 
 
 @pytest.mark.asyncio
-async def test_collect_web_visible_retire_legacy_history_ids_dedupes_visible_sources():
+async def test_collect_web_visible_history_ids_dedupes_visible_sources():
     session = _SequentialSession(
         [
             [10, 9, 8],
@@ -125,7 +125,7 @@ async def test_collect_web_visible_retire_legacy_history_ids_dedupes_visible_sou
         ]
     )
 
-    history_ids, source_counts = await collect_web_visible_retire_legacy_history_ids(
+    history_ids, source_counts = await collect_web_visible_history_ids(
         session,
         recent_limit=8,
         total_limit=5,
@@ -139,7 +139,7 @@ async def test_collect_web_visible_retire_legacy_history_ids_dedupes_visible_sou
 
 
 @pytest.mark.asyncio
-async def test_collect_web_visible_retire_legacy_history_ids_can_skip_recent_history():
+async def test_collect_web_visible_history_ids_can_skip_recent_history():
     session = _SequentialSession(
         [
             [9, 7],
@@ -149,7 +149,7 @@ async def test_collect_web_visible_retire_legacy_history_ids_can_skip_recent_his
         ]
     )
 
-    history_ids, source_counts = await collect_web_visible_retire_legacy_history_ids(
+    history_ids, source_counts = await collect_web_visible_history_ids(
         session,
         recent_limit=8,
         include_per_user_recent=False,

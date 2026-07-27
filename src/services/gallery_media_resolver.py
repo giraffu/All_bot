@@ -4,7 +4,7 @@ import logging
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
+    build_flat_r2_compatibility_key,
     build_storage_r2_object_key,
     build_thumbnail_object_name,
     resolve_storage_object,
@@ -33,7 +33,7 @@ def _gallery_media_r2_key_candidates(
         candidates.append(build_history_r2_media_key(task_id, output_file))
     candidates.append(build_storage_r2_object_key(output_file))
     candidates.append(output_file)
-    candidates.append(build_legacy_r2_key(output_file))
+    candidates.append(build_flat_r2_compatibility_key(output_file))
     return _dedupe_r2_keys(candidates)
 
 
@@ -52,7 +52,7 @@ def _gallery_thumbnail_r2_key_candidates(
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     candidates.append(build_storage_r2_object_key(thumb_object_name))
     candidates.append(thumb_object_name)
-    candidates.append(build_legacy_r2_key(thumb_object_name))
+    candidates.append(build_flat_r2_compatibility_key(thumb_object_name))
     return _dedupe_r2_keys(candidates)
 
 

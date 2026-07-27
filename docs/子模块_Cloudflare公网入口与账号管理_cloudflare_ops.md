@@ -41,12 +41,10 @@
 | `qqcc-admin.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28` + Access app `qqcc-admin` / `7fbb3a9a-7156-46b5-857c-1b7e5d97c7fe` | QQCC 懒人 Bot 管理后台公网入口 | Access policy `qqcc` allow `cv1347968277@gmail.com` |
 | `private-bot.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28`，DNS record `69c4e68bf442dea05fefa71db28791b5` | QQCC 私有 Bot owner WebApp，回源 `http://100.107.220.127:8088` | 面向 owner 公开，不创建 Access app；应用层 ticket/JWT + 双层 Host 隔离 |
 | `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
-| `assets.aivison.it.com` | Web/Nginx VPS | legacy MinIO 人工回滚、旧外链、迁移排障 | 不作为新生成媒体主路径 |
-| `web-test.aivison.it.com` | Web/Nginx VPS | legacy 测试静态站/回滚入口；VPS 离线时不可作为发布成功依据 | 不再接收逐文件发布 |
 
 2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
 
-同日已为 `user-data-test` 桶补齐不可变 Pages 测试站直传 CORS。当前允许的 Origin 为 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`、`https://web-cf-test.aivison.it.com`、`https://allbot-web-cf-test.pages.dev`，方法为 `GET/PUT/HEAD`，允许任意请求头并暴露 `ETag`。四个 Origin 的预检均返回 204，`web-cf-test` Origin 的真实预签名 PUT/HEAD 均返回 200。桶 CORS 变更需要具备 R2 Storage Write 管理权限；对象读写 key 即使能上传，也可能无权读取或修改桶 CORS，必须按目标 API/操作实测能力，且不得回显凭据。
+同日已为 `user-data-test` 桶补齐不可变 Pages 测试站直传 CORS。当前允许的 Origin 为 `https://web.aivison.it.com`、`https://web-cf-test.aivison.it.com`、`https://allbot-web-cf-test.pages.dev`，方法为 `GET/PUT/HEAD`，允许任意请求头并暴露 `ETag`。桶 CORS 变更需要具备 R2 Storage Write 管理权限；对象读写 key 即使能上传，也可能无权读取或修改桶 CORS，必须按目标 API/操作实测能力，且不得回显凭据。
 
 2026-07-16 已为云测试 QQCC Config Web 上线 `qqcc-admin-test.aivison.it.com`。该 hostname 插入 `allbot-cloud-web-api-canary` Tunnel 的 catch-all 404 之前，回源测试 Tailscale origin `http://100.82.124.91:8088`；proxied CNAME DNS record 为 `4d257ea98980b057d8d2ef15a2063fdb`。公网未登录请求已验证返回 Cloudflare Access 302，Access allow policy 只允许 `cv1347968277@gmail.com`，应用层 QQCC Config 登录继续保留。测试私有 Bot 总 gate 仍关闭，因此本轮没有创建 `private-bot-test.aivison.it.com` DNS、Tunnel ingress 或公开 Owner WebApp。
 

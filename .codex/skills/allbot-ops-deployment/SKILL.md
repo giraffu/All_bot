@@ -25,7 +25,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 | R2 可见热集审计、legacy 媒体补齐 | `docs/子模块_社区与存储_gallery_storage.md`、对应 `scripts/*r2* --help` |
 | QQCC 单服务更新 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`、`allbot-qqcc-lazy-bot` |
 | 付费群审核 Bot | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md`、`allbot-tg-fsm` |
-| 网络、Cloudflare、边缘节点 | `allbot-cloudflare-ops`、`docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`、`docs/子模块_网络暴露与代理穿透_network_proxy.md`、`docs/子模块_边缘节点运维指南_edge_node_ops.md` |
+| 网络、Cloudflare、公网入口 | `allbot-cloudflare-ops`、`docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`、`docs/子模块_网络暴露与代理穿透_network_proxy.md` |
 
 若用户报告失败、慢、卡住或线上异常，叠加 `allbot-diagnosing-bugs`。若改运维脚本、preflight、helper 或回归门禁，叠加 `allbot-tdd`。若改知识库事实，叠加 `allbot-kb-auto-updater`。
 
@@ -95,7 +95,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - `env_file` 只传给容器，不参与 compose 文件 `${...}` 插值；涉及默认值时必须渲染并核对容器内实际 env。
 - Alembic multiple heads 必须先中止处理；迁移通过后显式执行 `alembic upgrade head`，不要写“容器下次启动会自动应用迁移”。
 - workflow 运行时事实源是 `workers/comfy_agent/workflows`；Central API 不挂载、不 COPY、不启动校验 workflow。改 workflow/mappings/patcher 后重建或重启目标 worker。
-- 新生成对象写 R2 `user-data-prod`。正式 Web/Dashboard 不再生成 legacy MinIO URL；legacy MinIO 只用于迁移补齐、人工回滚、旧外链排障。
+- 所有运行时对象读写统一使用 R2 `user-data-prod`；正式 Web/Dashboard 不得生成本地 MinIO URL。
 - 容量判断以 Central `/system/workers` 当次快照和运维目标为准，不写死“7 个本地 worker”或某次 RunPod 数量。
 - GPU 节点操作只碰目标容器/slot；禁止因单容器异常整机 reboot、批量 compose down/up、误停另一张卡的 ComfyUI。
 - RunPod 真实 create/start/stop/restart/delete/add/scale 必须同时满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`--execute` 和生产确认。
