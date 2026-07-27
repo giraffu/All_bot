@@ -5805,6 +5805,8 @@ def _deploy_web(
             "reused_existing": True,
         }
     with tempfile.TemporaryDirectory(prefix="allbot-web-release-") as temp_dir:
+        wrangler_cwd = Path(temp_dir) / "wrangler"
+        wrangler_cwd.mkdir()
         dist = _extract_web_artifact(artifact, Path(temp_dir))
         (dist / "allbot-runtime-config.js").write_text(
             render_web_runtime_config_script(
@@ -5835,7 +5837,7 @@ def _deploy_web(
                 "--commit-hash",
                 sha,
             ],
-            cwd=ROOT / "frontend",
+            cwd=wrangler_cwd,
             env=env,
             text=True,
             capture_output=True,
