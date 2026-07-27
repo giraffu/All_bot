@@ -5774,6 +5774,18 @@ def _deploy_web(
             "runtime_config_revision": runtime_revision,
             "deployment_url": "",
         }
+    try:
+        existing = verify_pages_canonical_deployment(args, sha, runtime_revision)
+    except ReleaseError:
+        existing = None
+    if existing is not None:
+        return {
+            "project": target["project"],
+            "branch": target["branch"],
+            "runtime_config_revision": runtime_revision,
+            **existing,
+            "reused_existing": True,
+        }
     with tempfile.TemporaryDirectory(prefix="allbot-web-release-") as temp_dir:
         dist = _extract_web_artifact(artifact, Path(temp_dir))
         (dist / "allbot-runtime-config.js").write_text(

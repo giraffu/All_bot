@@ -3293,15 +3293,23 @@ def test_test_and_prod_web_use_same_pages_deployer(
         )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        module,
-        "verify_pages_canonical_deployment",
-        lambda *_args, **_kwargs: {
+    verification_calls = []
+
+    def fake_verify(*_args, **_kwargs):
+        verification_calls.append(True)
+        if len(verification_calls) == 1:
+            raise module.ReleaseError("matching deployment is not present yet")
+        return {
             "deployment_id": "deployment-id",
             "environment": "production",
             "canonical_url": module.WEB_PAGES_TARGETS[environment]["canonical_url"],
             "canonical_verified": True,
-        },
+        }
+
+    monkeypatch.setattr(
+        module,
+        "verify_pages_canonical_deployment",
+        fake_verify,
         raising=False,
     )
     args = SimpleNamespace(
@@ -3414,6 +3422,67 @@ def test_pages_deployer_reports_redacted_command_failure(tmp_path, monkeypatch):
         module._deploy_web(args, manifest)
 
     assert "do-not-leak" not in str(error.value)
+
+
+def test_pages_deployer_reuses_matching_canonical_deployment(tmp_path, monkeypatch):
+    module = _load_module()
+    artifact = tmp_path / "web-dist.tgz"
+    source = tmp_path / "source" / "dist"
+    source.mkdir(parents=True)
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    with tarfile.open(artifact, "w:gz") as archive:
+        archive.add(source, arcname="dist")
+    manifest = _manifest()
+    manifest["web_artifact_sha256"] = module.hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    runtime_path = tmp_path / "web-runtime-config.yml"
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "https://api-test.example.com/api"},
+                "prod": {"api_base_url": "https://api.example.com/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_pages_canonical_deployment",
+        lambda *_args, **_kwargs: {
+            "deployment_id": "existing-deployment",
+            "environment": "production",
+            "canonical_url": module.WEB_PAGES_TARGETS["test"]["canonical_url"],
+            "canonical_verified": True,
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "matching canonical Pages must not be redeployed"
+        ),
+    )
+    args = SimpleNamespace(
+        skip_web=False,
+        web_artifact=str(artifact),
+        bundle_cache=str(tmp_path),
+        execute=True,
+        env="test",
+        cloudflare_token_file=str(token_file),
+        cloudflare_account_id="account-id",
+        web_runtime_config=str(runtime_path),
+    )
+
+    result = module._deploy_web(args, manifest)
+
+    assert result["deployment_id"] == "existing-deployment"
+    assert result["canonical_verified"] is True
+    assert result["reused_existing"] is True
 
 
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
