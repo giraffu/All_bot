@@ -67,3 +67,14 @@ def test_ltx_t2v_dockerfiles_keep_weights_external_and_pin_runtime():
     assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in pornmaster
     assert "from shared.image_aspect import adapt_image_to_aspect" in pornmaster
     assert 'find "$(cat /opt/allbot-comfyui-dir)/models"' in pornmaster
+
+
+def test_runpod_profile_staging_includes_shared_aspect_adapter():
+    build_script = (
+        ROOT / "scripts/build_runpod_profile_image.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'cp -a shared/. "${destination}/shared/"'
+        in build_script
+    )

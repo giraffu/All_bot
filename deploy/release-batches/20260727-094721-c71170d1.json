@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "9d5c2d983d120c0bcde3dedab7e437ac0e4085e3",
+  "batch": "20260727-094721-c71170d1",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-094721-c71170d1",
+  "members": [
+    {
+      "base_sha": "9d5c2d983d120c0bcde3dedab7e437ac0e4085e3",
+      "branch": "codex/b-include-shared-in-runpod-build-context",
+      "head": "c71170d108eb099ed01d1e2ff12114b132a4c676",
+      "queued_at": "2026-07-27T09:46:51.031605+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
