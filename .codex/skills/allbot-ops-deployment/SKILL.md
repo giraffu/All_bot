@@ -52,6 +52,11 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
   test-execution 或 strict artifact 使整个事务进入 strict。
 - `plan_token` 只能复用短时间内相同 SHA/参数/输入 checksum 的只读证据；
   execute 前仍重新核对目标配置 revision 和健康。
+- `scripts/release.py` 是兼容 CLI 门面；不可变命令/计划与显式 I/O seam 在
+  `scripts/release_contracts.py`，schema-v2 纯请求策略在
+  `scripts/release_planning.py`。新增 planning/target/recovery 测试优先注入
+  `ReleaseDependencies`，不要继续把 `_run`、`_remote_shell`、`_read_json`
+  等私有函数固化为测试接口。
 
 ## 3. 配置与秘密
 
