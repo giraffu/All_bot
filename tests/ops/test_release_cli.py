@@ -99,6 +99,43 @@ def test_read_current_state_allows_explicit_missing_remote_state(monkeypatch):
     assert module._read_current_state(args, track_scoped=True) is None
 
 
+def test_resolve_previous_sha_keeps_offline_from_sha_plan_remote_free(
+    monkeypatch,
+):
+    module = _load_module()
+    args = SimpleNamespace(
+        from_sha=FULL_SHA,
+        skip_env_checks=True,
+        state_file=None,
+    )
+
+    def unexpected_state_read(*_args, **_kwargs):
+        raise AssertionError("offline plan must not read remote deployment state")
+
+    monkeypatch.setattr(module, "_read_current_state", unexpected_state_read)
+
+    assert module._resolve_previous_sha(args, track_scoped=True) == FULL_SHA
+    assert args.previous_state is None
+
+
+def test_resolve_previous_sha_still_reads_explicit_state_file(monkeypatch):
+    module = _load_module()
+    state = {"schema_version": 2, "git_sha": "b" * 40}
+    args = SimpleNamespace(
+        from_sha=FULL_SHA,
+        skip_env_checks=True,
+        state_file="/tmp/explicit-current.json",
+    )
+    monkeypatch.setattr(
+        module,
+        "_read_current_state",
+        lambda *_args, **_kwargs: state,
+    )
+
+    assert module._resolve_previous_sha(args, track_scoped=True) == FULL_SHA
+    assert args.previous_state == state
+
+
 def _plan_token_args(tmp_path, *, sha=FULL_SHA):
     manifest = tmp_path / "release-index.json"
     manifest.write_text('{"schema_version": 2}\n', encoding="utf-8")
