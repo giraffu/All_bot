@@ -56,7 +56,9 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   固定 SSH config 对同一 allowlisted 云主机最多尝试 4 次建连，并保留 bounded
   connect/server-alive 超时；不得因重试扩大 host、key 或环境范围。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
-  继续局部展示，不得让一个环境探测清空整个部署页。
+  继续局部展示，不得让一个环境探测清空整个部署页。发布 planner 读取远端
+  `current.json` 时也必须区分明确的文件不存在与 SSH/权限故障；后者不得伪装成
+  首次部署或缺失 schema-v2 基线。
 - 手动维护只管理 `/var/lib/allbot/<env>/runtime/GENERATION_MAINTENANCE`。只允许
   平台解除自身 owner metadata 建立的维护；活动/恢复事务或未知 owner 必须阻断。
 - 开发槽集成只允许固定调用 `auto_integrate_handoffs.py integrate-all --execute`：

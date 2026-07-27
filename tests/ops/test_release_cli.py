@@ -49,6 +49,56 @@ def _load_config_updater():
     return module
 
 
+def test_read_current_state_fails_closed_when_remote_state_is_unavailable(
+    monkeypatch,
+):
+    module = _load_module()
+    args = SimpleNamespace(
+        env="test",
+        track="control-plane",
+        state_file=None,
+        remote_host="test-control",
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=255,
+            stdout="",
+            stderr="connection timed out",
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="remote deployment state is unavailable"):
+        module._read_current_state(args, track_scoped=True)
+
+
+def test_read_current_state_allows_explicit_missing_remote_state(monkeypatch):
+    module = _load_module()
+    args = SimpleNamespace(
+        env="test",
+        track="control-plane",
+        state_file=None,
+        remote_host="test-control",
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "cat: /var/lib/allbot/deployments/test/control-plane/current.json: "
+                "No such file or directory"
+            ),
+        ),
+    )
+
+    assert module._read_current_state(args, track_scoped=True) is None
+
+
 def _plan_token_args(tmp_path, *, sha=FULL_SHA):
     manifest = tmp_path / "release-index.json"
     manifest.write_text('{"schema_version": 2}\n', encoding="utf-8")
