@@ -220,8 +220,10 @@ stage_profile_context() {
     local profile="$1"
     local destination="$2"
     mkdir -p \
+        "${destination}/shared" \
         "${destination}/workers/runpod_runtime" \
         "${destination}/workers/runpod_profiles"
+    cp -a shared/. "${destination}/shared/"
     cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
