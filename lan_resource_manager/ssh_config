@@ -40,8 +40,9 @@ Host allbot-do-sgp1-test-control
 
 Host *
     BatchMode yes
-    ConnectTimeout 10
-    ServerAliveInterval 15
-    ServerAliveCountMax 2
+    ConnectTimeout 20
+    ConnectionAttempts 4
+    ServerAliveInterval 20
+    ServerAliveCountMax 3
     StrictHostKeyChecking accept-new
     UserKnownHostsFile /run/secrets/known_hosts

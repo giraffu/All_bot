@@ -477,3 +477,14 @@ def test_runner_image_contains_digest_pinned_node_and_npx_for_pages():
     assert "node:22-bookworm-slim@sha256:" in dockerfile
     assert "COPY --from=node-runtime /usr/local/bin/node" in dockerfile
     assert "npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
+
+
+def test_runner_ssh_retries_transient_cloud_connection_failures():
+    config = (
+        Path(__file__).resolve().parents[1] / "ssh_config"
+    ).read_text(encoding="utf-8")
+
+    assert "ConnectTimeout 20" in config
+    assert "ConnectionAttempts 4" in config
+    assert "ServerAliveInterval 20" in config
+    assert "ServerAliveCountMax 3" in config
