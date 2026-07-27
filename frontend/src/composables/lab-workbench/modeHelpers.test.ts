@@ -84,6 +84,14 @@ describe('lab workbench mode helpers', () => {
       hasCharacter: true,
     })).toBe(12)
     expect(getLabModeCost({
+      mode: getLabModeConfig('ltx_t2v'),
+      uploadedReferenceCount: 0,
+      resolution: '768x448',
+      duration: '20',
+      wan22ResolutionPreset: 'preview',
+      hasCharacter: true,
+    })).toBe(48)
+    expect(getLabModeCost({
       mode: getLabModeConfig('scail2_video_replacement'),
       uploadedReferenceCount: 0,
       resolution: '512',

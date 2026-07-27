@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 from agent_result_assets import (
     LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES,
@@ -15,6 +15,8 @@ from agent_result_assets import (
     resolve_history_result_asset,
     result_asset_priority,
 )
+
+LTX_T2V_IC_GUIDE_TAIL_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,108 @@ def _extract_last_frame_from_video_bytes(video_bytes: bytes, logger) -> bytes | 
         return None
 
 
+def _trim_ltx_t2v_ic_guide_tail(video_bytes: bytes, logger) -> bytes:
+    """Remove the hidden one-second IC-LoRA guide buffer before delivery.
+
+    The character sheet is conditioning input, not user-visible video content.
+    This path deliberately fails closed: returning the original bytes after a
+    trim failure would leak the sheet into the delivered result.
+    """
+    if not video_bytes:
+        raise RuntimeError("IC-LoRA result video is empty")
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.mp4"
+            output_path = Path(tmpdir) / "trimmed.mp4"
+            input_path.write_bytes(video_bytes)
+            duration = _probe_video_duration_seconds(input_path)
+            if duration is None or duration <= LTX_T2V_IC_GUIDE_TAIL_SECONDS:
+                raise RuntimeError(
+                    "IC-LoRA result is too short to remove the hidden guide tail"
+                )
+            delivery_duration = duration - LTX_T2V_IC_GUIDE_TAIL_SECONDS
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(input_path),
+                    "-t",
+                    f"{delivery_duration:.3f}",
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0",
+                    "-r",
+                    "24",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "18",
+                    "-c:a",
+                    "aac",
+                    "-movflags",
+                    "+faststart",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+            )
+            if (
+                result.returncode != 0
+                or not output_path.exists()
+                or not output_path.stat().st_size
+            ):
+                logger.error(
+                    "Failed to remove IC-LoRA hidden guide tail with ffmpeg"
+                )
+                raise RuntimeError("failed to remove IC-LoRA hidden guide tail")
+            return output_path.read_bytes()
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.error("Failed to remove IC-LoRA hidden guide tail: %s", exc)
+        raise RuntimeError("failed to remove IC-LoRA hidden guide tail") from exc
+
+
+def _character_view_difference_hash(payload: bytes) -> int:
+    try:
+        with Image.open(io.BytesIO(payload)) as source:
+            pixels = list(
+                source.convert("L")
+                .resize(
+                    (9, 8),
+                    Image.Resampling.LANCZOS,
+                )
+                .get_flattened_data()
+            )
+    except Exception as exc:
+        raise RuntimeError("corrupt character reference view") from exc
+    value = 0
+    for row in range(8):
+        offset = row * 9
+        for column in range(8):
+            value = (value << 1) | int(
+                pixels[offset + column] > pixels[offset + column + 1]
+            )
+    return value
+
+
+def _validate_character_view_diversity(images: list[bytes]) -> None:
+    """Reject a sheet that is effectively repeated copies of one camera view."""
+    hashes = [_character_view_difference_hash(payload) for payload in images]
+    distinct_groups: list[int] = []
+    for candidate in hashes:
+        if all((candidate ^ existing).bit_count() > 2 for existing in distinct_groups):
+            distinct_groups.append(candidate)
+    if len(distinct_groups) < 4:
+        raise RuntimeError(
+            "character reference views lack visual camera-view diversity"
+        )
+
+
 def _character_view_assets(
     history: dict[str, Any], prompt_id: str
 ) -> list[dict[str, Any]]:
@@ -175,17 +279,20 @@ def _character_view_assets(
 
 
 def _compose_character_sheet(images: list[bytes]) -> bytes:
+    from shared.image_aspect import adapt_image_to_aspect
+
     if len(images) != 6:
         raise RuntimeError("character reference sheet requires exactly six views")
     canvas = Image.new("RGB", (1536, 896), "black")
     for index, payload in enumerate(images):
         try:
             with Image.open(io.BytesIO(payload)) as source:
-                tile = ImageOps.pad(
-                    source.convert("RGB"),
-                    (512, 448),
-                    method=Image.Resampling.LANCZOS,
-                    color="black",
+                adaptation = adapt_image_to_aspect(
+                    source,
+                    aspect=(8, 7),
+                )
+                tile = adaptation.image.resize(
+                    (512, 448), Image.Resampling.LANCZOS
                 )
         except Exception as exc:
             raise RuntimeError(
@@ -210,6 +317,7 @@ async def _materialize_character_reference(
                 type=asset.get("type", "output"),
             )
         )
+    await asyncio.to_thread(_validate_character_view_diversity, image_bytes)
     result_name = f"{execution.task_id}_character_reference.png"
     execution.task_result = result_name
     execution.task_result_priority = 0
@@ -276,6 +384,12 @@ async def materialize_task_outputs(
         original_subfolder,
         type=view_type,
     )
+    if task_type == "ltx_t2v_ic":
+        primary_bytes = await asyncio.to_thread(
+            _trim_ltx_t2v_ic_guide_tail,
+            primary_bytes,
+            logger,
+        )
     primary = MaterializedPrimaryResult(
         object_name=execution.task_result,
         file_name=original_filename,

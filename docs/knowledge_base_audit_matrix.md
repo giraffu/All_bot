@@ -52,7 +52,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | workflow JSON、mapping、patcher | current | 模型/workflow |
-| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、workflow、profile、`shared/image_aspect.py` | current | LTX 专项；人物参考表与 QQCC AI 动图共用智能比例适配器；test Web/后端开关与 cloud-test 人工 RunPod 已支持，prod 与 autoscaler 关闭 |
+| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、workflow、profile、`shared/image_aspect.py`、结果物化、RunPod canary | current | LTX 专项；人物参考表与 QQCC AI 动图共用智能比例适配器；IC guide 在交付区间外并 fail-closed 裁除；单张正面半身照的六视图需重复门禁与人工语义检查；test Web/后端和 cloud-test 人工 RunPod 已支持，prod 与 autoscaler 关闭 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger | runtime-verification-required | GPU 设计/运维 |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |

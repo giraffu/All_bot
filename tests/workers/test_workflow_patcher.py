@@ -70,13 +70,15 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
         patcher.load_workflow("ltx_t2v_ic"),
-        {"prompt": "scene", "duration": 5, "character_sheet": "owned-sheet.png"},
+        {"prompt": "scene", "duration": 20, "character_sheet": "owned-sheet.png"},
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
     assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
+    assert patched["272"]["inputs"]["frame_idx"] == -1
     assert patched["26:39"]["inputs"]["width"] == 384
     assert patched["26:39"]["inputs"]["height"] == 224
+    assert patched["18"]["inputs"]["Xi"] == 21
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():
