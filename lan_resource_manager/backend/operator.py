@@ -45,7 +45,14 @@ _SENSITIVE_RE = re.compile(
 
 
 def redact_error(value: str) -> str:
-    return _SENSITIVE_RE.sub(r"\1=[redacted]", value)[:2000]
+    redacted = _SENSITIVE_RE.sub(r"\1=[redacted]", value)
+    if len(redacted) <= 2000:
+        return redacted
+    prefix, separator, final_line = redacted.rstrip().rpartition("\n")
+    if not separator:
+        return redacted[-2000:]
+    heading = final_line + "\n...\n"
+    return heading + prefix[-(2000 - len(heading)) :]
 
 
 def parse_last_json(value: str) -> dict[str, Any]:

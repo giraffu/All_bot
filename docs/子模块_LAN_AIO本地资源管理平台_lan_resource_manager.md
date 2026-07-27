@@ -124,6 +124,9 @@ runner 的固定 SSH config 对同一 allowlisted 云主机使用 20 秒 connect
 让事务 fail closed 并进入原发布器补偿。planner 读取远端 `current.json` 时，只有
 远端明确返回文件不存在才视为尚无部署状态；SSH 超时、鉴权或其它读取失败统一报告
 “远端部署状态不可用”，不得降级成首次部署或缺失 schema-v2 基线。
+runner 子命令输出超过诊断上限时先对完整文本脱敏，再把最终错误行置于摘要开头并
+附带有界尾部上下文；模块构建部署页因此应显示实际 `ERROR`，而不是长 plan JSON
+的开头。
 
 integration 复用 release runner 的动作白名单。runner 对 Git common dir、A–H
 worktree root 与 XDG integration queue 只有精确 bind mount；Web 不挂载这些写路径。
