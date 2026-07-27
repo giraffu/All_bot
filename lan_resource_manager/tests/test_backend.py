@@ -422,6 +422,15 @@ def test_operator_parser_returns_outer_final_payload_after_progress():
     assert payload == {"ok": True, "slots": [{"id": "one"}]}
 
 
+def test_operator_parser_accepts_diagnostic_after_final_payload():
+    payload = parse_last_json(
+        '{"status": "deployed", "details": {"sha": "abc"}}\n'
+        "[ssh-retry] connection closed after command completion\n"
+    )
+
+    assert payload == {"status": "deployed", "details": {"sha": "abc"}}
+
+
 def test_cli_adapter_constructs_only_transactional_switch_commands(tmp_path):
     captured = []
 
