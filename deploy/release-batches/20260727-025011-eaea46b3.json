@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "1c25ee45fde60643cae8f7c68a56f7d3861e4120",
+  "batch": "20260727-025011-eaea46b3",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-025011-eaea46b3",
+  "members": [
+    {
+      "base_sha": "1c25ee45fde60643cae8f7c68a56f7d3861e4120",
+      "branch": "codex/d-scope-character-sheet-fix-local-worker",
+      "head": "eaea46b34dc6c17a899253e88da1c623028113b3",
+      "queued_at": "2026-07-27T02:49:55.717395+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
