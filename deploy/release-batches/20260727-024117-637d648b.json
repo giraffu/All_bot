@@ -1,0 +1,24 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "f297425df2b2bea6a55a408dd87f503f2fa9d12a",
+  "batch": "20260727-024117-637d648b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-024117-637d648b",
+  "members": [
+    {
+      "base_sha": "f297425df2b2bea6a55a408dd87f503f2fa9d12a",
+      "branch": "codex/d-fix-character-sheet-runpod-canary",
+      "head": "637d648b7e70f9282b332fdd452082596ae5177a",
+      "queued_at": "2026-07-27T02:36:12.355428+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "f297425df2b2bea6a55a408dd87f503f2fa9d12a",
+      "branch": "codex/d-fix-integration-python-executable",
+      "head": "5ba544ae4585e7d90bb0994f79dc142e68bbb34a",
+      "queued_at": "2026-07-27T02:38:27.394329+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}

@@ -76,6 +76,15 @@ def _png(color):
     return output.getvalue()
 
 
+def _portrait_png_with_head_and_feet_markers():
+    image = Image.new("RGB", (300, 900), "black")
+    image.paste((255, 0, 0), (0, 0, 300, 100))
+    image.paste((0, 0, 255), (0, 800, 300, 900))
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
 def test_character_reference_sheet_is_deterministic_three_by_two():
     payload = materialization._compose_character_sheet(
         [_png((i * 30, 0, 0)) for i in range(1, 7)]
@@ -84,6 +93,16 @@ def test_character_reference_sheet_is_deterministic_three_by_two():
         assert sheet.size == (1536, 896)
         assert sheet.getpixel((256, 224)) == (30, 0, 0)
         assert sheet.getpixel((1280, 672)) == (180, 0, 0)
+
+
+def test_character_reference_sheet_preserves_portrait_head_and_feet():
+    portrait = _portrait_png_with_head_and_feet_markers()
+
+    payload = materialization._compose_character_sheet([portrait] * 6)
+
+    with Image.open(io.BytesIO(payload)) as sheet:
+        assert sheet.getpixel((256, 10)) == (255, 0, 0)
+        assert sheet.getpixel((256, 438)) == (0, 0, 255)
 
 
 def test_character_reference_sheet_rejects_missing_or_corrupt_views():

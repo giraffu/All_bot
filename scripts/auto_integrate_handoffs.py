@@ -239,13 +239,13 @@ def test_deployment_commands(
         "--sha",
         sha,
     ]
-    deploy = ["python", release, "deploy", *common]
+    deploy = [sys.executable, release, "deploy", *common]
     if plan_token is not None:
         if not PLAN_TOKEN_RE.fullmatch(plan_token):
             raise IntegrationQueueError("test deployment plan token is invalid")
         deploy.extend(["--plan-token", plan_token])
     deploy.append("--execute")
-    return [["python", release, "plan", *common], deploy]
+    return [[sys.executable, release, "plan", *common], deploy]
 
 
 def classify_paths(paths: Sequence[str]) -> str:
