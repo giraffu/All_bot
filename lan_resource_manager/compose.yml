@@ -91,6 +91,7 @@ services:
       DOCKER_CONFIG: /run/secrets/docker
       INTEGRATION_QUEUE_ROOT: /home/hfy/.local/state/allbot/ai-integration-queue
       WORKSPACE_LOCK_PATH: /home/hfy/.local/state/allbot/ai-workspaces.lock
+      WORKSPACE_REPO_ROOT: /home/hfy/APP/All_bot
       TMPDIR: /home/app/.cache/allbot/releases
       GIT_AUTHOR_NAME: AllBot Integration Coordinator
       GIT_AUTHOR_EMAIL: integration-bot@allbot.local

@@ -417,7 +417,15 @@ class ReleaseRunner:
                 if action == "integrate_all"
                 else self.root / "scripts/manage_ai_workspaces.py"
             )
-            command = [sys.executable, str(script)]
+            workspace_repo_root = Path(
+                os.environ.get("WORKSPACE_REPO_ROOT", str(self.root))
+            ).resolve()
+            command = [
+                sys.executable,
+                str(script),
+                "--repo",
+                str(workspace_repo_root),
+            ]
             if action == "integrate_all":
                 command.extend(
                     [

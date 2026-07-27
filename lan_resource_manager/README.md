@@ -62,6 +62,8 @@ docker compose --env-file .env -f compose.yml up -d --build
 云 SSH key、GitHub Actions token、Git push SSH key、GHCR read config 与 Pages
 token 路径。runner 只对 Git common dir、A–H 与 XDG queue 使用精确写挂载；Web
 容器仍不接触这些凭据和写挂载。保持默认 `/dev/null` 时对应能力 fail closed。
+runner 的 `WORKSPACE_REPO_ROOT` 固定指向已显式写挂载的主仓库；`/workspace`
+继续只读，用于加载当前可信脚本和策略。
 
 停止平台不会停止任何 GPU runtime：
 
