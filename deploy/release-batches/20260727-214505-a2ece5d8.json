@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "df295e456adfa710a1889562366c668e9b6b677d",
+  "batch": "20260727-214505-a2ece5d8",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-214505-a2ece5d8",
+  "members": [
+    {
+      "base_sha": "df295e456adfa710a1889562366c668e9b6b677d",
+      "branch": "codex/c-pages-runner-tempdir",
+      "head": "a2ece5d8869d1da352452d2e1883502e2c4f0a1a",
+      "queued_at": "2026-07-27T21:44:29.675876+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

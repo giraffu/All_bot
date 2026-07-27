@@ -3371,6 +3371,10 @@ def test_test_and_prod_web_use_same_pages_deployer(
     calls = []
 
     def fake_run(command, **kwargs):
+        assert Path(kwargs["cwd"]).is_dir()
+        assert Path(kwargs["cwd"]).parent.name.startswith("allbot-web-release-")
+        assert Path(kwargs["cwd"]).name == "wrangler"
+        assert Path(kwargs["cwd"]) != module.ROOT / "frontend"
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(
             command,
