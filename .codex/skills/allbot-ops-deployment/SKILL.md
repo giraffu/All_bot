@@ -47,6 +47,9 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 - planner 根据 bundle exact digest、目标 track state、环境拓扑和 policy
   选择 artifact；不能仅用 `source_sha == target_sha`，也不能用 `--services`
   缩小自动影响集合。
+- CI 的离线 manifest 自检仅在显式 `--from-sha`、`--skip-env-checks` 且没有
+  `--state-file` 时不得读取远端 current state；真实 plan/deploy 与显式 state
+  仍必须 fail closed。
 - 发布器自动选择 `streamlined|strict`。已知、无漂移、完整验证的普通模块
   可 streamlined；migration、Compose/env、首次切换、未知影响、GPU、
   test-execution 或 strict artifact 使整个事务进入 strict。

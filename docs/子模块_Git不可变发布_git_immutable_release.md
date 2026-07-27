@@ -219,7 +219,7 @@ streamlined 的 Compose 运行契约以每个当前目标容器的 `com.docker.c
 
 `--control-plane-repair-fast-track` 不是通用免测入口，只用于 verified main-channel 控制面之后修复生产启用、测试禁用的 `private-bot-worker` 镜像闭包。发布器以测试状态 SHA 为基线重新计算路径差异；只接受 `Dockerfile.control-plane`、v2 artifact catalog 与配套 release/docs/tests/skills 元数据。对其它 digest 变化模块，catalog inputs 必须无变化且对应 Docker target 文本逐字等价；private worker 必须包含 `qqcc_bot/` 与 `qqcc_private_bot/`，并对目标 digest 执行 `--network none` 导入烟测。业务代码、migration、Compose、GPU/ops、未知路径以及显式 `--modules` / `--services` / `--from-sha` 全部拒绝。通过后状态记录 tested/target SHA、等价 artifact 与实际 smoke artifact；main/CI/env/preflight/生产确认/回滚事务仍保持原门禁。
 
-release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
+release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；当它同时带显式 `--from-sha` 且没有 `--state-file` 时，previous SHA 直接取该参数，不读取远端 `current.json`。显式 state-file 仍会读取，`deploy`/`rollback` 一律拒绝该参数。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
 本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。云测试 Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机测试配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。正式 GPU Worker 由各 GPU host 独立发布，不进入 `release.py --env prod`。
 
