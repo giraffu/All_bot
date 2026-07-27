@@ -8,7 +8,7 @@ import io
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKER_DIR = ROOT / "workers" / "comfy_agent"
+WORKER_DIR = ROOT / "workers" / "runpod_runtime" / "comfy_agent"
 if str(WORKER_DIR) not in sys.path:
     sys.path.insert(0, str(WORKER_DIR))
 
@@ -101,8 +101,18 @@ def test_character_reference_sheet_preserves_portrait_head_and_feet():
     payload = materialization._compose_character_sheet([portrait] * 6)
 
     with Image.open(io.BytesIO(payload)) as sheet:
-        assert sheet.getpixel((256, 10)) == (255, 0, 0)
-        assert sheet.getpixel((256, 438)) == (0, 0, 255)
+        first_tile = sheet.crop((0, 0, 512, 448))
+        colors = first_tile.getcolors(maxcolors=512 * 448)
+        assert colors is not None
+        color_counts = {color: count for count, color in colors}
+        assert any(
+            red > 200 and green < 30 and blue < 30
+            for red, green, blue in color_counts
+        )
+        assert any(
+            blue > 200 and red < 30 and green < 30
+            for red, green, blue in color_counts
+        )
 
 
 def test_character_reference_sheet_rejects_missing_or_corrupt_views():

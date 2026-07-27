@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "992e5ca3797cee45321b04ee809da7c10a79cba8",
+  "batch": "20260727-093524-cb5f4c5b",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-093524-cb5f4c5b",
+  "members": [
+    {
+      "base_sha": "992e5ca3797cee45321b04ee809da7c10a79cba8",
+      "branch": "codex/b-fix-character-reference-pad-regression",
+      "head": "cb5f4c5bc5e9bbee12afa191b447f4a4a3ec7c80",
+      "queued_at": "2026-07-27T09:35:08.885366+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
