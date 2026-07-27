@@ -1,0 +1,52 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "7dfd6f69bbc041a9ba82ef5f09e23784ba4b5ded",
+  "batch": "20260727-161018-68941719",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-161018-68941719",
+  "members": [
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/b-ltx-t2v-dashboard-web-test",
+      "head": "689417190db8c9b1da66c803436656b86ae2b88b",
+      "queued_at": "2026-07-27T13:54:45.579125+00:00",
+      "slot": "B"
+    },
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/c-separate-current-history-knowledge",
+      "head": "ad2f6df935eb7127af7e0d1ee334c8ee52ef46f9",
+      "queued_at": "2026-07-27T14:02:12.521160+00:00",
+      "slot": "C"
+    },
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/b-refactor-release-architecture",
+      "head": "54816baf97fb1f0b828e5493fe97e286f6e50e58",
+      "queued_at": "2026-07-27T14:26:15.194076+00:00",
+      "slot": "B"
+    },
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/d-runpod-prod-i2i-pro-targeted-face-swap-canary",
+      "head": "f523cb44b4f2c5d9eb5813a899ccbca8660530fe",
+      "queued_at": "2026-07-27T14:47:35.325579+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/b-ltx-ic-hidden-guide-20s-ssh-retry",
+      "head": "8897558de721c292a0e1d91d95e2c3b9eda789ed",
+      "queued_at": "2026-07-27T14:50:26.898181+00:00",
+      "slot": "B"
+    },
+    {
+      "base_sha": "b7ad29993c5059ca93e77cfc9167816461311e67",
+      "branch": "codex/b-document-runpod-ssh-proxy",
+      "head": "c894691e7b71b920acc10ab590e77d850582d125",
+      "queued_at": "2026-07-27T14:54:56.681749+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}
