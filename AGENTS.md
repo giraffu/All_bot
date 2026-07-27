@@ -1,82 +1,130 @@
-# AI 编程助手参考指南 (AGENTS.md)
+# AllBot AI 协作入口
 
-本文档是 AI 编程助手参与“修仙主题 Telegram 图像与视频机器人”项目时的全局路由指引。
-当前项目以 **VS Code + Codex** 为主要 AI 编程入口，`.codex/skills/` 是 Codex 的项目级技能主目录。
-为了避免全局上下文过载并保持规范的实时更新，**详细的架构规范与业务红线已全部下沉至独立的 Skills（技能）和 `/docs` 目录中**。
+本文件只维护全局路由和不可越过的边界。业务契约先加载对应
+`.codex/skills/<skill>/SKILL.md`，再按 Skill 路由读取必要 `docs/`；不要一次性
+加载整个知识库。
 
-## 1. 核心开发原则 (Core Principles)
+## 1. 全局规则
 
-- **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
-- **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
-- **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **主目录自动接单 (Auto Claim)**：用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时，必须先加载 `allbot-concurrent-workspaces` 并执行 `python scripts/manage_ai_workspaces.py claim --task <slug>`，后续只在返回的 A-H 槽位中工作。槽位以 `origin/main` 为基线；完成后推送并执行 `handoff`，用不可变 branch/head 交接、写入本机自动集成队列并立即释放槽位。纯查询/审查和集成发布任务不抢占槽位；无空闲槽位时必须在编辑前停止，不得回退到主目录开发。
-- **能力与授权分离 (Capability vs. Authority)**：A-H 可以读取真实 env、配置、凭据、日志和远端状态，用于只读核对、本地测试与计划；不得泄露秘密原文。凭据可见不代表获准部署或修改共享 test、prod、Cloudflare、RunPod/GPU、数据库或发布状态。槽位依赖应独立，但发现运行中任务使用历史共享依赖时只记录风险，不得自动中断或清理。
-- **单批次 main 集成与不可变发布 (Batch Main Release)**：并行槽位不再逐个进入 test-train。启用 `allbot-ai-integration-queue.timer` 后，本机单写者会把当次等待的 handoff 冻结为一个 `release-batch`，串行创建一个 main PR、等待门禁、合并、等待 main bundle，并只更新共享测试环境；运行中到达的新 handoff 自动排入下一批，任一冲突、CI 或测试部署失败都会阻断后续批次。轻量变更合入后跳过 bundle/环境更新。协调器没有 prod 参数，正式发布仍只接受 main 可达完整 SHA、成功 CI、配置/健康/事务/回滚门禁和每次明确的 `--confirm-prod`。云端禁止 rsync、现场 build、源码 bind mount和 `latest`；GPU/LAN AIO/RunPod 继续使用专用 operator/canary。
-- **非运行时与发布工具聚焦合入 (Focused Non-runtime Merge)**：`scripts/classify_ci_change.py` 将纯 docs、Skills、tests、仓库治理与 CI 元数据归为 `lightweight`；将精确列出的发布器、配置契约、上游 CI 校验和自动集成协调器归为 `release-tooling`，只运行发布专项回归。两者都可通过单独 PR 合入受保护 main，不进入 test-train，不构建 release bundle，也不部署环境。任一业务代码、migration、Compose、运行配置、白名单外执行器或未知路径都会恢复完整 CI 与发布流程；聚焦路径不等于允许 direct push main。
-- **GPU 运维聚焦门禁 (GPU Operator Focused Gate)**：仅包含 `ops/gpu_pool_controller/**` 与明确列出的 RunPod/LAN operator/helper 路径时，CI 使用 `operator` scope，只跑 `tests/ops`、`tests/scripts`，不启动 PostgreSQL、Web、Dashboard 前端或其它 Python 分片。LAN 主机 helper/candidate 变更不构建运行模块；Dashboard 镜像内置的 controller/rollout 依赖只重建 `dashboard-backend`。GPU↔LAN 当前映射、缓存态、实时 RunPod 数量属于 XDG/Provider/后台运行态，不写 Git，也不触发发布。`remote_workers/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖或与业务 runtime 混合的变更仍恢复完整 CI、同 SHA attestation/canary 和 GPU 专用发布门禁。
+- **Skills first**：开发、排障、审查或运维前，先加载命中的项目 Skill。
+  Skill 与代码冲突时，以代码和 focused tests 为现状证据，并先修正失真的
+  Skill/文档。
+- **Core isolation**：`src/core/` 只使用内部类型、协议和显式
+  provider/dependencies；禁止 Telegram `Update`、Web `Request/APIRouter`
+  和基础设施实现对象。跨入口统一使用 `internal_user_id`。
+- **能力不等于授权**：A–H 可只读核对真实 env、凭据、日志和远端状态，但
+  不得泄露秘密。读取到凭据不授权修改 test/prod、Cloudflare、数据库、
+  RunPod、GPU/LAN 或发布状态。
+- **生产 mutation**：正式发布、数据库迁移、Cloudflare、GPU/RunPod/LAN
+  和本地灾备必须由用户明确要求。核心用户链路默认先验证测试环境。
+- **不可变发布**：云环境只消费受保护 main 的完整 SHA 和 digest-pinned
+  artifact；禁止 rsync 源码、现场 build、源码 bind mount、mutable tag、
+  direct/force push main。
+- **运行态不入 Git**：实时 worker/Pod 数量、LAN current/cache、一次性任务
+  与事故现场只属于 provider/XDG/日志/归档，不写成稳定 Skill 或当前 SOP。
 
-## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
+## 2. 主目录自动接单
 
-- `AGENTS.md`：全局路由与高压红线，只保留入口级规则，避免塞入长篇业务细节。
-- `.codex/skills/<skill-name>/SKILL.md`：Codex 项目级技能主入口，按需加载；修改业务边界时优先更新这里。
-- `docs/skills/README.md`：技能目录清单与维护约定。
-- `docs/knowledge_base_audit_matrix.md`：实时知识库逐项核对台账；记录每篇文档/Skill 的事实源、状态和本轮处理结果。
-- `docs/domain/CONTEXT.md`：项目共享领域词汇表，只记录术语含义，不写实现细节。
-- `docs/adr/`：架构决策记录；仅在决策难逆、非显然且存在真实取舍时新增。
-- `/docs`：系统设计、业务规范、排障手册与历史背景；系统级重构或不确定业务逻辑时主动查阅。
+用户在 `/home/hfy/APP/All_bot` 要求写仓库时，必须先加载
+`allbot-concurrent-workspaces`，再执行：
 
-## 3. AI 技能路由索引 (Skills Router)
+```bash
+python scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
+```
 
-在执行不同模块的修改时，请主动触发以下技能（Skill）：
+后续读取、编辑、测试和 Git 只在返回的 A–H worktree。无空槽时在编辑前停止，
+不得回退主目录开发。纯查询、审查、规划和集成发布不 claim。
 
-| 领域 / 业务场景 | 对应 Skill 名称 | 核心管控边界 |
-| :--- | :--- | :--- |
-| **并发、排队与任务调度** | `allbot-task-engine` | Redis 队列调度、并发锁防刷、中控分发、僵尸任务双向剔除 |
-| **计费、鉴权与会员体系** | `allbot-billing-auth` | 灵石账本 (credits)、JWT 无状态鉴权、支付回调幂等、身份折算 |
-| **对象存储与画廊社区** | `allbot-gallery-storage` | MinIO 直传/容灾、R2 边缘分发、社区防并发点赞、一键克隆限制 |
-| **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
-| **QQCC 懒人 Bot / 用户私有 Bot** | `allbot-qqcc-lazy-bot` | 官方 QQCC polling、私有 Bot 申请 FSM/webhook worker、租户配置、`client_type` 恢复隔离和 token 红线 |
-| **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
-| **并发 AI 工作区与发布批次** | `allbot-concurrent-workspaces` | 主目录自动接单、A-H 高访问能力、main 基线、不可变 handoff、单写者批次队列、main PR 和自动测试发布 |
-| **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
-| **本地分析提示词词义治理** | `allbot-local-analytics-prompt-semantics` | 提示词词元分类、指定词元、同义映射、删除表、tokens-only 物化、模板候选槽位口径 |
-| **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
-| **本地资源管理平台** | `allbot-lan-resource-manager` | 开发 `lan_resource_manager/` 的 LAN AIO、可信 main 构建、模块部署、生成维护、runner 隔离与局域网安全边界 |
-| **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
-| **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
-| **测试驱动研发** | `allbot-tdd` | 通过 public facade / API / FSM / provider dependencies seam 做行为测试，一次一个 vertical slice |
-| **代码库架构设计** | `allbot-codebase-design` | 使用 module/interface/seam/adapter/depth/leverage/locality 词汇审查模块深度、职责移动与可测试性 |
-| **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
-| **附加模型与工作流配置** | `allbot-comfy-models` | 处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、参数透传与工作流注入 |
-| **前端代码审查与规范** | `vue-best-practices` | 针对 Vue3 / SPA 前端（如 Dashboard 或 Web 工作台）的开发规范，推荐 Composition API 与 TypeScript |
-| **前端预览与截图验收** | `frontend-browser-preview` | 使用 Playwright Chromium 在本服务器生成桌面/移动端截图，规避系统 Chrome headless 本地 HTTP 卡住问题 |
-| **系统日志监控与排障** | `ops-log-monitor` | 自动采集多环境日志，进行链路追踪与异常分析，并生成排障报告，期间保持静默与无痕清理 |
-| **全局代码静态分析** | `allbot-code-analyzer` | 执行全盘死代码检测、质量评估、架构审查及注释清理，静默输出无痕分析报告 |
+完成后在槽位运行 focused tests，提交并推送任务分支，再执行：
 
-## 4. 文档体系导览 (Documentation Guide)
+```bash
+python scripts/manage_ai_workspaces.py handoff --slot <A-H>
+```
 
-如果技能提示词不足以覆盖你的需求，请前往 `/docs` 目录查阅详尽的系统设计：
+handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽位。功能槽位
+不创建逐任务 test-train PR、不部署共享 test、不操作 prod/Cloudflare/GPU。
 
-- **系统全景图**：`/docs/system_architecture_report.md`
-- **知识库核对矩阵**：`/docs/knowledge_base_audit_matrix.md`（实时 docs / skills 核对台账、事实源和归档边界）
-- **系统资源与容量画像**：`/docs/子模块_系统资源与容量画像_resource_inventory.md`（主服务器、本地 GPU、网络、数据存储与运行负载快照）
-- **云控制面 SSH 密钥管理**：`/docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md`（DigitalOcean SSH key、登录入口、安全基线与轮换策略）
-- **局域网 GPU 节点 SSH 管理**：`/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`（本地 GPU 节点 SSH key、Host 别名、权限边界与验证命令）
-- **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
-- **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
-- **Git 不可变发布**：`/docs/子模块_Git不可变发布_git_immutable_release.md`（完整 SHA、GHCR digest、公共 Compose、配置契约、测试验收、生产晋级与回滚）
-- **并发 AI 开发与发布批次**：`/docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`（A-H worktree、不可变 handoff、自动单写者批次、main PR 与测试发布）
-- **并发 AI 自动接单**：`/docs/并发AI自动接单使用指南_auto_workspace_claim.md`（用户只需在主目录说需求，AI 自动抢占空闲槽位）
-- **首次可信发布准备**：`/docs/子模块_首次可信发布准备_first_trusted_release.md`（本地 stabilization 验证结果、Git 血缘和外部待办）
-- **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
-- **QQCC 用户私有 Bot 平台**：`/docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`（一人一 Bot、加密凭据、Webhook 多租户 worker、Owner WebApp、管理员治理与发布门禁）
-- **独立客服 Bot**：`/docs/子模块_客服Bot_support_bot.md`（客服工单、私有附件、Dashboard 回复与无维护组合发布门禁）
-- **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
-- **Cloudflare 公网入口与账号管理**：`/docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`（Cloudflare Token、DNS、Tunnel、Access、公网管理入口与本地分析平台公网访问）
-- **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
-- **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`
-- **业务领域设计**：`/docs/business/`（包含生成、商业化、社区、用户体系的深度文档）
-- **技术子模块规范**：`/docs/子模块_*.md`（针对网络穿透、FSM、任务调度等的专项说明）
+## 3. 集成与 CI
 
-👨‍💻 **To AI Assistant**:
-本文件已极简改造。你不再需要从这里读取繁杂的业务红线。**在接下来的所有对话中，请严格遵循“按需加载 `.codex/skills` Skill，再按需查阅 `/docs`”的原则开展工作。**
+- 本机单写者将等待 handoff 冻结为一个 `release-batch -> main` PR；运行中
+  到达的 handoff 进入下一批。冲突、CI 或测试部署失败会阻断后续批次。
+- `lightweight` 覆盖纯 docs、Skills、tests 和仓库治理；`release-tooling`
+  覆盖明确发布工具；`operator` 覆盖 GPU/LAN operator allowlist；其它或混合
+  路径 fail closed 为 runtime。
+- lightweight/release-tooling 不构建 release bundle、不部署环境，但仍须
+  受保护 PR 和相称的 focused tests。
+- main runtime/operator bundle 成功后，唯一协调器才可串行更新共享 test；
+  协调器没有 prod 参数。正式晋级仍需每次明确 `--confirm-prod`。
+
+## 4. Skill 路由
+
+| 场景 | Skill |
+| --- | --- |
+| 任务提交、队列、Worker、双 ID、zombie | `allbot-task-engine` |
+| 计费、JWT、支付、affiliate、会员 | `allbot-billing-auth` |
+| Gallery、评论、举报、R2、apply-context | `allbot-gallery-storage` |
+| Telegram FSM、callback、文件、菜单 | `allbot-tg-fsm` |
+| QQCC 官方/私有 Bot、webhook、租户归属 | `allbot-qqcc-lazy-bot` |
+| Docker、不可变发布、迁移、灾备 | `allbot-ops-deployment` |
+| A–H worktree、handoff、main 批次 | `allbot-concurrent-workspaces` |
+| Cloudflare DNS/Tunnel/Access/Pages/R2 | `allbot-cloudflare-ops` |
+| Comfy workflow、LoRA、ControlNet、profile | `allbot-comfy-models` |
+| LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
+| LAN 资源管理平台、可信构建与 runner | `allbot-lan-resource-manager` |
+| 本地分析提示词词元治理 | `allbot-local-analytics-prompt-semantics` |
+| 知识库、Skill、文档同步 | `allbot-kb-auto-updater` |
+| Bug 复现、诊断反馈环 | `allbot-diagnosing-bugs` |
+| 行为测试、red-green-refactor | `allbot-tdd` |
+| module/interface/seam 架构设计 | `allbot-codebase-design` |
+| 后端 Python/FastAPI 审查 | `backend-code-review` |
+| Vue 3 开发与审查 | `vue-best-practices` |
+| 浏览器预览与响应式截图 | `frontend-browser-preview` |
+| 日志采集、异常归因和事故报告 | `ops-log-monitor` |
+| 全局静态分析、死代码和质量评估 | `allbot-code-analyzer` |
+
+一个任务可以叠加多个 Skill。常见组合：
+
+- 新功能/修 bug：领域 Skill + `allbot-tdd`；线上异常再加
+  `allbot-diagnosing-bugs`。
+- 修改职责、facade 或依赖注入：领域 Skill + `allbot-codebase-design`。
+- 修改接口、入口、状态流或稳定术语：领域 Skill +
+  `allbot-kb-auto-updater`。
+- Vue UI 视觉验收：`vue-best-practices` + `frontend-browser-preview`。
+
+## 5. 知识库分层
+
+- `AGENTS.md`：全局路由、授权和工作区规则。
+- `.codex/skills/*/SKILL.md`：触发条件、稳定入口、高压红线、按需阅读和最小
+  验证；单个 Skill 必须小于 20 KB。
+- `docs/子模块_*.md` 与 `docs/business/`：当前架构、业务契约和可执行 SOP。
+- `docs/domain/CONTEXT.md`：只记录共享术语，不写实现或事故。
+- `docs/adr/`：难逆、非显然且有真实替代方案的架构决策；Superseded ADR
+  只作历史证据。
+- `docs/knowledge_base_audit_matrix.md`：一份活跃资料一行的当前事实源台账，
+  不记录逐日 changelog。
+- `docs/archive/`、`docs/release_evidence/`、`logs/`：历史、取证、canary、
+  事故和一次性运行态，不作为当前 SOP。
+
+知识变更运行：
+
+```bash
+python scripts/doc_quality_checker.py
+```
+
+若新增 Skill，同步 Skill 文件、本路由、`docs/skills/README.md` 和审计矩阵。
+若入口、异常、超时、ID、provider 或测试 seam 变化，同步对应专项文档。
+
+## 6. 文档入口
+
+- 系统总览：`docs/system_architecture_report.md`
+- 知识库矩阵：`docs/knowledge_base_audit_matrix.md`
+- 共享词汇：`docs/domain/CONTEXT.md`
+- 生成主链：`docs/子模块_生成任务全链路_task_full_chain.md`
+- 不可变发布：`docs/子模块_Git不可变发布_git_immutable_release.md`
+- 并发工作区：`docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
+- 云测试/正式：`docs/子模块_云测试控制面部署_cloud_test_control_plane.md`、
+  `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`
+- GPU/LAN：`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、
+  `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`
+
+其它资料由 Skill 路由按需读取，不在此重复目录清单。

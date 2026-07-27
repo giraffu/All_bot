@@ -1,123 +1,121 @@
 ---
 name: "allbot-gallery-storage"
-description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web apply-context。当开发作品分享、互动防刷、模板应用和存储生命周期时必须调用本技能。"
+description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举报治理、R2 媒体策略与存储生命周期。"
 ---
 
-# AllBot 社区广场与存储体系 (Gallery & Storage)
+# AllBot Gallery 与对象存储
 
-本技能覆盖社区广场、对象存储与模板应用上下文，不再局限于“投稿 + 点赞 + R2 转存”。
+修改 Gallery、R2、媒体 URL、apply-context、提示词解锁或社区治理时必须加载
+本技能。异常排查叠加 `allbot-diagnosing-bugs`，新增行为叠加 `allbot-tdd`，
+涉及扣费叠加 `allbot-billing-auth`。
 
-涉及 Gallery、R2、媒体 URL、apply-context 或提示词解锁异常时，叠加 `allbot-diagnosing-bugs` 建立可复现反馈环；新增社区/存储行为时，叠加 `allbot-tdd` 先锁定服务端行为。
+## 1. 按需阅读
 
-## 1. 模块功能描述
-- **广场投稿与原创保护**：基于 `History.allow_contribute` 阻断模板套娃再投稿。
-- **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。
-- **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
-- **举报治理**：Web 详情页可提交 `children/gore/gross/other` 单选举报；`gallery_reports.reporter_user_id + post_id` 唯一拒绝重复举报，Dashboard 举报管理支持筛选、标记处理、图片/视频弹窗预览与用户级“封禁并下架”。
-- **个人视图**：支持 `my-posts`、`my-favorites` 与 `my-prompt-unlocks`；`my-favorites` 从互动记录反查点赞/应用历史，`my-prompt-unlocks` 从提示词解锁记录反查已解锁模板。
-- **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`GET /api/users/search?q=` 可按 `User.username/full_name` 模糊查找用户并返回关注状态，`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
-- **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
-- **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file/input_file_url`、`input_files/input_file_urls`、`requested_duration`、`billing_resolution` 等上下文；自由P图 v2.5 还返回可选 `required_image_count`（1/2），但不返回或复用原图。v2.5 使用独立 `free_edit_v2_5_group`，v3 使用 `free_edit_v3_group`（BF16 与历史 single/multi v2），`free_edit_v2_group` 只保留为 v3 查询别名。两种模板都锁定 prompt、不展示 LoRA；v2.5 必须重新上传与投稿原输入等量的图片，单图 3 灵石、双图 7 灵石，v3 重新上传恰好 1 张并按 BF16→原脸恢复 5 灵石提交，模板结果均 `allow_contribute=false`；`i2i_draw` 局部重绘当前已在 Web 一键应用关闭，列表/详情返回 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 必须 400；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位，并恢复 canonical `5s/8s/10s` 时长；`wan22_video_v2` 单段投稿可回填正向/负面提示词、分辨率档位与 canonical 时长；LTX `ltx_video`/`ltx_video_flf2v` 从 `_ltx_context` 回填 LoRA、宽高、时长并保留起始帧/终止帧输入顺序；SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿可作为视频模板，apply-context 只复用原 motion/driving video，复用者必须上传自己的 reference image。
-- **QQCC 修仙市集**：QQCC Bot 可提供轻量 Gallery 浏览入口；分类基于 Web 可见分组，但隐藏 `txt2img` 和已关闭应用的 `i2i_draw`，自由 P 图版本入口使用 `free_edit_v2_5_group`，不再展示旧 `free_edit_v2_group` v3 兼容分类。市集支持点赞/点踩，普通可应用投稿同时展示 `一键应用` 与 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`，视频换脸与 `free_edit_v2_5` 模板只展示 Web 深链，Wan22/LTX 多段拼接结果不展示应用入口。安全单图模板可走 Bot 原生应用，必须带 `source_post_id`、`allow_contribute=False` 和 `client_type=bot:qqcc`；复杂多图/视频/SCAIL-2 等模板的一键应用 callback 只做 Web handoff。Bot caption 的类型与 `#task.mode_*` 标签必须使用当前语言翻译，不得直接显示内部 task type key。点击应用不得预增 `applied_count`。
-- **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除，新增查询条件不要回写到 core。LTX 高级图生视频只展示一个 `ltx_video` 入口，投稿/筛选兼容 `ltx_video_flf2v` 历史/执行别名。
-- **媒体 URL 策略**：
-  - QQCC 场景示范媒体使用 R2 确定性 key `qqcc/demo/<scene_kind>/<scene_id>/<slot>` 覆盖写，配置保存内容哈希与按 Bot ID 划分的 Telegram file_id 缓存；替换文件时内容哈希变化必须让旧 file_id 失效。配置 Web 预览 URL 只能按需短签生成，不能持久化过期 URL。
-  - R2 key 候选顺序为标准 `history/{task_id}/original.ext`、原始 object key、raw `output_file`（兼容 `bot-data/...` 前缀镜像）、旧 basename。
-  - 正式 Web/Dashboard 媒体只从当前 R2/S3 返回短签、公网 URL、空值或 `pending_result`；运行时代码不保留本地对象存储回源。
-  - web/bot 新成功历史都应预热标准 R2 原文件和缩略图，只有 web 来源执行用户历史 R2 cache prune。
-  - 云正式 worker 可通过本地上传 sidecar 把 `/app/spool` 结果上传 R2，但仍必须等待 R2/S3 put 成功后才调用 Central `/complete`。
-  - Gallery 列表热路径不得对每条媒体做公网 `HEAD`；R2 S3 命中时优先返回 R2 S3 短签 URL，避免 `R2_PUBLIC_DOMAIN` 自定义域名 miss 导致前端空白，预签不可用时才退回公网 URL。
-  - Telegram Gallery 浏览优先复用 `GalleryPost.telegram_file_id` 秒发缓存；缓存缺失或失效时只下载当前作品的 Gallery R2/S3 URL 并刷新 file_id，测试 Bot 不写回。
-  - 列表页缩略图 R2 miss 后应快速返回空值，不做深度探测。
-  - History、收藏、Gallery 等集合路径统一走已有 R2 S3 existence cache/singleflight 和短签，不得逐条公网 HEAD；History extra outputs 必须显式使用列表策略。
-  - Dashboard History 集合的输出媒体必须分别返回原件 URL 与缩略图 URL；列表图片只加载缩略图，视频列表不挂载原视频，无缩略图时显示占位符，点击后才在当前页弹窗加载原视频。输入媒体可返回不探测 existence 的文件级缩略图候选，缩略图缺失时图片降级原图、视频降级占位符。媒体解析前必须结束 SQL 只读事务。
-  - Web owner `/result` 延迟敏感路径保留 R2 公网 HEAD 快探测，但每个 Web worker 必须复用连接池，并按 object key singleflight；公网 hit 缓存 60 秒、404 缓存 5 秒。公网 miss 时图片可走 R2 S3 短签，视频继续 `pending_result`，不得生成 legacy URL。
-  - 缩略图和 `input_file_url` 使用当前 R2 key/短签逻辑。
-  - 迁移脚本可使用 `--hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files` 补齐 Web 可见热集的原文件、缩略图和输入文件。
-  - 若只迁移 Gallery 投稿、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，可追加 `--skip-per-user-recent-history` 并使用独立 cursor，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
-- **R2 可见热集审计**：只读排查 Web 可见热集在 R2 中还缺什么时，使用 `scripts/audit_visible_hotset_r2_objects.py --env-file .env.cloud.prod --recent-limit 8 --report-dir logs`。默认范围包含每用户最近 8 条可见历史、全部 Gallery post、History 收藏、Gallery like/apply active posts 与 prompt unlock active posts，并默认审计原文件、缩略图和本地 `input_file`。报告会同时区分“运行时 R2 全候选缺失”和“标准 `history/{task_id}/...` key 缺失但 fallback key 命中”，并在 `logs/` 生成 JSON、Markdown 概要和 CSV 缺失附录；脚本只做 R2 `HEAD` 与 DB 只读查询，不上传、不删除、不改 cursor。全量生产审计默认用 `--db-batch-size 1000` 分批读取 History 详情，`--concurrency` 同时控制 R2 HEAD semaphore 与线程池 worker，`--progress-interval` 输出进度，避免大热集黑盒长跑；若只看社区强可见、不含最近 8 条，可追加 `--skip-per-user-recent-history`。
-- **Web 读路径性能边界**：历史、用户历史、Gallery 响应构造在慢对象存储/R2 探测/短签生成前应释放只读数据库事务；新增列表或详情读路径时，不要在 DB 事务内等待对象存储探测。云正式已补 Gallery/History 热路径索引，新增查询条件前先确认索引命中。
-- **云测试/R2 直连 CORS**：`.env.cloud.test` 可将 `MINIO_*` 兼容变量全部指向 R2 S3 endpoint 与 `user-data-test` 桶；当前云测试应保持 `MINIO_PUBLIC_URL=`，并设置 `R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频 `/result` 依赖 R2 公网 URL，`R2_PUBLIC_DOMAIN` 缺失会停在 99% / `pending_result`；若公开域名临时返回 403，图片可走短签 fallback，视频必须优先修复公开域名或实现受控 fallback。Web 参考图/视频上传会由浏览器直传 R2；`user-data-test` 桶只允许 `https://web.aivison.it.com`、测试 Pages 自定义域 `https://web-cf-test.aivison.it.com` 与其默认域 `https://allbot-web-cf-test.pages.dev`。策略保持 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`。
-- **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
+| 场景 | 必读事实源 |
+| --- | --- |
+| 社区、互动、举报、媒体和 apply-context | `docs/子模块_社区与存储_gallery_storage.md` |
+| 业务展示与模板语义 | `docs/business/03_BIZ_社区广场与社交互动板块.md` |
+| R2/legacy 迁移与运维 | `allbot-ops-deployment`、相关 `scripts/*r2* --help` |
+| QQCC 修仙市集 | `allbot-qqcc-lazy-bot` |
+| 计费和幂等 | `allbot-billing-auth` |
 
-## 2. 输入输出规范
+任务类型、媒体候选、旧分辨率映射和迁移命令的完整枚举只放专项文档，不复制
+到本 Skill。
 
-### 社区互动
-- **接口**：`POST /api/gallery/posts/{post_id}/interact`
-- **输入**：`post_id`、`action=like|dislike`
-- **输出**：更新后的互动状态与计数
+## 2. 稳定模块边界
 
-### 提示词解锁
-- **接口**：`POST /api/gallery/posts/{post_id}/prompt-unlock`
-- **输出**：完整 `prompt`、`current_credits`、`already_unlocked` 与 prompt 解锁状态字段。
-- **个人列表**：`GET /api/gallery/my-prompt-unlocks` 返回当前用户已解锁提示词的活跃帖子，供修仙笔记“提示词模版”tab 使用。
+- 投稿、互动和错误 facade 位于 `src/core/gallery_*`；默认依赖通过
+  `gallery_core_dependencies.py` 注入。
+- feed SQL 拼装位于 `src/services/gallery_feed_queries.py`，不得回写 core。
+- Web Gallery router/service/presenter 负责用户响应和展示转换；对象存储
+  探测不能混在长数据库事务中。
+- `/api/gallery/posts/{post_id}/apply-context` 是 Web 模板应用事实入口，
+  必须从 `History` 还原请求语义，而不是只看输出展示字段。
+- QQCC 市集是轻量 Bot adapter，不复制 Web feed/query 规则，也不注册主
+  Bot 完整 Gallery handler。
 
-### 评论
-- **接口**：`POST /api/gallery/posts/{post_id}/comments`
-- **输入**：评论内容
-- **输出**：评论实体与作者信息
+## 3. 业务不变量
 
-### 举报治理
-- **Web 接口**：`POST /api/gallery/posts/{post_id}/reports`
-- **输入**：`reason=children|gore|gross|other`，仅允许登录用户举报仍上架作品。
-- **输出**：`report_id`；同一用户重复举报同一 `post_id` 返回 `409`，不覆盖旧原因。
-- **Dashboard 接口**：`GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`、`POST /api/gallery/reports/{report_id}/resolve`、兼容单作品入口 `POST /api/gallery/reports/{report_id}/takedown`；举报表治理按钮复用用户级 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`。
-- **媒体预览**：举报列表中的有效图片/视频缩略图必须可点击打开 Dashboard 弹窗；图片按比例放大，视频提供播放控制。
-- **下架语义**：软下架 `GalleryPost.is_active=False`，同步同一 `task_id + user_id` 的 `History.is_public=False`，并把同作品其他 pending 举报一起置为 resolved。
+- 投稿必须尊重 `History.allow_contribute`，模板应用结果和 QQCC 自生成结果
+  不得再次投稿。
+- like/dislike/apply 使用 `user_interactions` 唯一约束和原子计数；捕获
+  `IntegrityError` 前先 `flush()`。点击应用不能预增 `applied_count`，只有
+  任务真正进入成功链路后记账。
+- 评论创建、分页和计数保持限频与原子更新；帖子并发下架时整笔回滚，不能
+  留下脏评论。
+- 未解锁 prompt 在列表和详情必须由服务端遮罩。提示词解锁以
+  `gallery_prompt_unlocks(user_id, post_id)` 为幂等锚点，买家扣 1 灵石和
+  作者入账同事务；作者查看自己的内容不扣费。
+- 举报 reason 使用当前 API allowlist；同一举报人和帖子唯一。Dashboard
+  下架必须同步 `GalleryPost.is_active=False` 与同作者/任务 History 的
+  `is_public=False`，并在同事务收口相关 pending 举报。
+- 用户级封禁下架同样同步全部帖子、History 与 pending 举报。硬删除帖子前
+  清理互动、提示词解锁和评论，避免外键阻断。
+- `my-favorites` 和 `my-prompt-unlocks` 是现有互动/解锁记录的视图，不新增
+  重复收藏或解锁表。
+- 关注/粉丝方向必须保持清楚：我的关注按 follower 查询，我的粉丝按
+  followee 查询；粉丝项的 `is_following` 表示当前用户是否回关。
 
-### 用户搜索与关注
-- **接口**：`GET /api/users/search?q=&limit=`
-- **输入**：`q` 支持 TG username（可带 `@`）或昵称片段，匹配 `User.username/full_name`；`limit` 默认 20、最大 30。
-- **输出**：复用公开用户摘要列表，包含 `is_following`、公开投稿数、粉丝数等字段；不返回当前用户自己。
+## 4. apply-context
 
-### 应用上下文
-- **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
-- **输出**：`source_post_id`、`prompt`、`negative_prompt`、`lora_name`、`input_file_url`、`input_files/input_file_urls`、`requested_duration`、`billing_resolution`、媒体尺寸等
-- **Wan22 图生视频兼容**：旧 `custom_video` / `video_lora` 的 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`，历史 canonical duration 恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒；`video_lora` 需兼容从 prompt 的 `[模型: xxx]` 解析 `lora_name`；`wan22_video_v2` 单段投稿从 `_wan22_context` 恢复 `wan22_negative_prompt`、`wan22_resolution_preset` 与 `wan22_duration_seconds`。
-- **LTX 高级图生视频兼容**：`ltx_video` 与执行别名 `ltx_video_flf2v` 都按同一个高级图生视频能力展示；首尾帧 tag、段号/拼接 tag 从 `_ltx_context` 或 stitch payload 补齐，apply-context 从 `_ltx_context` 回填 `lora_items`、宽高和请求时长。
-- **SCAIL-2 视频模板**：`scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿进入 Web 模板应用时，`History.input_file` 的第二个输入即 motion/driving video 是唯一可复用输入；`input_file` 旧字段也指向该视频以兼容旧前端。缺失该视频时列表/详情应返回 `template_apply_supported=false`、`template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 入口必须 400。
-- **局部重绘禁用**：`i2i_draw` 投稿仍可作为历史/广场作品展示，但 Web 一键应用已关闭；列表/详情必须返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 入口必须 400。
-- **拼接记录禁用**：所有 Wan22 stitched 记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不能返回 apply-context，接口应返回 400，列表/详情响应需给出 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`。
+- 服务端返回 `source_post_id`、prompt、negative prompt、输入素材、时长、
+  分辨率、LoRA 和媒体尺寸等当前任务所需上下文；前端不得自行猜历史字段。
+- 每类任务的支持范围、必要重新上传素材和历史兼容映射以 Gallery 专项文档
+  和 focused tests 为准。
+- Wan22 拼接记录和当前关闭的 `i2i_draw` 必须由服务端拒绝 apply-context，
+  不能只隐藏前端按钮。
+- LTX、Wan22、SCAIL-2、自由 P 图版本和 face swap 的输入顺序、可复用素材、
+  History context 与禁用理由属于公开响应契约，修改时同步前端 presenter 和
+  回归测试。
+- QQCC 原生应用只承接安全单图模板，并传 `source_post_id`、
+  `allow_contribute=False`、`client_type=bot:qqcc`；复杂模板只返回 Web
+  handoff。
 
-### 后台广场列表治理筛选
-- **接口**：`GET /api/gallery/all`
-- **输入**：`username` 可按 `User.username/full_name` 模糊筛选，`prompt_contains` 对 `History.prompt` 模糊匹配，`prompt_max_length` 按去除首尾空白后的提示词字符数过滤。
-- **输出**：分页投稿列表。
+## 5. 媒体与 R2 红线
 
-### 后台投稿封禁与批量下架
-- **接口**：`POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`
-- **输入**：`reason` 可选；为空时使用默认封禁提示。
-- **输出**：`affected_posts`、`affected_histories`、`resolved_reports`、`is_submission_banned`、封禁原因与时间；用户级操作会把该作者全部 pending 举报以 `ban_and_takedown` 一并处理。
+- 正式 Web/Dashboard 只返回当前 R2/S3 短签、公网 URL、空值或
+  `pending_result`，不能生成 legacy MinIO URL。
+- 新成功 History 应物化标准 R2 原文件和缩略图；对象 key 兼容候选顺序和
+  backfill 细节以专项文档/脚本为准。
+- 列表热路径不得对每条媒体做公网 `HEAD`，也不得在持有 DB 事务时等待 R2
+  探测或短签。集合路径复用 existence cache/singleflight。
+- owner `/result` 的延迟敏感探测可以使用连接池和按 key singleflight，但
+  公网 miss 仍只能回退当前 R2/S3；视频未就绪返回 `pending_result`。
+- Dashboard History 列表分别返回原件与缩略图。图片先加载缩略图；视频列表
+  不挂载原视频，点击后才加载，避免批量下载。
+- Telegram Gallery 优先使用 `GalleryPost.telegram_file_id`；失效时只从
+  当前 Gallery R2/S3 resolver 下载目标作品并刷新。测试 Bot 不持久化缓存。
+- Worker sidecar 上传必须等 R2 put 成功后才向 Central `/complete`；不能把
+  本地 spool 成功误写成已交付。
+- 存储异常应降级用户展示但保留可恢复信息；不能因一次慢探测阻断整个 feed。
+- R2 审计、backfill、缩略图补齐和 shadow 同步默认 dry-run。执行前明确
+  env、bucket、范围、cursor、方向和授权，不得把生产 env 或预签 URL输出。
 
-## 3. 核心红线
-- 捕获互动类 `IntegrityError` 前必须先 `flush()`。
-- 点赞、点踩、评论计数必须走数据库原子更新，不能先查再加。
-- `apply` 次数不能在前端点击时预增，必须等任务真正进入成功链路后再记账。
-- 未解锁提示词不能通过 Gallery 列表/详情响应返回完整内容；必须服务端遮罩，并通过 `prompt_is_masked` 等字段告知前端展示状态。
-- 提示词解锁必须以 `gallery_prompt_unlocks` 唯一记录为幂等锚点；扣买家 1 灵石和给作者 +1 灵石必须同事务完成。
-- `apply-context` 必须优先从 `History` 还原请求语义，不能只看展示用输出元数据。
-- `apply-context` 必须服务端拒绝 Wan22 stitched 记录和 Web 已关闭的 `i2i_draw` 记录，不能只依赖前端按钮禁用。
-- 存储/R2 异常只能降级，不能阻断广场主流程。
-- Gallery 列表热路径不得恢复为“持有 DB 只读事务 + 每条媒体公网 HEAD 探测”的模式。
-- 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。硬删除 `GalleryPost` 前必须同步清理 `user_interactions`、`gallery_prompt_unlocks` 与 `gallery_comments`，避免提示词解锁记录外键阻断删除。
-- 用户级批量下架不得只改 `GalleryPost.is_active`；必须同步把该用户投稿关联的 `History.is_public` 置为 `False`，避免旧公开资源入口继续可见。
-- Dashboard 举报下架也必须同步 `GalleryPost.is_active=False` 与同 `task_id + user_id` 的 `History.is_public=False`，不得只把举报标记为 resolved。
-- Dashboard 用户级“封禁并下架”必须在同一数据库事务中处理该作者的 pending 举报，避免作品已全部下架但举报仍停留在待处理状态。
+## 6. 公开接口重点
 
-## 4. 边界条件处理
-- 帖子并发下架时，评论创建必须整体回滚而不是留下脏评论。
-- `my-favorites` 只是互动记录视图，不要额外维护一张重复收藏表。
-- `my-prompt-unlocks` 是提示词解锁记录视图；重复解锁同一 `post_id` 不得重复扣费，作者查看自己的帖子不创建解锁记录。
-- Telegram 端 `gallery_apply_fsm` 仅是兼容路径，新的模板应用设计应优先围绕 Web workbench 与 apply-context。
+- `POST /api/gallery/posts/{post_id}/interact`
+- `POST /api/gallery/posts/{post_id}/comments`
+- `POST /api/gallery/posts/{post_id}/reports`
+- `POST /api/gallery/posts/{post_id}/prompt-unlock`
+- `GET /api/gallery/posts/{post_id}/apply-context`
+- `GET /api/gallery/my-prompt-unlocks`
+- `GET /api/users/search`、`/api/users/me/follows`、`/api/users/me/followers`
+- Dashboard 举报查询/处理与用户级封禁下架接口
 
-## 5. 测试要求
-- 覆盖重复投稿与 `allow_contribute=False` 拦截。
-- 覆盖并发点赞/点踩一致性。
-- 覆盖评论限频、并发下架回滚、分页查询。
-- 覆盖用户搜索 username/full_name 模糊匹配、排除自己和当前关注状态。
-- 覆盖提示词解锁首次扣费、重复解锁幂等、唯一约束并发冲突回滚、作者自看免扣费与 `my-prompt-unlocks` 列表。
-- 覆盖举报成功、非法 reason、作品不存在/已下架、重复举报 `409`，以及 Dashboard 举报列表筛选、标记处理、图片/视频弹窗预览、用户级封禁下架和该作者 pending 举报批量 resolved。
-- 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url`、`input_files/input_file_urls` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd`、`0.36 MP - Small -> small` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，LTX 需覆盖首尾帧 tag、两张输入图顺序、`ltx_video_flf2v` alias 与 `_ltx_context` 回填，SCAIL-2 需覆盖只复用 motion video 与缺失 motion video 400，Wan22 stitched 与 Web 关闭的 `i2i_draw` 需覆盖 apply-context 400 与列表禁用字段。
-- 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。
-- 覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback、对象存储慢响应时释放 DB 只读事务后的响应路径。
-- 覆盖已下架投稿硬删除时仍会清理提示词解锁记录、互动记录与评论记录，尤其是已被他人解锁提示词的投稿。
+变更字段、状态码或幂等语义时先检查调用方和类型定义，避免只改 router。
+
+## 7. 最小验证
+
+- 投稿：重复投稿、`allow_contribute=False`、多 History 同步和硬删除外键。
+- 互动/评论：并发 like/dislike、原子计数、限频和并发下架回滚。
+- 解锁：首次扣费、重复幂等、并发唯一冲突、作者免扣和个人列表。
+- 举报：非法 reason、重复 409、媒体预览、单帖/用户级下架和 pending 举报
+  同事务收口。
+- apply-context：每类支持模板的 payload、输入顺序、历史兼容；禁用/拼接
+  记录服务端 400。
+- 存储：R2 hit/miss、短签/空值/`pending_result`、无 legacy URL、缩略图
+  fallback、慢对象存储时 DB 事务已释放。
+- QQCC：file ID fallback、安全单图原生应用、复杂模板 Web handoff、不预增
+  apply count。
+- 交付时说明是否触及公开 API、扣费、R2 生命周期、迁移脚本或生产运行态；
+  本地测试不得描述成已完成线上 backfill。

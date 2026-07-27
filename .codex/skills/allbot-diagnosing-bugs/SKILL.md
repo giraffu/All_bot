@@ -5,6 +5,11 @@ description: "AllBot 专用 bug 诊断闭环。用户报告线上/测试环境�
 
 # AllBot Bug 诊断闭环
 
+先从 `AGENTS.md` 选择故障所属领域 Skill，再按该 Skill 路由读取对应
+`docs/子模块_*.md`。任务/队列问题优先读取
+`docs/子模块_生成任务全链路_task_full_chain.md`，发布/环境问题优先读取
+`docs/子模块_运维指南与容器管理_ops_deployment.md`；不要预加载全部文档。
+
 本技能把“先构造反馈环”作为排障主纪律。日志监控可先用 `ops-log-monitor` 采集事实；一旦进入代码修复或根因验证，必须用本技能把问题收束到可复现、可回归的信号。
 
 ## 1. 先建立反馈环
