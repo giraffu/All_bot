@@ -49,6 +49,8 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   Unix socket runner 的动作和参数白名单；runner 同样不得挂载 Docker Socket。
   runner 镜像必须内置 digest-pinned Node 22 与 npm/npx，供发布器按前端 lockfile
   的精确 Wrangler 版本上传测试 Pages；不得依赖宿主 Node 或临时安装系统包。
+  固定 SSH config 对同一 allowlisted 云主机最多尝试 4 次建连，并保留 bounded
+  connect/server-alive 超时；不得因重试扩大 host、key 或环境范围。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
   继续局部展示，不得让一个环境探测清空整个部署页。
 - 手动维护只管理 `/var/lib/allbot/<env>/runtime/GENERATION_MAINTENANCE`。只允许
