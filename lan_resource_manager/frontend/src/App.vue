@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  alignWorkspaces,
   createDeploymentPlan,
+  deployAllTestModules,
   executeDeploymentPlan,
   getDeploymentCatalog,
   getEnvironmentStatus,
   getFleet,
+  getIntegrationStatus,
   getReleaseCandidate,
   initializeSecurity,
+  integrateAll,
   refreshFleet,
+  retryIntegration,
   setMaintenance,
   startTrustedBuild,
+  startGPUReleaseBuild,
+  syncTestConfig,
   switchProfile,
 } from './api'
 import type {
@@ -19,6 +26,7 @@ import type {
   DeploymentPlan,
   EnvironmentStatus,
   Fleet,
+  IntegrationStatus,
   Operation,
   PhysicalSlot,
   ReleaseCandidate,
@@ -40,8 +48,15 @@ const maintenanceMode = ref<'planner' | 'rolling'>('planner')
 const plan = ref<DeploymentPlan | null>(null)
 const deployConfirmation = ref('')
 const buildConfirmation = ref('')
+const gpuBuildConfirmation = ref('')
+const testConfigConfirmation = ref('')
 const maintenanceReason = ref('')
 const maintenanceConfirmation = ref('')
+const integrationStatus = ref<IntegrationStatus | null>(null)
+const integrationConfirmation = ref('')
+const retryConfirmation = ref('')
+const alignConfirmation = ref('')
+const deployAllConfirmation = ref('')
 let eventSource: EventSource | null = null
 
 const terminal = new Set([
@@ -66,6 +81,12 @@ const switchBlocked = computed(
 const buildPhrase = computed(
   () => `BUILD ${releaseCandidate.value?.main_sha ?? ''}`,
 )
+const gpuBuildPhrase = computed(
+  () => `GPU BUILD ${releaseCandidate.value?.main_sha ?? ''}`,
+)
+const testConfigPhrase = computed(
+  () => `TEST CONFIG ${releaseCandidate.value?.main_sha ?? ''}`,
+)
 const deployPhrase = computed(() => {
   if (!plan.value) return ''
   return `${plan.value.environment.toUpperCase()} ${plan.value.module} ${plan.value.candidate_sha}`
@@ -74,6 +95,30 @@ const maintenancePhrase = computed(() => {
   const state = environmentStatus.value?.maintenance.enabled ? 'OFF' : 'ON'
   return `${environment.value.toUpperCase()} MAINTENANCE ${state}`
 })
+const integrationPhrase = computed(
+  () => `INTEGRATE ${integrationStatus.value?.main_sha ?? ''}`,
+)
+const alignPhrase = computed(
+  () => `ALIGN ${integrationStatus.value?.main_sha ?? ''}`,
+)
+const deployAllPhrase = computed(
+  () => `TEST ALL ${releaseCandidate.value?.deployable_sha ?? ''}`,
+)
+const integrationQueue = computed(() => integrationStatus.value?.queue ?? {
+  pending: [],
+  running: [],
+  failed: [],
+})
+const failedBatch = computed(() => integrationQueue.value.failed[0] ?? null)
+const retryPhrase = computed(
+  () => failedBatch.value ? `RETRY ${failedBatch.value.id}` : '',
+)
+const integrationSlots = computed(() => integrationStatus.value?.slots ?? [])
+const alignedSlotCount = computed(
+  () => integrationSlots.value.filter(
+    (slot) => slot.clean && slot.at_base && !slot.branch,
+  ).length,
+)
 
 function formatTime(value?: string | null) {
   if (!value) return '尚未采集'
@@ -114,6 +159,7 @@ async function loadDeployment() {
     getDeploymentCatalog(),
     getReleaseCandidate(),
     getEnvironmentStatus(environment.value),
+    getIntegrationStatus(),
   ])
   if (results[0].status === 'fulfilled') catalog.value = results[0].value
   if (results[1].status === 'fulfilled') releaseCandidate.value = results[1].value
@@ -122,6 +168,7 @@ async function loadDeployment() {
   } else {
     environmentStatus.value = null
   }
+  if (results[3].status === 'fulfilled') integrationStatus.value = results[3].value
   if (!availableModules.value.includes(moduleName.value)) {
     moduleName.value = availableModules.value[0] ?? ''
   }
@@ -220,6 +267,72 @@ async function changeMaintenance() {
     message.value = error instanceof Error ? error.message : '维护状态提交失败'
   }
 }
+async function runIntegration() {
+  if (!integrationStatus.value) return
+  try {
+    watchOperation(await integrateAll(integrationStatus.value.main_sha, integrationConfirmation.value))
+    integrationConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '批次集成提交失败'
+  }
+}
+async function retryFailedIntegration() {
+  if (!failedBatch.value) return
+  try {
+    watchOperation(await retryIntegration(
+      failedBatch.value.id,
+      retryConfirmation.value,
+    ))
+    retryConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '失败批次重试提交失败'
+  }
+}
+async function runAlignment() {
+  if (!integrationStatus.value) return
+  try {
+    watchOperation(await alignWorkspaces(integrationStatus.value.main_sha, alignConfirmation.value))
+    alignConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '开发槽对齐提交失败'
+  }
+}
+async function buildGPURelease() {
+  if (!releaseCandidate.value) return
+  try {
+    watchOperation(await startGPUReleaseBuild({
+      expected_main_sha: releaseCandidate.value.main_sha,
+      confirmation: gpuBuildConfirmation.value,
+    }))
+    gpuBuildConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : 'GPU 不可变容器准备失败'
+  }
+}
+async function runTestConfigSync() {
+  if (!releaseCandidate.value) return
+  try {
+    watchOperation(await syncTestConfig({
+      expected_main_sha: releaseCandidate.value.main_sha,
+      confirmation: testConfigConfirmation.value,
+    }))
+    testConfigConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '测试配置同步失败'
+  }
+}
+async function deployAllTest() {
+  if (!releaseCandidate.value?.deployable_sha) return
+  try {
+    watchOperation(await deployAllTestModules(
+      releaseCandidate.value.deployable_sha,
+      deployAllConfirmation.value,
+    ))
+    deployAllConfirmation.value = ''
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '全模块测试部署提交失败'
+  }
+}
 async function selectTab(next: 'lan' | 'deploy') {
   tab.value = next
   if (next === 'deploy' && !catalog.value) await loadDeployment()
@@ -250,12 +363,15 @@ onBeforeUnmount(() => eventSource?.close())
         <h1>本地资源管理平台</h1>
         <p class="subtitle">受控管理 LAN AIO 映射、可信构建与模块化部署。</p>
       </div>
-      <button v-if="tab === 'lan'" class="refresh" :disabled="Boolean(operation)" @click="refresh">
-        <span>↻</span> 刷新实时状态
-      </button>
-      <button v-else class="refresh" :disabled="Boolean(operation)" @click="loadDeployment">
-        <span>↻</span> 刷新部署状态
-      </button>
+      <div class="hero-actions">
+        <a class="help-link" href="/help.html" target="_blank" rel="noopener" aria-label="打开使用帮助">?</a>
+        <button v-if="tab === 'lan'" class="refresh" :disabled="Boolean(operation)" @click="refresh">
+          <span>↻</span> 刷新实时状态
+        </button>
+        <button v-else class="refresh" :disabled="Boolean(operation)" @click="loadDeployment">
+          <span>↻</span> 刷新部署状态
+        </button>
+      </div>
     </header>
 
     <nav class="tabs" aria-label="资源管理分类">
@@ -341,6 +457,57 @@ onBeforeUnmount(() => eventSource?.close())
         </div>
       </section>
 
+      <section class="deploy-card integration-card">
+        <div class="form-title">
+          <div><p class="eyebrow">DEVELOPMENT TRAIN</p><h3>开发槽集成与对齐</h3></div>
+          <span>main {{ shortSha(integrationStatus?.main_sha) }}</span>
+        </div>
+        <div class="integration-summary">
+          <div><strong>{{ integrationQueue.pending.length }}</strong><span>待集成 handoff</span></div>
+          <div><strong>{{ integrationQueue.running.length }}</strong><span>运行中批次</span></div>
+          <div :class="{ blocked: integrationQueue.failed.length }">
+            <strong>{{ integrationQueue.failed.length }}</strong><span>失败阻断</span>
+          </div>
+          <div>
+            <strong>{{ alignedSlotCount }}/8</strong>
+            <span>已对齐槽位</span>
+          </div>
+        </div>
+        <div class="slot-row">
+          <span v-for="slot in integrationSlots" :key="slot.slot"
+            :class="{ ok: slot.clean && slot.at_base && !slot.branch, blocked: !slot.clean, pending: Boolean(slot.branch) }">
+            {{ slot.slot }} · {{ !slot.clean ? '脏工作区' : slot.branch ? '待合入' : slot.at_base ? '已对齐' : '待刷新' }}
+          </span>
+        </div>
+        <p class="muted">集成会安全收敛已合入项、冻结剩余 handoff 为批次 PR、等待 main CI 与不可变 bundle，并只更新测试环境；不具备正式发布能力。</p>
+        <div v-if="failedBatch" class="failure-retry">
+          <div>
+            <strong>失败批次 {{ failedBatch.id }}</strong>
+            <p class="muted">{{ failedBatch.error ?? failedBatch.stage ?? '等待人工确认后重试' }}</p>
+          </div>
+          <div class="confirm-stack">
+            <label>输入 <code>{{ retryPhrase }}</code><input v-model="retryConfirmation" /></label>
+            <button data-action="retry-integration" class="primary"
+              :disabled="retryConfirmation !== retryPhrase || Boolean(operation)"
+              @click="retryFailedIntegration">从原批次安全重试</button>
+          </div>
+        </div>
+        <div class="integration-actions">
+          <div class="confirm-stack">
+            <label>输入 <code>{{ integrationPhrase }}</code><input v-model="integrationConfirmation" /></label>
+            <button data-action="integrate-all" class="primary"
+              :disabled="!integrationStatus || integrationConfirmation !== integrationPhrase || Boolean(operation)"
+              @click="runIntegration">合并全部开发槽代码</button>
+          </div>
+          <div class="confirm-stack">
+            <label>输入 <code>{{ alignPhrase }}</code><input v-model="alignConfirmation" /></label>
+            <button data-action="align-workspaces" class="primary"
+              :disabled="!integrationStatus || alignConfirmation !== alignPhrase || Boolean(operation)"
+              @click="runAlignment">对齐全部安全开发槽</button>
+          </div>
+        </div>
+      </section>
+
       <div class="deploy-grid">
         <section class="deploy-card candidate-card">
           <p class="eyebrow">LATEST MAIN</p>
@@ -355,6 +522,13 @@ onBeforeUnmount(() => eventSource?.close())
             </span>
           </div>
           <p v-if="releaseCandidate?.scope === 'lightweight'" class="muted">该 SHA 无运行时变更，不需要新 bundle。</p>
+          <div class="confirm-stack gpu-build-action">
+            <p class="muted">当 bundle 因同 SHA GPU attestation 缺失而阻断时，构建 8 个不可变镜像、发布 9-profile manifest 并重放 bundle；不会创建 Pod 或部署正式环境。</p>
+            <label>输入 <code>{{ gpuBuildPhrase }}</code><input v-model="gpuBuildConfirmation" /></label>
+            <button data-action="gpu-release-build" class="primary"
+              :disabled="!releaseCandidate || gpuBuildConfirmation !== gpuBuildPhrase || Boolean(operation)"
+              @click="buildGPURelease">准备全部 GPU 正式候选容器</button>
+          </div>
           <p v-if="releaseCandidate?.blockers.length" class="error">
             阻断：{{ releaseCandidate.blockers.join(' · ') }}
           </p>
@@ -393,6 +567,14 @@ onBeforeUnmount(() => eventSource?.close())
             </span>
           </div>
         </div>
+        <div v-if="environment === 'test' && environmentStatus?.config_drift"
+          class="confirm-stack config-sync-action">
+          <p class="muted">先按当前 main 生成配置计划，再原子同步测试环境投影；不会修改正式环境或手动进入维护。</p>
+          <label>输入 <code>{{ testConfigPhrase }}</code><input v-model="testConfigConfirmation" /></label>
+          <button data-action="test-config-sync" class="primary"
+            :disabled="!releaseCandidate || testConfigConfirmation !== testConfigPhrase || Boolean(operation)"
+            @click="runTestConfigSync">同步测试环境配置</button>
+        </div>
         <div class="form-grid">
           <label>独立模块
             <select v-model="moduleName">
@@ -412,6 +594,15 @@ onBeforeUnmount(() => eventSource?.close())
         <button data-action="create-plan" class="primary"
           :disabled="!moduleName || !releaseCandidate?.deployable_sha || Boolean(operation)"
           @click="generatePlan">生成只读计划</button>
+        <div v-if="environment === 'test'" class="bulk-deploy">
+          <p class="muted">按模块目录顺序逐一生成短效计划并幂等部署测试环境全部适用模块；任一失败即停止，重新执行会从当前精确状态继续。</p>
+          <div class="confirm-stack">
+            <label>输入 <code>{{ deployAllPhrase }}</code><input v-model="deployAllConfirmation" /></label>
+            <button data-action="deploy-all-test" class="danger-button"
+              :disabled="!releaseCandidate?.deployable_sha || deployAllConfirmation !== deployAllPhrase || Boolean(operation)"
+              @click="deployAllTest">部署测试环境全部模块</button>
+          </div>
+        </div>
       </section>
 
       <section v-if="plan" class="deploy-card plan-preview">
@@ -448,3 +639,6 @@ onBeforeUnmount(() => eventSource?.close())
     </div>
   </main>
 </template>
+  deployAllTestModules,
+  getIntegrationStatus,
+  integrateAll,

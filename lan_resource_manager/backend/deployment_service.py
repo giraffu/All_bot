@@ -12,11 +12,16 @@ from typing import Any
 from fastapi import HTTPException
 
 from .models import (
+    BulkTestDeployRequest,
     BuildRequest,
     DeploymentExecuteRequest,
     DeploymentPlanRequest,
+    GPUReleaseBuildRequest,
+    IntegrationRequest,
     MaintenanceRequest,
     OperationStatus,
+    RetryIntegrationRequest,
+    TestConfigSyncRequest,
 )
 from .release_operator import ReleaseOperatorError, ReleaseOperatorPort
 from .store import OperationStore, utc_now
@@ -87,6 +92,401 @@ class DeploymentService:
             raise HTTPException(
                 502, detail="environment_status_unavailable"
             ) from exc
+
+    async def integration_status(self):
+        try:
+            return await self.operator.integration_status()
+        except ReleaseOperatorError as exc:
+            raise HTTPException(
+                502, detail="integration_status_unavailable"
+            ) from exc
+
+    def _runtime_available(self) -> bool:
+        return not self.runtime_lock.locked() and not self.store.active(
+            kinds={
+                "switch",
+                "deploy",
+                "deploy-all-test",
+                "maintenance",
+                "integration",
+                "integration-retry",
+                "gpu-release-build",
+                "test-config-sync",
+                "workspace-align",
+            }
+        )
+
+    async def start_integration(
+        self,
+        request: IntegrationRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"INTEGRATE {request.expected_main_sha}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        candidate = await self.operator.candidate()
+        if candidate.get("main_sha") != request.expected_main_sha:
+            raise HTTPException(409, detail="main_changed")
+        if not self._runtime_available() or self.store.active(kind="build"):
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"integration-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="integration",
+            request={
+                "sha": request.expected_main_sha,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._integration(operation_id, request.expected_main_sha)
+        )
+        return operation
+
+    async def start_gpu_release_build(
+        self,
+        request: GPUReleaseBuildRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"GPU BUILD {request.expected_main_sha}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        candidate = await self.operator.candidate()
+        if candidate.get("main_sha") != request.expected_main_sha:
+            raise HTTPException(409, detail="main_changed")
+        if not self._runtime_available() or self.store.active(kind="build"):
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"gpu-release-build-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="gpu-release-build",
+            request={
+                "sha": request.expected_main_sha,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._gpu_release_build(
+                operation_id, request.expected_main_sha
+            )
+        )
+        return operation
+
+    async def _gpu_release_build(self, operation_id: str, sha: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="preparing-gpu-release",
+                )
+                result = await self.operator.prepare_gpu_release(
+                    expected_main_sha=sha,
+                    confirmation=f"GPU BUILD {sha}",
+                )
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="gpu-release-ready",
+                    result=result,
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120]
+                    or "gpu_release_preparation_failed",
+                )
+
+    async def start_test_config_sync(
+        self,
+        request: TestConfigSyncRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"TEST CONFIG {request.expected_main_sha}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        candidate = await self.operator.candidate()
+        if candidate.get("main_sha") != request.expected_main_sha:
+            raise HTTPException(409, detail="main_changed")
+        if not self._runtime_available() or self.store.active(kind="build"):
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"test-config-sync-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="test-config-sync",
+            request={
+                "sha": request.expected_main_sha,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._sync_test_config(
+                operation_id, request.expected_main_sha
+            )
+        )
+        return operation
+
+    async def _sync_test_config(self, operation_id: str, sha: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="syncing-test-config",
+                )
+                result = await self.operator.sync_test_config(
+                    expected_main_sha=sha,
+                    confirmation=f"TEST CONFIG {sha}",
+                )
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="test-config-synced",
+                    result=result,
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120]
+                    or "test_config_sync_failed",
+                )
+
+    async def _integration(self, operation_id: str, sha: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="integrating-handoffs",
+                )
+                await self.operator.integrate_all(
+                    expected_main_sha=sha,
+                    confirmation=f"INTEGRATE {sha}",
+                )
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="integration-completed",
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120] or "integration_failed",
+                )
+
+    async def start_integration_retry(
+        self,
+        request: RetryIntegrationRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"RETRY {request.batch}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        status = await self.integration_status()
+        failed_ids = {
+            str(row.get("id"))
+            for row in status.get("queue", {}).get("failed", [])
+        }
+        if request.batch not in failed_ids:
+            raise HTTPException(409, detail="failed_batch_not_found")
+        if not self._runtime_available() or self.store.active(kind="build"):
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"integration-retry-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="integration-retry",
+            request={
+                "batch": request.batch,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(self._retry_integration(operation_id, request.batch))
+        return operation
+
+    async def _retry_integration(self, operation_id: str, batch: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="retrying-integration",
+                )
+                result = await self.operator.retry_integration(
+                    batch=batch,
+                    confirmation=f"RETRY {batch}",
+                )
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="integration-retry-completed",
+                    result=result,
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120] or "integration_retry_failed",
+                )
+
+    async def start_workspace_alignment(
+        self,
+        request: IntegrationRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"ALIGN {request.expected_main_sha}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        if not self._runtime_available():
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"workspace-align-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="workspace-align",
+            request={
+                "sha": request.expected_main_sha,
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._align_workspaces(operation_id, request.expected_main_sha)
+        )
+        return operation
+
+    async def _align_workspaces(self, operation_id: str, sha: str):
+        async with self.runtime_lock:
+            try:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.RUNNING,
+                    stage="aligning-workspaces",
+                )
+                result = await self.operator.align_workspaces(
+                    expected_main_sha=sha,
+                    confirmation=f"ALIGN {sha}",
+                )
+                blocked = [
+                    row
+                    for row in result.get("slots", [])
+                    if not str(row.get("status", "")).startswith("aligned")
+                ]
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage=(
+                        "aligned-with-blockers"
+                        if blocked
+                        else "alignment-completed"
+                    ),
+                    result={"slots": result.get("slots", [])},
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120] or "workspace_alignment_failed",
+                )
+
+    async def start_bulk_test_deploy(
+        self,
+        request: BulkTestDeployRequest,
+        source_ip: str,
+        request_id: str,
+    ):
+        if request.confirmation != f"TEST ALL {request.candidate_sha}":
+            raise HTTPException(422, detail="confirmation_mismatch")
+        catalog, candidate = await asyncio.gather(
+            self.operator.catalog(), self.operator.candidate()
+        )
+        if candidate.get("deployable_sha") != request.candidate_sha:
+            raise HTTPException(409, detail="candidate_changed")
+        modules = list(
+            ((catalog.get("environments") or {}).get("test") or {}).get(
+                "modules", []
+            )
+        )
+        if not modules:
+            raise HTTPException(409, detail="test_modules_unavailable")
+        if not self._runtime_available():
+            raise HTTPException(409, detail="runtime_operation_in_progress")
+        operation_id = f"deploy-all-test-{uuid.uuid4().hex[:12]}"
+        operation = self.store.create(
+            operation_id,
+            kind="deploy-all-test",
+            request={
+                "sha": request.candidate_sha,
+                "modules": ",".join(modules),
+                "source_ip": source_ip,
+                "request_id": request_id,
+            },
+        )
+        self._spawn(
+            self._bulk_test_deploy(
+                operation_id, request.candidate_sha, modules
+            )
+        )
+        return operation
+
+    async def _bulk_test_deploy(
+        self, operation_id: str, sha: str, modules: list[str]
+    ):
+        async with self.runtime_lock:
+            completed: list[str] = []
+            try:
+                for module in modules:
+                    self.store.update(
+                        operation_id,
+                        status=OperationStatus.RUNNING,
+                        stage=f"planning-{module}",
+                    )
+                    plan = await self.operator.plan(
+                        "test", module, sha, "planner"
+                    )
+                    token = plan.get("plan_token")
+                    if not token:
+                        raise ReleaseOperatorError(
+                            f"release_plan_missing_token:{module}"
+                        )
+                    self.store.update(
+                        operation_id,
+                        status=OperationStatus.RUNNING,
+                        stage=f"deploying-{module}",
+                    )
+                    await self.operator.deploy(
+                        environment="test",
+                        module=module,
+                        sha=sha,
+                        maintenance="planner",
+                        plan_token=token,
+                        confirm_prod=False,
+                    )
+                    completed.append(module)
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.SUCCEEDED,
+                    stage="all-test-modules-deployed",
+                    result={"completed_modules": completed},
+                )
+            except Exception as exc:
+                self.store.update(
+                    operation_id,
+                    status=OperationStatus.FAILED,
+                    stage="failed",
+                    error_code=str(exc)[:120] or "bulk_test_deploy_failed",
+                    result={"completed_modules": completed},
+                )
 
     async def create_plan(
         self, request: DeploymentPlanRequest, source_ip: str, request_id: str

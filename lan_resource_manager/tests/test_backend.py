@@ -93,9 +93,14 @@ class FakeOperator:
 class FakeReleaseOperator:
     def __init__(self):
         self.builds = []
+        self.gpu_builds = []
+        self.test_config_syncs = []
         self.plans = []
         self.executions = []
         self.maintenance_calls = []
+        self.integration_calls = []
+        self.integration_retry_calls = []
+        self.align_calls = []
 
     async def catalog(self):
         return {
@@ -148,6 +153,23 @@ class FakeReleaseOperator:
         self.builds.append(expected_main_sha)
         return {"run_id": 42, "status": "queued", "reused": False}
 
+    async def prepare_gpu_release(self, **kwargs):
+        self.gpu_builds.append(kwargs)
+        return {
+            "status": "ready",
+            "source_sha": kwargs["expected_main_sha"],
+            "production_deployed": False,
+        }
+
+    async def sync_test_config(self, **kwargs):
+        self.test_config_syncs.append(kwargs)
+        return {
+            "status": "applied",
+            "source_sha": kwargs["expected_main_sha"],
+            "environment": "test",
+            "production_changed": False,
+        }
+
     async def build_status(self, sha):
         return {
             "sha": sha,
@@ -183,6 +205,37 @@ class FakeReleaseOperator:
                 "can_disable": kwargs["enabled"],
             },
         }
+
+    async def integration_status(self):
+        return {
+            "main_sha": "a" * 40,
+            "queue": {
+                "pending": [{"head": "c" * 40, "branch": "codex/a-task"}],
+                "running": [],
+                "failed": [],
+            },
+            "slots": [
+                {
+                    "slot": "A",
+                    "branch": None,
+                    "head": "a" * 40,
+                    "clean": True,
+                    "at_base": True,
+                }
+            ],
+        }
+
+    async def integrate_all(self, **kwargs):
+        self.integration_calls.append(kwargs)
+        return {"status": "completed", "batches": []}
+
+    async def retry_integration(self, **kwargs):
+        self.integration_retry_calls.append(kwargs)
+        return {"status": "completed", "batch": kwargs["batch"]}
+
+    async def align_workspaces(self, **kwargs):
+        self.align_calls.append(kwargs)
+        return {"main_sha": kwargs["expected_main_sha"], "slots": []}
 
 
 def settings(tmp_path: Path):
@@ -465,6 +518,159 @@ def test_maintenance_uses_expected_state_and_confirmation(tmp_path):
     assert response.status_code == 202
     assert wait_operation(http, response.json()["operation_id"])["status"] == "succeeded"
     assert release.maintenance_calls[0]["reason"] == "release window"
+
+
+def test_integration_status_and_mutations_are_exposed_with_exact_confirmation(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    status = http.get("/api/v1/integration/status")
+    assert status.status_code == 200
+    assert status.json()["queue"]["pending"][0]["branch"] == "codex/a-task"
+
+    bad = http.post(
+        "/api/v1/integration/run",
+        json={"expected_main_sha": "a" * 40, "confirmation": "yes"},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+    accepted = http.post(
+        "/api/v1/integration/run",
+        json={
+            "expected_main_sha": "a" * 40,
+            "confirmation": f"INTEGRATE {'a' * 40}",
+        },
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    assert wait_operation(http, accepted.json()["operation_id"])["status"] == "succeeded"
+    assert release.integration_calls[0]["expected_main_sha"] == "a" * 40
+
+    aligned = http.post(
+        "/api/v1/workspaces/align",
+        json={
+            "expected_main_sha": "a" * 40,
+            "confirmation": f"ALIGN {'a' * 40}",
+        },
+        headers=headers,
+    )
+    assert aligned.status_code == 202
+    assert wait_operation(http, aligned.json()["operation_id"])["status"] == "succeeded"
+
+
+def test_gpu_release_build_prepares_artifacts_without_prod_deployment(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    sha = "a" * 40
+    bad = http.post(
+        "/api/v1/releases/gpu-builds",
+        json={"expected_main_sha": sha, "confirmation": "yes"},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+    accepted = http.post(
+        "/api/v1/releases/gpu-builds",
+        json={
+            "expected_main_sha": sha,
+            "confirmation": f"GPU BUILD {sha}",
+        },
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    operation = wait_operation(http, accepted.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert operation["result"]["production_deployed"] is False
+    assert release.gpu_builds == [
+        {
+            "expected_main_sha": sha,
+            "confirmation": f"GPU BUILD {sha}",
+        }
+    ]
+
+
+def test_test_config_sync_is_exact_sha_and_never_targets_prod(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    sha = "a" * 40
+    accepted = http.post(
+        "/api/v1/environments/test/config-sync",
+        json={
+            "expected_main_sha": sha,
+            "confirmation": f"TEST CONFIG {sha}",
+        },
+        headers=headers,
+    )
+
+    assert accepted.status_code == 202
+    operation = wait_operation(http, accepted.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert operation["result"]["environment"] == "test"
+    assert operation["result"]["production_changed"] is False
+    assert release.test_config_syncs == [
+        {
+            "expected_main_sha": sha,
+            "confirmation": f"TEST CONFIG {sha}",
+        }
+    ]
+
+
+def test_failed_integration_batch_can_be_retried_with_exact_confirmation(tmp_path):
+    release = FakeReleaseOperator()
+    release.integration_status = lambda: None
+
+    async def failed_status():
+        return {
+            "main_sha": "a" * 40,
+            "queue": {
+                "pending": [],
+                "running": [],
+                "failed": [{"id": "20260727-161018-68941719"}],
+            },
+            "slots": [],
+        }
+
+    release.integration_status = failed_status
+    http, headers = client(tmp_path, FakeOperator(), release)
+    batch = "20260727-161018-68941719"
+    bad = http.post(
+        "/api/v1/integration/retry",
+        json={"batch": batch, "confirmation": "RETRY something-else"},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+    accepted = http.post(
+        "/api/v1/integration/retry",
+        json={"batch": batch, "confirmation": f"RETRY {batch}"},
+        headers=headers,
+    )
+    assert accepted.status_code == 202
+    operation = wait_operation(http, accepted.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert release.integration_retry_calls == [
+        {"batch": batch, "confirmation": f"RETRY {batch}"}
+    ]
+
+
+def test_deploy_all_test_modules_runs_each_catalog_module_without_prod(tmp_path):
+    release = FakeReleaseOperator()
+    http, headers = client(tmp_path, FakeOperator(), release)
+    response = http.post(
+        "/api/v1/environments/test/deploy-all",
+        json={
+            "candidate_sha": "a" * 40,
+            "confirmation": f"TEST ALL {'a' * 40}",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 202
+    operation = wait_operation(http, response.json()["operation_id"])
+    assert operation["status"] == "succeeded"
+    assert [call[1] for call in release.plans] == [
+        "central-api",
+        "web-api",
+        "main-bot",
+    ]
+    assert all(call["environment"] == "test" for call in release.executions)
+    assert all(call["confirm_prod"] is False for call in release.executions)
 
 
 def test_restart_resumes_build_observation_but_interrupts_runtime_mutation(tmp_path):

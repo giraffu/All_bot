@@ -3,8 +3,9 @@
 ## 1. 定位
 
 `lan_resource_manager/` 是只发布到本地主服务器 LAN 地址的 FastAPI + Vue 3
-独立子项目。页面分为 LAN AIO 与模块构建部署两个 Tab；所有写操作都经精确确认和
-既有 operator/release facade，不承载第二套运维实现。
+独立子项目。页面分为 LAN AIO 与模块构建部署两个 Tab；后者覆盖 A–H handoff
+集成、安全槽位对齐、可信构建与模块化部署。所有写操作都经精确确认和既有
+operator/integration/release facade，不承载第二套运维实现。
 
 它不替代 `scripts/lan_aio_fleet_prod_ops.py`，也不恢复云 Dashboard 已移除的 slot
 管理 API。catalog、ledger、live 与 helper history 继续是唯一事实源。
@@ -24,6 +25,14 @@
   两阶段单模块部署。
 - `POST /api/v1/environments/{env}/maintenance`：以预期状态、原因和完整确认文字
   更新平台 owner 的生成维护。
+- `GET /api/v1/integration/status`：合并远端 main、A–H clean/base/branch 和
+  pending/running/failed queue 的脱敏状态。
+- `POST /api/v1/integration/run`：确认 `INTEGRATE <full-sha>` 后固定执行测试专用
+  `integrate-all`；逐批冻结、PR、CI、bundle 和 test deploy，不接受 prod 参数。
+- `POST /api/v1/workspaces/align`：确认 `ALIGN <full-sha>` 后只对 clean 且已被
+  main 包含的槽执行 detached refresh。
+- `POST /api/v1/environments/test/deploy-all`：确认 `TEST ALL <full-sha>` 后逐个
+  部署 release policy 中 test 可用的完整独立模块。
 
 全量 status 可能持续数十秒，因此首屏不等待 live SSH；超过默认 180 秒的 snapshot
 标记为 stale 并禁止切换。
@@ -94,3 +103,31 @@ recover。
 Web 与 runner 使用同一只读镜像但不同容器。Web 只挂 LAN operator 所需材料和 Unix
 socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、只读根文件系统、
 drop all capabilities、`no-new-privileges` 且无 Docker Socket。
+
+integration 复用 release runner 的动作白名单。runner 对 Git common dir、A–H
+worktree root 与 XDG integration queue 只有精确 bind mount；Web 不挂载这些写路径。
+队列自动收敛只允许两类可证明安全的历史项：head 已在当前 main 的 pending，或
+`deploying-test` 失败且其 main SHA 已被更新 main 超越的批次。其它 failed batch
+继续阻断。槽位 dirty、未初始化或未合入均只读展示。
+
+失败原因修复后可通过 `POST /api/v1/integration/retry` 和精确短语
+`RETRY <batch>` 将指定批次重新排队并继续集成。runner 的集成临时 worktree
+固定落在 release cache volume，并使用固定 coordinator 提交身份，不依赖小容量的
+容器 `/tmp` 或宿主 Git 全局配置。同一隔离 volume 覆盖 runner 的
+`~/.cache/allbot`，供 bundle cache、临时 worktree 与短效 release plan 使用；Web
+不挂载该 volume。
+
+测试全模块入口按 catalog 顺序为每个模块重新生成短效 token 并立即执行；失败时停止，
+operation result 记录已完成模块，重跑依靠 exact state 幂等继续。该接口固定为 test，
+不存在 prod 对称入口。右上角 `/help.html` 是可点击操作手册，随前端 artifact 发布。
+
+`POST /api/v1/releases/gpu-builds` 只接受当前 main 与精确短语
+`GPU BUILD <main-sha>`。它通过 `scripts/prepare_gpu_release_v2.py` 并行补齐 8 个实际
+GPU 镜像，复用可信基线的模型 checksum/rollback digest，形成同 SHA 的 9-profile
+attested manifest，并重放模块 bundle。已经存在的不可变镜像只有在能找到同 SHA 成功
+workflow 时才复用。该入口不创建 RunPod/LAN Pod、不部署 prod，也不进入维护。
+
+`POST /api/v1/environments/test/config-sync` 只接受 `TEST CONFIG <main-sha>`，固定从
+当前 main checkout 执行 test `config-plan` 后再执行原子 `config-apply --execute`。
+该动作只用于收敛发布前已检测到的 test 配置投影漂移，不接受环境参数、不附加
+`--confirm-prod`，也不调用手动维护入口。

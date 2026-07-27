@@ -33,7 +33,18 @@ export interface PhysicalSlot {
 
 export interface Operation {
   operation_id: string
-  kind: 'refresh' | 'switch' | 'build' | 'deploy' | 'maintenance'
+  kind:
+    | 'refresh'
+    | 'switch'
+    | 'build'
+    | 'gpu-release-build'
+    | 'test-config-sync'
+    | 'deploy'
+    | 'deploy-all-test'
+    | 'maintenance'
+    | 'integration'
+    | 'integration-retry'
+    | 'workspace-align'
   status: string
   stage: string
   request: Record<string, string | null>
@@ -41,6 +52,31 @@ export interface Operation {
   updated_at: string
   finished_at?: string | null
   error_code?: string | null
+}
+
+export interface IntegrationStatus {
+  main_sha: string
+  queue: Record<
+    'pending' | 'running' | 'failed',
+    Array<{
+      id: string
+      status: string
+      stage?: string | null
+      branch?: string | null
+      head?: string | null
+      main_sha?: string | null
+      error?: string | null
+      members?: Array<{ slot?: string; branch?: string; head?: string }>
+    }>
+  >
+  slots: Array<{
+    slot: string
+    branch?: string | null
+    head?: string | null
+    clean: boolean
+    at_base: boolean
+    safe_to_assign?: boolean
+  }>
 }
 
 export interface DeploymentCatalog {

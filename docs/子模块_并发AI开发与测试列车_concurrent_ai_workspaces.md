@@ -62,6 +62,13 @@ scripts/install_ai_integration_queue_timer.sh --execute
 python scripts/auto_integrate_handoffs.py status
 ```
 
+本地主资源管理平台的“模块构建部署”是上述稳定入口的受限 UI：读取 A–H 与 queue
+状态，确认 `INTEGRATE <main-sha>` 后执行 `integrate-all --execute`，再以
+`ALIGN <main-sha>` 对齐 clean 且已被 main 包含的槽。UI 不实现另一套 merge 逻辑，
+也没有 prod 参数。`integrate-all` 会把已包含于 main 的 stale pending 记为
+`already-merged`；只有旧 `deploying-test` 失败已被更新 main 超越时才记为
+`superseded`，其它失败继续阻断。
+
 未启用 timer、自动协调器故障或需要人工选择成员时，仍可使用下列手工入口。
 
 集成 AI 先选择本轮要交付的 handoff，再执行只读冻结：

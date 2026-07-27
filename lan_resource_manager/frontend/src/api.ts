@@ -3,6 +3,7 @@ import type {
   DeploymentPlan,
   EnvironmentStatus,
   Fleet,
+  IntegrationStatus,
   Operation,
   ReleaseCandidate,
 } from './types'
@@ -63,6 +64,15 @@ export const startTrustedBuild = (payload: {
   expected_main_sha: string
   confirmation: string
 }) => json<Operation>('/api/v1/releases/builds', mutation(payload))
+export const startGPUReleaseBuild = (payload: {
+  expected_main_sha: string
+  confirmation: string
+}) => json<Operation>('/api/v1/releases/gpu-builds', mutation(payload))
+export const syncTestConfig = (payload: {
+  expected_main_sha: string
+  confirmation: string
+}) =>
+  json<Operation>('/api/v1/environments/test/config-sync', mutation(payload))
 export const createDeploymentPlan = (payload: {
   environment: 'test' | 'prod'
   module: string
@@ -89,4 +99,32 @@ export const setMaintenance = (
   json<Operation>(
     `/api/v1/environments/${environment}/maintenance`,
     mutation(payload),
+  )
+export const getIntegrationStatus = () =>
+  json<IntegrationStatus>('/api/v1/integration/status')
+export const integrateAll = (expectedMainSha: string, confirmation: string) =>
+  json<Operation>(
+    '/api/v1/integration/run',
+    mutation({ expected_main_sha: expectedMainSha, confirmation }),
+  )
+export const retryIntegration = (batch: string, confirmation: string) =>
+  json<Operation>(
+    '/api/v1/integration/retry',
+    mutation({ batch, confirmation }),
+  )
+export const alignWorkspaces = (
+  expectedMainSha: string,
+  confirmation: string,
+) =>
+  json<Operation>(
+    '/api/v1/workspaces/align',
+    mutation({ expected_main_sha: expectedMainSha, confirmation }),
+  )
+export const deployAllTestModules = (
+  candidateSha: string,
+  confirmation: string,
+) =>
+  json<Operation>(
+    '/api/v1/environments/test/deploy-all',
+    mutation({ candidate_sha: candidateSha, confirmation }),
   )

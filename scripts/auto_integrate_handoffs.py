@@ -222,6 +222,70 @@ class IntegrationQueue:
         os.replace(source, destination)
         return batch
 
+    def reconcile_merged(
+        self,
+        *,
+        current_main: str,
+        is_ancestor,
+    ) -> dict[str, list[str]]:
+        """Remove queue blockers already superseded by a newer protected main.
+
+        Only pending handoff heads already contained by main and failed batches
+        that reached ``deploying-test`` before a newer main superseded them are
+        eligible. CI, conflict, build, and current-main deployment failures stay
+        failed and continue to block the queue.
+        """
+
+        if not FULL_SHA_RE.fullmatch(current_main):
+            raise IntegrationQueueError("current main SHA is invalid")
+        merged_pending: list[str] = []
+        superseded_failed: list[str] = []
+        for source in sorted(self.pending.glob("*.json")):
+            handoff = _validate_handoff(
+                json.loads(source.read_text(encoding="utf-8"))
+            )
+            if not is_ancestor(handoff["head"], current_main):
+                continue
+            destination = self.completed / f"reconciled-{handoff['head']}.json"
+            _atomic_json(
+                destination,
+                {
+                    "batch": f"reconciled-{handoff['head']}",
+                    "status": "already-merged",
+                    "members": [handoff],
+                    "main_sha": current_main,
+                    "finished_at": _now(),
+                    "path": str(destination),
+                },
+            )
+            source.unlink()
+            merged_pending.append(handoff["head"])
+
+        for source in sorted(self.failed.glob("*.json")):
+            batch = json.loads(source.read_text(encoding="utf-8"))
+            failed_main = str(batch.get("main_sha", ""))
+            if (
+                batch.get("stage") != "deploying-test"
+                or not FULL_SHA_RE.fullmatch(failed_main)
+                or failed_main == current_main
+                or not is_ancestor(failed_main, current_main)
+            ):
+                continue
+            destination = self.completed / f"reconciled-{source.name}"
+            batch.update(
+                status="superseded",
+                superseded_by_main=current_main,
+                reconciled_at=_now(),
+                path=str(destination),
+            )
+            _atomic_json(destination, batch)
+            source.unlink()
+            superseded_failed.append(str(batch.get("batch") or source.stem))
+        return {
+            "merged_pending": merged_pending,
+            "superseded_failed": superseded_failed,
+        }
+
 
 def test_deployment_commands(
     checkout: Path, sha: str, plan_token: str | None = None
@@ -275,13 +339,24 @@ class Coordinator:
         cwd: Path | None = None,
         capture: bool = True,
     ) -> str:
-        result = self.run_func(
-            list(args),
-            cwd=cwd or self.repo,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        workdir = (cwd or self.repo).resolve()
+        kwargs: dict[str, Any] = {
+            "cwd": workdir,
+            "text": True,
+            "capture_output": True,
+            "check": False,
+        }
+        if self.run_func is subprocess.run:
+            inherited = os.environ.get("PYTHONPATH", "")
+            kwargs["env"] = {
+                **os.environ,
+                "PYTHONPATH": (
+                    str(workdir)
+                    if not inherited
+                    else str(workdir) + os.pathsep + inherited
+                ),
+            }
+        result = self.run_func(list(args), **kwargs)
         if result.returncode:
             detail = (result.stderr or result.stdout or args[0]).strip().splitlines()[-1]
             raise IntegrationQueueError(detail)
@@ -381,11 +456,22 @@ class Coordinator:
         while time.monotonic() < deadline:
             raw = self._run(
                 [
-                    "gh", "run", "list", "--workflow", workflow, "--commit", sha,
-                    "--json", "databaseId,status,conclusion", "--limit", "1",
+                    "gh",
+                    "run",
+                    "list",
+                    "--workflow",
+                    workflow,
+                    "--json",
+                    "databaseId,status,conclusion,headSha",
+                    "--limit",
+                    "50",
                 ]
             )
-            runs = json.loads(raw or "[]")
+            runs = [
+                run
+                for run in json.loads(raw or "[]")
+                if run.get("headSha") == sha
+            ]
             if runs:
                 run = runs[0]
                 if run.get("status") == "completed":
@@ -419,17 +505,45 @@ class Coordinator:
     def _wait_pr_checks(self, pr_url: str, *, cwd: Path, timeout_seconds: int = 7200) -> None:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            try:
+            payload = json.loads(
                 self._run(
-                    ["gh", "pr", "checks", "--watch", "--fail-fast", pr_url],
+                    [
+                        "gh",
+                        "pr",
+                        "view",
+                        pr_url,
+                        "--json",
+                        "state,statusCheckRollup",
+                    ],
                     cwd=cwd,
-                    capture=True,
                 )
+            )
+            if payload.get("state") == "MERGED":
                 return
-            except IntegrationQueueError as exc:
-                if "no checks" not in str(exc).lower():
-                    raise
-                time.sleep(15)
+            checks = payload.get("statusCheckRollup") or []
+            failures = [
+                str(check.get("name") or check.get("context") or "unnamed")
+                for check in checks
+                if str(check.get("conclusion") or "").upper()
+                in {
+                    "ACTION_REQUIRED",
+                    "CANCELLED",
+                    "FAILURE",
+                    "STALE",
+                    "STARTUP_FAILURE",
+                    "TIMED_OUT",
+                }
+            ]
+            if failures:
+                raise IntegrationQueueError(
+                    "batch PR checks failed: " + ", ".join(failures)
+                )
+            if checks and all(
+                str(check.get("status") or "").upper() == "COMPLETED"
+                for check in checks
+            ):
+                return
+            time.sleep(15)
         raise IntegrationQueueError("timed out waiting for batch PR checks to start")
 
     def _validate_members(self, members: Sequence[Mapping[str, Any]]) -> None:
@@ -461,7 +575,11 @@ class Coordinator:
             worktree_added = True
             stage = str(batch.get("stage") or "queued")
             if stage == "queued":
-                self._git("switch", "-c", branch, cwd=checkout)
+                # A failed attempt can leave this automation-owned local ref
+                # behind even though the temporary worktree was removed.
+                # Reset it to the current protected base before deterministically
+                # replaying the immutable handoff members.
+                self._git("switch", "-C", branch, "origin/main", cwd=checkout)
                 for member in members:
                     self._git("merge", "--no-ff", "--no-edit", member["head"], cwd=checkout)
                 changed_paths = self._git(
@@ -526,11 +644,42 @@ class Coordinator:
                 pr_url = str(batch["pr_url"])
                 view = json.loads(
                     self._run(
-                        ["gh", "pr", "view", pr_url, "--json", "state,mergeCommit"],
+                        [
+                            "gh",
+                            "pr",
+                            "view",
+                            pr_url,
+                            "--json",
+                            "state,mergeCommit,headRefOid",
+                        ],
                         cwd=checkout,
                     )
                 )
                 if view.get("state") != "MERGED":
+                    remote_batch_head = str(view.get("headRefOid") or "")
+                    recorded_batch_head = str(batch["batch_head"])
+                    if remote_batch_head != recorded_batch_head:
+                        self._git("fetch", "origin", branch, cwd=checkout)
+                        fetched_head = self._git(
+                            "rev-parse", f"origin/{branch}", cwd=checkout
+                        )
+                        if fetched_head != remote_batch_head:
+                            raise IntegrationQueueError(
+                                "batch PR head changed while being inspected"
+                            )
+                        self._run(
+                            [
+                                "git",
+                                "merge-base",
+                                "--is-ancestor",
+                                recorded_batch_head,
+                                remote_batch_head,
+                            ],
+                            cwd=checkout,
+                        )
+                        self.queue.update_batch(
+                            batch, batch_head=remote_batch_head
+                        )
                     self._wait_pr_checks(pr_url, cwd=checkout)
                     self._run(
                         [
@@ -609,6 +758,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--execute", action="store_true")
     retry = subparsers.add_parser("retry-failed")
     retry.add_argument("--batch", required=True)
+    integrate_all = subparsers.add_parser("integrate-all")
+    integrate_all.add_argument("--execute", action="store_true")
     return parser
 
 
@@ -621,6 +772,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "retry-failed":
             queue.retry_batch(args.batch)
             result = {"status": "requeued", "batch": args.batch}
+        elif args.command == "integrate-all" and not args.execute:
+            result = {"status": "dry-run", "queue": queue.status()}
+        elif args.command == "integrate-all":
+            with queue.lock():
+                coordinator = Coordinator(args.repo, queue)
+                coordinator._git("fetch", "--prune", "origin", "main")
+                current_main = coordinator._git("rev-parse", "origin/main")
+
+                def is_ancestor(head: str, main: str) -> bool:
+                    return (
+                        coordinator.run_func(
+                            ["git", "merge-base", "--is-ancestor", head, main],
+                            cwd=args.repo,
+                            text=True,
+                            capture_output=True,
+                            check=False,
+                        ).returncode
+                        == 0
+                    )
+
+                reconciled = queue.reconcile_merged(
+                    current_main=current_main,
+                    is_ancestor=is_ancestor,
+                )
+                completed_batches = []
+                while True:
+                    batch = queue.freeze_pending()
+                    if batch is None:
+                        break
+                    try:
+                        completed = coordinator.process(batch)
+                    except Exception as exc:
+                        queue.fail_batch(batch, str(exc))
+                        raise
+                    queue.complete_batch(batch, **completed)
+                    completed_batches.append(completed)
+                result = {
+                    "status": "completed",
+                    "reconciled": reconciled,
+                    "batches": completed_batches,
+                }
         elif not args.execute:
             result = {"status": "dry-run", "queue": queue.status()}
         else:

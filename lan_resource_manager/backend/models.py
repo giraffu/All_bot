@@ -40,6 +40,16 @@ class BuildRequest(BaseModel):
     confirmation: str = Field(min_length=1, max_length=100)
 
 
+class GPUReleaseBuildRequest(BaseModel):
+    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
+class TestConfigSyncRequest(BaseModel):
+    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
 class DeploymentPlanRequest(BaseModel):
     environment: Literal["test", "prod"]
     module: str = Field(pattern=r"^[a-z0-9-]{1,80}$")
@@ -55,4 +65,19 @@ class MaintenanceRequest(BaseModel):
     enabled: bool
     expected_enabled: bool
     reason: str = Field(min_length=3, max_length=240)
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
+class IntegrationRequest(BaseModel):
+    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
+class RetryIntegrationRequest(BaseModel):
+    batch: str = Field(pattern=r"^[a-zA-Z0-9._-]{1,160}$")
+    confirmation: str = Field(min_length=1, max_length=180)
+
+
+class BulkTestDeployRequest(BaseModel):
+    candidate_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     confirmation: str = Field(min_length=1, max_length=100)

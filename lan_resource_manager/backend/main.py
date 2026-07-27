@@ -14,10 +14,15 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import Settings
 from .deployment_service import DeploymentService
 from .models import (
+    BulkTestDeployRequest,
     BuildRequest,
     DeploymentExecuteRequest,
     DeploymentPlanRequest,
+    GPUReleaseBuildRequest,
+    IntegrationRequest,
     MaintenanceRequest,
+    RetryIntegrationRequest,
+    TestConfigSyncRequest,
     SwitchRequest,
     TERMINAL_OPERATION_STATUSES,
 )
@@ -99,6 +104,33 @@ def create_app(
     async def deployment_catalog():
         return await deployment.catalog()
 
+    @app.get("/api/v1/integration/status")
+    async def integration_status():
+        return await deployment.integration_status()
+
+    @app.post("/api/v1/integration/run", status_code=202)
+    async def integration_run(payload: IntegrationRequest, request: Request):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_integration(
+            payload, source_ip, request.state.request_id
+        )
+
+    @app.post("/api/v1/integration/retry", status_code=202)
+    async def integration_retry(
+        payload: RetryIntegrationRequest, request: Request
+    ):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_integration_retry(
+            payload, source_ip, request.state.request_id
+        )
+
+    @app.post("/api/v1/workspaces/align", status_code=202)
+    async def align_workspaces(payload: IntegrationRequest, request: Request):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_workspace_alignment(
+            payload, source_ip, request.state.request_id
+        )
+
     @app.get("/api/v1/releases/candidate")
     async def release_candidate():
         return await deployment.candidate()
@@ -110,9 +142,27 @@ def create_app(
             payload, source_ip, request.state.request_id
         )
 
+    @app.post("/api/v1/releases/gpu-builds", status_code=202)
+    async def gpu_release_build(
+        payload: GPUReleaseBuildRequest, request: Request
+    ):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_gpu_release_build(
+            payload, source_ip, request.state.request_id
+        )
+
     @app.get("/api/v1/environments/{environment}/status")
     async def environment_status(environment: str):
         return await deployment.environment_status(environment)
+
+    @app.post("/api/v1/environments/test/config-sync", status_code=202)
+    async def test_config_sync(
+        payload: TestConfigSyncRequest, request: Request
+    ):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_test_config_sync(
+            payload, source_ip, request.state.request_id
+        )
 
     @app.post("/api/v1/deployment-plans", status_code=201)
     async def deployment_plan(payload: DeploymentPlanRequest, request: Request):
@@ -139,6 +189,13 @@ def create_app(
         source_ip = request.client.host if request.client else "unknown"
         return await deployment.set_maintenance(
             environment, payload, source_ip, request.state.request_id
+        )
+
+    @app.post("/api/v1/environments/test/deploy-all", status_code=202)
+    async def deploy_all_test(payload: BulkTestDeployRequest, request: Request):
+        source_ip = request.client.host if request.client else "unknown"
+        return await deployment.start_bulk_test_deploy(
+            payload, source_ip, request.state.request_id
         )
 
     @app.get("/api/v1/operations/{operation_id}")

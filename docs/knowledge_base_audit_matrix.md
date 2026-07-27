@@ -60,7 +60,7 @@
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger | runtime-verification-required | GPU 设计/运维 |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |
-| `docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` | LAN 管理 UI/runner | `lan_resource_manager`、fleet helper | current | 本地资源平台 |
+| `docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` | LAN 管理、A–H 集成/对齐与发布 UI/runner | `lan_resource_manager`、fleet/integration/release helper | current | 本地资源平台 |
 | `docs/子模块_系统资源与容量画像_resource_inventory.md` | 资源和容量快照 | 当次只读探测 | runtime-verification-required | 容量规划 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | 数据库/Redis 恢复 | schema、backup/restore scripts | current | 数据恢复 |
 
