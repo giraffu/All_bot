@@ -29,13 +29,12 @@
 ## 系统子模块架构文档索引
 
 - [AllBot 发布入口](./docs/SAFE_DEPLOY_GUIDE.md)
-- [Compat / Seam 退出表](./docs/compat_seam_exit_table.md)
+- [Compat / Seam 当前退出表](./docs/compat_seam_exit_table.md)
 - [AllBot Knowledge Base Audit Matrix](./docs/knowledge_base_audit_matrix.md)
-- [修仙主题 AI 创作工作台 - 系统架构与业务分析报告](./docs/system_architecture_report.md)
+- [AllBot 系统架构总览](./docs/system_architecture_report.md)
 - [双入口职责矩阵](./docs/入口职责矩阵_entry_responsibility_matrix.md)
-- [双入口重复能力 Inventory](./docs/双入口重复能力_inventory.md)
 - [子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)](./docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md)
-- [子模块: GPU 算力资源池控制器 (GPU Pool Controller)](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
+- [子模块：GPU 算力资源池控制器](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
 - [GitHub 分支保护与热点回归门禁](./docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md)
 - [Git + 不可变镜像发布](./docs/子模块_Git不可变发布_git_immutable_release.md)
 - [AllBot 本地资源管理平台](./docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md)
@@ -71,7 +70,6 @@
 - [子模块: 计费与支付核心 (Billing & Payment)](./docs/子模块_计费与支付_billing_payment.md)
 - [子模块: 运维指南与容器管理 (Ops & Deployment)](./docs/子模块_运维指南与容器管理_ops_deployment.md)
 - [子模块: 附加模型部署与配置指南 (ComfyUI Add-on Models)](./docs/子模块_附加模型配置指南_comfy_models.md)
-- [首次可信 Release 准备记录](./docs/子模块_首次可信发布准备_first_trusted_release.md)
 - [并发 AI 自动接单使用指南](./docs/并发AI自动接单使用指南_auto_workspace_claim.md)
 - [测试与入口命名约定](./docs/测试与入口命名约定.md)
 <!-- DOCS_INDEX_END -->
