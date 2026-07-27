@@ -179,7 +179,7 @@ export function useLabSubmitPayload({
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',
         resolution: characterId ? '768x448' : '1280x704',
-        duration: characterId ? 5 : Number(duration.value),
+        duration: Number(duration.value),
         extraInputs: {
           ...(characterId ? { character_id: characterId } : {}),
           ...(audioPrompt?.value.trim() ? { audio_prompt: audioPrompt.value.trim() } : {}),

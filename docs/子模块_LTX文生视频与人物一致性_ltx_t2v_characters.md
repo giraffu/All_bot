@@ -78,8 +78,12 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 - `workers/comfy_agent/workflows/Character Reference Six Views.json`。
 
 `workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format、双阶段、
-同步音频输出；T2V 是 `1280x704` 和 `24 * seconds + 1` 帧，IC 第一版锁定
-`768x448 / 121 frames / 24fps`。候选 ComfyUI 使用 `--reserve-vram 5`。
+同步音频输出；T2V 是 `1280x704`，IC 是 `768x448`，交付规格均为
+`24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。人物参考表只作隐藏条件：
+workflow 在请求时长之外额外生成一秒并把 guide 固定在尾端，统一结果物化层在上传
+前重编码裁掉该一秒。裁剪、AAC 音轨或输出生成失败必须 fail closed，禁止回退上传
+含参考表的原 MP4；fallback last frame 只能从裁剪后的交付 MP4 提取。
+候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
 `ops/gpu_pool_controller/validation_workflows/ltx_t2v/`。第 1/3 组只是官方
@@ -124,6 +128,12 @@ FP8 在一个 workflow 中生成固定六视图，worker 要求六个输出标�
 1. 正脸近照；2. 3/4 脸；3. 正面半身；
 4. 全身正面；5. 全身侧面；6. 全身背面。
 
+单张正面半身源图是受支持且必须覆盖的验收输入，但它不意味着六格都可以复制
+正面半身构图。materializer 使用视觉感知差异门禁拒绝近似重复视图，但不把该门禁
+冒充姿态语义识别；真实 canary 仍须
+人工确认至少正面、3/4、侧面、背面和景别变化均成立。参考表、拼贴边框或任一格
+不得出现在交付视频首帧、尾帧或场景切换附近。
+
 每个视图统一复用 QQCC AI 动图的
 `shared.image_aspect.adapt_image_to_aspect`：比例变化不安全或没有可靠焦点检测时，
 使用模糊背景填充并完整缩放前景，再等比落到 `512x448`；禁止另写居中 cover
@@ -147,7 +157,7 @@ pending 构建返回 409。
 视频仍走 `POST /api/tasks/generate`：
 
 - `ltx_t2v`：5/10/15/20 秒分别 10/20/30/40 灵石；
-- `ltx_t2v_ic`：固定 5 秒 12 灵石；
+- `ltx_t2v_ic`：5/10/15/20 秒分别 12/24/36/48 灵石；
 - 人物参考表：18 灵石。
 
 IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`ready` 状态和
@@ -194,6 +204,12 @@ autoscaler 仍属于单独授权边界。
 4. 从 `https://web-cf-test.aivison.it.com` 登录，分别提交普通 T2V、创建人物参考表
    和 IC T2V；任务必须由目标测试 agent 接取并回流 `user-data-test`；
 5. 人工测试结束后 disable、drain、删除测试 Pod，并确认 Central 无活动任务。
+
+本轮 IC 黄金用例固定从一张隔离的亚洲成年人物正面半身照开始：先生成并检查六种
+语义视图，再提交 20 秒 `ltx_t2v_ic`。prompt 明确 0–5、5–10、10–15、15–20 秒
+四个场景并在 5/10/15 秒切换。验收下载首帧、各切换点前后帧和尾帧，确认同一亚洲
+成年人五官、发型、年龄与服装连续，同时任何帧均不出现 3×2 参考表、分屏或拼贴。
+还须用 ffprobe 核对 768×448、24fps、AAC、约 20 秒且无 OOM/status 137。
 
 ### 6.1 2026-07-22 LAN 运行结果
 
