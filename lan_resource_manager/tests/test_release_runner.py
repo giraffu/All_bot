@@ -88,6 +88,54 @@ def test_plan_and_deploy_commands_are_fixed(tmp_path):
     assert "--services" not in deploy
 
 
+def test_atomic_test_module_commands_require_the_exact_test_catalog(tmp_path):
+    captured = []
+    (tmp_path / "deploy").mkdir()
+    (tmp_path / "deploy/release-policy.yml").write_text(
+        """
+{"independent_modules": {
+  "central-api": {"artifacts": ["central-api"]},
+  "dashboard": {"artifacts": ["dashboard-backend", "dashboard-frontend"]},
+  "public-web": {"artifacts": ["public-web"]}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    async def fake_run(command, **_kwargs):
+        captured.append(command)
+        return {"status": "passed", "plan_token": "safe-token"}
+
+    runner = ReleaseRunner(tmp_path, run_json=fake_run)
+    payload = {
+        "modules": ["central-api", "public-web"],
+        "sha": "a" * 40,
+    }
+    asyncio.run(runner.dispatch("plan_test_modules", payload))
+    asyncio.run(
+        runner.dispatch(
+            "deploy_test_modules",
+            {**payload, "plan_token": "safe-token"},
+        )
+    )
+
+    assert captured[0][2] == "plan"
+    assert captured[0].count("--modules") == 2
+    assert captured[0][captured[0].index("--env") + 1] == "test"
+    assert captured[1][2] == "deploy"
+    assert "--execute" in captured[1]
+    assert "--confirm-prod" not in captured[1]
+    assert "--skip-gate" not in captured[1]
+
+    with pytest.raises(RunnerError, match="invalid_test_modules"):
+        asyncio.run(
+            runner.dispatch(
+                "plan_test_modules",
+                {"modules": ["central-api"], "sha": "a" * 40},
+            )
+        )
+
+
 def test_environment_status_allows_slow_read_only_remote_probe(tmp_path):
     captured = []
 

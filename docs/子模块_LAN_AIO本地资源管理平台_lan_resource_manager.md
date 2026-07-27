@@ -31,8 +31,10 @@ operator/integration/release facade，不承载第二套运维实现。
   `integrate-all`；逐批冻结、PR、CI、bundle 和 test deploy，不接受 prod 参数。
 - `POST /api/v1/workspaces/align`：确认 `ALIGN <full-sha>` 后只对 clean 且已被
   main 包含的槽执行 detached refresh。
-- `POST /api/v1/environments/test/deploy-all`：确认 `TEST ALL <full-sha>` 后逐个
-  部署 release policy 中 test 可用的完整独立模块。
+- `POST /api/v1/environments/test/deploy-all`：确认 `TEST ALL <full-sha>` 后，把
+  test catalog 的精确模块全集组成一次原子 plan/deploy；拒绝子集与 prod。共享
+  migration/config blocker 以完整集合判断，避免某个旧 artifact source SHA 让
+  无关的单模块计划重复承接已提交的全局迁移。
 
 全量 status 可能持续数十秒，因此首屏不等待 live SSH；超过默认 180 秒的 snapshot
 标记为 stale 并禁止切换。

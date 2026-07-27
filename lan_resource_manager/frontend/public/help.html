@@ -47,7 +47,7 @@
 
   <h2>测试环境全部模块</h2>
   <p>若 main bundle 因 GPU attestation 缺失而阻断，可输入 <code>GPU BUILD &lt;main-sha&gt;</code>。“准备全部 GPU 正式候选容器”会并行触发 8 个实际镜像构建，以同一 main SHA 形成 9-profile 完整 manifest，再重放模块 bundle。操作可从已经存在且具有成功 exact-SHA workflow 的镜像继续，不重复覆盖不可变 tag；它只准备容器，不创建 RunPod/LAN Pod，也不部署正式环境。</p>
-  <p>“部署测试环境全部模块”只遍历发布策略中适用于 test 的完整独立模块组。每个模块都重新执行 <code>release.py plan → deploy</code>，使用短效 token、精确 SHA、digest 与配置门禁。任一模块失败即停止；已完成模块保留事务证据，修复后可幂等重跑。</p>
+  <p>“部署测试环境全部模块”只接受发布策略中适用于 test 的模块精确全集，并把它们组成一次原子 <code>release.py plan → deploy</code>，使用短效 token、精确 SHA、digest、迁移与配置门禁。平台不接受模块子集、任意 service 或正式环境批量部署；失败时整次事务按发布器补偿，修复后可幂等重跑。</p>
 
   <h2>正式容器准备完成的判定</h2>
   <ul>
