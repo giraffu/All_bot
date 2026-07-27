@@ -52,7 +52,7 @@ python scripts/manage_ai_workspaces.py status
 
 日常入口是用户级 `allbot-ai-integration-queue.timer`。每分钟唤醒的 `scripts/auto_integrate_handoffs.py run-once --execute` 先抢非阻塞单写者锁：已有集成/测试发布在运行时本轮不抢占；拿到锁后把当时全部 pending handoff 冻结为一个不可变批次，后到任务留给下一批。协调器依次组合精确 head、创建 main PR、等待 PR checks、合并、等待 main CI 和 modular bundle，最后只执行固定的 `release.py ... --env test`。阶段写入 `running/*.json`，进程中断后从 PR、main CI 或测试部署阶段续跑。
 
-任一 head 漂移、组合冲突、CI、bundle 或测试部署失败都会把批次移入 `failed/` 并阻断后续批次；排除原因后使用 `retry-failed --batch <id>` 将同一批次移回 running，并从已持久化的 PR、main CI 或测试部署阶段续跑。`lightweight` 与 `release-tooling` 批次均在 main CI 后完成，不等待不存在的 modular bundle，也不更新环境；从历史 `deploying-test` 阶段恢复时仍应用同一 scope 规则，其中纯 lightweight 批次不写 release-batch JSON。协调器没有 `--env`、prod 或 promote 参数，不能修改正式环境。
+任一 head 漂移、组合冲突、CI、bundle 或测试部署失败都会把批次移入 `failed/` 并阻断后续批次；排除原因后使用 `retry-failed --batch <id>` 将同一批次移回 running，并从已持久化的 PR、main CI 或测试部署阶段续跑。若失败阶段是 `waiting-main-ci` 且已有 pending forward-fix，精确重试会把这些 handoff 按原顺序冻结进同一批次、清除旧 PR/main/scope 元数据并以新分支重走受保护 PR，避免“旧 main 必然构建失败、修复又被 failed 阻塞”的死锁；`deploying-test` 失败不得吸收后到 handoff。`lightweight` 与 `release-tooling` 批次均在 main CI 后完成，不等待不存在的 modular bundle，也不更新环境；从历史 `deploying-test` 阶段恢复时仍应用同一 scope 规则，其中纯 lightweight 批次不写 release-batch JSON。协调器没有 `--env`、prod 或 promote 参数，不能修改正式环境。
 
 首次启用必须等实现进入 main 后从主目录 dry-run 并安装用户 timer：
 

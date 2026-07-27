@@ -214,12 +214,45 @@ class IntegrationQueue:
         if not source.is_file():
             raise IntegrationQueueError(f"failed batch does not exist: {batch_id}")
         batch = json.loads(source.read_text(encoding="utf-8"))
+        absorbed: list[dict[str, Any]] = []
+        if batch.get("stage") == "waiting-main-ci":
+            absorbed = sorted(
+                (
+                    _validate_handoff(
+                        json.loads(path.read_text(encoding="utf-8"))
+                    )
+                    for path in self.pending.glob("*.json")
+                ),
+                key=lambda item: (item["queued_at"], item["head"]),
+            )
+        if absorbed:
+            existing_heads = {
+                str(member.get("head"))
+                for member in batch.get("members", ())
+            }
+            batch["members"] = [
+                *batch.get("members", ()),
+                *(
+                    member
+                    for member in absorbed
+                    if member["head"] not in existing_heads
+                ),
+            ]
+            suffix = absorbed[-1]["head"][:8]
+            batch.update(
+                stage="queued",
+                branch=f"codex/release-batch-{batch_id}-retry-{suffix}",
+            )
+            for field in ("pr_url", "batch_head", "main_sha", "scope"):
+                batch.pop(field, None)
         destination = self.running / source.name
         batch.update(status="running", path=str(destination), retried_at=_now())
         batch.pop("error", None)
         batch.pop("finished_at", None)
         _atomic_json(source, batch)
         os.replace(source, destination)
+        for member in absorbed:
+            (self.pending / f"{member['head']}.json").unlink(missing_ok=True)
         return batch
 
     def reconcile_merged(
