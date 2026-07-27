@@ -146,7 +146,7 @@
 | 云测试入口 | `scripts/release.py plan\|deploy --env test --sha <full-sha>`；代码/env rsync、现场 build 与源码 bind mount 均禁止 |
 | 云正式入口 | `release.py deploy --env prod --strategy auto\|standard\|direct\|emergency` 按模块风险和 artifact digest 判门禁；管理面/执行面默认 direct，公共 Web 可显式 direct，核心仅 emergency 可旁路，migration/共享契约/未知路径永久 standard；`--dashboard-fast-track` 仅为兼容别名 |
 | 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`；`R2_BUCKET_SYNC_ENABLED=true` 时把 R2 `user-data-prod` 镜像到本地 `user-data-prod-shadow` 并用 quarantine 保留被覆盖对象；本地对象桶只供离线灾备核验，不参与应用回源；脚本持有 `.shadow-sync.lock` 防并发 |
-| 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
+| 本地灾备脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；旧本地测试部署入口已删除 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
 
 ## 2. 总览与索引文档
@@ -276,11 +276,10 @@
 
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
-| `docs/archive/2026-06-cloud-migration/README.md` | 归档索引 | 归档确认 | 已明确“不作为当前 SOP” |
-| `docs/archive/2026-06-cloud-migration/正式云环境切换前准备清单.md` | 历史迁云记录 | 归档确认 | 不重写历史证据 |
-| `docs/archive/2026-06-cloud-migration/子模块_Cloudflare_Pages与API_Tunnel测试入口迁移_runbook.md` | 历史 runbook | 归档确认 | 不重写历史证据 |
+| `docs/archive/2026-06-cloud-migration/README.md` | 归档索引 | 已精简 | 删除旧 Web 节点迁移手册与切换清单，只保留仍有复盘价值的两份业务问题记录 |
 | `docs/archive/2026-06-cloud-migration/变更说明_web历史原视频R2优先链路.md` | 历史变更说明 | 归档确认 | 不重写历史证据 |
 | `docs/archive/2026-06-cloud-migration/问题分析_web老任务恢复导致无效状态轮询.md` | 历史问题分析 | 归档确认 | 不重写历史证据 |
+| `docs/archive/2026-07-web-vps-retirement.md` | 退役审计 | 归档确认 | 只保留两段退役结论，具体旧配置和操作步骤由 Git 历史承载 |
 | `docs/archive/2026-06-runtime-canaries/README.md` | 归档索引 | 归档确认 | 已明确“不作为当前 SOP 或容量事实源” |
 | `docs/archive/2026-06-runtime-canaries/LAN_AIO_PROD_CANARY_20260616.md` | 一次性 canary | 归档确认 | 不重写历史证据 |
 | `docs/archive/2026-06-runtime-canaries/lan_model_cache_upload_2026-06-15.md` | 一次性模型上传记录 | 归档确认 | 不重写历史证据 |

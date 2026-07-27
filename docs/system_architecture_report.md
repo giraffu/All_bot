@@ -96,7 +96,6 @@ graph TD
     TASKSUB --> REDIS
     TASKSUB --> CENTRAL --> VLAN --> WORKERS
     WORKERS --> R2
-    WEBVPS -.旧外链/人工回滚.-> MINIO
     GAL --> R2
     AUTH --> PG
     BILL --> PG
