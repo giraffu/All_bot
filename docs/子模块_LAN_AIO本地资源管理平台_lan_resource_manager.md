@@ -107,6 +107,9 @@ recover。
 Web 与 runner 使用同一只读镜像但不同容器。Web 只挂 LAN operator 所需材料和 Unix
 socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、只读根文件系统、
 drop all capabilities、`no-new-privileges` 且无 Docker Socket。
+槽位对齐和集成脚本仍从只读 `/workspace` 取可信版本，但通过
+`WORKSPACE_REPO_ROOT=/home/hfy/APP/All_bot` 对显式挂载的可写主仓库执行 Git
+状态迁移；不得对只读挂载做 `fetch`，也不得把该写挂载暴露给 Web 容器。
 镜像从 digest-pinned Node 22 stage 只复制 `node` 与 npm/npx；发布测试 Pages 时仍由
 `release.py` 读取前端 lockfile 的精确 Wrangler 版本。这样隔离 runner 不依赖宿主
 Node，也不会在运行时 apt 安装工具。`NPM_CONFIG_CACHE` 固定落到 runner 专用的

@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "ad7c5b12313314327fdb01803d0ee4a21b0f7660",
+  "batch": "20260727-222221-cfc48306",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-222221-cfc48306",
+  "members": [
+    {
+      "base_sha": "ad7c5b12313314327fdb01803d0ee4a21b0f7660",
+      "branch": "codex/c-writable-workspace-root",
+      "head": "cfc48306407186565d0c471ece35463872f9850a",
+      "queued_at": "2026-07-27T22:22:07.529439+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}
