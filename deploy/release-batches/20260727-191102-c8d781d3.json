@@ -1,0 +1,59 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+  "batch": "20260727-191102-c8d781d3",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-191102-c8d781d3",
+  "members": [
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-resource-manager-release-orchestration",
+      "head": "c8d781d3562cc47fb65a808687345c81b003fc44",
+      "queued_at": "2026-07-27T17:38:56.700888+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-resource-manager-test-rollback-state-lock",
+      "head": "d2e4475fbb2a01fb8148d14c1215acdf27856e85",
+      "queued_at": "2026-07-27T17:41:20.906031+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-resource-manager-pages-runner-runtime",
+      "head": "e85041ee153ce960c685312c04bf27e41715152d",
+      "queued_at": "2026-07-27T18:10:29.298517+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-resource-manager-ssh-connection-retries",
+      "head": "bb38ea81eaffdc773cded1d6b2a348a51f96e5e8",
+      "queued_at": "2026-07-27T18:22:03.659423+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-resource-manager-npm-runtime-diagnostics",
+      "head": "9a12d786cd6a2535bfa4f4196680f71f107a0d60",
+      "queued_at": "2026-07-27T18:35:29.446356+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-pages-idempotent-canonical-reuse",
+      "head": "b80d5822edf173774d805e38fac9783582734553",
+      "queued_at": "2026-07-27T18:46:07.736348+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "9545c48c610e4ed902b810d40562f4a02f0b669a",
+      "branch": "codex/d-pages-canonical-id-selection",
+      "head": "e5e73e7a22456e74961afc3d9c551646dbf1a4c6",
+      "queued_at": "2026-07-27T19:02:51.250424+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
