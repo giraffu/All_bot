@@ -60,6 +60,7 @@ def test_http_json_posts_json_with_query_params():
 def test_http_request_returns_raw_response():
     def urlopen(request, *, timeout):
         assert request.get_method() == "GET"
+        assert request.get_header("User-agent") == "AllBot-RunPod-Operator/1"
         assert timeout == 30
         return FakeResponse(200, b"raw-bytes")
 
@@ -69,6 +70,21 @@ def test_http_request_returns_raw_response():
     )
 
     assert payload == {"status": 200, "text": "raw-bytes", "raw": b"raw-bytes"}
+
+
+def test_http_request_preserves_explicit_user_agent():
+    def urlopen(request, *, timeout):
+        assert request.get_header("User-agent") == "Custom-Canary/2"
+        assert timeout == 30
+        return FakeResponse(200, b"ok")
+
+    payload = RunPodHttpClient(urlopen_func=urlopen).request(
+        "GET",
+        "https://api.example/raw",
+        headers={"User-Agent": "Custom-Canary/2"},
+    )
+
+    assert payload["status"] == 200
 
 
 def test_http_json_returns_allowlisted_error_payload():
