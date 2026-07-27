@@ -71,6 +71,7 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
         "i2i_pro",
         "t2i-pornmaster-turbo",
         "face_swap_v2",
+        "face_swap",
     ]
 
     scail2_cases = RunPodCloudTestCanaryCaseBuilder(
