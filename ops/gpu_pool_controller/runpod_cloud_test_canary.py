@@ -26,6 +26,16 @@ SCAIL2_SAMPLE_MOTION_VIDEO_URL = (
 SCAIL2_CANARY_NEGATIVE_PROMPT = (
     "low quality, artifacts, text, watermark, distorted face, bad hands"
 )
+LTX_T2V_IC_20S_SCENE_PROMPT = (
+    "An adult Asian woman matching the supplied identity reference is the same "
+    "person in every shot. 0-5s: medium shot walking through a quiet modern art "
+    "gallery. Hard cut at 5s. 5-10s: three-quarter shot under neon lights on a "
+    "rainy city street. Hard cut at 10s. 10-15s: side-profile tracking shot in a "
+    "sunlit greenhouse. Hard cut at 15s. 15-20s: close-up inside a warm lantern-lit "
+    "room, natural expression. Preserve the same facial features, hairstyle, age, "
+    "and clothing across every scene. Cinematic continuity; never show a contact "
+    "sheet, split screen, tiled reference, collage, or character turnaround."
+)
 
 
 class RunPodCloudTestCanaryError(ValueError):
@@ -199,35 +209,42 @@ class RunPodCloudTestCanaryCaseBuilder:
         ]
 
     def ltx_t2v_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
-        base_inputs = {
-            "duration": 5,
-            "duration_seconds": 5,
-            "seed": 20260722,
-        }
+        base_inputs = {"seed": 20260722}
         return [
             {
                 "label": "ltx_t2v_sulphur_5s",
                 "expected_central_task_type": "ltx_t2v",
                 "payload": {
                     "task_type": "ltx_t2v",
-                    "inputs": {**base_inputs, "resolution": "1280x704"},
+                    "inputs": {
+                        **base_inputs,
+                        "resolution": "1280x704",
+                        "duration": 5,
+                        "duration_seconds": 5,
+                    },
                     "prompt": self.config.prompt,
                     "negative_prompt": self.config.negative_prompt,
                     "priority": 0,
                 },
             },
             {
-                "label": "ltx_t2v_ic_ingredients_5s",
+                "label": "ltx_t2v_ic_ingredients_20s_multiscene",
                 "expected_central_task_type": "ltx_t2v_ic",
                 "payload": {
                     "task_type": "ltx_t2v_ic",
                     "inputs": {
                         **base_inputs,
                         "resolution": "768x448",
+                        "duration": 20,
+                        "duration_seconds": 20,
                         "character_sheet": image_object_key,
                     },
-                    "prompt": self.config.prompt,
-                    "negative_prompt": self.config.negative_prompt,
+                    "prompt": LTX_T2V_IC_20S_SCENE_PROMPT,
+                    "negative_prompt": (
+                        self.config.negative_prompt
+                        + ", contact sheet, split screen, tiled image, collage, "
+                        "character turnaround, repeated panels"
+                    ).strip(", "),
                     "priority": 0,
                 },
             },

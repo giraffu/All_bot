@@ -36,6 +36,7 @@ PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
 PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
 PROD_FACE_SWAP_TASK_TYPE = "face_swap_v2"
+PROD_LEGACY_FACE_SWAP_TASK_TYPE = "face_swap"
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
 
@@ -74,7 +75,8 @@ class RunPodProdWorkerCanaryCaseBuilder:
     def dry_run_steps(self) -> list[str]:
         if self.config.profile == "i2i_pro":
             task_summary = (
-                "submit prod Web i2i_pro, txt2img, and face_swap_v2 tasks serially"
+                "submit prod Web i2i_pro, txt2img, face_swap_v2, and legacy "
+                "face_swap tasks serially"
             )
         elif self.config.profile == "scail2":
             task_summary = (
@@ -191,6 +193,22 @@ class RunPodProdWorkerCanaryCaseBuilder:
                 "expected_central_task_type": PROD_FACE_SWAP_TASK_TYPE,
                 "payload": {
                     "task_type": PROD_FACE_SWAP_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key, image_object_key],
+                        "target_image": image_object_key,
+                        "face_image": image_object_key,
+                    },
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+                "result_kind": "image",
+            },
+            {
+                "label": "prod_legacy_face_swap_canary",
+                "expected_central_task_type": PROD_LEGACY_FACE_SWAP_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_LEGACY_FACE_SWAP_TASK_TYPE,
                     "inputs": {
                         "images": [image_object_key, image_object_key],
                         "target_image": image_object_key,
@@ -619,6 +637,13 @@ class RunPodProdWorkerCanaryExecutor:
                 )
             raise self._error(
                 f"{label}: Central terminal status is {final_status.get('status')}"
+            )
+        actual_agent_id = str(pop_evidence.get("agent_id") or "")
+        if actual_agent_id != self.config.agent_id:
+            actual = actual_agent_id or "no worker observed"
+            raise self._error(
+                f"{label}: task was popped by {actual}, "
+                f"expected {self.config.agent_id}"
             )
         result_payload = self.wait_web_result(task_id)
         result_url = str(result_payload.get("result_url") or "")

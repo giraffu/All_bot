@@ -72,11 +72,11 @@ export const getLabModeCost = ({
   }
 
   if (isLtxLabModeId(mode.id)) {
-    if (mode.id === 'ltx_t2v' && hasCharacter) return 12
     let multiplier = 1
     if (duration === '10') multiplier = 2
     else if (duration === '15') multiplier = 3
     else if (duration === '20') multiplier = 4
+    if (mode.id === 'ltx_t2v' && hasCharacter) return 12 * multiplier
     return 10 * multiplier
   }
 

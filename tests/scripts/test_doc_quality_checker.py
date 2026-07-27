@@ -215,3 +215,69 @@ def test_oversized_active_doc_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "活跃文档超过单文件预算" in result.stdout
+
+
+def test_active_matrix_rejects_archive_rows(tmp_path: Path) -> None:
+    _valid_fixture(tmp_path)
+    matrix = tmp_path / "docs/knowledge_base_audit_matrix.md"
+    matrix.write_text(
+        matrix.read_text(encoding="utf-8")
+        + "| `docs/archive/old.md` | history | Git | archived | trace only |\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "审计矩阵不得登记归档材料" in result.stdout
+
+
+def test_hotspot_doc_rejects_phase_history_and_migrated_paths(
+    tmp_path: Path,
+) -> None:
+    _valid_fixture(tmp_path)
+    hotspot = "docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md"
+    _write(
+        tmp_path,
+        hotspot,
+        "# Hotspot\n\n"
+        "## 当前阶段快照\n\n"
+        "- 2026-06-18：阶段 4 已完成。\n"
+        "- `src/core/user_core_bindings.py`\n",
+    )
+    matrix = tmp_path / "docs/knowledge_base_audit_matrix.md"
+    matrix.write_text(
+        matrix.read_text(encoding="utf-8")
+        + f"| `{hotspot}` | guard | workflow | current | CI change |\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "热点文档包含阶段或日期历史" in result.stdout
+    assert "知识文档引用已迁移路径" in result.stdout
+
+
+def test_compat_table_requires_current_ownership_fields(tmp_path: Path) -> None:
+    _valid_fixture(tmp_path)
+    compat = "docs/compat_seam_exit_table.md"
+    _write(
+        tmp_path,
+        compat,
+        "# Compat\n\n"
+        "| Object | Status | Current use | Exit condition |\n"
+        "| --- | --- | --- | --- |\n"
+        "| alias | active-compat | old caller | no traffic |\n",
+    )
+    matrix = tmp_path / "docs/knowledge_base_audit_matrix.md"
+    matrix.write_text(
+        matrix.read_text(encoding="utf-8")
+        + f"| `{compat}` | compat | callers | current | seam removal |\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "兼容退出表缺少当前责任字段" in result.stdout

@@ -1,7 +1,9 @@
 # Compat / Seam 当前退出表
 
 本表只跟踪仍在运行或仍需运行态确认的兼容层。已删除、已下沉和已完成条目
-保存在 `docs/archive/knowledge-base-cleanup-20260727/`，不再进入默认上下文。
+保存在
+[`docs/archive/knowledge-base-cleanup-20260727/`](archive/knowledge-base-cleanup-20260727/)，
+不再进入默认上下文。
 
 ## 状态定义
 
@@ -11,19 +13,19 @@
 
 ## 当前条目
 
-| 对象 | 状态 | 当前用途 | 删除条件 |
-| --- | --- | --- | --- |
-| `image_to_video_fsm.start_custom_video` | active-compat | `/custom_video` 与旧 callback 命名 | 产品入口和已发消息不再使用旧名 |
-| `MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | active-compat | 历史任务值和旧 payload | 数据/调用方全部迁移到 canonical type |
-| QQCC Wan22 单模型字段与旧模型名 | active-compat | 升级前场景、payload、continuation | 官方/私有配置迁移且观察窗口无旧字段 |
-| QQCC `next_scene_id` 容错归一 | active-compat | 安全加载旧或损坏配置 | 所有受支持 checkpoint 重新保存且回滚点退出 |
-| `video_insert` / `video_edit` | active-compat | 旧 Central endpoint/队列/worker alias | 队列与访问日志确认旧类型清零 |
-| Order 历史内部用户列语义 | runtime-verification-required | 生产 schema 兼容 | 目标环境 migration/head 与 ORM 契约一致 |
-| `ORDER:` / `ORDER_V2:` 双载荷 | active-compat | 旧支付 callback | 旧通道和展示调用方完全退出 |
-| legacy user adopt 分支 | runtime-verification-required | 早期内部 ID/TG ID 混用记录 | 数据审计确认不存在可收养历史用户 |
-| Gallery `free_edit_v2_group` 查询别名 | active-compat | 升级前客户端 | 受支持客户端只发送 v3 group 且日志清零 |
-| QQCC `buttons_per_row=null` | active-compat | 旧 checkpoint 固定分行 | 官方/私有配置迁移为显式列数 |
-| provider/dependencies fake | test-seam | 测试与环境 adapter 替换 | 属于有价值 seam，不按历史兼容删除 |
+| 对象 | 状态 | 责任域 | 运行时调用方 | 当前用途 | 退出信号 | 最近复核（静态） |
+| --- | --- | --- | --- | --- | --- | --- |
+| `image_to_video_fsm.start_custom_video` | active-compat | TG FSM | `/custom_video`、旧菜单与 callback handler | 保持已发消息和旧入口可达 | 产品入口与已发 callback 不再使用旧名 | 2026-07-27 |
+| `MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | active-compat | Task engine | task constants、提交与 History 恢复 | 归一历史任务值和 payload | 数据与调用方全部改用 canonical type | 2026-07-27 |
+| QQCC Wan22 单模型字段与旧模型名 | active-compat | QQCC | `qqcc_config_service`、quick-video continuation | 读取升级前场景和 payload | 官方/私有配置迁移且观察窗口无旧字段 | 2026-07-27 |
+| QQCC `next_scene_id` 容错归一 | active-compat | QQCC | `qqcc_config_service`、`qqcc_video_scene_chain_service` | 安全加载旧或损坏配置 | 支持中的 checkpoint 重存且回滚点退出 | 2026-07-27 |
+| `video_insert` / `video_edit` | active-compat | Task engine | Central simple routes、task registry、Worker mapping | 接受旧 endpoint、队列和 worker alias | 队列与访问日志确认旧类型清零 | 2026-07-27 |
+| Order 历史内部用户列语义 | runtime-verification-required | Billing/Auth | Order ORM、支付创建与校验 service | 兼容生产 schema 的历史身份列 | 目标 migration/head 与 ORM 契约一致 | 2026-07-27 |
+| `ORDER:` / `ORDER_V2:` 双载荷 | active-compat | Billing | `order_v2_service`、`payment_validator` | 解析旧支付 callback | 旧通道和展示调用方完全退出 | 2026-07-27 |
+| legacy user adopt 分支 | runtime-verification-required | Identity | `user_persistence_service` | 收口早期内部 ID/TG ID 混用记录 | 数据审计确认无可收养历史用户 | 2026-07-27 |
+| Gallery `free_edit_v2_group` 查询别名 | active-compat | Gallery | `gallery_feed_queries`、前端展示映射 | 服务升级前客户端 | 支持中的客户端只发送 v3 group 且日志清零 | 2026-07-27 |
+| QQCC `buttons_per_row=null` | active-compat | QQCC | config normalization、Bot 菜单渲染 | 旧 checkpoint 固定分行 | 官方/私有配置迁移为显式列数 | 2026-07-27 |
+| provider/dependencies fake | test-seam | Architecture/Test | public facade focused tests、环境 adapter | 替换外部行为而不改调用点 | 有价值的测试 seam，不进入兼容退出 | 2026-07-27 |
 
 ## 维护规则
 

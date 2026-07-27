@@ -19,20 +19,25 @@ def test_ltx_t2v_duration_cost_and_frames(duration, cost, frames):
     assert (spec.cost, spec.frame_count, spec.fps) == (cost, frames, 24)
 
 
-def test_ltx_t2v_ic_is_locked_and_requires_character_sheet():
+@pytest.mark.parametrize(
+    ("duration", "cost", "frames"),
+    [(5, 12, 121), (10, 24, 241), (15, 36, 361), (20, 48, 481)],
+)
+def test_ltx_t2v_ic_duration_cost_and_frames(duration, cost, frames):
     spec = build_ltx_t2v_spec(
         "ltx_t2v_ic",
         {
-            "duration": 5,
+            "duration": duration,
             "resolution": "768x448",
             "character_sheet": "private/sheet.png",
         },
     )
-    assert (spec.width, spec.height, spec.cost, spec.frame_count) == (768, 448, 12, 121)
-    with pytest.raises(LtxT2VValidationError):
-        build_ltx_t2v_spec(
-            "ltx_t2v_ic", {"duration": 10, "character_sheet": "sheet.png"}
-        )
+    assert (spec.width, spec.height, spec.cost, spec.frame_count) == (
+        768,
+        448,
+        cost,
+        frames,
+    )
 
 
 @pytest.mark.parametrize(

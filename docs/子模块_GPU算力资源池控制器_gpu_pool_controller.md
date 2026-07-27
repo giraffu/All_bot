@@ -39,6 +39,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   证据；不能重新标记旧镜像冒充当前 SHA 构建。
 - LAN registry 只镜像 canonical digest；禁止在 LAN 主机现场 build 同一
   release/profile。
+- Dashboard 手动池 profile catalog 包含独立 `ltx_t2v`，对应
+  `ltx_t2v,ltx_t2v_ic`。创建后的 worker 默认 disabled，支持开启、暂停、重启、
+  锁定和删除；该 profile 的 `autoscaler_enabled=false`，不会被自动扩缩容。
 - release index 必须包含 Dashboard/autoscaler 需要的完整 profile pin 集。
   mutable tag、缺 profile、冲突 digest 或 incomplete manifest 一律 fail closed。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
@@ -48,6 +51,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 
 - 先读取 provider 状态、operation store、Central worker 和目标 profile
   release pin，再决定 status/add/down/restart/rollout。
+- Pod 内诊断优先使用 Dashboard 提供的 `ssh.runpod.io` 代理入口；连接、有限重试、
+  PTY 与标准输入命令模板见 `allbot-ops-deployment` 的
+  `references/runpod-lan-runtime.md`。当次 Pod 页面是用户名和直连端口的事实源，
+  不把临时连接信息写入 Git。
 - 真实 create/start/stop/restart/delete/scale 同时要求运行开关、`--execute`
   和用户明确的生产确认。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、

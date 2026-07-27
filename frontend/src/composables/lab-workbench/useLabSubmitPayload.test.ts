@@ -197,12 +197,13 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.ltx_t2v_title')
 
     harness.selectedCharacterId.value = 'character-1'
+    harness.duration.value = '20'
     await harness.handleSubmit()
     expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
       task_type: 'ltx_t2v_ic',
       inputs: expect.objectContaining({
         character_id: 'character-1',
-        duration: 5,
+        duration: 20,
         resolution: '768x448',
       }),
     }), 'lab.cards.ltx_t2v_title')

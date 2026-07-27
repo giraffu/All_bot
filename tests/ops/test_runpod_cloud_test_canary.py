@@ -88,6 +88,19 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
         "motion.mp4",
     ]
 
+    ltx_cases = RunPodCloudTestCanaryCaseBuilder(
+        _config(tmp_path, task_type="ltx_t2v")
+    ).task_cases(image_key)
+    ic_case = ltx_cases[1]
+    assert ic_case["label"] == "ltx_t2v_ic_ingredients_20s_multiscene"
+    assert ic_case["payload"]["inputs"]["duration"] == 20
+    assert ic_case["payload"]["inputs"]["duration_seconds"] == 20
+    assert ic_case["payload"]["inputs"]["character_sheet"] == image_key
+    assert "adult Asian woman" in ic_case["payload"]["prompt"]
+    assert "Hard cut at 5s" in ic_case["payload"]["prompt"]
+    assert "Hard cut at 15s" in ic_case["payload"]["prompt"]
+    assert "never show a contact sheet" in ic_case["payload"]["prompt"]
+
 
 def test_split_video_case_builder_preserves_fixed_order(tmp_path):
     cases = RunPodCloudTestCanaryCaseBuilder(_config(tmp_path)).split_video_task_cases(

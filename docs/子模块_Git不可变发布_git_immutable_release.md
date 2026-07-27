@@ -18,12 +18,22 @@
 | Web 公开运行时配置 | `frontend/runtime-config.yml` |
 | 公共控制面 | `deploy/docker-compose-cloud-base.yml` + test/prod overlay |
 | 公共 Worker | `deploy/docker-compose-worker-base.yml` |
-| 发布接口 | `scripts/release.py` |
+| 发布 CLI 兼容门面 | `scripts/release.py` |
+| 发布稳定契约与 I/O seam | `scripts/release_contracts.py` |
+| schema-v2 纯请求策略 | `scripts/release_planning.py` |
 | 风险策略 | `scripts/release_strategy.py` |
 | GPU release rollout | `scripts/gpu_release_rollout.py` + RunPod/LAN operator |
 | 主机首次准备 | `scripts/bootstrap_release_host.sh` |
 | 状态 | v2 为 `/var/lib/allbot/deployments/<env>/<track>/current.json` 与 `history/`；事务仍记录在 `transactions/<sha>.json` |
 | 私密配置 | `/etc/allbot/test.env`、`/etc/allbot/prod.env`，`600 deploy:deploy` |
+
+发布工具采用渐进式拆分，不改变现有 CLI、JSON 输出和发布语义。
+`ReleaseCommand`/`ReleasePlan` 是不可变的公开投影；`ReleaseDependencies`
+集中声明 manifest/state 读取、命令 runner、SSH 和恢复等待等 I/O 能力。
+`build_plan`、cloud target 与 recovery validation 接受显式 dependencies，
+旧调用仍使用调用时组装的默认 adapter。新测试应从这些公开 seam 注入 fake；
+旧的模块级 private monkeypatch 只作为尚未迁移测试的兼容方式。计划请求中不
+触发 I/O 的互斥模式校验由 `release_planning.validate_v2_plan_request` 负责。
 
 ## 3. 构建契约
 

@@ -1,4 +1,5 @@
 import sys
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -70,6 +71,41 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
     assert outputs.extra_outputs["last_frame"].file_data == b"png-bytes"
 
 
+@pytest.mark.asyncio
+async def test_materialize_ltx_t2v_ic_removes_hidden_guide_tail(monkeypatch):
+    monkeypatch.setattr(
+        materialization,
+        "_trim_ltx_t2v_ic_guide_tail",
+        lambda video_bytes, _logger: b"trimmed-video:" + video_bytes,
+    )
+    monkeypatch.setattr(
+        materialization,
+        "_extract_last_frame_from_video_bytes",
+        lambda video_bytes, _logger: b"last-frame:" + video_bytes,
+    )
+    execution = SimpleNamespace(
+        prompt_id="prompt-1",
+        task_id="task-1",
+        task_result=None,
+        task_result_priority=0,
+    )
+
+    outputs = await materialization.materialize_task_outputs(
+        comfy_client=DummyComfyClient(),
+        execution=execution,
+        task_type="ltx_t2v_ic",
+        logger=SimpleNamespace(
+            warning=lambda *args, **kwargs: None,
+            info=lambda *args, **kwargs: None,
+        ),
+    )
+
+    assert outputs.primary.file_data == b"trimmed-video:video-bytes"
+    assert outputs.extra_outputs["last_frame"].file_data == (
+        b"last-frame:trimmed-video:video-bytes"
+    )
+
+
 def _png(color):
     output = io.BytesIO()
     Image.new("RGB", (32, 32), color).save(output, format="PNG")
@@ -120,3 +156,49 @@ def test_character_reference_sheet_rejects_missing_or_corrupt_views():
         materialization._compose_character_sheet([_png("black")] * 5)
     with pytest.raises(RuntimeError, match="corrupt"):
         materialization._compose_character_sheet([b"broken"] + [_png("black")] * 5)
+
+
+def test_ic_guide_tail_trim_is_exact_and_preserves_required_audio(monkeypatch):
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "ffprobe":
+            return subprocess.CompletedProcess(command, 0, stdout="21.000\n")
+        Path(command[-1]).write_bytes(b"trimmed")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(materialization.subprocess, "run", fake_run)
+    result = materialization._trim_ltx_t2v_ic_guide_tail(
+        b"original",
+        SimpleNamespace(error=lambda *args, **kwargs: None),
+    )
+
+    assert result == b"trimmed"
+    ffmpeg = commands[-1]
+    assert ffmpeg[ffmpeg.index("-t") + 1] == "20.000"
+    assert ["-map", "0:a:0"] == ffmpeg[
+        ffmpeg.index("0:a:0") - 1 : ffmpeg.index("0:a:0") + 1
+    ]
+    assert ffmpeg[ffmpeg.index("-c:a") + 1] == "aac"
+
+
+def test_ic_guide_tail_trim_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        materialization,
+        "_probe_video_duration_seconds",
+        lambda _path: None,
+    )
+
+    with pytest.raises(RuntimeError, match="too short"):
+        materialization._trim_ltx_t2v_ic_guide_tail(
+            b"original",
+            SimpleNamespace(error=lambda *args, **kwargs: None),
+        )
+
+
+def test_character_reference_views_reject_repeated_front_view():
+    repeated = _portrait_png_with_head_and_feet_markers()
+
+    with pytest.raises(RuntimeError, match="visual camera-view diversity"):
+        materialization._validate_character_view_diversity([repeated] * 6)
