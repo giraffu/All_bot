@@ -9,6 +9,7 @@ from lan_resource_manager.backend.config import Settings
 from lan_resource_manager.backend.main import create_app
 from lan_resource_manager.backend.operator import parse_last_json
 from lan_resource_manager.backend.operator import CliLanAioOperator
+from lan_resource_manager.backend.operator import redact_error
 from lan_resource_manager.backend.store import OperationStore
 
 
@@ -24,6 +25,24 @@ SLOT = {
     "retargetable": True,
     "phase": "catalog_ready",
 }
+
+
+def test_redact_error_prioritizes_final_diagnostic_for_long_output():
+    rendered = '{"artifacts":"' + ("x" * 2400) + '"}\nERROR: remote state timed out'
+
+    result = redact_error(rendered)
+
+    assert result.startswith("ERROR: remote state timed out\n")
+    assert len(result) <= 2000
+
+
+def test_redact_error_scrubs_secrets_before_selecting_tail():
+    rendered = ("x" * 2400) + "\nERROR: token=super-secret-value"
+
+    result = redact_error(rendered)
+
+    assert result.startswith("ERROR: token=[redacted]\n")
+    assert "super-secret-value" not in result
 BLOCKED = {
     **SLOT,
     "id": "gpu-002-gpu1-wan22",

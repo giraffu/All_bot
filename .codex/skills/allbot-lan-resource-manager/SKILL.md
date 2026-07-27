@@ -55,6 +55,8 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   匹配时复用现有成功部署，保证中断重试幂等。
   固定 SSH config 对同一 allowlisted 云主机最多尝试 4 次建连，并保留 bounded
   connect/server-alive 超时；不得因重试扩大 host、key 或环境范围。
+  runner 命令失败且输出超过上限时必须先全量脱敏，再把最终诊断行置于摘要开头并
+  保留有界尾部上下文；不得用 plan JSON 头部淹没真实 `ERROR`。
   远端 SSH 状态不可用时只阻断对应环境操作并返回脱敏错误，main/CI/bundle/catalog
   继续局部展示，不得让一个环境探测清空整个部署页。发布 planner 读取远端
   `current.json` 时也必须区分明确的文件不存在与 SSH/权限故障；后者不得伪装成
