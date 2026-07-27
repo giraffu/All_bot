@@ -6,11 +6,20 @@ from fastapi import HTTPException
 
 from src.core.task_core_types import CoreDomainError
 from src.web_api.schemas.task_schema import TaskGenerateRequest
+from src.web_api.routers import tasks as tasks_router
 from src.web_api.services import task_submission_service as service
 
 
 def _user():
     return SimpleNamespace(id=123, username="tester")
+
+
+def test_operator_canary_token_requires_exact_agent_secret(monkeypatch):
+    monkeypatch.setenv("AGENT_SECRET_TOKEN", "test-agent-secret")
+
+    assert tasks_router._is_operator_canary_authorized("test-agent-secret") is True
+    assert tasks_router._is_operator_canary_authorized("wrong") is False
+    assert tasks_router._is_operator_canary_authorized(None) is False
 
 
 @pytest.mark.asyncio
@@ -26,6 +35,71 @@ async def test_ltx_t2v_backend_flag_defaults_closed(monkeypatch):
             ),
             current_user=_user(),
             get_balance=AsyncMock(return_value=100),
+        )
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_operator_canary_bypasses_closed_user_flag(monkeypatch):
+    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "false")
+    submit = AsyncMock(return_value={"task_id": "task-canary", "cost": 12})
+    monkeypatch.setattr(service, "process_and_submit_task", submit)
+
+    response = await service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="ltx_t2v",
+            prompt="a cinematic scene",
+            inputs={"duration": 5, "resolution": "1280x704"},
+        ),
+        current_user=_user(),
+        get_balance=AsyncMock(return_value=88),
+        operator_canary_authorized=True,
+    )
+
+    assert response.task_id == "task-canary"
+    submit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_ic_operator_canary_accepts_only_isolated_fixture(monkeypatch):
+    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "false")
+    submit = AsyncMock(return_value={"task_id": "task-canary", "cost": 12})
+    monkeypatch.setattr(service, "process_and_submit_task", submit)
+
+    await service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="ltx_t2v_ic",
+            prompt="the same adult character walks through a room",
+            inputs={
+                "duration": 5,
+                "resolution": "768x448",
+                "character_sheet": (
+                    "runpod-canary/ltx-t2v/20260727T032529Z/character_reference.png"
+                ),
+            },
+        ),
+        current_user=_user(),
+        get_balance=AsyncMock(return_value=88),
+        operator_canary_authorized=True,
+    )
+
+    assert submit.await_args.kwargs["inputs"]["character_sheet"].startswith(
+        "runpod-canary/ltx-t2v/"
+    )
+
+    with pytest.raises(CoreDomainError, match="隔离测试前缀"):
+        await service.submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type="ltx_t2v_ic",
+                prompt="scene",
+                inputs={
+                    "duration": 5,
+                    "resolution": "768x448",
+                    "character_sheet": "web_uploads/another-user/private.png",
+                },
+            ),
+            current_user=_user(),
+            get_balance=AsyncMock(return_value=88),
+            operator_canary_authorized=True,
         )
 
 

@@ -26,6 +26,7 @@ WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS = {
 WEB_FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 WEB_FREE_EDIT_V3_COST = 5
 WEB_FREE_EDIT_V2_5_TASK_TYPE = "free_edit_v2_5"
+LTX_T2V_CANARY_OBJECT_PREFIX = "runpod-canary/ltx-t2v/"
 
 
 def _raise_if_web_generation_task_disabled(task_type: str) -> None:
@@ -40,6 +41,7 @@ async def submit_generation_task(
     current_user,
     get_balance: Callable[[int], Awaitable[int]],
     logger=None,
+    operator_canary_authorized: bool = False,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -48,16 +50,22 @@ async def submit_generation_task(
 
         _raise_if_web_generation_task_disabled(req.task_type)
 
-        if req.task_type in {
-            "ltx_t2v",
-            "ltx_t2v_ic",
-            "character_reference_build",
-        } and os.getenv("LTX_T2V_BACKEND_ENABLED", "false").strip().lower() not in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }:
+        if (
+            req.task_type
+            in {
+                "ltx_t2v",
+                "ltx_t2v_ic",
+                "character_reference_build",
+            }
+            and not operator_canary_authorized
+            and os.getenv("LTX_T2V_BACKEND_ENABLED", "false").strip().lower()
+            not in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        ):
             raise CoreDomainError("文生视频与人物图库功能当前未开放。")
 
         is_template = getattr(req, "is_template", False)
@@ -68,25 +76,30 @@ async def submit_generation_task(
         if req.task_type == "character_reference_build":
             raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
         if req.task_type == "ltx_t2v_ic":
-            if inputs.get("character_sheet"):
+            character_sheet = str(inputs.get("character_sheet") or "").strip()
+            if character_sheet and not operator_canary_authorized:
                 raise CoreDomainError("不得直接指定人物参考表存储路径。")
-            character_id = str(inputs.get("character_id") or "").strip()
-            if not character_id:
-                raise CoreDomainError("请选择一个已就绪人物。")
-            from src.database.core import AsyncSessionLocal
-            from src.web_api.services.character_reference_service import (
-                resolve_ready_character_sheet,
-            )
+            if character_sheet and operator_canary_authorized:
+                if not character_sheet.startswith(LTX_T2V_CANARY_OBJECT_PREFIX):
+                    raise CoreDomainError("IC canary 参考图必须位于隔离测试前缀。")
+            else:
+                character_id = str(inputs.get("character_id") or "").strip()
+                if not character_id:
+                    raise CoreDomainError("请选择一个已就绪人物。")
+                from src.database.core import AsyncSessionLocal
+                from src.web_api.services.character_reference_service import (
+                    resolve_ready_character_sheet,
+                )
 
-            async with AsyncSessionLocal() as character_db:
-                try:
-                    inputs["character_sheet"] = await resolve_ready_character_sheet(
-                        db=character_db,
-                        user_id=current_user.id,
-                        character_id=character_id,
-                    )
-                except HTTPException as exc:
-                    raise CoreDomainError(str(exc.detail)) from exc
+                async with AsyncSessionLocal() as character_db:
+                    try:
+                        inputs["character_sheet"] = await resolve_ready_character_sheet(
+                            db=character_db,
+                            user_id=current_user.id,
+                            character_id=character_id,
+                        )
+                    except HTTPException as exc:
+                        raise CoreDomainError(str(exc.detail)) from exc
         images = list(inputs.get("images") or [])
         if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
             raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")
@@ -168,9 +181,7 @@ async def submit_generation_task(
         )
     except Exception as exc:
         if scail2_first_frame_to_cleanup:
-            await cleanup_scail2_face_swap_first_frame(
-                scail2_first_frame_to_cleanup
-            )
+            await cleanup_scail2_face_swap_first_frame(scail2_first_frame_to_cleanup)
         if logger is not None:
             logger.error("Task submission error: %s", exc, exc_info=True)
         raise

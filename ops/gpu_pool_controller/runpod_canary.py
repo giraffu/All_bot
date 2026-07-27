@@ -94,9 +94,7 @@ EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
 )
-EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
-)
+EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
 EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX
 EXPECTED_LTX_T2V_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX
@@ -532,7 +530,7 @@ class RunPodCanaryRunner:
             self._canary_config(),
             http_json_func=self._http_json,
             http_request_func=self._http_request,
-            web_auth_headers_func=self._web_auth_headers,
+            web_auth_headers_func=self._web_canary_auth_headers,
             fetch_workers_func=self._fetch_workers,
             sleep_func=self._sleep,
             phase_func=self._phase,
@@ -591,8 +589,7 @@ class RunPodCanaryRunner:
                 target_agent_id = str(runpod_worker.get("agent_id") or "")
 
                 if (
-                    RUNPOD_TASK_PROFILES[self.options.task_type].task_type
-                    == "ltx_t2v"
+                    RUNPOD_TASK_PROFILES[self.options.task_type].task_type == "ltx_t2v"
                     and not pod_reused
                 ):
                     self._set_agent_control(
@@ -1063,9 +1060,7 @@ class RunPodCanaryRunner:
                 "managed_count": reconcile.get("managed_count"),
             }
             if self.options.cleanup and int(reconcile.get("managed_count") or 0) != 0:
-                cleanup_errors.append(
-                    "post cleanup managed RunPod pod count is not 0"
-                )
+                cleanup_errors.append("post cleanup managed RunPod pod count is not 0")
         except Exception as exc:
             cleanup_errors.append(f"post cleanup reconcile: {redact_text(str(exc))}")
         if cleanup_errors:
@@ -1084,9 +1079,8 @@ class RunPodCanaryRunner:
             if pod_id in reused_pod_ids:
                 ignored.append(pod)
                 continue
-            if (
-                self.options.allow_existing_prod_managed_pods
-                and _is_prod_manual_pod(pod)
+            if self.options.allow_existing_prod_managed_pods and _is_prod_manual_pod(
+                pod
             ):
                 ignored.append(pod)
                 continue
@@ -1127,9 +1121,9 @@ class RunPodCanaryRunner:
         uses_canonical_digest = bool(
             re.fullmatch(re.escape(digest_prefix) + r"[0-9a-f]{64}", image_name)
         )
-        uses_public_image = image_name.startswith(
-            spec.image_ref_prefix
-        ) or uses_canonical_digest
+        uses_public_image = (
+            image_name.startswith(spec.image_ref_prefix) or uses_canonical_digest
+        )
         if template_id and not spec.allow_template_id:
             failures.append("templateId must be empty for baked GHCR canary")
         if image_name and not uses_public_image:
@@ -1165,14 +1159,20 @@ class RunPodCanaryRunner:
         for key, expected in expected_env.items():
             if str(env.get(key) or "") != expected:
                 failures.append(f"{key} must be {expected}")
-        if spec.workflow_overrides and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "") != spec.workflow_overrides:
+        if (
+            spec.workflow_overrides
+            and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "")
+            != spec.workflow_overrides
+        ):
             failures.append(
                 "TASK_TYPE_WORKFLOW_OVERRIDES must match the i2i_pro multitask override"
             )
         if spec.task_type == "scail2" and tuple(body.get("dockerStartCmd") or ()) != (
             RUNPOD_SCAIL2_DOCKER_START_CMD
         ):
-            failures.append("dockerStartCmd must start the RunPod git bootstrap for scail2")
+            failures.append(
+                "dockerStartCmd must start the RunPod git bootstrap for scail2"
+            )
         for key in (
             "AGENT_SECRET_TOKEN",
             "MINIO_ACCESS_KEY",
@@ -1242,6 +1242,12 @@ class RunPodCanaryRunner:
 
     def _web_auth_headers(self) -> dict[str, str]:
         return self._control_client().web_auth_headers()
+
+    def _web_canary_auth_headers(self) -> dict[str, str]:
+        headers = self._web_auth_headers()
+        if self.options.task_type == "ltx_t2v" and self.options.agent_token:
+            headers["X-AllBot-Cloud-Test-Canary-Token"] = self.options.agent_token
+        return headers
 
     def _agent_headers(self) -> dict[str, str]:
         return self._control_client().agent_headers()
