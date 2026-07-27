@@ -223,7 +223,7 @@ async def test_submit_video_demo_uses_scene_duration_prompt_and_engine():
 
 
 @pytest.mark.asyncio
-async def test_submit_video_demo_crops_input_bytes_before_central_upload():
+async def test_submit_video_demo_safely_adapts_input_bytes_before_central_upload():
     storage = FakeStorage()
     storage.r2_client.get_object.return_value = {
         "Body": Mock(read=Mock(return_value=_png_bytes()))
@@ -250,7 +250,7 @@ async def test_submit_video_demo_crops_input_bytes_before_central_upload():
 
     uploaded = storage.upload_bytes.call_args.args[0]
     with Image.open(BytesIO(uploaded)) as uploaded_image:
-        assert uploaded_image.size == (162, 288)
+        assert uploaded_image.size == (225, 400)
 
 
 @pytest.mark.asyncio

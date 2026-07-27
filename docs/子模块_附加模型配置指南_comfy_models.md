@@ -151,7 +151,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
-`video_scenes[].aspect_ratio` 的 `source / 9:16 / 16:9 / 1:1` 不是 Comfy workflow 参数。它由 `src/services/qqcc_video_frame_adapter.py` 和 QQCC Quick Video plan 在任务提交前裁剪首帧/尾帧，私有 continuation 的内部比例字段在调用现有任务入口前剥离。不得因此修改 `Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、分辨率档位或计费。
+`video_scenes[].aspect_ratio` 的 `source / 9:16 / 16:9 / 1:1` 不是 Comfy workflow 参数。它由 `src/services/qqcc_video_frame_adapter.py` 和 QQCC Quick Video plan 在任务提交前适配首帧/尾帧：通用 `smart_image_aspect_service` 在预计保留面积低于 55%、YuNet 不可用/失败或人脸联合安全框装不下时使用完整前景加暗化模糊背景补边；安全比例优先按 YuNet 人脸框移动裁剪，无人脸再使用 SmartCrop 显著性裁剪。私有 continuation 的内部比例字段在调用现有任务入口前剥离。OpenCV/SmartCrop/YuNet 只属于控制面 `python-media-runtime-base`；不得因此修改 `Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、分辨率档位或计费。
 
 `video_scenes[].next_scene_id` / `ai_video_scenes[].next_scene_id` 同样不是 workflow 参数。它由 QQCC scene-chain resolver、quick video runner、私有 durable continuation 与通用 ffmpeg 拼接器在 Bot/配置服务层处理；每段仍提交现有 Wan22/LTX task type。禁止为模板串联复制 workflow、增加 Worker patcher 字段、建立新 GPU profile 或把 QQCC 内部链元数据发送给 Central。
 

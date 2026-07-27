@@ -53,7 +53,7 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 
 `video_scenes` 和 `ai_video_scenes` 可选填 `jump_draw_scene_id`，只能引用有效 `draw_scenes[].id`。后台在“首尾帧配置”中提供选择；点击对应动图/视频场景后，示范媒体和上传提示下会出现“先去 AI绘图生成”按钮，点击后进入目标绘图场景的单图上传流程。若用户正处于该 AI动图/AI视频的等待上传流程，点击按钮会只清理该待上传视频状态并立即进入绘图流程；其它进行中的交互仍保留原有冲突保护。目标场景删除、失效或关闭 `main_buttons.ai_draw` 时，引用会在归一化时清空或运行时隐藏。
 
-链式视频的尾帧提取、规格归一化和拼接发生在控制面媒体编排层，运行镜像必须同时提供 `ffmpeg` 与 `ffprobe`。官方 QQCC、私有 Bot continuation、QQCC Config 示例和 Private Owner 示例分别运行在 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend`，四者统一继承不可运行的 `python-media-runtime-base`；模块化 release 的 full-validation 必须对四个最终 digest 分别执行双工具 smoke，不能以旧 `Dockerfile.qqcc` 或其它服务含有工具替代验证。若某段已生成但尾帧处理失败，用户提示必须明确为“该段已生成，但尾帧处理失败”；只有生成任务本身失败时才显示“生成失败”。两类失败都只返回已完成前缀，不改变既有计费与退款语义。
+链式视频的尾帧提取、规格归一化、拼接和智能画幅适配发生在控制面媒体编排层。官方 QQCC、私有 Bot continuation、QQCC Config 示例和 Private Owner 示例分别运行在 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend`，四者统一继承不可运行的 `python-media-runtime-base`；该层提供 ffmpeg/ffprobe、OpenCV headless、SmartCrop 和 SHA-256 锁定的 YuNet ONNX。模块化 release 的 full-validation 必须对四个最终 digest 分别执行双媒体工具、Python 依赖导入和模型存在 smoke，不能以旧 `Dockerfile.qqcc` 或其它服务含有工具替代验证。若某段已生成但尾帧处理失败，用户提示必须明确为“该段已生成，但尾帧处理失败”；只有生成任务本身失败时才显示“生成失败”。两类失败都只返回已完成前缀，不改变既有计费与退款语义。
 
 `AI绘图` 场景由管理后台 `draw_scenes` 动态配置，`快速自慰` 与 `快速脱衣` 两个默认项是一次性种子化的普通预设，底层 engine 均为旧 `free_edit`。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选 `postprocess_draw_scene_id` 绘图后处理、可选 `postprocess_filter_scene_id` 滤镜终止后处理和 `original_face_swap_enabled` 原图换脸，`id` 使用短安全 callback 字符串；所有场景都必须有非空按钮名称和提示词，`negative_prompt` 可选，缺省或非法归一为空字符串，QQCC 运行时只读取场景自身 `prompt` 与 `negative_prompt`，不再通过 `prompt_key` 或 `prompts.ini` 回退。新增自定义场景默认 engine 是自由P图 v2 `free_edit_v2`，不支持附加模型；切到旧 `free_edit` 时才可选图片 LoRA。绘图后处理只能选择其它有效绘图场景；滤镜后处理只能选择有效滤镜场景并作为终止步骤。`postprocess_draw_scene_id` 与 `postprocess_filter_scene_id` 互斥，若两者都有效则保存时保留绘图后处理并清空滤镜引用；后端还会清空非法引用、自引用和绘图循环引用，前端也过滤会形成循环的选项。`original_face_swap_enabled` 只接受布尔 `true`，缺省或非法值归一为 `false`；开启后该步骤按“场景绘图/滤镜 -> 使用用户最初上传原图做人脸来源换脸 -> 后处理链下一步”执行，内部任务类型为 `face_swap_v2`。根场景 `credit_cost=null` 时每个开启步骤额外计费 `2` 灵石；固定价链则包含该费用，内部换脸不得重复扣费。内部换脸不传负面提示词。用户点击主菜单 `AI绘图` 后，QQCC Bot 回复 `system.ai_draw_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qdraw_scene:<scene_id>`。该 callback 由 `get_quick_image_fsm_handler()` 承接，进入发送 1 张图片步骤；收到图片后按 `draw -> draw...` 或 `draw -> filter` 串行提交绘图/滤镜/原图换脸，每步使用自身负面提示词，只把最终图发给用户。若最终可见输出来自内部原图换脸，历史、结果展示和完成文案仍按原 AI绘图场景归类，不暴露成 `快速换脸`。新 continuation 必须写 V2；恢复升级前 QQCC checkpoint 时，仅把内部原脸恢复 stage 的旧 `face_swap` 解释为 V2，不影响快速换脸。QQCC 生成结果不可投稿、不可公开。旧消息中的已删除场景 callback 必须回复 `功能暂未开放`，不提交任务。本次复用现有 `free_edit`/`img2img` 与 V2 执行面，不新增数据库表。
 
@@ -145,11 +145,18 @@ AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata�
 
 ### 2.1 AI动图输入比例适配
 
-后台场景编辑面板的“视频比例”从配置 GET `options.video_aspect_ratios` 读取原始枚举，中文标签仅由 Vue 映射；默认和新增场景均为 `source`。非 `source` 时，QQCC 专属适配器在任务提交前执行 JPEG/PNG 校验、EXIF 方向归一及最大内接精确整数比例的居中裁剪，不拉伸、不补边、不扩图，也不主动放大；后续 Wan22 仍按用户画质档位缩放。
+后台场景编辑面板的“视频比例”从配置 GET `options.video_aspect_ratios` 读取原始枚举，中文标签仅由 Vue 映射；默认和新增场景均为 `source`。非 `source` 时，QQCC 专属适配器在任务提交前执行 JPEG/PNG 校验和 EXIF 方向归一，再把 Pillow 图像交给可复用的 `src/services/smart_image_aspect_service.py`：
+
+- 最大内接裁剪框预计保留面积低于原图 55% 时，不尝试硬裁，直接生成目标比例画布；完整前景等比缩放居中，背景使用原图 cover、强模糊、降饱和和压暗填充。
+- 其余情况先用 `src/services/yunet_face_detector.py` 的 CPU YuNet 检测人脸，并对每张脸向头顶、左右和肩颈方向扩展安全框；全部安全框能容纳时只沿需要裁掉的轴移动裁剪框，使头部接近画面上三分之一。
+- 多人联合安全框装不下、YuNet 模型/运行时缺失或检测异常时，一律补边；不得为了继续生成退回可能切头的居中裁剪。
+- YuNet 成功执行但未检测到人脸时，使用 `smartcrop.py` 的皮肤/边缘/饱和度显著性候选；SmartCrop 自身不可用或返回非法框才居中裁剪。
+
+整个流程不拉伸前景。后续 Wan22 仍只根据适配后图片比例和用户画质档位缩放。
 
 单首帧 `image_to_video` / `wan22_video_v2` 都提交适配后的首图。尾帧链先用适配首图执行绘图链，再适配最终尾图，保证首尾比例一致。私有 Bot checkpoint 保存内部比例策略，最终 executor 对 durable `original/current` 执行同一处理并在调用既有任务入口前剥离内部字段；后台示例生成也在上传 Central 临时输入前适配 R2 bytes。重新生成和 AI绘图结果的“生成动图”按当前配置重建同一 plan。适配失败时清理 FSM 临时文件、提示图片处理失败，且不调用任务入口、不扣灵石。
 
-该能力是 QQCC 输入适配，不是 workflow 比例开关。主 Bot、固定 `1280x704` 的 AI视频、`Wan22AioV82.json`、mapping/patcher/profile、RunPod/LAN AIO、费用及四档用户画质保持不变，比例字段不进入 Central/Worker payload。
+该能力是 QQCC 输入适配，不是 workflow 比例开关。检测与裁剪通过 `FocusDetector` / `SaliencyCropper` callable seam 注入，行为测试使用 fake，不要求测试机持有模型。真实 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend` 和 `dashboard-backend` 继承 `python-media-runtime-base`；其中固定 OpenCV headless、SmartCrop 和官方 YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，full-validation 对四个最终镜像分别验证依赖导入和模型存在。主 Bot、固定 `1280x704` 的 AI视频、`Wan22AioV82.json`、mapping/patcher/profile、RunPod/LAN AIO、费用及四档用户画质保持不变，比例字段不进入 Central/Worker payload。
 
 ## 3. 代码入口
 

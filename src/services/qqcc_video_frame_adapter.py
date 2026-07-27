@@ -8,6 +8,13 @@ from typing import Final
 from PIL import Image, ImageOps
 
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
+from src.services.smart_image_aspect_service import (
+    FocusDetector,
+    SaliencyCropper,
+    adapt_image_to_aspect,
+)
+from src.services.smartcrop_saliency_adapter import smartcrop_saliency_crop
+from src.services.yunet_face_detector import detect_yunet_focus_regions
 
 QQCC_VIDEO_ASPECT_SOURCE: Final = "source"
 QQCC_VIDEO_ASPECT_RATIOS: Final = ("source", "9:16", "16:9", "1:1")
@@ -49,25 +56,12 @@ def _load_supported_image(content: bytes) -> Image.Image:
         ) from exc
 
 
-def _crop_to_aspect(image: Image.Image, aspect_ratio: str) -> Image.Image:
-    ratio_width, ratio_height = _ASPECT_UNITS[aspect_ratio]
-    width, height = image.size
-    scale = min(width // ratio_width, height // ratio_height)
-    if scale < 1:
-        raise QqccVideoFrameAdaptationError(
-            "QQCC video frame is too small for the configured aspect ratio"
-        )
-    target_width = scale * ratio_width
-    target_height = scale * ratio_height
-    left = (width - target_width) // 2
-    top = (height - target_height) // 2
-    return image.crop((left, top, left + target_width, top + target_height))
-
-
 def adapt_qqcc_video_frame_bytes(
     content: bytes,
     *,
     aspect_ratio: str,
+    focus_detector: FocusDetector = detect_yunet_focus_regions,
+    saliency_cropper: SaliencyCropper = smartcrop_saliency_crop,
 ) -> bytes:
     normalized_aspect = normalize_qqcc_video_aspect_ratio(aspect_ratio)
     image = _load_supported_image(content)
@@ -77,9 +71,14 @@ def adapt_qqcc_video_frame_bytes(
 
     try:
         normalized_image = ImageOps.exif_transpose(image).convert("RGB")
-        cropped_image = _crop_to_aspect(normalized_image, normalized_aspect)
+        adaptation = adapt_image_to_aspect(
+            normalized_image,
+            aspect=_ASPECT_UNITS[normalized_aspect],
+            focus_detector=focus_detector,
+            saliency_cropper=saliency_cropper,
+        )
         output = BytesIO()
-        cropped_image.save(output, format="PNG")
+        adaptation.image.save(output, format="PNG")
         return output.getvalue()
     except QqccVideoFrameAdaptationError:
         raise
@@ -96,6 +95,8 @@ def adapt_qqcc_video_frame_file(
     *,
     aspect_ratio: str,
     output_dir: str = FSM_TEMP_DIR,
+    focus_detector: FocusDetector = detect_yunet_focus_regions,
+    saliency_cropper: SaliencyCropper = smartcrop_saliency_crop,
 ) -> str:
     try:
         with open(path, "rb") as source_file:
@@ -109,6 +110,8 @@ def adapt_qqcc_video_frame_file(
     adapted = adapt_qqcc_video_frame_bytes(
         content,
         aspect_ratio=normalized_aspect,
+        focus_detector=focus_detector,
+        saliency_cropper=saliency_cropper,
     )
     if normalized_aspect == QQCC_VIDEO_ASPECT_SOURCE:
         return path
