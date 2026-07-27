@@ -326,6 +326,12 @@ def classify_paths(paths: Sequence[str]) -> str:
     return str(module.classify_change_scope(paths).scope)
 
 
+def scope_skips_test_deploy(scope: str) -> bool:
+    """Return whether a successful main scope intentionally has no runtime bundle."""
+
+    return scope in {"lightweight", "release-tooling"}
+
+
 class Coordinator:
     """Single-writer orchestration seam; subprocess execution is injectable."""
 
@@ -703,12 +709,13 @@ class Coordinator:
             main_sha = str(batch["main_sha"])
             if stage == "waiting-main-ci":
                 self._wait_workflow("control-plane-release.yml", main_sha)
-                if batch.get("scope") == "lightweight":
+                scope = str(batch.get("scope") or "")
+                if scope_skips_test_deploy(scope):
                     return {
                         "branch": branch,
                         "pr_url": str(batch["pr_url"]),
                         "main_sha": main_sha,
-                        "test_status": "skipped-lightweight",
+                        "test_status": f"skipped-{scope}",
                     }
                 self._wait_workflow("modular-release-v2.yml", main_sha)
                 self.queue.update_batch(batch, stage="deploying-test")
