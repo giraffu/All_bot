@@ -429,6 +429,53 @@ def test_queue_reuses_the_repository_change_scope_policy():
 
     assert module.classify_paths(["docs/example.md", "tests/ops/test_example.py"]) == "lightweight"
     assert module.classify_paths(["src/core/task_core.py"]) == "runtime"
+    assert module.classify_paths(["scripts/release.py"]) == "release-tooling"
+
+
+def test_nonruntime_scopes_skip_shared_test_deployment():
+    module = _load_module()
+
+    assert module.scope_skips_test_deploy("lightweight")
+    assert module.scope_skips_test_deploy("release-tooling")
+    assert not module.scope_skips_test_deploy("runtime")
+    assert not module.scope_skips_test_deploy("operator")
+
+
+@pytest.mark.parametrize("stage", ["waiting-main-ci", "deploying-test"])
+def test_release_tooling_batch_completes_without_test_deploy(tmp_path, stage):
+    module = _load_module()
+    coordinator = module.Coordinator(
+        tmp_path,
+        module.IntegrationQueue(tmp_path / "queue"),
+    )
+    coordinator._validate_members = lambda _members: None
+    coordinator._git = lambda *_args, **_kwargs: ""
+    workflows = []
+    coordinator._wait_workflow = lambda workflow, sha: workflows.append(
+        (workflow, sha)
+    )
+    sha = "b" * 40
+    batch = {
+        "batch": "20260727-203219-8470b3b4",
+        "status": "running",
+        "stage": stage,
+        "scope": "release-tooling",
+        "branch": "codex/release-batch-20260727-203219-8470b3b4",
+        "pr_url": "https://github.com/giraffu/All_bot/pull/364",
+        "main_sha": sha,
+        "members": [
+            _handoff("D", "release-tooling", queued_at="2026-07-27T20:32:19+00:00")
+        ],
+    }
+
+    result = coordinator.process(batch)
+
+    assert workflows == (
+        [("control-plane-release.yml", sha)]
+        if stage == "waiting-main-ci"
+        else []
+    )
+    assert result["test_status"] == "skipped-release-tooling"
 
 
 def test_workflow_wait_filters_head_sha_without_version_specific_commit_flag(

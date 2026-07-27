@@ -326,6 +326,12 @@ def classify_paths(paths: Sequence[str]) -> str:
     return str(module.classify_change_scope(paths).scope)
 
 
+def scope_skips_test_deploy(scope: str) -> bool:
+    """Return whether a successful main scope intentionally has no runtime bundle."""
+
+    return scope in {"lightweight", "release-tooling"}
+
+
 class Coordinator:
     """Single-writer orchestration seam; subprocess execution is injectable."""
 
@@ -701,15 +707,19 @@ class Coordinator:
                 self.queue.update_batch(batch, stage="waiting-main-ci", main_sha=main_sha)
                 stage = "waiting-main-ci"
             main_sha = str(batch["main_sha"])
+            scope = str(batch.get("scope") or "")
             if stage == "waiting-main-ci":
                 self._wait_workflow("control-plane-release.yml", main_sha)
-                if batch.get("scope") == "lightweight":
-                    return {
-                        "branch": branch,
-                        "pr_url": str(batch["pr_url"]),
-                        "main_sha": main_sha,
-                        "test_status": "skipped-lightweight",
-                    }
+            if stage in {"waiting-main-ci", "deploying-test"} and (
+                scope_skips_test_deploy(scope)
+            ):
+                return {
+                    "branch": branch,
+                    "pr_url": str(batch["pr_url"]),
+                    "main_sha": main_sha,
+                    "test_status": f"skipped-{scope}",
+                }
+            if stage == "waiting-main-ci":
                 self._wait_workflow("modular-release-v2.yml", main_sha)
                 self.queue.update_batch(batch, stage="deploying-test")
             self._git("fetch", "origin", "main", cwd=checkout)

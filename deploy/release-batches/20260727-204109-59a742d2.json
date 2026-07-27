@@ -1,0 +1,24 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "7eb594f9c3a6af857a40b7d7ec3a5e67584bc9f4",
+  "batch": "20260727-204109-59a742d2",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-204109-59a742d2",
+  "members": [
+    {
+      "base_sha": "7eb594f9c3a6af857a40b7d7ec3a5e67584bc9f4",
+      "branch": "codex/d-skip-nonruntime-test-deploy",
+      "head": "59a742d2441d39e1c8770e9b5437780a1f67f5c3",
+      "queued_at": "2026-07-27T20:38:20.105639+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "7eb594f9c3a6af857a40b7d7ec3a5e67584bc9f4",
+      "branch": "codex/d-resume-nonruntime-integration-batch",
+      "head": "8139063cc4d413b79575e74e448375b73d117ce5",
+      "queued_at": "2026-07-27T20:40:37.017039+00:00",
+      "slot": "D"
+    }
+  ],
+  "pr_base": "main"
+}
