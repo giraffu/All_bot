@@ -1080,7 +1080,7 @@ describe('QueueStats worker health display', () => {
   })
 
   it('opens worker history modal when a worker card is clicked', async () => {
-    const agentId = 'worker_remote_01'
+    const agentId = 'lan_aio_prod_gpu002_gpu0_img2img_lora_01'
     queueStatsMocks.workersRef.value = [
       {
         agent_id: agentId,
@@ -1101,7 +1101,7 @@ describe('QueueStats worker health display', () => {
   })
 
   it('opens worker history modal from keyboard activation', async () => {
-    const agentId = 'worker_remote_02'
+    const agentId = 'runpod_prod_i2i_pro_manual_02'
     queueStatsMocks.workersRef.value = [
       {
         agent_id: agentId,
@@ -1122,7 +1122,7 @@ describe('QueueStats worker health display', () => {
   it('does not open worker history modal when clicking worker controls', async () => {
     queueStatsMocks.workersRef.value = [
       {
-        agent_id: 'worker_remote_03',
+        agent_id: 'cloud_prod_worker_03',
         types: 'img2img',
         status: 'idle',
         last_seen: Date.now() / 1000,

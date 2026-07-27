@@ -1,6 +1,6 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
-> 2026-07-26：`i2i_pro` 与专属 `face_swap` Worker profile 都可承接 Central 的 `face_swap` 与 `face_swap_v2`，并通过显式 workflow override 将两者运行到 `face_swap_v2.json`。上游 API、计费、退款和业务类型不变，通用 V1 `worker_remote_02` 继续运行 `face_swap.json`。
+> 当前 `i2i_pro` 与专属 `face_swap` Worker profile 都可承接 Central 的 `face_swap` 与 `face_swap_v2`，并通过显式 workflow override 将两者运行到 `face_swap_v2.json`。上游 API、计费、退款和业务类型不变；旧远程 V1 执行池已退役。
 
 ## 1. 目标与适用场景
 
@@ -35,7 +35,7 @@
 - `agent_id`、`draining/disabled`、GPU pool heartbeat 元数据只作用于 Worker Agent 层；它不会自动重启或替换目标 ComfyUI。`cloud_prod_worker_01` 的 agent 容器已支持新协议，但它调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
 - 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
 - 本地 relay `/health` 是轻量存活检查，`/ready` 会检查云 Central 与上传 client；worker 到 relay/Central 的控制面半断持续超过默认阈值时，agent 会退出并交给 Docker restart。这个自愈只恢复 worker 进程，不改变任务成功必须 `/complete` 的语义
-- 无法接入 Tailscale 的远程 Windows GPU 节点可使用 `remote_workers/` 独立 venv 包运行 bundled `comfy_agent` 与 `remote_relay`；它复用同一 Central `pop/status/complete/heartbeat` 语义，只是通过专用 Cloudflare Tunnel 域名访问云 Central
+- RunPod 镜像内的 `workers/runpod_runtime/` 通过 `runpod_relay` 访问专用 Central 域名，并复用同一 `pop/status/complete/heartbeat` 语义
 
 ## 3. 分层职责图
 
@@ -417,7 +417,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 当前底层 Worker 主循环主要在：
 
 - `workers/comfy_agent/agent_main.py`
-- `remote_workers/comfy_agent/agent_main.py` 是给非 Tailscale 远程 Windows 节点 sparse-checkout 使用的同源 bundled 副本
+- `workers/runpod_runtime/comfy_agent/agent_main.py` 是 LAN/RunPod GPU profile 烘焙的正式执行 runtime
 
 启动后主要做三件事：
 
@@ -486,16 +486,16 @@ Worker 拉到任务后会先处理输入：
 
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
-- RunPod profile 镜像必须把 `remote_workers/` 烘焙到 `/opt/allbot/runtime/remote_workers`，并以镜像 label/manifest 固定 agent 与 workflow revision；Pod 启动不访问 AllBot Git 分支。当 `i2i_pro` profile 同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap_v2/face_swap` 时，baked bundle 的 `workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 workflows 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 同理内置 replacement/audio/context-window/v10 workflow；只更新本地主 `workers/` 或只更新 `remote_workers/` 而未重建对应 profile digest 都不会影响后续 Pod。
-- `face_swap_v2` 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 对 V1/V2 都只写入 `face_image -> 2`、`body_image -> 3`。i2i_pro Worker 仅声明 V2；旧 `face_swap` 继续读取 `face_swap.json`，正式启用容量由 `worker_remote_02` 保持，不修改其环境、workflow 或模型。
+- RunPod profile 镜像必须把 `workers/runpod_runtime/` 烘焙到 `/opt/allbot/runtime/runpod_worker`，并以镜像 label/manifest 固定 agent 与 workflow revision；Pod 启动不访问 AllBot Git 分支。当 `i2i_pro` profile 同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap_v2/face_swap` 时，baked bundle 的 `workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 workflows 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 同理内置 replacement/audio/context-window/v10 workflow；源码变化只有重建并发布对应 profile digest 后才会进入 LAN/RunPod。
+- `face_swap_v2` 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 对两个业务类型都只写入 `face_image -> 2`、`body_image -> 3`。当前 i2i_pro/专属 face-swap profile 对 `face_swap` 和 `face_swap_v2` 都执行 `face_swap_v2.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
 - `image_to_video`、legacy `video_insert` / `video_edit` 与 `wan22_video_v2` 共用 `Wan22AioV82.json`。Wan22 请求优先读取最多 5 个 `{name,strength}`，无列表时兼容 `lora_name/lora_strength`；patcher 清空旧槽后按序写入节点 `26`/`18` 的高/低噪双文件。主 Bot 仍保持既有单模型入口，QQCC 官方/私有场景可配置 5 项；v2 使用相同注入规则。
-- 对 `image_to_video` / `video_insert` / `video_edit` 这类共享 workflow 的 alias，`TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和 `TASK_SPECIFIC_PATCHERS` 必须同轮更新，并同步 `workers/` 与 `remote_workers/`。只让挂载目录里的 workflow/mapping 先生效、但容器镜像中的 `workflow_task_patchers.py` 仍是旧版，会出现“读到新 `Wan22AioV82.json` 但仍按旧 patcher 提交”的半更新状态，典型表现是 ComfyUI `/prompt` 400、`LoadImage` 还在读取模板占位文件。
+- 对 `image_to_video` / `video_insert` / `video_edit` 这类共享 workflow 的 alias，`TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和 `TASK_SPECIFIC_PATCHERS` 必须同轮更新，并同步 `workers/` 与 `workers/runpod_runtime/`。只让挂载目录里的 workflow/mapping 先生效、但容器镜像中的 `workflow_task_patchers.py` 仍是旧版，会出现“读到新 `Wan22AioV82.json` 但仍按旧 patcher 提交”的半更新状态，典型表现是 ComfyUI `/prompt` 400、`LoadImage` 还在读取模板占位文件。
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。历史生产 worker3 / `192.168.1.177:8189` 的 `FL_RIFE` 修复已随 gpu-177 旧链路退役；gpu-177 GPU0 AIO `8190` 当前按 `image_to_video` profile 渲染，gpu-177 GPU1 Wan22 v2 在 2026-07-01 正确切换后首单 OOM（status 137）并标记 `blocked_oom_32gb`，`wan22_video_v2` 需要使用 RunPod 或 48GB+ LAN 容量。所有 Wan22 AIO 容量都必须由 AIO 镜像/manifest 提供 RIFE 缓存。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。
 - 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，懒人动图历史类型仍是其具体 mode；执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
-- LTX API workflow 事实源在 `workers/comfy_agent/workflows`，现有 `LTX 2.3 I2V 6.1.json` 不变；新增 `LTX 2.3 FLF2V 6.1.json` 绑定 `ltx_video_flf2v`，新增 `LTX 2.3 V2V Audio 6.1.json` 绑定 `ltx_video_v2v_audio`，`remote_workers/` 同步同名副本。FLF2V 使用额外 `LoadImage` 节点 `16` 与 end-frame resize 节点 `26:313`，并把第二张图注入 `26:297` / `26:312` 的 image slot；V2V Audio 使用 `VHS_LoadVideo` 节点 `900` 读输入视频并按所选时长采样，视频合成仍沿用 LTX workflow 的音频连接。两个新 workflow 都通过 `ImageFromBatch` / `SaveImage` 节点 `901` / `902` 保存输出尾帧，worker materialization 会写入 `extra_outputs.last_frame` 供扩展生成使用。V2V Audio 的真实口型/音轨效果必须以目标 ComfyUI 节点集 `/object_info`、实际生成结果与 `ffprobe` 音轨检查为准。
+- LTX API workflow 事实源在 `workers/comfy_agent/workflows`，现有 `LTX 2.3 I2V 6.1.json` 不变；新增 `LTX 2.3 FLF2V 6.1.json` 绑定 `ltx_video_flf2v`，新增 `LTX 2.3 V2V Audio 6.1.json` 绑定 `ltx_video_v2v_audio`，`workers/runpod_runtime/` 同步同名副本。FLF2V 使用额外 `LoadImage` 节点 `16` 与 end-frame resize 节点 `26:313`，并把第二张图注入 `26:297` / `26:312` 的 image slot；V2V Audio 使用 `VHS_LoadVideo` 节点 `900` 读输入视频并按所选时长采样，视频合成仍沿用 LTX workflow 的音频连接。两个新 workflow 都通过 `ImageFromBatch` / `SaveImage` 节点 `901` / `902` 保存输出尾帧，worker materialization 会写入 `extra_outputs.last_frame` 供扩展生成使用。V2V Audio 的真实口型/音轨效果必须以目标 ComfyUI 节点集 `/object_info`、实际生成结果与 `ffprobe` 音轨检查为准。
 - SCAIL-2 用户侧任务类型包括 `scail2_action_transfer`（动作迁移）、`scail2_video_replacement`（视频换人）以及 `scail2_face_swap_v2`（视频换脸 v10 two-stage）；内部保留 `scail2_action_transfer_long` 作为动作迁移 10/15/20s 的隐藏 Central/Worker 执行类型。Web payload 使用 `inputs.images=[参考图, 驱动视频]`、可选 `prompt`、`negative_prompt`、`duration`；Bot 入口在“视频生视频”二级菜单下，SCAIL-2 任务都收集参考图、驱动视频和可选正向提示词，Bot 可跳过、Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词。负面词使用默认值，驱动视频上限 40MB。公开动作迁移支持 `5s/8s/10s/15s/20s`，计费 `40/80/120/180/260` 灵石；视频换人和视频换脸 v2 仍只支持 `5s/8s`，计费 `40/80` 灵石。业务/History/Gallery 记录长动作迁移仍写 `scail2_action_transfer`；dispatcher 在提交 Central 前按 duration 选择执行类型：`5s/8s -> scail2_action_transfer -> SCAIL-2_Animation_multi-char_audio.api.json`，`10s/15s/20s -> scail2_action_transfer_long -> SCAIL-2_Animation_WAN-Context-Windows.api.json`。长时长只按 `16fps * 秒数 + 1` 写 `161/241/321` 帧，不开放无限长度输入。SCAIL-2 Web/Bot 成功结果可投稿；Web 一键应用只复用原 motion/driving video，复用者重新上传 reference image，衍生任务必须保持 `allow_contribute=false`；旧 `scail2_action_transfer_long` 历史/广场/模板数据展示和筛选归并为“动作迁移”。业务 workflow 必须是 API format；当前正式 LAN 四任务默认覆盖到 audio/context-window/v10 workflow，其中 `scail2_action_transfer_long -> SCAIL-2_Animation_WAN-Context-Windows.api.json`，`scail2_face_swap_v2 -> SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 是两阶段流程：worker 先抽驱动视频第一帧，调用 `face_swap_v2.json` 把用户参考脸换到首帧，再把换脸后的首帧作为 SCAIL-2 reference image，并走视频换人式 `human` track / replacement workflow。worker patcher 固定 512x896、`force_rate=16`、`skip_first_frames=0`；动作迁移执行类型强制 `replacement_mode=false`，视频换人与视频换脸 v2 强制 `replacement_mode=true`。云测试执行 runtime 可以是 gpu-002 LAN AIO SCAIL-2 容器 `http://192.168.1.2:8190` + `cloud_worker_test_08`；云正式 LAN slot0 `lan_aio_prod_gpu002_gpu0_scail2_01` 接四类 SCAIL-2 执行任务并只写 `user-data-prod`，正式 RunPod `scail2` profile 仍只接动作迁移与视频换人。
 - SCAIL-2 长动作迁移的 Context Windows 节点当前保持 `freenoise=true`；`workflow_task_patchers.py` 会对 `scail2_action_transfer_long` 再次写入该值，避免 workflow 重导出后把 FreeNoise 关闭。该选择优先减少长时长生成耗时，代价是动作循环类伪影风险可能回归。
 - 2026-07-26 起，上一条中的视频换脸 Worker 首帧预处理描述已由标准 Central 两阶段 continuation 取代：共享服务从 Bot 本地视频或 Web 对象键抽取首帧，第一阶段 `face_swap_v2` 固定优先级 100；成功后先持久化 intent 并切换 TaskRegistry，再以确定性 backend ID、根任务正常 `final_priority` 提交 `reference_preprocessed=true` 的 SCAIL-2 阶段。根业务 ID、原始 `[人脸参考图, 驱动视频]`、40/80 灵石扣费与最终 History/Gallery 类型保持不变；第一阶段可取消，第二阶段不可取消，中间图不投递/不落历史。恢复逻辑先查询确定性阶段 ID，存在时禁止重复提交。SCAIL-2 Worker 只执行 replacement workflow，不加载 `face_swap_v2.json`、不创建辅助 ComfyClient、不访问外部 8188。

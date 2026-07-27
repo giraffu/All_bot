@@ -7,7 +7,7 @@
 - wrapper 默认 dry-run；真实 mutation 需要 `--execute`、明确 profile，并满足生产确认规则。
 - `add` 表示新增 slot，不应删除已有 Pod；`restart` 应走 RunPod 原生 restart，不用 stop/start 模拟。
 - 判断是否可接单必须同时看 Pod 状态、worker heartbeat、agent control 和 `current_task_id/current_task_type`。
-- RunPod profile 镜像入口可能复用已有 `remote_workers` bundle；怀疑 bundle 过旧时，先 disable，再诊断更新或重建。
+- RunPod/LAN profile 镜像从 `workers/runpod_runtime/` 烘焙 worker bundle；怀疑 bundle 过旧时，先 disable，再按 release index 诊断或重建。
 - 统一 RunPod create request 对后续 autoscaler/手动新建 Pod 注入深度 1 原子预接：`PREFETCH_ENABLED=true`、`PREFETCH_RESERVE_TASK=true`、`PREFETCH_DEPTH=1`、`PREFETCH_CONSUME_WAIT_SECONDS=10`，且 `PREFETCH_TASK_TYPES=SUPPORTED_TASK_TYPES`。该配置不回写存量 Pod；新 Pod 必须使用 `gpu-execution` track 验证过的 baked agent/workflow 镜像 digest，不能只靠环境变量让旧 Worker 获得预接实现，也不得在启动时 clone `deploy` 分支。
 - 云正式 `image_to_video` / `wan22_video_v2` 只接受现网兼容 RIFE tag，或 canonical `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:<64位小写十六进制>`；release rollout 与 exact rollback 都应传 digest，任意仓库、mutable tag、缩写或大写 digest 必须 fail closed。
 - 云正式 Dashboard 的 operation 子进程必须用 catalog 中已验收的 img2img 与 PornMaster baked 镜像 ref 覆盖容器 `/app/.env` 的历史值；手动 add 与 autoscaler 共享该 pin。目标 tag 未发布、baked entrypoint 不可执行或 OCI/agent/workflow revision 不完整时，不得先部署引用它的 Dashboard。

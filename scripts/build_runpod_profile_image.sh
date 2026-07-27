@@ -206,7 +206,7 @@ if [ -z "$COMFYUI_REF" ]; then
     COMFYUI_REF="$(default_comfyui_ref_for_profile "$PROFILE")"
 fi
 
-dockerfile="remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
+dockerfile="workers/runpod_profiles/${PROFILE}/Dockerfile"
 if [ ! -f "$dockerfile" ]; then
     echo "Dockerfile not found: ${dockerfile}" >&2
     exit 2
@@ -215,6 +215,18 @@ context_dir="$(dirname "$dockerfile")"
 dockerfile_for_build="$dockerfile"
 context_for_build="$context_dir"
 cleanup_dir=""
+
+stage_profile_context() {
+    local profile="$1"
+    local destination="$2"
+    mkdir -p \
+        "${destination}/workers/runpod_runtime" \
+        "${destination}/workers/runpod_profiles"
+    cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
+    cp -a "workers/runpod_profiles/${profile}" \
+        "${destination}/workers/runpod_profiles/${profile}"
+}
+
 if [ -n "$KJNODES_SOURCE" ]; then
     if [ ! -d "$KJNODES_SOURCE" ]; then
         echo "KJNodes source directory not found: ${KJNODES_SOURCE}" >&2
@@ -227,34 +239,16 @@ if [ -n "$KJNODES_SOURCE" ]; then
     fi
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
-    cp -a remote_workers "${cleanup_dir}/remote_workers"
+    stage_profile_context "$PROFILE" "$cleanup_dir"
     cp "$local_dockerfile" "${cleanup_dir}/Dockerfile"
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "scail2" ]; then
+else
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
-    cp -a remote_workers "${cleanup_dir}/remote_workers"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
-    context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ]; then
-    cleanup_dir="$(mktemp -d)"
-    trap 'rm -rf "$cleanup_dir"' EXIT
-    cp -a remote_workers "${cleanup_dir}/remote_workers"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
-    context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
-    cleanup_dir="$(mktemp -d)"
-    trap 'rm -rf "$cleanup_dir"' EXIT
-    cp -a remote_workers "${cleanup_dir}/remote_workers"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
-    context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "face_swap" ] || [ "$PROFILE" = "img2img_lora" ]; then
-    cleanup_dir="$(mktemp -d)"
-    trap 'rm -rf "$cleanup_dir"' EXIT
-    cp -a remote_workers "${cleanup_dir}/remote_workers"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
+    stage_profile_context "$PROFILE" "$cleanup_dir"
+    dockerfile_for_build="${cleanup_dir}/workers/runpod_profiles/${PROFILE}/Dockerfile"
     context_for_build="$cleanup_dir"
 fi
 
@@ -326,8 +320,8 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
 test -f "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes/requirements.txt"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
-test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
-test -d /opt/allbot/runtime/remote_workers/comfy_agent/workflows
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
+test -d /opt/allbot/runtime/runpod_worker/comfy_agent/workflows
 if find "${comfyui_dir}/models" -type f \( -name "Qwen-Rapid-AIO-NSFW-v23.safetensors" -o -path "*/loras/qwen/*.safetensors" \) -print -quit | grep -q .; then
   echo "Business model files must stay out of the profile image" >&2
   exit 1
@@ -360,7 +354,7 @@ test -s "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/
 test -s "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
-test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
 LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'"'"'
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"
@@ -394,7 +388,7 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
 test -d "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
-test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
 python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
 python3 -c '"'"'from sageattention import sageattn; assert callable(sageattn)'"'"'
 COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'"'"'
@@ -423,7 +417,7 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
-test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
 test -x /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json
 python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
@@ -448,7 +442,7 @@ command -v ffmpeg >/dev/null
 command -v curl >/dev/null
 command -v git >/dev/null
 command -v ssh-keygen >/dev/null
-runtime_root=/opt/allbot/runtime/remote_workers
+runtime_root=/opt/allbot/runtime/runpod_worker
 bf16_workflow="${runtime_root}/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
 bf16_multi_workflow="${runtime_root}/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
 test -f "${bf16_workflow}"

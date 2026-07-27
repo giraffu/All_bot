@@ -3,18 +3,18 @@ import os
 import subprocess
 
 
-BOOTSTRAP_SCRIPT = Path("remote_workers/scripts/runpod_bootstrap_from_git.sh")
-ENTRYPOINT_SCRIPT = Path("remote_workers/scripts/runpod_entrypoint.sh")
+BOOTSTRAP_SCRIPT = Path("workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh")
+ENTRYPOINT_SCRIPT = Path("workers/runpod_runtime/scripts/runpod_entrypoint.sh")
 BAKED_ENTRYPOINT_SCRIPT = Path(
-    "remote_workers/scripts/runpod_baked_runtime_entrypoint.sh"
+    "workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh"
 )
-PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile")
+PROFILE_DOCKERFILE = Path("workers/runpod_profiles/img2img_lora/Dockerfile")
 PROFILE_LOCAL_DOCKERFILE = Path(
-    "remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
+    "workers/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
 )
-WAN22_PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile")
+WAN22_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/wan22_aio_video/Dockerfile")
 LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
-    "remote_workers/docker/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
+    "workers/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
 )
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
@@ -37,9 +37,9 @@ def test_runpod_runtime_requires_baked_agent_and_never_clones_allbot_at_startup(
     baked_entrypoint = BAKED_ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
 
     assert "git clone --depth 1 --branch \"$REPO_BRANCH\"" not in bootstrap
-    assert "baked AllBot remote worker bundle is missing" in bootstrap
+    assert "baked AllBot RunPod worker bundle is missing" in bootstrap
     assert "ALLBOT_RUNPOD_REPO_DIR:-/opt/allbot/runtime" in baked_entrypoint
-    assert "${runtime_root}/remote_workers" in baked_entrypoint
+    assert "${runtime_root}/runpod_worker" in baked_entrypoint
     assert "comfy_agent/workflows" in baked_entrypoint
 
 
@@ -53,6 +53,14 @@ def test_runpod_bootstrap_and_entrypoint_supervise_managed_processes():
         assert "stopping container for restart policy" in script
 
 
+def test_runpod_entrypoints_start_the_baked_runpod_relay():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    for script in (bootstrap, entrypoint):
+        assert "python3 -m runpod_relay.relay_main" in script
+
+
 def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
     script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
 
@@ -64,33 +72,42 @@ def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
     assert install_call_index < comfy_start_index
 
 
-def test_runpod_bootstrap_patches_remote_worker_pop_agent_id():
-    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+def test_runpod_runtime_bakes_agent_id_into_pop_requests():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    agent = Path(
+        "workers/runpod_runtime/comfy_agent/agent_main.py"
+    ).read_text(encoding="utf-8")
 
-    assert "comfy_agent/agent_main.py" in script
-    assert '"params: dict[str, str] = {\\"agent_id\\": AGENT_ID}"' in script
-
-
-def test_runpod_bootstrap_patches_wan22_runtime_node_inputs():
-    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-
-    assert "comfy_agent/workflow_task_patchers.py" in script
-    assert "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095" in script
-    assert 'input_name="resolution_preset"' in script
-    assert 'input_name="swap_aspect_when_not_image"' in script
-    assert 'input_name="aspect_preset_when_not_image"' in script
-    assert 'input_name="custom_aspect_width"' in script
-    assert 'input_name="custom_aspect_height"' in script
+    assert 'params: dict[str, str] = {"agent_id": AGENT_ID}' in agent
+    assert "write_text(" not in bootstrap
 
 
-def test_runpod_bootstrap_patches_model_sync_for_resume_downloads():
-    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+def test_runpod_runtime_bakes_wan22_node_inputs():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    patchers = Path(
+        "workers/runpod_runtime/comfy_agent/workflow_task_patchers.py"
+    ).read_text(encoding="utf-8")
 
-    assert "scripts/runpod_sync_models_from_r2.py" in script
-    assert "_download_object_with_resume" in script
-    assert "RUNPOD_MODEL_DOWNLOAD_MAX_ATTEMPTS" in script
-    assert "RUNPOD_MODEL_DOWNLOAD_PROGRESS_BYTES" in script
-    assert "offset=current_size" in script
+    assert "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095" in patchers
+    assert 'input_name="resolution_preset"' in patchers
+    assert 'input_name="swap_aspect_when_not_image"' in patchers
+    assert 'input_name="aspect_preset_when_not_image"' in patchers
+    assert 'input_name="custom_aspect_width"' in patchers
+    assert 'input_name="custom_aspect_height"' in patchers
+    assert "write_text(" not in bootstrap
+
+
+def test_runpod_runtime_bakes_resumable_model_sync():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    sync_script = Path(
+        "workers/runpod_runtime/scripts/runpod_sync_models_from_r2.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_download_object_with_resume" in sync_script
+    assert "RUNPOD_MODEL_DOWNLOAD_MAX_ATTEMPTS" in sync_script
+    assert "RUNPOD_MODEL_DOWNLOAD_PROGRESS_BYTES" in sync_script
+    assert "offset=current_size" in sync_script
+    assert "write_text(" not in bootstrap
 
 
 def test_runpod_bootstrap_checks_wan22_rife_cache_before_starting_comfyui():
@@ -216,10 +233,10 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "LTXVSpatioTemporalTiledVAEDecode" in dockerfile
     assert "NODE_CLASS_MAPPINGS = dict(RUNTIME_NODE_CLASS_MAPPINGS)" in dockerfile
     assert (
-        "COPY remote_workers/scripts/runpod_bootstrap_from_git.sh "
+        "COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh "
         "/opt/allbot/runpod_bootstrap_from_git.sh"
     ) in dockerfile
-    assert "COPY remote_workers /opt/allbot/runtime/remote_workers" in dockerfile
+    assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
     assert (
         'CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]'
         in dockerfile
@@ -330,7 +347,7 @@ def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(
     )
 
     rendered = calls.read_text(encoding="utf-8")
-    assert "remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile" in rendered
+    assert "workers/runpod_profiles/wan22_aio_video/Dockerfile" in rendered
     assert f"BASE_IMAGE={WAN22_PROVEN_COMFY_CU128_BASE}" in rendered
     assert "COMFYUI_REF=master" in rendered
     assert "REUSE_BASE_CUSTOM_NODES=false" in rendered

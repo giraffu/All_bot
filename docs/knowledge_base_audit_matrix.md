@@ -136,3 +136,4 @@
 | `docs/archive/knowledge-base-cleanup-20260727/compat_seam_exit_table_full_snapshot.md` | 已完成 compat/seam 台账 | 历史代码审计 | archived | 追溯退出证据 |
 | `docs/archive/knowledge-base-cleanup-20260727/双入口重复能力_inventory.md` | 原双入口 inventory | 历史入口审计 | archived | 追溯合并前判断 |
 | `docs/archive/knowledge-base-cleanup-20260727/首次可信发布准备_first_trusted_release.md` | 一次性可信发布准备 | 历史发布证据 | archived | 追溯首次切换 |
+| `docs/archive/remote-worker-retirement-20260727.md` | 旧独立远程 Worker 退役摘要 | 本轮代码与构建迁移 | archived | 仅追溯退役原因 |

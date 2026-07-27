@@ -37,7 +37,7 @@
 - 本地 shadow 同步：本地主服务器可通过 `scripts/sync_cloud_prod_to_local_shadow.py` 每日把云正式 PostgreSQL 全量快照恢复为 `bot_db_prod_shadow`；R2 `user-data-prod` 到本地 MinIO `user-data-prod-shadow` 的媒体桶镜像由 `R2_BUCKET_SYNC_ENABLED` 单独控制，当前可按数据库-only timer 关闭。该副本只供灾备预热和后续只读分析，不会让本地服务自动切库。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`；测试入口使用 `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`。
-- 当前容量判断口径：本地 compose 声明 `cloud-prod-comfy-agent-1..7`，但实际线上 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 `active_workers=13`、`healthy_workers=13`、`error_workers=0`、`quarantined_workers=0`；该数字只代表当时运行态，不写成固定长期容量。
+- 当前容量判断口径：执行池由本地 compose、LAN AIO 与 RunPod 组成；容量必须读取 Central `/system/workers`，不把历史 worker 数量写成长期事实。
 
 ## 2. 服务分布
 
@@ -112,7 +112,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video` 与 `pornmaster_flux2_edit_bf16`；旧 `pornmaster_flux2_edit` FP8 profile 已退役。真实创建或启用生产任务仍必须由用户明确确认并满足 RunPod 门禁。
 
-`prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`，将 `face_swap_v2` 与 `face_swap` 都指向 `face_swap_v2.json`。legacy 类型、Central 队列和 1 灵石计费不变，`worker_remote_02` 仍执行 `face_swap.json`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；本次发布只更新未来新 Pod 的创建配置并做只读 render，不创建、重启或测试现有 RunPod。
+`prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`，将 `face_swap_v2` 与 `face_swap` 都指向 `face_swap_v2.json`。legacy 业务类型、Central 队列和 1 灵石计费不变，但当前执行池统一运行 V2 workflow。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口。
 
 `prod-worker --profile scail2` 使用 `runpod_prod_scail2_manual_NN` agent 和 `allbot-runpod-prod-scail2-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `scail2_action_transfer,scail2_video_replacement`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步，用户输入和结果只写 `user-data-prod`。生产 canary 会串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两单，全部由 `runpod_prod_scail2_manual_NN` 接单并返回可播放 MP4 后，才可与 LAN SCAIL-2 并行 enable。当前长期口径是：`scail2` RunPod 已具备代码、镜像、模型 manifest 与 Dashboard 管理入口，但不是必须常驻的正式容量；没有 heartbeat 或已删除的 `manual_NN` 不能当作可用 worker。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准，RunPod 只作为手动备用/临时扩容。
 
@@ -125,7 +125,7 @@ RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worke
 Central agent control 切到 `enabled` 并允许接正式队列。`disable --execute`
 只停接新单不关 Pod，适合保留现场；`down --execute` 会删除 Pod，必须确认目标
 worker 没有 `current_task_id`。旧 Pod 原地重启可能复用
-`/workspace/allbot/repo` 中已有的 `remote_workers` bundle；修复 workflow/override 后，
+镜像内已有的 `/opt/allbot/runtime/runpod_worker` bundle；修复 workflow/override 后，
 新建 Pod 会拉最新 `deploy`，已有旧 Pod 则先 disable 再更新远端 repo 或重建。
 
 正式手动 RunPod 池的容量和 profile 组合按当次运维目标决定，不记录为固定长期事实；
@@ -149,7 +149,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 
 ### 2.2 本地执行面
 
-本地主服务器保留云正式本地 worker compose 和一个本地 worker relay/上传 sidecar。compose 声明 `cloud-prod-comfy-agent-1..7`，但线上实际启停可以按任务容量、LAN AIO 接管、`remote_workers` 和手动 RunPod 状态调整；容量验收应以 `/system/workers` 的目标 worker 集合为准。
+本地主服务器保留云正式本地 worker compose 和一个本地 worker relay/上传 sidecar。线上实际启停可以按任务容量、LAN AIO 接管和 RunPod 状态调整；容量验收应以 `/system/workers` 的目标 worker 集合为准。
 
 | 容器 | 说明 |
 | :--- | :--- |
@@ -183,7 +183,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 
 worker 只写入 R2 `user-data-prod`。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
 
-无法接入 Tailscale 的旧远程 GPU 服务器可使用根目录 `remote_workers/` 的独立 venv 包接入：远程主机只需 sparse-checkout 该目录，即可启动本机 `remote_relay` 与 bundled `comfy_agent`；如仍保留旧 agent，则把旧 agent 的 `MASTER_API_URL` 指向 `127.0.0.1:8013`。该路径要求使用独立 Cloudflare Tunnel worker 专用域名回源云 Central `:8003`，不得复用 `api.aivison.it.com`，并需继续使用 R2 `user-data-prod` 写路径。2026-06-12 正式云机已新增独立 `cloudflared-runpod-prod.service`，使用 root-only token file，回源 `http://100.107.220.127:8003`，作为 RunPod production worker Central connector；已有 `cloudflared-worker-central.service` 仍保持运行，`https://worker-central.aivison.it.com/health` 当前可直接访问正式 Central。
+RunPod 通过专用 Cloudflare Tunnel 域名访问云 Central `:8003`，不得复用 `api.aivison.it.com`；结果写入 R2 `user-data-prod`。`cloudflared-runpod-prod.service` 使用 root-only token file，作为 RunPod production worker Central connector。
 
 GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*` 只替换本地主服务器上的 worker 容器，不会自动重启 GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI。GPU 节点硬件、容器、模型挂载和单容器运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
@@ -191,7 +191,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 
 - `web.aivison.it.com`：静态前端由 Cloudflare Pages 项目 `allbot-web-prod` 承接，生产前端调用 `https://api.aivison.it.com/api`。
 - `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
-- `worker-central.aivison.it.com`：远程 worker / RunPod worker 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。RunPod-Prod 独立 tunnel 若使用新 hostname，需在 Cloudflare Public Hostname 中绑定到 `cloudflared-runpod-prod.service` 对应 tunnel。
+- `worker-central.aivison.it.com`：RunPod 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。
 - `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
 - 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。QQCC 懒人 Bot 配置已剥离到独立 `http://100.107.220.127:8088/`，后端为 `8045`，使用 `QQCC_CONFIG_*` 独立后台账号。若需要公网管理域名，必须通过 Cloudflare Tunnel 回源对应前端地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086`/`8043`/`8088`/`8045` 直接暴露到公网。
 - `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：云测试 Pages 与 API Tunnel 入口，不得复用本地主服务器 RMB tunnel。
@@ -311,7 +311,7 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 
 渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 绑定动作迁移 audio、动作迁移 Context-Windows、视频换人 audio 与视频换脸 v10 workflow。视频换脸首帧预处理由 Central 标准 `face_swap_v2` 阶段承担；compose 不得出现 `SCAIL2_FACE_SWAP_V10_*`、固定图片换脸地址、`cloud-test` 或 `user-data-test`。只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
 
-自由P图 v2 正式 LAN 接单当前使用 GPU002 GPU1 的 `gpu-002-gpu1-pornmaster_flux2_edit`；GPU252 GPU1 已切为 `gpu-252-gpu1-i2i_pro`，不再计入 PornMaster Flux2 edit 容量。i2i_pro 发布目标统一声明 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap` 并固定各自 UUID，两个 face swap 类型都执行 V2；旧 `worker_remote_02` 保留 V1。发布前后必须用 Central 心跳核验，旧 UUID 对应的 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled。PornMaster Flux2 edit AIO 只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`；正式入口需在 `.env.cloud.prod` 设置 `ENABLE_FREE_EDIT_V2=true`，前端 Pages 构建需设置 `VITE_ENABLE_FREE_EDIT_V2=true`。
+自由P图 v2 正式 LAN 接单当前使用 GPU002 GPU1 的 `gpu-002-gpu1-pornmaster_flux2_edit`；GPU252 GPU1 已切为 `gpu-252-gpu1-i2i_pro`，不再计入 PornMaster Flux2 edit 容量。i2i_pro 发布目标统一声明 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap`，两个 face swap 类型都执行 V2。发布前后必须用 Central 心跳核验。PornMaster Flux2 edit AIO 只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。
 
 自由P图 v2 的正式 RunPod 手动备用容量使用同一个 `pornmaster_flux2_edit` runtime profile，不写 `user-data-prod` 以外的用户结果桶，也不把模型 baked 进镜像。启用前必须确认 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向公开 GHCR tag，`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`，`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`。
 
@@ -492,7 +492,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 
 云 Central 应看到：
 
-- `active_workers` / `healthy_workers` 与当次预期容量一致；2026-06-18 03:06 快照为 13 个 active/healthy workers，但 LAN AIO、`remote_workers` 与手动 RunPod 数量都是运行态，不是固定长期容量
+- `active_workers` / `healthy_workers` 与当次本地、LAN AIO 和 RunPod 预期容量一致；数量是运行态，不是固定长期容量
 - `error_workers=0`
 - `quarantined_workers=0`
 - Central Redis 中 `comfy:queue:pending`、`comfy:queue:running`、`comfy:task_heartbeat:*` TTL 与 `/system/status` 口径一致

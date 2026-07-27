@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 COMFY_CLIENT_PATHS = [
     ROOT / "workers" / "comfy_agent" / "comfy_client.py",
-    ROOT / "remote_workers" / "comfy_agent" / "comfy_client.py",
+    ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "comfy_client.py",
 ]
 
 

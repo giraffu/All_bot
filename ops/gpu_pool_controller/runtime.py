@@ -454,7 +454,7 @@ class RuntimePlanner:
                         "bash",
                         "-lc",
                         (
-                            'remote_root="$${RUNPOD_REMOTE_WORKER_ROOT:-/opt/allbot/remote_workers}"; '
+                            'worker_root="$${RUNPOD_WORKER_ROOT:-/opt/allbot/runpod_worker}"; '
                             "if [ -x /opt/allbot/runpod_baked_runtime_entrypoint.sh ]; then "
                             "exec bash /opt/allbot/runpod_baked_runtime_entrypoint.sh; "
                             "fi; "
@@ -471,8 +471,8 @@ class RuntimePlanner:
                             "rm -rf /default-comfyui-bundle/ComfyUI/models; "
                             'ln -s "$${model_target}" /default-comfyui-bundle/ComfyUI/models; '
                             "fi; "
-                            'if [ -f "$${remote_root}/requirements.txt" ]; then '
-                            "python3 - <<'PY' || python3 -m pip install --no-cache-dir -r \"$${remote_root}/requirements.txt\"\n"
+                            'if [ -f "$${worker_root}/requirements.txt" ]; then '
+                            "python3 - <<'PY' || python3 -m pip install --no-cache-dir -r \"$${worker_root}/requirements.txt\"\n"
                             "import fastapi\n"
                             "import minio\n"
                             "import uvicorn\n"
@@ -480,22 +480,16 @@ class RuntimePlanner:
                             "PY\n"
                             "fi; "
                             'if [ "$${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then '
-                            'python3 "$${remote_root}/scripts/runpod_sync_models_from_r2.py" '
+                            'python3 "$${worker_root}/scripts/runpod_sync_models_from_r2.py" '
                             '--bucket "$${RUNPOD_MODEL_BUCKET:-}" '
                             '--prefix "$${RUNPOD_MODEL_PREFIX:-img2img_lora/2026-06-10}" '
                             '--target-dir "$${model_target}"; '
                             "fi; "
-                            'if [ -f "$${remote_root}/scripts/ensure_wan22_rife_cache.py" ]; then '
-                            'python3 "$${remote_root}/scripts/ensure_wan22_rife_cache.py" '
+                            'if [ -f "$${worker_root}/scripts/ensure_wan22_rife_cache.py" ]; then '
+                            'python3 "$${worker_root}/scripts/ensure_wan22_rife_cache.py" '
                             '--model-target-dir "$${model_target}"; '
                             "fi; "
-                            'entrypoint="$${remote_root}/scripts/runpod_entrypoint.sh"; '
-                            'if [ "$${remote_root}" = "/opt/allbot/remote_workers" ] '
-                            '&& [ -f "$${entrypoint}" ]; then '
-                            "sed -i "
-                            "'s#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/ready#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/health#g' "
-                            '"$${entrypoint}" || true; '
-                            "fi; "
+                            'entrypoint="$${worker_root}/scripts/runpod_entrypoint.sh"; '
                             'exec bash "$${entrypoint}"'
                         ),
                     ],
@@ -576,7 +570,7 @@ class RuntimePlanner:
                         "MINIO_SECURE": "true",
                         "RUNPOD_WORKSPACE_DIR": "/workspace",
                         "RUNPOD_VOLUME_COMFYUI_DIR": "/workspace/ComfyUI",
-                        "RUNPOD_REMOTE_WORKER_ROOT": "/opt/allbot/remote_workers",
+                        "RUNPOD_WORKER_ROOT": "/opt/allbot/runpod_worker",
                         "RUNPOD_PREPARE_COMFYUI_ON_VOLUME": "true",
                         "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
                         "RUNPOD_MODEL_SYNC_ENABLED": "true",

@@ -29,7 +29,7 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - Worker Agent 从 Central 领取支持的 task type，调用同容器/目标 ComfyUI，
   上传结果并在 `/complete` 前确认交付成功。
 - RunPod 是云端弹性 adapter；LAN AIO 是单物理卡受控容器 adapter。二者都
-  必须使用 exact digest 和 baked `remote_workers`，不能主机源码覆盖。
+  必须使用 exact digest 和 baked `workers/runpod_runtime`，不能主机源码覆盖。
 
 ## 3. 不可变产物
 
@@ -42,7 +42,7 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - release index 必须包含 Dashboard/autoscaler 需要的完整 profile pin 集。
   mutable tag、缺 profile、冲突 digest 或 incomplete manifest 一律 fail closed。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
-  `remote_workers` bundle；Central 不携带 workflow。
+  `workers/runpod_runtime` bundle；Central 不携带 workflow。
 
 ## 4. RunPod 边界
 

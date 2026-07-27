@@ -13,7 +13,7 @@
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
-- LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`remote_workers/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
+- LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
 
 ---
 
@@ -26,11 +26,11 @@
 | `pornmaster_flux2_single_edit` | `PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 15.image`、`prompt -> CLIPTextEncode 185.text`、`negative_prompt -> CLIPTextEncode 254.text`、`seed -> RandomNoise 28.noise_seed` |
 | `pornmaster_flux2_multi_edit` | `PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 17.image`、`image2 -> LoadImage 29.image`、`prompt -> CLIPTextEncode 8.text`、`negative_prompt -> CLIPTextEncode 49.text`、`seed -> RandomNoise 43.noise_seed` |
 
-这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `remote_workers/src/workflow_mapping_validation.py`。
+这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `workers/runpod_runtime/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `workers/runpod_runtime/src/workflow_mapping_validation.py`。
 
 旧 `pornmaster_flux2_edit_baseline/2026-06-27` FP8 bundle 及其本地导入、LAN 上传、R2 manifest 发布脚本均已退役。不得再用历史 workflow 或缓存恢复 FP8 worker；当前模型口径只维护 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`。
 
-LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点、FLUX.2 small-decoder VAE 兼容补丁与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
+LAN AIO 镜像入口为 `workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点、FLUX.2 small-decoder VAE 兼容补丁与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
 
 ---
 
@@ -131,7 +131,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
     - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
   - 无 LoRA 的 `custom_video`、懒人动图 mode 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
-  - V82 通过 `265`（`FL_RIFE`，`multiplier=4`）对 `2603` 最终帧序列插帧；`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。所有 `image_to_video` / `wan22_video_v2` / `wan22_aio_video` runtime 都必须把 `rife49.pth` 当作离线运行依赖：LAN AIO 通过 slot 热缓存预置到 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处路径；RunPod Wan22 新镜像要在构建期 baked 并由 `remote_workers/scripts/ensure_wan22_rife_cache.py` 启动前 fail-fast 校验，不能让正式任务后处理临时访问 HuggingFace。
+  - V82 通过 `265`（`FL_RIFE`，`multiplier=4`）对 `2603` 最终帧序列插帧；`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。所有 `image_to_video` / `wan22_video_v2` / `wan22_aio_video` runtime 都必须把 `rife49.pth` 当作离线运行依赖：LAN AIO 通过 slot 热缓存预置到 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处路径；RunPod Wan22 新镜像要在构建期 baked 并由 `workers/runpod_runtime/scripts/ensure_wan22_rife_cache.py` 启动前 fail-fast 校验，不能让正式任务后处理临时访问 HuggingFace。
   - 节点 `2612` 当前 DaSiWa 版本要求同时写入旧口径 `precision_presets` 和新口径 `resolution_preset`，并补齐 `swap_aspect_when_not_image=false`、`aspect_preset_when_not_image="9:16 - Social"`、`custom_aspect_width=16`、`custom_aspect_height=9`；否则 RunPod ComfyUI `/prompt` 会因缺必填输入拒绝工作流。节点 `2607` 的 `ImageFromBatch.batch_index` 必须保持 `4095`，不要改回旧模板里的 `16384`。
   - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV82.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371`、`2578`、`2603`、`265`、`2575`、`2607` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率、首尾帧输入、时长、RIFE 插帧或尾帧输出会失效。
@@ -209,9 +209,9 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
   - 当前最大注入槽位为 3；超出的项不会继续下沉到工作流。
   - 当请求未带 `lora_items` 时，patcher 会回退兼容读取 `lora_name / lora_strength`；若最终仍无有效 LoRA，则直接裁掉节点 `256`，并把 `8.inputs.model` 回接到 `191`，保持原始无附加模型拓扑可运行。
   - 未显式传 `strength` 时，会回落到 `src/lora_catalog.py` 中登记的默认强度。
-  - `ltx_video_flf2v` 通过 `LoadImage 16` 接收终止帧，并在 `26:297` / `26:312` 写入第二帧条件；`SaveImage 902` 保存尾帧。默认与 10Eros v1.2 FLF2V workflow 的时空 VAE 解码节点 `26:149` 必须保持 `last_frame_fix=true`：解码器会临时重复末端 latent、补足时间边界上下文，再丢弃额外帧，避免最终画面出现轻微形变；本地 `workers/` 与 RunPod/LAN bundle `remote_workers/` 必须同轮同步。
+  - `ltx_video_flf2v` 通过 `LoadImage 16` 接收终止帧，并在 `26:297` / `26:312` 写入第二帧条件；`SaveImage 902` 保存尾帧。默认与 10Eros v1.2 FLF2V workflow 的时空 VAE 解码节点 `26:149` 必须保持 `last_frame_fix=true`：解码器会临时重复末端 latent、补足时间边界上下文，再丢弃额外帧，避免最终画面出现轻微形变；本地 `workers/` 与 RunPod/LAN bundle `workers/runpod_runtime/` 必须同轮同步。
   - `ltx_video_v2v_audio` 通过 `VHS_LoadVideo 900` 接收输入视频，patcher 固定 `force_rate=24`、`frame_load_cap=duration_seconds*24+1`。
-  - 三个 LTX task type 都需要 worker 声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并同步 `remote_workers/`。
+  - 三个 LTX task type 都需要 worker 声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并同步 `workers/runpod_runtime/`。
   - 2026-06-22 新增的 10Eros v1.2 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，只通过单 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 测试覆盖；默认三份 `LTX 2.3 *.json` 仍保持旧主模型绑定。
   - 10Eros v1.2 主模型节点应指向 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 10Eros v1.2-only，旧 v1 不再作为正式 RunPod 回退。新增或切换主模型时，不要直接覆盖旧 workflow 文件名，先复制新 workflow 并用 override canary。
   - Worker 结果物化会优先识别主 MP4，并保存 `extra_outputs.last_frame`；若 Comfy 未返回 `902` 图片，会用 ffmpeg 从主视频兜底抽最后一帧。
@@ -242,7 +242,7 @@ SCAIL-2 当前是正式可用的视频生视频能力。用户侧只展示三个
 | `scail2_face_swap_v2` | 视频换脸两阶段 | `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json` | `replacement_mode=true`，仅接受 `reference_preprocessed=true` |
 
 Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
-`remote_workers/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
+`workers/runpod_runtime/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
 派生的 API-format workflow，不得直接把 UI JSON 提交给 worker。`SCAIL-2_Animation_WAN-Context-Windows.json`
 原始文件是 ComfyUI UI workflow，保存时长为 133 帧、16fps，约 8.3s；已转换为
 `SCAIL-2_Animation_WAN-Context-Windows.api.json` 给动作迁移 10/15/20s 隐藏执行路由使用，但该能力
@@ -283,8 +283,8 @@ SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测�
 audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVideo 113`
 的 audio 输出，且 `trim_to_audio=false`。重导 workflow 后要同时更新：
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
-`src/workflow_mapping_validation.py`、`remote_workers/src/workflow_mapping_validation.py` 与
-`remote_workers/comfy_agent/workflows/`。
+`src/workflow_mapping_validation.py`、`workers/runpod_runtime/src/workflow_mapping_validation.py` 与
+`workers/runpod_runtime/comfy_agent/workflows/`。
 视频换脸是 Central 两阶段方案，不把图片换脸模型混装进 SCAIL-2 runtime。共享首帧准备服务先从本地文件或对象存储视频抽取首帧并保存隐藏对象；第一阶段以固定优先级 100 向 `i2i_pro` 提交标准 `face_swap_v2`，人脸参考图做人脸来源、驱动首帧做 body。第一阶段结果不写 History/Gallery。continuation 必须先持久化派发意图、切换 TaskRegistry，再用确定性 backend ID 按根任务原始正常优先级提交第二阶段；内部请求必须带 `reference_preprocessed=true`，缺失或 false 由 Central 拒绝。第二阶段不可取消、不扣费，最终只写一条 `scail2_face_swap_v2` 视频记录。
 
 SCAIL-2 Worker 只把“换脸后的首帧”作为 `LoadImage 58` 提交给
@@ -297,10 +297,10 @@ SCAIL-2 Worker 只把“换脸后的首帧”作为 `LoadImage 58` 提交给
 
 - 模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`。
 - LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，因为 workflow 的 LoRA 枚举引用带 `Wan2.1/` 子目录。
-- 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`。
-- 当前 LAN AIO 镜像由 profile catalog 固定为 verified GPU release `b2587e560fe3f94c941e21777dad40547e3e0158` 的 LAN mirror digest `192.168.1.115:5000/allbot/comfy-runpod-scail2@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607`；镜像内必须 baked 完整 worker bundle，禁止退回宿主 `remote_workers` 挂载。RTX 5090/Blackwell 仍不得用 `--disable-xformers` 绕过性能路径。
+- 镜像入口是 `workers/runpod_profiles/scail2/Dockerfile`。
+- 当前 LAN AIO 镜像由 profile catalog 固定为 verified GPU release `b2587e560fe3f94c941e21777dad40547e3e0158` 的 LAN mirror digest `192.168.1.115:5000/allbot/comfy-runpod-scail2@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607`；镜像内必须 baked 完整 worker bundle，禁止退回宿主 `workers/runpod_runtime` 挂载。RTX 5090/Blackwell 仍不得用 `--disable-xformers` 绕过性能路径。
 - LAN workspace 的代码与模型寿命需要分离：`lan_workspace_key` 是只允许安全单段字符的版本 key，当 baked ComfyUI/custom-node revision 变化时必须换 key，以便新 workspace 从镜像完整种子化；旧 workspace 保留作回滚，不得临场覆盖 custom nodes。`lan_model_workspace_key` 可只复用同 manifest 的 `ComfyUI/models` 子目录，不得扩大到整个旧 workspace。当前 SCAIL-2 代码 key 为 `scail2-b2587e56`，模型 key 为 `scail2`，LAN runtime 必须显式使用 `COMFYUI_DIR=/opt/ComfyUI` 和 `RUNPOD_MODEL_TARGET_DIR=/opt/ComfyUI/models`，并把同 manifest 模型目录直接挂到该 target；以此加载 digest 镜像内完整 SCAIL-2 custom nodes，不得回退到精简 default bundle。
-- 镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`。
+- 镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `workers/runpod_runtime/requirements.txt`。
 - 镜像不得 baked 任何 `.safetensors` 模型权重；LAN AIO 与 RunPod 都应启动时从 `allbot-model-cache` 同步模型。
 
 ### 4. 运行环境边界

@@ -117,7 +117,7 @@ jobs:
             paths: tests/dashboard tests/local_analytics
           - name: web-workers-misc
             paths: >-
-              tests/web_api tests/workers tests/remote_workers tests/smoke tests/utils
+              tests/web_api tests/workers tests/runpod_runtime tests/smoke tests/utils
               tests/test_*.py
     env:
       JWT_SECRET_KEY: ci-test-only-not-for-runtime
