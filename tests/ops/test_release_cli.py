@@ -3867,7 +3867,10 @@ def test_artifact_state_history_is_read_in_deployment_order(monkeypatch):
         f"{history_root}/{newer_sha}.json": {"git_sha": newer_sha},
     }
 
+    calls = []
+
     def fake_run(command, **_kwargs):
+        calls.append(command)
         remote = command[-1]
         if remote.startswith("find "):
             return subprocess.CompletedProcess(
@@ -3879,9 +3882,16 @@ def test_artifact_state_history_is_read_in_deployment_order(monkeypatch):
                 ),
                 stderr="",
             )
-        path = remote.removeprefix("cat ")
         return subprocess.CompletedProcess(
-            command, 0, stdout=json.dumps(states[path]), stderr=""
+            command,
+            0,
+            stdout=(
+                json.dumps(states[f"{history_root}/{older_sha}.json"])
+                + "\0"
+                + json.dumps(states[f"{history_root}/{newer_sha}.json"])
+                + "\0"
+            ),
+            stderr="",
         )
 
     monkeypatch.setattr(module, "_run", fake_run)
@@ -3894,6 +3904,16 @@ def test_artifact_state_history_is_read_in_deployment_order(monkeypatch):
     history = module._read_artifact_state_history(args)
 
     assert [state["git_sha"] for state in history] == [older_sha, newer_sha]
+    assert len(calls) == 2
+    assert calls[1][-1].startswith("set -e; ")
+
+
+def test_test_private_worker_is_an_explicit_initial_artifact():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    config = policy["independent_modules"]["private-bot-worker"]
+
+    assert config["initial_artifacts"] == ["private-bot-worker"]
 
 
 def test_test_acceptance_allows_non_target_artifacts_in_current_state():
