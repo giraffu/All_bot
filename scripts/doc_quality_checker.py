@@ -19,6 +19,10 @@ from urllib.parse import unquote
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 MATRIX_RELATIVE_PATH = Path("docs/knowledge_base_audit_matrix.md")
 SKILL_INDEX_RELATIVE_PATH = Path("docs/skills/README.md")
+COMPAT_RELATIVE_PATH = Path("docs/compat_seam_exit_table.md")
+HOTSPOT_RELATIVE_PATH = Path(
+    "docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md"
+)
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+.+$", re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
@@ -33,6 +37,21 @@ VALIDATION_RE = re.compile(
     r"(?:最小验证|测试要求|验证清单|Validation Commands|交付格式)",
     re.IGNORECASE,
 )
+HOTSPOT_HISTORY_RE = re.compile(
+    r"^(?:#{1,6}\s+.*(?:当前阶段快照|阶段\s*\d+.*收尾|下一批建议)"
+    r"|[-*]\s+(?:20\d{2}-\d{2}-\d{2}.*(?:基线|复核|阶段)"
+    r"|阶段\s*\d+：))",
+    re.MULTILINE,
+)
+
+MIGRATED_KNOWLEDGE_PATHS = {
+    "src/core/gallery_core_dependencies.py": "src/gallery_core_dependencies.py",
+    "src/core/gallery_feed_queries.py": "src/services/gallery_feed_queries.py",
+    "src/core/user_core_bindings.py": "src/user_core_bindings.py",
+    "src/services/bot_task_service.py": (
+        "src/services/task_service_entrypoints*.py / src/core/task_core.py"
+    ),
+}
 
 MAX_SKILL_BYTES = 16_000
 MAX_SKILL_LINE_LENGTH = 1_000
@@ -249,10 +268,42 @@ def verify_matrix(root: Path, errors: list[str]) -> None:
         errors.append(f"审计矩阵未登记活跃文档: {path}")
 
     for line in text.splitlines():
-        if not line.startswith("| `docs/archive/"):
-            continue
-        if "| current |" in line:
-            errors.append(f"归档材料被标记为 current: {line.split('|')[1].strip()}")
+        if line.startswith("| `docs/archive/") or "| archived |" in line:
+            errors.append(
+                "审计矩阵不得登记归档材料: "
+                f"{line.split('|')[1].strip()}"
+            )
+
+
+def verify_current_history_boundaries(root: Path, errors: list[str]) -> None:
+    hotspot = root / HOTSPOT_RELATIVE_PATH
+    if hotspot.is_file() and HOTSPOT_HISTORY_RE.search(read_text(hotspot)):
+        errors.append(
+            "热点文档包含阶段或日期历史；请迁入 docs/archive/: "
+            f"{relative(hotspot, root)}"
+        )
+
+    current_sources = list_active_docs(root)
+    current_sources.extend(list_skill_files(root))
+    for source in current_sources:
+        text = read_text(source)
+        for old_path, canonical_path in MIGRATED_KNOWLEDGE_PATHS.items():
+            if old_path not in text:
+                continue
+            errors.append(
+                "知识文档引用已迁移路径: "
+                f"{relative(source, root)}: {old_path} -> {canonical_path}"
+            )
+
+    compat = root / COMPAT_RELATIVE_PATH
+    if compat.is_file():
+        text = read_text(compat)
+        required_fields = ("责任域", "运行时调用方", "最近复核")
+        missing = [field for field in required_fields if field not in text]
+        if missing:
+            errors.append(
+                "兼容退出表缺少当前责任字段: " + "、".join(missing)
+            )
 
 
 def run(root: Path) -> list[str]:
@@ -262,6 +313,7 @@ def run(root: Path) -> list[str]:
     verify_internal_links(root, errors)
     verify_skill_routes(root, errors)
     verify_matrix(root, errors)
+    verify_current_history_boundaries(root, errors)
     return errors
 
 

@@ -1,9 +1,13 @@
 # AllBot Knowledge Base Audit Matrix
 
-本矩阵只登记活跃知识入口和当前事实源，一份资料一行。状态只使用：
-`current`、`needs-review`、`runtime-verification-required`、`archived`。
-逐日变化、部署结果、事故和一次性运行态进入 `docs/archive/` 或
-`docs/release_evidence/`。
+本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
+标题确定；本轮静态核对日期为 `2026-07-27`。状态只使用 `current`、
+`needs-review`、`runtime-verification-required`、`superseded`。
+
+逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
+进入
+[`docs/archive/knowledge-base-changelog/`](archive/knowledge-base-changelog/)
+或 `docs/release_evidence/`。
 
 ## 总览、治理与业务文档
 
@@ -90,9 +94,9 @@
 | `docs/adr/0002-qqcc-private-bots-use-webhooks.md` | 私有 Bot webhook 决策 | private worker 架构 | current | 私有 Bot 运行时 |
 | `docs/adr/0003-git-sha-immutable-image-promotion.md` | 不可变身份决策 | release contract | current | 发布身份 |
 | `docs/adr/0004-three-release-tracks-and-thin-images.md` | 三轨与薄镜像 | artifact catalog | current | artifact 架构 |
-| `docs/adr/0005-four-ai-worktrees-and-test-train.md` | 旧 test-train 决策 | ADR 0008 | archived | 历史原因 |
+| `docs/adr/0005-four-ai-worktrees-and-test-train.md` | 旧 test-train 决策 | ADR 0008 | superseded | 历史原因 |
 | `docs/adr/0006-risk-based-artifact-release-gates.md` | 风险门禁决策 | release policy | current | assurance 策略 |
-| `docs/adr/0007-promote-tested-candidate-artifacts.md` | 旧 candidate 晋级 | ADR 0008 | archived | 历史原因 |
+| `docs/adr/0007-promote-tested-candidate-artifacts.md` | 旧 candidate 晋级 | ADR 0008 | superseded | 历史原因 |
 | `docs/adr/0008-main-first-release-batches.md` | main-first 批次 | integration queue/workspace scripts | current | 当前集成设计 |
 
 ## 项目 Skills
@@ -120,20 +124,3 @@
 | `.codex/skills/frontend-browser-preview/SKILL.md` | 浏览器预览 | Playwright workflow | current | UI 截图 |
 | `.codex/skills/ops-log-monitor/SKILL.md` | 日志监控 | env logs/diagnostics | current | 线上日志 |
 | `.codex/skills/allbot-code-analyzer/SKILL.md` | 静态分析 | analyzer workflow | current | 全局审查 |
-
-## 归档边界
-
-`docs/archive/` 保存历史迁移、canary、事故、旧矩阵和被取代的完整长文；
-`docs/release_evidence/` 保存发布取证。两者不作为当前 SOP，除非活跃文档
-明确要求为了追溯读取。远端或运行态未在本轮探测时，矩阵使用
-`runtime-verification-required`，不能把代码支持写成现场已生效。
-
-| 路径 | 用途 | 事实源 | 状态 | 何时加载 |
-| --- | --- | --- | --- | --- |
-| `docs/archive/knowledge-base-changelog/knowledge_base_audit_matrix_history_through_20260727.md` | 旧矩阵与逐日变更 | 历史提交 | archived | 追溯旧核对结果 |
-| `docs/archive/knowledge-base-cleanup-20260727/system_architecture_report_full_snapshot.md` | 原系统长报告 | 历史代码/运行态 | archived | 追溯被精简细节 |
-| `docs/archive/knowledge-base-cleanup-20260727/gpu_pool_controller_full_snapshot.md` | 原 GPU Pool 长文 | 历史 profile/canary | archived | 追溯 GPU 历史 |
-| `docs/archive/knowledge-base-cleanup-20260727/compat_seam_exit_table_full_snapshot.md` | 已完成 compat/seam 台账 | 历史代码审计 | archived | 追溯退出证据 |
-| `docs/archive/knowledge-base-cleanup-20260727/双入口重复能力_inventory.md` | 原双入口 inventory | 历史入口审计 | archived | 追溯合并前判断 |
-| `docs/archive/knowledge-base-cleanup-20260727/首次可信发布准备_first_trusted_release.md` | 一次性可信发布准备 | 历史发布证据 | archived | 追溯首次切换 |
-| `docs/archive/remote-worker-retirement-20260727.md` | 旧独立远程 Worker 退役摘要 | 本轮代码与构建迁移 | archived | 仅追溯退役原因 |
