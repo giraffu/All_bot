@@ -530,7 +530,7 @@ class RunPodCanaryRunner:
             self._canary_config(),
             http_json_func=self._http_json,
             http_request_func=self._http_request,
-            web_auth_headers_func=self._web_canary_auth_headers,
+            web_auth_headers_func=self._web_auth_headers,
             fetch_workers_func=self._fetch_workers,
             sleep_func=self._sleep,
             phase_func=self._phase,
@@ -1242,12 +1242,6 @@ class RunPodCanaryRunner:
 
     def _web_auth_headers(self) -> dict[str, str]:
         return self._control_client().web_auth_headers()
-
-    def _web_canary_auth_headers(self) -> dict[str, str]:
-        headers = self._web_auth_headers()
-        if self.options.task_type == "ltx_t2v" and self.options.agent_token:
-            headers["X-AllBot-Cloud-Test-Canary-Token"] = self.options.agent_token
-        return headers
 
     def _agent_headers(self) -> dict[str, str]:
         return self._control_client().agent_headers()

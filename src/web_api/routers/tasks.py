@@ -1,9 +1,7 @@
-import hmac
 import logging
-import os
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.core.task_core import (
     ConcurrencyLimitError,
@@ -14,7 +12,13 @@ from src.core.task_core import (
 from src.database.models import User
 from src.quota import QuotaManager
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
+from src.web_api.core.security import verify_token
+from src.web_api.dependencies import (
+    get_bearer_token,
+    get_current_user,
+    get_current_user_once,
+    get_db,
+)
 from src.web_api.schemas.task_schema import (
     TaskGenerateRequest,
     TaskGenerateResponse,
@@ -35,14 +39,11 @@ logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
 
 
-def _is_operator_canary_authorized(candidate: str | None) -> bool:
-    expected = os.getenv("AGENT_SECRET_TOKEN", "")
-    return bool(
-        expected
-        and isinstance(candidate, str)
-        and candidate
-        and hmac.compare_digest(candidate.encode(), expected.encode())
-    )
+def _is_operator_canary_authorized(token: str | None) -> bool:
+    if not isinstance(token, str) or not token:
+        return False
+    payload = verify_token(token)
+    return bool(payload and payload.get("channel") == "runpod_canary")
 
 
 @router.delete("/cancel/{task_id}")
@@ -56,11 +57,9 @@ async def cancel_pending_task(
 async def create_generation_task(
     req: TaskGenerateRequest,
     current_user: User = Depends(get_current_user),
-    operator_canary_token: Annotated[
+    bearer_token: Annotated[
         str | None,
-        Header(
-            alias="X-AllBot-Cloud-Test-Canary-Token",
-        ),
+        Depends(get_bearer_token),
     ] = None,
 ):
     """
@@ -72,9 +71,7 @@ async def create_generation_task(
             current_user=current_user,
             get_balance=quota_manager.get_credits,
             logger=logger,
-            operator_canary_authorized=_is_operator_canary_authorized(
-                operator_canary_token
-            ),
+            operator_canary_authorized=_is_operator_canary_authorized(bearer_token),
         )
     except QueueCapacityError as exc:
         raise HTTPException(

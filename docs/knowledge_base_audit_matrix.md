@@ -9,11 +9,11 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/knowledge_base_audit_matrix.md` | 活跃知识索引 | 本矩阵、质量检查器 | current | 全量知识校准 |
+| `docs/knowledge_base_audit_matrix.md` | 活跃知识索引 | 本矩阵、质量检查器的登记/体积门禁 | current | 仅全量知识校准 |
 | `docs/system_architecture_report.md` | 稳定系统拓扑与边界 | 入口、core、Central、Worker、发布契约 | current | 跨模块设计 |
 | `docs/SAFE_DEPLOY_GUIDE.md` | 发布快速入口 | `scripts/release.py`、不可变发布文档 | current | 只需发布入口 |
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
-| `docs/skills/README.md` | 项目 Skill 索引与治理 | `.codex/skills`、`AGENTS.md` | current | 选择/维护 Skill |
+| `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central 入口归属与重叠 | 应用入口、router、provider 注册 | current | 新接口或职责移动 |
 | `docs/compat_seam_exit_table.md` | 尚存兼容层和退出条件 | 静态调用、数据/运行态观测 | runtime-verification-required | 删除兼容层 |
 | `docs/测试与入口命名约定.md` | 测试与入口命名 | tests、公开 facade | current | 新测试/入口 |

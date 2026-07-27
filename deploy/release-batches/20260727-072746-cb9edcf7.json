@@ -1,0 +1,24 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "b7f7289f711d66e42067b1a3f0bb95563c528364",
+  "batch": "20260727-072746-cb9edcf7",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260727-072746-cb9edcf7",
+  "members": [
+    {
+      "base_sha": "b7f7289f711d66e42067b1a3f0bb95563c528364",
+      "branch": "codex/b-knowledge-base-token-pruning",
+      "head": "cb9edcf72ea7c947f9d600c22c5557e447c8be60",
+      "queued_at": "2026-07-27T07:19:10.846753+00:00",
+      "slot": "B"
+    },
+    {
+      "base_sha": "b7f7289f711d66e42067b1a3f0bb95563c528364",
+      "branch": "codex/b-ltx-canary-jwt-channel-auth",
+      "head": "478f038d2adf48b2b25d726a6f7be02710ec86f3",
+      "queued_at": "2026-07-27T07:27:08.369942+00:00",
+      "slot": "B"
+    }
+  ],
+  "pr_base": "main"
+}

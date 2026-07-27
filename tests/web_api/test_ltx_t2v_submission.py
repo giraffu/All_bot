@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.core.task_core_types import CoreDomainError
+from src.web_api.core.security import create_access_token
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.services import task_submission_service as service
@@ -14,11 +15,20 @@ def _user():
     return SimpleNamespace(id=123, username="tester")
 
 
-def test_operator_canary_token_requires_exact_agent_secret(monkeypatch):
-    monkeypatch.setenv("AGENT_SECRET_TOKEN", "test-agent-secret")
+def test_operator_canary_requires_dedicated_jwt_channel():
+    canary_token = create_access_token(
+        subject="123",
+        pwd_ver=1,
+        channel="runpod_canary",
+    )
+    user_token = create_access_token(
+        subject="123",
+        pwd_ver=1,
+        channel="web",
+    )
 
-    assert tasks_router._is_operator_canary_authorized("test-agent-secret") is True
-    assert tasks_router._is_operator_canary_authorized("wrong") is False
+    assert tasks_router._is_operator_canary_authorized(canary_token) is True
+    assert tasks_router._is_operator_canary_authorized(user_token) is False
     assert tasks_router._is_operator_canary_authorized(None) is False
 
 
