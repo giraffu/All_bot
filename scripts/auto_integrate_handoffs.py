@@ -707,16 +707,19 @@ class Coordinator:
                 self.queue.update_batch(batch, stage="waiting-main-ci", main_sha=main_sha)
                 stage = "waiting-main-ci"
             main_sha = str(batch["main_sha"])
+            scope = str(batch.get("scope") or "")
             if stage == "waiting-main-ci":
                 self._wait_workflow("control-plane-release.yml", main_sha)
-                scope = str(batch.get("scope") or "")
-                if scope_skips_test_deploy(scope):
-                    return {
-                        "branch": branch,
-                        "pr_url": str(batch["pr_url"]),
-                        "main_sha": main_sha,
-                        "test_status": f"skipped-{scope}",
-                    }
+            if stage in {"waiting-main-ci", "deploying-test"} and (
+                scope_skips_test_deploy(scope)
+            ):
+                return {
+                    "branch": branch,
+                    "pr_url": str(batch["pr_url"]),
+                    "main_sha": main_sha,
+                    "test_status": f"skipped-{scope}",
+                }
+            if stage == "waiting-main-ci":
                 self._wait_workflow("modular-release-v2.yml", main_sha)
                 self.queue.update_batch(batch, stage="deploying-test")
             self._git("fetch", "origin", "main", cwd=checkout)

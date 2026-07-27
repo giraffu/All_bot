@@ -441,9 +441,8 @@ def test_nonruntime_scopes_skip_shared_test_deployment():
     assert not module.scope_skips_test_deploy("operator")
 
 
-def test_release_tooling_batch_completes_after_main_ci_without_test_deploy(
-    tmp_path,
-):
+@pytest.mark.parametrize("stage", ["waiting-main-ci", "deploying-test"])
+def test_release_tooling_batch_completes_without_test_deploy(tmp_path, stage):
     module = _load_module()
     coordinator = module.Coordinator(
         tmp_path,
@@ -459,7 +458,7 @@ def test_release_tooling_batch_completes_after_main_ci_without_test_deploy(
     batch = {
         "batch": "20260727-203219-8470b3b4",
         "status": "running",
-        "stage": "waiting-main-ci",
+        "stage": stage,
         "scope": "release-tooling",
         "branch": "codex/release-batch-20260727-203219-8470b3b4",
         "pr_url": "https://github.com/giraffu/All_bot/pull/364",
@@ -471,7 +470,11 @@ def test_release_tooling_batch_completes_after_main_ci_without_test_deploy(
 
     result = coordinator.process(batch)
 
-    assert workflows == [("control-plane-release.yml", sha)]
+    assert workflows == (
+        [("control-plane-release.yml", sha)]
+        if stage == "waiting-main-ci"
+        else []
+    )
     assert result["test_status"] == "skipped-release-tooling"
 
 
