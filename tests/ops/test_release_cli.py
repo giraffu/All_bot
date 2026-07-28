@@ -67,6 +67,40 @@ def test_build_never_reads_changed_paths_or_release_bundle(tmp_path):
     assert "gpu" not in rendered
 
 
+def test_public_web_oras_push_uses_checkout_relative_archive(tmp_path):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:3] == ["oras", "manifest", "fetch"] and "--descriptor" not in command:
+            return module.CommandResult(1, "", "not found")
+        if command[:4] == ["oras", "manifest", "fetch", "--descriptor"]:
+            return module.CommandResult(
+                0, json.dumps({"digest": "sha256:" + "1" * 64}), ""
+            )
+        return module.CommandResult(0, "", "")
+
+    dependencies = module.ReleaseDependencies(
+        run=fake_run,
+        temporary_checkout=lambda _sha: module.null_checkout(tmp_path),
+    )
+
+    module.build_modules(
+        catalog,
+        ["public-web"],
+        sha="a" * 40,
+        image_prefix="ghcr.io/example",
+        dependencies=dependencies,
+    )
+
+    push = next(command for command in calls if command[:2] == ["oras", "push"])
+    archive_argument = push[-1].split(":", 1)[0]
+    assert archive_argument == ".module-output/public-web/public-web-dist.tgz"
+    assert not Path(archive_argument).is_absolute()
+
+
 def test_prod_deploy_requires_confirmation_only():
     module = _load_module()
     with pytest.raises(module.ReleaseError, match="--confirm-prod"):
