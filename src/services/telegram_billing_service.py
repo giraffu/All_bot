@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import Order
+from src.database.models import Order, RMBPaymentReconciliationJob
 from src.services.membership_plan_catalog import (
     build_visible_membership_plan_lookup_stmt,
     build_visible_membership_plans_stmt,
@@ -53,6 +53,14 @@ async def create_rmb_pending_order(
             tx_hash=out_trade_no,
         )
         session.add(new_order)
+        await session.flush()
+        session.add(
+            RMBPaymentReconciliationJob(
+                order_id=new_order.id,
+                status="pending",
+                next_attempt_at=datetime.now() + timedelta(seconds=60),
+            )
+        )
         await session.commit()
         return new_order, get_order_public_id(new_order)
 

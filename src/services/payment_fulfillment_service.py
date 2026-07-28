@@ -669,9 +669,25 @@ async def _run_post_commit_payment_side_effects(
     result: PaymentFulfillmentResult,
 ) -> None:
     if referral:
-        await dependencies.invalidate_invitation_cache_func(referral.inviter_id)
+        try:
+            await dependencies.invalidate_invitation_cache_func(referral.inviter_id)
+        except Exception as exc:
+            logger.warning(
+                "Payment committed but affiliate cache invalidation failed "
+                "channel=%s error_type=%s",
+                command.channel,
+                type(exc).__name__,
+            )
     if command.notify:
-        await command.notify(result)
+        try:
+            await command.notify(result)
+        except Exception as exc:
+            logger.warning(
+                "Payment committed but notification failed "
+                "channel=%s error_type=%s",
+                command.channel,
+                type(exc).__name__,
+            )
 
 
 async def fulfill_payment_command(
@@ -818,17 +834,11 @@ async def fulfill_order(
     统一发货逻辑，目前供 RMB 支付网关回调使用。
     """
     try:
-        result = await fulfill_payment_command(
-            PaymentFulfillmentCommand(
-                channel="RMB",
-                order_lookup=out_trade_no,
-                external_tx_id=external_trade_no,
-                paid_amount=paid_amount,
-                paid_unit="rmb",
-                source="rmb_payment_callback",
-                affiliate_source="rmb_payment_callback",
-                audit_source="rmb_payment_callback",
-            )
+        result = await fulfill_rmb_order(
+            out_trade_no,
+            external_trade_no,
+            paid_amount,
+            source="rmb_payment_callback",
         )
         if result.status == "success":
             await _notify_rmb_payment_success_from_result(result)
@@ -837,6 +847,28 @@ async def fulfill_order(
     except Exception:
         logger.exception("Failed to fulfill order %s", out_trade_no)
         return False
+
+
+async def fulfill_rmb_order(
+    out_trade_no: str,
+    external_trade_no: str,
+    paid_amount: Decimal | str | int,
+    *,
+    source: str,
+) -> PaymentFulfillmentResult:
+    """Fulfill an RMB payment without delaying the caller on user notification."""
+    return await fulfill_payment_command(
+        PaymentFulfillmentCommand(
+            channel="RMB",
+            order_lookup=out_trade_no,
+            external_tx_id=external_trade_no,
+            paid_amount=paid_amount,
+            paid_unit="rmb",
+            source=source,
+            affiliate_source=source,
+            audit_source=source,
+        )
+    )
 
 
 async def _notify_rmb_payment_success_from_result(
@@ -859,3 +891,9 @@ async def _notify_rmb_payment_success_from_result(
         plan=plan,
         applied_snapshot=result.applied_snapshot,
     )
+
+
+async def deliver_rmb_payment_success_notification(
+    result: PaymentFulfillmentResult,
+) -> None:
+    await _notify_rmb_payment_success_from_result(result)

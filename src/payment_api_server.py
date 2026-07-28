@@ -1,5 +1,9 @@
+import asyncio
+import contextlib
+import hashlib
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -7,8 +11,18 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
-from src.services.payment_fulfillment_service import fulfill_order
-from src.services.rmb_payment_service import HUANYUY_KEY, RMBPaymentService
+from src.services.payment_fulfillment_service import (
+    deliver_rmb_payment_success_notification,
+    fulfill_rmb_order,
+)
+from src.services.rmb_payment_service import (
+    HUANYUY_KEY,
+    HUANYUY_PID,
+    RMBPaymentService,
+)
+from src.services.rmb_payment_reconciliation_service import (
+    build_rmb_payment_reconciler_if_enabled,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("payment_api")
@@ -20,50 +34,134 @@ async def register_payment_api_providers():
 @asynccontextmanager
 async def payment_api_lifespan(_app: FastAPI):
     await register_payment_api_providers()
-    yield
+    reconciler = build_rmb_payment_reconciler_if_enabled()
+    _app.state.reconciler_enabled = reconciler is not None
+    reconciler_task = (
+        asyncio.create_task(reconciler.run_forever()) if reconciler else None
+    )
+    try:
+        yield
+    finally:
+        if reconciler_task is not None:
+            reconciler_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reconciler_task
 
 
 app = FastAPI(title="RMB Payment Webhook API", lifespan=payment_api_lifespan)
+app.state.notification_tasks = set()
+app.state.reconciler_enabled = False
 
 
-@app.get("/api/pay/notify/huanyuy", response_class=PlainTextResponse)
-async def huanyuy_notify(request: Request):
-    """
-    易支付异步回调通知接口
-    """
+def _order_log_key(out_trade_no: str | None) -> str:
+    return hashlib.sha256(str(out_trade_no or "").encode("utf-8")).hexdigest()[:12]
+
+
+def schedule_payment_notification(result) -> None:
+    task = asyncio.create_task(deliver_rmb_payment_success_notification(result))
+    app.state.notification_tasks.add(task)
+
+    def _consume_result(completed_task):
+        app.state.notification_tasks.discard(completed_task)
+        if completed_task.cancelled():
+            return
+        try:
+            completed_task.result()
+        except Exception as exc:
+            logger.error(
+                "RMB payment notification task failed error_type=%s",
+                type(exc).__name__,
+            )
+
+    task.add_done_callback(_consume_result)
+
+
+async def _read_callback_params(request: Request) -> dict[str, str]:
     params = dict(request.query_params)
-    logger.info(f"Received notify callback: {params}")
+    if request.method == "GET":
+        return params
+    form = await request.form()
+    params.update({str(key): str(value) for key, value in form.items()})
+    return params
 
-    # 1. 验证签名
-    if not RMBPaymentService.verify_callback_sign(params, HUANYUY_KEY):
-        logger.error("Signature verification failed")
-        return "fail"
 
-    # 2. 检查支付状态
+def _callback_is_valid(params: dict[str, str]) -> bool:
+    if not HUANYUY_PID or not HUANYUY_KEY:
+        return False
+    if params.get("pid") != HUANYUY_PID:
+        return False
+    if str(params.get("sign_type", "")).upper() != "MD5":
+        return False
     if params.get("trade_status") != "TRADE_SUCCESS":
-        logger.error(f"Trade not successful: {params.get('trade_status')}")
-        return "fail"
+        return False
+    if not all(
+        params.get(field)
+        for field in ("out_trade_no", "trade_no", "money", "sign")
+    ):
+        return False
+    return RMBPaymentService.verify_callback_sign(params, HUANYUY_KEY)
 
-    out_trade_no = params.get("out_trade_no")
-    trade_no = params.get("trade_no")
-    money = params.get("money")
 
-    if not all([out_trade_no, trade_no, money]):
-        logger.error("Missing required parameters")
-        return "fail"
-
-    # 3. 触发统一发货逻辑
+@app.api_route(
+    "/api/pay/notify/huanyuy",
+    methods=["GET", "POST"],
+    response_class=PlainTextResponse,
+)
+async def huanyuy_notify(request: Request):
+    started_at = time.monotonic()
     try:
-        success = await fulfill_order(out_trade_no, trade_no, money)
-        if success:
-            logger.info(f"Order {out_trade_no} fulfilled successfully")
-            return "SUCCESS"
-        else:
-            logger.error(f"Failed to fulfill order {out_trade_no}")
-            return "fail"
-    except Exception as e:
-        logger.error(f"Exception in fulfillment: {e}")
-        return "fail"
+        params = await _read_callback_params(request)
+    except Exception:
+        logger.warning("RMB callback rejected reason=invalid_request_body")
+        return PlainTextResponse("fail")
+
+    order_key = _order_log_key(params.get("out_trade_no"))
+    if not _callback_is_valid(params):
+        logger.warning(
+            "RMB callback rejected order_key=%s reason=validation_failed",
+            order_key,
+        )
+        return PlainTextResponse("fail")
+
+    try:
+        result = await fulfill_rmb_order(
+            params["out_trade_no"],
+            params["trade_no"],
+            params["money"],
+            source="rmb_payment_callback",
+        )
+    except Exception as exc:
+        logger.error(
+            "RMB callback fulfillment failed order_key=%s error_type=%s",
+            order_key,
+            type(exc).__name__,
+        )
+        return PlainTextResponse("fail")
+
+    if result.status not in {"success", "noop"}:
+        logger.error(
+            "RMB callback fulfillment rejected order_key=%s status=%s",
+            order_key,
+            result.status,
+        )
+        return PlainTextResponse("fail")
+    if result.status == "success":
+        schedule_payment_notification(result)
+    logger.info(
+        "RMB callback acknowledged order_key=%s result=%s elapsed_ms=%d",
+        order_key,
+        result.status,
+        int((time.monotonic() - started_at) * 1000),
+    )
+    return PlainTextResponse("success")
+
+
+@app.get("/healthz")
+async def payment_health():
+    return {
+        "status": "ok",
+        "rmb_reconciliation_enabled": bool(app.state.reconciler_enabled),
+    }
 
 
 @app.get("/pay/result", response_class=HTMLResponse)

@@ -202,6 +202,62 @@ async def test_fulfill_order_invalidates_affiliate_cache_after_commit(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_post_commit_cache_failure_does_not_turn_committed_payment_into_failure(
+    monkeypatch,
+):
+    order = _build_order(status="PENDING")
+    plan = _build_plan()
+    user = _build_user()
+    referral = SimpleNamespace(inviter_id=1001)
+    session = _FakeSession([order, plan, user])
+
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "AsyncSessionLocal",
+        lambda: _SessionContext(session),
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "calculate_and_set_commission_for_paid_order",
+        AsyncMock(
+            side_effect=lambda _s, current_order: setattr(
+                current_order,
+                "commission_usdt",
+                Decimal("1.2500"),
+            )
+            or referral
+        ),
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "record_affiliate_commission_transaction",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "invalidate_invitation_recharge_cache",
+        AsyncMock(side_effect=RuntimeError("cache unavailable")),
+    )
+    monkeypatch.delenv("BOT_TOKEN", raising=False)
+
+    result = await payment_fulfillment_service.fulfill_rmb_order(
+        "RMB-ORDER-1",
+        "external-tx-post-commit",
+        "10.00",
+        source="rmb_payment_callback",
+    )
+
+    assert result.status == "success"
+    session.commit.assert_awaited_once()
+    session.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_fulfill_order_accepts_string_paid_amount(monkeypatch):
     order = _build_order(status="PENDING")
     order.final_price = Decimal("0.30")
