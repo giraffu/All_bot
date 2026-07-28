@@ -808,6 +808,14 @@ class ComfyAgent:
             return False
         return task_type in self._prefetch_task_types
 
+    async def _reset_comfy_memory_for_all_profile(self) -> None:
+        if POOL_RUNTIME_PROFILE != "all":
+            return
+        logger.info(
+            "Releasing resident ComfyUI models before all-profile task submission"
+        )
+        await self.comfy_client.free_memory()
+
     def _eligible_prefetch_types(self) -> str:
         pop_types = self._build_pop_params(pipeline=True).get("types", "")
         eligible_types = {
@@ -1479,6 +1487,7 @@ class ComfyAgent:
                 downloaded_input_paths=downloaded_input_paths,
             )
 
+        await self._reset_comfy_memory_for_all_profile()
         await submit_task_workflow(
             task_id=task_id,
             task_type=task_type,

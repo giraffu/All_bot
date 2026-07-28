@@ -235,6 +235,55 @@ def test_agent_main_removes_debug_side_paths():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "module_path",
+    (
+        ROOT / "workers" / "comfy_agent" / "agent_main.py",
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
+    ),
+)
+async def test_all_profile_releases_comfy_memory_before_each_submission(
+    monkeypatch,
+    module_path: Path,
+):
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch("os.makedirs", return_value=None))
+        stack.enter_context(mock.patch("logging.FileHandler", DummyFileHandler))
+        module = load_agent_main_module(module_path)
+    calls = []
+
+    class RecordingComfyClient:
+        async def free_memory(self):
+            calls.append("free_memory")
+
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent.comfy_client = RecordingComfyClient()
+    monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "all")
+
+    await agent._reset_comfy_memory_for_all_profile()
+
+    assert calls == ["free_memory"]
+
+
+@pytest.mark.asyncio
+async def test_non_all_profile_keeps_resident_comfy_models(monkeypatch):
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch("os.makedirs", return_value=None))
+        stack.enter_context(mock.patch("logging.FileHandler", DummyFileHandler))
+        module = load_agent_main_module()
+
+    class UnexpectedComfyClient:
+        async def free_memory(self):
+            raise AssertionError("non-all worker must preserve its resident model cache")
+
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent.comfy_client = UnexpectedComfyClient()
+    monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "image_to_video")
+
+    await agent._reset_comfy_memory_for_all_profile()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("module_path", WORKFLOW_EXECUTION_PATHS)
 async def test_scail2_face_swap_worker_rejects_unprepared_reference_before_comfy(
     module_path,
@@ -706,12 +755,16 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
     agent = module.ComfyAgent()
     submitted_params = {}
     completed = []
+    memory_events = []
 
     async def fake_check_task_cancelled(task_id):
         return False
 
     async def unexpected_prepare_task_inputs(*args, **kwargs):
         raise AssertionError("prefetch hit should skip input preparation")
+
+    async def fake_free_memory():
+        memory_events.append("free_memory")
 
     async def fake_submit_task_workflow(**kwargs):
         submitted_params.update(kwargs["params"])
@@ -737,6 +790,7 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
 
     agent.check_task_cancelled = fake_check_task_cancelled
     agent._prepare_task_inputs = unexpected_prepare_task_inputs
+    agent.comfy_client.free_memory = fake_free_memory
     agent._prefetch_cache["task-1"] = {
         "task_id": "task-1",
         "task_type": "img2img",
@@ -744,6 +798,7 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
         "downloaded_input_paths": ["/tmp/not-real-prefetch.png"],
     }
     monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "all")
     monkeypatch.setattr(
         module, "wait_for_task_completion", fake_wait_for_task_completion
     )
@@ -771,6 +826,7 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
     )
 
     assert submitted_params == {"image": "prepared.png", "prompt": "cached"}
+    assert memory_events == ["free_memory"]
     assert completed == ["task-1"]
     assert agent._prefetch_cache == {}
 
