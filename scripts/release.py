@@ -7269,7 +7269,11 @@ def _smoke_private_worker_image(ref: str) -> None:
 def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
     if args.env != "prod":
         return
-    if getattr(args, "command", "") == "promote" and manifest.get("schema_version") == 2:
+    if (
+        getattr(args, "command", "") in {"promote", "deploy"}
+        and manifest.get("schema_version") == 2
+        and not getattr(args, "control_plane_repair_fast_track", False)
+    ):
         decisions = resolve_promote_artifact_assurance(
             manifest.get("selected_artifacts", [])
         )
