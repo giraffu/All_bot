@@ -178,8 +178,20 @@ def test_status_reads_module_local_state(tmp_path):
     assert module.read_status(tmp_path, "prod", "payment-api")["current"] == "digest"
 
 
+@pytest.mark.parametrize(
+    ("environment", "expected_api", "expected_bot", "expected_branch"),
+    [
+        ("test", "https://api-test.example/api", "test_bot", "test"),
+        ("prod", "https://api.example/api", "prod_bot", "main"),
+    ],
+)
 def test_pages_deploy_injects_target_runtime_config_and_release_sha(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    environment,
+    expected_api,
+    expected_bot,
+    expected_branch,
 ):
     module = _load_module()
     artifact = "ghcr.io/example/public-web@sha256:" + "1" * 64
@@ -254,7 +266,7 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
     monkeypatch.setattr(module.subprocess, "run", fake_subprocess_run)
 
     module.SystemAdapters({})._deploy_pages(
-        "test",
+        environment,
         artifact,
         {
             "cloudflare_token_file": str(token_file),
@@ -262,12 +274,12 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
         },
     )
 
-    assert '"api_base_url":"https://api-test.example/api"' in deployed[
-        "runtime_script"
-    ]
-    assert '"telegram_bot_username":"test_bot"' in deployed["runtime_script"]
+    assert f'"api_base_url":"{expected_api}"' in deployed["runtime_script"]
+    assert f'"telegram_bot_username":"{expected_bot}"' in deployed["runtime_script"]
     assert f'"release_sha":"{release_sha}"' in deployed["runtime_script"]
     assert deployed["command"][-2:] == ["--commit-hash", release_sha]
+    branch_index = deployed["command"].index("--branch")
+    assert deployed["command"][branch_index + 1] == expected_branch
 
 
 def test_web_runtime_config_keeps_test_and_prod_isolated(tmp_path):
