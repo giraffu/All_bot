@@ -100,6 +100,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
     )
     assert pornmaster_bf16["supported_task_types"] == [
+        "character_reference_build",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]

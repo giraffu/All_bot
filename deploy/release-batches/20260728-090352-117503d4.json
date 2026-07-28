@@ -1,57 +1,15 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "bedd925bcacc320d0e9cbc71f11cbac6fecbdea6",
+  "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-8fd334d0",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-20f98ead",
   "members": [
     {
-      "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
-      "branch": "codex/c-huanyuy-uppercase-callback-contract",
-      "head": "117503d4f786e3c446d2f2bd24b74fb3c6858aad",
-      "queued_at": "2026-07-28T07:01:21.130600+00:00",
-      "slot": "C"
-    },
-    {
-      "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
-      "branch": "codex/c-lan-all-worker-gpu226",
-      "head": "fe5873d74cb317db186f884a8e8e2c0fce48f73b",
-      "queued_at": "2026-07-28T08:25:26.905025+00:00",
-      "slot": "C"
-    },
-    {
-      "base_sha": "34e912bcc975e06cc59a926fcf9020c3ad162f55",
-      "branch": "codex/d-fix-lan-all-gpu-release-bootstrap",
-      "head": "3bb8d1790b300292110565bf7aa6eb8dd4f0e721",
-      "queued_at": "2026-07-28T09:32:51.180071+00:00",
-      "slot": "D"
-    },
-    {
-      "base_sha": "01898998d41bf6c661834fbeab97321cf6d65915",
-      "branch": "codex/e-fix-gpu-profile-input-boundaries",
-      "head": "3b765647012881fce67d078e93bcace5bc1292c0",
-      "queued_at": "2026-07-28T09:48:22.545689+00:00",
-      "slot": "E"
-    },
-    {
-      "base_sha": "a675bf55d2b556d61a516cf5f8387d34c26f7b48",
-      "branch": "codex/e-fix-all-image-patch-application",
-      "head": "c9c677de0beee6fa72e17057029b72099d71832a",
-      "queued_at": "2026-07-28T09:59:01.667957+00:00",
-      "slot": "E"
-    },
-    {
-      "base_sha": "01898998d41bf6c661834fbeab97321cf6d65915",
-      "branch": "codex/d-character-reference-workbench",
-      "head": "60a0d9283574def89bdddcea8bc21d8632008683",
-      "queued_at": "2026-07-28T10:19:37.060733+00:00",
-      "slot": "D"
-    },
-    {
-      "base_sha": "bedd925bcacc320d0e9cbc71f11cbac6fecbdea6",
-      "branch": "codex/d-pin-gpu226-all-lan-digest",
-      "head": "8fd334d0cff315d5f7cc8704aa72e8cad166960b",
-      "queued_at": "2026-07-28T10:27:50.306455+00:00",
+      "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
+      "branch": "codex/d-resolve-release-batch-character-gpu",
+      "head": "efe53871c84f67841cc10d23e314f06178274892",
+      "queued_at": "2026-07-28T10:47:18.151459+00:00",
       "slot": "D"
     }
   ],
