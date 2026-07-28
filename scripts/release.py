@@ -135,6 +135,15 @@ def _artifact_revision(artifact: str) -> str:
     return revision
 
 
+def _find_single_module_archive(output: Path, module_name: str) -> Path:
+    archives = sorted(output.rglob("*.tgz"))
+    if len(archives) != 1:
+        raise ReleaseError(
+            f"{module_name} artifact must contain exactly one archive"
+        )
+    return archives[0]
+
+
 class CommandResult(NamedTuple):
     returncode: int
     stdout: str
@@ -946,9 +955,7 @@ mv "$candidate" "$runtime"
             result = _run(["oras", "pull", artifact, "-o", str(output)])
             if result.returncode:
                 raise ReleaseError(f"unable to pull {name}")
-            archive = next(output.glob("*.tgz"), None)
-            if archive is None:
-                raise ReleaseError(f"{name} artifact has no archive")
+            archive = _find_single_module_archive(output, name)
             encoded = base64.b64encode(archive.read_bytes()).decode("ascii")
             digest = artifact.rsplit("@", 1)[1].replace(":", "-")
             root = f"/var/lib/allbot/module-contracts/{environment}/{name}"
@@ -1040,9 +1047,7 @@ mv -Tf {root}/current.new {root}/current
             output = Path(directory)
             if _run(["oras", "pull", artifact, "-o", str(output)]).returncode:
                 raise ReleaseError("unable to pull Public Web artifact")
-            archive = next(output.glob("*.tgz"), None)
-            if archive is None:
-                raise ReleaseError("Public Web artifact has no archive")
+            archive = _find_single_module_archive(output, "Public Web")
             dist_root = output / "dist-root"
             dist_root.mkdir()
             if _run(["tar", "-xzf", str(archive), "-C", str(dist_root)]).returncode:

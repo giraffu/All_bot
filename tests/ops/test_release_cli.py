@@ -313,3 +313,12 @@ def test_repository_web_runtime_config_uses_canonical_environment_endpoints():
     assert test_values["telegram_bot_username"] == "testAIvison_bot"
     assert prod_values["api_base_url"] == "https://api.aivison.it.com/api"
     assert prod_values["telegram_bot_username"] == "AIVision1111_bot"
+
+
+def test_module_archive_discovery_accepts_oras_preserved_relative_path(tmp_path):
+    module = _load_module()
+    archive = tmp_path / ".module-output" / "public-web" / "public-web-dist.tgz"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"artifact")
+
+    assert module._find_single_module_archive(tmp_path, "public-web") == archive
