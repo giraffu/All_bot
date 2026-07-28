@@ -2663,8 +2663,18 @@ class LanAioProdOps:
                     shlex.quote(fallback_script),
                 ]
             )
+            preparation_failure_checks = [
+                f"! mkdir -p {shlex.quote(target_dir)}",
+            ]
+            if require_host_write:
+                preparation_failure_checks.append(
+                    f"! test -w {shlex.quote(target_dir)}"
+                )
             commands = [
-                f"mkdir -p {shlex.quote(target_dir)} || {fallback_command}",
+                (
+                    f"if {' || '.join(preparation_failure_checks)}; then "
+                    f"{fallback_command}; fi"
+                ),
                 f"test -d {shlex.quote(target_dir)}",
             ]
             if require_host_write:

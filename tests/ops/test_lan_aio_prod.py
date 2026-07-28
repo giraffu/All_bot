@@ -2205,9 +2205,10 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
         command for command in ops.commands if "docker run" in command
     )
     assert (
-        "mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
-        "scail2-b2587e56/workspace/ComfyUI/models "
-        "|| docker run --rm"
+        "if ! mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace/ComfyUI/models || ! test -w "
+        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/"
+        "scail2-b2587e56/workspace/ComfyUI/models; then docker run --rm"
     ) in docker_command
     assert (
         "-v "
