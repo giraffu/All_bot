@@ -7,7 +7,7 @@ on:
         description: Full main SHA shared by every GPU artifact.
         required: true
       manifest_base64:
-        description: Base64 encoded complete gpu-execution-manifest.json.
+        description: Base64 encoded truthful exact-SHA gpu-execution evidence manifest.
         required: true
       manifest_sha256:
         description: SHA256 of the decoded manifest bytes.
@@ -54,7 +54,7 @@ jobs:
 
       - uses: oras-project/setup-oras@v1
 
-      - name: Validate and publish immutable manifest
+      - name: Validate and publish immutable evidence manifest
         shell: bash
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}

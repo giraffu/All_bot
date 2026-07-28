@@ -78,6 +78,81 @@ def test_gpu_preparation_defaults_to_a_non_mutating_dry_run():
     assert len(payload["profiles"]) == 9
 
 
+def test_gpu_preparation_can_scope_to_only_the_new_lan_profile():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(MODULE_PATH),
+            "--source-sha",
+            "a" * 40,
+            "--profile",
+            "lan_all",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["profiles"] == ["lan_all"]
+
+
+def test_scoped_lan_all_manifest_reuses_explicit_model_and_rollback_sources(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    preparer = module.GPUReleasePreparer(
+        ROOT,
+        "a" * 40,
+        profiles=["lan_all"],
+    )
+    digest = "sha256:" + "1" * 64
+    rollback_digest = "sha256:" + "2" * 64
+    model_manifest = {
+        "key": "img2img_lora/2026-06-10/manifest.json",
+        "sha256": "3" * 64,
+        "size": 1,
+    }
+
+    def fake_run(command, *, cwd, check=True):
+        if command[:2] == ["oras", "resolve"]:
+            return digest
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if check:
+            result.check_returncode()
+        return result.stdout.strip()
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    manifest_path = preparer._assemble_manifest(
+        ROOT,
+        tmp_path,
+        {
+            "artifacts": {
+                "img2img": {"model_manifest": model_manifest},
+                "pornmaster_flux2_edit_bf16": {
+                    "ref": f"ghcr.io/giraffu/bf16@{rollback_digest}"
+                },
+            }
+        },
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert set(manifest["artifacts"]) == {"lan_all"}
+    assert manifest["completeness"] == "incomplete"
+    assert manifest["artifacts"]["lan_all"]["model_manifest"] == model_manifest
+    assert (
+        manifest["artifacts"]["lan_all"]["rollback_target"]
+        == f"ghcr.io/giraffu/bf16@{rollback_digest}"
+    )
+
+
 def test_retry_observes_existing_exact_sha_build_without_dispatching(
     monkeypatch,
     tmp_path,

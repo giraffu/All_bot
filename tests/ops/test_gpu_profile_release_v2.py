@@ -116,11 +116,20 @@ def test_gpu_manifest_merge_preserves_unselected_profiles_and_replaces_exact_one
     assert "scail2" not in merged["missing_artifacts"]
 
 
-def test_gpu_manifest_publish_requires_complete_sha_tag_and_immutable_target(tmp_path):
+def test_gpu_manifest_publish_requires_complete_sha_tag_and_immutable_target(
+    monkeypatch, tmp_path
+):
     module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "load_catalog",
+        lambda _path: {"i2i_pro": {"track": "gpu-execution"}},
+    )
     manifest_path = tmp_path / "gpu-execution-manifest.json"
     manifest_path.write_text("{}", encoding="utf-8")
     manifest = {
+        "schema_version": 2,
+        "track": "gpu-execution",
         "source_sha": SHA,
         "completeness": "complete",
         "missing_artifacts": [],
@@ -154,13 +163,76 @@ def test_gpu_manifest_publish_requires_complete_sha_tag_and_immutable_target(tmp
         )
 
 
-def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(tmp_path):
+def test_gpu_manifest_publish_accepts_truthful_partial_exact_sha_evidence(tmp_path):
     module = _load_module()
+    manifest_path = tmp_path / "gpu-execution-manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    artifact = module.validate_artifact_attestation(
+        {
+            **_evidence(),
+            "checks": {
+                "actual_image_digest": True,
+                "baked_agent_revision": True,
+                "baked_workflow_revision": True,
+                "model_manifest_checksum": True,
+            },
+        },
+        profile="i2i_pro",
+        source_sha=SHA,
+        image_ref="ghcr.io/giraffu/i2i@" + DIGEST,
+    )
+    monkeypatch_catalog = {
+        "i2i_pro": {"track": "gpu-execution"},
+        "scail2": {"track": "gpu-execution"},
+    }
+    original_loader = module.load_catalog
+    module.load_catalog = lambda _path: monkeypatch_catalog
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=1 if command[:3] == ["oras", "manifest", "fetch"] else 0,
+            stdout="",
+            stderr="",
+        )
+
+    manifest = {
+        "schema_version": 2,
+        "track": "gpu-execution",
+        "source_sha": SHA,
+        "completeness": "incomplete",
+        "missing_artifacts": ["scail2"],
+        "artifacts": {"i2i_pro": artifact},
+    }
+    try:
+        module.publish_gpu_manifest(
+            manifest,
+            manifest_path=manifest_path,
+            publish_ref=f"ghcr.io/giraffu/allbot-gpu-release-manifests:{SHA}",
+            source_sha=SHA,
+            run_func=fake_run,
+        )
+    finally:
+        module.load_catalog = original_loader
+
+    assert calls[-1][0:2] == ["oras", "push"]
+
+
+def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "load_catalog",
+        lambda _path: {"i2i_pro": {"track": "gpu-execution"}},
+    )
     manifest_path = tmp_path / "gpu-execution-manifest.json"
     manifest_path.write_text("{}", encoding="utf-8")
     target = f"ghcr.io/giraffu/allbot-gpu-release-manifests:{SHA}"
 
-    with pytest.raises(module.GPUProfileReleaseError, match="must be complete"):
+    with pytest.raises(module.GPUProfileReleaseError, match="manifest shape"):
         module.publish_gpu_manifest(
             {"source_sha": SHA, "completeness": "incomplete"},
             manifest_path=manifest_path,
@@ -175,6 +247,8 @@ def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(tmp_path):
     with pytest.raises(module.GPUProfileReleaseError, match="already exists"):
         module.publish_gpu_manifest(
             {
+                "schema_version": 2,
+                "track": "gpu-execution",
                 "source_sha": SHA,
                 "completeness": "complete",
                 "missing_artifacts": [],
@@ -189,6 +263,8 @@ def test_gpu_manifest_publish_refuses_incomplete_or_existing_target(tmp_path):
     with pytest.raises(module.GPUProfileReleaseError, match="same source SHA"):
         module.publish_gpu_manifest(
             {
+                "schema_version": 2,
+                "track": "gpu-execution",
                 "source_sha": SHA,
                 "completeness": "complete",
                 "missing_artifacts": [],
