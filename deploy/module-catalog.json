@@ -26,6 +26,7 @@
     "compose-contract": {"kind": "contract", "adapter": "compose-contract", "repository": "allbot-compose-contract", "files": ["deploy/docker-compose-cloud-base.yml", "deploy/docker-compose-cloud-test.overlay.yml", "deploy/docker-compose-cloud-prod.overlay.yml"], "environments": ["test", "prod"]},
     "database-migration": {"kind": "image", "adapter": "database-migration", "image": "allbot-database-migration", "dockerfile": "deploy/docker/Dockerfile.migration", "target": "database-migration", "base": "python-runtime-base", "environments": ["test", "prod"]},
     "lan_all": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-lan-all", "dockerfile": "workers/runpod_profiles/all/Dockerfile", "environments": ["test", "prod"]},
+    "lan_all_runtime_refresh": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-lan-all", "dockerfile": "workers/runpod_profiles/all/Dockerfile.runtime-refresh", "environments": ["test", "prod"]},
     "i2i_pro": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-i2i-pro", "dockerfile": "workers/runpod_profiles/i2i_pro/Dockerfile", "environments": ["test", "prod"]},
     "face_swap": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-face-swap", "dockerfile": "workers/runpod_profiles/face_swap/Dockerfile", "environments": ["test", "prod"]},
     "pornmaster_flux2_edit_bf16": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-pornmaster-flux2-edit-bf16", "dockerfile": "workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile", "environments": ["test", "prod"]},
