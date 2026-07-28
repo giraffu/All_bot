@@ -18,6 +18,7 @@
     "payment-api": {
       "environments": ["prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
+      "required_if": [{"key": "HUANYUY_QUERY_URL", "when": {"key": "RMB_RECONCILIATION_ENABLED", "equals": "true"}}],
       "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-backend": {

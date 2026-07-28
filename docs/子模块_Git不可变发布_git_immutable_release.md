@@ -102,6 +102,10 @@ python scripts/release.py config-apply --env prod --confirm-prod --execute
 所有具有容器 env 契约的独立模块都可先执行 `config-plan --env <env> --module <name>`，确认影响集没有逃出模块闭包，再以同模块 `config-apply` 暂存目标投影。日常 `promote` 本身只校验所选模块闭包与全部既有非目标投影，不自动修改配置；发现漂移会在 pull/up/Pages 前阻断。支持 `central-api`、`web-api`、`payment-api`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker` 与 `paid-group-bot`；imgproxy/Public Web 没有容器 env 投影。局部配置入口先完整校验 active state，再只重建目标和当前环境仍适用的 active 投影；当前环境已退役或契约未知的历史非目标投影按相同 revision 与原始字节复制到新快照，不清理、不改写。局部入口保留不可变 history，默认不调用 Compose、不重启容器。若目标镜像 digest 未变化、普通晋级因 live-exact 判定不会重建进程，可在投影已暂存且 `drift=false` 后显式执行 `config-apply --env <env> --module <name> --activate-staged --service <exact-service> --execute`（生产额外要求 `--confirm-prod`）；服务必须属于模块闭包，执行只滚动重建该服务并逐一核对非目标容器 ID、镜像与启动时间，不写维护标记，失败时原子回滚配置指针并以旧 `release.env` 恢复目标服务。
 
 RMB 创建支付链接的 `HUANYUY_*` 六项配置同时是 `payment-api`、`web-api` 和 `main-bot` 的必填投影：Payment API 承载公网入口与回调，Web/Bot 则在创建链接的调用点直接消费同一套配置。任一目标投影缺失时必须在配置阶段 fail closed，不得以 Payment API 自身健康作为 Web/Bot 配置完整性的替代证据。
+RMB 主动查单只属于 `payment-api`：`RMB_RECONCILIATION_ENABLED=true` 时
+`HUANYUY_QUERY_URL` 条件必填并进入该服务投影；默认关闭时不得因查询 URL
+缺失阻断其它服务。启用前必须用稳定服务端接口完成只读契约验证，不能把常见
+易支付路径猜测或商户后台页面当作配置事实。
 
 主 Bot 的 `REQUIRED_CHANNEL_ID` 同样是精确必填投影，只属于 `main-bot`。它驱动 Telegram `getChatMember`、频道成员状态同步、凡人晋级和签到资格；`CHANNEL_INVITE_LINK` 只是展示链接，不能替代频道 ID。该键不得进入可忽略 legacy 清单，宿主缺失时配置投影必须 fail closed。契约变更后，正式 main-bot 更新先显式执行同模块 `config-plan/config-apply` 刷新投影，再执行受控发布；`promote` 不会隐式改写配置。
 

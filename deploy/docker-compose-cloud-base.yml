@@ -60,6 +60,9 @@ services:
     command: ["python", "src/payment_api_server.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8021/healthz', timeout=5)"]
 
   dashboard-backend:
     profiles: [owner-tools]

@@ -1,0 +1,17 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "c2bc05d26c5a7a332dd9fdcd5b37a8c1d0c6893e",
+  "batch": "20260728-065427-ced8bdf2",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260728-065427-ced8bdf2",
+  "members": [
+    {
+      "base_sha": "c2bc05d26c5a7a332dd9fdcd5b37a8c1d0c6893e",
+      "branch": "codex/c-rmb-payment-reliability",
+      "head": "ced8bdf29f8aed26fca8077f77662b5a4dee5613",
+      "queued_at": "2026-07-28T06:53:23.897459+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

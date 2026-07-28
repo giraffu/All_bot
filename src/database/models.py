@@ -592,6 +592,66 @@ class Order(Base):
     plan = relationship("MembershipPlan")
 
 
+class RMBPaymentReconciliationJob(Base):
+    __tablename__ = "rmb_payment_reconciliation_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending', 'processing', 'completed', 'exhausted')",
+            name="ck_rmb_payment_reconciliation_jobs_status",
+        ),
+        Index(
+            "ix_rmb_payment_reconciliation_jobs_due",
+            "status",
+            "next_attempt_at",
+        ),
+        Index(
+            "ix_rmb_payment_reconciliation_jobs_lease",
+            "status",
+            "lease_until",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(
+        Integer,
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
+    attempt_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    next_attempt_at = Column(DateTime, nullable=False)
+    lease_token = Column(String(64), nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    last_error_code = Column(String(100), nullable=True)
+    last_outcome = Column(String(100), nullable=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+
+
 class AffiliateTransaction(Base):
     __tablename__ = "affiliate_transactions"
     __table_args__ = (

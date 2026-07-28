@@ -1,7 +1,10 @@
 import hashlib
+import hmac
 import logging
 import os
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
+from enum import Enum
 
 import aiohttp
 
@@ -14,6 +17,20 @@ HUANYUY_GATEWAY = os.getenv("HUANYUY_GATEWAY")
 HUANYUY_NOTIFY_URL = os.getenv("HUANYUY_NOTIFY_URL")
 HUANYUY_RETURN_URL = os.getenv("HUANYUY_RETURN_URL")
 HUANYUY_SITENAME = os.getenv("HUANYUY_SITENAME")
+HUANYUY_QUERY_URL = os.getenv("HUANYUY_QUERY_URL")
+
+
+class RMBOrderQueryStatus(str, Enum):
+    PAID = "paid"
+    NOT_PAID = "not_paid"
+
+
+@dataclass(frozen=True)
+class RMBOrderQueryResult:
+    status: RMBOrderQueryStatus
+    out_trade_no: str
+    external_trade_no: str | None = None
+    paid_amount: Decimal | None = None
 
 
 class RMBPaymentService:
@@ -44,9 +61,14 @@ class RMBPaymentService:
         """
         验证回调签名
         """
+        if not key:
+            return False
         received_sign = str(params.get("sign", "")).lower()
         expected_sign = RMBPaymentService.generate_sign(params, key).lower()
-        return received_sign == expected_sign
+        return bool(received_sign) and hmac.compare_digest(
+            received_sign,
+            expected_sign,
+        )
 
     @staticmethod
     async def create_payment_url(
@@ -59,7 +81,9 @@ class RMBPaymentService:
         """
         发起支付请求，获取 pay_url
         """
-        import urllib.parse
+        if not HUANYUY_GATEWAY or not HUANYUY_PID or not HUANYUY_KEY:
+            logger.error("RMB payment gateway configuration is incomplete")
+            return {"code": 0, "msg": "Payment gateway unavailable"}
 
         params = {
             "money": RMBPaymentService._format_amount(amount),
@@ -90,22 +114,113 @@ class RMBPaymentService:
 
         try:
             async with aiohttp.ClientSession() as session:
-                query_string = "&".join(
-                    f"{k}={urllib.parse.quote(str(v))}"
-                    for k, v in submit_params.items()
-                )
-                request_url = f"{HUANYUY_GATEWAY}?{query_string}"
-
-                logger.info(f"Sending GET request to {request_url}")
-                async with session.get(request_url, timeout=15) as resp:
+                async with session.post(
+                    HUANYUY_GATEWAY,
+                    data=submit_params,
+                    timeout=15,
+                ) as resp:
                     try:
                         data = await resp.json(content_type=None)
-                        logger.info(f"Payment creation response: {data}")
+                        if not isinstance(data, dict):
+                            raise ValueError("payment response is not an object")
+                        logger.info(
+                            "RMB payment creation completed http_status=%s code=%s",
+                            resp.status,
+                            data.get("code"),
+                        )
                         return data
                     except Exception:
-                        text_resp = await resp.text()
-                        logger.error(f"Failed to parse JSON response: {text_resp}")
+                        await resp.read()
+                        logger.error(
+                            "RMB payment creation returned invalid JSON "
+                            "http_status=%s",
+                            resp.status,
+                        )
                         return {"code": 0, "msg": "Invalid response format"}
-        except Exception as e:
-            logger.error(f"Error creating RMB payment: {e}")
-            return {"code": 0, "msg": str(e)}
+        except Exception as exc:
+            logger.error(
+                "RMB payment creation failed error_type=%s",
+                type(exc).__name__,
+            )
+            return {"code": 0, "msg": "Payment gateway request failed"}
+
+    @staticmethod
+    async def query_order(
+        *,
+        out_trade_no: str,
+        expected_amount: Decimal | str | int,
+        query_url: str | None = None,
+        timeout_seconds: int = 5,
+    ) -> RMBOrderQueryResult:
+        target_url = query_url or HUANYUY_QUERY_URL
+        if not target_url:
+            raise ValueError("HUANYUY_QUERY_URL is required")
+        if not HUANYUY_PID or not HUANYUY_KEY:
+            raise ValueError("RMB payment gateway credentials are incomplete")
+
+        params = {
+            "act": "order",
+            "pid": HUANYUY_PID,
+            "key": HUANYUY_KEY,
+            "out_trade_no": out_trade_no,
+        }
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "AllBot-RMB-Reconciler/1.0",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                target_url,
+                params=params,
+                timeout=timeout_seconds,
+                headers=headers,
+            ) as resp:
+                if resp.status != 200:
+                    await resp.read()
+                    raise ValueError(
+                        f"RMB order query returned HTTP {resp.status}"
+                    )
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception as exc:
+                    await resp.read()
+                    raise ValueError("RMB order query returned invalid JSON") from exc
+
+        if not isinstance(data, dict):
+            raise ValueError("RMB order query response is not an object")
+
+        status = data.get("status")
+        code = data.get("code")
+        if str(code) != "1":
+            raise ValueError("RMB order query was rejected")
+        if str(status) not in {"0", "1"}:
+            raise ValueError("RMB order query returned an unknown status")
+        if str(status) == "0":
+            return RMBOrderQueryResult(
+                status=RMBOrderQueryStatus.NOT_PAID,
+                out_trade_no=out_trade_no,
+            )
+
+        returned_order_id = str(data.get("out_trade_no") or "")
+        external_trade_no = str(data.get("trade_no") or "")
+        returned_amount = data.get("money")
+        if returned_order_id != out_trade_no:
+            raise ValueError("RMB order query returned a different order")
+        if not external_trade_no or returned_amount in (None, ""):
+            raise ValueError("RMB paid order query is missing required fields")
+        normalized_amount = Decimal(str(returned_amount)).quantize(
+            RMB_AMOUNT_QUANT,
+            rounding=ROUND_HALF_UP,
+        )
+        if normalized_amount != Decimal(str(expected_amount)).quantize(
+            RMB_AMOUNT_QUANT,
+            rounding=ROUND_HALF_UP,
+        ):
+            raise ValueError("RMB paid order query amount mismatch")
+
+        return RMBOrderQueryResult(
+            status=RMBOrderQueryStatus.PAID,
+            out_trade_no=returned_order_id,
+            external_trade_no=external_trade_no,
+            paid_amount=normalized_amount,
+        )

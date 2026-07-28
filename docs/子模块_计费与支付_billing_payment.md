@@ -69,6 +69,10 @@ sequenceDiagram
 - `runtime_checkpoints`
   - 保存跨进程运行时游标，当前首个用途是 TON 轮询 `last_lt`。
   - TON key 形如 `ton:<merchant_address>:last_lt`，`value` 保存 JSON 快照并记录 `updated_at`。
+- `rmb_payment_reconciliation_jobs`
+  - 仅在新建 RMB PENDING 订单时同事务创建，不自动回填历史漏单。
+  - 保存查单退避、数据库 lease、尝试次数、脱敏错误类别与完成结果；多实例通过
+    `FOR UPDATE SKIP LOCKED` 领取，崩溃后可由过期 lease 恢复。
 
 ## 4. 核心实现事实
 
@@ -86,6 +90,18 @@ sequenceDiagram
 
 - 当前支付履约共享内核是 `payment_fulfillment_service.fulfill_payment_command(PaymentFulfillmentCommand(...))`，返回 `PaymentFulfillmentResult`；RMB `fulfill_order(...)` 只保留旧 bool 兼容包装。
 - RMB 适配层按本地业务单定位订单；TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
+- RMB 公网回调 `GET|POST /api/pay/notify/huanyuy` 统一解析 query/form，校验
+  merchant、MD5 签名、成功状态、业务单、外部流水与金额。事务提交成功或幂等
+  noop 后返回精确纯文本 `success`；Telegram 消息不阻塞该确认响应。
+- RMB 下单通过服务端 POST 提交，日志不得记录签名参数、完整支付 URL 或网关
+  响应。`RMB_RECONCILIATION_ENABLED` 默认关闭；启用时
+  `HUANYUY_QUERY_URL` 条件必填，查单返回必须同时匹配订单号、金额和平台流水，
+  HTML、404、未知状态与字段缺失一律失败并保留重试。
+- Payment API 的 reconciler 只处理新建 job：60 秒后首次查单，按
+  1/2/5/10/30 分钟及每小时退避，最多跟踪 24 小时。查到已支付后仍调用
+  `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
+  边界；没有稳定服务端查单接口时禁止用浏览器 Cookie、后台抓取或自动“补发”
+  替代。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
 - TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
@@ -150,9 +166,12 @@ sequenceDiagram
 - Web 订单状态：`GET /api/payment/orders/{order_id}/status`
   - 仅允许订单所属用户查询；成功状态额外返回 `account` 白名单摘要。
 
-- RMB 支付回调：`POST /api/payment/notify`
+- RMB 支付回调：`GET|POST /api/pay/notify/huanyuy`
   - 仅适用于 RMB 网关异步通知。
-  - 成功必须返回文本 `success` 阻断第三方重试。
+  - 成功或重复通知必须返回精确纯文本 `success` 阻断第三方重试；非法通知返回
+    `fail`。
+- Payment API 健康：`GET /healthz`
+  - 返回非敏感服务状态与 RMB reconciler 是否启用，不暴露 URL、凭据或订单。
 - Telegram 登录：`POST /api/auth/telegram`
   - 支持 Mini App `initData` 与 Login Widget 字段。
 - 密码登录：`POST /api/auth/login`
@@ -169,7 +188,13 @@ sequenceDiagram
 
 - 支付履约幂等
   - 同一 RMB 回调重复通知只发货一次。
+  - RMB GET/POST 回调与主动查单竞态只发货一次，提交后的缓存/通知失败不能把
+    已完成支付改写成失败。
   - 同一 TON `tx_hash` 重复出现只落一笔单。
+- RMB 主动补偿
+  - 新订单与 reconciliation job 同事务；迁移不回填历史订单。
+  - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、24 小时耗尽、查单字段
+    冲突 fail closed，以及默认关闭/启用缺 URL 阻断启动。
 - 支付金额校验
   - RMB 金额按 Decimal/字符串链路量化到两位，禁止 float 漂移。
 - Affiliate 并发与幂等

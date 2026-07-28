@@ -472,7 +472,7 @@ Web、Payment、Dashboard、QQCC Config 验证：
 - `https://web.aivison.it.com` Pages 静态站 200，且 JS bundle 指向 `https://api.aivison.it.com/api`
 - `https://api.aivison.it.com/api/health`
 - `https://api-cf-test.aivison.it.com/api/health` 仅在 canary tunnel 已配置时验证；若未配置，不得把 502 当作云 Web API 故障。
-- `https://rmb.aivison.it.com/pay/result`
+- `https://rmb.aivison.it.com/healthz`
 - `http://100.107.220.127:8086/api/health` 仅在云正式 Dashboard Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。
 - `http://100.107.220.127:8045/api/health` 仅在云正式 QQCC Config Backend 已启动后验证。
 - `http://100.107.220.127:8088/api/health` 仅在云正式 QQCC Config Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。

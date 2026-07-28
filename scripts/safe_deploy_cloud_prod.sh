@@ -370,7 +370,7 @@ QQCC_CONFIG_ADMIN_HOST="$(read_env_value QQCC_CONFIG_ADMIN_HOST)"
 
 wait_for_http_ready "Central API" "http://${CLOUD_PROD_HEALTH_HOST}:8003/health" 40 5
 wait_for_http_ready "Web API" "http://${CLOUD_PROD_HEALTH_HOST}:8000/api/health" 40 5
-wait_for_http_ready "Payment API" "http://${CLOUD_PROD_HEALTH_HOST}:8021/pay/result" 40 5
+wait_for_http_ready "Payment API" "http://${CLOUD_PROD_HEALTH_HOST}:8021/healthz" 40 5
 wait_for_http_ready "Dashboard API" "http://${CLOUD_PROD_HEALTH_HOST}:8043/api/health" 40 5
 wait_for_http_ready "Dashboard Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${DASHBOARD_FRONTEND_PORT}/api/health" 40 5
 wait_for_http_ready "QQCC Config API" "http://${CLOUD_PROD_HEALTH_HOST}:8045/api/health" 40 5
