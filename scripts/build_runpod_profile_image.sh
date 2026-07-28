@@ -233,6 +233,13 @@ stage_profile_context() {
     cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
+    if [ "$profile" = "pornmaster_flux2_edit" ]; then
+        mkdir -p "${destination}/workers/comfy_agent"
+        cp workers/comfy_agent/workflow_task_patchers.py \
+            "${destination}/workers/comfy_agent/workflow_task_patchers.py"
+        cp workers/comfy_agent/agent_result_materialization.py \
+            "${destination}/workers/comfy_agent/agent_result_materialization.py"
+    fi
     if [ "$profile" = "all" ]; then
         cp -a workers/runpod_profiles/ltx_t2v \
             "${destination}/workers/runpod_profiles/ltx_t2v"

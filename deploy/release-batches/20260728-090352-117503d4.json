@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
+  "base_sha": "e0115422b7a62e5307b933eb4f61a32a8f8c897c",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-20f98ead",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-23b4d146",
   "members": [
     {
       "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
@@ -11,6 +11,27 @@
       "head": "efe53871c84f67841cc10d23e314f06178274892",
       "queued_at": "2026-07-28T10:47:18.151459+00:00",
       "slot": "D"
+    },
+    {
+      "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
+      "branch": "codex/e-allow-payment-api-release-replay",
+      "head": "9ae528c20b0ceec516231db8b710e0a27b9e851c",
+      "queued_at": "2026-07-28T10:48:37.240613+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "6a401c6dc6b69cad78a105b1761ef7e06d46d0fb",
+      "branch": "codex/d-payment-api-online-policy",
+      "head": "f2591101b44c36b5bd975bb932a39339d9b0d86a",
+      "queued_at": "2026-07-28T11:03:21.804335+00:00",
+      "slot": "D"
+    },
+    {
+      "base_sha": "6a401c6dc6b69cad78a105b1761ef7e06d46d0fb",
+      "branch": "codex/e-include-character-overlay-build-context",
+      "head": "23b4d1467ad0dc7b60f1453db00d9397d3b23069",
+      "queued_at": "2026-07-28T11:04:07.930567+00:00",
+      "slot": "E"
     }
   ],
   "pr_base": "main"
