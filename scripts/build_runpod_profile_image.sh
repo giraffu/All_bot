@@ -10,6 +10,7 @@ COMFYUI_REF="${RUNPOD_PROFILE_COMFYUI_REF:-}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
 NODE_SOURCE_IMAGE="${RUNPOD_PROFILE_NODE_SOURCE_IMAGE:-}"
+SCAIL_SOURCE_IMAGE="${RUNPOD_PROFILE_SCAIL_SOURCE_IMAGE:-}"
 REUSE_BASE_CUSTOM_NODES="${RUNPOD_PROFILE_REUSE_BASE_CUSTOM_NODES:-false}"
 DOCKER_BUILD_NETWORK="${RUNPOD_PROFILE_DOCKER_BUILD_NETWORK:-}"
 XFORMERS_SOURCE_URL="${RUNPOD_PROFILE_XFORMERS_SOURCE_URL:-}"
@@ -71,6 +72,8 @@ Options:
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
   --node-source-image <ref>
                          Source image for profile Dockerfiles that copy baked custom nodes.
+  --scail-source-image <ref>
+                         Digest-pinned LAN SCAIL image supplying the verified Blackwell xformers build for the all profile.
   --reuse-base-custom-nodes
                          Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers.
   --build-network <mode> Docker build network mode, for example host when using a local proxy.
@@ -121,6 +124,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --node-source-image)
             NODE_SOURCE_IMAGE="${2:?missing value for --node-source-image}"
+            shift 2
+            ;;
+        --scail-source-image)
+            SCAIL_SOURCE_IMAGE="${2:?missing value for --scail-source-image}"
             shift 2
             ;;
         --reuse-base-custom-nodes)
@@ -273,7 +280,7 @@ if [ "$PROFILE" = "all" ]; then
     profile_label_args+=(--label "allbot.lan.profile=all")
     profile_label_args+=(--label "allbot.lan.model_sync=external-lan-manifests")
     if [ "$REUSE_BASE_CUSTOM_NODES" = "true" ]; then
-        for source_ref in "$BASE_IMAGE" "$NODE_SOURCE_IMAGE"; do
+        for source_ref in "$BASE_IMAGE" "$NODE_SOURCE_IMAGE" "$SCAIL_SOURCE_IMAGE"; do
             case "$source_ref" in
                 localhost:5000/*@sha256:*|127.0.0.1:5000/*@sha256:*|192.168.1.115:5000/*@sha256:*)
                     ;;
@@ -285,6 +292,7 @@ if [ "$PROFILE" = "all" ]; then
         done
         profile_label_args+=(--label "allbot.lan.base-image=${BASE_IMAGE}")
         profile_label_args+=(--label "allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")
+        profile_label_args+=(--label "allbot.lan.scail-source-image=${SCAIL_SOURCE_IMAGE}")
         profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")
     fi
 else
@@ -296,6 +304,9 @@ if [ -n "$DOCKER_BUILD_NETWORK" ]; then
 fi
 if [ -n "$NODE_SOURCE_IMAGE" ]; then
     docker_build_args+=(--build-arg "NODE_SOURCE_IMAGE=${NODE_SOURCE_IMAGE}")
+fi
+if [ -n "$SCAIL_SOURCE_IMAGE" ]; then
+    docker_build_args+=(--build-arg "SCAIL_SOURCE_IMAGE=${SCAIL_SOURCE_IMAGE}")
 fi
 if [ -n "$XFORMERS_SOURCE_URL" ]; then
     docker_build_args+=(--build-arg "XFORMERS_SOURCE_URL=${XFORMERS_SOURCE_URL}")

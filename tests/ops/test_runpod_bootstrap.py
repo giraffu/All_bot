@@ -170,6 +170,10 @@ def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
     dockerfile = LAN_ALL_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
+    assert "ARG SCAIL_SOURCE_IMAGE=" in dockerfile
+    assert "FROM ${SCAIL_SOURCE_IMAGE} AS scail_source" in dockerfile
+    assert "scail_xformers/xformers" in dockerfile
+    assert "0.0.33+e70569e.d20260704" in dockerfile
     assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
     assert 'if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then' in dockerfile
     assert 'echo "Reusing pinned ComfyUI and LTX sources from base image"' in dockerfile
@@ -184,6 +188,12 @@ def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
         '"allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")'
         in build_script
     )
+    assert (
+        'profile_label_args+=(--label '
+        '"allbot.lan.scail-source-image=${SCAIL_SOURCE_IMAGE}")'
+        in build_script
+    )
+    assert 'docker_build_args+=(--build-arg "SCAIL_SOURCE_IMAGE=${SCAIL_SOURCE_IMAGE}")' in build_script
     assert (
         'profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")'
         in build_script
