@@ -12,6 +12,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
+import CharacterReferenceWorkbench from '@/components/lab/CharacterReferenceWorkbench.vue'
 import LabAdvancedOptionsPanel from '@/components/lab/LabAdvancedOptionsPanel.vue'
 import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
@@ -102,8 +103,13 @@ const promptLockedHint = computed(() => (
   <div class="lab-workbench mx-auto flex w-full max-w-7xl flex-col gap-4 px-2 py-3 sm:px-6">
     <div
       class="grid grid-cols-1 gap-4"
-      :class="currentTask ? 'xl:grid-cols-[minmax(0,1.24fr)_minmax(360px,0.82fr)]' : ''"
+      :class="currentModeId !== 'character_reference' && currentTask ? 'xl:grid-cols-[minmax(0,1.24fr)_minmax(360px,0.82fr)]' : ''"
     >
+      <CharacterReferenceWorkbench
+        v-if="currentModeId === 'character_reference'"
+        class="min-w-0"
+      />
+      <template v-else>
       <LabPromptComposer
         :title="t(currentMode.titleKey)"
         :description="t(currentMode.descriptionKey)"
@@ -307,6 +313,7 @@ const promptLockedHint = computed(() => (
           </template>
         </TaskResultPreviewPanel>
       </section>
+      </template>
     </div>
 
     <div class="lab-workbench__mode-dock mx-auto w-full max-w-4xl">

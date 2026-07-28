@@ -58,7 +58,9 @@ class User(Base):
     credits = Column(Integer, default=6)
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
-    is_submission_banned = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    is_submission_banned = Column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
     submission_banned_at = Column(DateTime, nullable=True)
     submission_ban_reason = Column(String(255), nullable=True)
     user_group = Column(
@@ -100,25 +102,45 @@ class User(Base):
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     __table_args__ = (
-        CheckConstraint("category in ('recharge', 'bug', 'suggestion', 'business', 'uncategorized')", name="ck_support_tickets_category"),
-        CheckConstraint("status in ('open', 'processing', 'resolved', 'closed')", name="ck_support_tickets_status"),
+        CheckConstraint(
+            "category in ('recharge', 'bug', 'suggestion', 'business', 'uncategorized')",
+            name="ck_support_tickets_category",
+        ),
+        CheckConstraint(
+            "status in ('open', 'processing', 'resolved', 'closed')",
+            name="ck_support_tickets_status",
+        ),
         Index("ix_support_tickets_status_last_message", "status", "last_message_at"),
         Index("ix_support_tickets_telegram_status", "telegram_user_id", "status"),
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     telegram_user_id = Column(BigInteger, nullable=False, index=True)
-    internal_user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    category = Column(String(32), nullable=False, server_default=text("'uncategorized'"))
+    internal_user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    category = Column(
+        String(32), nullable=False, server_default=text("'uncategorized'")
+    )
     status = Column(String(32), nullable=False, server_default=text("'open'"))
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
     language_code = Column(String(20), nullable=True)
     assigned_admin = Column(String(100), nullable=True)
     closed_at = Column(DateTime, nullable=True)
-    last_message_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
-    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, server_default=func.now())
+    last_message_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
 
 
 class SupportMessage(Base):
@@ -132,12 +154,21 @@ class SupportMessage(Base):
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ticket_id = Column(BigInteger, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id = Column(
+        BigInteger,
+        ForeignKey("support_tickets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     sender_type = Column(String(16), nullable=False)
     body = Column(Text, nullable=True)
     telegram_message_id = Column(BigInteger, nullable=True)
-    attachments = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
-    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    attachments = Column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
 
     ticket = relationship("SupportTicket", backref="messages")
 
@@ -418,7 +449,9 @@ class UserFollow(Base):
     follower = relationship(
         "User", foreign_keys=[follower_id], backref="following_links"
     )
-    followee = relationship("User", foreign_keys=[followee_id], backref="follower_links")
+    followee = relationship(
+        "User", foreign_keys=[followee_id], backref="follower_links"
+    )
 
 
 class History(Base):
@@ -428,7 +461,9 @@ class History(Base):
         Index("ix_history_created_at", "created_at"),
         Index("ix_history_created_at_type", "created_at", "type"),
         Index("ix_history_created_at_user_id", "created_at", "user_id"),
-        Index("ix_history_source_created_at_user_id", "source", "created_at", "user_id"),
+        Index(
+            "ix_history_source_created_at_user_id", "source", "created_at", "user_id"
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -462,7 +497,7 @@ class CharacterReference(Base):
     __tablename__ = "character_references"
     __table_args__ = (
         CheckConstraint(
-            "status in ('pending', 'ready', 'failed', 'deleted')",
+            "status in ('draft', 'pending', 'ready', 'failed', 'deleted')",
             name="ck_character_references_status",
         ),
         Index("ix_character_references_user_status", "user_id", "status"),
@@ -478,10 +513,58 @@ class CharacterReference(Base):
     task_id = Column(String(64), nullable=False)
     status = Column(String(16), nullable=False, default="pending")
     created_at = Column(DateTime, nullable=False, default=datetime.now)
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
     deleted_at = Column(DateTime, nullable=True)
 
     user = relationship("User", backref="character_references")
+    views = relationship(
+        "CharacterReferenceView",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class CharacterReferenceView(Base):
+    __tablename__ = "character_reference_views"
+    __table_args__ = (
+        CheckConstraint(
+            "view_type in ('face_front', 'face_side', 'face_three_quarter', "
+            "'body_front', 'body_side', 'body_back')",
+            name="ck_character_reference_views_type",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'ready', 'failed')",
+            name="ck_character_reference_views_status",
+        ),
+        UniqueConstraint(
+            "character_id",
+            "view_type",
+            name="uq_character_reference_views_character_type",
+        ),
+        Index("ix_character_reference_views_task_id", "task_id", unique=True),
+    )
+
+    id = Column(String(36), primary_key=True)
+    character_id = Column(
+        String(36),
+        ForeignKey("character_references.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    view_type = Column(String(32), nullable=False)
+    prompt = Column(Text, nullable=False)
+    object_key = Column(String(1024), nullable=True)
+    task_id = Column(String(64), nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+    character = relationship("CharacterReference", back_populates="views")
 
 
 class TemplateContribution(Base):
@@ -551,10 +634,18 @@ class SiteNotice(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False, default="", server_default=text("''"))
     content = Column(Text, nullable=False, default="")
-    is_active = Column(Boolean, nullable=False, default=False, server_default=text("false"))
-    is_pinned = Column(Boolean, nullable=False, default=False, server_default=text("false"))
-    target_groups = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
-    target_identities = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    is_active = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_pinned = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    target_groups = Column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
+    target_identities = Column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
     published_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -725,8 +816,12 @@ class RuntimeCheckpoint(Base):
     __tablename__ = "runtime_checkpoints"
 
     key = Column(String(128), primary_key=True)
-    value = Column(JSON, nullable=False, default=dict, server_default=text("'{}'::json"))
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    value = Column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'::json")
+    )
+    updated_at = Column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )
 
 
 class WorkerLog(Base):
@@ -772,7 +867,12 @@ class GalleryPost(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", backref="gallery_posts")
-    comments = relationship("GalleryComment", back_populates="post", cascade="all, delete-orphan", passive_deletes=True)
+    comments = relationship(
+        "GalleryComment",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     reports = relationship("GalleryReport", back_populates="post", passive_deletes=True)
     histories = relationship(
         "History",
@@ -822,7 +922,9 @@ class GalleryPromptUnlock(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
-    post_id = Column(Integer, ForeignKey("gallery_posts.id"), nullable=False, index=True)
+    post_id = Column(
+        Integer, ForeignKey("gallery_posts.id"), nullable=False, index=True
+    )
     author_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     cost_credits = Column(Integer, nullable=False, default=1, server_default=text("1"))
     created_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -849,11 +951,17 @@ class GalleryComment(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    post_id = Column(Integer, ForeignKey("gallery_posts.id", ondelete="CASCADE"), nullable=False)
+    post_id = Column(
+        Integer, ForeignKey("gallery_posts.id", ondelete="CASCADE"), nullable=False
+    )
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True, nullable=False)
     content = Column(String(500), nullable=False)  # 限制评论长度
-    is_active = Column(Boolean, default=True, server_default=text("true"), nullable=False)  # 软删除与审核控制
-    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+    is_active = Column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )  # 软删除与审核控制
+    created_at = Column(
+        DateTime, default=datetime.now, server_default=func.now(), nullable=False
+    )
 
     user = relationship("User")
     post = relationship("GalleryPost", back_populates="comments")
@@ -907,7 +1015,9 @@ class GalleryReport(Base):
         default="pending",
         server_default=text("'pending'"),
     )
-    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.now, server_default=func.now(), nullable=False
+    )
     resolved_at = Column(DateTime, nullable=True)
     resolution_action = Column(String(32), nullable=True)
 

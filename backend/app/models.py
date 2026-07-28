@@ -138,6 +138,8 @@ class Img2ImgRequest(BaseModel):
     num_inference_steps: Optional[int] = 6
     guidance_scale: Optional[float] = 1.0
     seed: Optional[int] = None
+    character_view_index: Optional[int] = Field(default=None, ge=1, le=6)
+    character_view_type: Optional[str] = None
     priority: int = 0
 
 

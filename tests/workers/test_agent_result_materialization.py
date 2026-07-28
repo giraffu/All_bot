@@ -2,6 +2,7 @@ import sys
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -142,12 +143,10 @@ def test_character_reference_sheet_preserves_portrait_head_and_feet():
         assert colors is not None
         color_counts = {color: count for count, color in colors}
         assert any(
-            red > 200 and green < 30 and blue < 30
-            for red, green, blue in color_counts
+            red > 200 and green < 30 and blue < 30 for red, green, blue in color_counts
         )
         assert any(
-            blue > 200 and red < 30 and green < 30
-            for red, green, blue in color_counts
+            blue > 200 and red < 30 and green < 30 for red, green, blue in color_counts
         )
 
 
@@ -156,6 +155,48 @@ def test_character_reference_sheet_rejects_missing_or_corrupt_views():
         materialization._compose_character_sheet([_png("black")] * 5)
     with pytest.raises(RuntimeError, match="corrupt"):
         materialization._compose_character_sheet([b"broken"] + [_png("black")] * 5)
+
+
+@pytest.mark.asyncio
+async def test_character_reference_single_view_materializes_without_six_view_gate():
+    payload = _png((10, 20, 30))
+    comfy_client = SimpleNamespace(
+        get_history=AsyncMock(
+            return_value={
+                "prompt-1": {
+                    "outputs": {
+                        "v3:201": {
+                            "images": [
+                                {
+                                    "filename": "character_reference_view_03_task.png",
+                                    "subfolder": "",
+                                    "type": "output",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        ),
+        get_view=AsyncMock(return_value=payload),
+    )
+    execution = SimpleNamespace(
+        prompt_id="prompt-1",
+        task_id="task-1",
+        params={"character_view_index": 3},
+        task_result=None,
+        task_result_priority=-1,
+    )
+
+    result = await materialization.materialize_task_outputs(
+        comfy_client=comfy_client,
+        execution=execution,
+        task_type="character_reference_build",
+        logger=SimpleNamespace(error=lambda *_args: None),
+    )
+
+    assert result.primary.file_data == payload
+    assert result.primary.object_name == "task-1_character_reference_view_03.png"
 
 
 def test_ic_guide_tail_trim_is_exact_and_preserves_required_audio(monkeypatch):

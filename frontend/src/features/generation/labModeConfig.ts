@@ -7,6 +7,7 @@ import {
 } from './imageToVideo'
 
 export type UnifiedLabModeId =
+  | 'character_reference'
   | 'edit'
   | 'edit_v2_5'
   | 'edit_v3'
@@ -191,6 +192,25 @@ export const PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = 'pornmaster_flux2_edit_bf16'
 export const FREE_EDIT_V2_5_TASK_TYPE = 'free_edit_v2_5'
 
 export const LAB_MODE_CONFIGS: LabModeConfig[] = [
+  {
+    id: 'character_reference',
+    taskType: 'character_reference',
+    titleKey: 'lab.cards.character_reference_title',
+    descriptionKey: 'lab.cards.character_reference_desc',
+    kindKey: 'lab.workbench.mode_kinds.image',
+    baseCost: 3,
+    promptPlaceholderKey: 'characters.view_prompt_placeholder',
+    promptTarget: 'inputs',
+    submitLabelKey: 'characters.generate_view',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: false,
+    supportsAdvancedOptions: false,
+    supportsPromptInput: false,
+    promptRequired: false,
+    unified: true,
+  },
   {
     id: 'edit',
     taskType: 'edit',
@@ -630,6 +650,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
+  && (mode.id !== 'character_reference' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
 )) as LabModeConfig[]
 
@@ -638,6 +659,8 @@ export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
 
 export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined): UnifiedLabModeId => {
   switch (taskType) {
+    case 'character_reference':
+      return WEB_LTX_T2V_ENABLED ? 'character_reference' : DEFAULT_LAB_MODE_ID
     case 'txt2img':
       return 'txt2img'
     case FREE_EDIT_V2_5_TASK_TYPE:

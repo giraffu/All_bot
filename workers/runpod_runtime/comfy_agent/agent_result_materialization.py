@@ -203,9 +203,7 @@ def _trim_ltx_t2v_ic_guide_tail(video_bytes: bytes, logger) -> bytes:
                 or not output_path.exists()
                 or not output_path.stat().st_size
             ):
-                logger.error(
-                    "Failed to remove IC-LoRA hidden guide tail with ffmpeg"
-                )
+                logger.error("Failed to remove IC-LoRA hidden guide tail with ffmpeg")
                 raise RuntimeError("failed to remove IC-LoRA hidden guide tail")
             return output_path.read_bytes()
     except RuntimeError:
@@ -291,9 +289,7 @@ def _compose_character_sheet(images: list[bytes]) -> bytes:
                     source,
                     aspect=(8, 7),
                 )
-                tile = adaptation.image.resize(
-                    (512, 448), Image.Resampling.LANCZOS
-                )
+                tile = adaptation.image.resize((512, 448), Image.Resampling.LANCZOS)
         except Exception as exc:
             raise RuntimeError(
                 f"corrupt character reference view {index + 1:02d}"
@@ -334,6 +330,46 @@ async def _materialize_character_reference(
     )
 
 
+async def _materialize_character_reference_view(
+    *, comfy_client, execution, history, view_index: int
+) -> MaterializedTaskOutputs:
+    prompt_history = history.get(execution.prompt_id) or {}
+    outputs = prompt_history.get("outputs") or {}
+    marker = f"character_reference_view_{view_index:02d}"
+    matched: list[dict[str, Any]] = []
+    for node_output in outputs.values():
+        if not isinstance(node_output, dict):
+            continue
+        matched.extend(
+            asset
+            for asset in (node_output.get("images", []) or [])
+            if marker in str(asset.get("filename") or "")
+        )
+    if len(matched) != 1:
+        raise RuntimeError(f"character reference workflow expected one {marker} output")
+    asset = matched[0]
+    payload = await comfy_client.get_view(
+        asset["filename"],
+        asset.get("subfolder", ""),
+        type=asset.get("type", "output"),
+    )
+    await asyncio.to_thread(_character_view_difference_hash, payload)
+    result_name = f"{execution.task_id}_character_reference_view_{view_index:02d}.png"
+    execution.task_result = result_name
+    execution.task_result_priority = 0
+    return MaterializedTaskOutputs(
+        primary=MaterializedPrimaryResult(
+            object_name=result_name,
+            file_name=result_name,
+            subfolder="",
+            view_type="output",
+            content_type="image/png",
+            file_data=payload,
+        ),
+        extra_outputs={},
+    )
+
+
 async def materialize_task_outputs(
     *,
     comfy_client,
@@ -343,6 +379,14 @@ async def materialize_task_outputs(
 ) -> MaterializedTaskOutputs:
     history = await comfy_client.get_history(execution.prompt_id)
     if task_type == "character_reference_build":
+        view_index = int((execution.params or {}).get("character_view_index") or 0)
+        if view_index:
+            return await _materialize_character_reference_view(
+                comfy_client=comfy_client,
+                execution=execution,
+                history=history,
+                view_index=view_index,
+            )
         return await _materialize_character_reference(
             comfy_client=comfy_client,
             execution=execution,

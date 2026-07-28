@@ -8,7 +8,10 @@ from src.core.task_core_finalization import (
 )
 from src.core.task_core_persistence import persist_successful_web_history_default
 from src.core.task_core_runtime import cleanup_task_runtime_state
-from src.core.task_core_types import TaskSubmissionContext
+from src.core.task_core_types import (
+    TaskPersistencePostprocessPlan,
+    TaskSubmissionContext,
+)
 from src.domain_config.scail2_video import is_scail2_task_type
 from src.services.ltx_video_extension_service import (
     merge_ltx_history_context_into_extra_outputs,
@@ -86,6 +89,14 @@ async def finalize_monitored_web_task_success(
             extra_outputs=persisted_extra_outputs,
             metadata=generation_metadata,
         )
+        persistence_options = {}
+        if submission_context.metadata.get("record_history") is False:
+            persistence_options["postprocess_plan"] = TaskPersistencePostprocessPlan(
+                source="web",
+                record_history=False,
+                refresh_user_group_after_log=False,
+                warmup_web_history=False,
+            )
         await persist_successful_web_history_func(
             backend_task_id=backend_task_id,
             registry_task_id=registry_task_id,
@@ -103,6 +114,7 @@ async def finalize_monitored_web_task_success(
             output_height=submission_context.output_height,
             output_duration=submission_context.output_duration,
             requested_duration=submission_context.requested_duration,
+            **persistence_options,
         )
     except Exception as log_err:
         logger.error(

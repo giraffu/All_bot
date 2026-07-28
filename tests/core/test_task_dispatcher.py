@@ -136,6 +136,44 @@ async def test_face_swap_strategy_submits_selected_task_type(monkeypatch, task_t
     )
 
 
+@pytest.mark.asyncio
+async def test_character_reference_strategy_forwards_selected_view(monkeypatch):
+    submit = AsyncMock(return_value="backend-task")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_character_reference_build_task=submit,
+    )
+    strategy = StrategyFactory.get_strategy("character_reference_build")
+    inputs = {
+        "saved_input_images": ["character.png"],
+        "prompt": "strict side profile",
+        "character_id": "character-1",
+        "character_view_type": "face_side",
+        "character_view_index": 2,
+        "record_history": False,
+    }
+
+    result = await strategy.submit_task("task-1", inputs, 5)
+
+    assert result == "backend-task"
+    submit.assert_awaited_once_with(
+        "task-1",
+        prompt="strict side profile",
+        image_path="character.png",
+        priority=5,
+        character_view_index=2,
+        character_view_type="face_side",
+    )
+    assert strategy.get_metadata(inputs) == {
+        "saved_inputs": ["character.png"],
+        "character_id": "character-1",
+        "character_view_type": "face_side",
+        "character_view_index": 2,
+        "record_history": False,
+        "gallery_supported": False,
+    }
+
+
 def test_base_video_strategy_keeps_explicit_image_to_video_mode():
     strategy = BaseVideoStrategy(MODE_IMAGE_TO_VIDEO_LITERAL)
 

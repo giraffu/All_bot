@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Plus, History as HistoryIcon, Compass, Bookmark, Users } from 'lucide-vue-next'
+import { User, Plus, History as HistoryIcon, Compass, Bookmark } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { getRuntimeFlag } from '@/config/runtime'
 
 const router = useRouter()
 const route = useRoute()
@@ -15,9 +14,6 @@ const navItems = [
   { key: 'CustomFeatures', labelKey: 'menu.custom_features', icon: Plus },
   { key: 'History', labelKey: 'menu.history', icon: HistoryIcon },
   { key: 'Profile', labelKey: 'menu.profile', icon: User },
-  ...(getRuntimeFlag('enable_ltx_t2v', false)
-    ? [{ key: 'Characters', labelKey: 'menu.characters', icon: Users }]
-    : []),
 ]
 
 const currentRouteName = computed(() => route.name as string)

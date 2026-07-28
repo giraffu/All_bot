@@ -59,7 +59,10 @@ const routes: RouteRecordRaw[] = [
         ? [{
             path: 'characters',
             name: 'Characters',
-            component: () => import('@/views/Characters.vue')
+            redirect: {
+              name: 'MyFavorites',
+              query: { tab: 'characters' },
+            }
           } satisfies RouteRecordRaw]
         : []),
       {

@@ -1,0 +1,437 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { CheckCircle2, ImagePlus, RefreshCw, Sparkles } from 'lucide-vue-next'
+import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+
+import type {
+  CharacterReference,
+  CharacterReferenceView,
+  CharacterViewType,
+} from '@/api/characters'
+import { useUpload } from '@/composables/useUpload'
+import { useCharactersStore } from '@/stores/characters'
+
+type ViewDefinition = {
+  type: CharacterViewType
+  labelKey: string
+  defaultPrompt: string
+}
+
+const VIEW_DEFINITIONS: ViewDefinition[] = [
+  {
+    type: 'face_front',
+    labelKey: 'characters.views.face_front',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. front close-up face portrait, looking directly at camera. Single view, pure black background, no text, labels, border or collage.',
+  },
+  {
+    type: 'face_side',
+    labelKey: 'characters.views.face_side',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. strict side-profile close-up face portrait, looking left. Single view, pure black background, no text, labels, border or collage.',
+  },
+  {
+    type: 'face_three_quarter',
+    labelKey: 'characters.views.face_three_quarter',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. three-quarter close-up face portrait with both eyes visible. Single view, pure black background, no text, labels, border or collage.',
+  },
+  {
+    type: 'body_front',
+    labelKey: 'characters.views.body_front',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. front full-body standing view, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+  },
+  {
+    type: 'body_side',
+    labelKey: 'characters.views.body_side',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. strict side-profile full-body standing view, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+  },
+  {
+    type: 'body_back',
+    labelKey: 'characters.views.body_back',
+    defaultPrompt: 'Same adult person as the source image; preserve exact identity, hairstyle, body shape, clothing and accessories. full-body back view facing away from camera, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+  },
+]
+
+const { t } = useI18n()
+const router = useRouter()
+const store = useCharactersStore()
+const { uploading, uploadFile } = useUpload()
+const name = ref('')
+const description = ref('')
+const sourceKey = ref<string | null>(null)
+const sourcePreview = ref<string | null>(null)
+const draftId = ref<string | null>(null)
+const activeViewType = ref<CharacterViewType>('face_front')
+const creatingDraft = ref(false)
+const generatingView = ref<CharacterViewType | null>(null)
+const saving = ref(false)
+const prompts = reactive<Record<CharacterViewType, string>>(
+  Object.fromEntries(
+    VIEW_DEFINITIONS.map(view => [view.type, view.defaultPrompt]),
+  ) as Record<CharacterViewType, string>,
+)
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+const draft = computed<CharacterReference | null>(() => (
+  store.items.find(item => item.id === draftId.value) ?? null
+))
+const viewMap = computed(() => new Map(
+  (draft.value?.views ?? []).map(view => [view.type, view]),
+))
+const activeDefinition = computed(() => (
+  VIEW_DEFINITIONS.find(view => view.type === activeViewType.value)!
+))
+const activeView = computed<CharacterReferenceView | undefined>(() => (
+  viewMap.value.get(activeViewType.value)
+))
+const readyCount = computed(() => (
+  draft.value?.views.filter(view => view.status === 'ready').length ?? 0
+))
+const hasPendingView = computed(() => (
+  draft.value?.views.some(view => view.status === 'pending') ?? false
+))
+
+const refreshDraft = async () => {
+  await store.refresh()
+  if (draftId.value && hasPendingView.value) {
+    refreshTimer = setTimeout(() => void refreshDraft(), 4000)
+  }
+}
+
+const beforeUpload = async (file: File) => {
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    message.error(t('characters.image_type_error'))
+    return false
+  }
+  sourceKey.value = await uploadFile(file, {
+    maxSizeBytes: 20 * 1024 * 1024,
+    maxSizeLabel: '20MB',
+  })
+  if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
+  sourcePreview.value = sourceKey.value ? URL.createObjectURL(file) : null
+  return false
+}
+
+const createDraft = async () => {
+  if (!name.value.trim() || !sourceKey.value) return
+  creatingDraft.value = true
+  try {
+    const created = await store.createDraft({
+      name: name.value.trim(),
+      description: description.value.trim() || undefined,
+      source_object_key: sourceKey.value,
+    })
+    draftId.value = created.id
+    message.success(t('characters.draft_created'))
+  } finally {
+    creatingDraft.value = false
+  }
+}
+
+const generateView = async () => {
+  if (!draftId.value) return
+  const prompt = prompts[activeViewType.value].trim()
+  if (!prompt) {
+    message.warning(t('characters.view_prompt_required'))
+    return
+  }
+  generatingView.value = activeViewType.value
+  try {
+    await store.generateView(draftId.value, activeViewType.value, prompt)
+    message.success(t('characters.view_submitted', {
+      view: t(activeDefinition.value.labelKey),
+    }))
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => void refreshDraft(), 2500)
+  } finally {
+    generatingView.value = null
+  }
+}
+
+const saveReference = async () => {
+  if (!draftId.value || readyCount.value < 2) return
+  saving.value = true
+  try {
+    await store.saveReference(draftId.value)
+    message.success(t('characters.saved_to_library'))
+    await router.push({ name: 'MyFavorites', query: { tab: 'characters' } })
+  } finally {
+    saving.value = false
+  }
+}
+
+const resetWorkspace = () => {
+  draftId.value = null
+  name.value = ''
+  description.value = ''
+  sourceKey.value = null
+  if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
+  sourcePreview.value = null
+  activeViewType.value = 'face_front'
+  for (const definition of VIEW_DEFINITIONS) {
+    prompts[definition.type] = definition.defaultPrompt
+  }
+}
+
+onMounted(() => void store.refresh())
+onBeforeUnmount(() => {
+  if (refreshTimer) clearTimeout(refreshTimer)
+  if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
+})
+</script>
+
+<template>
+  <section class="character-workbench overflow-hidden rounded-[28px] border">
+    <header class="character-workbench__hero px-5 py-5 sm:px-7">
+      <div class="flex items-start gap-3">
+        <div class="character-workbench__icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
+          <Sparkles :size="22" />
+        </div>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">
+            {{ t('characters.lab_eyebrow') }}
+          </div>
+          <h2 class="mt-1 text-xl font-bold sm:text-2xl">
+            {{ t('characters.lab_title') }}
+          </h2>
+          <p class="mt-2 max-w-3xl text-sm leading-6">
+            {{ t('characters.lab_description') }}
+          </p>
+        </div>
+      </div>
+    </header>
+
+    <div v-if="!draft" class="grid gap-5 p-5 sm:p-7 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <a-upload
+        class="character-workbench__upload"
+        :show-upload-list="false"
+        :before-upload="beforeUpload"
+        accept="image/png,image/jpeg,image/webp"
+      >
+        <div class="character-workbench__source flex aspect-[4/5] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-3xl border border-dashed">
+          <img v-if="sourcePreview" :src="sourcePreview" class="h-full w-full object-contain" />
+          <template v-else>
+            <ImagePlus :size="34" />
+            <span class="mt-3 text-sm font-semibold">{{ t('characters.upload_source') }}</span>
+            <span class="mt-1 text-xs">{{ t('characters.upload_hint') }}</span>
+          </template>
+        </div>
+      </a-upload>
+
+      <div class="flex flex-col justify-center space-y-4">
+        <div>
+          <div class="mb-2 text-sm font-semibold">{{ t('characters.name_label') }}</div>
+          <a-input
+            v-model:value="name"
+            size="large"
+            :maxlength="60"
+            :placeholder="t('characters.name_placeholder')"
+          />
+        </div>
+        <div>
+          <div class="mb-2 text-sm font-semibold">{{ t('characters.description_label') }}</div>
+          <a-textarea
+            v-model:value="description"
+            :maxlength="500"
+            :auto-size="{ minRows: 3, maxRows: 5 }"
+            :placeholder="t('characters.description_placeholder')"
+          />
+        </div>
+        <div class="character-workbench__notice rounded-2xl px-4 py-3 text-sm leading-6">
+          {{ t('characters.billing_hint') }}
+        </div>
+        <a-button
+          type="primary"
+          size="large"
+          class="h-12 rounded-2xl font-semibold"
+          :disabled="!name.trim() || !sourceKey"
+          :loading="creatingDraft || uploading"
+          @click="createDraft"
+        >
+          {{ t('characters.start_views') }}
+        </a-button>
+      </div>
+    </div>
+
+    <div v-else class="p-4 sm:p-6">
+      <div class="character-workbench__progress mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+        <div>
+          <div class="font-semibold">{{ draft.name }}</div>
+          <div class="mt-1 text-xs">
+            {{ t('characters.ready_progress', { ready: readyCount, total: 6 }) }}
+          </div>
+        </div>
+        <a-button size="small" class="rounded-full" @click="resetWorkspace">
+          {{ t('characters.new_character') }}
+        </a-button>
+      </div>
+
+      <div class="character-workbench__tabs mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <button
+          v-for="definition in VIEW_DEFINITIONS"
+          :key="definition.type"
+          type="button"
+          class="character-workbench__tab rounded-2xl border px-3 py-3 text-left"
+          :class="{ 'character-workbench__tab--active': activeViewType === definition.type }"
+          @click="activeViewType = definition.type"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-semibold">{{ t(definition.labelKey) }}</span>
+            <CheckCircle2
+              v-if="viewMap.get(definition.type)?.status === 'ready'"
+              :size="16"
+              class="text-emerald-400"
+            />
+            <RefreshCw
+              v-else-if="viewMap.get(definition.type)?.status === 'pending'"
+              :size="16"
+              class="animate-spin text-cyan-400"
+            />
+          </div>
+          <div class="mt-1 text-[11px]">
+            {{ t(`characters.view_status_${viewMap.get(definition.type)?.status || 'empty'}`) }}
+          </div>
+        </button>
+      </div>
+
+      <div class="grid gap-5 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
+        <div class="character-workbench__preview flex min-h-[360px] items-center justify-center overflow-hidden rounded-3xl border">
+          <img
+            v-if="activeView?.preview_url"
+            :src="activeView.preview_url"
+            class="max-h-[560px] h-full w-full object-contain"
+          />
+          <div v-else class="px-6 text-center">
+            <ImagePlus :size="40" class="mx-auto opacity-60" />
+            <div class="mt-3 font-semibold">{{ t(activeDefinition.labelKey) }}</div>
+            <div class="mt-2 text-sm leading-6 opacity-70">
+              {{ t('characters.view_empty_hint') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col">
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold">{{ t('characters.view_prompt_label') }}</div>
+              <div class="mt-1 text-xs opacity-70">{{ t('characters.view_prompt_hint') }}</div>
+            </div>
+            <a-button
+              size="small"
+              class="rounded-full"
+              @click="prompts[activeViewType] = activeDefinition.defaultPrompt"
+            >
+              {{ t('characters.restore_default') }}
+            </a-button>
+          </div>
+          <a-textarea
+            v-model:value="prompts[activeViewType]"
+            :maxlength="1200"
+            :auto-size="{ minRows: 8, maxRows: 14 }"
+            :placeholder="t('characters.view_prompt_placeholder')"
+          />
+          <a-button
+            type="primary"
+            size="large"
+            class="mt-4 h-12 rounded-2xl font-semibold"
+            :loading="generatingView === activeViewType || activeView?.status === 'pending'"
+            :disabled="!prompts[activeViewType].trim() || hasPendingView"
+            @click="generateView"
+          >
+            {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
+            · 3 {{ t('app.credits') }}
+          </a-button>
+          <div class="character-workbench__save mt-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="font-semibold">{{ t('characters.save_reference_title') }}</div>
+              <div class="mt-1 text-xs opacity-70">
+                {{ readyCount >= 2 ? t('characters.save_ready_hint') : t('characters.save_need_two') }}
+              </div>
+            </div>
+            <a-button
+              type="primary"
+              ghost
+              class="shrink-0 rounded-xl"
+              :disabled="readyCount < 2 || hasPendingView"
+              :loading="saving"
+              @click="saveReference"
+            >
+              {{ draft.status === 'ready' ? t('characters.update_reference') : t('characters.save_to_library') }}
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.character-workbench {
+  background: var(--theme-card-bg);
+  border-color: var(--theme-border);
+  color: var(--theme-text-primary);
+  box-shadow: var(--theme-shadow);
+}
+
+.character-workbench__hero {
+  background:
+    radial-gradient(circle at 88% 10%, rgba(34, 211, 238, 0.16), transparent 32%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.84));
+  border-bottom: 1px solid var(--theme-border);
+  color: #f8fafc;
+}
+
+.character-workbench__hero p {
+  color: rgba(226, 232, 240, 0.86);
+}
+
+.character-workbench__progress,
+.character-workbench__tab,
+.character-workbench__notice {
+  color: var(--theme-text-secondary);
+}
+
+.character-workbench__icon {
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.28), rgba(34, 211, 238, 0.18));
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  color: #67e8f9;
+}
+
+.character-workbench__upload,
+.character-workbench__upload :deep(.ant-upload-select) {
+  display: block;
+  width: 100%;
+}
+
+.character-workbench__source,
+.character-workbench__preview {
+  background: var(--theme-panel-strong-bg);
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-secondary);
+}
+
+.character-workbench__notice,
+.character-workbench__progress,
+.character-workbench__save {
+  background: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.character-workbench__tab {
+  background: var(--theme-pill-bg);
+  border-color: var(--theme-border);
+  transition: 160ms ease;
+}
+
+.character-workbench__tab:hover {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-primary);
+}
+
+.character-workbench__tab--active {
+  background: var(--theme-tab-active-bg);
+  border-color: var(--theme-tab-active-border);
+  color: var(--theme-tab-active-text);
+  box-shadow: var(--theme-tab-active-shadow);
+}
+</style>

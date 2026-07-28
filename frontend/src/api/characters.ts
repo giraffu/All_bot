@@ -4,12 +4,32 @@ export type CharacterReference = {
   id: string
   name: string
   description: string | null
-  status: 'pending' | 'ready' | 'failed'
-  task_id: string
+  status: 'draft' | 'pending' | 'ready' | 'failed'
+  task_id: string | null
   source_object_key: string
   sheet_object_key: string | null
   preview_url: string | null
+  views: CharacterReferenceView[]
 }
+
+export type CharacterReferenceView = {
+  type: CharacterViewType
+  label: string
+  prompt: string
+  default_prompt: string
+  status: 'pending' | 'ready' | 'failed'
+  task_id: string | null
+  object_key: string | null
+  preview_url: string | null
+}
+
+export type CharacterViewType =
+  | 'face_front'
+  | 'face_side'
+  | 'face_three_quarter'
+  | 'body_front'
+  | 'body_side'
+  | 'body_back'
 
 export const fetchCharacters = async (): Promise<CharacterReference[]> => (
   await api.get('/characters')
@@ -20,6 +40,28 @@ export const buildCharacter = async (payload: {
   description?: string
   source_object_key: string
 }) => (await api.post('/characters/build', payload)).data
+
+export const createCharacterDraft = async (payload: {
+  name: string
+  description?: string
+  source_object_key: string
+}): Promise<CharacterReference> => (
+  await api.post('/characters/drafts', payload)
+).data
+
+export const generateCharacterView = async (
+  id: string,
+  viewType: CharacterViewType,
+  prompt: string,
+) => (
+  await api.post(`/characters/${id}/views/${viewType}/generate`, { prompt })
+).data
+
+export const saveCharacterReference = async (
+  id: string,
+): Promise<CharacterReference> => (
+  await api.post(`/characters/${id}/save`)
+).data
 
 export const updateCharacter = async (id: string, payload: { name?: string; description?: string }) => (
   await api.patch(`/characters/${id}`, payload)
