@@ -2607,6 +2607,8 @@ class LanAioProdOps:
             f"RUNPOD_WORKER_ROOT={RUNPOD_WORKER_TARGET_DIR}",
             "-v",
             f"{workspace_host_dir}:/workspace",
+            "-v",
+            f"{model_host_dir}:{model_target_dir}",
         ]
         if metadata.get("lan_local_model_overrides"):
             docker_command.extend(
@@ -2617,8 +2619,6 @@ class LanAioProdOps:
                     f"RUNPOD_LAN_LOCAL_MODEL_OVERRIDES={json.dumps(metadata['lan_local_model_overrides'], separators=(',', ':'))}",
                 ]
             )
-        if model_workspace_host_dir != workspace_host_dir:
-            docker_command.extend(["-v", f"{model_host_dir}:{model_target_dir}"])
         docker_command.extend([image_ref, "bash", "-lc", inner_script])
 
         def prepare_writable_directory(
@@ -2681,6 +2681,11 @@ class LanAioProdOps:
                 *directory_setup,
                 f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
                 " ".join(shlex.quote(part) for part in docker_command),
+                (
+                    'test -n "$(find '
+                    f"{shlex.quote(model_host_dir)} "
+                    '-type f -print -quit)"'
+                ),
             ]
         )
         return "bash -lc " + shlex.quote(script)
