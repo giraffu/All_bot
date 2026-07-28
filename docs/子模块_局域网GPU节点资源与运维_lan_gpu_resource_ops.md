@@ -114,6 +114,15 @@ LAN AIO 当前态、候选和缓存状态不在本文或 Git 维护静态 slot �
 
 fleet helper 的普通切换只允许事务化 `takeover`，异常恢复只允许精确 `recover`；`drain-legacy/stop-old/start-disabled/rollback` 仍是内部 phase 名称，但不再允许单独 `--execute`。下文若描述这些名称，均表示 takeover 内部顺序，不是独立操作入口。`recover` 遇到已停止候选时始终通过 managed compose 重建并重新验收；即使 image digest 未变化，也不能直接 `docker start`，因为本地主受限 env、挂载、端口或其它运行配置可能已经更新。
 
+`enable-aio` 会把被替换 worker 写成无 TTL 的 `disabled`，避免临时控制过期后
+旧 agent 重新进入可接单口径。已经完成接管、但旧控制位曾按旧实现恢复为
+`enabled` 时，使用
+`scripts/lan_aio_fleet_prod_ops.py retire-legacy --slot <current-slot> --execute`
+收口；该 managed action 只接受 live/ledger 一致、当前 AIO 健康且 intake
+enabled、旧 worker 无任务、旧 runtime 已停止的单卡。它不 drain 或重启当前
+AIO，允许在途任务自然继续，同时固定旧容器 `restart=no` 并写入无 TTL
+disabled control。
+
 LAN AIO 容器冷启动若需通过本地主 VPN 获取公开依赖，只能在本地主受限 env 中配置 `LAN_AIO_HTTP_PROXY`、`LAN_AIO_HTTPS_PROXY` 与 `LAN_AIO_NO_PROXY`；operator 会同时映射大小写 proxy 变量到目标容器。LAN registry、Central、MinIO 与节点地址必须保留在 `NO_PROXY`，代理端点不得硬编码进 Git catalog 或 Compose；未配置时保持原有直连行为。
 
 每个 slot 必须先 `preflight`、准备目标镜像、预拉或加载镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。`preflight` 的 legacy `/system_stats` 与 `/queue` 对刚重启的 ComfyUI 会短重试，只有连续失败才阻断切换；镜像门禁接受目标节点已配置 Docker insecure registry、目标镜像已存在，或本地主 runner 已有同 tag 镜像可通过 `docker save | ssh docker load` 流式加载。`preflight` 还会检查 host port 的 Docker published owner，只允许当前目标容器或声明的 `old_runtime_container` 占用；若同卡残留旧 prod/canary 容器占用端口，必须先人工确认队列、agent 与容器归属，再清理残留容器后重试。禁止一次性接管整台节点或跨节点批量启用。新增候选不由 Dashboard 直接写生产配置，先用 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id <node> --profile <profile> --replace-slot <current-slot>` 生成 YAML patch、渲染摘要和预检命令，审阅并提交 `lan_aio_prod_slots.yml` 后再由本地主 AI operator/CLI 执行后续管理。

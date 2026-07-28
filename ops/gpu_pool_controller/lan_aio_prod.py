@@ -73,6 +73,7 @@ MANAGED_MUTATION_ACTIONS = {
     "disable-aio",
     "enable-aio",
     "restart-aio",
+    "retire-legacy",
     "recover",
     "release-rollout",
     "canary-start-disabled",
@@ -1533,6 +1534,17 @@ class LanAioProdOps:
                         f"set {slot.agent_id}=enabled",
                     ]
                 )
+            elif action == "retire-legacy":
+                operations.extend(
+                    [
+                        f"verify {slot.id} is the live and ledger current slot",
+                        f"verify {slot.container_name} is healthy without draining it",
+                        f"verify {slot.legacy_worker_id} is idle",
+                        f"verify {slot.old_runtime_container} is stopped",
+                        f"disable restart for {slot.old_runtime_container}",
+                        f"set {slot.legacy_worker_id}=disabled without TTL",
+                    ]
+                )
             elif action == "rollback":
                 operations.extend(
                     [
@@ -1576,7 +1588,6 @@ class LanAioProdOps:
                 slot.legacy_worker_id,
                 "disabled",
                 "lan_aio_fleet_disable_legacy",
-                ttl_seconds=CONTROL_TTL_SECONDS,
             )
             gate = self._assert_enable_aio_gate(slot)
             self._set_control(slot.agent_id, "enabled", "lan_aio_fleet_enable_aio")
@@ -1586,6 +1597,115 @@ class LanAioProdOps:
             "action": "enable-aio",
             "slots": [slot.id for slot in slots],
             "gates": gated,
+        }
+
+    def retire_legacy(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("retire-legacy requires exactly one --slot")
+        slot = slots[0]
+        physical_slot = physical_slot_key(slot)
+        ledger_current = self.current_slot_id(physical_slot)
+        if ledger_current != slot.id:
+            raise RuntimeError(
+                f"refusing to retire legacy worker for non-current slot {slot.id}: "
+                f"ledger current is {ledger_current}"
+            )
+        live = self.live_current_snapshot({physical_slot})
+        live_current = (live.get("current") or {}).get(physical_slot)
+        if live.get("errors") or live_current != slot.id:
+            raise RuntimeError(
+                f"refusing to retire legacy worker for {slot.id}: "
+                f"live current is {live_current!r}, errors={live.get('errors') or {}}"
+            )
+        if self._control_state(slot.agent_id) != "enabled":
+            raise RuntimeError(
+                f"refusing to retire {slot.legacy_worker_id}: "
+                f"{slot.agent_id} intake is not enabled"
+            )
+        workers = {
+            str(item.get("agent_id")): item
+            for item in self._system_workers()
+            if item.get("agent_id")
+        }
+        aio_worker = workers.get(slot.agent_id)
+        if not aio_worker or str(aio_worker.get("status") or "").lower() not in {
+            "idle",
+            "running",
+        }:
+            raise RuntimeError(
+                f"refusing to retire {slot.legacy_worker_id}: "
+                f"{slot.agent_id} is not healthy in Central"
+            )
+        legacy_worker = workers.get(slot.legacy_worker_id) or {}
+        if legacy_worker.get("current_task_id") or legacy_worker.get(
+            "current_task_type"
+        ):
+            raise RuntimeError(
+                f"refusing to retire active legacy worker {slot.legacy_worker_id}"
+            )
+
+        # This is intentionally a non-draining health gate: the current AIO may
+        # keep executing a task while the already-stopped predecessor is retired.
+        self._wait_container_health(slot)
+        old_state = self._ssh(
+            slot.ssh_host,
+            (
+                "docker inspect -f "
+                "'{{.State.Running}}|{{.HostConfig.RestartPolicy.Name}}' "
+                f"{shlex.quote(slot.old_runtime_container)} 2>/dev/null || true"
+            ),
+            capture=True,
+        ).strip()
+        if old_state:
+            running, _, restart_policy = old_state.partition("|")
+            if running.strip().lower() == "true":
+                raise RuntimeError(
+                    f"refusing to retire running old runtime "
+                    f"{slot.old_runtime_container}"
+                )
+            if restart_policy.strip() != "no":
+                self._ssh(
+                    slot.ssh_host,
+                    (
+                        "docker update --restart=no "
+                        f"{shlex.quote(slot.old_runtime_container)} >/dev/null"
+                    ),
+                )
+            restart_policy = self._ssh(
+                slot.ssh_host,
+                (
+                    "docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "
+                    f"{shlex.quote(slot.old_runtime_container)}"
+                ),
+                capture=True,
+            ).strip()
+            if restart_policy != "no":
+                raise RuntimeError(
+                    f"old runtime restart policy is not disabled: "
+                    f"{slot.old_runtime_container}"
+                )
+        else:
+            restart_policy = "missing"
+
+        self._set_control(
+            slot.legacy_worker_id,
+            "disabled",
+            "lan_aio_fleet_retire_legacy",
+        )
+        legacy_control = self._control_state(slot.legacy_worker_id)
+        if legacy_control != "disabled":
+            raise RuntimeError(
+                f"legacy worker control did not remain disabled: "
+                f"{slot.legacy_worker_id}={legacy_control!r}"
+            )
+        return {
+            "ok": True,
+            "action": "retire-legacy",
+            "slot": slot.id,
+            "legacy_agent_id": slot.legacy_worker_id,
+            "legacy_control": legacy_control,
+            "old_runtime_container": slot.old_runtime_container,
+            "old_runtime_restart_policy": restart_policy,
         }
 
     def drain_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -3599,6 +3719,7 @@ def build_parser() -> argparse.ArgumentParser:
             "drain-aio",
             "disable-aio",
             "restart-aio",
+            "retire-legacy",
             "rollback",
             "stop-old",
             "recover",
@@ -3874,6 +3995,8 @@ def _run_raw_execute_action(
         return ops.disable_aio(slots)
     if args.action == "restart-aio":
         return ops.restart_aio(slots)
+    if args.action == "retire-legacy":
+        return ops.retire_legacy(slots)
     if args.action == "rollback":
         return ops.rollback(slots)
     if args.action == "stop-old":
