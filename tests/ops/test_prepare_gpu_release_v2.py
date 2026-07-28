@@ -183,3 +183,35 @@ def test_retry_observes_existing_exact_sha_build_without_dispatching(
 
     assert all(ids == set() for ids in before.values())
     assert dispatched == []
+
+
+def test_publish_observes_dispatch_run_when_main_advances(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_module()
+    preparer = module.GPUReleasePreparer(tmp_path, "a" * 40)
+    calls = []
+
+    def fake_workflow_runs(_workflow, *, source_sha_only=True):
+        calls.append(source_sha_only)
+        return [
+            {
+                "databaseId": 84,
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "b" * 40,
+            }
+        ]
+
+    monkeypatch.setattr(preparer, "_workflow_runs", fake_workflow_runs)
+
+    run_id = preparer._wait_new_workflow(
+        "publish-gpu-release-manifest.yml",
+        {42},
+        timeout_seconds=1,
+        source_sha_only=False,
+    )
+
+    assert run_id == 84
+    assert calls == [False]
