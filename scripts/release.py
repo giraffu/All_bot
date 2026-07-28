@@ -264,16 +264,27 @@ def _digest_for_ref(
     command = (
         ["oras", "manifest", "fetch", "--descriptor", ref]
         if kind in {"pages", "contract"}
-        else ["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{.Manifest.Digest}}"]
+        else [
+            "docker",
+            "buildx",
+            "imagetools",
+            "inspect",
+            ref,
+            "--format",
+            "{{json .Manifest.Digest}}",
+        ]
     )
     result = dependencies.run(command, cwd=cwd)
     if result.returncode:
         raise ReleaseError(f"registry did not return a digest for {ref}")
     output = result.stdout.strip()
-    if output.startswith("{"):
+    if output.startswith(("{", '"')):
         try:
-            output = str(json.loads(output)["digest"])
-        except (KeyError, json.JSONDecodeError) as exc:
+            descriptor = json.loads(output)
+            output = str(
+                descriptor["digest"] if isinstance(descriptor, Mapping) else descriptor
+            )
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
             raise ReleaseError(f"registry descriptor is invalid for {ref}") from exc
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", output):
         raise ReleaseError(f"registry digest is invalid for {ref}")
