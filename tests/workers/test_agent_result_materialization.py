@@ -10,7 +10,7 @@ import io
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKER_DIR = ROOT / "workers" / "runpod_runtime" / "comfy_agent"
+WORKER_DIR = ROOT / "workers" / "comfy_agent"
 if str(WORKER_DIR) not in sys.path:
     sys.path.insert(0, str(WORKER_DIR))
 
