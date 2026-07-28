@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -14,18 +13,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import Settings
 from .deployment_service import DeploymentService
 from .models import (
-    BulkTestDeployRequest,
-    BuildRequest,
-    DeploymentExecuteRequest,
-    DeploymentPlanRequest,
-    GPUReleaseBuildRequest,
-    IntegrationRequest,
-    MaintenanceRequest,
-    RetryIntegrationRequest,
-    TestConfigSyncRequest,
-    TestRollbackRepairRequest,
+    ModuleBuildRequest,
+    ModuleDeployRequest,
     SwitchRequest,
     TERMINAL_OPERATION_STATUSES,
+    WorkspaceSelectionRequest,
 )
 from .operator import CliLanAioOperator, OperatorPort
 from .release_operator import ReleaseOperatorPort, UnixReleaseOperator
@@ -57,16 +49,10 @@ def create_app(
         runtime_lock,
     )
 
-    @asynccontextmanager
-    async def lifespan(_app: FastAPI):
-        deployment.resume_build_observation()
-        yield
-
     app = FastAPI(
         title="LAN AIO Resource Manager",
         docs_url=None,
         redoc_url=None,
-        lifespan=lifespan,
     )
     app.state.service = service
     app.state.csrf_token = csrf_token
@@ -105,108 +91,47 @@ def create_app(
     async def deployment_catalog():
         return await deployment.catalog()
 
-    @app.get("/api/v1/integration/status")
-    async def integration_status():
+    @app.get("/api/v1/workspaces/scan")
+    async def workspace_scan():
         return await deployment.integration_status()
 
-    @app.post("/api/v1/integration/run", status_code=202)
-    async def integration_run(payload: IntegrationRequest, request: Request):
+    @app.post("/api/v1/workspaces/integrate", status_code=202)
+    async def integrate_workspaces(
+        payload: WorkspaceSelectionRequest, request: Request
+    ):
         source_ip = request.client.host if request.client else "unknown"
         return await deployment.start_integration(
             payload, source_ip, request.state.request_id
         )
 
-    @app.post("/api/v1/integration/retry", status_code=202)
-    async def integration_retry(
-        payload: RetryIntegrationRequest, request: Request
+    @app.post("/api/v1/workspaces/align", status_code=202)
+    async def align_workspaces(
+        payload: WorkspaceSelectionRequest, request: Request
     ):
         source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_integration_retry(
+        return await deployment.start_alignment(
             payload, source_ip, request.state.request_id
         )
 
-    @app.post("/api/v1/workspaces/align", status_code=202)
-    async def align_workspaces(payload: IntegrationRequest, request: Request):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_workspace_alignment(
-            payload, source_ip, request.state.request_id
-        )
-
-    @app.get("/api/v1/releases/candidate")
-    async def release_candidate():
-        return await deployment.candidate()
-
-    @app.post("/api/v1/releases/builds", status_code=202)
-    async def release_build(payload: BuildRequest, request: Request):
+    @app.post("/api/v1/modules/build", status_code=202)
+    async def build_modules(payload: ModuleBuildRequest, request: Request):
         source_ip = request.client.host if request.client else "unknown"
         return await deployment.start_build(
             payload, source_ip, request.state.request_id
         )
 
-    @app.post("/api/v1/releases/gpu-builds", status_code=202)
-    async def gpu_release_build(
-        payload: GPUReleaseBuildRequest, request: Request
+    @app.post("/api/v1/modules/deploy", status_code=202)
+    async def deploy_modules(
+        payload: ModuleDeployRequest, request: Request
     ):
         source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_gpu_release_build(
+        return await deployment.start_deploy(
             payload, source_ip, request.state.request_id
         )
 
-    @app.get("/api/v1/environments/{environment}/status")
-    async def environment_status(environment: str):
-        return await deployment.environment_status(environment)
-
-    @app.post("/api/v1/environments/test/config-sync", status_code=202)
-    async def test_config_sync(
-        payload: TestConfigSyncRequest, request: Request
-    ):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_test_config_sync(
-            payload, source_ip, request.state.request_id
-        )
-
-    @app.post("/api/v1/environments/test/rollback-repair", status_code=202)
-    async def test_rollback_repair(
-        payload: TestRollbackRepairRequest, request: Request
-    ):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_test_rollback_repair(
-            payload, source_ip, request.state.request_id
-        )
-
-    @app.post("/api/v1/deployment-plans", status_code=201)
-    async def deployment_plan(payload: DeploymentPlanRequest, request: Request):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.create_plan(
-            payload, source_ip, request.state.request_id
-        )
-
-    @app.post("/api/v1/deployment-plans/{plan_id}/execute", status_code=202)
-    async def execute_deployment_plan(
-        plan_id: str, payload: DeploymentExecuteRequest, request: Request
-    ):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.execute_plan(
-            plan_id, payload, source_ip, request.state.request_id
-        )
-
-    @app.post(
-        "/api/v1/environments/{environment}/maintenance", status_code=202
-    )
-    async def update_maintenance(
-        environment: str, payload: MaintenanceRequest, request: Request
-    ):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.set_maintenance(
-            environment, payload, source_ip, request.state.request_id
-        )
-
-    @app.post("/api/v1/environments/test/deploy-all", status_code=202)
-    async def deploy_all_test(payload: BulkTestDeployRequest, request: Request):
-        source_ip = request.client.host if request.client else "unknown"
-        return await deployment.start_bulk_test_deploy(
-            payload, source_ip, request.state.request_id
-        )
+    @app.get("/api/v1/modules/{environment}/{module}/status")
+    async def module_status(environment: str, module: str):
+        return await deployment.module_status(environment, module)
 
     @app.get("/api/v1/operations/{operation_id}")
     async def operation(operation_id: str):

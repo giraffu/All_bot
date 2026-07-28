@@ -1,177 +1,112 @@
 # AllBot 本地资源管理平台
 
-> 当前发布流程：旧 GitHub build、bundle、change-scope、plan token 和批量测试
-> 发布 UI 已退役。候选页只读展示当前 main 与 `deploy/module-catalog.json`；
-> 旧发布动作返回 `module_release_cli_required`。模块构建和部署统一使用
-> `scripts/release.py build/deploy/rollback/status`。A–H 集成只运行轻量 main
-> 协调器，不等待 CI 或部署测试环境。下文旧发布 UI 描述只作历史背景。
-
 ## 1. 定位
 
-`lan_resource_manager/` 是只发布到本地主服务器 LAN 地址的 FastAPI + Vue 3
-独立子项目。页面分为 LAN AIO 与模块构建部署两个 Tab；后者覆盖 A–H handoff
-集成、安全槽位对齐、可信构建与模块化部署。所有写操作都经精确确认和既有
-operator/integration/release facade，不承载第二套运维实现。
+`lan_resource_manager/` 是仅绑定本地主服务器 LAN 地址的 FastAPI + Vue 3
+控制面。它有两个独立界面：
 
-它不替代 `scripts/lan_aio_fleet_prod_ops.py`，也不恢复云 Dashboard 已移除的 slot
-管理 API。catalog、ledger、live 与 helper history 继续是唯一事实源。
+- LAN AIO：读取 catalog、XDG ledger 与 live snapshot，写操作只调用既有单槽
+  operator。
+- 模块构建部署：扫描 A–H 和 handoff 队列，选择性集成/对齐，并调用独立模块
+  发布 CLI。
 
-## 2. 状态与接口
+平台是受限 adapter，不实现第二套 workspace coordinator、release engine 或
+GPU fleet。人工选择决定合入和发布目标；系统记录执行结果。
 
-- `GET /api/v1/fleet`：快速合并 catalog、ledger 和最近一次持久化 live snapshot。
-- `POST /api/v1/fleet/refresh`：后台执行全量 `status --include-disabled`；同一时间只
-  存在一个 operation。
-- `POST /api/v1/physical-slots/{node_id}/{gpu_index}/switches`：接收目标 slot、
-  页面看到的 current 和手工输入的目标 profile。
-- `GET /api/v1/operations/{id}` 与 `/events`：读取结构化阶段或通过 SSE 跟踪。
-- `GET /api/v1/deployments/catalog`、`/releases/candidate` 与
-  `/environments/{env}/status`：读取模块、可信候选、当前部署和维护状态。
-- `POST /api/v1/releases/builds`：只触发当前 main 的可信上游构建链，同 SHA 幂等。
-- `POST /api/v1/deployment-plans` 与 `/{plan_id}/execute`：服务端保管短效 token 的
-  两阶段单模块部署。
-- `POST /api/v1/environments/{env}/maintenance`：以预期状态、原因和完整确认文字
-  更新平台 owner 的生成维护。
-- `GET /api/v1/integration/status`：合并远端 main、A–H clean/base/branch 和
-  pending/running/failed queue 的脱敏状态。
-- `POST /api/v1/integration/run`：确认 `INTEGRATE <full-sha>` 后固定执行测试专用
-  `integrate-all`；逐批冻结、PR、CI、bundle 和 test deploy，不接受 prod 参数。
-- `POST /api/v1/workspaces/align`：确认 `ALIGN <full-sha>` 后只对 clean 且已被
-  main 包含的槽执行 detached refresh。
-- `POST /api/v1/environments/test/deploy-all`：确认 `TEST ALL <full-sha>` 后，把
-  test catalog 的精确模块全集组成一次原子 plan/deploy；拒绝子集与 prod。共享
-  migration/config blocker 以完整集合判断，避免某个旧 artifact source SHA 让
-  无关的单模块计划重复承接已提交的全局迁移。远端 artifact history 用一次
-  allowlisted SSH 批量读取并逐条 JSON 校验，不随历史数量线性增加 SSH 建连；
-  `private-bot-worker` 由 policy 明确标为允许首次部署的 initial artifact。
+## 2. 当前 API
 
-全量 status 可能持续数十秒，因此首屏不等待 live SSH；超过默认 180 秒的 snapshot
-标记为 stale 并禁止切换。
+只读：
 
-## 3. 切换事务
+- `GET /api/v1/fleet`
+- `GET /api/v1/deployments/catalog`
+- `GET /api/v1/workspaces/scan`
+- `GET /api/v1/modules/{environment}/{module}/status`
+- `GET /api/v1/operations/{id}` 与 `/events`
 
-网页只开放 `catalog_ready + enabled + retargetable` 候选。服务收到请求后重新跑目标
-卡 status，要求 state `passed`、没有 drift/未完成 helper operation，并再次读取
-ledger 核对 current：
+写操作：
 
-- current 存在：执行单卡 `takeover`，固定 `auto_rollback`。
-- current 为空且存在 `intentionally_empty`：对用户选择的 slot 执行精确 `recover`。
-- current 与页面预期不同、空槽未收口或目标已经 current：fail closed。
+- `POST /api/v1/fleet/refresh`
+- `POST /api/v1/physical-slots/{node}/{gpu}/switches`
+- `POST /api/v1/workspaces/integrate`
+- `POST /api/v1/workspaces/align`
+- `POST /api/v1/modules/build`
+- `POST /api/v1/modules/deploy`
 
-helper 的 XDG `mutation.lock` 与平台自己的全局 operation gate 共同保证串行。平台不
-提供 state-reconcile、candidate-plan、独立 warm-cache、release-rollout、自由
-Docker/SSH 或任务强杀入口。
+已删除的 API 包括 release candidate/build-status、deployment plan/token、
+maintenance、failed-batch retry、全量 test deploy、GPU manifest preparation、
+test config sync 和 rollback-material repair。
 
-## 4. 本地部署与安全
+## 3. 槽位扫描、选择性集成与对齐
 
-Compose 使用 host network 避免 bridge NAT 隐藏真实来源，但 Uvicorn 默认只绑定
-`192.168.1.115:8096`，不会监听 `0.0.0.0` 或 Tailscale；应用再次校验
-`192.168.1.0/24`、Host、Origin、JSON Content-Type 和 CSRF token。平台没有登录，
-所以同网段访问者都视为 operator；若安全边界变化，应先新增应用鉴权再扩大网络范围。
+`workspaces/scan` 合并：
 
-容器以 UID/GID 1000、只读根文件系统、drop all capabilities 和
-`no-new-privileges` 运行。AllBot 源码只读、XDG state 读写、正式 env 与 LAN GPU
-专用 SSH key 只读挂载；禁止 Docker Socket和云控制面 SSH key。
+- `manage_ai_workspaces.py status` 的 A–H clean/branch/head/base；
+- XDG integration queue 的
+  `pending/integrating/needs-rebase/completed`；
+- 当前远端 main SHA。
 
-常驻部署必须由用户明确要求；Compose 镜像内置平台代码，`ALLBOT_ROOT` 只读挂载目标
-AllBot 主目录作为 operator 事实源，不挂载 A–H feature worktree。启动与页面刷新均
-为只读，不自动修改 GPU。本平台首次授权部署已验证 health passed 且只监听
-`192.168.1.115:8096`。
+用户可多选槽位：
 
-## 5. 验收与恢复
+- 合入要求每个所选槽位存在当前 pending handoff。runner 将这些 exact head 作为
+  重复 `--head` 传给
+  `auto_integrate_handoffs.py integrate-all --execute`。协调器仍持有唯一写锁，
+  冲突单独进入 needs-rebase。
+- 对齐将重复 `--slot` 传给
+  `manage_ai_workspaces.py align-merged`。只有 clean 且已经被 main 包含的任务分支
+  或 detached 槽位会被刷新；其它槽位原样保留。
 
-后端测试通过 fake `OperatorPort` 覆盖状态合并、安全门禁、drift、竞争、takeover /
-recover 分流和持久化 operation；前端用 Vitest、`vue-tsc`、Vite build 与
-Playwright 桌面/移动截图验收。
+选择器没有“直接合并槽位分支”的旁路。未 push/handoff 的开发内容不能从 UI 写入
+main。
 
-若容器在 switch 中退出，平台本地 operation 在下次启动标记为 `interrupted`；真实
-收口状态以 XDG history/current 和 helper status 为准。不得由平台猜测续跑或自动
-recover。
+## 4. 模块构建与部署
 
-## 6. 可信构建、部署与维护
+模块事实源为 `deploy/module-catalog.json`。runner 从可写的真实 main 挂载执行
+`scripts/release.py`：
 
-- runner 查询远端 main、提交变更 scope、上游 CI 与
-  `allbot-release-v2:<full-sha>`。缺可信 CI 时 dispatch
-  `control-plane-release.yml`；已有同 SHA 成功 CI 时只用固定
-  `source_sha/release_channel=main/validation_mode=full/upstream_run_id` 补跑
-  modular workflow，禁止 build-only。lightweight 或 release-tooling main 不需要
-  新 bundle，部署候选沿 main 历史选择最近不可变 bundle。
-- main 身份固定由已认证 `gh api` 读取；Actions run 使用兼容旧版 GitHub CLI 的
-  run list 后在 runner 内按 `headSha` 精确过滤，不使用匿名 `git ls-remote` 或
-  `gh --commit`。catalog、candidate 与环境 SSH 状态在前端独立收敛；单个环境 SSH
-  不可达时显示脱敏 blocker，但不清空已成功读取的 main、bundle 和模块目录。
-- `GET /api/v1/deployments/catalog` 从 release policy 返回完整模块组，并按环境拓扑
-  过滤；每次计划只接受一个模块。服务端保存 `release.py plan` 的短效 token，浏览器
-  只看到安全预览。
-- 执行阶段重新核对候选 SHA，固定调用 `release.py deploy --track control-plane
-  --modules <one> --plan-token ... --execute`；正式环境附加 `--confirm-prod`。
-- `scripts/release_maintenance.py` 只管理 test/prod 固定 state root 的
-  `GENERATION_MAINTENANCE`。平台 owner metadata 与活动 transaction 共同决定是否
-  可解除，不写 `/app/MAINTENANCE`。
-- CI 构建使用独立并发通道；LAN 切换、部署和维护共享 runtime mutation gate。
-  runner/Web 重启不会重放 mutation，GitHub build 仍可从外部 run 状态继续观察。
+```text
+build --module <selected>... --sha <current-main-sha>
+deploy --env <test|prod> --module <one> --artifact <exact-digest>
+status --env <test|prod> --module <one>
+```
 
-Web 与 runner 使用同一只读镜像但不同容器。Web 只挂 LAN operator 所需材料和 Unix
-socket；runner 才挂云 SSH、GitHub/GHCR/Pages 凭据。两者均非 root、只读根文件系统、
-drop all capabilities、`no-new-privileges` 且无 Docker Socket。
-槽位对齐和集成脚本仍从只读 `/workspace` 取可信版本，但通过
-`WORKSPACE_REPO_ROOT=/home/hfy/APP/All_bot` 对显式挂载的可写主仓库执行 Git
-状态迁移；不得对只读挂载做 `fetch`，也不得把该写挂载暴露给 Web 容器。
-镜像从 digest-pinned Node 22 stage 只复制 `node` 与 npm/npx；发布测试 Pages 时仍由
-`release.py` 读取前端 lockfile 的精确 Wrangler 版本。这样隔离 runner 不依赖宿主
-Node，也不会在运行时 apt 安装工具。`NPM_CONFIG_CACHE` 固定落到 runner 专用的
-`/home/app/.cache/allbot/npm`，`XDG_CONFIG_HOME` 固定到同一 volume 的 `config`
-子目录；只读 home 不承担 npm cache 或 Wrangler log/config 写入。Pages 命令失败时
-只返回最后一条经统一脱敏和长度限制的诊断，不得回显 token 或完整环境。
-Pages 阶段在上传前先同时核对 canonical deployment 的 commit SHA、成功状态以及
-公开 runtime config revision；三者匹配就复用该不可变部署并记录
-`reused_existing`，使“Pages 已成功但本地进程随后中断”的重试不会重复 mutation。
-同 SHA 存在多次历史上传时，以项目当前 canonical deployment ID 选定记录，不能取
-部署列表中第一条同 SHA 记录后反向猜测 canonical。
-runner 的固定 SSH config 对同一 allowlisted 云主机使用 20 秒 connect timeout、
-最多 4 次 connection attempts，以及 20 秒 server-alive/3 次失联上限。该重试只吸收
-瞬时网络抖动，不改变目标 host、用户、密钥、known_hosts 或环境授权；全部尝试失败仍
-让事务 fail closed 并进入原发布器补偿。planner 读取远端 `current.json` 时，只有
-远端明确返回文件不存在才视为尚无部署状态；SSH 超时、鉴权或其它读取失败统一报告
-“远端部署状态不可用”，不得降级成首次部署或缺失 schema-v2 基线。
-runner 子命令输出超过诊断上限时先对完整文本脱敏，再把最终错误行置于摘要开头并
-附带有界尾部上下文；模块构建部署页因此应显示实际 `ERROR`，而不是长 plan JSON
-的开头。
+构建允许多选，只递归各模块必要 base，返回所选模块的精确 digest。部署按模块逐个
+执行，不形成全局 bundle：
 
-integration 复用 release runner 的动作白名单。runner 对 Git common dir、A–H
-worktree root 与 XDG integration queue 只有精确 bind mount；Web 不挂载这些写路径。
-队列自动收敛只允许两类可证明安全的历史项：head 已在当前 main 的 pending，或
-`deploying-test` 失败且其 main SHA 已被更新 main 超越的批次。其它 failed batch
-继续阻断。槽位 dirty、未初始化或未合入均只读展示。
+- test 每次选择 1–2 个 catalog 支持 test 的模块；
+- prod 可在后台多选，确认短语后每个调用都附加 `--confirm-prod`；
+- GPU 必须单独选择并指定 `operator + exact slot`；
+- 单个模块失败时停止后续模块，已完成模块和失败结果保存在 operation 中；
+- 发布器负责目标健康检查与该模块回滚，migration 保留现场。
 
-失败原因修复后可通过 `POST /api/v1/integration/retry` 和精确短语
-`RETRY <batch>` 将指定批次重新排队并继续集成。runner 的集成临时 worktree
-固定落在 release cache volume，并使用固定 coordinator 提交身份，不依赖小容量的
-容器 `/tmp` 或宿主 Git 全局配置。同一隔离 volume 覆盖 runner 的
-`~/.cache/allbot`，供 bundle cache、临时 worktree 与短效 release plan 使用；Web
-不挂载该 volume。
+平台不查询 CI、Git diff、test evidence、bundle、其它模块或 GPU baseline。
 
-测试全模块入口按 catalog 顺序为每个模块重新生成短效 token 并立即执行；失败时停止，
-operation result 记录已完成模块，重跑依靠 exact state 幂等继续。该接口固定为 test，
-不存在 prod 对称入口。右上角 `/help.html` 是可点击操作手册，随前端 artifact 发布。
+## 5. 安全边界
 
-`POST /api/v1/releases/gpu-builds` 只接受当前 main 与精确短语
-`GPU BUILD <main-sha>`。它通过 `scripts/prepare_gpu_release_v2.py` 并行补齐 8 个实际
-GPU 镜像，复用可信基线的模型 checksum/rollback digest，形成同 SHA 的 9-profile
-attested manifest，并重放模块 bundle。已经存在的不可变镜像只有在能找到同 SHA 成功
-workflow 时才复用。该入口不创建 RunPod/LAN Pod、不部署 prod，也不进入维护。
+- Uvicorn 仅绑定配置的 LAN IP；中间件继续校验 CIDR、Host、Origin、JSON、CSRF
+  与 mutation rate。
+- Web 和 runner 都是非 root、只读 rootfs、drop capabilities、
+  `no-new-privileges`。
+- Web 只接 Unix socket，不挂主仓库写路径、A–H、Docker/Git/云凭据。
+- runner 只接受固定 JSON action；写挂载限真实 main、A–H 与 XDG queue/state。
+- runner 不挂 Docker Socket。本机构建使用专用 SSH Docker endpoint 与专用 key；
+  GHCR、云 SSH 和 Pages token 均按需只读挂载。
+- 页面启动和扫描只读，不自动合入、对齐、构建或部署。
+- prod、GPU、数据库、Cloudflare mutation 仍需操作者显式选择和确认。
 
-`POST /api/v1/environments/test/config-sync` 只接受 `TEST CONFIG <main-sha>`，固定从
-当前 main checkout 执行 test `config-plan` 后再执行原子 `config-apply --execute`。
-该动作只用于收敛发布前已检测到的 test 配置投影漂移，不接受环境参数、不附加
-`--confirm-prod`，也不调用手动维护入口。
+## 6. 运行与恢复
 
-`POST /api/v1/environments/test/rollback-repair` 只接受
-`REPAIR TEST ROLLBACK <current-sha>`。Web 提交前重新读取测试状态并要求 current SHA
-完全相同；runner 固定调用 test/control-plane/dashboard 的
-`recover --repair-rollback-materials --execute` 兼容入口。该 repair 模式可按精确
-SHA 拉取旧不可变 bundle，再由发布器核对完整 bundle、
-current artifact 和运行容器 digest，只原子物化 checkout 与非敏感 `release.env` 并
-执行 `compose config -q`；不拉镜像、不替换或重启容器、不写维护标记及 deployment
-state。runner 在调用前通过固定测试 SSH 再读取一次当前 control-plane state，校验
-schema/track/SHA 后以 0600 临时 `--state-file` 绑定本次恢复，完成后删除；不会为
-Dashboard 缺失项遍历历史文件。平台不存在正式环境对称入口。
+operation 持久化到平台 data volume。容器重启后未完成 mutation 标为
+`interrupted`，不会自动续跑。真实状态分别以 Git/main/queue、模块 release state、
+远端 live target 和 LAN operator ledger 为准。
+
+最小验证：
+
+```bash
+python -m pytest -q lan_resource_manager/tests
+python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
+  tests/ops/test_auto_integrate_handoffs.py tests/ops/test_release_cli.py
+cd lan_resource_manager/frontend && npm test && npm run build
+docker compose --env-file lan_resource_manager/.env.example \
+  -f lan_resource_manager/compose.yml config
+python scripts/doc_quality_checker.py
+```

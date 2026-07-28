@@ -4,68 +4,27 @@ import argparse
 import asyncio
 import json
 import os
+from pathlib import Path
 import re
 import sys
-import tempfile
-from pathlib import Path
-from typing import Any, Awaitable, Callable
-
-import yaml
+from typing import Any
 
 from .operator import parse_last_json, redact_error
 
-RunJson = Callable[..., Awaitable[dict[str, Any]]]
+
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{3,240}$")
+DIGEST_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+MODULE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
+SLOTS = tuple("ABCDEFGH")
 ENVIRONMENTS = {"test", "prod"}
-TEST_SERVICES = {
-    "central-api",
-    "web-api",
-    "main-bot",
-    "qqcc-bot",
-    "qqcc-config-backend",
-    "qqcc-config-frontend",
-    "private-bot-worker",
-    "imgproxy",
-    "public-web",
-}
-ARTIFACT_SERVICE = {
-    "dashboard-backend": "dashboard",
-    "dashboard-frontend": "dashboard",
-    "payment-api": "payment-api",
-    "paid-group-bot": "paid-group-bot",
-    "support-bot": "support-platform",
-}
 ALLOWED_ACTIONS = {
     "catalog",
-    "candidate",
-    "build_status",
-    "environment_status",
-    "start_build",
-    "plan",
-    "deploy",
-    "plan_test_modules",
-    "deploy_test_modules",
-    "set_maintenance",
-    "integrate_all",
-    "align_workspaces",
     "integration_status",
-    "prepare_gpu_release",
-    "sync_test_config",
-    "repair_test_rollback",
-    "retry_integration",
-}
-RETIRED_RELEASE_ACTIONS = {
-    "build_status",
-    "start_build",
-    "plan",
-    "deploy",
-    "plan_test_modules",
-    "deploy_test_modules",
-    "prepare_gpu_release",
-    "sync_test_config",
-    "repair_test_rollback",
-    "retry_integration",
+    "integrate_slots",
+    "align_slots",
+    "build_modules",
+    "deploy_modules",
+    "module_status",
 }
 
 
@@ -74,24 +33,23 @@ class RunnerError(RuntimeError):
 
 
 class ReleaseRunner:
-    def __init__(self, allbot_root: Path, run_json: RunJson | None = None):
+    """Allowlisted host adapter for the existing workspace and release CLIs."""
+
+    def __init__(self, allbot_root: Path, run_json=None):
         self.root = allbot_root
-        self.release = self.root / "scripts/release.py"
-        self.maintenance = self.root / "scripts/release_maintenance.py"
         self.run_json = run_json or self._run_json
 
-    async def _run(self, command: list[str], timeout: int = 7200) -> str:
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-        token_file = os.environ.get("GITHUB_ACTIONS_TOKEN_FILE")
-        if token_file:
-            try:
-                env["GH_TOKEN"] = Path(token_file).read_text(encoding="utf-8").strip()
-            except OSError as exc:
-                raise RunnerError("github_token_unavailable") from exc
+    def _workspace_repo(self) -> Path:
+        return Path(os.environ.get("WORKSPACE_REPO_ROOT", str(self.root))).resolve()
+
+    def _release_script(self) -> Path:
+        return self._workspace_repo() / "scripts/release.py"
+
+    async def _run(self, command: list[str], timeout: int = 28800) -> str:
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=self.root,
-            env=env,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -109,608 +67,306 @@ class ReleaseRunner:
     async def _run_json(self, command: list[str], **kwargs) -> dict[str, Any]:
         return parse_last_json(await self._run(command, **kwargs))
 
-    def _policy_modules(self) -> dict[str, dict[str, Any]]:
+    def _catalog(self) -> dict[str, dict[str, Any]]:
         path = self.root / "deploy/module-catalog.json"
         try:
-            catalog = json.loads(path.read_text(encoding="utf-8"))
-            modules = catalog["modules"]
+            document = json.loads(path.read_text(encoding="utf-8"))
+            modules = document["modules"]
         except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise RunnerError("module_catalog_invalid") from exc
         if not isinstance(modules, dict):
             raise RunnerError("module_catalog_invalid")
         return {
             str(name): {
-                "artifacts": [str(name)],
+                "kind": str(config.get("kind") or ""),
+                "adapter": str(config.get("adapter") or ""),
                 "environments": list(config.get("environments") or []),
+                "build_only": config.get("adapter") == "build-only",
+                "requires_target": config.get("adapter") == "gpu",
             }
             for name, config in modules.items()
-            if isinstance(config, dict) and config.get("adapter") != "build-only"
-        }
-
-    def _validate_common(self, payload: dict[str, Any]):
-        environment = payload.get("environment")
-        module = payload.get("module")
-        sha = payload.get("sha")
-        if environment not in ENVIRONMENTS:
-            raise RunnerError("invalid_environment")
-        if not isinstance(module, str) or not re.fullmatch(r"[a-z0-9-]{1,80}", module):
-            raise RunnerError("invalid_module")
-        if module not in self._policy_modules():
-            raise RunnerError("invalid_module")
-        if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-            raise RunnerError("invalid_sha")
-        maintenance = payload.get("maintenance")
-        if maintenance not in {"planner", "rolling"}:
-            raise RunnerError("invalid_maintenance_mode")
-        if maintenance == "rolling" and environment != "prod":
-            raise RunnerError("rolling_only_for_prod")
-        return environment, module, sha, maintenance
-
-    def _test_modules(self) -> list[str]:
-        modules = self._policy_modules()
-        result = []
-        for name, config in modules.items():
-            services = {
-                ARTIFACT_SERVICE.get(artifact, artifact)
-                for artifact in config["artifacts"]
-            }
-            if services <= TEST_SERVICES:
-                result.append(name)
-        return sorted(result)
-
-    def _validate_test_modules(self, payload: dict[str, Any]) -> tuple[list[str], str]:
-        modules = payload.get("modules")
-        sha = payload.get("sha")
-        if (
-            not isinstance(modules, list)
-            or not modules
-            or not all(
-                isinstance(module, str)
-                and re.fullmatch(r"[a-z0-9-]{1,80}", module)
-                for module in modules
-            )
-            or len(modules) != len(set(modules))
-            or set(modules) != set(self._test_modules())
-        ):
-            raise RunnerError("invalid_test_modules")
-        if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-            raise RunnerError("invalid_sha")
-        return sorted(modules), sha
-
-    async def dispatch(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if action not in ALLOWED_ACTIONS:
-            raise RunnerError("unsupported_action")
-        if action == "catalog":
-            modules = self._policy_modules()
-            return {
-                "modules": modules,
-                "environments": {
-                    "test": {
-                        "label": "测试环境",
-                        "modules": self._test_modules(),
-                        "maintenance_supported": True,
-                    },
-                    "prod": {
-                        "label": "正式环境",
-                        "modules": sorted(modules),
-                        "maintenance_supported": True,
-                    },
-                },
-            }
-        if action == "candidate":
-            return await self._candidate()
-        if action in RETIRED_RELEASE_ACTIONS:
-            raise RunnerError("module_release_cli_required")
-        if action == "prepare_gpu_release":
-            sha = payload.get("expected_main_sha")
-            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-                raise RunnerError("invalid_sha")
-            if payload.get("confirmation") != f"GPU BUILD {sha}":
-                raise RunnerError("confirmation_mismatch")
-            if await self._remote_main_sha() != sha:
-                raise RunnerError("main_changed")
-            return parse_last_json(
-                await self._run(
-                    [
-                        sys.executable,
-                        str(self.root / "scripts/prepare_gpu_release_v2.py"),
-                        "--repo",
-                        str(self.root),
-                        "--source-sha",
-                        sha,
-                        "--execute",
-                    ],
-                    timeout=28800,
-                )
-            )
-        if action == "sync_test_config":
-            sha = payload.get("expected_main_sha")
-            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-                raise RunnerError("invalid_sha")
-            if payload.get("confirmation") != f"TEST CONFIG {sha}":
-                raise RunnerError("confirmation_mismatch")
-            if await self._remote_main_sha() != sha:
-                raise RunnerError("main_changed")
-            return parse_last_json(
-                await self._run(
-                    [
-                        sys.executable,
-                        str(
-                            self.root
-                            / "scripts/sync_test_release_config.py"
-                        ),
-                        "--repo",
-                        str(self.root),
-                        "--source-sha",
-                        sha,
-                        "--execute",
-                    ],
-                    timeout=3600,
-                )
-            )
-        if action == "repair_test_rollback":
-            sha = payload.get("expected_current_sha")
-            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-                raise RunnerError("invalid_sha")
-            if payload.get("confirmation") != f"REPAIR TEST ROLLBACK {sha}":
-                raise RunnerError("confirmation_mismatch")
-            raw_state = await self._run(
-                [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "allbot-do-sgp1-test-control",
-                    "cat /var/lib/allbot/deployments/test/control-plane/current.json",
-                ],
-                timeout=60,
-            )
-            try:
-                state = json.loads(raw_state)
-            except json.JSONDecodeError as exc:
-                raise RunnerError("test_deployment_state_invalid") from exc
-            if (
-                not isinstance(state, dict)
-                or state.get("git_sha") != sha
-                or state.get("schema_version") != 2
-                or state.get("track") != "control-plane"
-            ):
-                raise RunnerError("test_environment_changed")
-            temp_root = Path(os.environ.get("TMPDIR", "/tmp"))
-            temp_root.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                dir=temp_root,
-                prefix="test-control-state-",
-                suffix=".json",
-                delete=False,
-            ) as handle:
-                json.dump(state, handle, sort_keys=True)
-                handle.write("\n")
-                state_file = Path(handle.name)
-            state_file.chmod(0o600)
-            common = [
-                "--env",
-                "test",
-                "--track",
-                "control-plane",
-                "--sha",
-                sha,
-                "--modules",
-                "dashboard",
-                "--bundle-repository",
-                "ghcr.io/giraffu/allbot-release-v2",
-                "--state-file",
-                str(state_file),
-            ]
-            try:
-                return parse_last_json(
-                    await self._run(
-                        [
-                            sys.executable,
-                            str(self.release),
-                            "recover",
-                            *common,
-                            "--repair-rollback-materials",
-                            "--execute",
-                        ],
-                        timeout=3600,
-                    )
-                )
-            finally:
-                state_file.unlink(missing_ok=True)
-        if action == "integration_status":
-            main_sha = await self._remote_main_sha()
-            workspace_output = await self._run(
-                [
-                    sys.executable,
-                    str(self.root / "scripts/manage_ai_workspaces.py"),
-                    "status",
-                ],
-                timeout=60,
-            )
-            try:
-                slots = json.loads(workspace_output)
-            except json.JSONDecodeError as exc:
-                raise RunnerError("workspace_status_invalid") from exc
-            if not isinstance(slots, list):
-                raise RunnerError("workspace_status_invalid")
-            queue_root = Path(
-                os.environ.get(
-                    "INTEGRATION_QUEUE_ROOT",
-                    str(
-                        Path.home()
-                        / ".local/state/allbot/ai-integration-queue"
-                    ),
-                )
-            )
-            queue: dict[str, list[dict[str, Any]]] = {}
-            for state in ("pending", "integrating", "completed", "needs-rebase"):
-                records = []
-                for path in sorted((queue_root / state).glob("*.json")):
-                    try:
-                        raw = json.loads(path.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError):
-                        records.append(
-                            {"id": path.stem, "status": "invalid"}
-                        )
-                        continue
-                    records.append(
-                        {
-                            "id": str(raw.get("batch") or path.stem),
-                            "status": str(raw.get("status") or state),
-                            "stage": raw.get("stage"),
-                            "branch": raw.get("branch"),
-                            "head": raw.get("head"),
-                            "main_sha": raw.get("main_sha"),
-                            "error": raw.get("error"),
-                            "members": [
-                                {
-                                    "slot": item.get("slot"),
-                                    "branch": item.get("branch"),
-                                    "head": item.get("head"),
-                                }
-                                for item in raw.get("members", [])
-                                if isinstance(item, dict)
-                            ],
-                        }
-                    )
-                queue[state] = records
-            return {
-                "main_sha": main_sha,
-                "slots": slots,
-                "queue": queue,
-            }
-        if action == "build_status":
-            sha = payload.get("sha")
-            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-                raise RunnerError("invalid_sha")
-            ci_runs, modular_runs, bundle_ready = await asyncio.gather(
-                self._gh_runs("control-plane-release.yml", sha),
-                self._gh_runs("modular-release-v2.yml", sha),
-                self._bundle_ready(sha),
-            )
-            return {
-                "sha": sha,
-                "ci": ci_runs[0] if ci_runs else None,
-                "build": modular_runs[0] if modular_runs else None,
-                "bundle": {"status": "ready" if bundle_ready else "missing"},
-            }
-        if action == "environment_status":
-            environment = payload.get("environment")
-            if environment not in ENVIRONMENTS:
-                raise RunnerError("invalid_environment")
-            return await self.run_json(
-                [
-                    sys.executable,
-                    str(self.maintenance),
-                    "status",
-                    "--env",
-                    environment,
-                ],
-                timeout=30,
-            )
-        if action == "start_build":
-            sha = payload.get("expected_main_sha")
-            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-                raise RunnerError("invalid_sha")
-            candidate = await self._candidate()
-            if candidate.get("main_sha") != sha:
-                raise RunnerError("main_changed")
-            return await self._start_build(sha, candidate)
-        if action in {"integrate_all", "align_workspaces"}:
-            expected = payload.get("expected_main_sha")
-            if not isinstance(expected, str) or not SHA_RE.fullmatch(expected):
-                raise RunnerError("invalid_sha")
-            prefix = "INTEGRATE" if action == "integrate_all" else "ALIGN"
-            if payload.get("confirmation") != f"{prefix} {expected}":
-                raise RunnerError("confirmation_mismatch")
-            current = await self._remote_main_sha()
-            if current != expected:
-                raise RunnerError("main_changed")
-            script = (
-                self.root / "scripts/auto_integrate_handoffs.py"
-                if action == "integrate_all"
-                else self.root / "scripts/manage_ai_workspaces.py"
-            )
-            workspace_repo_root = Path(
-                os.environ.get("WORKSPACE_REPO_ROOT", str(self.root))
-            ).resolve()
-            command = [
-                sys.executable,
-                str(script),
-                "--repo",
-                str(workspace_repo_root),
-            ]
-            if action == "integrate_all":
-                command.extend(
-                    [
-                        "--queue-root",
-                        os.environ.get(
-                            "INTEGRATION_QUEUE_ROOT",
-                            str(
-                                Path.home()
-                                / ".local/state/allbot/ai-integration-queue"
-                            ),
-                        ),
-                        "integrate-all",
-                        "--execute",
-                    ]
-                )
-            else:
-                command.extend(
-                    [
-                        "--lock-path",
-                        os.environ.get(
-                            "WORKSPACE_LOCK_PATH",
-                            str(
-                                Path.home()
-                                / ".local/state/allbot/ai-workspaces.lock"
-                            ),
-                        ),
-                        "align-merged",
-                    ]
-                )
-            return parse_last_json(
-                await self._run(
-                    command,
-                    timeout=28800 if action == "integrate_all" else 300,
-                )
-            )
-        if action == "retry_integration":
-            batch = payload.get("batch")
-            if not isinstance(batch, str) or not re.fullmatch(
-                r"[a-zA-Z0-9][a-zA-Z0-9._-]{2,99}", batch
-            ):
-                raise RunnerError("invalid_batch")
-            if payload.get("confirmation") != f"RETRY {batch}":
-                raise RunnerError("confirmation_mismatch")
-            queue_root = os.environ.get(
-                "INTEGRATION_QUEUE_ROOT",
-                str(Path.home() / ".local/state/allbot/ai-integration-queue"),
-            )
-            script = str(self.root / "scripts/auto_integrate_handoffs.py")
-            await self._run(
-                [
-                    sys.executable,
-                    script,
-                    "--queue-root",
-                    queue_root,
-                    "retry-failed",
-                    "--batch",
-                    batch,
-                ],
-                timeout=60,
-            )
-            return parse_last_json(
-                await self._run(
-                    [
-                        sys.executable,
-                        script,
-                        "--queue-root",
-                        queue_root,
-                        "integrate-all",
-                        "--execute",
-                    ],
-                    timeout=28800,
-                )
-            )
-        if action == "plan":
-            raise RunnerError("module_release_cli_required")
-        if action == "deploy":
-            raise RunnerError("module_release_cli_required")
-        if action in {"plan_test_modules", "deploy_test_modules"}:
-            raise RunnerError("module_release_cli_required")
-        environment = payload.get("environment")
-        if environment not in ENVIRONMENTS:
-            raise RunnerError("invalid_environment")
-        enabled = payload.get("enabled")
-        expected = payload.get("expected_enabled")
-        if not isinstance(enabled, bool) or not isinstance(expected, bool):
-            raise RunnerError("invalid_maintenance_state")
-        reason = str(payload.get("reason", ""))
-        operation_id = str(payload.get("operation_id", ""))
-        if not (3 <= len(reason) <= 240) or not re.fullmatch(
-            r"[a-zA-Z0-9._:-]{3,100}", operation_id
-        ):
-            raise RunnerError("invalid_maintenance_request")
-        command = [
-            sys.executable,
-            str(self.maintenance),
-            "enable" if enabled else "disable",
-            "--env",
-            environment,
-            "--expected-enabled",
-            "true" if expected else "false",
-            "--reason",
-            reason,
-            "--operation-id",
-            operation_id,
-            "--execute",
-        ]
-        if environment == "prod":
-            command.append("--confirm-prod")
-        return await self.run_json(command, timeout=120)
-
-    async def _gh_runs(self, workflow: str, sha: str) -> list[dict[str, Any]]:
-        output = await self._run(
-            [
-                "gh",
-                "run",
-                "list",
-                "--workflow",
-                workflow,
-                "--branch",
-                "main",
-                "--limit",
-                "50",
-                "--json",
-                "databaseId,status,conclusion,headSha,url,event",
-            ],
-            timeout=60,
-        )
-        try:
-            value = json.loads(output)
-        except json.JSONDecodeError as exc:
-            raise RunnerError("github_response_invalid") from exc
-        return (
-            [item for item in value if item.get("headSha") == sha]
-            if isinstance(value, list)
-            else []
-        )
-
-    async def _bundle_ready(self, sha: str) -> bool:
-        process = await asyncio.create_subprocess_exec(
-            "oras",
-            "manifest",
-            "fetch",
-            f"ghcr.io/giraffu/allbot-release-v2:{sha}",
-            cwd=self.root,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        return await process.wait() == 0
-
-    async def _latest_deployable_sha(self, main_sha: str) -> str | None:
-        tags_output, history_output = await asyncio.gather(
-            self._run(
-                [
-                    "oras",
-                    "repo",
-                    "tags",
-                    "ghcr.io/giraffu/allbot-release-v2",
-                ],
-                timeout=60,
-            ),
-            self._run(
-                [
-                    "gh",
-                    "api",
-                    "--method",
-                    "GET",
-                    "--paginate",
-                    "repos/giraffu/All_bot/commits",
-                    "-f",
-                    f"sha={main_sha}",
-                    "-f",
-                    "per_page=100",
-                    "--jq",
-                    ".[].sha",
-                ],
-                timeout=120,
-            ),
-        )
-        tags = {
-            value.strip()
-            for value in tags_output.splitlines()
-            if SHA_RE.fullmatch(value.strip())
-        }
-        return next(
-            (
-                value.strip()
-                for value in history_output.splitlines()
-                if value.strip() in tags
-            ),
-            None,
-        )
-
-    async def _candidate(self) -> dict[str, Any]:
-        main_sha = await self._remote_main_sha()
-        return {
-            "main_sha": main_sha,
-            "deployable_sha": main_sha,
-            "scope": "explicit-modules",
-            "ci": None,
-            "bundle": None,
-            "build": None,
-            "blockers": [],
+            if isinstance(config, dict)
         }
 
     async def _remote_main_sha(self) -> str:
         output = await self._run(
+            ["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"],
+            timeout=60,
+        )
+        sha = output.split()[0] if output.split() else ""
+        if not SHA_RE.fullmatch(sha):
+            raise RunnerError("main_sha_unavailable")
+        return sha
+
+    @staticmethod
+    def _selected_modules(value: Any) -> list[str]:
+        if (
+            not isinstance(value, list)
+            or not value
+            or len(value) != len(set(value))
+            or not all(isinstance(name, str) and MODULE_RE.fullmatch(name) for name in value)
+        ):
+            raise RunnerError("invalid_modules")
+        return sorted(value)
+
+    @staticmethod
+    def _selected_slots(value: Any) -> list[str]:
+        if (
+            not isinstance(value, list)
+            or not value
+            or len(value) != len(set(value))
+            or not all(slot in SLOTS for slot in value)
+        ):
+            raise RunnerError("invalid_slots")
+        return sorted(value)
+
+    def _queue_root(self) -> Path:
+        return Path(
+            os.environ.get(
+                "INTEGRATION_QUEUE_ROOT",
+                str(Path.home() / ".local/state/allbot/ai-integration-queue"),
+            )
+        )
+
+    def _queue_records(self) -> dict[str, list[dict[str, Any]]]:
+        result: dict[str, list[dict[str, Any]]] = {}
+        for state in ("pending", "integrating", "needs-rebase", "completed"):
+            rows = []
+            for path in sorted((self._queue_root() / state).glob("*.json")):
+                try:
+                    record = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    rows.append({"id": path.stem, "status": "invalid"})
+                    continue
+                rows.append(
+                    {
+                        "id": path.stem,
+                        "slot": record.get("slot"),
+                        "branch": record.get("branch"),
+                        "head": record.get("head"),
+                        "base_sha": record.get("base_sha"),
+                        "status": record.get("status") or state,
+                        "main_sha": record.get("main_sha"),
+                        "reason": record.get("reason"),
+                        "conflict_files": record.get("conflict_files") or [],
+                    }
+                )
+            result[state] = rows
+        return result
+
+    async def dispatch(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if action not in ALLOWED_ACTIONS:
+            raise RunnerError("unsupported_action")
+        catalog = self._catalog()
+
+        if action == "catalog":
+            return {"modules": catalog}
+
+        if action == "integration_status":
+            raw = await self._run(
+                [
+                    sys.executable,
+                    str(self.root / "scripts/manage_ai_workspaces.py"),
+                    "--repo",
+                    str(
+                        self._workspace_repo()
+                    ),
+                    "status",
+                ],
+                timeout=60,
+            )
+            try:
+                slots = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise RunnerError("workspace_status_invalid") from exc
+            if not isinstance(slots, list):
+                raise RunnerError("workspace_status_invalid")
+            return {
+                "main_sha": await self._remote_main_sha(),
+                "slots": slots,
+                "queue": self._queue_records(),
+            }
+
+        if action in {"integrate_slots", "align_slots"}:
+            slots = self._selected_slots(payload.get("slots"))
+            expected = payload.get("expected_main_sha")
+            if not isinstance(expected, str) or not SHA_RE.fullmatch(expected):
+                raise RunnerError("invalid_sha")
+            prefix = "INTEGRATE" if action == "integrate_slots" else "ALIGN"
+            if payload.get("confirmation") != f"{prefix} {','.join(slots)} {expected}":
+                raise RunnerError("confirmation_mismatch")
+            if await self._remote_main_sha() != expected:
+                raise RunnerError("main_changed")
+            repo = str(
+                self._workspace_repo()
+            )
+            if action == "integrate_slots":
+                heads = payload.get("heads")
+                if (
+                    not isinstance(heads, dict)
+                    or set(heads) != set(slots)
+                    or not all(
+                        isinstance(values, list)
+                        and values
+                        and len(values) == len(set(values))
+                        and all(
+                            isinstance(head, str) and SHA_RE.fullmatch(head)
+                            for head in values
+                        )
+                        for values in heads.values()
+                    )
+                ):
+                    raise RunnerError("invalid_handoff_heads")
+                command = [
+                    sys.executable,
+                    str(self.root / "scripts/auto_integrate_handoffs.py"),
+                    "--repo",
+                    repo,
+                    "--queue-root",
+                    str(self._queue_root()),
+                    "integrate-all",
+                    "--execute",
+                ]
+                for slot in slots:
+                    for head in heads[slot]:
+                        command.extend(["--head", head])
+                return parse_last_json(await self._run(command))
+            command = [
+                sys.executable,
+                str(self.root / "scripts/manage_ai_workspaces.py"),
+                "--repo",
+                repo,
+                "--lock-path",
+                os.environ.get(
+                    "WORKSPACE_LOCK_PATH",
+                    str(Path.home() / ".local/state/allbot/ai-workspaces.lock"),
+                ),
+                "align-merged",
+            ]
+            for slot in slots:
+                command.extend(["--slot", slot])
+            return parse_last_json(await self._run(command, timeout=300))
+
+        if action == "build_modules":
+            modules = self._selected_modules(payload.get("modules"))
+            sha = payload.get("sha")
+            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+                raise RunnerError("invalid_sha")
+            if any(name not in catalog for name in modules):
+                raise RunnerError("invalid_modules")
+            if payload.get("confirmation") != f"BUILD {','.join(modules)} {sha}":
+                raise RunnerError("confirmation_mismatch")
+            if await self._remote_main_sha() != sha:
+                raise RunnerError("main_changed")
+            command = [sys.executable, str(self._release_script()), "build"]
+            for name in modules:
+                command.extend(["--module", name])
+            command.extend(["--sha", sha])
+            built = parse_last_json(await self._run(command))
+            artifacts = {
+                name: built[name]
+                for name in modules
+                if isinstance(built.get(name), str)
+                and DIGEST_RE.fullmatch(str(built[name]))
+            }
+            if set(artifacts) != set(modules):
+                raise RunnerError("module_build_result_invalid")
+            return {"sha": sha, "artifacts": artifacts}
+
+        if action == "deploy_modules":
+            environment = payload.get("environment")
+            if environment not in ENVIRONMENTS:
+                raise RunnerError("invalid_environment")
+            artifacts = payload.get("artifacts")
+            if (
+                not isinstance(artifacts, dict)
+                or not artifacts
+                or not all(
+                    isinstance(name, str)
+                    and MODULE_RE.fullmatch(name)
+                    and isinstance(ref, str)
+                    and DIGEST_RE.fullmatch(ref)
+                    for name, ref in artifacts.items()
+                )
+            ):
+                raise RunnerError("invalid_artifacts")
+            modules = sorted(artifacts)
+            if environment == "test" and len(modules) > 2:
+                raise RunnerError("test_module_limit")
+            if any(
+                name not in catalog
+                or catalog[name]["build_only"]
+                or environment not in catalog[name]["environments"]
+                for name in modules
+            ):
+                raise RunnerError("module_unavailable")
+            if payload.get("confirmation") != (
+                f"DEPLOY {environment.upper()} {','.join(modules)}"
+            ):
+                raise RunnerError("confirmation_mismatch")
+            targets = payload.get("targets") or {}
+            completed = []
+            results = {}
+            for name in modules:
+                command = [
+                    sys.executable,
+                    str(self._release_script()),
+                    "deploy",
+                    "--env",
+                    environment,
+                    "--module",
+                    name,
+                    "--artifact",
+                    artifacts[name],
+                ]
+                if environment == "prod":
+                    command.append("--confirm-prod")
+                if catalog[name]["requires_target"]:
+                    target = targets.get(name) if isinstance(targets, dict) else None
+                    if (
+                        not isinstance(target, dict)
+                        or target.get("operator") not in {"runpod", "lan"}
+                        or not isinstance(target.get("slot"), str)
+                        or not target["slot"]
+                    ):
+                        raise RunnerError("gpu_target_required")
+                    command.extend(
+                        ["--operator", target["operator"], "--slot", target["slot"]]
+                    )
+                results[name] = parse_last_json(await self._run(command))
+                completed.append(name)
+            return {
+                "environment": environment,
+                "completed_modules": completed,
+                "results": results,
+            }
+
+        environment = payload.get("environment")
+        module = payload.get("module")
+        if (
+            environment not in ENVIRONMENTS
+            or not isinstance(module, str)
+            or module not in catalog
+        ):
+            raise RunnerError("invalid_status_target")
+        return await self.run_json(
             [
-                "gh",
-                "api",
-                "repos/giraffu/All_bot/git/ref/heads/main",
-                "--jq",
-                ".object.sha",
+                sys.executable,
+                str(self._release_script()),
+                "status",
+                "--env",
+                environment,
+                "--module",
+                module,
             ],
             timeout=60,
         )
-        main_sha = output.strip()
-        if not SHA_RE.fullmatch(main_sha):
-            raise RunnerError("main_sha_unavailable")
-        return main_sha
-
-    async def _start_build(self, sha: str, candidate: dict[str, Any]) -> dict:
-        build = candidate.get("build")
-        if isinstance(build, dict) and build.get("status") in {
-            "queued",
-            "in_progress",
-            "completed",
-        } and build.get("conclusion") in {None, "success"}:
-            return {
-                "run_id": build.get("databaseId"),
-                "status": build.get("status"),
-                "reused": True,
-            }
-        ci = candidate.get("ci")
-        if isinstance(ci, dict) and ci.get("conclusion") == "success":
-            command = [
-                "gh",
-                "workflow",
-                "run",
-                "modular-release-v2.yml",
-                "--ref",
-                "main",
-                "-f",
-                f"source_sha={sha}",
-                "-f",
-                "release_channel=main",
-                "-f",
-                "validation_mode=full",
-                "-f",
-                f"upstream_run_id={ci['databaseId']}",
-            ]
-            run_id = None
-        else:
-            command = [
-                "gh",
-                "workflow",
-                "run",
-                "control-plane-release.yml",
-                "--ref",
-                "main",
-            ]
-            run_id = None
-        await self._run(command, timeout=60)
-        return {"run_id": run_id, "status": "queued", "reused": False}
 
 
 async def _serve(socket_path: Path, runner: ReleaseRunner) -> None:
-    Path(
-        os.environ.get("TMPDIR", "/home/app/.cache/allbot/releases")
-    ).mkdir(parents=True, exist_ok=True)
+    Path(os.environ.get("TMPDIR", "/home/app/.cache/allbot/releases")).mkdir(
+        parents=True, exist_ok=True
+    )
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():
         socket_path.unlink()
@@ -723,8 +379,7 @@ async def _serve(socket_path: Path, runner: ReleaseRunner) -> None:
             payload = request.get("payload")
             if not isinstance(action, str) or not isinstance(payload, dict):
                 raise RunnerError("invalid_request")
-            result = await runner.dispatch(action, payload)
-            response = {"ok": True, "result": result}
+            response = {"ok": True, "result": await runner.dispatch(action, payload)}
         except Exception as exc:
             response = {
                 "ok": False,

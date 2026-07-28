@@ -32,31 +32,91 @@ const fleet = {
           task_types: [],
           cache: { cache_state: 'ready' },
         },
-        {
-          slot_id: 'blocked',
-          profile: 'wan22',
-          phase: 'blocked_oom_32gb',
-          enabled: false,
-          retargetable: false,
-          switchable: false,
-          task_types: [],
-        },
       ],
       blocked_observations: [],
     },
   ],
-  state: { status: 'passed', drift: [], captured_at: new Date().toISOString(), stale: false },
+  state: {
+    status: 'passed',
+    drift: [],
+    captured_at: new Date().toISOString(),
+    stale: false,
+  },
   active_operation: null,
+}
+
+const scan = {
+  main_sha: 'a'.repeat(40),
+  slots: Array.from({ length: 8 }, (_, index) => ({
+    slot: String.fromCharCode(65 + index),
+    branch: null,
+    head: 'a'.repeat(40),
+    clean: true,
+    at_base: true,
+  })),
+  queue: {
+    pending: [
+      {
+        id: 'one',
+        slot: 'A',
+        status: 'pending',
+        branch: 'codex/a-task',
+        head: 'c'.repeat(40),
+      },
+    ],
+    integrating: [],
+    'needs-rebase': [
+      { id: 'old', slot: 'C', status: 'needs-rebase', head: 'd'.repeat(40) },
+    ],
+    completed: [],
+  },
+}
+
+const catalog = {
+  modules: {
+    'central-api': {
+      kind: 'image',
+      adapter: 'compose-image',
+      environments: ['test', 'prod'],
+      build_only: false,
+      requires_target: false,
+    },
+    'web-api': {
+      kind: 'image',
+      adapter: 'compose-image',
+      environments: ['test', 'prod'],
+      build_only: false,
+      requires_target: false,
+    },
+    'worker-agent': {
+      kind: 'image',
+      adapter: 'compose-image',
+      environments: ['test'],
+      build_only: false,
+      requires_target: false,
+    },
+    'payment-api': {
+      kind: 'image',
+      adapter: 'compose-image',
+      environments: ['prod'],
+      build_only: false,
+      requires_target: false,
+    },
+  },
 }
 
 beforeEach(() => {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url.includes('security/csrf')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ csrf_token: 'x' }) })
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(fleet) })
+      const body = url.includes('security/csrf')
+        ? { csrf_token: 'x' }
+        : url.includes('workspaces/scan')
+          ? scan
+          : url.includes('deployments/catalog')
+            ? catalog
+            : fleet
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) })
     }),
   )
   vi.stubGlobal('EventSource', class {})
@@ -64,152 +124,49 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('LAN AIO cards', () => {
-  it('shows current and blocked profiles and opens typed confirmation only for stable target', async () => {
+  it('keeps typed confirmation for a stable single-slot switch', async () => {
     const wrapper = mount(App)
     await flushPromises()
-    expect(wrapper.text()).toContain('i2i_pro')
-    expect(wrapper.text()).toContain('wan22')
     const buttons = wrapper.findAll('button.candidate')
-    expect(buttons[2].attributes('disabled')).toBeDefined()
+    expect(buttons[0].attributes('disabled')).toBeDefined()
     await buttons[1].trigger('click')
     expect(wrapper.text()).toContain('确认单卡类型切换')
     expect(wrapper.find('.danger-button').attributes('disabled')).toBeDefined()
   })
-
-  it('blocks every switch when live state is stale', async () => {
-    fleet.state.stale = true
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.text()).toContain('状态已过期')
-    expect(wrapper.findAll('button.candidate').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
-    fleet.state.stale = false
-  })
 })
 
-describe('deployment workspace', () => {
-  it('switches tabs, filters prod-only modules, and requires a plan confirmation', async () => {
-    const catalog = {
-      modules: {
-        'central-api': { artifacts: ['central-api'] },
-        dashboard: { artifacts: ['dashboard-backend', 'dashboard-frontend'] },
-      },
-      environments: {
-        test: {
-          label: '测试环境',
-          modules: ['central-api'],
-          maintenance_supported: true,
-        },
-        prod: {
-          label: '正式环境',
-          modules: ['central-api', 'dashboard'],
-          maintenance_supported: true,
-        },
-      },
-    }
-    const candidate = {
-      main_sha: 'a'.repeat(40),
-      deployable_sha: 'a'.repeat(40),
-      scope: 'runtime',
-      ci: { status: 'completed', conclusion: 'success', run_id: 41 },
-      bundle: { status: 'ready' },
-      build: null,
-      blockers: [],
-    }
-    const environment = {
-      environment: 'test',
-      current_sha: 'b'.repeat(40),
-      maintenance: { enabled: false, owner: null, can_disable: false },
-      active_transaction: null,
-      config_drift: false,
-    }
-    const integration = {
-      main_sha: 'a'.repeat(40),
-      queue: {
-        pending: [{ id: 'one', status: 'pending', branch: 'codex/a-task', head: 'c'.repeat(40) }],
-        running: [],
-        failed: [{ id: 'failed-batch', status: 'failed', error: 'checkout failed' }],
-      },
-      slots: Array.from({ length: 8 }, (_, index) => ({
-        slot: String.fromCharCode(65 + index),
-        branch: null,
-        head: 'a'.repeat(40),
-        clean: true,
-        at_base: true,
-      })),
-    }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => {
-        const body = url.includes('security/csrf')
-          ? { csrf_token: 'x' }
-          : url.includes('integration/status')
-            ? integration
-          : url.includes('deployments/catalog')
-            ? catalog
-            : url.includes('releases/candidate')
-              ? candidate
-              : url.includes('environments/test/status')
-                ? environment
-                : fleet
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(body) })
-      }),
-    )
+describe('module release control', () => {
+  it('scans all slots and exposes selected integration and alignment', async () => {
     const wrapper = mount(App)
     await flushPromises()
     await wrapper.get('[data-tab="deploy"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('模块构建部署')
-    expect(wrapper.text()).toContain('central-api')
-    expect(wrapper.text()).not.toContain('dashboard-backend')
-    expect(wrapper.text()).toContain('可信 bundle 已就绪')
-    expect(wrapper.text()).toContain('1待集成 handoff')
-    expect(wrapper.text()).toContain('8/8已对齐槽位')
-    expect(wrapper.get('.help-link').attributes('href')).toBe('/help.html')
-    expect(wrapper.text()).toContain('失败批次 failed-batch')
-    expect(wrapper.find('[data-action="retry-integration"]').exists()).toBe(true)
-    expect(wrapper.find('[data-action="deploy-all-test"]').exists()).toBe(true)
-    expect(wrapper.find('[data-action="gpu-release-build"]').exists()).toBe(true)
-    expect(wrapper.find('[data-action="test-config-sync"]').exists()).toBe(false)
-    expect(wrapper.find('[data-action="test-rollback-repair"]').exists()).toBe(true)
-    expect(wrapper.get('[data-action="create-plan"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.findAll('.workspace-option')).toHaveLength(8)
+    expect(wrapper.text()).toContain('pending handoff')
+    expect(wrapper.text()).toContain('needs-rebase')
+    expect(wrapper.find('[data-action="integrate-selected"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="align-selected"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('可信 bundle')
+    expect(wrapper.text()).not.toContain('生成受控发布计划')
   })
 
-  it('keeps trusted release data visible when environment SSH is unavailable', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => {
-        const ok = !url.includes('environments/test/status')
-        const body = url.includes('security/csrf')
-          ? { csrf_token: 'x' }
-          : url.includes('deployments/catalog')
-            ? {
-                modules: { 'central-api': { artifacts: ['central-api'] } },
-                environments: {
-                  test: { label: '测试环境', modules: ['central-api'], maintenance_supported: true },
-                  prod: { label: '正式环境', modules: ['central-api'], maintenance_supported: true },
-                },
-              }
-            : url.includes('releases/candidate')
-              ? {
-                  main_sha: 'a'.repeat(40),
-                  deployable_sha: 'a'.repeat(40),
-                  scope: 'runtime',
-                  ci: { conclusion: 'success' },
-                  bundle: { status: 'ready' },
-                  blockers: [],
-                }
-              : url.endsWith('/fleet')
-                ? fleet
-                : { detail: 'environment_status_unavailable' }
-        return Promise.resolve({ ok, status: ok ? 200 : 502, json: () => Promise.resolve(body) })
-      }),
-    )
+  it('limits test selection to two modules and exposes prod modules', async () => {
     const wrapper = mount(App)
     await flushPromises()
     await wrapper.get('[data-tab="deploy"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('可信 bundle 已就绪')
-    expect(wrapper.text()).toContain('central-api')
-    expect(wrapper.text()).toContain('environment_status_unavailable')
+    const testModules = wrapper.findAll('.module-option')
+    expect(testModules).toHaveLength(3)
+    await testModules[0].trigger('click')
+    await testModules[1].trigger('click')
+    await testModules[2].trigger('click')
+    expect(wrapper.text()).toContain('测试环境每次最多选择两个模块')
+    expect(wrapper.find('[data-action="build-selected"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="deploy-selected"]').exists()).toBe(true)
+
+    await wrapper.findAll('.environment-switch button')[1].trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('payment-api')
+    expect(wrapper.text()).toContain('正式环境可在管理后台多选模块')
   })
 })

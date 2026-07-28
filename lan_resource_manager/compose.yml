@@ -87,8 +87,10 @@ services:
       - /workspace
     environment:
       HOME: /home/app
-      GITHUB_ACTIONS_TOKEN_FILE: /run/secrets/github-actions.token
+      XDG_STATE_HOME: /home/hfy/.local/state
       DOCKER_CONFIG: /run/secrets/docker
+      DOCKER_HOST: "${RESOURCE_MANAGER_DOCKER_HOST:-ssh://hfy@192.168.1.115}"
+      DOCKER_SSH_COMMAND: "ssh -i /run/secrets/local_build_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/known_hosts"
       INTEGRATION_QUEUE_ROOT: /home/hfy/.local/state/allbot/ai-integration-queue
       WORKSPACE_LOCK_PATH: /home/hfy/.local/state/allbot/ai-workspaces.lock
       WORKSPACE_REPO_ROOT: /home/hfy/APP/All_bot
@@ -109,9 +111,9 @@ services:
       - "${CLOUD_DEPLOY_PROD_ENV_FILE:-/dev/null}:/home/app/.config/allbot/prod.env:ro"
       - "${CLOUD_DEPLOY_SSH_KEY:-/dev/null}:/run/secrets/cloud_deploy_key:ro"
       - "${CLOUD_DEPLOY_KNOWN_HOSTS:-/home/hfy/.ssh/known_hosts}:/run/secrets/known_hosts:ro"
-      - "${GITHUB_ACTIONS_TOKEN_FILE:-/dev/null}:/run/secrets/github-actions.token:ro"
       - "${GITHUB_GIT_SSH_KEY:-/home/hfy/.ssh/allbot_github_ed25519}:/run/secrets/github_git_key:ro"
-      - "${GHCR_READ_CONFIG_FILE:-/dev/null}:/run/secrets/docker/config.json:ro"
+      - "${LOCAL_BUILD_SSH_KEY:-/dev/null}:/run/secrets/local_build_key:ro"
+      - "${GHCR_CONFIG_FILE:-/dev/null}:/run/secrets/docker/config.json:ro"
       - "${CLOUDFLARE_PAGES_TOKEN_FILE:-/dev/null}:/home/app/.config/allbot/cloudflare-pages.token:ro"
     tmpfs:
       - /tmp:size=64m,mode=1777

@@ -122,7 +122,14 @@ class FleetService:
                 "stale": stale,
             },
             "active_operation": self.store.active(
-                kinds={"refresh", "switch", "deploy", "maintenance"}
+                kinds={
+                    "refresh",
+                    "switch",
+                    "workspace-integrate",
+                    "workspace-align",
+                    "module-build",
+                    "module-deploy",
+                }
             ),
         }
 
@@ -164,7 +171,14 @@ class FleetService:
     ) -> dict:
         async with self._lock:
             if self.store.active(
-                kinds={"refresh", "switch", "deploy", "maintenance"}
+                kinds={
+                    "refresh",
+                    "switch",
+                    "workspace-integrate",
+                    "workspace-align",
+                    "module-build",
+                    "module-deploy",
+                }
             ):
                 raise HTTPException(409, detail="operation_in_progress")
             catalog = await self.operator.list_slots()

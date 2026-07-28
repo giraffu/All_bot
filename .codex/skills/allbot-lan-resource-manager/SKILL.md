@@ -22,13 +22,15 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
   挂载 Docker Socket、自动 reconcile、跨槽批量操作或泄露 env/密钥。
 - LAN Web 必须保留 CIDR、bind IP、Trusted Host、Origin、JSON 与 CSRF 限制。
 - 开发槽集成只允许
-  `auto_integrate_handoffs.py integrate-all --execute`；协调器只写 main，不查询
-  CI、不构建、不部署。冲突记录 `needs-rebase` 后继续其它任务。
+  `auto_integrate_handoffs.py integrate-all [--head <exact-head>...] --execute`；
+  后台多选只是过滤 pending handoff，协调器仍是唯一 main 写者。冲突记录
+  `needs-rebase` 后继续其它任务。
 - 候选视图只展示当前 main 和 `deploy/module-catalog.json`，不查询 CI、
   bundle、change scope 或 test evidence，也不产生 blocker。
-- 旧 plan-token/bulk-test/GitHub-build 发布 UI 已退役，runner 对这些动作返回
-  `module_release_cli_required`。实际构建、部署、回滚和状态统一使用
-  `scripts/release.py` 的四个明确命令。
+- 旧 plan-token/bulk-test/GitHub-build 发布 UI 和 runner action 已删除。当前后台
+  只把显式模块选择适配到 `scripts/release.py build/deploy/status`：test 每次
+  1–2 个模块，prod 可多选但逐模块执行并附加 `--confirm-prod`。
+- 槽位对齐允许重复 `align-merged --slot <A-H>`，只触及所选且安全的槽位。
 - release runner 和 Web 容器不得读取或显示无关云/GitHub/GHCR/Pages 凭据。
 - 容器重启后未完成的 mutation 标为 interrupted，不自动恢复或续跑。
 - 生产、数据库、Cloudflare、RunPod、GPU/LAN mutation 仍需用户明确命令；

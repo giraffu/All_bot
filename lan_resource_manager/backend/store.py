@@ -30,20 +30,12 @@ class OperationStore:
             if operation.get("status") not in {
                 str(status) for status in TERMINAL_OPERATION_STATUSES
             }:
-                if operation.get("kind") == "build":
-                    operation.update(
-                        status=OperationStatus.QUEUED,
-                        stage="resuming-build-observation",
-                        finished_at=None,
-                        updated_at=utc_now(),
-                    )
-                else:
-                    operation.update(
-                        status=OperationStatus.INTERRUPTED,
-                        stage="interrupted",
-                        finished_at=utc_now(),
-                        updated_at=utc_now(),
-                    )
+                operation.update(
+                    status=OperationStatus.INTERRUPTED,
+                    stage="interrupted",
+                    finished_at=utc_now(),
+                    updated_at=utc_now(),
+                )
                 changed = True
         if changed:
             self._save()

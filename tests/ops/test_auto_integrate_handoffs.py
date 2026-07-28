@@ -108,6 +108,29 @@ def test_coordinator_conflict_does_not_stop_next_handoff(tmp_path):
     assert result["completed"] == ["2" * 40]
 
 
+def test_coordinator_integrates_only_explicit_selected_handoffs(tmp_path):
+    module = _load_module()
+    queue = module.IntegrationQueue(tmp_path / "queue")
+    first = _handoff("A", "1", "2026-07-22T01:00:00+00:00")
+    selected = _handoff("B", "2", "2026-07-22T02:00:00+00:00")
+    queue.enqueue(first)
+    queue.enqueue(selected)
+    coordinator = module.Coordinator(tmp_path, queue)
+    integrated = []
+
+    def integrate(handoff):
+        integrated.append(handoff["head"])
+        return module.IntegrationResult(status="completed", main_sha="c" * 40)
+
+    coordinator.integrate = integrate
+
+    result = coordinator.run_all(selected_heads={selected["head"]})
+
+    assert result["completed"] == [selected["head"]]
+    assert integrated == [selected["head"]]
+    assert (queue.pending / f"{first['head']}.json").is_file()
+
+
 def test_remote_head_drift_is_isolated_as_needs_rebase(tmp_path):
     module = _load_module()
     queue = module.IntegrationQueue(tmp_path / "queue")

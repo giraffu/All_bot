@@ -1,11 +1,8 @@
 import type {
-  DeploymentCatalog,
-  DeploymentPlan,
-  EnvironmentStatus,
   Fleet,
-  IntegrationStatus,
+  ModuleCatalog,
   Operation,
-  ReleaseCandidate,
+  WorkspaceScan,
 } from './types'
 
 let csrfToken = ''
@@ -54,85 +51,52 @@ export const switchProfile = (
 export const getOperation = (id: string) =>
   json<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`)
 
-export const getDeploymentCatalog = () =>
-  json<DeploymentCatalog>('/api/v1/deployments/catalog')
-export const getReleaseCandidate = () =>
-  json<ReleaseCandidate>('/api/v1/releases/candidate')
-export const getEnvironmentStatus = (environment: 'test' | 'prod') =>
-  json<EnvironmentStatus>(`/api/v1/environments/${environment}/status`)
-export const startTrustedBuild = (payload: {
-  expected_main_sha: string
-  confirmation: string
-}) => json<Operation>('/api/v1/releases/builds', mutation(payload))
-export const startGPUReleaseBuild = (payload: {
-  expected_main_sha: string
-  confirmation: string
-}) => json<Operation>('/api/v1/releases/gpu-builds', mutation(payload))
-export const syncTestConfig = (payload: {
-  expected_main_sha: string
-  confirmation: string
-}) =>
-  json<Operation>('/api/v1/environments/test/config-sync', mutation(payload))
-export const repairTestRollback = (payload: {
-  expected_current_sha: string
-  confirmation: string
-}) =>
-  json<Operation>(
-    '/api/v1/environments/test/rollback-repair',
-    mutation(payload),
-  )
-export const createDeploymentPlan = (payload: {
-  environment: 'test' | 'prod'
-  module: string
-  candidate_sha: string
-  maintenance: 'planner' | 'rolling'
-}) => json<DeploymentPlan>('/api/v1/deployment-plans', mutation(payload))
-export const executeDeploymentPlan = (
-  planId: string,
+export const getModuleCatalog = () =>
+  json<ModuleCatalog>('/api/v1/deployments/catalog')
+export const scanWorkspaces = () =>
+  json<WorkspaceScan>('/api/v1/workspaces/scan')
+export const integrateWorkspaces = (
+  expectedMainSha: string,
+  slots: string[],
   confirmation: string,
 ) =>
   json<Operation>(
-    `/api/v1/deployment-plans/${encodeURIComponent(planId)}/execute`,
-    mutation({ confirmation }),
-  )
-export const setMaintenance = (
-  environment: 'test' | 'prod',
-  payload: {
-    enabled: boolean
-    expected_enabled: boolean
-    reason: string
-    confirmation: string
-  },
-) =>
-  json<Operation>(
-    `/api/v1/environments/${environment}/maintenance`,
-    mutation(payload),
-  )
-export const getIntegrationStatus = () =>
-  json<IntegrationStatus>('/api/v1/integration/status')
-export const integrateAll = (expectedMainSha: string, confirmation: string) =>
-  json<Operation>(
-    '/api/v1/integration/run',
-    mutation({ expected_main_sha: expectedMainSha, confirmation }),
-  )
-export const retryIntegration = (batch: string, confirmation: string) =>
-  json<Operation>(
-    '/api/v1/integration/retry',
-    mutation({ batch, confirmation }),
+    '/api/v1/workspaces/integrate',
+    mutation({
+      expected_main_sha: expectedMainSha,
+      slots,
+      confirmation,
+    }),
   )
 export const alignWorkspaces = (
   expectedMainSha: string,
+  slots: string[],
   confirmation: string,
 ) =>
   json<Operation>(
     '/api/v1/workspaces/align',
-    mutation({ expected_main_sha: expectedMainSha, confirmation }),
+    mutation({
+      expected_main_sha: expectedMainSha,
+      slots,
+      confirmation,
+    }),
   )
-export const deployAllTestModules = (
-  candidateSha: string,
+export const buildModules = (
+  sha: string,
+  modules: string[],
   confirmation: string,
 ) =>
   json<Operation>(
-    '/api/v1/environments/test/deploy-all',
-    mutation({ candidate_sha: candidateSha, confirmation }),
+    '/api/v1/modules/build',
+    mutation({ sha, modules, confirmation }),
+  )
+export const deployModules = (
+  environment: 'test' | 'prod',
+  artifacts: Record<string, string>,
+  targets: Record<string, { operator: 'runpod' | 'lan'; slot: string }>,
+  confirmation: string,
+) =>
+  json<Operation>(
+    '/api/v1/modules/deploy',
+    mutation({ environment, artifacts, targets, confirmation }),
   )
