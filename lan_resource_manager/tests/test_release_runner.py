@@ -37,9 +37,15 @@ def test_compose_separates_web_and_runner_credentials_without_docker_socket():
     assert "/var/run/docker.sock" not in compose
     assert "CLOUD_DEPLOY_SSH_KEY" in runner
     assert "GITHUB_GIT_SSH_KEY" in runner
+    assert "ssh://allbot-local-docker" in runner
+    assert "DOCKER_SSH_COMMAND" not in runner
     assert "All_bot-workspaces" in runner
     assert "/home/hfy/.local/state/allbot" in runner
     assert "lan-resource-manager-release-cache:/home/app/.cache/allbot" in runner
+
+    ssh_config = (root / "ssh_config").read_text(encoding="utf-8")
+    assert "Host allbot-local-docker" in ssh_config
+    assert "IdentityFile /run/secrets/local_build_key" in ssh_config
 
 
 def test_runner_image_contains_release_cli_dependencies():

@@ -38,6 +38,14 @@ Host allbot-do-sgp1-test-control
     StrictHostKeyChecking yes
     UserKnownHostsFile /run/secrets/known_hosts
 
+Host allbot-local-docker
+    HostName 192.168.1.115
+    User hfy
+    IdentityFile /run/secrets/local_build_key
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /run/secrets/known_hosts
+
 Host *
     BatchMode yes
     ConnectTimeout 20
