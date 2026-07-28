@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_WAN22_VIDEO_V2_COST } from './imageToVideo'
 import {
   DEFAULT_LAB_MODE_ID,
+  LAB_MODE_CONFIGS,
   SCAIL2_SHORT_VIDEO_DURATION_OPTIONS,
   SCAIL2_VIDEO_DURATION_OPTIONS,
   UNIFIED_LAB_MODES,
+  WEB_LTX_T2V_ENABLED,
   getLabModeConfig,
   getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
@@ -13,6 +15,16 @@ import {
 } from './labModeConfig'
 
 describe('labModeConfig', () => {
+  it('places character reference creation inside the unified lab', () => {
+    expect(LAB_MODE_CONFIGS.map(item => item.id)).toContain('character_reference')
+    expect(UNIFIED_LAB_MODES.map(item => item.id).includes('character_reference')).toBe(
+      WEB_LTX_T2V_ENABLED,
+    )
+    expect(resolveLabModeIdFromTaskType('character_reference')).toBe(
+      WEB_LTX_T2V_ENABLED ? 'character_reference' : DEFAULT_LAB_MODE_ID,
+    )
+  })
+
   it('uses the default wan22 v2 cost for the lab mode tag', () => {
     expect(getLabModeConfig('wan22_video_v2').baseCost).toBe(DEFAULT_WAN22_VIDEO_V2_COST)
     expect(getLabModeConfig('wan22_video_v2').baseCost).toBe(6)

@@ -52,6 +52,7 @@ from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger(__name__)
 
+
 def should_count_central_api_circuit_failure(exc: Exception) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
@@ -372,7 +373,9 @@ class APIClient:
             endpoint = PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT
             expected_images = 2
         else:
-            raise ValueError(f"Unsupported PornMaster Flux2 edit task type: {execution_task_type}")
+            raise ValueError(
+                f"Unsupported PornMaster Flux2 edit task type: {execution_task_type}"
+            )
 
         if len(image_paths) < expected_images:
             raise ValueError(
@@ -633,7 +636,9 @@ class APIClient:
         fps: int,
         priority: int = 0,
     ) -> str:
-        endpoint = LTX_T2V_IC_ENDPOINT if task_type == "ltx_t2v_ic" else LTX_T2V_ENDPOINT
+        endpoint = (
+            LTX_T2V_IC_ENDPOINT if task_type == "ltx_t2v_ic" else LTX_T2V_ENDPOINT
+        )
         data = {
             "task_id": task_id,
             "prompt": prompt,
@@ -647,23 +652,37 @@ class APIClient:
             "fps": fps,
             "priority": priority,
         }
-        r = await self._request("POST", endpoint, json=data, circuit_breaker_key="submit")
+        r = await self._request(
+            "POST", endpoint, json=data, circuit_breaker_key="submit"
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
     async def submit_character_reference_build(
-        self, task_id: str, *, prompt: str, image_path: str, priority: int = 0
+        self,
+        task_id: str,
+        *,
+        prompt: str,
+        image_path: str,
+        priority: int = 0,
+        character_view_index: int | None = None,
+        character_view_type: str | None = None,
     ) -> str:
+        payload = {
+            "task_id": task_id,
+            "images": [image_path],
+            "prompt": prompt,
+            "negative_prompt": "text, labels, collage, duplicate person",
+            "priority": priority,
+        }
+        if character_view_index is not None:
+            payload["character_view_index"] = character_view_index
+        if character_view_type:
+            payload["character_view_type"] = character_view_type
         r = await self._request(
             "POST",
             CHARACTER_REFERENCE_BUILD_ENDPOINT,
-            json={
-                "task_id": task_id,
-                "images": [image_path],
-                "prompt": prompt,
-                "negative_prompt": "text, labels, collage, duplicate person",
-                "priority": priority,
-            },
+            json=payload,
             circuit_breaker_key="submit",
         )
         return r.json()["task_id"]
@@ -1137,5 +1156,6 @@ class APIClient:
         """Close the underlying HTTP client"""
         if hasattr(self, "client") and not self.client.is_closed:
             await self.client.aclose()
+
 
 api_client = APIClient()

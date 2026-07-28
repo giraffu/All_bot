@@ -40,10 +40,22 @@ class ImageService:
         )
 
     async def submit_character_reference_build_task(
-        self, task_id: str, *, prompt: str, image_path: str, priority: int = 0
+        self,
+        task_id: str,
+        *,
+        prompt: str,
+        image_path: str,
+        priority: int = 0,
+        character_view_index: int | None = None,
+        character_view_type: str | None = None,
     ) -> str:
         return await api_client.submit_character_reference_build(
-            task_id, prompt=prompt, image_path=image_path, priority=priority
+            task_id,
+            prompt=prompt,
+            image_path=image_path,
+            priority=priority,
+            character_view_index=character_view_index,
+            character_view_type=character_view_type,
         )
 
     async def submit_ltx_video_task(

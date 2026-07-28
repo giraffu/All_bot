@@ -97,6 +97,29 @@ def test_character_reference_patcher_marks_six_outputs_in_order():
     ] == [f"character_reference_view_{i:02d}" for i in range(1, 7)]
 
 
+def test_character_reference_patcher_generates_only_selected_editable_view():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "character_reference_build",
+        patcher.load_workflow("character_reference_build"),
+        {
+            "image": "owned-source.png",
+            "seed": 42,
+            "character_view_index": 2,
+            "prompt": "custom three-quarter portrait prompt",
+        },
+    )
+
+    assert set(node_id.split(":", 1)[0] for node_id in patched) == {"v2"}
+    assert patched["v2:15"]["inputs"]["image"] == "owned-source.png"
+    assert patched["v2:185"]["inputs"]["text"] == (
+        "custom three-quarter portrait prompt"
+    )
+    assert patched["v2:201"]["inputs"]["filename_prefix"].startswith(
+        "character_reference_view_02_"
+    )
+
+
 @pytest.mark.parametrize(
     ("task_type", "node_id", "input_name"),
     [

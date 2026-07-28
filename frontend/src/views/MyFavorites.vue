@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import api from '@/api'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
+import CharacterLibraryPanel from '@/components/CharacterLibraryPanel.vue'
 import FavoriteDetailActions from '@/components/FavoriteDetailActions.vue'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
@@ -94,7 +95,13 @@ const {
   favoriteSupportsPostDetail,
 } = useMyLibraryPostBrowser<Post>({
   pageSize,
-  scope: () => (filterType.value === 'favorite' ? 'favorite' : filterType.value),
+  scope: () => (
+    filterType.value === 'characters'
+      ? 'favorite'
+      : filterType.value === 'favorite'
+        ? 'favorite'
+        : filterType.value
+  ),
   taskType: () => selectedTaskType.value,
   t,
   templateApplySource: () => (filterType.value === 'favorite' ? 'favorites' : 'gallery'),
@@ -132,6 +139,7 @@ const {
   filterType,
   selectedTaskType,
   isSubmissionTab,
+  isCharacterTab,
   filterTabs,
   taskTypeTabs,
   emptyStateText,
@@ -235,7 +243,7 @@ const {
 })
 
 const prefetchNextPage = () => {
-  if (isSubmissionTab.value) {
+  if (isSubmissionTab.value || isCharacterTab.value) {
     return
   }
   prefetchBrowserNextPage()
@@ -243,7 +251,7 @@ const prefetchNextPage = () => {
 const { navigateToPage } = usePagedScrollNavigation({
   contentRef: layoutContentRef,
   goToPage: async (pageNumber) => {
-    if (isSubmissionTab.value) {
+    if (isSubmissionTab.value || isCharacterTab.value) {
       return false
     }
     return browserGoToPage(pageNumber)
@@ -255,7 +263,7 @@ const goToPage = async (pageNumber: number) => {
   await navigateToPage(pageNumber)
 }
 const loadPosts = async (reset = false) => {
-  if (isSubmissionTab.value) return
+  if (isSubmissionTab.value || isCharacterTab.value) return
   await loadBrowserPosts(reset)
 }
 
@@ -293,11 +301,11 @@ onMounted(() => {
 
 <template>
   <PostBrowserShell
-    :show-state="!isSubmissionTab"
-    :loading="loading"
-    :error-text="posts.length === 0 ? errorMessage : ''"
-    :show-retry="posts.length === 0 && !!errorMessage"
-    :empty="posts.length === 0"
+    :show-state="!isSubmissionTab && !isCharacterTab"
+    :loading="!isCharacterTab && loading"
+    :error-text="!isCharacterTab && posts.length === 0 ? errorMessage : ''"
+    :show-retry="!isCharacterTab && posts.length === 0 && !!errorMessage"
+    :empty="!isCharacterTab && posts.length === 0"
     :empty-text="emptyStateText"
     :retry-text="t('gallery.comments.retry')"
     @retry="loadPosts(true)"
@@ -318,7 +326,7 @@ onMounted(() => {
         </div>
 
         <SegmentedTabsRail
-          v-if="taskTypeTabs.length > 1"
+          v-if="!isCharacterTab && taskTypeTabs.length > 1"
           :items="taskTypeTabs"
           :selected-id="selectedTaskType"
           container-class="mt-3 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card-strong-bg)] px-2 py-2 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
@@ -329,7 +337,7 @@ onMounted(() => {
         />
 
         <HeaderPaginationBar
-          v-if="!isSubmissionTab"
+          v-if="!isSubmissionTab && !isCharacterTab"
           wrapper-class="mt-3 flex justify-center"
           :current-page="currentPage"
           :total-pages="totalPages"
@@ -340,7 +348,9 @@ onMounted(() => {
       </StickyHeaderSection>
     </template>
 
-    <MySubmissionsPanel v-if="isSubmissionTab" :task-type="selectedTaskType" />
+    <CharacterLibraryPanel v-if="isCharacterTab" />
+
+    <MySubmissionsPanel v-else-if="isSubmissionTab" :task-type="selectedTaskType" />
 
     <Waterfall
       v-else

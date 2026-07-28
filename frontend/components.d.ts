@@ -44,6 +44,8 @@ declare module 'vue' {
     ATextarea: typeof import('ant-design-vue/es')['Textarea']
     AUpload: typeof import('ant-design-vue/es')['Upload']
     AUploadDragger: typeof import('ant-design-vue/es')['UploadDragger']
+    CharacterLibraryPanel: typeof import('./src/components/CharacterLibraryPanel.vue')['default']
+    CharacterReferenceWorkbench: typeof import('./src/components/lab/CharacterReferenceWorkbench.vue')['default']
     DetailApplyActions: typeof import('./src/components/DetailApplyActions.vue')['default']
     DetailCommentsSection: typeof import('./src/components/DetailCommentsSection.vue')['default']
     DetailDesktopActions: typeof import('./src/components/DetailDesktopActions.vue')['default']

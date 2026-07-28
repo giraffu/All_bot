@@ -1,8 +1,10 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+import io
 
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 from pydantic import ValidationError
 
 from config import MINIO_BUCKET
@@ -18,6 +20,12 @@ class _ScalarResult:
         return self.value
 
     def scalar_one_or_none(self):
+        return self.value
+
+    def scalars(self):
+        return self
+
+    def all(self):
         return self.value
 
 
@@ -58,6 +66,197 @@ def test_character_name_rejects_whitespace_only_values():
         CharacterBuildRequest(
             name="   ", source_object_key="web_uploads/123/source.webp"
         )
+
+
+def test_character_view_catalog_exposes_six_distinct_editable_targets():
+    assert [item["type"] for item in service.CHARACTER_VIEW_CATALOG] == [
+        "face_front",
+        "face_side",
+        "face_three_quarter",
+        "body_front",
+        "body_side",
+        "body_back",
+    ]
+    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 6
+    assert all(
+        item["default_prompt"].strip() for item in service.CHARACTER_VIEW_CATALOG
+    )
+
+
+@pytest.mark.asyncio
+async def test_character_draft_upload_creates_editable_workspace_without_charging(
+    monkeypatch,
+):
+    db = _Session([0])
+    monkeypatch.setattr(
+        service.storage, "async_object_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        service.storage,
+        "async_object_size",
+        AsyncMock(return_value=1024),
+    )
+
+    result = await service.create_character_draft(
+        db=db,
+        current_user=_user(),
+        payload=CharacterBuildRequest(
+            name="Alice",
+            source_object_key="web_uploads/123/source.webp",
+        ),
+    )
+
+    assert result["status"] == "draft"
+    assert result["views"] == []
+    assert db.added[0].status == "draft"
+    assert db.added[0].sheet_object_key is None
+
+
+@pytest.mark.asyncio
+async def test_generate_character_view_charges_three_and_submits_selected_branch(
+    monkeypatch,
+):
+    from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
+
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="draft",
+        source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
+    )
+    db = _Session([character, None])
+    submit = AsyncMock(return_value={"task_id": "task-view-1", "cost": 3})
+    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "QuotaManager",
+        lambda: SimpleNamespace(get_credits=AsyncMock(return_value=97)),
+    )
+
+    result = await service.generate_character_view(
+        db=db,
+        current_user=_user(),
+        character_id="character-1",
+        view_type="face_side",
+        payload=CharacterViewGenerateRequest(prompt="custom side portrait"),
+    )
+
+    assert result["cost"] == 3
+    assert result["status"] == "pending"
+    assert db.added[0].view_type == "face_side"
+    kwargs = submit.await_args.kwargs
+    assert kwargs["cost_override"] == 3
+    assert kwargs["inputs"]["character_view_index"] == 2
+    assert kwargs["inputs"]["prompt"] == "custom side portrait"
+    assert kwargs["registry_metadata"]["record_history"] is False
+
+
+@pytest.mark.asyncio
+async def test_save_character_requires_two_ready_views(monkeypatch):
+    character = SimpleNamespace(id="character-1", user_id=123, status="draft")
+    db = _Session([character, [SimpleNamespace(status="ready", object_key="one.png")]])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.save_character(
+            db=db,
+            user_id=123,
+            character_id="character-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "至少生成 2 张" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_save_character_composes_ready_views_and_enters_library(monkeypatch):
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        name="Alice",
+        description=None,
+        status="draft",
+        task_id="draft-1",
+        source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
+        sheet_object_key=None,
+        updated_at=None,
+    )
+    views = [
+        SimpleNamespace(
+            view_type="face_front",
+            prompt="front",
+            status="ready",
+            task_id="view-1",
+            object_key=f"{MINIO_BUCKET}/views/front.png",
+        ),
+        SimpleNamespace(
+            view_type="body_back",
+            prompt="back",
+            status="ready",
+            task_id="view-2",
+            object_key=f"{MINIO_BUCKET}/views/back.png",
+        ),
+    ]
+    db = _Session([character, views])
+
+    def _image_bytes(color):
+        output = io.BytesIO()
+        Image.new("RGB", (64, 64), color).save(output, format="PNG")
+        return output.getvalue()
+
+    monkeypatch.setattr(
+        service.storage,
+        "get_file_bytes",
+        lambda object_key, bucket=None: _image_bytes(
+            "red" if object_key.endswith("front.png") else "blue"
+        ),
+    )
+    upload = MagicMock()
+
+    def _upload_bytes(data, object_key, content_type, bucket):
+        upload(data, object_key, content_type, bucket)
+        return object_key
+
+    monkeypatch.setattr(service.storage, "upload_bytes", _upload_bytes)
+    monkeypatch.setattr(
+        service.storage,
+        "get_presigned_url",
+        lambda object_key, bucket=None: f"https://media/{object_key}",
+    )
+
+    result = await service.save_character(
+        db=db,
+        user_id=123,
+        character_id="character-1",
+    )
+
+    assert result["status"] == "ready"
+    assert result["sheet_object_key"].endswith("/character-1/sheet.png")
+    assert result["preview_url"].endswith("/character-1/sheet.png")
+    assert upload.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_character_view_finalizer_updates_only_matching_child(monkeypatch):
+    from src.database import core as database_core
+
+    view = SimpleNamespace(
+        view_type="face_side",
+        status="pending",
+        object_key=None,
+        updated_at=None,
+    )
+    db = _Session([view])
+    monkeypatch.setattr(database_core, "AsyncSessionLocal", lambda: _SessionContext(db))
+
+    await service.finalize_character_reference(
+        task_id="task-view-1",
+        status="done",
+        result_path=f"{MINIO_BUCKET}/views/side.png",
+    )
+
+    assert view.status == "ready"
+    assert view.object_key == f"{MINIO_BUCKET}/views/side.png"
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

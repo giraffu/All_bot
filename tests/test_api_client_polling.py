@@ -25,7 +25,9 @@ async def test_ltx_api_client_trims_nonempty_negative_and_omits_blank(
     monkeypatch, method_name, input_kwargs
 ):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
-    request = AsyncMock(return_value=SimpleNamespace(json=lambda: {"task_id": "task-1"}))
+    request = AsyncMock(
+        return_value=SimpleNamespace(json=lambda: {"task_id": "task-1"})
+    )
     monkeypatch.setattr(client, "_request", request)
     method = getattr(client, method_name)
 
@@ -35,6 +37,35 @@ async def test_ltx_api_client_trims_nonempty_negative_and_omits_blank(
     request.reset_mock()
     await method("task-2", "prompt", negative_prompt="   ", **input_kwargs)
     assert "negative_prompt" not in request.await_args.kwargs["json"]
+
+
+@pytest.mark.asyncio
+async def test_character_reference_api_client_forwards_selected_view(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=SimpleNamespace(json=lambda: {"task_id": "task-1"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    result = await client.submit_character_reference_build(
+        "task-1",
+        prompt="strict side profile",
+        image_path="character.png",
+        priority=4,
+        character_view_index=2,
+        character_view_type="face_side",
+    )
+
+    assert result == "task-1"
+    assert request.await_args.kwargs["json"] == {
+        "task_id": "task-1",
+        "images": ["character.png"],
+        "prompt": "strict side profile",
+        "negative_prompt": "text, labels, collage, duplicate person",
+        "priority": 4,
+        "character_view_index": 2,
+        "character_view_type": "face_side",
+    }
 
 
 @pytest.mark.asyncio
@@ -123,6 +154,7 @@ async def test_listen_for_progress_uses_polling_without_pubsub(
             {"status": "done", "progress": 1.0, "queue_pos": None},
         ]
     )
+
     async def fake_fetch_progress_status(_status_url, **_kwargs):
         return next(payloads)
 
@@ -143,7 +175,9 @@ async def test_listen_for_progress_uses_polling_without_pubsub(
 
 
 @pytest.mark.asyncio
-async def test_listen_for_progress_requests_type_queue_position_when_enabled(monkeypatch):
+async def test_listen_for_progress_requests_type_queue_position_when_enabled(
+    monkeypatch,
+):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     captured = []
 
@@ -196,6 +230,7 @@ async def test_image_service_monitor_progress_requests_type_queue_position_by_de
         ("task-1", True, {"include_type_position": True}),
     ]
 
+
 @pytest.mark.asyncio
 async def test_listen_for_progress_keeps_404_cancelled_semantics(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
@@ -241,9 +276,7 @@ async def test_request_uses_isolated_circuit_breaker_keys(monkeypatch):
     monkeypatch.setattr(
         api_client_module,
         "get_circuit_breaker",
-        lambda key: (
-            calls.append(("key", key)) or FakeBreaker()
-        ),
+        lambda key: calls.append(("key", key)) or FakeBreaker(),
     )
     client.headers = {}
     client.client = FakeHttpClient()
@@ -322,8 +355,13 @@ def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx(status_code):
         response=httpx.Response(503, request=request),
     )
 
-    assert api_client_module.should_count_central_api_circuit_failure(client_error) is False
-    assert api_client_module.should_count_central_api_circuit_failure(server_error) is True
+    assert (
+        api_client_module.should_count_central_api_circuit_failure(client_error)
+        is False
+    )
+    assert (
+        api_client_module.should_count_central_api_circuit_failure(server_error) is True
+    )
     assert (
         api_client_module.should_count_central_api_circuit_failure(
             httpx.ConnectError("connection lost")
@@ -416,7 +454,9 @@ async def test_submit_scail2_face_swap_marks_reference_preprocessed(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint(monkeypatch):
+async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint(
+    monkeypatch,
+):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(
         return_value=httpx.Response(200, json={"task_id": "backend-task-id"})
@@ -441,7 +481,9 @@ async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint
 
 
 @pytest.mark.asyncio
-async def test_submit_pornmaster_flux2_multi_bf16_uses_dedicated_two_image_endpoint(monkeypatch):
+async def test_submit_pornmaster_flux2_multi_bf16_uses_dedicated_two_image_endpoint(
+    monkeypatch,
+):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(
         return_value=httpx.Response(200, json={"task_id": "backend-task-id"})

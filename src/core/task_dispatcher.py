@@ -943,6 +943,9 @@ class CharacterReferenceBuildStrategy(BaseTaskStrategy):
         return {
             "saved_inputs": _get_saved_input_images(inputs),
             "character_id": inputs.get("character_id"),
+            "character_view_type": inputs.get("character_view_type"),
+            "character_view_index": inputs.get("character_view_index"),
+            "record_history": inputs.get("record_history", True),
             "gallery_supported": False,
         }
 
@@ -958,6 +961,8 @@ class CharacterReferenceBuildStrategy(BaseTaskStrategy):
                 prompt=_get_input_prompt(inputs, "adult character reference sheet"),
                 image_path=saved[0],
                 priority=priority,
+                character_view_index=inputs.get("character_view_index"),
+                character_view_type=inputs.get("character_view_type"),
             )
         )
 
@@ -1027,9 +1032,7 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         if not submission.reference_image_path or not submission.motion_video_path:
             raise CoreDomainError("SCAIL-2 任务需要同时上传参考图片和驱动视频。")
 
-        first_frame = str(
-            inputs.get("_scail2_face_swap_first_frame") or ""
-        ).strip()
+        first_frame = str(inputs.get("_scail2_face_swap_first_frame") or "").strip()
         if self.task_type == MODE_SCAIL2_FACE_SWAP_V2 and first_frame:
             return await image_service.submit_face_swap_task(
                 task_id,
