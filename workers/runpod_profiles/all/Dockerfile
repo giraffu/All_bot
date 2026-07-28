@@ -1,7 +1,9 @@
 ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
 ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f
+ARG SCAIL_SOURCE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-scail2@sha256:ddd16e47f9e96de8ab9af4ed992d2f5377e8f25bf8ccb10cb58814169105839c
 
 FROM ${NODE_SOURCE_IMAGE} AS node_source
+FROM ${SCAIL_SOURCE_IMAGE} AS scail_source
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
@@ -71,6 +73,8 @@ COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch /opt/allbot/runpod_sync_models_multi_manifest.patch
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+COPY --from=scail_source /usr/local/lib/python3.12/dist-packages/xformers /opt/allbot/scail_xformers/xformers
+COPY --from=scail_source /usr/local/lib/python3.12/dist-packages/xformers-0.0.33+e70569e.d20260704.dist-info /opt/allbot/scail_xformers/xformers-0.0.33+e70569e.d20260704.dist-info
 
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
@@ -109,6 +113,14 @@ RUN set -euo pipefail; \
     (cd /opt/allbot/runtime/runpod_worker && git apply /opt/allbot/runpod_sync_models_multi_manifest.patch); \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
+    rm -rf \
+      /usr/local/lib64/python3.12/site-packages/xformers \
+      /usr/local/lib64/python3.12/site-packages/xformers-*.dist-info \
+      /usr/local/lib/python3.12/site-packages/xformers \
+      /usr/local/lib/python3.12/site-packages/xformers-*.dist-info; \
+    mkdir -p /usr/local/lib/python3.12/site-packages; \
+    cp -a /opt/allbot/scail_xformers/. /usr/local/lib/python3.12/site-packages/; \
+    python3 -c 'import importlib.metadata as metadata, torch, xformers; assert metadata.version("xformers") == "0.0.33+e70569e.d20260704"; assert torch.__version__.startswith("2.11.0+cu128")'; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'; \
     COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${ltxvideo_dir}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; root=Path(os.environ["COMFYUI_DIR"]); node_dir=Path(os.environ["LTXVIDEO_NODE_DIR"]); spec=importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir/"__init__.py", submodule_search_locations=[str(node_dir)]); module=importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name]=module; spec.loader.exec_module(module); expected={"LTXVSpatioTemporalTiledVAEDecode","LTXICLoRALoaderModelOnly","LTXAddVideoICLoRAGuide"}; assert expected <= set(module.NODE_CLASS_MAPPINGS), expected-set(module.NODE_CLASS_MAPPINGS); scail=(root/"comfy_extras"/"nodes_scail.py").read_text(encoding="utf-8"); assert "WanSCAILToVideo" in scail and "SCAIL2ColoredMask" in scail; kj=(root/"custom_nodes"/"ComfyUI-KJNodes"/"__init__.py").read_text(encoding="utf-8"); assert "DiffusionModelLoaderKJ" in kj and "VAELoaderKJ" in kj'; \

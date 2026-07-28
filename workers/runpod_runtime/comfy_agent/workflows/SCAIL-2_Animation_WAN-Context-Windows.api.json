@@ -359,7 +359,9 @@
       "context_stride": 1,
       "closed_loop": false,
       "fuse_method": "pyramid",
-      "freenoise": true
+      "freenoise": true,
+      "retain_first_frame": false,
+      "split_conds_to_windows": false
     }
   }
 }

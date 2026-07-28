@@ -850,12 +850,17 @@ def _patch_scail2_workflow(
 
     # Keep FreeNoise enabled for long motion transfer throughput.
     if output_task_prefix == "scail2_action_transfer_long":
-        set_node_input(
-            workflow,
-            node_id=SCAIL2_CONTEXT_WINDOWS_NODE_ID,
-            input_name="freenoise",
-            value=True,
-        )
+        for input_name, value in (
+            ("freenoise", True),
+            ("retain_first_frame", False),
+            ("split_conds_to_windows", False),
+        ):
+            set_node_input(
+                workflow,
+                node_id=SCAIL2_CONTEXT_WINDOWS_NODE_ID,
+                input_name=input_name,
+                value=value,
+            )
 
 
 def patch_scail2_action_transfer_workflow(
