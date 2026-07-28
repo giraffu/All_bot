@@ -533,6 +533,9 @@ def patch_character_reference_build_workflow(
         if not prompt:
             raise ValueError("character reference view prompt missing")
         workflow[selected_prefix + "185"]["inputs"]["text"] = prompt
+        workflow[selected_prefix + "100"]["inputs"]["unet_name"] = (
+            PORNMASTER_FLUX2_BF16_UNET_NAME
+        )
     for index in range(1, 7):
         if selected_index and index != selected_index:
             continue

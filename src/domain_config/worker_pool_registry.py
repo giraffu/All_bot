@@ -35,7 +35,11 @@ _WORKER_POOL_PROFILES = (
     WorkerPoolProfile("ltx_t2v", ("ltx_t2v", "ltx_t2v_ic")),
     WorkerPoolProfile(
         "pornmaster_flux2_edit_bf16",
-        ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_multi_edit_bf16"),
+        (
+            "character_reference_build",
+            "pornmaster_flux2_edit_bf16",
+            "pornmaster_flux2_multi_edit_bf16",
+        ),
     ),
 )
 

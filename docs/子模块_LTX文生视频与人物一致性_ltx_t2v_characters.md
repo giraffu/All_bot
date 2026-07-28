@@ -132,7 +132,10 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 
 每个子图都是独立 `character_reference_build` 任务。控制面传
 `character_view_index/type` 和该槽位 prompt；worker 在既有六分支 workflow 中
-删除其余五个分支，只物化所选输出。子任务保持私有，`record_history=false`，
+删除其余五个分支，把所选分支切换到 BF16 V4 UNET，并只物化所选输出。该执行
+类型属于 `pornmaster_flux2_edit_bf16` 共享容量池，RunPod/LAN profile 必须显式
+声明它且使用对应 BF16 模型 manifest；无 index 的旧六图兼容任务仍保留 FP8
+workflow 模型。子任务保持私有，`record_history=false`，
 不会污染闪回瓶，也不允许投稿。旧 `POST /api/characters/build` 与无
 `character_view_index` 的 worker 路径继续保留一次六图兼容语义。
 
