@@ -86,9 +86,10 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
   RunPod mutation、GPU 维护和本地灾备接管必须由用户明确要求。
 - 日常正式入口是 `python scripts/release.py promote` 的无 mutation 预览；
   只有同一候选、无 blocker 后增加 `--confirm-prod` 才执行。
-- `--no-maintenance` 只表达用户对显式模块本次 forward rollout 的决定，
-  不能豁免 migration、首次切换、共享契约、未知路径、配置漂移、健康或
-  rollback 门禁。
+- `--no-maintenance` 只表达用户对显式模块本次 forward rollout 的决定。
+  migration 仅在同一命令同时显式 `--confirm-db-upgrade` 时可豁免生成维护，
+  但仍保持 strict、备份、单 Alembic head、升级和失败恢复；首次切换、共享
+  契约、未知路径、配置漂移、健康和 rollback 门禁不能豁免。
 - `--skip-gate` 仅能按 policy 跳过明确可跳门禁并记录 reason；main 血缘、
   digest/checksum、OCI revision、配置、健康、事务、回滚和非目标证明永久
   保留。execute 禁止 `--skip-ci-checks`。
