@@ -5,7 +5,7 @@ CONFIG_PATH="${CLOUDFLARED_RMB_CONFIG:-/home/hfy/.cloudflared/config.yml}"
 SERVICE_NAME="${CLOUDFLARED_RMB_SERVICE:-cloudflared-rmb-pay}"
 HOSTNAME="${RMB_TUNNEL_HOSTNAME:-rmb.aivison.it.com}"
 LOCAL_SERVICE_URL="${RMB_TUNNEL_LOCAL_SERVICE_URL:-http://127.0.0.1:8021}"
-CLOUD_SERVICE_URL="${RMB_TUNNEL_CLOUD_SERVICE_URL:-http://100.107.220.127:8021}"
+CLOUD_SERVICE_URL="${RMB_TUNNEL_CLOUD_SERVICE_URL:-http://100.107.220.127:8002}"
 BACKUP_DIR="${RMB_TUNNEL_BACKUP_DIR:-/home/hfy/APP/All_bot/backups/cloud-prod-rmb-tunnel}"
 PUBLIC_HEALTH_URL="${RMB_TUNNEL_PUBLIC_HEALTH_URL:-https://rmb.aivison.it.com/healthz}"
 
@@ -20,13 +20,13 @@ Usage:
   scripts/manage_rmb_tunnel_origin.sh --target local [--dry-run|--execute]
 
 Options:
-  --target cloud|local       Required. cloud -> 100.107.220.127:8021, local -> 127.0.0.1:8021.
+  --target cloud|local       Required. cloud -> 100.107.220.127:8002, local -> 127.0.0.1:8021.
   --dry-run                  Default. Print planned changes without editing config or restarting.
   --execute                  Apply the change and restart cloudflared-rmb-pay.
   --config PATH              Cloudflared config path. Default: /home/hfy/.cloudflared/config.yml.
   --service-name NAME        Systemd service name. Default: cloudflared-rmb-pay.
   --hostname HOST            Tunnel hostname. Default: rmb.aivison.it.com.
-  --cloud-url URL            Cloud Payment API origin. Default: http://100.107.220.127:8021.
+  --cloud-url URL            Cloud Payment API origin. Default: http://100.107.220.127:8002.
   --local-url URL            Local Payment API origin. Default: http://127.0.0.1:8021.
   --backup-dir PATH          Backup directory for config snapshots.
   --skip-network-checks      Skip direct target and public URL health checks.

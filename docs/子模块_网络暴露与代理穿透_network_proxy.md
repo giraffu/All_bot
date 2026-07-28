@@ -10,7 +10,7 @@ AllBot 的 Web 静态站统一由 Cloudflare Pages 承载，API、支付、Worke
 | `web-cf-test.aivison.it.com` | Pages `allbot-web-cf-test` | 测试 Web 静态站 |
 | `api.aivison.it.com` | Cloudflare Tunnel | 云正式 Web API `100.107.220.127:8000` |
 | `api-cf-test.aivison.it.com` | Cloudflare Tunnel | 云测试 Web API `100.82.124.91:8001` |
-| `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `100.107.220.127:8021` |
+| `rmb.aivison.it.com` | Cloudflare Tunnel | 不可变云正式 Payment API `100.107.220.127:8002` |
 | `worker-central.aivison.it.com` | Cloudflare Tunnel | 正式 RunPod Central |
 | `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 测试 RunPod Central |
 | `qqcc-admin.aivison.it.com` | Tunnel + Access | 正式 QQCC 管理后台 |

@@ -64,6 +64,15 @@ def test_every_cloud_service_has_bounded_json_log_rotation():
         }, f"{name} is missing bounded json-file logging"
 
 
+def test_payment_api_healthcheck_uses_the_runtime_port():
+    payment = _compose(BASE)["services"]["payment-api"]
+    command = payment["healthcheck"]["test"]
+
+    assert command[:3] == ["CMD", "python", "-c"]
+    assert "PAYMENT_API_PORT" in command[3]
+    assert "8021/healthz" not in command[3]
+
+
 def test_service_projection_files_are_optional_during_partial_project_parse():
     services = _compose(BASE)["services"]
 
