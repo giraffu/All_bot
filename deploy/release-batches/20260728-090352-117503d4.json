@@ -1,0 +1,24 @@
+{
+  "base_ref": "origin/main",
+  "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
+  "batch": "20260728-090352-117503d4",
+  "container_build_trigger": "main-merge",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4",
+  "members": [
+    {
+      "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
+      "branch": "codex/c-huanyuy-uppercase-callback-contract",
+      "head": "117503d4f786e3c446d2f2bd24b74fb3c6858aad",
+      "queued_at": "2026-07-28T07:01:21.130600+00:00",
+      "slot": "C"
+    },
+    {
+      "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
+      "branch": "codex/c-lan-all-worker-gpu226",
+      "head": "fe5873d74cb317db186f884a8e8e2c0fce48f73b",
+      "queued_at": "2026-07-28T08:25:26.905025+00:00",
+      "slot": "C"
+    }
+  ],
+  "pr_base": "main"
+}

@@ -168,6 +168,23 @@ pytest   tests/core/test_task_runtime_cleanup.py
 3. 运行中任务取消后，前端或 Bot 侧仍能看到“已请求取消”或明确终态
 4. 任务完成后，历史/结果回查与 SSE terminal payload 一致
 
+### 7.1 LAN `all` worker 验收
+
+- [ ] profile 的 supported/prefetch/pipeline 集合严格等于八池展开后的 19 类型
+- [ ] 19 份真实 workflow 均能加载、patch、提交并保留非目标节点
+- [ ] 多 manifest 相同内容去重；路径冲突、缺对象、空间不足和 marker 不完整
+  均 fail closed
+- [ ] 队列按全局最早 supported task 领取；单 Comfy、深度一预取和交付重叠
+  上限不漂移
+- [ ] 视频换脸与自由 P 图 v3 两条多阶段链保持一次扣费、隐藏中间结果、确定性
+  stage ID、失败补偿和终态一致
+- [ ] takeover 前旧任务自然完成；disabled heartbeat、exact digest、OCI
+  revision、Comfy health、模型 marker 全部通过后才 enable
+- [ ] OOM/status 137/Xid、重启、workflow、上传、重复扣费或终态错误触发
+  `recover --prefer old`
+- [ ] 19 类型 canary 后连续观察至少两小时、十个真实任务且覆盖至少三个 profile
+  family
+
 ## 8. 执行建议
 
 - 改 Bot flow / entrypoints：先跑最小必跑集，再补 `tests/services/test_task_service_flow.py`

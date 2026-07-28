@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -91,6 +92,91 @@ def test_runpod_model_sync_rejects_invalid_lan_override(monkeypatch, tmp_path):
     monkeypatch.setenv("RUNPOD_LAN_LOCAL_MODEL_OVERRIDES", '[{"relative_path":"diffusion_models/v11.safetensors","size_bytes":2,"sha256":"00"}]')
     with pytest.raises(RuntimeError, match="LAN local model override is missing or invalid"):
         sync_module.sync_models(bucket="models", prefix="wan", target_dir=tmp_path, verify_existing=True)
+
+
+def test_runpod_model_sync_merges_multiple_manifests_by_relative_path(monkeypatch):
+    sync_module = _load_module()
+    manifests = {
+        "img/manifest.json": {
+            "files": [
+                {
+                    "relative_path": "checkpoints/shared.safetensors",
+                    "size_bytes": 2,
+                    "sha256": "aa",
+                    "key": "models/shared",
+                }
+            ]
+        },
+        "video/manifest.json": {
+            "files": [
+                {
+                    "relative_path": "checkpoints/shared.safetensors",
+                    "size_bytes": 2,
+                    "sha256": "aa",
+                    "key": "models/shared",
+                },
+                {
+                    "relative_path": "diffusion_models/video.safetensors",
+                    "size_bytes": 3,
+                    "sha256": "bb",
+                    "key": "models/video",
+                },
+            ]
+        },
+    }
+
+    merged = sync_module.merge_model_manifests(manifests)
+
+    assert [item["relative_path"] for item in merged] == [
+        "checkpoints/shared.safetensors",
+        "diffusion_models/video.safetensors",
+    ]
+
+
+def test_runpod_model_sync_rejects_multi_manifest_path_conflict():
+    sync_module = _load_module()
+
+    with pytest.raises(RuntimeError, match="conflicting model manifests"):
+        sync_module.merge_model_manifests(
+            {
+                "one/manifest.json": {
+                    "files": [
+                        {
+                            "relative_path": "checkpoints/model.safetensors",
+                            "size_bytes": 2,
+                            "sha256": "aa",
+                        }
+                    ]
+                },
+                "two/manifest.json": {
+                    "files": [
+                        {
+                            "relative_path": "checkpoints/model.safetensors",
+                            "size_bytes": 3,
+                            "sha256": "bb",
+                        }
+                    ]
+                },
+            }
+        )
+
+
+def test_runpod_model_sync_rejects_insufficient_disk_space(
+    monkeypatch, tmp_path
+):
+    sync_module = _load_module()
+    monkeypatch.setenv("RUNPOD_MODEL_MIN_FREE_BYTES", "10")
+    monkeypatch.setattr(
+        sync_module.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(free=12),
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient disk space"):
+        sync_module._ensure_disk_capacity(
+            target_dir=tmp_path,
+            required_bytes=3,
+        )
 
 
 def test_lan_local_model_sync_hashes_existing_large_file_in_chunks(monkeypatch, tmp_path):

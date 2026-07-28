@@ -16,6 +16,7 @@ WAN22_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/wan22_aio_video/Dockerf
 LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
 )
+LAN_ALL_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/all/Dockerfile")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
 
@@ -142,6 +143,20 @@ def test_runpod_profile_build_script_has_valid_bash_syntax():
         ["bash", "-n", str(PROFILE_BUILD_SCRIPT)],
         check=True,
     )
+
+
+def test_lan_all_profile_uses_pinned_union_image_contract():
+    dockerfile = LAN_ALL_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+    build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert "COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
+    assert "NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" in dockerfile
+    assert "allbot.lan.profile=\"all\"" in dockerfile
+    assert "allbot.runpod.profile" not in dockerfile
+    assert "--cpu --quick-test-for-ci --disable-auto-launch" in dockerfile
+    assert "Business model files must stay out of the LAN all image" in dockerfile
+    assert "all)" in build_script
+    assert "allbot/comfy-lan-all:local" in build_script
 
 
 def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():

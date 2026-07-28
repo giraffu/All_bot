@@ -15,6 +15,7 @@ FAST_IMAGE_PIPELINE_PROFILES = frozenset(
 )
 MEDIA_PIPELINE_PROFILES = frozenset(
     {
+        "all",
         "image_to_video",
         "ltx_video",
         "ltx_t2v",

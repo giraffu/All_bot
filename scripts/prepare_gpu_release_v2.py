@@ -23,6 +23,10 @@ BUNDLE_REPOSITORY = "ghcr.io/giraffu/allbot-release-v2"
 GPU_MANIFEST_REPOSITORY = "ghcr.io/giraffu/allbot-gpu-release-manifests"
 
 WORKFLOWS = {
+    "lan_all": (
+        "lan_all_profile_image.yml",
+        "ghcr.io/giraffu/allbot-gpu-lan-all",
+    ),
     "face_swap": (
         "runpod_face_swap_profile_image.yml",
         "ghcr.io/giraffu/allbot-gpu-face-swap",
@@ -86,7 +90,7 @@ def _run(
 
 
 def _workflow_inputs(profile: str, sha: str) -> list[str]:
-    if profile == "ltx_t2v":
+    if profile in {"lan_all", "ltx_t2v"}:
         return ["-f", f"source_sha={sha}", "-f", "verify_public_pull=true"]
     return [
         "-f",

@@ -367,6 +367,9 @@ def slot_to_jsonable(
         "all_in_one_image_ref": profile.all_in_one_image_ref if profile else None,
         "model_prefix": profile.model_prefix if profile else None,
         "model_manifest_key": profile.model_manifest_key if profile else None,
+        "model_manifest_keys": (
+            list(profile.model_manifest_keys) if profile else []
+        ),
         "min_vram_gb": profile.min_vram_gb if profile else None,
         "notes": slot.notes,
     }
@@ -680,6 +683,7 @@ class LanAioProdOps:
                 "image_ref": metadata.get("image_ref"),
                 "model_prefix": metadata.get("model_prefix"),
                 "model_manifest_key": metadata.get("model_manifest_key"),
+                "model_manifest_keys": metadata.get("model_manifest_keys"),
                 "workspace_host_dir": metadata.get("workspace_host_dir"),
             },
             "preflight_commands": [
@@ -975,6 +979,9 @@ class LanAioProdOps:
             "state": "running",
             "image_ref": profile.all_in_one_image_ref,
             "model_manifest_key": profile.model_manifest_key,
+            "model_manifest_keys": list(
+                profile.model_manifest_keys or (profile.model_manifest_key,)
+            ),
             "last_verified_at": datetime.now(timezone.utc).isoformat(),
         }
         if slot.gpu_device_id:
@@ -1012,6 +1019,7 @@ class LanAioProdOps:
             "cache_state": marker.get("status") or "ready",
             "image_ref": marker.get("image_ref"),
             "model_manifest_key": marker.get("model_manifest_key"),
+            "model_manifest_keys": marker.get("model_manifest_keys"),
             "workspace_host_dir": marker.get("workspace_host_dir"),
             "synced_at": marker.get("synced_at"),
         }
@@ -1950,6 +1958,7 @@ class LanAioProdOps:
             "model_cache_bucket": metadata.get("model_cache_bucket"),
             "model_prefix": metadata.get("model_prefix"),
             "model_manifest_key": metadata.get("model_manifest_key"),
+            "model_manifest_keys": metadata.get("model_manifest_keys"),
             "workspace_host_dir": metadata.get("workspace_host_dir"),
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1989,6 +1998,21 @@ class LanAioProdOps:
         if len(slots) != 1:
             raise RuntimeError("start-disabled requires exactly one --slot")
         slot = slots[0]
+        profile = self.config.profiles[slot.target_profile_id]
+        if profile.model_manifest_keys:
+            marker = self._remote_cache_marker(slot)
+            expected_keys = list(profile.model_manifest_keys)
+            if (
+                marker.get("status") != "ready"
+                or marker.get("ok") is not True
+                or marker.get("profile") != slot.target_profile_id
+                or marker.get("image_ref") != profile.all_in_one_image_ref
+                or marker.get("model_manifest_keys") != expected_keys
+            ):
+                raise RuntimeError(
+                    "multi-manifest cache marker is missing or incomplete for "
+                    f"{slot.id}"
+                )
         self._set_control(
             slot.agent_id,
             "disabled",
@@ -2560,6 +2584,15 @@ class LanAioProdOps:
             f"RUNPOD_MODEL_PREFIX={metadata['model_prefix']}",
             "-e",
             f"RUNPOD_MODEL_MANIFEST_KEY={metadata['model_manifest_key']}",
+            "-e",
+            (
+                "RUNPOD_MODEL_MANIFEST_KEYS="
+                + json.dumps(
+                    metadata.get("model_manifest_keys")
+                    or [metadata["model_manifest_key"]],
+                    separators=(",", ":"),
+                )
+            ),
             "-e",
             f"RUNPOD_MODEL_TARGET_DIR={model_target_dir}",
             "-e",

@@ -13,6 +13,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_TASK_PROFILES,
 )
+from ops.gpu_pool_controller.runtime import LAN_AIO_ALL_WORKFLOW_OVERRIDES
 from src.workflow_mapping_validation import resolve_workflow_filename
 
 
@@ -88,6 +89,39 @@ def test_runpod_task_execution_context_matches_main_worker_contract():
     assert RUNPOD_RUNTIME_TYPES_PATH.read_text(
         encoding="utf-8"
     ) == MAIN_RUNTIME_TYPES_PATH.read_text(encoding="utf-8")
+
+
+def test_lan_all_profile_validates_every_execution_workflow(monkeypatch):
+    validation = _load_runpod_validation_module()
+    task_types = {
+        "img2img",
+        "img2img_lora",
+        "image_to_video",
+        "wan22_video_v2",
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+        "ltx_video",
+        "ltx_video_flf2v",
+        "ltx_video_v2v_audio",
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+        "face_swap",
+        "ltx_t2v",
+        "ltx_t2v_ic",
+    }
+    monkeypatch.setenv(
+        validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
+        LAN_AIO_ALL_WORKFLOW_OVERRIDES,
+    )
+
+    mappings = validation.validate_workflow_directory(str(RUNPOD_WORKFLOW_DIR))
+
+    assert task_types <= set(mappings)
 
 
 def test_baked_runpod_worker_imports_task_patchers_from_its_own_bundle(tmp_path):

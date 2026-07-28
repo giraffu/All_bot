@@ -124,3 +124,23 @@ ledger。
   old/new digest、结果与回滚状态。
 - 区分代码支持、本地/disabled canary、测试环境和正式接单；未执行的运行态
   不能写成已上线。
+
+## 9. LAN-only `all` profile
+
+`all` 是 LAN AIO 专用聚合 profile，不属于 RunPod provider、autoscaler、
+Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格等于
+`img2img`、Wan22 AIO、PornMaster BF16、SCAIL-2、LTX Video、`i2i_pro`、
+专属换脸和 LTX T2V/IC-LoRA 等现有池展开后的 19 个 execution task type；
+不新增 public type、价格或业务身份。
+
+- canonical 镜像由受保护 main 的 exact SHA 构建，包含 workflow/custom node
+  依赖并以 digest 固定；模型权重不入镜像。
+- LAN model cache 可只读合并多个 manifest，以相对路径、size 和 SHA-256
+  去重；同路径内容冲突、缺文件、ready marker 不完整或磁盘不足均 fail
+  closed。
+- runtime 使用单 Comfy 执行、最多两个 claimed slot（执行 + 深度一预取），
+  上传和 `/complete` 交付可与下一次 Comfy 执行重叠。
+- Central 仍在全部支持类型中按全局 queue score 领取最早任务，不做按类型轮询
+  或亲和。
+- GPU226 候选只能经 fleet helper 做单卡 drain、takeover、auto rollback；
+  任意 OOM/status 137/Xid、workflow、上传或终态错误均恢复旧 exact digest。

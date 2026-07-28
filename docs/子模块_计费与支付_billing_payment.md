@@ -90,9 +90,11 @@ sequenceDiagram
 
 - 当前支付履约共享内核是 `payment_fulfillment_service.fulfill_payment_command(PaymentFulfillmentCommand(...))`，返回 `PaymentFulfillmentResult`；RMB `fulfill_order(...)` 只保留旧 bool 兼容包装。
 - RMB 适配层按本地业务单定位订单；TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
-- RMB 公网回调 `GET|POST /api/pay/notify/huanyuy` 统一解析 query/form，校验
+- RMB 公网回调以平台文档声明的
+  `GET /api/pay/notify/huanyuy` 为正式方式，同时兼容 POST query/form，校验
   merchant、MD5 签名、成功状态、业务单、外部流水与金额。事务提交成功或幂等
-  noop 后返回精确纯文本 `success`；Telegram 消息不阻塞该确认响应。
+  noop 后返回平台要求的精确纯文本大写 `SUCCESS`；Telegram 消息不阻塞该确认
+  响应。平台未收到 `SUCCESS` 时按一分钟间隔最多重试五次。
 - RMB 下单通过服务端 POST 提交，日志不得记录签名参数、完整支付 URL 或网关
   响应。`RMB_RECONCILIATION_ENABLED` 默认关闭；启用时
   `HUANYUY_QUERY_URL` 条件必填，查单返回必须同时匹配订单号、金额和平台流水，
@@ -102,6 +104,10 @@ sequenceDiagram
   `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
   边界；没有稳定服务端查单接口时禁止用浏览器 Cookie、后台抓取或自动“补发”
   替代。
+- 环宇平台签名按字段名 a-z 升序拼接，排除 `sign`、`sign_type` 与空值，
+  参数值不额外 urlencode，末尾直接拼接商户 Key 后计算 MD5。平台文档同时写有
+  “降序”和“a-z”，两者互相矛盾；当前实现保持与既有成功订单及易支付 a-z
+  行为一致，不按 z-a 反转。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
 - TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
@@ -168,7 +174,8 @@ sequenceDiagram
 
 - RMB 支付回调：`GET|POST /api/pay/notify/huanyuy`
   - 仅适用于 RMB 网关异步通知。
-  - 成功或重复通知必须返回精确纯文本 `success` 阻断第三方重试；非法通知返回
+  - 平台正式通知使用 GET，POST 仅作兼容。成功或重复通知必须返回精确纯文本
+    大写 `SUCCESS` 阻断第三方重试；非法通知返回
     `fail`。
 - Payment API 健康：`GET /healthz`
   - 返回非敏感服务状态与 RMB reconciler 是否启用，不暴露 URL、凭据或订单。

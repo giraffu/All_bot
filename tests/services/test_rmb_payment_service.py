@@ -82,6 +82,22 @@ class _FakeClientSession:
         return _FakeResponse(self._payload)
 
 
+def test_generate_sign_uses_a_to_z_order_and_excludes_signature_fields():
+    assert (
+        RMBPaymentService.generate_sign(
+            {
+                "z": "last",
+                "sign": "ignored",
+                "empty": "",
+                "a": "first",
+                "sign_type": "MD5",
+            },
+            "merchant-key",
+        )
+        == "688c85dd2ff07486c857736159319936"
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_payment_url_formats_decimal_amount_without_float_rounding_noise(
     monkeypatch,
