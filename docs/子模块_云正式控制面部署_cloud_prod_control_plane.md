@@ -49,7 +49,7 @@
 | :--- | :--- | :--- | :--- |
 | Central API | `cloud-central-api-prod` | `100.107.220.127:8003` | 执行面、队列、worker heartbeat、状态观测 |
 | Web API | `cloud-web-api-prod` | `100.107.220.127:8000` | Web/BFF、任务提交、历史、广场、用户中心 |
-| Payment API | `cloud-payment-api-prod` | `100.107.220.127:8021` | RMB 回调与支付结果页 |
+| Payment API | `allbot-prod-payment-api-1` | `100.107.220.127:8002` | RMB 回调与支付结果页 |
 | Dashboard Backend | `cloud-dashboard-backend-prod` | `100.107.220.127:8043` | 管理后台 API |
 | Dashboard Frontend | `cloud-dashboard-frontend-prod` | `100.107.220.127:8086` | 管理后台云端 Nginx 前端，同源反代 Dashboard Backend |
 | QQCC Config Backend | `cloud-qqcc-config-backend-prod` | `100.107.220.127:8045` | QQCC 懒人 Bot 独立配置 API，使用 `QQCC_CONFIG_*` 独立账号 |
@@ -192,7 +192,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `web.aivison.it.com`：静态前端由 Cloudflare Pages 项目 `allbot-web-prod` 承接，生产前端调用 `https://api.aivison.it.com/api`。
 - `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
 - `worker-central.aivison.it.com`：RunPod 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。
-- `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
+- `rmb.aivison.it.com`：Cloudflare Tunnel 回源到不可变云 Payment API `http://100.107.220.127:8002`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。云服务的容器 healthcheck 必须读取实际 `PAYMENT_API_PORT`，不得把 legacy `8021` 写死后误判 8002 进程不健康。
 - 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。QQCC 懒人 Bot 配置已剥离到独立 `http://100.107.220.127:8088/`，后端为 `8045`，使用 `QQCC_CONFIG_*` 独立后台账号。若需要公网管理域名，必须通过 Cloudflare Tunnel 回源对应前端地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086`/`8043`/`8088`/`8045` 直接暴露到公网。
 - `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：云测试 Pages 与 API Tunnel 入口，不得复用本地主服务器 RMB tunnel。
 
