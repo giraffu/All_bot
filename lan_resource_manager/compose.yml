@@ -89,8 +89,7 @@ services:
       HOME: /home/app
       XDG_STATE_HOME: /home/hfy/.local/state
       DOCKER_CONFIG: /run/secrets/docker
-      DOCKER_HOST: "${RESOURCE_MANAGER_DOCKER_HOST:-ssh://hfy@192.168.1.115}"
-      DOCKER_SSH_COMMAND: "ssh -i /run/secrets/local_build_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/known_hosts"
+      DOCKER_HOST: "${RESOURCE_MANAGER_DOCKER_HOST:-ssh://allbot-local-docker}"
       INTEGRATION_QUEUE_ROOT: /home/hfy/.local/state/allbot/ai-integration-queue
       WORKSPACE_LOCK_PATH: /home/hfy/.local/state/allbot/ai-workspaces.lock
       WORKSPACE_REPO_ROOT: /home/hfy/APP/All_bot
