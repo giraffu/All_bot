@@ -37,7 +37,7 @@ def test_runpod_runtime_requires_baked_agent_and_never_clones_allbot_at_startup(
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
     baked_entrypoint = BAKED_ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
 
-    assert "git clone --depth 1 --branch \"$REPO_BRANCH\"" not in bootstrap
+    assert 'git clone --depth 1 --branch "$REPO_BRANCH"' not in bootstrap
     assert "baked AllBot RunPod worker bundle is missing" in bootstrap
     assert "ALLBOT_RUNPOD_REPO_DIR:-/opt/allbot/runtime" in baked_entrypoint
     assert "${runtime_root}/runpod_worker" in baked_entrypoint
@@ -75,9 +75,9 @@ def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
 
 def test_runpod_runtime_bakes_agent_id_into_pop_requests():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-    agent = Path(
-        "workers/runpod_runtime/comfy_agent/agent_main.py"
-    ).read_text(encoding="utf-8")
+    agent = Path("workers/runpod_runtime/comfy_agent/agent_main.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'params: dict[str, str] = {"agent_id": AGENT_ID}' in agent
     assert "write_text(" not in bootstrap
@@ -120,10 +120,7 @@ def test_runpod_bootstrap_checks_wan22_rife_cache_before_starting_comfyui():
         'log "starting ComfyUI'
     )
     assert "ensure_wan22_rife_cache.py" in entrypoint
-    assert (
-        "\nensure_wan22_rife_cache\n\nif [ -n \"${COMFYUI_DIR:-}\" ]"
-        in entrypoint
-    )
+    assert '\nensure_wan22_rife_cache\n\nif [ -n "${COMFYUI_DIR:-}" ]' in entrypoint
 
 
 def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
@@ -135,7 +132,7 @@ def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
     assert 'log "starting ComfyUI from ${baked_comfyui_dir}"' in bootstrap
     assert "/opt/allbot-comfyui-dir" in entrypoint
     assert "resolve_baked_comfyui_dir" in entrypoint
-    assert "cd \"$baked_comfyui_dir\"" in entrypoint
+    assert 'cd "$baked_comfyui_dir"' in entrypoint
 
 
 def test_runpod_profile_build_script_has_valid_bash_syntax():
@@ -150,8 +147,11 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
     assert "COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
-    assert "NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" in dockerfile
-    assert "allbot.lan.profile=\"all\"" in dockerfile
+    assert (
+        "NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        in dockerfile
+    )
+    assert 'allbot.lan.profile="all"' in dockerfile
     assert "allbot.runpod.profile" not in dockerfile
     assert "--cpu --quick-test-for-ci --disable-auto-launch" in dockerfile
     assert "Business model files must stay out of the LAN all image" in dockerfile
@@ -169,8 +169,7 @@ def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
 
     assert (
         "BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:"
-        "124cd638cab69e87c39946190a7e17169b6223e35c7d946e9df540719ddb385b"
-        in dockerfile
+        "124cd638cab69e87c39946190a7e17169b6223e35c7d946e9df540719ddb385b" in dockerfile
     )
     assert "LTX 2.3 Sulphur Ingredients T2V.json" in dockerfile
     assert 'ic["26:91"]["inputs"]["latent"] == ["26:153",0]' in dockerfile
@@ -228,7 +227,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
     assert "Reusing baked custom nodes from base image" in dockerfile
     assert "require_existing_node" in dockerfile
-    assert "sys.exit(\"REUSE_BASE_CUSTOM_NODES=true" in dockerfile
+    assert 'sys.exit("REUSE_BASE_CUSTOM_NODES=true' in dockerfile
     assert "if missing else 0" in dockerfile
     assert "Reusing baked ComfyUI_Fill-Nodes from base image" in dockerfile
     assert "Reusing baked ComfyUI-LTXVideo from base image" in dockerfile
@@ -244,8 +243,14 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "26545cc2dd95bc3d27f056016300673bdeee78f5" in dockerfile
     assert "ComfyUI_Fill-Nodes" in dockerfile
     assert "2c94c3b675e7832ae18986e7062365c7d025b802" in dockerfile
-    assert "RIFE49_URL=https://huggingface.co/lividtm/RIFE/resolve/main/rife49.pth" in dockerfile
-    assert "RIFE49_SHA256=e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533" in dockerfile
+    assert (
+        "RIFE49_URL=https://huggingface.co/lividtm/RIFE/resolve/main/rife49.pth"
+        in dockerfile
+    )
+    assert (
+        "RIFE49_SHA256=e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533"
+        in dockerfile
+    )
     assert "ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" in dockerfile
     assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in dockerfile
     assert "ComfyUI-LTXVideo" in dockerfile
@@ -258,15 +263,12 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     ) in dockerfile
     assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
     assert (
-        'CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]'
-        in dockerfile
+        'CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]' in dockerfile
     )
-    assert (
-        "# Keep the FL_RIFE provider in a final small layer" in dockerfile
-    )
-    assert dockerfile.index('echo "${comfyui_dir}" > /opt/allbot-comfyui-dir') < dockerfile.index(
-        "# Keep the FL_RIFE provider in a final small layer"
-    )
+    assert "# Keep the FL_RIFE provider in a final small layer" in dockerfile
+    assert dockerfile.index(
+        'echo "${comfyui_dir}" > /opt/allbot-comfyui-dir'
+    ) < dockerfile.index("# Keep the FL_RIFE provider in a final small layer")
     assert "ComfyUI-GGUF" in dockerfile
     assert "ComfyUI-DaSiWa-Nodes" in dockerfile
     assert "comfyui-WhiteRabbit" in dockerfile
@@ -317,9 +319,9 @@ def test_face_swap_github_workflow_publishes_dedicated_revision_pinned_image():
 
 
 def test_ltx_t2v_github_workflow_builds_exact_main_revision_without_models():
-    workflow = Path(
-        ".github/workflows/runpod_ltx_t2v_profile_image.yml"
-    ).read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/runpod_ltx_t2v_profile_image.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "source_sha:" in workflow
     assert "git merge-base --is-ancestor" in workflow
@@ -333,14 +335,15 @@ def test_ltx_t2v_github_workflow_builds_exact_main_revision_without_models():
     assert "docker manifest inspect" in workflow
 
 
-def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(tmp_path):
+def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(
+    tmp_path,
+):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
-        "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$*\" >> \"$DOCKER_CALLS\"\n",
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
@@ -381,8 +384,7 @@ def test_profile_build_script_can_reuse_base_custom_nodes(tmp_path):
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
-        "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$*\" >> \"$DOCKER_CALLS\"\n",
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
@@ -419,14 +421,53 @@ def test_profile_build_script_can_reuse_base_custom_nodes(tmp_path):
     assert "REUSE_BASE_CUSTOM_NODES=true" in rendered
 
 
-def test_profile_build_script_rejects_unknown_profile_before_docker(tmp_path):
+def test_pornmaster_profile_stages_character_runtime_overlays(tmp_path):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
         "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$*\" >> \"$DOCKER_CALLS\"\n",
+        "set -euo pipefail\n"
+        'context="${!#}"\n'
+        'test -f "$context/workers/comfy_agent/workflow_task_patchers.py"\n'
+        'test -f "$context/workers/comfy_agent/agent_result_materialization.py"\n'
+        'printf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "DOCKER_CALLS": str(calls),
+    }
+
+    subprocess.run(
+        [
+            "bash",
+            str(PROFILE_BUILD_SCRIPT),
+            "--profile",
+            "pornmaster_flux2_edit",
+            "--image-ref",
+            "allbot/comfy-runpod-pornmaster-flux2-edit:test",
+            "--no-smoke",
+        ],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert calls.exists()
+
+
+def test_profile_build_script_rejects_unknown_profile_before_docker(tmp_path):
+    calls = tmp_path / "docker-calls.txt"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
