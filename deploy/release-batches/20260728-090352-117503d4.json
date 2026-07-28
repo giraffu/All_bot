@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "d9e881151617ee9c33d93bff4e7b319bcc87abe5",
+  "base_sha": "cca6b06eb6045f467df2468212dcbbbfab3846e8",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-765d9854",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-9c04db57",
   "members": [
     {
       "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
@@ -67,6 +67,20 @@
       "head": "765d985441d0234a2d2c4d7627f5c76e3379d88e",
       "queued_at": "2026-07-28T11:36:47.050777+00:00",
       "slot": "F"
+    },
+    {
+      "base_sha": "d9e881151617ee9c33d93bff4e7b319bcc87abe5",
+      "branch": "codex/f-fix-gpu-manifest-baseline-seed",
+      "head": "ff69d23edfb442911f6befe1cb3240462742c17c",
+      "queued_at": "2026-07-28T11:56:36.566172+00:00",
+      "slot": "F"
+    },
+    {
+      "base_sha": "d9e881151617ee9c33d93bff4e7b319bcc87abe5",
+      "branch": "codex/g-fix-payment-healthcheck-port",
+      "head": "9c04db57f767f8667b606f94386f6baae8415104",
+      "queued_at": "2026-07-28T11:56:45.872605+00:00",
+      "slot": "G"
     }
   ],
   "pr_base": "main"

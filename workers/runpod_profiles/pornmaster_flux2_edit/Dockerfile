@@ -5,6 +5,7 @@ LABEL org.opencontainers.image.title="AllBot RunPod PornMaster Flux2 edit ComfyU
 LABEL org.opencontainers.image.description="ComfyUI runtime profile for PornMaster Flux2 single/multiple image editing; model files are synced from the LAN model cache at startup."
 LABEL allbot.runpod.profile="pornmaster_flux2_edit"
 LABEL allbot.runpod.models="external-lan-manifest"
+LABEL io.allbot.character-reference.runtime="selected-view-bf16"
 ARG ALLBOT_GIT_SHA
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
