@@ -7,8 +7,9 @@
 
 - `ltx_t2v`：纯文生同步音视频；
 - `ltx_t2v_ic`：文生同步音视频 + 私有人物参考表 + Ingredients；
-- `character_reference_build`：从本人上传源图生成一个指定人物视角；旧版一次生成
-  六图的调用仍只作兼容。
+- 人物子图：从本人上传源图生成一个指定人物视角，复用普通自由 P 图、自由 P 图
+  v2.5 或自由 P 图 v3 任务链；`character_reference_build` 只保留旧版一次生成
+  六图的兼容调用。
 
 本阶段允许已授权的 cloud-test disabled canary、测试 Web 人工验收，并继续支持
 本地 LAN 验收。后端 `LTX_T2V_BACKEND_ENABLED` 默认关闭，由云测试环境显式开启；
@@ -130,14 +131,19 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 1. 正脸图；2. 侧脸图；3. 3/4 侧脸图；
 4. 全身正面图；5. 全身侧面图；6. 全身背面图。
 
-每个子图都是独立 `character_reference_build` 任务。控制面传
-`character_view_index/type` 和该槽位 prompt；worker 在既有六分支 workflow 中
-删除其余五个分支，把所选分支切换到 BF16 V4 UNET，并只物化所选输出。该执行
-类型属于 `pornmaster_flux2_edit_bf16` 共享容量池，RunPod/LAN profile 必须显式
-声明它且使用对应 BF16 模型 manifest；无 index 的旧六图兼容任务仍保留 FP8
-workflow 模型。子任务保持私有，`record_history=false`，
-不会污染闪回瓶，也不允许投稿。旧 `POST /api/characters/build` 与无
-`character_view_index` 的 worker 路径继续保留一次六图兼容语义。
+每个子图都是独立的标准生成任务。`POST
+/api/characters/{id}/views/{view_type}/generate` 接受 `engine=free_edit |
+free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
+`pornmaster_flux2_edit_bf16` 业务类型，沿用各自价格、worker pool、workflow
+与退款语义；v3 仍执行 Web 的 BF16 → `face_swap_v2` continuation。人物
+`character_id/view_type` 只作为终态 metadata，在最终结果落地后回写对应子图，
+不得改变 worker execution type。子任务保持私有，`record_history=false`，
+不会污染闪回瓶，也不允许投稿；前端把返回的根 task ID 登记到统一任务 store，
+因此与普通生成任务一样显示悬浮球、状态和取消入口。
+
+旧 `POST /api/characters/build`、`character_reference_build` workflow、
+`character_view_index` patcher 和结果物化只保留一次六图兼容语义；新子图入口
+不得再路由到该专用 worker type。
 
 单张正面半身源图是受支持且必须覆盖的验收输入，但它不意味着六格都可以复制
 正面半身构图。materializer 使用视觉感知差异门禁拒绝近似重复视图，但不把该门禁
@@ -184,7 +190,8 @@ pending 子图存在时删除返回 409。
 
 - `ltx_t2v`：5/10/15/20 秒分别 10/20/30/40 灵石；
 - `ltx_t2v_ic`：5/10/15/20 秒分别 12/24/36/48 灵石；
-- 人物子图：每张 3 灵石，最多六张合计 18 灵石；重生同样按张计费。
+- 人物子图与重生按所选标准流程计费：自由 P 图 2 灵石、自由 P 图 v2.5
+  3 灵石、自由 P 图 v3 5 灵石；失败沿用根任务幂等退款。
 
 IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`ready` 状态和
 未删除状态，并解析真实 `sheet_object_key`；任何客户端直传 `character_sheet`
@@ -193,11 +200,11 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 ## 6. Web 与验收
 
 测试 Web 发布后，“练功房 → 人物参考图”提供上传、六个子图 tab、各槽位默认
-prompt 编辑、独立生成/重生、状态轮询和至少两图保存。“修仙笔记 → 人物图库”
-提供合成表与六子图查看、选择子图重生和重新合成；旧 `/characters` 只重定向到
-该 tab，不再保留独立人物页。统一工作台的“文生视频”可清空人物选择：无人物提交
-`ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格和价格。视觉 prompt 与可选
-audio prompt 分别进入任务输入，默认生成同步音频。
+prompt 编辑、自由 P 图三模式选择、独立生成/重生、统一悬浮球状态和至少两图保存。
+“修仙笔记 → 人物图库”提供合成表与六子图查看、同样的三模式重生和重新合成；
+旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
+可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
+和价格。视觉 prompt 与可选 audio prompt 分别进入任务输入，默认生成同步音频。
 
 LAN mutation 只能通过 `scripts/lan_aio_fleet_prod_ops.py`。先核对 live、ledger、
 catalog 并带原因收口 unfinished operation；状态不唯一就停止。只在明确授权的

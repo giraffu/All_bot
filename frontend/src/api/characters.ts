@@ -31,6 +31,11 @@ export type CharacterViewType =
   | 'body_side'
   | 'body_back'
 
+export type CharacterViewEngine =
+  | 'free_edit'
+  | 'free_edit_v2_5'
+  | 'free_edit_v3'
+
 export const fetchCharacters = async (): Promise<CharacterReference[]> => (
   await api.get('/characters')
 ).data
@@ -53,8 +58,9 @@ export const generateCharacterView = async (
   id: string,
   viewType: CharacterViewType,
   prompt: string,
+  engine: CharacterViewEngine,
 ) => (
-  await api.post(`/characters/${id}/views/${viewType}/generate`, { prompt })
+  await api.post(`/characters/${id}/views/${viewType}/generate`, { prompt, engine })
 ).data
 
 export const saveCharacterReference = async (

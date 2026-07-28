@@ -496,6 +496,52 @@ async def test_web_generate_submits_free_edit_v25_as_one_three_credit_stage(
 
 
 @pytest.mark.asyncio
+async def test_internal_free_edit_submission_merges_private_context_and_task_id(
+    monkeypatch,
+):
+    process_task = AsyncMock(return_value={"task_id": "character-view-1", "cost": 5})
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_task,
+    )
+
+    response = await task_submission_service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="pornmaster_flux2_edit_bf16",
+            inputs={
+                "images": ["123/input_images/original.png"],
+                "record_history": False,
+            },
+            prompt="front portrait",
+        ),
+        current_user=_build_current_user(),
+        get_balance=AsyncMock(return_value=95),
+        task_id_override="character-view-1",
+        registry_metadata_extra={
+            "_character_reference_view": {
+                "version": 1,
+                "character_id": "character-1",
+                "view_type": "face_front",
+            },
+            "record_history": False,
+        },
+        allow_contribute_override=False,
+    )
+
+    assert response.task_id == "character-view-1"
+    submit_kwargs = process_task.await_args.kwargs
+    assert submit_kwargs["task_id"] == "character-view-1"
+    assert submit_kwargs["allow_contribute_override"] is False
+    assert submit_kwargs["registry_metadata"]["_character_reference_view"][
+        "view_type"
+    ] == "face_front"
+    assert submit_kwargs["registry_metadata"]["_web_free_edit_v3"][
+        "final_allow_contribute"
+    ] is False
+
+
+@pytest.mark.asyncio
 async def test_web_generate_submits_two_image_free_edit_v25_for_seven_credits(
     monkeypatch,
 ):

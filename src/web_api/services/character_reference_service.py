@@ -21,12 +21,18 @@ from src.domain_config.ltx_t2v import (
 from src.quota import QuotaManager
 from src.services.storage import storage
 from src.web_api.common.utils import release_read_transaction
+from src.web_api.schemas.task_schema import TaskGenerateRequest
+from src.web_api.services.task_submission_service import submit_generation_task
 
 ALLOWED_CHARACTER_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 CHARACTER_READY_LIMIT = 20
 CHARACTER_SOURCE_MAX_BYTES = 20 * 1024 * 1024
-CHARACTER_VIEW_COST = 3
 CHARACTER_MIN_READY_VIEWS = 2
+CHARACTER_VIEW_TASK_TYPES = {
+    "free_edit": "edit",
+    "free_edit_v2_5": "free_edit_v2_5",
+    "free_edit_v3": "pornmaster_flux2_edit_bf16",
+}
 
 CHARACTER_VIEW_CATALOG = (
     {
@@ -240,8 +246,7 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
 async def generate_character_view(
     *, db, current_user, character_id: str, view_type: str, payload
 ) -> dict:
-    config = CHARACTER_VIEW_BY_TYPE.get(view_type)
-    if config is None:
+    if view_type not in CHARACTER_VIEW_BY_TYPE:
         raise HTTPException(status_code=404, detail="未知的人物子图类型。")
     character = (
         await db.execute(
@@ -283,27 +288,25 @@ async def generate_character_view(
         view.updated_at = datetime.now()
     await db.commit()
     try:
-        result = await process_and_submit_task(
-            user_id=current_user.id,
-            username=current_user.username,
-            task_type=CHARACTER_REFERENCE_BUILD_TASK_TYPE,
-            inputs={
-                "images": [character.source_object_key],
-                "character_id": character_id,
-                "character_view_type": view_type,
-                "character_view_index": config["index"],
-                "prompt": payload.prompt.strip(),
-                "record_history": False,
-            },
-            task_id=task_id,
-            submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-                attach_web_monitor=True
+        task_type = CHARACTER_VIEW_TASK_TYPES[payload.engine]
+        result = await submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type=task_type,
+                inputs={
+                    "images": [character.source_object_key],
+                    "record_history": False,
+                },
+                prompt=payload.prompt.strip(),
             ),
-            cost_override=CHARACTER_VIEW_COST,
-            user_cancel_allowed=True,
-            registry_metadata={
-                "character_id": character_id,
-                "character_view_type": view_type,
+            current_user=current_user,
+            get_balance=QuotaManager().get_credits,
+            task_id_override=task_id,
+            registry_metadata_extra={
+                "_character_reference_view": {
+                    "version": 1,
+                    "character_id": character_id,
+                    "view_type": view_type,
+                },
                 "record_history": False,
             },
             allow_contribute_override=False,
@@ -313,14 +316,14 @@ async def generate_character_view(
         view.updated_at = datetime.now()
         await db.commit()
         raise
-    balance = await QuotaManager().get_credits(current_user.id)
     return {
         "character_id": character_id,
         "view_type": view_type,
-        "task_id": result["task_id"],
+        "task_id": result.task_id,
+        "task_type": task_type,
         "status": "pending",
-        "cost": result["cost"],
-        "balance_remaining": balance,
+        "cost": result.cost,
+        "balance_remaining": result.balance_remaining,
     }
 
 

@@ -646,7 +646,13 @@
     "description_label": "人物描述（可选）",
     "name_placeholder": "人物名称（1–60 字）",
     "description_placeholder": "可选描述",
-    "billing_hint": "创建草稿不扣费。每个视角独立消耗 3 灵石；任务失败按现有账本自动退款，六张全部生成共 18 灵石。",
+    "billing_hint": "创建草稿不扣费。每个视角可选择自由P图、自由P图 v2.5 或自由P图 v3，并按所选流程计费；任务失败按现有账本自动退款。",
+    "engine_label": "子图生成模型",
+    "engines": {
+      "free_edit": "自由P图",
+      "free_edit_v2_5": "自由P图 v2.5",
+      "free_edit_v3": "自由P图 v3"
+    },
     "start_views": "开始制作六视角",
     "draft_created": "人物草稿已创建",
     "ready_progress": "已完成 {ready}/{total} 个视角",

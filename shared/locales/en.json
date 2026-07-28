@@ -645,7 +645,13 @@
     "description_label": "Description (optional)",
     "name_placeholder": "Character name (1–60 characters)",
     "description_placeholder": "Optional description",
-    "billing_hint": "Drafts are free. Each view costs 3 credits and failed tasks use the existing automatic refund flow; all six views cost 18 credits.",
+    "billing_hint": "Drafts are free. Each view can use Free Edit, Free Edit v2.5, or Free Edit v3 and is billed by the selected flow; failed tasks use the existing automatic refund flow.",
+    "engine_label": "View generation model",
+    "engines": {
+      "free_edit": "Free Edit",
+      "free_edit_v2_5": "Free Edit v2.5",
+      "free_edit_v3": "Free Edit v3"
+    },
     "start_views": "Start Six-View Workspace",
     "draft_created": "Character draft created",
     "ready_progress": "{ready}/{total} views ready",

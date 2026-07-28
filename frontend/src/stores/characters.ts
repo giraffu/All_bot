@@ -10,10 +10,13 @@ import {
   saveCharacterReference,
   updateCharacter,
   type CharacterReference,
+  type CharacterViewEngine,
   type CharacterViewType,
 } from '@/api/characters'
+import { useTasksStore } from '@/stores/tasks'
 
 export const useCharactersStore = defineStore('characters', () => {
+  const tasksStore = useTasksStore()
   const items = ref<CharacterReference[]>([])
   const loading = ref(false)
   const readyItems = computed(() => items.value.filter(item => item.status === 'ready'))
@@ -43,8 +46,15 @@ export const useCharactersStore = defineStore('characters', () => {
     id: string,
     viewType: CharacterViewType,
     prompt: string,
+    engine: CharacterViewEngine = 'free_edit_v2_5',
+    viewLabel: string = viewType,
   ) => {
-    const result = await generateCharacterView(id, viewType, prompt)
+    const result = await generateCharacterView(id, viewType, prompt, engine)
+    tasksStore.addTask(
+      result.task_id,
+      result.task_type,
+      `人物参考图 · ${viewLabel}`,
+    )
     await refresh()
     return result
   }

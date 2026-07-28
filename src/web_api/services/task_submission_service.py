@@ -42,6 +42,9 @@ async def submit_generation_task(
     get_balance: Callable[[int], Awaitable[int]],
     logger=None,
     operator_canary_authorized: bool = False,
+    task_id_override: str | None = None,
+    registry_metadata_extra: dict | None = None,
+    allow_contribute_override: bool | None = None,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -108,21 +111,22 @@ async def submit_generation_task(
         if req.prompt:
             inputs["prompt"] = req.prompt
 
-        task_id = str(uuid.uuid4())
+        task_id = task_id_override or str(uuid.uuid4())
         correlation_id.set(task_id)
 
-        free_edit_v3_metadata = None
-        scail2_face_swap_metadata = None
+        registry_metadata = dict(registry_metadata_extra or {})
         if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE:
-            free_edit_v3_metadata = {
-                "_web_free_edit_v3": {
-                    "version": 1,
-                    "kind": "free_edit_v3",
-                    "stage": "bf16",
-                    "stage2_task_type": "face_swap_v2",
-                    "original_image": images[0],
-                    "final_allow_contribute": not is_template,
-                }
+            registry_metadata["_web_free_edit_v3"] = {
+                "version": 1,
+                "kind": "free_edit_v3",
+                "stage": "bf16",
+                "stage2_task_type": "face_swap_v2",
+                "original_image": images[0],
+                "final_allow_contribute": (
+                    bool(allow_contribute_override)
+                    if allow_contribute_override is not None
+                    else not is_template
+                ),
             }
         elif req.task_type == SCAIL2_FACE_SWAP_V2_TASK_TYPE:
             if len(images) != 2:
@@ -134,18 +138,20 @@ async def submit_generation_task(
             )
             inputs["_scail2_face_swap_first_frame"] = first_frame
             scail2_first_frame_to_cleanup = first_frame
-            scail2_face_swap_metadata = {
-                "_web_scail2_face_swap_v2": {
-                    "version": 1,
-                    "kind": SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-                    "stage": "face_swap_v2",
-                    "first_frame": first_frame,
-                    "original_reference": images[0],
-                    "motion_video": images[1],
-                    "duration": inputs.get("duration", 5),
-                    "normal_priority": req.priority,
-                    "final_allow_contribute": not is_template,
-                }
+            registry_metadata["_web_scail2_face_swap_v2"] = {
+                "version": 1,
+                "kind": SCAIL2_FACE_SWAP_V2_TASK_TYPE,
+                "stage": "face_swap_v2",
+                "first_frame": first_frame,
+                "original_reference": images[0],
+                "motion_video": images[1],
+                "duration": inputs.get("duration", 5),
+                "normal_priority": req.priority,
+                "final_allow_contribute": (
+                    bool(allow_contribute_override)
+                    if allow_contribute_override is not None
+                    else not is_template
+                ),
             }
 
         result = await process_and_submit_task(
@@ -167,7 +173,8 @@ async def submit_generation_task(
                 else None
             ),
             user_cancel_allowed=True,
-            registry_metadata=free_edit_v3_metadata or scail2_face_swap_metadata,
+            registry_metadata=registry_metadata or None,
+            allow_contribute_override=allow_contribute_override,
         )
         scail2_first_frame_to_cleanup = None
 
