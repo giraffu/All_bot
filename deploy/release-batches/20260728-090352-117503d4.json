@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "34e912bcc975e06cc59a926fcf9020c3ad162f55",
+  "base_sha": "01898998d41bf6c661834fbeab97321cf6d65915",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-3bb8d179",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-3b765647",
   "members": [
     {
       "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
@@ -25,6 +25,13 @@
       "head": "3bb8d1790b300292110565bf7aa6eb8dd4f0e721",
       "queued_at": "2026-07-28T09:32:51.180071+00:00",
       "slot": "D"
+    },
+    {
+      "base_sha": "01898998d41bf6c661834fbeab97321cf6d65915",
+      "branch": "codex/e-fix-gpu-profile-input-boundaries",
+      "head": "3b765647012881fce67d078e93bcace5bc1292c0",
+      "queued_at": "2026-07-28T09:48:22.545689+00:00",
+      "slot": "E"
     }
   ],
   "pr_base": "main"
