@@ -148,6 +148,39 @@ def test_gpu_worker_change_rebuilds_gpu_images_but_not_dashboard():
     } <= plan.build
 
 
+def test_character_runtime_overlay_rebuilds_only_pornmaster_gpu_profile():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    plan = module.plan_builds(
+        catalog,
+        ["workers/comfy_agent/workflow_task_patchers.py"],
+        has_previous=True,
+    )
+
+    assert "worker-agent" in plan.build
+    assert {
+        name for name in plan.build if catalog[name]["track"] == "gpu-execution"
+    } == {"pornmaster_flux2_edit_bf16"}
+
+    profile = catalog["pornmaster_flux2_edit_bf16"]
+    assert "workers/comfy_agent/workflow_task_patchers.py" in profile["inputs"]
+    assert "workers/comfy_agent/agent_result_materialization.py" in profile["inputs"]
+    dockerfile = (ROOT / profile["dockerfile"]).read_text(encoding="utf-8")
+    runtime_copy = dockerfile.index(
+        "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker"
+    )
+    patcher_overlay = dockerfile.index(
+        "COPY workers/comfy_agent/workflow_task_patchers.py "
+        "/opt/allbot/runtime/runpod_worker/comfy_agent/workflow_task_patchers.py"
+    )
+    materializer_overlay = dockerfile.index(
+        "COPY workers/comfy_agent/agent_result_materialization.py "
+        "/opt/allbot/runtime/runpod_worker/comfy_agent/agent_result_materialization.py"
+    )
+    assert runtime_copy < patcher_overlay < materializer_overlay
+
+
 def test_first_v2_release_builds_every_owned_artifact_but_resolves_vendors():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

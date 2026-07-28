@@ -521,24 +521,7 @@ def patch_character_reference_build_workflow(
         image_path = str(images[0] if images else "").strip()
     if not image_path:
         raise ValueError("character reference source image missing")
-    selected_index = int(params.get("character_view_index") or 0)
-    if selected_index:
-        if selected_index not in range(1, 7):
-            raise ValueError("character reference view index must be between 1 and 6")
-        selected_prefix = f"v{selected_index}:"
-        for node_id in list(workflow):
-            if not node_id.startswith(selected_prefix):
-                workflow.pop(node_id)
-        prompt = str(params.get("prompt") or "").strip()
-        if not prompt:
-            raise ValueError("character reference view prompt missing")
-        workflow[selected_prefix + "185"]["inputs"]["text"] = prompt
-        workflow[selected_prefix + "100"]["inputs"]["unet_name"] = (
-            PORNMASTER_FLUX2_BF16_UNET_NAME
-        )
     for index in range(1, 7):
-        if selected_index and index != selected_index:
-            continue
         prefix = f"v{index}:"
         workflow[prefix + "15"]["inputs"]["image"] = image_path
         workflow[prefix + "28"]["inputs"]["noise_seed"] = int(

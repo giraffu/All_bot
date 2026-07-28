@@ -27,6 +27,8 @@ RUN set -euo pipefail; \
       awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent/workflow_task_patchers.py /opt/allbot/runtime/runpod_worker/comfy_agent/workflow_task_patchers.py
+COPY workers/comfy_agent/agent_result_materialization.py /opt/allbot/runtime/runpod_worker/comfy_agent/agent_result_materialization.py
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
