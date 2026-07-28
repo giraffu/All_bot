@@ -68,7 +68,7 @@ class ReleaseRunner:
         return parse_last_json(await self._run(command, **kwargs))
 
     def _catalog(self) -> dict[str, dict[str, Any]]:
-        path = self.root / "deploy/module-catalog.json"
+        path = self._workspace_repo() / "deploy/module-catalog.json"
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
             modules = document["modules"]

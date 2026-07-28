@@ -136,7 +136,7 @@ def test_runner_limits_test_deployment_to_two_modules(tmp_path):
 
 
 def test_runner_integrates_and_aligns_only_selected_slots(tmp_path, monkeypatch):
-    _catalog(tmp_path)
+    _catalog(tmp_path / "repo")
     commands = []
     monkeypatch.setenv("WORKSPACE_REPO_ROOT", str(tmp_path / "repo"))
 

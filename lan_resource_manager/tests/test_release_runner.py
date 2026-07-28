@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,34 @@ def test_runner_has_only_current_allowlisted_actions(tmp_path):
     ):
         with pytest.raises(RunnerError, match="unsupported_action"):
             asyncio.run(runner.dispatch(action, {}))
+
+
+def test_catalog_comes_from_current_main_repo(tmp_path, monkeypatch):
+    mounted_snapshot = tmp_path / "stale-snapshot"
+    mounted_snapshot.mkdir()
+    current_main = tmp_path / "current-main"
+    catalog_path = current_main / "deploy/module-catalog.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "modules": {
+                    "payment-api": {
+                        "kind": "image",
+                        "adapter": "compose-image",
+                        "environments": ["prod"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WORKSPACE_REPO_ROOT", str(current_main))
+
+    result = asyncio.run(ReleaseRunner(mounted_snapshot).dispatch("catalog", {}))
+
+    assert result["modules"]["payment-api"]["adapter"] == "compose-image"
 
 
 def test_compose_separates_web_and_runner_credentials_without_docker_socket():
