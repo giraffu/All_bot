@@ -10,9 +10,9 @@ usage() {
   cat <<USAGE
 Usage: $0 [--execute] [--root PATH] [--systemd-dir PATH]
 
-Install the user-level immutable handoff integration timer. The default is a
-dry-run. The service can merge protected-main PRs and deploy only the shared
-test environment; it has no production deployment option.
+Install the user-level handoff-only main integration timer. The default is a
+dry-run. The service serially merges exact handoff heads directly into main;
+it does not query CI, build artifacts, or deploy any environment.
 USAGE
 }
 
