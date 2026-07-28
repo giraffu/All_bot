@@ -21,7 +21,7 @@ def _load_module():
     return module
 
 
-def test_gpu_preparation_covers_all_profiles_with_eight_shared_images():
+def test_gpu_preparation_covers_all_profiles_with_nine_shared_images():
     module = _load_module()
     catalog = json.loads(
         (ROOT / "deploy/release-artifacts-v2.json").read_text(
@@ -37,7 +37,7 @@ def test_gpu_preparation_covers_all_profiles_with_eight_shared_images():
     for profiles in module.SHARED_IMAGE_PROFILES.values():
         covered.update(profiles)
 
-    assert len(module.WORKFLOWS) == 8
+    assert len(module.WORKFLOWS) == 9
     assert covered == expected
     assert module.SHARED_IMAGE_PROFILES == {
         "image_to_video": ("image_to_video", "wan22_video_v2")
@@ -52,7 +52,7 @@ def test_gpu_workflow_dispatches_use_exact_sha_and_no_prod_action():
         inputs = module._workflow_inputs(profile, sha)
         assert sha in " ".join(inputs)
         assert "prod" not in " ".join(inputs).lower()
-        if profile == "ltx_t2v":
+        if profile in {"lan_all", "ltx_t2v"}:
             assert inputs[:2] == ["-f", f"source_sha={sha}"]
         else:
             assert inputs[:2] == ["-f", f"image_tag={sha}"]
@@ -75,7 +75,7 @@ def test_gpu_preparation_defaults_to_a_non_mutating_dry_run():
 
     assert payload["status"] == "dry-run"
     assert payload["production_deployed"] is False
-    assert len(payload["profiles"]) == 8
+    assert len(payload["profiles"]) == 9
 
 
 def test_retry_observes_existing_exact_sha_build_without_dispatching(

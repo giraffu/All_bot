@@ -634,3 +634,30 @@ ssh allbot-gpu-002 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mo
 - ComfyUI 从宿主机进程迁移为容器，或反向迁移。
 - 共享模型目录改路径。
 - 远端磁盘低于 10% 可用空间并完成清理/迁移。
+
+## 13. GPU226 `all` 候选操作契约
+
+`gpu-226-gpu0-all` 是固定到 `gpu-226:gpu0`、宿主端口 `8190` 的 LAN-only
+候选。它可声明 19 个 execution task type，但 catalog 中存在候选不等于已经
+切换或验收；current 仍以 XDG ledger、live container 与 Central heartbeat
+三方读取为准。
+
+切换前必须保存旧 worker 的 exact digest、agent、workspace 和 manifest 作为
+rollback contract，先让当前任务自然结束，再确认 Central current task 为空且
+Comfy `/queue` 无 running/pending。预热只同步七份既有 manifest 的缺失对象，
+按相对路径与 SHA-256 去重，不修改或重新上传模型。实际 mutation 只允许：
+
+```bash
+python scripts/lan_aio_fleet_prod_ops.py takeover \
+  --slot gpu-226-gpu0-all \
+  --replace-slot <live-gpu226-slot> \
+  --include-disabled \
+  --failure-policy auto_rollback \
+  --execute
+```
+
+失败恢复使用同一 fleet helper 的 `recover --prefer old`，禁止自由 Compose、
+现场 build、重启 Docker daemon 或操作其它物理槽。正式验收需覆盖 19 类型、
+视频换脸前置图片换脸链、自由 P 图 v3 后置换脸链，并完成不少于两小时且至少
+十个连续真实任务的稳定观察；一次性任务 ID、日志和当前容量只写运行证据，不
+写入 Git。

@@ -1,4 +1,63 @@
 profiles:
+  all:
+    runtime_profile: all
+    task_types:
+      - img2img
+      - img2img_lora
+      - image_to_video
+      - wan22_video_v2
+      - pornmaster_flux2_edit_bf16
+      - pornmaster_flux2_multi_edit_bf16
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+      - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
+      - i2i_pro
+      - t2i-pornmaster-turbo
+      - face_swap_v2
+      - face_swap
+      - ltx_t2v
+      - ltx_t2v_ic
+    model_bundles:
+      - img2img_lora_baseline
+      - video_basic_baseline
+      - wan22_video_v2_baseline
+      - pornmaster_flux2_edit_bf16_baseline
+      - scail2_baseline
+      - ltx_video_baseline
+      - i2i_pro_baseline
+      - ltx_t2v_runtime
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - FL_RIFE
+      - VHS_VideoCombine
+      - WanSCAILToVideo
+      - SCAIL2ColoredMask
+      - SAM3_VideoTrack
+      - Power Lora Loader (rgthree)
+      - LTXICLoRALoaderModelOnly
+      - LTXAddVideoICLoRAGuide
+      - DiffusionModelLoaderKJ
+      - VAELoaderKJ
+    min_vram_gb: 32
+    image_ref: ghcr.io/giraffu/allbot-gpu-lan-all:pending
+    all_in_one_image_ref: ghcr.io/giraffu/allbot-gpu-lan-all:pending
+    model_prefix: all/lan
+    model_manifest_key: img2img_lora/2026-06-10/manifest.json
+    model_manifest_keys:
+      - img2img_lora/2026-06-10/manifest.json
+      - wan22_aio_video/2026-07-18-lora5/manifest.json
+      - pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+      - scail2/2026-06-17-test/manifest.json
+      - ltx_video/2026-06-10/manifest.json
+      - i2i_pro/2026-06-14-test/manifest.json
+      - ltx_t2v/2026-07-22/manifest.json
+
   face_i2i_t2i:
     runtime_profile: face_i2i_t2i
     task_types:

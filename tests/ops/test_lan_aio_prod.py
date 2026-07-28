@@ -28,6 +28,28 @@ SCAIL2_BAKED_LAN_IMAGE = (
     "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607"
 )
 
+LAN_ALL_TASK_TYPES = (
+    "img2img",
+    "img2img_lora",
+    "image_to_video",
+    "wan22_video_v2",
+    "pornmaster_flux2_edit_bf16",
+    "pornmaster_flux2_multi_edit_bf16",
+    "scail2_action_transfer",
+    "scail2_action_transfer_long",
+    "scail2_video_replacement",
+    "scail2_face_swap_v2",
+    "ltx_video",
+    "ltx_video_flf2v",
+    "ltx_video_v2v_audio",
+    "i2i_pro",
+    "t2i-pornmaster-turbo",
+    "face_swap_v2",
+    "face_swap",
+    "ltx_t2v",
+    "ltx_t2v_ic",
+)
+
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
@@ -39,6 +61,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert "gpu-002-gpu0-scail2" in slots
     assert "gpu-002-gpu1-i2i_pro" in slots
     assert "gpu-226-gpu0-pornmaster_flux2_edit_bf16" in slots
+    assert "gpu-226-gpu0-all" in slots
     assert "gpu-177-gpu1-wan22_video_v2" not in slots
     assert "gpu-252-gpu1-scail2" not in slots
     assert all(slot.phase == "catalog_ready" for slot in slots.values())
@@ -101,6 +124,57 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert slots["gpu-226-gpu0-i2i_pro"].agent_id == (
         "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
     )
+    assert slots["gpu-226-gpu0-all"].target_task_types == LAN_ALL_TASK_TYPES
+
+
+def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
+    import yaml
+
+    config = load_controller_config()
+    profile = config.profiles["all"]
+    assert profile.task_types == LAN_ALL_TASK_TYPES
+    assert len(profile.model_manifest_keys) == 7
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-226-gpu0-all"]
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+    expected_types = ",".join(LAN_ALL_TASK_TYPES)
+
+    assert environment["SUPPORTED_TASK_TYPES"] == expected_types
+    assert environment["PREFETCH_TASK_TYPES"] == expected_types
+    assert environment["PIPELINE_TASK_TYPES"] == expected_types
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert json.loads(environment["RUNPOD_MODEL_MANIFEST_KEYS"]) == list(
+        profile.model_manifest_keys
+    )
+    assert environment["POOL_RUNTIME_PROFILE"] == "all"
+
+
+def test_gpu226_all_profile_rejects_incomplete_multi_manifest_marker(
+    monkeypatch,
+):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-226-gpu0-all"]
+    monkeypatch.setattr(
+        ops,
+        "_remote_cache_marker",
+        lambda _slot: {"ok": True, "status": "ready", "profile": "all"},
+    )
+
+    with pytest.raises(RuntimeError, match="cache marker is missing or incomplete"):
+        ops.start_disabled([slot])
 
 
 def test_all_i2i_pro_lan_slots_accept_legacy_and_v2_face_swap():

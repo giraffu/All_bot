@@ -23,11 +23,13 @@ RUNPOD_AIO_RUNTIME_SHAPE = "runpod_all_in_one"
 DEFAULT_LAN_AIO_ENVIRONMENT = "cloud-test"
 LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
     {
+        "all",
         "image_to_video",
         "wan22_video_v2",
     }
 )
 LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
+    "all": 5,
     "ltx_t2v": 5,
 }
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
@@ -49,13 +51,23 @@ LAN_AIO_SCAIL2_ENV = {
 LAN_AIO_LTX_T2V_ENV = {
     "COMFYUI_DIR": "/opt/ComfyUI",
 }
+LAN_AIO_ALL_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        **json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
+        **json.loads(RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES),
+        **json.loads(LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES),
+    },
+    separators=(",", ":"),
+)
 LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
+    "all": LAN_AIO_ALL_WORKFLOW_OVERRIDES,
     "face_swap": RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
 }
 LAN_AIO_EXTRA_ENV_BY_PROFILE = {
+    "all": LAN_AIO_LTX_T2V_ENV,
     "scail2": LAN_AIO_SCAIL2_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
 }
@@ -425,6 +437,7 @@ class RuntimePlanner:
         model_manifest_key = (
             profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
         )
+        model_manifest_keys = profile.model_manifest_keys or (model_manifest_key,)
         workflow_overrides = LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE.get(
             profile.runtime_profile
         )
@@ -580,6 +593,11 @@ class RuntimePlanner:
                         "RUNPOD_MODEL_BUCKET": DEFAULT_LAN_MODEL_CACHE_BUCKET,
                         "RUNPOD_MODEL_PREFIX": model_prefix,
                         "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
+                        "RUNPOD_MODEL_MANIFEST_KEYS": json.dumps(
+                            model_manifest_keys,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
                         **(
                             {
                                 "RUNPOD_LAN_LOCAL_MODEL_OVERRIDES": json.dumps(
@@ -650,6 +668,7 @@ class RuntimePlanner:
                 "model_cache_bucket": DEFAULT_LAN_MODEL_CACHE_BUCKET,
                 "model_prefix": model_prefix,
                 "model_manifest_key": model_manifest_key,
+                "model_manifest_keys": list(model_manifest_keys),
                 "lan_local_model_overrides": list(profile.lan_local_model_overrides),
                 "model_target_dir": model_target_dir,
                 "model_write_scope": [model_target_dir],
