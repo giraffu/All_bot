@@ -53,6 +53,21 @@ def _matches(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatchcase(path.removeprefix("./"), pattern) for pattern in patterns)
 
 
+def _artifact_runtime_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    """Return fields whose change alters the produced or deployed artifact.
+
+    ``inputs`` is planner metadata: tightening an over-broad path glob must not
+    manufacture a new image revision when the Dockerfile/runtime contract is
+    unchanged.
+    """
+
+    return {
+        key: value
+        for key, value in artifact.items()
+        if key != "inputs"
+    }
+
+
 def _expand_bases(
     catalog: Mapping[str, Mapping[str, Any]], selected: set[str]
 ) -> set[str]:
@@ -148,7 +163,8 @@ def plan_builds(
         direct.update(
             name
             for name in owned
-            if previous_catalog.get(name) != catalog.get(name)
+            if _artifact_runtime_contract(previous_catalog.get(name, {}))
+            != _artifact_runtime_contract(catalog.get(name, {}))
         )
     build = _expand_bases(catalog, direct) & owned
     return BuildPlan(build=build, reuse=owned - build, resolve=external)
