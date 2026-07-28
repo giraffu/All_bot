@@ -67,6 +67,38 @@ def test_build_never_reads_changed_paths_or_release_bundle(tmp_path):
     assert "gpu" not in rendered
 
 
+def test_image_digest_reader_accepts_buildx_json_string_for_oci_index(tmp_path):
+    module = _load_module()
+    calls = []
+    digest = "sha256:" + "1" * 64
+    dependencies = module.ReleaseDependencies(
+        run=lambda command, **_kwargs: calls.append(command)
+        or module.CommandResult(0, json.dumps(digest), ""),
+        temporary_checkout=lambda _sha: module.null_checkout(tmp_path),
+    )
+
+    assert (
+        module._digest_for_ref(
+            "registry.local/image:sha",
+            kind="gpu",
+            dependencies=dependencies,
+            cwd=tmp_path,
+        )
+        == digest
+    )
+    assert calls == [
+        [
+            "docker",
+            "buildx",
+            "imagetools",
+            "inspect",
+            "registry.local/image:sha",
+            "--format",
+            "{{json .Manifest.Digest}}",
+        ]
+    ]
+
+
 def test_public_web_oras_push_uses_checkout_relative_archive(tmp_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
