@@ -148,7 +148,8 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     )
     slot = ops.slots["gpu-226-gpu0-all"]
     compose = yaml.safe_load(ops.render_compose(slot))
-    environment = compose["services"][slot.container_name]["environment"]
+    service = compose["services"][slot.container_name]
+    environment = service["environment"]
     expected_types = ",".join(LAN_ALL_TASK_TYPES)
 
     assert environment["SUPPORTED_TASK_TYPES"] == expected_types
@@ -160,6 +161,10 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
         profile.model_manifest_keys
     )
     assert environment["POOL_RUNTIME_PROFILE"] == "all"
+    assert (
+        "/home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/"
+        "all/workspace/ComfyUI/models:/opt/ComfyUI/models"
+    ) in service["volumes"]
 
 
 def test_gpu226_all_profile_rejects_incomplete_multi_manifest_marker(

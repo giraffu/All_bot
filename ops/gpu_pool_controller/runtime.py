@@ -447,10 +447,15 @@ class RuntimePlanner:
         pipeline_environment = pipeline_environment_for_profile(profile.id)
         comfyui_dir = str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
         model_target_dir = f"{comfyui_dir.rstrip('/')}/models"
-        if model_workspace_host_dir != workspace_host_dir:
-            volumes.append(
-                f"{model_workspace_host_dir}/ComfyUI/models:{model_target_dir}"
-            )
+        # Keep the model cache as an explicit mount even when the model and
+        # runtime workspaces share the same profile directory.  The baked
+        # ComfyUI runtime uses /opt/ComfyUI while /workspace only persists its
+        # mutable bundle; without this mount the agent sees an empty
+        # /opt/ComfyUI/models and downloads the entire manifest into the
+        # container layer on every start.
+        volumes.append(
+            f"{model_workspace_host_dir}/ComfyUI/models:{model_target_dir}"
+        )
         state_root = "/workspace/allbot-state"
         compose = {
             "name": self._compose_project_name(
