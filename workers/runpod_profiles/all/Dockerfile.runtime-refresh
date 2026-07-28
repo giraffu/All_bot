@@ -1,0 +1,43 @@
+ARG RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
+FROM ${RUNTIME_BASE_IMAGE}
+
+ARG ALLBOT_GIT_SHA
+ARG RUNTIME_REQUIREMENTS_SHA256=d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13
+
+LABEL org.opencontainers.image.title="AllBot LAN all-task runtime refresh"
+LABEL org.opencontainers.image.description="Dependency-closed baked worker refresh layered on the verified LAN all-task image."
+LABEL allbot.lan.profile="all"
+LABEL allbot.lan.models="external-lan-manifests"
+LABEL allbot.lan.scope="gpu226-production-validation"
+LABEL allbot.lan.runtime-refresh-base="sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33"
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN set -euo pipefail; \
+    echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c -; \
+    rm -rf /opt/allbot/runtime/runpod_worker
+
+COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch /opt/allbot/runpod_sync_models_multi_manifest.patch
+
+RUN set -euo pipefail; \
+    echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c -; \
+    cd /opt/allbot/runtime/runpod_worker; \
+    git apply /opt/allbot/runpod_sync_models_multi_manifest.patch; \
+    chmod +x \
+      /opt/allbot/runtime/runpod_worker/scripts/runpod_bootstrap_from_git.sh \
+      /opt/allbot/runtime/runpod_worker/scripts/runpod_baked_runtime_entrypoint.sh; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import inspect; from comfy_agent.agent_result_reporting import upload_spooled_outputs_via_sidecar; assert inspect.signature(upload_spooled_outputs_via_sidecar).parameters["timeout_seconds"].default is None'; \
+    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); mappings=json.loads((root/"mappings.json").read_text()); expected={"img2img","img2img_lora","image_to_video","wan22_video_v2","pornmaster_flux2_edit_bf16","pornmaster_flux2_multi_edit_bf16","scail2_action_transfer","scail2_action_transfer_long","scail2_video_replacement","scail2_face_swap_v2","ltx_video","ltx_video_flf2v","ltx_video_v2v_audio","i2i_pro","t2i-pornmaster-turbo","face_swap_v2","face_swap","ltx_t2v","ltx_t2v_ic"}; assert expected <= set(mappings), sorted(expected-set(mappings))'; \
+    if find /opt/ComfyUI/models -type f \( -name "*.safetensors" -o -name "*.ckpt" -o -name "*.pth" \) -print -quit | grep -q .; then \
+      echo "Business model files must stay out of the LAN all image" >&2; \
+      exit 1; \
+    fi; \
+    find /opt/allbot/runtime/runpod_worker -type d -name __pycache__ -prune -exec rm -rf {} +
+
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_WORKER_DIR=/opt/allbot/runtime/runpod_worker
+CMD ["bash", "/opt/allbot/runtime/runpod_worker/scripts/runpod_baked_runtime_entrypoint.sh"]

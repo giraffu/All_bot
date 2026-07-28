@@ -144,6 +144,12 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
 
 - canonical 镜像由受保护 main 的 exact SHA 构建，包含 workflow/custom node
   依赖并以 digest 固定；模型权重不入镜像。
+- 仅 baked worker runtime 变化且依赖清单未变时，可使用
+  `lan_all_runtime_refresh`：它以已经验证的 LAN `all` exact digest 为基础，
+  对旧/新 `requirements.txt` 做固定 SHA-256 双向门禁后完整替换 runtime，
+  重新应用多 manifest 补丁并写入新的 main revision。依赖、ComfyUI、custom
+  node 或 workflow 资产发生变化时必须回到完整 `lan_all` 构建，不能借 refresh
+  绕过节点与依赖验证。
 - LAN model cache 可只读合并多个 manifest，以相对路径、size 和 SHA-256
   去重；同路径内容冲突、缺文件、ready marker 不完整或磁盘不足均 fail
   closed。

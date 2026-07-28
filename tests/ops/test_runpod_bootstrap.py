@@ -19,6 +19,10 @@ LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
 )
 LAN_ALL_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/all/Dockerfile")
+LAN_ALL_RUNTIME_REFRESH_DOCKERFILE = Path(
+    "workers/runpod_profiles/all/Dockerfile.runtime-refresh"
+)
+MODULE_CATALOG = Path("deploy/module-catalog.json")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
 
@@ -205,6 +209,32 @@ def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
         'profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")'
         in build_script
     )
+
+
+def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
+    dockerfile = LAN_ALL_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
+    catalog = MODULE_CATALOG.read_text(encoding="utf-8")
+
+    assert (
+        "RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/"
+        "allbot-gpu-lan-all@sha256:"
+        in dockerfile
+    )
+    assert "ghcr.io/" not in dockerfile
+    assert "docker.io/" not in dockerfile
+    assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
+    assert (
+        "d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13"
+        in dockerfile
+    )
+    assert (
+        "git apply /opt/allbot/runpod_sync_models_multi_manifest.patch"
+        in dockerfile
+    )
+    assert 'allbot.lan.profile="all"' in dockerfile
+    assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in dockerfile
+    assert '"lan_all_runtime_refresh"' in catalog
+    assert '"workers/runpod_profiles/all/Dockerfile.runtime-refresh"' in catalog
 
 
 def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
