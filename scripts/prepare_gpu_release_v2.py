@@ -136,7 +136,12 @@ class GPUReleasePreparer:
             check=False,
         ).returncode == 0
 
-    def _workflow_runs(self, workflow: str) -> list[dict[str, Any]]:
+    def _workflow_runs(
+        self,
+        workflow: str,
+        *,
+        source_sha_only: bool = True,
+    ) -> list[dict[str, Any]]:
         raw = _run(
             [
                 "gh",
@@ -156,7 +161,10 @@ class GPUReleasePreparer:
             row
             for row in value
             if isinstance(row, Mapping)
-            and row.get("headSha") == self.source_sha
+            and (
+                not source_sha_only
+                or row.get("headSha") == self.source_sha
+            )
         ]
 
     def _dispatch_missing_images(self) -> dict[str, set[int]]:
@@ -381,12 +389,16 @@ class GPUReleasePreparer:
         before: set[int],
         *,
         timeout_seconds: int,
+        source_sha_only: bool = True,
     ) -> int:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             candidates = [
                 row
-                for row in self._workflow_runs(workflow)
+                for row in self._workflow_runs(
+                    workflow,
+                    source_sha_only=source_sha_only,
+                )
                 if int(row.get("databaseId") or 0) not in before
             ]
             if candidates:
@@ -409,7 +421,10 @@ class GPUReleasePreparer:
         workflow = "publish-gpu-release-manifest.yml"
         before = {
             int(row["databaseId"])
-            for row in self._workflow_runs(workflow)
+            for row in self._workflow_runs(
+                workflow,
+                source_sha_only=False,
+            )
             if row.get("databaseId") is not None
         }
         payload = manifest.read_bytes()
@@ -431,7 +446,10 @@ class GPUReleasePreparer:
             cwd=self.repo,
         )
         run_id = self._wait_new_workflow(
-            workflow, before, timeout_seconds=1800
+            workflow,
+            before,
+            timeout_seconds=1800,
+            source_sha_only=False,
         )
         if not self._remote_exists(ref):
             raise GPUReleasePreparationError(

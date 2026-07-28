@@ -18,6 +18,7 @@ LABEL org.opencontainers.image.description="LAN-only union runtime for all suppo
 LABEL allbot.lan.profile="all"
 LABEL allbot.lan.models="external-lan-manifests"
 LABEL allbot.lan.scope="gpu226-production-validation"
+LABEL io.allbot.character-reference.runtime="six-view-compatible"
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
