@@ -29,12 +29,9 @@ def test_dashboard_pinned_images_use_baked_runtime_artifacts():
 
 def test_ltx_release_workflow_and_runtime_use_repository_owned_v2_package():
     expected_prefix = "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:"
-    workflow = (
-        ROOT / ".github/workflows/runpod_ltx_video_profile_image.yml"
-    ).read_text(encoding="utf-8")
 
     assert catalog.RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX == expected_prefix
-    assert "IMAGE_NAME: allbot-comfy-runpod-ltx-video-v2" in workflow
+    assert not (ROOT / ".github/workflows/runpod_ltx_video_profile_image.yml").exists()
 
 
 def test_provider_reexports_profile_catalog_symbols_for_old_imports():

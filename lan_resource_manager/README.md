@@ -1,5 +1,8 @@
 # AllBot 本地资源管理平台
 
+> 模块发布 UI 的旧 build/plan/deploy 路径已退役；当前只读展示 main 与独立模块
+> 目录，实际操作使用 `scripts/release.py build/deploy/rollback/status`。
+
 仅供本地主服务器局域网使用的资源控制面。`LAN AIO 资源管理` Tab 合并 Git
 catalog、XDG ledger 和 live status；`模块构建部署` Tab 管理 A–H handoff
 集成/安全对齐、可信 main bundle 与模块化测试部署，通过隔离 runner 调用既有

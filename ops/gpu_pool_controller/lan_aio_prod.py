@@ -1740,8 +1740,7 @@ class LanAioProdOps:
             "old_ref": old_ref,
             "target_ref": target_ref,
             "digest": resolved["digest"],
-            "oci_revision": resolved["oci_revision"],
-            "validation_level": resolved["validation_level"],
+            "oci_revision": resolved.get("oci_revision"),
         }
 
     def _verify_release_runtime(
@@ -1749,15 +1748,22 @@ class LanAioProdOps:
     ) -> None:
         ref = shlex.quote(str(resolved["ref"]))
         container = shlex.quote(slot.container_name)
-        revision = shlex.quote(str(resolved["oci_revision"]))
         command = (
             "set -euo pipefail; "
             f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
-            "actual_revision=$(docker image inspect "
-            f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
-            f'test "$actual_revision" = {revision}; '
             f"{self._pipeline_runtime_contract_checks(slot, container)}"
         )
+        revision_value = resolved.get("oci_revision")
+        if revision_value:
+            revision = shlex.quote(str(revision_value))
+            command = (
+                "set -euo pipefail; "
+                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
+                "actual_revision=$(docker image inspect "
+                f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
+                f'test "$actual_revision" = {revision}; '
+                f"{self._pipeline_runtime_contract_checks(slot, container)}"
+            )
         self._ssh(slot.ssh_host, command)
 
     def _verify_exact_runtime_ref(self, slot: LanAioProdSlot, image_ref: str) -> None:
@@ -3603,10 +3609,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model-env-file", type=Path, default=Path(".env.lan.model-cache")
     )
-    parser.add_argument("--release-index", type=Path, default=None)
-    parser.add_argument("--sha", default=None)
+    parser.add_argument("--artifact", default=None)
     parser.add_argument("--rollback-ref", default=None)
-    parser.add_argument("--strategy", choices=("direct", "standard"), default="direct")
     return parser
 
 
@@ -3857,62 +3861,15 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
         return _handle_state_action(args, ops)
     if args.action == "recover":
         return _handle_recover(args, ops)
-    if args.action == "canary-start-disabled" and any(
-        (args.release_index, args.sha, args.profile)
-    ):
-        if not args.slot or not args.release_index or not args.sha or not args.profile:
-            raise SystemExit(
-                "release canary-start-disabled requires --slot, --profile, "
-                "--release-index and --sha"
-            )
-        slot = ops.select_slots(args.slot, include_disabled=True)[0]
-        resolved = resolve_gpu_artifact(
-            args.release_index,
-            source_sha=args.sha,
-            profile=args.profile,
-            strategy=args.strategy,
-        )
-        if not args.execute:
-            plan = rollout_plan(resolved, slot=slot.id, operator="lan")
-            plan.update(
-                {
-                    "action": "release-canary-start-disabled",
-                    "intake": "disabled",
-                    "steps": [
-                        "preflight selected slot",
-                        "pull exact target digest",
-                        "warm exact model manifest",
-                        "start target digest while disabled",
-                        "verify actual digest, OCI revision and runtime contract",
-                        "leave selected slot disabled for workload canary",
-                    ],
-                }
-            )
-            _print_json_payload(plan)
-            return 0
-        operation_id = args.operation_id or _new_operation_id(
-            "release-canary-start-disabled"
-        )
-        _print_json_payload(
-            ops.execute_managed_mutation(
-                action="release-canary-start-disabled",
-                slots=[slot],
-                operation_id=operation_id,
-                execute=lambda: ops.start_release_disabled_canary(slot, resolved),
-            )
-        )
-        return 0
     if args.action == "release-rollout":
-        if not args.slot or not args.release_index or not args.sha or not args.profile:
+        if not args.slot or not args.artifact or not args.profile:
             raise SystemExit(
-                "release-rollout requires --slot, --profile, --release-index and --sha"
+                "release-rollout requires --slot, --profile and --artifact"
             )
         slot = ops.select_slots(args.slot, include_disabled=True)[0]
         resolved = resolve_gpu_artifact(
-            args.release_index,
-            source_sha=args.sha,
+            args.artifact,
             profile=args.profile,
-            strategy=args.strategy,
         )
         if not args.execute:
             _print_json_payload(rollout_plan(resolved, slot=slot.id, operator="lan"))

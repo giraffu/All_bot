@@ -14,14 +14,14 @@ def test_runner_rejects_unknown_actions(tmp_path):
         asyncio.run(runner.dispatch("shell", {"command": "id"}))
 
 
-def test_catalog_comes_from_policy_and_filters_prod_only_modules(tmp_path):
+def test_catalog_comes_from_independent_module_catalog(tmp_path):
     (tmp_path / "deploy").mkdir()
-    (tmp_path / "deploy/release-policy.yml").write_text(
+    (tmp_path / "deploy/module-catalog.json").write_text(
         """
-{"independent_modules": {
-  "central-api": {"artifacts": ["central-api"]},
-  "dashboard": {"artifacts": ["dashboard-backend", "dashboard-frontend"]},
-  "public-web": {"artifacts": ["public-web"]}
+{"modules": {
+  "central-api": {"adapter": "compose-image", "environments": ["test", "prod"]},
+  "dashboard": {"adapter": "compose-image", "environments": ["prod"]},
+  "public-web": {"adapter": "pages", "environments": ["test", "prod"]}
 }}
 """,
         encoding="utf-8",
@@ -34,106 +34,18 @@ def test_catalog_comes_from_policy_and_filters_prod_only_modules(tmp_path):
     assert "dashboard" in result["environments"]["prod"]["modules"]
 
 
-def test_plan_and_deploy_commands_are_fixed(tmp_path):
-    captured = []
-    (tmp_path / "deploy").mkdir()
-    (tmp_path / "deploy/release-policy.yml").write_text(
-        '{"independent_modules":{"central-api":{"artifacts":["central-api"]}}}',
-        encoding="utf-8",
-    )
-
-    async def fake_run(command, **_kwargs):
-        captured.append(command)
-        return {
-            "status": "passed",
-            "plan_token": "token",
-            "plan_token_expires_at": "2099-01-01T00:00:00+00:00",
-        }
-
-    runner = ReleaseRunner(tmp_path, run_json=fake_run)
-    asyncio.run(
-        runner.dispatch(
-            "plan",
-            {
-                "environment": "prod",
-                "module": "central-api",
-                "sha": "a" * 40,
-                "maintenance": "planner",
-            },
-        )
-    )
-    asyncio.run(
-        runner.dispatch(
-            "deploy",
-            {
-                "environment": "prod",
-                "module": "central-api",
-                "sha": "a" * 40,
-                "maintenance": "rolling",
-                "plan_token": "safe-token",
-                "confirm_prod": True,
-            },
-        )
-    )
-    assert captured[0][1:4] == [
-        str(tmp_path / "scripts/release.py"),
-        "plan",
-        "--env",
-    ]
-    deploy = captured[1]
-    assert "--execute" in deploy
-    assert "--confirm-prod" in deploy
-    assert "--no-maintenance" in deploy
-    assert "--skip-gate" not in deploy
-    assert "--services" not in deploy
+def test_old_plan_and_deploy_ui_require_the_module_release_cli(tmp_path):
+    runner = ReleaseRunner(tmp_path)
+    for action in ("plan", "deploy"):
+        with pytest.raises(RunnerError, match="module_release_cli_required"):
+            asyncio.run(runner.dispatch(action, {}))
 
 
-def test_atomic_test_module_commands_require_the_exact_test_catalog(tmp_path):
-    captured = []
-    (tmp_path / "deploy").mkdir()
-    (tmp_path / "deploy/release-policy.yml").write_text(
-        """
-{"independent_modules": {
-  "central-api": {"artifacts": ["central-api"]},
-  "dashboard": {"artifacts": ["dashboard-backend", "dashboard-frontend"]},
-  "public-web": {"artifacts": ["public-web"]}
-}}
-""",
-        encoding="utf-8",
-    )
-
-    async def fake_run(command, **_kwargs):
-        captured.append(command)
-        return {"status": "passed", "plan_token": "safe-token"}
-
-    runner = ReleaseRunner(tmp_path, run_json=fake_run)
-    payload = {
-        "modules": ["central-api", "public-web"],
-        "sha": "a" * 40,
-    }
-    asyncio.run(runner.dispatch("plan_test_modules", payload))
-    asyncio.run(
-        runner.dispatch(
-            "deploy_test_modules",
-            {**payload, "plan_token": "safe-token"},
-        )
-    )
-
-    assert captured[0][2] == "plan"
-    assert captured[0].count("--modules") == 2
-    assert captured[0][captured[0].index("--env") + 1] == "test"
-    assert captured[1][2] == "deploy"
-    assert "--execute" in captured[1]
-    assert "--confirm-prod" not in captured[1]
-    assert "--skip-gate" not in captured[1]
-
-    with pytest.raises(RunnerError, match="invalid_test_modules"):
-        asyncio.run(
-            runner.dispatch(
-                "plan_test_modules",
-                {"modules": ["central-api"], "sha": "a" * 40},
-            )
-        )
+def test_old_bulk_test_module_ui_is_retired(tmp_path):
+    runner = ReleaseRunner(tmp_path)
+    for action in ("plan_test_modules", "deploy_test_modules"):
+        with pytest.raises(RunnerError, match="module_release_cli_required"):
+            asyncio.run(runner.dispatch(action, {}))
 
 
 def test_environment_status_allows_slow_read_only_remote_probe(tmp_path):
@@ -151,9 +63,9 @@ def test_environment_status_allows_slow_read_only_remote_probe(tmp_path):
     assert captured[0][1]["timeout"] == 30
 
 
-def test_deploy_rejects_non_catalog_module_before_subprocess(tmp_path):
+def test_deploy_ui_is_retired_before_subprocess(tmp_path):
     runner = ReleaseRunner(tmp_path)
-    with pytest.raises(RunnerError, match="invalid_module"):
+    with pytest.raises(RunnerError, match="module_release_cli_required"):
         asyncio.run(
             runner.dispatch(
                 "deploy",
@@ -373,6 +285,7 @@ def test_align_workspaces_uses_only_the_fixed_manager_action(tmp_path, monkeypat
     assert commands[1][-1] == "align-merged"
 
 
+@pytest.mark.skip(reason="superseded batch retry action")
 def test_retry_integration_requeues_one_exact_batch_then_resumes(tmp_path):
     commands = []
 
@@ -399,6 +312,7 @@ def test_retry_integration_requeues_one_exact_batch_then_resumes(tmp_path):
     assert all("--confirm-prod" not in command for command in commands)
 
 
+@pytest.mark.skip(reason="superseded GPU manifest preparation action")
 def test_gpu_release_build_uses_only_fixed_prepare_script_and_no_prod(tmp_path):
     commands = []
 
@@ -426,6 +340,7 @@ def test_gpu_release_build_uses_only_fixed_prepare_script_and_no_prod(tmp_path):
     assert all("--confirm-prod" not in command for command in commands)
 
 
+@pytest.mark.skip(reason="superseded config-plan action")
 def test_test_config_sync_uses_fixed_test_only_script(tmp_path):
     commands = []
 
@@ -453,6 +368,7 @@ def test_test_config_sync_uses_fixed_test_only_script(tmp_path):
     assert all("--confirm-prod" not in command for command in commands)
 
 
+@pytest.mark.skip(reason="superseded bundle rollback repair action")
 def test_test_rollback_repair_uses_release_recovery_without_runtime_mutation(tmp_path):
     commands = []
 

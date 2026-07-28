@@ -68,7 +68,7 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_Git不可变发布_git_immutable_release.md` | artifact、测试、晋级、回滚 | release.py 兼容门面、release contracts/planning、catalog、policy、tests | current | 发布变更/执行 |
+| `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块构建、部署、状态、回滚 | `scripts/release.py`、`deploy/module-catalog.json`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | Compose 与一般运维 | deploy compose、release scripts | current | 容器运维 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与 SOP | test overlay/env contract、release state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与 SOP | prod overlay/env contract、release state | runtime-verification-required | 正式环境 |
@@ -77,9 +77,9 @@
 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` | DNS/Tunnel/Access/Pages/R2 | Cloudflare 配置与只读探测 | runtime-verification-required | 公网入口 |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | 网络与代理边界 | compose/network/Cloudflare config | current | 网络改动 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | 边缘节点运维 | edge config/scripts | runtime-verification-required | 边缘节点 |
-| `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md` | main 保护与 CI 门禁 | GitHub workflow/ruleset | runtime-verification-required | CI/保护规则 |
-| `docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md` | 热点路径回归 | classifier、workflow、tests | current | CI 路由 |
-| `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md` | A–H/handoff/main 批次 | workspace scripts、integration queue | current | 并发开发 |
+| `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md` | 旧 main CI 门禁 | 历史 ruleset | superseded | 历史取证 |
+| `docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md` | 旧热点路径门禁 | 历史 classifier/workflow | superseded | 历史取证 |
+| `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md` | A–H/handoff/轻量 main 协调 | workspace scripts、integration queue | current | 并发开发 |
 | `docs/并发AI自动接单使用指南_auto_workspace_claim.md` | 用户接单指南 | manage_ai_workspaces.py | current | 主目录写任务 |
 | `docs/子模块_前端浏览器预览截图_frontend_browser_preview.md` | Playwright 截图 | preview skill/scripts | current | UI 验收 |
 | `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | 静态分析报告规范 | analyzer skill/tooling | current | 全盘审查 |
@@ -92,12 +92,13 @@
 | `docs/adr/0000-template.md` | ADR 模板 | ADR 维护约定 | current | 新建 ADR |
 | `docs/adr/0001-postgresql-only-runtime.md` | PostgreSQL-only 决策 | schema/运维工具 | current | 数据库架构 |
 | `docs/adr/0002-qqcc-private-bots-use-webhooks.md` | 私有 Bot webhook 决策 | private worker 架构 | current | 私有 Bot 运行时 |
-| `docs/adr/0003-git-sha-immutable-image-promotion.md` | 不可变身份决策 | release contract | current | 发布身份 |
-| `docs/adr/0004-three-release-tracks-and-thin-images.md` | 三轨与薄镜像 | artifact catalog | current | artifact 架构 |
+| `docs/adr/0003-git-sha-immutable-image-promotion.md` | 旧晋级身份 | ADR 0009 | superseded | 历史原因 |
+| `docs/adr/0004-three-release-tracks-and-thin-images.md` | 旧三轨发布 | ADR 0009 | superseded | 历史原因 |
 | `docs/adr/0005-four-ai-worktrees-and-test-train.md` | 旧 test-train 决策 | ADR 0008 | superseded | 历史原因 |
-| `docs/adr/0006-risk-based-artifact-release-gates.md` | 风险门禁决策 | release policy | current | assurance 策略 |
-| `docs/adr/0007-promote-tested-candidate-artifacts.md` | 旧 candidate 晋级 | ADR 0008 | superseded | 历史原因 |
-| `docs/adr/0008-main-first-release-batches.md` | main-first 批次 | integration queue/workspace scripts | current | 当前集成设计 |
+| `docs/adr/0006-risk-based-artifact-release-gates.md` | 旧风险门禁 | ADR 0009 | superseded | 历史原因 |
+| `docs/adr/0007-promote-tested-candidate-artifacts.md` | 旧 candidate 晋级 | ADR 0009 | superseded | 历史原因 |
+| `docs/adr/0008-main-first-release-batches.md` | 旧 main-first 批次 | ADR 0009 | superseded | 历史原因 |
+| `docs/adr/0009-operator-decides-module-release.md` | 人工结果与独立模块发布 | module catalog、release/coordinator scripts | current | 当前发布设计 |
 
 ## 项目 Skills
 

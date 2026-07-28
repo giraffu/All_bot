@@ -1,6 +1,6 @@
 # ADR 0007：测试候选产物按原 digest 晋级 main
 
-- 状态：Superseded by ADR 0008
+- 状态：Superseded by ADR 0009
 - 日期：2026-07-19
 - 取代：ADR 0005 中“candidate 不可晋级、main 必须重新构建复测”的结论
 - 修订：ADR 0003/0004 中“生产与测试必须同一 Git SHA”的表述；新契约是同一 artifact digest/checksum，artifact source SHA 保持候选 SHA，main bundle 另记 main SHA

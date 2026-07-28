@@ -1,5 +1,11 @@
 # AllBot 本地资源管理平台
 
+> 当前发布流程：旧 GitHub build、bundle、change-scope、plan token 和批量测试
+> 发布 UI 已退役。候选页只读展示当前 main 与 `deploy/module-catalog.json`；
+> 旧发布动作返回 `module_release_cli_required`。模块构建和部署统一使用
+> `scripts/release.py build/deploy/rollback/status`。A–H 集成只运行轻量 main
+> 协调器，不等待 CI 或部署测试环境。下文旧发布 UI 描述只作历史背景。
+
 ## 1. 定位
 
 `lan_resource_manager/` 是只发布到本地主服务器 LAN 地址的 FastAPI + Vue 3

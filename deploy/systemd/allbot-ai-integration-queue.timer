@@ -1,5 +1,5 @@
 [Unit]
-Description=Poll the AllBot immutable handoff integration queue
+Description=Poll the AllBot handoff-only main integration queue
 
 [Timer]
 OnBootSec=2m

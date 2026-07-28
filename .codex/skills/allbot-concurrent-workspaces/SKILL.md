@@ -1,102 +1,61 @@
 ---
 name: allbot-concurrent-workspaces
-description: "管理 AllBot A-H 固定 worktree、main 基线、不可变 handoff、自动集成队列、单批次 main PR 与测试发布。用户在主目录提出写仓库需求、需要分配/释放工作区、冻结并行交接或组装发布批次时必须使用。"
+description: "管理 AllBot A-H 固定 worktree、不可变 handoff、needs-rebase 与轻量 main 单写者协调。"
 ---
 
-# AllBot 并发工作区与单批次集成
+# AllBot 并发工作区
 
-按任务读取：
+## 资料
 
-- 功能槽位 claim/handoff：
-  `docs/并发AI自动接单使用指南_auto_workspace_claim.md`
-- 批次、main PR、自动测试发布：
-  `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
-- 不可变 artifact 与正式晋级：`docs/子模块_Git不可变发布_git_immutable_release.md`
+- claim/handoff：`docs/并发AI自动接单使用指南_auto_workspace_claim.md`
+- 协调器：`docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`
+- 模块发布：`allbot-ops-deployment`
 
-## 1. 主目录自动接单
+## 开发槽位
 
-用户在 `/home/hfy/APP/All_bot` 提出需要写入仓库的开发、修复、重构或文档任务时：
-
-1. 生成 2-6 个英文小写 kebab-case slug。
-2. 在主目录执行 `python scripts/manage_ai_workspaces.py claim --task <slug>`。
-3. 记住返回的 `slot/path/branch/base_sha` 并告知用户。
-4. 后续读取、编辑、测试和 Git 命令只在返回的 A-H 路径执行。
-5. 槽位基线固定为最新 `origin/main`；不再以 `codex/test-train` 为开发基线。
-
-纯解释、审查、状态查询和集成发布不抢占槽位。没有安全空槽时，在编辑前停止，不回退到主目录开发。
-
-## 2. 功能槽位交接
-
-- 功能 AI 只在自己的 worktree 开发、运行 focused tests、提交并推送任务分支。
-- 功能槽位不创建逐任务 test-train PR，不构建 release bundle，不部署共享 test，也不操作 prod、Cloudflare 或 GPU runtime。
-- 代码推送完成后执行 `python scripts/manage_ai_workspaces.py handoff --slot <A-H>`。该命令验证工作区 clean、远端分支精确包含本地 head，先把 `slot + branch + head + base_sha` 的不可变身份幂等写入 `${XDG_STATE_HOME:-~/.local/state}/allbot/ai-integration-queue`，成功后才把槽位停放到最新 `origin/main`。只有明确不进入自动集成时才使用 `--no-enqueue`。
-- handoff 完成即允许槽位接新任务；后续集成按不可变 branch/head 找代码，不能再按槽位字母推断成员。
-- handoff 后任务分支不得改写或 force-push。需要修改时产生新的 head，并作为新交接或当前批次的可追溯修订。
-
-## 3. 一次性发布批次
-
-启用用户级 `allbot-ai-integration-queue.timer` 后，`scripts/auto_integrate_handoffs.py run-once --execute` 是唯一自动集成写者。它用非阻塞文件锁判断是否已有批次或测试部署在运行，把锁定时所有 pending handoff 冻结为一个批次；运行期间新到达的 handoff 留给下一批。协调器按 `PR CI → main merge → main CI/bundle → release.py plan/deploy --env test` 串行推进，并持久化阶段以便进程重启后续跑；strict 由 deploy 内部执行完整门禁。组合冲突、CI、bundle 或测试部署任一失败都会把批次移入 failed 并阻断后续工作，必须修复原因后显式 `retry-failed` 从原阶段续跑。协调器不接受环境参数，也没有任何 prod/promote 调用；纯 lightweight 批次在 main CI 后直接完成，不构建 bundle或更新环境。
-
-未启用 timer、自动协调器故障或需要人工选择成员时，保留下列手工冻结入口：
-
-集成 AI 在开始批次前冻结本轮 handoff：
+主目录写仓库任务先执行：
 
 ```bash
-python scripts/manage_ai_workspaces.py batch-plan \
-  --batch <slug> \
-  --output <release-batch.json> \
-  --member A:codex/a-task@<40位SHA> \
-  --member B:codex/b-task@<40位SHA>
+python scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
 ```
 
-`batch-plan` 只读核对每个远端 head 未漂移、记录各自 main base，并以独占创建方式写入不可覆盖的批次 JSON，同时输出唯一 `codex/release-batch-<slug>` 和 `pr_base=main`。随后：
-
-1. 从冻结的 `origin/main` 创建批次分支。
-2. 一次性组合所有精确 handoff head，解决跨任务冲突并运行批次级测试。
-3. 只创建一个 `release-batch -> main` PR；成员任务不再各自进入 test train。
-4. 批次冻结后出现的新 handoff 自动属于下一批，不动态插入当前 PR。
-
-合并 main 前的 PR CI 可以运行代码门禁，但不会构建或发布容器。只有 main 合并后的 push CI 成功，才触发一次模块化 GitHub Actions 构建并生成 main-channel 不可变 bundle。
-
-纯非运行时与发布工具变更是批次流程的两类聚焦例外。`scripts/classify_ci_change.py` 对 docs、`.codex/**`、tests、AGENTS/README、CI/release policy 元数据和文档治理脚本返回 `lightweight`；对 `release.py`、运行时配置契约、上游 CI 校验、change classifier 与自动集成协调器返回 `release-tooling`：
-
-- 可创建单独 PR 直接合入受保护 main，或直接合入仍需维护的兼容分支，不必等待 release batch，也不生成 test-train candidate；
-- lightweight 只运行 change-scope/aggregate gate；release-tooling 只运行发布器、配置契约、不可变校验及协调器专项回归。两者都跳过 PostgreSQL、Web、Dashboard 与业务 Python 分片，main push 不创建 release bundle，不部署 test/prod；
-- 任一业务代码、migration、Compose、运行配置、白名单外发布执行器或未知路径都会 fail closed 为 `runtime`，恢复完整 CI、main bundle 与按需测试链路；
-- 轻量路径仍要求本任务运行与改动相称的 focused tests 或文档检查，且不放宽 main 禁止 direct push/force-push。
-
-GPU operator 变更是第二条聚焦路径。全部非轻量路径都位于 `ops/gpu_pool_controller/**` 或明确列出的 RunPod/LAN helper allowlist 时，分类为 `operator`：PR/main 只跑 `tests/ops tests/scripts`，但 main 后继 modular workflow 仍创建 bundle。LAN 宿主 helper 没有运行 artifact；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。它不授权共享环境或 GPU mutation，也不放宽真实 `workers/runpod_runtime/**`、`workers/runpod_profiles/**`、GPU artifact/profile/Dockerfile/模型依赖的完整 CI、attestation/canary 门禁。
-
-## 4. 测试环境与正式发布
-
-- 自动集成 timer 已启用时，runtime/operator 批次在 main bundle 成功后使用完整 main SHA 串行执行 `release.py plan -> deploy --env test`；协调器从 plan JSON 读取 10 分钟有效、绑定 SHA/目标/策略/输入 checksum 的 `plan_token` 并传给 deploy，复用候选、CI 与 evidence，同时 deploy 仍重新核对目标配置 revision。strict 由 deploy 路由完整门禁。不要并行启动另一条共享测试发布。
-- 测试控制面只从目标主机 `/etc/allbot/test.env` 生成权限为 `600` 的逐服务投影；不得把整份 env 注入所有容器，也不得把测试投影复制给正式环境。
-- 测试按 main bundle 中的精确 digest/checksum 验收；普通 streamlined 目标 smoke 成功后自动写入 main-channel exact-digest verified history，`verify-test` 保留作专项人工补充。
-- `verify-test` 仍要求精确 SHA/digest、全部适用 smoke、真实开始/完成时间和批准人，但不再要求固定 24 小时观察，也没有短观察 override/CLI 确认。
-- 测试失败不回退或改写 main 历史。修复走新的功能 handoff 和新的单批次 main PR，再为新 main SHA 构建一次。
-- 正式环境只接受受保护 main 可达完整 SHA、成功 main CI bundle 和对应策略证据；日常入口为 `python scripts/release.py promote --confirm-prod`，由它自动锁定候选、实际变化模块及 streamlined/strict。streamlined standard 复用测试 exact-digest evidence，direct 读取 bundle full/passed；migration、Compose/env、首次切换、未知或专用执行轨整体 strict。每次生产 mutation仍需用户明确调用并确认。
-- 正式控制面独立从 `/etc/allbot/prod.env` 生成逐服务投影；配置漂移先走全量 `config-plan`/`config-apply`，或对一个具有容器 env 契约的独立模块使用同名 `--module` 局部暂存。局部暂存可替换/追加目标投影，但必须保证所有非目标 active 投影继续存在且 revision/字节不变；它不调用 Compose 或重启容器，代码发布不能隐式修改宿主 env 或复用测试配置。
-- Dashboard 等 direct artifact 可按策略不要求测试 history，但不能绕过 main full-validation bundle、digest、目标配置、健康、目标回切与生产确认；LAN runner 仅在相关影响规则命中时检查。
-- 测试 Worker 仅在专项诊断时显式部署；GPU/LAN AIO/RunPod 继续走专用 operator/canary。
-
-## 5. 能力与授权边界
-
-- A-H 可读取真实 env、配置、凭据、日志、数据库连接和远端状态，用于只读核对、本地测试与计划；秘密不得进入对话、输出、diff、commit 或 PR。
-- 凭据可见不代表获准修改共享 test、prod、Cloudflare、RunPod/GPU、数据库或发布状态。
-- `.venv`、`node_modules` 和可写缓存以槽位独立为目标。发现历史共享依赖只记录风险，不自动中断或清理运行中任务。
-
-## 6. 红线与最小验证
-
-- 禁止逐功能分支自动触发容器构建；`modular-release-v2.yml` 的 full 自动入口只能来自 main 上游 CI 的成功 `push`，或在 push 事件丢失后对当前 main 精确 head 手动重跑同一上游 workflow。恢复重跑必须再次通过完整预期 test jobs、workflow 元数据和当前 main head 验证；Modular workflow 自身的 `workflow_dispatch` 永远只产生 `build-only`。
-- 禁止 direct push/force-push main；批次只能通过一个受保护 PR 合并。
-- 禁止把旧 `test-candidate` channel 当作新批次入口。历史 candidate/promotion 工具只作既有记录兼容，不再生成新候选。
-- 批次 PR 必须记录全部 handoff 身份、测试结果、影响 track/module、migration 和风险。
-- 修改工作区或发布流程时运行：
+后续读取、修改、测试和 Git 只在返回的 A-H worktree。任务自行决定 focused
+tests，提交并推送精确远端 head 后执行：
 
 ```bash
-python -m pytest -q tests/ops/test_manage_ai_workspaces.py
-python -m pytest -q tests/ops/test_release_promotion_v2.py tests/ops/test_release_cli.py
-python scripts/doc_quality_checker.py
+python scripts/manage_ai_workspaces.py handoff --slot <A-H>
 ```
 
-规则变化继续加载 `allbot-tdd`、`allbot-ops-deployment` 与 `allbot-kb-auto-updater`。
+handoff 成功入队后才释放槽位。功能槽位不得直接 push main，也不负责构建或
+部署环境。
+
+## main 单写者
+
+`scripts/auto_integrate_handoffs.py integrate-all --execute` 持有进程锁，逐个：
+
+1. 获取最新 `origin/main` 与 handoff 精确 head；
+2. 拒绝被改写的远端 head；
+3. 在临时 worktree 执行 `merge --no-ff`；
+4. 无冲突直接 push main；并发前进则重新获取 main 后重试；
+5. 内容冲突转入 `needs-rebase` 并继续下一个 pending。
+
+协调器只协调 main 写入，不创建 PR、不运行/等待 CI、不组 batch、不构建产物、
+不部署 test/prod。重启时 `integrating` 可恢复为 pending，completed 不重复合入。
+
+## 冲突修订
+
+`needs-rebase` 不自动重试。原槽位或新槽位从最新 main 重做，推送新 head 后：
+
+```bash
+python scripts/manage_ai_workspaces.py handoff \
+  --slot <A-H> --supersedes <旧handoff-id>
+```
+
+新记录进入 pending，旧记录标记 superseded。禁止改写旧 handoff 分支/head。
+
+## 最小验证
+
+```bash
+python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
+  tests/ops/test_auto_integrate_handoffs.py
+```

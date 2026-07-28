@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted，部分门禁由 ADR 0006 取代；schema v2、薄镜像与 GPU baked runtime 继续有效。“所有正式 artifact 必须云测试 verified”及“每个 GPU profile 必须业务 canary”已由按风险策略、逐 artifact assurance 与强制 attestation/可选 canary 规则替代。本文不授权正式部署或 legacy 执行面下线。
+Superseded by ADR 0009。薄镜像背景保留，三轨完整性不再是发布契约。
 
 ## Context
 

@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted，晋级身份语义由 ADR 0007 修订：main SHA 标识发布索引，artifact source SHA/OCI revision 保持已测试候选 SHA。
+Superseded by ADR 0009。保留 digest 不可变身份的历史背景。
 
 ## Context
 

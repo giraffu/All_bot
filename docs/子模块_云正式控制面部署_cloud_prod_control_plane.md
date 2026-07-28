@@ -1,5 +1,9 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
+> 当前入口为 `release.py deploy --env prod --module ... --artifact
+> <exact-digest> --confirm-prod`。除明确生产确认外，不查询 CI、test evidence、
+> bundle、Git ancestry 或其它模块。下文旧 promotion/门禁说明只作历史背景。
+>
 > 2026-07-24：主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时配置计划/应用 fail closed，不再作为可忽略 legacy key。懒人入口正式使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，只投影给 main-bot；旧 `QQCC_LAZY_BOT_*` 仅作运行时兼容回退。下一次正式 main-bot 更新必须先用 `config-plan/config-apply --module main-bot` 刷新投影，再由受控发布事务重建 Bot。
 >
 > 2026-07-22：`promote` 增加内部 `streamlined|strict` 执行配置，CLI 不变。普通已知 schema-v2 main control-plane 模块在目标配置投影无漂移时走 streamlined：direct 只消费 bundle 内 `validation.mode=full/tests=passed`，standard 复用测试 history 中同 artifact + exact digest 的 verified evidence，不再重复查询 GitHub CI；只 inspect/替换目标容器，不准备完整 rollback checkout、不预拉旧镜像、不检查非目标启动时间。一次目标替换脚本持事务锁，从全部目标容器交叉核验同一个受控 Compose checkout（artifact `source_sha` 不作为 Compose SHA）、单次 pull、`up --no-deps --wait`、核对 digest/OCI/config/health/API_BASE/polling，并用主机已有旧 ref 做目标回切；只有回切失败才保留 maintenance/recovery transaction。migration、Compose/env、数据库/Redis、首次切换、未知或混合 strict 影响继续保留完整备份、Alembic、queue drain、维护和恢复能力。Dashboard 仅在 LAN runner 影响规则命中时探测 runner；未选择 Public Web 时不初始化 Wrangler/Pages。

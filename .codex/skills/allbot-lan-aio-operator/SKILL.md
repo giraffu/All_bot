@@ -27,12 +27,14 @@ GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `
 - live status：观测现实，不是自动覆盖源。live、ledger、catalog 的不一致会记录为 drift 审计，但不阻断已经明确授权的单 slot mutation；live 不可达时 ledger 只显示 last-known。
 - `lan_aio_fleet_state.legacy.yml`：只供首次 `state-init` 的冻结迁移种子，普通操作绝不更新。
 
-发布与 CI 边界：
+发布边界：
 
 - GPU↔LAN 当前映射、cache marker、最近验证时间以及 RunPod 当前数量都是易变运行态，只写 XDG ledger、provider/operation store 或后台观测，不写 Git，不因漂移触发代码发布。
-- 仅修改 `scripts/lan_aio_*.py|sh`、`scripts/lan_*_aio_*.sh` 这类宿主 helper 时，CI 使用聚焦的 `operator` scope；它不构建或部署任何 control-plane/GPU artifact，合入后仍须在获授权的单槽操作中显式使用新 helper。
-- 修改 `ops/gpu_pool_controller/**`、`scripts/gpu_pool_controller.py`、`scripts/gpu_release_rollout.py` 或 `scripts/runpod_prod_ops.sh` 时，同样只跑 operator 测试，但可信 main bundle 最多重建 `dashboard-backend`；不会因此构建、canary 或替换 GPU 镜像，也不会改动现有 Pod/LAN 容器。
-- 修改 `workers/runpod_runtime/**`、`workers/runpod_profiles/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、GPU Dockerfile、模型 manifest 或真实 GPU 基础依赖时，必须恢复全量 CI、同 SHA artifact attestation，并按策略执行 canary/operator；不得借 operator scope 规避。
+- helper、operator、runtime 或 profile 代码进入 main 不自动构建或部署任何
+  artifact。focused tests 由任务自行决定，不是 main 合入或发布门禁。
+- GPU 构建由操作者显式执行 `release.py build --module <profile> --sha <sha>`，
+  只构建该 profile；不读取 change scope、CI、bundle、attestation、canary
+  evidence 或其它 profile 状态。
 
 ## 2. 固定命令
 
@@ -49,13 +51,12 @@ python scripts/lan_aio_fleet_prod_ops.py render --slot <slot> --include-disabled
 python scripts/lan_aio_fleet_prod_ops.py preflight --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py pull-image --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disabled --execute
-python scripts/lan_aio_fleet_prod_ops.py canary-start-disabled --slot <slot> --profile <profile> --release-index <release-index.json|complete-gpu-manifest.json> --sha <full-sha> --strategy direct|standard --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py isolate-quarantined --slot <slot> --execute
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
 python scripts/lan_aio_fleet_prod_ops.py restart-aio --slot <slot> --execute
-python scripts/lan_aio_fleet_prod_ops.py release-rollout --slot <slot> --profile <profile> --release-index <release-index.json> --sha <full-sha> --strategy direct|standard [--rollback-ref <same-repo@sha256:...>] --execute
+python scripts/lan_aio_fleet_prod_ops.py release-rollout --slot <slot> --profile <profile> --artifact <repo@sha256:digest> [--rollback-ref <same-repo@sha256:...>] --execute
 ```
 
 辅助只读检查：
@@ -73,8 +74,11 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 
 - 未经用户明确要求，不执行生产 mutation。
 - 一次只操作一个 physical GPU / slot；禁止跨节点批量切换。
-- `release-rollout` 必须从 release index 解析精确 digest：先 disabled/drain，验证容器实际 image、OCI revision、进程健康和 disabled heartbeat 后才 enable；失败立即停止后续 slot 并恢复该 slot 的旧镜像，恢复无法验证时保持 disabled。
-- release index 若引用 GHCR canonical 仓库，而当前 LAN profile 使用 LAN registry mirror，helper 只把同一 release digest 映射到当前 profile 的 repository；必须先用 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制 canonical manifest，禁止改 digest 或现场 build。
+- `release-rollout` 直接接收精确 artifact：先 disabled/drain，验证容器实际
+  image、进程健康和 disabled heartbeat 后才 enable；失败只恢复该 slot 的旧
+  镜像，恢复无法验证时保持 disabled。
+- 若 artifact 使用 GHCR canonical 仓库，而当前 LAN profile 使用 LAN registry
+  mirror，helper 只映射同一 digest；必须先保摘要复制，禁止改 digest 或现场 build。
 - 目标节点尚未配置 HTTP LAN registry 且没有 Docker daemon 维护窗口时，Git catalog 可直接固定 release index 的 canonical GHCR 完整 digest，禁止改用 tag；显式 exact rollback ref 会在停接/等待空闲前由 helper 预拉，确保回滚镜像真实可用。
 - 历史 LAN 镜像若由 tar 导入、旧 tag 没有 `RepoDigests`，只能在独立核验当前 tag 的 registry digest 后传 `--rollback-ref <same-repo@sha256:...>`；helper 拒绝 mutable 或跨仓库回滚引用，不能用该参数自由指定运行镜像。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
@@ -89,7 +93,10 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - `takeover/recover/restart-aio/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续显式单 slot mutation。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。`recover` 遇到已停止候选时必须通过 managed compose 重建并重新验收，不能因 image digest 相同直接 `docker start`，否则最新 env、挂载或端口配置不会生效。
 - GPU/Comfy 已失联、标准 queue-idle 门禁无法执行时，只允许对 Central 明确为 `quarantined|error` 且 `current_task_id/current_task_type` 均为空，或 agent 已注销但 control 已明确为 `disabled` 的单 slot 使用 `isolate-quarantined`。该动作写无 TTL 的 disabled control，先把目标容器 restart policy 固定为 `no` 并复核，再停止目标容器、验证 stopped 并把物理槽记为 intentionally-empty；即使 GPU reset-required 导致 stop 失败，已验证的 `restart=no` 仍保证下次主机启动不会自动拉起该容器。状态不满足时拒绝，不能借此强杀运行中任务或跳过普通 canary stop。
-- 只做本地验收且禁止 intake 的候选必须使用成对的 `canary-start-disabled` / `canary-stop-disabled`。对 release artifact 必须同时传 `--profile/--release-index/--sha`；`--release-index` 可指向完整三轨 index 或 `completeness=complete` 且同 SHA 的独立 GPU manifest，helper 解析精确 digest，执行 preflight、pull、warm-cache、disabled heartbeat、实际 image/OCI revision/runtime contract 校验后仍保持 Central control disabled。不得用 incomplete GPU manifest，也不得用 `recover/takeover` 替代，因为后两者成功后会 enable intake。
+- 只做本地验收且禁止 intake 的候选使用成对的
+  `canary-start-disabled` / `canary-stop-disabled`；发布 artifact 本身通过
+  `release-rollout --artifact <exact-digest>` 单槽替换，不再读取 release index、
+  strategy、attestation 或 canary evidence。
 - ledger 明确记录 `intentionally_empty` 时，允许对同一物理槽的指定候选执行只读 `preflight --execute`，用于读取逐项门禁；该例外不扩展到 pull、warm-cache 或其它 mutation。`configure-registry` 必须同时维护 daemon `insecure-registries` / `proxies.no-proxy` 与 systemd `NO_PROXY/no_proxy`，保留既有代理端点；重启 Docker 后只等待重启前已运行的候选恢复，本来停止的候选必须保持停止。
 
 ## 4. 标准流程

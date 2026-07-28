@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted。取代 ADR 0005 的串行 test-train 决策和 ADR 0007 的 candidate digest promotion 日常流程；A-H worktree、单一共享测试站、不可变产物和正式发布门禁继续有效。
+Superseded by ADR 0009。A–H 与不可变 handoff 由 ADR 0009 继续保留。
 
 ## Context
 

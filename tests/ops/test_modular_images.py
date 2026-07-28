@@ -95,21 +95,17 @@ def test_private_bot_worker_image_contains_its_qqcc_runtime_dependency():
     assert "COPY qqcc_bot /app/qqcc_bot" in private_worker
 
     catalog = json.loads(
-        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
+        (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
     )
-    assert "qqcc_bot/**" in catalog["artifacts"]["private-bot-worker"]["inputs"]
+    assert catalog["modules"]["private-bot-worker"]["target"] == "private-bot-worker"
 
 
-def test_i2i_pro_gpu_release_contract_includes_legacy_face_swap():
+def test_i2i_pro_gpu_release_contract_is_independent():
     catalog = json.loads(
-        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
+        (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
     )
-    assert catalog["artifacts"]["i2i_pro"]["profile"]["task_types"] == [
-        "i2i_pro",
-        "t2i-pornmaster-turbo",
-        "face_swap_v2",
-        "face_swap",
-    ]
+    assert catalog["modules"]["i2i_pro"]["adapter"] == "gpu"
+    assert "face_swap" in catalog["modules"]
 
 
 def test_web_api_image_and_release_smoke_require_ffmpeg():
@@ -119,11 +115,7 @@ def test_web_api_image_and_release_smoke_require_ffmpeg():
     web_api = control.split("AS web-api", 1)[1].split("AS payment-api", 1)[0]
     assert "apt-get install -y --no-install-recommends ffmpeg" in web_api
 
-    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
-        encoding="utf-8"
-    )
-    assert "web_ref=" in workflow
-    assert 'docker run --rm --entrypoint ffmpeg "$web_ref" -version' in workflow
+    assert not (ROOT / ".github/workflows/modular-release-v2.yml").exists()
 
 
 def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools():
@@ -142,15 +134,11 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
     assert "media.githubusercontent.com/media/opencv/opencv_zoo/" in media_runtime
 
     catalog = json.loads(
-        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
-    )["artifacts"]
+        (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
+    )["modules"]
     media_base = catalog["python-media-runtime-base"]
     assert media_base["base"] == "python-runtime-base"
     assert media_base["dockerfile"] == "deploy/docker/Dockerfile.media-runtime-base"
-    assert (
-        "deploy/docker/media-intelligence-requirements.txt"
-        in media_base["inputs"]
-    )
     for target in (
         "qqcc-bot",
         "private-bot-worker",
@@ -160,36 +148,6 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
         assert catalog[target]["base"] == "python-media-runtime-base"
     assert catalog["central-api"]["base"] == "python-runtime-base"
     assert catalog["main-bot"]["base"] == "python-runtime-base"
-
-    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
-        encoding="utf-8"
-    )
-    assert "qqcc_bot_ref=" in workflow
-    assert "private_bot_ref=" in workflow
-    assert "qqcc_config_backend_ref=" in workflow
-    assert (
-        'docker run --rm --entrypoint sh "$qqcc_bot_ref" '
-        "-c 'ffmpeg -version && ffprobe -version'"
-    ) in workflow
-    assert (
-        'docker run --rm --entrypoint sh "$private_bot_ref" '
-        "-c 'ffmpeg -version && ffprobe -version'"
-    ) in workflow
-    assert (
-        'docker run --rm --entrypoint sh "$backend_ref" '
-        "-c 'ffmpeg -version && ffprobe -version'"
-    ) in workflow
-    assert (
-        'docker run --rm --entrypoint sh "$qqcc_config_backend_ref" '
-        "-c 'ffmpeg -version && ffprobe -version'"
-    ) in workflow
-    assert (
-        'for media_ref in "$backend_ref" "$qqcc_config_backend_ref" '
-        '"$qqcc_bot_ref" "$private_bot_ref"; do'
-    ) in workflow
-    assert "import cv2, smartcrop" in workflow
-    assert "/opt/allbot/models/face_detection_yunet_2023mar.onnx" in workflow
-
 
 def test_dashboard_and_qqcc_frontends_are_separate_targets():
     dockerfile = (ROOT / "deploy/docker/Dockerfile.frontends").read_text(

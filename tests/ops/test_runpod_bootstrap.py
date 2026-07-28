@@ -318,47 +318,18 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
 
 
 def test_wan22_github_workflow_defaults_to_lan_proven_base_and_comfyui_ref():
-    workflow = Path(".github/workflows/runpod_wan22_profile_image.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert f'default: "{WAN22_PROVEN_COMFY_CU128_BASE}"' in workflow
-    assert "comfyui_ref:" in workflow
-    assert "reuse_base_custom_nodes:" in workflow
-    assert "--comfyui-ref" in workflow
-    assert "--reuse-base-custom-nodes" in workflow
-    assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" in workflow
+    assert not Path(".github/workflows/runpod_wan22_profile_image.yml").exists()
+    assert Path("workers/runpod_profiles/wan22_aio_video/Dockerfile").exists()
 
 
 def test_face_swap_github_workflow_publishes_dedicated_revision_pinned_image():
-    workflow = Path(".github/workflows/runpod_face_swap_profile_image.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert "IMAGE_NAME: allbot-gpu-face-swap" in workflow
-    assert "--profile face_swap" in workflow
-    assert "ALLBOT_GIT_SHA: ${{ github.sha }}" in workflow
-    assert "io.allbot.runpod.agent-revision" in workflow
-    assert "io.allbot.runpod.workflow-revision" in workflow
-    assert "face_swap_v2/2026-07-25/manifest.json" in workflow
-    assert "docker manifest inspect" in workflow
+    assert not Path(".github/workflows/runpod_face_swap_profile_image.yml").exists()
+    assert Path("workers/runpod_profiles/face_swap/Dockerfile").exists()
 
 
 def test_ltx_t2v_github_workflow_builds_exact_main_revision_without_models():
-    workflow = Path(".github/workflows/runpod_ltx_t2v_profile_image.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert "source_sha:" in workflow
-    assert "git merge-base --is-ancestor" in workflow
-    assert "IMAGE_NAME: allbot-gpu-ltx-t2v" in workflow
-    assert "--profile ltx_t2v" in workflow
-    assert "ALLBOT_GIT_SHA: ${{ inputs.source_sha }}" in workflow
-    assert "org.opencontainers.image.revision" in workflow
-    assert "io.allbot.runpod.agent-revision" in workflow
-    assert "io.allbot.runpod.workflow-revision" in workflow
-    assert "ltx_t2v/2026-07-22/manifest.json" in workflow
-    assert "docker manifest inspect" in workflow
+    assert not Path(".github/workflows/runpod_ltx_t2v_profile_image.yml").exists()
+    assert Path("workers/runpod_profiles/ltx_t2v/Dockerfile").exists()
 
 
 def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(

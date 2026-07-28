@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "ERROR: single-file/single-service sync is disabled. Use scripts/release.py; dependency scope is computed by deploy/release-policy.yml." >&2
+echo "ERROR: source sync is retired. Use scripts/release.py with an explicit module and exact artifact." >&2
 exit 2

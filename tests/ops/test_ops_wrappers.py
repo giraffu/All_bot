@@ -12,7 +12,6 @@ WHOLE_REPO_RSYNC_SCRIPTS = (
     "scripts/update_cloud_test_with_maintenance.sh",
 )
 RETIRED_CLOUD_TEST_BUILD_SCRIPTS = (
-    "scripts/safe_deploy_cloud_test.sh",
     "scripts/migrate_local_test_to_cloud_containers.sh",
 )
 
@@ -47,10 +46,9 @@ def test_cloud_prod_qqcc_update_shell_syntax():
 
 def test_private_bot_env_validation_uses_the_target_environment_bot_type():
     prod_script = (ROOT / "scripts/safe_deploy_cloud_prod.sh").read_text()
-    test_script = (ROOT / "scripts/safe_deploy_cloud_test.sh").read_text()
 
     assert "--bot-type PROD" in prod_script
-    assert "--bot-type TEST" in test_script
+    assert not (ROOT / "scripts/safe_deploy_cloud_test.sh").exists()
 
 
 def test_root_docker_context_excludes_runtime_backups():
@@ -136,40 +134,36 @@ def test_runpod_enable_requires_profile():
     assert "--profile is required for enable" in result.stderr
 
 
-def test_runpod_release_rollout_requires_single_slot_release_contract():
+def test_runpod_artifact_rollout_requires_single_slot_and_artifact():
     result = run_script(
         "bash",
         "scripts/runpod_prod_ops.sh",
-        "rollout-release",
+        "rollout-artifact",
         "--profile",
         "i2i_pro",
         "--dry-run",
     )
 
     assert result.returncode == 2
-    assert "--slot, --release-index and --sha" in result.stderr
+    assert "--slot and --artifact" in result.stderr
 
 
-def test_runpod_release_rollout_rejects_mutable_rollback_override_before_resolution():
+def test_runpod_artifact_rollout_rejects_mutable_artifact():
     result = run_script(
         "bash",
         "scripts/runpod_prod_ops.sh",
-        "rollout-release",
+        "rollout-artifact",
         "--profile",
         "image_to_video",
         "--slot",
         "01",
-        "--release-index",
-        "/missing/release-index.json",
-        "--sha",
-        "a" * 40,
-        "--rollback-ref",
+        "--artifact",
         "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:legacy-tag",
         "--dry-run",
     )
 
     assert result.returncode == 2
-    assert "--rollback-ref must be an exact digest-pinned image" in result.stderr
+    assert "--artifact must be an exact digest-pinned image" in result.stderr
 
 
 def test_runpod_release_rollout_help_documents_legacy_digest_migration():

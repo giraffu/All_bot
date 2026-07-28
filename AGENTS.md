@@ -17,9 +17,9 @@
   RunPod、GPU/LAN 或发布状态。
 - **生产 mutation**：正式发布、数据库迁移、Cloudflare、GPU/RunPod/LAN
   和本地灾备必须由用户明确要求。核心用户链路默认先验证测试环境。
-- **不可变发布**：云环境只消费受保护 main 的完整 SHA 和 digest-pinned
-  artifact；禁止 rsync 源码、现场 build、源码 bind mount、mutable tag、
-  direct/force push main。
+- **不可变发布**：操作者从完整 Git SHA 在本机构建明确模块，云环境只消费
+  digest-pinned artifact；禁止 rsync 源码、目标机 build、源码 bind mount、
+  mutable tag 和 force push main。
 - **运行态不入 Git**：实时 worker/Pod 数量、LAN current/cache、一次性任务
   与事故现场只属于 provider/XDG/日志/归档，不写成稳定 Skill 或当前 SOP。
 
@@ -44,17 +44,17 @@ python scripts/manage_ai_workspaces.py handoff --slot <A-H>
 handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽位。功能槽位
 不创建逐任务 test-train PR、不部署共享 test、不操作 prod/Cloudflare/GPU。
 
-## 3. 集成与 CI
+## 3. 集成与发布
 
-- 本机单写者将等待 handoff 冻结为一个 `release-batch -> main` PR；运行中
-  到达的 handoff 进入下一批。冲突、CI 或测试部署失败会阻断后续批次。
-- `lightweight` 覆盖纯 docs、Skills、tests 和仓库治理；`release-tooling`
-  覆盖明确发布工具；`operator` 覆盖 GPU/LAN operator allowlist；其它或混合
-  路径 fail closed 为 runtime。
-- lightweight/release-tooling 不构建 release bundle、不部署环境，但仍须
-  受保护 PR 和相称的 focused tests。
-- main runtime/operator bundle 成功后，唯一协调器才可串行更新共享 test；
-  协调器没有 prod 参数。正式晋级仍需每次明确 `--confirm-prod`。
+- 本机单写者逐个验证 handoff 的精确远端 head，并直接合并、推送 main。
+  内容冲突只把该记录转入 `needs-rebase`，后续 pending 继续集成。
+- 冲突修订基于最新 main 产生新 commit 和 handoff，并用 `--supersedes`
+  指向旧记录。协调器不创建 PR、不查询或运行 CI、不构建产物、不部署环境。
+- focused tests 由任务自行决定，不是 main 合入条件；并发写入协调不是发布门禁。
+- 操作者使用 `scripts/release.py build --module ... --sha ...` 独立构建模块，
+  再以精确 digest 直接部署 test 或 prod。系统不保存人工测试资格。
+- 正式 mutation 仍需明确模块、环境和 `--confirm-prod`，但不查询 CI、
+  test evidence、Git diff、bundle、其它模块或 GPU 完整性。
 
 ## 4. Skill 路由
 
