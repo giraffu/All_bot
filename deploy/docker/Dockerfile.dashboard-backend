@@ -20,8 +20,6 @@ RUN mkdir -p /app/scripts
 COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh
 COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py
 COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py
-COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py
-COPY scripts/release_strategy.py /app/scripts/release_strategy.py
 COPY alembic.ini /app/alembic.ini
 COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
 RUN chmod 755 /usr/local/bin/allbot-release-entrypoint /app/scripts/runpod_prod_ops.sh

@@ -13,7 +13,6 @@ from typing import Any, Awaitable, Callable
 import yaml
 
 from .operator import parse_last_json, redact_error
-from scripts.classify_ci_change import classify_change_scope
 
 RunJson = Callable[..., Awaitable[dict[str, Any]]]
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -51,6 +50,18 @@ ALLOWED_ACTIONS = {
     "integrate_all",
     "align_workspaces",
     "integration_status",
+    "prepare_gpu_release",
+    "sync_test_config",
+    "repair_test_rollback",
+    "retry_integration",
+}
+RETIRED_RELEASE_ACTIONS = {
+    "build_status",
+    "start_build",
+    "plan",
+    "deploy",
+    "plan_test_modules",
+    "deploy_test_modules",
     "prepare_gpu_release",
     "sync_test_config",
     "repair_test_rollback",
@@ -99,18 +110,21 @@ class ReleaseRunner:
         return parse_last_json(await self._run(command, **kwargs))
 
     def _policy_modules(self) -> dict[str, dict[str, Any]]:
-        path = self.root / "deploy/release-policy.yml"
+        path = self.root / "deploy/module-catalog.json"
         try:
-            policy = yaml.safe_load(path.read_text(encoding="utf-8"))
-            modules = policy["independent_modules"]
-        except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
-            raise RunnerError("release_policy_invalid") from exc
+            catalog = json.loads(path.read_text(encoding="utf-8"))
+            modules = catalog["modules"]
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise RunnerError("module_catalog_invalid") from exc
         if not isinstance(modules, dict):
-            raise RunnerError("release_policy_invalid")
+            raise RunnerError("module_catalog_invalid")
         return {
-            str(name): {"artifacts": list(config.get("artifacts") or [])}
+            str(name): {
+                "artifacts": [str(name)],
+                "environments": list(config.get("environments") or []),
+            }
             for name, config in modules.items()
-            if isinstance(config, dict)
+            if isinstance(config, dict) and config.get("adapter") != "build-only"
         }
 
     def _validate_common(self, payload: dict[str, Any]):
@@ -185,6 +199,8 @@ class ReleaseRunner:
             }
         if action == "candidate":
             return await self._candidate()
+        if action in RETIRED_RELEASE_ACTIONS:
+            raise RunnerError("module_release_cli_required")
         if action == "prepare_gpu_release":
             sha = payload.get("expected_main_sha")
             if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
@@ -329,7 +345,7 @@ class ReleaseRunner:
                 )
             )
             queue: dict[str, list[dict[str, Any]]] = {}
-            for state in ("pending", "running", "failed"):
+            for state in ("pending", "integrating", "completed", "needs-rebase"):
                 records = []
                 for path in sorted((queue_root / state).glob("*.json")):
                     try:
@@ -500,72 +516,11 @@ class ReleaseRunner:
                 )
             )
         if action == "plan":
-            environment, module, sha, _ = self._validate_common(payload)
-            return await self.run_json(
-                [
-                    sys.executable,
-                    str(self.release),
-                    "plan",
-                    "--env",
-                    environment,
-                    "--track",
-                    "control-plane",
-                    "--modules",
-                    module,
-                    "--sha",
-                    sha,
-                ],
-                timeout=900,
-            )
+            raise RunnerError("module_release_cli_required")
         if action == "deploy":
-            environment, module, sha, maintenance = self._validate_common(payload)
-            token = payload.get("plan_token")
-            if not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
-                raise RunnerError("invalid_plan_token")
-            command = [
-                sys.executable,
-                str(self.release),
-                "deploy",
-                "--env",
-                environment,
-                "--track",
-                "control-plane",
-                "--modules",
-                module,
-                "--sha",
-                sha,
-                "--plan-token",
-                token,
-                "--execute",
-            ]
-            if maintenance == "rolling":
-                command.append("--no-maintenance")
-            if environment == "prod":
-                if payload.get("confirm_prod") is not True:
-                    raise RunnerError("production_confirmation_required")
-                command.append("--confirm-prod")
-            return await self.run_json(command, timeout=7500)
+            raise RunnerError("module_release_cli_required")
         if action in {"plan_test_modules", "deploy_test_modules"}:
-            modules, sha = self._validate_test_modules(payload)
-            command = [
-                sys.executable,
-                str(self.release),
-                "plan" if action == "plan_test_modules" else "deploy",
-                "--env",
-                "test",
-                "--track",
-                "control-plane",
-            ]
-            for module in modules:
-                command.extend(["--modules", module])
-            command.extend(["--sha", sha])
-            if action == "plan_test_modules":
-                return await self.run_json(command, timeout=900)
-            token = payload.get("plan_token")
-            if not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
-                raise RunnerError("invalid_plan_token")
-            command.extend(["--plan-token", token, "--execute"])
-            return await self.run_json(command, timeout=7500)
+            raise RunnerError("module_release_cli_required")
         environment = payload.get("environment")
         if environment not in ENVIRONMENTS:
             raise RunnerError("invalid_environment")
@@ -636,20 +591,6 @@ class ReleaseRunner:
         )
         return await process.wait() == 0
 
-    async def _change_scope(self, sha: str) -> str:
-        output = await self._run(
-            [
-                "gh",
-                "api",
-                "--paginate",
-                f"repos/giraffu/All_bot/commits/{sha}",
-                "--jq",
-                ".files[].filename",
-            ],
-            timeout=60,
-        )
-        return classify_change_scope(output.splitlines()).scope
-
     async def _latest_deployable_sha(self, main_sha: str) -> str | None:
         tags_output, history_output = await asyncio.gather(
             self._run(
@@ -695,32 +636,14 @@ class ReleaseRunner:
 
     async def _candidate(self) -> dict[str, Any]:
         main_sha = await self._remote_main_sha()
-        ci_runs, modular_runs, bundle_ready, scope = await asyncio.gather(
-            self._gh_runs("control-plane-release.yml", main_sha),
-            self._gh_runs("modular-release-v2.yml", main_sha),
-            self._bundle_ready(main_sha),
-            self._change_scope(main_sha),
-        )
-        deployable_sha = (
-            main_sha
-            if bundle_ready
-            else await self._latest_deployable_sha(main_sha)
-        )
-        ci = ci_runs[0] if ci_runs else None
-        build = modular_runs[0] if modular_runs else None
-        blockers = []
-        if scope in {"operator", "runtime"} and not bundle_ready:
-            blockers.append("bundle_missing")
-        if not ci or ci.get("conclusion") != "success":
-            blockers.append("trusted_ci_missing")
         return {
             "main_sha": main_sha,
-            "deployable_sha": deployable_sha,
-            "scope": scope,
-            "ci": ci,
-            "bundle": {"status": "ready" if bundle_ready else "missing"},
-            "build": build,
-            "blockers": blockers,
+            "deployable_sha": main_sha,
+            "scope": "explicit-modules",
+            "ci": None,
+            "bundle": None,
+            "build": None,
+            "blockers": [],
         }
 
     async def _remote_main_sha(self) -> str:

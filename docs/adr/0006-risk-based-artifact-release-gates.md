@@ -1,6 +1,6 @@
 # ADR 0006：按 artifact 风险分级发布门禁
 
-- 状态：Accepted
+- 状态：Superseded by ADR 0009
 - 日期：2026-07-16
 - 取代：ADR 0004 中“所有生产 artifact 都依赖全局 verified”以及“GPU profile 必须有业务 canary 才能发布”的部分结论
 

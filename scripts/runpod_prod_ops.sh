@@ -18,13 +18,10 @@ MAX_ATTEMPTS="20"
 RETRY_INTERVAL_SECONDS="90"
 READINESS_TIMEOUT_SECONDS=""
 WORKER_TIMEOUT_SECONDS=""
-RELEASE_INDEX=""
-RELEASE_SHA=""
-RELEASE_STRATEGY="direct"
+RELEASE_ARTIFACT=""
 RELEASE_ROLLBACK_REF=""
-ROLLOUT_RESOLVER="${ROOT_DIR}/scripts/gpu_release_rollout.py"
 
-STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video ltx_t2v pornmaster_flux2_edit_bf16)
+STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro face_swap scail2 ltx_video ltx_t2v pornmaster_flux2_edit_bf16)
 
 usage() {
   cat <<'USAGE'
@@ -42,14 +39,14 @@ Actions:
   scale     Scale one prod manual profile to --desired N.
   canary    Run a real prod canary and leave the target worker disabled.
   rollback  Disable or delete the selected prod manual capacity.
-  rollout-release
-            Replace exactly one slot from an attested release digest. The new
+  rollout-artifact
+            Replace exactly one slot from an explicitly selected digest. The new
             Pod stays disabled through digest/heartbeat checks and restores the
             old exact image if the slot update fails.
 
 Options:
   --profile <name>            Required for mutations. One of img2img,
-                              image_to_video, wan22_video_v2, i2i_pro,
+                              image_to_video, wan22_video_v2, i2i_pro, face_swap,
                               scail2, ltx_video, ltx_t2v, pornmaster_flux2_edit_bf16.
   --slot <NN>                 Optional manual worker slot, for example 01.
   --count <N>                 Required for add.
@@ -63,10 +60,8 @@ Options:
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --readiness-timeout <sec>   Override prod-worker pod readiness timeout.
   --worker-timeout <sec>      Override prod-worker heartbeat timeout.
-  --release-index <path>      Required for rollout-release.
-  --sha <full-sha>            Required release SHA for rollout-release.
-  --strategy <direct|standard>
-                              GPU evidence policy. Default direct.
+  --artifact <repo@sha256:...>
+                              Required exact image for rollout-artifact.
   --rollback-ref <repo@sha256:...>
                               Exact old image used only when the live legacy
                               Pod still reports a tag. Repository must match.
@@ -78,7 +73,7 @@ USAGE
 
 is_valid_profile() {
   case "$1" in
-    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|ltx_t2v|pornmaster_flux2_edit_bf16) return 0 ;;
+    img2img|image_to_video|wan22_video_v2|i2i_pro|face_swap|scail2|ltx_video|ltx_t2v|pornmaster_flux2_edit_bf16) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -180,16 +175,16 @@ require_profile_for_mutation() {
   fi
 }
 
-require_rollout_release_options() {
+require_rollout_artifact_options() {
   require_profile_for_mutation
-  if [ -z "$SLOT" ] || [ -z "$RELEASE_INDEX" ] || [ -z "$RELEASE_SHA" ]; then
-    echo "rollout-release requires --profile, --slot, --release-index and --sha" >&2
+  if [ -z "$SLOT" ] || [ -z "$RELEASE_ARTIFACT" ]; then
+    echo "rollout-artifact requires --profile, --slot and --artifact" >&2
     exit 2
   fi
-  case "$RELEASE_STRATEGY" in
-    direct|standard) ;;
-    *) echo "--strategy must be direct or standard for rollout-release" >&2; exit 2 ;;
-  esac
+  if ! [[ "$RELEASE_ARTIFACT" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+    echo "--artifact must be an exact digest-pinned image" >&2
+    exit 2
+  fi
   if [ -n "$RELEASE_ROLLBACK_REF" ] \
     && ! [[ "$RELEASE_ROLLBACK_REF" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
     echo "--rollback-ref must be an exact digest-pinned image" >&2
@@ -207,17 +202,6 @@ image_repository() {
   printf '%s\n' "$ref"
 }
 
-resolve_rollout_field() {
-  python3 "$ROLLOUT_RESOLVER" \
-    --release-index "$RELEASE_INDEX" \
-    --sha "$RELEASE_SHA" \
-    --profile "$PROFILE" \
-    --strategy "$RELEASE_STRATEGY" \
-    --operator runpod \
-    --slot "$SLOT" \
-    --field "$1"
-}
-
 set_profile_image_ref() {
   local env_key="$1"
   local image_ref="$2"
@@ -225,21 +209,29 @@ set_profile_image_ref() {
   export "$env_key"
 }
 
-rollout_release() {
-  require_rollout_release_options
+rollout_artifact() {
+  require_rollout_artifact_options
   local target_ref image_env
-  target_ref="$(resolve_rollout_field ref)"
-  image_env="$(resolve_rollout_field runpod_image_env)"
+  target_ref="$RELEASE_ARTIFACT"
+  case "$PROFILE" in
+    img2img) image_env="RUNPOD_IMAGE_NAME_IMG2IMG_LORA" ;;
+    image_to_video) image_env="RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO" ;;
+    wan22_video_v2) image_env="RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2" ;;
+    i2i_pro) image_env="RUNPOD_IMAGE_NAME_I2I_PRO" ;;
+    face_swap) image_env="RUNPOD_IMAGE_NAME_FACE_SWAP" ;;
+    scail2) image_env="RUNPOD_IMAGE_NAME_SCAIL2" ;;
+    ltx_video) image_env="RUNPOD_IMAGE_NAME_LTX_VIDEO" ;;
+    ltx_t2v) image_env="RUNPOD_IMAGE_NAME_LTX_T2V" ;;
+    pornmaster_flux2_edit_bf16) image_env="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT" ;;
+  esac
   if [ "$MODE" != "execute" ]; then
-    python3 "$ROLLOUT_RESOLVER" \
-      --release-index "$RELEASE_INDEX" --sha "$RELEASE_SHA" \
-      --profile "$PROFILE" --strategy "$RELEASE_STRATEGY" \
-      --operator runpod --slot "$SLOT"
+    printf '{"operator":"runpod","scope":"single-slot","profile":"%s","slot":"%s","artifact":"%s"}\n' \
+      "$PROFILE" "$SLOT" "$target_ref"
     return
   fi
 
   command -v jq >/dev/null 2>&1 || {
-    echo "rollout-release execute requires jq" >&2
+    echo "rollout-artifact execute requires jq" >&2
     exit 2
   }
   local before_file after_file observed_old_ref="" old_ref=""
@@ -288,7 +280,7 @@ rollout_release() {
   fi
   set -e
   if [ "$rollout_status" -eq 0 ]; then
-    echo "[runpod-prod-ops] rollout-release verified ${PROFILE}/${SLOT} at ${target_ref}"
+    echo "[runpod-prod-ops] rollout-artifact verified ${PROFILE}/${SLOT} at ${target_ref}"
     return
   fi
 
@@ -494,7 +486,7 @@ run_mutation() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-release)
+    status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-artifact)
       ACTION="$1"
       shift
       ;;
@@ -554,16 +546,8 @@ while [ "$#" -gt 0 ]; do
       WORKER_TIMEOUT_SECONDS="${2:?missing value for --worker-timeout}"
       shift 2
       ;;
-    --release-index)
-      RELEASE_INDEX="${2:?missing value for --release-index}"
-      shift 2
-      ;;
-    --sha)
-      RELEASE_SHA="${2:?missing value for --sha}"
-      shift 2
-      ;;
-    --strategy)
-      RELEASE_STRATEGY="${2:?missing value for --strategy}"
+    --artifact)
+      RELEASE_ARTIFACT="${2:?missing value for --artifact}"
       shift 2
       ;;
     --rollback-ref)
@@ -597,8 +581,8 @@ case "$ACTION" in
   up|add|enable|disable|restart|down|scale|canary|rollback)
     run_mutation
     ;;
-  rollout-release)
-    rollout_release
+  rollout-artifact)
+    rollout_artifact
     ;;
   *)
     echo "Unknown action: ${ACTION}" >&2

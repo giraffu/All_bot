@@ -322,7 +322,7 @@ python -m alembic heads
 pytest tests/qqcc_bot/test_qqcc_bot_entrypoint.py \
   tests/services/test_task_service_flow.py \
   tests/services/test_recovery_service.py -q
-pytest tests/ops/test_release_cli.py tests/ops/test_release_strategy.py -q
+pytest tests/ops/test_release_cli.py -q
 ```
 
 涉及任务 registry 或 core 提交流程时，补跑：

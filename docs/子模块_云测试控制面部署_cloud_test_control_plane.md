@@ -1,5 +1,9 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
+> 当前入口为 `release.py deploy --env test --module ... --artifact
+> <exact-digest>`。不运行 plan、CI、bundle、test evidence 或 acceptance 门禁；
+> 人工验证结果由操作者判断。下文旧 schema-v2 自动发布说明只作历史背景。
+>
 > 2026-07-22：普通 schema-v2 main control-plane 发布由 `release.py` 自动选择 `streamlined`：目标主机只读检查选中服务的现有投影，单次 pull 后以 `compose up --no-deps --wait` 替换目标服务，并在同一远端脚本核对 exact digest、OCI revision、health、解析后的 `API_BASE` 与 Bot single polling/getUpdates conflict。成功即按 artifact + exact digest 自动写入带真实开始/完成时间的 `verified` evidence；`verify-test` 保留作专项人工补充，不再是普通路径必需步骤。失败只使用主机已有旧 ref 回切目标服务，不预拉旧镜像、不做全局 queue drain、完整 rollback preflight、非目标快照或固定 observation。migration、Compose/env、首次切换、未知影响及 test-execution/GPU 继续使用 `strict`/专用 operator。
 > 2026-07-23：control-plane 的 strict 与 streamlined 都按测试环境实际服务裁剪配置检查；migration 继续 strict，但不再构造测试站不存在的 Dashboard、Payment、Paid Group 或 Support 投影。服务配置契约以 `environments` 标注拓扑；全量 `config-plan/config-apply` 会报告并清理历史 prod-only `retired_services`，代码发布只核验目标 current projection，并以 `effective_environment_revision` 记录当前已激活配置。目标缺键、篡改、revision drift 或影响目标的未知键仍 fail closed。
 > 2026-07-23：若当前测试 control-plane 只记录全量 bundle SHA 和实际运行 artifact、没有测试站本就不运行的 Dashboard artifact 条目，`recover --modules dashboard --repair-rollback-materials` 仍可修复该精确 bundle 的回滚材料。入口必须先确认全局 current SHA 相同，再展开 bundle 并逐项核对所有实际启用服务的 state/container digest；不会拉镜像、重启容器或改写部署状态。

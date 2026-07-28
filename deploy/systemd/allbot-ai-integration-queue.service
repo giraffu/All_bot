@@ -1,5 +1,5 @@
 [Unit]
-Description=AllBot immutable handoff integration and shared test deployment
+Description=AllBot lightweight immutable handoff main integrator
 After=network-online.target
 Wants=network-online.target
 
@@ -7,6 +7,6 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=__ALLBOT_ROOT__
 ExecStart=/usr/bin/env python3 __ALLBOT_ROOT__/scripts/auto_integrate_handoffs.py --repo __ALLBOT_ROOT__ run-once --execute
-TimeoutStartSec=8h
+TimeoutStartSec=30m
 PrivateTmp=true
 NoNewPrivileges=true

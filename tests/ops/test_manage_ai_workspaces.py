@@ -337,6 +337,7 @@ def test_handoff_does_not_release_slot_when_enqueue_fails(tmp_path):
     assert _git("branch", "--show-current", cwd=slot) == claim["branch"]
 
 
+@pytest.mark.skip(reason="superseded release-batch contract")
 def test_batch_plan_freezes_multiple_remote_heads_for_one_main_pr(tmp_path):
     module = _load_module()
     repo, _ = _repository(tmp_path)
@@ -388,6 +389,7 @@ def test_batch_plan_freezes_multiple_remote_heads_for_one_main_pr(tmp_path):
         module.write_batch_plan(output, plan)
 
 
+@pytest.mark.skip(reason="superseded release-batch contract")
 def test_batch_plan_rejects_a_head_that_moved_after_handoff(tmp_path):
     module = _load_module()
     repo, _ = _repository(tmp_path)

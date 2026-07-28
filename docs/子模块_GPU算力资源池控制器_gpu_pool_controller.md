@@ -9,7 +9,7 @@ profile、canary、现场故障与某次节点状态已归档；实时数量和 
 | 事实 | 唯一来源 |
 | --- | --- |
 | task type、workflow、profile 映射 | `src/domain_config/task_type_registry.py`、worker mapping |
-| GPU artifact/profile contract | `deploy/release-artifacts-v2.json`、同 SHA release manifest |
+| GPU artifact/profile contract | `deploy/module-catalog.json`、操作者指定的精确 digest |
 | controller 与 provider | `ops/gpu_pool_controller/`、`scripts/gpu_pool_controller.py` |
 | RunPod 手工操作 | `scripts/runpod_prod_ops.sh` 与 provider operation store |
 | LAN 候选 catalog | `ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` |

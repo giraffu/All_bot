@@ -91,8 +91,6 @@ COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY scripts/runpod_prod_ops.sh scripts/gpu_pool_controller.py /app/scripts/
 COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py
-COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py
-COPY scripts/release_strategy.py /app/scripts/release_strategy.py
 RUN chmod 755 /app/scripts/runpod_prod_ops.sh
 CMD ["gunicorn", "dashboard.backend.main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
 

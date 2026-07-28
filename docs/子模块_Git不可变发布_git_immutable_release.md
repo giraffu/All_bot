@@ -1,290 +1,65 @@
-# Git + 不可变镜像发布
+# 独立模块不可变发布
 
-## 1. 状态与边界
+## 原则
 
-截至 2026-07-16，发布 schema v2 在三条 artifact track 之上增加按模块风险分级的策略层。仓库实现不等于任何运行态已晋级；每次正式部署、GPU mutation 或 Cloudflare Pages mutation仍需当次明确授权。不可变产物、全量只读 preflight、跨阶段事务、逆序恢复和非目标服务不重建继续保留。
+发布资格由操作者的实际测试结果决定，系统不设置发布门禁。系统只保证：
 
-2026-07-16 起，正式 Dashboard 的 LAN AIO 基础控制属于不可变配置契约：prod overlay 固定 SSH runner，`deploy/env.schema.yml` 要求 runner host 与宿主 key 目录，Compose 只读挂载精确 `id_ed25519`，并默认连接本地主 Tailscale 地址上独立 OpenSSH 2222 端口，不占用 Tailscale SSH 22 端口。cloud preflight 校验 key 可读且权限为 `600`，还必须真实连接 runner 核对 helper、正式 env 和模型缓存 env 可读。缺项必须在 env/Compose/preflight 阶段阻断，生产后端也不得静默回退到容器内 local helper。相关 Compose/env/release preflight 变更不是 Dashboard fast-track allowlist，首次修复必须走普通测试与正式晋级；之后纯 Dashboard 代码更新仍可使用既有 fast-track，但不得绕过该运行时契约。
+1. 从操作者指定的完整 Git SHA 构建明确模块；
+2. 部署精确 digest 到明确环境和目标；
+3. 检查目标模块的执行结果；
+4. 失败时只恢复该目标的上一 identity（migration 除外）。
 
-旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
+发布器不读取 CI、Git diff、main ancestry、test evidence、approval、bundle、
+其它模块状态或 GPU baseline。并发写入协调、focused tests、test 人工验收都
+不是发布门禁。
 
-## 2. 事实源
+## 模块目录与构建
 
-| 事实 | 文件/位置 |
-| :--- | :--- |
-| CI 构建 | `.github/workflows/control-plane-release.yml` |
-| 影响分析 | `deploy/release-policy.yml` |
-| 配置契约 | `deploy/env.schema.yml` |
-| Web 公开运行时配置 | `frontend/runtime-config.yml` |
-| 公共控制面 | `deploy/docker-compose-cloud-base.yml` + test/prod overlay |
-| 公共 Worker | `deploy/docker-compose-worker-base.yml` |
-| 发布 CLI 兼容门面 | `scripts/release.py` |
-| 发布稳定契约与 I/O seam | `scripts/release_contracts.py` |
-| schema-v2 纯请求策略 | `scripts/release_planning.py` |
-| 风险策略 | `scripts/release_strategy.py` |
-| GPU release rollout | `scripts/gpu_release_rollout.py` + RunPod/LAN operator |
-| 主机首次准备 | `scripts/bootstrap_release_host.sh` |
-| 状态 | v2 为 `/var/lib/allbot/deployments/<env>/<track>/current.json` 与 `history/`；事务仍记录在 `transactions/<sha>.json` |
-| 私密配置 | `/etc/allbot/test.env`、`/etc/allbot/prod.env`，`600 deploy:deploy` |
-
-发布工具采用渐进式拆分，不改变现有 CLI、JSON 输出和发布语义。
-`ReleaseCommand`/`ReleasePlan` 是不可变的公开投影；`ReleaseDependencies`
-集中声明 manifest/state 读取、命令 runner、SSH 和恢复等待等 I/O 能力。
-`build_plan`、cloud target 与 recovery validation 接受显式 dependencies，
-旧调用仍使用调用时组装的默认 adapter。新测试应从这些公开 seam 注入 fake；
-旧的模块级 private monkeypatch 只作为尚未迁移测试的兼容方式。计划请求中不
-触发 I/O 的互斥模式校验由 `release_planning.validate_v2_plan_request` 负责。
-
-## 3. 构建契约
-
-CI release index 记录 `validation.mode=full|build-only|promoted`。新批次使用 `full`：批次 PR 合入 main 后，上游 main CI 全绿才触发一次模块构建；`build-only` 明确记录 tests skipped，只能经合法 direct/emergency、显式 `--skip-gate ci-tests` 与原因消费；`promoted` 仅用于读取旧 candidate promotion 历史。
-
-并发槽位不再发布独立 candidate。功能分支 handoff 后由集成 AI 一次组合为 release batch，只创建一个 main PR。main bundle 固定发布到 `ghcr.io/giraffu/allbot-release-v2:<main-sha>`；`.github/workflows/modular-release-v2.yml` 通常监听成功的 main push CI，不监听 test-train，也不在 PR 阶段发布容器。同一 main SHA tag 不可覆盖。
-
-GitHub 未投递 main push workflow 时，允许对当前受保护 main 精确 head 手动运行 `Immutable control-plane release` 作为事件通道恢复。模块化 workflow 不信任事件结论本身：`scripts/validate_upstream_ci_run.py` 使用 GitHub Actions API 核对 run repository、workflow name/path、event、main branch、精确 SHA、completed/success，并要求 Web、Dashboard、PostgreSQL 与九个 Python shard 全部成功；目标 SHA还必须等于当时 `origin/main` head 且可达。任一缺项、失败 job 或陈旧 SHA 都在镜像构建前阻断。该恢复不改变 Modular workflow 自身的手动入口：它仍只能选择 `build-only`，不能宣称完整测试。
-
-用户要求测试时，`release.py` 把该 main bundle 的精确 digest/checksum 部署到云测试；standard artifact 经 `verify-test` 写入 main-channel retained history。生产 standard preflight 按 artifact 名称和 exact digest 查找这份 evidence；direct/emergency 只能按风险策略显式豁免，不能伪装 tested。旧 test-candidate、approval 和 promotion artifact 继续可读以支持历史回滚取证，但不再创建新记录。
-
-受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
-
-GPU 首次聚合按六个实际 runtime 构建、八个发布 profile 记录：`image_to_video` 与
-`wan22_video_v2` 复用同一 Wan22 镜像，`pornmaster_flux2_edit` 与
-`pornmaster_flux2_edit_bf16` 复用同一 PornMaster 镜像，但各自必须使用独立模型
-manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
-`.github/workflows/runpod_img2img_profile_image.yml`；其它 runtime 使用对应的
-`runpod_*_profile_image.yml`。v2 catalog 的 `task_types` 必须等于运行时真实声明，不能
-用 Dashboard profile 名替代 Central task type。
-
-发布 v2 release bundle 本身不创建 RunPod，也不要求八个 profile 同时完成业务 canary。
-如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA attestation manifest，
-聚合器不得复用旧 digest。受保护 main 只要本轮包含 GPU rebuild，就必须从 OCI
-`allbot-gpu-release-manifests:<full-sha>` 读取完整证明，
-否则在 main bundle tag 创建前 fail closed。已有可信增量基线时，artifact catalog 通过前后版本逐 artifact 语义比较，只重建定义变化的 artifact 及其真实 base descendants；控制面、Public Web、文档和发布工具变化不会自动调度 `gpu-execution`。只有缺少可比较旧 catalog 时才 fail-safe 全量重建。GPU artifact/profile、`workers/runpod_runtime/**`、`workers/runpod_profiles/**` 或真实 GPU 基础依赖变化继续走独立 manifest、canary 和 operator 门禁，避免旧镜像被新 metadata 伪装。GPU evidence 分为强制 artifact attestation（digest、OCI revision、baked agent/workflow revision、模型 manifest checksum）和可选业务 canary。direct 接受 attested artifact；standard 仍要求 canary-verified。CI 会沿
-main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
-不会导致下一次无条件全量重建。
-
-各 profile 用 `scripts/gpu_profile_release_v2.py` 逐项合并证明；最后一项补齐后可传
-`--publish-ref ghcr.io/giraffu/allbot-gpu-release-manifests:<full-sha>`。helper 只允许
-`completeness=complete`、manifest/artifact 同 SHA、SHA tag 且远端 ref 尚不存在时推送。
-若本地 GitHub token 没有 `write:packages`，不得换临时 tag 或使用参数注入绕过；应把完整
-manifest 的 base64 与文件 SHA256 交给受保护的
-`.github/workflows/publish-gpu-release-manifest.yml`。该 workflow 仅接受 `origin/main`
-可达的完整 SHA，在 Actions `packages:write` 身份下重复执行同一 helper 的完整 catalog、
-同 SHA、内容 checksum 和不可覆盖校验。
-
-`release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
-
-## 4. 配置
-
-代码发布不修改真实 env。本机 env 不参与云控制面配置 revision；发布器只在目标主机读取权限为 `600` 的 `/etc/allbot/<env>.env`，并先合并版本化、非敏感的 `deploy/env.defaults`。`deploy/service-env-contract.yml` 把结果投影为 `/var/lib/allbot/config/<env>/<revision>/<service>.env`，每个容器只注入自己的数据库、Redis、Token、存储、功能开关和所需环境中立默认值。`release.env` 仍按 track 保存于 `/var/lib/allbot/releases/<track>/<sha>/release.env`，但只包含 release/main/source SHA、精确 digest、配置 revision、投影根路径及非敏感 RunPod pin；禁止保存秘密。
-
-`ALLBOT_ENV` 必须是 `test|prod`，`BOT_TYPE` 由它派生且冲突立即退出。主 Bot、QQCC、Dashboard、Central 与 Web API 不自动 `load_dotenv()`，不读取 `_TEST` 别名，也没有明文 secret、password、bucket、外部 URL 或数据库/Redis fallback。显式本地开发必须由操作者先加载一份受限 dev env，再启动程序，容器入口不会寻找仓库 `.env`。
-
-同一可运行服务镜像必须可由 test/prod 宿主投影解析为两个环境。`.dockerignore` 必须同时排除根目录和任意子目录的 `.env`/`.env.*`、私钥和 SSH 材料，不能让目录级 `COPY` 把开发示例带入镜像；Dockerfile/镜像 `Config.Env` 不得包含环境身份、数据库/Redis、Token、对象存储、bucket、外部域名或 Bot 用户名。`scripts/validate_release_environment_neutral.py` 在 main CI 构建前扫描上下文、运行源码与 Dockerfile，构建后扫描真实 Image Config.Env、应用目录中的 `.env`/密钥文件与 Web dist，并对同一可运行 Python service digest 注入 test/prod 哨兵身份做真实 import；不包含应用源码的 `python-runtime-base` / `python-worker-base` 仍接受 Config.Env 和文件系统扫描，但不伪装成可启动服务。Dashboard/QQCC Backend 的入口 smoke 同样必须显式注入合成逐服务配置，不得依赖镜像默认值，错误只报告变量名。Public Web tar 只包含环境中立字节，部署时独立生成 `allbot-runtime-config.js`。
-
-若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 main bundle 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
-
-test/prod overlay 不再写 `BOT_TYPE`、`API_BASE_TEST` 或环境专属 API fallback；这些值来自各自主机投影。服务投影包含自己的 `ALLBOT_CONFIG_REVISION`，因此相同镜像 digest 在两套环境中保留独立配置身份。
-
-远端发布脚本通过 SSH stdin 交给 `bash -s`。Compose v2 的 `exec -T` 只关闭伪终端，并不保证关闭 stdin；如果不重定向，队列检查可能把后续 pull/up/校验脚本全部读走并以 0 返回。发布器因此要求脚本内所有 `docker compose exec/run` 使用 `</dev/null`，脚本末尾输出绑定 SHA 的完成标记，并在标记前逐服务核对容器 `.Config.Image` 与 manifest digest、自有镜像 OCI revision。缺标记、digest 或 revision 任一不一致都不得写部署状态，也不得作为生产晋级依据。
-
-配置只读计划与原子应用：
+事实源为 `deploy/module-catalog.json`。每项记录 adapter、build target、必要
+base、repository、部署目标、环境支持和结果检查。模块独立构建、部署，不生成
+全局 release index，也不因 changed paths 扩大集合。
 
 ```bash
-python scripts/release.py config-plan --env test
-python scripts/release.py config-plan --env prod
-python scripts/release.py config-apply --env test --execute
-python scripts/release.py config-apply --env prod --confirm-prod --execute
+python scripts/release.py build \
+  --module payment-api \
+  --sha <40位main-sha>
 ```
 
-`config-plan` 只返回变化键名、受影响服务与 revision；不返回任何值。契约未识别的宿主键影响全部服务，强制完整维护、数据库备份与单 Alembic head；内部 contract revision 只用于计算 environment revision，具体影响服务由真实配置键和逐服务 revision drift 决定。`config-apply` 原子激活新投影并只重建消费者；首次切换额外备份原 env 与数据库。失败时恢复旧投影和旧 `release.env` 后重建旧服务，任一恢复步骤失败都保留维护。
+`--module` 可重复。发布器创建临时干净 worktree，用本机 buildx/GHCR 构建并
+push，仅递归必要 base。已有同 SHA 产物时复用并返回精确 digest；外部镜像只
+解析 digest。完整 SHA 是构建输入标识，不是 ancestry 门禁。
 
-所有具有容器 env 契约的独立模块都可先执行 `config-plan --env <env> --module <name>`，确认影响集没有逃出模块闭包，再以同模块 `config-apply` 暂存目标投影。日常 `promote` 本身只校验所选模块闭包与全部既有非目标投影，不自动修改配置；发现漂移会在 pull/up/Pages 前阻断。支持 `central-api`、`web-api`、`payment-api`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker` 与 `paid-group-bot`；imgproxy/Public Web 没有容器 env 投影。局部配置入口先完整校验 active state，再只重建目标和当前环境仍适用的 active 投影；当前环境已退役或契约未知的历史非目标投影按相同 revision 与原始字节复制到新快照，不清理、不改写。局部入口保留不可变 history，默认不调用 Compose、不重启容器。若目标镜像 digest 未变化、普通晋级因 live-exact 判定不会重建进程，可在投影已暂存且 `drift=false` 后显式执行 `config-apply --env <env> --module <name> --activate-staged --service <exact-service> --execute`（生产额外要求 `--confirm-prod`）；服务必须属于模块闭包，执行只滚动重建该服务并逐一核对非目标容器 ID、镜像与启动时间，不写维护标记，失败时原子回滚配置指针并以旧 `release.env` 恢复目标服务。
-
-RMB 创建支付链接的 `HUANYUY_*` 六项配置同时是 `payment-api`、`web-api` 和 `main-bot` 的必填投影：Payment API 承载公网入口与回调，Web/Bot 则在创建链接的调用点直接消费同一套配置。任一目标投影缺失时必须在配置阶段 fail closed，不得以 Payment API 自身健康作为 Web/Bot 配置完整性的替代证据。
-RMB 主动查单只属于 `payment-api`：`RMB_RECONCILIATION_ENABLED=true` 时
-`HUANYUY_QUERY_URL` 条件必填并进入该服务投影；默认关闭时不得因查询 URL
-缺失阻断其它服务。启用前必须用稳定服务端接口完成只读契约验证，不能把常见
-易支付路径猜测或商户后台页面当作配置事实。
-
-主 Bot 的 `REQUIRED_CHANNEL_ID` 同样是精确必填投影，只属于 `main-bot`。它驱动 Telegram `getChatMember`、频道成员状态同步、凡人晋级和签到资格；`CHANNEL_INVITE_LINK` 只是展示链接，不能替代频道 ID。该键不得进入可忽略 legacy 清单，宿主缺失时配置投影必须 fail closed。契约变更后，正式 main-bot 更新先显式执行同模块 `config-plan/config-apply` 刷新投影，再执行受控发布；`promote` 不会隐式改写配置。
-
-公共云 Compose 的逐服务 `env_file` 使用长语法 `required: false`，只为允许 Compose 在局部模块发布时解析尚无投影的非目标服务；同时使用 `format: raw`，确保密码 hash、Token 等配置中的 `$` 按原始字节进入容器而不被 Compose 插值。这不是容器运行时的缺配置豁免。发布器在任何 pull/up 之前仍通过目标模块 service closure 严格生成、校验并核对目标投影 revision，目标投影缺失或必填键缺失立即失败。非目标容器不执行 `up`，且事务会逐一核对其启动时间不变。发布后的跨服务 smoke 从各目标容器真实导入 `config.API_BASE` 并请求其 `/health`，不得把 test/prod 的 Central 服务别名硬编码到通用发布器。当前正式 Compose 的 project service DNS 是 `central-api`；历史 Dashboard 投影中的 `central-api-prod` 不可解析，因此 Dashboard-only rolling 由 prod overlay 把 Dashboard Backend 精确覆盖为 `http://central-api:8003`，不修改或重启其它正式服务，完整宿主配置收敛留到独立窗口。该 Compose 内容以精确 checksum 纳入 owner-only snapshot，任一后续改动重新成为共享契约 blocker。
-
-数据库备份在容器 `/bin/sh` 中执行；migration 的临时 PostgreSQL client 以 `--network container:$web_container` 共享当前 Web 容器网络命名空间，使 `postgres-test`/正式 Compose DNS 在备份时保持可解析，但不把数据库端口暴露到宿主。URL scheme 转换只使用 POSIX `case` 和 `${VAR#prefix}`；仅接受 `postgresql+asyncpg:` 或 `postgresql:`，其它 scheme 在 `pg_dump` 前 fail closed。不得依赖 Bash 专属替换语法，也不得在备份门禁失败后手工跳过继续激活。
-
-GPU/Worker 配置与控制面配置为两条独立发布链。`deploy/service-env-contract.yml` 将 `ALLBOT_WORKER_*`、`CLOUD_TEST_WORKER_*` 和 `CLOUD_TEST_SHARED_AIO_*` 标记为控制面契约外部键：它们仍原样保存在受限宿主 env 中，但不进入控制面 environment revision、逐服务投影、漂移或影响集。因此单独修改 Worker 镜像、槽位或开关不得触发 `config-apply` 或重建主控制面。Dashboard 真实消费的 `RUNPOD_*` / `LAN_AIO_*` 仍属于 Dashboard 服务投影，非 Worker 的未知键仍影响全部服务并 fail closed。
-
-错误只输出变量名，不输出值。Worker 槽位由 `ALLBOT_WORKER_SERVICES=worker-01,...` allowlist 决定；当前支持 `worker-01` 至 `worker-08`，发布器只重建该列表，未启用 canary 不会被顺带启动。每个选中槽位必须提供对应 `ALLBOT_WORKER_XX_*` 的 endpoint、任务类型、node/GPU/runtime profile 与 prefetch/pipeline 契约；08 号槽位另外保留 SCAIL-2 workflow/face-swap 配置。
-
-控制面影响分析只允许扩大依赖集合，但可选 Bot 的运行态还必须服从已校验配置：没有本环境 canonical `QQCC_BOT_TOKEN` 时不启动 `qqcc-bot`，`PRIVATE_QQCC_BOT_ENABLED` 未明确开启时不启动私有 Bot worker，没有 `PAID_GROUP_BOT_TOKEN` 时不启动付费群 Bot。`plan` 同时输出 `cloud_services` 与 `disabled_cloud_services`；该过滤白名单只覆盖这三个可选 runtime，不能借配置缩小 API、数据库、Redis、主 Bot 等核心依赖闭包。
-
-测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 生成候选文件：`--source` 必须是云测试当前 `/etc/allbot/test.env` 的受限副本，作为控制面配置事实源；只收敛控制面时必须使用 `--control-plane-only`，它只把 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等已知旧别名复制到 canonical key，在已有 canonical 值时保留原值，并为旧自建 Telegram `:8081` API 生成对应 `:8082` file endpoint；不识别的 endpoint 必须显式配置而不猜测。该模式完整保留已有 Worker 选择和槽位值，不接受 `--worker-source`。需要单独迁移测试 Worker 时，`--worker-source` 可指向本机旧 `.env.cloud.test`，只补 Worker 槽位参数，不能用旧本机配置覆盖云端新增项。脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，补齐测试 admin/owner 非敏感 Host，且只输出计数不输出值。候选必须再经 `scripts/release.py validate-env` 和选中边界的 Compose `config -q`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
-
-## 5. 标准流程
-
-### 风险策略
-
-| 风险类 | artifact | auto 策略 | 测试要求 |
-| :--- | :--- | :--- | :--- |
-| critical | Central、Web API、Payment、主/QQCC/私有/付费群 Bot、imgproxy | standard | 同 artifact digest 测试、验收、观察；可显式 emergency |
-| owner-tools | QQCC Config 前后端 | standard | 专属测试实例按精确 digest 部署、验收与观察 |
-| owner-tools | Dashboard 前后端 | direct | 测试环境无 Dashboard，状态记 waived |
-| public-web | Cloudflare Pages Web tar | standard | 精确 tar checksum；可显式 direct |
-| execution | test Worker、正式 GPU profile | direct | 测试 Worker 按需；GPU 强制 attestation、canary 可跳过 |
-| locked | migration、部署/Compose 契约、未知路径 | standard | 不允许 direct/emergency |
-
-普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从组内每个已部署 artifact 的 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，因此前后端混合版本无需伪造共同 SHA。目标 SHA 上其它新产物不扩入，非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、未知共享 Compose/env 和未审计跨模块契约仍拒绝独立发布；`independent_additive_migration_snapshots` 只允许目标模块自己的精确增量迁移并继续 DB upgrade，`independent_non_target_migration_snapshots` 只允许明确属于其它模块的精确 migration 跳出本模块差异且不得执行 Alembic，两者都按模块/路径/内容 SHA256 fail closed。`independent_contract_snapshots` 只识别内容 SHA256 已固定、已证明 owner-only 或向后兼容的精确契约版本。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
-
-增量空集判定以正式实际容器 digest/健康/config revision 与 Pages canonical deployment 为准，不只相信 state 或 artifact `source_sha`。全部目标精确一致时 `promote` 直接返回 `no-change`，不准备面向 mutation 的回滚材料；缺失或漂移的完整模块才进入事务。
-
-QQCC 后台独占 LTX 目录把 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 作为同一份受审计 snapshot 契约。只有两者都精确匹配 `deploy/release-policy.yml` 的内容 SHA256 时，才允许分别执行 `qqcc-config` 两服务与 `qqcc-bot` 单服务的 target-only rolling 事务；任何内容漂移都会重新触发共享契约 blocker。
-
-并发任务先 handoff，再由集成 AI 冻结为一个 release batch 和一个 main PR；A-H 功能工作区不得直接运行发布器。main bundle 构建成功且用户要求测试后，统一通过 `scripts/release.py` 部署。详细 handoff、批次与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
-
-测试默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 按需选择 `test-execution`；未启用时不得写入 acceptance。QQCC Config main artifact 部署专属测试前后端；Dashboard-only 不修改共享测试站。共享构建输入导致同一 bundle 同时包含 Dashboard 与 QQCC Config artifact 时，test preflight 过滤测试环境不存在的 Dashboard 服务，但继续部署并验收 QQCC Config。若 artifact/service 选择集为空，不运行空 preflight/deploy。
-
-`test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
-
-v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env>/transactions/<track>/<sha>.json|.state.json`。control-plane 与 test-execution 即使目标 SHA 相同也不得复用 journal；Worker 的 `initial-release` 只驱动 legacy Agent/Relay 切换，不能注入控制面首次迁移的 Postgres/Redis。升级前已经产生的无 track 失败 journal 仅允许由精确 `recover --track <track>` 兼容读取并收口，恢复写回新的 track-scoped journal，禁止手工删除 journal 或 maintenance marker。
-
-`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
-
-2026-07-23 起，`plan`/`preflight` 输出短效 `plan_token`，绑定环境、完整 SHA、track/module/service、策略、skip gate 与 manifest/Web/policy/schema checksum。preflight/deploy 复用 token 时不再重复候选解析、GitHub CI 和已通过 evidence，但仍重新执行一次目标配置只读检查；10 分钟过期、参数或配置 revision 变化均 fail closed。自动集成协调器会把 plan token 传给 test deploy。strict SSH 脚本实时输出 candidate/config/pull/backup/migration/replace/health 阶段心跳并写无敏感耗时，失败 journal 记录脱敏阶段/原因；Alembic `heads` 与 `upgrade` 都用 `compose run --no-deps`。普通 test/prod 容器若 exact ref、RepoDigest、OCI revision、逐服务配置 revision 与健康全部一致，发布器在 rollback preflight 前返回 `no-change`，不 pull、不替换。
-
-发布工具本身不再伪装成零测试的 lightweight：classifier 将 `release.py`、runtime env contract、上游 CI 校验、change classifier 与自动集成协调器归为 `release-tooling`，只运行发布专项回归，仍不构建 bundle或部署环境。GitHub jobs API 的短暂最终一致性只对“预期成功 job 尚未出现/完成”做固定次数重读；repository、workflow/path、event、branch、SHA 等安全身份不匹配立即失败。
-
-正式维护默认由 artifact 分类确定：`central-api`、`web-api`、主 Bot、QQCC Bot、私有 Bot worker 任一进入集合，整次事务开启生成维护；Dashboard、QQCC 配置后台、Payment、Paid Group Bot、Public Web 单独发布不进入生成维护。用户明确决定所选模块不进入维护时，`promote --modules <...> --no-maintenance` 把 forward rollout 改为 rolling，并在预览和事务记录 `maintenance_required` / `maintenance_waived`；该决定随同一次 `--confirm-prod` 生效，不再二次确认。migration 只有在同一命令额外提供 `--confirm-db-upgrade` 时才能豁免生成维护，执行配置仍为 strict，并继续数据库备份、单 Alembic head、`upgrade head`、事务日志和失败恢复；Compose/发布契约、首次切换、blocker 和未知影响不可豁免。失败补偿仍可启用维护以保证恢复。
-
-control-plane 代码发布无论 `streamlined` 还是 `strict`，都先按 test/prod 实际可用服务裁剪影响集合，再只构造目标服务闭包并验证 current projection 的文件、权限、字节和 revision；migration 始终保持 strict 的备份、单 head Alembic、事务日志和完整恢复，默认同时启用维护与 drain，只有显式模块发布同时给出 `--no-maintenance --confirm-db-upgrade` 才跳过 forward maintenance/drain。该豁免不会因历史测试 Dashboard/Support 投影退回全 catalog 配置检查，也不能扩大目标服务闭包。非目标 active state 中的未知历史名称或 drift 不阻断无关模块；影响目标的未知宿主键、目标缺键、篡改或 revision 漂移仍 fail closed。目标检查同时报告宿主候选 revision 与当前 `effective_environment_revision`，发布状态只能记录后者。代码发布不激活或重写配置；全量 `config-plan/config-apply` 报告并清理当前环境不再适用的 `retired_services`，模块级 apply 则在完整 active state 校验通过后原样携带这些非目标历史投影，禁止借局部入口清理或改写。共享 Compose/env 只有内容 SHA256 精确等于已审阅 snapshot 时才可随模块通过；任一字节变化立即恢复 blocker。
-
-main 控制面 bundle 必须携带完整 `gpu-execution-manifest.json`，供 Dashboard 把每个 RunPod profile 解析成精确 `image@sha256`。当本批次没有 GPU 输入变化时，模块化 CI 从目标 main 的全部祖先中选择最近的完整、不可变 main-channel GPU manifest，原样继承每项 digest、artifact source SHA、OCI revision 与模型证据；历史 manifest 只需覆盖它产生时的完整 catalog，并且必须是当前 catalog 的非空子集，因此新增 profile 不会反向要求祖先包含尚不存在的 artifact。当前 SHA 可以发布只含实际变化 profile 的 truthful incomplete evidence manifest，`missing_artifacts` 必须精确等于当前 catalog 差集；bundle assembler 再把它与祖先 baseline 合并为完整 pin 集。该过程只构建变化 profile，不测试、不部署其它 GPU，也不把历史镜像改写成当前 SHA。手动 full replay 可用受限的 `release_artifact` 选择单个已登记 control-plane artifact；当前 workflow allowlist 只开放 `qqcc-bot` 与 `payment-api`。该模式要求已有 bundle、复核同 SHA 的可信上游 CI，并只重建目标及其 base。累计 Git diff 中其它 GPU catalog/profile 变化不进入本次构建计划，完整 GPU pin 索引继续从可信基线继承；选择 GPU、test-execution、external 或未知 artifact 必须 fail closed。环境中立门禁只扫描 artifact 自身构建 SHA 对应的新增镜像，并按 exact ref 聚合共享 profile；每个唯一镜像只 pull/config/filesystem 一次，文件树用停止容器的定向 `docker cp` 检查应用目录，不再 `docker export` 全部模型/系统层。继承镜像继续复用原构建 CI 证据，过滤 SHA 必须等于当前 release index SHA。非定向发布中，若某 profile 的 Dockerfile、专属目录、公共 runtime 或其它真实输入发生变化，历史基线不能满足它，仍须当前 main SHA 的专用 GPU attestation/canary；catalog 的 `inputs` 只属于影响面规划元数据，单纯把过宽 glob 收窄不制造新镜像 revision，但其它 catalog runtime/profile 契约变化仍触发重建。找不到可信祖先、evidence 差集失真或出现 mutable/mismatch ref 时，main bundle 在发布前阻断。
-
-当 GPU catalog 删除退役 profile、导致旧 release bundle 的 profile 键集合不再等于当前 catalog 时，模块化 CI 可继续从 main 祖先的独立 `allbot-gpu-release-manifests:<full-sha>` 查找基线。该回退仍要求 manifest source SHA 等于祖先 tag、`completeness=complete`、`missing_artifacts=[]` 且 artifact 键与当前 catalog 完全一致；不接受分支外 SHA、mutable tag 或部分 manifest。
-
-若自动 full release 在同 SHA GPU evidence manifest 发布前已 fail closed，可手动重放该 source SHA，但必须同时提供原始成功的 `Immutable control-plane release` run ID。workflow 会再次验证 run conclusion、精确 source SHA、当前 main 祖先关系与 change scope；没有可信 run ID 的手动入口仍只能生成 `build-only` artifact。当前 SHA 的 evidence 可以是完整集，也可以是与可信祖先 baseline 互补的变化子集；两者合并后仍必须完整覆盖当前 catalog。
+## 部署
 
 ```bash
-scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
-scripts/release.py preflight --env test --track control-plane --sha <40-char-sha>
-scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> --execute
-
-scripts/release.py plan --env test --track test-execution --sha <40-char-sha>
-scripts/release.py preflight --env test --track test-execution --sha <40-char-sha>
-scripts/release.py deploy --env test --track test-execution --sha <40-char-sha> --execute
-
-scripts/release.py verify-test \
-  --sha <40-char-sha> \
-  --manifest release.json \
-  --evidence test-acceptance.json \
-  --execute
-
-# 日常正式入口：自动锁定最新 main bundle、识别运行态差异并确认一次
-python scripts/release.py promote --confirm-prod
-# 部分模块或固定候选
-python scripts/release.py promote \
-  --modules dashboard,qqcc-config --sha <40-char-main-sha> --confirm-prod
-# 用户已明确决定 QQCC Bot 本次不进入默认生成维护：
-python scripts/release.py promote \
-  --modules qqcc-bot --sha <40-char-main-sha> --no-maintenance --confirm-prod
-# 去掉确认只输出精简预览，不执行生产 mutation
-python scripts/release.py promote --modules qqcc-bot
-
-# 独立轮换窗口完成全部 test/prod 隔离和 Worker 验证后，受控关闭过渡状态
-python scripts/release.py credential-isolation-complete \
-  --evidence <value-free-isolation-evidence.json> \
-  --confirm-prod --execute
-
-# 高级/兼容入口继续存在，但 migration、共享/未知契约、emergency、
-# 跳门禁和 recover 才应使用，不属于日常 SOP；秘密轮换状态仅作审计。
-python scripts/release.py deploy --help
-python scripts/release.py recover --help
+python scripts/release.py deploy \
+  --env test --module payment-api \
+  --artifact ghcr.io/example/payment-api@sha256:<digest>
 ```
-
-`promote` 的模块名只接受公开完整组，逗号组合后配置闭包取并集；每个模块独立匹配共享契约 blocker，不能用组合名称绕过。普通高级模式下 `--services` 仍只能扩大自动集合；Worker、migration、未知路径与 GPU 专用链路保持原门禁。
-
-`deploy/docker-compose-worker-base.yml` 只描述独立 Worker 槽位，不参与云控制面目标容器的 Compose 合约；根 `deploy/docker-compose.yml` 只保留本地/兼容 Compose 入口，也不参与云控制面目标容器替换。两者都以 `independent_contract_snapshots` 的精确内容 SHA256 允许独立模块跨越已审阅且内容未变的共享契约；任一文件任一字节再次变化都会恢复 `shared-compose-contract` 阻断，必须重新审阅并更新快照。这些快照不允许发布器启动、停止或替换非目标 Worker/GPU/控制面服务。
-
-standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified。
-
-`dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
-
-当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须选择同一模块集合和同一 digest。
-
-若唯一云测试站仍运行历史 test-train candidate，可在一次迁移期间使用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该兼容 policy 只允许 test，生产显式拒绝；新批次完成 main 部署后不再使用。
-
-普通 streamlined 云测试部署在目标 health/API_BASE/polling smoke 成功后，自动按 artifact + exact digest 向 `current/history` 写入 `verified` evidence，并记录真实开始/完成时间和自动化来源。正式 standard 从 retained history 复用相同 artifact/digest，不要求全局 SHA 相同；direct 只校验 bundle full/passed。`verify-test` 保留作专项人工补充，仍校验时间顺序、未来时间、适用 smoke、SHA/digest、Web checksum 与测试运行态，禁止伪造时间或直接编辑状态。
-
-streamlined 的 Compose 运行契约以每个当前目标容器的 `com.docker.compose.project.working_dir` 与 `config_files` labels 为事实源：每个目标都必须独立指向受控 `/home/deploy/APP/All_bot-release/releases/<40位SHA>/deploy`，且各自文件集合必须精确为该 checkout 的 cloud base + 当前环境 overlay。独立模块分次晋级后，不同目标合法地来自不同历史 checkout；发布器从已核验目标中选择一个 checkout 作为本次 Compose seed，逐目标记录当前 exact image ref 供回切，再执行单次目标集合替换。artifact `source_sha` 只表示镜像构建来源，发布器不得拿它拼接 checkout 路径。任一目标标签不一致、越出受控根目录或契约文件缺失都会在 pull 前 fail closed。
-
-`scripts/classify_ci_change.py` 区分三类路径。纯 docs、Skills、tests、AGENTS/README、`.github/**`、release policy、测试验收样例与精确仓库治理脚本为 `lightweight`：上游跳过全量模块测试，main 后继 modular workflow 不创建 bundle。仅包含 `ops/gpu_pool_controller/**` 与明确 RunPod/LAN operator/helper 的变更为 `operator`：上游只跑 `tests/ops tests/scripts`，不运行 PostgreSQL、Web、Dashboard 前端或其它 Python 分片；main 后继仍创建模块化 bundle，以便真实镜像输入变化得到不可变 artifact。LAN 宿主 helper 没有 artifact，最小更新模块为零；Dashboard 内置 controller/rollout 最多重建 `dashboard-backend`。`workers/runpod_runtime/**`、`workers/runpod_profiles/**`、`deploy/release-artifacts-v2.json` 中的 GPU release artifact/profile、镜像 Dockerfile/基础依赖、业务代码、migration、Compose、运行配置、未知路径或混合变更仍为 `runtime`，恢复完整 CI 与对应 GPU attestation/canary。三类路径都必须经受保护 main，且都不自动部署测试/正式环境。
-
-管理后台是 owner-tools：QQCC Config 因已有专属测试实例而 auto 默认 standard，Dashboard 仍 auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 只声明 QQCC Config 前后端覆盖，Dashboard 不进入测试站；公共 base 继续用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
-
-`--control-plane-repair-fast-track` 不是通用免测入口，只用于 verified main-channel 控制面之后修复生产启用、测试禁用的 `private-bot-worker` 镜像闭包。发布器以测试状态 SHA 为基线重新计算路径差异；只接受 `Dockerfile.control-plane`、v2 artifact catalog 与配套 release/docs/tests/skills 元数据。对其它 digest 变化模块，catalog inputs 必须无变化且对应 Docker target 文本逐字等价；private worker 必须包含 `qqcc_bot/` 与 `qqcc_private_bot/`，并对目标 digest 执行 `--network none` 导入烟测。业务代码、migration、Compose、GPU/ops、未知路径以及显式 `--modules` / `--services` / `--from-sha` 全部拒绝。通过后状态记录 tested/target SHA、等价 artifact 与实际 smoke artifact；main/CI/env/preflight/生产确认/回滚事务仍保持原门禁。
-
-release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；当它同时带显式 `--from-sha` 且没有 `--state-file` 时，previous SHA 直接取该参数，不读取远端 `current.json`。显式 state-file 仍会读取，`deploy`/`rollback` 一律拒绝该参数。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
-
-本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。云测试 Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机测试配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。正式 GPU Worker 由各 GPU host 独立发布，不进入 `release.py --env prod`。
-
-## 6. Web、Worker 与回滚
-
-- 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。release checkout 可以没有 `frontend/node_modules`；发布器交叉校验 `package.json`、lockfile 根依赖和 lockfile 已解析项中的精确 Wrangler 版本，并用 `npx --yes --package=wrangler@<exact>` 执行，版本漂移或 lockfile 不一致一律阻断。
-- Pages Token 默认读取 `~/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Read/Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。
-- Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
-- 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，并在事务提交时原子移动到对应 track 的 `current/history`，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
-- CI 继续生成同 SHA 的可选测试 Worker digest；`workers/comfy_agent` 只属于 `test-execution` 专项链。生产 GPU profile 镜像烘焙 `workers/runpod_runtime`，由 GPU host operator 从 release index 解析精确 digest 后逐槽切换；单槽先 disabled 验证实际 image/OCI revision/进程/heartbeat，失败恢复该槽旧 image 并停止。禁止整机重启、跨槽批量清理、现场 build 或源码同步。
-- RunPod `image_to_video` / `wan22_video_v2` 的生产请求构造器只允许兼容旧 RIFE tag，或同一 canonical GHCR 仓库的完整 SHA256 digest ref；`rollout-release` 和 exact rollback 不能被 tag-only allowlist 阻断，也不得因此放宽为任意 tag 或仓库。
-- schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/runpod_worker`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
-- 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按本次已确认的维护模式执行“云控制面 → Pages → 状态提交”：默认维护模式在 mutation 前建立生成维护并在成功提交后解除；经用户明确选择且 planner 允许的无维护模式全程不写维护 marker。首次正式切换仍强制同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，不能关闭，也不操作任何 GPU Worker 容器。
-- `promote` 的回滚合约按本次目标服务逐项读取线上旧 image ref、OCI revision 与配置 revision，并写入事务专用 rollback env；因此独立模块的当前 artifact 来自多个历史 SHA 时，不要求伪造一个全局旧 checkout/release.env。普通 `deploy`/`rollback` 仍必须验证其精确旧 SHA 的不可变 checkout 与 release.env。
-- 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
-- 回滚命令读取旧 release manifest/Web tar，不重建；v2 从缓存中的 `release-v2/release-index.json` 与 `public-web-dist.tgz` 取材。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash
-scripts/release.py rollback --env test --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute
-scripts/release.py rollback --env prod --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute --confirm-prod
-
-# 只允许把未完成事务逆向恢复到旧完整栈，不允许续跑失败阶段
-scripts/release.py recover --env prod --transaction <failed-target-sha> --execute --confirm-prod
-
-# 当前独立模块仍运行旧 digest、但其 rollback checkout/release.env 被误删时：
-# 先用 plan 拉取并验证旧 main bundle，再只物化不可变回滚材料。
-# 此模式校验当前目标容器 digest 与旧 bundle 一致，只执行 Git worktree、
-# 原子写入非敏感 release.env 和 compose config -q；不 pull/up/stop/restart，
-# 不写维护标记，也不修改 deployment current/history。test/prod 均支持，
-# prod 仍额外要求 --confirm-prod。
-# 若精确已部署基线早于 RunPod profile pin 契约，只有该恢复模式会把旧的
-# “未固定 profile”语义投影成空 JSON；普通 main Dashboard 发布仍要求完整
-# digest pin。模块因生成入口被分类为 maintenance 也不阻断材料恢复，因为
-# 该入口不启维护、不替换容器，仍须无 migration/blocker/unknown path。
-scripts/release.py plan --env prod --track control-plane --sha <deployed-old-sha> --modules qqcc-bot
-scripts/release.py recover --env prod --track control-plane --sha <deployed-old-sha> \
-  --modules qqcc-bot --repair-rollback-materials --execute --confirm-prod
-scripts/release.py recover --env test --track control-plane --sha <deployed-old-sha> \
-  --modules qqcc-config --repair-rollback-materials --execute
-
-# 测试站不运行 Dashboard。若 Dashboard-only candidate 已成为记录基线，
-# current.json 只需以全局 git_sha 精确指向该 bundle，不要求存在 Dashboard
-# artifact 条目；同一入口会从完整 bundle 展开实际启用的测试控制面服务，
-# 先同时核对 current.json 与运行容器 digest，再物化完整（不是
-# Dashboard-only）的 release.env：
-scripts/release.py recover --env test --track control-plane --sha <deployed-candidate-sha> \
-  --modules dashboard --repair-rollback-materials --execute
-
-# v2 各 track 独立回滚
-scripts/release.py rollback --env test --track control-plane --to <old-sha> --manifest <old-release-index.json> --execute
-scripts/release.py rollback --env test --track test-execution --to <old-sha> --manifest <old-release-index.json> --execute
+python scripts/release.py deploy \
+  --env prod --module payment-api \
+  --artifact ghcr.io/example/payment-api@sha256:<digest> --confirm-prod
 ```
 
-## 7. 首次切换
+一次只部署一个模块。prod 唯一资格确认是 `--confirm-prod`。test 不支持某模块
+时只返回目标不可用，不产生 prod blocker。
 
-`scripts/bootstrap_release_host.sh` 默认 dry-run，并要求显式角色：云控制面使用 `--role cloud-control`，固定 `/home/deploy/...` 且由 `deploy` 账号执行；云测试 Worker host 使用 `--role local-worker-host`，固定当前用户的 `~/APP/...` 与 `~/.config/allbot/...` 边界。正式 GPU host 的独立发布准备遵循对应 GPU/LAN/RunPod operator，不由 prod release bootstrap 代办。`--execute` 只在已有只读 deploy key、Docker Compose v2、受限 GHCR read 凭据和明确授权时使用。脚本不会创建密钥或复制 env；它建立干净 release checkout、禁用 origin push，并归档 legacy compose、容器 image ID 和排除 env/日志/runtime 的混合源码。
+GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
+只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
 
-测试控制面首次切换不是普通 rolling recreate。发布器会把 Postgres/Redis 与应用服务一起纳入初始依赖闭包，测试 overlay 通过显式 external volume 名复用 `deploy_cloud-postgres-test-data` 和 `deploy_cloud-redis-test-data`，并保留 `postgres-test`/`redis-test` 网络别名及旧 `CLOUD_TEST_*` 到运行时变量的映射。流程必须先拉取并校验全部 digest，再从 legacy Central 排空队列、记录实际运行的 legacy 容器、停止这些容器并启动新项目；如果新项目健康或非目标启动时间门禁失败，EXIT trap 会移除新目标容器并重启记录中的旧容器。成功后旧容器保持 stopped，作为一次性 legacy 回滚入口，不得删除旧数据卷。
+## 状态与恢复
 
-归档 `origin/main`/`origin/deploy` tag、stabilization PR、GHCR 权限、主机 bootstrap、env 原子迁移、测试回滚演练、Pages 自动构建关闭和首次生产切换均是外部 mutation，必须分别确认。测试 Pages 已于 2026-07-14 使用独立最小 Pages token 关闭 production/preview 自动部署；正式 Pages 仍未修改。本机 DNS/Tunnel Account Token 对 Pages API 返回 403，不能冒充 Pages 发布凭据。
+```bash
+python scripts/release.py status --env prod --module payment-api
+python scripts/release.py rollback \
+  --env prod --module payment-api --confirm-prod
+```
 
-定向 `release_artifact` 复用上一 bundle 中已验证、digest-pinned 的共享 base，只重建目标 artifact；不得重建共享 base 后让其它复用模块留下 stale base digest。
+状态按环境和模块保存 current、previous、最近动作和结果。首次部署从 live
+adapter 建立基线。部署失败自动尝试恢复 previous；migration 失败只报告并保留
+现场，不自动 downgrade 或恢复备份。
 
-定向任务若在镜像推送后、bundle 组装前失败，同 SHA 重试可复用 registry 中的现有 tag，但必须先读取镜像配置并核对 `org.opencontainers.image.revision` 精确等于目标 SHA，再解析 digest；revision 缺失或不匹配继续 fail closed，禁止覆盖不可变 tag。
+旧 bundle、transaction、acceptance、failed batch 和 evidence 只作历史取证，
+不能作为当前命令输入或阻断模块。
