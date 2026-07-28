@@ -10,6 +10,7 @@ ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
 ARG LTXVIDEO_REF=aceeae9635f6d493f2893ba3c411a1c36031788a
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG SAGEATTENTION_VERSION=1.0.6
+ARG REUSE_BASE_CUSTOM_NODES=false
 ARG ALLBOT_GIT_SHA
 
 LABEL org.opencontainers.image.title="AllBot LAN all-task ComfyUI profile"
@@ -33,20 +34,26 @@ RUN set -euo pipefail; \
 
 RUN set -euo pipefail; \
     comfyui_dir="${COMFYUI_INSTALL_DIR}"; \
-    rm -rf "${comfyui_dir}"; \
-    mkdir -p "${comfyui_dir}"; \
-    git -C "${comfyui_dir}" init; \
-    git -C "${comfyui_dir}" remote add origin "${COMFYUI_REPO}"; \
-    for attempt in 1 2 3 4 5; do \
-      git -C "${comfyui_dir}" fetch --depth 1 --filter=blob:none origin "${COMFYUI_REF}" && break; \
-      if [ "$attempt" = "5" ]; then exit 128; fi; \
-      sleep $((attempt * 3)); \
-    done; \
-    git -C "${comfyui_dir}" checkout --force FETCH_HEAD; \
-    test "$(git -C "${comfyui_dir}" rev-parse HEAD)" = "${COMFYUI_REF}"; \
-    python3 -m pip install --no-cache-dir -r "${comfyui_dir}/requirements.txt"; \
-    rm -rf "${comfyui_dir}/.git"; \
-    mkdir -p "${comfyui_dir}/custom_nodes"; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then \
+      echo "Reusing pinned ComfyUI and LTX sources from base image"; \
+      test -f "${comfyui_dir}/main.py"; \
+      test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
+    else \
+      rm -rf "${comfyui_dir}"; \
+      mkdir -p "${comfyui_dir}"; \
+      git -C "${comfyui_dir}" init; \
+      git -C "${comfyui_dir}" remote add origin "${COMFYUI_REPO}"; \
+      for attempt in 1 2 3 4 5; do \
+        git -C "${comfyui_dir}" fetch --depth 1 --filter=blob:none origin "${COMFYUI_REF}" && break; \
+        if [ "$attempt" = "5" ]; then exit 128; fi; \
+        sleep $((attempt * 3)); \
+      done; \
+      git -C "${comfyui_dir}" checkout --force FETCH_HEAD; \
+      test "$(git -C "${comfyui_dir}" rev-parse HEAD)" = "${COMFYUI_REF}"; \
+      python3 -m pip install --no-cache-dir -r "${comfyui_dir}/requirements.txt"; \
+      rm -rf "${comfyui_dir}/.git"; \
+      mkdir -p "${comfyui_dir}/custom_nodes"; \
+    fi; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir
 
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-KJNodes /opt/allbot/node_source/ComfyUI-KJNodes
@@ -76,21 +83,27 @@ RUN set -euo pipefail; \
       ComfyUI-DaSiWa-Nodes \
       comfyui-WhiteRabbit; do \
       test -d "/opt/allbot/node_source/${node_name}"; \
+      rm -rf "${comfyui_dir}/custom_nodes/${node_name}"; \
       cp -a "/opt/allbot/node_source/${node_name}" "${comfyui_dir}/custom_nodes/${node_name}"; \
       if [ -f "${comfyui_dir}/custom_nodes/${node_name}/requirements.txt" ]; then \
         python3 -m pip install --no-cache-dir -r "${comfyui_dir}/custom_nodes/${node_name}/requirements.txt"; \
       fi; \
     done; \
+    rm -rf "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"; \
     cp -a /opt/allbot/allbot_ltx_min_nodes "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"; \
     ltxvideo_dir="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
-    mkdir -p "${ltxvideo_dir}"; \
-    git -C "${ltxvideo_dir}" init; \
-    git -C "${ltxvideo_dir}" remote add origin "${LTXVIDEO_REPO}"; \
-    git -C "${ltxvideo_dir}" fetch --depth 1 --filter=blob:none origin "${LTXVIDEO_REF}"; \
-    git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
-    test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
-    python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \
-    rm -rf "${ltxvideo_dir}/.git"; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then \
+      test -f "${ltxvideo_dir}/__init__.py"; \
+    else \
+      mkdir -p "${ltxvideo_dir}"; \
+      git -C "${ltxvideo_dir}" init; \
+      git -C "${ltxvideo_dir}" remote add origin "${LTXVIDEO_REPO}"; \
+      git -C "${ltxvideo_dir}" fetch --depth 1 --filter=blob:none origin "${LTXVIDEO_REF}"; \
+      git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
+      test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
+      python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \
+      rm -rf "${ltxvideo_dir}/.git"; \
+    fi; \
     COMFYUI_DIR="${comfyui_dir}" python3 /opt/allbot/patch_flux2_small_decoder.py; \
     (cd /opt/allbot/runtime/runpod_worker && git apply /opt/allbot/runpod_sync_models_multi_manifest.patch); \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \

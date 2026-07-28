@@ -164,6 +164,30 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "allbot/comfy-lan-all:local" in build_script
 
 
+def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
+    dockerfile = LAN_ALL_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+    build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
+    assert 'if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then' in dockerfile
+    assert 'echo "Reusing pinned ComfyUI and LTX sources from base image"' in dockerfile
+    assert 'test -f "${comfyui_dir}/main.py"' in dockerfile
+    assert 'test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"' in dockerfile
+    assert (
+        'profile_label_args+=(--label "allbot.lan.base-image=${BASE_IMAGE}")'
+        in build_script
+    )
+    assert (
+        'profile_label_args+=(--label '
+        '"allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")'
+        in build_script
+    )
+    assert (
+        'profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")'
+        in build_script
+    )
+
+
 def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
     dockerfile = LTX_T2V_RUNTIME_REFRESH_DOCKERFILE.read_text(encoding="utf-8")
 
