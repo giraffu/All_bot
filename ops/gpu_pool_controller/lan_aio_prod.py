@@ -1379,7 +1379,14 @@ class LanAioProdOps:
                 slot.target_profile_id
             ].all_in_one_image_ref
             legacy_checks = []
-            if slot.legacy_preflight_required:
+            physical_state = (
+                (self.state_store.load_current() or {}).get("physical_slots") or {}
+            ).get(physical_slot_key(slot)) or {}
+            intentionally_empty = bool(
+                physical_state.get("intentionally_empty")
+                and not (physical_state.get("current") or {}).get("slot_id")
+            )
+            if slot.legacy_preflight_required and not intentionally_empty:
                 legacy_checks.extend(
                     [
                         self._remote_check(
@@ -1397,6 +1404,14 @@ class LanAioProdOps:
                             retry_delay_seconds=3.0,
                         ),
                     ]
+                )
+            elif intentionally_empty:
+                legacy_checks.append(
+                    {
+                        "name": "legacy_health_skipped_intentionally_empty",
+                        "ok": True,
+                        "physical_slot": physical_slot_key(slot),
+                    }
                 )
             else:
                 legacy_checks.append(
@@ -3788,7 +3803,7 @@ def _select_action_slots(
                 physical_slot
             ) or {}
             if (
-                args.action == "preflight"
+                args.action in {"render", "preflight", "pull-image", "warm-cache"}
                 and not (physical_state.get("current") or {}).get("slot_id")
                 and physical_state.get("intentionally_empty")
             ):

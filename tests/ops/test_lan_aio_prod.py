@@ -2646,6 +2646,117 @@ def test_lan_aio_preflight_retries_transient_legacy_endpoint_reset():
     assert ops.sleeps == [3.0, 3.0]
 
 
+def test_lan_aio_preflight_skips_legacy_health_for_intentionally_empty_slot(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+            self.legacy_checks: list[str] = []
+
+        def _http_check(self, name: str, url: str) -> dict[str, object]:
+            return {"name": name, "ok": True}
+
+        def render_compose(self, slot) -> str:
+            return "services: {}\n"
+
+        def _remote_check(self, slot, name: str, command: str, **kwargs):
+            if name.startswith("legacy_"):
+                self.legacy_checks.append(name)
+            return {"name": name, "ok": True, "output": "ok"}
+
+        def _image_readiness_check(self, slot, image_ref):
+            return {"name": "docker_registry_or_image_present", "ok": True}
+
+        def _remote_published_port_owners(self, slot, host_port: int):
+            return []
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-226-gpu0-all"]
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-226:gpu0": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "disabled canary stopped",
+                        "operation_id": "stop-disabled",
+                    },
+                }
+            },
+        },
+        operation_id="stop-disabled",
+    )
+
+    payload = ops.preflight_payload([slot], execute=True)
+
+    assert payload["ok"] is True
+    assert ops.legacy_checks == []
+    assert payload["slots"][0]["checks"][0] == {
+        "name": "legacy_health_skipped_intentionally_empty",
+        "ok": True,
+        "physical_slot": "gpu-226:gpu0",
+    }
+
+
+@pytest.mark.parametrize("action", ["pull-image", "warm-cache"])
+def test_lan_aio_cli_allows_cache_preparation_for_intentionally_empty_slot(
+    action: str,
+    tmp_path: Path,
+    capsys,
+):
+    state_dir = tmp_path / "state"
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=tmp_path / "missing-prod.env",
+        aio_env_file=tmp_path / "missing-aio.env",
+        model_env_file=tmp_path / "missing-model.env",
+        state_dir=state_dir,
+    )
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": ops.catalog_sha256,
+            "physical_slots": {
+                "gpu-226:gpu0": {
+                    "current": {},
+                    "intentionally_empty": {
+                        "reason": "disabled canary stopped",
+                        "operation_id": "stop-disabled",
+                    },
+                }
+            },
+        },
+        operation_id="stop-disabled",
+    )
+
+    result = lan_aio_main(
+        [
+            action,
+            "--slot",
+            "gpu-226-gpu0-all",
+            "--include-disabled",
+            "--state-dir",
+            str(state_dir),
+            "--prod-env-file",
+            str(tmp_path / "missing-prod.env"),
+            "--aio-env-file",
+            str(tmp_path / "missing-aio.env"),
+            "--model-env-file",
+            str(tmp_path / "missing-model.env"),
+        ]
+    )
+
+    assert result == 0
+    assert f'"action": "{action}"' in capsys.readouterr().out
+
+
 def test_lan_aio_takeover_dry_run_shows_full_sequence():
     ops = LanAioProdOps(
         config_root=None,
