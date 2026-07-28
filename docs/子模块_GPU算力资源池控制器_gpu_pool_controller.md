@@ -42,6 +42,15 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - Dashboard 手动池 profile catalog 包含独立 `ltx_t2v`，对应
   `ltx_t2v,ltx_t2v_ic`。创建后的 worker 默认 disabled，支持开启、暂停、重启、
   锁定和删除；该 profile 的 `autoscaler_enabled=false`，不会被自动扩缩容。
+- Dashboard 的 `RUNPOD_RELEASE_PROFILE_PINS_JSON` 必须与管理 profile catalog
+  派生的 image env key 集合精确一致，且每个值都是
+  `repository@sha256:<digest>`。`deploy/service-env-contract.yml` 和
+  `scripts/runtime_env_contract.py` 在生产服务配置激活前执行该校验；缺少新
+  profile、残留已退役 profile 或 mutable tag 均 fail closed，不能等到
+  `/api/runpod/scale` 才暴露。
+- 旧 `face_swap` 只是 `i2i_pro` 的兼容任务 alias，复用
+  `RUNPOD_IMAGE_NAME_I2I_PRO`，不得在 Dashboard release pins 中保留独立
+  `RUNPOD_IMAGE_NAME_FACE_SWAP`。
 - release index 必须包含 Dashboard/autoscaler 需要的完整 profile pin 集。
   mutable tag、缺 profile、冲突 digest 或 incomplete manifest 一律 fail closed。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
