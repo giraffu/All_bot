@@ -75,6 +75,9 @@
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
 - 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，Gallery 列表应直接返回 R2 S3 短签 URL，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
 - 云正式 Web 由 Cloudflare Pages 项目 `allbot-web-prod` 承接，正式 Web API 独立使用 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不作为 API 健康检查。RMB 支付入口使用 Cloudflare Tunnel 回源云 Payment API。
+- Payment API 的机器健康入口为 `/healthz`，只返回服务状态与 RMB 主动查单是否
+  启用；`/pay/result` 仅是用户支付跳转页。主动查单默认关闭，启用配置缺少
+  `HUANYUY_QUERY_URL` 时 Payment API 必须拒绝启动。
 - 云正式 Dashboard Frontend 由 `cloud-dashboard-frontend-prod` 提供，默认绑定 `100.107.220.127:8086`，`/api/` 在 Docker 内网反代 `dashboard-backend-prod:8043`。QQCC 懒人 Bot 配置已剥离为 `cloud-qqcc-config-frontend-prod` / `cloud-qqcc-config-backend-prod`，默认 `100.107.220.127:8088` / `8045`，并使用独立 `QQCC_CONFIG_*` 管理账号。管理入口若需要公网域名，必须通过 Cloudflare Tunnel + Access 或等价身份层保护，禁止裸开 `8086`/`8043`/`8088`/`8045`。
 - Telegram Local API 节点 `69.63.220.115` 当前只能做 8081/8082 公网端口探测；完整容器和磁盘排障需先补 SSH。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。

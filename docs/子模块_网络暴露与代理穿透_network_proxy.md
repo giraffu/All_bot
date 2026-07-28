@@ -57,7 +57,7 @@ curl -fsS https://web.aivison.it.com
 curl -fsS https://api.aivison.it.com/api/health
 curl -fsS https://web-cf-test.aivison.it.com
 curl -fsS https://api-cf-test.aivison.it.com/api/health
-curl -fsS https://rmb.aivison.it.com/pay/result
+curl -fsS https://rmb.aivison.it.com/healthz
 curl -I https://analytics.aivison.it.com
 ```
 

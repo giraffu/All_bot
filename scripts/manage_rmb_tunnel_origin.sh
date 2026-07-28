@@ -7,7 +7,7 @@ HOSTNAME="${RMB_TUNNEL_HOSTNAME:-rmb.aivison.it.com}"
 LOCAL_SERVICE_URL="${RMB_TUNNEL_LOCAL_SERVICE_URL:-http://127.0.0.1:8021}"
 CLOUD_SERVICE_URL="${RMB_TUNNEL_CLOUD_SERVICE_URL:-http://100.107.220.127:8021}"
 BACKUP_DIR="${RMB_TUNNEL_BACKUP_DIR:-/home/hfy/APP/All_bot/backups/cloud-prod-rmb-tunnel}"
-PUBLIC_HEALTH_URL="${RMB_TUNNEL_PUBLIC_HEALTH_URL:-https://rmb.aivison.it.com/pay/result}"
+PUBLIC_HEALTH_URL="${RMB_TUNNEL_PUBLIC_HEALTH_URL:-https://rmb.aivison.it.com/healthz}"
 
 TARGET=""
 EXECUTE=false
@@ -187,7 +187,7 @@ PY
 current_service="$(read_current_service)"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 backup_path="${BACKUP_DIR}/config.yml.before-${TARGET}.${timestamp}.bak"
-target_health_url="${TARGET_SERVICE_URL%/}/pay/result"
+target_health_url="${TARGET_SERVICE_URL%/}/healthz"
 
 log "RMB tunnel hostname: ${HOSTNAME}"
 log "Config path: ${CONFIG_PATH}"

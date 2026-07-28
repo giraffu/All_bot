@@ -69,6 +69,7 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_KEY": f"{suffix}-payment-key",
         "HUANYUY_GATEWAY": f"https://gateway-{suffix}.example.com",
         "HUANYUY_SITENAME": f"AllBot {suffix}",
+        "RMB_RECONCILIATION_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "UNRELATED_OPERATOR_SECRET": "must-not-enter-containers",
     }
@@ -142,6 +143,37 @@ def test_ton_merchant_address_is_conditionally_required(service):
 
     assert "VITE_MERCHANT_ADDRESS" in str(exc.value)
     assert "prod-bot-token" not in str(exc.value)
+
+
+def test_rmb_query_url_is_required_only_when_reconciliation_is_enabled():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    values["RMB_RECONCILIATION_ENABLED"] = "true"
+
+    with pytest.raises(module.ContractError, match="HUANYUY_QUERY_URL"):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"payment-api"},
+        )
+
+    values["HUANYUY_QUERY_URL"] = "https://gateway-prod.example.com/order-query"
+    snapshot = module.build_snapshot(
+        contract,
+        "prod",
+        values,
+        services={"payment-api"},
+    )
+
+    assert snapshot.projections["payment-api"]["HUANYUY_QUERY_URL"].endswith(
+        "/order-query"
+    )
+    assert (
+        snapshot.projections["payment-api"]["RMB_RECONCILIATION_ENABLED"]
+        == "true"
+    )
 
 
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])

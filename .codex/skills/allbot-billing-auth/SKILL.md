@@ -35,6 +35,9 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - RMB、TON、Telegram Stars 收口到
   `payment_fulfillment_service.fulfill_payment_command(...)`；通道 adapter
   只解析通知、金额与外部流水。legacy wrapper 只能保持兼容返回语义。
+- RMB Webhook 与主动查单共用上述履约入口；查单必须由新订单的持久化
+  reconciliation job 驱动，严格核对业务单、金额和外部流水。没有稳定服务端
+  查单接口时保持关闭，禁止抓取商户后台或自动点击补发。
 - Affiliate、会员结算、灵石转账和任务退款必须穿过现有账本/provider seam，
   不允许入口直接改余额。
 - `QuotaManager.transfer_credits(...)` 在同一事务锁定双方、扣减、入账并写
@@ -78,7 +81,7 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - 认证：验签失败、错误密码、限流、改密后旧 token 失效、支付 channel 与普通
   channel 隔离。
 - 履约：相同外部流水幂等、金额不符 fail fast、事务回滚无部分资产、通知失败
-  不改变履约事实。
+  不改变履约事实；RMB GET/POST 回调、查单竞态、lease 恢复和退避耗尽。
 - 账本：并发扣费/兑换/转账、同幂等同参数稳定返回、同键不同参数冲突。
 - 任务：单阶段与多阶段只扣一次，重复取消/终态只退一次，History/workflow
   override 不改变业务价格。

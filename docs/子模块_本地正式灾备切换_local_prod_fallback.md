@@ -24,7 +24,7 @@
 ```bash
 ssh allbot-do-sgp1-control 'hostname && docker ps --format "{{.Names}}\t{{.Status}}"'
 curl -fsS --max-time 8 https://api.aivison.it.com/api/health
-curl -fsS --max-time 8 https://rmb.aivison.it.com/pay/result
+curl -fsS --max-time 8 https://rmb.aivison.it.com/healthz
 curl -fsS --max-time 8 http://100.107.220.127:8003/health
 ```
 
@@ -86,7 +86,7 @@ scripts/rollback_rmb_tunnel_to_local_prod.sh --execute
 ```bash
 curl -fsS https://api.aivison.it.com/api/health
 curl -fsS https://web.aivison.it.com
-curl -fsS https://rmb.aivison.it.com/pay/result
+curl -fsS https://rmb.aivison.it.com/healthz
 ```
 
 所有媒体仍必须通过 R2 公网域名或 R2/S3 短签访问。
