@@ -140,8 +140,30 @@ raise SystemExit(f"hostname {hostname!r} service entry not found in {path}")
 PY
 }
 
-rewrite_service() {
-  python3 - "$CONFIG_PATH" "$HOSTNAME" "$TARGET_SERVICE_URL" <<'PY'
+read_current_host_header() {
+  python3 - "$CONFIG_PATH" "$HOSTNAME" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+hostname = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+in_block = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("- hostname:"):
+        value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+        in_block = value == hostname
+        continue
+    if in_block and stripped.startswith("httpHostHeader:"):
+        print(stripped.split(":", 1)[1].strip())
+        raise SystemExit(0)
+raise SystemExit(f"hostname {hostname!r} httpHostHeader entry not found in {path}")
+PY
+}
+
+rewrite_origin() {
+  python3 - "$CONFIG_PATH" "$HOSTNAME" "$TARGET_SERVICE_URL" "$TARGET_HOST_HEADER" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -150,10 +172,12 @@ import tempfile
 path = Path(sys.argv[1])
 hostname = sys.argv[2]
 target = sys.argv[3]
+target_host_header = sys.argv[4]
 lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
 
 in_block = False
-changed = False
+service_found = False
+host_header_found = False
 for idx, line in enumerate(lines):
     stripped = line.strip()
     if stripped.startswith("- hostname:"):
@@ -166,11 +190,20 @@ for idx, line in enumerate(lines):
             indent = line[: len(line) - len(line.lstrip())]
             newline = "\n" if line.endswith("\n") else ""
             lines[idx] = f"{indent}service: {target}{newline}"
-        changed = True
-        break
+        service_found = True
+        continue
+    if in_block and stripped.startswith("httpHostHeader:"):
+        current = stripped.split(":", 1)[1].strip()
+        if current != target_host_header:
+            indent = line[: len(line) - len(line.lstrip())]
+            newline = "\n" if line.endswith("\n") else ""
+            lines[idx] = f"{indent}httpHostHeader: {target_host_header}{newline}"
+        host_header_found = True
 
-if not changed:
+if not service_found:
     raise SystemExit(f"hostname {hostname!r} service entry not found in {path}")
+if not host_header_found:
+    raise SystemExit(f"hostname {hostname!r} httpHostHeader entry not found in {path}")
 
 fd, tmp_name = tempfile.mkstemp(
     prefix=f".{path.name}.",
@@ -185,6 +218,18 @@ PY
 }
 
 current_service="$(read_current_service)"
+current_host_header="$(read_current_host_header)"
+TARGET_HOST_HEADER="$(
+  python3 - "$TARGET_SERVICE_URL" <<'PY'
+from urllib.parse import urlsplit
+import sys
+
+parsed = urlsplit(sys.argv[1])
+if not parsed.hostname:
+    raise SystemExit("target service URL has no hostname")
+print(parsed.netloc)
+PY
+)"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 backup_path="${BACKUP_DIR}/config.yml.before-${TARGET}.${timestamp}.bak"
 target_health_url="${TARGET_SERVICE_URL%/}/healthz"
@@ -193,7 +238,9 @@ log "RMB tunnel hostname: ${HOSTNAME}"
 log "Config path: ${CONFIG_PATH}"
 log "Systemd service: ${SERVICE_NAME}"
 log "Current origin: ${current_service}"
+log "Current origin Host header: ${current_host_header}"
 log "Target origin: ${TARGET_SERVICE_URL}"
+log "Target origin Host header: ${TARGET_HOST_HEADER}"
 
 if [ "$SKIP_NETWORK_CHECKS" = false ]; then
   command -v curl >/dev/null 2>&1 || die "curl is required unless --skip-network-checks is used"
@@ -203,7 +250,8 @@ if [ "$SKIP_NETWORK_CHECKS" = false ]; then
 fi
 
 if [ "$EXECUTE" = false ]; then
-  if [ "$current_service" = "$TARGET_SERVICE_URL" ]; then
+  if [ "$current_service" = "$TARGET_SERVICE_URL" ] \
+    && [ "$current_host_header" = "$TARGET_HOST_HEADER" ]; then
     cat <<EOF
 DRY-RUN only. No file will be edited and ${SERVICE_NAME} will not be restarted.
 ${HOSTNAME} is already configured for the target origin:
@@ -219,13 +267,18 @@ Would update ${HOSTNAME} origin from:
   ${current_service}
 to:
   ${TARGET_SERVICE_URL}
+Would update origin Host header from:
+  ${current_host_header}
+to:
+  ${TARGET_HOST_HEADER}
 Would restart systemd service:
   ${SERVICE_NAME}
 EOF
   exit 0
 fi
 
-if [ "$current_service" = "$TARGET_SERVICE_URL" ]; then
+if [ "$current_service" = "$TARGET_SERVICE_URL" ] \
+  && [ "$current_host_header" = "$TARGET_HOST_HEADER" ]; then
   log "Target origin is already active in config. A backup and restart will still be skipped."
   exit 0
 fi
@@ -235,20 +288,54 @@ mkdir -p "$BACKUP_DIR"
 cp -p "$CONFIG_PATH" "$backup_path"
 log "Backed up config to: ${backup_path}"
 
-rewrite_service
+rewrite_origin
 updated_service="$(read_current_service)"
+updated_host_header="$(read_current_host_header)"
 [ "$updated_service" = "$TARGET_SERVICE_URL" ] \
   || die "config rewrite verification failed: got ${updated_service}"
+[ "$updated_host_header" = "$TARGET_HOST_HEADER" ] \
+  || die "config Host header verification failed: got ${updated_host_header}"
 log "Updated config origin: ${updated_service}"
+log "Updated origin Host header: ${updated_host_header}"
 
-SUDO=()
-if [ "$(id -u)" -ne 0 ]; then
-  command -v sudo >/dev/null 2>&1 || die "sudo is required to restart ${SERVICE_NAME}"
-  SUDO=(sudo)
-fi
+restart_service() {
+  if [ "$(id -u)" -eq 0 ]; then
+    systemctl restart "$SERVICE_NAME"
+    systemctl is-active --quiet "$SERVICE_NAME"
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1 \
+    && sudo -n systemctl restart "$SERVICE_NAME" >/dev/null 2>&1; then
+    sudo -n systemctl is-active --quiet "$SERVICE_NAME"
+    return
+  fi
 
-"${SUDO[@]}" systemctl restart "$SERVICE_NAME"
-"${SUDO[@]}" systemctl is-active --quiet "$SERVICE_NAME" \
+  local current_pid service_user restart_policy new_pid active
+  current_pid="$(systemctl show "$SERVICE_NAME" --property=MainPID --value)"
+  service_user="$(systemctl show "$SERVICE_NAME" --property=User --value)"
+  restart_policy="$(systemctl show "$SERVICE_NAME" --property=Restart --value)"
+  [ "$current_pid" != 0 ] \
+    || die "systemd service has no running process: ${SERVICE_NAME}"
+  [ "$service_user" = "$(id -un)" ] \
+    || die "sudo is required to restart ${SERVICE_NAME}"
+  [ "$restart_policy" = always ] \
+    || die "safe owner restart requires Restart=always: ${SERVICE_NAME}"
+
+  kill -TERM "$current_pid"
+  for _attempt in $(seq 1 20); do
+    sleep 1
+    new_pid="$(systemctl show "$SERVICE_NAME" --property=MainPID --value)"
+    active="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)"
+    if [ "$active" = active ] \
+      && [ "$new_pid" != 0 ] \
+      && [ "$new_pid" != "$current_pid" ]; then
+      return
+    fi
+  done
+  die "systemd service did not restart with a new process: ${SERVICE_NAME}"
+}
+
+restart_service \
   || die "systemd service is not active after restart: ${SERVICE_NAME}"
 log "Restarted systemd service: ${SERVICE_NAME}"
 
