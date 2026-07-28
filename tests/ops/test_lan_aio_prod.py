@@ -157,6 +157,8 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     assert environment["PIPELINE_TASK_TYPES"] == expected_types
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert environment["PIPELINE_MAX_CLAIMED_TASKS"] == "2"
+    assert "--disable-dynamic-vram" in environment["COMFY_EXTRA_ARGS"]
+    assert "--reserve-vram" not in environment["COMFY_EXTRA_ARGS"]
     assert json.loads(environment["RUNPOD_MODEL_MANIFEST_KEYS"]) == list(
         profile.model_manifest_keys
     )

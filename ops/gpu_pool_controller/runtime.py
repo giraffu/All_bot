@@ -29,7 +29,6 @@ LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
     }
 )
 LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
-    "all": 5,
     "ltx_t2v": 5,
 }
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
