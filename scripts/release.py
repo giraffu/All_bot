@@ -365,7 +365,7 @@ def _build_pages_or_contract(
                 f"org.opencontainers.image.revision={sha}",
                 "--annotation",
                 f"io.allbot.release.module={name}",
-                f"{archive}:{media_type}",
+                f"{archive.relative_to(checkout)}:{media_type}",
             ],
             cwd=checkout,
         )
