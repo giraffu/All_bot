@@ -52,6 +52,7 @@ export const RUNPOD_FALLBACK_PROFILES: RunPodProfile[] = [
     profile: 'pornmaster_flux2_edit_bf16',
     label: 'pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池',
     supported_task_types: [
+      'character_reference_build',
       'pornmaster_flux2_edit_bf16',
       'pornmaster_flux2_multi_edit_bf16',
     ],

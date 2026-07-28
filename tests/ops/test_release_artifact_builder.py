@@ -290,11 +290,13 @@ def test_gpu_catalog_matches_canonical_runtime_contracts():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
 
-    assert catalog["pornmaster_flux2_edit_bf16"]["profile"][
-        "model_manifest_key"
-    ] == "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
+    assert (
+        catalog["pornmaster_flux2_edit_bf16"]["profile"]["model_manifest_key"]
+        == "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
+    )
     assert "pornmaster_flux2_edit" not in catalog
     assert catalog["pornmaster_flux2_edit_bf16"]["profile"]["task_types"] == [
+        "character_reference_build",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]

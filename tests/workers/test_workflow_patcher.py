@@ -115,6 +115,9 @@ def test_character_reference_patcher_generates_only_selected_editable_view():
     assert patched["v2:185"]["inputs"]["text"] == (
         "custom three-quarter portrait prompt"
     )
+    assert patched["v2:100"]["inputs"]["unet_name"] == (
+        "flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+    )
     assert patched["v2:201"]["inputs"]["filename_prefix"].startswith(
         "character_reference_view_02_"
     )
