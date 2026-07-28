@@ -5386,6 +5386,14 @@ def test_checked_in_payment_migration_snapshot_matches_current_file():
     }
 
 
+def test_payment_non_target_character_migration_snapshot_matches_current_file():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+    path = "migrations/versions/3a7c9e1f2b40_add_character_reference_views.py"
+    snapshots = policy["independent_non_target_migration_snapshots"]["payment-api"]
+
+    assert snapshots[path] == hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+
+
 def test_checked_in_qqcc_non_target_migration_snapshots_match_current_files():
     policy = _load_module().load_structured_file(POLICY_PATH)
     configured = policy["independent_non_target_migration_snapshots"]
