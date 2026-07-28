@@ -8,13 +8,9 @@ from dataclasses import dataclass
 RUNPOD_PROD_AGENT_ID_PREFIX = "runpod_prod_img2img_manual_"
 RUNPOD_PROD_POD_NAME_PREFIX = "allbot-runpod-prod-img2img-manual-"
 RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX = "runpod_prod_wan22_video_v2_manual_"
-RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX = (
-    "allbot-runpod-prod-wan22-video-v2-manual-"
-)
+RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX = "allbot-runpod-prod-wan22-video-v2-manual-"
 RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = "runpod_prod_image_to_video_manual_"
-RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = (
-    "allbot-runpod-prod-image-to-video-manual-"
-)
+RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-image-to-video-manual-"
 RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
 RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
 RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX = "runpod_prod_scail2_manual_"
@@ -55,9 +51,7 @@ RUNPOD_WAN22_AIO_VIDEO_RIFE_TAG = "20260619-wan22aio-rife-bcf3ebd"
 RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE = (
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + RUNPOD_WAN22_AIO_VIDEO_RIFE_TAG
 )
-RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-scail2:"
-)
+RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-scail2:"
 RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:"
 )
@@ -196,20 +190,17 @@ RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES = (
 )
 RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
-RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX = (
-    "pornmaster_flux2_edit_bf16/2026-07-12"
-)
+RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX = "pornmaster_flux2_edit_bf16/2026-07-12"
 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY = (
     "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
 )
 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB = 120
 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES = (
+    "character_reference_build",
     "pornmaster_flux2_edit_bf16",
     "pornmaster_flux2_multi_edit_bf16",
 )
-RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD = (
-    RUNPOD_BOOTSTRAP_DOCKER_START_CMD
-)
+RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS = "--lowvram"
 
 

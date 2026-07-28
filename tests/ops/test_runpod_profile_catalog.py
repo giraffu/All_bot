@@ -18,8 +18,9 @@ def test_dashboard_pinned_images_use_baked_runtime_artifacts():
         "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:"
         "20260716-pornmaster-flux2-edit-baked-runtime-v1"
     )
-    assert "runpod_baked_runtime_entrypoint.sh" in (
-        catalog.RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD[2]
+    assert (
+        "runpod_baked_runtime_entrypoint.sh"
+        in (catalog.RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD[2])
     )
     assert catalog.RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD == (
         catalog.RUNPOD_BOOTSTRAP_DOCKER_START_CMD
@@ -159,6 +160,7 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
     assert options["ltx_t2v"] == ["ltx_t2v", "ltx_t2v_ic"]
     assert "pornmaster_flux2_edit" not in options
     assert options["pornmaster_flux2_edit_bf16"] == [
+        "character_reference_build",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]
@@ -224,6 +226,7 @@ def test_pornmaster_flux2_bf16_profile_is_available_to_autoscaler():
         == "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
     )
     assert worker_options["pornmaster_flux2_edit_bf16"]["supported_task_types"] == [
+        "character_reference_build",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_multi_edit_bf16",
     ]
