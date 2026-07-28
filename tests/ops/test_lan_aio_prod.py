@@ -2076,7 +2076,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
             self.marker = marker
 
     ops = RecordingOps()
-    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
+    slot = ops.slots["gpu-226-gpu0-all"]
 
     result = ops.warm_cache([slot])
 
@@ -2096,9 +2096,17 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert " -p " not in docker_run_line
     assert "--publish" not in docker_run_line
     assert "AGENT_ID" not in docker_run_line
+    assert (
+        "-v /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/"
+        "all/workspace/ComfyUI/models:/opt/ComfyUI/models"
+    ) in docker_run_line
+    assert (
+        "find /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/"
+        "all/workspace/ComfyUI/models -type f -print -quit"
+    ) in docker_command
     assert ops.marker is not None
-    assert ops.marker["profile"] == "img2img_lora"
-    assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
+    assert ops.marker["profile"] == "all"
+    assert ops.marker["physical_slot_key"] == "gpu-226:gpu0"
 
 
 def test_lan_local_model_token_uses_ephemeral_remote_env_file_not_command_line():

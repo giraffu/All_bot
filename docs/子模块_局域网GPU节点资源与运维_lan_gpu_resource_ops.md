@@ -649,6 +649,11 @@ rollback contract，先让当前任务自然结束，再确认 Central current t
 Comfy `/queue` 无 running/pending。预热只同步七份既有 manifest 的缺失对象，
 按相对路径与 SHA-256 去重，不修改或重新上传模型。实际 mutation 只允许：
 
+同步容器必须把宿主模型目录显式 bind 到实际
+`RUNPOD_MODEL_TARGET_DIR`，即使模型 workspace 与 worker workspace 相同也不得
+省略。只有同步成功且宿主模型目录存在真实文件后才可写 ready marker，禁止把
+容器 overlay 中的临时文件误判为热缓存。
+
 ```bash
 python scripts/lan_aio_fleet_prod_ops.py takeover \
   --slot gpu-226-gpu0-all \
