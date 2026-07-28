@@ -20,7 +20,7 @@
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
-> 2026-07-16 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不进入日常门面；需要不同维护编排时改用高级入口。禁止手工写删 marker 或静默按另一模式上线。
+> 2026-07-28 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。显式模块 migration 可由同一条生产命令同时提供 `--no-maintenance --confirm-db-upgrade`，仅豁免 forward generation maintenance/drain；仍执行 strict、数据库备份、单 Alembic head、`upgrade head`、事务日志与失败恢复。首次/legacy 切换、未知影响或其它 blocker 不能豁免。禁止手工写删 marker 或静默按另一模式上线。
 
 ## 1. 当前生产架构事实
 
@@ -265,7 +265,7 @@ python scripts/release.py promote --confirm-prod
 
 Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
 
-独立模块若跨过其它模块新增的 migration，默认仍 fail closed。只有 clean main 的 `deploy/release-policy.yml` 在 `independent_non_target_migration_snapshots` 中按模块、路径与内容 SHA256 精确审阅后，高级 `deploy --policy <clean-main-policy> --modules <...> --no-maintenance` 才把它记为非目标差异：`requires_db_upgrade=false`，不备份、不运行 Alembic，只滚动目标容器。任何未列文件、内容漂移、目标模块自身 migration、未知路径或共享契约仍恢复 strict。测试验收未写 `verified` 而用户明确接受无业务验收时，必须使用带 `--reason` 的 emergency 审计语义；main/CI、digest、配置、健康、事务回切和非目标证明不允许跳过。
+独立模块若跨过其它模块新增的 migration，默认仍 fail closed。只有 clean main 的 `deploy/release-policy.yml` 在 `independent_non_target_migration_snapshots` 中按模块、路径与内容 SHA256 精确审阅后，高级 `deploy --policy <clean-main-policy> --modules <...> --no-maintenance` 才把它记为非目标差异：`requires_db_upgrade=false`，不备份、不运行 Alembic，只滚动目标容器。目标模块自身的纯增量 migration 必须进入 `independent_additive_migration_snapshots` 并精确固定内容 SHA256；执行时保持 `requires_db_upgrade=true`，只有同一命令再给出 `--no-maintenance --confirm-db-upgrade` 才跳过 forward maintenance/drain，备份和 Alembic 仍执行。当前 `payment-api` 已固定 `1d6f4a8b9c20_add_rmb_payment_reconciliation_jobs.py`。任何未列文件、内容漂移、未知路径或共享契约仍恢复 blocker。测试验收未写 `verified` 而用户明确接受无业务验收时，必须使用带 `--reason` 的 emergency 审计语义；main/CI、digest、配置、健康、事务回切和非目标证明不允许跳过。
 
 ### 4.2 专用 GPU 执行面运维
 

@@ -4177,13 +4177,14 @@ def test_user_authorized_no_maintenance_turns_explicit_module_into_rolling():
     assert "user-authorized-no-maintenance" in impact.matched_rules
 
 
-def test_user_authorized_no_maintenance_keeps_locked_gates_fail_closed():
+def test_user_authorized_no_maintenance_requires_db_upgrade_confirmation():
     module = _load_module()
     args = SimpleNamespace(
         command="promote",
         env="prod",
         modules=["qqcc-bot"],
         no_maintenance=True,
+        confirm_db_upgrade=False,
     )
     impact = module.ReleaseImpact(
         services={"qqcc-bot"},
@@ -4192,7 +4193,50 @@ def test_user_authorized_no_maintenance_keeps_locked_gates_fail_closed():
         matched_rules=["database-migrations"],
     )
 
-    with pytest.raises(module.ReleaseError, match="cannot waive migration"):
+    with pytest.raises(module.ReleaseError, match="requires --confirm-db-upgrade"):
+        module.apply_user_authorized_no_maintenance(args, impact)
+
+
+def test_user_authorized_no_maintenance_waives_confirmed_migration_maintenance():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote",
+        env="prod",
+        modules=["payment-api"],
+        no_maintenance=True,
+        confirm_db_upgrade=True,
+    )
+    impact = module.ReleaseImpact(
+        services={"payment-api"},
+        level="maintenance",
+        requires_db_upgrade=True,
+        matched_rules=["database-migrations"],
+    )
+
+    module.apply_user_authorized_no_maintenance(args, impact)
+
+    assert impact.level == "rolling"
+    assert args.maintenance_required is True
+    assert args.maintenance_waived is True
+    assert "user-authorized-no-maintenance" in impact.matched_rules
+
+
+def test_user_authorized_no_maintenance_keeps_non_migration_gates_locked():
+    module = _load_module()
+    args = SimpleNamespace(
+        command="promote",
+        env="prod",
+        modules=["payment-api"],
+        no_maintenance=True,
+        confirm_db_upgrade=True,
+    )
+    impact = module.ReleaseImpact(
+        services={"payment-api"},
+        level="maintenance",
+        matched_rules=["deployment-contract"],
+    )
+
+    with pytest.raises(module.ReleaseError, match="cannot waive"):
         module.apply_user_authorized_no_maintenance(args, impact)
 
 
@@ -5180,6 +5224,7 @@ def test_user_authorized_no_maintenance_accepts_reviewed_additive_migration():
         command="promote",
         env="prod",
         modules=["support-platform"],
+        confirm_db_upgrade=True,
     )
     impact = module.ReleaseImpact(
         level="rolling",
@@ -5318,6 +5363,16 @@ def test_checked_in_support_migration_snapshots_match_current_files():
     }
 
     assert mismatches == {}
+
+
+def test_checked_in_payment_migration_snapshot_matches_current_file():
+    policy = _load_module().load_structured_file(POLICY_PATH)
+    path = "migrations/versions/1d6f4a8b9c20_add_rmb_payment_reconciliation_jobs.py"
+    snapshots = policy["independent_additive_migration_snapshots"]["payment-api"]
+
+    assert snapshots == {
+        path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+    }
 
 
 def test_checked_in_qqcc_non_target_migration_snapshots_match_current_files():

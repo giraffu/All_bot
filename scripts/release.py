@@ -4334,8 +4334,10 @@ def apply_user_authorized_no_maintenance(
 ) -> None:
     """Suppress planned maintenance for an explicitly selected prod module set.
 
-    This changes only the forward rollout mode. Transaction compensation may
-    still enable maintenance when a failed rollout cannot yet be proven safe.
+    A database migration additionally requires the caller's explicit
+    ``--confirm-db-upgrade`` acknowledgement. This changes only the forward
+    rollout mode: backup, single-head Alembic upgrade, transaction journaling,
+    and failed-rollout compensation remain mandatory.
     """
 
     if not getattr(args, "no_maintenance", False):
@@ -4346,24 +4348,29 @@ def apply_user_authorized_no_maintenance(
         )
     if not _split_services(args.modules):
         raise ReleaseError("--no-maintenance requires explicit --modules")
+    matched_rules = set(impact.matched_rules)
+    migration_requested = bool(
+        impact.requires_db_upgrade
+        or "database-migrations" in matched_rules
+        or "reviewed-additive-migration" in matched_rules
+    )
+    if migration_requested and not getattr(args, "confirm_db_upgrade", False):
+        raise ReleaseError(
+            "migration --no-maintenance requires --confirm-db-upgrade"
+        )
     locked_rules = {
-        "database-migrations",
         "deployment-contract",
         "initial-release",
         "test-data-service-repair",
     }
-    reviewed_additive_migration = (
-        "reviewed-additive-migration" in impact.matched_rules
-    )
     if (
-        (impact.requires_db_upgrade and not reviewed_additive_migration)
-        or impact.blockers
+        impact.blockers
         or impact.unknown_paths
-        or locked_rules & set(impact.matched_rules)
+        or locked_rules & matched_rules
     ):
         raise ReleaseError(
-            "--no-maintenance cannot waive migration, deployment-contract, "
-            "initial-release, blocker, or unknown-path safety gates"
+            "--no-maintenance cannot waive deployment-contract, initial-release, "
+            "blocker, or unknown-path safety gates"
         )
     args.maintenance_required = impact.level == "maintenance"
     args.maintenance_waived = args.maintenance_required
@@ -9031,7 +9038,8 @@ def _add_release_arguments(
             action="store_true",
             help=(
                 "for an explicit production module set, record the user's "
-                "decision and use a rolling forward update"
+                "decision and use a rolling forward update; migrations also "
+                "require --confirm-db-upgrade"
             ),
         )
     parser.add_argument("--confirm-legacy-cutover", action="store_true")
@@ -9104,7 +9112,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "for an explicit module set, record the user's decision and use a "
-            "rolling forward update; rollback failure safety may still enable maintenance"
+            "rolling forward update; migrations also require --confirm-db-upgrade "
+            "and rollback failure safety may still enable maintenance"
         ),
     )
     promote.set_defaults(
