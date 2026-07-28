@@ -126,7 +126,7 @@ async def upload_spooled_outputs_via_sidecar(
     task_id: str,
     spooled_outputs: SpooledTaskOutputs,
     logger,
-    timeout_seconds: float = 120.0,
+    timeout_seconds: float | None = None,
 ) -> dict[str, dict[str, Any]]:
     payload = {
         "task_id": task_id,
@@ -138,7 +138,19 @@ async def upload_spooled_outputs_via_sidecar(
         },
     }
     logger.info("Submitting task %s result spool to upload sidecar", task_id)
-    async with httpx.AsyncClient(base_url=sidecar_url, timeout=timeout_seconds) as client:
+    # The relay owns the bounded R2 retry policy. A read deadline here can expire
+    # while the relay is still completing a valid upload, causing the agent to
+    # report a false terminal failure after the objects have been delivered.
+    sidecar_timeout = httpx.Timeout(
+        connect=10.0,
+        read=timeout_seconds,
+        write=30.0,
+        pool=10.0,
+    )
+    async with httpx.AsyncClient(
+        base_url=sidecar_url,
+        timeout=sidecar_timeout,
+    ) as client:
         response = await client.post("/api/local/upload-result", json=payload)
     if response.status_code >= 400:
         raise RuntimeError(
