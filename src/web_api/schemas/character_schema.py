@@ -30,15 +30,39 @@ class CharacterPatchRequest(BaseModel):
         return value
 
 
+class CharacterViewGenerateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1200)
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("子图提示词不能为空")
+        return value
+
+
+class CharacterViewResponse(BaseModel):
+    type: str
+    label: str
+    prompt: str
+    default_prompt: str
+    status: str
+    task_id: str | None = None
+    object_key: str | None = None
+    preview_url: str | None = None
+
+
 class CharacterResponse(BaseModel):
     id: str
     name: str
     description: str | None
     status: str
-    task_id: str
+    task_id: str | None
     source_object_key: str
     sheet_object_key: str | None
     preview_url: str | None = None
+    views: list[CharacterViewResponse] = Field(default_factory=list)
 
 
 class CharacterBuildResponse(BaseModel):

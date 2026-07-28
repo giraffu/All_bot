@@ -1,9 +1,10 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
+import { getRuntimeFlag } from '@/config/runtime'
 import { resolveGalleryTaskTypeLabel } from '@/utils/galleryPresentation'
 
-export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'prompt_templates' | 'submissions'
+export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'prompt_templates' | 'submissions' | 'characters'
 
 function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
   const value = typeof tabValue === 'string' ? tabValue : ''
@@ -12,6 +13,7 @@ function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
     || value === 'apply'
     || value === 'prompt_templates'
     || value === 'submissions'
+    || (value === 'characters' && getRuntimeFlag('enable_ltx_t2v', false))
   ) {
     return value
   }
@@ -32,14 +34,21 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
   const filterType = ref<FavoriteFilterTab>(normalizeFilterType(options.route.query.tab))
   const selectedTaskType = ref('all')
   const isSubmissionTab = computed(() => filterType.value === 'submissions')
+  const isCharacterTab = computed(() => filterType.value === 'characters')
 
-  const filterTabs = computed(() => [
-    { id: 'favorite' as const, name: options.t('my_notes.tabs.favorite') },
-    { id: 'like' as const, name: options.t('my_notes.tabs.like') },
-    { id: 'apply' as const, name: options.t('my_notes.tabs.apply') },
-    { id: 'prompt_templates' as const, name: options.t('my_notes.tabs.prompt_templates') },
-    { id: 'submissions' as const, name: options.t('my_notes.tabs.submissions') },
-  ])
+  const filterTabs = computed(() => {
+    const tabs = [
+      { id: 'favorite' as FavoriteFilterTab, name: options.t('my_notes.tabs.favorite') },
+      { id: 'like' as FavoriteFilterTab, name: options.t('my_notes.tabs.like') },
+      { id: 'apply' as FavoriteFilterTab, name: options.t('my_notes.tabs.apply') },
+      { id: 'prompt_templates' as FavoriteFilterTab, name: options.t('my_notes.tabs.prompt_templates') },
+      { id: 'submissions' as FavoriteFilterTab, name: options.t('my_notes.tabs.submissions') },
+    ]
+    if (getRuntimeFlag('enable_ltx_t2v', false)) {
+      tabs.push({ id: 'characters', name: options.t('my_notes.tabs.characters') })
+    }
+    return tabs
+  })
 
   const taskTypeTabs = computed(() => [
     { id: 'all', name: options.t('gallery.tabs.all') },
@@ -94,7 +103,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
         })
       }
 
-      if (nextType === 'submissions') {
+      if (nextType === 'submissions' || nextType === 'characters') {
         options.clearBrowserState()
         return
       }
@@ -104,7 +113,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
   )
 
   watch(selectedTaskType, () => {
-    if (isSubmissionTab.value) {
+    if (isSubmissionTab.value || isCharacterTab.value) {
       return
     }
     options.reloadPosts()
@@ -123,6 +132,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
     filterType,
     selectedTaskType,
     isSubmissionTab,
+    isCharacterTab,
     filterTabs,
     taskTypeTabs,
     emptyStateText,

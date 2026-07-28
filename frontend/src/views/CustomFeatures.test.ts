@@ -42,6 +42,13 @@ vi.mock('@/stores/characters', () => ({
   }),
 }))
 
+vi.mock('@/composables/useUpload', () => ({
+  useUpload: () => ({
+    uploading: ref(false),
+    uploadFile: vi.fn(),
+  }),
+}))
+
 const baseMode = {
   id: 'wan22_video_v2',
   taskType: 'wan22_video_v2',

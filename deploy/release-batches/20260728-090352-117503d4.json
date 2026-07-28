@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "a675bf55d2b556d61a516cf5f8387d34c26f7b48",
+  "base_sha": "8db0c34fcc086b74f74f930347687522920c50e5",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-c9c677de",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-60a0d928",
   "members": [
     {
       "base_sha": "e613e0db9d041188432e1b1b6d260ef7eac947fd",
@@ -39,6 +39,13 @@
       "head": "c9c677de0beee6fa72e17057029b72099d71832a",
       "queued_at": "2026-07-28T09:59:01.667957+00:00",
       "slot": "E"
+    },
+    {
+      "base_sha": "01898998d41bf6c661834fbeab97321cf6d65915",
+      "branch": "codex/d-character-reference-workbench",
+      "head": "60a0d9283574def89bdddcea8bc21d8632008683",
+      "queued_at": "2026-07-28T10:19:37.060733+00:00",
+      "slot": "D"
     }
   ],
   "pr_base": "main"

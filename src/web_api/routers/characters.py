@@ -8,12 +8,16 @@ from src.web_api.schemas.character_schema import (
     CharacterBuildResponse,
     CharacterPatchRequest,
     CharacterResponse,
+    CharacterViewGenerateRequest,
 )
 from src.web_api.services.character_reference_service import (
     build_character,
+    create_character_draft,
     delete_character,
+    generate_character_view,
     list_characters,
     patch_character,
+    save_character,
 )
 
 router = APIRouter()
@@ -28,11 +32,54 @@ async def create_character(
     return await build_character(db=db, current_user=current_user, payload=payload)
 
 
+@router.post("/drafts", response_model=CharacterResponse)
+async def create_character_workspace(
+    payload: CharacterBuildRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await create_character_draft(
+        db=db,
+        current_user=current_user,
+        payload=payload,
+    )
+
+
 @router.get("", response_model=list[CharacterResponse])
 async def get_characters(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     return await list_characters(db=db, user_id=current_user.id)
+
+
+@router.post("/{character_id}/views/{view_type}/generate")
+async def create_character_view(
+    character_id: str,
+    view_type: str,
+    payload: CharacterViewGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await generate_character_view(
+        db=db,
+        current_user=current_user,
+        character_id=character_id,
+        view_type=view_type,
+        payload=payload,
+    )
+
+
+@router.post("/{character_id}/save", response_model=CharacterResponse)
+async def save_character_workspace(
+    character_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await save_character(
+        db=db,
+        user_id=current_user.id,
+        character_id=character_id,
+    )
 
 
 @router.patch("/{character_id}", response_model=CharacterResponse)
