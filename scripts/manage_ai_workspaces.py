@@ -314,7 +314,7 @@ class WorkspaceManager:
             self._fetch_base()
             self._git("switch", "--detach", self.base_ref, cwd=path)
 
-    def align_merged(self) -> dict[str, Any]:
+    def align_merged(self, slots: Sequence[str] | None = None) -> dict[str, Any]:
         """Park merged task branches and refresh clean detached slots.
 
         Dirty workspaces and branches not yet contained by main are reported and
@@ -326,7 +326,10 @@ class WorkspaceManager:
             main_sha = self._git("rev-parse", self.base_ref)
             registered = self._registered_worktrees()
             rows: list[dict[str, Any]] = []
-            for slot in SLOTS:
+            selected = tuple(self._slot(slot) for slot in slots) if slots else SLOTS
+            if len(set(selected)) != len(selected):
+                raise WorkspaceError("selected slots must be unique")
+            for slot in selected:
                 path = self._path(slot)
                 if path not in registered or not path.is_dir():
                     rows.append({"slot": slot, "status": "blocked_uninitialized"})
@@ -400,7 +403,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("park", "refresh"):
         child = subparsers.add_parser(name)
         child.add_argument("--slot", required=True)
-    subparsers.add_parser("align-merged")
+    align = subparsers.add_parser("align-merged")
+    align.add_argument("--slot", action="append", default=[])
     return parser
 
 
@@ -451,7 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             manager.refresh(args.slot)
             result = {"slot": args.slot.upper(), "status": "refreshed"}
         else:
-            result = manager.align_merged()
+            result = manager.align_merged(args.slot or None)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except WorkspaceError as exc:

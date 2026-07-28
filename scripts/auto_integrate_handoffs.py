@@ -203,10 +203,14 @@ class IntegrationQueue:
         _atomic_json(path, payload)
         return {"status": "queued", "path": str(path)}
 
-    def claim_next(self) -> dict[str, Any] | None:
+    def claim_next(
+        self, allowed_heads: set[str] | None = None
+    ) -> dict[str, Any] | None:
         candidates = []
         for path in self.pending.glob("*.json"):
             payload = json.loads(path.read_text(encoding="utf-8"))
+            if allowed_heads is not None and str(payload.get("head")) not in allowed_heads:
+                continue
             candidates.append((str(payload.get("queued_at", "")), path, payload))
         if not candidates:
             return None
@@ -378,11 +382,11 @@ class Coordinator:
             reason="main-advanced-repeatedly",
         )
 
-    def run_all(self) -> dict[str, Any]:
+    def run_all(self, selected_heads: set[str] | None = None) -> dict[str, Any]:
         completed: list[str] = []
         needs_rebase: list[str] = []
         while True:
-            handoff = self.queue.claim_next()
+            handoff = self.queue.claim_next(selected_heads)
             if handoff is None:
                 break
             result = self.integrate(handoff)
@@ -414,6 +418,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--execute", action="store_true")
     integrate_all = subparsers.add_parser("integrate-all")
     integrate_all.add_argument("--execute", action="store_true")
+    integrate_all.add_argument(
+        "--head",
+        action="append",
+        default=[],
+        help="integrate only this exact pending handoff head; repeatable",
+    )
     return parser
 
 
@@ -450,7 +460,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "main_sha": outcome.main_sha,
                         }
                 else:
-                    result = coordinator.run_all()
+                    selected_heads = set(args.head) if args.head else None
+                    if selected_heads is not None and (
+                        len(selected_heads) != len(args.head)
+                        or any(not FULL_SHA_RE.fullmatch(head) for head in selected_heads)
+                    ):
+                        raise IntegrationQueueError(
+                            "selected handoff heads must be unique full SHAs"
+                        )
+                    result = coordinator.run_all(selected_heads)
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except IntegrationQueueError as exc:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class OperationStatus(str, Enum):
@@ -35,54 +35,27 @@ class SwitchRequest(BaseModel):
     confirmation_profile: str = Field(min_length=1, max_length=100)
 
 
-class BuildRequest(BaseModel):
+class WorkspaceSelectionRequest(BaseModel):
     expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=100)
+    slots: list[Literal["A", "B", "C", "D", "E", "F", "G", "H"]] = Field(
+        min_length=1, max_length=8
+    )
+    confirmation: str = Field(min_length=1, max_length=180)
 
 
-class GPUReleaseBuildRequest(BaseModel):
-    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=100)
+class ModuleBuildRequest(BaseModel):
+    sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    modules: list[str] = Field(min_length=1, max_length=40)
+    confirmation: str = Field(min_length=1, max_length=1000)
 
 
-class TestConfigSyncRequest(BaseModel):
-    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=100)
+class GPUTarget(BaseModel):
+    operator: Literal["runpod", "lan"]
+    slot: str = Field(min_length=1, max_length=160)
 
 
-class TestRollbackRepairRequest(BaseModel):
-    expected_current_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=120)
-
-
-class DeploymentPlanRequest(BaseModel):
+class ModuleDeployRequest(BaseModel):
     environment: Literal["test", "prod"]
-    module: str = Field(pattern=r"^[a-z0-9-]{1,80}$")
-    candidate_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    maintenance: Literal["planner", "rolling"] = "planner"
-
-
-class DeploymentExecuteRequest(BaseModel):
-    confirmation: str = Field(min_length=1, max_length=180)
-
-
-class MaintenanceRequest(BaseModel):
-    enabled: bool
-    expected_enabled: bool
-    reason: str = Field(min_length=3, max_length=240)
-    confirmation: str = Field(min_length=1, max_length=100)
-
-
-class IntegrationRequest(BaseModel):
-    expected_main_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=100)
-
-
-class RetryIntegrationRequest(BaseModel):
-    batch: str = Field(pattern=r"^[a-zA-Z0-9._-]{1,160}$")
-    confirmation: str = Field(min_length=1, max_length=180)
-
-
-class BulkTestDeployRequest(BaseModel):
-    candidate_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
-    confirmation: str = Field(min_length=1, max_length=100)
+    artifacts: dict[str, str] = Field(min_length=1, max_length=40)
+    targets: dict[str, GPUTarget] = Field(default_factory=dict)
+    confirmation: str = Field(min_length=1, max_length=1000)

@@ -463,3 +463,20 @@ def test_align_merged_parks_only_clean_merged_slots(tmp_path):
     assert rows["B"]["status"] == "blocked_dirty"
     assert (slot_b / "local-only.txt").read_text(encoding="utf-8") == "keep me\n"
     assert result["main_sha"] == _git("rev-parse", "origin/main", cwd=repo)
+
+
+def test_align_merged_touches_only_explicit_selected_slots(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+
+    result = manager.align_merged(slots=["B", "D"])
+
+    assert [row["slot"] for row in result["slots"]] == ["B", "D"]
+    assert all(row["status"] == "aligned" for row in result["slots"])
