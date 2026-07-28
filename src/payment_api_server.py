@@ -153,7 +153,7 @@ async def huanyuy_notify(request: Request):
         result.status,
         int((time.monotonic() - started_at) * 1000),
     )
-    return PlainTextResponse("success")
+    return PlainTextResponse("SUCCESS")
 
 
 @app.get("/healthz")

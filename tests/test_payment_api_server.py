@@ -111,7 +111,7 @@ async def test_huanyuy_notify_accepts_signed_get_and_post_and_returns_exact_succ
     )
 
     assert response.status_code == 200
-    assert response.text == "success"
+    assert response.text == "SUCCESS"
     assert response.headers["content-type"].startswith("text/plain")
     fulfill_mock.assert_awaited_once_with(
         "RMB-ORDER-1",
@@ -175,7 +175,7 @@ async def test_huanyuy_notify_acknowledges_duplicate_without_scheduling_notifica
 
     response = await _request("GET", params=_signed_callback_params())
 
-    assert response.text == "success"
+    assert response.text == "SUCCESS"
     schedule_mock.assert_not_called()
 
 
@@ -188,5 +188,5 @@ async def test_huanyuy_post_accepts_callback_parameters_in_query_string(monkeypa
 
     response = await _request("POST", params=_signed_callback_params())
 
-    assert response.text == "success"
+    assert response.text == "SUCCESS"
     fulfill_mock.assert_awaited_once()
