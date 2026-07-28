@@ -208,6 +208,14 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 公网测试 Web 入口固定为 Cloudflare Pages `web-cf-test.aivison.it.com`，浏览器通过 `api-cf-test.aivison.it.com` 调用云测试 Web API。发布只走不可变 release CLI，不直接同步静态目录。
 
+测试 Bot 的 canonical `MINI_APP_URL` 固定为
+`https://web-cf-test.aivison.it.com/`；运行时环境契约会拒绝测试 Bot 指向
+`web.aivison.it.com`，也会拒绝正式 Bot 指向测试 Pages。`public-web` 发布时
+必须把 `frontend/runtime-config.yml` 的 `test` mapping 注入
+`allbot-runtime-config.js`，发布后从 canonical 域名回读并验证
+`api_base_url=https://api-cf-test.aivison.it.com/api`、测试 Bot 用户名、完整
+release SHA 与 runtime revision。空配置对象或同源 `/api` 不算发布成功。
+
 ## 4. 数据库初始化策略
 
 当前历史 `initial_baseline` Alembic 迁移不是完整的空库建表迁移，它依赖一批历史表已经存在。因此云端全新测试库不能直接先跑 `alembic upgrade head`。
