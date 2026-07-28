@@ -34,7 +34,7 @@ on:
         description: Optional built control-plane artifact for a module-scoped replay.
         required: false
         type: choice
-        options: ["", qqcc-bot]
+        options: ["", qqcc-bot, payment-api]
         default: ""
 
 permissions:

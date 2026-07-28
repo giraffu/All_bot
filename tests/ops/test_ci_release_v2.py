@@ -254,6 +254,7 @@ def test_module_scoped_workflow_does_not_treat_historical_gpu_diff_as_rebuild():
         "github.event_name == 'workflow_dispatch' && inputs.release_artifact != ''"
         in workflow
     )
+    assert 'options: ["", qqcc-bot, payment-api]' in workflow
 
 
 def test_scoped_retry_reuses_exact_revision_image(monkeypatch):
