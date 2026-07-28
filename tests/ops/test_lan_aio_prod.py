@@ -134,6 +134,11 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     profile = config.profiles["all"]
     assert profile.task_types == LAN_ALL_TASK_TYPES
     assert len(profile.model_manifest_keys) == 7
+    assert profile.all_in_one_image_ref == (
+        "192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:"
+        "90da0583f6ab732977733965bbb88b248e5a45c2b2b57283525f32a8160775c4"
+    )
+    assert ":pending" not in profile.image_ref
 
     ops = LanAioProdOps(
         config_root=None,
