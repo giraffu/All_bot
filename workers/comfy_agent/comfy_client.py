@@ -82,6 +82,14 @@ class ComfyClient:
             logger.warning(f"ComfyUI interrupt failed: {e}")
             return False
 
+    async def free_memory(self) -> None:
+        """Unload resident models and release ComfyUI's allocator cache."""
+        response = await self.client.post(
+            "/free",
+            json={"unload_models": True, "free_memory": True},
+        )
+        response.raise_for_status()
+
     async def get_view(
         self, filename: str, subfolder: str = "", type: str = "output"
     ) -> bytes:

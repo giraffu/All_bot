@@ -118,6 +118,7 @@ class AgentPipelineCoordinator:
         cancel_lock_on_pop: bool,
         agent_id: str,
         submit_task_workflow_func: Callable[..., Awaitable[Any]],
+        before_submit_func: Callable[[], Awaitable[None]] | None = None,
     ) -> TaskExecutionContext | None:
         trace_id = task.get("trace_id", "")
         if trace_id:
@@ -169,6 +170,8 @@ class AgentPipelineCoordinator:
                 downloaded_input_paths=downloaded_input_paths,
             )
 
+        if before_submit_func is not None:
+            await before_submit_func()
         await submit_task_workflow_func(
             task_id=task_id,
             task_type=task_type,

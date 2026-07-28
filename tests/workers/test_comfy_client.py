@@ -75,3 +75,36 @@ async def test_interrupt_posts_to_comfy_interrupt(monkeypatch, module_path: Path
 
     assert await client.interrupt() is True
     assert calls == [("/interrupt", {"json": {}})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", COMFY_CLIENT_PATHS)
+async def test_free_memory_unloads_models_and_releases_allocator(
+    monkeypatch, module_path: Path
+):
+    module = load_comfy_client_module(module_path)
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return FakeResponse()
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = module.ComfyClient("http://comfy.local")
+    await client.free_memory()
+
+    assert calls == [
+        (
+            "/free",
+            {"json": {"unload_models": True, "free_memory": True}},
+        )
+    ]

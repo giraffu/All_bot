@@ -757,6 +757,14 @@ class ComfyAgent:
             prefetch_depth=PREFETCH_DEPTH,
         )
 
+    async def _reset_comfy_memory_for_all_profile(self) -> None:
+        if POOL_RUNTIME_PROFILE != "all":
+            return
+        logger.info(
+            "Releasing resident ComfyUI models before all-profile task submission"
+        )
+        await self.comfy_client.free_memory()
+
     def _cleanup_input_paths(self, paths: list[str]) -> None:
         self._prefetch_manager.cleanup_input_paths(paths)
 
@@ -1143,6 +1151,7 @@ class ComfyAgent:
             cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
             agent_id=AGENT_ID,
             submit_task_workflow_func=submit_task_workflow,
+            before_submit_func=self._reset_comfy_memory_for_all_profile,
         )
 
     def _reset_execution_for_retry(
