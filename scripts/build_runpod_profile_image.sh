@@ -36,6 +36,9 @@ default_base_image_for_profile() {
 
 default_comfyui_ref_for_profile() {
     case "$1" in
+        all)
+            printf '%s\n' "7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1"
+            ;;
         i2i_pro|face_swap)
             printf '%s\n' "16cd8d8a8f5f16ce7e5f929fdba9f783990254ea"
             ;;
@@ -60,7 +63,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, face_swap, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
+  --profile <name>       Profile to build: all, img2img_lora, wan22_aio_video, i2i_pro, face_swap, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -169,6 +172,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
+    all)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-lan-all:local}"
+        ;;
     img2img_lora)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-img2img-lora:local}"
         ;;
@@ -227,6 +233,12 @@ stage_profile_context() {
     cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
+    if [ "$profile" = "all" ]; then
+        cp -a workers/runpod_profiles/ltx_t2v \
+            "${destination}/workers/runpod_profiles/ltx_t2v"
+        cp -a workers/runpod_profiles/pornmaster_flux2_edit \
+            "${destination}/workers/runpod_profiles/pornmaster_flux2_edit"
+    fi
 }
 
 if [ -n "$KJNODES_SOURCE" ]; then
@@ -256,6 +268,14 @@ fi
 
 echo "Building ${IMAGE_REF}"
 docker_build_args=()
+profile_label_args=()
+if [ "$PROFILE" = "all" ]; then
+    profile_label_args+=(--label "allbot.lan.profile=all")
+    profile_label_args+=(--label "allbot.lan.model_sync=external-lan-manifests")
+else
+    profile_label_args+=(--label "allbot.runpod.profile=${PROFILE}")
+    profile_label_args+=(--label "allbot.runpod.model_sync=external-r2-manifest")
+fi
 if [ -n "$DOCKER_BUILD_NETWORK" ]; then
     docker_build_args+=(--network "$DOCKER_BUILD_NETWORK")
 fi
@@ -286,6 +306,7 @@ for proxy_env in \
 done
 docker build \
     "${docker_build_args[@]}" \
+    "${profile_label_args[@]}" \
     -f "$dockerfile_for_build" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
@@ -295,8 +316,6 @@ docker build \
     --label "org.opencontainers.image.revision=${ALLBOT_GIT_SHA}" \
     --label "io.allbot.runpod.agent-revision=${ALLBOT_GIT_SHA}" \
     --label "io.allbot.runpod.workflow-revision=${ALLBOT_GIT_SHA}" \
-    --label "allbot.runpod.profile=${PROFILE}" \
-    --label "allbot.runpod.model_sync=external-r2-manifest" \
     -t "$IMAGE_REF" \
     "$context_for_build"
 
@@ -377,6 +396,27 @@ if find "${comfyui_dir}/models" -type f \( \
 fi
 echo "COMFYUI_DIR=${comfyui_dir}"
 echo "WAN22_CUSTOM_NODES_PRESENT=true"
+'
+    elif [ "$PROFILE" = "all" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+test -f "${comfyui_dir}/main.py"
+for node_name in ComfyUI-KJNodes ComfyUI-VideoHelperSuite rgthree-comfy ComfyUI-Frame-Interpolation ComfyUI_Fill-Nodes ComfyUI-GGUF ComfyUI-DaSiWa-Nodes comfyui-WhiteRabbit ComfyUI-LTXVideo allbot_ltx_min_nodes; do
+  test -d "${comfyui_dir}/custom_nodes/${node_name}"
+done
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
+python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
+COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; root=Path(os.environ["COMFYUI_DIR"]); node_dir=Path(os.environ["LTXVIDEO_NODE_DIR"]); spec=importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir/"__init__.py", submodule_search_locations=[str(node_dir)]); module=importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name]=module; spec.loader.exec_module(module); expected={"LTXVSpatioTemporalTiledVAEDecode","LTXICLoRALoaderModelOnly","LTXAddVideoICLoRAGuide"}; assert expected <= set(module.NODE_CLASS_MAPPINGS); scail=(root/"comfy_extras"/"nodes_scail.py").read_text(encoding="utf-8"); assert "WanSCAILToVideo" in scail and "SCAIL2ColoredMask" in scail'"'"'
+LTX_MIN_NODE_DIR="${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes" python3 -c '"'"'import importlib.util, os; from pathlib import Path; spec=importlib.util.spec_from_file_location("allbot_ltx_min_nodes_smoke", Path(os.environ["LTX_MIN_NODE_DIR"])/"__init__.py"); module=importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(module); expected={"ImpactDummyInput","TwoWaySwitch","easy int","mxSlider","RAMCleanup","VRAMCleanup","Float","IntToFloat","Sigmas Sigmoid","MathExpression|pysssss"}; assert expected <= set(module.NODE_CLASS_MAPPINGS)'"'"'
+command -v ffmpeg >/dev/null
+command -v ffprobe >/dev/null
+if find "${comfyui_dir}/models" -type f \( -name "*.safetensors" -o -name "*.ckpt" -o -name "*.pth" \) -print -quit | grep -q .; then
+  echo "Business model files must stay out of the LAN all image" >&2
+  exit 1
+fi
+echo "LAN_ALL_PROFILE_PRESENT=true"
 '
     elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ]; then
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '

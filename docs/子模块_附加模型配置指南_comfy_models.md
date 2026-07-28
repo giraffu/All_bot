@@ -333,3 +333,17 @@ workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `di
 RTX 4090 与 `--lowvram`。两者都可通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 手动管理，也都进入
 Dashboard autoscaler；BF16 默认按单任务 30 秒、清空阈值 30 分钟复用 add/down/restart/enable、锁定跳过、
 最短生命周期和冷却规则。用户逻辑类型 `free_edit_v2_5` 按输入数映射到 BF16 单图/双图内部执行类型，自由P图 v3 只映射单图；双图复用既有 multiple-images workflow 并把节点 9 切到 BF16 UNet。v2.5 单阶段直出，v3 再续接 `face_swap_v2`，该阶段包含在 v3 的 5 灵石根任务价格内、不二次扣费，因此不复制 workflow、模型目录或 GPU profile。v2 canary 与 BF16 canary 都串行验证 single/multi 两单。
+
+### 5. LAN `all` 聚合镜像
+
+`workers/runpod_profiles/all/Dockerfile` 只用于 LAN AIO。它固定 ComfyUI、
+LTXVideo 与 custom-node revision，烘焙八类 profile 的 workflow/runtime，
+并在构建期验证 19 个 mapping；不得把该 profile 加入任何 RunPod 配置。
+镜像通过 `allbot.lan.profile=all` 和 source/agent/workflow revision 标签
+证明来源，且不得包含业务 `.safetensors`、`.ckpt` 或 `.pth` 权重。
+
+运行时通过 `RUNPOD_MODEL_MANIFEST_KEYS` 读取现有七份 manifest。同步器按
+`relative_path + size_bytes + sha256` 合并，重复内容只 materialize 一次；
+同路径 checksum 冲突、对象校验失败、LAN override 缺失或剩余磁盘不足时不写
+ready marker 并拒绝启动。旧 profile 未设置该变量时继续使用
+`RUNPOD_MODEL_MANIFEST_KEY`，保持单 manifest 兼容。

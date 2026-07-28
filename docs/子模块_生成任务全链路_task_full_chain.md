@@ -36,6 +36,10 @@
 - 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
 - 本地 relay `/health` 是轻量存活检查，`/ready` 会检查云 Central 与上传 client；worker 到 relay/Central 的控制面半断持续超过默认阈值时，agent 会退出并交给 Docker restart。这个自愈只恢复 worker 进程，不改变任务成功必须 `/complete` 的语义
 - RunPod 镜像内的 `workers/runpod_runtime/` 通过 `runpod_relay` 访问专用 Central 域名，并复用同一 `pop/status/complete/heartbeat` 语义
+- LAN-only `all` worker 在一次 `pop` 中携带 19 个支持类型，Central 仍按这些
+  类型的全局 queue score 选择最早任务。它不会改变 execution type、根任务
+  ID、计费、History、Gallery 或退款；流水线只让一个 Comfy 执行与一个预取、
+  一个交付阶段安全重叠。
 
 ## 3. 分层职责图
 
@@ -297,6 +301,10 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 - `img2img_lora` 会带 `lora_name` 和 `lora_strength`
 - Web 与主 Bot 的自由P图 v2.5 公开逻辑类型为 `free_edit_v2_5`，接受 1 或 2 张原图且不传 LoRA：单图扣 3 灵石并映射到 `pornmaster_flux2_edit_bf16`，双图扣 7 灵石并映射到仅内部使用的 `pornmaster_flux2_multi_edit_bf16`；其它数量在扣费前拒绝。内部双图类型复用既有 multiple-images workflow、BF16 模型与同一 GPU profile。任务完成后直接返回并统一以 `free_edit_v2_5` 写 History，不创建 `face_swap` continuation。
 - Web 自由P图 v3 入口使用 `edit_v3`，只接受 1 张原图并提交逻辑类型 `pornmaster_flux2_edit_bf16`，固定扣 5 灵石且不传 LoRA。Web finalizer 在同一业务 `task_id` 下先等待 BF16 编辑，再用确定性的第二阶段 backend ID 提交 `face_swap_v2`（原图做人脸、BF16 结果做 body）；第二阶段不重复扣费且不可取消，只将最终换脸结果写入一条 `pornmaster_flux2_edit_bf16` History，输入只保留用户原图。主 Bot 的 v3 同样维持 BF16→V2 原脸恢复两阶段语义。
+- `all` worker 同时支持这些内部阶段不代表把它们合并为一个 Comfy workflow：
+  视频换脸仍是 `face_swap_v2 → scail2_face_swap_v2`，自由 P 图 v3 仍是
+  `pornmaster_flux2_edit_bf16 → face_swap_v2`。continuation、隐藏中间结果、
+  根计费锚点、确定性 stage ID 和幂等退款继续由现有控制面持有。
 - Web finalizer 的 Redis pending 记录用 `continuation={version,kind,stage,stage2_task_type,stage2_backend_task_id,original_image,stage1_result_path}` 持久化两阶段进度，`stage2_task_type` 固定为 `face_swap_v2`；升级前缺少该字段或残留旧 `face_swap` 标签的 v3 记录也强制按 V2 恢复。先落盘 dispatch intent、再切换 active registry backend ID、最后提交确定性第二阶段 ID；因此重启或重复扫描不会重复扣费、重复提交或重复退款。任一执行阶段终止失败均以根业务 `task_id` 的既有幂等退款键退还 5 灵石。
 - Web API 拒绝新的 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit` 直接提交并提示刷新使用 v3；Bot 与 QQCC 的历史 v2 执行兼容仍保留，不得用 Web 下线规则删除 core/dispatcher/worker 能力。
 - v2.5 与 v3 共用 `pornmaster_flux2_edit_bf16` 执行队列和 autoscaler profile；队列/运维展示必须明确标记“v2.5 + v3 共用执行池”，但不得把逻辑 History 类型合并或迁移。

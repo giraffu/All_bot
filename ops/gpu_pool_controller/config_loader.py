@@ -181,6 +181,7 @@ def _parse_profiles(raw_profiles: dict[str, Any]) -> dict[str, TaskProfile]:
             all_in_one_image_ref=data.get("all_in_one_image_ref"),
             model_prefix=data.get("model_prefix"),
             model_manifest_key=data.get("model_manifest_key"),
+            model_manifest_keys=_as_tuple(data.get("model_manifest_keys")),
             lan_workspace_key=data.get("lan_workspace_key"),
             lan_model_workspace_key=data.get("lan_model_workspace_key"),
             lan_local_model_overrides=tuple(

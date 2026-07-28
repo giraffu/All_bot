@@ -615,6 +615,45 @@ slots:
     rollout_order: 105
     notes: Stopped same-card PornMaster Flux2 V4 turbo BF16 rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. It restores lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01 / allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod on host port 8190 by replacing the current gpu-226-gpu0-i2i_pro AIO when explicitly requested. BF16 was idle with queue 0/0 before stop-old.
 
+  - id: gpu-226-gpu0-all
+    enabled: true
+    phase: candidate
+    retargetable: true
+    assignment_id: lan-226-8190-worker-01-aio
+    target_profile_id: all
+    target_task_types:
+      - img2img
+      - img2img_lora
+      - image_to_video
+      - wan22_video_v2
+      - pornmaster_flux2_edit_bf16
+      - pornmaster_flux2_multi_edit_bf16
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+      - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
+      - i2i_pro
+      - t2i-pornmaster-turbo
+      - face_swap_v2
+      - face_swap
+      - ltx_t2v
+      - ltx_t2v_ic
+    gpu_index: 0
+    host_port: 8190
+    legacy_health_port: 8190
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu226_gpu0_all_01
+    container_name: allbot-lan-aio-gpu-226-gpu0-all-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod
+    old_local_agent_container: ""
+    remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-all
+    rollout_order: 107
+    notes: LAN-only all-profile candidate for the explicitly authorized gpu-226 GPU0 production validation. It must replace the live BF16 slot through a transactional takeover with exact-digest rollback and must not be used by RunPod.
+
   - id: gpu-226-gpu0-i2i_pro
     enabled: true
     phase: prod_enabled

@@ -57,7 +57,7 @@
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | workflow JSON、mapping、patcher | current | 模型/workflow |
 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、workflow、profile、`shared/image_aspect.py`、结果物化、RunPod canary | current | LTX 专项；人物参考表与 QQCC AI 动图共用智能比例适配器；IC guide 在交付区间外并 fail-closed 裁除；单张正面半身照的六视图需重复门禁与人工语义检查；test Web/后端和 cloud-test 人工 RunPod 已支持，prod 与 autoscaler 关闭 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger | runtime-verification-required | GPU 设计/运维 |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |
 | `docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` | LAN 管理、A–H 集成/对齐与发布 UI/runner | `lan_resource_manager`、fleet/integration/release helper | current | 本地资源平台 |

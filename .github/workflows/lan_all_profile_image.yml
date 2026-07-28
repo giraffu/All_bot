@@ -1,0 +1,133 @@
+name: Build LAN all Profile Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full origin/main-reachable SHA to bake and publish.
+        required: true
+      base_image:
+        description: External-model CUDA 12.8 ComfyUI base.
+        required: false
+        default: "yanwk/comfyui-boot:cu128-slim"
+      node_source_image:
+        description: Exact-digest Wan/LTX custom-node source image.
+        required: false
+        default: "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f"
+      verify_public_pull:
+        description: Verify the pushed exact-SHA image can be pulled without credentials.
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: lan-all-profile-image-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: allbot-gpu-lan-all
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: Build and publish LAN all profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify trusted main source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --prune origin main
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve immutable image
+        id: image
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_ref="ghcr.io/${owner}/${IMAGE_NAME}:${SOURCE_SHA}"
+          if docker manifest inspect "$image_ref" >/dev/null 2>&1; then
+            echo "::error::Immutable LAN all image already exists: ${image_ref}"
+            exit 2
+          fi
+          echo "ref=${image_ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Build, smoke test, and push
+        shell: bash
+        env:
+          ALLBOT_GIT_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          scripts/build_runpod_profile_image.sh \
+            --profile all \
+            --image-ref "${{ steps.image.outputs.ref }}" \
+            --base-image "${{ inputs.base_image }}" \
+            --node-source-image "${{ inputs.node_source_image }}" \
+            --push
+
+      - name: Verify LAN-only immutable contract
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$SOURCE_SHA"
+          test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "io.allbot.runpod.agent-revision" }}')" = "$SOURCE_SHA"
+          test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "io.allbot.runpod.workflow-revision" }}')" = "$SOURCE_SHA"
+          test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "allbot.lan.profile" }}')" = "all"
+          test -z "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "allbot.runpod.profile" }}')"
+
+      - name: Verify public exact-SHA pull
+        if: ${{ inputs.verify_public_pull }}
+        shell: bash
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          docker logout ghcr.io
+          docker image rm "$IMAGE_REF"
+          docker pull "$IMAGE_REF"
+
+      - name: Record digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect \
+            "${{ steps.image.outputs.ref }}" \
+            --format '{{json .Manifest}}' > lan-all-manifest.json
+          digest="$(docker buildx imagetools inspect "${{ steps.image.outputs.ref }}" --format '{{.Manifest.Digest}}')"
+          test -n "$digest"
+          {
+            echo "## LAN all GPU artifact"
+            echo ""
+            echo "- Source SHA: \`${{ inputs.source_sha }}\`"
+            echo "- Image: \`${{ steps.image.outputs.ref }}\`"
+            echo "- Digest: \`${digest}\`"
+            echo "- Runtime scope: \`LAN-only\`"
+          } >> "$GITHUB_STEP_SUMMARY"
