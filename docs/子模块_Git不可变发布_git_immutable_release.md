@@ -203,7 +203,7 @@ python scripts/release.py recover --help
 
 `promote` 的模块名只接受公开完整组，逗号组合后配置闭包取并集；每个模块独立匹配共享契约 blocker，不能用组合名称绕过。普通高级模式下 `--services` 仍只能扩大自动集合；Worker、migration、未知路径与 GPU 专用链路保持原门禁。
 
-`deploy/docker-compose-worker-base.yml` 只描述独立 Worker 槽位，不参与云控制面目标容器的 Compose 合约；它以 `independent_contract_snapshots` 的精确内容 SHA256 允许 QQCC 等控制面独立模块跨越已审阅的 worker-only 变更。文件任一字节再次变化都会恢复 `shared-compose-contract` 阻断，必须重新审阅并更新快照；该快照不允许发布器启动、停止或替换 Worker/GPU 服务。
+`deploy/docker-compose-worker-base.yml` 只描述独立 Worker 槽位，不参与云控制面目标容器的 Compose 合约；根 `deploy/docker-compose.yml` 只保留本地/兼容 Compose 入口，也不参与云控制面目标容器替换。两者都以 `independent_contract_snapshots` 的精确内容 SHA256 允许独立模块跨越已审阅且内容未变的共享契约；任一文件任一字节再次变化都会恢复 `shared-compose-contract` 阻断，必须重新审阅并更新快照。这些快照不允许发布器启动、停止或替换非目标 Worker/GPU/控制面服务。
 
 standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified。
 
