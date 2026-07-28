@@ -1249,6 +1249,157 @@ def test_lan_aio_enable_rejects_old_runtime_gpu_memory():
     assert ops.controls == [("lan_aio_prod_gpu177_gpu0_wan22_video_v2_01", "disabled")]
 
 
+def test_lan_aio_enable_persistently_disables_replaced_worker():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.controls: list[tuple[str, str, int | None]] = []
+
+        def _set_control(
+            self,
+            agent_id: str,
+            state: str,
+            reason: str,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> None:
+            self.controls.append((agent_id, state, ttl_seconds))
+
+        def _control_state(self, agent_id: str) -> str:
+            return "disabled"
+
+        def _system_workers(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "agent_id": "cloud_prod_worker_02",
+                    "status": "idle",
+                    "current_task_type": None,
+                },
+                {
+                    "agent_id": "lan_aio_prod_gpu177_gpu0_image_to_video_01",
+                    "status": "idle",
+                    "current_task_type": None,
+                },
+            ]
+
+        def _old_runtime_gpu_memory_processes(self, slot):
+            return []
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+
+    result = ops.enable_aio([slot])
+
+    assert result["ok"] is True
+    assert ops.controls == [
+        ("lan_aio_prod_gpu177_gpu0_wan22_video_v2_01", "disabled", None),
+        ("lan_aio_prod_gpu177_gpu0_image_to_video_01", "enabled", None),
+    ]
+
+
+def test_lan_aio_retire_legacy_keeps_active_aio_running_and_disables_old_persistently():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+            self.legacy_state = "enabled"
+
+        def current_slot_id(self, physical_slot: str) -> str:
+            assert physical_slot == "gpu-177:gpu0"
+            return "gpu-177-gpu0-image_to_video"
+
+        def live_current_snapshot(self, physical_slots):
+            assert physical_slots == {"gpu-177:gpu0"}
+            return {
+                "current": {"gpu-177:gpu0": "gpu-177-gpu0-image_to_video"},
+                "errors": {},
+            }
+
+        def _control_state(self, agent_id: str) -> str:
+            if agent_id == "lan_aio_prod_gpu177_gpu0_image_to_video_01":
+                return "enabled"
+            return self.legacy_state
+
+        def _system_workers(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "agent_id": "cloud_prod_worker_02",
+                    "status": "idle",
+                    "current_task_id": None,
+                    "current_task_type": None,
+                },
+                {
+                    "agent_id": "lan_aio_prod_gpu177_gpu0_image_to_video_01",
+                    "status": "running",
+                    "current_task_id": "task-in-progress",
+                    "current_task_type": "image_to_video",
+                },
+            ]
+
+        def _wait_container_health(self, slot) -> None:
+            self.events.append("verify-aio-health")
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            if ".State.Running" in command:
+                self.events.append("verify-old-stopped")
+                return "false|unless-stopped\n"
+            if "docker update --restart=no" in command:
+                self.events.append("disable-old-restart")
+                return ""
+            if ".HostConfig.RestartPolicy.Name" in command:
+                self.events.append("verify-old-restart-disabled")
+                return "no\n"
+            raise AssertionError(command)
+
+        def _set_control(
+            self,
+            agent_id: str,
+            state: str,
+            reason: str,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> None:
+            assert agent_id == "lan_aio_prod_gpu177_gpu0_wan22_video_v2_01"
+            assert state == "disabled"
+            assert ttl_seconds is None
+            self.events.append("persistent-disable")
+            self.legacy_state = "disabled"
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+
+    result = ops.retire_legacy([slot])
+
+    assert result == {
+        "ok": True,
+        "action": "retire-legacy",
+        "slot": "gpu-177-gpu0-image_to_video",
+        "legacy_agent_id": "lan_aio_prod_gpu177_gpu0_wan22_video_v2_01",
+        "legacy_control": "disabled",
+        "old_runtime_container": (
+            "allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"
+        ),
+        "old_runtime_restart_policy": "no",
+    }
+    assert ops.events == [
+        "verify-aio-health",
+        "verify-old-stopped",
+        "disable-old-restart",
+        "verify-old-restart-disabled",
+        "persistent-disable",
+    ]
+
+
 def test_lan_aio_start_disabled_force_recreates_container():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
