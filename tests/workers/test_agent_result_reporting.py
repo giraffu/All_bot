@@ -48,6 +48,7 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
 @pytest.mark.asyncio
 async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypatch):
     requests = []
+    client_timeouts = []
 
     class FakeResponse:
         status_code = 200
@@ -63,6 +64,7 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
     class FakeClient:
         def __init__(self, *args, **kwargs):
             self.base_url = kwargs.get("base_url")
+            client_timeouts.append(kwargs.get("timeout"))
 
         async def __aenter__(self):
             return self
@@ -103,3 +105,7 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
     assert payload == {"last_frame": {"path": "last_frame.png", "media_type": "image"}}
     assert requests[0][0] == "/api/local/upload-result"
     assert requests[0][1]["primary"]["object_name"] == "primary.png"
+    assert client_timeouts[0].connect == 10.0
+    assert client_timeouts[0].read is None
+    assert client_timeouts[0].write == 30.0
+    assert client_timeouts[0].pool == 10.0
