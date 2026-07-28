@@ -19,6 +19,7 @@ from typing import Any, Iterable, Mapping
 
 
 SERVICE_CONTRACT_REVISION_KEY = "ALLBOT_SERVICE_CONTRACT_REVISION"
+OCI_DIGEST_REF_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
 
 class ContractError(RuntimeError):
@@ -57,6 +58,7 @@ def load_contract(path: Path) -> dict[str, Any]:
             raise ContractError(f"{service} service environment contract is invalid")
         _service_environments(config)
         _conditional_contract_keys(config)
+        _json_digest_pin_sets(config)
     return value
 
 
@@ -165,6 +167,65 @@ def _conditional_condition_keys(config: Mapping[str, Any]) -> set[str]:
     }
 
 
+def _json_digest_pin_sets(
+    config: Mapping[str, Any],
+) -> dict[str, frozenset[str]]:
+    raw_sets = config.get("json_digest_pin_sets", {})
+    if not isinstance(raw_sets, Mapping):
+        raise ContractError("service json_digest_pin_sets contract is invalid")
+    normalized: dict[str, frozenset[str]] = {}
+    for raw_key, raw_expected_keys in raw_sets.items():
+        key = str(raw_key).strip()
+        if (
+            not key
+            or not isinstance(raw_expected_keys, list)
+            or not raw_expected_keys
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in raw_expected_keys
+            )
+        ):
+            raise ContractError("service json_digest_pin_sets contract is invalid")
+        expected_keys = frozenset(value.strip() for value in raw_expected_keys)
+        if len(expected_keys) != len(raw_expected_keys):
+            raise ContractError("service json_digest_pin_sets contract is invalid")
+        normalized[key] = expected_keys
+    return normalized
+
+
+def _validate_json_digest_pin_sets(
+    name: str,
+    config: Mapping[str, Any],
+    values: Mapping[str, str],
+) -> None:
+    for key, expected_keys in _json_digest_pin_sets(config).items():
+        raw_value = values.get(key, "").strip()
+        try:
+            pins = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise ContractError(f"{name} has invalid {key}") from exc
+        if not isinstance(pins, dict):
+            raise ContractError(f"{name} has invalid {key}")
+        actual_keys = {str(pin_key) for pin_key in pins}
+        if actual_keys != expected_keys:
+            missing = sorted(expected_keys - actual_keys)
+            extra = sorted(actual_keys - expected_keys)
+            details: list[str] = []
+            if missing:
+                details.append("missing " + ", ".join(missing))
+            if extra:
+                details.append("extra " + ", ".join(extra))
+            raise ContractError(
+                f"{name} has invalid {key} profile keys: " + "; ".join(details)
+            )
+        if any(
+            not isinstance(image_ref, str)
+            or not OCI_DIGEST_REF_RE.fullmatch(image_ref)
+            for image_ref in pins.values()
+        ):
+            raise ContractError(f"{name} has non-digest-pinned values in {key}")
+
+
 def _projection(
     name: str,
     config: Mapping[str, Any],
@@ -179,6 +240,7 @@ def _projection(
         raise ContractError(
             f"{name} is missing required environment keys: " + ", ".join(missing)
         )
+    _validate_json_digest_pin_sets(name, config, values)
     patterns = [str(pattern) for pattern in config.get("patterns", [])]
     included = {str(key) for key in included_keys}
     included.update(_conditional_condition_keys(config))

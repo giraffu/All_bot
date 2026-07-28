@@ -18,6 +18,33 @@ def _load_module():
     return module
 
 
+RUNPOD_RELEASE_PROFILE_IMAGE_ENVS = (
+    "RUNPOD_IMAGE_NAME_I2I_PRO",
+    "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
+    "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
+    "RUNPOD_IMAGE_NAME_LTX_T2V",
+    "RUNPOD_IMAGE_NAME_LTX_VIDEO",
+    "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+    "RUNPOD_IMAGE_NAME_SCAIL2",
+    "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
+)
+
+
+def _runpod_release_profile_pins() -> str:
+    return json.dumps(
+        {
+            key: (
+                f"ghcr.io/giraffu/test-{index}@sha256:"
+                + f"{index:x}" * 64
+            )
+            for index, key in enumerate(
+                RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
+                start=1,
+            )
+        }
+    )
+
+
 def _environment(environment: str) -> dict[str, str]:
     suffix = "test" if environment == "test" else "prod"
     return {
@@ -71,6 +98,7 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_SITENAME": f"AllBot {suffix}",
         "RMB_RECONCILIATION_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
+        "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "UNRELATED_OPERATOR_SECRET": "must-not-enter-containers",
     }
 
@@ -276,6 +304,48 @@ def test_dashboard_backend_projection_rejects_missing_agent_control_token():
     del values["AGENT_SECRET_TOKEN"]
 
     with pytest.raises(module.ContractError, match="AGENT_SECRET_TOKEN"):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"dashboard-backend"},
+        )
+
+
+def test_dashboard_backend_projection_rejects_stale_runpod_profile_pin_set():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    pins = json.loads(values["RUNPOD_RELEASE_PROFILE_PINS_JSON"])
+    pins["RUNPOD_IMAGE_NAME_FACE_SWAP"] = pins.pop("RUNPOD_IMAGE_NAME_LTX_T2V")
+    values["RUNPOD_RELEASE_PROFILE_PINS_JSON"] = json.dumps(pins)
+
+    with pytest.raises(
+        module.ContractError,
+        match="RUNPOD_RELEASE_PROFILE_PINS_JSON",
+    ):
+        module.build_snapshot(
+            contract,
+            "prod",
+            values,
+            services={"dashboard-backend"},
+        )
+
+
+def test_dashboard_backend_projection_rejects_mutable_runpod_profile_pin():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    pins = json.loads(values["RUNPOD_RELEASE_PROFILE_PINS_JSON"])
+    pins["RUNPOD_IMAGE_NAME_I2I_PRO"] = (
+        "ghcr.io/giraffu/allbot-gpu-i2i-pro:latest"
+    )
+    values["RUNPOD_RELEASE_PROFILE_PINS_JSON"] = json.dumps(pins)
+
+    with pytest.raises(
+        module.ContractError,
+        match="non-digest-pinned.*RUNPOD_RELEASE_PROFILE_PINS_JSON",
+    ):
         module.build_snapshot(
             contract,
             "prod",

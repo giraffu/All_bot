@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -135,6 +136,21 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
         "${RUNPOD_RELEASE_PROFILE_PINS_JSON:?"
         "RUNPOD_RELEASE_PROFILE_PINS_JSON is required}"
     )
+
+
+def test_dashboard_runpod_release_pin_contract_matches_admin_profile_catalog():
+    from dashboard.backend.services.runpod_admin_commands import (
+        RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
+    )
+
+    contract = json.loads(
+        (ROOT / "deploy" / "service-env-contract.yml").read_text(encoding="utf-8")
+    )
+    configured = contract["services"]["dashboard-backend"][
+        "json_digest_pin_sets"
+    ]["RUNPOD_RELEASE_PROFILE_PINS_JSON"]
+
+    assert set(configured) == RUNPOD_RELEASE_PROFILE_IMAGE_ENVS
 
 
 def test_prod_dashboard_backend_uses_required_remote_lan_aio_runner_contract():
