@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "356f30ea954b5da4b227f0cd687f4673020ae8ab",
+  "base_sha": "d9e881151617ee9c33d93bff4e7b319bcc87abe5",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-31df35f4",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-765d9854",
   "members": [
     {
       "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
@@ -46,6 +46,27 @@
       "head": "31df35f4a61087a59f1fd25d5680fd6781148d3c",
       "queued_at": "2026-07-28T11:19:56.964351+00:00",
       "slot": "E"
+    },
+    {
+      "base_sha": "356f30ea954b5da4b227f0cd687f4673020ae8ab",
+      "branch": "codex/e-deploy-prod-only-direct-assurance",
+      "head": "3f21f4158dd3067d9cd998f1a2a582d987291531",
+      "queued_at": "2026-07-28T11:23:24.414103+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "baf5c49cef82097d52e3cf4421999ae3dd1d53a3",
+      "branch": "codex/e-deploy-prod-only-direct-assurance-v2",
+      "head": "b831c49998f9316564653183d5bfbd7875e45a75",
+      "queued_at": "2026-07-28T11:25:55.624817+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "d9e881151617ee9c33d93bff4e7b319bcc87abe5",
+      "branch": "codex/f-pin-gpu226-local-all-digest",
+      "head": "765d985441d0234a2d2c4d7627f5c76e3379d88e",
+      "queued_at": "2026-07-28T11:36:47.050777+00:00",
+      "slot": "F"
     }
   ],
   "pr_base": "main"
