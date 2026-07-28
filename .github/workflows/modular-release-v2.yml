@@ -299,8 +299,15 @@ jobs:
             [ "$(jq -r '.release_channel' "$index")" = main ] || continue
             [ "$(jq -r '.source_ref' "$index")" = refs/heads/main ] || continue
             [ "$(jq -r '.source_sha' "$manifest")" = "$candidate" ] || continue
+            [ "$(jq -r '.completeness' "$manifest")" = complete ] || continue
+            [ "$(jq -c '.missing_artifacts' "$manifest")" = '[]' ] || continue
             actual_profiles="$(jq -r '.artifacts | keys[]' "$manifest" | sort)"
-            [ "$actual_profiles" = "$expected_profiles" ] || continue
+            unexpected_profiles="$(
+              comm -23 \
+                <(printf '%s\n' "$actual_profiles") \
+                <(printf '%s\n' "$expected_profiles")
+            )"
+            [ -n "$actual_profiles" ] && [ -z "$unexpected_profiles" ] || continue
             rm -rf gpu-baseline-release
             mv "$candidate_bundle" gpu-baseline-release
             baseline_manifest="gpu-baseline-release/gpu-execution-manifest.json"
@@ -323,7 +330,12 @@ jobs:
               [ "$(jq -r '.completeness' "$manifest")" = complete ] || continue
               [ "$(jq -c '.missing_artifacts' "$manifest")" = '[]' ] || continue
               actual_profiles="$(jq -r '.artifacts | keys[]' "$manifest" | sort)"
-              [ "$actual_profiles" = "$expected_profiles" ] || continue
+              unexpected_profiles="$(
+                comm -23 \
+                  <(printf '%s\n' "$actual_profiles") \
+                  <(printf '%s\n' "$expected_profiles")
+              )"
+              [ -n "$actual_profiles" ] && [ -z "$unexpected_profiles" ] || continue
               baseline_manifest="$manifest"
               echo "sha=${candidate}" >> "$GITHUB_OUTPUT"
               break

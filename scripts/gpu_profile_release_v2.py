@@ -204,6 +204,43 @@ def validate_complete_gpu_manifest(
         raise GPUProfileReleaseError(str(exc)) from exc
 
 
+def validate_publishable_gpu_manifest(
+    manifest: Mapping[str, Any], *, source_sha: str
+) -> None:
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("track") != "gpu-execution"
+        or manifest.get("source_sha") != source_sha
+    ):
+        raise GPUProfileReleaseError("GPU evidence manifest shape is invalid")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping) or not artifacts:
+        raise GPUProfileReleaseError("GPU evidence manifest shape is invalid")
+    catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
+    expected = {
+        name
+        for name, metadata in catalog.items()
+        if metadata["track"] == "gpu-execution"
+    }
+    actual = {str(name) for name in artifacts}
+    missing = sorted(expected - actual)
+    if (
+        not actual <= expected
+        or manifest.get("missing_artifacts") != missing
+        or manifest.get("completeness")
+        != ("incomplete" if missing else "complete")
+    ):
+        raise GPUProfileReleaseError("GPU evidence manifest shape is invalid")
+    if any(
+        not isinstance(artifact, Mapping)
+        or artifact.get("source_sha") != source_sha
+        for artifact in artifacts.values()
+    ):
+        raise GPUProfileReleaseError(
+            "GPU manifest artifacts must use the same source SHA"
+        )
+
+
 def publish_gpu_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -212,23 +249,9 @@ def publish_gpu_manifest(
     source_sha: str,
     run_func: Any = subprocess.run,
 ) -> None:
-    """Publish the complete profile manifest to an immutable SHA-tagged OCI ref."""
+    """Publish exact-SHA GPU evidence to an immutable OCI ref."""
 
-    if (
-        manifest.get("source_sha") != source_sha
-        or manifest.get("completeness") != "complete"
-        or manifest.get("missing_artifacts") not in ([], ())
-    ):
-        raise GPUProfileReleaseError("GPU manifest must be complete for the source SHA")
-    artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, Mapping) or not artifacts or any(
-        not isinstance(artifact, Mapping)
-        or artifact.get("source_sha") != source_sha
-        for artifact in artifacts.values()
-    ):
-        raise GPUProfileReleaseError(
-            "GPU manifest artifacts must use the same source SHA"
-        )
+    validate_publishable_gpu_manifest(manifest, source_sha=source_sha)
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise GPUProfileReleaseError("source_sha must be a full Git SHA")
     if not publish_ref.endswith(f":{source_sha}"):
@@ -281,11 +304,11 @@ def main() -> int:
     parser.add_argument(
         "--publish-existing-manifest",
         type=Path,
-        help="Validate and publish an already assembled complete GPU manifest.",
+        help="Validate and publish an assembled exact-SHA GPU evidence manifest.",
     )
     parser.add_argument(
         "--publish-ref",
-        help="Immutable OCI ref ending in :<source-sha>; requires a complete manifest.",
+        help="Immutable OCI ref ending in :<source-sha>.",
     )
     parser.add_argument(
         "--validation-level",
@@ -299,7 +322,7 @@ def main() -> int:
         manifest = json.loads(
             args.publish_existing_manifest.read_text(encoding="utf-8")
         )
-        validate_complete_gpu_manifest(manifest, source_sha=args.source_sha)
+        validate_publishable_gpu_manifest(manifest, source_sha=args.source_sha)
         publish_gpu_manifest(
             manifest,
             manifest_path=args.publish_existing_manifest,
