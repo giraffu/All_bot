@@ -92,7 +92,7 @@ RUN set -euo pipefail; \
     python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \
     rm -rf "${ltxvideo_dir}/.git"; \
     COMFYUI_DIR="${comfyui_dir}" python3 /opt/allbot/patch_flux2_small_decoder.py; \
-    git apply --directory=/opt/allbot/runtime/runpod_worker /opt/allbot/runpod_sync_models_multi_manifest.patch; \
+    (cd /opt/allbot/runtime/runpod_worker && git apply /opt/allbot/runpod_sync_models_multi_manifest.patch); \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
