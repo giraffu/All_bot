@@ -150,9 +150,11 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
 
     assert "COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
     assert (
-        "NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
+        "NODE_SOURCE_IMAGE=192.168.1.115:5000/allbot/"
+        "comfy-runpod-wan22-aio-video@sha256:"
         in dockerfile
     )
+    assert "ghcr.io/" not in dockerfile
     assert 'allbot.lan.profile="all"' in dockerfile
     assert "allbot.runpod.profile" not in dockerfile
     assert "--cpu --quick-test-for-ci --disable-auto-launch" in dockerfile

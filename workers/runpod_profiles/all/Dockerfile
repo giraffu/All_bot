@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
-ARG NODE_SOURCE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f
+ARG NODE_SOURCE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f
 ARG SCAIL_SOURCE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-scail2@sha256:ddd16e47f9e96de8ab9af4ed992d2f5377e8f25bf8ccb10cb58814169105839c
 
 FROM ${NODE_SOURCE_IMAGE} AS node_source
