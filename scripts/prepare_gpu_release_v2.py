@@ -110,9 +110,21 @@ def _find_bundle_dir(root: Path) -> Path:
 
 
 class GPUReleasePreparer:
-    def __init__(self, repo: Path, source_sha: str):
+    def __init__(
+        self,
+        repo: Path,
+        source_sha: str,
+        profiles: Sequence[str] | None = None,
+    ):
         self.repo = repo
         self.source_sha = source_sha
+        self.profiles = tuple(profiles or WORKFLOWS)
+        unknown = set(self.profiles) - set(WORKFLOWS)
+        if not self.profiles or unknown:
+            raise GPUReleasePreparationError(
+                "unknown or empty GPU profile selection: "
+                + ", ".join(sorted(unknown))
+            )
         self.runs: dict[str, int] = {}
 
     def _remote_exists(self, ref: str) -> bool:
@@ -149,7 +161,8 @@ class GPUReleasePreparer:
 
     def _dispatch_missing_images(self) -> dict[str, set[int]]:
         before: dict[str, set[int]] = {}
-        for profile, (workflow, repository) in WORKFLOWS.items():
+        for profile in self.profiles:
+            workflow, repository = WORKFLOWS[profile]
             ref = f"{repository}:{self.source_sha}"
             existing_runs = self._workflow_runs(workflow)
             before[profile] = {
@@ -204,7 +217,8 @@ class GPUReleasePreparer:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             pending = []
-            for profile, (workflow, repository) in WORKFLOWS.items():
+            for profile in self.profiles:
+                workflow, repository = WORKFLOWS[profile]
                 if profile in self.runs:
                     continue
                 candidates = [
@@ -234,7 +248,7 @@ class GPUReleasePreparer:
             time.sleep(20)
         raise GPUReleasePreparationError(
             "timed out waiting for GPU images: "
-            + ", ".join(sorted(set(WORKFLOWS) - set(self.runs)))
+            + ", ".join(sorted(set(self.profiles) - set(self.runs)))
         )
 
     def _previous_gpu_manifest(self, checkout: Path, temp_root: Path) -> dict:
@@ -280,8 +294,14 @@ class GPUReleasePreparer:
         prior_artifacts = previous.get("artifacts")
         if not isinstance(prior_artifacts, Mapping):
             raise GPUReleasePreparationError("previous GPU artifacts are invalid")
+        catalog = json.loads(
+            (checkout / "deploy/release-artifacts-v2.json").read_text(
+                encoding="utf-8"
+            )
+        )["artifacts"]
         output: Path | None = None
-        for build_profile, (_workflow, repository) in WORKFLOWS.items():
+        for build_profile in self.profiles:
+            _workflow, repository = WORKFLOWS[build_profile]
             digest = _run(
                 ["oras", "resolve", f"{repository}:{self.source_sha}"],
                 cwd=checkout,
@@ -293,10 +313,24 @@ class GPUReleasePreparer:
             for profile in SHARED_IMAGE_PROFILES.get(
                 build_profile, (build_profile,)
             ):
-                previous_artifact = prior_artifacts.get(profile)
-                if not isinstance(previous_artifact, Mapping):
+                contract = catalog[profile]["profile"]
+                model_source = str(
+                    contract.get("model_manifest_source_profile") or profile
+                )
+                rollback_source = str(
+                    contract.get("rollback_profile") or profile
+                )
+                model_artifact = prior_artifacts.get(model_source)
+                rollback_artifact = prior_artifacts.get(rollback_source)
+                if not isinstance(model_artifact, Mapping):
                     raise GPUReleasePreparationError(
-                        f"{profile} is missing from the trusted GPU baseline"
+                        f"{profile} model evidence source is missing from "
+                        f"the trusted GPU baseline: {model_source}"
+                    )
+                if not isinstance(rollback_artifact, Mapping):
+                    raise GPUReleasePreparationError(
+                        f"{profile} rollback source is missing from "
+                        f"the trusted GPU baseline: {rollback_source}"
                     )
                 evidence = {
                     "profile": profile,
@@ -308,8 +342,8 @@ class GPUReleasePreparer:
                         "baked_workflow_revision": True,
                         "model_manifest_checksum": True,
                     },
-                    "model_manifest": previous_artifact.get("model_manifest"),
-                    "rollback_target": previous_artifact.get("ref"),
+                    "model_manifest": model_artifact.get("model_manifest"),
+                    "rollback_target": rollback_artifact.get("ref"),
                 }
                 evidence_path = temp_root / f"{profile}-evidence.json"
                 evidence_path.write_text(
@@ -534,6 +568,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=ROOT)
     parser.add_argument("--source-sha", required=True)
+    parser.add_argument(
+        "--profile",
+        action="append",
+        choices=sorted(WORKFLOWS),
+        help="Build only this GPU image profile; repeat to select more than one.",
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=14400)
     args = parser.parse_args(argv)
@@ -545,7 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "status": "dry-run",
                     "source_sha": args.source_sha,
-                    "profiles": sorted(WORKFLOWS),
+                    "profiles": sorted(args.profile or WORKFLOWS),
                     "production_deployed": False,
                 },
                 indent=2,
@@ -554,7 +594,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     try:
         result = GPUReleasePreparer(
-            args.repo, args.source_sha
+            args.repo,
+            args.source_sha,
+            profiles=args.profile,
         ).execute(timeout_seconds=args.timeout_seconds)
     except GPUReleasePreparationError as exc:
         print(f"ERROR: {exc}", file=__import__("sys").stderr)

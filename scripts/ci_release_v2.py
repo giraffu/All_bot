@@ -167,11 +167,18 @@ def _validated_gpu_baseline(
         if metadata.get("track") == "gpu-execution"
     }
     actual = {str(name) for name in raw_artifacts}
-    if actual != expected:
-        raise CIReleaseError("GPU baseline profiles must exactly match the catalog")
+    if (
+        not actual
+        or not actual <= expected
+        or document.get("completeness") != "complete"
+        or document.get("missing_artifacts") not in ([], ())
+    ):
+        raise CIReleaseError(
+            "GPU baseline must be a complete historical catalog subset"
+        )
 
     artifacts: dict[str, dict[str, Any]] = {}
-    for name in sorted(expected):
+    for name in sorted(actual):
         raw_artifact = raw_artifacts[name]
         if not isinstance(raw_artifact, Mapping):
             raise CIReleaseError(f"GPU baseline profile is invalid: {name}")

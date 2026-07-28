@@ -110,6 +110,8 @@ def test_complete_gpu_baseline_can_fill_unchanged_profiles():
         "schema_version": 2,
         "track": "gpu-execution",
         "source_sha": "b" * 40,
+        "completeness": "complete",
+        "missing_artifacts": [],
         "artifacts": {
             name: _gpu_artifact(name)
             for name in ("i2i", "i2i_pro", "scail2")
@@ -120,6 +122,25 @@ def test_complete_gpu_baseline_can_fill_unchanged_profiles():
 
     assert set(artifacts) == {"i2i", "i2i_pro", "scail2"}
     assert artifacts["i2i"]["source_sha"] == "b" * 40
+
+
+def test_historical_gpu_baseline_may_precede_a_new_catalog_profile():
+    module = _load_module()
+    document = {
+        "schema_version": 2,
+        "track": "gpu-execution",
+        "source_sha": "b" * 40,
+        "completeness": "complete",
+        "missing_artifacts": [],
+        "artifacts": {
+            name: _gpu_artifact(name)
+            for name in ("i2i", "i2i_pro")
+        },
+    }
+
+    artifacts = module._validated_gpu_baseline(document, catalog=_catalog())
+
+    assert set(artifacts) == {"i2i", "i2i_pro"}
 
 
 def test_inherited_gpu_baseline_is_materialized_for_bundle_assembler(tmp_path):
@@ -143,7 +164,12 @@ def test_inherited_gpu_baseline_is_materialized_for_bundle_assembler(tmp_path):
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (lambda doc: doc["artifacts"].pop("i2i_pro"), "exactly match"),
+        (
+            lambda doc: doc["artifacts"].update(
+                unknown=_gpu_artifact("i2i")
+            ),
+            "historical catalog subset",
+        ),
         (
             lambda doc: doc["artifacts"]["i2i"].update(
                 ref="ghcr.io/giraffu/i2i:latest"
@@ -164,6 +190,8 @@ def test_gpu_baseline_rejects_incomplete_or_mutable_artifacts(mutation, message)
         "schema_version": 2,
         "track": "gpu-execution",
         "source_sha": "b" * 40,
+        "completeness": "complete",
+        "missing_artifacts": [],
         "artifacts": {
             name: _gpu_artifact(name)
             for name in ("i2i", "i2i_pro", "scail2")
@@ -197,6 +225,8 @@ def test_main_workflow_resolves_complete_gpu_baseline_from_all_ancestors():
     assert 'git rev-list --topo-order "${SOURCE_SHA}^"' in workflow
     assert "release_channel' \"$index\")\" = main" in workflow
     assert "actual_profiles" in workflow
+    assert "unexpected_profiles" in workflow
+    assert "comm -23" in workflow
     assert "gpu-baseline-standalone/gpu-execution-manifest.json" in workflow
     assert 'oras repo tags "$gpu_manifest_repository"' in workflow
     assert "[ \"$(jq -r '.completeness' \"$manifest\")\" = complete ]" in workflow
