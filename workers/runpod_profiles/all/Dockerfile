@@ -60,6 +60,7 @@ COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/comfyui-Whi
 COPY workers/runpod_profiles/ltx_t2v/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
 COPY workers/runpod_profiles/pornmaster_flux2_edit/patch_flux2_small_decoder.py /opt/allbot/patch_flux2_small_decoder.py
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch /opt/allbot/runpod_sync_models_multi_manifest.patch
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
@@ -91,6 +92,7 @@ RUN set -euo pipefail; \
     python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \
     rm -rf "${ltxvideo_dir}/.git"; \
     COMFYUI_DIR="${comfyui_dir}" python3 /opt/allbot/patch_flux2_small_decoder.py; \
+    git apply --directory=/opt/allbot/runtime/runpod_worker /opt/allbot/runpod_sync_models_multi_manifest.patch; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \

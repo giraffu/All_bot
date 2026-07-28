@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +11,9 @@ import pytest
 
 MODULE_PATH = Path("workers/runpod_runtime/scripts/runpod_sync_models_from_r2.py")
 LOCAL_SYNC_MODULE_PATH = Path("workers/runpod_runtime/scripts/runpod_sync_local_models.py")
+ALL_SYNC_PATCH_PATH = Path(
+    "workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch"
+).resolve()
 
 
 def _load_module(path: Path = MODULE_PATH):
@@ -18,6 +23,18 @@ def _load_module(path: Path = MODULE_PATH):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_all_module(tmp_path: Path):
+    target = tmp_path / "scripts" / MODULE_PATH.name
+    target.parent.mkdir(parents=True)
+    shutil.copy2(MODULE_PATH, target)
+    subprocess.run(
+        ["git", "apply", str(ALL_SYNC_PATCH_PATH)],
+        cwd=tmp_path,
+        check=True,
+    )
+    return _load_module(target)
 
 
 class _FakeResponse:
@@ -94,8 +111,8 @@ def test_runpod_model_sync_rejects_invalid_lan_override(monkeypatch, tmp_path):
         sync_module.sync_models(bucket="models", prefix="wan", target_dir=tmp_path, verify_existing=True)
 
 
-def test_runpod_model_sync_merges_multiple_manifests_by_relative_path(monkeypatch):
-    sync_module = _load_module()
+def test_runpod_model_sync_merges_multiple_manifests_by_relative_path(tmp_path):
+    sync_module = _load_all_module(tmp_path)
     manifests = {
         "img/manifest.json": {
             "files": [
@@ -133,8 +150,8 @@ def test_runpod_model_sync_merges_multiple_manifests_by_relative_path(monkeypatc
     ]
 
 
-def test_runpod_model_sync_rejects_multi_manifest_path_conflict():
-    sync_module = _load_module()
+def test_runpod_model_sync_rejects_multi_manifest_path_conflict(tmp_path):
+    sync_module = _load_all_module(tmp_path)
 
     with pytest.raises(RuntimeError, match="conflicting model manifests"):
         sync_module.merge_model_manifests(
@@ -164,7 +181,7 @@ def test_runpod_model_sync_rejects_multi_manifest_path_conflict():
 def test_runpod_model_sync_rejects_insufficient_disk_space(
     monkeypatch, tmp_path
 ):
-    sync_module = _load_module()
+    sync_module = _load_all_module(tmp_path)
     monkeypatch.setenv("RUNPOD_MODEL_MIN_FREE_BYTES", "10")
     monkeypatch.setattr(
         sync_module.shutil,

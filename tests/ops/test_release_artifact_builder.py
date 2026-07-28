@@ -183,7 +183,7 @@ def test_control_plane_catalog_change_does_not_schedule_gpu_track():
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
     previous_catalog = deepcopy(catalog)
-    previous_catalog["central-api"]["inputs"] = ["old-central-api/**"]
+    previous_catalog["central-api"]["image"] = "old-central-api"
 
     plan = module.plan_builds(
         catalog,
@@ -197,6 +197,51 @@ def test_control_plane_catalog_change_does_not_schedule_gpu_track():
         name
         for name, artifact in catalog.items()
         if artifact["track"] == "gpu-execution"
+    } <= plan.reuse
+
+
+def test_catalog_input_boundary_change_is_planner_only():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    previous_catalog = deepcopy(catalog)
+    previous_catalog["i2i_pro"]["inputs"] = [
+        "workers/runpod_runtime/**",
+        "workers/runpod_profiles/**",
+    ]
+
+    plan = module.plan_builds(
+        catalog,
+        ["deploy/release-artifacts-v2.json"],
+        has_previous=True,
+        previous_catalog=previous_catalog,
+    )
+
+    assert "i2i_pro" in plan.reuse
+    assert "i2i_pro" not in plan.build
+
+
+def test_new_all_profile_does_not_rebuild_existing_gpu_profiles():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    previous_catalog = deepcopy(catalog)
+    previous_catalog.pop("lan_all")
+
+    plan = module.plan_builds(
+        catalog,
+        [
+            "deploy/release-artifacts-v2.json",
+            "workers/runpod_profiles/all/Dockerfile",
+            "workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch",
+        ],
+        has_previous=True,
+        previous_catalog=previous_catalog,
+    )
+
+    assert plan.build == {"lan_all"}
+    assert {
+        name
+        for name, artifact in catalog.items()
+        if artifact["track"] == "gpu-execution" and name != "lan_all"
     } <= plan.reuse
 
 
