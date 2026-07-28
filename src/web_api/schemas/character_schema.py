@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -32,6 +34,7 @@ class CharacterPatchRequest(BaseModel):
 
 class CharacterViewGenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1200)
+    engine: Literal["free_edit", "free_edit_v2_5", "free_edit_v3"] = "free_edit_v2_5"
 
     @field_validator("prompt")
     @classmethod

@@ -8,9 +8,14 @@ import { useRouter } from 'vue-router'
 import type {
   CharacterReference,
   CharacterReferenceView,
+  CharacterViewEngine,
   CharacterViewType,
 } from '@/api/characters'
 import { useUpload } from '@/composables/useUpload'
+import {
+  CHARACTER_VIEW_ENGINE_OPTIONS,
+  getCharacterViewEngineCost,
+} from '@/features/characters/characterViewEngines'
 import { useCharactersStore } from '@/stores/characters'
 
 type ViewDefinition = {
@@ -64,6 +69,7 @@ const draftId = ref<string | null>(null)
 const activeViewType = ref<CharacterViewType>('face_front')
 const creatingDraft = ref(false)
 const generatingView = ref<CharacterViewType | null>(null)
+const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const saving = ref(false)
 const prompts = reactive<Record<CharacterViewType, string>>(
   Object.fromEntries(
@@ -90,6 +96,7 @@ const readyCount = computed(() => (
 const hasPendingView = computed(() => (
   draft.value?.views.some(view => view.status === 'pending') ?? false
 ))
+const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 
 const refreshDraft = async () => {
   await store.refresh()
@@ -137,7 +144,13 @@ const generateView = async () => {
   }
   generatingView.value = activeViewType.value
   try {
-    await store.generateView(draftId.value, activeViewType.value, prompt)
+    await store.generateView(
+      draftId.value,
+      activeViewType.value,
+      prompt,
+      selectedEngine.value,
+      t(activeDefinition.value.labelKey),
+    )
     message.success(t('characters.view_submitted', {
       view: t(activeDefinition.value.labelKey),
     }))
@@ -168,6 +181,7 @@ const resetWorkspace = () => {
   if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
   sourcePreview.value = null
   activeViewType.value = 'face_front'
+  selectedEngine.value = 'free_edit_v2_5'
   for (const definition of VIEW_DEFINITIONS) {
     prompts[definition.type] = definition.defaultPrompt
   }
@@ -330,6 +344,24 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 8, maxRows: 14 }"
             :placeholder="t('characters.view_prompt_placeholder')"
           />
+          <div class="mt-4">
+            <div class="mb-2 text-sm font-semibold">
+              {{ t('characters.engine_label') }}
+            </div>
+            <a-radio-group
+              v-model:value="selectedEngine"
+              button-style="solid"
+              class="character-workbench__engines flex flex-wrap gap-2"
+            >
+              <a-radio-button
+                v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ t(option.labelKey) }} · {{ option.cost }} {{ t('app.credits') }}
+              </a-radio-button>
+            </a-radio-group>
+          </div>
           <a-button
             type="primary"
             size="large"
@@ -339,7 +371,7 @@ onBeforeUnmount(() => {
             @click="generateView"
           >
             {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
-            · 3 {{ t('app.credits') }}
+            · {{ selectedEngineCost }} {{ t('app.credits') }}
           </a-button>
           <div class="character-workbench__save mt-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>

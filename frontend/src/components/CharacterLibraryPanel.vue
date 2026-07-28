@@ -8,8 +8,13 @@ import { useRouter } from 'vue-router'
 import type {
   CharacterReference,
   CharacterReferenceView,
+  CharacterViewEngine,
   CharacterViewType,
 } from '@/api/characters'
+import {
+  CHARACTER_VIEW_ENGINE_OPTIONS,
+  getCharacterViewEngineCost,
+} from '@/features/characters/characterViewEngines'
 import { useCharactersStore } from '@/stores/characters'
 
 const VIEW_TYPES: CharacterViewType[] = [
@@ -26,6 +31,7 @@ const router = useRouter()
 const store = useCharactersStore()
 const selectedCharacterId = ref<string | null>(null)
 const selectedViewType = ref<CharacterViewType>('face_front')
+const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const regenerating = ref(false)
 const saving = ref(false)
 const prompts = reactive<Record<string, string>>({})
@@ -53,6 +59,7 @@ const selectedPrompt = computed({
     if (promptKey.value) prompts[promptKey.value] = value
   },
 })
+const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 
 const schedulePoll = () => {
   if (pollTimer) clearTimeout(pollTimer)
@@ -78,6 +85,8 @@ const regenerate = async () => {
       selectedCharacter.value.id,
       selectedView.value.type,
       selectedPrompt.value.trim(),
+      selectedEngine.value,
+      selectedView.value.label,
     )
     message.success(t('characters.view_submitted', { view: selectedView.value.label }))
     schedulePoll()
@@ -214,6 +223,24 @@ onBeforeUnmount(() => {
               :maxlength="1200"
               :auto-size="{ minRows: 4, maxRows: 8 }"
             />
+            <div class="mt-3">
+              <div class="mb-2 text-xs font-semibold">
+                {{ t('characters.engine_label') }}
+              </div>
+              <a-radio-group
+                v-model:value="selectedEngine"
+                button-style="solid"
+                class="flex flex-wrap gap-2"
+              >
+                <a-radio-button
+                  v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ t(option.labelKey) }} · {{ option.cost }} {{ t('app.credits') }}
+                </a-radio-button>
+              </a-radio-group>
+            </div>
             <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <a-button
                 :disabled="readyCount < 2 || character.views.some(view => view.status === 'pending')"
@@ -230,7 +257,7 @@ onBeforeUnmount(() => {
                 class="rounded-xl"
                 @click="regenerate"
               >
-                {{ t('characters.regenerate_view') }} · 3 {{ t('app.credits') }}
+                {{ t('characters.regenerate_view') }} · {{ selectedEngineCost }} {{ t('app.credits') }}
               </a-button>
             </div>
           </div>

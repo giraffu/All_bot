@@ -113,8 +113,19 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
 
 
 @pytest.mark.asyncio
-async def test_generate_character_view_charges_three_and_submits_selected_branch(
+@pytest.mark.parametrize(
+    ("engine", "task_type", "cost"),
+    [
+        ("free_edit", "edit", 2),
+        ("free_edit_v2_5", "free_edit_v2_5", 3),
+        ("free_edit_v3", "pornmaster_flux2_edit_bf16", 5),
+    ],
+)
+async def test_generate_character_view_uses_the_selected_standard_free_edit_flow(
     monkeypatch,
+    engine,
+    task_type,
+    cost,
 ):
     from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
 
@@ -125,30 +136,47 @@ async def test_generate_character_view_charges_three_and_submits_selected_branch
         source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
     )
     db = _Session([character, None])
-    submit = AsyncMock(return_value={"task_id": "task-view-1", "cost": 3})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
-    monkeypatch.setattr(
-        service,
-        "QuotaManager",
-        lambda: SimpleNamespace(get_credits=AsyncMock(return_value=97)),
+    submit = AsyncMock(
+        return_value=SimpleNamespace(
+            task_id="task-view-1",
+            cost=cost,
+            status="pending",
+            balance_remaining=100 - cost,
+        )
     )
+    monkeypatch.setattr(service, "submit_generation_task", submit)
 
     result = await service.generate_character_view(
         db=db,
         current_user=_user(),
         character_id="character-1",
         view_type="face_side",
-        payload=CharacterViewGenerateRequest(prompt="custom side portrait"),
+        payload=CharacterViewGenerateRequest(
+            prompt="custom side portrait",
+            engine=engine,
+        ),
     )
 
-    assert result["cost"] == 3
+    assert result["cost"] == cost
     assert result["status"] == "pending"
     assert db.added[0].view_type == "face_side"
     kwargs = submit.await_args.kwargs
-    assert kwargs["cost_override"] == 3
-    assert kwargs["inputs"]["character_view_index"] == 2
-    assert kwargs["inputs"]["prompt"] == "custom side portrait"
-    assert kwargs["registry_metadata"]["record_history"] is False
+    assert kwargs["req"].task_type == task_type
+    assert kwargs["req"].inputs == {
+        "images": [character.source_object_key],
+        "record_history": False,
+    }
+    assert kwargs["req"].prompt == "custom side portrait"
+    assert kwargs["task_id_override"] == db.added[0].task_id
+    assert kwargs["registry_metadata_extra"] == {
+        "_character_reference_view": {
+            "version": 1,
+            "character_id": "character-1",
+            "view_type": "face_side",
+        },
+        "record_history": False,
+    }
+    assert kwargs["allow_contribute_override"] is False
 
 
 @pytest.mark.asyncio

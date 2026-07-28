@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.services import task_web_finalizer
+from src.web_api.services import character_reference_service
 
 
 def _build_record(
@@ -127,6 +128,47 @@ def _mock_pending_record(monkeypatch, record):
         get_pending_mock,
     )
     return get_pending_mock
+
+
+@pytest.mark.asyncio
+async def test_standard_free_edit_terminal_updates_character_view_from_metadata(
+    monkeypatch,
+):
+    record = _build_record(registry_task_id="character-view-task")
+    record["submission_context"]["task_type"] = "free_edit_v2_5"
+    record["submission_context"]["metadata"] = {
+        "_character_reference_view": {
+            "version": 1,
+            "character_id": "character-1",
+            "view_type": "face_side",
+        },
+        "record_history": False,
+    }
+    finalize_character = AsyncMock()
+    monkeypatch.setattr(
+        character_reference_service,
+        "finalize_character_reference",
+        finalize_character,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer,
+        "route_backend_terminal_snapshot",
+        AsyncMock(),
+    )
+
+    await task_web_finalizer._finalize_terminal_record(
+        record,
+        {
+            "status": "done",
+            "result_path": "bot-data/character-views/side.png",
+        },
+    )
+
+    finalize_character.assert_awaited_once_with(
+        task_id="character-view-task",
+        status="done",
+        result_path="bot-data/character-views/side.png",
+    )
 
 
 @pytest.mark.asyncio

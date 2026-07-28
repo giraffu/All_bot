@@ -384,7 +384,12 @@ async def _finalize_terminal_record(
         await redis_client.remove_pending_web_finalizer(registry_task_id)
 
     submission = record.get("submission_context") or {}
-    if submission.get("task_type") == "character_reference_build":
+    metadata = submission.get("metadata") or {}
+    character_view_marker = metadata.get("_character_reference_view")
+    if (
+        submission.get("task_type") == "character_reference_build"
+        or isinstance(character_view_marker, dict)
+    ):
         from src.web_api.services.character_reference_service import (
             finalize_character_reference,
         )
