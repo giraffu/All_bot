@@ -49,6 +49,15 @@ python scripts/release.py deploy \
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
 
+`public-web` 的 test/prod 使用同一份环境中立 tar。Pages adapter 从 artifact
+annotation 读取完整 Git SHA，在上传前按目标环境读取
+`frontend/runtime-config.yml`，覆盖 tar 中的空占位
+`allbot-runtime-config.js`，并向 Wrangler 传递 `--commit-hash`。上传后必须从
+目标 canonical 域名回读 runtime script，确认完整 SHA、runtime revision、
+API 域名和 Bot 用户名均与目标环境一致；未切换时部署失败并进入目标模块回滚。
+测试与正式配置由 focused tests 固定为独立 mapping，禁止把 test API/Bot
+注入正式 Pages，也禁止测试 Pages 回退到同源 `/api`。
+
 ## 状态与恢复
 
 ```bash

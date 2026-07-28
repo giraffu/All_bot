@@ -739,6 +739,15 @@ def validate_environment_semantics(environment: str, values: Mapping[str, str]) 
     bot_type = values.get("BOT_TYPE")
     if bot_type and bot_type != environment.upper():
         raise ContractError("BOT_TYPE conflicts with ALLBOT_ENV")
+    expected_mini_app_urls = {
+        "test": "https://web-cf-test.aivison.it.com",
+        "prod": "https://web.aivison.it.com",
+    }
+    mini_app_url = values.get("MINI_APP_URL", "").strip().rstrip("/")
+    if mini_app_url and mini_app_url != expected_mini_app_urls[environment]:
+        raise ContractError(
+            f"MINI_APP_URL does not match the canonical {environment} Web"
+        )
     if environment != "prod":
         return
     test_keys = sorted(

@@ -131,6 +131,41 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     ) == {"web-api"}
 
 
+@pytest.mark.parametrize(
+    ("environment", "wrong_url"),
+    [
+        ("test", "https://web.aivison.it.com/"),
+        ("prod", "https://web-cf-test.aivison.it.com/"),
+    ],
+)
+def test_environment_rejects_other_environment_mini_app_url(
+    environment, wrong_url
+):
+    module = _load_module()
+    values = _environment(environment)
+    values["MINI_APP_URL"] = wrong_url
+
+    with pytest.raises(module.ContractError, match="MINI_APP_URL"):
+        module.validate_environment_semantics(environment, values)
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_url"),
+    [
+        ("test", "https://web-cf-test.aivison.it.com/"),
+        ("prod", "https://web.aivison.it.com/"),
+    ],
+)
+def test_environment_accepts_its_canonical_mini_app_url(
+    environment, expected_url
+):
+    module = _load_module()
+    values = _environment(environment)
+    values["MINI_APP_URL"] = expected_url
+
+    module.validate_environment_semantics(environment, values)
+
+
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])
 def test_ton_merchant_address_is_conditionally_required(service):
     module = _load_module()

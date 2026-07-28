@@ -60,6 +60,10 @@ sequenceDiagram
 - 验签时会同时尝试 `BOT_TOKEN` 与 `BOT_TOKEN_TEST`，兼容正式/测试 Bot。
 - 验签包含 `auth_date` 过期检查，阻断重放攻击。
 - Bot 个人中心里的 Mini App 自动登录入口必须使用 Telegram `web_app=WebAppInfo(...)` 按钮，普通 URL/Web 按钮不会携带 `initData`，只能走密码登录或 Login Widget 兜底。
+- 测试 Bot 的 `MINI_APP_URL` 必须指向测试 Pages，正式 Bot 必须指向正式
+  Pages；运行时环境契约对这两个 canonical URL fail closed。Pages 发布器按
+  目标环境注入 API/Bot runtime config 并从 canonical 域名回读，因此
+  Telegram `initData` 不会被跨环境发送到另一套验签 API。
 - 前端登录页收到 `/auth/login` 或 `/auth/telegram` 的 `401` 时由调用方展示具体错误；全局 axios 拦截器只把其他接口的 `401` 视为已有会话过期。
 
 ### 3.2 密码登录与改密

@@ -7,6 +7,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Any, Callable, Iterator, Mapping, NamedTuple, Sequence
 import urllib.error
 import urllib.request
@@ -43,10 +45,94 @@ ENVIRONMENTS = {
     },
 }
 PAGES_PROJECTS = {"test": "allbot-web-cf-test", "prod": "allbot-web-prod"}
+PAGES_URLS = {
+    "test": "https://web-cf-test.aivison.it.com",
+    "prod": "https://web.aivison.it.com",
+}
+PUBLIC_WEB_RUNTIME_FIELDS = {
+    "api_base_url",
+    "storage_url",
+    "imgproxy_url",
+    "telegram_bot_username",
+    "tonconnect_manifest_url",
+    "tonconnect_twa_return_url",
+    "enable_free_edit_v2",
+    "enable_free_edit_v3",
+    "enable_scail2_long_action_transfer",
+    "enable_ltx_t2v",
+}
 
 
 class ReleaseError(RuntimeError):
     pass
+
+
+def load_web_runtime_config(
+    path: Path,
+    environment: str,
+) -> tuple[dict[str, Any], str]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseError("Web runtime config is unavailable or invalid") from exc
+    if not isinstance(document, Mapping) or document.get("schema_version") != 1:
+        raise ReleaseError("unsupported Web runtime config schema_version")
+    raw_values = document.get(environment)
+    if not isinstance(raw_values, Mapping):
+        raise ReleaseError(f"Web runtime config has no {environment!r} mapping")
+    unknown = sorted(set(raw_values) - PUBLIC_WEB_RUNTIME_FIELDS)
+    if unknown:
+        raise ReleaseError(
+            "unsupported public Web runtime fields: " + ", ".join(unknown)
+        )
+    values: dict[str, Any] = {}
+    for key, value in raw_values.items():
+        if not isinstance(value, (str, bool)):
+            raise ReleaseError(f"Web runtime field {key} must be a string or boolean")
+        normalized = value.strip() if isinstance(value, str) else value
+        if normalized == "":
+            raise ReleaseError(f"Web runtime field {key} cannot be empty")
+        values[key] = normalized
+    for required in ("api_base_url", "telegram_bot_username"):
+        if required not in values:
+            raise ReleaseError(f"Web runtime config requires {required}")
+    canonical = json.dumps(
+        values, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    revision = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return values, revision
+
+
+def render_web_runtime_config_script(
+    values: Mapping[str, Any],
+    *,
+    git_sha: str,
+    config_revision: str,
+) -> str:
+    payload = {
+        **values,
+        "release_sha": git_sha,
+        "runtime_config_revision": config_revision,
+    }
+    return (
+        "window.__ALLBOT_CONFIG__ = Object.freeze("
+        + json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + ");\n"
+    )
+
+
+def _artifact_revision(artifact: str) -> str:
+    result = _run(["oras", "manifest", "fetch", artifact])
+    if result.returncode:
+        raise ReleaseError("unable to read Public Web artifact metadata")
+    try:
+        manifest = json.loads(result.stdout)
+        revision = manifest["annotations"]["org.opencontainers.image.revision"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ReleaseError("Public Web artifact has no source revision") from exc
+    if not isinstance(revision, str) or not FULL_SHA_RE.fullmatch(revision):
+        raise ReleaseError("Public Web artifact source revision is invalid")
+    return revision
 
 
 class CommandResult(NamedTuple):
@@ -925,6 +1011,21 @@ mv -Tf {root}/current.new {root}/current
         artifact: str,
         context: Mapping[str, Any],
     ) -> None:
+        release_sha = _artifact_revision(artifact)
+        runtime_values, runtime_revision = load_web_runtime_config(
+            Path(
+                str(
+                    context.get("web_runtime_config")
+                    or ROOT / "frontend" / "runtime-config.yml"
+                )
+            ),
+            environment,
+        )
+        runtime_script = render_web_runtime_config_script(
+            runtime_values,
+            git_sha=release_sha,
+            config_revision=runtime_revision,
+        )
         token_file = Path(
             str(
                 context.get("cloudflare_token_file")
@@ -933,6 +1034,8 @@ mv -Tf {root}/current.new {root}/current
         )
         if not token_file.is_file():
             raise ReleaseError("Cloudflare Pages token file is unavailable")
+        if token_file.stat().st_mode & 0o077:
+            raise ReleaseError("Cloudflare Pages token file permissions must be 600")
         with tempfile.TemporaryDirectory(prefix="allbot-pages-") as directory:
             output = Path(directory)
             if _run(["oras", "pull", artifact, "-o", str(output)]).returncode:
@@ -945,8 +1048,18 @@ mv -Tf {root}/current.new {root}/current
             if _run(["tar", "-xzf", str(archive), "-C", str(dist_root)]).returncode:
                 raise ReleaseError("unable to extract Public Web artifact")
             dist = dist_root / "dist"
+            if not (dist / "index.html").is_file():
+                raise ReleaseError("Public Web artifact has no dist/index.html")
+            (dist / "allbot-runtime-config.js").write_text(
+                runtime_script,
+                encoding="utf-8",
+            )
             env = os.environ.copy()
-            env["CLOUDFLARE_API_TOKEN"] = token_file.read_text().strip()
+            env["CLOUDFLARE_API_TOKEN"] = token_file.read_text(
+                encoding="utf-8"
+            ).strip()
+            if not env["CLOUDFLARE_API_TOKEN"]:
+                raise ReleaseError("Cloudflare Pages token file is empty")
             installed = _run(["npm", "ci"], cwd=ROOT / "frontend")
             if installed.returncode:
                 raise ReleaseError("unable to install pinned Wrangler")
@@ -962,6 +1075,8 @@ mv -Tf {root}/current.new {root}/current
                     PAGES_PROJECTS[environment],
                     "--branch",
                     "main" if environment == "prod" else "test",
+                    "--commit-hash",
+                    release_sha,
                 ],
                 text=True,
                 capture_output=True,
@@ -971,6 +1086,26 @@ mv -Tf {root}/current.new {root}/current
             )
             if result.returncode:
                 raise ReleaseError("Cloudflare Pages deployment failed")
+            canonical_url = (
+                f"{PAGES_URLS[environment]}/allbot-runtime-config.js"
+                f"?release_sha={release_sha}"
+            )
+            runtime_switched = False
+            for _attempt in range(12):
+                observed = _run(
+                    ["curl", "-fsS", "--max-time", "15", canonical_url]
+                )
+                if (
+                    observed.returncode == 0
+                    and observed.stdout.strip() == runtime_script.strip()
+                ):
+                    runtime_switched = True
+                    break
+                time.sleep(5)
+            if not runtime_switched:
+                raise ReleaseError(
+                    "Pages canonical runtime configuration did not switch"
+                )
 
     @staticmethod
     def _pages_credentials(
