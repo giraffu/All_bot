@@ -136,7 +136,7 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     assert len(profile.model_manifest_keys) == 7
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:"
-        "c4a7117185bf8a16fb2877edc78d383dfb65d28d19a80f0c489fdaf659e0460f"
+        "c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33"
     )
     assert ":pending" not in profile.image_ref
 
