@@ -166,8 +166,18 @@ GPU nodes still need their Docker daemon configured to trust
 On the main server, push and verify through `localhost:5000`/`127.0.0.1:5000`
 so the host Docker daemon does not need the LAN IP registered as insecure.
 
-LAN all-in-one profile images are mirrors of verified GHCR RunPod images, not
-one-off local builds:
+Existing LAN profile images may be mirrors of verified GHCR RunPod images. The
+LAN-only `all` profile is built from protected-main source with both of its
+container inputs pinned to exact digests in the local registry. Invoke
+`build_runpod_profile_image.sh --profile all --reuse-base-custom-nodes` with a
+digest-pinned LAN LTX base and Wan node-source image; the builder rejects
+non-local or mutable source refs and records both refs in OCI labels. Push the
+result to `localhost:5000`, verify its digest and revision labels, then pin that
+LAN digest in the catalog before any GPU slot consumes it. GPU nodes pull the
+result only from `192.168.1.115:5000`; model files remain outside the image and
+move only through the LAN model cache.
+
+Current profile image relationships:
 
 | Profile | LAN image |
 | :--- | :--- |

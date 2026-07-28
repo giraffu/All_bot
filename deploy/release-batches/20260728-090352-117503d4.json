@@ -1,9 +1,9 @@
 {
   "base_ref": "origin/main",
-  "base_sha": "e0115422b7a62e5307b933eb4f61a32a8f8c897c",
+  "base_sha": "356f30ea954b5da4b227f0cd687f4673020ae8ab",
   "batch": "20260728-090352-117503d4",
   "container_build_trigger": "main-merge",
-  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-23b4d146",
+  "integration_branch": "codex/release-batch-20260728-090352-117503d4-retry-31df35f4",
   "members": [
     {
       "base_sha": "7fa6edd9db5ff41f426600a0534abcb8a09f47e4",
@@ -31,6 +31,20 @@
       "branch": "codex/e-include-character-overlay-build-context",
       "head": "23b4d1467ad0dc7b60f1453db00d9397d3b23069",
       "queued_at": "2026-07-28T11:04:07.930567+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "e0115422b7a62e5307b933eb4f61a32a8f8c897c",
+      "branch": "codex/e-lan-all-local-registry-build",
+      "head": "2abdd1ef55236ec1ead3a8157c6dd70c7ba628a4",
+      "queued_at": "2026-07-28T11:10:46.601799+00:00",
+      "slot": "E"
+    },
+    {
+      "base_sha": "356f30ea954b5da4b227f0cd687f4673020ae8ab",
+      "branch": "codex/e-isolate-character-overlay-installer",
+      "head": "31df35f4a61087a59f1fd25d5680fd6781148d3c",
+      "queued_at": "2026-07-28T11:19:56.964351+00:00",
       "slot": "E"
     }
   ],

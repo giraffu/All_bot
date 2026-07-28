@@ -233,13 +233,6 @@ stage_profile_context() {
     cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
-    if [ "$profile" = "pornmaster_flux2_edit" ]; then
-        mkdir -p "${destination}/workers/comfy_agent"
-        cp workers/comfy_agent/workflow_task_patchers.py \
-            "${destination}/workers/comfy_agent/workflow_task_patchers.py"
-        cp workers/comfy_agent/agent_result_materialization.py \
-            "${destination}/workers/comfy_agent/agent_result_materialization.py"
-    fi
     if [ "$profile" = "all" ]; then
         cp -a workers/runpod_profiles/ltx_t2v \
             "${destination}/workers/runpod_profiles/ltx_t2v"
@@ -279,6 +272,21 @@ profile_label_args=()
 if [ "$PROFILE" = "all" ]; then
     profile_label_args+=(--label "allbot.lan.profile=all")
     profile_label_args+=(--label "allbot.lan.model_sync=external-lan-manifests")
+    if [ "$REUSE_BASE_CUSTOM_NODES" = "true" ]; then
+        for source_ref in "$BASE_IMAGE" "$NODE_SOURCE_IMAGE"; do
+            case "$source_ref" in
+                localhost:5000/*@sha256:*|127.0.0.1:5000/*@sha256:*|192.168.1.115:5000/*@sha256:*)
+                    ;;
+                *)
+                    echo "LAN all reuse requires digest-pinned local source images: ${source_ref}" >&2
+                    exit 2
+                    ;;
+            esac
+        done
+        profile_label_args+=(--label "allbot.lan.base-image=${BASE_IMAGE}")
+        profile_label_args+=(--label "allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")
+        profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")
+    fi
 else
     profile_label_args+=(--label "allbot.runpod.profile=${PROFILE}")
     profile_label_args+=(--label "allbot.runpod.model_sync=external-r2-manifest")

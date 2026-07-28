@@ -1,6 +1,8 @@
 from pathlib import Path
 import os
+import shutil
 import subprocess
+import sys
 
 
 BOOTSTRAP_SCRIPT = Path("workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh")
@@ -162,6 +164,30 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "git apply --directory=/opt/" not in dockerfile
     assert "all)" in build_script
     assert "allbot/comfy-lan-all:local" in build_script
+
+
+def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
+    dockerfile = LAN_ALL_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+    build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
+    assert 'if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then' in dockerfile
+    assert 'echo "Reusing pinned ComfyUI and LTX sources from base image"' in dockerfile
+    assert 'test -f "${comfyui_dir}/main.py"' in dockerfile
+    assert 'test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"' in dockerfile
+    assert (
+        'profile_label_args+=(--label "allbot.lan.base-image=${BASE_IMAGE}")'
+        in build_script
+    )
+    assert (
+        'profile_label_args+=(--label '
+        '"allbot.lan.node-source-image=${NODE_SOURCE_IMAGE}")'
+        in build_script
+    )
+    assert (
+        'profile_label_args+=(--label "allbot.lan.source-images=local-digest-pinned")'
+        in build_script
+    )
 
 
 def test_ltx_t2v_runtime_refresh_is_digest_based_and_revalidates_fixed_graphs():
@@ -421,7 +447,7 @@ def test_profile_build_script_can_reuse_base_custom_nodes(tmp_path):
     assert "REUSE_BASE_CUSTOM_NODES=true" in rendered
 
 
-def test_pornmaster_profile_stages_character_runtime_overlays(tmp_path):
+def test_pornmaster_profile_stages_character_runtime_installer(tmp_path):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -430,8 +456,9 @@ def test_pornmaster_profile_stages_character_runtime_overlays(tmp_path):
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'context="${!#}"\n'
-        'test -f "$context/workers/comfy_agent/workflow_task_patchers.py"\n'
-        'test -f "$context/workers/comfy_agent/agent_result_materialization.py"\n'
+        'test -f "$context/workers/runpod_profiles/pornmaster_flux2_edit/'
+        'install_character_runtime_overlay.py"\n'
+        'test ! -e "$context/workers/comfy_agent"\n'
         'printf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
         encoding="utf-8",
     )
@@ -459,6 +486,43 @@ def test_pornmaster_profile_stages_character_runtime_overlays(tmp_path):
     )
 
     assert calls.exists()
+
+
+def test_character_runtime_installer_patches_selected_view_contract(tmp_path):
+    runtime_dir = tmp_path / "comfy_agent"
+    runtime_dir.mkdir()
+    shutil.copy2(
+        "workers/runpod_runtime/comfy_agent/workflow_task_patchers.py",
+        runtime_dir / "workflow_task_patchers.py",
+    )
+    shutil.copy2(
+        "workers/runpod_runtime/comfy_agent/agent_result_materialization.py",
+        runtime_dir / "agent_result_materialization.py",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "workers/runpod_profiles/pornmaster_flux2_edit/"
+            "install_character_runtime_overlay.py",
+            str(runtime_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    patcher = (runtime_dir / "workflow_task_patchers.py").read_text(
+        encoding="utf-8"
+    )
+    materializer = (runtime_dir / "agent_result_materialization.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'selected_prefix + "100"' in patcher
+    assert "PORNMASTER_FLUX2_BF16_UNET_NAME" in patcher
+    assert "if selected_index and index != selected_index" in patcher
+    assert "async def _materialize_character_reference_view" in materializer
+    assert "(execution.params or {}).get(\"character_view_index\")" in materializer
 
 
 def test_profile_build_script_rejects_unknown_profile_before_docker(tmp_path):

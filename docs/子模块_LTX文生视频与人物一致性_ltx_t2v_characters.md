@@ -156,11 +156,13 @@ workflow 模型。子任务保持私有，`record_history=false`，
 裁剪。竖幅人物必须完整保留头顶与脚部，六个格子再按固定 3x2 顺序拼接。
 `src.services.smart_image_aspect_service` 只保留兼容 facade，控制面与
 `workers/runpod_runtime` 的比例安全策略以 `shared/image_aspect.py` 为唯一事实源。
-人物子图 patcher 与 materializer 由 PornMaster profile 在共享 RunPod runtime
-之上显式 overlay；不得把人物专属实现写回共享 runtime 并误触发全部 GPU profile
-重建。PornMaster 人物构建镜像还必须显式打包共享图片模块，目录迁移后的真实
-RunPod runtime 测试必须覆盖极端竖图，防止旧 `ImageOps.fit` 回归。修复后的
-artifact 和新人物表未完成 canary 前，旧参考表不得作为 IC 人物一致性验收证据。
+共享 RunPod runtime 保留人物单子图裁枝与物化兼容逻辑；只有实际声明
+`character_reference_build` 的 PornMaster BF16 profile 通过 profile 内 installer
+把选中分支切换到 BF16 checkpoint。installer、Dockerfile 或人物任务契约变化只重建
+该 profile，不得修改共享镜像构建脚本并误触发全部 GPU profile。PornMaster 人物构建
+镜像还必须显式打包共享图片模块，目录迁移后的真实 RunPod runtime 测试必须覆盖极端
+竖图，防止旧 `ImageOps.fit` 回归。修复后的 artifact 和新人物表未完成 canary 前，
+旧参考表不得作为 IC 人物一致性验收证据。
 
 终态 finalizer 通过子图 task ID 幂等回写 `ready/failed` 与 object key；旧版任务
 仍回写人物主记录。失败、取消或入队失败使用现有 Saga 幂等退款。
