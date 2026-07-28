@@ -8084,6 +8084,31 @@ def test_promote_dashboard_direct_never_requires_test_history(monkeypatch):
     )
 
 
+def test_advanced_deploy_payment_direct_never_requires_test_history(monkeypatch):
+    module = _load_module()
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "selected_artifacts": ["payment-api"],
+        "artifacts": {
+            "payment-api": {"digest": "sha256:" + "1" * 64}
+        },
+    }
+    monkeypatch.setattr(
+        module,
+        "_read_test_artifact_evidence",
+        lambda *_args: pytest.fail("prod-only artifact must not query test history"),
+    )
+
+    args = SimpleNamespace(env="prod", command="deploy")
+    module._promotion_check(args, manifest)
+
+    assert args.promote_artifact_assurance == {
+        "payment-api": {"strategy": "direct", "assurance": "waived"}
+    }
+
+
 def test_combined_independent_release_checks_blockers_for_each_module():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)

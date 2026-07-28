@@ -133,7 +133,9 @@ description: "处理不可变发布、Docker Compose、迁移、云测试/正式
 2. 只读运行 `release.py promote` 或对应 `plan`，核对 artifact 旧→新 digest、
    strategy/assurance、execution profile、migration、配置和 blocker。
 3. 对 standard artifact 核对同名 exact-digest test evidence；direct 仍核对
-   full main validation、目标健康和回滚。不得伪造测试 state。
+   full main validation、目标健康和回滚。`promote` 与使用 clean-main policy
+   的高级 `deploy` 必须复用同一份 artifact assurance，prod-only direct
+   artifact 不得因测试拓扑不存在该服务而伪造测试 state。
 4. blocker 存在时停止；配置问题只有用户另行要求才进入
    `config-plan/config-apply`，migration/未知契约使用对应 strict 高级入口。
 5. 获得明确生产授权后，在同一候选命令增加一次 `--confirm-prod`。
