@@ -23,7 +23,6 @@ RUNPOD_AIO_RUNTIME_SHAPE = "runpod_all_in_one"
 DEFAULT_LAN_AIO_ENVIRONMENT = "cloud-test"
 LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
     {
-        "all",
         "image_to_video",
         "wan22_video_v2",
     }
