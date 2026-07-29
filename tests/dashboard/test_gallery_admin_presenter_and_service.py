@@ -93,6 +93,7 @@ async def test_get_all_gallery_posts_payload_uses_presenter():
         task_type="img2img",
         sort_by="latest",
         username="tester",
+        author_user_id=456,
         prompt_contains="hello",
         prompt_max_length=20,
         storage_service=_FakeStorage(),
@@ -102,6 +103,7 @@ async def test_get_all_gallery_posts_payload_uses_presenter():
     assert result["total"] == 1
     assert result["items"][0]["media_url"] == "file://demo.png"
     assert captured_kwargs["username"] == "tester"
+    assert captured_kwargs["author_user_id"] == 456
     assert captured_kwargs["prompt_contains"] == "hello"
     assert captured_kwargs["prompt_max_length"] == 20
 

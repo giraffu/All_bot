@@ -143,6 +143,8 @@ async def get_all_history_payload(
 async def get_user_history_payload(
     *,
     user_id: int,
+    page: int = 1,
+    page_size: int = 20,
     db,
     storage_service=None,
     resolve_media_urls_func=resolve_history_media_urls,
@@ -153,20 +155,37 @@ async def get_user_history_payload(
         storage_service = storage
 
     try:
+        worker_id = (
+            select(WorkerLog.worker_id)
+            .where(WorkerLog.task_id == History.task_id)
+            .order_by(WorkerLog.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        private_client_type = (
+            select(PrivateBotTaskSubmission.client_type)
+            .where(
+                PrivateBotTaskSubmission.registry_task_id == History.task_id
+            )
+            .order_by(PrivateBotTaskSubmission.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        total = (
+            await db.execute(
+                select(func.count(History.id)).where(History.user_id == user_id)
+            )
+        ).scalar() or 0
         stmt = (
             select(
                 History,
-                WorkerLog.worker_id,
-                PrivateBotTaskSubmission.client_type,
-            )
-            .outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
-            .outerjoin(
-                PrivateBotTaskSubmission,
-                History.task_id == PrivateBotTaskSubmission.registry_task_id,
+                worker_id,
+                private_client_type,
             )
             .where(History.user_id == user_id)
             .order_by(desc(History.created_at))
-            .limit(100)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
         result = await db.execute(stmt)
         rows = list(result)
@@ -182,17 +201,22 @@ async def get_user_history_payload(
                 for row in rows
             )
         )
-        return [
-            build_history_item_payload(
-                history=row[0],
-                worker_id=row[1],
-                private_client_type=row[2],
-                storage_service=storage_service,
-                output_file_url=media_result[0],
-                output_file_preview_url=media_result[1],
-            )
-            for row, media_result in zip(rows, media_results)
-        ]
+        return {
+            "items": [
+                build_history_item_payload(
+                    history=row[0],
+                    worker_id=row[1],
+                    private_client_type=row[2],
+                    storage_service=storage_service,
+                    output_file_url=media_result[0],
+                    output_file_preview_url=media_result[1],
+                )
+                for row, media_result in zip(rows, media_results)
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
     except Exception as exc:
         active_logger.error(f"Error getting history: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

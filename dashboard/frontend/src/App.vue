@@ -46,7 +46,11 @@ const {
   selectedUser,
   userHistory,
   historyLoading,
+  historyPage,
+  historyPageSize,
+  historyTotal,
   viewHistory,
+  changeHistoryPage,
   closeModal
 } = useDashboardUserHistory()
 const {
@@ -159,6 +163,10 @@ const handleLogout = () => {
       :user="selectedUser" 
       :history="userHistory" 
       :loading="historyLoading" 
+      :page="historyPage"
+      :page-size="historyPageSize"
+      :total="historyTotal"
+      @page-change="changeHistoryPage"
       @close="closeModal" 
     />
 

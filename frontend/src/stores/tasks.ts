@@ -13,6 +13,7 @@ import {
   probeDetachedTaskResult,
   pollTaskStatus,
   pollTaskResult,
+  reconcileTasksAfterForeground,
   restoreTasksFromStorage,
   serializeTasksForStorage,
   touchTaskActivity
@@ -42,6 +43,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const currentDetailRecord = ref<TaskRecord | null>(null)
   const authStore = useAuthStore()
   const detachedResultProbeTaskIds = new Set<string>()
+  const resultPollingTaskIds = new Set<string>()
   const statusPollingTaskIds = new Set<string>()
 
   const dismissActiveTaskForDetailRecord = (record: TaskRecord) => {
@@ -54,6 +56,7 @@ export const useTasksStore = defineStore('tasks', () => {
     closeTaskStream(task)
     removeTaskSession(activeTasks.value, taskId, closeTaskStream)
     detachedResultProbeTaskIds.delete(taskId)
+    resultPollingTaskIds.delete(taskId)
     statusPollingTaskIds.delete(taskId)
   }
 
@@ -133,24 +136,32 @@ export const useTasksStore = defineStore('tasks', () => {
 
   // Result polling starts after the coarse status endpoint reports success.
   const pollForResult = async (task: Task, retryCount = 0) => {
+    if (retryCount === 0 && resultPollingTaskIds.has(task.id)) {
+      return
+    }
+    resultPollingTaskIds.add(task.id)
     await pollTaskResult(task, activeTasks.value, {
       apiGet: (url) => api.get(url),
       schedule: (callback, delayMs) => {
         setTimeout(callback, delayMs)
       },
       onSuccess: (currentTask) => {
+        resultPollingTaskIds.delete(currentTask.id)
         touchTaskActivity(currentTask)
         message.success(`任务 [${currentTask.title}] 生成完成！`)
       },
       onTimeout: (currentTask) => {
+        resultPollingTaskIds.delete(currentTask.id)
         touchTaskActivity(currentTask)
         message.warning(`获取任务 [${currentTask.title}] 结果超时，请稍后在历史记录中查看`)
       },
       onForbidden: (currentTask) => {
+        resultPollingTaskIds.delete(currentTask.id)
         touchTaskActivity(currentTask)
         message.error(`获取任务 [${currentTask.title}] 结果失败: 任务不存在或无权限`)
       },
       onError: (currentTask) => {
+        resultPollingTaskIds.delete(currentTask.id)
         touchTaskActivity(currentTask)
         message.error(`获取任务 [${currentTask.title}] 结果失败`)
       },
@@ -306,6 +317,25 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   })
 
+  const reconcileForegroundTasks = () => {
+    reconcileTasksAfterForeground(activeTasks.value, {
+      pollForResult: (task) => {
+        void pollForResult(task)
+      },
+      startStatusPolling,
+    })
+  }
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    window.addEventListener('pageshow', reconcileForegroundTasks)
+    window.addEventListener('online', reconcileForegroundTasks)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        reconcileForegroundTasks()
+      }
+    })
+  }
+
   // Persist to localStorage whenever tasks change
   watch(activeTasks, (newTasks) => {
     const serialized = serializeTasksForStorage(newTasks)
@@ -338,6 +368,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const removeTask = (taskId: string) => {
     statusPollingTaskIds.delete(taskId)
     detachedResultProbeTaskIds.delete(taskId)
+    resultPollingTaskIds.delete(taskId)
     removeTaskSession(activeTasks.value, taskId, closeTaskStream)
   }
 

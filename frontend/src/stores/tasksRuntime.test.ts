@@ -7,6 +7,7 @@ import {
   probeDetachedTaskResult,
   pollTaskStatus,
   pollTaskResult,
+  reconcileTasksAfterForeground,
   restoreTasksFromStorage,
   serializeTasksForStorage,
   type RuntimeTaskLike
@@ -166,6 +167,37 @@ test('restoreTasksFromStorage preserves existing updatedAt when rerouting a rest
   assert.equal(activeTasks[0].status, 'running')
   assert.equal(activeTasks[0].awaitingResult, true)
   assert.equal(pollCalls, 1)
+})
+
+test('reconcileTasksAfterForeground resumes saving and active tasks after a tab is restored', () => {
+  const resultTask = createTask({
+    id: 'saving-task',
+    status: 'running',
+    awaitingResult: true,
+  })
+  const runningTask = createTask({
+    id: 'running-task',
+    status: 'running',
+    awaitingResult: false,
+  })
+  const completedTask = createTask({
+    id: 'completed-task',
+    status: 'success',
+    resultUrl: 'https://cdn.example/result.png',
+  })
+  const resultPolls: string[] = []
+  const statusPolls: string[] = []
+
+  reconcileTasksAfterForeground(
+    [resultTask, runningTask, completedTask],
+    {
+      pollForResult: task => resultPolls.push(task.id),
+      startStatusPolling: task => statusPolls.push(task.id),
+    },
+  )
+
+  assert.deepEqual(resultPolls, ['saving-task'])
+  assert.deepEqual(statusPolls, ['running-task'])
 })
 
 test('pollTaskStatus preserves pending type queue position and schedules low-frequency retry', async () => {

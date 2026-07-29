@@ -17,6 +17,7 @@ import {
   banGalleryUserSubmissionsAndTakedown,
   fetchGalleryReports,
   resolveGalleryReport,
+  takedownGalleryReport,
 } from '../api/api'
 import { formatDate } from '../utils/helpers'
 
@@ -271,6 +272,37 @@ const confirmBanAndTakedown = (record: GalleryReportItem) => {
   })
 }
 
+const confirmSingleTakedown = (record: GalleryReportItem) => {
+  if (!record.post_id || record.post_is_active === false) {
+    message.warning('当前作品已下架或不存在')
+    return
+  }
+
+  Modal.confirm({
+    title: '确认仅下架当前这条内容?',
+    icon: h(ExclamationCircleOutlined),
+    content: `只下架作品 #${record.post_id} 并处理该作品的待处理举报；不会封禁用户，也不会影响该用户的其他投稿。`,
+    okText: '仅下架此条',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        actionLoading.value[record.id] = 'single_takedown'
+        await takedownGalleryReport(record.id)
+        message.success(
+          `已下架作品 ${record.post_id}，未封禁用户 ${record.post_author_user_id || '-'}`,
+        )
+        await loadReports(pagination.value.current)
+      } catch (error: any) {
+        message.error(`操作失败: ${error.response?.data?.detail || error.message}`)
+        throw error
+      } finally {
+        actionLoading.value[record.id] = undefined
+      }
+    },
+  })
+}
+
 onMounted(() => {
   void loadReports(1)
 })
@@ -434,7 +466,7 @@ onMounted(() => {
           </template>
 
           <template v-else-if="column.key === 'action'">
-            <div class="flex flex-wrap gap-2 w-[210px]">
+            <div class="flex flex-wrap gap-2 w-[250px]">
               <a-popconfirm
                 title="确认标记这条举报为已处理？"
                 ok-text="确认"
@@ -449,6 +481,16 @@ onMounted(() => {
                   标记处理
                 </a-button>
               </a-popconfirm>
+
+              <a-button
+                size="small"
+                danger
+                :disabled="record.status === 'resolved' || !record.post_id || record.post_is_active === false"
+                :loading="actionLoading[record.id] === 'single_takedown'"
+                @click="confirmSingleTakedown(record)"
+              >
+                仅下架此条
+              </a-button>
 
               <a-button
                 size="small"
