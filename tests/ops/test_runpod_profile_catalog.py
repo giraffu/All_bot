@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -192,6 +193,22 @@ def test_i2i_pro_routes_both_face_swap_types_to_v2_workflow():
         '"face_swap_v2":"face_swap_v2.json",'
         '"face_swap":"face_swap_v2.json"}'
     )
+
+
+def test_prod_env_example_keeps_i2i_pro_workflow_override_in_sync_with_catalog():
+    env_values = {}
+    for raw_line in (ROOT / ".env.cloud.prod.example").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env_values[key] = value
+
+    assert json.loads(
+        env_values["RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO"]
+    ) == json.loads(catalog.RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES)
 
 
 def test_pornmaster_flux2_fp8_profile_is_retired():
