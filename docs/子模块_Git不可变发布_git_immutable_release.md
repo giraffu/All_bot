@@ -51,9 +51,10 @@ python scripts/release.py deploy \
 
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
-migration 镜像闭包必须同时包含 `config.py`、`src/`、Alembic 配置和 migrations；
-因为数据库 URL 的运行环境解析由 `src.runtime_environment` 提供，不能只复制
-Alembic 文件。
+Migration 镜像闭包必须包含 `src/`、Alembic 配置和 migrations；
+Alembic 只通过 `src.runtime_environment.require_env("DATABASE_URL")` 读取唯一
+所需配置，不导入完整业务 `config.py`，避免被 R2、Bot 或 Web 的无关必填项
+阻断。
 
 `public-web` 的 test/prod 使用同一份环境中立 tar。Pages adapter 从 artifact
 annotation 读取完整 Git SHA，在上传前按目标环境读取

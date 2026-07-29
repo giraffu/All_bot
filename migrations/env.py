@@ -12,8 +12,10 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from config import DATABASE_URL
+from src.runtime_environment import require_env
 from src.database.models import Base
+
+DATABASE_URL = require_env("DATABASE_URL")
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
