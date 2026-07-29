@@ -159,3 +159,13 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
   或亲和。
 - GPU226 候选只能经 fleet helper 做单卡 drain、takeover、auto rollback；
   任意 OOM/status 137/Xid、workflow、上传或终态错误均恢复旧 exact digest。
+
+## 10. 统一 LTX 执行 profile
+
+`ltx_unified` 是执行层 profile，不替代 `ltx_video` 或 `ltx_t2v` 的逻辑
+profile。它固定五个 task type、单 Comfy 执行槽、5GB reserve VRAM、独立
+workspace key，并通过 `lan_model_workspace_key: ltx_video` 只复用原模型目录。
+镜像必须由 `ltx_unified` 模块从完整 Git SHA 构建并固定精确 digest；LAN
+workflow override 只把三类图生视频映射到 extracted-LoRA workflow，T2V 两类
+继续使用原 Sulphur/Ingredients workflow。4090/5090 都允许进入候选 catalog，
+但每种硬件首次正式承载前分别执行五类串行 canary。

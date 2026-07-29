@@ -49,7 +49,7 @@ default_comfyui_ref_for_profile() {
         ltx_video)
             printf '%s\n' "f026b01ba576d98442839861a0eb0046bc2250d3"
             ;;
-        ltx_t2v)
+        ltx_t2v|ltx_unified)
             printf '%s\n' "7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1"
             ;;
         *)
@@ -64,7 +64,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: all, img2img_lora, wan22_aio_video, i2i_pro, face_swap, scail2, ltx_video, ltx_t2v, or pornmaster_flux2_edit.
+  --profile <name>       Profile to build: all, img2img_lora, wan22_aio_video, i2i_pro, face_swap, scail2, ltx_video, ltx_t2v, ltx_unified, or pornmaster_flux2_edit.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -205,6 +205,9 @@ case "$PROFILE" in
         ;;
     ltx_t2v)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-ltx-t2v:local}"
+        ;;
+    ltx_unified)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-ltx-unified:local}"
         ;;
     *)
         echo "Unsupported RunPod profile: ${PROFILE}" >&2
@@ -444,7 +447,7 @@ if find "${comfyui_dir}/models" -type f \( -name "*.safetensors" -o -name "*.ckp
 fi
 echo "LAN_ALL_PROFILE_PRESENT=true"
 '
-    elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ]; then
+    elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ] || [ "$PROFILE" = "ltx_unified" ]; then
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
 set -euo pipefail
 comfyui_dir="$(cat /opt/allbot-comfyui-dir)"

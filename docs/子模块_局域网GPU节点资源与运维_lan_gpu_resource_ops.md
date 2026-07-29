@@ -549,6 +549,14 @@ scripts/watch_cloud_worker_recovery.sh --env cloud-prod --mode dry-run
 
 ## 10. 单容器更新流程
 
+统一 LTX 候选必须复用 `gpu-177-gpu1-ltx_video` 的模型 workspace，只由
+`ltx_unified/2026-07-29/manifest.json` 补齐差集；不得删除旧完整 10Eros
+checkpoint。切换使用单槽事务化 `takeover --failure-policy auto_rollback`，
+旧 `ltx_video` 容器停止保留。切后先确认 unified agent 的五类 task type 和
+空队列，再串行提交 I2V、FLF2V、V2V Audio、5 秒 T2V、5 秒 T2V IC；公共 T2V
+开关保持关闭。任一任务失败且影响正式 LTX 流量时，使用精确 physical slot
+和旧 slot 执行 `recover --prefer old`。
+
 更新某个仍保留传统 Comfy 容器的 GPU 节点时：
 
 ```bash

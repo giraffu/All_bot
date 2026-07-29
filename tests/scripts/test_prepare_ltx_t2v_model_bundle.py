@@ -69,6 +69,21 @@ def test_ltx_t2v_dockerfiles_keep_weights_external_and_pin_runtime():
     assert 'find "$(cat /opt/allbot-comfyui-dir)/models"' in pornmaster
 
 
+def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
+    dockerfile = (
+        ROOT / "workers/runpod_profiles/ltx_unified/Dockerfile"
+    ).read_text()
+
+    assert "7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1" in dockerfile
+    assert "aceeae9635f6d493f2893ba3c411a1c36031788a" in dockerfile
+    assert (
+        '{"ltx_video","ltx_video_flf2v","ltx_video_v2v_audio","ltx_t2v","ltx_t2v_ic"}'
+        in dockerfile
+    )
+    assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
+    assert 'find "${comfyui_dir}/models" -type f -name "*.safetensors"' in dockerfile
+
+
 def test_runpod_profile_staging_includes_shared_aspect_adapter():
     build_script = (
         ROOT / "scripts/build_runpod_profile_image.sh"

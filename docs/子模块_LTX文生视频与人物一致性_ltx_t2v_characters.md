@@ -18,6 +18,13 @@ Web runtime flag `enable_ltx_t2v` 只在 test 为 `true`，prod 固定为 `false
 `ltx_t2v` profile，只接受 `ltx_t2v,ltx_t2v_ic`，禁止 template，首轮只接受
 32GB RTX 5090；不得把本地 registry 镜像当作 GHCR artifact。
 
+LAN 可使用 `ltx_unified` 作为执行层聚合 profile，同时承接三类 `ltx_video`
+和两类 `ltx_t2v`。这不合并用户侧逻辑 profile、计费、路由、公共开关或
+RunPod 容量：`ltx_t2v` 在 prod 仍默认关闭，只允许 operator canary 通道提交。
+统一 profile 的模型事实源是
+`ltx_unified/2026-07-29/manifest.json`，其中 Sulphur、Ingredients 与 extracted
+10Eros LoRA 是独立分支资产，公共 CLIP/VAE/upscaler 只引用一次。
+
 ## 2. 固定模型栈
 
 模型 bundle 为 `ltx_t2v_runtime/2026-07-22`，LAN model-cache 前缀为

@@ -12,6 +12,15 @@ MODULE_PATH = ROOT / "scripts" / "release.py"
 CATALOG_PATH = ROOT / "deploy" / "module-catalog.json"
 
 
+def test_release_catalog_has_dedicated_ltx_unified_gpu_artifact():
+    catalog = json.loads(CATALOG_PATH.read_text())["modules"]["ltx_unified"]
+
+    assert catalog["kind"] == "gpu"
+    assert catalog["adapter"] == "gpu"
+    assert catalog["image"] == "allbot-gpu-ltx-unified"
+    assert catalog["dockerfile"] == "workers/runpod_profiles/ltx_unified/Dockerfile"
+
+
 def _load_module():
     spec = importlib.util.spec_from_file_location("release", MODULE_PATH)
     assert spec is not None and spec.loader is not None

@@ -456,6 +456,41 @@ def test_workflow_patcher_injects_multiple_ltx_video_loras_from_lora_items(tmp_p
     assert "lora_9" not in patched["256"]["inputs"]
 
 
+@pytest.mark.parametrize(
+    ("task_type", "filename"),
+    [
+        ("ltx_video", "LTX 2.3 I2V 10Eros LoRA.json"),
+        ("ltx_video_flf2v", "LTX 2.3 FLF2V 10Eros LoRA.json"),
+        ("ltx_video_v2v_audio", "LTX 2.3 V2V Audio 10Eros LoRA.json"),
+    ],
+)
+def test_unified_ltx_workflows_keep_fixed_10eros_when_optional_lora_is_absent(
+    monkeypatch, task_type, filename
+):
+    monkeypatch.setenv(
+        "TASK_TYPE_WORKFLOW_OVERRIDES",
+        json.dumps({task_type: filename}),
+    )
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow(task_type)
+
+    patched = patcher.patch_workflow(task_type, workflow, {"prompt": "demo"})
+
+    assert patched["257"]["inputs"]["model_name"] == (
+        "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+    )
+    assert patched["191"]["inputs"]["input_1"] == ["905", 0]
+    assert patched["905"]["inputs"]["model"] == ["257", 0]
+    assert patched["905"]["inputs"]["clip"] == ["189", 0]
+    assert patched["905"]["inputs"]["lora_1"] == {
+        "on": True,
+        "lora": "ltx2.3/LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors",
+        "strength": 1.0,
+    }
+    assert "256" not in patched
+    assert patched["8"]["inputs"]["model"] == ["191", 0]
+
+
 def test_workflow_patcher_patches_real_ltx_flf2v_workflow():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     workflow = patcher.load_workflow("ltx_video_flf2v")

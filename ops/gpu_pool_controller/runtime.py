@@ -29,6 +29,7 @@ LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
 )
 LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
     "ltx_t2v": 5,
+    "ltx_unified": 5,
 }
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
     {
@@ -49,6 +50,14 @@ LAN_AIO_SCAIL2_ENV = {
 LAN_AIO_LTX_T2V_ENV = {
     "COMFYUI_DIR": "/opt/ComfyUI",
 }
+LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "ltx_video": "LTX 2.3 I2V 10Eros LoRA.json",
+        "ltx_video_flf2v": "LTX 2.3 FLF2V 10Eros LoRA.json",
+        "ltx_video_v2v_audio": "LTX 2.3 V2V Audio 10Eros LoRA.json",
+    },
+    separators=(",", ":"),
+)
 LAN_AIO_ALL_WORKFLOW_OVERRIDES = json.dumps(
     {
         **json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
@@ -62,12 +71,14 @@ LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
     "face_swap": RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    "ltx_unified": LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
 }
 LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "all": LAN_AIO_LTX_T2V_ENV,
     "scail2": LAN_AIO_SCAIL2_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
+    "ltx_unified": LAN_AIO_LTX_T2V_ENV,
 }
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {

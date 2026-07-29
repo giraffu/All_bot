@@ -35,6 +35,7 @@
     "wan22_video_v2": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-wan22-aio-video", "dockerfile": "workers/runpod_profiles/wan22_aio_video/Dockerfile", "environments": ["test", "prod"]},
     "ltx_video": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-video-v2", "dockerfile": "workers/runpod_profiles/ltx_video/Dockerfile", "environments": ["test", "prod"]},
     "ltx_t2v": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-t2v", "dockerfile": "workers/runpod_profiles/ltx_t2v/Dockerfile", "environments": ["test", "prod"]},
+    "ltx_unified": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-unified", "dockerfile": "workers/runpod_profiles/ltx_unified/Dockerfile", "environments": ["test", "prod"]},
     "img2img": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-img2img-lora", "dockerfile": "workers/runpod_profiles/img2img_lora/Dockerfile", "environments": ["test", "prod"]}
   }
 }
