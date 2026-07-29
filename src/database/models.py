@@ -567,6 +567,134 @@ class CharacterReferenceView(Base):
     character = relationship("CharacterReference", back_populates="views")
 
 
+class CharacterModelAsset(Base):
+    __tablename__ = "character_model_assets"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('queued', 'preparing_views', 'reconstructing', "
+            "'rigging', 'ready', 'failed')",
+            name="ck_character_model_assets_status",
+        ),
+        UniqueConstraint(
+            "character_id",
+            "version",
+            name="uq_character_model_assets_character_version",
+        ),
+        Index("ix_character_model_assets_user_status", "user_id", "status"),
+        Index(
+            "ix_character_model_assets_character_created",
+            "character_id",
+            "created_at",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    character_id = Column(
+        String(36),
+        ForeignKey("character_references.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version = Column(Integer, nullable=False)
+    provider = Column(String(32), nullable=False, default="local_fixture")
+    status = Column(String(24), nullable=False, default="queued")
+    error_code = Column(String(64), nullable=True)
+    model_object_key = Column(String(1024), nullable=True)
+    render_source_object_key = Column(String(1024), nullable=True)
+    thumbnail_object_key = Column(String(1024), nullable=True)
+    rig_type = Column(String(32), nullable=True)
+    animation_ids = Column(JSON, nullable=False, default=list)
+    model_metadata = Column(JSON, nullable=False, default=dict)
+    lease_owner = Column(String(128), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+    character = relationship("CharacterReference", backref="model_assets")
+    input_views = relationship(
+        "CharacterModelInputView",
+        back_populates="asset",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class CharacterModelInputView(Base):
+    __tablename__ = "character_model_input_views"
+    __table_args__ = (
+        CheckConstraint(
+            "view_type in ('model_front', 'model_back', 'model_left', 'model_right')",
+            name="ck_character_model_input_views_type",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'ready', 'failed')",
+            name="ck_character_model_input_views_status",
+        ),
+        UniqueConstraint(
+            "asset_id",
+            "view_type",
+            name="uq_character_model_input_views_asset_type",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    asset_id = Column(
+        String(36),
+        ForeignKey("character_model_assets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    view_type = Column(String(24), nullable=False)
+    status = Column(String(16), nullable=False, default="pending")
+    object_key = Column(String(1024), nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+    asset = relationship("CharacterModelAsset", back_populates="input_views")
+
+
+class CharacterRenderJob(Base):
+    __tablename__ = "character_render_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('queued', 'rendering', 'ready', 'failed', 'cancelled')",
+            name="ck_character_render_jobs_status",
+        ),
+        Index("ix_character_render_jobs_user_status", "user_id", "status"),
+        Index("ix_character_render_jobs_status_created", "status", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    asset_id = Column(
+        String(36),
+        ForeignKey("character_model_assets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status = Column(String(16), nullable=False, default="queued")
+    render_recipe = Column(JSON, nullable=False)
+    output_object_key = Column(String(1024), nullable=True)
+    error_code = Column(String(64), nullable=True)
+    lease_owner = Column(String(128), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+    asset = relationship("CharacterModelAsset", backref="render_jobs")
+
+
 class TemplateContribution(Base):
     __tablename__ = "template_contributions"
 

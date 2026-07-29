@@ -51,6 +51,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .eslintcache
+**/test-results/
+**/playwright-report/
 
 # Database files
 *.db
@@ -133,6 +135,7 @@ local_analytics_platform/.env.*
 !.env.lan.model-cache.example
 !.env.lan-aio-test.example
 !.env.lan-aio-prod.example
+!avatar_miniapp/.env.lan.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/

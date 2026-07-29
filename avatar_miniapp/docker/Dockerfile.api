@@ -1,0 +1,10 @@
+FROM ghcr.io/giraffu/allbot-python-runtime-base@sha256:ed259ecf85b3288795f206366747955d7ff575ad46a0ce24853e016acfc8014b
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY . /app
+
+EXPOSE 8010
+CMD ["uvicorn", "src.avatar_miniapp.api:app", "--host", "0.0.0.0", "--port", "8010"]

@@ -1,0 +1,115 @@
+name: allbot-avatar-miniapp
+
+x-avatar-environment: &avatar-environment
+  ALLBOT_ENV: ${ALLBOT_ENV:-test}
+  BOT_TYPE: ${BOT_TYPE:-avatar_miniapp}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+  REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+  REDIS_PREFIX: ${REDIS_PREFIX:-allbot:test}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+  MINIO_BUCKET: ${MINIO_BUCKET:?MINIO_BUCKET is required}
+  MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-${MINIO_BUCKET}}
+  MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-${MINIO_BUCKET}}
+  MINIO_SECURE: ${MINIO_SECURE:-false}
+  MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+  API_BASE: ${API_BASE:-http://127.0.0.1:1}
+  API_TOKEN: ${API_TOKEN:-disabled}
+  R2_MAX_POOL_CONNECTIONS: ${R2_MAX_POOL_CONNECTIONS:-10}
+  R2_EXISTS_POSITIVE_TTL_SECONDS: ${R2_EXISTS_POSITIVE_TTL_SECONDS:-300}
+  R2_EXISTS_NEGATIVE_TTL_SECONDS: ${R2_EXISTS_NEGATIVE_TTL_SECONDS:-30}
+  R2_EXISTS_CACHE_MAX_ENTRIES: ${R2_EXISTS_CACHE_MAX_ENTRIES:-1000}
+  R2_HEAD_SEMAPHORE_LIMIT: ${R2_HEAD_SEMAPHORE_LIMIT:-8}
+  R2_HEAD_CONNECT_TIMEOUT_SECONDS: ${R2_HEAD_CONNECT_TIMEOUT_SECONDS:-2}
+  R2_HEAD_READ_TIMEOUT_SECONDS: ${R2_HEAD_READ_TIMEOUT_SECONDS:-5}
+  R2_HEAD_MAX_ATTEMPTS: ${R2_HEAD_MAX_ATTEMPTS:-2}
+  POLL_INTERVAL: ${POLL_INTERVAL:-2}
+  POLL_TIMEOUT: ${POLL_TIMEOUT:-900}
+  DAILY_LIMIT: ${DAILY_LIMIT:-10}
+  ENABLE_PUBLIC_SHARE: ${ENABLE_PUBLIC_SHARE:-false}
+  MINIAPP_FIXTURE_MODE: ${MINIAPP_FIXTURE_MODE:-true}
+  BOT_TOKEN: ""
+
+services:
+  avatar-miniapp-api:
+    build:
+      context: ..
+      dockerfile: avatar_miniapp/docker/Dockerfile.api
+    environment: *avatar-environment
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - avatar-internal
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/api/ready', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  avatar-miniapp-worker:
+    build:
+      context: ..
+      dockerfile: avatar_miniapp/docker/Dockerfile.worker
+    environment:
+      <<: *avatar-environment
+      MINIAPP_WORKER_POLL_SECONDS: ${MINIAPP_WORKER_POLL_SECONDS:-2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - avatar-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.avatar_miniapp.worker", "--health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  avatar-miniapp-web:
+    build:
+      context: ..
+      dockerfile: avatar_miniapp/docker/Dockerfile.web
+    environment:
+      MINIAPP_LAN_HOST: ${MINIAPP_LAN_HOST:-localhost}
+    depends_on:
+      avatar-miniapp-api:
+        condition: service_healthy
+    ports:
+      - "${MINIAPP_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - avatar-internal
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "-",
+          "http://127.0.0.1:2019/config/",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+networks:
+  avatar-internal:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

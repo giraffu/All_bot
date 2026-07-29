@@ -17,6 +17,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-cloudflare-ops` | DNS、Tunnel、Access、Pages、R2 公网入口 |
 | `allbot-cloud-ssh` | 云主机 SSH 连接、认证、主机密钥与救援入口 |
 | `allbot-comfy-models` | workflow、LoRA、ControlNet、Worker profile |
+| `allbot-avatar-miniapp` | 3D 角色 Mini App、fixture、GLB/VRM、CPU 渲染 |
 | `allbot-lan-aio-operator` | LAN AIO current/cache/takeover/recover |
 | `allbot-lan-resource-manager` | LAN 资源平台、可信构建、部署与 runner |
 | `allbot-local-analytics-prompt-semantics` | 本地分析提示词词元治理 |

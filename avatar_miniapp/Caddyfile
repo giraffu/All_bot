@@ -1,0 +1,14 @@
+https://{$MINIAPP_LAN_HOST:localhost}:8443 {
+	tls internal
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy avatar-miniapp-api:8010
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
