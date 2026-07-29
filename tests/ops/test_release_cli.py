@@ -243,6 +243,29 @@ def test_deploy_failure_rolls_back_only_target_module(tmp_path):
     assert events == ["rollback"]
 
 
+def test_compose_deploy_waits_for_target_health(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_remote_shell(host, script):
+        captured["host"] = host
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+
+    module.SystemAdapters(catalog)._deploy_compose(
+        "prod",
+        catalog["dashboard-backend"],
+        "ghcr.io/example/dashboard@sha256:" + "1" * 64,
+        {"remote_host": "prod-control"},
+    )
+
+    assert captured["host"] == "prod-control"
+    assert "up -d --no-deps --wait --wait-timeout 120 dashboard-backend" in captured["script"]
+
+
 def test_migration_failure_is_reported_without_rollback(tmp_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
