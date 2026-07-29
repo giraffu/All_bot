@@ -123,8 +123,13 @@ def test_database_migration_image_contains_runtime_environment_dependency():
         encoding="utf-8"
     )
 
-    assert "COPY config.py /app/config.py" in migration
+    assert "COPY config.py /app/config.py" not in migration
     assert "COPY src /app/src" in migration
+
+    alembic_env = (ROOT / "migrations/env.py").read_text(encoding="utf-8")
+    assert "from config import DATABASE_URL" not in alembic_env
+    assert "from src.runtime_environment import require_env" in alembic_env
+    assert 'DATABASE_URL = require_env("DATABASE_URL")' in alembic_env
 
 
 def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools():
