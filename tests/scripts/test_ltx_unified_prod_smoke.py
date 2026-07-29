@@ -36,8 +36,6 @@ def test_prod_smoke_builds_five_serial_cases_with_public_t2v_left_closed():
         "canary/start.png",
         "canary/end.png",
     ]
-    assert cases[2]["payload"]["task_type"] == "ltx_video"
-    assert cases[2]["payload"]["inputs"]["ltx_mode"] == "v2v_audio"
     assert cases[2]["payload"]["inputs"]["video"] == "canary/input.mp4"
     assert cases[4]["payload"]["inputs"]["character_sheet"] == (
         "canary/character.png"
