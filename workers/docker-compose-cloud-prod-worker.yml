@@ -12,6 +12,7 @@ x-worker-cloud-prod-env: &worker-cloud-prod-env
   MINIO_SECURE: ${MINIO_SECURE:-true}
   UPLOAD_SIDECAR_URL: http://127.0.0.1:${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
   RESULT_SPOOL_DIR: /app/spool
+  PREFERRED_TASK_TYPES: ${PREFERRED_TASK_TYPES:-}
   PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
   PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
   PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap_v2,i2i_draw,i2i_pro}

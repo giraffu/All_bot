@@ -23,6 +23,7 @@ from app.routers.agent import HeartbeatRequest
 def test_parse_allowed_types_trims_csv_values():
     assert parse_allowed_types(None) is None
     assert parse_allowed_types("img2img, face_swap") == ["img2img", "face_swap"]
+    assert parse_allowed_types(" , ") is None
 
 
 def test_heartbeat_request_accepts_legacy_empty_numeric_health_fields():
@@ -64,6 +65,7 @@ async def test_pop_task_payload_returns_missing_message_when_task_details_absent
     assert payload == {"task": None, "message": "Task details not found"}
     queue_manager.dequeue_task.assert_awaited_once_with(
         allowed_types=["img2img"],
+        preferred_types=None,
         cancel_lock=True,
     )
 
@@ -102,6 +104,7 @@ async def test_peek_task_payload_returns_first_pending_match_without_dequeue():
     assert payload == {"task": task}
     queue_manager.peek_pending_tasks.assert_awaited_once_with(
         allowed_types=["img2img", "face_swap"],
+        preferred_types=None,
         limit=1,
     )
 
@@ -119,6 +122,69 @@ async def test_peek_task_payload_returns_no_task_message_when_empty():
     assert payload == {"task": None, "message": "No pending tasks"}
     queue_manager.peek_pending_tasks.assert_awaited_once_with(
         allowed_types=None,
+        preferred_types=None,
+        limit=1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pop_task_payload_passes_valid_preferred_subset():
+    queue_manager = SimpleNamespace(
+        dequeue_task=AsyncMock(return_value=None),
+    )
+
+    await pop_task_payload(
+        types="img2img,scail2_face_swap_v2",
+        preferred_types="scail2_face_swap_v2",
+        queue_manager=queue_manager,
+    )
+
+    queue_manager.dequeue_task.assert_awaited_once_with(
+        allowed_types=["img2img", "scail2_face_swap_v2"],
+        preferred_types=["scail2_face_swap_v2"],
+        cancel_lock=False,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("types", "preferred_types"),
+    (
+        (None, "scail2_face_swap_v2"),
+        ("img2img", "scail2_face_swap_v2"),
+    ),
+)
+async def test_pop_task_payload_rejects_invalid_preferred_types(
+    types,
+    preferred_types,
+):
+    queue_manager = SimpleNamespace(dequeue_task=AsyncMock())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await pop_task_payload(
+            types=types,
+            preferred_types=preferred_types,
+            queue_manager=queue_manager,
+        )
+
+    assert exc_info.value.status_code == 422
+    queue_manager.dequeue_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_peek_task_payload_passes_valid_preferred_subset():
+    queue_manager = SimpleNamespace(peek_pending_tasks=AsyncMock(return_value=[]))
+
+    await peek_task_payload(
+        types="img2img,scail2_face_swap_v2",
+        preferred_types="scail2_face_swap_v2",
+        limit=1,
+        queue_manager=queue_manager,
+    )
+
+    queue_manager.peek_pending_tasks.assert_awaited_once_with(
+        allowed_types=["img2img", "scail2_face_swap_v2"],
+        preferred_types=["scail2_face_swap_v2"],
         limit=1,
     )
 

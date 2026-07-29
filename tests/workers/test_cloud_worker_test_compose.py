@@ -24,6 +24,22 @@ def test_cloud_test_workers_and_release_relay_share_the_same_spool_mount():
         assert SHARED_SPOOL_MOUNT in service["volumes"], service_name
 
 
+def test_cloud_worker_preferred_types_default_is_dormant():
+    for compose_path in (
+        COMPOSE_PATH,
+        ROOT / "workers" / "docker-compose-cloud-prod-worker.yml",
+    ):
+        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        shared_environment = next(
+            value
+            for key, value in compose.items()
+            if key.startswith("x-worker-") and key.endswith("-env")
+        )
+        assert shared_environment["PREFERRED_TASK_TYPES"] == (
+            "${PREFERRED_TASK_TYPES:-}"
+        )
+
+
 def test_immutable_worker_release_keeps_agents_and_relay_on_one_spool_root():
     compose = yaml.safe_load(IMMUTABLE_COMPOSE_PATH.read_text(encoding="utf-8"))
     expected_mount = (

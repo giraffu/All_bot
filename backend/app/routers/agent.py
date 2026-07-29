@@ -81,6 +81,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
 @router.get("/pop")
 async def pop_task(
     types: Optional[str] = None,
+    preferred_types: Optional[str] = None,
     agent_id: Optional[str] = None,
     cancel_lock: bool = False,
     _authorized: bool = Depends(verify_token),
@@ -88,6 +89,7 @@ async def pop_task(
 ):
     return await pop_task_payload(
         types=types,
+        preferred_types=preferred_types,
         agent_id=agent_id,
         queue_manager=queue_manager,
         cancel_lock=cancel_lock,
@@ -97,12 +99,14 @@ async def pop_task(
 @router.get("/peek")
 async def peek_task(
     types: Optional[str] = None,
+    preferred_types: Optional[str] = None,
     limit: int = 1,
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
     return await peek_task_payload(
         types=types,
+        preferred_types=preferred_types,
         limit=limit,
         queue_manager=queue_manager,
     )

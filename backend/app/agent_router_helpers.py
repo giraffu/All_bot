@@ -4,7 +4,31 @@ from fastapi import HTTPException, status
 def parse_allowed_types(types: str | None) -> list[str] | None:
     if not types:
         return None
-    return [task_type.strip() for task_type in types.split(",") if task_type.strip()]
+    parsed = [task_type.strip() for task_type in types.split(",") if task_type.strip()]
+    return parsed or None
+
+
+def parse_task_type_preferences(
+    *,
+    types: str | None,
+    preferred_types: str | None,
+) -> tuple[list[str] | None, list[str] | None]:
+    allowed = parse_allowed_types(types)
+    preferred = parse_allowed_types(preferred_types)
+    if not preferred:
+        return allowed, None
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="preferred_types requires non-empty types",
+        )
+    unsupported = sorted(set(preferred) - set(allowed))
+    if unsupported:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"preferred_types must be a subset of types: {', '.join(unsupported)}",
+        )
+    return allowed, preferred
 
 
 async def bind_agent_task(
@@ -28,10 +52,15 @@ async def clear_agent_current_task(
 async def pop_task_payload(
     *,
     types: str | None,
+    preferred_types: str | None = None,
     queue_manager,
     agent_id: str | None = None,
     cancel_lock: bool = False,
 ) -> dict:
+    allowed, preferred = parse_task_type_preferences(
+        types=types,
+        preferred_types=preferred_types,
+    )
     if agent_id and hasattr(queue_manager, "is_agent_pop_enabled"):
         enabled, reason = await queue_manager.is_agent_pop_enabled(agent_id)
         if not enabled:
@@ -41,7 +70,8 @@ async def pop_task_payload(
             }
 
     task_data = await queue_manager.dequeue_task(
-        allowed_types=parse_allowed_types(types),
+        allowed_types=allowed,
+        preferred_types=preferred,
         cancel_lock=cancel_lock,
     )
     if not task_data:
@@ -57,11 +87,17 @@ async def pop_task_payload(
 async def peek_task_payload(
     *,
     types: str | None,
+    preferred_types: str | None = None,
     limit: int,
     queue_manager,
 ) -> dict:
+    allowed, preferred = parse_task_type_preferences(
+        types=types,
+        preferred_types=preferred_types,
+    )
     tasks = await queue_manager.peek_pending_tasks(
-        allowed_types=parse_allowed_types(types),
+        allowed_types=allowed,
+        preferred_types=preferred,
         limit=max(1, limit),
     )
     if not tasks:

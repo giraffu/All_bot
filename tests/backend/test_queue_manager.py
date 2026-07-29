@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -56,16 +57,45 @@ class _FakeRedis:
 
     async def eval(
         self,
-        _script,
+        script,
         _numkeys,
-        task_key,
-        pending_key,
-        request_fingerprint,
-        task_data_json,
-        _ttl,
-        score,
-        task_id,
+        *args,
     ):
+        if "preferred_count" in script:
+            pending_key, task_prefix, allowed_count, preferred_count, *task_types = args
+            allowed_count = int(allowed_count)
+            preferred_count = int(preferred_count)
+            allowed = set(task_types[:allowed_count])
+            preferred = set(
+                task_types[allowed_count : allowed_count + preferred_count]
+            )
+            fallback = None
+            for task_id, score in sorted(
+                self.sorted_sets.get(pending_key, {}).items(),
+                key=lambda item: item[1],
+            ):
+                task_type = self.hashes.get(f"{task_prefix}{task_id}", {}).get("type")
+                if task_type not in allowed:
+                    continue
+                if fallback is None:
+                    fallback = (task_id, score)
+                if task_type in preferred:
+                    self.sorted_sets[pending_key].pop(task_id)
+                    return [task_id, score]
+            if fallback is not None:
+                self.sorted_sets[pending_key].pop(fallback[0])
+                return list(fallback)
+            return []
+
+        (
+            task_key,
+            pending_key,
+            request_fingerprint,
+            task_data_json,
+            _ttl,
+            score,
+            task_id,
+        ) = args
         existing = self.hashes.get(task_key)
         if existing is not None:
             return (
@@ -509,6 +539,107 @@ async def test_dequeue_task_uses_priority_score_across_allowed_types():
 
 
 @pytest.mark.asyncio
+async def test_dequeue_task_prefers_preferred_type_over_lower_score_fallback():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    await redis.hset(
+        f"{manager.task_prefix}fallback",
+        mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING},
+    )
+    await redis.hset(
+        f"{manager.task_prefix}preferred",
+        mapping={"type": TaskType.SCAIL2_FACE_SWAP_V2, "status": TaskStatus.PENDING},
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"fallback": 1.0, "preferred": 20.0},
+    )
+
+    result = await manager.dequeue_task(
+        allowed_types=[TaskType.IMG2IMG, TaskType.SCAIL2_FACE_SWAP_V2],
+        preferred_types=[TaskType.SCAIL2_FACE_SWAP_V2],
+    )
+
+    assert result == ("preferred", 20.0)
+    assert "fallback" in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
+async def test_dequeue_task_uses_first_fallback_when_no_preferred_is_pending():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    await redis.hset(
+        f"{manager.task_prefix}fallback-a",
+        mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING},
+    )
+    await redis.hset(
+        f"{manager.task_prefix}fallback-b",
+        mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING},
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"fallback-a": 2.0, "fallback-b": 3.0},
+    )
+
+    result = await manager.dequeue_task(
+        allowed_types=[TaskType.IMG2IMG, TaskType.LTX_VIDEO],
+        preferred_types=[TaskType.SCAIL2_FACE_SWAP_V2],
+    )
+
+    assert result == ("fallback-a", 2.0)
+    assert "fallback-b" in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
+async def test_preferred_dequeue_does_not_retry_atomic_claim_failure():
+    redis = _FlakyRedis({"eval": 1})
+    manager = QueueManager(redis)
+
+    with pytest.raises(ConnectionResetError):
+        await manager.dequeue_task(
+            allowed_types=[TaskType.IMG2IMG],
+            preferred_types=[TaskType.IMG2IMG],
+        )
+
+    assert redis.calls["eval"] == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_preferred_dequeue_never_claims_same_task_twice():
+    redis = _FakeRedis()
+    first_manager = QueueManager(redis)
+    second_manager = QueueManager(redis)
+    for task_id in ("preferred-a", "preferred-b"):
+        await redis.hset(
+            f"{first_manager.task_prefix}{task_id}",
+            mapping={
+                "type": TaskType.SCAIL2_FACE_SWAP_V2,
+                "status": TaskStatus.PENDING,
+            },
+        )
+    await redis.zadd(
+        first_manager.pending_key,
+        {"preferred-a": 1.0, "preferred-b": 2.0},
+    )
+
+    results = await asyncio.gather(
+        first_manager.dequeue_task(
+            allowed_types=[TaskType.IMG2IMG, TaskType.SCAIL2_FACE_SWAP_V2],
+            preferred_types=[TaskType.SCAIL2_FACE_SWAP_V2],
+        ),
+        second_manager.dequeue_task(
+            allowed_types=[TaskType.IMG2IMG, TaskType.SCAIL2_FACE_SWAP_V2],
+            preferred_types=[TaskType.SCAIL2_FACE_SWAP_V2],
+        ),
+    )
+
+    assert {result[0] for result in results if result} == {
+        "preferred-a",
+        "preferred-b",
+    }
+
+
+@pytest.mark.asyncio
 async def test_dequeue_task_with_cancel_lock_marks_task_uncancellable_phase():
     redis = _FakeRedis()
     manager = QueueManager(redis)
@@ -549,6 +680,44 @@ async def test_peek_pending_tasks_respects_allowed_types_without_mutating_queue_
     assert redis.sorted_sets[manager.pending_key] == {"task-a": 1.0, "task-b": 2.0}
     assert redis.sets.get(manager.running_key, set()) == set()
     assert manager._task_heartbeat_key("task-b") not in redis.values
+
+
+@pytest.mark.asyncio
+async def test_peek_pending_tasks_prefers_preferred_without_mutating_queue_state():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    await redis.hset(
+        f"{manager.task_prefix}fallback",
+        mapping={
+            "task_id": "fallback",
+            "type": TaskType.IMG2IMG,
+            "status": TaskStatus.PENDING,
+        },
+    )
+    await redis.hset(
+        f"{manager.task_prefix}preferred",
+        mapping={
+            "task_id": "preferred",
+            "type": TaskType.SCAIL2_FACE_SWAP_V2,
+            "status": TaskStatus.PENDING,
+        },
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"fallback": 1.0, "preferred": 20.0},
+    )
+
+    result = await manager.peek_pending_tasks(
+        allowed_types=[TaskType.IMG2IMG, TaskType.SCAIL2_FACE_SWAP_V2],
+        preferred_types=[TaskType.SCAIL2_FACE_SWAP_V2],
+        limit=1,
+    )
+
+    assert result[0]["task_id"] == "preferred"
+    assert redis.sorted_sets[manager.pending_key] == {
+        "fallback": 1.0,
+        "preferred": 20.0,
+    }
 
 
 @pytest.mark.asyncio

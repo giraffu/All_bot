@@ -70,7 +70,7 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
 - worker pool 容量准入、用户等级豁免、fail-open/fail-closed 条件以任务调度
   文档和当前实现为准；必须在扣费/入队前完成，不能用全局队列总数替代
   profile pressure。
-- Worker 只领取 `SUPPORTED_TASK_TYPES`、prefetch 和 pipeline policy 的交集；
+- Worker 只领取 `SUPPORTED_TASK_TYPES`、prefetch 和 pipeline policy 的交集；可选 `PREFERRED_TASK_TYPES` 必须是 supported 子集，Central 在一次领取内优先 preferred、无 preferred 才回退，空配置保持旧顺序；
   预接不能黏住当前类型，也不能覆盖当前 heartbeat 或形成无界本地队列。
 - `gpu_done` 只表示释放 Comfy 槽；结果上传成功且 Central `/complete` 确认后
   才能终态。claimed、execution、delivery 和 reserved 都计入对应有界容量。

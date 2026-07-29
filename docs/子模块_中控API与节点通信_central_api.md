@@ -86,6 +86,7 @@ sequenceDiagram
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
 - `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
+- `/api/agent/task/pop` 与 `/peek` 可选携带 `preferred_types`，但必须同时携带 `types` 且前者是后者的子集，否则返回 422。参数缺失或清洗后为空时完全沿用旧 score 顺序。参数有效时，Central 在单次 Redis Lua 中按 score 扫描候选：记录最早 fallback，但只要领取瞬间存在 preferred 就优先原子 `ZREM` 最早 preferred；没有 preferred 才领取最早 fallback。已经 running 的 fallback 不抢占，下一次领取重新判断。真实原子出队失败不盲 retry；`peek` 使用相同分组顺序但不修改队列。
 - 新版 worker 会在 `/api/agent/task/pop` query 中携带 `agent_id`。Central 会读取 `comfy:agent:control:{agent_id}` 控制键；若 worker 处于 `draining` 或 `disabled`，则返回空任务并保留 pending 队列不变。旧 worker 不传 `agent_id` 时保持兼容旧行为。
 - `/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，只扫描 pending 队列中最早匹配的任务并返回 `{ "task": task_details | null }`。它不得 `zrem` pending、不得写 running set、不得标记 `running`、不得写 task heartbeat；真实接单和取消语义仍必须以后续 `/api/agent/task/pop` 为准。
 - 任务类型事实表位于 `src/domain_config/task_type_registry.py`，当前提供查询 helper 并驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，同时作为一致性门禁；Central simple route 的 task key -> `TaskType` 值由 registry 的 `central_type` 派生，队列 task type 与 worker `SUPPORTED_TASK_TYPES` 分发语义保持不变。新增 Central simple route 或 workflow 映射时，必须同步 registry 并跑 `tests/config/test_task_type_registry.py`。
@@ -109,6 +110,7 @@ sequenceDiagram
 - 覆盖 `peek` 只读语义：不修改 pending/running/status/task heartbeat，且不返回已取消任务
 - 覆盖 `pop(cancel_lock=true)` 写入取消锁，locked running cancel 返回不可取消且不写 `cancel_requested`
 - 覆盖 `pop(agent_id=...)` 在 worker `draining/disabled` 时不出队、不写 running
+- 覆盖未传 `preferred_types` 时旧顺序不变、preferred 优先于更早 fallback、无 preferred 时回退、非子集 422、并发领取不重复，以及 preferred `peek` 不修改队列
 - 覆盖 worker heartbeat GPU pool 元数据能在 `/system/workers` 解析展示
 - 覆盖双槽 worker 下旧任务终态 compare-clear 不会清掉新任务 `current_task_id`
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete
