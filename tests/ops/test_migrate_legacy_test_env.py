@@ -52,6 +52,15 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     assert values["ALLBOT_WORKER_01_COMFY_WS_URL"] == (
         "ws://192.168.1.252:8191/ws"
     )
+    assert values["ALLBOT_WORKER_03_RUNTIME_PROFILE"] == "ltx_unified"
+    assert values["ALLBOT_WORKER_03_TASK_TYPES"] == (
+        "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,ltx_t2v,ltx_t2v_ic"
+    )
+    assert values["ALLBOT_WORKER_06_NODE_ID"] == "gpu-226"
+    assert values["ALLBOT_WORKER_06_RUNTIME_PROFILE"] == "all"
+    assert values["ALLBOT_WORKER_06_COMFY_API_URL"] == (
+        "http://192.168.1.226:8190"
+    )
     assert values["ALLBOT_WORKER_08_NODE_ID"] == "gpu-002"
     assert values["ALLBOT_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         '{"scail2":"x.json"}'

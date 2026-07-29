@@ -407,30 +407,30 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。agent 先把 ComfyUI 结果写入共享 spool，再由不可变发布的本地 relay 上传 R2；两侧默认必须共同挂载宿主机 `/var/lib/allbot/test-worker/spool`，仅在 relay 与全部 agent 同时迁移时才可统一覆盖 `CLOUD_TEST_WORKER_SPOOL_HOST_DIR`。若日志出现 `Upload sidecar returned HTTP 502`，先核对 agent/relay 的 `/app/spool` mount source 是否一致；relay 会以 `upload_asset_attempt_failed` 记录真实异常类型，`FileNotFoundError: spool file not found` 表示共享挂载契约被破坏，而不是 R2 或 ComfyUI 生成失败。
 
-云测试日常可以复用正式可用的 LAN AIO ComfyUI runtime，但 worker 仍注册到云测试 Central，输入/结果仍写测试桶。图片换脸拆分候选中，test-1 指向 `gpu-252` GPU1 的 `8191` `i2i_pro`，承接 `face_swap_v2`、`i2i_pro`、`i2i_draw`、`t2i-pornmaster-turbo`，不得承接 V1；test-8 指向 `gpu-002:8190` 的 SCAIL-2。test-8 可通过任务类型与 workflow override 覆盖动作迁移、视频换人和视频换脸 workflow；视频换脸首帧换脸由 Central 标准 `face_swap_v2` 第一阶段完成，worker8 只接收 `reference_preprocessed=true` 的 SCAIL-2 第二阶段，不再迁移或读取任何 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 配置。
+云测试日常可以复用正式可用的 LAN AIO ComfyUI runtime，但 worker 仍注册到云测试 Central，输入/结果仍写测试桶。图片换脸拆分候选中，test-1 指向 `gpu-252` GPU1 的 `8191` `i2i_pro`，承接 `face_swap_v2`、`i2i_pro`、`i2i_draw`、`t2i-pornmaster-turbo`，不得承接 V1；test-8 指向 `gpu-002:8190` 的 SCAIL-2。test-3 与 test-6 是常驻的人工生成测试入口：test-3 复用 `gpu-177:gpu1` 的 `ltx_unified` runtime，test-6 复用 `gpu-226:gpu0` 的 `all` runtime。两者关闭 prefetch/pipeline、单任务串行，测试 Central 与测试桶保持独立，但底层 ComfyUI 仍与正式 Worker 共享，因此人工测试必须接受与正式任务共用同一 GPU 队列。test-8 可通过任务类型与 workflow override 覆盖动作迁移、视频换人和视频换脸 workflow；视频换脸首帧换脸由 Central 标准 `face_swap_v2` 第一阶段完成，worker8 只接收 `reference_preprocessed=true` 的 SCAIL-2 第二阶段，不再迁移或读取任何 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 配置。
 
 2026-06-18 03:06 只读快照：云测试 Central `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。该状态是瞬时运行态；执行测试验收前必须重新查 `/system/workers` 并按目标任务类型确认 worker 健康。
 
 ### 8.1 Shared LAN AIO cloud-test worker
 
-`cloud-comfy-agent-test-2..7` 是共享正式 LAN AIO runtime 的云测试 worker，默认不常驻：
+`cloud-comfy-agent-test-2..7` 是共享正式 LAN AIO runtime 的云测试 worker。test-3 与 test-6 常驻以支持人工测试，其余仍按专项窗口启动：
 
 | Worker | Profile | 默认 ComfyUI | 任务类型 | 口径 |
 | :--- | :--- | :--- | :--- | :--- |
 | `cloud_worker_test_02` | `shared-aio-canary` | `192.168.1.177:8190` | `wan22_video_v2` | gpu-177 GPU0 AIO |
-| `cloud_worker_test_03` | `shared-aio-canary` | `192.168.1.177:8191` | `ltx_video,*` | gpu-177 GPU1 LTX AIO |
+| `cloud_worker_test_03` | 常驻 | `192.168.1.177:8191` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,ltx_t2v,ltx_t2v_ic` | gpu-177 GPU1 `ltx_unified` |
 | `cloud_worker_test_04` | `shared-aio-canary` | 默认 `127.0.0.1:9` 占位 | `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit` | 仅保留旧本地 AIO canary 入口；常规测试不启动 |
 | `cloud_worker_test_05` | `wan22-canary` | 无健康默认入口 | `wan22_video_v2` | 默认指向 `127.0.0.1:9` 占位，必须先换成有效 RunPod/LAN endpoint |
-| `cloud_worker_test_06` | `shared-aio-canary` | `192.168.1.226:8188` | `img2img,img2img_lora` | 备用 img2img shared runtime |
+| `cloud_worker_test_06` | 常驻 | `192.168.1.226:8190` | `all` profile 的全部执行类型 | gpu-226 GPU0 `all` runtime |
 | `cloud_worker_test_07` | `shared-aio-canary` | `192.168.1.2:8191` | `image_to_video,video_insert,video_edit` | gpu-002 slot1 image_to_video AIO |
 
-启动共享 AIO canary 前，先确认正式队列压力可接受，且目标端口 `/system_stats` 返回 200。真实启动只针对目标服务，不要 `up` 整个 compose：
+启动共享 AIO worker 前，先确认正式队列压力可接受，且目标端口 `/system_stats` 返回 200。标准测试执行栈会启动常驻的 test-3/test-6；其它共享 AIO canary 仍只针对目标服务启动，不要一次启用全部 profile：
 
 ```bash
-COMPOSE_PROFILES=shared-aio-canary docker-compose \
+docker-compose \
   --env-file .env.cloud.test \
   -f workers/docker-compose-cloud-worker-test.yml \
-  up -d --no-deps cloud-comfy-agent-test-2 cloud-comfy-agent-test-3
+  up -d --no-deps cloud-comfy-agent-test-3 cloud-comfy-agent-test-6
 ```
 
 主 Bot 的旧“自由P图 v2”按钮已升级为自由P图 v3：单图先提交 `pornmaster_flux2_edit_bf16`，再以原图为人脸来源提交内部 `face_swap_v2`；整个用户操作统一扣 5 灵石，换脸续接任务不得二次扣费。云测试 Web 发布不负责保证 BF16 或全部 Worker 在线，也不为日常页面验收启动本地 PornMaster LAN AIO；需要专项验证真实生成时，可另行启动云测试 RunPod worker：
