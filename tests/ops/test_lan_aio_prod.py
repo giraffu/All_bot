@@ -72,7 +72,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert profile.min_vram_gb == 24
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-ltx-unified"
-        "@sha256:f2f397a7d1e8d8ec49b7405c84cc8b322eac4baaf67a92acadc850136fcab358"
+        "@sha256:432268ca2d789cce5823d8d2a20bfe125c742b83cde689fb6d3dedd779b77afa"
     )
     assert slot.target_task_types == LTX_UNIFIED_TASK_TYPES
     assert slot.agent_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
