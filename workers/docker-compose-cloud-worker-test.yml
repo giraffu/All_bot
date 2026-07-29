@@ -101,9 +101,6 @@ services:
   cloud-comfy-agent-test-3:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-3
-    profiles:
-      - shared-aio-canary
-    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_03
@@ -111,11 +108,11 @@ services:
       POOL_PROVIDER: lan_ssh
       POOL_NODE_ID: gpu-177
       POOL_GPU_INDEX: "1"
-      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_03_RUNTIME_PROFILE:-ltx_video}
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_03_RUNTIME_PROFILE:-ltx_unified}
       PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
       PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
       PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
-      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_03_TASK_TYPES:-ltx_video,ltx_video_flf2v,ltx_video_v2v_audio}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_03_TASK_TYPES:-ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,ltx_t2v,ltx_t2v_ic}
       TASK_TYPE_WORKFLOW_OVERRIDES: ${CLOUD_TEST_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES:-}
       COMFY_API_URL: ${CLOUD_TEST_WORKER_03_COMFY_API_URL:-http://192.168.1.177:8191}
       COMFY_WS_URL: ${CLOUD_TEST_WORKER_03_COMFY_WS_URL:-ws://192.168.1.177:8191/ws}
@@ -172,23 +169,21 @@ services:
   cloud-comfy-agent-test-6:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-6
-    profiles:
-      - shared-aio-canary
-    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_06
       POOL_MANAGED: "true"
       POOL_PROVIDER: lan_ssh
-      POOL_NODE_ID: ${CLOUD_TEST_WORKER_06_NODE_ID:-gpu-252}
+      POOL_NODE_ID: ${CLOUD_TEST_WORKER_06_NODE_ID:-gpu-226}
       POOL_GPU_INDEX: "0"
-      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_06_RUNTIME_PROFILE:-img2img_lora}
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_06_RUNTIME_PROFILE:-all}
       PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
       PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
       PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
-      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_06_TASK_TYPES:-img2img,img2img_lora}
-      COMFY_API_URL: ${CLOUD_TEST_WORKER_06_COMFY_API_URL:-http://192.168.1.252:8190}
-      COMFY_WS_URL: ${CLOUD_TEST_WORKER_06_COMFY_WS_URL:-ws://192.168.1.252:8190/ws}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_06_TASK_TYPES:-img2img,img2img_lora,image_to_video,wan22_video_v2,pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16,scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2,ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap,ltx_t2v,ltx_t2v_ic}
+      TASK_TYPE_WORKFLOW_OVERRIDES: ${CLOUD_TEST_WORKER_06_TASK_TYPE_WORKFLOW_OVERRIDES:-}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_06_COMFY_API_URL:-http://192.168.1.226:8190}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_06_COMFY_WS_URL:-ws://192.168.1.226:8190/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 

@@ -39,8 +39,11 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
     "03": {
         "NODE_ID": "gpu-177",
         "GPU_INDEX": "1",
-        "RUNTIME_PROFILE": "ltx_video",
-        "TASK_TYPES": "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio",
+        "RUNTIME_PROFILE": "ltx_unified",
+        "TASK_TYPES": (
+            "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,"
+            "ltx_t2v,ltx_t2v_ic"
+        ),
         "COMFY_API_URL": "http://192.168.1.177:8191",
         "COMFY_WS_URL": "ws://192.168.1.177:8191/ws",
     },
@@ -61,12 +64,20 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
         "COMFY_WS_URL": "ws://127.0.0.1:9/ws",
     },
     "06": {
-        "NODE_ID": "gpu-252",
+        "NODE_ID": "gpu-226",
         "GPU_INDEX": "0",
-        "RUNTIME_PROFILE": "img2img_lora",
-        "TASK_TYPES": "img2img,img2img_lora",
-        "COMFY_API_URL": "http://192.168.1.252:8190",
-        "COMFY_WS_URL": "ws://192.168.1.252:8190/ws",
+        "RUNTIME_PROFILE": "all",
+        "TASK_TYPES": (
+            "img2img,img2img_lora,image_to_video,wan22_video_v2,"
+            "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16,"
+            "scail2_action_transfer,scail2_action_transfer_long,"
+            "scail2_video_replacement,scail2_face_swap_v2,"
+            "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,"
+            "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap,"
+            "ltx_t2v,ltx_t2v_ic"
+        ),
+        "COMFY_API_URL": "http://192.168.1.226:8190",
+        "COMFY_WS_URL": "ws://192.168.1.226:8190/ws",
     },
     "07": {
         "NODE_ID": "gpu-002",

@@ -94,7 +94,7 @@
 
 - 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
 - 测试对象存储事实源为 R2 `user-data-test`，公网读取域名 `https://r2-test.aivison.it.com`。
-- 本地主服务器运行 `cloud-comfy-agent-test-1..8`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
+- 本地主服务器声明 `cloud-comfy-agent-test-1..8`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`；常驻人工生成入口 `cloud_worker_test_03` 指向 gpu177 `ltx_unified`，`cloud_worker_test_06` 指向 gpu226 `all`，`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime 并默认 disabled。
 - 公网测试 Web 入口是 Cloudflare Pages `web-cf-test.aivison.it.com`，API 通过 `api-cf-test.aivison.it.com` 回源云测试 Web API。
 
 ### 2.3 云正式负载巡检快照
@@ -155,7 +155,7 @@
 - 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-imgproxy-test`；Dashboard/QQCC Config 管理面不再部署，`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
-- 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`，其中 `test-8` 是 SCAIL-2 测试接单层
+- 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`；`test-3`/`test-6` 是常驻的 LTX unified/全类型人工测试接单层，`test-8` 是默认 disabled 的 SCAIL-2 测试接单层
 - 本地旧测试栈：不再作为受支持测试或回滚环境；仅作为历史取证材料，默认应停止并保留数据
 - 本地运维与历史数据：`postgres-server`、`redis-server`、`minio-server`、`pgadmin-server`、`filebrowser`、`portainer_agent`
 

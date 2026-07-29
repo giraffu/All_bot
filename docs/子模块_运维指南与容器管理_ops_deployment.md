@@ -58,7 +58,7 @@
 - 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。
-- 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。当前 compose 声明 `cloud-comfy-agent-test-1..8`，其中 `cloud_worker_test_08` 是 SCAIL-2 测试 worker。
+- 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。当前 compose 声明 `cloud-comfy-agent-test-1..8`；其中 `cloud_worker_test_03` 常驻复用 gpu177 的 `ltx_unified`，`cloud_worker_test_06` 常驻复用 gpu226 的 `all`，`cloud_worker_test_08` 是默认 disabled 的 SCAIL-2 测试 worker。共享正式 ComfyUI 的 test-3/test-6 关闭 prefetch/pipeline、单任务串行，但仍与正式任务共用 GPU 队列。
 - 若历史本地测试栈仍在运行，切云测试前用 `scripts/stop_local_test_preserve.sh` 停止并保留数据；云测试 GPU 执行面使用 `scripts/start_cloud_worker_test.sh` 启动本地 cloud-worker 测试栈。
 - 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
