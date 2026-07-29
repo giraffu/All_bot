@@ -21,6 +21,17 @@ def test_release_catalog_has_dedicated_ltx_unified_gpu_artifact():
     assert catalog["dockerfile"] == "workers/runpod_profiles/ltx_unified/Dockerfile"
 
 
+def test_ltx_unified_uses_current_digest_pinned_ltx_t2v_runtime():
+    dockerfile = (
+        ROOT / "workers/runpod_profiles/ltx_unified/Dockerfile"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v"
+        "@sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043"
+    ) in dockerfile
+
+
 def _load_module():
     spec = importlib.util.spec_from_file_location("release", MODULE_PATH)
     assert spec is not None and spec.loader is not None
