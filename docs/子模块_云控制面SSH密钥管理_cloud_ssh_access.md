@@ -8,7 +8,7 @@
 
 本文档不记录私钥内容、云服务密码、token、R2 key、数据库密码或任何可直接登录生产环境的敏感凭据。
 
-最近一次更新：2026-06-18 03:06，Asia/Shanghai。
+最近一次更新：2026-07-30，Asia/Shanghai。
 
 ## 2. 当前 SSH 密钥
 
@@ -134,7 +134,44 @@ ssh allbot-do-sgp1-test-control
 ssh allbot-do-sgp1-control-root
 ```
 
-## 5. 云服务器初始化安全基线
+## 5. SSH 故障诊断最小闭环
+
+SSH 故障统一先加载 `allbot-cloud-ssh`。不要从“连接不上”直接跳到重启、重置
+密码、放宽防火墙或重建实例；先按名称解析、TCP、SSH 握手、认证、会话五个
+阶段确定第一个失败点。
+
+最小证据：
+
+```bash
+ssh -G <host-alias> | sed -n \
+  '/^hostname /p;/^user /p;/^port /p;/^identityfile /p;/^identitiesonly /p;/^proxyjump /p'
+nc -vz -w 5 <hostname> <port>
+ssh -vv -o BatchMode=yes -o ConnectTimeout=10 <host-alias>
+```
+
+错误分流：
+
+| 现象 | 优先核对 |
+| :--- | :--- |
+| 名称无法解析 | Host 别名、DNS、云控制台实时 IP |
+| 连接超时 | 实例状态、路由、来源 IP、云防火墙、主机防火墙 |
+| 连接被拒绝 | `sshd` 状态、监听端口、`ListenAddress` |
+| `Permission denied (publickey)` | 用户、`IdentityFile`、公钥安装、目录/文件权限 |
+| 主机标识变化 | 带外核对实例与新指纹，确认后精确清理旧记录 |
+| 偶发断线 | 路径丢包、NAT/防火墙 idle timeout、主机负载，再评估保活 |
+
+普通 Web Console 仍依赖网络、SSH 端口和 Droplet Agent；网络或 `sshd` 失效时
+使用 Recovery Console。任何远端配置、云防火墙、重启、密码或密钥 mutation
+仍需明确授权，并在修改 `sshd` 前保留现有会话、运行 `sshd -t`、验证新会话。
+
+参考资料：
+
+- [DigitalOcean：连接 Droplet 的 SSH 前提](https://docs.digitalocean.com/products/droplets/how-to/connect-with-ssh/)
+- [DigitalOcean：SSH 连接故障诊断](https://docs.digitalocean.com/support/how-to-troubleshoot-ssh-connectivity-issues/)
+- [DigitalOcean：Droplet Console 与 Recovery Console](https://docs.digitalocean.com/products/droplets/how-to/connect-with-console/)
+- [DigitalOcean：私网 Droplet 与 ProxyJump](https://docs.digitalocean.com/products/droplets/how-to/connect-private-droplet/)
+
+## 6. 云服务器初始化安全基线
 
 首次登录后建议按下面顺序收口：
 
@@ -148,7 +185,7 @@ ssh allbot-do-sgp1-control-root
 8. 安装 Tailscale，让云控制面和武汉本地 GPU/主服务器走出站组网。
 9. Central API、Postgres、Valkey、Dashboard 管理接口不得公网裸露。
 
-## 6. `$96/mo` Droplet 的使用边界
+## 7. `$96/mo` Droplet 的使用边界
 
 DigitalOcean Basic Regular `$96/mo` Droplet 的页面规格为 `8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer`。2026-06-16 原地扩容后，它当前承接正式生产控制面；PostgreSQL、Valkey 与对象存储仍不在该 Droplet 上长期自托管。
 
@@ -181,7 +218,7 @@ DigitalOcean Basic Regular `$96/mo` Droplet 的页面规格为 `8 vCPU / 16GB RA
 
 若触发以上任一条件，应升级到 `8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer` 的 `$96/mo` 规格，或把 Dashboard/后台任务拆到第二台节点。
 
-## 7. 轮换与撤销
+## 8. 轮换与撤销
 
 需要轮换 SSH key 的场景：
 

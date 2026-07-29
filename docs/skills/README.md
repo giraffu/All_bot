@@ -15,6 +15,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-ops-deployment` | 不可变发布、Compose、迁移、测试/正式和灾备 |
 | `allbot-concurrent-workspaces` | A–H worktree、handoff、批次集成 |
 | `allbot-cloudflare-ops` | DNS、Tunnel、Access、Pages、R2 公网入口 |
+| `allbot-cloud-ssh` | 云主机 SSH 连接、认证、主机密钥与救援入口 |
 | `allbot-comfy-models` | workflow、LoRA、ControlNet、Worker profile |
 | `allbot-lan-aio-operator` | LAN AIO current/cache/takeover/recover |
 | `allbot-lan-resource-manager` | LAN 资源平台、可信构建、部署与 runner |

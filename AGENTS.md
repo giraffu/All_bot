@@ -68,6 +68,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | Docker、不可变发布、迁移、灾备 | `allbot-ops-deployment` |
 | A–H worktree、handoff、main 批次 | `allbot-concurrent-workspaces` |
 | Cloudflare DNS/Tunnel/Access/Pages/R2 | `allbot-cloudflare-ops` |
+| 云主机 SSH、密钥、端口、堡垒机、救援控制台 | `allbot-cloud-ssh` |
 | Comfy workflow、LoRA、ControlNet、profile | `allbot-comfy-models` |
 | LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
 | LAN 资源管理平台、可信构建与 runner | `allbot-lan-resource-manager` |
@@ -90,6 +91,8 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 - 修改接口、入口、状态流或稳定术语：领域 Skill +
   `allbot-kb-auto-updater`。
 - Vue UI 视觉验收：`vue-best-practices` + `frontend-browser-preview`。
+- 云 SSH 失败：`allbot-cloud-ssh`；线上事故再加 `allbot-diagnosing-bugs`，
+  需要日志采集再加 `ops-log-monitor`。
 
 ## 5. 知识库分层
 
