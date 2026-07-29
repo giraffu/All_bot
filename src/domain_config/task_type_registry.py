@@ -165,7 +165,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         central_type=None,
         workflow_filename="Qwen-Rapid-AIO.json",
         is_generation=True,
-        cost=1,
+        cost=2,
         legacy_alias_of="img2img",
     ),
     MODE_PENETRATION_STEP1: _entry(
@@ -260,7 +260,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         runpod_profile="i2i_pro",
         is_generation=True,
         apply_input_reuse_supported=True,
-        cost=1,
+        cost=2,
     ),
     MODE_FACE_SWAP_V2: _entry(
         MODE_FACE_SWAP_V2,
@@ -278,7 +278,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         workflow_filename="face_swap.json",
         is_generation=True,
         legacy_alias_of="face_swap",
-        cost=1,
+        cost=2,
     ),
     MODE_FACESWAP_STEP2: _entry(
         MODE_FACESWAP_STEP2,

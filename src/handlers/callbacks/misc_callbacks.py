@@ -108,7 +108,7 @@ async def random_faceswap_again_callback(
         )
         return
 
-    cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
+    cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 2)
     if not update.effective_user:
         return
     user = update.effective_user

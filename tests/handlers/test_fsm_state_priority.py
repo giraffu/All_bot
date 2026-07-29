@@ -483,7 +483,7 @@ async def test_qqcc_quick_faceswap_entry_waits_for_image(monkeypatch):
 
     assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
     assert context.user_data["quick_image_data"]["mode"] == MODE_RANDOM_FACESWAP
-    assert context.user_data["quick_image_data"]["cost"] == 1
+    assert context.user_data["quick_image_data"]["cost"] == 2
     reply_mock.assert_awaited_once()
     assert "快速换脸" in reply_mock.await_args.args[1]
 

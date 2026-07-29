@@ -108,8 +108,8 @@ def test_strategy_factory_returns_correct_strategy():
     assert strategy.mode == "unknown_mode"
 
 
-def test_face_swap_versions_have_independent_costs():
-    assert StrategyFactory.get_strategy(MODE_FACE_SWAP).get_cost({}) == 1
+def test_face_swap_versions_share_two_credit_price():
+    assert StrategyFactory.get_strategy(MODE_FACE_SWAP).get_cost({}) == 2
     assert StrategyFactory.get_strategy(MODE_FACE_SWAP_V2).get_cost({}) == 2
     assert StrategyFactory.get_strategy(MODE_I2I_PRO).get_cost({}) == 6
 
