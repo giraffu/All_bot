@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 from ops.gpu_pool_controller.config_loader import load_controller_config
 from ops.gpu_pool_controller.lan_aio_prod import (
@@ -18,6 +19,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
 )
 from ops.gpu_pool_controller.runtime import (
+    LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
     LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
     RuntimePlanner,
     RuntimeRenderOverrides,
@@ -49,6 +51,56 @@ LAN_ALL_TASK_TYPES = (
     "ltx_t2v",
     "ltx_t2v_ic",
 )
+LTX_UNIFIED_TASK_TYPES = (
+    "ltx_video",
+    "ltx_video_flf2v",
+    "ltx_video_v2v_audio",
+    "ltx_t2v",
+    "ltx_t2v_ic",
+)
+
+
+def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
+    config = load_controller_config()
+    profile = config.profiles["ltx_unified"]
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+    slot = slots["gpu-177-gpu1-ltx_unified"]
+
+    assert profile.task_types == LTX_UNIFIED_TASK_TYPES
+    assert profile.lan_model_workspace_key == "ltx_video"
+    assert profile.model_manifest_key == "ltx_unified/2026-07-29/manifest.json"
+    assert profile.min_vram_gb == 24
+    assert profile.all_in_one_image_ref == (
+        "192.168.1.115:5000/allbot/allbot-gpu-ltx-unified"
+        "@sha256:f2f397a7d1e8d8ec49b7405c84cc8b322eac4baaf67a92acadc850136fcab358"
+    )
+    assert slot.target_task_types == LTX_UNIFIED_TASK_TYPES
+    assert slot.agent_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
+    assert slot.host_port == 8191
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    compose = yaml.safe_load(ops.render_compose(slot))
+    service = compose["services"][slot.container_name]
+    environment = service["environment"]
+    assert environment["SUPPORTED_TASK_TYPES"] == ",".join(
+        LTX_UNIFIED_TASK_TYPES
+    )
+    assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
+        LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES
+    )
+    assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
+    assert "--reserve-vram 5" in environment["COMFY_EXTRA_ARGS"]
+    model_mount = next(
+        mount
+        for mount in service["volumes"]
+        if mount.endswith(":/opt/ComfyUI/models")
+    )
+    assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
 
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
