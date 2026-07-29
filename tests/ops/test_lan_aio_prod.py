@@ -63,6 +63,7 @@ LTX_UNIFIED_TASK_TYPES = (
 def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     config = load_controller_config()
     profile = config.profiles["ltx_unified"]
+    rollback_profile = config.profiles["ltx_video"]
     slots = load_lan_aio_prod_slots(include_disabled=True)
     slot = slots["gpu-177-gpu1-ltx_unified"]
 
@@ -73,6 +74,10 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-ltx-unified"
         "@sha256:432268ca2d789cce5823d8d2a20bfe125c742b83cde689fb6d3dedd779b77afa"
+    )
+    assert rollback_profile.all_in_one_image_ref == (
+        "192.168.1.115:5000/allbot/comfy-runpod-ltx-video"
+        "@sha256:e291d068ca5d0264209ba452427a55bb4fb62c95ddc1b7b657c1e7246834b4cc"
     )
     assert slot.target_task_types == LTX_UNIFIED_TASK_TYPES
     assert slot.agent_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
