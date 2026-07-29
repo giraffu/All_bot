@@ -40,7 +40,7 @@ RUN set -euo pipefail; \
     git -C "${comfyui_dir}" init; \
     git -C "${comfyui_dir}" remote add origin "${COMFYUI_REPO}"; \
     for attempt in 1 2 3 4 5; do \
-      git -C "${comfyui_dir}" fetch --depth 1 --filter=blob:none origin "${COMFYUI_REF}" && break; \
+      git -C "${comfyui_dir}" fetch --depth 1 origin "${COMFYUI_REF}" && break; \
       if [ "$attempt" = "5" ]; then \
         echo "Failed to fetch pinned ComfyUI after ${attempt} attempts" >&2; \
         exit 128; \
@@ -84,7 +84,14 @@ RUN set -euo pipefail; \
     mkdir -p "${ltxvideo_dir}"; \
     git -C "${ltxvideo_dir}" init; \
     git -C "${ltxvideo_dir}" remote add origin "${LTXVIDEO_REPO}"; \
-    git -C "${ltxvideo_dir}" fetch --depth 1 --filter=blob:none origin "${LTXVIDEO_REF}"; \
+    for attempt in 1 2 3 4 5; do \
+      git -C "${ltxvideo_dir}" fetch --depth 1 origin "${LTXVIDEO_REF}" && break; \
+      if [ "$attempt" = "5" ]; then \
+        echo "Failed to fetch pinned ComfyUI-LTXVideo after ${attempt} attempts" >&2; \
+        exit 128; \
+      fi; \
+      sleep $((attempt * 3)); \
+    done; \
     git -C "${ltxvideo_dir}" checkout --force FETCH_HEAD; \
     test "$(git -C "${ltxvideo_dir}" rev-parse HEAD)" = "${LTXVIDEO_REF}"; \
     python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \

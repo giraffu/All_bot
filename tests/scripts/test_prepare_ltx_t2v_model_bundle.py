@@ -82,6 +82,7 @@ def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
     )
     assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
     assert 'find "${comfyui_dir}/models" -type f -name "*.safetensors"' in dockerfile
+    assert "--filter=blob:none" not in dockerfile
 
 
 def test_runpod_profile_staging_includes_shared_aspect_adapter():
