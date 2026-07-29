@@ -112,6 +112,7 @@
 | `.codex/skills/allbot-ops-deployment/SKILL.md` | 发布运维路由 | release/compose/docs | current | 运维 |
 | `.codex/skills/allbot-concurrent-workspaces/SKILL.md` | A–H/handoff 路由 | workspace/integration scripts | current | 仓库写任务 |
 | `.codex/skills/allbot-cloudflare-ops/SKILL.md` | Cloudflare 路由 | Cloudflare config/docs | current | 公网入口 |
+| `.codex/skills/allbot-cloud-ssh/SKILL.md` | 云 SSH 诊断与恢复路由 | SSH config、云控制台、访问文档 | current | 云 SSH 故障或配置 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | 模型/workflow 路由 | workflow/mapping/profile | current | AI 模型 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` | LAN AIO 操作红线 | catalog/ledger/helper | current | LAN mutation |
 | `.codex/skills/allbot-lan-resource-manager/SKILL.md` | 本地资源平台 | platform/helper/docs | current | LAN UI |

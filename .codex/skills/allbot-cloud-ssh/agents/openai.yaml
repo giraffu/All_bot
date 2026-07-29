@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot 云主机 SSH"
+  short_description: "诊断云主机 SSH 连接、认证、主机密钥与救援入口"
+  default_prompt: "使用 $allbot-cloud-ssh 诊断这次云主机 SSH 连接失败，并给出最小风险的下一步。"
