@@ -56,6 +56,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | workflow JSON、mapping、patcher | current | 模型/workflow |
+| `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、人物草稿/子图表、workflow、profile、`shared/image_aspect.py`、结果物化、RunPod canary | current | LTX 专项；练功房按槽位独立生成最多六个私有子图，每张 3 灵石，至少两张后固定槽位合成；人物图库位于修仙笔记且支持单图重生；IC guide 在交付区间外并 fail-closed 裁除；test Web/后端和 cloud-test 人工 RunPod 已支持，prod 与 autoscaler 关闭 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
@@ -114,6 +115,7 @@
 | `.codex/skills/allbot-cloudflare-ops/SKILL.md` | Cloudflare 路由 | Cloudflare config/docs | current | 公网入口 |
 | `.codex/skills/allbot-cloud-ssh/SKILL.md` | 云 SSH 诊断与恢复路由 | SSH config、云控制台、访问文档 | current | 云 SSH 故障或配置 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | 模型/workflow 路由 | workflow/mapping/profile | current | AI 模型 |
+| `.codex/skills/allbot-avatar-miniapp/SKILL.md` | 3D Mini App 路由 | Mini App API/Worker/Vue/Compose | current | 3D 角色工作室 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` | LAN AIO 操作红线 | catalog/ledger/helper | current | LAN mutation |
 | `.codex/skills/allbot-lan-resource-manager/SKILL.md` | 本地资源平台 | platform/helper/docs | current | LAN UI |
 | `.codex/skills/allbot-local-analytics-prompt-semantics/SKILL.md` | 词元治理 | analytics code/docs | current | 提示词治理 |

@@ -1,0 +1,38 @@
+{
+  "name": "allbot-avatar-miniapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.4.4",
+    "ant-design-vue": "^4.2.6",
+    "axios": "^1.15.0",
+    "pinia": "^3.0.4",
+    "three": "^0.180.0",
+    "vue": "^3.5.32",
+    "vue-i18n": "^9.14.5",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@emnapi/core": "^2.0.0-alpha.3",
+    "@emnapi/runtime": "^2.0.0-alpha.3",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^24.12.2",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "@vue/tsconfig": "^0.9.1",
+    "jsdom": "^29.1.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.4",
+    "vitest": "^4.1.6",
+    "vue-tsc": "^3.2.6"
+  }
+}

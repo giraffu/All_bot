@@ -1,0 +1,36 @@
+FROM ghcr.io/giraffu/allbot-python-runtime-base@sha256:ed259ecf85b3288795f206366747955d7ff575ad46a0ce24853e016acfc8014b
+
+ARG BLENDER_VERSION=4.3.2
+ARG BLENDER_SHA256=4da1c956673c0485e63054e563ee69198cc8f80d8157dd7592dffc8a6a5592e6
+ARG FFMPEG_VERSION=7.0.2
+ARG FFMPEG_SHA256=abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    BLENDER_BINARY=/usr/bin/blender
+
+RUN sed -i \
+        's|http://deb.debian.org/debian-security|https://mirrors.ustc.edu.cn/debian-security|; s|http://deb.debian.org/debian|https://mirrors.ustc.edu.cn/debian|' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends \
+        libegl1 libgl1 libice6 libsm6 libx11-6 libxfixes3 libxi6 \
+        libxkbcommon0 libxrender1 libxxf86vm1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ADD https://download.blender.org/release/Blender4.3/blender-${BLENDER_VERSION}-linux-x64.tar.xz /tmp/blender.tar.xz
+ADD https://johnvansickle.com/ffmpeg/releases/ffmpeg-${FFMPEG_VERSION}-amd64-static.tar.xz /tmp/ffmpeg.tar.xz
+RUN echo "${BLENDER_SHA256}  /tmp/blender.tar.xz" | sha256sum -c - \
+    && echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c - \
+    && python -c "import tarfile; tarfile.open('/tmp/blender.tar.xz').extractall('/opt')" \
+    && python -c "import tarfile; tarfile.open('/tmp/ffmpeg.tar.xz').extractall('/opt')" \
+    && mv "/opt/blender-${BLENDER_VERSION}-linux-x64" /opt/blender \
+    && mv "/opt/ffmpeg-${FFMPEG_VERSION}-amd64-static" /opt/ffmpeg \
+    && ln -s /opt/blender/blender /usr/bin/blender \
+    && ln -s /opt/ffmpeg/ffmpeg /usr/bin/ffmpeg \
+    && rm /tmp/blender.tar.xz /tmp/ffmpeg.tar.xz
+
+WORKDIR /app
+COPY . /app
+
+CMD ["python", "-m", "src.avatar_miniapp.worker"]

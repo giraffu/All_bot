@@ -1,0 +1,14 @@
+FROM node:24-bookworm-slim AS build
+
+WORKDIR /workspace
+COPY shared /workspace/shared
+COPY avatar_miniapp/frontend/package.json avatar_miniapp/frontend/package-lock.json /workspace/avatar_miniapp/frontend/
+RUN cd /workspace/avatar_miniapp/frontend && npm ci
+COPY avatar_miniapp/frontend /workspace/avatar_miniapp/frontend
+RUN cd /workspace/avatar_miniapp/frontend && npm run build
+
+FROM caddy:2.10-alpine
+COPY avatar_miniapp/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /workspace/avatar_miniapp/frontend/dist /srv
+
+EXPOSE 8443
