@@ -95,13 +95,14 @@ def build_cases(
             "label": "ltx_video_v2v_audio_5s",
             "expected_central_task_type": "ltx_video_v2v_audio",
             "payload": {
-                "task_type": "ltx_video_v2v_audio",
+                "task_type": "ltx_video",
                 "inputs": {
                     **common,
                     "video": video_key,
                     "images": [video_key],
                     "resolution": "1280x704",
                     "extract_last_frame": True,
+                    "ltx_mode": "v2v_audio",
                 },
                 "prompt": prompt,
                 "negative_prompt": negative,
