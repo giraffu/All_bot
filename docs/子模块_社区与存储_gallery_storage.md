@@ -79,7 +79,7 @@ sequenceDiagram
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
-- Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
+- Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `user_id` 精确筛选，以及 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
 - Dashboard 广场内容管理与举报管理统一通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts`、`affected_histories` 与 `resolved_reports`，并在同一事务中处理该作者全部 pending 举报。
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 
@@ -103,7 +103,9 @@ sequenceDiagram
 - 只有登录用户可举报仍处于 `is_active=True` 的作品；同一用户对同一 `post_id` 只能举报一次，重复提交返回 `409`，不覆盖旧原因。
 - Dashboard 新增举报管理入口，`GET /api/gallery/reports` 支持 `status`、`reason`、`post_id` 筛选，并按 `created_at desc, id desc` 稳定排序。
 - 举报列表中的有效图片/视频缩略图可点击打开媒体预览弹窗；图片按比例放大，视频保留播放控制。
-- Dashboard 标记处理只更新举报状态；举报页“封禁并下架”复用用户级治理接口，设置用户投稿封禁、下架该用户全部 `GalleryPost`、同步关联 `History.is_public=False`，并把该作者全部 pending 举报以 `ban_and_takedown` 置为 resolved。兼容单作品下架入口仍会处理同作品其他 pending 举报。
+- Dashboard 标记处理只更新举报状态；“仅下架此条”只下架当前
+  `GalleryPost`、同步对应 `History.is_public=False` 并处理同作品 pending 举报，
+  不封禁作者或影响其其它投稿；举报页“封禁并下架”复用用户级治理接口，设置用户投稿封禁、下架该用户全部 `GalleryPost`、同步关联 `History.is_public=False`，并把该作者全部 pending 举报以 `ban_and_takedown` 置为 resolved。
 - 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
 
 ### 4.5 收藏与个人视图

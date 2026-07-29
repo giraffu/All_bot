@@ -112,6 +112,7 @@ async def get_gallery_feed(
     username: str = None,
     prompt_contains: str = None,
     prompt_max_length: int = None,
+    author_user_id: int = None,
     session_factory: Callable[[], Any] | None = None,
     fetch_gallery_feed_page_func: Callable[..., Any] | None = None,
 ) -> tuple[list, int]:
@@ -140,4 +141,5 @@ async def get_gallery_feed(
             username=username,
             prompt_contains=prompt_contains,
             prompt_max_length=prompt_max_length,
+            author_user_id=author_user_id,
         )

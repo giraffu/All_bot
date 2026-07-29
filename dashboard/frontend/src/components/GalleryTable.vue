@@ -55,6 +55,7 @@ const filterActive = ref(undefined)
 const filterTaskType = ref('all')
 const filterSort = ref('created_at')
 const filterUsername = ref('')
+const filterUserId = ref(null)
 const filterPromptContains = ref('')
 const filterPromptMaxLength = ref(null)
 
@@ -205,6 +206,10 @@ const loadData = async (page = pagination.value.current) => {
     if (username) {
       params.username = username
     }
+    const userId = Number(filterUserId.value)
+    if (Number.isInteger(userId) && userId > 0) {
+      params.user_id = userId
+    }
     const promptContains = normalizeTextFilter(filterPromptContains.value)
     if (promptContains) {
       params.prompt_contains = promptContains
@@ -242,6 +247,7 @@ const resetFilters = () => {
   filterTaskType.value = 'all'
   filterSort.value = 'created_at'
   filterUsername.value = ''
+  filterUserId.value = null
   filterPromptContains.value = ''
   filterPromptMaxLength.value = null
   loadData(1)
@@ -413,6 +419,19 @@ onMounted(() => {
             :options="sortOptions"
             class="w-32"
             @change="onFilterChange"
+          />
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">用户 ID:</span>
+          <a-input-number
+            v-model:value="filterUserId"
+            :min="1"
+            :precision="0"
+            :controls="false"
+            class="w-32"
+            placeholder="精确 ID"
+            @pressEnter="onFilterChange"
           />
         </div>
 

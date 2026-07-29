@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { HeartOff } from 'lucide-vue-next'
 import { Waterfall } from 'vue-waterfall-plugin-next'
 import 'vue-waterfall-plugin-next/dist/style.css'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,6 +34,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
+const unfavoriteTaskIds = ref(new Set<string>())
 
 const { isMobile } = useViewport()
 const waterfallBreakpoints = {
@@ -267,20 +269,29 @@ const loadPosts = async (reset = false) => {
   await loadBrowserPosts(reset)
 }
 
-const handleUnfavorite = async (post: Post) => {
-  if (!post) return
+const handleUnfavorite = async (post: Post, closeDetail = true) => {
+  if (!post || unfavoriteTaskIds.value.has(post.task_id)) return
+
+  unfavoriteTaskIds.value.add(post.task_id)
   
   try {
     await api.delete(`/users/history/${post.task_id}/favorite`)
     message.success(t('my_notes.favorite_removed'))
-    detailVisible.value = false
-    void loadPosts(true)
+    if (closeDetail) {
+      detailVisible.value = false
+    }
+    posts.value = posts.value.filter(item => item.task_id !== post.task_id)
+    if (posts.value.length === 0 && currentPage.value > 1) {
+      await browserGoToPage(currentPage.value - 1)
+    }
   } catch (error: any) {
     if (error.response?.status === 404) {
       return
     }
     console.error(error)
     message.error(error.response?.data?.detail || t('my_notes.action_failed'))
+  } finally {
+    unfavoriteTaskIds.value.delete(post.task_id)
   }
 }
 
@@ -373,6 +384,19 @@ onMounted(() => {
           <template #top-left>
             <OriginalInputBadge :source="post" />
           </template>
+          <template v-if="filterType === 'favorite'" #top-right>
+            <button
+              type="button"
+              data-testid="favorite-card-unfavorite"
+              class="favorite-card-unfavorite"
+              :disabled="unfavoriteTaskIds.has(post.task_id)"
+              :aria-label="t('my_notes.unfavorite_button')"
+              :title="t('my_notes.unfavorite_button')"
+              @click.stop="handleUnfavorite(post, false)"
+            >
+              <HeartOff :size="16" />
+            </button>
+          </template>
           <template #overlay>
             <div class="flex flex-col justify-between h-full">
               <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
@@ -429,5 +453,23 @@ onMounted(() => {
 <style scoped>
 .favorites-media-pane {
   background: var(--theme-card-strong-bg);
+}
+
+.favorite-card-unfavorite {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fda4af;
+  transition: color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.favorite-card-unfavorite:hover {
+  color: #fb7185;
+  transform: scale(1.08);
+}
+
+.favorite-card-unfavorite:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 </style>

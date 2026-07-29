@@ -1,10 +1,10 @@
 import logging
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.backend.schemas import HistoryListResponse, HistoryResponse
+from dashboard.backend.schemas import HistoryListResponse, UserHistoryListResponse
 from dashboard.backend.services.history_service import (
     get_all_history_payload,
     get_user_history_payload,
@@ -17,8 +17,8 @@ logger = logging.getLogger("dashboard.history")
 
 @router.get("/all", response_model=HistoryListResponse)
 async def get_all_history(
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     type: Optional[str] = None,
     rating: Optional[int] = None,
     is_public: Optional[bool] = None,
@@ -40,11 +40,18 @@ async def get_all_history(
     )
 
 
-@router.get("/{user_id}", response_model=List[HistoryResponse])
-async def get_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/{user_id}", response_model=UserHistoryListResponse)
+async def get_user_history(
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+    db: AsyncSession = Depends(get_db),
+):
     """Get history for a specific user"""
     return await get_user_history_payload(
         user_id=user_id,
+        page=page,
+        page_size=page_size,
         db=db,
         logger_override=logger,
     )

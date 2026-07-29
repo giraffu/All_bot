@@ -303,11 +303,19 @@ async def test_get_user_history_payload_uses_presenter_for_items():
     history = _build_history(output_file="folder/output.png")
     db = _FakeRowsResult([(history, "worker-2", None)])
 
+    class _CountResult:
+        def scalar(self):
+            return 125
+
     class _FakeUserHistoryDb:
         rollback_calls = 0
         expunge_all_calls = 0
+        execute_calls = 0
 
         async def execute(self, _stmt):
+            self.execute_calls += 1
+            if self.execute_calls == 1:
+                return _CountResult()
             return db
 
         async def rollback(self):
@@ -325,15 +333,20 @@ async def test_get_user_history_payload_uses_presenter_for_items():
 
     result = await history_service.get_user_history_payload(
         user_id=123,
+        page=2,
+        page_size=25,
         db=user_db,
         storage_service=storage_service,
         resolve_media_urls_func=resolve_media_urls,
     )
 
-    assert len(result) == 1
-    assert result[0]["worker_id"] == "worker-2"
-    assert result[0]["output_file_url"] == "url://r2/output.png"
-    assert result[0]["output_file_preview_url"] == "url://r2/output_thumb.webp"
+    assert result["total"] == 125
+    assert result["page"] == 2
+    assert result["page_size"] == 25
+    assert len(result["items"]) == 1
+    assert result["items"][0]["worker_id"] == "worker-2"
+    assert result["items"][0]["output_file_url"] == "url://r2/output.png"
+    assert result["items"][0]["output_file_preview_url"] == "url://r2/output_thumb.webp"
     assert user_db.expunge_all_calls == 1
 
 

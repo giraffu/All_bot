@@ -155,6 +155,11 @@ class HistoryListResponse(BaseModel):
     total: int
 
 
+class UserHistoryListResponse(HistoryListResponse):
+    page: int
+    page_size: int
+
+
 class TemplateContributionResponse(BaseModel):
     id: int
     user_id: int

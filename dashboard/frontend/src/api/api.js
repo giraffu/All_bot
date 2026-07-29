@@ -89,7 +89,11 @@ export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
 
 export const fetchUserStats = async (userId) => get(`/api/users/${userId}/stats`)
 
-export const fetchUserHistory = async (userId) => get(`/api/history/${userId}`)
+export const fetchUserHistory = async (userId, page = 1, pageSize = 20) =>
+  get(withQuery(`/api/history/${userId}`, params => {
+    appendQueryParam(params, 'page', page)
+    appendQueryParam(params, 'page_size', pageSize)
+  }))
 
 export const fetchUserFavorites = async (
   userId,

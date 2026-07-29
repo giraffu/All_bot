@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   banGalleryUserSubmissionsAndTakedown: vi.fn(),
   fetchGalleryReports: vi.fn(),
   resolveGalleryReport: vi.fn(),
+  takedownGalleryReport: vi.fn(),
 }))
 
 const modalMocks = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ vi.mock('../api/api', () => ({
   banGalleryUserSubmissionsAndTakedown: apiMocks.banGalleryUserSubmissionsAndTakedown,
   fetchGalleryReports: apiMocks.fetchGalleryReports,
   resolveGalleryReport: apiMocks.resolveGalleryReport,
+  takedownGalleryReport: apiMocks.takedownGalleryReport,
 }))
 
 vi.mock('ant-design-vue/es/modal', () => ({
@@ -152,6 +154,12 @@ describe('GalleryReportsTable', () => {
       page_size: 20,
     })
     apiMocks.resolveGalleryReport.mockResolvedValue({ status: 'ok' })
+    apiMocks.takedownGalleryReport.mockResolvedValue({
+      status: 'ok',
+      affected_posts: 1,
+      affected_histories: 1,
+      resolved_reports: 1,
+    })
     apiMocks.banGalleryUserSubmissionsAndTakedown.mockResolvedValue({
       status: 'ok',
       affected_posts: 1,
@@ -226,6 +234,29 @@ describe('GalleryReportsTable', () => {
     expect(apiMocks.banGalleryUserSubmissionsAndTakedown).toHaveBeenCalledWith(456)
     expect(messageMocks.success).toHaveBeenCalledWith(
       '已封禁用户 456，下架 1 条投稿，处理 2 条举报',
+    )
+  })
+
+  it('confirms and only takes down the reported post without banning the author', async () => {
+    const wrapper = mountReportsTable()
+    await flushPromises()
+
+    const takedownButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('仅下架此条'))
+
+    expect(takedownButton).toBeTruthy()
+    await takedownButton!.trigger('click')
+
+    const confirmOptions = modalMocks.confirm.mock.calls[0][0]
+    expect(confirmOptions.title).toBe('确认仅下架当前这条内容?')
+    expect(confirmOptions.okText).toBe('仅下架此条')
+
+    await confirmOptions.onOk()
+    expect(apiMocks.takedownGalleryReport).toHaveBeenCalledWith(10)
+    expect(apiMocks.banGalleryUserSubmissionsAndTakedown).not.toHaveBeenCalled()
+    expect(messageMocks.success).toHaveBeenCalledWith(
+      '已下架作品 7，未封禁用户 456',
     )
   })
 })

@@ -12,6 +12,7 @@ import { useTemplateApplyStore } from '@/stores/templateApply'
 
 const {
   apiGetMock,
+  apiDeleteMock,
   routerReplaceMock,
   messageSuccessMock,
   messageErrorMock,
@@ -19,6 +20,7 @@ const {
   routeMock
 } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
+  apiDeleteMock: vi.fn(),
   routerReplaceMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
@@ -32,7 +34,8 @@ const {
 
 vi.mock('@/api', () => ({
   default: {
-    get: apiGetMock
+    get: apiGetMock,
+    delete: apiDeleteMock,
   }
 }))
 
@@ -298,6 +301,7 @@ describe('MyFavorites workbench flow', () => {
     routeMock.query.tab = 'favorite'
     sessionStorage.clear()
     apiGetMock.mockReset()
+    apiDeleteMock.mockReset()
     routerReplaceMock.mockReset()
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
@@ -399,12 +403,32 @@ describe('MyFavorites workbench flow', () => {
     expect(messageErrorMock).not.toHaveBeenCalled()
   })
 
+  it('removes a favorite directly from its preview without opening details', async () => {
+    primeFavoritesApi()
+    apiDeleteMock.mockResolvedValue({ data: { status: 'success' } })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    const unfavoriteButton = wrapper.get('[data-testid="favorite-card-unfavorite"]')
+    await unfavoriteButton.trigger('click')
+    await flushPromises()
+
+    expect(apiDeleteMock).toHaveBeenCalledWith('/users/history/task-1/favorite')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(0)
+    expect(wrapper.find('.a-modal-stub[data-open="true"]').exists()).toBe(false)
+    expect(messageSuccessMock).toHaveBeenCalledWith('已取消收藏')
+    useTemplateApplyStore().reset()
+  })
+
   it('renders the shared empty state block when the favorites list is empty', async () => {
     primeFavoritesApi({ empty: true })
 
     const wrapper = mountHarness()
     await flushPromises()
     await flushPromises()
+    useTemplateApplyStore().reset()
 
     expect(wrapper.text()).toContain('您还没有收藏过任何作品')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(0)

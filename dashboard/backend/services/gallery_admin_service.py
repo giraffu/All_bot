@@ -35,6 +35,7 @@ async def get_all_gallery_posts_payload(
     task_type,
     sort_by,
     username=None,
+    author_user_id=None,
     prompt_contains=None,
     prompt_max_length=None,
     storage_service=None,
@@ -59,6 +60,7 @@ async def get_all_gallery_posts_payload(
             time_range="all",
             is_active=is_active,
             username=username,
+            author_user_id=author_user_id,
             prompt_contains=prompt_contains,
             prompt_max_length=prompt_max_length,
         )

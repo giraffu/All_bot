@@ -72,6 +72,20 @@ export interface RestoreTasksDeps<T extends RuntimeTaskLike> {
   onParseError?: (error: unknown) => void
 }
 
+export function reconcileTasksAfterForeground<T extends RuntimeTaskLike>(
+  activeTasks: T[],
+  deps: RestoreTasksDeps<T>,
+): void {
+  activeTasks.forEach(task => {
+    const restoration = restorePersistedTask(task)
+    if (restoration.type === 'poll_result') {
+      deps.pollForResult(task)
+    } else if (restoration.type === 'resume_status_poll') {
+      deps.startStatusPolling(task)
+    }
+  })
+}
+
 export interface PersistableTaskLike extends RuntimeTaskLike {
   eventSource?: unknown
 }

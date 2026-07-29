@@ -19,10 +19,13 @@ defineProps({
   loading: {
     type: Boolean,
     default: false
-  }
+  },
+  page: { type: Number, default: 1 },
+  pageSize: { type: Number, default: 20 },
+  total: { type: Number, default: 0 }
 })
 
-defineEmits(['close'])
+defineEmits(['close', 'pageChange'])
 </script>
 
 <template>
@@ -56,7 +59,8 @@ defineEmits(['close'])
         <div v-else-if="history.length === 0" class="text-center py-24">
           <a-empty description="该用户暂无生成记录" />
         </div>
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div v-else class="space-y-6">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <a-card v-for="item in history" :key="item.id" size="small" class="shadow-sm rounded-xl">
             <template #title>
               <div class="flex justify-between items-center">
@@ -115,6 +119,17 @@ defineEmits(['close'])
               </div>
             </div>
           </a-card>
+          </div>
+          <div class="flex justify-end">
+            <a-pagination
+              :current="page"
+              :page-size="pageSize"
+              :total="total"
+              :show-size-changer="false"
+              :show-total="count => `共 ${count} 条历史记录`"
+              @change="$emit('pageChange', $event)"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -192,6 +192,25 @@ async def test_fetch_gallery_feed_page_supports_dashboard_author_and_prompt_filt
     assert 120 in params
 
 
+def test_gallery_feed_query_filters_exact_author_user_id_without_mine_sort():
+    query = build_gallery_feed_query(
+        media_type=None,
+        task_type=None,
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=None,
+        author_user_id=456,
+    )
+
+    compiled = query.compile()
+    sql = str(compiled).lower()
+    assert "gallery_posts.user_id" in sql
+    assert 456 in compiled.params.values()
+
+
 @pytest.mark.asyncio
 async def test_fetch_gallery_feed_page_supports_edit_group_none_filter():
     session = _FakeSession([_ScalarResult(0), _ItemsResult([])])

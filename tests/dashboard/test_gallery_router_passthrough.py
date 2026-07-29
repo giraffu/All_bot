@@ -19,6 +19,7 @@ async def test_get_all_gallery_posts_routes_to_service(monkeypatch):
         task_type="img2img",
         sort_by="latest",
         username="tester",
+        user_id=456,
         prompt_contains="demo",
         prompt_max_length=80,
     )
@@ -32,6 +33,7 @@ async def test_get_all_gallery_posts_routes_to_service(monkeypatch):
         task_type="img2img",
         sort_by="latest",
         username="tester",
+        author_user_id=456,
         prompt_contains="demo",
         prompt_max_length=80,
         logger_override=gallery_router.logger,

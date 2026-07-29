@@ -257,6 +257,7 @@ def build_gallery_feed_query(
     username: str | None = None,
     prompt_contains: str | None = None,
     prompt_max_length: int | None = None,
+    author_user_id: int | None = None,
 ):
     query = select(GalleryPost)
     query = _apply_active_filter(query, is_active=is_active)
@@ -285,6 +286,8 @@ def build_gallery_feed_query(
     )
     query = _apply_time_range_filter(query, time_range=time_range)
     query = _apply_author_username_filter(query, username=username)
+    if author_user_id is not None:
+        query = query.where(GalleryPost.user_id == author_user_id)
     query = _apply_prompt_filters(
         query,
         prompt_contains=prompt_contains,
@@ -312,6 +315,7 @@ async def fetch_gallery_feed_page(
     username: str | None = None,
     prompt_contains: str | None = None,
     prompt_max_length: int | None = None,
+    author_user_id: int | None = None,
 ) -> tuple[list, int]:
     query = build_gallery_feed_query(
         media_type=media_type,
@@ -325,6 +329,7 @@ async def fetch_gallery_feed_page(
         username=username,
         prompt_contains=prompt_contains,
         prompt_max_length=prompt_max_length,
+        author_user_id=author_user_id,
     )
 
     total_query = select(func.count()).select_from(query.order_by(None).subquery())
