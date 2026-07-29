@@ -48,6 +48,9 @@ python scripts/release.py deploy \
 
 一次只部署一个模块。prod 唯一资格确认是 `--confirm-prod`。test 不支持某模块
 时只返回目标不可用，不产生 prod blocker。
+Compose image adapter 使用 `up --no-deps --wait --wait-timeout 120`，只替换
+目标服务并等待其健康检查完成；不得在 `up -d` 返回后立即读取健康状态，以免
+把正常启动窗口误判为失败并触发无效回滚。
 
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
