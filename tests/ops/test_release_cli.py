@@ -87,6 +87,53 @@ def test_build_never_reads_changed_paths_or_release_bundle(tmp_path):
     assert "gpu" not in rendered
 
 
+def test_image_build_forwards_present_proxy_variables_without_values(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    digest = "sha256:" + "1" * 64
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:7890")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            if "--format" in command:
+                return module.CommandResult(0, digest, "")
+            return module.CommandResult(1, "", "not found")
+        return module.CommandResult(0, "", "")
+
+    dependencies = module.ReleaseDependencies(
+        run=fake_run,
+        temporary_checkout=lambda _sha: module.null_checkout(tmp_path),
+    )
+
+    module.build_modules(
+        catalog,
+        ["python-runtime-base"],
+        sha="a" * 40,
+        image_prefix="ghcr.io/example",
+        dependencies=dependencies,
+    )
+
+    build = next(command for command in calls if command[:3] == ["docker", "buildx", "build"])
+    proxy_args = [
+        build[index + 1]
+        for index, value in enumerate(build)
+        if value == "--build-arg"
+    ]
+    assert "http_proxy" in proxy_args
+    assert "HTTPS_PROXY" in proxy_args
+    assert "HTTP_PROXY" not in proxy_args
+    assert "https_proxy" not in proxy_args
+    assert all("127.0.0.1:7890" not in argument for argument in build)
+
+
 def test_image_digest_reader_accepts_buildx_json_string_for_oci_index(tmp_path):
     module = _load_module()
     calls = []
