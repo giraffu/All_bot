@@ -30,6 +30,16 @@ DEFAULT_STATE_ROOT = (
 )
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_REF_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+PROXY_BUILD_ARGS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "FTP_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "ftp_proxy",
+    "no_proxy",
+)
 ENVIRONMENTS = {
     "test": {
         "host": "allbot-do-sgp1-test-control",
@@ -319,6 +329,9 @@ def _build_image(
             "--build-arg",
             f"ALLBOT_GIT_SHA={sha}",
         ]
+        for proxy_name in PROXY_BUILD_ARGS:
+            if os.environ.get(proxy_name):
+                command.extend(["--build-arg", proxy_name])
         target = module.get("target")
         if target:
             command.extend(["--target", str(target)])

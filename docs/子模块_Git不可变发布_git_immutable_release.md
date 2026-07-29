@@ -28,6 +28,9 @@ python scripts/release.py build \
 `--module` 可重复。发布器创建临时干净 worktree，用本机 buildx/GHCR 构建并
 push，仅递归必要 base。已有同 SHA 产物时复用并返回精确 digest；外部镜像只
 解析 digest。完整 SHA 是构建输入标识，不是 ancestry 门禁。
+若操作者环境存在标准 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 或小写同名
+变量，发布器只把变量名作为 BuildKit 预定义 build arg 转发，不把代理值拼进
+命令或镜像历史；未设置时不新增 build arg。
 
 ## 部署
 
