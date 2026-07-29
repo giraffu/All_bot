@@ -25,7 +25,7 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 
 `AI动图` 是 QQCC Bot 的专用展示文案，对应共享兼容路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响旧按钮兼容和 QQCC 动图路由。场景配置 v2 起将旧 `video_scenes` / `draw_scenes` 作为 V2 兼容投影，并持久化 `video_scenes_v1`、`video_scenes_v2`、`draw_scenes_v1`、`draw_scenes_v2`：V1 固定旧图生视频/自由P图，V2 固定图生视频 V2/自由P图 V2.5；旧菜单与 callback 仍进入 V2。`main_buttons.ai_draw_v1` 与 `video_edit_v1` 默认关闭，旧 `ai_draw` / `video_edit` 开关只回填 V2，因此代码部署后、正式配置迁移前也不会向用户提前显示 V1；后台显式开启版本开关后才显示对应入口。运行时从场景 callback、素材接收、参数确认到最终提交必须按场景版本检查 `ai_draw_v1|v2` / `video_edit_v1|v2`，不能再次读取旧兼容键，否则会形成一级入口可见、二级场景被错误拒绝的分裂状态。
 
-`快速换脸` 是 QQCC Bot 的专用主菜单文案，对应 `qqcc.menu.quick_faceswap`，复用现有单图随机换脸流程，发送 1 张正脸图后自动匹配模板；它不是主 Bot 的双图 `faceswap_fsm`，也不属于四类场景配置。该入口继续提交 `face_swap` V1、扣 1 灵石，不读取 `credit_cost`。
+`快速换脸` 是 QQCC Bot 的专用主菜单文案，对应 `qqcc.menu.quick_faceswap`，复用现有单图随机换脸流程，发送 1 张正脸图后自动匹配模板；它不是主 Bot 的双图 `faceswap_fsm`，也不属于四类场景配置。该入口继续提交 `face_swap` V1、扣 2 灵石，不读取 `credit_cost`。
 
 `AI绘图` 是 QQCC Bot 的专用展示文案，对应 `qqcc.menu.ai_draw` 专用路由。旧配置首次归一化时会通过 `scene_preset_version=1` 一次性种子化两个预设 `draw_scenes`：`快速自慰` 与 `快速脱衣`；种子化后它们和自定义场景没有结构差异，可编辑、删除、调整模型、绘图后处理、滤镜终止后处理和原图换脸。关闭直接入口通过 `main_buttons.ai_draw=false`；管理员也可以清空 `draw_scenes` 删除所有直接 AI绘图场景。配置有效滤镜场景后，默认功能行按 `AI绘图 / AI滤镜 / AI动图` 排列；无滤镜场景时不展示 `AI滤镜`。
 

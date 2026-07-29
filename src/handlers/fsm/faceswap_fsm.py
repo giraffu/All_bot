@@ -157,7 +157,7 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
+    cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 2)
     if not update.effective_user:
         return ConversationHandler.END
     user = update.effective_user
