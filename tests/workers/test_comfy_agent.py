@@ -1268,6 +1268,53 @@ def test_build_pop_params_includes_agent_id_for_drain_control(monkeypatch):
 
     assert params["agent_id"] == module.AGENT_ID
     assert params["types"] == module.SUPPORTED_TASK_TYPES
+    assert "preferred_types" not in params
+
+
+def test_build_pop_params_includes_configured_preferred_types(monkeypatch):
+    monkeypatch.setenv(
+        "SUPPORTED_TASK_TYPES",
+        "img2img,scail2_face_swap_v2",
+    )
+    monkeypatch.setenv("PREFERRED_TASK_TYPES", "scail2_face_swap_v2")
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    params = agent._build_pop_params()
+
+    assert params["preferred_types"] == "scail2_face_swap_v2"
+
+
+def test_pipeline_pop_params_omit_preferred_types_outside_pipeline_subset(monkeypatch):
+    monkeypatch.setenv(
+        "SUPPORTED_TASK_TYPES",
+        "img2img,scail2_face_swap_v2",
+    )
+    monkeypatch.setenv("PREFERRED_TASK_TYPES", "scail2_face_swap_v2")
+    monkeypatch.setenv("PIPELINE_TASK_TYPES", "img2img")
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    params = agent._build_pop_params(pipeline=True)
+
+    assert params["types"] == "img2img"
+    assert "preferred_types" not in params
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    (
+        ROOT / "workers" / "comfy_agent" / "agent_main.py",
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
+    ),
+)
+def test_agent_rejects_preferred_types_outside_supported_set(monkeypatch, module_path):
+    monkeypatch.setenv("SUPPORTED_TASK_TYPES", "img2img")
+    monkeypatch.setenv("PREFERRED_TASK_TYPES", "scail2_face_swap_v2")
+
+    with mock.patch("os.makedirs", return_value=None):
+        with pytest.raises(ValueError, match="PREFERRED_TASK_TYPES"):
+            load_agent_main_module(module_path)
 
 
 @pytest.mark.asyncio

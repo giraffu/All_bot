@@ -50,6 +50,7 @@ class AgentPipelineCoordinator:
         *,
         agent_id: str,
         supported_task_types: str,
+        preferred_task_types: str,
         pipeline_task_types: set[str],
         cancel_lock_on_pop: bool,
         pipeline: bool = False,
@@ -65,6 +66,16 @@ class AgentPipelineCoordinator:
         )
         if types:
             params["types"] = types
+        request_types = {
+            task_type.strip() for task_type in types.split(",") if task_type.strip()
+        }
+        request_preferred = [
+            task_type.strip()
+            for task_type in preferred_task_types.split(",")
+            if task_type.strip() and task_type.strip() in request_types
+        ]
+        if request_preferred:
+            params["preferred_types"] = ",".join(request_preferred)
         if cancel_lock_on_pop:
             params["cancel_lock"] = "true"
         return params
@@ -74,6 +85,7 @@ class AgentPipelineCoordinator:
         *,
         agent_id: str,
         supported_task_types: str,
+        preferred_task_types: str,
         pipeline_task_types: set[str],
         cancel_lock_on_pop: bool,
         pipeline: bool = False,
@@ -83,6 +95,7 @@ class AgentPipelineCoordinator:
             params=self.build_pop_params(
                 agent_id=agent_id,
                 supported_task_types=supported_task_types,
+                preferred_task_types=preferred_task_types,
                 pipeline_task_types=pipeline_task_types,
                 cancel_lock_on_pop=cancel_lock_on_pop,
                 pipeline=pipeline,

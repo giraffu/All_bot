@@ -22,11 +22,35 @@ from local_relay import relay_main as relay  # noqa: E402
 
 
 class FakeRequest:
-    def __init__(self, payload):
+    def __init__(self, payload, *, query_params=None):
         self._payload = payload
+        self.query_params = query_params or {}
 
     async def json(self):
         return self._payload
+
+
+@pytest.mark.asyncio
+async def test_relay_preserves_preferred_types_query_params(monkeypatch):
+    calls = []
+
+    async def fake_forward(method, path, *, params=None, json_body=None, retry=True):
+        calls.append((method, path, dict(params), retry))
+        return JSONResponse({"task": None})
+
+    monkeypatch.setattr(relay, "_forward_request", fake_forward)
+    query = {
+        "types": "img2img,scail2_face_swap_v2",
+        "preferred_types": "scail2_face_swap_v2",
+    }
+
+    await relay.pop_task(FakeRequest(None, query_params=query))
+    await relay.peek_task(FakeRequest(None, query_params=query))
+
+    assert calls == [
+        ("GET", "/api/agent/task/pop", query, True),
+        ("GET", "/api/agent/task/peek", query, True),
+    ]
 
 
 @pytest.mark.asyncio

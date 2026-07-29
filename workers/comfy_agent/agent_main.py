@@ -104,6 +104,15 @@ class CorrelationIdFilter(logging.Filter):
 # Configuration
 AGENT_ID = os.getenv("AGENT_ID", "worker_local_01")
 SUPPORTED_TASK_TYPES = os.getenv("SUPPORTED_TASK_TYPES", "img2img,face_swap")
+PREFERRED_TASK_TYPES = os.getenv("PREFERRED_TASK_TYPES", "")
+_supported_task_type_set = {
+    task_type.strip() for task_type in SUPPORTED_TASK_TYPES.split(",") if task_type.strip()
+}
+_preferred_task_type_set = {
+    task_type.strip() for task_type in PREFERRED_TASK_TYPES.split(",") if task_type.strip()
+}
+if not _preferred_task_type_set.issubset(_supported_task_type_set):
+    raise ValueError("PREFERRED_TASK_TYPES must be a subset of SUPPORTED_TASK_TYPES")
 MASTER_API_URL = os.getenv("MASTER_API_URL", "http://127.0.0.1:8000")
 AGENT_SECRET_TOKEN = os.getenv("AGENT_SECRET_TOKEN", "")
 POOL_NODE_ID = os.getenv("POOL_NODE_ID", "")
@@ -1120,6 +1129,7 @@ class ComfyAgent:
         return self._pipeline_coordinator.build_pop_params(
             agent_id=AGENT_ID,
             supported_task_types=SUPPORTED_TASK_TYPES,
+            preferred_task_types=PREFERRED_TASK_TYPES,
             pipeline_task_types=self._pipeline_task_types,
             cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
             pipeline=pipeline,
@@ -1134,6 +1144,7 @@ class ComfyAgent:
         return await self._pipeline_coordinator.pop_next_task(
             agent_id=AGENT_ID,
             supported_task_types=SUPPORTED_TASK_TYPES,
+            preferred_task_types=PREFERRED_TASK_TYPES,
             pipeline_task_types=self._pipeline_task_types,
             cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
             pipeline=pipeline,

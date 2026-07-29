@@ -155,8 +155,13 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
   closed。
 - runtime 使用单 Comfy 执行、最多两个 claimed slot（执行 + 深度一预取），
   上传和 `/complete` 交付可与下一次 Comfy 执行重叠。
-- Central 仍在全部支持类型中按全局 queue score 领取最早任务，不做按类型轮询
-  或亲和。
+- `PREFERRED_TASK_TYPES` 为空时，Central 仍在全部支持类型中按全局 queue
+  score 领取最早任务，不做按类型轮询或亲和。未来 flex Worker 可显式声明
+  preferred 子集，让单次原子领取先扫描 preferred 组、无匹配时才取 fallback；
+  已经 running 的 fallback 不抢占，下一次领取重新判断。
+- gpu-002 若未来把 SCAIL-2 扩展为 flex，preferred 必须固定为四类 SCAIL-2，
+  且 `PREFETCH_TASK_TYPES` 也只能包含这四类，禁止预接 fallback。本协议能力
+  上线不等于授权修改当前 profile、镜像、agent env 或启用 flex。
 - GPU226 候选只能经 fleet helper 做单卡 drain、takeover、auto rollback；
   任意 OOM/status 137/Xid、workflow、上传或终态错误均恢复旧 exact digest。
 

@@ -67,6 +67,45 @@ redis.call('ZADD', KEYS[2], tonumber(ARGV[4]), ARGV[5])
 return 1
 """
 
+_POP_PREFERRED_TASK_SCRIPT = """
+local allowed_count = tonumber(ARGV[1])
+local preferred_count = tonumber(ARGV[2])
+local allowed = {}
+local preferred = {}
+for index = 1, allowed_count do
+    allowed[ARGV[2 + index]] = true
+end
+for index = 1, preferred_count do
+    preferred[ARGV[2 + allowed_count + index]] = true
+end
+
+local fallback_id = nil
+local fallback_score = nil
+local pending = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
+for index = 1, #pending, 2 do
+    local task_id = pending[index]
+    local score = pending[index + 1]
+    local task_type = redis.call('HGET', KEYS[2] .. task_id, 'type')
+    if task_type and allowed[task_type] then
+        if not fallback_id then
+            fallback_id = task_id
+            fallback_score = score
+        end
+        if preferred[task_type] then
+            if redis.call('ZREM', KEYS[1], task_id) == 1 then
+                return {task_id, score}
+            end
+            return {}
+        end
+    end
+end
+
+if fallback_id and redis.call('ZREM', KEYS[1], fallback_id) == 1 then
+    return {fallback_id, fallback_score}
+end
+return {}
+"""
+
 
 class TaskAdmissionConflictError(RuntimeError):
     pass
@@ -278,6 +317,29 @@ class QueueManager:
             zrem_func=self.redis.zrem,
             batch_size=batch_size,
         )
+
+    async def _pop_preferred_or_fallback_task(
+        self,
+        *,
+        allowed_types: list[str],
+        preferred_types: list[str],
+    ) -> Optional[Tuple[str, float]]:
+        result = await self._single_redis_call(
+            "pop_preferred_or_fallback_task",
+            self.redis.eval,
+            _POP_PREFERRED_TASK_SCRIPT,
+            2,
+            self.pending_key,
+            self.task_prefix,
+            len(allowed_types),
+            len(preferred_types),
+            *allowed_types,
+            *preferred_types,
+        )
+        if not result:
+            return None
+        task_id, score = result
+        return self._decode_redis_value(task_id), float(score)
 
     async def _activate_dequeued_task(
         self,
@@ -504,6 +566,7 @@ class QueueManager:
     async def peek_pending_tasks(
         self,
         allowed_types: Optional[list[str]] = None,
+        preferred_types: Optional[list[str]] = None,
         *,
         limit: int = 1,
         batch_size: int = 50,
@@ -511,6 +574,55 @@ class QueueManager:
         if limit <= 0:
             return []
 
+        if not preferred_types:
+            return await self._peek_pending_tasks_in_score_order(
+                allowed_types=allowed_types,
+                limit=limit,
+                batch_size=batch_size,
+            )
+
+        preferred_set = set(preferred_types)
+        preferred_matches: list[Dict[str, Any]] = []
+        fallback_matches: list[Dict[str, Any]] = []
+        offset = 0
+        allowed_type_set = set(allowed_types or [])
+        while len(preferred_matches) < limit:
+            tasks_with_scores = await self._retry_redis_call(
+                "peek_pending_tasks_zrange",
+                self.redis.zrange,
+                self.pending_key,
+                offset,
+                offset + batch_size - 1,
+                withscores=True,
+            )
+            if not tasks_with_scores:
+                break
+            for task_id_raw, _score in tasks_with_scores:
+                task_details = await self.get_task_status(
+                    self._decode_redis_value(task_id_raw)
+                )
+                if not task_details or task_details.get("status") != TaskStatus.PENDING:
+                    continue
+                task_type = task_details.get("type")
+                if allowed_type_set and task_type not in allowed_type_set:
+                    continue
+                target = (
+                    preferred_matches
+                    if task_type in preferred_set
+                    else fallback_matches
+                )
+                if len(target) < limit:
+                    target.append(task_details)
+            offset += batch_size
+        return (preferred_matches + fallback_matches)[:limit]
+
+    async def _peek_pending_tasks_in_score_order(
+        self,
+        *,
+        allowed_types: Optional[list[str]],
+        limit: int,
+        batch_size: int,
+    ) -> list[Dict[str, Any]]:
         matched_tasks: list[Dict[str, Any]] = []
         offset = 0
         allowed_type_set = set(allowed_types or [])
@@ -549,9 +661,19 @@ class QueueManager:
     async def dequeue_task(
         self,
         allowed_types: Optional[list[str]] = None,
+        preferred_types: Optional[list[str]] = None,
         *,
         cancel_lock: bool = False,
     ) -> Optional[Tuple[str, float]]:
+        if preferred_types:
+            next_task = await self._pop_preferred_or_fallback_task(
+                allowed_types=list(allowed_types or []),
+                preferred_types=preferred_types,
+            )
+            return await self._activate_dequeued_task(
+                next_task,
+                cancel_lock=cancel_lock,
+            )
         return await dequeue_task_flow(
             allowed_types=allowed_types,
             pop_next_pending_task_func=self._pop_next_pending_task,
