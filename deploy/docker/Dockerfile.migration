@@ -3,6 +3,7 @@ FROM ${RUNTIME_BASE_IMAGE} AS database-migration
 ARG ALLBOT_GIT_SHA
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=database-migration
 COPY config.py /app/config.py
+COPY src /app/src
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 ENTRYPOINT ["alembic"]

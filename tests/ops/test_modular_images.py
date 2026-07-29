@@ -118,6 +118,15 @@ def test_web_api_image_and_release_smoke_require_ffmpeg():
     assert not (ROOT / ".github/workflows/modular-release-v2.yml").exists()
 
 
+def test_database_migration_image_contains_runtime_environment_dependency():
+    migration = (ROOT / "deploy/docker/Dockerfile.migration").read_text(
+        encoding="utf-8"
+    )
+
+    assert "COPY config.py /app/config.py" in migration
+    assert "COPY src /app/src" in migration
+
+
 def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools():
     media_runtime = (ROOT / "deploy/docker/Dockerfile.media-runtime-base").read_text(
         encoding="utf-8"
