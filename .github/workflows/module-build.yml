@@ -1,0 +1,101 @@
+name: Build immutable module
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full protected main Git SHA
+        required: true
+        type: string
+      modules:
+        description: Comma-separated non-GPU module names
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: allbot-build-sgp1
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64, allbot-build-sgp1]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout requested revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha }}
+
+      - name: Require exact protected main revision and allowed modules
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUESTED_MODULES: ${{ inputs.modules }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$REQUESTED_SHA"
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          python - "$REQUESTED_MODULES" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          catalog = json.loads(Path("deploy/module-catalog.json").read_text())["modules"]
+          modules = [item.strip() for item in sys.argv[1].split(",") if item.strip()]
+          if not modules:
+              raise SystemExit("at least one module is required")
+          for name in modules:
+              if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+                  raise SystemExit(f"invalid module name: {name}")
+              if name not in catalog:
+                  raise SystemExit(f"unknown module: {name}")
+              if catalog[name]["kind"] == "gpu":
+                  raise SystemExit(f"GPU module must be built locally: {name}")
+          print("\n".join(modules))
+          PY
+
+      - name: Login to GHCR with ephemeral token
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and publish exact artifacts
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUESTED_MODULES: ${{ inputs.modules }}
+        run: |
+          set -euo pipefail
+          args=()
+          IFS=',' read -ra modules <<< "$REQUESTED_MODULES"
+          for raw in "${modules[@]}"; do
+            module="${raw//[[:space:]]/}"
+            args+=(--module "$module")
+          done
+          started=$SECONDS
+          python scripts/release.py build \
+            "${args[@]}" \
+            --sha "$REQUESTED_SHA" \
+            --image-prefix ghcr.io/${{ github.repository_owner }} \
+            --builder allbot-sgp1 \
+            --registry-cache-prefix ghcr.io/${{ github.repository_owner }}/allbot-build-cache \
+            --build-progress plain > module-digests.json
+          {
+            echo "## Immutable module build"
+            echo
+            echo "Duration: $((SECONDS - started)) seconds"
+            echo
+            echo '```json'
+            cat module-digests.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove GHCR credentials
+        if: always()
+        run: docker logout ghcr.io || true

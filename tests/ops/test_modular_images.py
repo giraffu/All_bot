@@ -109,11 +109,17 @@ def test_i2i_pro_gpu_release_contract_is_independent():
 
 
 def test_web_api_image_and_release_smoke_require_ffmpeg():
-    control = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
+    ffmpeg_runtime = (
+        ROOT / "deploy/docker/Dockerfile.python-ffmpeg-runtime-base"
+    ).read_text(
         encoding="utf-8"
     )
-    web_api = control.split("AS web-api", 1)[1].split("AS payment-api", 1)[0]
-    assert "apt-get install -y --no-install-recommends ffmpeg" in web_api
+    assert "apt-get install -y --no-install-recommends ffmpeg" in ffmpeg_runtime
+    catalog = json.loads(
+        (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
+    )["modules"]
+    assert catalog["web-api"]["base"] == "python-ffmpeg-runtime-base"
+    assert catalog["main-bot"]["base"] == "python-ffmpeg-runtime-base"
 
     assert not (ROOT / ".github/workflows/modular-release-v2.yml").exists()
 
@@ -137,7 +143,7 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
         encoding="utf-8"
     )
     assert "AS python-media-runtime-base" in media_runtime
-    assert "apt-get install -y --no-install-recommends ffmpeg" in media_runtime
+    assert "apt-get install -y --no-install-recommends ffmpeg" not in media_runtime
     assert "media-intelligence-requirements.txt" in media_runtime
     assert "face_detection_yunet_2023mar.onnx" in media_runtime
     assert "YUNET_LICENSE.txt" in media_runtime
@@ -151,7 +157,7 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
         (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
     )["modules"]
     media_base = catalog["python-media-runtime-base"]
-    assert media_base["base"] == "python-runtime-base"
+    assert media_base["base"] == "python-ffmpeg-runtime-base"
     assert media_base["dockerfile"] == "deploy/docker/Dockerfile.media-runtime-base"
     for target in (
         "qqcc-bot",
@@ -161,7 +167,7 @@ def test_qqcc_video_chain_runtime_images_and_release_smoke_require_ffmpeg_tools(
     ):
         assert catalog[target]["base"] == "python-media-runtime-base"
     assert catalog["central-api"]["base"] == "python-runtime-base"
-    assert catalog["main-bot"]["base"] == "python-runtime-base"
+    assert catalog["main-bot"]["base"] == "python-ffmpeg-runtime-base"
 
 def test_dashboard_and_qqcc_frontends_are_separate_targets():
     dockerfile = (ROOT / "deploy/docker/Dockerfile.frontends").read_text(

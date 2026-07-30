@@ -28,6 +28,28 @@ python scripts/release.py build \
 `--module` 可重复。发布器创建临时干净 worktree，用本机 buildx/GHCR 构建并
 push，仅递归必要 base。已有同 SHA 产物时复用并返回精确 digest；外部镜像只
 解析 digest。完整 SHA 是构建输入标识，不是 ancestry 门禁。
+`build-only` base 不再跟随应用 SHA：其 tag 为
+`input-<canonical-sha256>`，身份只覆盖模块名、target、Dockerfile、catalog
+声明的 `build_inputs` 和上游 base 的精确 digest。requirements、Dockerfile
+或 base digest 变化才重建；最终业务镜像仍用完整 Git SHA tag，并返回
+`repository@sha256:digest`。
+
+SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模块构建：
+
+```bash
+python scripts/release.py build \
+  --module main-bot \
+  --sha <40位main-sha> \
+  --builder allbot-sgp1 \
+  --registry-cache-prefix ghcr.io/giraffu/allbot-build-cache \
+  --build-progress plain
+```
+
+registry cache ref 是唯一允许 mutable 的构建缓存；运行 artifact 始终精确
+digest。构建器在真正 build 前验证 Buildx、registry namespace 和代理。
+`127.0.0.1`、`localhost`、`::1` 代理对 docker-container builder 不可达，会
+立即失败；需改为容器可达网桥地址或在云 Runner 直连。构建 stderr 实时显示
+阶段与耗时，stdout 继续只输出模块到 digest 的 JSON。
 若操作者环境存在标准 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 或小写同名
 变量，发布器只把变量名作为 BuildKit 预定义 build arg 转发，不把代理值拼进
 命令或镜像历史；未设置时不新增 build arg。
@@ -81,6 +103,17 @@ python scripts/release.py rollback \
 状态按环境和模块保存 current、previous、最近动作和结果。首次部署从 live
 adapter 建立基线。部署失败自动尝试恢复 previous；migration 失败只报告并保留
 现场，不自动 downgrade 或恢复备份。
+本地 CLI 默认继续使用 XDG state；GitHub deploy workflow 显式使用 remote
+state backend，把状态原子写入目标主机
+`/var/lib/allbot/module-release-state/<env>/<module>/current.json`，因此 Runner
+重建不会丢失 rollback identity。
+
+`.github/workflows/module-build.yml` 与 `module-deploy.yml` 只有
+`workflow_dispatch`，self-hosted job 不接收 PR/fork。build workflow 要求输入
+SHA 等于当前 `origin/main` 并拒绝 GPU kind；GPU/ComfyUI 仍由本地发布路径构建。
+deploy workflow 绑定 `test`/`production` GitHub Environment，校验精确 digest；
+production mutation 还需 Environment 人工批准、布尔确认和
+`--confirm-prod`。Environment 凭据只解码到 `/dev/shm` 并在 job 结束清理。
 
 旧 bundle、transaction、acceptance、failed batch 和 evidence 只作历史取证，
 不能作为当前命令输入或阻断模块。

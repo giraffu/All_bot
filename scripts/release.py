@@ -12,12 +12,15 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any, Callable, Iterator, Mapping, NamedTuple, Sequence
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -161,6 +164,22 @@ class CommandResult(NamedTuple):
 
 
 def _run(command: Sequence[str], **kwargs: Any) -> CommandResult:
+    stream_stderr = bool(kwargs.pop("stream_stderr", False))
+    if stream_stderr:
+        process = subprocess.Popen(
+            list(command),
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            **kwargs,
+        )
+        stderr_lines: list[str] = []
+        assert process.stderr is not None
+        for line in process.stderr:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            stderr_lines.append(line)
+        return CommandResult(process.wait(), "", "".join(stderr_lines))
     result = subprocess.run(
         list(command),
         text=True,
@@ -169,6 +188,25 @@ def _run(command: Sequence[str], **kwargs: Any) -> CommandResult:
         **kwargs,
     )
     return CommandResult(result.returncode, result.stdout, result.stderr)
+
+
+def _ssh_command(host: str, remote_command: str) -> list[str]:
+    command = ["ssh", "-o", "BatchMode=yes"]
+    identity = os.environ.get("ALLBOT_SSH_IDENTITY_FILE")
+    known_hosts = os.environ.get("ALLBOT_SSH_KNOWN_HOSTS_FILE")
+    if identity:
+        command.extend(["-o", "IdentitiesOnly=yes", "-i", identity])
+    if known_hosts:
+        command.extend(
+            [
+                "-o",
+                f"UserKnownHostsFile={known_hosts}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+        )
+    command.extend([host, remote_command])
+    return command
 
 
 @contextmanager
@@ -301,6 +339,78 @@ def _digest_for_ref(
     return output
 
 
+def _input_files(checkout: Path, paths: Sequence[str]) -> list[Path]:
+    files: list[Path] = []
+    for relative in paths:
+        path = checkout / relative
+        if path.is_dir():
+            files.extend(item for item in sorted(path.rglob("*")) if item.is_file())
+        elif path.is_file():
+            files.append(path)
+        else:
+            raise ReleaseError(f"declared build input is missing: {relative}")
+    return sorted(set(files), key=lambda item: item.relative_to(checkout).as_posix())
+
+
+def build_input_identity(
+    name: str,
+    module: Mapping[str, Any],
+    *,
+    checkout: Path,
+    base_artifact: str | None,
+) -> str:
+    """Return the canonical identity of a build-only image's real inputs."""
+    declared = [str(module["dockerfile"]), *map(str, module.get("build_inputs", []))]
+    entries = [
+        {
+            "path": path.relative_to(checkout).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in _input_files(checkout, declared)
+    ]
+    payload = {
+        "module": name,
+        "target": module.get("target"),
+        "base": base_artifact,
+        "inputs": entries,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _validate_build_environment(
+    *,
+    image_prefix: str,
+    builder: str | None,
+    dependencies: ReleaseDependencies,
+    cwd: Path,
+) -> None:
+    if not image_prefix or "/" not in image_prefix or any(
+        character.isspace() for character in image_prefix
+    ):
+        raise ReleaseError("image prefix must name a registry namespace")
+    for name in PROXY_BUILD_ARGS:
+        if name.lower() == "no_proxy":
+            continue
+        value = os.environ.get(name)
+        if not value:
+            continue
+        parsed = urllib.parse.urlsplit(value if "://" in value else f"http://{value}")
+        if (parsed.hostname or "").lower() in {"127.0.0.1", "localhost", "::1"}:
+            raise ReleaseError(
+                f"{name} uses a loopback proxy; configure a container-reachable "
+                "proxy address before building"
+            )
+    command = ["docker", "buildx", "inspect", builder] if builder else [
+        "docker",
+        "buildx",
+        "version",
+    ]
+    result = dependencies.run(command, cwd=cwd)
+    if result.returncode:
+        raise ReleaseError("Docker Buildx preflight failed")
+
+
 def _build_image(
     name: str,
     module: Mapping[str, Any],
@@ -310,8 +420,21 @@ def _build_image(
     checkout: Path,
     built: Mapping[str, str],
     dependencies: ReleaseDependencies,
+    builder: str | None,
+    registry_cache_prefix: str | None,
+    build_progress: str,
 ) -> str:
-    tag = f"{image_prefix}/{module['image']}:{sha}"
+    base = module.get("base")
+    base_artifact = built.get(str(base)) if base else None
+    tag_suffix = sha
+    if module.get("adapter") == "build-only":
+        tag_suffix = "input-" + build_input_identity(
+            name,
+            module,
+            checkout=checkout,
+            base_artifact=base_artifact,
+        )
+    tag = f"{image_prefix}/{module['image']}:{tag_suffix}"
     existing = dependencies.run(
         ["docker", "buildx", "imagetools", "inspect", tag],
         cwd=checkout,
@@ -321,30 +444,51 @@ def _build_image(
             "docker",
             "buildx",
             "build",
-            "--push",
-            "-f",
-            str(module["dockerfile"]),
-            "-t",
-            tag,
-            "--build-arg",
-            f"ALLBOT_GIT_SHA={sha}",
         ]
+        if builder:
+            command.extend(["--builder", builder])
+        command.extend(
+            [
+                "--progress",
+                build_progress,
+                "--push",
+                "-f",
+                str(module["dockerfile"]),
+                "-t",
+                tag,
+                "--build-arg",
+                f"ALLBOT_GIT_SHA={sha}",
+            ]
+        )
+        if registry_cache_prefix:
+            cache_ref = f"{registry_cache_prefix}:{name}"
+            command.extend(
+                [
+                    "--cache-from",
+                    f"type=registry,ref={cache_ref}",
+                    "--cache-to",
+                    f"type=registry,ref={cache_ref},mode=max",
+                ]
+            )
         for proxy_name in PROXY_BUILD_ARGS:
             if os.environ.get(proxy_name):
                 command.extend(["--build-arg", proxy_name])
         target = module.get("target")
         if target:
             command.extend(["--target", str(target)])
-        base = module.get("base")
         if base:
             command.extend(["--build-arg", f"RUNTIME_BASE_IMAGE={built[str(base)]}"])
         command.append(".")
-        result = dependencies.run(command, cwd=checkout)
+        started = time.monotonic()
+        print(f"[build:{name}] started", file=sys.stderr)
+        result = dependencies.run(command, cwd=checkout, stream_stderr=True)
+        elapsed = time.monotonic() - started
+        print(f"[build:{name}] finished in {elapsed:.1f}s", file=sys.stderr)
         if result.returncode:
-            detail = (result.stderr or result.stdout).strip().splitlines()[-1:]
+            detail = (result.stderr or result.stdout).strip().splitlines()[-20:]
             raise ReleaseError(
                 f"module build failed: {name}"
-                + (f": {detail[0]}" if detail else "")
+                + (f": {' | '.join(detail)}" if detail else "")
             )
     digest = _digest_for_ref(
         tag, kind=str(module["kind"]), dependencies=dependencies, cwd=checkout
@@ -416,6 +560,9 @@ def build_modules(
     *,
     sha: str,
     image_prefix: str,
+    builder: str | None = None,
+    registry_cache_prefix: str | None = None,
+    build_progress: str = "plain",
     dependencies: ReleaseDependencies | None = None,
 ) -> dict[str, str]:
     if not FULL_SHA_RE.fullmatch(sha):
@@ -423,6 +570,12 @@ def build_modules(
     dependencies = dependencies or ReleaseDependencies()
     built: dict[str, str] = {}
     with dependencies.temporary_checkout(sha) as checkout:
+        _validate_build_environment(
+            image_prefix=image_prefix,
+            builder=builder,
+            dependencies=dependencies,
+            cwd=checkout,
+        )
         for name in build_closure(catalog, requested):
             module = catalog[name]
             kind = str(module["kind"])
@@ -453,6 +606,9 @@ def build_modules(
                     checkout=checkout,
                     built=built,
                     dependencies=dependencies,
+                    builder=builder,
+                    registry_cache_prefix=registry_cache_prefix,
+                    build_progress=build_progress,
                 )
     return built
 
@@ -476,6 +632,100 @@ def validate_deploy_request(
 
 def _state_path(root: Path, environment: str, module_name: str) -> Path:
     return root / environment / module_name / "current.json"
+
+
+class LocalStateBackend:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def read(self, environment: str, module_name: str) -> dict[str, Any]:
+        return read_status(self.root, environment, module_name)
+
+    def write(
+        self,
+        environment: str,
+        module_name: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        _write_state(self.root, environment, module_name, payload)
+
+
+class RemoteStateBackend:
+    def __init__(
+        self,
+        *,
+        host: str,
+        root: Path = Path("/var/lib/allbot/module-release-state"),
+        run: Callable[..., CommandResult] = _run,
+    ) -> None:
+        self.host = host
+        self.root = root
+        self.run = run
+
+    def _path(self, environment: str, module_name: str) -> Path:
+        if environment not in ENVIRONMENTS or not re.fullmatch(
+            r"[a-z0-9][a-z0-9-]*", module_name
+        ):
+            raise ReleaseError("invalid remote release-state target")
+        return self.root / environment / module_name / "current.json"
+
+    def read(self, environment: str, module_name: str) -> dict[str, Any]:
+        path = self._path(environment, module_name)
+        result = self.run(
+            _ssh_command(self.host, f"cat {path}")
+        )
+        if result.returncode:
+            return {
+                "environment": environment,
+                "module": module_name,
+                "status": "untracked",
+            }
+        try:
+            value = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ReleaseError("remote module release state is invalid") from exc
+        if not isinstance(value, dict):
+            raise ReleaseError("remote module release state is invalid")
+        return value
+
+    def write(
+        self,
+        environment: str,
+        module_name: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        path = self._path(environment, module_name)
+        encoded = base64.b64encode(
+            (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
+        ).decode()
+        quoted_directory = shlex.quote(str(path.parent))
+        quoted_path = shlex.quote(str(path))
+        quoted_payload = shlex.quote(encoded)
+        script = (
+            "set -eu\n"
+            f"directory={quoted_directory}\n"
+            'mkdir -p "$directory"\n'
+            'chmod 700 "$directory"\n'
+            'temporary=$(mktemp "$directory/.current.json.XXXXXX")\n'
+            'trap \'rm -f "$temporary"\' EXIT\n'
+            f"printf '%s' {quoted_payload} | base64 -d > \"$temporary\"\n"
+            'chmod 600 "$temporary"\n'
+            f'mv "$temporary" {quoted_path}\n'
+            "trap - EXIT\n"
+        )
+        result = self.run(
+            _ssh_command(self.host, "bash -s"),
+            input=script,
+        )
+        if result.returncode:
+            raise ReleaseError("unable to atomically write remote release state")
+
+
+StateBackend = Path | LocalStateBackend | RemoteStateBackend
+
+
+def _backend(value: StateBackend) -> LocalStateBackend | RemoteStateBackend:
+    return LocalStateBackend(value) if isinstance(value, Path) else value
 
 
 def _write_state(
@@ -519,7 +769,7 @@ def deploy_module(
     module_name: str,
     artifact: str,
     confirm_prod: bool,
-    state_root: Path,
+    state_root: StateBackend,
     adapters: Mapping[str, FunctionAdapter],
     context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -543,7 +793,8 @@ def deploy_module(
         raise ReleaseError(f"deployment adapter is unavailable: {adapter_name}")
     context = dict(context or {})
     context["desired_artifact"] = artifact
-    previous_state = read_status(state_root, environment, module_name)
+    state = _backend(state_root)
+    previous_state = state.read(environment, module_name)
     live = adapter.inspect(environment, module_name, module, context)
     previous = live or previous_state.get("current")
     started_at = datetime.now(timezone.utc).isoformat()
@@ -563,8 +814,7 @@ def deploy_module(
                     )
                 except Exception:
                     current_live = None
-                _write_state(
-                    state_root,
+                state.write(
                     environment,
                     module_name,
                     {
@@ -590,8 +840,7 @@ def deploy_module(
                 ) or previous
             except Exception:
                 current_live = previous
-            _write_state(
-                state_root,
+            state.write(
                 environment,
                 module_name,
                 {
@@ -614,8 +863,7 @@ def deploy_module(
             ) or previous
         except Exception:
             current_live = previous
-        _write_state(
-            state_root,
+        state.write(
             environment,
             module_name,
             {
@@ -641,7 +889,7 @@ def deploy_module(
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "observed": observed,
     }
-    _write_state(state_root, environment, module_name, result)
+    state.write(environment, module_name, result)
     return result
 
 
@@ -651,11 +899,12 @@ def rollback_module(
     environment: str,
     module_name: str,
     confirm_prod: bool,
-    state_root: Path,
+    state_root: StateBackend,
     adapters: Mapping[str, FunctionAdapter],
     context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    state = read_status(state_root, environment, module_name)
+    state_backend = _backend(state_root)
+    state = state_backend.read(environment, module_name)
     previous = state.get("previous")
     if environment == "prod" and not confirm_prod:
         raise ReleaseError("production rollback requires --confirm-prod")
@@ -688,13 +937,13 @@ def rollback_module(
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "observed": observed,
     }
-    _write_state(state_root, environment, module_name, result)
+    state_backend.write(environment, module_name, result)
     return result
 
 
 def _remote_shell(host: str, script: str) -> CommandResult:
     return _run(
-        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        _ssh_command(host, "bash -s"),
         input=script,
     )
 
@@ -769,7 +1018,7 @@ class SystemAdapters:
             host = str(context.get("remote_host") or ENVIRONMENTS[environment]["host"])
             root = f"/var/lib/allbot/module-contracts/{environment}/{_name}"
             result = _run(
-                ["ssh", "-o", "BatchMode=yes", host, f"readlink -f {root}/current"]
+                _ssh_command(host, f"readlink -f {root}/current")
             )
             identity = Path(result.stdout.strip()).name
             match = re.fullmatch(r"sha256-([0-9a-f]{64})", identity)
@@ -848,7 +1097,7 @@ class SystemAdapters:
             "image_id=$(docker inspect --format '{{.Image}}' \"$id\"); "
             "docker image inspect --format '{{index .RepoDigests 0}}' \"$image_id\""
         )
-        result = _run(["ssh", "-o", "BatchMode=yes", host, command])
+        result = _run(_ssh_command(host, command))
         return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
 
     def deploy(
@@ -922,7 +1171,7 @@ class SystemAdapters:
             "docker inspect --format "
             "'{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \"$id\""
         )
-        result = _run(["ssh", "-o", "BatchMode=yes", host, command])
+        result = _run(_ssh_command(host, command))
         health = result.stdout.strip()
         if result.returncode or health not in {"healthy", "running"}:
             raise ReleaseError(f"target service is unhealthy: {service}")
@@ -1011,7 +1260,7 @@ mv -Tf {root}/current.new {root}/current
             f"docker run --rm {network}--env-file {target['env_file']} "
             f"{artifact} upgrade head"
         )
-        result = _run(["ssh", "-o", "BatchMode=yes", host, command])
+        result = _run(_ssh_command(host, command))
         if result.returncode:
             raise ReleaseError("database migration failed")
 
@@ -1193,6 +1442,13 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--module", action="append", required=True)
     build.add_argument("--sha", required=True)
     build.add_argument("--image-prefix", default="ghcr.io/giraffu")
+    build.add_argument("--builder")
+    build.add_argument("--registry-cache-prefix")
+    build.add_argument(
+        "--build-progress",
+        choices=("auto", "plain", "tty", "rawjson"),
+        default="plain",
+    )
     for command in ("deploy", "rollback", "status"):
         child = subparsers.add_parser(command)
         child.add_argument("--env", choices=("test", "prod"), required=True)
@@ -1200,6 +1456,14 @@ def build_parser() -> argparse.ArgumentParser:
         child.add_argument("--confirm-prod", action="store_true")
         child.add_argument("--remote-host")
         child.add_argument("--remote-root")
+        child.add_argument(
+            "--state-backend", choices=("local", "remote"), default="local"
+        )
+        child.add_argument(
+            "--remote-state-root",
+            type=Path,
+            default=Path("/var/lib/allbot/module-release-state"),
+        )
         child.add_argument("--operator", choices=("runpod", "lan"))
         child.add_argument("--slot")
         child.add_argument("--cloudflare-token-file")
@@ -1219,9 +1483,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.module,
                 sha=args.sha,
                 image_prefix=args.image_prefix,
+                builder=args.builder,
+                registry_cache_prefix=args.registry_cache_prefix,
+                build_progress=args.build_progress,
             )
-        elif args.command == "status":
-            result = read_status(args.state_root, args.env, args.module)
         else:
             context = {
                 key: getattr(args, key)
@@ -1235,6 +1500,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 if getattr(args, key, None)
             }
+            if args.state_backend == "remote":
+                if not args.remote_host:
+                    raise ReleaseError("--state-backend remote requires --remote-host")
+                state_backend: StateBackend = RemoteStateBackend(
+                    host=args.remote_host,
+                    root=args.remote_state_root,
+                )
+            else:
+                state_backend = args.state_root
+            if args.command == "status":
+                result = _backend(state_backend).read(args.env, args.module)
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 0
             adapters = SystemAdapters(catalog).mapping()
             if args.command == "deploy":
                 result = deploy_module(
@@ -1243,7 +1521,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     module_name=args.module,
                     artifact=args.artifact,
                     confirm_prod=args.confirm_prod,
-                    state_root=args.state_root,
+                    state_root=state_backend,
                     adapters=adapters,
                     context=context,
                 )
@@ -1253,7 +1531,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     environment=args.env,
                     module_name=args.module,
                     confirm_prod=args.confirm_prod,
-                    state_root=args.state_root,
+                    state_root=state_backend,
                     adapters=adapters,
                     context=context,
                 )

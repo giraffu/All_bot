@@ -1,0 +1,115 @@
+name: Deploy immutable module
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Read status, deploy an exact artifact, or rollback
+        required: true
+        type: choice
+        options: [status, deploy, rollback]
+      environment:
+        description: GitHub deployment environment
+        required: true
+        type: choice
+        options: [test, production]
+      module:
+        description: Exact module name
+        required: true
+        type: string
+      artifact:
+        description: Required for deploy; repository@sha256:digest
+        required: false
+        type: string
+      confirm_production:
+        description: Required in addition to production approval for mutations
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, allbot-build-sgp1]
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout protected main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: main
+
+      - name: Validate request
+        env:
+          ACTION: ${{ inputs.action }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          MODULE: ${{ inputs.module }}
+          ARTIFACT: ${{ inputs.artifact }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          set -euo pipefail
+          [[ "$MODULE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
+          if [ "$ACTION" = deploy ]; then
+            [[ "$ARTIFACT" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]
+          fi
+          if [ "$TARGET_ENVIRONMENT" = production ] && [ "$ACTION" != status ]; then
+            test "$CONFIRM_PRODUCTION" = true
+          fi
+
+      - name: Materialize approved credentials in tmpfs
+        env:
+          DEPLOY_KEY: ${{ secrets.ALLBOT_DEPLOY_SSH_KEY }}
+          TARGET_ENV_GZIP_B64: ${{ secrets.ALLBOT_TARGET_ENV_GZIP_B64 }}
+          TARGET_ENV_SHA256: ${{ secrets.ALLBOT_TARGET_ENV_SHA256 }}
+          TARGET_HOST_KEY: ${{ secrets.ALLBOT_TARGET_SSH_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          secret_dir="/dev/shm/allbot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir "$secret_dir"
+          printf '%s\n' "$DEPLOY_KEY" > "$secret_dir/deploy-key"
+          printf '%s' "$TARGET_ENV_GZIP_B64" | base64 -d | gzip -d > "$secret_dir/target.env"
+          printf '%s  %s\n' "$TARGET_ENV_SHA256" "$secret_dir/target.env" | sha256sum -c -
+          printf '%s\n' "$TARGET_HOST_KEY" > "$secret_dir/known_hosts"
+          echo "ALLBOT_SECRET_DIR=$secret_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact release operation
+        env:
+          ACTION: ${{ inputs.action }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          MODULE: ${{ inputs.module }}
+          ARTIFACT: ${{ inputs.artifact }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+          TARGET_ENDPOINT: ${{ vars.ALLBOT_TARGET_SSH_ENDPOINT }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.ALLBOT_CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_TOKEN: ${{ secrets.ALLBOT_CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          export ALLBOT_SSH_IDENTITY_FILE="$ALLBOT_SECRET_DIR/deploy-key"
+          export ALLBOT_SSH_KNOWN_HOSTS_FILE="$ALLBOT_SECRET_DIR/known_hosts"
+          printf '%s' "$CLOUDFLARE_TOKEN" > "$ALLBOT_SECRET_DIR/cloudflare-token"
+          env_name="$TARGET_ENVIRONMENT"
+          [ "$env_name" = production ] && env_name=prod
+          args=(
+            "$ACTION" --env "$env_name" --module "$MODULE"
+            --remote-host "$TARGET_ENDPOINT"
+            --state-backend remote
+            --cloudflare-token-file "$ALLBOT_SECRET_DIR/cloudflare-token"
+            --cloudflare-account-id "$CLOUDFLARE_ACCOUNT_ID"
+          )
+          [ "$ACTION" = deploy ] && args+=(--artifact "$ARTIFACT")
+          if [ "$env_name" = prod ] && [ "$ACTION" != status ]; then
+            args+=(--confirm-prod)
+          fi
+          python scripts/release.py "${args[@]}"
+
+      - name: Remove tmpfs credentials
+        if: always()
+        run: |
+          if [ -n "${ALLBOT_SECRET_DIR:-}" ] && [[ "$ALLBOT_SECRET_DIR" == /dev/shm/allbot-* ]]; then
+            find "$ALLBOT_SECRET_DIR" -type f -exec shred -u {} + 2>/dev/null || true
+            rmdir "$ALLBOT_SECRET_DIR" 2>/dev/null || true
+          fi

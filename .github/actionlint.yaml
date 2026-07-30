@@ -1,0 +1,5 @@
+self-hosted-runner:
+  labels:
+    - allbot-build-sgp1
+config-variables:
+  - ALLBOT_TARGET_SSH_ENDPOINT

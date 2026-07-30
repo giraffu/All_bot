@@ -39,6 +39,26 @@
 | 默认研发登录用户 | `deploy` |
 | root 初始化入口 | `allbot-do-sgp1-test-control-root` |
 
+独立 GitHub 构建 Runner：
+
+| 项目 | 当前值 |
+| :--- | :--- |
+| Droplet 名称 | `allbot-github-runner-sgp1` |
+| 区域/VPC | DigitalOcean `SGP1` / `default-sgp1` |
+| 公网 IPv4 | `174.138.28.64` |
+| VPC/私网 IPv4 | `10.104.0.3` |
+| 系统/规格 | Ubuntu 24.04 LTS，4 vCPU / 8GB / 160GB SSD |
+| 管理入口 | `allbot-do-sgp1-build`（deploy） |
+| root 救援入口 | `allbot-do-sgp1-build-root` |
+| 主机 ED25519 指纹 | `SHA256:Jxq9L/Fs2Rfs1V5TuY+cmWdm/J4XjklNkkCxBDh+gds` |
+
+该节点只运行 repository-level GitHub Runner 与 BuildKit，不运行 GitLab，也不
+承载 test/prod 服务。`actions` 是无 sudo 的 systemd 服务用户，加入 docker
+组；`deploy` 用于主机管理和远程 release-state。Runner 标签为
+`self-hosted,linux,x64,allbot-build-sgp1`，单服务实例即并发 1。入站 UFW 只
+允许 SSH；BuildKit docker-container builder 名为 `allbot-sgp1`，GC 以
+40GB/80GB 为目标阈值。
+
 | 项目 | 当前值 |
 | :--- | :--- |
 | 用途 | DigitalOcean Singapore 云控制面登录 |
@@ -49,7 +69,12 @@
 | 公钥指纹 | `SHA256:K3tTbjmz8Oau7mSliQcBeTs44YsqHGpQKGsg9TE6Rjo` |
 | 文件权限 | `~/.ssh` 为 `700`，私钥为 `600`，公钥为 `644` |
 
-私钥只能保存在本地管理机，不得提交到 Git、不得粘贴到网页、不得发送给第三方。DigitalOcean 控制台只需要粘贴 `.pub` 公钥内容。
+私钥不得提交到 Git、不得粘贴到普通网页、不得发送给第三方。DigitalOcean
+控制台只需要粘贴 `.pub` 公钥内容。当前有一个用户明确接受的例外：同一管理
+私钥的副本保存在 GitHub `test`/`production` Environment secret
+`ALLBOT_DEPLOY_SSH_KEY`，只由受保护的手动 deploy job 解码到 tmpfs。该 key
+仍可登录 root；Environment、workflow 或 Runner 泄露时必须按 root 凭据泄露
+处理并立即轮换，不能把 GitHub 的 secret masking 当作最小权限隔离。
 
 查看公钥内容：
 
@@ -115,6 +140,27 @@ Host allbot-do-sgp1-test-control
     ServerAliveCountMax 3
     StrictHostKeyChecking accept-new
 ```
+
+构建节点另有：
+
+```sshconfig
+Host allbot-do-sgp1-build-root
+    HostName 174.138.28.64
+    User root
+    IdentityFile ~/.ssh/allbot_do_sgp1_control_20260606_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+
+Host allbot-do-sgp1-build
+    HostName 174.138.28.64
+    User deploy
+    IdentityFile ~/.ssh/allbot_do_sgp1_control_20260606_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+```
+
+该节点曾出现 banner 前偶发超时。端口或 SSH 首次超时时应按本 Skill 重试并从
+Web Console 检查 cloud-init、sshd、负载和监听；不得关闭 host key 校验。
 
 日常 VS Code Remote-SSH、Codex 远程研发和常规运维默认使用：
 
