@@ -333,9 +333,9 @@ slots:
     notes: Active production gpu-002 GPU0 SCAIL-2 LAN AIO. It was originally managed by scripts/lan_scail2_aio_prod.sh and is now declared in the fleet config so Dashboard can observe the live runtime, control state, model cache, and same-physical-GPU recovery status without changing the running container.
 
   - id: gpu-002-gpu0-scail2_flex
-    enabled: false
-    phase: artifact_pending
-    retargetable: false
+    enabled: true
+    phase: catalog_ready
+    retargetable: true
     assignment_id: lan-002-8188-worker-06
     target_profile_id: scail2_flex
     target_task_types:
@@ -356,7 +356,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0-flex
     rollout_order: 41
-    notes: Disabled gpu-002 GPU0 SCAIL-2 flex candidate pending its own immutable artifact. It keeps the four SCAIL-2 execution types preferred, adds only img2img and img2img_lora as fallback, and must never prefetch fallback tasks.
+    notes: Disabled-at-runtime gpu-002 GPU0 SCAIL-2 flex candidate pinned to its own immutable artifact. It keeps the four SCAIL-2 execution types preferred, adds only img2img and img2img_lora as fallback, and must never prefetch fallback tasks. Catalog eligibility does not authorize a production takeover.
 
   - id: gpu-002-gpu1-image_to_video
     enabled: false
