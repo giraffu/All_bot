@@ -41,7 +41,7 @@ jobs:
           git fetch --no-tags origin main
           test "$(git rev-parse origin/main)" = "$REQUESTED_SHA"
           test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
-          python - "$REQUESTED_MODULES" <<'PY'
+          python3 - "$REQUESTED_MODULES" <<'PY'
           import json
           import re
           import sys
@@ -79,7 +79,7 @@ jobs:
             args+=(--module "$module")
           done
           started=$SECONDS
-          python scripts/release.py build \
+          python3 scripts/release.py build \
             "${args[@]}" \
             --sha "$REQUESTED_SHA" \
             --image-prefix ghcr.io/${{ github.repository_owner }} \
