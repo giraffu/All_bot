@@ -18,6 +18,7 @@ import {
 import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
 import { useAuthStore } from '@/stores/auth'
 import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
+import UsdtTonConfirmationModal from '@/components/billing/UsdtTonConfirmationModal.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -35,6 +36,8 @@ const {
   payMethod,
   isPaying,
   showPaymentModal,
+  showUsdtTonConfirmation,
+  usdtTonConfirmationDetails,
   orderStatus,
   tonWalletAddress,
   tonPaymentEnabled,
@@ -42,6 +45,8 @@ const {
   handleRmbPay,
   handleTonPay,
   handleUsdtTonPay,
+  confirmUsdtTonPayment,
+  cancelUsdtTonConfirmation,
   openTonConnectModal,
   disconnectTonWallet
 } = useBillingPayments()
@@ -298,7 +303,7 @@ const returnToProfile = () => {
             :class="{ 'is-selected': payMethod === 'ton' }"
           >
             <Zap class="mr-1 md:mr-2 shrink-0" :size="16" />
-            <span class="truncate">TON</span>
+            <span class="truncate">{{ t('billing.ton_label') }}</span>
           </button>
         </div>
         <p
@@ -400,6 +405,14 @@ const returnToProfile = () => {
         </div>
       </div>
     </Transition>
+
+    <UsdtTonConfirmationModal
+      :open="showUsdtTonConfirmation"
+      :details="usdtTonConfirmationDetails"
+      :loading="isPaying"
+      @confirm="confirmUsdtTonPayment"
+      @cancel="cancelUsdtTonConfirmation"
+    />
 
     <!-- Payment Polling Modal -->
     <a-modal

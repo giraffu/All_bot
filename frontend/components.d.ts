@@ -111,6 +111,7 @@ declare module 'vue' {
     TemplateImageToVideoPanel: typeof import('./src/components/template-apply/TemplateImageToVideoPanel.vue')['default']
     TemplateScail2VideoPanel: typeof import('./src/components/template-apply/TemplateScail2VideoPanel.vue')['default']
     TemplateVideoSwapPanel: typeof import('./src/components/template-apply/TemplateVideoSwapPanel.vue')['default']
+    UsdtTonConfirmationModal: typeof import('./src/components/billing/UsdtTonConfirmationModal.vue')['default']
     UserProfileModal: typeof import('./src/components/UserProfileModal.vue')['default']
   }
 }
