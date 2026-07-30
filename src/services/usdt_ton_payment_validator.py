@@ -78,24 +78,31 @@ class UsdtTonPaymentValidator:
                 logger.exception("Error in USDT-TON polling task")
             await asyncio.sleep(self.poll_interval_seconds)
 
-    async def _ensure_last_lt_loaded(self) -> None:
+    async def _ensure_last_lt_loaded(self) -> bool | None:
         if self._last_lt_loaded:
-            return
-        self._last_lt_loaded = True
+            return True
         try:
             async with AsyncSessionLocal() as db:
                 checkpoint = await db.get(
                     RuntimeCheckpoint,
                     self._last_lt_checkpoint_key,
                 )
+                if checkpoint is None:
+                    self._last_lt_loaded = True
+                    return False
                 value = getattr(checkpoint, "value", None)
                 if isinstance(value, dict):
                     self.last_lt = max(
                         self.last_lt,
                         int(value.get("last_lt", 0) or 0),
                     )
+                    self._last_lt_loaded = True
+                    return True
+                logger.warning("USDT-TON last_lt checkpoint is invalid")
+                return None
         except Exception as exc:
             logger.warning("Failed to load USDT-TON last_lt checkpoint: %s", exc)
+            return None
 
     async def _persist_last_lt(self) -> None:
         try:
@@ -136,7 +143,9 @@ class UsdtTonPaymentValidator:
             return False
 
     async def _check_new_transfers(self) -> None:
-        await self._ensure_last_lt_loaded()
+        checkpoint_loaded = await self._ensure_last_lt_loaded()
+        if checkpoint_loaded is None:
+            return
         params = {
             "owner_address": self.merchant_address,
             "jetton_master": self.jetton_master_address,
@@ -168,6 +177,28 @@ class UsdtTonPaymentValidator:
         transfers = data.get("jetton_transfers")
         if not isinstance(transfers, list):
             logger.warning("USDT-TON indexer response has no transfer list")
+            return
+
+        if not checkpoint_loaded:
+            latest_lt = 0
+            for transfer in transfers:
+                if not isinstance(transfer, dict):
+                    continue
+                try:
+                    latest_lt = max(
+                        latest_lt,
+                        int(transfer.get("transaction_lt", 0) or 0),
+                    )
+                except (TypeError, ValueError):
+                    continue
+            if latest_lt > 0:
+                self.last_lt = latest_lt
+                await self._persist_last_lt()
+                logger.info(
+                    "Initialized USDT-TON payment checkpoint at latest lt=%s "
+                    "without replaying historical transfers",
+                    latest_lt,
+                )
             return
 
         for transfer in transfers:

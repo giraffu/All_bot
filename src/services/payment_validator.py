@@ -141,21 +141,28 @@ class TonPaymentValidator:
 
             await asyncio.sleep(self.current_poll_interval_seconds)
 
-    async def _ensure_last_lt_loaded(self) -> None:
+    async def _ensure_last_lt_loaded(self) -> bool | None:
         if self._last_lt_loaded:
-            return
-        self._last_lt_loaded = True
+            return True
         try:
             async with AsyncSessionLocal() as db:
                 checkpoint = await db.get(
                     RuntimeCheckpoint,
                     self._last_lt_checkpoint_key,
                 )
+                if checkpoint is None:
+                    self._last_lt_loaded = True
+                    return False
                 value = getattr(checkpoint, "value", None)
                 if isinstance(value, dict):
                     self.last_lt = max(self.last_lt, int(value.get("last_lt", 0) or 0))
+                    self._last_lt_loaded = True
+                    return True
+                logger.warning("TON last_lt checkpoint is invalid")
+                return None
         except Exception as exc:
             logger.warning("Failed to load TON last_lt checkpoint: %s", exc)
+            return None
 
     async def _persist_last_lt(self) -> None:
         try:
@@ -245,7 +252,31 @@ class TonPaymentValidator:
 
                 self._reset_poll_interval()
                 if transactions:
-                    await self._ensure_last_lt_loaded()
+                    checkpoint_loaded = await self._ensure_last_lt_loaded()
+                    if checkpoint_loaded is None:
+                        return
+                    if not checkpoint_loaded:
+                        latest_lt = 0
+                        for tx in transactions:
+                            tx_id = tx.get("transaction_id") if isinstance(tx, dict) else None
+                            if not isinstance(tx_id, dict):
+                                continue
+                            try:
+                                latest_lt = max(
+                                    latest_lt,
+                                    int(tx_id.get("lt", 0) or 0),
+                                )
+                            except (TypeError, ValueError):
+                                continue
+                        if latest_lt > 0:
+                            self.last_lt = latest_lt
+                            await self._persist_last_lt()
+                            logger.info(
+                                "Initialized TON payment checkpoint at latest lt=%s "
+                                "without replaying historical transactions",
+                                latest_lt,
+                            )
+                        return
 
                 # Process from oldest to newest in the current batch
                 for tx in reversed(transactions):
