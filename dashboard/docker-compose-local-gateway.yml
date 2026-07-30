@@ -24,7 +24,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -q -O /dev/null http://127.0.0.1:8086/ && wget -q -O /dev/null http://127.0.0.1:8086/api/health",
+          "wget -q -O /dev/null http://127.0.0.1:8086/api/health",
         ]
       interval: 20s
       timeout: 5s
@@ -44,7 +44,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -q -O /dev/null http://127.0.0.1:8085/ && wget -q -O /dev/null http://127.0.0.1:8085/api/health",
+          "wget -q -O /dev/null http://127.0.0.1:8085/api/health",
         ]
       interval: 20s
       timeout: 5s
