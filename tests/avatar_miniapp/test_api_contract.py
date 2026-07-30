@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.avatar_miniapp import api as avatar_api
 from src.avatar_miniapp.api import app
 from src.database.models import (
     CharacterModelAsset,
@@ -100,3 +101,21 @@ def test_caddy_selects_the_lan_ip_certificate_without_sni():
     ).read_text(encoding="utf-8")
 
     assert "default_sni {$MINIAPP_LAN_HOST:localhost}" in caddyfile
+
+
+@pytest.mark.asyncio
+async def test_miniapp_lifespan_registers_shared_auth_providers(monkeypatch):
+    registered = False
+
+    def register():
+        nonlocal registered
+        registered = True
+
+    monkeypatch.setattr(
+        avatar_api,
+        "ensure_billing_core_providers_registered",
+        register,
+    )
+
+    async with avatar_api.lifespan(app):
+        assert registered is True

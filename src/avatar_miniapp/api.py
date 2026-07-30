@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from sqlalchemy import text
 
 from config import MINIO_BUCKET
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import engine
 from src.database.models import User
 from src.services.redis_client import redis_client
@@ -44,6 +45,7 @@ from .service import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    ensure_billing_core_providers_registered()
     yield
     await redis_client.close()
     await engine.dispose()
