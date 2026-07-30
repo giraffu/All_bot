@@ -354,7 +354,7 @@ slots:
     legacy_worker_id: lan_aio_prod_gpu002_gpu0_scail2_01
     old_runtime_container: allbot-lan-aio-gpu-002-gpu0-scail2-prod
     old_local_agent_container: ""
-    remote_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0-flex
+    remote_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-gpu0-scail2-flex
     rollout_order: 41
     notes: Disabled-at-runtime gpu-002 GPU0 SCAIL-2 flex candidate pinned to its own immutable artifact. It keeps the four SCAIL-2 execution types preferred, adds only img2img and img2img_lora as fallback, and must never prefetch fallback tasks. Catalog eligibility does not authorize a production takeover.
 

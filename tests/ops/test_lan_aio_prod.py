@@ -94,6 +94,9 @@ def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
     assert slot.enabled is True
     assert slot.phase == "catalog_ready"
     assert slot.retargetable is True
+    assert slot.remote_dir == (
+        "/home/chuzeyu/allbot-scail2-aio-prod/gpu002-gpu0-scail2-flex"
+    )
     assert slot.target_task_types == SCAIL2_FLEX_TASK_TYPES
     assert slot.legacy_worker_id == "lan_aio_prod_gpu002_gpu0_scail2_01"
     assert slot.old_runtime_container == (
