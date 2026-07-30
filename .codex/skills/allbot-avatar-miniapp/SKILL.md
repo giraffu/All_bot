@@ -19,6 +19,8 @@ description: "开发和维护独立 3D 角色 Mini App、局域网容器、fixtu
 
 - `src.avatar_miniapp.api:app` 只挂载 Mini App 所需登录、用户、上传、人物草稿
   和 3D 接口，不挂 Telegram、支付或通用任务入口。
+- API lifespan 负责注册共享 billing/auth providers；密码登录不得绕过
+  `password_version`、限流或动态 Web 权限检查。
 - `ModelBuildProvider` 是建模 adapter seam；`local_fixture` 只用于明确开启的
   LAN 开发模式，不计费、不进 History、不声称根据照片重建真人。
 - `character_model_input_views` 的四张标准建模视图与现有六种

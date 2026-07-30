@@ -24,6 +24,10 @@ Bot、公网域名、GPU、ComfyUI 或生产发布。
 - Vue：`avatar_miniapp/frontend/`
 - LAN Compose：`avatar_miniapp/docker-compose.lan.yml`
 
+独立 API lifespan 负责调用
+`ensure_billing_core_providers_registered()`，使密码登录和动态权限检查复用
+主 Web 的 provider seam；不得在 Mini App 路由中绕过或私自实现权限判断。
+
 ## 2. 数据与状态
 
 主服务 Alembic 管理三张表：
