@@ -508,6 +508,49 @@ async def test_fulfillment_failure_does_not_advance_checkpoint(monkeypatch):
     persist_last_lt.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_missing_checkpoint_bootstraps_latest_transaction_without_replay(
+    monkeypatch,
+):
+    post_calls = []
+    validator = _validator(SimpleNamespace(send_message=AsyncMock()))
+    process_order = AsyncMock(return_value=True)
+    persist_last_lt = AsyncMock()
+    monkeypatch.setattr(
+        validator,
+        "_ensure_last_lt_loaded",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(validator, "_process_order", process_order)
+    monkeypatch.setattr(validator, "_persist_last_lt", persist_last_lt)
+    monkeypatch.setattr(
+        payment_validator.aiohttp,
+        "ClientSession",
+        lambda: _FakeAiohttpSession(
+            _FakeAiohttpResponse(
+                {
+                    "result": [
+                        {
+                            "transaction_id": {"lt": "20", "hash": "historical-tx"},
+                            "in_msg": {
+                                "value": str(TON_TO_NANOTON),
+                                "message": "ORDER:12345:1:999",
+                            },
+                        }
+                    ]
+                }
+            ),
+            post_calls,
+        ),
+    )
+
+    await validator._check_new_transactions()
+
+    process_order.assert_not_awaited()
+    assert validator.last_lt == 20
+    persist_last_lt.assert_awaited_once()
+
+
 def test_validator_rejects_missing_merchant_before_any_polling():
     with pytest.raises(ValueError, match="merchant"):
         payment_validator.TonPaymentValidator(

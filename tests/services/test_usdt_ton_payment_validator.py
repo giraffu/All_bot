@@ -146,6 +146,56 @@ async def test_aborted_or_wrong_master_transfer_never_fulfills(monkeypatch):
     advance.assert_awaited_once_with(42)
 
 
+@pytest.mark.asyncio
+async def test_missing_usdt_checkpoint_bootstraps_latest_transfer_without_replay(
+    monkeypatch,
+):
+    validator = usdt_ton_payment_validator.UsdtTonPaymentValidator(
+        SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+        merchant_address=VALID_TON_ADDRESS,
+    )
+    process_order = AsyncMock(return_value=True)
+    persist_last_lt = AsyncMock()
+    monkeypatch.setattr(
+        validator,
+        "_ensure_last_lt_loaded",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(validator, "_process_order", process_order)
+    monkeypatch.setattr(validator, "_persist_last_lt", persist_last_lt)
+    monkeypatch.setattr(
+        usdt_ton_payment_validator.aiohttp,
+        "ClientSession",
+        lambda: _FakeSession(
+            _FakeResponse(
+                {
+                    "jetton_transfers": [
+                        {
+                            "amount": "4500000",
+                            "destination": VALID_TON_ADDRESS,
+                            "forward_payload": _comment_boc(
+                                "ORDER_V2:historical-order"
+                            ),
+                            "forward_ton_amount": "1",
+                            "jetton_master": USDT_TON_JETTON_MASTER_ADDRESS,
+                            "transaction_aborted": False,
+                            "transaction_hash": "historical-usdt-tx",
+                            "transaction_lt": "42",
+                        }
+                    ]
+                }
+            ),
+            [],
+        ),
+    )
+
+    await validator._check_new_transfers()
+
+    process_order.assert_not_awaited()
+    assert validator.last_lt == 42
+    persist_last_lt.assert_awaited_once()
+
+
 def test_usdt_checkpoint_is_scoped_to_merchant_and_official_master():
     validator = usdt_ton_payment_validator.UsdtTonPaymentValidator(
         SimpleNamespace(),

@@ -119,6 +119,10 @@ sequenceDiagram
   行为一致，不按 z-a 反转。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
+- TON / USDT-TON 首次启用且对应 checkpoint 不存在时，只把索引器当前最新
+  `lt` 写成基线，不履约当前批次中的历史交易；checkpoint 读取失败时保持停止，
+  不能把数据库异常误判为首次启用。已有 checkpoint 后才从下一 `lt` 正常处理，
+  避免复用商户地址时重放旧 `ORDER` payload 并重复发货。
 - USDT-TON 使用 Tether 官方主网 Jetton master
   `EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs`，固定六位精度。
   Web/Mini App 通过 TON Connect 向付款人的 USDT Jetton wallet 发送 TEP-74
