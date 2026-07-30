@@ -57,7 +57,9 @@ GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 Migration 镜像闭包必须包含 `src/`、Alembic 配置和 migrations；
 Alembic 只通过 `src.runtime_environment.require_env("DATABASE_URL")` 读取唯一
 所需配置，不导入完整业务 `config.py`，避免被 R2、Bot 或 Web 的无关必填项
-阻断。
+阻断。测试数据库主机位于 Compose 网络内，因此 `database-migration` 在
+`test` 自动加入 `--network allbot-test_default`；正式数据库使用外部连接，
+`prod` 不附加 Compose 网络。
 
 `public-web` 的 test/prod 使用同一份环境中立 tar。Pages adapter 从 artifact
 annotation 读取完整 Git SHA，在上传前按目标环境读取

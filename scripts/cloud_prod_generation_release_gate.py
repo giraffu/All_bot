@@ -5,30 +5,43 @@ import argparse
 import asyncio
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from src.ops.generation_release_refund import (  # noqa: E402
+    PENDING_KEY,
+    RUNNING_KEY,
+    build_queue_snapshot,
+    cancel_backend_pending,
+    load_active_tasks,
+)
+
+
 DEFAULT_ENV_FILE = ROOT / ".env.cloud.prod"
 DEFAULT_CONTROL_HOST = "allbot-do-sgp1-control"
-PENDING_KEY = "comfy:queue:pending"
-RUNNING_KEY = "comfy:queue:running"
-TASK_PREFIX = "comfy:task:"
-TASK_EVENT_PREFIX = "comfy:task_events:"
-MAINTENANCE_CONTAINERS = (
-    "cloud-web-api-prod",
-    "cloud-tg-bot-prod",
-    "cloud-qqcc-bot-prod",
+MAINTENANCE_SERVICES = (
+    "web-api",
+    "bot",
+    "qqcc-bot",
+    "qqcc-private-bot-worker",
 )
-GENERATION_MAINTENANCE_PATH = "/app/GENERATION_MAINTENANCE"
+MAINTENANCE_PROJECT = "allbot-prod"
+GENERATION_MAINTENANCE_HOST_PATH = (
+    "/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE"
+)
 GENERATION_MAINTENANCE_RUNTIME_PATH = "/app/runtime-flags/GENERATION_MAINTENANCE"
-REFUND_TASK_TYPE = "refund_prod_maintenance_release"
+PROD_WEB_ENV_FILE = "/var/lib/allbot/config/prod/current/web-api.env"
+PROD_COMPOSE_NETWORK = "allbot-prod_default"
+EXACT_DIGEST_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -94,25 +107,29 @@ def run_ssh(host: str, script: str, *, execute: bool) -> None:
 def set_maintenance(host: str, *, enabled: bool, execute: bool) -> None:
     if enabled:
         operation = (
-            f"mkdir -p {GENERATION_MAINTENANCE_RUNTIME_PATH.rsplit('/', 1)[0]} && "
-            f"printf '1\\n' > {GENERATION_MAINTENANCE_PATH} && "
-            f"printf '1\\n' > {GENERATION_MAINTENANCE_RUNTIME_PATH}"
+            f"install -d -m 700 {shlex.quote(str(Path(GENERATION_MAINTENANCE_HOST_PATH).parent))}\n"
+            f"tmp={shlex.quote(GENERATION_MAINTENANCE_HOST_PATH)}.$$"
+            "\nprintf '1\\n' > \"$tmp\"\nchmod 600 \"$tmp\"\n"
+            f"mv \"$tmp\" {shlex.quote(GENERATION_MAINTENANCE_HOST_PATH)}"
         )
     else:
-        operation = (
-            f"rm -f {GENERATION_MAINTENANCE_PATH} "
-            f"{GENERATION_MAINTENANCE_RUNTIME_PATH}"
-        )
+        operation = f"rm -f {shlex.quote(GENERATION_MAINTENANCE_HOST_PATH)}"
+    expected_check = (
+        f"test -f {GENERATION_MAINTENANCE_RUNTIME_PATH}"
+        if enabled
+        else f"test ! -f {GENERATION_MAINTENANCE_RUNTIME_PATH}"
+    )
     script = "\n".join(
         [
             "set -euo pipefail",
-            f"for container in {' '.join(MAINTENANCE_CONTAINERS)}; do",
-            "  if docker ps --format '{{.Names}}' | grep -qx \"$container\"; then",
-            f"    docker exec \"$container\" sh -lc {operation!r}",
-            "    echo \"$container maintenance updated\"",
-            "  else",
-            "    echo \"$container not running; skipped\"",
-            "  fi",
+            operation,
+            f"for service in {' '.join(MAINTENANCE_SERVICES)}; do",
+            "  container=$(docker ps -q "
+            f"--filter label=com.docker.compose.project={MAINTENANCE_PROJECT} "
+            "--filter label=com.docker.compose.service=\"$service\" | head -n1)",
+            "  test -n \"$container\" || { echo \"$service missing\" >&2; exit 1; }",
+            f"  docker exec \"$container\" sh -lc {expected_check!r}",
+            "  echo \"$service maintenance verified\"",
             "done",
         ]
     )
@@ -123,20 +140,66 @@ def maintenance_status(host: str) -> None:
     script = "\n".join(
         [
             "set -euo pipefail",
-            f"for container in {' '.join(MAINTENANCE_CONTAINERS)}; do",
-            "  if docker ps --format '{{.Names}}' | grep -qx \"$container\"; then",
-            f"    if docker exec \"$container\" sh -lc 'test -f {GENERATION_MAINTENANCE_PATH} || test -f {GENERATION_MAINTENANCE_RUNTIME_PATH}'; then",
-            "      echo \"$container=generation_maintenance\"",
+            f"for service in {' '.join(MAINTENANCE_SERVICES)}; do",
+            "  container=$(docker ps -q "
+            f"--filter label=com.docker.compose.project={MAINTENANCE_PROJECT} "
+            "--filter label=com.docker.compose.service=\"$service\" | head -n1)",
+            "  if [ -n \"$container\" ]; then",
+            f"    if docker exec \"$container\" sh -lc 'test -f {GENERATION_MAINTENANCE_RUNTIME_PATH}'; then",
+            "      echo \"$service=generation_maintenance\"",
             "    else",
-            "      echo \"$container=open\"",
+            "      echo \"$service=open\"",
             "    fi",
             "  else",
-            "    echo \"$container=not_running\"",
+            "    echo \"$service=not_running\"",
             "  fi",
             "done",
         ]
     )
     subprocess.run(["ssh", host, "bash", "-s"], input=script, text=True, check=True)
+
+
+def run_refund_runtime(args) -> None:
+    artifact = str(args.runtime_image or "")
+    revision = str(args.runtime_sha or "")
+    if not EXACT_DIGEST_RE.fullmatch(artifact):
+        raise SystemExit("refund-pending requires --runtime-image as an exact digest")
+    if not FULL_SHA_RE.fullmatch(revision):
+        raise SystemExit("refund-pending requires a full --runtime-sha")
+
+    quoted_artifact = shlex.quote(artifact)
+    runtime_args = [
+        "-m",
+        "src.ops.generation_release_refund",
+        "--threshold",
+        str(args.threshold),
+    ]
+    if args.allow_above_threshold:
+        runtime_args.append("--allow-above-threshold")
+    if args.execute:
+        runtime_args.append("--execute")
+    rendered_args = " ".join(shlex.quote(value) for value in runtime_args)
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            f"docker pull {quoted_artifact}",
+            "labels=$(docker image inspect --format "
+            "'{{index .Config.Labels \"io.allbot.release.module\"}}|"
+            "{{index .Config.Labels \"org.opencontainers.image.revision\"}}' "
+            f"{quoted_artifact})",
+            f"test \"$labels\" = {shlex.quote('web-api|' + revision)}",
+            "docker run --rm "
+            f"--network {PROD_COMPOSE_NETWORK} "
+            f"--env-file {PROD_WEB_ENV_FILE} "
+            "--entrypoint python "
+            f"{quoted_artifact} {rendered_args}",
+        ]
+    )
+    run_ssh(
+        args.control_host,
+        script,
+        execute=bool(args.run_runtime or args.execute),
+    )
 
 
 async def connect_redis(url: str):
@@ -151,43 +214,6 @@ async def connect_redis(url: str):
     )
 
 
-async def load_active_tasks(app_redis, redis_prefix: str) -> dict[str, dict[str, Any]]:
-    raw = await app_redis.hgetall(f"{redis_prefix}active_tasks")
-    tasks: dict[str, dict[str, Any]] = {}
-    for registry_task_id, payload in raw.items():
-        try:
-            parsed = json.loads(payload)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(parsed, dict):
-            tasks[str(registry_task_id)] = parsed
-    return tasks
-
-
-async def build_queue_snapshot(worker_redis, app_redis, redis_prefix: str) -> dict[str, Any]:
-    pending_backend_ids = [str(item) for item in await worker_redis.zrange(PENDING_KEY, 0, -1)]
-    running_backend_ids = [str(item) for item in await worker_redis.smembers(RUNNING_KEY)]
-    active_tasks = await load_active_tasks(app_redis, redis_prefix)
-    by_backend = {
-        str(data.get("backend_task_id")): registry_id
-        for registry_id, data in active_tasks.items()
-        if data.get("backend_task_id")
-    }
-    mapped_pending = [backend_id for backend_id in pending_backend_ids if backend_id in by_backend]
-    orphan_pending = [backend_id for backend_id in pending_backend_ids if backend_id not in by_backend]
-    return {
-        "pending_count": len(pending_backend_ids),
-        "running_count": len(running_backend_ids),
-        "active_task_count": len(active_tasks),
-        "mapped_pending_count": len(mapped_pending),
-        "orphan_pending_count": len(orphan_pending),
-        "pending_backend_ids": pending_backend_ids,
-        "running_backend_ids": running_backend_ids,
-        "active_tasks": active_tasks,
-        "registry_by_backend": by_backend,
-    }
-
-
 async def print_status(args, values: dict[str, str]) -> None:
     app_redis = await connect_redis(os.environ["REDIS_URL"])
     worker_redis = await connect_redis(os.environ["WORKER_REDIS_URL"])
@@ -200,9 +226,9 @@ async def print_status(args, values: dict[str, str]) -> None:
         print(
             json.dumps(
                 {
-                    "pending_count": snapshot["pending_count"],
-                    "running_count": snapshot["running_count"],
-                    "active_task_count": snapshot["active_task_count"],
+                    "pending_count": len(snapshot["pending_backend_ids"]),
+                    "running_count": len(snapshot["running_backend_ids"]),
+                    "active_task_count": len(snapshot["active_tasks"]),
                     "mapped_pending_count": snapshot["mapped_pending_count"],
                     "orphan_pending_count": snapshot["orphan_pending_count"],
                     "threshold": args.threshold,
@@ -228,7 +254,7 @@ async def wait_pending_below(args, values: dict[str, str]) -> None:
                 app_redis,
                 os.environ.get("REDIS_PREFIX", "prod_bot_"),
             )
-            count = snapshot["pending_count"]
+            count = len(snapshot["pending_backend_ids"])
             if count < args.threshold:
                 print(f"pending_count={count} below threshold={args.threshold}")
                 return
@@ -239,123 +265,6 @@ async def wait_pending_below(args, values: dict[str, str]) -> None:
         raise SystemExit(
             f"timed out waiting for pending_count < {args.threshold}"
         )
-    finally:
-        await app_redis.aclose()
-        await worker_redis.aclose()
-
-
-async def cancel_backend_pending(worker_redis, backend_task_id: str) -> bool:
-    removed = await worker_redis.zrem(PENDING_KEY, backend_task_id)
-    if not removed:
-        return False
-    await worker_redis.hset(
-        f"{TASK_PREFIX}{backend_task_id}",
-        mapping={
-            "status": "cancelled",
-            "cancel_requested": 0,
-            "cancel_requested_at": "",
-            "cancel_locked": 0,
-            "execution_phase": "",
-            "cancel_locked_at": "",
-        },
-    )
-    await worker_redis.srem(RUNNING_KEY, backend_task_id)
-    await worker_redis.publish(
-        f"{TASK_EVENT_PREFIX}{backend_task_id}",
-        json.dumps({"status": "cancelled"}),
-    )
-    return True
-
-
-async def refund_pending(args, values: dict[str, str]) -> None:
-    from src.core.task_core_finalization import finalize_task_failure
-    from src.core.task_core_runtime import sync_user_concurrency
-
-    app_redis = await connect_redis(os.environ["REDIS_URL"])
-    worker_redis = await connect_redis(os.environ["WORKER_REDIS_URL"])
-    affected_users: set[int] = set()
-    try:
-        snapshot = await build_queue_snapshot(
-            worker_redis,
-            app_redis,
-            os.environ.get("REDIS_PREFIX", "prod_bot_"),
-        )
-        pending_count = snapshot["pending_count"]
-        if pending_count >= args.threshold and not args.allow_above_threshold:
-            raise SystemExit(
-                f"refusing to refund while pending_count={pending_count} >= "
-                f"threshold={args.threshold}; wait first or pass --allow-above-threshold"
-            )
-        if not snapshot["pending_backend_ids"]:
-            print("no pending backend tasks to refund")
-            return
-
-        active_tasks: dict[str, dict[str, Any]] = snapshot["active_tasks"]
-        registry_by_backend: dict[str, str] = snapshot["registry_by_backend"]
-        summary = {
-            "refunded": 0,
-            "skipped_orphan": 0,
-            "skipped_moved": 0,
-            "dry_run": not args.execute,
-        }
-        for backend_task_id in snapshot["pending_backend_ids"]:
-            registry_task_id = registry_by_backend.get(backend_task_id)
-            if not registry_task_id:
-                summary["skipped_orphan"] += 1
-                print(f"skip orphan pending backend_task_id={backend_task_id}")
-                continue
-            task = active_tasks.get(registry_task_id) or {}
-            user_id = task.get("user_id")
-            username = str(task.get("username") or "Unknown")
-            try:
-                user_id_int = int(user_id)
-            except (TypeError, ValueError):
-                print(f"skip task without numeric user_id registry_task_id={registry_task_id}")
-                summary["skipped_orphan"] += 1
-                continue
-            cost = int(task.get("cost") or 0)
-            if not args.execute:
-                print(
-                    "would_refund "
-                    f"registry_task_id={registry_task_id} backend_task_id={backend_task_id} "
-                    f"user_id={user_id_int} cost={cost}"
-                )
-                summary["refunded"] += 1
-                continue
-            cancelled = await cancel_backend_pending(worker_redis, backend_task_id)
-            if not cancelled:
-                summary["skipped_moved"] += 1
-                print(f"skip moved backend_task_id={backend_task_id}")
-                continue
-            await finalize_task_failure(
-                internal_user_id=user_id_int,
-                username=username,
-                cost=cost,
-                should_refund=cost > 0,
-                registry_task_id=registry_task_id,
-                refund_task_type=REFUND_TASK_TYPE,
-                explicit_user_message="发布维护取消排队任务，已退还预扣灵石。",
-            )
-            affected_users.add(user_id_int)
-            summary["refunded"] += 1
-            print(
-                f"refunded registry_task_id={registry_task_id} "
-                f"backend_task_id={backend_task_id} user_id={user_id_int} cost={cost}"
-            )
-
-        if args.execute and affected_users:
-            refreshed = await load_active_tasks(
-                app_redis,
-                os.environ.get("REDIS_PREFIX", "prod_bot_"),
-            )
-            for user_id in sorted(affected_users):
-                actual_count = sum(
-                    1 for task in refreshed.values() if int(task.get("user_id") or 0) == user_id
-                )
-                await sync_user_concurrency(user_id, actual_count)
-                print(f"sync_user_concurrency user_id={user_id} actual_count={actual_count}")
-
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
     finally:
         await app_redis.aclose()
         await worker_redis.aclose()
@@ -374,8 +283,6 @@ async def async_main(args) -> None:
         await print_status(args, values)
     elif args.action == "wait-pending":
         await wait_pending_below(args, values)
-    elif args.action == "refund-pending":
-        await refund_pending(args, values)
     else:
         raise SystemExit(f"unsupported async action: {args.action}")
 
@@ -401,6 +308,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=7200)
     parser.add_argument("--interval-seconds", type=int, default=15)
     parser.add_argument("--allow-above-threshold", action="store_true")
+    parser.add_argument("--runtime-image")
+    parser.add_argument("--runtime-sha")
+    parser.add_argument(
+        "--run-runtime",
+        action="store_true",
+        help="run an immutable refund dry-run on the control host",
+    )
     parser.add_argument("--execute", action="store_true")
     return parser.parse_args(argv)
 
@@ -415,6 +329,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.action == "maintenance-status":
         maintenance_status(args.control_host)
+        return 0
+    if args.action == "refund-pending":
+        run_refund_runtime(args)
         return 0
     asyncio.run(async_main(args))
     return 0
