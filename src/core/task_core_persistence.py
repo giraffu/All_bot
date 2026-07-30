@@ -323,6 +323,7 @@ async def persist_successful_web_history_default(
     output_height: int | None,
     output_duration: int | None,
     requested_duration: int | None,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
 ):
     await _persist_successful_web_history(
         backend_task_id=backend_task_id,
@@ -342,4 +343,5 @@ async def persist_successful_web_history_default(
         output_duration=output_duration,
         requested_duration=requested_duration,
         persist_successful_task_result_func=persist_successful_task_result_default,
+        postprocess_plan=postprocess_plan,
     )
