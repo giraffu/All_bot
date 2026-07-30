@@ -70,6 +70,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | Cloudflare DNS/Tunnel/Access/Pages/R2 | `allbot-cloudflare-ops` |
 | 云主机 SSH、密钥、端口、堡垒机、救援控制台 | `allbot-cloud-ssh` |
 | Comfy workflow、LoRA、ControlNet、profile | `allbot-comfy-models` |
+| 独立媒体增强平台、账本、Worker 契约与 workflow | `allbot-media-enhance-platform` |
 | 3D 角色 Mini App、GLB/VRM、Blender 渲染 | `allbot-avatar-miniapp` |
 | LAN AIO current/cache/takeover/recover | `allbot-lan-aio-operator` |
 | LAN 资源管理平台、可信构建与 runner | `allbot-lan-resource-manager` |

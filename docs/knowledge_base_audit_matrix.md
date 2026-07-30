@@ -70,6 +70,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
+| `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | Compose 与一般运维 | deploy compose、release scripts | current | 容器运维 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与 SOP | test overlay/env contract、release state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与 SOP | prod overlay/env contract、release state | runtime-verification-required | 正式环境 |
@@ -115,6 +116,7 @@
 | `.codex/skills/allbot-cloudflare-ops/SKILL.md` | Cloudflare 路由 | Cloudflare config/docs | current | 公网入口 |
 | `.codex/skills/allbot-cloud-ssh/SKILL.md` | 云 SSH 诊断与恢复路由 | SSH config、云控制台、访问文档 | current | 云 SSH 故障或配置 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | 模型/workflow 路由 | workflow/mapping/profile | current | AI 模型 |
+| `.codex/skills/allbot-media-enhance-platform/SKILL.md` | 独立媒体增强平台路由 | `media_enhance_platform/`、专项文档 | current | 媒体增强平台 |
 | `.codex/skills/allbot-avatar-miniapp/SKILL.md` | 3D Mini App 路由 | Mini App API/Worker/Vue/Compose | current | 3D 角色工作室 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` | LAN AIO 操作红线 | catalog/ledger/helper | current | LAN mutation |
 | `.codex/skills/allbot-lan-resource-manager/SKILL.md` | 本地资源平台 | platform/helper/docs | current | LAN UI |
