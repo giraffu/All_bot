@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from app.agent_router_helpers import (
     check_task_payload,
@@ -164,6 +164,24 @@ async def test_pop_task_payload_rejects_invalid_preferred_types(
         await pop_task_payload(
             types=types,
             preferred_types=preferred_types,
+            queue_manager=queue_manager,
+        )
+
+    assert exc_info.value.status_code == 422
+    queue_manager.dequeue_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_preferred_types_supports_pinned_starlette_status_constants(
+    monkeypatch,
+):
+    monkeypatch.delattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", raising=False)
+    queue_manager = SimpleNamespace(dequeue_task=AsyncMock())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await pop_task_payload(
+            types="img2img",
+            preferred_types="scail2_face_swap_v2",
             queue_manager=queue_manager,
         )
 

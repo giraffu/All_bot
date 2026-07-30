@@ -19,13 +19,13 @@ def parse_task_type_preferences(
         return allowed, None
     if not allowed:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=422,
             detail="preferred_types requires non-empty types",
         )
     unsupported = sorted(set(preferred) - set(allowed))
     if unsupported:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=422,
             detail=f"preferred_types must be a subset of types: {', '.join(unsupported)}",
         )
     return allowed, preferred
