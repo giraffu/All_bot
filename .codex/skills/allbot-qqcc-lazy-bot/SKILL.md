@@ -115,14 +115,14 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
 
 - 代码或文档任务不授权正式发布。生产 mutation 必须由用户明确要求，并
   遵循 `allbot-ops-deployment`。
-- 日常预览使用 `scripts/release.py promote --modules qqcc-bot`；
-  Config 使用 `--modules qqcc-config`；共享契约变化可在同一事务选择两者。
-  生产执行仍需同一命令的 `--confirm-prod`。
-- 未审阅 migration、首次切换、共享 Compose/env、未知路径、配置漂移或
-  planner blocker 不能用 `--no-maintenance` 绕过。
+- 从完整 main SHA 分别构建 `qqcc-bot`、`qqcc-config-backend` 或
+  `qqcc-config-frontend`；部署时一次只提交一个精确 digest。test/prod 状态
+  按模块独立，prod 每个 mutation 都必须带 `--confirm-prod`。
+- `database-migration`、`config-contract` 与 `compose-contract` 是独立模块，
+  不能借 QQCC 代码部署隐式执行或绕过。
 - 禁止 legacy 发布脚本、rsync、现场 build、源码 bind mount 和自由 compose。
-  发布器只消费受保护 main 的不可变 digest，并验证目标服务、single polling、
-  配置 revision、健康和非目标容器不变。
+  发布器只消费不可变 digest，并验证目标服务、single polling 和健康；失败
+  只恢复该模块 previous identity。
 - 私有 Bot worker 涉及 migration、Web API、QQCC Config、共享密钥和公网
   Host，不属于普通 QQCC Bot/Config 的窄发布范围。
 

@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-07-27`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-07-30`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
@@ -71,11 +71,11 @@
 | --- | --- | --- | --- | --- |
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
-| `docs/子模块_运维指南与容器管理_ops_deployment.md` | Compose 与一般运维 | deploy compose、release scripts | current | 容器运维 |
-| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与 SOP | test overlay/env contract、release state | runtime-verification-required | 测试环境 |
-| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与 SOP | prod overlay/env contract、release state | runtime-verification-required | 正式环境 |
+| `docs/子模块_运维指南与容器管理_ops_deployment.md` | 独立模块发布、Compose 与一般运维 | module catalog、release CLI、compose adapters | current | 容器运维 |
+| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与单模块 exact-digest SOP | test overlay/env contract、remote module state | runtime-verification-required | 测试环境 |
+| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与单模块 exact-digest SOP | prod overlay/env contract、remote module state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
-| `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界与 SGP1 构建 Runner | key metadata、host config、GitHub Runner API | runtime-verification-required | 云登录/Runner 运维 |
+| `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |
 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` | DNS/Tunnel/Access/Pages/R2 | Cloudflare 配置与只读探测 | runtime-verification-required | 公网入口 |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | 网络与代理边界 | compose/network/Cloudflare config | current | 网络改动 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | 边缘节点运维 | edge config/scripts | runtime-verification-required | 边缘节点 |

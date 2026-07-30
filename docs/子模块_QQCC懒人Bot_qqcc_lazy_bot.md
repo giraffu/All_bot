@@ -53,7 +53,14 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 
 `video_scenes` 和 `ai_video_scenes` 可选填 `jump_draw_scene_id`，只能引用有效 `draw_scenes[].id`。后台在“首尾帧配置”中提供选择；点击对应动图/视频场景后，示范媒体和上传提示下会出现“先去 AI绘图生成”按钮，点击后进入目标绘图场景的单图上传流程。若用户正处于该 AI动图/AI视频的等待上传流程，点击按钮会只清理该待上传视频状态并立即进入绘图流程；其它进行中的交互仍保留原有冲突保护。目标场景删除、失效或关闭 `main_buttons.ai_draw` 时，引用会在归一化时清空或运行时隐藏。
 
-链式视频的尾帧提取、规格归一化、拼接和智能画幅适配发生在控制面媒体编排层。官方 QQCC、私有 Bot continuation、QQCC Config 示例和 Private Owner 示例分别运行在 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend`，四者统一继承不可运行的 `python-media-runtime-base`；该层提供 ffmpeg/ffprobe、OpenCV headless、SmartCrop 和 SHA-256 锁定的 YuNet ONNX。模块化 release 的 full-validation 必须对四个最终 digest 分别执行双媒体工具、Python 依赖导入和模型存在 smoke，不能以旧 `Dockerfile.qqcc` 或其它服务含有工具替代验证。若某段已生成但尾帧处理失败，用户提示必须明确为“该段已生成，但尾帧处理失败”；只有生成任务本身失败时才显示“生成失败”。两类失败都只返回已完成前缀，不改变既有计费与退款语义。
+链式视频的尾帧提取、规格归一化、拼接和智能画幅适配发生在控制面媒体编排层。
+官方 QQCC、私有 Bot continuation、QQCC Config 示例和 Private Owner 示例分别
+运行在 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、
+`dashboard-backend`，四者统一继承不可运行的 `python-media-runtime-base`；
+该层提供 ffmpeg/ffprobe、OpenCV headless、SmartCrop 和 SHA-256 锁定的 YuNet
+ONNX。镜像 focused smoke 必须对四个最终 digest 分别执行双媒体工具、Python
+依赖导入和模型存在验证。若某段已生成但尾帧处理失败，用户提示必须明确为
+“该段已生成，但尾帧处理失败”；只有生成任务本身失败时才显示“生成失败”。
 
 `AI绘图` 场景由管理后台 `draw_scenes` 动态配置，`快速自慰` 与 `快速脱衣` 两个默认项是一次性种子化的普通预设，底层 engine 均为旧 `free_edit`。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选 `postprocess_draw_scene_id` 绘图后处理、可选 `postprocess_filter_scene_id` 滤镜终止后处理和 `original_face_swap_enabled` 原图换脸，`id` 使用短安全 callback 字符串；所有场景都必须有非空按钮名称和提示词，`negative_prompt` 可选，缺省或非法归一为空字符串，QQCC 运行时只读取场景自身 `prompt` 与 `negative_prompt`，不再通过 `prompt_key` 或 `prompts.ini` 回退。新增自定义场景默认 engine 是自由P图 v2 `free_edit_v2`，不支持附加模型；切到旧 `free_edit` 时才可选图片 LoRA。绘图后处理只能选择其它有效绘图场景；滤镜后处理只能选择有效滤镜场景并作为终止步骤。`postprocess_draw_scene_id` 与 `postprocess_filter_scene_id` 互斥，若两者都有效则保存时保留绘图后处理并清空滤镜引用；后端还会清空非法引用、自引用和绘图循环引用，前端也过滤会形成循环的选项。`original_face_swap_enabled` 只接受布尔 `true`，缺省或非法值归一为 `false`；开启后该步骤按“场景绘图/滤镜 -> 使用用户最初上传原图做人脸来源换脸 -> 后处理链下一步”执行，内部任务类型为 `face_swap_v2`。根场景 `credit_cost=null` 时每个开启步骤额外计费 `2` 灵石；固定价链则包含该费用，内部换脸不得重复扣费。内部换脸不传负面提示词。用户点击主菜单 `AI绘图` 后，QQCC Bot 回复 `system.ai_draw_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qdraw_scene:<scene_id>`。该 callback 由 `get_quick_image_fsm_handler()` 承接，进入发送 1 张图片步骤；收到图片后按 `draw -> draw...` 或 `draw -> filter` 串行提交绘图/滤镜/原图换脸，每步使用自身负面提示词，只把最终图发给用户。若最终可见输出来自内部原图换脸，历史、结果展示和完成文案仍按原 AI绘图场景归类，不暴露成 `快速换脸`。新 continuation 必须写 V2；恢复升级前 QQCC checkpoint 时，仅把内部原脸恢复 stage 的旧 `face_swap` 解释为 V2，不影响快速换脸。QQCC 生成结果不可投稿、不可公开。旧消息中的已删除场景 callback 必须回复 `功能暂未开放`，不提交任务。本次复用现有 `free_edit`/`img2img` 与 V2 执行面，不新增数据库表。
 
@@ -156,7 +163,13 @@ AI绘图的最终结果若带有 `scene_kind=draw` 的 QQCC 重生成 metadata�
 
 单首帧 `image_to_video` / `wan22_video_v2` 都提交适配后的首图。尾帧链先用适配首图执行绘图链，再适配最终尾图，保证首尾比例一致。私有 Bot checkpoint 保存内部比例策略，最终 executor 对 durable `original/current` 执行同一处理并在调用既有任务入口前剥离内部字段；后台示例生成也在上传 Central 临时输入前适配 R2 bytes。重新生成和 AI绘图结果的“生成动图”按当前配置重建同一 plan。适配失败时清理 FSM 临时文件、提示图片处理失败，且不调用任务入口、不扣灵石。
 
-该能力是 QQCC 输入适配，不是 workflow 比例开关。检测与裁剪通过 `FocusDetector` / `SaliencyCropper` callable seam 注入，行为测试使用 fake，不要求测试机持有模型。真实 `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend` 和 `dashboard-backend` 继承 `python-media-runtime-base`；其中固定 OpenCV headless、SmartCrop 和官方 YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，full-validation 对四个最终镜像分别验证依赖导入和模型存在。主 Bot、固定 `1280x704` 的 AI视频、`Wan22AioV82.json`、mapping/patcher/profile、RunPod/LAN AIO、费用及四档用户画质保持不变，比例字段不进入 Central/Worker payload。
+该能力是 QQCC 输入适配，不是 workflow 比例开关。检测与裁剪通过
+`FocusDetector` / `SaliencyCropper` callable seam 注入，行为测试使用 fake，
+不要求测试机持有模型。真实 `qqcc-bot`、`private-bot-worker`、
+`qqcc-config-backend` 和 `dashboard-backend` 继承
+`python-media-runtime-base`；其中固定 OpenCV headless、SmartCrop 和官方
+YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，focused image smoke
+分别验证四个最终镜像的依赖导入和模型存在。
 
 ## 3. 代码入口
 
@@ -240,7 +253,9 @@ token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cl
 - backend service/container: `qqcc-config-backend-prod` / `cloud-qqcc-config-backend-prod`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-prod` / `cloud-qqcc-config-frontend-prod`，默认端口 `8088`
 
-云测试现有专属 QQCC Config Web 前后端，分别使用测试 8045/8088；对应 artifact 的 auto 策略为 standard，必须从已构建的 main-channel bundle 按需以不可变 digest 部署、preflight 并验收。
+云测试现有专属 QQCC Config Web 前后端，分别使用测试 8045/8088；
+`qqcc-config-backend` 与 `qqcc-config-frontend` 必须从完整 main SHA 构建，
+分别以不可变 digest 部署并验收。
 `https://qqcc-admin-test.aivison.it.com` 通过测试 Tunnel 回源 `100.82.124.91:8088`，属于共享测试发布事务管理的测试入口。公网必须先通过仅允许管理员邮箱的 Cloudflare Access，进入后仍需 QQCC Config 独立账号登录；当前可达只证明入口健康，验收还必须核对容器 digest/revision 与业务页面。
 
 私有 Bot webhook worker 由同一 `Dockerfile.qqcc` 构建，但使用独立 profile 和入口：
@@ -269,47 +284,49 @@ QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。
 
 ## 6. 维护与发布
 
-QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
-QQCC Bot 读取同一个 `GENERATION_MAINTENANCE_FILE`。云测试和云正式维护脚本写入/清理生成维护标记时，应同时覆盖正在运行的 `cloud-qqcc-bot-test` / `cloud-qqcc-bot-prod`。
-
-云测试只部署可信 candidate/main release。单独请求官方 QQCC Bot 时，planner 使用该 artifact 自己的已部署 `source_sha` 作为基线，不再把同一目标 SHA 的其它控制面 artifact 自动并入：
-
-```bash
-scripts/release.py plan --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
-scripts/release.py preflight --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
-scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute
-```
-
-没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止；`plan` 应把它列入 `disabled_cloud_services`，不得为测试临时复用正式 token。
-
-只更新云正式 QQCC Bot 时，使用日常生产门面；去掉确认可先看精简预览：
+QQCC 代码使用独立模块不可变发布。专用
+`update_cloud_prod_qqcc_bot.sh` 已 fail closed；禁止源码同步、远端 build、
+自由 Compose 或隐式扩大到其它模块。官方 Bot 的 main SHA 构建与测试部署：
 
 ```bash
-python scripts/release.py promote --modules qqcc-bot --confirm-prod
-# 用户明确决定本次不进入默认生成维护时：
-python scripts/release.py promote --modules qqcc-bot --no-maintenance --confirm-prod
+python scripts/release.py build --module qqcc-bot --sha <40位main-sha>
+python scripts/release.py deploy \
+  --env test --module qqcc-bot \
+  --artifact ghcr.io/giraffu/allbot-qqcc-bot@sha256:<digest>
 ```
 
-`qqcc-bot` 是受控模块边界，只选择官方 Bot service；发布器自动验证唯一目标容器、已知 legacy 实例停止，并扫描启动窗口内的 Telegram polling conflict。migration 或共享/未知契约会在 mutation 前阻断并提示高级入口；待处理秘密轮换仅保留审计状态。
+没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止，且不得对
+test 执行 `qqcc-bot` deploy；不得为测试临时复用正式 token。
 
-如果 QQCC artifact 的旧 `source_sha` 到候选之间只夹带客服/Web 等其它模块的 migration，可在 clean main 策略的 `independent_non_target_migration_snapshots` 下为 `qqcc-bot` 与 `qqcc-config` 分别固定路径和内容 SHA256。高级发布器会记录 `reviewed-non-target-migration`，保持 `requires_db_upgrade=false`，不执行数据库备份/Alembic，也不扩大到非 QQCC 服务；任一文件新增或内容变化重新 fail closed。该能力只解决 Git 基线跨越造成的误阻断，不允许把 QQCC 自己依赖的 schema 伪装成非目标。
-
-只更新正式 QQCC Config Web 时，请求一个完整配置模块组，发布器固定展开为前后端两个 artifact：
+生产只部署同一精确 artifact，并逐模块确认：
 
 ```bash
-python scripts/release.py promote --modules qqcc-config --confirm-prod
+python scripts/release.py deploy \
+  --env prod --module qqcc-bot \
+  --artifact ghcr.io/giraffu/allbot-qqcc-bot@sha256:<digest> \
+  --confirm-prod
 ```
 
-发布器固定展开 backend/frontend 两个 artifact，自动执行 exact-digest 测试取证、目标健康、非目标 `allbot-prod` 容器 ID/image/start time 证明和状态原子提交。
-
-QQCC Bot 与 QQCC Config Web 可以在一个生产事务内组合，配置闭包取并集，测试证据与 direct/standard 保证仍按 artifact 独立计算：
+QQCC Config 前后端是两个独立 artifact，分别构建、部署和回滚：
 
 ```bash
-python scripts/release.py promote \
-  --modules qqcc-bot,qqcc-config --confirm-prod
+python scripts/release.py build \
+  --module qqcc-config-backend --module qqcc-config-frontend \
+  --sha <40位main-sha>
+python scripts/release.py deploy \
+  --env prod --module qqcc-config-backend \
+  --artifact ghcr.io/giraffu/allbot-qqcc-config-backend@sha256:<digest> \
+  --confirm-prod
+python scripts/release.py deploy \
+  --env prod --module qqcc-config-frontend \
+  --artifact ghcr.io/giraffu/allbot-qqcc-config-frontend@sha256:<digest> \
+  --confirm-prod
 ```
 
-组合名称不能绕过共享契约：blocker 对 `qqcc-bot`、`qqcc-config` 分别匹配，snapshot 任一字节漂移都会 fail closed。日常 `promote` 总是从候选不可变 SHA 读取该 snapshot 策略，不受调用机器当前工作目录分支影响。禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。
+多模块更新不得伪装成单一事务；按明确顺序逐一执行，任何模块失败即停止后续
+模块。migration、配置契约和 Compose 契约必须作为 catalog 中的独立模块另行
+授权。QQCC Bot 继续读取 `GENERATION_MAINTENANCE_FILE`，但模块发布器不隐式
+开启或关闭全局维护。
 
 ## 7. 最小验证
 

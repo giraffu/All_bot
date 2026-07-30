@@ -133,7 +133,10 @@ sequenceDiagram
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
 - 管理后台卡顿时先区分三类问题：Dashboard stats 重查询、Central 观测接口慢、GPU/ComfyUI 执行停顿。GPU 生成短暂停顿不等同于 Dashboard worker 监控慢。
 - 云测试不再部署 Dashboard 前后端；其行为测试保留在本地与 CI。
-- 云正式 Dashboard 前端默认通过受控入口 `http://100.107.220.127:8086/` 提供。Dashboard 默认使用 `release.py --strategy direct`，无需测试环境证据，但仍要求 main/CI 或 build-only manifest、digest、preflight、生产确认、事务回滚，并只重建目标服务。
+- 云正式 Dashboard 前端默认通过受控入口 `http://100.107.220.127:8086/`
+  提供。`dashboard-backend` 与 `dashboard-frontend` 分别从完整 main SHA 构建，
+  并以精确 digest 逐模块部署；正式 mutation 每次都要求 `--confirm-prod`。
+  发布器不查询 CI/test evidence，只重建目标服务并保存该模块 previous identity。
 - 只更新管理后台系统时，操作范围应限于 `dashboard-backend-prod` / `dashboard-frontend-prod`；如果只改 Dashboard 后端统计、RunPod operation 入口或 Dashboard 后端镜像闭包，只重建 `dashboard-backend-prod`；如果只改前端展示或 RunPod profile 识别，只重建 `dashboard-frontend-prod`。验证使用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`，并确认 Central/Web/Bot/Payment/imgproxy/worker/RunPod 未被重启或重建。
 - 面向公网访问管理后台时，必须使用 Cloudflare Tunnel + Cloudflare Access 或等价身份层保护，回源到 `100.107.220.127:8086`；不要把 `8086` 或 `8043` 裸露到公网。
 - 本地管理后台入口由 `dashboard/docker-compose-local-gateway.yml` 管理，可作为局域网/回退入口。原本地上线流程是先启动 `dashboard-local-gateway-8085` canary，验证后停止旧 `8086` Vite dev 进程，再启动 `dashboard-local-gateway-8086`；该流程不需要重建云端正式 Dashboard Backend。

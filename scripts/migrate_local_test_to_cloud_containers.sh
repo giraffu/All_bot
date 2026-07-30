@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "RETIRED: cloud test must use immutable test-candidate artifacts through scripts/release.py." >&2
+echo "RETIRED: cloud test accepts one explicitly selected exact-digest module through scripts/release.py deploy." >&2
 exit 2
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
