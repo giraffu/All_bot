@@ -86,7 +86,7 @@ def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
         "img2img_lora/2026-06-10/manifest.json",
     )
     assert profile.image_ref == (
-        "ghcr.io/giraffu/allbot-gpu-lan-scail2-flex"
+        "192.168.1.115:5000/allbot/allbot-gpu-lan-scail2-flex"
         "@sha256:7ed80ca5f2934c682ad2baaf83d56af3325ca92f00215a94cf6dcc0fc4a64552"
     )
     assert profile.all_in_one_image_ref == profile.image_ref
