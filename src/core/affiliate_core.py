@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Affiliate first-order commission intentionally follows "first successful commit wins"
 # so out-of-order payment callbacks cannot create duplicate positive commissions.
-VALID_PAYMENT_CHANNELS = {"RMB", "TON", "XTR"}
+VALID_PAYMENT_CHANNELS = {"RMB", "TON", "USDT_TON", "XTR"}
 ZERO_COMMISSION = Decimal("0.0000")
 COMMISSION_QUANT = Decimal("0.0001")
 
@@ -114,6 +114,7 @@ async def calculate_and_set_commission_for_paid_order(
     channel_rate_map = {
         "RMB": Decimal(str(rates.get("rmb_to_usdt", 0))),
         "TON": Decimal(str(rates.get("ton_to_usdt", 0))),
+        "USDT_TON": Decimal("1"),
         "XTR": Decimal(str(rates.get("stars_to_usdt", 0))),
     }
     exchange_rate = channel_rate_map.get(order.payment_channel)

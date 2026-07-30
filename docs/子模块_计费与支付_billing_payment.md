@@ -9,6 +9,7 @@
 - RMB 网关异步回调履约
 - Telegram Stars 官方支付回调履约
 - TON 链上轮询入账与发货
+- USDT-TON Jetton 链上轮询入账与发货
 - Affiliate 返佣入账、余额统计与兑换灵石
 
 核心目标不是“把钱加上”，而是保证任意真实资产变化都具备以下性质：
@@ -30,6 +31,7 @@ sequenceDiagram
     participant RMB as RMB网关
     participant TG as Telegram Stars
     participant TON as TON轮询器
+    participant USDT as USDT-TON轮询器
     participant Aff as Affiliate账本
 
     U->>Bot: 发起购买或消费
@@ -47,6 +49,11 @@ sequenceDiagram
         TON->>PG: TON 轮询适配 -> fulfill_payment_command()
         TON->>PG: 成功前移 runtime_checkpoints last_lt
         PG->>Aff: 成功单写返佣账本
+    else USDT-TON 支付
+        USDT->>PG: 核验官方 master/目标/金额/订单备注
+        USDT->>PG: fulfill_payment_command(USDT_TON)
+        USDT->>PG: 成功前移独立 last_lt
+        PG->>Aff: 按 1 USDT = 1 USDT 写返佣账本
     end
 
     U->>Bot: 发起返佣兑换灵石
@@ -89,7 +96,7 @@ sequenceDiagram
 ### 4.2 订单履约红线
 
 - 当前支付履约共享内核是 `payment_fulfillment_service.fulfill_payment_command(PaymentFulfillmentCommand(...))`，返回 `PaymentFulfillmentResult`；RMB `fulfill_order(...)` 只保留旧 bool 兼容包装。
-- RMB 适配层按本地业务单定位订单；TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
+- RMB 适配层按本地业务单定位订单；TON / USDT-TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
 - RMB 公网回调以平台文档声明的
   `GET /api/pay/notify/huanyuy` 为正式方式，同时兼容 POST query/form，校验
   merchant、MD5 签名、成功状态、业务单、外部流水与金额。事务提交成功或幂等
@@ -112,6 +119,19 @@ sequenceDiagram
   行为一致，不按 z-a 反转。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
+- USDT-TON 使用 Tether 官方主网 Jetton master
+  `EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs`，固定六位精度。
+  Web/Mini App 通过 TON Connect 向付款人的 USDT Jetton wallet 发送 TEP-74
+  transfer，并把订单 payload 放入 `forward_payload`；外层附带 0.05 TON
+  执行费用，`forward_ton_amount >= 1` 以触发收款通知。
+- `UsdtTonPaymentValidator` 使用 TON Center v3 Jetton transfer 索引，只接受
+  官方 master、目标为规范化商户钱包、`transaction_aborted=false`、非空交易
+  哈希、精确微 USDT 金额和有效 `ORDER` / `ORDER_V2` forward payload。
+  checkpoint 以 `usdt_ton:<merchant>:<official_master>:last_lt` 隔离；验证或
+  履约失败不能越过该交易。
+- `USDT_TON_PAYMENT_ENABLED=true` 时，Web API 与 main Bot 均要求合法
+  `VITE_MERCHANT_ADDRESS`；缺失或非法时 fail closed。原生 TON 的
+  `TON_PAYMENT_POLLING_ENABLED` 保持独立，两个通道可以分别启停。
 - TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
 - `GET /api/payment/plans` 返回 `ton_payment_enabled` 和可空的 `ton_receiver_address`；禁用时地址必须为 `null`。`POST /api/payment/ton-orders` 在套餐查询、`Order` 构造和事务提交前检查可用性，不可用时返回 `503 / TON_PAYMENT_UNAVAILABLE`，不得留下 `PENDING` 订单。Vue 交易地址只能取自订单响应，不能保留接收地址硬编码或使用套餐地址兜底。
 - `POST /api/payment/orders`、`POST /api/payment/ton-orders` 与本人订单状态查询接受完整 Web 会话或支付会话；成功状态附带白名单账户摘要，供充值页刷新灵石、身份、到期时间与境界，不要求支付用户调用受限的 `/api/users/me`。
@@ -167,8 +187,15 @@ sequenceDiagram
 
 - Web 套餐：`GET /api/payment/plans`
   - `data.ton_payment_enabled=false` 时 `data.ton_receiver_address=null`。
+  - 返回每个套餐的 `price_usdt`，并通过
+    `usdt_ton_payment_enabled/usdt_ton_receiver_address/
+    usdt_ton_jetton_master_address` 描述 USDT-TON 可用性。
 - Web TON 预建单：`POST /api/payment/ton-orders`
   - TON 配置不可用时返回 HTTP 503，`reason=TON_PAYMENT_UNAVAILABLE`，且无数据库写入。
+- Web USDT-TON 预建单：`POST /api/payment/usdt-ton-orders`
+  - 返回服务端订单 ID、商户钱包、官方 master、六位精度
+    `amount_microusdt` 和订单 comment；配置不可用时返回 HTTP 503
+    `USDT_TON_PAYMENT_UNAVAILABLE`，且不创建 PENDING 订单。
 - 支付专用 Telegram 登录：`POST /api/auth/telegram/payment`
   - 返回支付用途 JWT；低阶用户可使用支付路由，不能据此访问其它受限 Web 能力。
 - Web 订单状态：`GET /api/payment/orders/{order_id}/status`
@@ -200,12 +227,16 @@ sequenceDiagram
   - RMB GET/POST 回调与主动查单竞态只发货一次，提交后的缓存/通知失败不能把
     已完成支付改写成失败。
   - 同一 TON `tx_hash` 重复出现只落一笔单。
+  - 同一 USDT-TON `transaction_hash` 重复出现只发货一次；假 master、中止
+    交易、错误目标、缺失 forward payload 和错误金额均不得发货。
 - RMB 主动补偿
   - 新订单与 reconciliation job 同事务；迁移不回填历史订单。
   - 覆盖 lease 竞争、崩溃恢复、未支付退避、网关异常、24 小时耗尽、查单字段
     冲突 fail closed，以及默认关闭/启用缺 URL 阻断启动。
 - 支付金额校验
   - RMB 金额按 Decimal/字符串链路量化到两位，禁止 float 漂移。
+  - USDT-TON 按六位微 USDT 整数精确相等；少付或多付都返回
+    `amount_mismatch`，不产生资产副作用。
 - Affiliate 并发与幂等
   - 同用户并发兑换不能双花。
   - 同 `idempotency_key` 同参数稳定返回首次结果。

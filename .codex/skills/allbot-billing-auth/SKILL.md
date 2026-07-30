@@ -32,7 +32,7 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
   旧会话失效。
 - 支付专用 Telegram 会话只放宽支付路由的身份准入；它仍需验签、JWT、
   `password_version` 和订单归属校验，且不能访问普通 Web 路由。
-- RMB、TON、Telegram Stars 收口到
+- RMB、原生 TON、USDT-TON Jetton、Telegram Stars 收口到
   `payment_fulfillment_service.fulfill_payment_command(...)`；通道 adapter
   只解析通知、金额与外部流水。legacy wrapper 只能保持兼容返回语义。
 - RMB Webhook 与主动查单共用上述履约入口；查单必须由新订单的持久化
@@ -63,7 +63,9 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - 改密必须递增 `password_version`，使旧 token 失效并执行安全通知链路。
 - 金额、汇率、merchant、套餐或结算参数缺失/冲突时 fail fast，不能静默降级。
 - Affiliate 缓存只在事务提交成功后失效。
-- TON 等轮询游标只有在目标交易成功处理后才前移；抓链或履约失败保持原位。
+- TON / USDT-TON 轮询游标只有在目标交易成功处理后才前移；抓链或履约失败
+  保持原位。USDT-TON 还必须校验官方 Jetton master、目标钱包、未中止交易、
+  六位精度金额和订单 forward payload。
 - 低阶用户容量准入只使用目标 Worker pool 的健康 enabled 快照；观测缺失或
   请求异常按领域文档的 fail-open 语义告警，不能扩大成全体停服。
 

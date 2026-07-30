@@ -22,16 +22,27 @@ async def test_recharge_back_preserves_buttons_and_uses_unified_ton_webapp(
         "build_ton_payment_mini_app_url",
         lambda: "https://web.example/billing?method=ton&kind=membership",
     )
+    monkeypatch.setattr(
+        billing_callbacks,
+        "build_usdt_ton_payment_mini_app_url",
+        lambda *, kind: f"https://web.example/billing?method=usdt-ton&kind={kind}",
+    )
 
     await billing_callbacks.recharge_back_callback(update, context)
 
     reply_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
     buttons = [row[0] for row in reply_markup.inline_keyboard]
-    assert len(buttons) == 5
+    assert len(buttons) == 7
     assert buttons[0].web_app.url.endswith(
+        "/billing?method=usdt-ton&kind=membership"
+    )
+    assert buttons[1].web_app.url.endswith(
+        "/billing?method=usdt-ton&kind=credits"
+    )
+    assert buttons[2].web_app.url.endswith(
         "/billing?method=ton&kind=membership"
     )
-    assert [button.callback_data for button in buttons[1:]] == [
+    assert [button.callback_data for button in buttons[3:]] == [
         "recharge_stars_menu",
         "recharge_stars_credit_menu",
         "recharge_rmb_menu",

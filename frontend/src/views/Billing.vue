@@ -6,7 +6,8 @@ import {
   CheckCircle,
   CreditCard,
   RefreshCw,
-  Loader
+  Loader,
+  CircleDollarSign,
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -37,8 +38,10 @@ const {
   orderStatus,
   tonWalletAddress,
   tonPaymentEnabled,
+  usdtTonPaymentEnabled,
   handleRmbPay,
   handleTonPay,
+  handleUsdtTonPay,
   openTonConnectModal,
   disconnectTonWallet
 } = useBillingPayments()
@@ -49,6 +52,7 @@ type BillingPlan = {
   description: string
   price_rmb: number
   price_ton: number
+  price_usdt: number
   duration_days: number
   identity_override: string
   credits_granted: number
@@ -221,7 +225,7 @@ const returnToProfile = () => {
           
           <div class="mt-auto pt-3 md:pt-4 flex items-end gap-1 md:gap-2">
             <span class="text-xl md:text-2xl font-extrabold text-amber-400">¥{{ plan.price_rmb }}</span>
-            <span class="plan-price-note hidden md:inline text-xs md:text-sm mb-1 line-through" v-if="plan.price_ton">/ {{ plan.price_ton }} TON</span>
+            <span class="plan-price-note text-[10px] md:text-sm mb-1">/ {{ plan.price_usdt }} USDT</span>
           </div>
         </div>
         
@@ -242,7 +246,9 @@ const returnToProfile = () => {
           <div>
             <p class="payment-kicker text-xs uppercase tracking-[0.18em]">已选套餐</p>
             <h3 class="payment-title mt-1 text-base font-semibold">{{ selectedPlan.displayName }}</h3>
-            <p class="mt-1 text-sm text-amber-300">¥{{ selectedPlan.price_rmb }}</p>
+            <p class="mt-1 text-sm text-amber-300">
+              ¥{{ selectedPlan.price_rmb }} · {{ selectedPlan.price_usdt }} USDT
+            </p>
           </div>
           <button
             type="button"
@@ -255,8 +261,7 @@ const returnToProfile = () => {
         <h2 class="payment-heading text-lg md:text-2xl font-bold mb-3 md:mb-5">选择支付方式</h2>
         
         <div
-          class="grid gap-2 md:gap-4 mb-3 md:mb-6"
-          :class="tonPaymentEnabled ? 'grid-cols-3' : 'grid-cols-2'"
+          class="grid grid-cols-2 gap-2 md:gap-4 mb-3 md:mb-6"
         >
           <button
             @click="payMethod = 'alipay'"
@@ -277,6 +282,16 @@ const returnToProfile = () => {
           </button>
           
           <button
+            v-if="usdtTonPaymentEnabled"
+            @click="payMethod = 'usdt-ton'"
+            class="payment-option payment-option--usdt rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
+            :class="{ 'is-selected': payMethod === 'usdt-ton' }"
+          >
+            <CircleDollarSign class="mr-1 md:mr-2 shrink-0" :size="16" />
+            <span class="truncate">{{ t('billing.usdt_ton_label') }}</span>
+          </button>
+
+          <button
             v-if="tonPaymentEnabled"
             @click="payMethod = 'ton'"
             class="payment-option payment-option--cyan rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
@@ -287,7 +302,7 @@ const returnToProfile = () => {
           </button>
         </div>
         <p
-          v-if="!tonPaymentEnabled"
+          v-if="!tonPaymentEnabled && !usdtTonPaymentEnabled"
           class="payment-hint text-sm mb-3 md:mb-4 text-center"
         >
           {{ t('billing.ton_unavailable') }}
@@ -310,6 +325,47 @@ const returnToProfile = () => {
           >
             确认{{ payMethod === 'wxpay' ? '微信' : '支付宝' }}支付 ¥{{ selectedPlan.price_rmb }}
           </a-button>
+        </div>
+
+        <!-- USDT on TON Action -->
+        <div
+          v-if="payMethod === 'usdt-ton' && usdtTonPaymentEnabled"
+          class="flex flex-col items-center"
+        >
+          <div class="usdt-payment-note mb-3 md:mb-4 w-full rounded-xl px-3 py-3 text-sm">
+            <p class="font-semibold text-emerald-300">
+              {{ t('billing.usdt_ton_amount_network', { amount: selectedPlan.price_usdt }) }}
+            </p>
+            <p class="mt-1 text-xs leading-5 text-slate-400">
+              {{ t('billing.usdt_ton_fee_notice') }}
+            </p>
+          </div>
+
+          <a-button
+            v-if="!tonWalletAddress"
+            type="primary"
+            size="large"
+            @click="openTonConnectModal"
+            class="w-full bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 border-none h-11 md:h-12 text-base md:text-lg font-bold shadow-lg mb-4"
+          >
+            {{ t('billing.connect_ton_wallet') }}
+          </a-button>
+
+          <div v-else class="w-full flex flex-col items-center">
+            <div class="ton-wallet-card rounded-lg px-4 py-2 mb-4 text-sm flex items-center">
+              已连接: {{ tonWalletAddress.slice(0, 4) }}...{{ tonWalletAddress.slice(-4) }}
+              <a-button type="link" size="small" @click="disconnectTonWallet" class="ml-2 text-rose-400 hover:text-rose-300 p-0">断开</a-button>
+            </div>
+            <a-button
+              type="primary"
+              size="large"
+              @click="handleUsdtTonPay"
+              :loading="isPaying"
+              class="w-full bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 border-none h-11 md:h-12 text-base md:text-lg font-bold shadow-lg"
+            >
+              {{ t('billing.confirm_usdt_ton_payment', { amount: selectedPlan.price_usdt }) }}
+            </a-button>
+          </div>
         </div>
         
         <!-- TON Action -->
@@ -430,7 +486,8 @@ const returnToProfile = () => {
 }
 
 .billing-identity-card,
-.ton-wallet-card {
+.ton-wallet-card,
+.usdt-payment-note {
   background: var(--theme-panel-strong-bg);
   border: 1px solid var(--theme-border);
 }
@@ -513,6 +570,12 @@ const returnToProfile = () => {
   border-color: #06b6d4;
   background: rgba(6, 182, 212, 0.18);
   color: #67e8f9;
+}
+
+.payment-option.is-selected.payment-option--usdt {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
 }
 
 .slide-fade-enter-active {

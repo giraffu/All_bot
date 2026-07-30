@@ -749,6 +749,7 @@ class MembershipPlan(Base):
     name = Column(String(50), nullable=False)
     identity_name = Column(String(50), nullable=False)
     price_ton = Column(DECIMAL(10, 2), nullable=False)
+    price_usdt = Column(DECIMAL(10, 2), nullable=False, default=0.00)
     price_stars = Column(Integer, nullable=False, default=0)
     price_rmb = Column(DECIMAL(10, 2), nullable=False, default=0.00)
     reward_credits = Column(Integer, nullable=False)

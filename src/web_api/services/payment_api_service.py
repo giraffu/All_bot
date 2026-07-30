@@ -23,11 +23,16 @@ from src.services.ton_payment_config import (
     TonPaymentAvailability,
     get_ton_payment_availability,
 )
+from src.services.usdt_ton_payment_config import (
+    UsdtTonPaymentAvailability,
+    get_usdt_ton_payment_availability,
+)
 from src.web_api.presenters.payment_presenter import (
     build_order_status_payload,
     build_payment_plans_payload,
     build_rmb_order_payload,
     build_ton_order_payload,
+    build_usdt_ton_order_payload,
 )
 
 
@@ -64,8 +69,10 @@ async def get_payment_plans_payload(
     *,
     db,
     availability: TonPaymentAvailability | None = None,
+    usdt_availability: UsdtTonPaymentAvailability | None = None,
 ) -> dict:
     availability = availability or get_ton_payment_availability()
+    usdt_availability = usdt_availability or get_usdt_ton_payment_availability()
     result = await db.execute(
         build_visible_membership_plans_stmt(is_rmb=True, is_subscription=None)
     )
@@ -74,6 +81,9 @@ async def get_payment_plans_payload(
         plans,
         ton_payment_enabled=availability.enabled,
         ton_receiver_address=availability.merchant_address,
+        usdt_ton_payment_enabled=usdt_availability.enabled,
+        usdt_ton_receiver_address=usdt_availability.merchant_address,
+        usdt_ton_jetton_master_address=usdt_availability.jetton_master_address,
     )
 
 
@@ -190,6 +200,71 @@ async def create_ton_order_payload(
         ton_comment=ton_comment,
         amount_ton=plan.price_ton,
         ton_receiver_address=availability.merchant_address,
+    )
+
+
+async def create_usdt_ton_order_payload(
+    *,
+    db,
+    current_user,
+    plan_id: int,
+) -> dict:
+    availability = get_usdt_ton_payment_availability()
+    if not availability.enabled or not availability.merchant_address:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "USDT_TON_PAYMENT_UNAVAILABLE",
+                "message": "USDT-TON payment is unavailable",
+            },
+        )
+
+    plan_res = await db.execute(build_visible_membership_plan_lookup_stmt(plan_id))
+    plan = plan_res.scalar_one_or_none()
+    if not plan or not plan.is_active:
+        raise HTTPException(status_code=404, detail="Plan not found or inactive")
+    if not getattr(plan, "price_usdt", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Plan does not support USDT-TON payment",
+        )
+
+    business_order_id = generate_business_order_id()
+    legacy_order_id = (
+        f"USDT:{current_user.telegram_id or current_user.id}:{plan.id}:"
+        f"{int(datetime.now().timestamp())}"
+    )[:64]
+    new_order = Order(
+        order_id=legacy_order_id,
+        business_order_id=business_order_id,
+        internal_user_id=current_user.id,
+        plan_id=plan.id,
+        original_price=plan.price_usdt,
+        final_price=plan.price_usdt,
+        settlement_schema_version="order_plan_v1",
+        settlement_snapshot=build_order_settlement_snapshot(plan),
+        status="PENDING",
+        payment_channel="USDT_TON",
+        created_at=datetime.now(),
+    )
+    db.add(new_order)
+    await db.commit()
+
+    usdt_comment = (
+        build_order_v2_payload(business_order_id)
+        if is_order_v2_enabled()
+        else build_legacy_order_payload(
+            telegram_user_id=current_user.telegram_id or current_user.id,
+            plan_id=plan.id,
+            timestamp=int(datetime.now().timestamp()),
+        )
+    )
+    return build_usdt_ton_order_payload(
+        order=new_order,
+        usdt_comment=usdt_comment,
+        amount_usdt=plan.price_usdt,
+        usdt_receiver_address=availability.merchant_address,
+        usdt_jetton_master_address=availability.jetton_master_address,
     )
 
 

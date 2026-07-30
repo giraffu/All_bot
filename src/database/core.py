@@ -32,7 +32,8 @@ def _build_membership_plan_sync_sql() -> str:
     values_sql = ",\n                    ".join(
         (
             f"({plan['id']}, '{plan['name']}', '{plan['identity_name']}', "
-            f"{plan['price_ton']}, {plan['price_stars']}, {plan['price_rmb']}, "
+            f"{plan['price_ton']}, {plan['price_usdt']}, "
+            f"{plan['price_stars']}, {plan['price_rmb']}, "
             f"{plan['reward_credits']}, {plan['duration_days']}, "
             f"{'TRUE' if plan['is_active'] else 'FALSE'})"
         )
@@ -40,13 +41,14 @@ def _build_membership_plan_sync_sql() -> str:
     )
     return f"""
                     INSERT INTO membership_plans
-                        (id, name, identity_name, price_ton, price_stars, price_rmb, reward_credits, duration_days, is_active)
+                        (id, name, identity_name, price_ton, price_usdt, price_stars, price_rmb, reward_credits, duration_days, is_active)
                     VALUES
                     {values_sql}
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
                         identity_name = EXCLUDED.identity_name,
                         price_ton = EXCLUDED.price_ton,
+                        price_usdt = EXCLUDED.price_usdt,
                         price_stars = EXCLUDED.price_stars,
                         price_rmb = EXCLUDED.price_rmb,
                         reward_credits = EXCLUDED.reward_credits,

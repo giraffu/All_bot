@@ -82,6 +82,30 @@ def build_ton_payment_mini_app_url(
     )
 
 
+def build_usdt_ton_payment_mini_app_url(
+    *,
+    kind: str,
+    base_url: str | None = None,
+    version: str | None = None,
+) -> str:
+    if kind not in {"membership", "credits"}:
+        raise ValueError("USDT-TON billing kind must be membership or credits")
+    resolved_base_url = base_url or MINI_APP_URL
+    if not resolved_base_url:
+        raise ValueError("MINI_APP_URL is required")
+
+    parsed = urlparse(resolved_base_url)
+    billing_path = f"{parsed.path.rstrip('/')}/billing"
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items.update({"method": "usdt-ton", "kind": kind})
+    resolved_version = MINI_APP_VERSION if version is None else version
+    if resolved_version:
+        query_items["v"] = resolved_version
+    return urlunparse(
+        parsed._replace(path=billing_path, query=urlencode(query_items))
+    )
+
+
 # --- Database Configuration ---
 # Only PostgreSQL is supported
 DATABASE_URL = _get_env_value("DATABASE_URL")

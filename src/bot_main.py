@@ -33,6 +33,9 @@ from src.handlers.message_handler import (
 )
 from src.logger import setup_logging
 from src.services.payment_validator import build_ton_payment_validator_if_available
+from src.services.usdt_ton_payment_validator import (
+    build_usdt_ton_payment_validator_if_available,
+)
 from src.services.recovery_service import recover_active_tasks
 from src.services.task_registry import TaskRegistry
 from src.services.telegram_runtime_bootstrap import (
@@ -92,6 +95,16 @@ async def post_init(application):
         task_payment = asyncio.create_task(payment_validator.poll_transactions())
         application.bot_data["bg_tasks"].add(task_payment)
         task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
+
+    usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
+    if usdt_payment_validator is not None:
+        task_usdt_payment = asyncio.create_task(
+            usdt_payment_validator.poll_transactions()
+        )
+        application.bot_data["bg_tasks"].add(task_usdt_payment)
+        task_usdt_payment.add_done_callback(
+            application.bot_data["bg_tasks"].discard
+        )
 
     # Recover tasks from Redis
     task_recover = asyncio.create_task(

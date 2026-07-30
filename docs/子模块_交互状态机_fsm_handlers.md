@@ -9,6 +9,10 @@
 - FSM 负责分步收集图片、视频设置、提示词与确认信息。
 - 全局菜单打断依赖统一黑盒路由，而不是散落的硬编码菜单判断。
 - callback 路由负责把充值、广场、杂项等回调拆分到独立模块。
+- 充值菜单同时提供 USDT-TON 身份套餐、USDT-TON 灵石直充、原生 TON、
+  Telegram Stars 与人民币入口。USDT 两个按钮都进入主 Vue `/billing`，
+  分别携带 `method=usdt-ton&kind=membership|credits`；旧原生 TON 深链保持
+  `method=ton&kind=membership`，不得把两种链上资产混成同一按钮。
 - 文件下载、临时目录创建与清理由服务层承接，不应在各 FSM 内重复实现。
 
 ## 2. 当前架构图

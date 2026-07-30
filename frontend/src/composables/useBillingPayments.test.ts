@@ -84,6 +84,17 @@ describe('TON payment contract', () => {
     expect(filterPlansForBillingKind(plans, entry.kind)).toEqual([plans[0]])
   })
 
+  it('resolves the Bot USDT-TON deep link and filters credit plans', () => {
+    const entry = resolveBillingEntry({ method: 'usdt-ton', kind: 'credits' })
+    const plans = [
+      { id: 1, duration_days: 30 },
+      { id: 5, duration_days: 0 },
+    ]
+
+    expect(entry).toEqual({ method: 'usdt-ton', kind: 'credits' })
+    expect(filterPlansForBillingKind(plans, entry.kind)).toEqual([plans[1]])
+  })
+
   it('falls back to the complete billing page for invalid entry params', () => {
     expect(resolveBillingEntry({ method: 'crypto', kind: 'membership' })).toEqual({
       method: 'alipay',
