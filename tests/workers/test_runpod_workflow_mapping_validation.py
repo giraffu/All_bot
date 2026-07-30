@@ -124,6 +124,26 @@ def test_lan_all_profile_validates_every_execution_workflow(monkeypatch):
     assert task_types <= set(mappings)
 
 
+def test_scail2_flex_profile_validates_only_six_execution_workflows(monkeypatch):
+    validation = _load_runpod_validation_module()
+    task_types = {
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+        "img2img",
+        "img2img_lora",
+    }
+    monkeypatch.setenv(
+        validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
+        LAN_AIO_ALL_WORKFLOW_OVERRIDES,
+    )
+
+    mappings = validation.validate_workflow_directory(str(RUNPOD_WORKFLOW_DIR))
+
+    assert task_types <= set(mappings)
+
+
 def test_baked_runpod_worker_imports_task_patchers_from_its_own_bundle(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "workers" / "runpod_runtime")

@@ -260,7 +260,39 @@ async def test_all_profile_releases_comfy_memory_before_each_submission(
     agent.comfy_client = RecordingComfyClient()
     monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "all")
 
-    await agent._reset_comfy_memory_for_all_profile()
+    await agent._reset_comfy_memory_before_task()
+
+    assert calls == ["free_memory"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "module_path",
+    (
+        ROOT / "workers" / "comfy_agent" / "agent_main.py",
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
+    ),
+)
+async def test_explicit_multi_model_profile_releases_comfy_memory(
+    monkeypatch,
+    module_path: Path,
+):
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch("os.makedirs", return_value=None))
+        stack.enter_context(mock.patch("logging.FileHandler", DummyFileHandler))
+        module = load_agent_main_module(module_path)
+    calls = []
+
+    class RecordingComfyClient:
+        async def free_memory(self):
+            calls.append("free_memory")
+
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent.comfy_client = RecordingComfyClient()
+    monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "scail2_flex")
+    monkeypatch.setattr(module, "RESET_COMFY_MEMORY_BEFORE_TASK", True)
+
+    await agent._reset_comfy_memory_before_task()
 
     assert calls == ["free_memory"]
 
@@ -279,8 +311,9 @@ async def test_non_all_profile_keeps_resident_comfy_models(monkeypatch):
     agent = module.ComfyAgent.__new__(module.ComfyAgent)
     agent.comfy_client = UnexpectedComfyClient()
     monkeypatch.setattr(module, "POOL_RUNTIME_PROFILE", "image_to_video")
+    monkeypatch.setattr(module, "RESET_COMFY_MEMORY_BEFORE_TASK", False)
 
-    await agent._reset_comfy_memory_for_all_profile()
+    await agent._reset_comfy_memory_before_task()
 
 
 @pytest.mark.asyncio

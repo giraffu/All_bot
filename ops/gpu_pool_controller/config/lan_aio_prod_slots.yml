@@ -332,6 +332,32 @@ slots:
     rollout_order: 38
     notes: Active production gpu-002 GPU0 SCAIL-2 LAN AIO. It was originally managed by scripts/lan_scail2_aio_prod.sh and is now declared in the fleet config so Dashboard can observe the live runtime, control state, model cache, and same-physical-GPU recovery status without changing the running container.
 
+  - id: gpu-002-gpu0-scail2_flex
+    enabled: false
+    phase: artifact_pending
+    retargetable: false
+    assignment_id: lan-002-8188-worker-06
+    target_profile_id: scail2_flex
+    target_task_types:
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+      - img2img
+      - img2img_lora
+    gpu_index: 0
+    host_port: 8190
+    legacy_health_port: 8190
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu002_gpu0_scail2_flex_01
+    container_name: allbot-lan-aio-gpu-002-gpu0-scail2_flex-prod
+    legacy_worker_id: lan_aio_prod_gpu002_gpu0_scail2_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu0-scail2-prod
+    old_local_agent_container: ""
+    remote_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0-flex
+    rollout_order: 41
+    notes: Disabled gpu-002 GPU0 SCAIL-2 flex candidate pending its own immutable artifact. It keeps the four SCAIL-2 execution types preferred, adds only img2img and img2img_lora as fallback, and must never prefetch fallback tasks.
+
   - id: gpu-002-gpu1-image_to_video
     enabled: false
     phase: superseded_by_i2i_pro

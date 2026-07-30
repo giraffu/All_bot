@@ -22,6 +22,7 @@ LAN_ALL_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/all/Dockerfile")
 LAN_ALL_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/all/Dockerfile.runtime-refresh"
 )
+SCAIL2_FLEX_DOCKERFILE = Path("workers/runpod_profiles/scail2_flex/Dockerfile")
 MODULE_CATALOG = Path("deploy/module-catalog.json")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
@@ -32,6 +33,21 @@ def test_runpod_bootstrap_script_has_valid_bash_syntax():
         ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
         check=True,
     )
+
+
+def test_scail2_flex_artifact_is_a_restricted_union_runtime():
+    dockerfile = SCAIL2_FLEX_DOCKERFILE.read_text(encoding="utf-8")
+    catalog = MODULE_CATALOG.read_text(encoding="utf-8")
+
+    assert "AllBot LAN SCAIL-2 flex runtime" in dockerfile
+    assert 'allbot.lan.profile="scail2_flex"' in dockerfile
+    assert "scail2_action_transfer" in dockerfile
+    assert "scail2_action_transfer_long" in dockerfile
+    assert "scail2_video_replacement" in dockerfile
+    assert "scail2_face_swap_v2" in dockerfile
+    assert "img2img" in dockerfile
+    assert "img2img_lora" in dockerfile
+    assert '"lan_scail2_flex"' in catalog
 
 
 def test_runpod_entrypoint_script_has_valid_bash_syntax():

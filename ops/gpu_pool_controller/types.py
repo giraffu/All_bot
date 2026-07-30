@@ -64,6 +64,8 @@ class TaskProfile:
     task_types: tuple[str, ...]
     runtime_profile: str
     model_bundles: tuple[str, ...]
+    preferred_task_types: tuple[str, ...] = ()
+    reset_comfy_memory_before_task: bool = False
     required_nodes: tuple[str, ...] = ()
     workflow: str | None = None
     min_vram_gb: float | None = None

@@ -167,11 +167,24 @@ def _parse_nodes(raw_nodes: dict[str, Any]) -> dict[str, GpuNode]:
 def _parse_profiles(raw_profiles: dict[str, Any]) -> dict[str, TaskProfile]:
     profiles: dict[str, TaskProfile] = {}
     for profile_id, data in raw_profiles.items():
+        task_types = _as_tuple(data.get("task_types"))
+        preferred_task_types = _as_tuple(data.get("preferred_task_types"))
+        unsupported_preferred = sorted(set(preferred_task_types) - set(task_types))
+        if unsupported_preferred:
+            raise ValueError(
+                f"profile {profile_id} preferred_task_types must be a subset of "
+                f"task_types: {', '.join(unsupported_preferred)}"
+            )
         profiles[profile_id] = TaskProfile(
             id=profile_id,
-            task_types=_as_tuple(data.get("task_types")),
+            task_types=task_types,
             runtime_profile=str(data.get("runtime_profile") or profile_id),
             model_bundles=_as_tuple(data.get("model_bundles")),
+            preferred_task_types=preferred_task_types,
+            reset_comfy_memory_before_task=_as_bool(
+                data.get("reset_comfy_memory_before_task"),
+                default=False,
+            ),
             required_nodes=_as_tuple(data.get("required_nodes")),
             workflow=data.get("workflow"),
             min_vram_gb=(
