@@ -12,6 +12,21 @@ MODULE_PATH = ROOT / "scripts" / "release.py"
 CATALOG_PATH = ROOT / "deploy" / "module-catalog.json"
 
 
+@pytest.fixture(autouse=True)
+def _clear_build_proxy_environment(monkeypatch):
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "FTP_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "ftp_proxy",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_release_catalog_has_dedicated_ltx_unified_gpu_artifact():
     catalog = json.loads(CATALOG_PATH.read_text())["modules"]["ltx_unified"]
 
@@ -87,18 +102,75 @@ def test_build_never_reads_changed_paths_or_release_bundle(tmp_path):
     assert "gpu" not in rendered
 
 
-def test_image_build_forwards_present_proxy_variables_without_values(
-    tmp_path,
+def test_loopback_build_proxy_fails_before_build(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:7890")
+
+    dependencies = module.ReleaseDependencies(
+        run=lambda command, **_kwargs: calls.append(command)
+        or module.CommandResult(0, "", ""),
+        temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+    )
+
+    with pytest.raises(module.ReleaseError, match="container-reachable"):
+        module.build_modules(
+            catalog,
+            ["python-runtime-base"],
+            sha="a" * 40,
+            image_prefix="ghcr.io/example",
+            dependencies=dependencies,
+        )
+
+    assert calls == []
+
+
+def test_build_only_identity_uses_inputs_and_base_digest(tmp_path):
+    module = _load_module()
+    dockerfile = tmp_path / "Dockerfile"
+    requirements = tmp_path / "requirements.txt"
+    dockerfile.write_text("FROM scratch\n")
+    requirements.write_text("example==1\n")
+    contract = {
+        "target": "base",
+        "dockerfile": "Dockerfile",
+        "build_inputs": ["requirements.txt"],
+    }
+
+    first = module.build_input_identity(
+        "base", contract, checkout=tmp_path, base_artifact=None
+    )
+    assert first == module.build_input_identity(
+        "base", contract, checkout=tmp_path, base_artifact=None
+    )
+
+    requirements.write_text("example==2\n")
+    changed_input = module.build_input_identity(
+        "base", contract, checkout=tmp_path, base_artifact=None
+    )
+    dockerfile.write_text("FROM scratch\nRUN true\n")
+    changed_dockerfile = module.build_input_identity(
+        "base", contract, checkout=tmp_path, base_artifact=None
+    )
+    changed_base = module.build_input_identity(
+        "base",
+        contract,
+        checkout=tmp_path,
+        base_artifact="ghcr.io/example/base@sha256:" + "1" * 64,
+    )
+
+    assert len({first, changed_input, changed_dockerfile, changed_base}) == 4
+
+
+def test_build_command_uses_builder_registry_cache_progress_and_reachable_proxy(
     monkeypatch,
 ):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)
     calls = []
     digest = "sha256:" + "1" * 64
-    monkeypatch.setenv("http_proxy", "http://127.0.0.1:7890")
-    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
-    monkeypatch.delenv("HTTP_PROXY", raising=False)
-    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("http_proxy", "http://172.17.0.1:7890")
 
     def fake_run(command, **_kwargs):
         calls.append(command)
@@ -108,30 +180,100 @@ def test_image_build_forwards_present_proxy_variables_without_values(
             return module.CommandResult(1, "", "not found")
         return module.CommandResult(0, "", "")
 
-    dependencies = module.ReleaseDependencies(
-        run=fake_run,
-        temporary_checkout=lambda _sha: module.null_checkout(tmp_path),
-    )
-
     module.build_modules(
         catalog,
         ["python-runtime-base"],
         sha="a" * 40,
         image_prefix="ghcr.io/example",
-        dependencies=dependencies,
+        builder="allbot-builder",
+        registry_cache_prefix="ghcr.io/example/cache",
+        build_progress="plain",
+        dependencies=module.ReleaseDependencies(
+            run=fake_run,
+            temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+        ),
     )
 
-    build = next(command for command in calls if command[:3] == ["docker", "buildx", "build"])
-    proxy_args = [
-        build[index + 1]
-        for index, value in enumerate(build)
-        if value == "--build-arg"
-    ]
-    assert "http_proxy" in proxy_args
-    assert "HTTPS_PROXY" in proxy_args
-    assert "HTTP_PROXY" not in proxy_args
-    assert "https_proxy" not in proxy_args
-    assert all("127.0.0.1:7890" not in argument for argument in build)
+    build = next(call for call in calls if call[:3] == ["docker", "buildx", "build"])
+    assert build[3:5] == ["--builder", "allbot-builder"]
+    assert ["--progress", "plain"] == build[5:7]
+    assert "--cache-from" in build and "--cache-to" in build
+    assert "http_proxy" in build
+    assert all("172.17.0.1:7890" not in value for value in build)
+    assert any(":input-" in value for value in build)
+
+
+def test_remote_state_backend_reads_and_atomically_writes_target_isolated_state():
+    module = _load_module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[-1].startswith("cat "):
+            return module.CommandResult(
+                0,
+                json.dumps(
+                    {"environment": "prod", "module": "payment-api", "current": "x"}
+                ),
+                "",
+            )
+        return module.CommandResult(0, "", "")
+
+    backend = module.RemoteStateBackend(
+        host="deploy@target",
+        root=Path("/var/lib/allbot/module-release-state"),
+        run=fake_run,
+    )
+
+    assert backend.read("prod", "payment-api")["current"] == "x"
+    backend.write(
+        "test",
+        "main-bot",
+        {"environment": "test", "module": "main-bot", "current": "y"},
+    )
+
+    write_script = calls[-1][1]["input"]
+    assert "/test/main-bot/current.json" in write_script
+    assert "mktemp" in write_script
+    assert "mv " in write_script
+
+
+def test_revision_labels_follow_expensive_runtime_install_steps():
+    python_base = (
+        ROOT / "deploy/docker/Dockerfile.python-runtime-base"
+    ).read_text(encoding="utf-8")
+    ffmpeg_base = (
+        ROOT / "deploy/docker/Dockerfile.python-ffmpeg-runtime-base"
+    ).read_text(encoding="utf-8")
+    control = (
+        ROOT / "deploy/docker/Dockerfile.control-plane"
+    ).read_text(encoding="utf-8")
+
+    assert python_base.index("pip install") < python_base.index(
+        "org.opencontainers.image.revision"
+    )
+    assert ffmpeg_base.index("apt-get install") < ffmpeg_base.index(
+        "org.opencontainers.image.revision"
+    )
+    assert "apt-get install -y --no-install-recommends ffmpeg" not in control
+
+
+def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
+    build = (ROOT / ".github/workflows/module-build.yml").read_text()
+    deploy = (ROOT / ".github/workflows/module-deploy.yml").read_text()
+
+    assert "workflow_dispatch:" in build
+    assert "pull_request:" not in build + deploy
+    assert "allbot-build-sgp1" in build and "allbot-build-sgp1" in deploy
+    assert "packages: write" in build
+    assert "packages: write" not in deploy
+    assert "git rev-parse origin/main" in build
+    assert "GPU module must be built locally" in build
+    assert "environment: ${{ inputs.environment }}" in deploy
+    assert "confirm_production" in deploy
+    assert "@sha256:[0-9a-f]{64}" in deploy
+    assert "--confirm-prod" in deploy
+    assert "--state-backend remote" in deploy
 
 
 def test_image_digest_reader_accepts_buildx_json_string_for_oci_index(tmp_path):

@@ -8,23 +8,20 @@ RUN npm run build
 FROM nginx:1.27.5-alpine AS dashboard-frontend
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
-      org.opencontainers.image.source=$ALLBOT_SOURCE \
-      io.allbot.release.module=dashboard-frontend
 COPY --from=dashboard-build /build/dist/assets /opt/allbot-spa/assets
 COPY --from=dashboard-build /build/dist/index.html /opt/allbot-spa/index.html
 COPY deploy/docker/nginx.dashboard.conf.template /opt/allbot-nginx/dashboard.conf.template
 COPY deploy/docker/select-dashboard-spa.sh /docker-entrypoint.d/05-select-dashboard-spa.sh
 RUN mkdir -p /etc/nginx/templates \
     && chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE \
+      io.allbot.release.module=dashboard-frontend
 EXPOSE 8086
 
 FROM nginx:1.27.5-alpine AS qqcc-config-frontend
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
-      org.opencontainers.image.source=$ALLBOT_SOURCE \
-      io.allbot.release.module=qqcc-config-frontend
 COPY --from=dashboard-build /build/dist/assets /opt/allbot-spa/assets
 COPY --from=dashboard-build /build/dist/index.qqcc-config.html /opt/allbot-spa/index.qqcc-config.html
 COPY --from=dashboard-build /build/dist/index.private-bot.html /opt/allbot-spa/index.private-bot.html
@@ -32,4 +29,7 @@ COPY dashboard/frontend/nginx.cloud-gateway.conf.template /opt/allbot-nginx/qqcc
 COPY deploy/docker/select-dashboard-spa.sh /docker-entrypoint.d/05-select-dashboard-spa.sh
 RUN mkdir -p /etc/nginx/templates \
     && chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE \
+      io.allbot.release.module=qqcc-config-frontend
 EXPOSE 8088

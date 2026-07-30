@@ -1,83 +1,80 @@
 ARG RUNTIME_BASE_IMAGE
 FROM ${RUNTIME_BASE_IMAGE} AS central-api
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=central-api
 COPY config.py /app/config.py
 COPY backend/requirements.txt /tmp/backend-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app /app/app
 COPY src /app/src
 COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=central-api
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS web-api
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=web-api
 COPY config.py /app/config.py
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY src /app/src
 COPY shared /app/shared
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=web-api
 CMD ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS payment-api
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=payment-api
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=payment-api
 CMD ["python", "src/payment_api_server.py"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS main-bot
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=main-bot
 COPY config.py /app/config.py
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY src /app/src
 COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=main-bot
 CMD ["python", "src/bot_main.py"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS qqcc-bot
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=qqcc-bot
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
 COPY qqcc_bot /app/qqcc_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=qqcc-bot
 CMD ["python", "-m", "qqcc_bot.main"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS private-bot-worker
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=private-bot-worker
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
 COPY qqcc_bot /app/qqcc_bot
 COPY qqcc_private_bot /app/qqcc_private_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=private-bot-worker
 CMD ["python", "-m", "qqcc_private_bot.worker"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS paid-group-bot
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=paid-group-bot
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
 COPY paid_group_guard_bot /app/paid_group_guard_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=paid-group-bot
 CMD ["python", "-m", "paid_group_guard_bot"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS support-bot
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=support-bot
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
 COPY support_bot /app/support_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=support-bot
 CMD ["python", "-m", "support_bot.main"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS dashboard-backend
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=dashboard-backend
 COPY config.py /app/config.py
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
 COPY dashboard/backend/requirements.txt /tmp/dashboard-requirements.txt
@@ -92,15 +89,16 @@ COPY migrations /app/migrations
 COPY scripts/runpod_prod_ops.sh scripts/gpu_pool_controller.py /app/scripts/
 COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py
 RUN chmod 755 /app/scripts/runpod_prod_ops.sh
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=dashboard-backend
 CMD ["gunicorn", "dashboard.backend.main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
 
 FROM ${RUNTIME_BASE_IMAGE} AS qqcc-config-backend
 ARG ALLBOT_GIT_SHA
-LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=qqcc-config-backend
 COPY config.py /app/config.py
 COPY dashboard/backend/requirements.txt /tmp/dashboard-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/dashboard-requirements.txt
 COPY dashboard/backend /app/dashboard/backend
 COPY src /app/src
 COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=qqcc-config-backend
 CMD ["gunicorn", "dashboard.backend.qqcc_config_main:app", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8045"]

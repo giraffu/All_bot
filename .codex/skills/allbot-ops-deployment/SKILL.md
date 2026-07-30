@@ -21,6 +21,12 @@ description: "处理独立模块不可变构建、精确 digest 部署、目标�
 必要 base；不读取 changed paths、CI、测试批准、release bundle、其它 track
 或 GPU baseline。
 
+控制面云构建可显式选择 Buildx builder、registry cache prefix 和 progress。
+build-only base 使用 Dockerfile、显式 `build_inputs` 与上游精确 digest 的
+内容身份，不跟随应用 SHA；最终业务产物仍用 SHA 并返回精确 digest。loopback
+代理必须在 build 前拒绝。GitHub self-hosted workflow 只允许手动 protected
+main，拒绝 PR/fork 和 GPU kind；GPU/ComfyUI 继续本地构建。
+
 部署一次只替换一个模块的精确 `repository@sha256:digest`。test 人工验收是
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
 test 目标时可拒绝 test，但不阻断直接部署 prod。
@@ -34,6 +40,9 @@ Compose 只重建目标 service；Pages 只更新目标项目；GPU 必须明确
 部署前读取目标 live identity，部署后执行 adapter 健康检查。失败只回滚目标
 模块 previous identity并报告当前 identity；migration 失败保留现场，不自动
 downgrade 或恢复备份。状态按 `env/module` 独立保存。
+本地 state backend 保持兼容；持久 Runner workflow 使用目标机
+`/var/lib/allbot/module-release-state/<env>/<module>/` 的原子 remote backend。
+Environment secret 只能在批准 job 的 tmpfs 中短暂解码并在退出清理。
 
 ## 红线
 

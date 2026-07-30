@@ -69,12 +69,12 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块构建、部署、状态、回滚 | `scripts/release.py`、`deploy/module-catalog.json`、focused tests | current | 发布变更/执行 |
+| `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | Compose 与一般运维 | deploy compose、release scripts | current | 容器运维 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与 SOP | test overlay/env contract、release state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与 SOP | prod overlay/env contract、release state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
-| `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界 | key metadata、host config | runtime-verification-required | 云登录 |
+| `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界与 SGP1 构建 Runner | key metadata、host config、GitHub Runner API | runtime-verification-required | 云登录/Runner 运维 |
 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` | DNS/Tunnel/Access/Pages/R2 | Cloudflare 配置与只读探测 | runtime-verification-required | 公网入口 |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | 网络与代理边界 | compose/network/Cloudflare config | current | 网络改动 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | 边缘节点运维 | edge config/scripts | runtime-verification-required | 边缘节点 |

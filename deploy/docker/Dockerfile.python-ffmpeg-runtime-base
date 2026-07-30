@@ -1,0 +1,11 @@
+ARG RUNTIME_BASE_IMAGE
+FROM ${RUNTIME_BASE_IMAGE} AS python-ffmpeg-runtime-base
+
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE \
+      io.allbot.release.layer=python-ffmpeg-runtime-base
