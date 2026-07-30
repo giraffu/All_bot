@@ -14,6 +14,9 @@
 本阶段允许已授权的 cloud-test disabled canary、测试 Web 人工验收，并继续支持
 本地 LAN 验收。后端 `LTX_T2V_BACKEND_ENABLED` 默认关闭，由云测试环境显式开启；
 Web runtime flag `enable_ltx_t2v` 只在 test 为 `true`，prod 固定为 `false`。
+关闭时，练功房不展示“人物参考图”和“文生视频”，修仙笔记不展示
+“人物图库”，并且前端不注册人物图库路由；直接访问旧入口也不能绕过
+Web API 的 backend flag。
 不得开放正式用户、未经单次授权创建正式 Pod 或启用 autoscaler。RunPod 使用独立
 `ltx_t2v` profile，只接受 `ltx_t2v,ltx_t2v_ic`，禁止 template，首轮只接受
 32GB RTX 5090；不得把本地 registry 镜像当作 GHCR artifact。
