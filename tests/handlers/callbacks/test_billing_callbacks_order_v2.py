@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from decimal import Decimal
 
 import pytest
 
@@ -121,3 +122,55 @@ async def test_buy_star_plan_callback_creates_pending_order_with_order_v2_payloa
         context.bot.send_invoice.await_args.kwargs["title"]
         == "💎 Sect Treasury - Stars Plan (Inner Disciple)"
     )
+
+
+@pytest.mark.asyncio
+async def test_buy_rmb_plan_failure_replaces_connecting_message(monkeypatch):
+    plan = SimpleNamespace(
+        id=1,
+        name="RMB Plan",
+        identity_name="内门弟子",
+        duration_days=30,
+        reward_credits=100,
+        price_rmb=Decimal("30.00"),
+    )
+    message = SimpleNamespace(edit_text=AsyncMock())
+    query = SimpleNamespace(
+        data="buy_rmb_plan_1_alipay",
+        from_user=SimpleNamespace(id=12345),
+        message=message,
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(lang="zh", user_data={})
+
+    safe_answer = AsyncMock()
+    monkeypatch.setattr(billing_callbacks, "safe_answer_query", safe_answer)
+    monkeypatch.setattr(
+        billing_callbacks,
+        "get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=2002), False)),
+    )
+    monkeypatch.setattr(
+        billing_callbacks,
+        "get_visible_membership_plan",
+        AsyncMock(return_value=plan),
+    )
+    monkeypatch.setattr(
+        billing_callbacks,
+        "create_rmb_pending_order",
+        AsyncMock(return_value=(SimpleNamespace(id=1), "public-order-1")),
+    )
+    monkeypatch.setattr(
+        billing_callbacks.RMBPaymentService,
+        "create_payment_url",
+        AsyncMock(return_value={"code": 0, "msg": "Invalid response format"}),
+    )
+
+    await billing_callbacks.buy_rmb_plan_callback(update, context)
+
+    assert message.edit_text.await_count == 2
+    failure_call = message.edit_text.await_args_list[-1]
+    assert failure_call.kwargs["text"] == "❌ 获取支付链接失败：Invalid response format"
+    reply_markup = failure_call.kwargs["reply_markup"]
+    assert reply_markup.inline_keyboard[0][0].callback_data == "recharge_back"
+    safe_answer.assert_awaited_once()

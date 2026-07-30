@@ -95,8 +95,10 @@ sequenceDiagram
   merchant、MD5 签名、成功状态、业务单、外部流水与金额。事务提交成功或幂等
   noop 后返回平台要求的精确纯文本大写 `SUCCESS`；Telegram 消息不阻塞该确认
   响应。平台未收到 `SUCCESS` 时按一分钟间隔最多重试五次。
-- RMB 下单通过服务端 POST 提交，日志不得记录签名参数、完整支付 URL 或网关
-  响应。`RMB_RECONCILIATION_ENABLED` 默认关闭；启用时
+- RMB 下单只允许向 HTTPS 网关通过服务端 POST 提交，并禁止自动跟随重定向，
+  避免 301/302 把 POST 改写成 GET 后丢失签名表单；日志不得记录签名参数、完整
+  支付 URL 或网关响应。失败时 Bot 必须把“连接中”消息收口为可重试的终态提示。
+  `RMB_RECONCILIATION_ENABLED` 默认关闭；启用时
   `HUANYUY_QUERY_URL` 条件必填，查单返回必须同时匹配订单号、金额和平台流水，
   HTML、404、未知状态与字段缺失一律失败并保留重试。
 - Payment API 的 reconciler 只处理新建 job：60 秒后首次查单，按

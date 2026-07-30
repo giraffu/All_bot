@@ -394,11 +394,21 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             pass
     else:
         error_msg = pay_resp.get("msg", "未知错误") if pay_resp else "请求无响应"
-        await safe_answer_query(
-            query,
-            text=_t(context, "billing.link_failed", error_msg=error_msg),
-            show_alert=True,
+        reply_markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        _t(context, "billing.back_recharge_menu"),
+                        callback_data="recharge_back",
+                    )
+                ]
+            ]
         )
+        with contextlib.suppress(Exception):
+            await query.message.edit_text(
+                text=_t(context, "billing.link_failed", error_msg=error_msg),
+                reply_markup=reply_markup,
+            )
 
 
 @register_callback("buy_star_plan_")
