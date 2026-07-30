@@ -312,7 +312,9 @@ label 解析 `web-api`、`bot`、`qqcc-bot`、`qqcc-private-bot-worker`，逐个
 `repository@sha256:digest` 和同一 40 位 OCI revision，在正式控制机校验
 `io.allbot.release.module=web-api` 后，以一次性容器复用
 `/var/lib/allbot/config/prod/current/web-api.env` 与
-`allbot-prod_default`。`--run-runtime` 只运行无 PII 汇总；确认
+`allbot-prod_default`。该 Web projection 必须同时包含应用 `REDIS_URL` 和队列
+`WORKER_REDIS_URL`；缺少任一键都应在启动退款运行器前 fail closed，不能临时
+拼接 Central env 或手工复制 secret。`--run-runtime` 只运行无 PII 汇总；确认
 `orphan_pending_count=0` 后才用 `--execute --allow-above-threshold`。执行只对
 仍能原子 ZREM 的 pending 任务走统一幂等 finalization；已被 Worker 移走的任务
 计入 `moved_count`，不抢占、不退款，running 任务不强杀。账本幂等金额冲突、
