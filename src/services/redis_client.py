@@ -147,6 +147,12 @@ class RedisClient:
                 raise
             return 0
 
+    async def get_user_concurrency(self, user_id: int) -> int:
+        """Return the live task-lock count without mutating it."""
+        key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
+        value = await self.redis.get(key)
+        return max(int(value or 0), 0)
+
     async def rollback_user_concurrency_acquire(
         self,
         user_id: int,

@@ -5,6 +5,7 @@ import {
   buildCharacter,
   createCharacterDraft,
   deleteCharacter,
+  fetchCharacterBatchCapacity,
   fetchCharacters,
   generateCharacterView,
   saveCharacterReference,
@@ -42,19 +43,24 @@ export const useCharactersStore = defineStore('characters', () => {
     return result
   }
 
+  const getBatchCapacity = () => fetchCharacterBatchCapacity()
+
   const generateView = async (
     id: string,
     viewType: CharacterViewType,
     prompt: string,
     engine: CharacterViewEngine = 'free_edit_v2_5',
     viewLabel: string = viewType,
+    registerFloatingTask = true,
   ) => {
     const result = await generateCharacterView(id, viewType, prompt, engine)
-    tasksStore.addTask(
-      result.task_id,
-      result.task_type,
-      `人物参考图 · ${viewLabel}`,
-    )
+    if (registerFloatingTask) {
+      tasksStore.addTask(
+        result.task_id,
+        result.task_type,
+        `人物参考图 · ${viewLabel}`,
+      )
+    }
     await refresh()
     return result
   }
@@ -82,6 +88,7 @@ export const useCharactersStore = defineStore('characters', () => {
     refresh,
     create,
     createDraft,
+    getBatchCapacity,
     generateView,
     saveReference,
     rename,

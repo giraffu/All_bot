@@ -74,6 +74,21 @@ async def test_get_all_user_concurrencies_uses_scan_not_keys(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_user_concurrency_reads_live_counter_without_mutation(monkeypatch):
+    client = RedisClient()
+    get = AsyncMock(return_value="3")
+    monkeypatch.setattr(
+        client,
+        "redis",
+        type("FakeRedis", (), {"get": get})(),
+    )
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    assert await client.get_user_concurrency(123) == 3
+    get.assert_awaited_once_with("prod_bot_user_concurrency:123")
+
+
+@pytest.mark.asyncio
 async def test_task_idempotent_concurrency_release_uses_atomic_redis_marker(monkeypatch):
     client = RedisClient()
     eval_script = AsyncMock(return_value=1)

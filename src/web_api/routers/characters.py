@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.task_core import (
+    ConcurrencyLimitError,
+    CoreDomainError,
+    InsufficientCreditsError,
+    QueueCapacityError,
+)
 from src.database.models import User
 from src.web_api.dependencies import get_current_user, get_db
 from src.web_api.schemas.character_schema import (
+    CharacterBatchCapacityResponse,
     CharacterBuildRequest,
     CharacterBuildResponse,
     CharacterPatchRequest,
@@ -15,6 +22,7 @@ from src.web_api.services.character_reference_service import (
     create_character_draft,
     delete_character,
     generate_character_view,
+    get_character_batch_capacity,
     list_characters,
     patch_character,
     save_character,
@@ -52,6 +60,13 @@ async def get_characters(
     return await list_characters(db=db, user_id=current_user.id)
 
 
+@router.get("/batch-capacity", response_model=CharacterBatchCapacityResponse)
+async def get_batch_capacity(
+    current_user: User = Depends(get_current_user),
+):
+    return await get_character_batch_capacity(current_user=current_user)
+
+
 @router.post("/{character_id}/views/{view_type}/generate")
 async def create_character_view(
     character_id: str,
@@ -60,13 +75,25 @@ async def create_character_view(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await generate_character_view(
-        db=db,
-        current_user=current_user,
-        character_id=character_id,
-        view_type=view_type,
-        payload=payload,
-    )
+    try:
+        return await generate_character_view(
+            db=db,
+            current_user=current_user,
+            character_id=character_id,
+            view_type=view_type,
+            payload=payload,
+        )
+    except QueueCapacityError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "GENERATION_QUEUE_FULL", "detail": str(exc)},
+        ) from exc
+    except ConcurrencyLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+    except CoreDomainError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{character_id}/save", response_model=CharacterResponse)

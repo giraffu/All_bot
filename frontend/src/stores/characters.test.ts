@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
+  fetchCharacterBatchCapacity: vi.fn(),
   fetchCharacters: vi.fn(),
   generateCharacterView: vi.fn(),
 }))
@@ -10,6 +11,7 @@ vi.mock('@/api/characters', () => ({
   buildCharacter: vi.fn(),
   createCharacterDraft: vi.fn(),
   deleteCharacter: vi.fn(),
+  fetchCharacterBatchCapacity: apiMocks.fetchCharacterBatchCapacity,
   fetchCharacters: apiMocks.fetchCharacters,
   generateCharacterView: apiMocks.generateCharacterView,
   saveCharacterReference: vi.fn(),
@@ -29,6 +31,21 @@ describe('characters store', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     apiMocks.fetchCharacters.mockResolvedValue([])
+    apiMocks.fetchCharacterBatchCapacity.mockResolvedValue({
+      limit: 5,
+      active: 2,
+      available: 3,
+    })
+  })
+
+  it('reads live batch capacity through the characters store seam', async () => {
+    const store = useCharactersStore()
+
+    await expect(store.getBatchCapacity()).resolves.toEqual({
+      limit: 5,
+      active: 2,
+      available: 3,
+    })
   })
 
   it('submits the selected free-edit engine and registers a floating task', async () => {
