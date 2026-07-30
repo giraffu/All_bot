@@ -1,3 +1,7 @@
+{
+	default_sni {$MINIAPP_LAN_HOST:localhost}
+}
+
 https://{$MINIAPP_LAN_HOST:localhost}:8443 {
 	tls internal
 	encode zstd gzip
