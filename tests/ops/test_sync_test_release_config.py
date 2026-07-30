@@ -1,35 +1,40 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "sync_test_release_config.py"
+VALIDATE_ENV_SCRIPT = ROOT / "scripts" / "validate_deploy_env.py"
 
 
-def test_test_config_sync_cli_has_no_prod_or_maintenance_controls():
+def test_retired_test_config_sync_fails_closed_with_current_entrypoint():
     help_result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--help"],
+        [sys.executable, str(SCRIPT), "--source-sha", "0" * 40],
         cwd=ROOT,
         text=True,
         capture_output=True,
-        check=True,
+        check=False,
     )
 
-    assert "--source-sha" in help_result.stdout
-    assert "--execute" in help_result.stdout
-    assert "--env" not in help_result.stdout
-    assert "prod" not in help_result.stdout.lower()
-    assert "maintenance" not in help_result.stdout.lower()
+    assert help_result.returncode == 2
+    assert "retired" in help_result.stderr.lower()
+    assert "runtime_env_contract.py" in help_result.stderr
+    assert "config-plan" not in SCRIPT.read_text(encoding="utf-8")
+    assert "config-apply" not in SCRIPT.read_text(encoding="utf-8")
 
 
-def test_test_config_sync_commands_are_fixed_to_test():
-    source = SCRIPT.read_text(encoding="utf-8")
+def test_retired_global_env_validator_fails_closed():
+    result = subprocess.run(
+        [sys.executable, str(VALIDATE_ENV_SCRIPT)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
-    assert '["python", release, "config-plan", "--env", "test"]' in source
-    assert '"config-apply",' in source
-    assert '"test",' in source
-    assert '"production_changed": False' in source
-    assert "--confirm-prod" not in source
+    assert result.returncode == 2
+    assert "validate-env is retired" in result.stderr
+    assert "release.py --help" in result.stderr

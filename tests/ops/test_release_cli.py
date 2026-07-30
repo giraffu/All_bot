@@ -278,6 +278,46 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "python3 scripts/release.py build" in build
 
 
+def test_active_knowledge_uses_only_current_release_commands():
+    roots = [ROOT / ".codex" / "skills", ROOT / "docs"]
+    sources = []
+    for root in roots:
+        for path in root.rglob("*.md"):
+            relative = path.relative_to(ROOT)
+            if relative.parts[:2] == ("docs", "archive"):
+                continue
+            if relative.parts[:2] == ("docs", "release_evidence"):
+                continue
+            if relative.parts[:2] == ("docs", "adr") and path.name not in {
+                "README.md",
+                "0009-operator-decides-module-release.md",
+            }:
+                continue
+            sources.append(path.read_text(encoding="utf-8"))
+    sources.extend(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "scripts" / "update_cloud_test_with_maintenance.sh",
+            ROOT / "scripts" / "update_cloud_prod_with_maintenance.sh",
+            ROOT / "scripts" / "sync_test_release_config.py",
+            ROOT / "scripts" / "validate_deploy_env.py",
+        )
+    )
+    active_text = "\n".join(sources)
+
+    for retired in (
+        "scripts/release.py promote",
+        "scripts/release.py plan",
+        "scripts/release.py preflight",
+        "release.py --strategy",
+        "--track control-plane",
+        "config-plan",
+        "config-apply",
+        "CI release manifest",
+    ):
+        assert retired not in active_text
+
+
 def test_image_digest_reader_accepts_buildx_json_string_for_oci_index(tmp_path):
     module = _load_module()
     calls = []

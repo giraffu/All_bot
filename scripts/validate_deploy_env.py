@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""Compatibility entry for the redacting release environment validator."""
+"""Fail-closed notice for the retired global release environment validator."""
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
 import sys
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
 def main() -> int:
-    return subprocess.call(
-        [sys.executable, str(ROOT / "scripts/release.py"), "validate-env", *sys.argv[1:]],
-        cwd=ROOT,
+    print(
+        "ERROR: validate-env is retired. The module release CLI validates only the "
+        "selected build/deploy target; use scripts/release.py --help.",
+        file=sys.stderr,
     )
+    return 2
 
 
 if __name__ == "__main__":

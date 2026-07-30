@@ -141,7 +141,12 @@ docker-compose -f deploy/docker-compose-paid-group-local.yml logs -f --tail=100 
 - 该 Bot 应作为单独 compose service 部署，复用项目根 `Dockerfile`，command 使用 `python -m paid_group_guard_bot`。
 - 不要把它合并到 `src/bot_main.py`，也不要让它复用主业务 `BOT_TOKEN`。
 - 云正式 service 为 `paid-group-guard-bot-prod`，容器名 `cloud-paid-group-guard-bot-prod`。它与 Dashboard Backend 共享 `runtime/cloud-prod/paid-group-guard` 和 `logs/cloud-prod`。
-- 单独发布该 Bot 与 Dashboard 管理页时，使用同一已验收 main SHA 的 `scripts/release.py plan|preflight|deploy --env prod --track control-plane --modules dashboard-backend dashboard-frontend paid-group-guard-bot`；模块参数只能扩大 planner 自动集合，真实执行仍须 `--execute --confirm-prod`。维护模式按本次正式发布独立选择，默认开启；只有用户当次明确要求且 planner 允许无维护时才关闭。禁止调用已 fail-closed 的 legacy 脚本、rsync、现场 build 或手工 compose。
+- catalog 模块名为 `paid-group-bot`。从完整 main SHA 构建后，只能以精确
+  `repository@sha256:digest` 执行 `release.py deploy --env prod --module
+  paid-group-bot ... --confirm-prod`。Dashboard 前后端是
+  `dashboard-backend`/`dashboard-frontend` 两个独立模块，若同轮需要更新，
+  也必须分别构建、部署和保存状态；任一失败即停止后续模块。禁止 legacy
+  脚本、rsync、现场 build 或手工 compose。
 
 ## 11. 验证
 

@@ -66,16 +66,24 @@
 - **RunPod 手动池**：云正式备用或临时扩容的 GPU worker 池，可由人工操作，也可由 Dashboard autoscaler 在门禁满足时提交 `add` / `down`。
 - **Dashboard RunPod autoscaler**：由 Dashboard backend 根据队列等待、worker 健康、profile 阈值和 RunPod operation store 自动提交 RunPod `add` / `down` 的管理循环。
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。
-- **维护发布**：影响 planner 因 migration、未知路径或跨栈变更提升的发布等级；发布器负责维护/drain、备份、单 Alembic head 与显式 upgrade，不同步代码或 env。
-- **云测试不可变发布**：将受保护 `main` 可达的完整 SHA 对应 release bundle 部署到云测试；服务范围由依赖影响自动计算，应用代码只来自 digest-pinned 镜像。
+- **维护发布**：操作者在独立模块发布之外显式执行生成维护、排空、备份或
+  migration 的专项运维过程；普通模块发布不会自动推断或开启维护。
+- **云测试不可变发布**：从完整 main SHA 构建明确模块，并把该模块的精确
+  digest 部署到云测试；模块范围由操作者选择，应用代码只来自不可变 artifact。
 - **不可变 handoff**：功能槽位完成本地测试并推送后，用槽位、远端任务分支、完整 head SHA 和 main base SHA 标识的一次交接；交接后槽位可立即复用，批次集成不再依赖槽位当前内容。
 - **并发写入协调**：唯一 main 写者逐个消费不可变 handoff；冲突项进入
   `needs-rebase`，不阻断后续项。它不是发布批次或发布门禁。
-- **自动集成队列**：本地主服务器保存不可变 handoff 的持久化队列；唯一协调器按批次串行推进 main PR、可信 CI/bundle 和共享测试部署，失败批次会阻断后续项，接口不包含正式环境发布。
-- **发布风险类**：根据选中 artifact 的最高影响划分为 critical、owner-tools、public-web、execution 或 locked；共享代码和混合变更不得通过缩小选择集降低风险。
-- **发布策略**：standard 要求测试部署/验收/观察，direct 用于低风险直发，emergency 用于显式接受核心业务风险的紧急直发；三者都保留不可变产物、配置、健康、回滚和生产确认。
-- **artifact assurance**：逐 artifact digest 的证据状态；tested 表示 main bundle 的精确 digest 已完成要求的测试，waived 表示策略明确豁免，attested 表示 GPU 不做业务 canary 但不可变产物声明已验证。
-- **独立模块发布**：schema v2 中一次只选择 Dashboard、官方 QQCC Bot 或 QQCC Config 一个完整组，以组内 artifact 已部署 `source_sha` 作为差异与回滚基线，并在混合版本 `current.json` 中保留非目标 artifact；共享数据库/Compose/env 或明确跨模块契约变化不属于独立发布。
+- **自动集成队列**：本地主服务器保存不可变 handoff 的持久化队列；唯一
+  main 写者逐项 merge/push，冲突项进入 `needs-rebase` 而不阻断后续项。队列
+  不创建 PR、不运行 CI、不构建产物或部署环境。
+- **模块 artifact identity**：一个明确 catalog 模块的
+  `repository@sha256:digest`；最终业务镜像附带完整 Git SHA revision，但运行
+  与回滚始终使用精确 digest。
+- **模块 release state**：按 `env/module` 保存的 current、previous、最近
+  动作和结果；Runner 使用目标机 remote backend，本地 CLI 保留 XDG backend。
+- **独立模块发布**：操作者从完整 SHA 构建明确模块，一次部署一个精确
+  artifact；系统不查询 CI、diff、test evidence、bundle、其它模块或 track，
+  失败只恢复目标 previous，migration 失败保留现场。
 - **云正式控制面**：生产控制面，任何正式发布、重建或生产 RunPod mutation 都需要用户明确确认。
 - **Cloudflare 自动化令牌**：用于 AllBot Cloudflare 账号自动化的高权限 API token，只允许保存在宿主机受限权限文件中；聊天、文档、Git 和日志只记录路径、用途和权限边界，不记录明文。
 - **本地正式灾备**：云正式整体不可用时，由本地主服务器临时接管正式入口的应急形态。

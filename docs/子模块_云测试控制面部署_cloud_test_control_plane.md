@@ -2,18 +2,13 @@
 
 > 当前入口为 `release.py deploy --env test --module ... --artifact
 > <exact-digest>`。不运行 plan、CI、bundle、test evidence 或 acceptance 门禁；
-> 人工验证结果由操作者判断。下文旧 schema-v2 自动发布说明只作历史背景。
->
-> 2026-07-22：普通 schema-v2 main control-plane 发布由 `release.py` 自动选择 `streamlined`：目标主机只读检查选中服务的现有投影，单次 pull 后以 `compose up --no-deps --wait` 替换目标服务，并在同一远端脚本核对 exact digest、OCI revision、health、解析后的 `API_BASE` 与 Bot single polling/getUpdates conflict。成功即按 artifact + exact digest 自动写入带真实开始/完成时间的 `verified` evidence；`verify-test` 保留作专项人工补充，不再是普通路径必需步骤。失败只使用主机已有旧 ref 回切目标服务，不预拉旧镜像、不做全局 queue drain、完整 rollback preflight、非目标快照或固定 observation。migration、Compose/env、首次切换、未知影响及 test-execution/GPU 继续使用 `strict`/专用 operator。
-> 2026-07-23：control-plane 的 strict 与 streamlined 都按测试环境实际服务裁剪配置检查；migration 继续 strict，但不再构造测试站不存在的 Dashboard、Payment、Paid Group 或 Support 投影。服务配置契约以 `environments` 标注拓扑；全量 `config-plan/config-apply` 会报告并清理历史 prod-only `retired_services`，代码发布只核验目标 current projection，并以 `effective_environment_revision` 记录当前已激活配置。目标缺键、篡改、revision drift 或影响目标的未知键仍 fail closed。
-> 2026-07-23：若当前测试 control-plane 只记录全量 bundle SHA 和实际运行 artifact、没有测试站本就不运行的 Dashboard artifact 条目，`recover --modules dashboard --repair-rollback-materials` 仍可修复该精确 bundle 的回滚材料。入口必须先确认全局 current SHA 相同，再展开 bundle 并逐项核对所有实际启用服务的 state/container digest；不会拉镜像、重启容器或改写部署状态。
-> 2026-07-23：strict migration 备份的临时 PostgreSQL client 必须共享当前 Web 容器网络命名空间，否则孤立 `docker run` 无法解析测试 Compose DNS `postgres-test`。该修复只恢复备份连通性，不跳过 `pg_dump`、单 Alembic head、维护或回滚门禁。
-> 2026-07-23：自动测试发布会把 `plan` 返回的短效 `plan_token` 交给 `deploy`，复用候选、CI 与 evidence，执行前仍重新核对目标配置 revision。strict 会实时报告 pull/backup/migration/replace/health 心跳和脱敏失败详情，Alembic 临时容器使用 `--no-deps`；目标 exact digest、OCI/config revision 与健康已一致时直接 `no-change`，不拉取或重建。
-> 2026-07-22：A-H handoff 默认进入本机自动集成队列；单写者将等待项合成一个 main PR，依次等待 CI/bundle 后只部署该 main SHA 到测试环境。新 handoff 在已有集成/测试发布运行时排入下一批，任一失败阻断后续批次；正式环境不在协调器能力范围。QQCC Config 前后端继续按 standard 进入专属测试实例，Dashboard 仍不进入测试站，`test-execution` 只在专项诊断时启用。状态/回滚历史按 track + artifact digest 隔离。禁止代码/env rsync、云端 build、源码 bind mount和 RunPod 启动 clone。
-> 配置唯一事实源为云测试主机 `/etc/allbot/test.env`；发布器只生成权限 `600` 的逐服务投影，不把整份 env 注入全部容器。`safe_deploy_cloud_test.sh` 与旧维护脚本仅作 fail-closed 历史兼容，legacy `.env`/Compose 运行态不再是新发布事实源。
-> 首次切换前如仍只有 `BOT_TOKEN_TEST`/`QQCC_BOT_TOKEN_TEST` 等旧别名，先对该主机事实源执行 `scripts/migrate_legacy_test_env.py --control-plane-only`；候选文件通过 `config-plan` 后备份并原子替换。该模式只补 canonical 控制面键，不改写任何 Worker 选择、槽位或端点。
->
-> `ALLBOT_WORKER_*`、`CLOUD_TEST_WORKER_*` 与 `CLOUD_TEST_SHARED_AIO_*` 属于独立 GPU/Worker 链路。控制面配置工具保留它们的受限宿主值，但不将其计入 control-plane revision、漂移、影响服务或逐服务投影。测试 Worker 的发布、候选切换和验收继续使用 `test-execution`/GPU operator，不随控制面 `config-apply` 联动。Dashboard 消费的 `RUNPOD_*` / `LAN_AIO_*` 不在此排除集。
+> 人工验证结果由操作者判断。A–H 协调器只合并 main，不触发构建或测试
+> 部署。GitHub `module-build` 可从精确 main SHA 构建非 GPU 模块；
+> `module-deploy` 或本地 CLI 一次只部署一个 catalog 支持 test 的精确 digest。
+> remote state 位于
+> `/var/lib/allbot/module-release-state/test/<module>/`，失败只回滚该模块。
+> 配置唯一事实源仍是云测试主机 `/etc/allbot/test.env`；代码发布不改写它。
+> GPU/Worker 使用本地专用 operator 和 exact slot，不随控制面发布联动。
 
 ## 1. 目标与边界
 
@@ -24,14 +19,26 @@
 ## 2. Legacy 入口与新事实源
 
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
-- 私密配置：`/etc/allbot/test.env`；逐服务投影：`/var/lib/allbot/config/test/<revision>/<service>.env`；非敏感镜像/SHA/当前已激活 `effective_environment_revision`：release 目录的 `release.env`。宿主候选 revision 未执行 `config-apply` 前不得写成已部署 revision。
-- 计划/发布：先执行 `scripts/release.py plan --env test --sha <full-sha>` 查看 `execution_profile` 与原因，再执行 `deploy --env test --sha <full-sha> --execute`；普通 `streamlined` 无需单独重复 `preflight`，`strict` 或人工诊断仍可显式执行。不得用 `--services` 人工缩小机器计算的依赖闭包。
-- 发布批次：A-H 推送并 handoff 后默认写入 `${XDG_STATE_HOME:-~/.local/state}/allbot/ai-integration-queue`；用户级 timer 以文件锁保证唯一写者，一次组合当前等待项为 release-batch，只创建一个 main PR。main CI bundle 成功后自动执行固定的 `release.py plan|deploy --env test --track control-plane`，strict 由 deploy 路由完整门禁。默认只部署需要测试的 control-plane/公共 Web；QQCC Config 按 standard 部署专属测试前后端，Dashboard-only 不修改测试站。Worker 专项诊断显式选择 `test-execution`。timer 启用后禁止并行启动另一条共享测试发布。
-- `test-execution` 首次没有独立 `current.json` 时，release plan 必须标记 `initial-release`，从当前 legacy `cloud-comfy-agent-test-*` / `cloud-worker-relay-test` 做 allowlist 快照和受控切换；快照、release env 与回滚材料统一位于 `~/APP/All_bot-release/release-env/test-execution/<sha>/`，后续 Worker preflight 也必须从该 track-scoped 路径读取。test-execution 未选择任何 cloud service 时跳过 cloud preflight，不要求云端存在该轨的 release.env。若 control-plane 已完成而 Worker 预检失败，保持原槽位做 forward-fix，不能把候选记为已完整部署。
-- 云端控制面回滚目标若是 track 隔离上线前的历史候选，可能只有 `/var/lib/allbot/releases/<sha>/release.env`。preflight、失败恢复和恢复验证必须先找 `/var/lib/allbot/releases/control-plane/<sha>/release.env`，缺失时才兼容同一 SHA 的 legacy 合约；正向候选仍只生成 track-scoped 合约，禁止回写或覆盖 legacy 文件。
-- v2 两轨事务分别写 `transactions/control-plane/<sha>` 与 `transactions/test-execution/<sha>`，不能因 SHA 相同覆盖彼此；test-execution 首次切换不重跑云端 Postgres/Redis。升级前的无 track Worker 失败 journal 必须用 `release.py recover --env test --track test-execution --transaction <sha> --execute` 收口，发布器兼容读取旧路径并把恢复结果写到新路径。
-- 若 control-plane 状态存在但 `allbot-test-postgres-1` / `allbot-test-redis-1` 缺失，普通 deploy 必须在 Redis drain 处失败，禁止手工 compose。先短暂启动停止的 `cloud-redis-test`，只读核对 worker DB 的 pending/running 均为 0 并立即停止；随后仅可对可信 main bundle 用 `release.py deploy --env test --track control-plane --repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue --execute` 做成对、维护式修复。任一队列非零不得确认。
-- Web 自由P图 v2.5/v3 发布验收共用运行时开关 `enable_free_edit_v3` 和 BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、无 LoRA、预签名上传、投稿与一键应用入口；目标 Worker 可用时分别完成“v2.5 单图”“v2.5 双图”“v3 BF16→换脸”三条黄金路径，其中双图投稿应用必须重新上传两张。Worker 不可用时记录独立待办，不得把未执行写成通过；全部适用 smoke 完成后即可执行 `verify-test`，不再等待固定 24 小时。
+- 私密配置：`/etc/allbot/test.env`；逐服务投影：
+  `/var/lib/allbot/config/test/<revision>/<service>.env`。使用
+  `runtime_env_contract.py inspect/activate/rollback` 管理投影；候选 revision
+  未激活前不得写成已部署 revision。模块 artifact 状态独立保存在
+  `/var/lib/allbot/module-release-state/test/<module>/`。
+- 构建：明确完整 main SHA 和 catalog 模块；云 Runner 拒绝 GPU kind。
+- 部署：`release.py deploy --env test --module <name> --artifact
+  <repository@sha256:digest>`，不接受 track、bundle、service 自动推导或
+  `--execute`。
+- 状态/回滚：按同一模块执行 `status`/`rollback`；GitHub workflow 使用
+  remote state，本地 CLI 默认使用 XDG state。
+- Postgres、Redis、migration、配置或 Compose 契约分别使用 catalog 中的
+  `postgres`、`redis`、`database-migration`、`config-contract`、
+  `compose-contract`，不得由普通业务模块隐式修复。
+- GPU/Worker 测试继续使用显式本地 operator 和 exact slot。
+- Web 自由P图 v2.5/v3 人工验收共用运行时开关 `enable_free_edit_v3` 和
+  BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、
+  无 LoRA、预签名上传、投稿与一键应用入口；目标 Worker 可用时分别完成
+  “v2.5 单图”“v2.5 双图”“v3 BF16→换脸”三条黄金路径。Worker 不可用时
+  记录独立待办，不得把未执行写成通过。验收结果由操作者判断，不写入发布资格。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`
@@ -80,7 +87,10 @@ PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 
 2026-07-14 首次真实 Bot 任务回归发现 legacy env 仍有 `API_BASE_TEST=http://central-api-test:8003`。由于 `BOT_TYPE=TEST` 会让 `config.py` 优先读取 `*_TEST`，只在 overlay 设置 `API_BASE=http://central-api:8003` 不足以覆盖，表现为任务派发阶段 `Errno -3` 且 Saga 退款。当前 immutable test overlay 必须对所有 Python 消费者同时设置 `API_BASE`/`API_BASE_TEST=http://central-api:8003`，发布器在写状态前进入容器校验 `config.API_BASE`。验收不得再用未经 `config.py` 解析的原始 env 作为 DNS 反馈环。
 
-同轮恢复还暴露 SSH stdin 脚本截断：远端 `docker compose exec -T central-api ...` 会继续读取 stdin，把后续 pull/up/门禁命令吞掉，外层 SSH 仍可能返回 0。所有远端 Compose exec/run 必须追加 `</dev/null`，且发布成功必须同时看到 SHA 完成标记、实际容器 digest 与 OCI revision；只看到 release plan 或 `current.json` 更新不算部署成功。
+同轮恢复还暴露 SSH stdin 脚本截断：远端 `docker compose exec -T central-api
+...` 会继续读取 stdin，把后续 pull/up/门禁命令吞掉，外层 SSH 仍可能返回 0。
+所有远端 Compose exec/run 必须追加 `</dev/null`，且发布成功必须同时看到目标
+健康、实际容器 digest 与 OCI revision；只看到 module state 更新不算部署成功。
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
 
@@ -125,7 +135,8 @@ Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地
 
 ## 3. Legacy 部署命令（归档，禁止执行）
 
-本节保留首次不可变切换前的现场事实，只用于归档与一次性 legacy 回滚设计。当前云测试发布必须执行 `scripts/release.py plan --env test --sha <full-sha>`，确认机器计算的依赖集合后再执行对应 `deploy`；不得复制执行下列 rsync/build 命令。
+本节保留首次不可变切换前的现场事实，只用于事故考古，禁止执行。当前云测试
+只接受前述单模块 exact-digest `deploy`；不得复制下列 rsync/build 命令。
 
 以下是旧流程原文：常规测试环境更新以快速为主，只同步本轮必要代码并重建对应模块容器。
 
@@ -254,8 +265,14 @@ release SHA 与 runtime revision。空配置对象或同源 `/api` 不算发布�
 | QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-test` | 无 | `qqcc-private-bots` profile；消费 Telegram webhook stream，默认不启动 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-Dashboard 不属于云测试服务清单。QQCC Config 的测试 Host/8045/8088 进入配置门禁、preflight 和验收；测试机 firewall 继续保护这些端口。
-`https://qqcc-admin-test.aivison.it.com` 由测试 Tunnel 回源 `100.82.124.91:8088`，未登录请求由 Cloudflare Access 拦截。该入口由 main bundle 的云测试发布管理；入口可达之外还必须核对目标 digest/revision 与业务页面。QQCC Config 自身登录仍是第二层认证，测试 private Bot gate 关闭，`private-bot-test.aivison.it.com` 未创建。
+Dashboard 不属于云测试服务清单。QQCC Config 的测试 Host/8045/8088 必须在
+部署前通过目标配置检查，并在部署后验收；测试机 firewall 继续保护这些端口。
+`https://qqcc-admin-test.aivison.it.com` 由测试 Tunnel 回源
+`100.82.124.91:8088`，未登录请求由 Cloudflare Access 拦截。QQCC Config
+前后端分别由 `qqcc-config-frontend` 与 `qqcc-config-backend` 模块发布；
+入口可达之外还必须核对各自目标 digest/revision 与业务页面。QQCC Config
+自身登录仍是第二层认证，测试 private Bot gate 关闭，
+`private-bot-test.aivison.it.com` 未创建。
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
 

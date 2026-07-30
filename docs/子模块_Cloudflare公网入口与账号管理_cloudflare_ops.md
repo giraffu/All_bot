@@ -48,7 +48,12 @@
 
 2026-07-16 已为云测试 QQCC Config Web 上线 `qqcc-admin-test.aivison.it.com`。该 hostname 插入 `allbot-cloud-web-api-canary` Tunnel 的 catch-all 404 之前，回源测试 Tailscale origin `http://100.82.124.91:8088`；proxied CNAME DNS record 为 `4d257ea98980b057d8d2ef15a2063fdb`。公网未登录请求已验证返回 Cloudflare Access 302，Access allow policy 只允许 `cv1347968277@gmail.com`，应用层 QQCC Config 登录继续保留。测试私有 Bot 总 gate 仍关闭，因此本轮没有创建 `private-bot-test.aivison.it.com` DNS、Tunnel ingress 或公开 Owner WebApp。
 
-正式 Pages 发布前必须由 `scripts/release.py preflight --env prod --sha <sha>` 只读确认：production branch 为 `main`、`production_deployments_enabled=false`、`preview_deployment_setting=none`、正式 custom domain active、当前 canonical production deployment ID 可作为回滚材料。任何一项不满足都只报告 blocker，不允许发布器自动 PATCH 项目设置。
+正式 Pages 使用 catalog 的 `public-web` 模块。从完整 main SHA 构建环境中立
+artifact 后，以精确 `repository@sha256:digest` 调用 `release.py deploy
+--env prod --module public-web ... --confirm-prod`。Pages adapter 在 mutation
+前只读确认 production branch 为 `main`、自动 production/preview 部署关闭、
+正式 custom domain active，并保存当前 canonical deployment 作为 previous；
+任何一项不满足都只报告失败，不自动 PATCH 项目设置。
 
 Wrangler 上传成功不等于正式域已切换。发布器随后通过 Pages API锁定 `environment=production`、branch=`main`、commit hash 等于目标完整 SHA、latest stage success 的 deployment ID，要求项目 `canonical_deployment.id` 指向它，并从 `https://web.aivison.it.com/allbot-runtime-config.js?release_sha=<sha>` 校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。后续阶段失败时，事务恢复调用官方 `POST /accounts/{account_id}/pages/projects/{project_name}/deployments/{deployment_id}/rollback` 恢复旧 production deployment，并再次核对 canonical ID；rollback API 或 canonical 验证失败时必须保持生成维护。
 

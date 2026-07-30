@@ -2,19 +2,31 @@
 
 > 当前入口为 `release.py deploy --env prod --module ... --artifact
 > <exact-digest> --confirm-prod`。除明确生产确认外，不查询 CI、test evidence、
-> bundle、Git ancestry 或其它模块。下文旧 promotion/门禁说明只作历史背景。
+> bundle、Git ancestry 或其它模块。模块必须先从完整 main SHA 构建；状态按
+> `/var/lib/allbot/module-release-state/prod/<module>/` 独立保存，失败只恢复
+> 该模块 previous identity。历史 promotion/track 设计只保留在 superseded
+> ADR 与 archive，不再作为本 SOP 的执行入口。
 >
-> 2026-07-24：主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时配置计划/应用 fail closed，不再作为可忽略 legacy key。懒人入口正式使用 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，只投影给 main-bot；旧 `QQCC_LAZY_BOT_*` 仅作运行时兼容回退。下一次正式 main-bot 更新必须先用 `config-plan/config-apply --module main-bot` 刷新投影，再由受控发布事务重建 Bot。
+> 主 Bot 的 `REQUIRED_CHANNEL_ID` 是频道成员同步、凡人晋级与签到资格的必填
+> 运行配置，必须进入 `main-bot` 逐服务投影；宿主缺失时环境投影工具
+> fail closed。懒人入口使用 `MAIN_BOT_LAZY_BOT_ENABLED` 与
+> `MAIN_BOT_LAZY_BOT_USERNAME`，只投影给 main-bot。配置变更必须通过
+> `runtime_env_contract.py inspect/activate` 的独立授权流程先激活目标投影，
+> 再部署 main-bot artifact；代码发布不会改写配置。
 >
-> 2026-07-22：`promote` 增加内部 `streamlined|strict` 执行配置，CLI 不变。普通已知 schema-v2 main control-plane 模块在目标配置投影无漂移时走 streamlined：direct 只消费 bundle 内 `validation.mode=full/tests=passed`，standard 复用测试 history 中同 artifact + exact digest 的 verified evidence，不再重复查询 GitHub CI；只 inspect/替换目标容器，不准备完整 rollback checkout、不预拉旧镜像、不检查非目标启动时间。一次目标替换脚本持事务锁，从全部目标容器交叉核验同一个受控 Compose checkout（artifact `source_sha` 不作为 Compose SHA）、单次 pull、`up --no-deps --wait`、核对 digest/OCI/config/health/API_BASE/polling，并用主机已有旧 ref 做目标回切；只有回切失败才保留 maintenance/recovery transaction。migration、Compose/env、数据库/Redis、首次切换、未知或混合 strict 影响继续保留完整备份、Alembic、queue drain、维护和恢复能力。Dashboard 仅在 LAN runner 影响规则命中时探测 runner；未选择 Public Web 时不初始化 Wrangler/Pages。
-> 2026-07-20 日常正式发布统一使用 `python scripts/release.py promote --confirm-prod`。不带确认只输出精简预览；不传模块时自动选择最新 main bundle 中与正式实际运行态不一致的模块，部分发布才传 `--modules <逗号列表>`，固定 SHA 才传 `--sha <40位SHA>`。该门面内部完成 exact-digest 测试取证、配置闭包、目标健康、single polling 和执行配置对应的事务回滚，不再要求操作者重复 plan/preflight 或追加 `--execute`。strict 保留非目标证明与完整回滚；streamlined 仅触碰和证明目标服务。旧 rsync/build 命令已从活跃 SOP 删除，历史只保留归档边界。
-> 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
-
-2026-07-20 模块边界：`promote` 支持一个事务内组合 `central-api`、`web-api`、`payment-api`、`imgproxy`、`dashboard`、`main-bot`、`qqcc-bot`、`qqcc-config`、`private-bot-worker`、`paid-group-bot` 与 `public-web`。planner 对每个模块和 artifact 分别使用真实旧 digest/source SHA、策略和 blocker；配置闭包取模块并集，状态提交保留非目标混合版本。standard artifact 必须命中测试 history 的同名 exact digest，Dashboard direct 仅记录 `waived`。migration、未知共享 Compose/env、未审计跨模块契约和 snapshot 漂移仍 fail closed。
+当前模块边界完全由 `deploy/module-catalog.json` 决定。多个模块可以由
+`module-build` 一次构建，但部署、状态和回滚始终逐模块执行；任一失败即停止
+后续模块。`database-migration`、`config-contract` 与 `compose-contract`
+是独立目标，不由业务模块隐式执行。禁止 rsync、目标机 build、源码挂载、
+mutable tag 和自由 Compose。
 
 2026-07-20 事务审计兼容：秘密隔离完成前的发布状态会持久记录 `pending_secret_rotation_acceptance`，下一次事务把旧 state 纳入回滚证据时必须保留该非敏感记录。journal 校验只对这一精确审计字段例外，字段内部仍递归禁止 token、secret、password 和 env-values；不得通过删除 current/history 审计记录来绕过校验。
 
-2026-07-20 逐服务配置收敛不再要求先做全控制面切换。具有容器 env 契约的独立模块可通过 `config-plan/config-apply --module <name>` 只暂存本模块投影；局部 apply 仍验证并保留全部非目标 active 投影。2026-07-22 起，普通发布的只读门禁改用更窄的 target inspection：只构造并校验目标 projection 文件、权限、字节和 revision，忽略非目标 active state 中的未知历史名称或 drift；它绝不激活或改写配置。目标自身缺键、篡改或 revision 漂移仍阻断，并要求显式 `config-plan/config-apply --module`。完整 `config-plan/config-apply` 继续报告和处理全局 drift。Public Web 继续使用独立 runtime config。Dashboard Backend 的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`。
+具有容器 env 契约的模块使用 `scripts/runtime_env_contract.py` 按环境和 service
+执行 `inspect`/`activate`/`rollback`。工具只生成权限 `600` 的逐服务投影，
+局部操作不得改写非目标 active 投影。代码发布只读取目标 current projection，
+绝不激活或改写配置。Public Web 使用独立 runtime config；Dashboard Backend
+的最小投影必须包含精确的 `AGENT_SECRET_TOKEN`。
 
 2026-07-20 TON/Telegram 配置契约收口：`web-api` 必须投影 `TELEGRAM_API_BASE_URL`；当 `TON_PAYMENT_POLLING_ENABLED=true` 时，`web-api` 与 `main-bot` 条件必填并投影有效的 `VITE_MERCHANT_ADDRESS`。地址和 Telegram endpoint 只来自 `/etc/allbot/prod.env`，不得写入镜像或代码。该变更触及共享服务环境契约，必须走完整 control-plane CI、测试验收与维护式正式事务；缺键在任何容器替换前 fail closed。
 
@@ -30,7 +42,9 @@
 必须具备可验证、可回滚的 canonical production deployment ID。不满足只报告
 blocker，不自动修正式环境。
 
-> 2026-07-28 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。显式模块 migration 可由同一条生产命令同时提供 `--no-maintenance --confirm-db-upgrade`，仅豁免 forward generation maintenance/drain；仍执行 strict、数据库备份、单 Alembic head、`upgrade head`、事务日志与失败恢复。首次/legacy 切换、未知影响或其它 blocker 不能豁免。禁止手工写删 marker 或静默按另一模式上线。
+> 普通模块 deploy 不管理全局生成维护。需要 migration、排空或数据库备份时，
+> 必须先执行对应专项 SOP，再显式运行 `database-migration` artifact；禁止
+> 手工写删 marker 或假设代码模块会夹带 migration。
 
 ## 1. 当前生产架构事实
 
@@ -72,7 +86,17 @@ blocker，不自动修正式环境。
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
-不可变控制面镜像与日志还需满足以下运行契约：Web API 会在 `src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须包含 `ffmpeg`，模块化 release 的 full-validation smoke 必须在最终 digest 镜像中执行 `ffmpeg -version`。QQCC 多段视频还会在控制面执行尾帧探测、提取、拼接与智能画幅适配，`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可运行的 `python-media-runtime-base`；该层固定 ffmpeg/ffprobe、OpenCV headless、SmartCrop 和 SHA-256 锁定的 YuNet ONNX。各最终 digest 必须分别执行双媒体工具 smoke，并验证 `cv2` / `smartcrop` 导入及模型存在；不能只因为基础镜像、旧 `Dockerfile.qqcc` 或其它服务含有工具就视为依赖满足。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用 `json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器按不可变发布流程重建后生效，不得通过远端手改 container HostConfig 代替仓库契约。
+不可变控制面镜像与日志还需满足以下运行契约：Web API 会在
+`src/core/media_processor.py` 为视频历史生成缩略图，因此 `web-api` 镜像必须
+包含 `ffmpeg`，镜像 focused smoke 必须对最终 digest 执行 `ffmpeg -version`。
+QQCC 多段视频还会在控制面执行尾帧探测、提取、拼接与智能画幅适配，
+`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、
+`dashboard-backend` 必须继承不可运行的 `python-media-runtime-base`；该层固定
+ffmpeg/ffprobe、OpenCV headless、SmartCrop 和 SHA-256 锁定的 YuNet ONNX。
+各最终 digest 必须分别执行双媒体工具 smoke，并验证 `cv2`/`smartcrop` 导入及
+模型存在。`deploy/docker-compose-cloud-base.yml` 中所有控制面服务统一使用
+`json-file` driver，并设置 `max-size=50m`、`max-file=5`；该限制只在目标容器
+按不可变发布流程重建后生效，不得远端手改 container HostConfig。
 
 QQCC 私有 Bot 正式启用不是 QQCC 单 polling 热修：它涉及 Alembic、新共享 secret、Web API webhook、QQCC Config Backend/Frontend、官方 QQCC 申请入口、独立 worker 和公网 owner Host。必须走完整生产确认与迁移门禁，不能套用只替换 `qqcc-bot-prod` 的单服务脚本。生产顺序、env contract 和回滚见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。2026-07-12 已执行 migration、设置 `PRIVATE_QQCC_BOT_ENABLED=true`、启动 private profile、启用生产 webhook，并将 `private-bot.aivison.it.com` 接入现有 Tunnel；严格 validator、Host 隔离、owner/admin 公网行为和 worker heartbeat 已验证。safe deploy 的 `--allow-disabled` 仍只适用于 gate 关闭的未启用环境，不能替代启用态严格校验。
 
@@ -104,7 +128,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
 | `QQCC_BOT_TOKEN` | `.env.cloud.prod` 真实值 | `cloud-qqcc-bot-prod` 的独立 Telegram token；不得写入仓库、docs、日志或 `docker compose config` 输出，正式上线前若已暴露应轮换 |
 | `MAIN_BOT_LAZY_BOT_ENABLED` / `MAIN_BOT_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 专属的 `懒人bot` 能力闸门和跳转目标；正式 username 为 `@QQCC666_bot`，只进入 `main-bot` 投影；旧 `QQCC_LAZY_BOT_*` 仅兼容回退 |
-| `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，正式 preflight 必须阻断 |
+| `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，目标配置检查必须阻断 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
 | `RUNPOD_IMAGE_NAME_IMG2IMG_LORA` | Dashboard operation 固定为 catalog 中已验收的 baked img2img 镜像 | 后续手动新增与 autoscaler 扩容不得继续使用缺少 `/opt/allbot/runpod_baked_runtime_entrypoint.sh` 的 2026-06-12 legacy 镜像；容器 `/app/.env` 中的旧值不能覆盖该 pin |
@@ -262,20 +286,26 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 
 ### 4.1 日常控制面发布
 
-正式控制面日常只使用不可变候选门面：
+正式控制面先从完整 main SHA 构建明确模块，再部署构建结果中的精确 digest：
 
 ```bash
-python scripts/release.py promote
-python scripts/release.py promote --confirm-prod
+python scripts/release.py build \
+  --module <module> --sha <40位main-sha>
+python scripts/release.py deploy \
+  --env prod --module <module> \
+  --artifact <repository@sha256:digest> --confirm-prod
 ```
 
-部分发布追加 `--modules <逗号列表>`，固定候选追加 `--sha <40位SHA>`。预览不创建事务、不拉取生产镜像、不执行 Compose 或 Pages mutation；确认后由发布器内部完成预检、回滚材料、目标更新、验收与失败恢复。配置漂移、高风险变更或待轮换秘密会在 mutation 前阻断。
+`status` 是只读入口；`rollback` 只恢复该模块 previous identity，prod 同样需要
+`--confirm-prod`。代码发布不提供全局预览、自动影响分析、组合事务或测试资格
+门禁；操作者负责明确测试范围、模块顺序和生产时机。
 
 首次不可变切换前曾使用 rsync、源码 bind mount、云端 build、`safe_deploy_cloud_prod.sh` 和按服务手工 Compose；这些流程已经退役，历史证据仅在 `docs/archive/` 中用于事故考古，不得从活跃文档恢复为执行入口。
 
-Dashboard、QQCC、Paid Group Bot 与 Public Web 均使用同一 `promote` 门面和模块别名；Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime 仍由各自专用 operator 管理，不属于控制面 promote 的隐式副作用。
-
-独立模块若跨过其它模块新增的 migration，默认仍 fail closed。只有 clean main 的 `deploy/release-policy.yml` 在 `independent_non_target_migration_snapshots` 中按模块、路径与内容 SHA256 精确审阅后，高级 `deploy --policy <clean-main-policy> --modules <...> --no-maintenance` 才把它记为非目标差异：`requires_db_upgrade=false`，不备份、不运行 Alembic，只滚动目标容器。目标模块自身的纯增量 migration 必须进入 `independent_additive_migration_snapshots` 并精确固定内容 SHA256；执行时保持 `requires_db_upgrade=true`，只有同一命令再给出 `--no-maintenance --confirm-db-upgrade` 才跳过 forward maintenance/drain，备份和 Alembic 仍执行。当前 `payment-api` 已固定 `1d6f4a8b9c20_add_rmb_payment_reconciliation_jobs.py`。任何未列文件、内容漂移、未知路径或共享契约仍恢复 blocker。高级 `deploy` 与 `promote` 使用相同的 artifact assurance：`payment-api` 等 prod-only direct artifact 不读取测试拓扑中不存在的服务历史，但仍要求 full main CI、不可变 digest、配置、目标健康、事务回切和非目标证明；standard artifact 继续要求同名 exact-digest test evidence，不得伪造测试 state。
+Dashboard、QQCC、Paid Group Bot 与 Public Web 都使用 catalog 中的精确模块名，
+没有组合别名。Dashboard 的 RunPod autoscaler、LAN AIO、RunPod/GPU runtime
+仍由各自专用 operator 管理，不属于控制面部署的隐式副作用。数据库变化必须
+显式构建和运行 `database-migration`，不能由代码模块自动推断或夹带。
 
 ### 4.2 专用 GPU 执行面运维
 
@@ -345,11 +375,16 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 
 自由P图 v2 的正式 RunPod 手动备用容量使用同一个 `pornmaster_flux2_edit` runtime profile，不写 `user-data-prod` 以外的用户结果桶，也不把模型 baked 进镜像。启用前必须确认 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向公开 GHCR tag，`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`，`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`。
 
-控制面服务发布仍按模块最小范围处理：
+控制面服务仍按模块最小范围处理；例如三个目标要分别构建并逐个部署：
 
 ```bash
-python scripts/release.py promote --modules central-api,web-api,main-bot
-python scripts/release.py promote --modules central-api,web-api,main-bot --confirm-prod
+python scripts/release.py build \
+  --module central-api --module web-api --module main-bot \
+  --sha <40位main-sha>
+# 对输出的三个 exact digest 分别执行：
+python scripts/release.py deploy \
+  --env prod --module <one-module> \
+  --artifact <repository@sha256:digest> --confirm-prod
 ```
 
 正式 Web Pages 只发布正式前端项目；不要把测试 Pages 或测试 API 域名带入正式构建。验收通过后执行：
@@ -398,7 +433,9 @@ scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
 
 Central agent control、正式 Worker 镜像和 GPU runtime 必须分别通过不可变控制面发布与专用 Worker/GPU operator 更新。历史上按文件 rsync Central、重启源码 bind mount 容器或在本地主机现场 build 整组 Worker 的灰度步骤已经退役；其测试结论保留，命令不再作为活跃 SOP。
 
-控制面 `promote` 不隐式重建生产 GPU Worker，也不以 Worker heartbeat 作为控制面提交条件。需要更新 Worker 时，先按 agent control drain 单槽，再走对应 release-index digest 和专用 operator；不得用控制面发布扩大到执行面。
+控制面模块 deploy 不隐式重建生产 GPU Worker，也不以 Worker heartbeat 作为
+控制面提交条件。需要更新 Worker 时，先按 agent control drain 单槽，再走
+对应精确 artifact 和专用 operator；不得用控制面发布扩大到执行面。
 
 ### 4.4 Cloudflare Pages/API Tunnel 维护
 

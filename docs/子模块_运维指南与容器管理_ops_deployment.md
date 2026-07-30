@@ -4,14 +4,17 @@
 > `scripts/release.py build/deploy/rollback/status`。旧 plan/policy/bundle
 > 说明只作历史背景，不再是可执行入口。
 
-> 2026-07-22 起，`release.py` 在同一门面内自动选择 `streamlined` 或 `strict`，并在 plan/promote JSON 输出原因。普通 full-validation main control-plane、已知影响且目标配置投影精确时使用 streamlined；migration、Compose/env、数据库/Redis、首次切换、未知影响、GPU/test-execution 或任一 strict artifact 使整次混合发布进入 strict。streamlined 只 pull/recreate 目标服务并用本机旧 ref 快速回切，测试 smoke 自动写 exact-digest verified evidence；strict 保留备份、Alembic、维护、queue drain、完整回滚和恢复。
-> 2026-07-20 起，日常正式发布唯一门面为 `python scripts/release.py promote --confirm-prod`；不带确认是零生产 mutation 的预览，部分发布可传 `--modules`，固定候选可传 `--sha`。`plan/preflight/deploy/deploy-module/rollback/recover/config-*` 只作为高级与兼容入口。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。
+> 构建必须给出完整 SHA 和明确模块；部署必须给出环境、单个模块与精确
+> digest。prod mutation 额外要求 `--confirm-prod`。数据库迁移、配置契约、
+> Compose 契约、Pages 和 GPU 都是 catalog 中的显式目标，不存在自动 planner、
+> track、组合 promotion 或 CI/test evidence 门禁。
 
 ## 1. 目标与范围
 
-本模块记录当前仓库真实生效的发布、迁移与故障恢复边界。新发布只消费 CI 生成的不可变镜像 digest，不在目标机 build，也不从云端源码目录加载应用代码。migration 由发布器识别并进入显式维护、备份、单 Alembic head 与 upgrade 流程。
-
-普通 streamlined 事务使用进程专属临时目录中的 SSH ControlMaster；退出时关闭且不写仓库。事务 journal 记录 candidate、evidence、config、pull、replace、health、state、target-rollback 的无敏感阶段耗时。正式晋级不再次查询 GitHub CI：direct 校验 bundle 的 full/passed，standard 额外读取测试 retained history 的同 artifact + exact digest verified evidence。配置只读检查只覆盖目标投影；任何目标 drift 都先停下，代码发布不会替操作者激活或改写配置。
+本模块记录当前仓库真实生效的发布、迁移与故障恢复边界。新发布只消费
+digest-pinned artifact，不在目标机 build，也不从云端源码目录加载应用代码。
+部署前读取目标 live identity，完成后检查目标结果；失败只恢复该模块 previous。
+migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 
 ## 2. Legacy 部署路径（禁止用于新代码发布）
 
@@ -37,24 +40,30 @@
 
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
-- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py promote --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许
+  执行 `scripts/release.py deploy --env prod --module <name> --artifact
+  <exact-digest> --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的
+  本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
-- Dashboard 与 QQCC Config 管理面默认使用通用 `--strategy direct`；`--dashboard-fast-track` 仅作旧调用兼容。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 tested artifact 证据，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke。所有路径都不放宽 main 血缘、CI 构建、digest、配置/preflight、`--confirm-prod`、事务回滚或非目标容器不变门禁。
-
-正式环境的生成维护模式是每次发布单独选择的操作参数，不是长期环境配置：
-
-- 用户当次没有说明时，默认选择“开启维护”；上一次发布的选择不自动继承。
-- 只有用户对该次发布明确要求“不进入维护”时才请求关闭，并且仅限 `plan` 判定可无维护的 `rolling`/`none` 变更。
-- migration、首次/legacy 切换、队列 drain、未知影响或发布策略要求的原子更新属于强制 maintenance，不能被“不开维护”覆盖。
-- `plan` 和 `preflight` 必须同时展示并核对用户请求/default、planner 的实际 level 与最终生效模式。请求开启但当前发布器不能实际创建并保持维护，或请求关闭但不能证明全程无维护时，必须在任何 mutation 前停止并修复发布契约；禁止手工写删 marker、调用 legacy 脚本或静默按另一模式上线。
-- 维护开启的事务若回滚/恢复不完整，继续保持维护并记录 `rollback_failed`；发布总结必须报告请求模式和实际模式。
+- Dashboard、QQCC Config 和 private worker 没有 fast-track 或 direct 策略别名，
+  只使用各自 catalog 模块和精确 digest。全局生成维护不是普通模块发布参数；
+  若专项操作确实需要维护、排空或数据库备份，必须先走对应专用 SOP 和独立
+  授权，不能假设 `release.py` 会隐式完成。
 
 ## 2.2 云端测试控制面
 
-- DigitalOcean SGP1 Droplet 上的云测试只接受 `scripts/release.py plan|deploy --env test --sha <full-sha>`；目标 service 集合由 `deploy/release-policy.yml` 计算，应用镜像由 release manifest 提供。
-- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API 与 imgproxy；Dashboard、QQCC Config 管理前后端已完全移除。`bot-test` 只通过 `bot` profile 手动启动，测试 Worker 仅在专项诊断显式启用。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
-- rolling/worker-drain/maintenance 等级由发布计划决定；用户指定 service 只能扩大范围，不能缩小机器计算出的消费者集合。
-- 测试 Web 使用 CI 的同一静态产物上传到 SHA 版本目录并原子切换 symlink，不覆盖式同步 dist。
+- DigitalOcean SGP1 Droplet 上的云测试只接受一个 catalog 模块的精确 digest：
+  `scripts/release.py deploy --env test --module <name> --artifact
+  <repository@sha256:digest>`。
+- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、
+  QQCC Config Backend/Frontend 与 imgproxy；Dashboard 不在测试站运行。
+  `bot-test` 只通过 `bot` profile 手动启动，测试 Worker 仅在专项诊断显式启用。
+  当前对象存储事实源是 Cloudflare R2，云测试 compose 不包含 MinIO、
+  Payment API 或 Web 前端 dev 容器。
+- 操作者按 catalog 精确选择模块；代码模块不会自动扩大到关联消费者，也不会
+  隐式 drain Worker 或切换维护。跨模块契约变化必须显式安排每个目标和顺序。
+- 测试 Web 使用 `public-web` 的环境中立 artifact，由 Pages adapter 注入测试
+  runtime config 并验证 canonical 测试域名；不覆盖式同步 dist。
 - 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。
@@ -68,11 +77,17 @@
 
 ## 2.3 云正式控制面
 
-- 2026-06-07 晚间正式生产已切到云控制面；首次不可变发布切换前的旧 compose 和脚本仍保留作归档/legacy rollback。新长期入口是公共 cloud/worker compose、release manifest 和 `scripts/release.py`。
+- 2026-06-07 晚间正式生产已切到云控制面；首次不可变发布切换前的旧
+  compose 和脚本仍保留作归档/legacy rollback。新长期入口是模块目录、公共
+  cloud/worker compose 和 `scripts/release.py`。
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot。生产按 artifact digest 与风险策略晋级：管理面默认 direct，公共 Web 可显式 direct，核心链路默认 standard、显式 emergency 才旁路；migration 与部署契约始终 standard。所有策略仍保留 main 血缘、不可变产物、配置、健康、事务与回滚门禁。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、
+  Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和
+  可选 QQCC 懒人 Bot。所有目标都按 catalog 模块和精确 digest 独立部署；
+  production mutation 每个模块都要求 `--confirm-prod`。migration 与部署契约
+  也是独立模块，不存在 direct/standard/emergency 风险策略或自动晋级。
 - 云正式执行池由本地 worker compose、LAN AIO 与 RunPod 构成。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 worker 数量当成验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 媒体只使用当前 R2/S3 URL；R2 miss 后只允许短签、空值或 `pending_result`，worker 只写 R2。
@@ -113,9 +128,15 @@
 
 ## 4. 服务重建注意事项
 
-- 所有自有服务只运行 release manifest 中的 digest-pinned 镜像；目标机不得现场 build。
-- QQCC 链式视频的尾帧探测、拼接与智能画幅适配由控制面执行；`qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、`dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。该层除 ffmpeg/ffprobe 外固定 OpenCV headless、SmartCrop 和按 SHA-256 校验的 YuNet ONNX。模块化 full-validation 对四个最终 digest 分别执行双媒体工具 smoke，并验证 `cv2` / `smartcrop` 导入和模型存在；修改该窄基础层或媒体智能依赖清单只重建真实 descendants，不得把所有控制面服务无差别卷入重建。
-- Dashboard、QQCC Config 或 Bot 的单模块发布由影响 planner 选择完整消费者，并在发布后核对目标健康与非目标容器启动时间不变。
+- 所有自有服务只运行 digest-pinned 镜像；目标机不得现场 build。
+- QQCC 链式视频的尾帧探测、拼接与智能画幅适配由控制面执行；
+  `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、
+  `dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。该层除
+  ffmpeg/ffprobe 外固定 OpenCV headless、SmartCrop 和按 SHA-256 校验的 YuNet
+  ONNX。相关 focused tests 应验证媒体工具、`cv2`/`smartcrop` 导入和模型存在；
+  修改该窄基础层或媒体依赖只重建真实 descendants。
+- Dashboard、QQCC Config 或 Bot 由操作者明确选择 catalog 模块；发布器只
+  核对目标结果，不自动扩大消费者集合。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。

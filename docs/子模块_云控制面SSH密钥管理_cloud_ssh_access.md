@@ -54,10 +54,13 @@
 
 该节点只运行 repository-level GitHub Runner 与 BuildKit，不运行 GitLab，也不
 承载 test/prod 服务。`actions` 是无 sudo 的 systemd 服务用户，加入 docker
-组；`deploy` 用于主机管理和远程 release-state。Runner 标签为
+组；构建节点的 `deploy` 只用于主机管理。deploy workflow 写 remote state 时
+登录的是对应 test/prod 控制机的 `deploy` 用户。Runner 标签为
 `self-hosted,linux,x64,allbot-build-sgp1`，单服务实例即并发 1。入站 UFW 只
 允许 SSH；BuildKit docker-container builder 名为 `allbot-sgp1`，GC 以
-40GB/80GB 为目标阈值。
+40GB/80GB 为目标阈值。Buildx 实例保存在 `actions` 用户的 Docker CLI
+上下文；`deploy` 登录后直接执行 `docker buildx inspect allbot-sgp1` 看不到
+它，这不代表 Runner builder 丢失。
 
 | 项目 | 当前值 |
 | :--- | :--- |
@@ -161,6 +164,27 @@ Host allbot-do-sgp1-build
 
 该节点曾出现 banner 前偶发超时。端口或 SSH 首次超时时应按本 Skill 重试并从
 Web Console 检查 cloud-init、sshd、负载和监听；不得关闭 host key 校验。
+
+构建节点日常管理使用：
+
+```bash
+ssh allbot-do-sgp1-build
+```
+
+只读检查 Runner 服务与 `actions` 用户的 Buildx：
+
+```bash
+ssh allbot-do-sgp1-build \
+  'systemctl is-active actions.runner.giraffu-All_bot.allbot-github-runner-sgp1.service'
+ssh allbot-do-sgp1-build \
+  'sudo -u actions env HOME=/home/actions docker buildx inspect allbot-sgp1'
+```
+
+只有初始化、账号/sshd 救援或 `deploy` sudo 不可用时才使用：
+
+```bash
+ssh allbot-do-sgp1-build-root
+```
 
 日常 VS Code Remote-SSH、Codex 远程研发和常规运维默认使用：
 
