@@ -153,6 +153,12 @@ describe('router template apply guard', () => {
     }
   })
 
+  it('does not register the character library route when production LTX is disabled', async () => {
+    const router = await loadRouter()
+
+    expect(router.getRoutes().map(route => route.name)).not.toContain('Characters')
+  })
+
   it('preserves Telegram Mini App launch hash when redirecting guests to login', async () => {
     authStoreMock.token = ''
     authStoreMock.user = null as any

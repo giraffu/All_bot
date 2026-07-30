@@ -15,13 +15,13 @@ import {
 } from './labModeConfig'
 
 describe('labModeConfig', () => {
-  it('places character reference creation inside the unified lab', () => {
+  it('hides character reference and text-to-video modes when production LTX is disabled', () => {
     expect(LAB_MODE_CONFIGS.map(item => item.id)).toContain('character_reference')
-    expect(UNIFIED_LAB_MODES.map(item => item.id).includes('character_reference')).toBe(
-      WEB_LTX_T2V_ENABLED,
-    )
+    expect(WEB_LTX_T2V_ENABLED).toBe(false)
+    expect(UNIFIED_LAB_MODES.map(item => item.id)).not.toContain('character_reference')
+    expect(UNIFIED_LAB_MODES.map(item => item.id)).not.toContain('ltx_t2v')
     expect(resolveLabModeIdFromTaskType('character_reference')).toBe(
-      WEB_LTX_T2V_ENABLED ? 'character_reference' : DEFAULT_LAB_MODE_ID,
+      DEFAULT_LAB_MODE_ID,
     )
   })
 
@@ -54,13 +54,15 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('free_edit_v2_5')).toBe('edit_v2_5')
   })
 
-  it('keeps random face swap available through the unified workbench', () => {
-    const mode = getLabModeConfig('random_faceswap')
+  it('shows the current two-credit price for direct and random face swap', () => {
+    const directMode = getLabModeConfig('face_swap')
+    const randomMode = getLabModeConfig('random_faceswap')
 
-    expect(mode.taskType).toBe('random_faceswap')
-    expect(mode.maxImages).toBe(1)
-    expect(mode.baseCost).toBe(1)
-    expect(mode.supportsPromptInput).toBe(false)
+    expect(directMode.baseCost).toBe(2)
+    expect(randomMode.taskType).toBe('random_faceswap')
+    expect(randomMode.maxImages).toBe(1)
+    expect(randomMode.baseCost).toBe(2)
+    expect(randomMode.supportsPromptInput).toBe(false)
     expect(UNIFIED_LAB_MODES.map(item => item.id)).toContain('random_faceswap')
     expect(resolveLabModeIdFromTaskType('random_faceswap')).toBe('random_faceswap')
     expect(resolveLabModeIdFromTaskType('image2video')).toBe('custom_video')
