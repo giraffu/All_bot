@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Clock3, Download, FileUp, Image, LoaderCircle, Sparkles, Trash2, Video } from 'lucide-vue-next'
+import { Clock3, Download, FileUp, Image, LoaderCircle, Sparkles, Trash2, Video } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { api, downloadFile } from '@/api'
 import { quotePoints } from '@/pricing'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { MessageCircle, Send } from 'lucide-vue-next'
+import { MessageCircle, Send } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 import type { Task, Ticket } from '@/types'

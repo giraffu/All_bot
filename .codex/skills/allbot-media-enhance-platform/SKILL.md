@@ -1,3 +1,8 @@
+---
+name: allbot-media-enhance-platform
+description: "开发和维护独立媒体增强平台，覆盖独立鉴权、点数账本、媒体生命周期、任务/attempt、Worker HTTP 契约、workflow、Vue 前端与本地 Compose。"
+---
+
 # AllBot Independent Media Enhance Platform
 
 ## Trigger

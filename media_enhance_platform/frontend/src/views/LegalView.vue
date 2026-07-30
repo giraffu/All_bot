@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { FileWarning, Send } from 'lucide-vue-next'
+import { FileWarning, Send } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 

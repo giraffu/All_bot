@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, Languages, Sparkles } from 'lucide-vue-next'
+import { ArrowUpRight, Languages, Sparkles } from '@lucide/vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()

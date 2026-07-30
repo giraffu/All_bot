@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CircleDollarSign, RotateCcw, Shield, Trash2 } from 'lucide-vue-next'
+import { CircleDollarSign, RotateCcw, Shield, Trash2 } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 import type { Task, Ticket, User } from '@/types'
