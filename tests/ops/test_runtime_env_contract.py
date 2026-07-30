@@ -130,6 +130,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["TELEGRAM_API_BASE_URL"] == (
         "https://telegram-api-prod.example.com"
     )
+    assert web["WORKER_REDIS_URL"] == "redis://prod-worker/0"
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
     assert all(
