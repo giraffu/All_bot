@@ -68,10 +68,11 @@ class _FakeClientSession:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    def post(self, url, data, timeout):
+    def post(self, url, data, timeout, allow_redirects):
         self._captured["url"] = url
         self._captured["data"] = data
         self._captured["timeout"] = timeout
+        self._captured["allow_redirects"] = allow_redirects
         return _FakeResponse(self._payload)
 
     def get(self, url, params, timeout, headers):
@@ -121,6 +122,55 @@ async def test_create_payment_url_formats_decimal_amount_without_float_rounding_
     assert captured["url"] == "https://gateway.test/submit.php"
     assert captured["data"]["money"] == "0.30"
     assert captured["data"]["return_type"] == "json"
+    assert captured["allow_redirects"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_payment_url_rejects_non_https_gateway_before_network(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "src.services.rmb_payment_service.HUANYUY_GATEWAY",
+        "http://gateway.test/submit.php",
+    )
+    monkeypatch.setattr(
+        "src.services.rmb_payment_service.aiohttp.ClientSession",
+        lambda: pytest.fail("non-HTTPS gateway must not be called"),
+    )
+
+    result = await RMBPaymentService.create_payment_url(
+        out_trade_no="RMB-ORDER-HTTP",
+        plan_name="Plan A",
+        amount="30.00",
+    )
+
+    assert result == {"code": 0, "msg": "Payment gateway unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_create_payment_url_rejects_redirect_response(monkeypatch):
+    response = _FakeResponse({})
+    response.status = 301
+
+    class _RedirectSession(_FakeClientSession):
+        def post(self, url, data, timeout, allow_redirects):
+            super().post(url, data, timeout, allow_redirects)
+            return response
+
+    captured = {}
+    monkeypatch.setattr(
+        "src.services.rmb_payment_service.aiohttp.ClientSession",
+        lambda: _RedirectSession(captured, {}),
+    )
+
+    result = await RMBPaymentService.create_payment_url(
+        out_trade_no="RMB-ORDER-REDIRECT",
+        plan_name="Plan A",
+        amount="30.00",
+    )
+
+    assert result == {"code": 0, "msg": "Payment gateway redirect rejected"}
+    assert captured["allow_redirects"] is False
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -84,6 +85,10 @@ class RMBPaymentService:
         if not HUANYUY_GATEWAY or not HUANYUY_PID or not HUANYUY_KEY:
             logger.error("RMB payment gateway configuration is incomplete")
             return {"code": 0, "msg": "Payment gateway unavailable"}
+        gateway_url = urlparse(HUANYUY_GATEWAY)
+        if gateway_url.scheme.lower() != "https" or not gateway_url.hostname:
+            logger.error("RMB payment gateway requires HTTPS")
+            return {"code": 0, "msg": "Payment gateway unavailable"}
 
         params = {
             "money": RMBPaymentService._format_amount(amount),
@@ -118,7 +123,18 @@ class RMBPaymentService:
                     HUANYUY_GATEWAY,
                     data=submit_params,
                     timeout=15,
+                    allow_redirects=False,
                 ) as resp:
+                    if 300 <= resp.status < 400:
+                        await resp.read()
+                        logger.error(
+                            "RMB payment creation rejected redirect http_status=%s",
+                            resp.status,
+                        )
+                        return {
+                            "code": 0,
+                            "msg": "Payment gateway redirect rejected",
+                        }
                     try:
                         data = await resp.json(content_type=None)
                         if not isinstance(data, dict):
