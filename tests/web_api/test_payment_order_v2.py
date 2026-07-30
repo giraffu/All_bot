@@ -57,6 +57,7 @@ def _build_plan():
         is_active=True,
         price_rmb=Decimal("19.90"),
         price_ton=Decimal("1.10"),
+        price_usdt=Decimal("4.50"),
         duration_days=30,
         identity_name="内门弟子",
         reward_credits=100,
@@ -83,6 +84,7 @@ async def test_get_plans_preserves_frontend_contract_fields():
     assert result["data"]["plans"][0]["id"] == 1
     assert result["data"]["plans"][0]["price_rmb"] == 19.9
     assert result["data"]["plans"][0]["price_ton"] == 1.1
+    assert result["data"]["plans"][0]["price_usdt"] == 4.5
     assert result["data"]["plans"][0]["credits_granted"] == 100
     assert result["data"]["plans"][0]["type"] == "monthly"
 
@@ -300,3 +302,46 @@ async def test_create_ton_order_fails_before_query_or_pending_order_when_unavail
     assert exc_info.value.detail["reason"] == "TON_PAYMENT_UNAVAILABLE"
     assert db.added == []
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_usdt_ton_order_returns_jetton_transfer_contract(monkeypatch):
+    db = _FakeSession([_build_plan()])
+    current_user = SimpleNamespace(id=2002, telegram_id=12345)
+
+    monkeypatch.setattr(
+        payment_api_service, "generate_business_order_id", lambda: "bo_usdt_ton_1"
+    )
+    monkeypatch.setattr(payment_api_service, "is_order_v2_enabled", lambda: True)
+    monkeypatch.setattr(
+        payment_api_service,
+        "get_usdt_ton_payment_availability",
+        lambda: SimpleNamespace(
+            enabled=True,
+            merchant_address=VALID_TON_ADDRESS,
+            jetton_master_address="EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+        ),
+    )
+
+    result = await payment_router.create_usdt_ton_order(
+        payment_router.CreateUsdtTonOrderRequest(plan_id=1),
+        current_user=current_user,
+        db=db,
+    )
+
+    created_order = db.added[0]
+    assert created_order.business_order_id == "bo_usdt_ton_1"
+    assert created_order.payment_channel == "USDT_TON"
+    assert created_order.final_price == Decimal("4.50")
+    assert result["data"] == {
+        "order_id": "bo_usdt_ton_1",
+        "business_order_id": "bo_usdt_ton_1",
+        "legacy_order_id": created_order.order_id,
+        "usdt_comment": "ORDER_V2:bo_usdt_ton_1",
+        "usdt_receiver_address": VALID_TON_ADDRESS,
+        "usdt_jetton_master_address": (
+            "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
+        ),
+        "amount_usdt": 4.5,
+        "amount_microusdt": "4500000",
+    }

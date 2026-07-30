@@ -12,8 +12,11 @@
     },
     "web-api": {
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "WORKER_REDIS_URL", "API_BASE", "API_TOKEN", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE", "JWT_SECRET_KEY", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME", "LTX_T2V_BACKEND_ENABLED"],
-      "required_if": [{"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}}],
-      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "required_if": [
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}}
+      ],
+      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "payment-api": {
       "environments": ["prod"],
@@ -47,10 +50,11 @@
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL", "REQUIRED_CHANNEL_ID", "DATABASE_URL", "REDIS_URL", "API_BASE", "API_TOKEN", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
       "required_if": [
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}},
         {"key": "MAIN_BOT_LAZY_BOT_ENABLED", "when": {"key": "ALLBOT_ENV", "equals": "prod"}},
         {"key": "MAIN_BOT_LAZY_BOT_USERNAME", "when": {"key": "ALLBOT_ENV", "equals": "prod"}}
       ],
-      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "HUANYUY_*", "WEBAPP_*", "MINI_APP_*", "MAIN_BOT_LAZY_BOT_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "WEBAPP_*", "MINI_APP_*", "MAIN_BOT_LAZY_BOT_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "qqcc-bot": {
       "enabled_if": {"key": "QQCC_BOT_TOKEN", "nonempty": true},

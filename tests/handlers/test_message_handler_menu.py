@@ -114,6 +114,11 @@ async def test_build_back_main_and_recharge_payload(monkeypatch):
     )
     monkeypatch.setattr(
         message_handler_menu,
+        "build_usdt_ton_payment_mini_app_url",
+        lambda *, kind: f"https://web.example/billing?method=usdt-ton&kind={kind}",
+    )
+    monkeypatch.setattr(
+        message_handler_menu,
         "build_ton_payment_mini_app_url",
         lambda: "https://web.example/billing?method=ton&kind=membership",
     )
@@ -129,10 +134,12 @@ async def test_build_back_main_and_recharge_payload(monkeypatch):
     assert recharge_message == "translated:billing.recharge_intro"
     assert (
         recharge_keyboard.inline_keyboard[0][0].text
-        == "translated:billing.ton_monthly_plan_btn"
+        == "translated:billing.usdt_ton_monthly_plan_btn"
     )
     buttons = [row[0] for row in recharge_keyboard.inline_keyboard]
     assert [button.text for button in buttons] == [
+        "translated:billing.usdt_ton_monthly_plan_btn",
+        "translated:billing.usdt_ton_credit_btn",
         "translated:billing.ton_monthly_plan_btn",
         "translated:billing.stars_monthly_plan_btn",
         "translated:billing.stars_credit_btn",
@@ -140,9 +147,15 @@ async def test_build_back_main_and_recharge_payload(monkeypatch):
         "translated:billing.rmb_credit_btn",
     ]
     assert buttons[0].web_app.url.endswith(
+        "/billing?method=usdt-ton&kind=membership"
+    )
+    assert buttons[1].web_app.url.endswith(
+        "/billing?method=usdt-ton&kind=credits"
+    )
+    assert buttons[2].web_app.url.endswith(
         "/billing?method=ton&kind=membership"
     )
-    assert [button.callback_data for button in buttons[1:]] == [
+    assert [button.callback_data for button in buttons[3:]] == [
         "recharge_stars_menu",
         "recharge_stars_credit_menu",
         "recharge_rmb_menu",

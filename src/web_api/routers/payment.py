@@ -6,6 +6,7 @@ from src.web_api.dependencies import get_db, get_payment_user
 from src.web_api.services.payment_api_service import (
     create_rmb_order_payload,
     create_ton_order_payload,
+    create_usdt_ton_order_payload,
     get_payment_order_status_payload,
     get_payment_plans_payload,
 )
@@ -27,6 +28,10 @@ class CreateOrderRequest(BaseModel):
 
 
 class CreateTonOrderRequest(BaseModel):
+    plan_id: int
+
+
+class CreateUsdtTonOrderRequest(BaseModel):
     plan_id: int
 
 
@@ -56,6 +61,19 @@ async def create_ton_order(
     db: AsyncSession = Depends(get_db),
 ):
     return await create_ton_order_payload(
+        db=db,
+        current_user=current_user,
+        plan_id=req.plan_id,
+    )
+
+
+@router.post("/usdt-ton-orders")
+async def create_usdt_ton_order(
+    req: CreateUsdtTonOrderRequest,
+    current_user: User = Depends(get_payment_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await create_usdt_ton_order_payload(
         db=db,
         current_user=current_user,
         plan_id=req.plan_id,

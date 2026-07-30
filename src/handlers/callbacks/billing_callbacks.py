@@ -4,7 +4,10 @@ import urllib.parse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import ContextTypes
 
-from config import build_ton_payment_mini_app_url
+from config import (
+    build_ton_payment_mini_app_url,
+    build_usdt_ton_payment_mini_app_url,
+)
 from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
 from src.services.order_v2_service import (
@@ -135,12 +138,28 @@ async def recharge_back_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await safe_answer_query(query)
 
-    webapp_url = build_ton_payment_mini_app_url()
+    ton_webapp_url = build_ton_payment_mini_app_url()
     keyboard = [
         [
             InlineKeyboardButton(
+                _t(context, "billing.usdt_ton_monthly_plan_btn"),
+                web_app=WebAppInfo(
+                    url=build_usdt_ton_payment_mini_app_url(kind="membership")
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.usdt_ton_credit_btn"),
+                web_app=WebAppInfo(
+                    url=build_usdt_ton_payment_mini_app_url(kind="credits")
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 _t(context, "billing.ton_monthly_plan_btn"),
-                web_app=WebAppInfo(url=webapp_url),
+                web_app=WebAppInfo(url=ton_webapp_url),
             )
         ],
         [

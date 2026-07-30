@@ -33,8 +33,20 @@ def test_build_ton_payment_mini_app_url_targets_membership_billing():
         base_url="https://web.aivison.it.com/app?from=bot",
         version="release-42",
     )
-
     assert url == (
         "https://web.aivison.it.com/app/billing"
         "?from=bot&method=ton&kind=membership&v=release-42"
+    )
+
+
+def test_build_usdt_ton_payment_mini_app_url_targets_requested_plan_kind():
+    url = config.build_usdt_ton_payment_mini_app_url(
+        kind="credits",
+        base_url="https://web.aivison.it.com/app?from=bot",
+        version="release-42",
+    )
+
+    assert url == (
+        "https://web.aivison.it.com/app/billing"
+        "?from=bot&method=usdt-ton&kind=credits&v=release-42"
     )

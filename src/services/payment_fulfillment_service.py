@@ -27,8 +27,8 @@ from config import TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger("payment_fulfillment")
 RMB_AMOUNT_QUANT = Decimal("0.01")
-PaymentChannel = Literal["RMB", "TON", "XTR"]
-PaidUnit = Literal["rmb", "nanoton", "stars"]
+PaymentChannel = Literal["RMB", "TON", "USDT_TON", "XTR"]
+PaidUnit = Literal["rmb", "nanoton", "micro_usdt", "stars"]
 FulfillmentStatus = Literal["success", "amount_mismatch", "noop"]
 
 
@@ -134,6 +134,10 @@ def _paid_amount_as_decimal(command: PaymentFulfillmentCommand) -> Decimal:
         from src.constants import TON_TO_NANOTON
 
         return Decimal(str(command.paid_amount)) / Decimal(str(TON_TO_NANOTON))
+    if command.paid_unit == "micro_usdt":
+        from src.services.usdt_ton_payment_config import USDT_TON_SCALE
+
+        return Decimal(str(command.paid_amount)) / Decimal(str(USDT_TON_SCALE))
     return Decimal(str(command.paid_amount))
 
 
@@ -144,6 +148,14 @@ def _amount_matches(command: PaymentFulfillmentCommand, *, order, plan) -> bool:
         )
     if command.channel == "XTR":
         return int(command.paid_amount) == int(getattr(plan, "price_stars", 0))
+    if command.channel == "USDT_TON":
+        from src.services.usdt_ton_payment_config import USDT_TON_SCALE
+
+        expected_microusdt = int(
+            Decimal(str(getattr(plan, "price_usdt", 0)))
+            * Decimal(str(USDT_TON_SCALE))
+        )
+        return int(command.paid_amount) == expected_microusdt
 
     from src.constants import TON_SLIPPAGE_NANOTON, TON_TO_NANOTON
 
@@ -163,7 +175,7 @@ def _mark_order(
     order.payment_channel = command.channel
     order.status = status
     order.tx_hash = _truncate_tx_hash(command.external_tx_id)
-    if command.channel == "TON":
+    if command.channel in {"TON", "USDT_TON"}:
         order.final_price = _paid_amount_as_decimal(command)
     order.paid_at = paid_at
     if status != "SUCCESS":
@@ -234,13 +246,17 @@ async def _settle_order_membership(
     user.credits += plan.reward_credits
     user.current_identity = final_identity
     user.identity_expire_at = new_expire_at
-    if command.channel in {"TON", "XTR"}:
+    if command.channel in {"TON", "USDT_TON", "XTR"}:
         import json
 
         reason = (
             f"Telegram Stars 购买: {plan.name}"
             if command.channel == "XTR"
-            else f"TON 购买: {plan.name}"
+            else (
+                f"USDT-TON 购买: {plan.name}"
+                if command.channel == "USDT_TON"
+                else f"TON 购买: {plan.name}"
+            )
         )
         session.add(
             UserLog(

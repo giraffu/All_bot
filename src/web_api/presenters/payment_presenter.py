@@ -10,6 +10,7 @@ def build_payment_plan_item(plan) -> dict:
         "description": f"获得 {plan.reward_credits} 灵石",
         "price_rmb": float(plan.price_rmb),
         "price_ton": float(plan.price_ton),
+        "price_usdt": float(plan.price_usdt),
         "duration_days": plan.duration_days,
         "identity_override": plan.identity_name,
         "credits_granted": plan.reward_credits,
@@ -22,6 +23,9 @@ def build_payment_plans_payload(
     *,
     ton_payment_enabled: bool,
     ton_receiver_address: str | None,
+    usdt_ton_payment_enabled: bool = False,
+    usdt_ton_receiver_address: str | None = None,
+    usdt_ton_jetton_master_address: str | None = None,
 ) -> dict:
     return {
         "code": 0,
@@ -31,6 +35,15 @@ def build_payment_plans_payload(
             "ton_payment_enabled": ton_payment_enabled,
             "ton_receiver_address": (
                 ton_receiver_address if ton_payment_enabled else None
+            ),
+            "usdt_ton_payment_enabled": usdt_ton_payment_enabled,
+            "usdt_ton_receiver_address": (
+                usdt_ton_receiver_address if usdt_ton_payment_enabled else None
+            ),
+            "usdt_ton_jetton_master_address": (
+                usdt_ton_jetton_master_address
+                if usdt_ton_payment_enabled
+                else None
             ),
         },
     }
@@ -69,6 +82,31 @@ def build_ton_order_payload(
             "amount_nanotons": str(
                 int(Decimal(str(amount_ton)) * Decimal("1000000000"))
             ),
+        },
+    }
+
+
+def build_usdt_ton_order_payload(
+    *,
+    order,
+    usdt_comment: str,
+    amount_usdt,
+    usdt_receiver_address: str,
+    usdt_jetton_master_address: str,
+) -> dict:
+    amount_microusdt = int(Decimal(str(amount_usdt)) * Decimal("1000000"))
+    return {
+        "code": 0,
+        "message": "success",
+        "data": {
+            "order_id": get_order_public_id(order),
+            "business_order_id": order.business_order_id,
+            "legacy_order_id": order.order_id,
+            "usdt_comment": usdt_comment,
+            "usdt_receiver_address": usdt_receiver_address,
+            "usdt_jetton_master_address": usdt_jetton_master_address,
+            "amount_usdt": float(amount_usdt),
+            "amount_microusdt": str(amount_microusdt),
         },
     }
 

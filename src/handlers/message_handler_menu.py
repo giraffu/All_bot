@@ -4,7 +4,10 @@ from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
-from config import build_ton_payment_mini_app_url
+from config import (
+    build_ton_payment_mini_app_url,
+    build_usdt_ton_payment_mini_app_url,
+)
 from src.handlers.message_handler_common import get_reply_message
 from src.services.lazy_bot_entry_service import resolve_lazy_bot_url
 from src.services.main_bot_menu_runtime import (
@@ -76,12 +79,28 @@ async def build_back_to_main_payload(context) -> tuple[str, object]:
 
 
 def build_recharge_payload(context) -> tuple[str, InlineKeyboardMarkup]:
-    webapp_url = build_ton_payment_mini_app_url()
+    ton_webapp_url = build_ton_payment_mini_app_url()
     keyboard = [
         [
             InlineKeyboardButton(
+                context.t("billing.usdt_ton_monthly_plan_btn"),
+                web_app=WebAppInfo(
+                    url=build_usdt_ton_payment_mini_app_url(kind="membership")
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                context.t("billing.usdt_ton_credit_btn"),
+                web_app=WebAppInfo(
+                    url=build_usdt_ton_payment_mini_app_url(kind="credits")
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 context.t("billing.ton_monthly_plan_btn"),
-                web_app=WebAppInfo(url=webapp_url),
+                web_app=WebAppInfo(url=ton_webapp_url),
             )
         ],
         [

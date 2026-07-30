@@ -6,8 +6,9 @@ import { useI18n } from 'vue-i18n'
 import api from '@/api'
 import { useAuthStore, type PaymentAccountSummary } from '@/stores/auth'
 import { getRuntimeConfig } from '@/config/runtime'
+import { buildUsdtTonTransferMessage } from './usdtTonTransfer'
 
-export type PayMethod = 'alipay' | 'wxpay' | 'ton'
+export type PayMethod = 'alipay' | 'wxpay' | 'ton' | 'usdt-ton'
 export type BillingPlanKind = 'membership' | 'credits' | null
 type OrderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'
 type TelegramPaymentWebApp = {
@@ -47,7 +48,7 @@ export const resolveBillingEntry = (query: Record<string, unknown>): {
   const rawMethod = asSingleQueryValue(query.method)
   const rawKind = asSingleQueryValue(query.kind)
   const validMethod = rawMethod !== undefined
-    && (rawMethod === null || ['alipay', 'wxpay', 'ton'].includes(rawMethod))
+    && (rawMethod === null || ['alipay', 'wxpay', 'ton', 'usdt-ton'].includes(rawMethod))
   const validKind = rawKind !== undefined
     && (rawKind === null || ['membership', 'credits'].includes(rawKind))
 
@@ -73,6 +74,9 @@ export const filterPlansForBillingKind = <T extends { duration_days: number }>(
 type TonPlansAvailability = {
   ton_payment_enabled?: boolean
   ton_receiver_address?: string | null
+  usdt_ton_payment_enabled?: boolean
+  usdt_ton_receiver_address?: string | null
+  usdt_ton_jetton_master_address?: string | null
 }
 
 type TonOrderTransaction = {
@@ -88,6 +92,23 @@ export const resolveTonPaymentAvailability = (data: TonPlansAvailability) => {
   return {
     enabled,
     receiverAddress: enabled ? receiverAddress : null,
+  }
+}
+
+export const resolveUsdtTonPaymentAvailability = (data: TonPlansAvailability) => {
+  const receiverAddress = typeof data.usdt_ton_receiver_address === 'string'
+    ? data.usdt_ton_receiver_address.trim()
+    : ''
+  const jettonMasterAddress = typeof data.usdt_ton_jetton_master_address === 'string'
+    ? data.usdt_ton_jetton_master_address.trim()
+    : ''
+  const enabled = data.usdt_ton_payment_enabled === true
+    && receiverAddress.length > 0
+    && jettonMasterAddress.length > 0
+  return {
+    enabled,
+    receiverAddress: enabled ? receiverAddress : null,
+    jettonMasterAddress: enabled ? jettonMasterAddress : null,
   }
 }
 
@@ -157,6 +178,7 @@ export function useBillingPayments() {
   const tonConnectUI = shallowRef<TonConnectUI | null>(null)
   const tonWalletAddress = ref<string | null>(null)
   const tonPaymentEnabled = ref(false)
+  const usdtTonPaymentEnabled = ref(false)
   const currentTonOrderId = ref<string | null>(null)
   const pendingTonPayAfterConnect = ref(false)
   const isSubmittingTonPayment = ref(false)
@@ -212,6 +234,52 @@ export function useBillingPayments() {
     }
   }
 
+  const submitUsdtTonPayment = async (tonUI: TonConnectUI) => {
+    if (!selectedPlan.value || !tonWalletAddress.value) return
+    if (!usdtTonPaymentEnabled.value) {
+      message.warning(t('billing.usdt_ton_unavailable'))
+      return
+    }
+    if (isSubmittingTonPayment.value) return
+
+    isSubmittingTonPayment.value = true
+    isPaying.value = true
+    try {
+      const res = await api.post('/payment/usdt-ton-orders', {
+        plan_id: selectedPlan.value.id,
+      })
+      const usdtOrder = res.data?.data
+      const transaction = {
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [
+          buildUsdtTonTransferMessage(usdtOrder, tonWalletAddress.value),
+        ],
+      }
+      currentTonOrderId.value = usdtOrder?.order_id
+      const result = await tonUI.sendTransaction(transaction)
+      if (result) {
+        showPaymentModal.value = true
+        orderStatus.value = 'PENDING'
+        startTonPolling(currentTonOrderId.value)
+      }
+    } catch (error) {
+      console.error('USDT-TON transaction error:', error)
+      message.error(t('billing.usdt_ton_payment_error'))
+    } finally {
+      resetTonConnectIntent()
+      isSubmittingTonPayment.value = false
+      isPaying.value = false
+    }
+  }
+
+  const submitSelectedCryptoPayment = async (tonUI: TonConnectUI) => {
+    if (payMethod.value === 'usdt-ton') {
+      await submitUsdtTonPayment(tonUI)
+      return
+    }
+    await submitTonPayment(tonUI)
+  }
+
   const handleTonWalletStatusChange = (
     wallet: { account: { address: string } } | null
   ) => {
@@ -222,12 +290,16 @@ export function useBillingPayments() {
       return
     }
 
-    if (!pendingTonPayAfterConnect.value || payMethod.value !== 'ton' || !selectedPlan.value) {
+    if (
+      !pendingTonPayAfterConnect.value
+      || !['ton', 'usdt-ton'].includes(payMethod.value)
+      || !selectedPlan.value
+    ) {
       return
     }
 
     tonConnectUI.value?.closeModal('wallet-selected')
-    void submitTonPayment(tonConnectUI.value!)
+    void submitSelectedCryptoPayment(tonConnectUI.value!)
   }
 
   const ensureTonModules = async () => {
@@ -261,6 +333,9 @@ export function useBillingPayments() {
       if (res.data?.data) {
         plans.value = res.data.data.plans || res.data.data
         tonPaymentEnabled.value = resolveTonPaymentAvailability(
+          res.data.data
+        ).enabled
+        usdtTonPaymentEnabled.value = resolveUsdtTonPaymentAvailability(
           res.data.data
         ).enabled
       }
@@ -414,8 +489,15 @@ export function useBillingPayments() {
   }
 
   const openTonConnectModal = async () => {
-    if (!tonPaymentEnabled.value) {
-      message.warning(t('billing.ton_unavailable'))
+    const selectedMethodEnabled = payMethod.value === 'usdt-ton'
+      ? usdtTonPaymentEnabled.value
+      : tonPaymentEnabled.value
+    if (!selectedMethodEnabled) {
+      message.warning(t(
+        payMethod.value === 'usdt-ton'
+          ? 'billing.usdt_ton_unavailable'
+          : 'billing.ton_unavailable',
+      ))
       return
     }
     try {
@@ -471,6 +553,29 @@ export function useBillingPayments() {
     await submitTonPayment(tonUI)
   }
 
+  const handleUsdtTonPay = async () => {
+    if (!selectedPlan.value) return
+    if (!usdtTonPaymentEnabled.value) {
+      message.warning(t('billing.usdt_ton_unavailable'))
+      return
+    }
+    let tonUI: TonConnectUI | null = null
+    try {
+      tonUI = await ensureTonModules()
+    } catch (error) {
+      console.error('TON modules load error:', error)
+      message.error(t('billing.ton_wallet_load_error'))
+      return
+    }
+    if (!tonUI) return
+    if (!tonUI.connected) {
+      pendingTonPayAfterConnect.value = true
+      tonUI.openModal()
+      return
+    }
+    await submitUsdtTonPayment(tonUI)
+  }
+
   onMounted(async () => {
     await fetchPlans()
     if (route.query.order_id) {
@@ -486,7 +591,7 @@ export function useBillingPayments() {
   })
 
   watch(payMethod, async (method) => {
-    if (method !== 'ton') {
+    if (!['ton', 'usdt-ton'].includes(method)) {
       resetTonConnectIntent()
       return
     }
@@ -508,8 +613,10 @@ export function useBillingPayments() {
     orderStatus,
     tonWalletAddress,
     tonPaymentEnabled,
+    usdtTonPaymentEnabled,
     handleRmbPay,
     handleTonPay,
+    handleUsdtTonPay,
     openTonConnectModal,
     disconnectTonWallet,
     fetchPlans
