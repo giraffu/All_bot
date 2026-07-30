@@ -85,6 +85,15 @@ def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
         "scail2/2026-06-17-test/manifest.json",
         "img2img_lora/2026-06-10/manifest.json",
     )
+    assert profile.image_ref == (
+        "ghcr.io/giraffu/allbot-gpu-lan-scail2-flex"
+        "@sha256:7ed80ca5f2934c682ad2baaf83d56af3325ca92f00215a94cf6dcc0fc4a64552"
+    )
+    assert profile.all_in_one_image_ref == profile.image_ref
+    assert profile.lan_workspace_key == "scail2-flex-7ed80ca5f293"
+    assert slot.enabled is True
+    assert slot.phase == "catalog_ready"
+    assert slot.retargetable is True
     assert slot.target_task_types == SCAIL2_FLEX_TASK_TYPES
     assert slot.legacy_worker_id == "lan_aio_prod_gpu002_gpu0_scail2_01"
     assert slot.old_runtime_container == (
