@@ -105,6 +105,10 @@ POOL_NODE_ID = os.getenv("POOL_NODE_ID", "")
 POOL_PROVIDER = os.getenv("POOL_PROVIDER", "")
 POOL_GPU_INDEX = os.getenv("POOL_GPU_INDEX", "")
 POOL_RUNTIME_PROFILE = os.getenv("POOL_RUNTIME_PROFILE", "")
+RESET_COMFY_MEMORY_BEFORE_TASK = os.getenv(
+    "RESET_COMFY_MEMORY_BEFORE_TASK",
+    "",
+).strip().lower() in {"1", "true", "yes", "on"}
 POOL_IMAGE_REF = os.getenv("POOL_IMAGE_REF", "")
 POOL_MODEL_BUNDLE_VERSIONS = os.getenv("POOL_MODEL_BUNDLE_VERSIONS", "")
 POOL_MANAGED = os.getenv("POOL_MANAGED", "")
@@ -817,11 +821,11 @@ class ComfyAgent:
             return False
         return task_type in self._prefetch_task_types
 
-    async def _reset_comfy_memory_for_all_profile(self) -> None:
-        if POOL_RUNTIME_PROFILE != "all":
+    async def _reset_comfy_memory_before_task(self) -> None:
+        if POOL_RUNTIME_PROFILE != "all" and not RESET_COMFY_MEMORY_BEFORE_TASK:
             return
         logger.info(
-            "Releasing resident ComfyUI models before all-profile task submission"
+            "Releasing resident ComfyUI models before multi-model task submission"
         )
         await self.comfy_client.free_memory()
 
@@ -1506,7 +1510,7 @@ class ComfyAgent:
                 downloaded_input_paths=downloaded_input_paths,
             )
 
-        await self._reset_comfy_memory_for_all_profile()
+        await self._reset_comfy_memory_before_task()
         await submit_task_workflow(
             task_id=task_id,
             task_type=task_type,

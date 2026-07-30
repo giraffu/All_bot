@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -58,6 +59,102 @@ LTX_UNIFIED_TASK_TYPES = (
     "ltx_t2v",
     "ltx_t2v_ic",
 )
+SCAIL2_FLEX_PREFERRED_TASK_TYPES = (
+    "scail2_action_transfer",
+    "scail2_action_transfer_long",
+    "scail2_video_replacement",
+    "scail2_face_swap_v2",
+)
+SCAIL2_FLEX_TASK_TYPES = (
+    *SCAIL2_FLEX_PREFERRED_TASK_TYPES,
+    "img2img",
+    "img2img_lora",
+)
+
+
+def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
+    config = load_controller_config()
+    profile = config.profiles["scail2_flex"]
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+    slot = slots["gpu-002-gpu0-scail2_flex"]
+
+    assert profile.task_types == SCAIL2_FLEX_TASK_TYPES
+    assert profile.preferred_task_types == SCAIL2_FLEX_PREFERRED_TASK_TYPES
+    assert profile.reset_comfy_memory_before_task is True
+    assert profile.model_manifest_keys == (
+        "scail2/2026-06-17-test/manifest.json",
+        "img2img_lora/2026-06-10/manifest.json",
+    )
+    assert slot.target_task_types == SCAIL2_FLEX_TASK_TYPES
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu002_gpu0_scail2_01"
+    assert slot.old_runtime_container == (
+        "allbot-lan-aio-gpu-002-gpu0-scail2-prod"
+    )
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert environment["SUPPORTED_TASK_TYPES"] == ",".join(SCAIL2_FLEX_TASK_TYPES)
+    assert environment["PREFERRED_TASK_TYPES"] == ",".join(
+        SCAIL2_FLEX_PREFERRED_TASK_TYPES
+    )
+    assert environment["PIPELINE_TASK_TYPES"] == ",".join(SCAIL2_FLEX_TASK_TYPES)
+    assert environment["PREFETCH_TASK_TYPES"] == ",".join(
+        SCAIL2_FLEX_PREFERRED_TASK_TYPES
+    )
+    assert environment["PREFETCH_RESERVE_TASK"] == "true"
+    assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
+    assert environment["POOL_RUNTIME_PROFILE"] == "scail2_flex"
+    assert (
+        environment["PIPELINE_PROFILE_POLICY"]
+        == "media_claim2_comfy1_delivery1_v1"
+    )
+    assert json.loads(environment["RUNPOD_MODEL_MANIFEST_KEYS"]) == list(
+        profile.model_manifest_keys
+    )
+
+
+def test_existing_profiles_do_not_gain_preferred_queue_environment():
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = slots["gpu-002-gpu0-scail2"]
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+
+    assert "PREFERRED_TASK_TYPES" not in environment
+    assert environment["PREFETCH_TASK_TYPES"] == environment["SUPPORTED_TASK_TYPES"]
+
+
+def test_profile_rejects_preferred_task_type_outside_supported_set(tmp_path):
+    config_root = tmp_path / "config"
+    shutil.copytree("ops/gpu_pool_controller/config", config_root)
+    profiles_path = config_root / "task_profiles.yml"
+    document = yaml.safe_load(profiles_path.read_text(encoding="utf-8"))
+    document["profiles"]["scail2"]["preferred_task_types"] = [
+        "scail2_action_transfer",
+        "img2img",
+    ]
+    profiles_path.write_text(
+        yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="preferred_task_types must be a subset of task_types",
+    ):
+        load_controller_config(config_root)
 
 
 def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():

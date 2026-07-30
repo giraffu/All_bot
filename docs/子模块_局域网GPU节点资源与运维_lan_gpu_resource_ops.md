@@ -687,3 +687,16 @@ python scripts/lan_aio_fleet_prod_ops.py takeover \
 视频换脸前置图片换脸链、自由 P 图 v3 后置换脸链，并完成不少于两小时且至少
 十个连续真实任务的稳定观察；一次性任务 ID、日志和当前容量只写运行证据，不
 写入 Git。
+
+## 14. gpu-002 SCAIL-2 flex 候选
+
+`gpu-002-gpu0-scail2_flex` 只替换同一物理槽上的
+`gpu-002-gpu0-scail2`。它支持四类 SCAIL-2 与
+`img2img,img2img_lora`，但 preferred 和 reserve prefetch 都严格限制为四类
+SCAIL-2。候选使用独立 agent、container、runtime workspace 和两份模型
+manifest；原 SCAIL-2 exact digest 与 workspace 必须保留为 rollback。
+
+artifact 固定并完成 warm-cache 后，只能在当前任务和 Comfy queue 自然清空时
+通过单槽 `release-rollout` 切换；禁止手写 Compose、强杀任务或把 fallback
+加入 `PREFETCH_TASK_TYPES`。正式启用前必须验证 disabled heartbeat、六类
+workflow、两份 manifest、显存释放开关和 preferred/fallback 领取顺序。

@@ -58,6 +58,42 @@ profiles:
       - i2i_pro/2026-06-14-test/manifest.json
       - ltx_t2v/2026-07-22/manifest.json
 
+  scail2_flex:
+    runtime_profile: scail2_flex
+    task_types:
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+      - img2img
+      - img2img_lora
+    preferred_task_types:
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+    reset_comfy_memory_before_task: true
+    model_bundles:
+      - scail2_baseline
+      - img2img_lora_baseline
+    required_nodes:
+      - WanSCAILToVideo
+      - SCAIL2ColoredMask
+      - SAM3_VideoTrack
+      - VHS_LoadVideo
+      - VHS_VideoCombine
+      - UNETLoader
+    min_vram_gb: 48
+    image_ref: 192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33
+    model_prefix: scail2_flex/lan
+    model_manifest_key: scail2/2026-06-17-test/manifest.json
+    model_manifest_keys:
+      - scail2/2026-06-17-test/manifest.json
+      - img2img_lora/2026-06-10/manifest.json
+    lan_workspace_key: scail2-flex-bootstrap
+    lan_model_workspace_key: scail2-flex
+
   face_i2i_t2i:
     runtime_profile: face_i2i_t2i
     task_types:

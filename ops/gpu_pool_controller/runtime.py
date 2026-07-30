@@ -73,10 +73,12 @@ LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     "ltx_unified": LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
+    "scail2_flex": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
 }
 LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "all": LAN_AIO_LTX_T2V_ENV,
     "scail2": LAN_AIO_SCAIL2_ENV,
+    "scail2_flex": LAN_AIO_SCAIL2_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
     "ltx_unified": LAN_AIO_LTX_T2V_ENV,
 }
@@ -442,6 +444,21 @@ class RuntimePlanner:
         user_data_bucket = environment_settings["user_data_bucket"]
         agent_id = overrides.agent_id or assignment.worker_id
         supported_task_types = ",".join(target_task_types)
+        preferred_task_types = profile.preferred_task_types
+        unsupported_preferred = sorted(
+            set(preferred_task_types) - set(target_task_types)
+        )
+        if unsupported_preferred:
+            raise ValueError(
+                f"profile {profile.id} preferred task types are not enabled by "
+                f"slot {slot_id}: {', '.join(unsupported_preferred)}"
+            )
+        preferred_task_types_csv = ",".join(preferred_task_types)
+        prefetch_task_types = (
+            preferred_task_types_csv
+            if preferred_task_types
+            else supported_task_types
+        )
         model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
         model_manifest_key = (
             profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
@@ -541,6 +558,11 @@ class RuntimePlanner:
                         "RUNPOD_RELAY_READY_PATH": "/ready",
                         "SUPPORTED_TASK_TYPES": supported_task_types,
                         **(
+                            {"PREFERRED_TASK_TYPES": preferred_task_types_csv}
+                            if preferred_task_types_csv
+                            else {}
+                        ),
+                        **(
                             {"TASK_TYPE_WORKFLOW_OVERRIDES": workflow_overrides}
                             if workflow_overrides
                             else {}
@@ -556,6 +578,11 @@ class RuntimePlanner:
                             overrides,
                         ),
                         "POOL_RUNTIME_PROFILE": profile.runtime_profile,
+                        **(
+                            {"RESET_COMFY_MEMORY_BEFORE_TASK": "true"}
+                            if profile.reset_comfy_memory_before_task
+                            else {}
+                        ),
                         "POOL_IMAGE_REF": image_ref,
                         "POOL_MODEL_BUNDLE_VERSIONS": json.dumps(
                             bundle_versions,
@@ -582,7 +609,7 @@ class RuntimePlanner:
                         "PREFETCH_ENABLED": "true",
                         "PREFETCH_RESERVE_TASK": "true",
                         "PREFETCH_DEPTH": "1",
-                        "PREFETCH_TASK_TYPES": supported_task_types,
+                        "PREFETCH_TASK_TYPES": prefetch_task_types,
                         "PREFETCH_CONSUME_WAIT_SECONDS": "10",
                         **pipeline_environment,
                         "CANCEL_LOCK_ON_POP": "true",

@@ -31,6 +31,7 @@
     "face_swap": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-face-swap", "dockerfile": "workers/runpod_profiles/face_swap/Dockerfile", "environments": ["test", "prod"]},
     "pornmaster_flux2_edit_bf16": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-pornmaster-flux2-edit-bf16", "dockerfile": "workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile", "environments": ["test", "prod"]},
     "scail2": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-scail2", "dockerfile": "workers/runpod_profiles/scail2/Dockerfile", "environments": ["test", "prod"]},
+    "lan_scail2_flex": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-lan-scail2-flex", "dockerfile": "workers/runpod_profiles/scail2_flex/Dockerfile", "environments": ["test", "prod"]},
     "image_to_video": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-wan22-aio-video", "dockerfile": "workers/runpod_profiles/wan22_aio_video/Dockerfile", "environments": ["test", "prod"]},
     "wan22_video_v2": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-wan22-aio-video", "dockerfile": "workers/runpod_profiles/wan22_aio_video/Dockerfile", "environments": ["test", "prod"]},
     "ltx_video": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-video-v2", "dockerfile": "workers/runpod_profiles/ltx_video/Dockerfile", "environments": ["test", "prod"]},
