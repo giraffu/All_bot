@@ -689,3 +689,38 @@ async def test_persist_successful_web_history_routes_through_persistence_boundar
             warmup_web_history=True,
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_web_history_default_forwards_private_asset_postprocess_plan(monkeypatch):
+    persist_mock = AsyncMock()
+    monkeypatch.setattr(
+        task_core_persistence, "_persist_successful_web_history", persist_mock
+    )
+    postprocess_plan = TaskPersistencePostprocessPlan(
+        source="web",
+        record_history=False,
+        refresh_user_group_after_log=False,
+        warmup_web_history=False,
+    )
+
+    await task_core_persistence.persist_successful_web_history_default(
+        backend_task_id="backend-1",
+        registry_task_id="registry-1",
+        internal_user_id=123,
+        username="tester",
+        prompt="front portrait",
+        task_type="character_reference_build",
+        input_images=["source.png"],
+        allow_contribute=False,
+        is_video=False,
+        result_path="private/view.png",
+        billing_resolution=None,
+        output_width=None,
+        output_height=None,
+        output_duration=None,
+        requested_duration=None,
+        postprocess_plan=postprocess_plan,
+    )
+
+    assert persist_mock.await_args.kwargs["postprocess_plan"] == postprocess_plan
