@@ -274,6 +274,8 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "@sha256:[0-9a-f]{64}" in deploy
     assert "--confirm-prod" in deploy
     assert "--state-backend remote" in deploy
+    assert "\n          python -" not in build
+    assert "python3 scripts/release.py build" in build
 
 
 def test_image_digest_reader_accepts_buildx_json_string_for_oci_index(tmp_path):

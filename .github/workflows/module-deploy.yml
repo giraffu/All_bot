@@ -104,7 +104,7 @@ jobs:
           if [ "$env_name" = prod ] && [ "$ACTION" != status ]; then
             args+=(--confirm-prod)
           fi
-          python scripts/release.py "${args[@]}"
+          python3 scripts/release.py "${args[@]}"
 
       - name: Remove tmpfs credentials
         if: always()
