@@ -71,6 +71,9 @@ sequenceDiagram
 - 路由已提供：
   - `POST /api/auth/login`
   - `POST /api/auth/bind-password`
+- 密码登录入口可以在未配置 `BOT_TOKEN` 的独立服务中启动；此时只跳过
+  Telegram 安全通知，JWT、密码校验、限流、`password_version` 和动态权限
+  检查保持不变。Telegram 验签入口在 Token 缺失时仍 fail-closed。
 - 密码不是明文 bcrypt，而是先 `SHA256` 再 `bcrypt`。
 - 登录与绑定密码都接入 Redis Lua 限流脚本，按 IP 和用户双维度限制爆破。
 - 改密成功后会：

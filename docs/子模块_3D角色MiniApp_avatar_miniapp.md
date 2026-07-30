@@ -6,6 +6,10 @@
 账号、PostgreSQL、Redis、MinIO 和 `CharacterReference`，但不绑定 Telegram
 Bot、公网域名、GPU、ComfyUI 或生产发布。
 
+容器沿用共享运行环境身份：测试环境使用 `ALLBOT_ENV=test` 与
+`BOT_TYPE=TEST`。Mini App 只挂密码登录，因此允许 `BOT_TOKEN` 为空；空值只
+禁用 Telegram 登录安全通知，不放宽 JWT、密码、限流或资源归属校验。
+
 本地 `local_fixture` 是不计费的开发 provider：它生成项目自有的写实比例、
 非真人肖像成年女性 mannequin，用于验证 3D 预览、骨骼动作和 CPU 视频导出。
 它不会根据用户上传图片重建真人，也不写入正式任务 History。正式多视角建模
