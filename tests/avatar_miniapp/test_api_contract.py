@@ -1,3 +1,8 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -55,3 +60,35 @@ async def test_miniapp_character_list_requires_real_authentication():
         response = await client.get("/api/miniapp/characters")
 
     assert response.status_code == 401
+
+
+def test_password_only_miniapp_starts_without_telegram_bot_token():
+    environment = {
+        **os.environ,
+        "ALLBOT_ENV": "test",
+        "BOT_TYPE": "TEST",
+        "BOT_TOKEN": "",
+    }
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import src.avatar_miniapp.api"],
+        cwd=Path(__file__).resolve().parents[2],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_lan_compose_uses_the_shared_runtime_identity():
+    compose = (
+        Path(__file__).resolve().parents[2]
+        / "avatar_miniapp"
+        / "docker-compose.lan.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "BOT_TYPE: ${BOT_TYPE:-TEST}" in compose
+    assert "BOT_TYPE: ${BOT_TYPE:-avatar_miniapp}" not in compose

@@ -1,7 +1,7 @@
 import logging
+import os
 from typing import Optional
 
-from src.runtime_environment import require_env
 from src.core.auth_core_dependencies import build_auth_core_dependencies
 from src.core.auth_core_flows import (
     authenticate_and_get_user_flow,
@@ -34,7 +34,7 @@ from src.core.auth_core_rate_limit import (
 )
 
 logger = logging.getLogger(__name__)
-BOT_TOKEN = require_env("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip() or None
 
 
 class AuthCoreError(Exception):
