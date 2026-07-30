@@ -3,12 +3,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  buildUsdtTonConfirmationDetails,
   buildTonTransactionMessage,
   filterPlansForBillingKind,
   hasTelegramExternalLinkOpener,
   openExternalPaymentUrl,
   resolveBillingEntry,
   resolveTonPaymentAvailability,
+  resolveUsdtTonPaymentAvailability,
 } from './useBillingPayments'
 
 const setTelegramWebApp = (webApp?: unknown) => {
@@ -73,6 +75,38 @@ describe('openExternalPaymentUrl', () => {
 })
 
 describe('TON payment contract', () => {
+  it('keeps native TON and USDT-TON availability independent', () => {
+    const data = {
+      ton_payment_enabled: true,
+      ton_receiver_address: 'UQnative-ton-merchant',
+      usdt_ton_payment_enabled: false,
+      usdt_ton_receiver_address: 'UQusdt-ton-merchant',
+      usdt_ton_jetton_master_address: 'EQofficial-usdt-master',
+    }
+
+    expect(resolveTonPaymentAvailability(data)).toEqual({
+      enabled: true,
+      receiverAddress: 'UQnative-ton-merchant',
+    })
+    expect(resolveUsdtTonPaymentAvailability(data)).toEqual({
+      enabled: false,
+      receiverAddress: null,
+      jettonMasterAddress: null,
+    })
+  })
+
+  it('builds an explicit USDT-TON confirmation before opening the wallet', () => {
+    expect(buildUsdtTonConfirmationDetails({
+      amount_usdt: 10,
+      usdt_receiver_address: 'UQusdt-ton-merchant',
+    })).toEqual({
+      amount: '10 USDT',
+      network: 'TON',
+      receiverAddress: 'UQusdt-ton-merchant',
+      maxGas: '0.05 TON',
+    })
+  })
+
   it('resolves the Bot TON deep link and filters membership plans', () => {
     const entry = resolveBillingEntry({ method: 'ton', kind: 'membership' })
     const plans = [

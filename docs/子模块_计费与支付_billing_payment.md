@@ -124,6 +124,10 @@ sequenceDiagram
   Web/Mini App 通过 TON Connect 向付款人的 USDT Jetton wallet 发送 TEP-74
   transfer，并把订单 payload 放入 `forward_payload`；外层附带 0.05 TON
   执行费用，`forward_ton_amount >= 1` 以触发收款通知。
+- USDT-TON 在调用钱包 `sendTransaction` 前先展示应用内二次确认，确认内容取自
+  本次服务端预建单，固定包含 USDT 金额、TON 网络、完整商户地址和最多附带
+  0.05 TON Gas；同时提示部分钱包只展示外层 Gas，不能把钱包里的 `0.05 TON`
+  误认为套餐金额。取消二次确认不得调用钱包。
 - `UsdtTonPaymentValidator` 使用 TON Center v3 Jetton transfer 索引，只接受
   官方 master、目标为规范化商户钱包、`transaction_aborted=false`、非空交易
   哈希、精确微 USDT 金额和有效 `ORDER` / `ORDER_V2` forward payload。
@@ -132,6 +136,9 @@ sequenceDiagram
 - `USDT_TON_PAYMENT_ENABLED=true` 时，Web API 与 main Bot 均要求合法
   `VITE_MERCHANT_ADDRESS`；缺失或非法时 fail closed。原生 TON 的
   `TON_PAYMENT_POLLING_ENABLED` 保持独立，两个通道可以分别启停。
+- Web 支付方式必须把 `TON（原生币）` 与 `USDT（TON 网络）` 显示为两个独立
+  入口；各自只受对应可用性字段控制，不得因启用 USDT-TON 隐藏或复用原生
+  TON 入口。
 - TON 商户地址的唯一运行时事实源是受限宿主环境 `VITE_MERCHANT_ADDRESS`，由 `src/services/ton_payment_config.py` 使用 TON 地址库校验并规范化；代码常量、前端常量和旧 `src/constants.py` 都不能充当支付兜底。`TON_PAYMENT_POLLING_ENABLED=true` 但地址缺失或非法时，Bot 只记录一次结构化配置错误并不创建 poller，Web 将 TON 标记为不可用。
 - `GET /api/payment/plans` 返回 `ton_payment_enabled` 和可空的 `ton_receiver_address`；禁用时地址必须为 `null`。`POST /api/payment/ton-orders` 在套餐查询、`Order` 构造和事务提交前检查可用性，不可用时返回 `503 / TON_PAYMENT_UNAVAILABLE`，不得留下 `PENDING` 订单。Vue 交易地址只能取自订单响应，不能保留接收地址硬编码或使用套餐地址兜底。
 - `POST /api/payment/orders`、`POST /api/payment/ton-orders` 与本人订单状态查询接受完整 Web 会话或支付会话；成功状态附带白名单账户摘要，供充值页刷新灵石、身份、到期时间与境界，不要求支付用户调用受限的 `/api/users/me`。
