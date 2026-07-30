@@ -266,6 +266,35 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
     assert "up -d --no-deps --wait --wait-timeout 120 dashboard-backend" in captured["script"]
 
 
+@pytest.mark.parametrize(
+    ("environment", "expected_network"),
+    (("test", "--network allbot-test_default"), ("prod", None)),
+)
+def test_database_migration_uses_only_the_test_compose_network(
+    monkeypatch, environment, expected_network
+):
+    module = _load_module()
+    captured = {}
+
+    def fake_run(command, **_kwargs):
+        captured["command"] = command
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    module.SystemAdapters({})._deploy_migration(
+        environment,
+        "ghcr.io/example/migration@sha256:" + "1" * 64,
+        {"remote_host": "control"},
+    )
+
+    remote_command = captured["command"][-1]
+    if expected_network is None:
+        assert "--network" not in remote_command
+    else:
+        assert expected_network in remote_command
+
+
 def test_migration_failure_is_reported_without_rollback(tmp_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

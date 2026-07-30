@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from scripts import cloud_prod_generation_release_gate as gate
 
 
@@ -58,9 +60,80 @@ def test_generation_maintenance_uses_dedicated_marker(capsys):
 
     output = capsys.readouterr().out
 
-    assert "/app/GENERATION_MAINTENANCE" in output
+    assert "/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE" in output
     assert "/app/runtime-flags/GENERATION_MAINTENANCE" in output
-    assert "/app/MAINTENANCE" not in output
+    for service in (
+        "web-api",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+    ):
+        assert service in output
+    assert "com.docker.compose.service=" in output
+    assert "cloud-web-api-prod" not in output
+
+
+def test_refund_pending_runs_inside_exact_web_digest(capsys):
+    digest = "ghcr.io/giraffu/allbot-web-api@sha256:" + "1" * 64
+
+    result = gate.main(
+        [
+            "refund-pending",
+            "--runtime-image",
+            digest,
+            "--runtime-sha",
+            "a" * 40,
+            "--control-host",
+            "prod-host",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert f"docker pull {digest}" in output
+    assert "--network allbot-prod_default" in output
+    assert "--env-file /var/lib/allbot/config/prod/current/web-api.env" in output
+    assert "io.allbot.release.module" in output
+    assert "org.opencontainers.image.revision" in output
+    assert "-m src.ops.generation_release_refund" in output
+    assert "--execute" not in output
+
+
+def test_refund_pending_rejects_mutable_runtime_image():
+    with pytest.raises(SystemExit, match="exact digest"):
+        gate.main(
+            [
+                "refund-pending",
+                "--runtime-image",
+                "ghcr.io/giraffu/allbot-web-api:latest",
+                "--runtime-sha",
+                "a" * 40,
+            ]
+        )
+
+
+def test_refund_dry_run_can_execute_remote_container_without_mutating(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(host, script, *, execute):
+        captured.update(host=host, script=script, execute=execute)
+
+    monkeypatch.setattr(gate, "run_ssh", fake_run_ssh)
+    digest = "ghcr.io/giraffu/allbot-web-api@sha256:" + "1" * 64
+
+    gate.main(
+        [
+            "refund-pending",
+            "--runtime-image",
+            digest,
+            "--runtime-sha",
+            "a" * 40,
+            "--run-runtime",
+        ]
+    )
+
+    assert captured["execute"] is True
+    assert "--execute" not in captured["script"]
 
 
 class FakeRedis:

@@ -22,7 +22,13 @@
 
 主 Bot 的懒人入口配置使用 `MAIN_BOT_LAZY_BOT_ENABLED`、`MAIN_BOT_LAZY_BOT_URL` / `MAIN_BOT_LAZY_BOT_USERNAME`，只允许影响 `main-bot`。正式 username 固定为 `@QQCC666_bot`，应解析为 `https://t.me/QQCC666_bot`；新命名空间任一键存在即整组优先，旧 `QQCC_LAZY_BOT_*` 仅在新键完全不存在时兼容回退。
 
-首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
+正式生成维护的唯一事实源是
+`/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE`；它由 immutable Compose
+挂载到 Web、Main Bot、QQCC Bot 和 Private Bot Worker 的
+`/app/runtime-flags/GENERATION_MAINTENANCE`。不得再依赖 legacy 源码目录 marker
+或 `cloud-*` 容器名。控制面发布器不得触碰任何正式或测试 Worker；正式 Pages
+必须具备可验证、可回滚的 canonical production deployment ID。不满足只报告
+blocker，不自动修正式环境。
 
 > 2026-07-28 维护模式选择：`promote` 根据目标模块与策略固定内部语义，并在预览中显示实际维护模式。显式模块 migration 可由同一条生产命令同时提供 `--no-maintenance --confirm-db-upgrade`，仅豁免 forward generation maintenance/drain；仍执行 strict、数据库备份、单 Alembic head、`upgrade head`、事务日志与失败恢复。首次/legacy 切换、未知影响或其它 blocker 不能豁免。禁止手工写删 marker 或静默按另一模式上线。
 
@@ -288,11 +294,29 @@ SCAIL-2 的正式上线起始边界是“只更新云正式主控制面 + 正式
 ```bash
 cd /home/hfy/APP/All_bot
 scripts/cloud_prod_generation_release_gate.py enable-maintenance --execute
-scripts/cloud_prod_generation_release_gate.py wait-pending --threshold 10 --timeout-seconds 3600
-scripts/cloud_prod_generation_release_gate.py refund-pending --threshold 10 --execute
+scripts/cloud_prod_generation_release_gate.py refund-pending \
+  --runtime-image ghcr.io/giraffu/allbot-web-api@sha256:<digest> \
+  --runtime-sha <40位最终SHA> --run-runtime --allow-above-threshold
+scripts/cloud_prod_generation_release_gate.py refund-pending \
+  --runtime-image ghcr.io/giraffu/allbot-web-api@sha256:<digest> \
+  --runtime-sha <40位最终SHA> --execute --allow-above-threshold
 ```
 
-`enable-maintenance --execute` 在 `cloud-web-api-prod`、`cloud-tg-bot-prod` 与正在运行的 `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成进入。不要为这类低影响发布写 `/app/MAINTENANCE`，它会触发 Web API 全局 503 并影响结果轮询、历史等非提交接口。`wait-pending` 与 `refund-pending` 必须在能访问正式 Redis 的 `allbot-do-sgp1-control` 上运行；本地主服务器直连正式 Redis 超时不代表队列闸门不可用。`refund-pending --execute` 只处理仍在 Central pending zset 中的任务，按维护发布退款类型 `refund_prod_maintenance_release` 走统一 finalization，释放并发锁并退款；running 任务不强杀。
+`enable-maintenance --execute` 原子写共享宿主 marker，并通过 Compose project/service
+label 解析 `web-api`、`bot`、`qqcc-bot`、`qqcc-private-bot-worker`，逐个确认
+容器内 runtime marker 可见；任一入口缺失或不可见即保持维护并失败。不要写
+`/app/MAINTENANCE`，它会触发 Web API 全局 503 并影响结果轮询、历史等非提交
+接口。
+
+`refund-pending` 不再从本地源码直连正式 Redis。它要求最终 Web API
+`repository@sha256:digest` 和同一 40 位 OCI revision，在正式控制机校验
+`io.allbot.release.module=web-api` 后，以一次性容器复用
+`/var/lib/allbot/config/prod/current/web-api.env` 与
+`allbot-prod_default`。`--run-runtime` 只运行无 PII 汇总；确认
+`orphan_pending_count=0` 后才用 `--execute --allow-above-threshold`。执行只对
+仍能原子 ZREM 的 pending 任务走统一幂等 finalization；已被 Worker 移走的任务
+计入 `moved_count`，不抢占、不退款，running 任务不强杀。账本幂等金额冲突、
+无效/重复 backend 映射或 orphan 均返回 blocked，维护保持开启。
 
 slot0 runtime 接管：
 

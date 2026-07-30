@@ -1001,9 +1001,15 @@ mv -Tf {root}/current.new {root}/current
     ) -> None:
         target = ENVIRONMENTS[environment]
         host = str(context.get("remote_host") or target["host"])
+        network = (
+            f"--network {target['project']}_default "
+            if environment == "test"
+            else ""
+        )
         command = (
             f"docker pull {artifact} && "
-            f"docker run --rm --env-file {target['env_file']} {artifact} upgrade head"
+            f"docker run --rm {network}--env-file {target['env_file']} "
+            f"{artifact} upgrade head"
         )
         result = _run(["ssh", "-o", "BatchMode=yes", host, command])
         if result.returncode:
