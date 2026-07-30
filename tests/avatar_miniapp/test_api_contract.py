@@ -92,3 +92,11 @@ def test_lan_compose_uses_the_shared_runtime_identity():
 
     assert "BOT_TYPE: ${BOT_TYPE:-TEST}" in compose
     assert "BOT_TYPE: ${BOT_TYPE:-avatar_miniapp}" not in compose
+
+
+def test_caddy_selects_the_lan_ip_certificate_without_sni():
+    caddyfile = (
+        Path(__file__).resolve().parents[2] / "avatar_miniapp" / "Caddyfile"
+    ).read_text(encoding="utf-8")
+
+    assert "default_sni {$MINIAPP_LAN_HOST:localhost}" in caddyfile
