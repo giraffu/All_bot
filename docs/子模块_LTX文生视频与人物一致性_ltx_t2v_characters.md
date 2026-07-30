@@ -151,6 +151,12 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 不会污染闪回瓶，也不允许投稿；前端把返回的根 task ID 登记到统一任务 store，
 因此与普通生成任务一样显示悬浮球、状态和取消入口。
 
+练功房支持批量生成当前草稿中尚未生成或已失败的子图，已 `ready/pending` 的
+槽位不会重复提交。前端每轮读取 `GET /api/characters/batch-capacity` 返回的
+后端权威 `limit/active/available`，只补满实时可用任务锁；没有槽位时等待已有
+任务终态释放锁，再继续逐张调用原单图生成接口。该调度不创建新的批量业务任务，
+不合并 task ID/扣费/退款，也不从固定最多 3 个的悬浮任务球数量推断并发上限。
+
 旧 `POST /api/characters/build`、`character_reference_build` workflow、
 `character_view_index` patcher 和结果物化只保留一次六图兼容语义；新子图入口
 不得再路由到该专用 worker type。
@@ -188,6 +194,8 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 人物 API 为：
 
 - `POST /api/characters/drafts`：创建免费草稿；
+- `GET /api/characters/batch-capacity`：只读返回当前用户任务锁的
+  `limit/active/available`；
 - `POST /api/characters/{id}/views/{view_type}/generate`：生成或重生一个子图；
 - `POST /api/characters/{id}/save`：至少两个 ready 子图后合成/更新参考表；
 - `GET /api/characters`、`PATCH /api/characters/{id}`、
@@ -210,7 +218,8 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 ## 6. Web 与验收
 
 测试 Web 发布后，“练功房 → 人物参考图”提供上传、六个子图 tab、各槽位默认
-prompt 编辑、自由 P 图三模式选择、独立生成/重生、统一悬浮球状态和至少两图保存。
+prompt 编辑、自由 P 图三模式选择、独立生成/重生、按实时并发锁补位的未生成子图
+批量提交、统一悬浮球状态和至少两图保存。
 “修仙笔记 → 人物图库”提供合成表与六子图查看、同样的三模式重生和重新合成；
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
 可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格

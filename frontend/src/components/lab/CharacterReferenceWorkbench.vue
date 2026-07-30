@@ -13,6 +13,10 @@ import type {
 } from '@/api/characters'
 import { useUpload } from '@/composables/useUpload'
 import {
+  getMissingCharacterViewTypes,
+  runCharacterViewBatch,
+} from '@/features/characters/characterBatchGeneration'
+import {
   CHARACTER_VIEW_ENGINE_OPTIONS,
   getCharacterViewEngineCost,
 } from '@/features/characters/characterViewEngines'
@@ -71,12 +75,16 @@ const creatingDraft = ref(false)
 const generatingView = ref<CharacterViewType | null>(null)
 const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const saving = ref(false)
+const batchGenerating = ref(false)
+const batchSubmitted = ref(0)
+const batchTotal = ref(0)
 const prompts = reactive<Record<CharacterViewType, string>>(
   Object.fromEntries(
     VIEW_DEFINITIONS.map(view => [view.type, view.defaultPrompt]),
   ) as Record<CharacterViewType, string>,
 )
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let batchRunId = 0
 
 const draft = computed<CharacterReference | null>(() => (
   store.items.find(item => item.id === draftId.value) ?? null
@@ -97,6 +105,13 @@ const hasPendingView = computed(() => (
   draft.value?.views.some(view => view.status === 'pending') ?? false
 ))
 const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
+const missingViewTypes = computed(() => getMissingCharacterViewTypes(
+  VIEW_DEFINITIONS.map(view => view.type),
+  draft.value?.views ?? [],
+))
+const batchEstimatedCost = computed(() => (
+  missingViewTypes.value.length * selectedEngineCost.value
+))
 
 const refreshDraft = async () => {
   await store.refresh()
@@ -161,6 +176,77 @@ const generateView = async () => {
   }
 }
 
+const isConcurrencyLimitError = (error: unknown) => {
+  const response = (error as {
+    response?: { status?: number; data?: { detail?: unknown } }
+  })?.response
+  return response?.status === 429
+    && typeof response.data?.detail === 'string'
+    && response.data.detail.includes('正在处理中')
+}
+
+const waitForBatchCapacity = async () => {
+  await new Promise(resolve => setTimeout(resolve, 4000))
+  await store.refresh()
+}
+
+const generateMissingViews = async () => {
+  if (!draftId.value || batchGenerating.value) return
+  const queuedViewTypes = [...missingViewTypes.value]
+  if (queuedViewTypes.length === 0) return
+
+  const runId = ++batchRunId
+  batchGenerating.value = true
+  batchSubmitted.value = 0
+  batchTotal.value = queuedViewTypes.length
+  try {
+    const result = await runCharacterViewBatch({
+      viewTypes: queuedViewTypes,
+      getCapacity: store.getBatchCapacity,
+      submit: async (viewType) => {
+        if (!draftId.value) return
+        const definition = VIEW_DEFINITIONS.find(view => view.type === viewType)!
+        const prompt = prompts[viewType].trim()
+        if (!prompt) throw new Error(`Missing prompt for ${viewType}`)
+        await store.generateView(
+          draftId.value,
+          viewType,
+          prompt,
+          selectedEngine.value,
+          t(definition.labelKey),
+          false,
+        )
+      },
+      waitForCapacity: waitForBatchCapacity,
+      isActive: () => runId === batchRunId,
+      shouldRetry: isConcurrencyLimitError,
+      onProgress: ({ submitted }) => {
+        batchSubmitted.value = submitted
+      },
+    })
+    if (!result.cancelled) {
+      if (result.failed > 0) {
+        message.warning(t('characters.batch_submitted_with_failures', {
+          submitted: result.submitted,
+          failed: result.failed,
+        }))
+      } else {
+        message.success(t('characters.batch_submitted', {
+          count: result.submitted,
+        }))
+      }
+    }
+  } catch (error) {
+    console.error('Failed to batch-generate character views:', error)
+    message.error(t('characters.batch_submit_failed'))
+  } finally {
+    if (runId === batchRunId) {
+      batchGenerating.value = false
+      await refreshDraft()
+    }
+  }
+}
+
 const saveReference = async () => {
   if (!draftId.value || readyCount.value < 2) return
   saving.value = true
@@ -174,6 +260,8 @@ const saveReference = async () => {
 }
 
 const resetWorkspace = () => {
+  batchRunId += 1
+  batchGenerating.value = false
   draftId.value = null
   name.value = ''
   description.value = ''
@@ -189,6 +277,7 @@ const resetWorkspace = () => {
 
 onMounted(() => void store.refresh())
 onBeforeUnmount(() => {
+  batchRunId += 1
   if (refreshTimer) clearTimeout(refreshTimer)
   if (sourcePreview.value) URL.revokeObjectURL(sourcePreview.value)
 })
@@ -367,12 +456,40 @@ onBeforeUnmount(() => {
             size="large"
             class="mt-4 h-12 rounded-2xl font-semibold"
             :loading="generatingView === activeViewType || activeView?.status === 'pending'"
-            :disabled="!prompts[activeViewType].trim() || hasPendingView"
+            :disabled="!prompts[activeViewType].trim() || hasPendingView || batchGenerating"
             @click="generateView"
           >
             {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
             · {{ selectedEngineCost }} {{ t('app.credits') }}
           </a-button>
+          <a-button
+            type="primary"
+            ghost
+            size="large"
+            class="character-workbench__batch mt-3 h-12 rounded-2xl font-semibold"
+            :loading="batchGenerating"
+            :disabled="missingViewTypes.length === 0 || generatingView !== null"
+            data-testid="generate-missing-views"
+            @click="generateMissingViews"
+          >
+            <span class="inline-flex items-center justify-center gap-2">
+              <template v-if="batchGenerating">
+                {{ t('characters.batch_submitting', {
+                  submitted: batchSubmitted,
+                  total: batchTotal,
+                }) }}
+              </template>
+              <template v-else>
+                {{ t('characters.generate_missing_views', {
+                  count: missingViewTypes.length,
+                }) }}
+                · {{ batchEstimatedCost }} {{ t('app.credits') }}
+              </template>
+            </span>
+          </a-button>
+          <div class="mt-2 text-center text-xs opacity-70">
+            {{ t('characters.batch_concurrency_hint') }}
+          </div>
           <div class="character-workbench__save mt-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div class="font-semibold">{{ t('characters.save_reference_title') }}</div>

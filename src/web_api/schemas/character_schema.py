@@ -45,6 +45,12 @@ class CharacterViewGenerateRequest(BaseModel):
         return value
 
 
+class CharacterBatchCapacityResponse(BaseModel):
+    limit: int = Field(ge=1)
+    active: int = Field(ge=0)
+    available: int = Field(ge=0)
+
+
 class CharacterViewResponse(BaseModel):
     type: str
     label: str

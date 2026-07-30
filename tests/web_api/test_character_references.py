@@ -8,6 +8,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from config import MINIO_BUCKET
+from src.core.task_core import ConcurrencyLimitError
 from src.web_api.schemas.character_schema import CharacterBuildRequest
 from src.web_api.services import character_reference_service as service
 
@@ -177,6 +178,51 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         "record_history": False,
     }
     assert kwargs["allow_contribute_override"] is False
+
+
+@pytest.mark.asyncio
+async def test_character_batch_capacity_uses_identity_limit_and_live_lock_count():
+    current_user = SimpleNamespace(
+        id=123,
+        username="tester",
+        current_identity="内门弟子",
+    )
+
+    result = await service.get_character_batch_capacity(
+        current_user=current_user,
+        get_active_count_func=AsyncMock(return_value=3),
+        get_identity_func=AsyncMock(return_value="内门弟子"),
+    )
+
+    assert result == {
+        "limit": 5,
+        "active": 3,
+        "available": 2,
+    }
+
+
+@pytest.mark.asyncio
+async def test_character_view_route_maps_concurrency_race_to_retryable_429(monkeypatch):
+    from src.web_api.routers import characters as router
+    from src.web_api.schemas.character_schema import CharacterViewGenerateRequest
+
+    monkeypatch.setattr(
+        router,
+        "generate_character_view",
+        AsyncMock(side_effect=ConcurrencyLimitError("已有 3 个任务正在处理中")),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await router.create_character_view(
+            character_id="character-1",
+            view_type="body_back",
+            payload=CharacterViewGenerateRequest(prompt="back view"),
+            current_user=_user(),
+            db=_Session([]),
+        )
+
+    assert exc_info.value.status_code == 429
+    assert "正在处理中" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio

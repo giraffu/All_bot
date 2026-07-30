@@ -36,8 +36,18 @@ export type CharacterViewEngine =
   | 'free_edit_v2_5'
   | 'free_edit_v3'
 
+export type CharacterBatchCapacity = {
+  limit: number
+  active: number
+  available: number
+}
+
 export const fetchCharacters = async (): Promise<CharacterReference[]> => (
   await api.get('/characters')
+).data
+
+export const fetchCharacterBatchCapacity = async (): Promise<CharacterBatchCapacity> => (
+  await api.get('/characters/batch-capacity')
 ).data
 
 export const buildCharacter = async (payload: {

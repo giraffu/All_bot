@@ -11,6 +11,7 @@ from PIL import Image
 from sqlalchemy import func, select
 
 from config import MINIO_BUCKET
+from src.core.billing_core import get_concurrent_task_limit_for_identity
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
 from src.database.models import CharacterReference, CharacterReferenceView
@@ -192,6 +193,30 @@ async def list_characters(*, db, user_id: int) -> list[dict]:
         .all()
     )
     return [_response(row) for row in rows]
+
+
+async def get_character_batch_capacity(
+    *,
+    current_user,
+    get_active_count_func=None,
+    get_identity_func=None,
+) -> dict[str, int]:
+    if get_active_count_func is None:
+        from src.services.redis_client import redis_client
+
+        get_active_count_func = redis_client.get_user_concurrency
+    if get_identity_func is None:
+        from src.services.permission_service import permission_service
+
+        get_identity_func = permission_service.get_user_identity
+    identity = await get_identity_func(current_user.id)
+    limit = get_concurrent_task_limit_for_identity(identity)
+    active = max(int(await get_active_count_func(current_user.id)), 0)
+    return {
+        "limit": limit,
+        "active": active,
+        "available": max(limit - active, 0),
+    }
 
 
 async def _validate_character_source(*, user_id: int, source_object_key: str) -> str:
