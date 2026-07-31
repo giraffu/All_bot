@@ -78,19 +78,41 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert "lora_2" not in patched["256"]["inputs"]
     assert patched["273"]["class_type"] == "RepeatImageBatch"
     assert patched["273"]["inputs"] == {
-        "image": ["270", 0],
+        "image": ["274", 0],
         "amount": 481,
     }
+    assert patched["274"]["inputs"] == {
+        "image": ["270", 0],
+        "upscale_method": "lanczos",
+        "width": 768,
+        "height": 448,
+        "crop": "disabled",
+    }
+    assert patched["275"]["inputs"] == {
+        "image": ["274", 0],
+        "img_compression": 18,
+    }
+    assert patched["276"]["inputs"] == {
+        "vae": ["283", 0],
+        "image": ["275", 0],
+        "latent": ["26:39", 0],
+        "strength": 1.0,
+        "bypass": False,
+    }
+    assert patched["272"]["inputs"]["latent"] == ["276", 0]
     assert patched["272"]["inputs"]["image"] == ["273", 0]
     assert patched["272"]["inputs"]["frame_idx"] == 0
-    assert patched["26:39"]["inputs"]["width"] == 384
-    assert patched["26:39"]["inputs"]["height"] == 224
+    assert patched["26:39"]["inputs"]["width"] == 768
+    assert patched["26:39"]["inputs"]["height"] == 448
+    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
+    assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
     assert patched["18"]["inputs"]["Xi"] == 20
     assert patched["18"]["inputs"]["Xf"] == 20
     prompt = patched["28"]["inputs"]["text"]
     assert prompt.startswith("### Reference Sheet Description\n")
     assert "Top row: front face close-up, side face close-up" in prompt
     assert "Bottom row: full-body front, full-body side, full-body back." in prompt
+    assert "never reproduce the sheet, grid, panels, or studio layout" in prompt
     assert prompt.endswith("### Target Description\nscene")
 
 

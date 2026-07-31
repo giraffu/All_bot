@@ -91,20 +91,24 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 - `workers/comfy_agent/workflows/LTX 2.3 Sulphur Ingredients T2V.json`；
 - `workers/comfy_agent/workflows/Character Reference Six Views.json`。
 
-`workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format、双阶段、
-同步音频输出；T2V 是 `1280x704`，IC 是 `768x448`，交付规格均为
-`24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
+`workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format
+同步音频输出；T2V 是 `1280x704` 双阶段，IC 是 `768x448` 单阶段，交付规格
+均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
 
 IC workflow 按官方 Ingredients ComfyUI 语义处理人物参考：`RepeatImageBatch`
 把 3×2 人物表复制成与目标帧数相同的静态参考视频，`LTXAddVideoICLoRAGuide`
-在 `frame_idx=0` 注入整段条件，采样后由 `LTXVCropGuides` 在空间放大和解码前
-移除全部 guide latent。请求不额外增加一秒，结果物化层不裁尾、不二次编码；
+在 `frame_idx=0` 注入整段条件；同时只有缩放后的单张人物表经过
+`LTXVPreprocess` 和 `LTXVImgToVideoConditionOnly` 进入首帧条件，禁止把重复
+batch 接入该节点，否则会把六宫格锁进每个输出帧。Ingredients 第一阶段直接以
+最终 `768x448` 采样，`LTXVCropGuides` 后直接解码，旧 x2 空间放大与第二阶段
+在执行图中保持 orphan。请求不额外增加一秒，结果物化层不裁尾、不二次编码；
 因此参考表能约束完整时段，但不会成为首帧、尾帧或任何交付帧。fallback last
 frame 直接从 workflow 已裁 guide 的 MP4 提取。
 
 IC prompt 由 worker 组合为 `### Reference Sheet Description` 与
 `### Target Description` 两段：前者明确六格顺序和需保持的身份、发型、肤色、
-体型、服装与配件，后者原样承载用户场景；可选音频描述继续追加为 `#Audio`。
+体型、服装与配件，并明确参考表只作 Ingredients、不得复现 grid/panels/studio
+layout；后者原样承载用户场景；可选音频描述继续追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
