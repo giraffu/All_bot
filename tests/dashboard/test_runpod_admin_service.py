@@ -11,6 +11,7 @@ from dashboard.backend.schemas import (
 )
 from dashboard.backend.services.runpod_operation_store import (
     InMemoryRunPodOperationStore,
+    RedisRunPodOperationStore,
 )
 from dashboard.backend.services import runpod_admin_service
 from dashboard.backend.services.runpod_admin_commands import (
@@ -34,6 +35,13 @@ def _clear_runpod_admin_operations(monkeypatch):
     runpod_admin_service._operations.clear()
     runpod_admin_service._operation_runner.create_subprocess_exec = None
     runpod_admin_service._operation_runner.kill_process_group = None
+
+    async def plan_slots(*, count, excluded_slots, **_kwargs):
+        excluded = set(excluded_slots)
+        slots = [f"{index:02d}" for index in range(1, 101)]
+        return [slot for slot in slots if slot not in excluded][:count]
+
+    monkeypatch.setattr(runpod_admin_service, "_manual_add_plan_func", plan_slots)
     yield
     runpod_admin_service._operations.clear()
     runpod_admin_service._operation_runner.create_subprocess_exec = None
@@ -72,6 +80,40 @@ class _FakeProcess:
         return self._exit_code
 
 
+class _ReservationRedis:
+    def __init__(self):
+        self.strings = {}
+        self.hashes = {}
+
+    async def eval(self, script, key_count, *args):
+        keys = list(args[:key_count])
+        argv = list(args[key_count:])
+        if 'redis.call("hlen", KEYS[2])' in script:
+            if self.hashes.get(keys[1]) or keys[0] in self.strings:
+                return 0
+            self.strings[keys[0]] = argv[0]
+            return 1
+        if 'redis.call("hexists", KEYS[2]' in script:
+            if keys[0] in self.strings:
+                return 0
+            active = self.hashes.setdefault(keys[1], {})
+            reservations = dict(zip(argv[::2], argv[1::2]))
+            if any(slot in active for slot in reservations):
+                return 0
+            active.update(reservations)
+            return 1
+        if 'redis.call("hget", KEYS[1]' in script:
+            active = self.hashes.setdefault(keys[0], {})
+            if active.get(argv[0]) == argv[1]:
+                active.pop(argv[0], None)
+                return 1
+            return 0
+        raise AssertionError("unexpected Redis script")
+
+    async def hgetall(self, key):
+        return dict(self.hashes.get(key, {}))
+
+
 @pytest.mark.asyncio
 async def test_runpod_profiles_payload_lists_supported_prod_profiles():
     payload = await runpod_admin_service.get_runpod_profiles_payload()
@@ -90,9 +132,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "img2img",
         "img2img_lora",
     ]
-    ltx_t2v = next(
-        item for item in payload["profiles"] if item["profile"] == "ltx_t2v"
-    )
+    ltx_t2v = next(item for item in payload["profiles"] if item["profile"] == "ltx_t2v")
     assert ltx_t2v["supported_task_types"] == ["ltx_t2v", "ltx_t2v_ic"]
     assert ltx_t2v["autoscaler_enabled"] is False
     pornmaster_bf16 = payload["profiles"][-1]
@@ -124,19 +164,23 @@ async def test_start_runpod_scale_payload_creates_retrying_operations():
     assert payload["status"] == "accepted"
     assert [operation["profile"] for operation in payload["operations"]] == [
         "img2img",
+        "img2img",
         "wan22_video_v2",
     ]
     command = payload["operations"][0]["command"]
     assert "add" in command
     assert command[command.index("--profile") + 1] == "img2img"
-    assert command[command.index("--count") + 1] == "2"
+    assert command[command.index("--count") + 1] == "1"
+    assert command[command.index("--slot") + 1] == "01"
     assert "--desired" not in command
     assert "--retry-unavailable" in command
     assert command[command.index("--max-attempts") + 1] == "100"
     assert command[command.index("--retry-interval") + 1] == "30"
     assert "--execute" in command
     assert payload["operations"][0]["action"] == "add"
-    assert payload["operations"][0]["requested_count"] == 2
+    assert payload["operations"][0]["requested_count"] == 1
+    assert payload["operations"][1]["slot"] == "02"
+    assert payload["operations"][0]["batch_id"] == payload["batch_id"]
     assert "desired_count" not in payload["operations"][0]
 
 
@@ -176,7 +220,7 @@ async def test_start_runpod_scale_payload_rejects_duplicate_profiles():
 
 
 @pytest.mark.asyncio
-async def test_start_runpod_scale_payload_rejects_active_profile_add():
+async def test_start_runpod_scale_payload_allows_overlapping_manual_profile_adds():
     first_payload = await runpod_admin_service.start_runpod_scale_payload(
         RunPodScaleRequest(
             items=[
@@ -186,19 +230,18 @@ async def test_start_runpod_scale_payload_rejects_active_profile_add():
         spawn_task_func=_discard_operation_coroutine,
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await runpod_admin_service.start_runpod_scale_payload(
-            RunPodScaleRequest(
-                items=[
-                    RunPodScaleItem(profile="img2img_lora", count=1),
-                ],
-            ),
-            spawn_task_func=_discard_operation_coroutine,
-        )
+    second_payload = await runpod_admin_service.start_runpod_scale_payload(
+        RunPodScaleRequest(
+            items=[
+                RunPodScaleItem(profile="img2img_lora", count=1),
+            ],
+        ),
+        spawn_task_func=_discard_operation_coroutine,
+    )
 
     assert first_payload["operations"][0]["status"] == "pending"
-    assert exc_info.value.status_code == 409
-    assert "already active for profile img2img" in exc_info.value.detail
+    assert first_payload["operations"][0]["slot"] == "01"
+    assert second_payload["operations"][0]["slot"] == "02"
 
 
 @pytest.mark.asyncio
@@ -232,6 +275,30 @@ async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
     await store.release_active_add("img2img", "op-2")
     assert await store.get_active_add("img2img") is None
 
+    assert (
+        await store.reserve_manual_add_slots(
+            "img2img", {"03": "manual-op-3", "04": "manual-op-4"}
+        )
+        is True
+    )
+    assert await store.list_manual_add_slots("img2img") == {
+        "03": "manual-op-3",
+        "04": "manual-op-4",
+    }
+    assert await store.reserve_manual_add_slots("img2img", {"04": "other-op"}) is False
+    assert await store.acquire_active_add("img2img", "auto-op") is False
+    await store.release_manual_add_slot("img2img", "03", "wrong-op")
+    assert "03" in await store.list_manual_add_slots("img2img")
+    await store.release_manual_add_slot("img2img", "03", "manual-op-3")
+    await store.release_manual_add_slot("img2img", "04", "manual-op-4")
+    assert await store.list_manual_add_slots("img2img") == {}
+
+    assert await store.acquire_active_add("img2img", "auto-op") is True
+    assert (
+        await store.reserve_manual_add_slots("img2img", {"05": "manual-op-5"}) is False
+    )
+    await store.release_active_add("img2img", "auto-op")
+
     assert await store.acquire_active_lan_aio_slot("gpu-252:gpu0", "op-2") is True
     assert await store.acquire_active_lan_aio_slot("gpu-252:gpu0", "op-3") is False
     assert await store.get_active_lan_aio_slot("gpu-252:gpu0") == "op-2"
@@ -258,6 +325,33 @@ async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
 
     await store.prune_operations(max_records=1)
     assert [item["id"] for item in await store.list_operations(limit=10)] == ["op-2"]
+
+
+@pytest.mark.asyncio
+async def test_redis_operation_store_manual_slots_are_atomic_with_autoscaler_lock():
+    store = RedisRunPodOperationStore(_ReservationRedis())
+
+    assert (
+        await store.reserve_manual_add_slots(
+            "img2img", {"01": "manual-1", "02": "manual-2"}
+        )
+        is True
+    )
+    assert (
+        await store.reserve_manual_add_slots("img2img", {"02": "manual-other"}) is False
+    )
+    assert await store.acquire_active_add("img2img", "autoscaler") is False
+    assert await store.list_manual_add_slots("img2img") == {
+        "01": "manual-1",
+        "02": "manual-2",
+    }
+
+    await store.release_manual_add_slot("img2img", "01", "wrong")
+    await store.release_manual_add_slot("img2img", "01", "manual-1")
+    await store.release_manual_add_slot("img2img", "02", "manual-2")
+
+    assert await store.acquire_active_add("img2img", "autoscaler") is True
+    assert await store.reserve_manual_add_slots("img2img", {"03": "manual-3"}) is False
 
 
 @pytest.mark.asyncio

@@ -116,8 +116,10 @@ class RunPodAdminCommandBuilder:
     def lan_aio_execution_mode(self) -> str:
         configured = os.getenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "").strip()
         environment = os.getenv("ALLBOT_ENV", "").strip().lower()
-        mode = configured.lower() if configured else (
-            "ssh" if environment == "prod" else "local"
+        mode = (
+            configured.lower()
+            if configured
+            else ("ssh" if environment == "prod" else "local")
         )
         if mode in {"", "local"}:
             return "local"
@@ -193,8 +195,7 @@ class RunPodAdminCommandBuilder:
                 raise HTTPException(
                     status_code=500,
                     detail=(
-                        "DASHBOARD_LAN_AIO_RUNNER_SSH_PORT must be between "
-                        "1 and 65535"
+                        "DASHBOARD_LAN_AIO_RUNNER_SSH_PORT must be between 1 and 65535"
                     ),
                 )
             command = ["ssh", "-p", str(parsed_port)]
@@ -303,6 +304,33 @@ class RunPodAdminCommandBuilder:
         ]
         if slot:
             command.extend(["--slot", slot])
+        return command
+
+    def plan_add_command(
+        self,
+        *,
+        profile: str,
+        count: int,
+        excluded_slots: list[str],
+    ) -> list[str]:
+        command = [
+            "python3",
+            str(self.project_root / "scripts" / "gpu_pool_controller.py"),
+            "runpod",
+            "prod-worker",
+            "add",
+            "--profile",
+            profile,
+            "--runpod-env-file",
+            self.runpod_env_file(),
+            "--prod-env-file",
+            self.prod_env_file(),
+            "--count",
+            str(count),
+            "--quiet",
+        ]
+        for slot in excluded_slots:
+            command.extend(["--exclude-slot", str(slot)])
         return command
 
     def lan_aio_restart_command(self, slot_id: str) -> list[str]:

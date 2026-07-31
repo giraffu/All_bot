@@ -115,6 +115,8 @@ class RunPodProdWorkerOptions:
     agent_id: str = RUNPOD_PROD_AGENT_ID
     desired_count: int | None = None
     add_count: int | None = None
+    slot: str | None = None
+    excluded_add_slots: tuple[str, ...] = ()
     central_url: str = ""
     web_api_url: str = ""
     web_user_id: int = 3
@@ -273,6 +275,8 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
         agent_id=agent_id,
         desired_count=getattr(args, "desired", None),
         add_count=getattr(args, "count", None),
+        slot=(str(getattr(args, "slot", "") or "").strip() or None),
+        excluded_add_slots=tuple(getattr(args, "exclude_slot", None) or ()),
         central_url=(
             getattr(args, "central_url", None)
             or os.getenv("RUNPOD_PROD_WORKER_CENTRAL_URL")
@@ -365,9 +369,7 @@ class RunPodProdWorkerRunner:
         self._emit_func = emit_func or (
             lambda message: print(message, file=sys.stderr, flush=True)
         )
-        self._http_client = RunPodProdWorkerHttpClient(
-            error_type=RunPodProdWorkerError
-        )
+        self._http_client = RunPodProdWorkerHttpClient(error_type=RunPodProdWorkerError)
 
     def _planner(self) -> RunPodProdWorkerPlanner:
         return RunPodProdWorkerPlanner(
@@ -470,7 +472,10 @@ class RunPodProdWorkerRunner:
             elif action == "canary":
                 self._run_canary(summary)
             elif action == "add":
-                self._run_profile_locked_mutation(summary, self._run_add)
+                if self.options.slot:
+                    self._run_slot_locked_mutation(summary, self._run_add)
+                else:
+                    self._run_profile_locked_mutation(summary, self._run_add)
             elif action == "scale":
                 self._run_profile_locked_mutation(summary, self._run_scale)
             else:
@@ -498,10 +503,32 @@ class RunPodProdWorkerRunner:
                 summary,
                 "operation_lock",
                 "ok",
-                {
-                    "profile": profile,
-                    "path": lock_path,
-                },
+                {"profile": profile, "path": lock_path},
+            )
+            run_func(summary)
+
+    def _run_slot_locked_mutation(
+        self,
+        summary: dict[str, Any],
+        run_func: Callable[[dict[str, Any]], None],
+    ) -> None:
+        if not self.options.execute:
+            run_func(summary)
+            return
+        profile = normalize_prod_worker_profile(self.options.profile)
+        slot = str(self.options.slot or "")
+        self._phase(
+            summary,
+            "operation_lock",
+            "running",
+            {"profile": profile, "slot": slot},
+        )
+        with _prod_profile_operation_lock(profile, slot=slot) as lock_path:
+            self._phase(
+                summary,
+                "operation_lock",
+                "ok",
+                {"profile": profile, "slot": slot, "path": lock_path},
             )
             run_func(summary)
 
@@ -666,7 +693,9 @@ class RunPodProdWorkerRunner:
             )
             pod = self._single_prod_pod(summary)
             if pod is None:
-                raise RunPodProdWorkerError("refusing restart: prod RunPod pod not found")
+                raise RunPodProdWorkerError(
+                    "refusing restart: prod RunPod pod not found"
+                )
             pod_id = str(pod.get("id") or pod.get("podId") or "")
             if not pod_id:
                 raise RunPodProdWorkerError("managed prod pod did not include an id")
@@ -832,9 +861,7 @@ class RunPodProdWorkerRunner:
             control_state = str(control.get("state") or "")
             control_reason = str(control.get("reason") or "")
             if control_state != "disabled":
-                blockers.append(
-                    f"control_not_disabled:{control_state or 'unknown'}"
-                )
+                blockers.append(f"control_not_disabled:{control_state or 'unknown'}")
             if control_reason != "runpod_prod_worker_restart_disable":
                 blockers.append("control_reason_not_restart_disable")
         return blockers
@@ -914,6 +941,8 @@ class RunPodProdWorkerRunner:
 
     def _run_add(self, summary: dict[str, Any]) -> None:
         count = self._add_count()
+        if self.options.slot and count != 1:
+            raise RunPodProdWorkerError("prod-worker add --slot requires --count 1")
         max_slots = self.provider.settings.prod_max_manual_slots
         summary["requested_count"] = count
         summary["max_manual_slots"] = max_slots
@@ -964,6 +993,8 @@ class RunPodProdWorkerRunner:
             count=count,
             slot_pods=slot_pods,
             workers=workers,
+            requested_slots=[self.options.slot] if self.options.slot else None,
+            excluded_slots=list(self.options.excluded_add_slots),
         )
         summary["add_plan"] = plan
         if not self.options.execute:
@@ -1125,12 +1156,16 @@ class RunPodProdWorkerRunner:
         count: int,
         slot_pods: dict[str, dict[str, Any]],
         workers: list[dict[str, Any]],
+        requested_slots: list[str] | None = None,
+        excluded_slots: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
             return self._planner().build_add_plan(
                 count=count,
                 slot_pods=slot_pods,
                 workers=workers,
+                requested_slots=requested_slots,
+                excluded_slots=excluded_slots,
             )
         except RunPodProdWorkerPlanError as exc:
             raise RunPodProdWorkerError(str(exc)) from exc
@@ -1779,16 +1814,13 @@ class RunPodProdWorkerRunner:
                 )
         if spec["runpod_task_type"] == PROD_IMAGE_TO_VIDEO_TASK_TYPE:
             min_disk = max(
-                int(
-                    getattr(target_settings, "container_disk_gb_image_to_video", 0)
-                ),
+                int(getattr(target_settings, "container_disk_gb_image_to_video", 0)),
                 RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB,
             )
             rendered_disk = self._rendered_container_disk(body)
             if rendered_disk < min_disk:
                 failures.append(
-                    "containerDiskInGb must be at least "
-                    f"{min_disk} for image_to_video"
+                    f"containerDiskInGb must be at least {min_disk} for image_to_video"
                 )
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
             min_disk = int(
@@ -2101,9 +2133,7 @@ class RunPodProdWorkerRunner:
         self,
         image_object_key: str,
     ) -> list[dict[str, Any]]:
-        return self._canary_cases().pornmaster_flux2_edit_task_cases(
-            image_object_key
-        )
+        return self._canary_cases().pornmaster_flux2_edit_task_cases(image_object_key)
 
     def _pornmaster_flux2_edit_bf16_task_cases(
         self,
@@ -2511,8 +2541,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "supported_task_types": RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
             "model_prefix": settings.model_prefix_scail2 or RUNPOD_SCAIL2_MODEL_PREFIX,
             "model_manifest_key": (
-                settings.model_manifest_key_scail2
-                or RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+                settings.model_manifest_key_scail2 or RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
             ),
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
@@ -2546,8 +2575,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_prefix_ltx_t2v or RUNPOD_LTX_T2V_MODEL_PREFIX
             ),
             "model_manifest_key": (
-                settings.model_manifest_key_ltx_t2v
-                or RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+                settings.model_manifest_key_ltx_t2v or RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
             ),
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
@@ -2629,12 +2657,14 @@ def _extract_pod_id(payload: dict[str, Any]) -> str:
 
 
 @contextmanager
-def _prod_profile_operation_lock(profile: str):
+def _prod_profile_operation_lock(profile: str, *, slot: str | None = None):
     lock_dir = Path(
         os.getenv("RUNPOD_PROD_OPERATION_LOCK_DIR", "/tmp/allbot_runpod_locks")
     )
     lock_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = lock_dir / f"prod-worker-{normalize_prod_worker_profile(profile)}.lock"
+    profile_key = normalize_prod_worker_profile(profile)
+    suffix = f"-{str(slot)}" if slot else ""
+    lock_path = lock_dir / f"prod-worker-{profile_key}{suffix}.lock"
     handle = lock_path.open("a", encoding="utf-8")
     try:
         import fcntl

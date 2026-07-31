@@ -64,16 +64,11 @@ from ops.gpu_pool_controller.runpod_prod_worker import (
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
 )
-PUBLIC_SCAIL2_GHCR_IMAGE = (
-    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
-)
-PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
-    RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
-)
+PUBLIC_SCAIL2_GHCR_IMAGE = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
+PUBLIC_LTX_VIDEO_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 PUBLIC_LTX_T2V_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX + "main-sha"
 PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE = (
-    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
-    + "20260701-pornmaster-flux2-edit"
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX + "20260701-pornmaster-flux2-edit"
 )
 
 
@@ -483,10 +478,7 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
 
 def test_prod_worker_render_accepts_release_pinned_img2img_digest():
-    release_image = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:"
-        + "a" * 64
-    )
+    release_image = "ghcr.io/giraffu/allbot-comfy-runpod-img2img@sha256:" + "a" * 64
     provider = RunPodProvider(
         replace(_settings(), image_name_img2img_lora=release_image)
     )
@@ -516,10 +508,7 @@ def test_prod_worker_render_rejects_foreign_img2img_digest():
 
 
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
-    image_ref = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:"
-        + "2" * 64
-    )
+    image_ref = "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "2" * 64
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = FakeRunPodProvider(
         _settings(
@@ -657,9 +646,7 @@ def test_prod_worker_render_i2i_pro_uses_prod_profile_defaults():
 
 
 def test_prod_worker_render_accepts_release_pinned_i2i_pro_digest():
-    release_image = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro@sha256:" + "a" * 64
-    )
+    release_image = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro@sha256:" + "a" * 64
     agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
     provider = RunPodProvider(
         replace(
@@ -688,9 +675,7 @@ def test_prod_worker_render_rejects_foreign_i2i_pro_digest():
         replace(
             _settings(),
             prod_agent_id=agent_id,
-            image_name_i2i_pro=(
-                "ghcr.io/example/foreign-i2i-pro@sha256:" + "b" * 64
-            ),
+            image_name_i2i_pro=("ghcr.io/example/foreign-i2i-pro@sha256:" + "b" * 64),
         )
     )
     options = RunPodProdWorkerOptions(
@@ -778,8 +763,12 @@ def test_prod_worker_render_ltx_video_uses_v12_profile_defaults():
     )
     assert payload["render"]["pool_runtime_profile"] == "ltx_video"
     assert payload["render"]["model_prefix"] == RUNPOD_LTX_VIDEO_MODEL_PREFIX
-    assert payload["render"]["model_manifest_key"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
-    assert payload["render"]["workflow_overrides"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    assert (
+        payload["render"]["model_manifest_key"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+    )
+    assert (
+        payload["render"]["workflow_overrides"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    )
     assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
@@ -898,9 +887,7 @@ def test_prod_worker_render_accepts_release_pinned_pornmaster_digest():
 
 
 def test_prod_worker_render_rejects_foreign_pornmaster_digest():
-    agent_id = prod_agent_id_from_slot(
-        "01", profile="pornmaster_flux2_edit_bf16"
-    )
+    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
     provider = RunPodProvider(
         _settings(
             prod_agent_id=agent_id,
@@ -922,8 +909,7 @@ def test_prod_worker_render_rejects_foreign_pornmaster_digest():
 
     assert payload["ok"] is False
     assert (
-        "imageName must start with "
-        + RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+        "imageName must start with " + RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
     ) in payload["error"]
 
 
@@ -1128,6 +1114,115 @@ def test_prod_worker_add_dry_run_uses_lowest_free_slots_without_deletes():
     assert "create cloud-prod RunPod pod for new slot 02" in payload["would_execute"]
     assert any("enabled" in item for item in payload["would_execute"])
     assert any("leave all existing" in item for item in payload["would_execute"])
+
+
+def test_prod_worker_add_dry_run_uses_explicit_free_slot():
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_max_manual_slots=8,
+            prod_agent_id="runpod_prod_img2img_manual_06",
+        ),
+        pods=[_prod_pod("01"), _prod_pod("03")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        add_count=1,
+        slot="06",
+        agent_id="runpod_prod_img2img_manual_06",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("03")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["add_plan"]["create_slots"] == ["06"]
+    assert provider.create_calls == 0
+
+
+def test_prod_worker_add_rejects_explicit_slot_with_count_greater_than_one():
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_max_manual_slots=8,
+            prod_agent_id="runpod_prod_img2img_manual_06",
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        add_count=2,
+        slot="06",
+        agent_id="runpod_prod_img2img_manual_06",
+        quiet=True,
+    )
+
+    payload = FakeHttpProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert "--slot requires --count 1" in payload["error"]
+    assert provider.create_calls == 0
+
+
+def test_prod_worker_add_rejects_explicit_occupied_slot():
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_max_manual_slots=8,
+            prod_agent_id="runpod_prod_img2img_manual_06",
+        ),
+        pods=[_prod_pod("06")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        add_count=1,
+        slot="06",
+        agent_id="runpod_prod_img2img_manual_06",
+        quiet=True,
+    )
+
+    payload = FakeHttpProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert "slot 06 is not free" in payload["error"]
+    assert provider.create_calls == 0
+
+
+def test_prod_worker_add_execute_creates_only_explicit_slot(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROD_OPERATION_LOCK_DIR", str(tmp_path))
+    agent_id = "runpod_prod_img2img_manual_06"
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_max_manual_slots=8,
+            prod_agent_id=agent_id,
+        ),
+        pods=[_prod_pod("01")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        execute=True,
+        add_count=1,
+        slot="06",
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("06")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["add_plan"]["create_slots"] == ["06"]
+    assert [item["agent_id"] for item in provider.create_log] == [agent_id]
 
 
 def test_prod_worker_add_execute_creates_only_new_free_slots():
@@ -1993,8 +2088,12 @@ def test_cli_parses_runpod_prod_worker_scail2_profile_command():
     assert args.prod_worker_command == "canary"
     assert args.profile == "scail2"
     assert args.slot == "01"
-    assert args.scail2_reference_object_key == "user-data-prod/web_uploads/3/reference.jpg"
-    assert args.scail2_motion_video_object_key == "user-data-prod/web_uploads/3/motion.mp4"
+    assert (
+        args.scail2_reference_object_key == "user-data-prod/web_uploads/3/reference.jpg"
+    )
+    assert (
+        args.scail2_motion_video_object_key == "user-data-prod/web_uploads/3/motion.mp4"
+    )
     assert args.quiet is True
 
 

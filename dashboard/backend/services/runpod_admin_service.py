@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +187,57 @@ def _normalize_profile_or_422(profile: str) -> str:
     return _command_builder.normalize_profile_or_422(profile)
 
 
+async def _default_manual_add_plan(
+    *,
+    profile: str,
+    count: int,
+    excluded_slots: list[str],
+    env: dict[str, str],
+) -> list[str]:
+    command = _command_builder.plan_add_command(
+        profile=profile,
+        count=count,
+        excluded_slots=excluded_slots,
+    )
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    output = stdout.decode("utf-8", errors="replace")
+    if process.returncode != 0:
+        del stderr
+        raise HTTPException(
+            status_code=409,
+            detail="RunPod add planning command failed",
+        )
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="RunPod add planner returned invalid JSON",
+        ) from exc
+    if payload.get("ok") is not True:
+        raise HTTPException(
+            status_code=409,
+            detail=str(payload.get("error") or "RunPod add planning failed"),
+        )
+    slots = list((payload.get("add_plan") or {}).get("create_slots") or [])
+    if len(slots) != count:
+        raise HTTPException(
+            status_code=409,
+            detail="RunPod add planner did not return enough free slots",
+        )
+    return [str(slot) for slot in slots]
+
+
+_manual_add_plan_func = _default_manual_add_plan
+
+
 def _agent_selection_or_422(
     agent_id: str,
     *,
@@ -245,9 +299,7 @@ async def is_runpod_worker_locked(agent_id: str) -> bool:
 async def get_locked_runpod_workers_payload() -> dict[str, Any]:
     locked = await _operation_store.list_locked_runpod_workers()
     return {
-        "locked_workers": [
-            locked[agent_id] for agent_id in sorted(locked)
-        ],
+        "locked_workers": [locked[agent_id] for agent_id in sorted(locked)],
         "count": len(locked),
     }
 
@@ -336,6 +388,7 @@ async def start_runpod_scale_payload(
     request: RunPodScaleRequest,
     *,
     spawn_task_func=None,
+    plan_slots_func=None,
 ) -> dict[str, Any]:
     _sync_runtime_paths()
     normalized_items: list[tuple[str, int]] = []
@@ -350,49 +403,70 @@ async def start_runpod_scale_payload(
         seen_profiles.add(profile)
         normalized_items.append((profile, _requested_count_or_422(item)))
 
-    for profile, _requested_count in normalized_items:
-        active_operation = await _active_add_operation_for_profile(profile)
-        if active_operation is not None:
+    env = _operation_env(prod_max_manual_slots=request.prod_max_manual_slots)
+    planner = plan_slots_func or _manual_add_plan_func
+    batch_id = uuid.uuid4().hex
+    operations: list[RunPodAdminOperation] = []
+    for profile, requested_count in normalized_items:
+        active_operation_id = await _operation_store.get_active_add(profile)
+        if active_operation_id:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "RunPod add operation is already active for profile "
-                    f"{profile}: {active_operation['id']}"
+                    "RunPod autoscaler add operation is already active for profile "
+                    f"{profile}: {active_operation_id}"
                 ),
             )
-
-    env = _operation_env(prod_max_manual_slots=request.prod_max_manual_slots)
-
-    operations: list[RunPodAdminOperation] = []
-    for profile, requested_count in normalized_items:
-        command = _base_command("add", profile=profile)
-        command.extend(["--count", str(requested_count)])
-        if request.retry_unavailable:
-            command.append("--retry-unavailable")
-        command.extend(
-            [
-                "--max-attempts",
-                str(request.max_attempts),
-                "--retry-interval",
-                str(request.retry_interval_seconds),
-                "--execute",
-            ]
-        )
-        operations.append(
-            await _register_operation(
-                action="add",
+        for attempt in range(3):
+            reserved_slots = await _operation_store.list_manual_add_slots(profile)
+            slots = await planner(
                 profile=profile,
-                command=command,
+                count=requested_count,
+                excluded_slots=sorted(reserved_slots),
                 env=env,
-                requested_count=requested_count,
-                active_add_profile=profile,
-                source="manual",
-                spawn_task_func=spawn_task_func,
             )
-        )
+            specs: list[dict[str, Any]] = []
+            for slot in slots:
+                agent_id = prod_agent_id_from_slot(
+                    slot,
+                    profile=profile,
+                    max_manual_slots=(
+                        request.prod_max_manual_slots
+                        or _default_prod_max_manual_slots()
+                    ),
+                )
+                command = _base_command("add", profile=profile, slot=slot)
+                command.extend(["--count", "1"])
+                if request.retry_unavailable:
+                    command.append("--retry-unavailable")
+                command.extend(
+                    [
+                        "--max-attempts",
+                        str(request.max_attempts),
+                        "--retry-interval",
+                        str(request.retry_interval_seconds),
+                        "--execute",
+                    ]
+                )
+                specs.append({"slot": slot, "agent_id": agent_id, "command": command})
+            try:
+                registered = await _operation_runner.register_manual_add_batch(
+                    profile=profile,
+                    batch_id=batch_id,
+                    specs=specs,
+                    env=env,
+                    spawn_task_func=spawn_task_func,
+                )
+            except HTTPException as exc:
+                if exc.status_code == 409 and attempt < 2:
+                    continue
+                raise
+            operations.extend(registered)
+            break
 
     return {
         "status": "accepted",
+        "batch_id": batch_id,
         "operations": [_operation_payload(operation) for operation in operations],
     }
 
