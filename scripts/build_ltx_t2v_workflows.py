@@ -85,6 +85,14 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
             "class_type": "LTXICLoRALoaderModelOnly",
             "_meta": {"title": "Ingredients IC LoRA (fixed 1.0)"},
         }
+        workflow["273"] = {
+            "inputs": {
+                "image": ["270", 0],
+                "amount": 121,
+            },
+            "class_type": "RepeatImageBatch",
+            "_meta": {"title": "Ingredients static reference video"},
+        }
         workflow["210"]["inputs"]["model"] = ["271", 0]
         workflow["272"] = {
             "inputs": {
@@ -92,7 +100,7 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
                 "negative": ["26:46", 1],
                 "vae": ["283", 0],
                 "latent": ["26:39", 0],
-                "image": ["270", 0],
+                "image": ["273", 0],
                 "frame_idx": 0,
                 "strength": 1.0,
                 "latent_downscale_factor": ["271", 1],
@@ -171,7 +179,9 @@ def write_json(path: Path, value: dict) -> None:
 def main() -> None:
     generated = {
         T2V_NAME: build_t2v(ingredients=False),
-        IC_NAME: build_t2v(ingredients=True),
+        # Match the official Ingredients workflow: distilled + Ingredients.
+        # Sulphur remains exclusive to the plain creative T2V profile.
+        IC_NAME: build_t2v(ingredients=True, sulphur=False),
         CHARACTER_NAME: build_character(),
     }
     for directory in (LOCAL, REMOTE):
