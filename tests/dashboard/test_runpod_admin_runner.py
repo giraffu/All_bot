@@ -92,6 +92,47 @@ async def test_runner_registers_operation_and_active_add_lock(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_runner_registers_manual_add_batch_with_independent_slot_reservations(
+    tmp_path,
+):
+    runner, store = _build_runner(tmp_path)
+
+    operations = await runner.register_manual_add_batch(
+        profile="img2img",
+        batch_id="batch-1",
+        specs=[
+            {
+                "slot": "02",
+                "agent_id": "runpod_prod_img2img_manual_02",
+                "command": ["bash", "ops.sh", "add", "--slot", "02"],
+            },
+            {
+                "slot": "03",
+                "agent_id": "runpod_prod_img2img_manual_03",
+                "command": ["bash", "ops.sh", "add", "--slot", "03"],
+            },
+        ],
+        env={},
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    assert [operation.slot for operation in operations] == ["02", "03"]
+    assert all(operation.batch_id == "batch-1" for operation in operations)
+    reservations = await store.list_manual_add_slots("img2img")
+    assert reservations == {
+        "02": operations[0].id,
+        "03": operations[1].id,
+    }
+    assert await store.acquire_active_add("img2img", "autoscaler-op") is False
+
+    await runner.release_active_locks_if_needed(operations[0])
+
+    assert await store.list_manual_add_slots("img2img") == {
+        "03": operations[1].id,
+    }
+
+
+@pytest.mark.asyncio
 async def test_runner_operations_payload_reads_detached_store_records(tmp_path):
     runner, store = _build_runner(tmp_path)
     await store.save_operation(

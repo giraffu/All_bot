@@ -70,6 +70,20 @@ def test_build_add_plan_rejects_when_not_enough_manual_slots_are_free():
         )
 
 
+def test_build_add_plan_excludes_dashboard_reserved_slots():
+    planner = RunPodProdWorkerPlanner(max_manual_slots=5, profile="img2img")
+
+    plan = planner.build_add_plan(
+        count=2,
+        slot_pods={"01": _pod("01")},
+        workers=[],
+        excluded_slots=["02", "04"],
+    )
+
+    assert plan["excluded_slots"] == ["02", "04"]
+    assert plan["create_slots"] == ["03", "05"]
+
+
 def test_build_scale_plan_splits_create_enable_and_delete_slots():
     planner = RunPodProdWorkerPlanner(max_manual_slots=4, profile="img2img")
 

@@ -44,6 +44,8 @@ type RunPodOperation = {
   can_terminate?: boolean
   terminate_requested?: boolean
   cleanup_status?: string
+  slot?: string
+  batch_id?: string
 }
 
 type RunPodAutoscalerDecision = {
@@ -98,6 +100,8 @@ const autoscalerControlSubmitting = ref(false)
 const terminatingOperationIds = ref<Set<string>>(new Set())
 const profiles = ref<RunPodProfile[]>(RUNPOD_FALLBACK_PROFILES)
 const operations = ref<RunPodOperation[]>([])
+const operationPage = ref(1)
+const operationPageSize = 6
 const autoscaler = ref<RunPodAutoscalerPayload | null>(null)
 const rows = ref<ScaleRow[]>([
   { profile: 'img2img', count: 1 },
@@ -116,7 +120,10 @@ const profileOptions = computed(() =>
   }))
 )
 
-const recentOperations = computed(() => operations.value.slice(0, 6))
+const recentOperations = computed(() => {
+  const start = (operationPage.value - 1) * operationPageSize
+  return operations.value.slice(start, start + operationPageSize)
+})
 
 const autoscalerDecisions = computed(() => autoscaler.value?.decisions || [])
 
@@ -197,6 +204,8 @@ const loadOperations = async () => {
   try {
     const payload = await fetchRunPodOperations()
     operations.value = payload?.operations || []
+    const lastPage = Math.max(1, Math.ceil(operations.value.length / operationPageSize))
+    operationPage.value = Math.min(operationPage.value, lastPage)
   } catch (err) {
     console.error(err)
   }
@@ -257,7 +266,7 @@ const submit = async () => {
       retry_interval_seconds: retryOptions.retry_interval_seconds,
     })
     message.success(`已提交 ${payload?.operations?.length || normalizedRows.length} 个 RunPod 操作`)
-    open.value = false
+    operationPage.value = 1
     await loadOperations()
     emit('changed')
   } catch (err) {
@@ -444,6 +453,9 @@ onUnmounted(() => {
           >
             <span class="min-w-0 flex-1 truncate">
               {{ operationActionLabel(operation.action) }} · {{ profileLabel(operation.profile) }}
+              <span v-if="operation.slot">
+                · slot {{ operation.slot }}
+              </span>
               <span v-if="operation.requested_count !== null && operation.requested_count !== undefined">
                 · 新增 {{ operation.requested_count }}
               </span>
@@ -476,6 +488,17 @@ onUnmounted(() => {
               </a-popconfirm>
             </div>
           </div>
+        </div>
+        <div v-if="operations.length > operationPageSize" class="runpod-operation-pagination">
+          <span>共 {{ operations.length }} 条</span>
+          <a-pagination
+            v-model:current="operationPage"
+            :total="operations.length"
+            :page-size="operationPageSize"
+            :show-size-changer="false"
+            size="small"
+            show-less-items
+          />
         </div>
       </div>
     </div>
@@ -553,6 +576,16 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+.runpod-operation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
 .runpod-autoscaler-profile,
 .runpod-autoscaler-reason {
   min-width: 0;
@@ -570,6 +603,11 @@ onUnmounted(() => {
   .runpod-autoscaler-metrics,
   .runpod-autoscaler-decisions {
     grid-template-columns: 1fr;
+  }
+
+  .runpod-operation-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

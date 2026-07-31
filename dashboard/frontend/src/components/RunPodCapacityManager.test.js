@@ -62,6 +62,7 @@ import {
   controlRunPodAutoscaler,
   fetchRunPodAutoscaler,
   fetchRunPodOperations,
+  scaleRunPodCapacity,
 } from '../api/api'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 
@@ -74,7 +75,15 @@ const ButtonStub = defineComponent({
 const ModalStub = defineComponent({
   name: 'ModalStub',
   props: ['open'],
-  template: '<div v-if="open"><slot /></div>',
+  emits: ['ok'],
+  template: '<div v-if="open"><slot /><button class="modal-ok" @click="$emit(\'ok\')">submit</button></div>',
+})
+
+const PaginationStub = defineComponent({
+  name: 'PaginationStub',
+  props: ['current', 'pageSize', 'total'],
+  emits: ['update:current'],
+  template: '<button class="page-2" @click="$emit(\'update:current\', 2)">page 2 / {{ total }}</button>',
 })
 
 const SelectStub = defineComponent({
@@ -111,6 +120,7 @@ const mountRunPodCapacityManager = () =>
         }),
         'a-tag': slotStub('TagStub'),
         'a-popconfirm': slotStub('PopconfirmStub'),
+        'a-pagination': PaginationStub,
         CloudServerOutlined: slotStub('CloudServerOutlinedStub'),
         DeleteOutlined: slotStub('DeleteOutlinedStub'),
         PauseCircleOutlined: slotStub('PauseCircleOutlinedStub'),
@@ -126,6 +136,13 @@ describe('RunPodCapacityManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(fetchRunPodOperations).mockResolvedValue({ operations: [] })
+    vi.mocked(scaleRunPodCapacity).mockResolvedValue({
+      batch_id: 'batch-1',
+      operations: [
+        { id: 'op-1', action: 'add', profile: 'img2img', slot: '01', status: 'pending' },
+        { id: 'op-2', action: 'add', profile: 'img2img', slot: '02', status: 'pending' },
+      ],
+    })
     vi.mocked(fetchRunPodAutoscaler).mockResolvedValue({
       enabled: true,
       configured_enabled: true,
@@ -240,5 +257,34 @@ describe('RunPodCapacityManager', () => {
       enabled: false,
       reason: 'dashboard pause',
     })
+  })
+
+  it('keeps the modal open after submitting and displays operation pages with slots', async () => {
+    vi.mocked(fetchRunPodOperations).mockResolvedValue({
+      operations: Array.from({ length: 8 }, (_value, index) => ({
+        id: `op-${index + 1}`,
+        action: 'add',
+        profile: 'img2img',
+        slot: String(index + 1).padStart(2, '0'),
+        status: 'running',
+        requested_count: 1,
+      })),
+    })
+    const wrapper = mountRunPodCapacityManager()
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('slot 01')
+    expect(wrapper.text()).not.toContain('slot 07')
+    await wrapper.get('.page-2').trigger('click')
+    expect(wrapper.text()).toContain('slot 07')
+
+    await wrapper.get('.modal-ok').trigger('click')
+    await flushPromises()
+
+    expect(scaleRunPodCapacity).toHaveBeenCalled()
+    expect(wrapper.find('.modal-ok').exists()).toBe(true)
+    expect(wrapper.text()).toContain('slot 01')
   })
 })

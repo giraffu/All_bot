@@ -951,6 +951,7 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[prod_worker_common],
     )
     prod_worker_add.add_argument("--count", type=int, required=True)
+    prod_worker_add.add_argument("--exclude-slot", action="append", default=[])
     prod_worker_add.add_argument("--execute", action="store_true")
     prod_worker_add.set_defaults(func=_cmd_runpod_prod_worker)
 

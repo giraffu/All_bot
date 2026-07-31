@@ -47,6 +47,34 @@ def test_base_command_uses_container_env_files_and_slot(monkeypatch, tmp_path):
     assert command[command.index("--prod-env-file") + 1] == str(container_env)
 
 
+def test_plan_add_command_is_read_only_and_excludes_reserved_slots(
+    monkeypatch, tmp_path
+):
+    container_env = tmp_path / "container.env"
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(container_env))
+
+    command = builder.plan_add_command(
+        profile="img2img",
+        count=2,
+        excluded_slots=["01", "03"],
+    )
+
+    assert command[:4] == [
+        "python3",
+        str(tmp_path / "scripts" / "gpu_pool_controller.py"),
+        "runpod",
+        "prod-worker",
+    ]
+    assert command[command.index("--count") + 1] == "2"
+    assert [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--exclude-slot"
+    ] == ["01", "03"]
+    assert "--execute" not in command
+
+
 def test_requested_count_accepts_legacy_desired_count():
     builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
 

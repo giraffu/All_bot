@@ -99,14 +99,14 @@ sequenceDiagram
 
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
-- `POST /api/runpod/scale` 接收多 profile 新增数量，后台拆成 profile 级 `add --count N` operation。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 不允许重复。
+- `POST /api/runpod/scale` 接收多 profile 新增数量。Dashboard 先用只读 add planner 排除已有 Pod 与 Redis 手动预留，再把每个 profile 的 `count=N` 拆成 N 个带明确 `slot` 的 `add --count 1 --slot NN` operation 并发启动；响应返回共同 `batch_id`，每个 operation 返回自身 `slot`、`agent_id` 与 `requested_count=1`。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 仍不允许重复，但已有手动批次运行时允许继续追加同 profile。
 - 当前可管理 profile 为 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`。`scail2` 支持正式 `scail2_action_transfer`、`scail2_video_replacement`；`ltx_video` 支持正式 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override；`pornmaster_flux2_edit` 支持正式 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，模型 manifest 为 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。这些 profile 都是手动备用/临时扩容能力，不代表系统里固定常驻一个 RunPod；没有 heartbeat 或已删除的 `manual_NN` 不应计入可用容量。
 - `POST /api/runpod/workers/{agent_id}/pause` 只提交 `disable` operation，停止目标 RunPod worker 接新单但保留 Pod。
 - `DELETE /api/runpod/workers/{agent_id}` 提交 `down` operation，先 disable 并等待 `current_task_id` 清空，再删除 Pod 释放 RunPod 计费资源。
-- RunPod operation 状态通过 `RunPodOperationStore` seam 持久化；生产默认使用 Redis，测试可注入 in-memory fake。Redis key 固定为 `dashboard:runpod:operations` sorted set、`dashboard:runpod:operation:{id}` JSON、`dashboard:runpod:active_add:{profile}` active add 锁。
+- RunPod operation 状态通过 `RunPodOperationStore` seam 持久化；生产默认使用 Redis，测试可注入 in-memory fake。Redis key 使用 `dashboard:runpod:operations` sorted set、`dashboard:runpod:operation:{id}` JSON、`dashboard:runpod:active_add:{profile}` autoscaler/legacy 独占 add 锁，以及 `dashboard:runpod:manual_add_slots:{profile}` 手动 slot 预留。手动预留整批原子写入并逐 operation 释放；存在手动预留时 autoscaler add 不启动，存在 autoscaler 独占 add 时手动批次不接收。
 - `GET /api/runpod/operations` 从 store 读取最近 operation，并叠加当前进程仍持有的 process handle 状态；响应保留旧字段，并增加 `owner_id`、`attached`、`can_terminate_reason`。
-- `终止` 只允许当前 Dashboard 进程仍能安全控制的 add operation。若 operation 来自旧进程或重启后已 detached，API 返回 409，不按 Redis 里的旧 pid 盲杀进程，避免 PID 复用误杀。
-- 默认保留最近 100 条 operation；完成态 Redis JSON TTL 为 24 小时，运行态不主动过期，避免长操作丢失追踪。
+- `终止` 只允许当前 Dashboard 进程仍能安全控制的 add operation。并发手动新增的每个 operation 只记录和清理自己的明确 slot，因此可单独淘汰拉取慢的 Pod；若 operation 来自旧进程或重启后已 detached，API 返回 409，不按 Redis 里的旧 pid 盲杀进程，避免 PID 复用误杀。
+- 默认保留最近 100 条 operation；完成态 Redis JSON TTL 为 24 小时，运行态不主动过期，避免长操作丢失追踪。RunPod 管理弹窗保持每页 6 条的前端分页，提交成功后保持打开、保留表单并回到第一页，轮询刷新时保留仍有效的当前页。
 - Dashboard RunPod mutation 只打开显式执行门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`。全局 Pod 数、单类型 Pod 数、小时成本上限不再由 Dashboard/API/provider 校验；`RUNPOD_PROD_MAX_MANUAL_SLOTS` 默认按 `100` 作为 manual slot 命名空间。
 - Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；不可变云正式容器默认使用 `/dev/null` 作为两个 env-file 参数，让 operation 子进程继承容器已注入的环境变量，不依赖或挂载 `/app/.env`。镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、`/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py` 与 `/app/ops`。
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
@@ -121,7 +121,7 @@ sequenceDiagram
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。
 - 覆盖历史输出缩略图解析在 SQL 只读事务结束后执行、R2 缩略图异常降级，以及图片缩略图打开原图、视频列表不加载原件且点击后使用当前页弹窗播放。
-- 覆盖 Dashboard RunPod 管理入口的 profile 校验、新增数量 add 命令、旧 `desired_count` 兼容、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2` 选项、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
+- 覆盖 Dashboard RunPod 管理入口的 profile 校验、精确 slot add、手动批次并发/连续追加、Redis slot 原子预留与 autoscaler 互斥、逐 Pod 终止清理、旧 `desired_count` 兼容、worker pause/delete slot 解析，以及弹窗保持打开、slot 展示、最近操作分页、前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
   - `backend_task_id` best-effort cancel

@@ -96,12 +96,24 @@ class RunPodAdminOperationRunner:
                 operation.id,
             )
 
+    async def release_manual_add_slot_if_needed(
+        self,
+        operation: RunPodAdminOperation,
+    ) -> None:
+        if operation.manual_add_profile and operation.slot:
+            await self.store.release_manual_add_slot(
+                operation.manual_add_profile,
+                operation.slot,
+                operation.id,
+            )
+
     async def release_active_locks_if_needed(
         self,
         operation: RunPodAdminOperation,
     ) -> None:
         await self.release_active_add_if_needed(operation)
         await self.release_active_lan_aio_slot_if_needed(operation)
+        await self.release_manual_add_slot_if_needed(operation)
 
     async def active_add_operation_for_profile(
         self,
@@ -153,9 +165,7 @@ class RunPodAdminOperationRunner:
             return float(raw)
         if isinstance(raw, str) and raw:
             try:
-                return float(
-                    calendar.timegm(time.strptime(raw, "%Y-%m-%dT%H:%M:%SZ"))
-                )
+                return float(calendar.timegm(time.strptime(raw, "%Y-%m-%dT%H:%M:%SZ")))
             except ValueError:
                 pass
         return fallback
@@ -176,11 +186,7 @@ class RunPodAdminOperationRunner:
             or payload.get("terminate_requested")
         ):
             return None
-        slots = [
-            str(slot)
-            for slot in payload.get("cleanup_slots") or []
-            if str(slot)
-        ]
+        slots = [str(slot) for slot in payload.get("cleanup_slots") or [] if str(slot)]
         try:
             requested_count = int(payload.get("requested_count") or len(slots))
         except (TypeError, ValueError):
@@ -205,9 +211,9 @@ class RunPodAdminOperationRunner:
                 "running",
             }:
                 return None
-            control_state = str(
-                worker.get("control_state") or "enabled"
-            ).strip().lower()
+            control_state = (
+                str(worker.get("control_state") or "enabled").strip().lower()
+            )
             if control_state != "enabled":
                 return None
             try:
@@ -216,9 +222,7 @@ class RunPodAdminOperationRunner:
                 return None
             heartbeat_age = now - last_seen
             if not (
-                0
-                <= heartbeat_age
-                <= self.detached_reconcile_heartbeat_max_age_seconds
+                0 <= heartbeat_age <= self.detached_reconcile_heartbeat_max_age_seconds
             ):
                 return None
         return agent_ids
@@ -264,10 +268,17 @@ class RunPodAdminOperationRunner:
                 created_at=created_at,
                 ttl_seconds=FINISHED_OPERATION_TTL_SECONDS,
             )
-            await self.store.release_active_add(
-                str(payload.get("profile") or ""),
-                str(payload.get("id") or ""),
-            )
+            operation_id = str(payload.get("id") or "")
+            manual_add_profile = str(payload.get("manual_add_profile") or "")
+            slot = str(payload.get("slot") or "")
+            if manual_add_profile and slot:
+                await self.store.release_manual_add_slot(
+                    manual_add_profile, slot, operation_id
+                )
+            else:
+                await self.store.release_active_add(
+                    str(payload.get("profile") or ""), operation_id
+                )
             self.logger.info(
                 "Reconciled detached RunPod add operation %s with healthy agents %s",
                 payload.get("id"),
@@ -308,7 +319,9 @@ class RunPodAdminOperationRunner:
             if operation.id not in seen_operation_ids
         ]
         local_only_operations.sort(key=lambda item: item.created_at, reverse=True)
-        operations.extend(operation_payload(operation) for operation in local_only_operations)
+        operations.extend(
+            operation_payload(operation) for operation in local_only_operations
+        )
 
         return {
             "operations": operations,
@@ -439,6 +452,66 @@ class RunPodAdminOperationRunner:
             task.add_done_callback(self.operation_tasks.discard)
         return operation
 
+    async def register_manual_add_batch(
+        self,
+        *,
+        profile: str,
+        batch_id: str,
+        specs: list[dict[str, Any]],
+        env: dict[str, str],
+        spawn_task_func=None,
+    ) -> list[RunPodAdminOperation]:
+        operations = [
+            RunPodAdminOperation(
+                id=uuid.uuid4().hex,
+                action="add",
+                profile=profile,
+                command=list(spec["command"]),
+                requested_count=1,
+                agent_id=str(spec["agent_id"]),
+                slot=str(spec["slot"]),
+                batch_id=batch_id,
+                manual_add_profile=profile,
+                source="manual",
+            )
+            for spec in specs
+        ]
+        reservations = {str(operation.slot): operation.id for operation in operations}
+        acquired = await self.store.reserve_manual_add_slots(profile, reservations)
+        if not acquired:
+            raise HTTPException(
+                status_code=409,
+                detail=f"RunPod manual add slots changed while planning profile {profile}",
+            )
+
+        try:
+            for operation in operations:
+                self.operations[operation.id] = operation
+                await self.persist_operation(operation)
+        except Exception:
+            for operation in operations:
+                self.operations.pop(operation.id, None)
+                await self.store.release_manual_add_slot(
+                    profile, str(operation.slot), operation.id
+                )
+            raise
+
+        self.prune_operations()
+        task_factory = spawn_task_func or asyncio.create_task
+        for operation in operations:
+            coroutine = self.run_operation(
+                operation.id,
+                command=operation.command,
+                env=env,
+            )
+            task = task_factory(coroutine)
+            if task is None:
+                coroutine.close()
+            if isinstance(task, asyncio.Task):
+                self.operation_tasks.add(task)
+                task.add_done_callback(self.operation_tasks.discard)
+        return operations
+
     async def run_operation(
         self,
         operation_id: str,
@@ -494,13 +567,16 @@ class RunPodAdminOperationRunner:
                 if operation.exit_code != 0:
                     operation.error = summarize_operation_failure(operation)
                     if (
-                        operation.source == "autoscaler"
-                        and operation.action == "add"
+                        operation.action == "add"
                         and operation.cleanup_slots
+                        and (
+                            operation.source == "autoscaler"
+                            or operation.manual_add_profile is not None
+                        )
                     ):
                         append_operation_log(
                             operation,
-                            "[dashboard-runpod] autoscaler add failed after "
+                            "[dashboard-runpod] add failed after "
                             "creating RunPod slot; cleanup started",
                         )
                         cleanup_ok = await self.run_termination_cleanup(
@@ -538,7 +614,9 @@ class RunPodAdminOperationRunner:
                 operation, f"[dashboard-runpod] sent SIGTERM to process group {pid}"
             )
         except ProcessLookupError:
-            append_operation_log(operation, "[dashboard-runpod] process group already exited")
+            append_operation_log(
+                operation, "[dashboard-runpod] process group already exited"
+            )
         except Exception as exc:
             append_operation_log(
                 operation,
@@ -625,8 +703,7 @@ class RunPodAdminOperationRunner:
             else:
                 operation.cleanup_status = "skipped_locked"
             operation.cleanup_error = (
-                "cleanup skipped locked RunPod worker(s): "
-                + ", ".join(locked_skips)
+                "cleanup skipped locked RunPod worker(s): " + ", ".join(locked_skips)
             )
         else:
             operation.cleanup_status = "succeeded" if cleanup_ok else "failed"

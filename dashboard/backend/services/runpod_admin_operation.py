@@ -38,6 +38,8 @@ class RunPodAdminOperation:
     requested_count: int | None = None
     agent_id: str | None = None
     slot: str | None = None
+    batch_id: str | None = None
+    manual_add_profile: str | None = None
     status: str = "pending"
     started_at: float | None = None
     ended_at: float | None = None
@@ -130,9 +132,7 @@ def operation_payload(
     owner_id: str = RUNPOD_OPERATION_OWNER_ID,
     log_lines: int = DEFAULT_OPERATION_LOG_LINES,
 ) -> dict[str, Any]:
-    can_terminate_reason = can_terminate_operation_reason(
-        operation, owner_id=owner_id
-    )
+    can_terminate_reason = can_terminate_operation_reason(operation, owner_id=owner_id)
     return {
         "id": operation.id,
         "action": operation.action,
@@ -142,6 +142,7 @@ def operation_payload(
         "requested_count": operation.requested_count,
         "agent_id": operation.agent_id,
         "slot": operation.slot,
+        "batch_id": operation.batch_id,
         "status": operation.status,
         "created_at": now_iso(operation.created_at),
         "started_at": now_iso(operation.started_at),
@@ -162,6 +163,7 @@ def operation_payload(
         "log_tail": list(operation.log_lines[-log_lines:]),
         "command": redacted_command(operation.command),
         "active_lan_aio_slot": operation.active_lan_aio_slot,
+        "manual_add_profile": operation.manual_add_profile,
         "source": operation.source,
         "trigger_reason": operation.trigger_reason,
     }

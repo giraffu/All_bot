@@ -67,17 +67,52 @@ class RunPodProdWorkerPlanner:
         count: int,
         slot_pods: dict[str, dict[str, Any]],
         workers: list[dict[str, Any]],
+        requested_slots: list[str] | None = None,
+        excluded_slots: list[str] | None = None,
     ) -> dict[str, Any]:
         existing_slots = set(slot_pods)
         all_slots = prod_slot_sequence(self.max_manual_slots)
-        free_slots = [slot for slot in all_slots if slot not in existing_slots]
+        normalized_excluded_slots = {
+            str(slot).zfill(2) for slot in (excluded_slots or [])
+        }
+        invalid_excluded_slots = normalized_excluded_slots - set(all_slots)
+        if invalid_excluded_slots:
+            invalid_slot = sorted(invalid_excluded_slots, key=slot_sort_key)[0]
+            raise RunPodProdWorkerPlanError(
+                f"prod-worker add excluded slot {invalid_slot} is outside the manual slot range"
+            )
+        free_slots = [
+            slot
+            for slot in all_slots
+            if slot not in existing_slots and slot not in normalized_excluded_slots
+        ]
+        if requested_slots is not None:
+            normalized_slots = [str(slot).zfill(2) for slot in requested_slots]
+            if len(normalized_slots) != count:
+                raise RunPodProdWorkerPlanError(
+                    "prod-worker add requested slot count does not match --count"
+                )
+            invalid_slots = [slot for slot in normalized_slots if slot not in all_slots]
+            if invalid_slots:
+                raise RunPodProdWorkerPlanError(
+                    f"prod-worker add slot {invalid_slots[0]} is outside the manual slot range"
+                )
+            occupied_slots = [
+                slot for slot in normalized_slots if slot in existing_slots
+            ]
+            if occupied_slots:
+                raise RunPodProdWorkerPlanError(
+                    f"prod-worker add slot {occupied_slots[0]} is not free"
+                )
+            create_slots = normalized_slots
+        else:
+            create_slots = free_slots[:count]
         if len(free_slots) < count:
             raise RunPodProdWorkerPlanError(
                 f"prod-worker add requires {count} free slot(s); only "
                 f"{len(free_slots)} available within "
                 f"RUNPOD_PROD_MAX_MANUAL_SLOTS={self.max_manual_slots}"
             )
-        create_slots = free_slots[:count]
         slots: dict[str, Any] = {}
         for slot in sorted(existing_slots | set(create_slots), key=slot_sort_key):
             agent_id = prod_agent_id_from_slot(
@@ -95,6 +130,7 @@ class RunPodProdWorkerPlanner:
             "requested_count": count,
             "existing_slots": sorted(existing_slots, key=slot_sort_key),
             "free_slots": free_slots,
+            "excluded_slots": sorted(normalized_excluded_slots, key=slot_sort_key),
             "create_slots": create_slots,
             "enable_slots": [],
             "delete_slots": [],

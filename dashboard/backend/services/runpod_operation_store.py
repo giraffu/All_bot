@@ -9,6 +9,7 @@ from typing import Any, Protocol
 OPERATIONS_ZSET_KEY = "dashboard:runpod:operations"
 OPERATION_KEY_PREFIX = "dashboard:runpod:operation:"
 ACTIVE_ADD_KEY_PREFIX = "dashboard:runpod:active_add:"
+MANUAL_ADD_SLOTS_KEY_PREFIX = "dashboard:runpod:manual_add_slots:"
 ACTIVE_LAN_AIO_SLOT_KEY_PREFIX = "dashboard:runpod:active_lan_aio_slot:"
 LOCKED_RUNPOD_WORKERS_KEY = "dashboard:runpod:locked_workers"
 FINISHED_OPERATION_TTL_SECONDS = 24 * 60 * 60
@@ -21,62 +22,58 @@ class RunPodOperationStore(Protocol):
         *,
         created_at: float,
         ttl_seconds: int | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    async def get_operation(self, operation_id: str) -> dict[str, Any] | None:
-        ...
+    async def get_operation(self, operation_id: str) -> dict[str, Any] | None: ...
 
-    async def list_operations(self, *, limit: int) -> list[dict[str, Any]]:
-        ...
+    async def list_operations(self, *, limit: int) -> list[dict[str, Any]]: ...
 
-    async def prune_operations(self, *, max_records: int) -> None:
-        ...
+    async def prune_operations(self, *, max_records: int) -> None: ...
 
-    async def acquire_active_add(self, profile: str, operation_id: str) -> bool:
-        ...
+    async def acquire_active_add(self, profile: str, operation_id: str) -> bool: ...
 
-    async def get_active_add(self, profile: str) -> str | None:
-        ...
+    async def get_active_add(self, profile: str) -> str | None: ...
 
-    async def release_active_add(self, profile: str, operation_id: str) -> None:
-        ...
+    async def release_active_add(self, profile: str, operation_id: str) -> None: ...
+
+    async def reserve_manual_add_slots(
+        self, profile: str, reservations: dict[str, str]
+    ) -> bool: ...
+
+    async def list_manual_add_slots(self, profile: str) -> dict[str, str]: ...
+
+    async def release_manual_add_slot(
+        self, profile: str, slot: str, operation_id: str
+    ) -> None: ...
 
     async def acquire_active_lan_aio_slot(
         self,
         physical_slot_key: str,
         operation_id: str,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
-    async def get_active_lan_aio_slot(self, physical_slot_key: str) -> str | None:
-        ...
+    async def get_active_lan_aio_slot(self, physical_slot_key: str) -> str | None: ...
 
     async def release_active_lan_aio_slot(
         self,
         physical_slot_key: str,
         operation_id: str,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def set_locked_runpod_worker(
         self,
         agent_id: str,
         payload: dict[str, Any],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def get_locked_runpod_worker(
         self,
         agent_id: str,
-    ) -> dict[str, Any] | None:
-        ...
+    ) -> dict[str, Any] | None: ...
 
-    async def list_locked_runpod_workers(self) -> dict[str, dict[str, Any]]:
-        ...
+    async def list_locked_runpod_workers(self) -> dict[str, dict[str, Any]]: ...
 
-    async def clear_locked_runpod_worker(self, agent_id: str) -> None:
-        ...
+    async def clear_locked_runpod_worker(self, agent_id: str) -> None: ...
 
 
 class InMemoryRunPodOperationStore:
@@ -84,6 +81,7 @@ class InMemoryRunPodOperationStore:
         self.operations: dict[str, dict[str, Any]] = {}
         self.scores: dict[str, float] = {}
         self.active_add: dict[str, str] = {}
+        self.manual_add_slots: dict[str, dict[str, str]] = {}
         self.active_lan_aio_slot: dict[str, str] = {}
         self.locked_runpod_workers: dict[str, dict[str, Any]] = {}
 
@@ -122,7 +120,7 @@ class InMemoryRunPodOperationStore:
             self.scores.pop(operation_id, None)
 
     async def acquire_active_add(self, profile: str, operation_id: str) -> bool:
-        if profile in self.active_add:
+        if profile in self.active_add or self.manual_add_slots.get(profile):
             return False
         self.active_add[profile] = operation_id
         return True
@@ -133,6 +131,34 @@ class InMemoryRunPodOperationStore:
     async def release_active_add(self, profile: str, operation_id: str) -> None:
         if self.active_add.get(profile) == operation_id:
             self.active_add.pop(profile, None)
+
+    async def reserve_manual_add_slots(
+        self, profile: str, reservations: dict[str, str]
+    ) -> bool:
+        if not reservations or profile in self.active_add:
+            return False
+        active = self.manual_add_slots.setdefault(profile, {})
+        if any(slot in active for slot in reservations):
+            return False
+        active.update(
+            {
+                str(slot): str(operation_id)
+                for slot, operation_id in reservations.items()
+            }
+        )
+        return True
+
+    async def list_manual_add_slots(self, profile: str) -> dict[str, str]:
+        return deepcopy(self.manual_add_slots.get(profile, {}))
+
+    async def release_manual_add_slot(
+        self, profile: str, slot: str, operation_id: str
+    ) -> None:
+        active = self.manual_add_slots.get(profile)
+        if active and active.get(str(slot)) == str(operation_id):
+            active.pop(str(slot), None)
+            if not active:
+                self.manual_add_slots.pop(profile, None)
 
     async def acquire_active_lan_aio_slot(
         self,
@@ -187,6 +213,10 @@ class RedisRunPodOperationStore:
     @staticmethod
     def active_add_key(profile: str) -> str:
         return f"{ACTIVE_ADD_KEY_PREFIX}{profile}"
+
+    @staticmethod
+    def manual_add_slots_key(profile: str) -> str:
+        return f"{MANUAL_ADD_SLOTS_KEY_PREFIX}{profile}"
 
     @staticmethod
     def active_lan_aio_slot_key(physical_slot_key: str) -> str:
@@ -249,11 +279,19 @@ class RedisRunPodOperationStore:
             await pipe.execute()
 
     async def acquire_active_add(self, profile: str, operation_id: str) -> bool:
+        script = """
+if redis.call("hlen", KEYS[2]) > 0 then
+    return 0
+end
+return redis.call("set", KEYS[1], ARGV[1], "NX") and 1 or 0
+"""
         return bool(
-            await self.redis.set(
+            await self.redis.eval(
+                script,
+                2,
                 self.active_add_key(profile),
+                self.manual_add_slots_key(profile),
                 operation_id,
-                nx=True,
             )
         )
 
@@ -269,6 +307,61 @@ end
 return 0
 """
         await self.redis.eval(script, 1, self.active_add_key(profile), operation_id)
+
+    async def reserve_manual_add_slots(
+        self, profile: str, reservations: dict[str, str]
+    ) -> bool:
+        if not reservations:
+            return False
+        slots = list(reservations)
+        values = [str(reservations[slot]) for slot in slots]
+        script = """
+if redis.call("exists", KEYS[1]) == 1 then
+    return 0
+end
+for index = 1, #ARGV, 2 do
+    if redis.call("hexists", KEYS[2], ARGV[index]) == 1 then
+        return 0
+    end
+end
+for index = 1, #ARGV, 2 do
+    redis.call("hset", KEYS[2], ARGV[index], ARGV[index + 1])
+end
+return 1
+"""
+        args: list[str] = []
+        for slot, operation_id in zip(slots, values):
+            args.extend([str(slot), operation_id])
+        return bool(
+            await self.redis.eval(
+                script,
+                2,
+                self.active_add_key(profile),
+                self.manual_add_slots_key(profile),
+                *args,
+            )
+        )
+
+    async def list_manual_add_slots(self, profile: str) -> dict[str, str]:
+        payload = await self.redis.hgetall(self.manual_add_slots_key(profile))
+        return {str(slot): str(operation_id) for slot, operation_id in payload.items()}
+
+    async def release_manual_add_slot(
+        self, profile: str, slot: str, operation_id: str
+    ) -> None:
+        script = """
+if redis.call("hget", KEYS[1], ARGV[1]) == ARGV[2] then
+    return redis.call("hdel", KEYS[1], ARGV[1])
+end
+return 0
+"""
+        await self.redis.eval(
+            script,
+            1,
+            self.manual_add_slots_key(profile),
+            str(slot),
+            str(operation_id),
+        )
 
     async def acquire_active_lan_aio_slot(
         self,
