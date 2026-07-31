@@ -181,6 +181,9 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 - 云正式 `/system/status`、管理后台 worker 监控卡顿
   - 常见根因：Central 状态观测重复扫描 Redis/Valkey、Dashboard stats 重查询、前端高频缓存击穿或 Valkey 连接抖动。
   - 处理：确认 Central 使用共享 Redis 客户端和约 10 秒观测缓存；确认 Dashboard stats 缓存未被 `_t` 参数击穿；确认 `/system/status` 和 `/system/workers` 只是观测接口，不参与任务分发。
+- 云正式 Central 健康检查与全部 Worker 心跳同时消失，但进程仍在
+  - 常见根因：Central 的结果媒体代理读取 R2/MinIO 时发生慢读或不完整响应，并在单进程事件循环中执行了同步存储调用；Dashboard 对 Central 超时会降级显示 `0 Worker`，不代表 GPU Worker 已全部退出。
+  - 处理：关联 Central 日志中的媒体 `Fetching`、存储读取错误和健康检查超时；结果媒体下载必须在线程中执行，不能阻塞 heartbeat、pop、status、complete 与观测接口。紧急恢复可只重启当前 Central 精确镜像，但旧镜像被同一媒体请求再次命中时仍会复发，必须发布包含非阻塞读取修复的 Central artifact。
 - 云控制面磁盘被 Docker 构建缓存或无限容器日志占用
   - 先用 `df -hT`、`docker system df -v`、`docker buildx du` 和逐容器 HostConfig 只读核对真实占用；构建缓存的 reclaimable 数字不等于可无条件删除，仍需确认当前无 CI/发布构建使用对应 builder。
   - 正式控制面 Compose 的所有服务必须保持 `json-file`、`max-size=50m`、`max-file=5`，并通过不可变发布重建生效。已有超大日志不会因仓库修改自动收缩；不得直接删除 `/var/lib/docker/containers` 下文件。

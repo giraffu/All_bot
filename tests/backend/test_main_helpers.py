@@ -1,5 +1,9 @@
 import asyncio
+import os
+import threading
+import time
 from functools import partial
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -1352,3 +1356,46 @@ async def test_cancel_task_or_404_raises_not_found():
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Task not found"
+
+
+@pytest.mark.asyncio
+async def test_serving_result_file_does_not_block_worker_heartbeats():
+    heartbeat_completed = threading.Event()
+    download_observations = []
+
+    class FakeQueueManager:
+        async def get_task_status(self, task_id):
+            assert task_id == "task-1"
+            return {"status": "done", "result_path": "result.png"}
+
+    class SlowMinioClient:
+        def fget_object(self, bucket_name, object_name, file_path):
+            assert bucket_name == "results"
+            assert object_name == "result.png"
+            time.sleep(0.05)
+            download_observations.append(heartbeat_completed.is_set())
+            Path(file_path).write_bytes(b"image")
+
+    class Settings:
+        minio_result_bucket = "results"
+
+    async def publish_heartbeat():
+        await asyncio.sleep(0.01)
+        heartbeat_completed.set()
+
+    response, _ = await asyncio.gather(
+        main_response_helpers.serve_task_result_file(
+            task_id="task-1",
+            ready_error_detail="not ready",
+            queue_manager=FakeQueueManager(),
+            minio_client=SlowMinioClient(),
+            settings=Settings(),
+            logger=main_response_helpers.logger,
+        ),
+        publish_heartbeat(),
+    )
+
+    try:
+        assert download_observations == [True]
+    finally:
+        os.remove(response.path)

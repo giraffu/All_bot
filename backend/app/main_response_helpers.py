@@ -492,7 +492,12 @@ async def serve_task_result_file(
         )
         fd, temp_path = tempfile.mkstemp()
         os.close(fd)
-        minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
+        await asyncio.to_thread(
+            minio_client.fget_object,
+            settings.minio_result_bucket,
+            result_path,
+            temp_path,
+        )
         background_tasks = BackgroundTasks()
         background_tasks.add_task(os.remove, temp_path)
         return FileResponse(temp_path, background=background_tasks)
