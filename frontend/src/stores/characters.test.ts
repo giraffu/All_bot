@@ -4,6 +4,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchCharacterBatchCapacity: vi.fn(),
   fetchCharacters: vi.fn(),
   generateCharacterView: vi.fn(),
+  uploadCharacterView: vi.fn(),
 }))
 const addTask = vi.hoisted(() => vi.fn())
 const settleExternalTask = vi.hoisted(() => vi.fn())
@@ -15,6 +16,7 @@ vi.mock('@/api/characters', () => ({
   fetchCharacterBatchCapacity: apiMocks.fetchCharacterBatchCapacity,
   fetchCharacters: apiMocks.fetchCharacters,
   generateCharacterView: apiMocks.generateCharacterView,
+  uploadCharacterView: apiMocks.uploadCharacterView,
   saveCharacterReference: vi.fn(),
   updateCharacter: vi.fn(),
 }))
@@ -59,23 +61,45 @@ describe('characters store', () => {
     const store = useCharactersStore()
     await store.generateView(
       'character-1',
-      'face_side',
-      'side portrait',
+      'body_side',
+      'side body',
       'free_edit_v2_5',
-      '侧脸图',
+      '全身侧面图',
     )
 
     expect(apiMocks.generateCharacterView).toHaveBeenCalledWith(
       'character-1',
-      'face_side',
-      'side portrait',
+      'body_side',
+      'side body',
       'free_edit_v2_5',
     )
     expect(addTask).toHaveBeenCalledWith(
       'character-view-task-1',
       'free_edit_v2_5',
-      '人物参考图 · 侧脸图',
+      '人物参考图 · 全身侧面图',
     )
+  })
+
+  it('uploads a view without registering a floating generation task', async () => {
+    apiMocks.uploadCharacterView.mockResolvedValue({
+      type: 'face_front',
+      status: 'ready',
+      preview_url: 'https://example.com/front.png',
+    })
+
+    const store = useCharactersStore()
+    await store.uploadView(
+      'character-1',
+      'face_front',
+      'web_uploads/123/front.png',
+    )
+
+    expect(apiMocks.uploadCharacterView).toHaveBeenCalledWith(
+      'character-1',
+      'face_front',
+      'web_uploads/123/front.png',
+    )
+    expect(addTask).not.toHaveBeenCalled()
   })
 
   it('settles floating tasks from persisted character view terminal states', async () => {
@@ -84,8 +108,8 @@ describe('characters store', () => {
         id: 'character-1',
         views: [
           {
-            type: 'face_three_quarter',
-            label: '3/4 侧脸图',
+            type: 'face_front',
+            label: '正脸图',
             task_id: 'ready-view-task',
             status: 'ready',
             preview_url: 'https://example.com/ready.png',

@@ -9,7 +9,10 @@ from pydantic import ValidationError
 
 from config import MINIO_BUCKET
 from src.core.task_core import ConcurrencyLimitError
-from src.web_api.schemas.character_schema import CharacterBuildRequest
+from src.web_api.schemas.character_schema import (
+    CharacterBuildRequest,
+    CharacterViewUploadRequest,
+)
 from src.web_api.services import character_reference_service as service
 
 
@@ -69,32 +72,23 @@ def test_character_name_rejects_whitespace_only_values():
         )
 
 
-def test_character_view_catalog_exposes_six_distinct_editable_targets():
+def test_character_view_catalog_exposes_four_official_nude_character_targets():
     assert [item["type"] for item in service.CHARACTER_VIEW_CATALOG] == [
         "face_front",
-        "face_side",
-        "face_three_quarter",
         "body_front",
         "body_side",
         "body_back",
     ]
-    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 6
+    assert len({item["default_prompt"] for item in service.CHARACTER_VIEW_CATALOG}) == 4
     assert all(
         item["default_prompt"].strip() for item in service.CHARACTER_VIEW_CATALOG
     )
-
-
-def test_three_quarter_default_prompt_requires_visible_asymmetric_yaw():
-    prompt = next(
-        item["default_prompt"]
-        for item in service.CHARACTER_VIEW_CATALOG
-        if item["type"] == "face_three_quarter"
-    )
-
-    assert "40-45 degrees" in prompt
-    assert "far eye noticeably narrower and smaller" in prompt
-    assert "nose tip clearly offset from the facial centerline" in prompt
-    assert "Not front-facing, not symmetrical, and not a full side profile" in prompt
+    for item in service.CHARACTER_VIEW_CATALOG:
+        prompt = item["default_prompt"]
+        assert "同一位成年人" in prompt
+        assert "完全裸体" in prompt
+        assert "纯黑背景" in prompt
+        assert not any("a" <= char.lower() <= "z" for char in prompt)
 
 
 @pytest.mark.asyncio
@@ -164,7 +158,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         db=db,
         current_user=_user(),
         character_id="character-1",
-        view_type="face_side",
+        view_type="body_side",
         payload=CharacterViewGenerateRequest(
             prompt="custom side portrait",
             engine=engine,
@@ -173,7 +167,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
 
     assert result["cost"] == cost
     assert result["status"] == "pending"
-    assert db.added[0].view_type == "face_side"
+    assert db.added[0].view_type == "body_side"
     kwargs = submit.await_args.kwargs
     assert kwargs["req"].task_type == task_type
     assert kwargs["req"].inputs == {
@@ -186,11 +180,63 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         "_character_reference_view": {
             "version": 1,
             "character_id": "character-1",
-            "view_type": "face_side",
+            "view_type": "body_side",
         },
         "record_history": False,
     }
     assert kwargs["allow_contribute_override"] is False
+
+
+@pytest.mark.asyncio
+async def test_upload_character_view_persists_owned_image_as_ready_without_task(
+    monkeypatch,
+):
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="draft",
+    )
+    db = _Session([character, None])
+    monkeypatch.setattr(
+        service.storage, "async_object_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        service.storage, "async_object_size", AsyncMock(return_value=2048)
+    )
+    monkeypatch.setattr(
+        service.storage, "get_file_bytes", MagicMock(return_value=b"uploaded-image")
+    )
+    upload = MagicMock(return_value="stored")
+    monkeypatch.setattr(service.storage, "upload_bytes", upload)
+    monkeypatch.setattr(
+        service.storage,
+        "get_presigned_url",
+        lambda object_key, bucket=None: f"https://media/{object_key}",
+    )
+
+    result = await service.upload_character_view(
+        db=db,
+        current_user=_user(),
+        character_id="character-1",
+        view_type="face_front",
+        payload=CharacterViewUploadRequest(
+            source_object_key="web_uploads/123/front.png"
+        ),
+    )
+
+    view = db.added[0]
+    assert result["type"] == "face_front"
+    assert result["status"] == "ready"
+    assert view.task_id is None
+    assert view.prompt == service.CHARACTER_VIEW_BY_TYPE["face_front"]["default_prompt"]
+    assert view.object_key.startswith(
+        f"{MINIO_BUCKET}/character_references/123/character-1/views/face_front-"
+    )
+    assert view.object_key.endswith(".png")
+    upload.assert_called_once()
+    assert upload.call_args.args[0] == b"uploaded-image"
+    assert upload.call_args.args[2] == "image/png"
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -239,9 +285,20 @@ async def test_character_view_route_maps_concurrency_race_to_retryable_429(monke
 
 
 @pytest.mark.asyncio
-async def test_save_character_requires_two_ready_views(monkeypatch):
+async def test_save_character_requires_all_four_official_views(monkeypatch):
     character = SimpleNamespace(id="character-1", user_id=123, status="draft")
-    db = _Session([character, [SimpleNamespace(status="ready", object_key="one.png")]])
+    db = _Session(
+        [
+            character,
+            [
+                SimpleNamespace(
+                    view_type="face_front",
+                    status="ready",
+                    object_key="one.png",
+                )
+            ],
+        ]
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.save_character(
@@ -251,7 +308,7 @@ async def test_save_character_requires_two_ready_views(monkeypatch):
         )
 
     assert exc_info.value.status_code == 409
-    assert "至少生成 2 张" in str(exc_info.value.detail)
+    assert "完成全部 4 张" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio
@@ -276,10 +333,24 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
             object_key=f"{MINIO_BUCKET}/views/front.png",
         ),
         SimpleNamespace(
+            view_type="body_front",
+            prompt="body front",
+            status="ready",
+            task_id="view-2",
+            object_key=f"{MINIO_BUCKET}/views/body-front.png",
+        ),
+        SimpleNamespace(
+            view_type="body_side",
+            prompt="body side",
+            status="ready",
+            task_id="view-3",
+            object_key=f"{MINIO_BUCKET}/views/body-side.png",
+        ),
+        SimpleNamespace(
             view_type="body_back",
             prompt="back",
             status="ready",
-            task_id="view-2",
+            task_id="view-4",
             object_key=f"{MINIO_BUCKET}/views/back.png",
         ),
     ]
@@ -290,11 +361,17 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         Image.new("RGB", (64, 64), color).save(output, format="PNG")
         return output.getvalue()
 
+    colors = {
+        "front.png": "red",
+        "body-front.png": "green",
+        "body-side.png": "blue",
+        "back.png": "yellow",
+    }
     monkeypatch.setattr(
         service.storage,
         "get_file_bytes",
         lambda object_key, bucket=None: _image_bytes(
-            "red" if object_key.endswith("front.png") else "blue"
+            colors[object_key.rsplit("/", 1)[-1]]
         ),
     )
     upload = MagicMock()
@@ -324,6 +401,12 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         "/character-1/ingredients-character-panel-v2.png"
     )
     assert upload.call_count == 1
+    with Image.open(io.BytesIO(upload.call_args.args[0])) as panel:
+        assert panel.size == (1536, 896)
+        assert panel.getpixel((288, 448)) == (255, 0, 0)
+        assert panel.getpixel((736, 448)) == (0, 128, 0)
+        assert panel.getpixel((1056, 448)) == (0, 0, 255)
+        assert panel.getpixel((1376, 448)) == (255, 255, 0)
 
 
 @pytest.mark.asyncio
@@ -331,7 +414,7 @@ async def test_character_view_finalizer_updates_only_matching_child(monkeypatch)
     from src.database import core as database_core
 
     view = SimpleNamespace(
-        view_type="face_side",
+        view_type="body_side",
         status="pending",
         object_key=None,
         updated_at=None,
@@ -429,8 +512,12 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
 
     db = _Session(
         [
-            SimpleNamespace(status="ready", sheet_object_key="bot-data/private/sheet.png"),
-            [],
+            SimpleNamespace(
+                status="ready",
+                sheet_object_key=(
+                    "bot-data/private/ingredients-character-panel-v2.png"
+                ),
+            ),
         ]
     )
     assert (
@@ -439,41 +526,25 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
             user_id=123,
             character_id="character-1",
         )
-        == "bot-data/private/sheet.png"
+        == "bot-data/private/ingredients-character-panel-v2.png"
     )
     db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_ready_character_resolution_migrates_legacy_sheet_layout(monkeypatch):
+async def test_ready_character_resolution_rejects_obsolete_sheet_layout():
     row = SimpleNamespace(
         id="character-1",
         user_id=123,
         status="ready",
         sheet_object_key="bot-data/private/sheet.png",
     )
-    views = [
-        SimpleNamespace(status="ready", object_key="bot-data/views/front.png"),
-        SimpleNamespace(status="ready", object_key="bot-data/views/body.png"),
-    ]
-    materialize = AsyncMock(
-        return_value={
-            "sheet_object_key": (
-                "bot-data/character_references/123/character-1/"
-                "ingredients-character-panel-v2.png"
-            )
-        }
-    )
-    monkeypatch.setattr(service, "_materialize_saved_character_sheet", materialize)
-
-    result = await service.resolve_ready_character_sheet(
-        db=_Session([row, views]),
-        user_id=123,
-        character_id="character-1",
-    )
-
-    assert result.endswith("/ingredients-character-panel-v2.png")
-    materialize.assert_awaited_once()
+    with pytest.raises(HTTPException, match="重新保存"):
+        await service.resolve_ready_character_sheet(
+            db=_Session([row]),
+            user_id=123,
+            character_id="character-1",
+        )
 
 
 @pytest.mark.asyncio

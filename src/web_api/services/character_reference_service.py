@@ -28,9 +28,14 @@ from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services.task_submission_service import submit_generation_task
 
 ALLOWED_CHARACTER_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+CHARACTER_IMAGE_CONTENT_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+}
 CHARACTER_READY_LIMIT = 20
 CHARACTER_SOURCE_MAX_BYTES = 20 * 1024 * 1024
-CHARACTER_MIN_READY_VIEWS = 2
 CHARACTER_VIEW_TASK_TYPES = {
     "free_edit": "edit",
     "free_edit_v2_5": "free_edit_v2_5",
@@ -43,37 +48,10 @@ CHARACTER_VIEW_CATALOG = (
         "label": "正脸图",
         "index": 1,
         "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, clothing and accessories. front close-up face "
-            "portrait, looking directly at camera. Single view, pure black "
-            "background, no text, labels, border or collage."
-        ),
-    },
-    {
-        "type": "face_side",
-        "label": "侧脸图",
-        "index": 2,
-        "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, clothing and accessories. strict side-profile "
-            "close-up face portrait, looking left. Single view, pure black "
-            "background, no text, labels, border or collage."
-        ),
-    },
-    {
-        "type": "face_three_quarter",
-        "label": "3/4 侧脸图",
-        "index": 3,
-        "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, clothing and accessories. True three-quarter "
-            "close-up face portrait: rotate the head 40-45 degrees toward the "
-            "viewer's left. Keep both eyes visible, with the far eye noticeably "
-            "narrower and smaller than the near eye; the nose tip clearly offset "
-            "from the facial centerline and one cheek dominant. The gaze follows "
-            "the head direction. Not front-facing, not symmetrical, and not a full "
-            "side profile. Single view, pure black background, no text, labels, "
-            "border or collage."
+            "生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、"
+            "肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
+            "直视镜头，画面包括完整头部、裸露肩部和上胸。仅一个人物，纯黑背景，"
+            "不要文字、标签、边框或拼贴。"
         ),
     },
     {
@@ -81,10 +59,10 @@ CHARACTER_VIEW_CATALOG = (
         "label": "全身正面图",
         "index": 4,
         "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, body shape, clothing and accessories. front "
-            "full-body standing view, head and feet fully visible. Single view, "
-            "pure black background, no text, labels, border or collage."
+            "生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、"
+            "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
+            "配饰，正对镜头自然站立，从头顶到双脚完整可见。仅一个人物，纯黑背景，"
+            "不要文字、标签、边框或拼贴。"
         ),
     },
     {
@@ -92,10 +70,10 @@ CHARACTER_VIEW_CATALOG = (
         "label": "全身侧面图",
         "index": 5,
         "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, body shape, clothing and accessories. strict "
-            "side-profile full-body standing view, head and feet fully visible. "
-            "Single view, pure black background, no text, labels, border or collage."
+            "生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、"
+            "肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何"
+            "配饰，身体与头部均向左旋转九十度，呈严格侧面，从头顶到双脚完整可见。"
+            "仅一个人物，纯黑背景，不要文字、标签、边框或拼贴。"
         ),
     },
     {
@@ -103,10 +81,10 @@ CHARACTER_VIEW_CATALOG = (
         "label": "全身背面图",
         "index": 6,
         "default_prompt": (
-            "Same adult person as the source image; preserve exact identity, "
-            "hairstyle, body shape, clothing and accessories. full-body back view "
-            "facing away from camera, head and feet fully visible. Single view, "
-            "pure black background, no text, labels, border or collage."
+            "生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、"
+            "身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，"
+            "背对镜头自然站立，不回头，从头顶到双脚完整可见。仅一个人物，纯黑背景，"
+            "不要文字、标签、边框或拼贴。"
         ),
     },
 )
@@ -114,6 +92,7 @@ CHARACTER_VIEW_BY_TYPE = {item["type"]: item for item in CHARACTER_VIEW_CATALOG}
 CHARACTER_VIEW_ORDER = {
     item["type"]: int(item["index"]) for item in CHARACTER_VIEW_CATALOG
 }
+CHARACTER_REQUIRED_VIEW_TYPES = tuple(item["type"] for item in CHARACTER_VIEW_CATALOG)
 
 
 def character_features_enabled() -> bool:
@@ -359,6 +338,81 @@ async def generate_character_view(
     }
 
 
+async def upload_character_view(
+    *, db, current_user, character_id: str, view_type: str, payload
+) -> dict:
+    config = CHARACTER_VIEW_BY_TYPE.get(view_type)
+    if config is None:
+        raise HTTPException(status_code=404, detail="未知的人物子图类型。")
+    character = (
+        await db.execute(
+            select(CharacterReference).where(
+                CharacterReference.id == character_id,
+                CharacterReference.user_id == current_user.id,
+                CharacterReference.status != "deleted",
+            )
+        )
+    ).scalar_one_or_none()
+    if character is None:
+        raise HTTPException(status_code=404, detail="人物不存在。")
+    view = (
+        await db.execute(
+            select(CharacterReferenceView).where(
+                CharacterReferenceView.character_id == character_id,
+                CharacterReferenceView.view_type == view_type,
+            )
+        )
+    ).scalar_one_or_none()
+    if view is not None and view.status == "pending":
+        raise HTTPException(status_code=409, detail="该子图正在生成，不能上传替换。")
+
+    source_key = await _validate_character_source(
+        user_id=current_user.id,
+        source_object_key=payload.source_object_key,
+    )
+    image_bytes = await asyncio.to_thread(
+        storage.get_file_bytes,
+        source_key,
+        MINIO_BUCKET,
+    )
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="无法读取上传图片，请重新上传。")
+    extension = source_key.rsplit(".", 1)[-1].lower()
+    durable_key = (
+        f"character_references/{current_user.id}/{character_id}/views/"
+        f"{view_type}-{uuid.uuid4().hex}.{extension}"
+    )
+    uploaded = await asyncio.to_thread(
+        storage.upload_bytes,
+        image_bytes,
+        durable_key,
+        CHARACTER_IMAGE_CONTENT_TYPES[extension],
+        MINIO_BUCKET,
+    )
+    if not uploaded:
+        raise HTTPException(status_code=503, detail="人物子图保存失败，请重试。")
+
+    if view is None:
+        view = CharacterReferenceView(
+            id=str(uuid.uuid4()),
+            character_id=character_id,
+            view_type=view_type,
+            prompt=config["default_prompt"],
+            task_id=None,
+            object_key=f"{MINIO_BUCKET}/{durable_key}",
+            status="ready",
+        )
+        db.add(view)
+    else:
+        view.prompt = config["default_prompt"]
+        view.task_id = None
+        view.object_key = f"{MINIO_BUCKET}/{durable_key}"
+        view.status = "ready"
+        view.updated_at = datetime.now()
+    await db.commit()
+    return _view_response(view)
+
+
 def _read_character_view_bytes(
     views: list[CharacterReferenceView],
 ) -> list[tuple[int, bytes]]:
@@ -383,12 +437,24 @@ def _compose_character_sheet(payloads: list[tuple[int, bytes]]) -> bytes:
 async def _materialize_saved_character_sheet(
     *, db, character: CharacterReference, views: list[CharacterReferenceView]
 ) -> dict:
-    ready_views = [view for view in views if view.status == "ready" and view.object_key]
-    if len(ready_views) < CHARACTER_MIN_READY_VIEWS:
+    ready_by_type = {
+        view.view_type: view
+        for view in views
+        if view.status == "ready" and view.object_key
+    }
+    missing_types = [
+        view_type
+        for view_type in CHARACTER_REQUIRED_VIEW_TYPES
+        if view_type not in ready_by_type
+    ]
+    if missing_types:
         raise HTTPException(
             status_code=409,
-            detail="至少生成 2 张子图后才能保存人物参考图。",
+            detail="请生成或上传并完成全部 4 张子图后再保存人物参考图。",
         )
+    ready_views = [
+        ready_by_type[view_type] for view_type in CHARACTER_REQUIRED_VIEW_TYPES
+    ]
     payloads = await asyncio.to_thread(_read_character_view_bytes, ready_views)
     sheet = await asyncio.to_thread(_compose_character_sheet, payloads)
     object_key = (
@@ -452,30 +518,11 @@ async def resolve_ready_character_sheet(*, db, user_id: int, character_id: str) 
     ).scalar_one_or_none()
     if row is None or row.status != "ready" or not row.sheet_object_key:
         raise HTTPException(status_code=400, detail="人物不存在、未就绪或已删除。")
-    if not row.sheet_object_key.endswith(
-        f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
-    ):
-        views = (
-            (
-                await db.execute(
-                    select(CharacterReferenceView).where(
-                        CharacterReferenceView.character_id == character_id,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+    if not row.sheet_object_key.endswith(f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"):
+        raise HTTPException(
+            status_code=400,
+            detail="人物参考图版本已失效，请完成四张子图后重新保存。",
         )
-        ready_views = [
-            view for view in views if view.status == "ready" and view.object_key
-        ]
-        if len(ready_views) >= CHARACTER_MIN_READY_VIEWS:
-            result = await _materialize_saved_character_sheet(
-                db=db,
-                character=row,
-                views=list(views),
-            )
-            return str(result["sheet_object_key"])
     sheet = row.sheet_object_key
     await release_read_transaction(db)
     return sheet

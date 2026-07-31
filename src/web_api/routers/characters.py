@@ -16,6 +16,8 @@ from src.web_api.schemas.character_schema import (
     CharacterPatchRequest,
     CharacterResponse,
     CharacterViewGenerateRequest,
+    CharacterViewResponse,
+    CharacterViewUploadRequest,
 )
 from src.web_api.services.character_reference_service import (
     build_character,
@@ -26,6 +28,7 @@ from src.web_api.services.character_reference_service import (
     list_characters,
     patch_character,
     save_character,
+    upload_character_view,
 )
 
 router = APIRouter()
@@ -94,6 +97,26 @@ async def create_character_view(
         raise HTTPException(status_code=402, detail=str(exc)) from exc
     except CoreDomainError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{character_id}/views/{view_type}/upload",
+    response_model=CharacterViewResponse,
+)
+async def upload_character_view_image(
+    character_id: str,
+    view_type: str,
+    payload: CharacterViewUploadRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await upload_character_view(
+        db=db,
+        current_user=current_user,
+        character_id=character_id,
+        view_type=view_type,
+        payload=payload,
+    )
 
 
 @router.post("/{character_id}/save", response_model=CharacterResponse)

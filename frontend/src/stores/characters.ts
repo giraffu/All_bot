@@ -9,6 +9,7 @@ import {
   fetchCharacters,
   generateCharacterView,
   saveCharacterReference,
+  uploadCharacterView,
   updateCharacter,
   type CharacterReference,
   type CharacterViewEngine,
@@ -92,6 +93,16 @@ export const useCharactersStore = defineStore('characters', () => {
     return result
   }
 
+  const uploadView = async (
+    id: string,
+    viewType: CharacterViewType,
+    sourceObjectKey: string,
+  ) => {
+    const result = await uploadCharacterView(id, viewType, sourceObjectKey)
+    await refresh()
+    return result
+  }
+
   const rename = async (id: string, payload: { name?: string; description?: string }) => {
     await updateCharacter(id, payload)
     await refresh()
@@ -111,6 +122,7 @@ export const useCharactersStore = defineStore('characters', () => {
     createDraft,
     getBatchCapacity,
     generateView,
+    uploadView,
     saveReference,
     rename,
     remove,

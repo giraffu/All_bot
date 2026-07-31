@@ -45,6 +45,10 @@ class CharacterViewGenerateRequest(BaseModel):
         return value
 
 
+class CharacterViewUploadRequest(BaseModel):
+    source_object_key: str = Field(min_length=1, max_length=1024)
+
+
 class CharacterBatchCapacityResponse(BaseModel):
     limit: int = Field(ge=1)
     active: int = Field(ge=0)

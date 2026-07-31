@@ -19,8 +19,6 @@ import { useCharactersStore } from '@/stores/characters'
 
 const VIEW_TYPES: CharacterViewType[] = [
   'face_front',
-  'face_side',
-  'face_three_quarter',
   'body_front',
   'body_side',
   'body_back',
@@ -103,7 +101,7 @@ const regenerate = async () => {
 }
 
 const saveReference = async () => {
-  if (!selectedCharacter.value || readyCount.value < 2) return
+  if (!selectedCharacter.value || readyCount.value !== VIEW_TYPES.length) return
   saving.value = true
   try {
     await store.saveReference(selectedCharacter.value.id)
@@ -333,7 +331,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <a-button
-                :disabled="readyCount < 2 || character.views.some(view => view.status === 'pending')"
+                :disabled="readyCount !== VIEW_TYPES.length || character.views.some(view => view.status === 'pending')"
                 :loading="saving"
                 class="rounded-xl"
                 @click="saveReference"
