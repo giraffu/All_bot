@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ImagePlus, RefreshCw, Sparkles, UserRound } from 'lucide-vue-next'
-import { message } from 'ant-design-vue'
+import { ImagePlus, Pencil, RefreshCw, Sparkles, Trash2, UserRound } from 'lucide-vue-next'
+import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
@@ -34,6 +34,13 @@ const selectedViewType = ref<CharacterViewType>('face_front')
 const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const regenerating = ref(false)
 const saving = ref(false)
+const editingCharacterId = ref<string | null>(null)
+const savingMetadata = ref(false)
+const deletingCharacterId = ref<string | null>(null)
+const metadataForm = reactive({
+  name: '',
+  description: '',
+})
 const prompts = reactive<Record<string, string>>({})
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -110,6 +117,60 @@ const createCharacter = () => (
   router.push({ name: 'CustomFeatures', query: { type: 'character_reference' } })
 )
 
+const openMetadataEditor = (character: CharacterReference) => {
+  editingCharacterId.value = character.id
+  metadataForm.name = character.name
+  metadataForm.description = character.description ?? ''
+}
+
+const closeMetadataEditor = () => {
+  if (savingMetadata.value) return
+  editingCharacterId.value = null
+}
+
+const handleEditorOpenChange = (value: boolean) => {
+  if (!value) closeMetadataEditor()
+}
+
+const saveMetadata = async () => {
+  const characterId = editingCharacterId.value
+  const name = metadataForm.name.trim()
+  if (!characterId || !name) return
+  savingMetadata.value = true
+  try {
+    await store.rename(characterId, {
+      name,
+      description: metadataForm.description.trim(),
+    })
+    editingCharacterId.value = null
+    message.success(t('characters.details_updated'))
+  } finally {
+    savingMetadata.value = false
+  }
+}
+
+const confirmDelete = (character: CharacterReference) => {
+  Modal.confirm({
+    title: t('characters.delete_confirm_named', { name: character.name }),
+    content: t('characters.delete_confirm_hint'),
+    okText: t('characters.delete'),
+    okButtonProps: { danger: true },
+    cancelText: t('characters.cancel'),
+    async onOk() {
+      deletingCharacterId.value = character.id
+      try {
+        await store.remove(character.id)
+        if (selectedCharacterId.value === character.id) {
+          selectedCharacterId.value = null
+        }
+        message.success(t('characters.deleted'))
+      } finally {
+        deletingCharacterId.value = null
+      }
+    },
+  })
+}
+
 watch(hasPending, schedulePoll)
 onMounted(async () => {
   await store.refresh()
@@ -136,8 +197,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <a-button type="primary" size="large" class="inline-flex items-center justify-center gap-2 rounded-2xl" @click="createCharacter">
-        <Sparkles :size="17" />
-        {{ t('characters.create_in_lab') }}
+        <span class="character-library__button-content items-center justify-center gap-2">
+          <Sparkles :size="17" />
+          {{ t('characters.create_in_lab') }}
+        </span>
       </a-button>
     </div>
 
@@ -173,13 +236,40 @@ onBeforeUnmount(() => {
 
         <div class="min-w-0 p-4 sm:p-5">
           <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0 flex-1">
               <h3 class="text-lg font-bold">{{ character.name }}</h3>
               <p v-if="character.description" class="mt-1 text-sm opacity-70">{{ character.description }}</p>
             </div>
-            <span class="character-library__status rounded-full border px-3 py-1 text-xs font-semibold">
-              {{ t(`characters.status_${character.status}`) }}
-            </span>
+            <div class="character-library__management flex flex-wrap items-center justify-end gap-2">
+              <span class="character-library__status rounded-full border px-3 py-1 text-xs font-semibold">
+                {{ t(`characters.status_${character.status}`) }}
+              </span>
+              <a-button
+                size="small"
+                class="inline-flex items-center gap-1.5 rounded-xl"
+                :data-testid="`edit-character-${character.id}`"
+                @click="openMetadataEditor(character)"
+              >
+                <span class="character-library__button-content items-center gap-1.5">
+                  <Pencil :size="14" />
+                  {{ t('characters.edit_details') }}
+                </span>
+              </a-button>
+              <a-button
+                danger
+                size="small"
+                class="inline-flex items-center gap-1.5 rounded-xl"
+                :disabled="character.status === 'pending'"
+                :loading="deletingCharacterId === character.id"
+                :data-testid="`delete-character-${character.id}`"
+                @click="confirmDelete(character)"
+              >
+                <span class="character-library__button-content items-center gap-1.5">
+                  <Trash2 :size="14" />
+                  {{ t('characters.delete') }}
+                </span>
+              </a-button>
+            </div>
           </div>
 
           <div class="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -265,6 +355,42 @@ onBeforeUnmount(() => {
       </div>
     </article>
     </template>
+
+    <a-modal
+      :open="editingCharacterId !== null"
+      :title="t('characters.edit_details_title')"
+      :confirm-loading="savingMetadata"
+      :ok-button-props="{ disabled: !metadataForm.name.trim() }"
+      :ok-text="t('characters.save_changes')"
+      :cancel-text="t('characters.cancel')"
+      @ok="saveMetadata"
+      @cancel="closeMetadataEditor"
+      @update:open="handleEditorOpenChange"
+    >
+      <div class="space-y-4 py-2">
+        <label class="block">
+          <span class="mb-2 block text-sm font-semibold">{{ t('characters.name_label') }}</span>
+          <a-input
+            v-model:value="metadataForm.name"
+            data-testid="edit-character-name"
+            :maxlength="60"
+            :placeholder="t('characters.name_placeholder')"
+            @press-enter="saveMetadata"
+          />
+        </label>
+        <label class="block">
+          <span class="mb-2 block text-sm font-semibold">{{ t('characters.description_label') }}</span>
+          <a-textarea
+            v-model:value="metadataForm.description"
+            data-testid="edit-character-description"
+            :maxlength="500"
+            :auto-size="{ minRows: 3, maxRows: 6 }"
+            :placeholder="t('characters.description_placeholder')"
+          />
+        </label>
+        <p class="text-xs leading-5 opacity-60">{{ t('characters.edit_details_hint') }}</p>
+      </div>
+    </a-modal>
   </section>
 </template>
 
@@ -293,6 +419,10 @@ onBeforeUnmount(() => {
   color: #67e8f9;
 }
 
+.character-library__button-content {
+  display: inline-flex;
+}
+
 .character-library__sheet {
   background: var(--theme-panel-strong-bg);
   border-color: var(--theme-border);
@@ -302,6 +432,13 @@ onBeforeUnmount(() => {
 .character-library__editor {
   background: var(--theme-card-strong-bg);
   border-color: var(--theme-border);
+}
+
+@media (max-width: 639px) {
+  .character-library__management {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .character-library__view {
