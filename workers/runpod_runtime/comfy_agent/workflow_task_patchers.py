@@ -552,17 +552,19 @@ def _patch_ltx_t2v_workflow(
             prompt_node.setdefault("inputs", {}).get("text", "")
         ).strip()
         prompt_node["inputs"]["text"] = (
-            f"Reference sheet: {LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
-            f"Generated video: {target_description}"
+            f"### Reference Sheet Description\n"
+            f"{LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
+            f"### Target Description\n{target_description}"
         )
         negative_node = workflow.get("29")
         if not isinstance(negative_node, dict):
             raise ValueError("LTX negative prompt node 29 missing")
-        negative_text = str(
-            negative_node.setdefault("inputs", {}).get("text", "")
-        ).strip()
+        negative_value = negative_node.setdefault("inputs", {}).get("text", "")
+        negative_text = (
+            negative_value.strip() if isinstance(negative_value, str) else ""
+        )
         negative_node["inputs"]["text"] = (
-            f"{negative_text}\n\n{LTX_T2V_INGREDIENTS_NEGATIVE}"
+            f"{negative_text}\n\n{LTX_T2V_INGREDIENTS_NEGATIVE}".strip()
         )
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:

@@ -111,14 +111,32 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["18"]["inputs"]["Xi"] == 20
     assert patched["18"]["inputs"]["Xf"] == 20
     prompt = patched["28"]["inputs"]["text"]
-    assert prompt.startswith("Reference sheet: ")
+    assert prompt.startswith("### Reference Sheet Description\n")
     assert "six clean panels on a black background" in prompt
     assert "front, side, and three-quarter face close-ups" in prompt
     assert "full-body front, side, and back turnarounds" in prompt
-    assert prompt.endswith("Generated video: scene")
+    assert prompt.endswith("### Target Description\nscene")
     negative = patched["29"]["inputs"]["text"]
+    assert not negative.startswith("None")
     assert "#Identity Reference Exclusions" not in negative
     assert "worst quality, inconsistent motion, blurry, jittery, distorted" in negative
+
+
+def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "scene",
+            "negative_prompt": None,
+            "duration": 5,
+            "character_sheet": "owned-sheet.png",
+        },
+    )
+
+    assert patched["29"]["inputs"]["text"].startswith("#Ingredients\n")
+    assert "None" not in patched["29"]["inputs"]["text"]
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():
