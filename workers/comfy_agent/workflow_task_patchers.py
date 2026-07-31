@@ -68,12 +68,6 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
-LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
-    "one adult character shown inside one single character panel: a dominant "
-    "front face close-up followed by full-body front, side, and back turnaround "
-    "views. Every view depicts the same exact facial identity, facial proportions, "
-    "hairstyle, skin tone, body proportions, clothing, and accessories."
-)
 LTX_T2V_INGREDIENTS_NEGATIVE = (
     "#Ingredients\n"
     "worst quality, inconsistent motion, blurry, jittery, distorted, split screen, "
@@ -549,8 +543,13 @@ def _patch_ltx_t2v_workflow(
         target_description = str(
             prompt_node.setdefault("inputs", {}).get("text", "")
         ).strip()
+        character_description = str(
+            params.get("character_description") or ""
+        ).strip()
+        if not character_description:
+            raise ValueError("Ingredients character description missing")
         prompt_node["inputs"]["text"] = (
-            f"Reference sheet: {LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
+            f"Reference sheet: {character_description}\n\n"
             f"Generated video: {target_description}"
         )
         negative_node = workflow.get("29")

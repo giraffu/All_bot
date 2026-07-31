@@ -40,3 +40,4 @@ def test_prod_smoke_builds_five_serial_cases_with_public_t2v_left_closed():
     assert cases[4]["payload"]["inputs"]["character_sheet"] == (
         "canary/character.png"
     )
+    assert "adult woman" in cases[4]["payload"]["inputs"]["character_description"]

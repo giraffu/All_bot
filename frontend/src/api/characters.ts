@@ -50,13 +50,13 @@ export const fetchCharacterBatchCapacity = async (): Promise<CharacterBatchCapac
 
 export const buildCharacter = async (payload: {
   name: string
-  description?: string
+  description: string
   source_object_key: string
 }) => (await api.post('/characters/build', payload)).data
 
 export const createCharacterDraft = async (payload: {
   name: string
-  description?: string
+  description: string
   source_object_key: string
 }): Promise<CharacterReference> => (
   await api.post('/characters/drafts', payload)

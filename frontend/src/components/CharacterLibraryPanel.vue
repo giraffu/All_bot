@@ -133,12 +133,17 @@ const handleEditorOpenChange = (value: boolean) => {
 const saveMetadata = async () => {
   const characterId = editingCharacterId.value
   const name = metadataForm.name.trim()
+  const characterDescription = metadataForm.description.trim()
   if (!characterId || !name) return
+  if (!characterDescription) {
+    message.error(t('characters.description_required'))
+    return
+  }
   savingMetadata.value = true
   try {
     await store.rename(characterId, {
       name,
-      description: metadataForm.description.trim(),
+      description: characterDescription,
     })
     editingCharacterId.value = null
     message.success(t('characters.details_updated'))
@@ -358,7 +363,7 @@ onBeforeUnmount(() => {
       :open="editingCharacterId !== null"
       :title="t('characters.edit_details_title')"
       :confirm-loading="savingMetadata"
-      :ok-button-props="{ disabled: !metadataForm.name.trim() }"
+      :ok-button-props="{ disabled: !metadataForm.name.trim() || !metadataForm.description.trim() }"
       :ok-text="t('characters.save_changes')"
       :cancel-text="t('characters.cancel')"
       @ok="saveMetadata"

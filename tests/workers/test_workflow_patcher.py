@@ -70,7 +70,12 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
         patcher.load_workflow("ltx_t2v_ic"),
-        {"prompt": "scene", "duration": 20, "character_sheet": "owned-sheet.png"},
+        {
+            "prompt": "scene",
+            "duration": 20,
+            "character_sheet": "owned-sheet.png",
+            "character_description": "an adult woman with a short black bob and amber eyes",
+        },
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
     assert patched["271"]["inputs"]["strength_model"] == 1.4
@@ -115,10 +120,9 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["18"]["inputs"]["Xi"] == 20
     assert patched["18"]["inputs"]["Xf"] == 20
     prompt = patched["28"]["inputs"]["text"]
-    assert prompt.startswith("Reference sheet: ")
-    assert "one single character panel" in prompt
-    assert "dominant front face close-up" in prompt
-    assert "full-body front, side, and back turnaround views" in prompt
+    assert prompt.startswith(
+        "Reference sheet: an adult woman with a short black bob and amber eyes"
+    )
     assert prompt.endswith("Generated video: scene")
     negative = patched["29"]["inputs"]["text"]
     assert not negative.startswith("None")
@@ -138,11 +142,27 @@ def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
             "negative_prompt": None,
             "duration": 5,
             "character_sheet": "owned-sheet.png",
+            "character_description": "an adult woman with a short black bob",
         },
     )
 
     assert patched["29"]["inputs"]["text"].startswith("#Ingredients\n")
     assert "None" not in patched["29"]["inputs"]["text"]
+
+
+def test_ltx_t2v_ic_patcher_requires_saved_character_description():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+
+    with pytest.raises(ValueError, match="character description missing"):
+        patcher.patch_workflow(
+            "ltx_t2v_ic",
+            patcher.load_workflow("ltx_t2v_ic"),
+            {
+                "prompt": "scene",
+                "duration": 5,
+                "character_sheet": "owned-sheet.png",
+            },
+        )
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():

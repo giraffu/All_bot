@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CharacterReferenceWorkbench from './CharacterReferenceWorkbench.vue'
 
 const {
+  createDraft,
+  error,
   fetchCapacity,
   generateView,
   refresh,
@@ -14,6 +16,8 @@ const {
   uploadFile,
   uploadView,
 } = vi.hoisted(() => ({
+  createDraft: vi.fn(),
+  error: vi.fn(),
   fetchCapacity: vi.fn(),
   generateView: vi.fn(),
   refresh: vi.fn(),
@@ -28,6 +32,7 @@ vi.mock('@/stores/characters', () => ({
     refresh,
     generateView,
     getBatchCapacity: fetchCapacity,
+    createDraft,
     uploadView,
   }),
 }))
@@ -53,7 +58,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('ant-design-vue', () => ({
   message: {
-    error: vi.fn(),
+    error,
     success: vi.fn(),
     warning: vi.fn(),
   },
@@ -98,6 +103,7 @@ describe('CharacterReferenceWorkbench', () => {
     uploadFile.mockResolvedValue('web_uploads/123/front.png')
     uploadView.mockResolvedValue(undefined)
     fetchCapacity.mockResolvedValue({ limit: 3, active: 1, available: 2 })
+    createDraft.mockResolvedValue({ id: 'character-2' })
   })
 
   it('uses four Chinese nude prompts for the official character panel', () => {
@@ -126,6 +132,29 @@ describe('CharacterReferenceWorkbench', () => {
       expect(prompt).toContain('完全裸体')
       expect(prompt).toContain('纯黑背景')
     }
+  })
+
+  it('requires a character description before creating a draft', async () => {
+    const wrapper = mount(CharacterReferenceWorkbench, {
+      global: {
+        stubs: {
+          AButton: ButtonStub,
+          AInput: passthroughStub,
+          ATextarea: passthroughStub,
+          ARadioGroup: passthroughStub,
+          ARadioButton: passthroughStub,
+          AUpload: passthroughStub,
+        },
+      },
+    })
+    ;(wrapper.vm as any).name = 'Alice'
+    ;(wrapper.vm as any).sourceKey = 'web_uploads/123/source.png'
+    ;(wrapper.vm as any).description = '   '
+
+    await (wrapper.vm as any).createDraft()
+
+    expect(createDraft).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('characters.description_required')
   })
 
   it('uploads the active view directly without submitting a generation task', async () => {

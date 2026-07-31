@@ -68,8 +68,23 @@ def _user():
 def test_character_name_rejects_whitespace_only_values():
     with pytest.raises(ValidationError):
         CharacterBuildRequest(
-            name="   ", source_object_key="web_uploads/123/source.webp"
+            name="   ",
+            description="adult woman with short black hair",
+            source_object_key="web_uploads/123/source.webp",
         )
+
+
+@pytest.mark.parametrize("description", [None, "", "   "])
+def test_character_description_is_required(description):
+    payload = {
+        "name": "Alice",
+        "source_object_key": "web_uploads/123/source.webp",
+    }
+    if description is not None:
+        payload["description"] = description
+
+    with pytest.raises(ValidationError):
+        CharacterBuildRequest(**payload)
 
 
 def test_character_view_catalog_exposes_four_official_nude_character_targets():
@@ -110,6 +125,7 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
         current_user=_user(),
         payload=CharacterBuildRequest(
             name="Alice",
+            description="adult woman with short black hair",
             source_object_key="web_uploads/123/source.webp",
         ),
     )
@@ -286,7 +302,12 @@ async def test_character_view_route_maps_concurrency_race_to_retryable_429(monke
 
 @pytest.mark.asyncio
 async def test_save_character_requires_all_four_official_views(monkeypatch):
-    character = SimpleNamespace(id="character-1", user_id=123, status="draft")
+    character = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="draft",
+        description="adult woman with short black hair",
+    )
     db = _Session(
         [
             character,
@@ -317,7 +338,7 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         id="character-1",
         user_id=123,
         name="Alice",
-        description=None,
+        description="adult woman with short black hair",
         status="draft",
         task_id="draft-1",
         source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
@@ -457,6 +478,7 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
         current_user=_user(),
         payload=CharacterBuildRequest(
             name="Alice",
+            description="adult woman with short black hair",
             source_object_key="web_uploads/123/source.webp",
         ),
     )
@@ -474,6 +496,7 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
 async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
     payload = CharacterBuildRequest(
         name="Alice",
+        description="adult woman with short black hair",
         source_object_key="web_uploads/999/source.png",
     )
     with pytest.raises(HTTPException, match="当前用户"):
@@ -495,6 +518,7 @@ async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
             current_user=_user(),
             payload=CharacterBuildRequest(
                 name="Alice",
+                description="adult woman with short black hair",
                 source_object_key="web_uploads/123/source.png",
             ),
         )
@@ -514,20 +538,22 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
         [
             SimpleNamespace(
                 status="ready",
+                description="an adult woman with short black hair",
                 sheet_object_key=(
                     "bot-data/private/ingredients-character-panel-v2.png"
                 ),
             ),
         ]
     )
-    assert (
-        await service.resolve_ready_character_sheet(
-            db=db,
-            user_id=123,
-            character_id="character-1",
-        )
-        == "bot-data/private/ingredients-character-panel-v2.png"
+    ingredient = await service.resolve_ready_character_sheet(
+        db=db,
+        user_id=123,
+        character_id="character-1",
     )
+    assert ingredient.sheet_object_key == (
+        "bot-data/private/ingredients-character-panel-v2.png"
+    )
+    assert ingredient.description == "an adult woman with short black hair"
     db.commit.assert_awaited_once()
 
 

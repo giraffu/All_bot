@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class CharacterBuildRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    description: str | None = Field(default=None, max_length=500)
+    description: str = Field(min_length=1, max_length=500)
     source_object_key: str = Field(min_length=1, max_length=1024)
 
     @field_validator("name")
@@ -14,6 +14,14 @@ class CharacterBuildRequest(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("人物名称不能为空")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("人物描述不能为空")
         return value
 
 
@@ -29,6 +37,16 @@ class CharacterPatchRequest(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("人物名称不能为空")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("人物描述不能为空")
         return value
 
 

@@ -30,6 +30,7 @@ def test_ltx_t2v_ic_duration_cost_and_frames(duration, cost, frames):
             "duration": duration,
             "resolution": "768x448",
             "character_sheet": "private/sheet.png",
+            "character_description": "an adult woman with a short black bob",
         },
     )
     assert (spec.width, spec.height, spec.cost, spec.frame_count) == (
@@ -38,6 +39,18 @@ def test_ltx_t2v_ic_duration_cost_and_frames(duration, cost, frames):
         cost,
         frames,
     )
+
+
+def test_ltx_t2v_ic_requires_character_description():
+    with pytest.raises(LtxT2VValidationError, match="人物描述"):
+        build_ltx_t2v_spec(
+            "ltx_t2v_ic",
+            {
+                "duration": 5,
+                "resolution": "768x448",
+                "character_sheet": "private/sheet.png",
+            },
+        )
 
 
 @pytest.mark.parametrize(

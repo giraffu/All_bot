@@ -127,11 +127,16 @@ const beforeUpload = async (file: File) => {
 
 const createDraft = async () => {
   if (!name.value.trim() || !sourceKey.value) return
+  const characterDescription = description.value.trim()
+  if (!characterDescription) {
+    message.error(t('characters.description_required'))
+    return
+  }
   creatingDraft.value = true
   try {
     const created = await store.createDraft({
       name: name.value.trim(),
-      description: description.value.trim() || undefined,
+      description: characterDescription,
       source_object_key: sourceKey.value,
     })
     draftId.value = created.id
@@ -363,7 +368,7 @@ onBeforeUnmount(() => {
           type="primary"
           size="large"
           class="h-12 rounded-2xl font-semibold"
-          :disabled="!name.trim() || !sourceKey"
+          :disabled="!name.trim() || !description.trim() || !sourceKey"
           :loading="creatingDraft || uploading"
           @click="createDraft"
         >
