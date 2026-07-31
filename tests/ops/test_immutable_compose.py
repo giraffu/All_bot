@@ -332,7 +332,7 @@ def test_test_runtime_uses_scoped_host_projections_without_test_aliases():
         assert "API_BASE_TEST" not in environment
 
 
-def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
+def test_owner_tools_are_exposed_by_the_test_overlay():
     base = _compose(BASE)["services"]
     test_services = _compose(OVERLAYS[0])["services"]
 
@@ -344,8 +344,12 @@ def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
     ):
         assert base[name]["profiles"] == ["owner-tools"]
 
-    assert "dashboard-backend" not in test_services
-    assert "dashboard-frontend" not in test_services
+    assert test_services["dashboard-backend"]["ports"] == [
+        "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8043:8043"
+    ]
+    assert test_services["dashboard-frontend"]["ports"] == [
+        "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8086:8086"
+    ]
     assert test_services["qqcc-config-backend"]["ports"] == [
         "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"
     ]

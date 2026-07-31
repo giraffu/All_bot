@@ -79,3 +79,6 @@ class AffiliateRedeemState(IntEnum):
     """返佣兑换流程状态枚举"""
 
     WAIT_CREDITS_AMOUNT = auto()
+    WAIT_USDT_AMOUNT = auto()
+    WAIT_USDT_ADDRESS = auto()
+    WAIT_USDT_CONFIRM = auto()

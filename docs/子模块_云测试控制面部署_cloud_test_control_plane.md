@@ -12,7 +12,7 @@
 
 ## 1. 目标与边界
 
-本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、QQCC Config Backend、QQCC Config Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot；Dashboard 不在测试站运行。
+本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend/Frontend、QQCC Config Backend/Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
 
 当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 8 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
 
@@ -157,7 +157,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 按目标替换上例中的 service/profile：
 
-- `web-api-test`、`central-api-test`、`imgproxy-test` 不需要 Bot profile；QQCC Config 由 immutable base 的 `owner-tools` profile 服务加测试 overlay 管理，Dashboard 不存在于测试 overlay。
+- `web-api-test`、`central-api-test`、`imgproxy-test` 不需要 Bot profile；Dashboard 与 QQCC Config 由 immutable base 的 `owner-tools` profile 服务加测试 overlay 管理。
 - `bot-test` 使用 `--profile bot`；启动前确认本地主服务器或其它位置没有同测试 token polling 实例。
 - `qqcc-bot-test` 使用 `--profile qqcc-bot`；没有独立 `QQCC_BOT_TOKEN_TEST` 时必须保持停止。
 
@@ -265,7 +265,9 @@ release SHA 与 runtime revision。空配置对象或同源 `/api` 不算发布�
 | QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-test` | 无 | `qqcc-private-bots` profile；消费 Telegram webhook stream，默认不启动 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-Dashboard 不属于云测试服务清单。QQCC Config 的测试 Host/8045/8088 必须在
+Dashboard Backend/Frontend 使用测试端口 `8043/8086`，模块 catalog 支持
+`test`，并通过 `admin-test.aivison.it.com` 的 Cloudflare Access 和应用登录
+双层保护。QQCC Config 的测试 Host/8045/8088 必须在
 部署前通过目标配置检查，并在部署后验收；测试机 firewall 继续保护这些端口。
 `https://qqcc-admin-test.aivison.it.com` 由测试 Tunnel 回源
 `100.82.124.91:8088`，未登录请求由 Cloudflare Access 拦截。QQCC Config
@@ -343,9 +345,8 @@ docker compose --env-file .env.cloud.test \
 - 公共测试 Web 的 runtime config 固定 `enable_ltx_t2v=true`，正式 Web 固定
   `false`；云测试 Web API 通过受审计配置显式设置
   `LTX_T2V_BACKEND_ENABLED=true`。该 key 只影响 `web-api`，不得投射到其它服务。
-- Dashboard 不部署在测试站。Dashboard 中的 `ltx_t2v` 项只用于登记正式手动池
-  能力；测试 Pod 必须通过 cloud-test RunPod operator 创建，禁止复用正式 agent
-  前缀或开启 autoscaler。
+- 测试 Dashboard 不启用正式 RunPod 手动池或 autoscaler；测试 Pod 必须通过
+  cloud-test RunPod operator 创建，禁止复用正式 agent 前缀。
 - 测试 worker 使用 `runpod_test_ltx_t2v_*`，任务类型仅
   `ltx_t2v,ltx_t2v_ic`。人工测试开始前先验证 disabled heartbeat、模型 manifest、
   Comfy 健康和目标 agent 归属，再显式 enable。

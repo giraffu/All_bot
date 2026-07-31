@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { fetchAffiliateRedeemRecords, fetchReferralRewards } from '../api/api'
 import message from 'ant-design-vue/es/message'
+import AffiliateUsdtRedeemActions from './AffiliateUsdtRedeemActions.vue'
 
 const activeTab = ref('rewards')
 const rewardsLoading = ref(false)
@@ -10,7 +11,8 @@ const data = ref([])
 const redeemRecords = ref([])
 const redeemFilters = ref({
   query: '',
-  redeemType: ''
+  redeemType: '',
+  status: ''
 })
 const redeemPagination = ref({
   current: 1,
@@ -43,7 +45,8 @@ const loadRedeemData = async (
       page,
       pageSize,
       query: redeemFilters.value.query.trim(),
-      redeemType: redeemFilters.value.redeemType
+      redeemType: redeemFilters.value.redeemType,
+      status: redeemFilters.value.status
     })
     redeemRecords.value = res.items || []
     redeemPagination.value = {
@@ -188,6 +191,13 @@ const columns = [
     key: 'spent_commission_usdt',
     width: '10%',
     sorter: (a, b) => (a.spent_commission_usdt || 0) - (b.spent_commission_usdt || 0)
+  },
+  {
+    title: '冻结返佣(USDT)',
+    dataIndex: 'frozen_commission_usdt',
+    key: 'frozen_commission_usdt',
+    width: '10%',
+    sorter: (a, b) => (a.frozen_commission_usdt || 0) - (b.frozen_commission_usdt || 0)
   }
 ]
 
@@ -287,10 +297,22 @@ const redeemColumns = [
     width: '8%'
   },
   {
+    title: '收款地址',
+    dataIndex: 'payout_address',
+    key: 'payout_address',
+    width: '18%'
+  },
+  {
     title: '记录 ID',
     dataIndex: 'redeem_id',
     key: 'redeem_id',
     width: '8%'
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 200,
+    fixed: 'right'
   }
 ]
 
@@ -434,6 +456,17 @@ const redeemColumns = [
             >
               <a-select-option value="CREDITS">兑灵石</a-select-option>
               <a-select-option value="MEMBERSHIP">兑身份</a-select-option>
+              <a-select-option value="USDT">兑 USDT</a-select-option>
+            </a-select>
+            <a-select
+              v-model:value="redeemFilters.status"
+              placeholder="状态"
+              allow-clear
+              class="w-36"
+            >
+              <a-select-option value="PENDING">待处理</a-select-option>
+              <a-select-option value="SUCCESS">已完成</a-select-option>
+              <a-select-option value="REJECTED">已拒绝</a-select-option>
             </a-select>
             <a-button type="primary" @click="handleRedeemSearch" :loading="redeemsLoading">
               查询
@@ -447,12 +480,13 @@ const redeemColumns = [
           row-key="redeem_id"
           :loading="redeemsLoading"
           :pagination="redeemPagination"
+          :scroll="{ x: 1600 }"
           class="flex-1 bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100"
           @change="handleRedeemTableChange"
         >
           <template #title>
             <div class="text-slate-500 text-sm">
-              展示用户佣金兑换灵石 / 兑换身份的后台记录，可按用户检索。
+              展示用户佣金兑换灵石 / 兑换身份 / 兑换 USDT 的后台记录，可按用户检索。
             </div>
           </template>
           <template #bodyCell="{ column, record }">
@@ -460,15 +494,19 @@ const redeemColumns = [
               <span class="text-blue-500">{{ record.username ? `@${record.username}` : '-' }}</span>
             </template>
             <template v-else-if="column.key === 'redeem_type'">
-              <a-tag :color="record.redeem_type === 'MEMBERSHIP' ? 'gold' : 'blue'">
-                {{ record.redeem_type === 'MEMBERSHIP' ? '兑身份' : '兑灵石' }}
+              <a-tag :color="record.redeem_type === 'MEMBERSHIP' ? 'gold' : record.redeem_type === 'USDT' ? 'cyan' : 'blue'">
+                {{ record.redeem_type === 'MEMBERSHIP' ? '兑身份' : record.redeem_type === 'USDT' ? '兑 USDT' : '兑灵石' }}
               </a-tag>
             </template>
             <template v-else-if="column.key === 'amount_usdt'">
               <span class="font-bold text-red-500">- $ {{ Number(record.amount_usdt || 0).toFixed(4) }}</span>
             </template>
             <template v-else-if="column.key === 'redeem_result'">
-              <div v-if="record.redeem_type === 'MEMBERSHIP'" class="flex flex-col">
+              <div v-if="record.redeem_type === 'USDT'" class="flex flex-col">
+                <span class="font-medium text-cyan-700">USDT · TON</span>
+                <span class="text-xs text-slate-500">{{ record.payout_tx_hash || '等待打款' }}</span>
+              </div>
+              <div v-else-if="record.redeem_type === 'MEMBERSHIP'" class="flex flex-col">
                 <span class="font-medium text-amber-700">{{ record.target_identity || '-' }}</span>
                 <span class="text-xs text-slate-500">{{ record.duration_days ? `${record.duration_days} 天` : '-' }}</span>
                 <span class="text-xs text-emerald-600" v-if="record.credits_granted">+{{ record.credits_granted }} 灵石</span>
@@ -479,7 +517,21 @@ const redeemColumns = [
               </div>
             </template>
             <template v-else-if="column.key === 'status'">
-              <a-tag :color="record.status === 'SUCCESS' ? 'green' : 'default'">{{ record.status }}</a-tag>
+              <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'REJECTED' ? 'red' : 'gold'">{{ record.status }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'payout_address'">
+              <a-typography-paragraph v-if="record.payout_address" copyable class="m-0 max-w-64" :ellipsis="{ rows: 2 }">
+                {{ record.payout_address }}
+              </a-typography-paragraph>
+              <span v-else>-</span>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <AffiliateUsdtRedeemActions
+                v-if="record.redeem_type === 'USDT' && record.status === 'PENDING'"
+                :record="record"
+                @completed="loadRedeemData()"
+              />
+              <span v-else>-</span>
             </template>
           </template>
         </a-table>

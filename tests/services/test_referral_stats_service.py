@@ -72,7 +72,7 @@ async def test_query_referral_rewards_sums_commission_before_rounding(monkeypatc
                 (order_2, inviter, invitee),
             ],
             [(1, 1)],
-            [(1, Decimal("0.0111"))],
+            [(1, Decimal("0.0111"), Decimal("5.0000"))],
         ]
     )
 
@@ -82,6 +82,7 @@ async def test_query_referral_rewards_sums_commission_before_rounding(monkeypatc
     reward = rewards[0]
     assert reward["commission_usdt"] == 0.03
     assert reward["spent_commission_usdt"] == 0.01
+    assert reward["frozen_commission_usdt"] == 5.0
     assert reward["invitees"][0]["commission_usdt"] == 0.03
     assert reward["total_invitees"] == 1
     assert reward["total_invitations"] == 1
@@ -138,7 +139,7 @@ async def test_query_invitation_recharge_stats_reads_history_and_balance_from_le
                 (4004, 500, "XTR", Decimal("0.0000")),
             ],
             [
-                (Decimal("1.2345"), Decimal("0.1111"), Decimal("1.1234")),
+                (Decimal("1.2345"), Decimal("0.0000"), Decimal("0.1111"), Decimal("1.1234")),
             ],
         ]
     )
@@ -153,8 +154,9 @@ async def test_query_invitation_recharge_stats_reads_history_and_balance_from_le
         "total_stars": 100,
         "commission_usdt": 1.23,
         "total_commission_usdt": 1.23,
-        "spent_commission_usdt": 0.11,
-        "available_balance_usdt": 1.12,
+            "spent_commission_usdt": 0.11,
+            "frozen_commission_usdt": 0.0,
+            "available_balance_usdt": 1.12,
     }
 
 
@@ -166,7 +168,7 @@ async def test_query_invitation_recharge_stats_defaults_ledger_aggregates_to_zer
                 (2002, Decimal("8.00"), "RMB", Decimal("1.2345")),
             ],
             [
-                (None, None, None),
+                (None, None, None, None),
             ],
         ]
     )
@@ -187,7 +189,7 @@ async def test_query_invitation_recharge_stats_can_show_non_zero_history_when_or
                 (2002, Decimal("8.00"), "RMB", Decimal("0.0000")),
             ],
             [
-                (Decimal("300.0000"), Decimal("67.6500"), Decimal("232.3500")),
+                (Decimal("300.0000"), Decimal("0.0000"), Decimal("67.6500"), Decimal("232.3500")),
             ],
         ]
     )

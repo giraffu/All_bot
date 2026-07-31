@@ -522,6 +522,7 @@ def test_changed_key_names_expand_to_affected_services_and_unknown_is_all():
     services = set(contract["services"])
 
     assert module.affected_services(contract, {"BOT_TOKEN"}) == {
+        "dashboard-backend",
         "main-bot",
         "web-api",
     }
@@ -1230,27 +1231,23 @@ def test_target_inspect_reports_only_target_revision_drift(tmp_path, capsys):
     assert inspected["affected_services"] == ["dashboard-backend"]
 
 
-def test_test_snapshot_excludes_prod_only_services_without_prod_secrets():
+def test_test_snapshot_includes_dashboard_services():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
     values = _environment("test")
-    values.pop("SUPPORT_BOT_TOKEN")
-    values.pop("DASHBOARD_SECRET_KEY")
-    values.pop("DASHBOARD_ADMIN_USERNAME")
-    values.pop("DASHBOARD_ADMIN_PASSWORD_HASH")
 
     snapshot = module.build_snapshot(contract, "test", values)
 
     assert "central-api" in snapshot.projections
     assert "qqcc-config-backend" in snapshot.projections
-    assert "dashboard-backend" not in snapshot.projections
-    assert "dashboard-frontend" not in snapshot.projections
+    assert "dashboard-backend" in snapshot.projections
+    assert "dashboard-frontend" in snapshot.projections
     assert "payment-api" not in snapshot.projections
     assert "paid-group-bot" not in snapshot.projections
     assert "support-bot" not in snapshot.projections
 
 
-def test_full_test_inspect_reports_and_activation_prunes_retired_prod_service(
+def test_full_test_inspect_preserves_dashboard_service(
     tmp_path, capsys
 ):
     module = _load_module()
@@ -1289,24 +1286,19 @@ def test_full_test_inspect_reports_and_activation_prunes_retired_prod_service(
         == 0
     )
     capsys.readouterr()
-    values.pop("SUPPORT_BOT_TOKEN")
-    values.pop("DASHBOARD_SECRET_KEY")
-    values.pop("DASHBOARD_ADMIN_USERNAME")
-    values.pop("DASHBOARD_ADMIN_PASSWORD_HASH")
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
     current_common = [*common, "--contract", str(CONTRACT_PATH)]
 
     assert module.main(["inspect", *current_common]) == 0
     inspected = json.loads(capsys.readouterr().out)
-    assert inspected["drift"] is True
-    assert inspected["retired_services"] == ["dashboard-backend"]
+    assert inspected["retired_services"] == []
 
     assert module.main(["activate", *current_common]) == 0
     activated = json.loads(capsys.readouterr().out)
-    assert activated["retired_services"] == ["dashboard-backend"]
-    assert "dashboard-backend" not in activated["service_revisions"]
-    assert "dashboard-backend" not in module.load_active_state(root)["service_revisions"]
+    assert activated["retired_services"] == []
+    assert "dashboard-backend" in activated["service_revisions"]
+    assert "dashboard-backend" in module.load_active_state(root)["service_revisions"]
 
 
 def test_target_inspect_uses_active_revision_and_ignores_non_target_host_change(

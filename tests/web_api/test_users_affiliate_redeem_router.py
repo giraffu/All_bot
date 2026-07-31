@@ -6,12 +6,16 @@ from src.database.models import User
 from src.web_api.routers.users import (
     redeem_current_user_affiliate_credits,
     redeem_current_user_affiliate_membership,
+    redeem_current_user_affiliate_usdt,
 )
 from src.web_api.schemas.affiliate_redeem_schema import (
     AffiliateCreditsRedeemRequest,
     AffiliateCreditsRedeemResponse,
     AffiliateMembershipRedeemRequest,
     AffiliateMembershipRedeemResponse,
+    AffiliateUsdtRedeemRequest,
+    AffiliateUsdtRedeemResponse,
+    AffiliateBalanceSummaryResponse,
 )
 
 
@@ -82,6 +86,52 @@ async def test_redeem_current_user_affiliate_membership_routes_to_service():
         new=AsyncMock(return_value=expected),
     ) as mock_service:
         response = await redeem_current_user_affiliate_membership(
+            payload,
+            current_user,
+            db,
+        )
+
+    assert response == expected
+    mock_service.assert_awaited_once_with(
+        payload=payload,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@pytest.mark.asyncio
+async def test_redeem_current_user_affiliate_usdt_routes_to_service():
+    payload = AffiliateUsdtRedeemRequest(
+        amount_usdt="5.0000",
+        payout_address="EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+        idempotency_key="idem-router-usdt",
+    )
+    current_user = User(id=123, username="tester")
+    db = AsyncMock()
+    expected = AffiliateUsdtRedeemResponse(
+        redeem_id=3,
+        amount_usdt="5.0000",
+        payout_network="TON",
+        payout_address="UQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_p0p",
+        payout_tx_hash=None,
+        status="PENDING",
+        idempotency_key=payload.idempotency_key,
+        created_at=None,
+        processed_at=None,
+        rejection_reason=None,
+        balance=AffiliateBalanceSummaryResponse(
+            total_usdt="20.0000",
+            spent_usdt="0.0000",
+            frozen_usdt="5.0000",
+            available_usdt="15.0000",
+        ),
+    )
+
+    with patch(
+        "src.web_api.routers.users.redeem_current_user_affiliate_usdt_payload",
+        new=AsyncMock(return_value=expected),
+    ) as mock_service:
+        response = await redeem_current_user_affiliate_usdt(
             payload,
             current_user,
             db,

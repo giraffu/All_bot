@@ -40,6 +40,8 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
   查单接口时保持关闭，禁止抓取商户后台或自动点击补发。
 - Affiliate、会员结算、灵石转账和任务退款必须穿过现有账本/provider seam，
   不允许入口直接改余额。
+- Affiliate 人工兑 USDT 使用 `PENDING OUT` 冻结，确认时原流水转 `SUCCESS`，
+  拒绝时转 `REJECTED`；禁止用第二笔 OUT 表示确认成功。
 - `QuotaManager.transfer_credits(...)` 在同一事务锁定双方、扣减、入账并写
   双方审计；Gallery 提示词解锁复用该入口。
 - Bot、Web、Payment API 和 Dashboard 中会调用 billing core 的入口负责执行

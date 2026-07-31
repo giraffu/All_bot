@@ -16,6 +16,7 @@ export function useProfileQuickActions(options: {
   router: RouterLike
   openRedeemCreditsModal: () => void
   openRedeemMembershipModal: () => void
+  openRedeemUsdtModal: () => void
   handleBindPasswordModalOpen: () => void
   openFollowingModal: () => void
   openFollowersModal: () => void
@@ -44,6 +45,13 @@ export function useProfileQuickActions(options: {
       className: 'quick-action-btn--emerald',
       icon: options.icons.Wallet,
       onClick: options.openRedeemCreditsModal,
+    },
+    {
+      key: 'redeem-usdt',
+      label: options.t('profile.redeem_usdt'),
+      className: 'quick-action-btn--cyan',
+      icon: options.icons.Wallet,
+      onClick: options.openRedeemUsdtModal,
     },
     {
       key: 'redeem-membership',

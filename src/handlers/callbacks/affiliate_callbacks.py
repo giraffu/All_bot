@@ -41,7 +41,12 @@ def _build_affiliate_home_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     "返佣兑身份", callback_data="affiliate_redeem_membership_menu"
                 ),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    "返佣兑 USDT", callback_data="affiliate_redeem_usdt_start"
+                )
+            ],
         ]
     )
 
@@ -97,6 +102,11 @@ def _build_post_redeem_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     "返佣兑身份", callback_data="affiliate_redeem_membership_menu"
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "返佣兑 USDT", callback_data="affiliate_redeem_usdt_start"
+                )
             ],
             [InlineKeyboardButton("🔙 返回分享面板", callback_data="affiliate_share_home")],
         ]

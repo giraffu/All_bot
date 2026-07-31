@@ -25,7 +25,7 @@
       "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-backend": {
-      "environments": ["prod"],
+      "environments": ["test", "prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "AGENT_SECRET_TOKEN", "DASHBOARD_SECRET_KEY", "DASHBOARD_ADMIN_USERNAME", "DASHBOARD_ADMIN_PASSWORD_HASH", "SUPPORT_BOT_TOKEN"],
       "json_digest_pin_sets": {
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": [
@@ -39,10 +39,10 @@
           "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2"
         ]
       },
-      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "BOT_*", "TELEGRAM_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-frontend": {
-      "environments": ["prod"],
+      "environments": ["test", "prod"],
       "required": ["ALLBOT_ENV"],
       "patterns": []
     },

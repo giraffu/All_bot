@@ -8,6 +8,9 @@ from src.web_api.schemas.affiliate_redeem_schema import (
     AffiliateCreditsRedeemResponse,
     AffiliateMembershipRedeemRequest,
     AffiliateMembershipRedeemResponse,
+    AffiliateUsdtRedeemListResponse,
+    AffiliateUsdtRedeemRequest,
+    AffiliateUsdtRedeemResponse,
 )
 from src.web_api.schemas.auth_schema import UserResponse
 from src.web_api.schemas.user_schema import (
@@ -51,6 +54,8 @@ from src.web_api.services.user_social_service import (
 from src.web_api.services.user_affiliate_redeem_api_service import (
     redeem_current_user_affiliate_credits_payload,
     redeem_current_user_affiliate_membership_payload,
+    redeem_current_user_affiliate_usdt_payload,
+    list_current_user_affiliate_usdt_redeems_payload,
 )
 from src.web_api.services.user_credit_ledger_service import (
     get_current_user_credit_ledger_payload,
@@ -127,6 +132,40 @@ async def redeem_current_user_affiliate_membership(
         payload=payload,
         current_user=current_user,
         db=db,
+    )
+
+
+@router.post(
+    "/me/affiliate/redeem-usdt",
+    response_model=AffiliateUsdtRedeemResponse,
+)
+async def redeem_current_user_affiliate_usdt(
+    payload: AffiliateUsdtRedeemRequest,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+) -> AffiliateUsdtRedeemResponse:
+    return await redeem_current_user_affiliate_usdt_payload(
+        payload=payload,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.get(
+    "/me/affiliate/usdt-redeems",
+    response_model=AffiliateUsdtRedeemListResponse,
+)
+async def list_current_user_affiliate_usdt_redeems(
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+) -> AffiliateUsdtRedeemListResponse:
+    return await list_current_user_affiliate_usdt_redeems_payload(
+        current_user=current_user,
+        db=db,
+        page=page,
+        page_size=page_size,
     )
 
 

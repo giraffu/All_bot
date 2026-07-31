@@ -13,6 +13,7 @@ export interface InvitationRechargeStats {
   total_commission_usdt?: number
   spent_commission_usdt?: number
   available_balance_usdt?: number
+  frozen_commission_usdt?: number
 }
 
 export interface BreakthroughCondition {

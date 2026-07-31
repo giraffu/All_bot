@@ -10,7 +10,7 @@
 - Telegram Stars 官方支付回调履约
 - TON 链上轮询入账与发货
 - USDT-TON Jetton 链上轮询入账与发货
-- Affiliate 返佣入账、余额统计与兑换灵石
+- Affiliate 返佣入账、余额统计、兑换灵石/身份与人工兑换 USDT-TON
 
 核心目标不是“把钱加上”，而是保证任意真实资产变化都具备以下性质：
 
@@ -165,6 +165,12 @@ sequenceDiagram
   - 会写入 `affiliate_redeems`、`affiliate_transactions`、`user_logs`
 - 同一个 `idempotency_key` 重放时，服务返回首次成功的快照结果，而不是重新计算当前余额。
 - 返佣余额缓存失效必须在最终事务提交后执行，不能在外部事务提交前抢跑。
+- 返佣兑换 USDT-TON 只支持主网普通 TON 钱包地址，金额四位小数且最低
+  `5.0000 USDT`。申请写 `USDT_REDEEM / OUT / PENDING`，可用余额立即扣除并
+  计入冻结；后台确认把同一流水改为 `SUCCESS`，拒绝改为 `REJECTED`。终态切换
+  不新增第二笔 OUT，因此不会二次扣减。
+- 人工打款成功必须记录唯一交易哈希；Bot 通知属于事务提交后的 best-effort
+  副作用，失败不得回滚兑换终态。
 
 ### 4.4 审计与事务边界
 
@@ -224,6 +230,10 @@ sequenceDiagram
 - 密码登录：`POST /api/auth/login`
 - 绑定/修改密码：`POST /api/auth/bind-password`
 - Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
+- Affiliate 人工兑 USDT：
+  `POST /api/users/me/affiliate/redeem-usdt` 提交申请，
+  `GET /api/users/me/affiliate/usdt-redeems` 查询本人记录；Dashboard 使用
+  `/api/referrals/redeems/{id}/complete|reject` 处理终态。
 - QQCC 四类场景可配置根场景固定总价 `credit_cost`：首个真实任务通过 `cost_override` 扣一次，后续内部任务统一 `deduct_quota=false`；后续阶段或最终投递失败按根任务实际扣费并以 `qqcc_scene_refund:<billing_id>` 全额幂等退款。`null`/缺失保持旧逐段计费与标准任务退款，快速换脸不读取该配置。
 - Web 个人中心灵石账本：`GET /api/users/me/credits/ledger?page=&page_size=`
   - 只允许当前登录用户查询自己的 `user_logs` 非 0 灵石变动。

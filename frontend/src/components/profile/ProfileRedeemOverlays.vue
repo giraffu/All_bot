@@ -20,20 +20,27 @@ const props = defineProps<{
   isMobile: boolean
   showRedeemCreditsModal: boolean
   showRedeemMembershipModal: boolean
+  showRedeemUsdtModal: boolean
   redeemCreditsLoading: boolean
   redeemMembershipLoading: boolean
+  redeemUsdtLoading: boolean
   redeemCreditsForm: { amountUsdt: number | string | null }
   redeemMembershipForm: { optionKey: string }
+  redeemUsdtForm: { amountUsdt: string; payoutAddress: string }
+  usdtRedeemRecords: readonly any[]
   redeemCreditsPackages: readonly RedeemCreditsPackage[]
   membershipRedeemOptions: readonly MembershipRedeemOption[]
   availableCommissionUsdt: number | string
+  frozenCommissionUsdt: number | string
   handleRedeemCredits: () => void | Promise<void>
   handleRedeemMembership: () => void | Promise<void>
+  handleRedeemUsdt: () => void | Promise<void>
 }>()
 
 const emit = defineEmits<{
   'update:showRedeemCreditsModal': [value: boolean]
   'update:showRedeemMembershipModal': [value: boolean]
+  'update:showRedeemUsdtModal': [value: boolean]
 }>()
 
 const { t } = useI18n()
@@ -47,6 +54,10 @@ const membershipOpen = computed({
   get: () => props.showRedeemMembershipModal,
   set: (value: boolean) => emit('update:showRedeemMembershipModal', value),
 })
+const usdtOpen = computed({
+  get: () => props.showRedeemUsdtModal,
+  set: (value: boolean) => emit('update:showRedeemUsdtModal', value),
+})
 
 const closeCredits = () => {
   creditsOpen.value = false
@@ -55,9 +66,69 @@ const closeCredits = () => {
 const closeMembership = () => {
   membershipOpen.value = false
 }
+const closeUsdt = () => {
+  usdtOpen.value = false
+}
 </script>
 
 <template>
+  <a-modal
+    v-model:open="usdtOpen"
+    :closable="false"
+    :confirmLoading="redeemUsdtLoading"
+    @ok="handleRedeemUsdt"
+    :okText="t('profile.usdt_submit')"
+    :cancelText="t('profile.usdt_cancel')"
+    class="dark-modal profile-action-modal"
+  >
+    <template #title>
+      <div class="profile-action-header">
+        <ProfileBackButton :label="t('profile.back_to_profile')" @click="closeUsdt" />
+        <span class="profile-action-title">{{ t('profile.redeem_usdt') }}</span>
+      </div>
+    </template>
+    <div class="py-4 space-y-4">
+      <p class="profile-action-text text-sm">
+        {{ t('profile.usdt_available') }}
+        <span class="font-bold text-cyan-300">{{ availableCommissionUsdt }} USDT</span>
+        <span class="ml-4">
+          {{ t('profile.usdt_frozen') }}
+          <span class="font-bold text-amber-300">{{ frozenCommissionUsdt }} USDT</span>
+        </span>
+      </p>
+      <a-alert type="info" show-icon :message="t('profile.usdt_manual_notice')" />
+      <a-input-number
+        v-model:value="redeemUsdtForm.amountUsdt"
+        string-mode
+        :min="5"
+        :precision="4"
+        class="w-full"
+        :placeholder="t('profile.usdt_amount')"
+      />
+      <a-input
+        v-model:value="redeemUsdtForm.payoutAddress"
+        :placeholder="t('profile.usdt_address')"
+        :maxlength="128"
+      />
+      <div v-if="usdtRedeemRecords.length" class="space-y-2 max-h-48 overflow-y-auto">
+        <div
+          v-for="record in usdtRedeemRecords"
+          :key="record.redeem_id"
+          class="profile-action-option-card rounded-lg px-3 py-2 text-sm"
+        >
+          <div class="flex justify-between">
+            <span>{{ record.amount_usdt }} USDT</span>
+            <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'REJECTED' ? 'red' : 'gold'">
+              {{ t(`profile.usdt_status_${record.status.toLowerCase()}`) }}
+            </a-tag>
+          </div>
+          <div class="profile-action-muted text-xs mt-1">#{{ record.redeem_id }} · {{ record.created_at }}</div>
+          <div v-if="record.rejection_reason" class="text-xs text-rose-400 mt-1">{{ record.rejection_reason }}</div>
+        </div>
+      </div>
+    </div>
+  </a-modal>
+
   <a-modal
     v-if="!isMobile"
     v-model:open="creditsOpen"

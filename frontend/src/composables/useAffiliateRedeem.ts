@@ -76,19 +76,32 @@ const buildIdempotencyKey = (prefix: string) => {
 export function useAffiliateRedeem(options: UseAffiliateRedeemOptions) {
   const redeemCreditsLoading = ref(false)
   const redeemMembershipLoading = ref(false)
+  const redeemUsdtLoading = ref(false)
   const showRedeemCreditsModal = ref(false)
   const showRedeemMembershipModal = ref(false)
+  const showRedeemUsdtModal = ref(false)
+  const usdtRedeemRecords = ref<any[]>([])
   const redeemCreditsForm = reactive({
     amountUsdt: '1.0000'
   })
   const redeemMembershipForm = reactive({
     optionKey: 'inner_30d'
   })
+  const redeemUsdtForm = reactive({
+    amountUsdt: '5.0000',
+    payoutAddress: ''
+  })
 
   const availableCommissionUsdt = computed(() => {
     const raw =
       options.user.value?.invitation_recharge?.available_balance_usdt ??
       options.user.value?.invitation_recharge?.commission_usdt
+    const parsed = Number(raw ?? 0)
+    return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000'
+  })
+
+  const frozenCommissionUsdt = computed(() => {
+    const raw = options.user.value?.invitation_recharge?.frozen_commission_usdt
     const parsed = Number(raw ?? 0)
     return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000'
   })
@@ -113,6 +126,43 @@ export function useAffiliateRedeem(options: UseAffiliateRedeemOptions) {
 
   const openRedeemMembershipModal = () => {
     showRedeemMembershipModal.value = true
+  }
+
+  const loadUsdtRedeemRecords = async () => {
+    const response = await api.get('/users/me/affiliate/usdt-redeems', {
+      params: { page: 1, page_size: 20 }
+    })
+    usdtRedeemRecords.value = response.data?.items || []
+  }
+
+  const openRedeemUsdtModal = async () => {
+    showRedeemUsdtModal.value = true
+    try {
+      await loadUsdtRedeemRecords()
+    } catch (error) {
+      console.error('Load USDT redeem records error:', error)
+    }
+  }
+
+  const handleRedeemUsdt = async () => {
+    redeemUsdtLoading.value = true
+    try {
+      await api.post('/users/me/affiliate/redeem-usdt', {
+        amount_usdt: redeemUsdtForm.amountUsdt,
+        payout_address: redeemUsdtForm.payoutAddress.trim(),
+        idempotency_key: buildIdempotencyKey('usdt_redeem')
+      })
+      await Promise.all([options.refreshUser(), loadUsdtRedeemRecords()])
+      message.success('USDT 兑换申请已提交，对应返佣已冻结')
+      redeemUsdtForm.amountUsdt = '5.0000'
+      redeemUsdtForm.payoutAddress = ''
+    } catch (error: any) {
+      console.error('Redeem USDT error:', error)
+      const detail = error.response?.data?.detail
+      message.error(typeof detail === 'string' ? detail : 'USDT 兑换申请提交失败')
+    } finally {
+      redeemUsdtLoading.value = false
+    }
   }
 
   const handleRedeemCredits = async () => {
@@ -180,18 +230,25 @@ export function useAffiliateRedeem(options: UseAffiliateRedeemOptions) {
   return {
     redeemCreditsLoading,
     redeemMembershipLoading,
+    redeemUsdtLoading,
     showRedeemCreditsModal,
     showRedeemMembershipModal,
+    showRedeemUsdtModal,
     redeemCreditsForm,
     redeemMembershipForm,
+    redeemUsdtForm,
+    usdtRedeemRecords,
     redeemCreditsPackages,
     membershipRedeemOptions,
     availableCommissionUsdt,
+    frozenCommissionUsdt,
     totalCommissionUsdt,
     spentCommissionUsdt,
     openRedeemCreditsModal,
     openRedeemMembershipModal,
+    openRedeemUsdtModal,
     handleRedeemCredits,
-    handleRedeemMembership
+    handleRedeemMembership,
+    handleRedeemUsdt
   }
 }

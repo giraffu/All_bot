@@ -916,6 +916,14 @@ class AffiliateRedeem(Base):
             name="uq_affiliate_redeems_user_idempotency_key",
         ),
         Index("ix_affiliate_redeems_user_created_at", "user_id", "created_at"),
+        Index(
+            "uq_affiliate_redeems_user_pending_usdt",
+            "user_id",
+            unique=True,
+            postgresql_where=text(
+                "redeem_type = 'USDT' AND status = 'PENDING'"
+            ),
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -934,6 +942,13 @@ class AffiliateRedeem(Base):
     rounding_mode = Column(String(32), nullable=True)
     status = Column(String(20), nullable=False, default="SUCCESS")
     idempotency_key = Column(String(128), nullable=False)
+    payout_network = Column(String(20), nullable=True)
+    payout_address = Column(String(128), nullable=True)
+    payout_tx_hash = Column(String(128), nullable=True, unique=True)
+    admin_note = Column(String(500), nullable=True)
+    rejection_reason = Column(String(500), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    processed_at = Column(DateTime, nullable=True)
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
