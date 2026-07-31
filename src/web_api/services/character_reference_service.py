@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -88,6 +89,14 @@ CHARACTER_VIEW_CATALOG = (
         ),
     },
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ReadyCharacterIngredient:
+    sheet_object_key: str
+    description: str
+
+
 CHARACTER_VIEW_BY_TYPE = {item["type"]: item for item in CHARACTER_VIEW_CATALOG}
 CHARACTER_VIEW_ORDER = {
     item["type"]: int(item["index"]) for item in CHARACTER_VIEW_CATALOG
@@ -244,7 +253,7 @@ async def create_character_draft(*, db, current_user, payload) -> dict:
         id=str(uuid.uuid4()),
         user_id=current_user.id,
         name=payload.name.strip(),
-        description=(payload.description or "").strip() or None,
+        description=payload.description.strip(),
         source_object_key=f"{MINIO_BUCKET}/{object_key}",
         task_id=str(uuid.uuid4()),
         status="draft",
@@ -489,6 +498,8 @@ async def save_character(*, db, user_id: int, character_id: str) -> dict:
     ).scalar_one_or_none()
     if character is None:
         raise HTTPException(status_code=404, detail="人物不存在。")
+    if not str(character.description or "").strip():
+        raise HTTPException(status_code=409, detail="请先填写人物描述。")
     views = (
         (
             await db.execute(
@@ -507,7 +518,9 @@ async def save_character(*, db, user_id: int, character_id: str) -> dict:
     )
 
 
-async def resolve_ready_character_sheet(*, db, user_id: int, character_id: str) -> str:
+async def resolve_ready_character_sheet(
+    *, db, user_id: int, character_id: str
+) -> ReadyCharacterIngredient:
     row = (
         await db.execute(
             select(CharacterReference).where(
@@ -523,9 +536,18 @@ async def resolve_ready_character_sheet(*, db, user_id: int, character_id: str) 
             status_code=400,
             detail="人物参考图版本已失效，请完成四张子图后重新保存。",
         )
+    description = str(row.description or "").strip()
+    if not description:
+        raise HTTPException(
+            status_code=400,
+            detail="请先在人物图库填写人物描述。",
+        )
     sheet = row.sheet_object_key
     await release_read_transaction(db)
-    return sheet
+    return ReadyCharacterIngredient(
+        sheet_object_key=sheet,
+        description=description,
+    )
 
 
 async def build_character(*, db, current_user, payload) -> dict:
@@ -559,7 +581,7 @@ async def build_character(*, db, current_user, payload) -> dict:
         id=character_id,
         user_id=current_user.id,
         name=payload.name.strip(),
-        description=(payload.description or "").strip() or None,
+        description=payload.description.strip(),
         source_object_key=f"{MINIO_BUCKET}/{object_key}",
         task_id=task_id,
         status="pending",
@@ -615,7 +637,7 @@ async def patch_character(*, db, user_id: int, character_id: str, payload) -> di
     if payload.name is not None:
         row.name = payload.name.strip()
     if payload.description is not None:
-        row.description = payload.description.strip() or None
+        row.description = payload.description.strip()
     row.updated_at = datetime.now()
     await db.commit()
     return _response(row)

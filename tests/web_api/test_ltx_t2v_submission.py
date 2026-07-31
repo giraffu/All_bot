@@ -85,6 +85,7 @@ async def test_ltx_t2v_ic_operator_canary_accepts_only_isolated_fixture(monkeypa
                 "character_sheet": (
                     "runpod-canary/ltx-t2v/20260727T032529Z/character_reference.png"
                 ),
+                "character_description": "an adult woman with short black hair",
             },
         ),
         current_user=_user(),
@@ -130,7 +131,12 @@ async def test_ltx_t2v_ic_resolves_character_server_side(monkeypatch):
     from src.web_api.services import character_reference_service
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
-    resolve = AsyncMock(return_value="bot-data/private/owned-sheet.png")
+    resolve = AsyncMock(
+        return_value=SimpleNamespace(
+            sheet_object_key="bot-data/private/owned-sheet.png",
+            description="an adult woman with short black hair",
+        )
+    )
     monkeypatch.setattr(
         character_reference_service, "resolve_ready_character_sheet", resolve
     )
@@ -152,6 +158,9 @@ async def test_ltx_t2v_ic_resolves_character_server_side(monkeypatch):
     assert response.cost == 12
     assert submit.await_args.kwargs["inputs"]["character_sheet"] == (
         "bot-data/private/owned-sheet.png"
+    )
+    assert submit.await_args.kwargs["inputs"]["character_description"] == (
+        "an adult woman with short black hair"
     )
     resolve.assert_awaited_once()
     assert resolve.await_args.kwargs["user_id"] == 123

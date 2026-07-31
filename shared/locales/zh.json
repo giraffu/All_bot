@@ -654,9 +654,10 @@
     "upload_source": "上传源图",
     "upload_hint": "PNG / JPEG / WebP，最大 20MB",
     "name_label": "人物名称",
-    "description_label": "人物描述（可选）",
+    "description_label": "人物描述（必填）",
     "name_placeholder": "人物名称（1–60 字）",
-    "description_placeholder": "可选描述",
+    "description_placeholder": "描述人物的年龄、面部、发型、肤色、体型和稳定外观特征",
+    "description_required": "请填写人物描述，用于视频人物参考",
     "billing_hint": "创建草稿不扣费。每个视角可选择自由P图、自由P图 v2.5 或自由P图 v3，并按所选流程计费；任务失败按现有账本自动退款。",
     "engine_label": "子图生成模型",
     "engines": {

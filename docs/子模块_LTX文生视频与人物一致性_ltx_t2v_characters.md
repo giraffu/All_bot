@@ -108,13 +108,14 @@ IC workflow 保留官方 Ingredients 的 loader、guide 和
 旧 x2 空间放大与第二阶段在执行图中保持 orphan。
 
 IC prompt 按官方模型卡的训练标签由 worker 组合为
-`Reference sheet: ...` 与 `Generated video: ...` 两段：前者把大幅正脸近景和
-全身正面、侧面、背面描述为同一个 character ingredient，后者原样承载用户场景。
+`Reference sheet: ...` 与 `Generated video: ...` 两段：前者使用人物资产中
+必填的稳定外观描述，后者原样承载用户场景。人物描述由服务端按 owner 和
+`character_id` 读取，客户端不能为一次视频任务覆盖它。
 缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入 conditioning；
 负向追加官方质量词，并明确排除 split screen、grid、collage、character sheet、
 重复角色、文字、字幕、logo 和 watermark。
-重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述继续追加为
-`#Audio`。
+重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述作为第三段
+继续追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
@@ -148,7 +149,7 @@ LTX 镜像固定 ComfyUI revision `7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1`
 
 ## 4. 人物资产与任务链
 
-`character_references` 记录 UUID、owner、名称/描述、源图 key、最终参考表 key、
+`character_references` 记录 UUID、owner、名称、必填人物描述、源图 key、最终参考表 key、
 兼容任务 ID、状态与时间戳；`character_reference_views` 以
 `(character_id, view_type)` 唯一保存每张子图的可编辑 prompt、task ID、object
 key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留 20 个 `draft/ready`
@@ -156,7 +157,7 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 
 `POST /api/characters/drafts` 只接受当前用户
 `web_uploads/{internal_user_id}/...` 下不超过 20 MiB 的 PNG/JPEG/WebP，创建草稿
-不扣费。用户按需处理四个官方面板固定槽位：正脸图、全身正面图、全身侧面图、
+不扣费；名称和人物描述均为必填，人物描述最多 500 字。用户按需处理四个官方面板固定槽位：正脸图、全身正面图、全身侧面图、
 全身背面图。服务端目录是默认提示词事实源；四条默认词均使用中文，要求同一位
 成年人、完全裸体、单一人物、纯黑背景和明确视角，不再保留侧脸近景与 3/4 侧脸
 槽位。
@@ -236,7 +237,8 @@ pending 子图存在时删除返回 409。
   3 灵石、自由 P 图 v3 5 灵石；失败沿用根任务幂等退款。
 
 IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`ready` 状态和
-未删除状态，并解析真实 `sheet_object_key`；任何客户端直传 `character_sheet`
+未删除状态，并解析真实 `sheet_object_key` 与非空人物描述；legacy 人物缺少描述时
+要求先在人物图库补充。任何客户端直传 `character_sheet`
 都拒绝。所有权读事务先释放，再进入扣费和入队 Saga。
 
 ## 6. Web 与验收
@@ -246,7 +248,7 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 并发锁补位的未生成子图批量提交、统一悬浮球状态和四图齐全后保存。
 “修仙笔记 → 人物图库”提供合成表与四子图查看、同样的三模式重生和重新合成。
 每张人物卡直接提供资料编辑与删除入口：资料编辑复用
-`PATCH /api/characters/{id}` 修改名称和描述，不触发生成或扣费；删除必须二次
+`PATCH /api/characters/{id}` 修改名称和必填描述，不触发生成或扣费；删除必须二次
 确认并复用 `DELETE /api/characters/{id}` 软删除，删除后从人物图库和人物选择器
 中隐藏。处于 legacy 整体构建 `pending` 状态的人物不可删除。
 单个子图生成会登记一个悬浮任务；`CharacterReferenceView` 的 ready/failed
@@ -254,7 +256,9 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 运行态清理后的 404 不是失败证据，前端必须以人物子图持久化终态纠正悬浮球。
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
 可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
-和价格。视觉 prompt 与可选 audio prompt 分别进入任务输入，默认生成同步音频。
+和价格。练功房仍保留视觉 prompt 与可选 audio prompt 两个任务输入；服务端把
+人物资产描述作为 `Reference sheet:`，视觉 prompt 作为 `Generated video:`，
+可选 audio prompt 作为 `#Audio`，默认生成同步音频。
 
 LAN mutation 只能通过 `scripts/lan_aio_fleet_prod_ops.py`。先核对 live、ledger、
 catalog 并带原因收口 unfinished operation；状态不唯一就停止。只在明确授权的

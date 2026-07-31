@@ -280,6 +280,7 @@ class LtxT2VRequest(BaseModel):
     frame_count: int = 121
     fps: int = 24
     character_sheet: Optional[str] = None
+    character_description: Optional[str] = None
     priority: int = 0
 
 

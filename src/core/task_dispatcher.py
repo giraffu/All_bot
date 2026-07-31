@@ -909,6 +909,7 @@ class LtxT2VStrategy(BaseTaskStrategy):
             "ltx_frame_count": spec.frame_count,
             "character_id": inputs.get("character_id"),
             "character_sheet": spec.character_sheet,
+            "character_description": spec.character_description,
         }
 
     async def submit_task(
@@ -922,6 +923,7 @@ class LtxT2VStrategy(BaseTaskStrategy):
             negative_prompt=str(inputs.get("negative_prompt") or "").strip() or None,
             audio_prompt=str(inputs.get("audio_prompt") or "").strip() or None,
             character_sheet=spec.character_sheet,
+            character_description=spec.character_description,
             width=spec.width,
             height=spec.height,
             length=spec.duration_seconds,

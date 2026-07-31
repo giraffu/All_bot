@@ -8,12 +8,14 @@ import CharacterLibraryPanel from './CharacterLibraryPanel.vue'
 
 const {
   confirm,
+  error,
   refresh,
   remove,
   rename,
   storeItems,
 } = vi.hoisted(() => ({
   confirm: vi.fn(),
+  error: vi.fn(),
   refresh: vi.fn(),
   remove: vi.fn(),
   rename: vi.fn(),
@@ -42,7 +44,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('ant-design-vue', () => ({
   message: {
-    error: vi.fn(),
+    error,
     success: vi.fn(),
   },
   Modal: {
@@ -148,6 +150,18 @@ describe('CharacterLibraryPanel', () => {
       name: '鹿小草新版',
       description: '新描述',
     })
+  })
+
+  it('does not save an empty character description', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="edit-character-character-1"]').trigger('click')
+    await wrapper.get('[data-testid="edit-character-description"]').setValue('   ')
+    await wrapper.get('[data-testid="confirm-edit-character"]').trigger('click')
+
+    expect(rename).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('characters.description_required')
   })
 
   it('requires confirmation before deleting a character from the library card', async () => {

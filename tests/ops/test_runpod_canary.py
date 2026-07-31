@@ -809,6 +809,7 @@ def test_ltx_t2v_canary_task_cases_lock_plain_and_ingredients_contracts():
     assert ingredients["inputs"]["duration"] == 20
     assert ingredients["inputs"]["duration_seconds"] == 20
     assert ingredients["inputs"]["character_sheet"].endswith("character-sheet.png")
+    assert "adult Asian woman" in ingredients["inputs"]["character_description"]
     assert "adult Asian woman" in ingredients["prompt"]
     assert "Hard cut at 15s" in ingredients["prompt"]
 

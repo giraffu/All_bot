@@ -96,11 +96,13 @@ async def submit_generation_task(
 
                 async with AsyncSessionLocal() as character_db:
                     try:
-                        inputs["character_sheet"] = await resolve_ready_character_sheet(
+                        ingredient = await resolve_ready_character_sheet(
                             db=character_db,
                             user_id=current_user.id,
                             character_id=character_id,
                         )
+                        inputs["character_sheet"] = ingredient.sheet_object_key
+                        inputs["character_description"] = ingredient.description
                     except HTTPException as exc:
                         raise CoreDomainError(str(exc.detail)) from exc
         images = list(inputs.get("images") or [])

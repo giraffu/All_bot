@@ -55,11 +55,16 @@ const beforeUpload = async (file: File) => {
 
 const submit = async () => {
   if (!name.value.trim() || !sourceKey.value) return
+  const characterDescription = description.value.trim()
+  if (!characterDescription) {
+    message.error(t('characters.description_required'))
+    return
+  }
   submitting.value = true
   try {
     await store.create({
       name: name.value.trim(),
-      description: description.value.trim() || undefined,
+      description: characterDescription,
       source_object_key: sourceKey.value,
     })
     name.value = ''
@@ -91,9 +96,13 @@ const saveRename = async (id: string) => {
 }
 
 const retry = async (character: (typeof store.items)[number]) => {
+  if (!character.description?.trim()) {
+    message.error(t('characters.description_required'))
+    return
+  }
   await store.create({
     name: character.name,
-    description: character.description || undefined,
+    description: character.description.trim(),
     source_object_key: character.source_object_key,
   })
   ensureRefreshPolling()
@@ -116,7 +125,7 @@ const retry = async (character: (typeof store.items)[number]) => {
         <div class="space-y-3">
           <a-input v-model:value="name" :maxlength="60" :placeholder="t('characters.name_placeholder')" />
           <a-textarea v-model:value="description" :maxlength="500" :rows="4" :placeholder="t('characters.description_placeholder')" />
-          <a-button type="primary" :disabled="!name.trim() || !sourceKey" :loading="submitting || uploading" @click="submit">
+          <a-button type="primary" :disabled="!name.trim() || !description.trim() || !sourceKey" :loading="submitting || uploading" @click="submit">
             {{ t('characters.build_button') }} · 18 {{ t('app.credits') }}
           </a-button>
         </div>

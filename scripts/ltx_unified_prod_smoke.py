@@ -128,6 +128,10 @@ def build_cases(
                     **common,
                     "resolution": "768x448",
                     "character_sheet": character_sheet_key,
+                    "character_description": (
+                        "an adult woman with stable facial features, hairstyle, "
+                        "skin tone, and body proportions"
+                    ),
                 },
                 "prompt": (
                     prompt

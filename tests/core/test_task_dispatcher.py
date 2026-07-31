@@ -257,6 +257,7 @@ def test_ltx_t2v_ic_uses_supported_duration_costs(duration, expected_cost):
                 "duration": duration,
                 "resolution": "768x448",
                 "character_sheet": "bucket/character.png",
+                "character_description": "an adult woman with short black hair",
             }
         )
         == expected_cost
@@ -288,6 +289,7 @@ async def test_ltx_t2v_submits_audio_video_spec(monkeypatch):
         negative_prompt="flicker",
         audio_prompt="quiet room tone",
         character_sheet=None,
+        character_description=None,
         width=1280,
         height=704,
         length=10,

@@ -173,6 +173,11 @@ Web 统一入口在：
 - 完成了 backend 提交
 - 挂好了 Web monitor side effect
 
+人物一致性文生视频是一个服务端组合特例：客户端只提交 `character_id`、画面
+prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已就绪人物参考表和
+必填人物描述；worker 按 `Reference sheet:`、`Generated video:`、可选 `#Audio`
+三段组成最终 conditioning。客户端不能直接指定参考表路径或覆盖已保存人物描述。
+
 ## 6. task_core 业务编排链路
 
 ### 6.1 统一门面

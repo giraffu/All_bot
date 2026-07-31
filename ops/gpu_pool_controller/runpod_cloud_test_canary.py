@@ -238,6 +238,10 @@ class RunPodCloudTestCanaryCaseBuilder:
                         "duration": 20,
                         "duration_seconds": 20,
                         "character_sheet": image_object_key,
+                        "character_description": (
+                            "an adult Asian woman with straight black hair, "
+                            "warm light skin, and stable facial features"
+                        ),
                     },
                     "prompt": LTX_T2V_IC_20S_SCENE_PROMPT,
                     "negative_prompt": (

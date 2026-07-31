@@ -40,6 +40,7 @@ class LtxT2VSpec:
     fps: int
     cost: int
     character_sheet: str | None
+    character_description: str | None
 
 
 def _duration(value: Any) -> int:
@@ -55,6 +56,9 @@ def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
 
     duration = _duration(inputs.get("duration", inputs.get("length", 5)))
     character_sheet = str(inputs.get("character_sheet") or "").strip() or None
+    character_description = (
+        str(inputs.get("character_description") or "").strip() or None
+    )
     if task_type == LTX_T2V_IC_TASK_TYPE:
         if duration not in LTX_T2V_ALLOWED_DURATIONS:
             raise LtxT2VValidationError(
@@ -62,6 +66,8 @@ def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
             )
         if not character_sheet:
             raise LtxT2VValidationError("人物一致性文生视频缺少已就绪的人物参考表。")
+        if not character_description:
+            raise LtxT2VValidationError("人物一致性文生视频缺少人物描述。")
         width, height, cost = (
             LTX_T2V_IC_WIDTH,
             LTX_T2V_IC_HEIGHT,
@@ -70,6 +76,8 @@ def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
     elif task_type == LTX_T2V_TASK_TYPE:
         if character_sheet:
             raise LtxT2VValidationError("普通文生视频不得携带人物参考表。")
+        if character_description:
+            raise LtxT2VValidationError("普通文生视频不得携带人物描述。")
         if duration not in LTX_T2V_ALLOWED_DURATIONS:
             raise LtxT2VValidationError("文生视频时长必须为 5、10、15 或 20 秒。")
         width, height, cost = (
@@ -92,4 +100,5 @@ def build_ltx_t2v_spec(task_type: str, inputs: dict[str, Any]) -> LtxT2VSpec:
         fps=LTX_T2V_FPS,
         cost=cost,
         character_sheet=character_sheet,
+        character_description=character_description,
     )
