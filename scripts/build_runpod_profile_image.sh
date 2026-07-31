@@ -244,8 +244,8 @@ stage_profile_context() {
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
     if [ "$profile" = "all" ]; then
-        cp -a workers/runpod_profiles/ltx_t2v \
-            "${destination}/workers/runpod_profiles/ltx_t2v"
+        cp -a workers/runpod_profiles/ltx_unified \
+            "${destination}/workers/runpod_profiles/ltx_unified"
         cp -a workers/runpod_profiles/pornmaster_flux2_edit \
             "${destination}/workers/runpod_profiles/pornmaster_flux2_edit"
     fi
