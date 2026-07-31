@@ -126,9 +126,15 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     prompt = patched["28"]["inputs"]["text"]
     assert prompt.startswith("### Identity Reference Description\n")
     assert "three-quarter face portrait" in prompt
-    assert "Treat it only as identity evidence" in prompt
-    assert "never reproduce the reference image" in prompt
+    assert "one continuous full-frame cinematic shot" in prompt
+    assert "grid" not in prompt.lower()
+    assert "contact sheet" not in prompt.lower()
     assert prompt.endswith("### Target Description\nscene")
+    negative = patched["29"]["inputs"]["text"]
+    assert "#Identity Reference Exclusions" in negative
+    assert "reference image, identity sheet, black padding" in negative
+    assert "grid, panel layout, contact sheet, collage" in negative
+    assert "other people, background person, extra person" in negative
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():

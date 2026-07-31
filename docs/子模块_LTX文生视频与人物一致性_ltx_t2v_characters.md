@@ -111,9 +111,10 @@ fallback last frame 只从裁尾后的交付 MP4 提取。
 
 IC prompt 由 worker 组合为 `### Identity Reference Description` 与
 `### Target Description` 两段：前者说明条件图是 3/4 面部身份子图，要求保持
-身份、脸部比例、发型、肤色、服装与配件，并明确不得复现参考图、补边、grid、
-panels/contact sheet/studio layout；后者原样承载用户场景；可选音频描述继续
-追加为 `#Audio`。
+身份、脸部比例、发型、肤色、服装与配件；后者原样承载用户场景。参考图、补边、
+grid、panels/contact sheet/collage 等禁用构图词只追加到负向提示词的
+`#Identity Reference Exclusions`，禁止在正向提示词用否定句重复这些名词，以免
+模型反向激活网格构图；可选音频描述继续追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
