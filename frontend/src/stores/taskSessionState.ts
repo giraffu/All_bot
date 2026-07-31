@@ -1,5 +1,9 @@
 import type { Task } from './taskStoreTypes'
 
+export type ExternalTaskOutcome =
+  | { status: 'success'; resultUrl?: string }
+  | { status: 'failed'; error: string }
+
 export function createPendingTask(taskId: string, type: string, title: string): Task {
   return {
     id: taskId,
@@ -21,6 +25,28 @@ export function resetExistingTaskSession(task: Task, type: string, title: string
   task.cancelMessage = undefined
   task.refundStatus = undefined
   task.refundMessage = undefined
+}
+
+export function settleExternalTaskSession(
+  task: Task,
+  outcome: ExternalTaskOutcome,
+): void {
+  task.status = outcome.status
+  task.progress = outcome.status === 'success' ? 100 : 0
+  task.awaitingResult = false
+  task.queuePos = undefined
+  task.cancelRequested = false
+  task.cancelMessage = undefined
+  task.refundStatus = undefined
+  task.refundMessage = undefined
+
+  if (outcome.status === 'success') {
+    task.resultUrl = outcome.resultUrl
+    task.error = undefined
+  } else {
+    task.resultUrl = undefined
+    task.error = outcome.error
+  }
 }
 
 export function removeTaskSession(

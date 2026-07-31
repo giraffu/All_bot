@@ -117,6 +117,11 @@ sequenceDiagram
 5. 若历史已落库，也可能通过最近历史或详情弹层展示结果
 6. pending 悬浮任务的关闭按钮按用户撤销处理，调用 `/tasks/cancel/{registry_task_id}`；非 pending 关闭按钮仅收起本地悬浮任务，不代表后端取消
 
+`record_history=false` 的内部交付任务不能只依赖通用 status/result 轮询收口：
+人物子图任务以 `CharacterReferenceView.task_id/status/preview_url` 为持久化事实源，
+人物 store 每次刷新都要把对应悬浮任务同步为 success 或 failed。运行态清理后
+通用 status 可能返回 404，但不得因此覆盖已经持久化为 ready 的人物子图终态。
+
 前端当前的状态语义重点：
 
 - `pending`: 已提交但还在排队
