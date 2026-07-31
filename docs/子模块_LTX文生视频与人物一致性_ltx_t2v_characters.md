@@ -229,6 +229,9 @@ prompt 编辑、自由 P 图三模式选择、独立生成/重生、按实时并
 `PATCH /api/characters/{id}` 修改名称和描述，不触发生成或扣费；删除必须二次
 确认并复用 `DELETE /api/characters/{id}` 软删除，删除后从人物图库和人物选择器
 中隐藏。处于 legacy 整体构建 `pending` 状态的人物不可删除。
+单个子图生成会登记一个悬浮任务；`CharacterReferenceView` 的 ready/failed
+持久化状态负责收口该悬浮任务。由于子图使用 `record_history=false`，通用任务
+运行态清理后的 404 不是失败证据，前端必须以人物子图持久化终态纠正悬浮球。
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
 可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
 和价格。视觉 prompt 与可选 audio prompt 分别进入任务输入，默认生成同步音频。

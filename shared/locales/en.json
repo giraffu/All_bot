@@ -667,6 +667,7 @@
     "view_status_pending": "Generating",
     "view_status_ready": "Ready",
     "view_status_failed": "Failed",
+    "view_generation_failed": "Character view generation failed",
     "generate_view": "Generate This View",
     "regenerate_view": "Regenerate",
     "regenerate_named_view": "Regenerate: {view}",

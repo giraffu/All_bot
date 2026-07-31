@@ -14,6 +14,7 @@ import {
   type CharacterViewEngine,
   type CharacterViewType,
 } from '@/api/characters'
+import i18n from '@/i18n'
 import { useTasksStore } from '@/stores/tasks'
 
 export const useCharactersStore = defineStore('characters', () => {
@@ -22,10 +23,30 @@ export const useCharactersStore = defineStore('characters', () => {
   const loading = ref(false)
   const readyItems = computed(() => items.value.filter(item => item.status === 'ready'))
 
+  const reconcileViewTaskSessions = (characters: CharacterReference[]) => {
+    characters.forEach(character => {
+      character.views.forEach(view => {
+        if (!view.task_id) return
+        if (view.status === 'ready') {
+          tasksStore.settleExternalTask(view.task_id, {
+            status: 'success',
+            resultUrl: view.preview_url ?? undefined,
+          })
+        } else if (view.status === 'failed') {
+          tasksStore.settleExternalTask(view.task_id, {
+            status: 'failed',
+            error: i18n.global.t('characters.view_generation_failed'),
+          })
+        }
+      })
+    })
+  }
+
   const refresh = async () => {
     loading.value = true
     try {
       items.value = await fetchCharacters()
+      reconcileViewTaskSessions(items.value)
     } finally {
       loading.value = false
     }

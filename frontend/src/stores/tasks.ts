@@ -23,6 +23,8 @@ import {
   clearCompletedTaskSessions,
   removeTaskSession,
   resetExistingTaskSession,
+  settleExternalTaskSession,
+  type ExternalTaskOutcome,
 } from './taskSessionState'
 import {
   closeTaskStream,
@@ -372,6 +374,31 @@ export const useTasksStore = defineStore('tasks', () => {
     removeTaskSession(activeTasks.value, taskId, closeTaskStream)
   }
 
+  const settleExternalTask = (
+    taskId: string,
+    outcome: ExternalTaskOutcome,
+  ) => {
+    const task = activeTasks.value.find(item => item.id === taskId)
+    if (!task) return false
+
+    const shouldNotify = task.status !== outcome.status
+    closeTaskStream(task)
+    statusPollingTaskIds.delete(taskId)
+    detachedResultProbeTaskIds.delete(taskId)
+    resultPollingTaskIds.delete(taskId)
+    settleExternalTaskSession(task, outcome)
+    touchTaskActivity(task)
+
+    if (shouldNotify) {
+      if (outcome.status === 'success') {
+        message.success(`任务 [${task.title}] 生成完成！`)
+      } else {
+        message.error(`任务 [${task.title}] 生成失败: ${outcome.error}`)
+      }
+    }
+    return true
+  }
+
   const clearCompleted = () => {
     clearCompletedTaskSessions(activeTasks.value, removeTask)
   }
@@ -414,6 +441,7 @@ export const useTasksStore = defineStore('tasks', () => {
     currentDetailRecord,
     getBlockingTaskCount,
     addTask,
+    settleExternalTask,
     removeTask,
     clearCompleted,
     cancelActiveTask,

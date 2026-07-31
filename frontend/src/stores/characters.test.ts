@@ -6,6 +6,7 @@ const apiMocks = vi.hoisted(() => ({
   generateCharacterView: vi.fn(),
 }))
 const addTask = vi.hoisted(() => vi.fn())
+const settleExternalTask = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/characters', () => ({
   buildCharacter: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('@/api/characters', () => ({
 }))
 
 vi.mock('@/stores/tasks', () => ({
-  useTasksStore: () => ({ addTask }),
+  useTasksStore: () => ({ addTask, settleExternalTask }),
 }))
 
 import { createPinia, setActivePinia } from 'pinia'
@@ -74,6 +75,53 @@ describe('characters store', () => {
       'character-view-task-1',
       'free_edit_v2_5',
       '人物参考图 · 侧脸图',
+    )
+  })
+
+  it('settles floating tasks from persisted character view terminal states', async () => {
+    apiMocks.fetchCharacters.mockResolvedValue([
+      {
+        id: 'character-1',
+        views: [
+          {
+            type: 'face_three_quarter',
+            label: '3/4 侧脸图',
+            task_id: 'ready-view-task',
+            status: 'ready',
+            preview_url: 'https://example.com/ready.png',
+          },
+          {
+            type: 'body_back',
+            label: '全身背面图',
+            task_id: 'failed-view-task',
+            status: 'failed',
+            preview_url: null,
+          },
+          {
+            type: 'body_side',
+            label: '全身侧面图',
+            task_id: 'pending-view-task',
+            status: 'pending',
+            preview_url: null,
+          },
+        ],
+      },
+    ])
+
+    const store = useCharactersStore()
+    await store.refresh()
+
+    expect(settleExternalTask).toHaveBeenCalledWith('ready-view-task', {
+      status: 'success',
+      resultUrl: 'https://example.com/ready.png',
+    })
+    expect(settleExternalTask).toHaveBeenCalledWith('failed-view-task', {
+      status: 'failed',
+      error: '人物子图生成失败',
+    })
+    expect(settleExternalTask).not.toHaveBeenCalledWith(
+      'pending-view-task',
+      expect.anything(),
     )
   })
 })

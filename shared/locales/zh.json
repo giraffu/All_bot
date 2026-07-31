@@ -668,6 +668,7 @@
     "view_status_pending": "生成中",
     "view_status_ready": "已完成",
     "view_status_failed": "生成失败",
+    "view_generation_failed": "人物子图生成失败",
     "generate_view": "生成当前子图",
     "regenerate_view": "重新生成",
     "regenerate_named_view": "重新生成：{view}",
