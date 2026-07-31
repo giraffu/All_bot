@@ -20,6 +20,10 @@ DEV_MODEL = "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
 DISTILLED = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 SULPHUR = "ltx2.3/sulphur_lora_rank_768.safetensors"
 INGREDIENTS = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+OFFICIAL_INGREDIENTS_SIGMAS = (
+    "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, "
+    "0.421875, 0.0"
+)
 
 
 def _replace_refs(workflow: dict, old: str, new: str, output: int = 0) -> None:
@@ -31,7 +35,234 @@ def _replace_refs(workflow: dict, old: str, new: str, output: int = 0) -> None:
                 node["inputs"][key] = [new, value[1] if len(value) > 1 else output]
 
 
+def build_ingredients_t2v(*, sulphur: bool) -> dict:
+    """Build the executable Lightricks single-stage Ingredients graph.
+
+    The model/text/VAE loaders intentionally reuse the model layout already present
+    in the AllBot GPU profiles. Everything after those loaders mirrors the official
+    distilled Ingredients workflow, with VHS retained only as the delivery adapter.
+    """
+    source = json.loads((LOCAL / "LTX 2.3 I2V 6.1.json").read_text())
+    model_after_distilled = "256"
+    model_before_ingredients = "258" if sulphur else model_after_distilled
+    workflow = {
+        "257": copy.deepcopy(source["257"]),
+        "189": copy.deepcopy(source["189"]),
+        "283": copy.deepcopy(source["283"]),
+        "282": copy.deepcopy(source["282"]),
+        "256": {
+            "inputs": {
+                "model": ["257", 0],
+                "lora_name": DISTILLED,
+                "strength_model": 0.5,
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": "Official distilled LoRA 0.5"},
+        },
+        "271": {
+            "inputs": {
+                "model": [model_before_ingredients, 0],
+                "lora_name": INGREDIENTS,
+                "strength_model": 1.0,
+            },
+            "class_type": "LTXICLoRALoaderModelOnly",
+            "_meta": {"title": "Official Ingredients IC-LoRA 1.0"},
+        },
+        "28": {
+            "inputs": {"text": "scene", "clip": ["189", 0]},
+            "class_type": "CLIPTextEncode",
+            "_meta": {"title": "Positive Video"},
+        },
+        "29": {
+            "inputs": {
+                "text": "worst quality, inconsistent motion, blurry, jittery, distorted",
+                "clip": ["189", 0],
+            },
+            "class_type": "CLIPTextEncode",
+            "_meta": {"title": "Negative Video"},
+        },
+        "26:46": {
+            "inputs": {
+                "frame_rate": 24.0,
+                "positive": ["28", 0],
+                "negative": ["29", 0],
+            },
+            "class_type": "LTXVConditioning",
+        },
+        "270": {
+            "inputs": {"image": "character_reference.png"},
+            "class_type": "LoadImage",
+            "_meta": {"title": "Ingredients reference sheet"},
+        },
+        "274": {
+            "inputs": {
+                "input": ["270", 0],
+                "resize_type": "scale shorter dimension",
+                "resize_type.shorter_size": 448,
+                "scale_method": "lanczos",
+            },
+            "class_type": "ResizeImageMaskNode",
+            "_meta": {"title": "Preserve reference-sheet aspect ratio"},
+        },
+        "5100": {
+            "inputs": {"image": ["274", 0]},
+            "class_type": "GetImageSize",
+        },
+        "273": {
+            "inputs": {"image": ["274", 0], "amount": 121},
+            "class_type": "RepeatImageBatch",
+            "_meta": {"title": "Static reference video"},
+        },
+        "275": {
+            "inputs": {"image": ["274", 0], "img_compression": 18},
+            "class_type": "LTXVPreprocess",
+        },
+        "26:39": {
+            "inputs": {
+                "width": ["5100", 0],
+                "height": ["5100", 1],
+                "length": 121,
+                "batch_size": 1,
+            },
+            "class_type": "EmptyLTXVLatentVideo",
+        },
+        "276": {
+            "inputs": {
+                "vae": ["283", 0],
+                "image": ["275", 0],
+                "latent": ["26:39", 0],
+                "strength": 1.0,
+                "bypass": True,
+            },
+            "class_type": "LTXVImgToVideoConditionOnly",
+        },
+        "272": {
+            "inputs": {
+                "positive": ["26:46", 0],
+                "negative": ["26:46", 1],
+                "vae": ["283", 0],
+                "latent": ["276", 0],
+                "image": ["273", 0],
+                "frame_idx": 0,
+                "strength": 1.0,
+                "latent_downscale_factor": ["271", 1],
+                "crop": "disabled",
+                "use_tiled_encode": False,
+                "tile_size": 256,
+                "tile_overlap": 64,
+            },
+            "class_type": "LTXAddVideoICLoRAGuide",
+        },
+        "26:40": {
+            "inputs": {
+                "frames_number": 121,
+                "frame_rate": 24,
+                "batch_size": 1,
+                "audio_vae": ["282", 0],
+            },
+            "class_type": "LTXVEmptyLatentAudio",
+        },
+        "26:45": {
+            "inputs": {
+                "video_latent": ["272", 2],
+                "audio_latent": ["26:40", 0],
+            },
+            "class_type": "LTXVConcatAVLatent",
+        },
+        "123": {
+            "inputs": {"noise_seed": -1},
+            "class_type": "RandomNoise",
+        },
+        "26:49": {
+            "inputs": {
+                "cfg": 1,
+                "model": ["271", 0],
+                "positive": ["272", 0],
+                "negative": ["272", 1],
+            },
+            "class_type": "CFGGuider",
+        },
+        "26:50": {
+            "inputs": {"sampler_name": "euler_ancestral_cfg_pp"},
+            "class_type": "KSamplerSelect",
+        },
+        "26:292": {
+            "inputs": {"sigmas": OFFICIAL_INGREDIENTS_SIGMAS},
+            "class_type": "ManualSigmas",
+        },
+        "26:51": {
+            "inputs": {
+                "noise": ["123", 0],
+                "guider": ["26:49", 0],
+                "sampler": ["26:50", 0],
+                "sigmas": ["26:292", 0],
+                "latent_image": ["26:45", 0],
+            },
+            "class_type": "SamplerCustomAdvanced",
+        },
+        "26:153": {
+            "inputs": {"av_latent": ["26:51", 0]},
+            "class_type": "LTXVSeparateAVLatent",
+        },
+        "26:91": {
+            "inputs": {
+                "positive": ["272", 0],
+                "negative": ["272", 1],
+                "latent": ["26:153", 0],
+            },
+            "class_type": "LTXVCropGuides",
+        },
+        "26:154": {
+            "inputs": {"samples": ["26:153", 1], "audio_vae": ["282", 0]},
+            "class_type": "LTXVAudioVAEDecode",
+        },
+        "26:149": {
+            "inputs": {
+                "vae": ["283", 0],
+                "latents": ["26:91", 2],
+                "horizontal_tiles": 2,
+                "vertical_tiles": 2,
+                "overlap": 6,
+                "last_frame_fix": False,
+                "working_device": "auto",
+                "working_dtype": "auto",
+            },
+            "class_type": "LTXVTiledVAEDecode",
+        },
+        "61": {
+            "inputs": {
+                "frame_rate": 24.0,
+                "loop_count": 0,
+                "filename_prefix": "ltx_t2v_ic",
+                "format": "video/h264-mp4",
+                "pix_fmt": "yuv420p",
+                "crf": 14,
+                "save_metadata": True,
+                "trim_to_audio": False,
+                "pingpong": False,
+                "save_output": True,
+                "images": ["26:149", 0],
+                "audio": ["26:154", 0],
+            },
+            "class_type": "VHS_VideoCombine",
+        },
+    }
+    if sulphur:
+        workflow["258"] = {
+            "inputs": {
+                "model": [model_after_distilled, 0],
+                "lora_name": SULPHUR,
+                "strength_model": 1.0,
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": "Sulphur LoRA 1.0"},
+        }
+    return workflow
+
+
 def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
+    if ingredients:
+        return build_ingredients_t2v(sulphur=sulphur)
     workflow = json.loads((LOCAL / "LTX 2.3 I2V 6.1.json").read_text())
     workflow["257"]["inputs"]["model_name"] = DEV_MODEL
     workflow["257"]["inputs"]["weight_dtype"] = "fp8_e4m3fn"
@@ -43,16 +274,13 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
     workflow["26:299"]["inputs"]["model"] = ["8", 0]
     workflow["26:300"]["inputs"]["model"] = ["8", 0]
 
-    # Plain T2V uses the fixed x2 spatial pass. Ingredients follows the official
-    # single-stage path and therefore starts at its final 768x448 dimensions.
+    # Plain T2V retains the fixed x2 spatial pass.
     for node_id in ("26:93", "26:65", "26:39"):
-        workflow[node_id]["inputs"]["width"] = 768 if ingredients else 640
-        workflow[node_id]["inputs"]["height"] = 448 if ingredients else 352
+        workflow[node_id]["inputs"]["width"] = 640
+        workflow[node_id]["inputs"]["height"] = 352
     workflow["26:45"]["inputs"]["video_latent"] = ["26:39", 0]
     workflow["26:88"]["inputs"]["video_latent"] = ["26:89", 0]
-    workflow["61"]["inputs"]["filename_prefix"] = (
-        "ltx_t2v_ic" if ingredients else "ltx_t2v"
-    )
+    workflow["61"]["inputs"]["filename_prefix"] = "ltx_t2v"
 
     removable = {
         "15",
@@ -70,95 +298,6 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
     for node_id in removable:
         workflow.pop(node_id, None)
 
-    if ingredients:
-        workflow["270"] = {
-            "inputs": {"image": "character_reference.png"},
-            "class_type": "LoadImage",
-            "_meta": {"title": "Ingredients character sheet"},
-        }
-        workflow["271"] = {
-            "inputs": {
-                "model": ["256", 0],
-                "lora_name": INGREDIENTS,
-                "strength_model": 1.0,
-            },
-            "class_type": "LTXICLoRALoaderModelOnly",
-            "_meta": {"title": "Ingredients IC LoRA (fixed 1.0)"},
-        }
-        workflow["273"] = {
-            "inputs": {
-                "image": ["274", 0],
-                "amount": 121,
-            },
-            "class_type": "RepeatImageBatch",
-            "_meta": {"title": "Ingredients static reference video"},
-        }
-        workflow["274"] = {
-            "inputs": {
-                "image": ["270", 0],
-                "upscale_method": "lanczos",
-                "width": 768,
-                "height": 448,
-                "crop": "disabled",
-            },
-            "class_type": "ImageScale",
-            "_meta": {"title": "Ingredients sheet at target size"},
-        }
-        workflow["275"] = {
-            "inputs": {
-                "image": ["274", 0],
-                "img_compression": 18,
-            },
-            "class_type": "LTXVPreprocess",
-            "_meta": {"title": "Official Ingredients preprocessing"},
-        }
-        workflow["276"] = {
-            "inputs": {
-                "vae": ["283", 0],
-                "image": ["275", 0],
-                "latent": ["26:39", 0],
-                "strength": 1.0,
-                "bypass": True,
-            },
-            "class_type": "LTXVImgToVideoConditionOnly",
-            "_meta": {"title": "Disabled visible image conditioning"},
-        }
-        workflow["210"]["inputs"]["model"] = ["271", 0]
-        workflow["272"] = {
-            "inputs": {
-                "positive": ["26:46", 0],
-                "negative": ["26:46", 1],
-                "vae": ["283", 0],
-                "latent": ["276", 0],
-                "image": ["273", 0],
-                "frame_idx": 0,
-                "strength": 1.0,
-                "latent_downscale_factor": ["271", 1],
-                "crop": "center",
-                "use_tiled_encode": False,
-                "tile_size": 256,
-                "tile_overlap": 64,
-            },
-            "class_type": "LTXAddVideoICLoRAGuide",
-            "_meta": {"title": "Ingredients reference guide"},
-        }
-        workflow["26:45"]["inputs"]["video_latent"] = ["272", 2]
-        workflow["26:49"]["inputs"]["positive"] = ["272", 0]
-        workflow["26:49"]["inputs"]["negative"] = ["272", 1]
-        # IC-LoRA appends one guide latent frame. Crop it before decoding and
-        # bypass the legacy x2 pass for the official single-stage Ingredients
-        # path.
-        workflow["26:91"]["inputs"].update(
-            {
-                "positive": ["272", 0],
-                "negative": ["272", 1],
-                "latent": ["26:153", 0],
-            }
-        )
-        workflow["26:90"]["inputs"]["positive"] = ["26:91", 0]
-        workflow["26:90"]["inputs"]["negative"] = ["26:91", 1]
-        workflow["26:149"]["inputs"]["latents"] = ["26:91", 2]
-        workflow["61"]["inputs"]["audio"] = ["26:154", 0]
     return workflow
 
 
@@ -209,8 +348,9 @@ def write_json(path: Path, value: dict) -> None:
 def main() -> None:
     generated = {
         T2V_NAME: build_t2v(ingredients=False),
-        # Match the official Ingredients workflow: distilled + Ingredients.
-        # Sulphur remains exclusive to the plain creative T2V profile.
+        # Keep the user-facing IC workflow on the validated official stack.
+        # Sulphur remains in validation 04 so compatibility can be rechecked
+        # without silently changing the production Ingredients graph.
         IC_NAME: build_t2v(ingredients=True, sulphur=False),
         CHARACTER_NAME: build_character(),
     }

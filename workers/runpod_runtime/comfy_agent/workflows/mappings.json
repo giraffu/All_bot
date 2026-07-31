@@ -224,11 +224,9 @@
     "ltx_t2v_ic": {
         "prompt": "28",
         "prompt_input": "text",
-        "negative_prompt": "29",
-        "negative_prompt_input": "text",
-        "length": "18",
-        "length_input": "Xi",
-        "character_sheet": "270",
+    "negative_prompt": "29",
+    "negative_prompt_input": "text",
+    "character_sheet": "270",
         "character_sheet_input": "image"
     },
     "character_reference_build": {},

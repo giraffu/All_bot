@@ -69,10 +69,7 @@ LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
 LTX_T2V_INGREDIENTS_NEGATIVE = (
-    "#Ingredients\n"
-    "worst quality, inconsistent motion, blurry, jittery, distorted, split screen, "
-    "grid, collage, character sheet, duplicated reference character, text, "
-    "subtitles, logo, watermark"
+    "worst quality, inconsistent motion, blurry, jittery, distorted"
 )
 
 
@@ -452,11 +449,12 @@ def _patch_ltx_t2v_workflow(
     # Plain T2V uses the fixed x2 spatial pass. Ingredients follows Lightricks'
     # official single-stage conditioning path and therefore starts at final size.
     width, height = (768, 448) if ingredients else (640, 352)
-    for node_id in ("26:93", "26:65", "26:39"):
-        node = workflow.get(node_id)
-        if isinstance(node, dict):
-            node.setdefault("inputs", {})["width"] = width
-            node["inputs"]["height"] = height
+    if not ingredients:
+        for node_id in ("26:93", "26:65", "26:39"):
+            node = workflow.get(node_id)
+            if isinstance(node, dict):
+                node.setdefault("inputs", {})["width"] = width
+                node["inputs"]["height"] = height
     for node_id in ("18",):
         node = workflow.get(node_id)
         if isinstance(node, dict):
@@ -466,22 +464,32 @@ def _patch_ltx_t2v_workflow(
     if not isinstance(loader, dict):
         raise ValueError("fixed LTX LoRA loader node 256 missing")
     loader_inputs = loader.setdefault("inputs", {})
-    loader_inputs["lora_1"] = {
-        "on": True,
-        "lora": LTX_T2V_DISTILLED_LORA,
-        "strength": 0.5,
-    }
-    loader_inputs["lora_2"] = {
-        "on": True,
-        "lora": LTX_T2V_SULPHUR_LORA,
-        "strength": 1.0,
-    }
+    if ingredients:
+        loader_inputs.update(
+            {
+                "model": ["257", 0],
+                "lora_name": LTX_T2V_DISTILLED_LORA,
+                "strength_model": 0.5,
+            }
+        )
+    else:
+        loader_inputs["lora_1"] = {
+            "on": True,
+            "lora": LTX_T2V_DISTILLED_LORA,
+            "strength": 0.5,
+        }
+        loader_inputs["lora_2"] = {
+            "on": True,
+            "lora": LTX_T2V_SULPHUR_LORA,
+            "strength": 1.0,
+        }
     if ingredients:
         ic_loader = workflow.get("271")
         if not isinstance(ic_loader, dict):
             raise ValueError("Ingredients loader node 271 missing")
         ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
-        ic_loader["inputs"]["strength_model"] = 1.4
+        ic_loader["inputs"]["model"] = ["256", 0]
+        ic_loader["inputs"]["strength_model"] = 1.0
         sheet = str(params.get("character_sheet") or "").strip()
         if not sheet:
             raise ValueError("Ingredients character sheet missing")
@@ -490,11 +498,10 @@ def _patch_ltx_t2v_workflow(
         if not isinstance(sheet_scale, dict):
             raise ValueError("Ingredients sheet scale node 274 missing")
         sheet_scale["inputs"] = {
-            "image": ["270", 0],
-            "upscale_method": "lanczos",
-            "width": width,
-            "height": height,
-            "crop": "disabled",
+            "input": ["270", 0],
+            "resize_type": "scale shorter dimension",
+            "resize_type.shorter_size": height,
+            "scale_method": "lanczos",
         }
         workflow.pop("277", None)
         workflow.pop("278", None)
@@ -505,6 +512,17 @@ def _patch_ltx_t2v_workflow(
             "image": ["274", 0],
             "amount": duration * LTX_VIDEO_FPS + 1,
         }
+        frame_count = duration * LTX_VIDEO_FPS + 1
+        workflow["26:39"]["inputs"].update(
+            {
+                "width": ["5100", 0],
+                "height": ["5100", 1],
+                "length": frame_count,
+            }
+        )
+        workflow["26:40"]["inputs"].update(
+            {"frames_number": frame_count, "frame_rate": LTX_VIDEO_FPS}
+        )
         preprocess = workflow.get("275")
         if not isinstance(preprocess, dict):
             raise ValueError("Ingredients preprocess node 275 missing")
@@ -529,6 +547,8 @@ def _patch_ltx_t2v_workflow(
         guide_inputs["latent"] = ["276", 0]
         guide_inputs["image"] = ["273", 0]
         guide_inputs["frame_idx"] = 0
+        guide_inputs["strength"] = 1.0
+        guide_inputs["crop"] = "disabled"
         decoder = workflow.get("26:149")
         if not isinstance(decoder, dict):
             raise ValueError("Ingredients video decoder node 26:149 missing")
@@ -549,19 +569,13 @@ def _patch_ltx_t2v_workflow(
         if not character_description:
             raise ValueError("Ingredients character description missing")
         prompt_node["inputs"]["text"] = (
-            f"Reference sheet: {character_description}\n\n"
-            f"Generated video: {target_description}"
+            f"### Reference Sheet Description\n{character_description}\n\n"
+            f"### Target Description\n{target_description}"
         )
         negative_node = workflow.get("29")
         if not isinstance(negative_node, dict):
             raise ValueError("LTX negative prompt node 29 missing")
-        negative_value = negative_node.setdefault("inputs", {}).get("text", "")
-        negative_text = (
-            negative_value.strip() if isinstance(negative_value, str) else ""
-        )
-        negative_node["inputs"]["text"] = (
-            f"{negative_text}\n\n{LTX_T2V_INGREDIENTS_NEGATIVE}".strip()
-        )
+        negative_node.setdefault("inputs", {})["text"] = LTX_T2V_INGREDIENTS_NEGATIVE
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
         prompt_node = workflow.get("28")
