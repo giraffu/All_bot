@@ -16,6 +16,9 @@ from agent_result_assets import (
     result_asset_priority,
 )
 
+LTX_T2V_IC_GUIDE_TAIL_SECONDS = 8.0
+
+
 @dataclass(frozen=True)
 class MaterializedPrimaryResult:
     object_name: str
@@ -144,6 +147,68 @@ def _extract_last_frame_from_video_bytes(video_bytes: bytes, logger) -> bytes | 
     except Exception as exc:
         logger.warning("Failed to extract fallback last frame: %s", exc)
         return None
+
+
+def _trim_ltx_t2v_ic_guide_tail(video_bytes: bytes, logger) -> bytes:
+    """Remove the hidden IC-LoRA guide buffer before delivery, failing closed."""
+    if not video_bytes:
+        raise RuntimeError("IC-LoRA result video is empty")
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.mp4"
+            output_path = Path(tmpdir) / "trimmed.mp4"
+            input_path.write_bytes(video_bytes)
+            duration = _probe_video_duration_seconds(input_path)
+            if duration is None or duration <= LTX_T2V_IC_GUIDE_TAIL_SECONDS:
+                raise RuntimeError(
+                    "IC-LoRA result is too short to remove the hidden guide tail"
+                )
+            delivery_duration = duration - LTX_T2V_IC_GUIDE_TAIL_SECONDS
+            delivery_frame_count = round(delivery_duration * 24)
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(input_path),
+                    "-t",
+                    f"{delivery_duration:.3f}",
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0",
+                    "-frames:v",
+                    str(delivery_frame_count),
+                    "-r",
+                    "24",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "18",
+                    "-c:a",
+                    "aac",
+                    "-movflags",
+                    "+faststart",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+            )
+            if (
+                result.returncode != 0
+                or not output_path.exists()
+                or not output_path.stat().st_size
+            ):
+                logger.error("Failed to remove IC-LoRA hidden guide tail with ffmpeg")
+                raise RuntimeError("failed to remove IC-LoRA hidden guide tail")
+            return output_path.read_bytes()
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.error("Failed to remove IC-LoRA hidden guide tail: %s", exc)
+        raise RuntimeError("failed to remove IC-LoRA hidden guide tail") from exc
 
 
 def _character_view_difference_hash(payload: bytes) -> int:
@@ -362,6 +427,12 @@ async def materialize_task_outputs(
         original_subfolder,
         type=view_type,
     )
+    if task_type == "ltx_t2v_ic":
+        primary_bytes = await asyncio.to_thread(
+            _trim_ltx_t2v_ic_guide_tail,
+            primary_bytes,
+            logger,
+        )
     primary = MaterializedPrimaryResult(
         object_name=execution.task_result,
         file_name=original_filename,

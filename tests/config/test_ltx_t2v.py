@@ -96,12 +96,29 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     }
     assert workflow["273"]["class_type"] == "RepeatImageBatch"
     assert workflow["273"]["inputs"] == {
-        "image": ["274", 0],
-        "amount": 121,
+        "image": ["278", 0],
+        "amount": 1,
+    }
+    assert workflow["277"]["class_type"] == "ImageCrop"
+    assert workflow["277"]["inputs"] == {
+        "image": ["270", 0],
+        "width": 512,
+        "height": 448,
+        "x": 1024,
+        "y": 0,
+    }
+    assert workflow["278"]["class_type"] == "ImagePadForOutpaint"
+    assert workflow["278"]["inputs"] == {
+        "image": ["277", 0],
+        "left": 128,
+        "top": 0,
+        "right": 128,
+        "bottom": 0,
+        "feathering": 0,
     }
     assert workflow["275"]["class_type"] == "LTXVPreprocess"
     assert workflow["275"]["inputs"] == {
-        "image": ["274", 0],
+        "image": ["278", 0],
         "img_compression": 18,
     }
     assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
@@ -110,11 +127,11 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
         "image": ["275", 0],
         "latent": ["26:39", 0],
         "strength": 1.0,
-        "bypass": False,
+        "bypass": True,
     }
     assert workflow["272"]["inputs"]["latent"] == ["276", 0]
     assert workflow["272"]["inputs"]["image"] == ["273", 0]
-    assert workflow["272"]["inputs"]["frame_idx"] == 0
+    assert workflow["272"]["inputs"]["frame_idx"] == -1
     assert workflow["26:39"]["inputs"]["width"] == 768
     assert workflow["26:39"]["inputs"]["height"] == 448
     # Ingredients follows the official single-stage path: crop the guide from
@@ -144,12 +161,14 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
         assert ("272" in workflow) is has_ingredients
         if has_ingredients:
             assert workflow["274"]["class_type"] == "ImageScale"
+            assert workflow["277"]["class_type"] == "ImageCrop"
+            assert workflow["278"]["class_type"] == "ImagePadForOutpaint"
             assert workflow["273"]["class_type"] == "RepeatImageBatch"
             assert workflow["275"]["class_type"] == "LTXVPreprocess"
             assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
             assert workflow["272"]["inputs"]["latent"] == ["276", 0]
             assert workflow["272"]["inputs"]["image"] == ["273", 0]
-            assert workflow["272"]["inputs"]["frame_idx"] == 0
+            assert workflow["272"]["inputs"]["frame_idx"] == -1
             # Ingredients decodes the first pass directly. The legacy x2
             # second pass is deliberately orphaned for this profile.
             assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]

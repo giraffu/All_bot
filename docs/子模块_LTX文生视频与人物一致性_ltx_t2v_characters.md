@@ -95,20 +95,25 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 同步音频输出；T2V 是 `1280x704` 双阶段，IC 是 `768x448` 单阶段，交付规格
 均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
 
-IC workflow 按官方 Ingredients ComfyUI 语义处理人物参考：`RepeatImageBatch`
-把 3×2 人物表复制成与目标帧数相同的静态参考视频，`LTXAddVideoICLoRAGuide`
-在 `frame_idx=0` 注入整段条件；同时只有缩放后的单张人物表经过
-`LTXVPreprocess` 和 `LTXVImgToVideoConditionOnly` 进入首帧条件，禁止把重复
-batch 接入该节点，否则会把六宫格锁进每个输出帧。Ingredients 第一阶段直接以
-最终 `768x448` 采样，`LTXVCropGuides` 后直接解码，旧 x2 空间放大与第二阶段
-在执行图中保持 orphan。请求不额外增加一秒，结果物化层不裁尾、不二次编码；
-因此参考表能约束完整时段，但不会成为首帧、尾帧或任何交付帧。fallback last
-frame 直接从 workflow 已裁 guide 的 MP4 提取。
+IC workflow 保留官方 Ingredients 的 loader、guide 和
+`LTXVCropGuides` 语义，但人物表不能直接作为可见首帧条件。worker 从固定
+1536×896、3×2 人物表裁出右上角 512×448 的 3/4 面部子图，左右补黑到
+768×448 后以单帧 `RepeatImageBatch` 接入 `LTXAddVideoICLoRAGuide`；
+`LTXVImgToVideoConditionOnly` 明确 `bypass=true`，guide 使用
+`frame_idx=-1`，所以首帧不锁定参考图，也不把六宫格复制到输出。
 
-IC prompt 由 worker 组合为 `### Reference Sheet Description` 与
-`### Target Description` 两段：前者明确六格顺序和需保持的身份、发型、肤色、
-体型、服装与配件，并明确参考表只作 Ingredients、不得复现 grid/panels/studio
-layout；后者原样承载用户场景；可选音频描述继续追加为 `#Audio`。
+强 Ingredients guide 即使经 `LTXVCropGuides` 删除追加的 guide latent，仍会
+向末端若干秒扩散参考构图。为把这段影响隔离在交付区间外，IC 生成时长固定为
+请求时长加 8 秒，结果物化层必须 fail-closed 地裁掉末尾 8 秒并保留 AAC；
+探测或裁剪失败时任务失败，禁止回退交付原始 MP4。Ingredients 第一阶段直接以
+最终 `768x448` 采样并解码，旧 x2 空间放大与第二阶段在执行图中保持 orphan。
+fallback last frame 只从裁尾后的交付 MP4 提取。
+
+IC prompt 由 worker 组合为 `### Identity Reference Description` 与
+`### Target Description` 两段：前者说明条件图是 3/4 面部身份子图，要求保持
+身份、脸部比例、发型、肤色、服装与配件，并明确不得复现参考图、补边、grid、
+panels/contact sheet/studio layout；后者原样承载用户场景；可选音频描述继续
+追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
