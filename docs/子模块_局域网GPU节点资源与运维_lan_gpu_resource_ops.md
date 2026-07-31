@@ -557,6 +557,13 @@ checkpoint。切换使用单槽事务化 `takeover --failure-policy auto_rollbac
 开关保持关闭。任一任务失败且影响正式 LTX 流量时，使用精确 physical slot
 和旧 slot 执行 `recover --prefer old`。
 
+LAN-only `all` profile 升级 LTX 子栈时同样使用
+`ltx_unified/2026-07-29/manifest.json` 替换其旧 LTX Video/T2V 两份声明，并在
+原 `all` workspace 原地补齐内容寻址差集；不得清空或重建该 workspace。镜像需
+完整重建并验证三份 extracted-10Eros workflow、Sulphur T2V、Ingredients IC、
+必填 `character_description` 和 `shared` 运行时依赖。上线只能走 `release-rollout`
+单槽事务，等待 Central 与 Comfy 队列自然空闲，失败按精确旧 digest 自动回滚。
+
 更新某个仍保留传统 Comfy 容器的 GPU 节点时：
 
 ```bash

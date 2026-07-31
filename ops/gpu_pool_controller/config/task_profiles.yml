@@ -27,9 +27,8 @@ profiles:
       - wan22_video_v2_baseline
       - pornmaster_flux2_edit_bf16_baseline
       - scail2_baseline
-      - ltx_video_baseline
       - i2i_pro_baseline
-      - ltx_t2v_runtime
+      - ltx_unified_runtime
     required_nodes:
       - UNETLoader
       - CLIPLoader
@@ -54,9 +53,8 @@ profiles:
       - wan22_aio_video/2026-07-18-lora5/manifest.json
       - pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
       - scail2/2026-06-17-test/manifest.json
-      - ltx_video/2026-06-10/manifest.json
       - i2i_pro/2026-06-14-test/manifest.json
-      - ltx_t2v/2026-07-22/manifest.json
+      - ltx_unified/2026-07-29/manifest.json
 
   scail2_flex:
     runtime_profile: scail2_flex

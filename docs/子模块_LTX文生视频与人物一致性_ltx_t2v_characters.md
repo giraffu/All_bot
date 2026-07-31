@@ -27,6 +27,10 @@ RunPod 容量：`ltx_t2v` 在 prod 仍默认关闭，只允许 operator canary �
 统一 profile 的模型事实源是
 `ltx_unified/2026-07-29/manifest.json`，其中 Sulphur、Ingredients 与 extracted
 10Eros LoRA 是独立分支资产，公共 CLIP/VAE/upscaler 只引用一次。
+LAN-only `all` profile 的 LTX 子栈也复用这份统一 manifest：它保留其它任务的
+五份 manifest，只用统一 LTX manifest 替换原先分别声明的 `ltx_video` 与
+`ltx_t2v` manifest；内容寻址同步不会重复下载相同模型。三类 LTX 视频映射到
+extracted-10Eros workflow，T2V/IC 继续映射到 Sulphur/Ingredients workflow。
 
 ## 2. 固定模型栈
 
