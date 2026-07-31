@@ -99,7 +99,7 @@
         0
       ],
       "audio": [
-        "26:117",
+        "26:154",
         0
       ]
     },
@@ -434,8 +434,8 @@
   "26:93": {
     "inputs": {
       "value": 0,
-      "width": 384,
-      "height": 224
+      "width": 768,
+      "height": 448
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -532,8 +532,8 @@
   "26:65": {
     "inputs": {
       "value": 0,
-      "width": 384,
-      "height": 224
+      "width": 768,
+      "height": 448
     },
     "class_type": "SolidMask",
     "_meta": {
@@ -543,8 +543,8 @@
   "26:89": {
     "inputs": {
       "samples": [
-        "26:91",
-        2
+        "26:153",
+        0
       ],
       "upscale_model": [
         "4",
@@ -574,8 +574,8 @@
         0
       ],
       "latents": [
-        "26:95",
-        0
+        "26:91",
+        2
       ]
     },
     "class_type": "LTXVSpatioTemporalTiledVAEDecode",
@@ -585,8 +585,8 @@
   },
   "26:39": {
     "inputs": {
-      "width": 384,
-      "height": 224,
+      "width": 768,
+      "height": 448,
       "length": [
         "26:42",
         0
@@ -970,7 +970,7 @@
   "273": {
     "inputs": {
       "image": [
-        "270",
+        "274",
         0
       ],
       "amount": 121
@@ -978,6 +978,57 @@
     "class_type": "RepeatImageBatch",
     "_meta": {
       "title": "Ingredients static reference video"
+    }
+  },
+  "274": {
+    "inputs": {
+      "image": [
+        "270",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 768,
+      "height": 448,
+      "crop": "disabled"
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Ingredients sheet at target size"
+    }
+  },
+  "275": {
+    "inputs": {
+      "image": [
+        "274",
+        0
+      ],
+      "img_compression": 18
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "Official Ingredients preprocessing"
+    }
+  },
+  "276": {
+    "inputs": {
+      "vae": [
+        "283",
+        0
+      ],
+      "image": [
+        "275",
+        0
+      ],
+      "latent": [
+        "26:39",
+        0
+      ],
+      "strength": 1.0,
+      "bypass": true
+    },
+    "class_type": "LTXVImgToVideoConditionOnly",
+    "_meta": {
+      "title": "Disabled visible image conditioning"
     }
   },
   "272": {
@@ -995,7 +1046,7 @@
         0
       ],
       "latent": [
-        "26:39",
+        "276",
         0
       ],
       "image": [

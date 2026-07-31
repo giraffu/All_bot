@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import uuid
 from datetime import datetime
 
 from fastapi import HTTPException
-from PIL import Image
 from sqlalchemy import func, select
 
 from config import MINIO_BUCKET
+from shared.character_reference_sheet import (
+    INGREDIENTS_CHARACTER_PANEL_VERSION,
+    compose_ingredients_character_panel,
+)
 from src.core.billing_core import get_concurrent_task_limit_for_identity
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
@@ -375,22 +377,7 @@ def _read_character_view_bytes(
 
 
 def _compose_character_sheet(payloads: list[tuple[int, bytes]]) -> bytes:
-    from shared.image_aspect import adapt_image_to_aspect
-
-    canvas = Image.new("RGB", (1536, 896), "black")
-    for slot, payload in payloads:
-        try:
-            with Image.open(io.BytesIO(payload)) as source:
-                tile = adapt_image_to_aspect(source, aspect=(8, 7)).image.resize(
-                    (512, 448),
-                    Image.Resampling.LANCZOS,
-                )
-        except Exception as exc:
-            raise RuntimeError(f"corrupt character view in slot {slot + 1}") from exc
-        canvas.paste(tile, ((slot % 3) * 512, (slot // 3) * 448))
-    output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
-    return output.getvalue()
+    return compose_ingredients_character_panel(payloads)
 
 
 async def _materialize_saved_character_sheet(
@@ -404,7 +391,10 @@ async def _materialize_saved_character_sheet(
         )
     payloads = await asyncio.to_thread(_read_character_view_bytes, ready_views)
     sheet = await asyncio.to_thread(_compose_character_sheet, payloads)
-    object_key = f"character_references/{character.user_id}/{character.id}/sheet.png"
+    object_key = (
+        f"character_references/{character.user_id}/{character.id}/"
+        f"{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
+    )
     uploaded = await asyncio.to_thread(
         storage.upload_bytes,
         sheet,
@@ -462,6 +452,30 @@ async def resolve_ready_character_sheet(*, db, user_id: int, character_id: str) 
     ).scalar_one_or_none()
     if row is None or row.status != "ready" or not row.sheet_object_key:
         raise HTTPException(status_code=400, detail="人物不存在、未就绪或已删除。")
+    if not row.sheet_object_key.endswith(
+        f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"
+    ):
+        views = (
+            (
+                await db.execute(
+                    select(CharacterReferenceView).where(
+                        CharacterReferenceView.character_id == character_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ready_views = [
+            view for view in views if view.status == "ready" and view.object_key
+        ]
+        if len(ready_views) >= CHARACTER_MIN_READY_VIEWS:
+            result = await _materialize_saved_character_sheet(
+                db=db,
+                character=row,
+                views=list(views),
+            )
+            return str(result["sheet_object_key"])
     sheet = row.sheet_object_key
     await release_read_transaction(db)
     return sheet

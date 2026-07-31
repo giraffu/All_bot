@@ -73,25 +73,76 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         {"prompt": "scene", "duration": 20, "character_sheet": "owned-sheet.png"},
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
-    assert patched["271"]["inputs"]["strength_model"] == 1.0
+    assert patched["271"]["inputs"]["strength_model"] == 1.4
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
-    assert "lora_2" not in patched["256"]["inputs"]
+    assert patched["256"]["inputs"]["lora_2"] == {
+        "on": True,
+        "lora": "ltx2.3/sulphur_lora_rank_768.safetensors",
+        "strength": 1.0,
+    }
+    assert "277" not in patched
+    assert "278" not in patched
     assert patched["273"]["class_type"] == "RepeatImageBatch"
     assert patched["273"]["inputs"] == {
-        "image": ["270", 0],
+        "image": ["274", 0],
         "amount": 481,
     }
+    assert patched["274"]["inputs"] == {
+        "image": ["270", 0],
+        "upscale_method": "lanczos",
+        "width": 768,
+        "height": 448,
+        "crop": "disabled",
+    }
+    assert patched["275"]["inputs"] == {
+        "image": ["274", 0],
+        "img_compression": 18,
+    }
+    assert patched["276"]["inputs"] == {
+        "vae": ["283", 0],
+        "image": ["275", 0],
+        "latent": ["26:39", 0],
+        "strength": 1.0,
+        "bypass": True,
+    }
+    assert patched["272"]["inputs"]["latent"] == ["276", 0]
     assert patched["272"]["inputs"]["image"] == ["273", 0]
     assert patched["272"]["inputs"]["frame_idx"] == 0
-    assert patched["26:39"]["inputs"]["width"] == 384
-    assert patched["26:39"]["inputs"]["height"] == 224
+    assert patched["26:39"]["inputs"]["width"] == 768
+    assert patched["26:39"]["inputs"]["height"] == 448
+    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
+    assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
     assert patched["18"]["inputs"]["Xi"] == 20
     assert patched["18"]["inputs"]["Xf"] == 20
     prompt = patched["28"]["inputs"]["text"]
-    assert prompt.startswith("### Reference Sheet Description\n")
-    assert "Top row: front face close-up, side face close-up" in prompt
-    assert "Bottom row: full-body front, full-body side, full-body back." in prompt
-    assert prompt.endswith("### Target Description\nscene")
+    assert prompt.startswith("Reference sheet: ")
+    assert "one single character panel" in prompt
+    assert "dominant front face close-up" in prompt
+    assert "full-body front, side, and back turnaround views" in prompt
+    assert prompt.endswith("Generated video: scene")
+    negative = patched["29"]["inputs"]["text"]
+    assert not negative.startswith("None")
+    assert "#Identity Reference Exclusions" not in negative
+    assert "worst quality, inconsistent motion, blurry, jittery, distorted" in negative
+    assert "split screen, grid, collage, character sheet" in negative
+    assert "text, subtitles, logo, watermark" in negative
+
+
+def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "scene",
+            "negative_prompt": None,
+            "duration": 5,
+            "character_sheet": "owned-sheet.png",
+        },
+    )
+
+    assert patched["29"]["inputs"]["text"].startswith("#Ingredients\n")
+    assert "None" not in patched["29"]["inputs"]["text"]
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():
