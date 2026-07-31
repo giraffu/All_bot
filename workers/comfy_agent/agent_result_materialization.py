@@ -15,6 +15,7 @@ from agent_result_assets import (
     resolve_history_result_asset,
     result_asset_priority,
 )
+from shared.character_reference_sheet import compose_ingredients_character_panel
 
 @dataclass(frozen=True)
 class MaterializedPrimaryResult:
@@ -210,27 +211,9 @@ def _character_view_assets(
 
 
 def _compose_character_sheet(images: list[bytes]) -> bytes:
-    from shared.image_aspect import adapt_image_to_aspect
-
     if len(images) != 6:
         raise RuntimeError("character reference sheet requires exactly six views")
-    canvas = Image.new("RGB", (1536, 896), "black")
-    for index, payload in enumerate(images):
-        try:
-            with Image.open(io.BytesIO(payload)) as source:
-                adaptation = adapt_image_to_aspect(
-                    source,
-                    aspect=(8, 7),
-                )
-                tile = adaptation.image.resize((512, 448), Image.Resampling.LANCZOS)
-        except Exception as exc:
-            raise RuntimeError(
-                f"corrupt character reference view {index + 1:02d}"
-            ) from exc
-        canvas.paste(tile, ((index % 3) * 512, (index // 3) * 448))
-    output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
-    return output.getvalue()
+    return compose_ingredients_character_panel(enumerate(images))
 
 
 async def _materialize_character_reference(

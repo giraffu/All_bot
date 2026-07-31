@@ -317,8 +317,12 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
     )
 
     assert result["status"] == "ready"
-    assert result["sheet_object_key"].endswith("/character-1/sheet.png")
-    assert result["preview_url"].endswith("/character-1/sheet.png")
+    assert result["sheet_object_key"].endswith(
+        "/character-1/ingredients-character-panel-v2.png"
+    )
+    assert result["preview_url"].endswith(
+        "/character-1/ingredients-character-panel-v2.png"
+    )
     assert upload.call_count == 1
 
 
@@ -424,7 +428,10 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
         )
 
     db = _Session(
-        [SimpleNamespace(status="ready", sheet_object_key="bot-data/private/sheet.png")]
+        [
+            SimpleNamespace(status="ready", sheet_object_key="bot-data/private/sheet.png"),
+            [],
+        ]
     )
     assert (
         await service.resolve_ready_character_sheet(
@@ -435,6 +442,38 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
         == "bot-data/private/sheet.png"
     )
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ready_character_resolution_migrates_legacy_sheet_layout(monkeypatch):
+    row = SimpleNamespace(
+        id="character-1",
+        user_id=123,
+        status="ready",
+        sheet_object_key="bot-data/private/sheet.png",
+    )
+    views = [
+        SimpleNamespace(status="ready", object_key="bot-data/views/front.png"),
+        SimpleNamespace(status="ready", object_key="bot-data/views/body.png"),
+    ]
+    materialize = AsyncMock(
+        return_value={
+            "sheet_object_key": (
+                "bot-data/character_references/123/character-1/"
+                "ingredients-character-panel-v2.png"
+            )
+        }
+    )
+    monkeypatch.setattr(service, "_materialize_saved_character_sheet", materialize)
+
+    result = await service.resolve_ready_character_sheet(
+        db=_Session([row, views]),
+        user_id=123,
+        character_id="character-1",
+    )
+
+    assert result.endswith("/ingredients-character-panel-v2.png")
+    materialize.assert_awaited_once()
 
 
 @pytest.mark.asyncio

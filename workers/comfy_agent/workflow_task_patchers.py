@@ -69,15 +69,16 @@ LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
 LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
-    "This reference sheet contains one adult character in six clean panels on a "
-    "black background. The top row shows front, side, and three-quarter face "
-    "close-ups. The bottom row shows full-body front, side, and back turnarounds. "
-    "All panels depict the same exact facial identity, facial proportions, "
+    "one adult character shown inside one single character panel: a dominant "
+    "front face close-up followed by full-body front, side, and back turnaround "
+    "views. Every view depicts the same exact facial identity, facial proportions, "
     "hairstyle, skin tone, body proportions, clothing, and accessories."
 )
 LTX_T2V_INGREDIENTS_NEGATIVE = (
     "#Ingredients\n"
-    "worst quality, inconsistent motion, blurry, jittery, distorted"
+    "worst quality, inconsistent motion, blurry, jittery, distorted, split screen, "
+    "grid, collage, character sheet, duplicated reference character, text, "
+    "subtitles, logo, watermark"
 )
 
 
@@ -476,20 +477,17 @@ def _patch_ltx_t2v_workflow(
         "lora": LTX_T2V_DISTILLED_LORA,
         "strength": 0.5,
     }
-    if ingredients:
-        loader_inputs.pop("lora_2", None)
-    else:
-        loader_inputs["lora_2"] = {
-            "on": True,
-            "lora": LTX_T2V_SULPHUR_LORA,
-            "strength": 1.0,
-        }
+    loader_inputs["lora_2"] = {
+        "on": True,
+        "lora": LTX_T2V_SULPHUR_LORA,
+        "strength": 1.0,
+    }
     if ingredients:
         ic_loader = workflow.get("271")
         if not isinstance(ic_loader, dict):
             raise ValueError("Ingredients loader node 271 missing")
         ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
-        ic_loader["inputs"]["strength_model"] = 1.0
+        ic_loader["inputs"]["strength_model"] = 1.4
         sheet = str(params.get("character_sheet") or "").strip()
         if not sheet:
             raise ValueError("Ingredients character sheet missing")
@@ -552,9 +550,8 @@ def _patch_ltx_t2v_workflow(
             prompt_node.setdefault("inputs", {}).get("text", "")
         ).strip()
         prompt_node["inputs"]["text"] = (
-            f"### Reference Sheet Description\n"
-            f"{LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
-            f"### Target Description\n{target_description}"
+            f"Reference sheet: {LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
+            f"Generated video: {target_description}"
         )
         negative_node = workflow.get("29")
         if not isinstance(negative_node, dict):

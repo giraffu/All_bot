@@ -37,8 +37,9 @@ RunPod 容量：`ltx_t2v` 在 prod 仍默认关闭，只允许 operator canary �
 1. 官方 `ltx-2.3-22b-dev-fp8.safetensors`；
 2. 官方 distilled LoRA，强度 `0.5`；
 3. 普通 `ltx_t2v` 追加 Sulphur rank-768 LoRA，强度 `1.0`；
-4. `ltx_t2v_ic` 不叠加 Sulphur，只追加 Ingredients 0.9，强度 `1.0`，
-   与 Lightricks 官方 Ingredients ComfyUI 工作流一致。
+4. `ltx_t2v_ic` 保留相同 Sulphur，再追加 Ingredients 0.9，强度 `1.4`。
+   Sulphur 保留成人生成能力；Ingredients 的条件接入、参考静态视频和 guide
+   裁除遵循 Lightricks 官方单阶段工作流。
 
 用户不能在这个固定栈上继续叠加 LoRA。Gemma、视频/音频 VAE 和空间
 upscaler 复用 content-addressed registry 既有 blobs，不重复下载。权重不 baked
@@ -96,20 +97,21 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
 
 IC workflow 保留官方 Ingredients 的 loader、guide 和
-`LTXVCropGuides` 语义。worker 将固定 1536×896、3×2 黑底人物表完整缩放为
-768×448，并用 `RepeatImageBatch` 复制成与输出完全同帧数（`24 * seconds + 1`）
-的静态参考视频；该视频在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`。
+`LTXVCropGuides` 语义。worker 将固定 1536×896 的单一黑底人物 ingredient
+面板完整缩放为 768×448，并用 `RepeatImageBatch` 复制成与输出完全同帧数
+（`24 * seconds + 1`）的静态参考视频；该视频在 `frame_idx=0` 接入
+`LTXAddVideoICLoRAGuide`。
 `LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
 采样后的 `LTXVCropGuides` 删除 guide latent，交付结果无需添加 8 秒保护尾段，
 也不经二次转码裁尾。Ingredients 第一阶段直接以最终 `768x448` 采样并解码，
 旧 x2 空间放大与第二阶段在执行图中保持 orphan。
 
-IC prompt 按官方可执行 workflow 与训练样例格式由 worker 组合为
-`### Reference Sheet Description` 与 `### Target Description` 两段：前者准确
-描述黑底六面板中的正面、侧面、3/4 面部近景和全身正面、侧面、背面，后者原样
-承载用户场景。缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入
-conditioning；负向追加官方建议的
-`worst quality, inconsistent motion, blurry, jittery, distorted`，不再用否定句
+IC prompt 按官方模型卡的训练标签由 worker 组合为
+`Reference sheet: ...` 与 `Generated video: ...` 两段：前者把大幅正脸近景和
+全身正面、侧面、背面描述为同一个 character ingredient，后者原样承载用户场景。
+缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入 conditioning；
+负向追加官方质量词，并明确排除 split screen、grid、collage、character sheet、
+重复角色、文字、字幕、logo 和 watermark。
 重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述继续追加为
 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
@@ -185,21 +187,19 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 单张正面半身源图是受支持且必须覆盖的验收输入，但它不意味着六格都可以复制
 正面半身构图。materializer 使用视觉感知差异门禁拒绝近似重复视图，但不把该门禁
 冒充姿态语义识别；真实 canary 仍须
-人工确认至少正面、3/4、侧面、背面和景别变化均成立。完整参考表用于官方
+人工确认至少正面、3/4、侧面、背面和景别变化均成立。完整参考面板用于官方
 Ingredients 静态参考视频条件，但参考表、拼贴边框或任一格不得出现在交付视频
 首帧、尾帧或场景切换附近。
 
 至少两个子图为 `ready` 后，`POST /api/characters/{id}/save` 才允许保存。服务端
-按固定 3×2 槽位合成 `1536x896` PNG；未生成的槽位保持纯黑，因此不同数量和重试
-顺序不会改变视角位置。人物图库可选择已有子图修改 prompt 后重新生成，再显式
-“更新人物参考图”重建合成表。
-
-每个已完成视图统一复用 QQCC AI 动图的
-`shared.image_aspect.adapt_image_to_aspect`：比例变化不安全或没有可靠焦点检测时，
-使用模糊背景填充并完整缩放前景，再等比落到 `512x448`；禁止另写居中 cover
-裁剪。竖幅人物必须完整保留头顶与脚部，六个格子再按固定 3x2 顺序拼接。
-`src.services.smart_image_aspect_service` 只保留兼容 facade，控制面与
-`workers/runpod_runtime` 的比例安全策略以 `shared/image_aspect.py` 为唯一事实源。
+通过 `shared/character_reference_sheet.py` 合成
+`ingredients-character-panel-v2.png`：优先选择正脸作为左侧大幅身份锚点，右侧
+依次放置全身正面、侧面和背面。多张人物素材属于一个 character ingredient，
+禁止再输出六个等权场景面板，否则模型可能把它解释为多人物或直接复现参考表。
+人物图库可选择已有子图修改 prompt 后重新生成，再显式“更新人物参考图”重建面板；
+旧 `sheet.png` 在下一次被选择时使用已有 ready 子图惰性迁移，不重新生成、不扣费。
+身体视图对横幅输入只居中裁掉空白两侧，对竖幅输入完整 contain，必须保留头顶和
+脚部。控制面、共享 worker 与 `workers/runpod_runtime` 复用同一合成函数。
 共享 RunPod runtime 保留人物单子图裁枝与物化兼容逻辑；只有实际声明
 `character_reference_build` 的 PornMaster BF16 profile 通过 profile 内 installer
 把选中分支切换到 BF16 checkpoint。installer、Dockerfile 或人物任务契约变化只重建

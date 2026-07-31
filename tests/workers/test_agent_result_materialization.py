@@ -117,14 +117,16 @@ def _portrait_png_with_head_and_feet_markers():
     return output.getvalue()
 
 
-def test_character_reference_sheet_is_deterministic_three_by_two():
+def test_character_reference_sheet_is_one_official_style_character_panel():
     payload = materialization._compose_character_sheet(
         [_png((i * 30, 0, 0)) for i in range(1, 7)]
     )
     with Image.open(io.BytesIO(payload)) as sheet:
         assert sheet.size == (1536, 896)
-        assert sheet.getpixel((256, 224)) == (30, 0, 0)
-        assert sheet.getpixel((1280, 672)) == (180, 0, 0)
+        assert sheet.getpixel((288, 448)) == (30, 0, 0)
+        assert sheet.getpixel((736, 448)) == (120, 0, 0)
+        assert sheet.getpixel((1056, 448)) == (150, 0, 0)
+        assert sheet.getpixel((1376, 448)) == (180, 0, 0)
 
 
 def test_character_reference_sheet_preserves_portrait_head_and_feet():
@@ -133,8 +135,8 @@ def test_character_reference_sheet_preserves_portrait_head_and_feet():
     payload = materialization._compose_character_sheet([portrait] * 6)
 
     with Image.open(io.BytesIO(payload)) as sheet:
-        first_tile = sheet.crop((0, 0, 512, 448))
-        colors = first_tile.getcolors(maxcolors=512 * 448)
+        body_tile = sheet.crop((576, 0, 896, 896))
+        colors = body_tile.getcolors(maxcolors=320 * 896)
         assert colors is not None
         color_counts = {color: count for count, color in colors}
         assert any(
