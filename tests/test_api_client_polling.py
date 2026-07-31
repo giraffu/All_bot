@@ -40,6 +40,33 @@ async def test_ltx_api_client_trims_nonempty_negative_and_omits_blank(
 
 
 @pytest.mark.asyncio
+async def test_ltx_t2v_api_client_forwards_fixed_seed(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=SimpleNamespace(json=lambda: {"task_id": "task-1"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    await client.submit_ltx_t2v(
+        "task-1",
+        task_type="ltx_t2v_ic",
+        prompt="scene",
+        negative_prompt="blur",
+        audio_prompt="waves",
+        character_sheet="sheet.png",
+        character_description="adult woman",
+        seed=65608997764964,
+        width=768,
+        height=448,
+        length=5,
+        frame_count=121,
+        fps=24,
+    )
+
+    assert request.await_args.kwargs["json"]["seed"] == 65608997764964
+
+
+@pytest.mark.asyncio
 async def test_character_reference_api_client_forwards_selected_view(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(

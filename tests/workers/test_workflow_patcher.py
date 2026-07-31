@@ -44,7 +44,12 @@ def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
     patched = patcher.patch_workflow(
         "ltx_t2v",
         workflow,
-        {"prompt": "rainy street", "audio_prompt": "distant traffic", "duration": 20},
+        {
+            "prompt": "rainy street",
+            "audio_prompt": "distant traffic",
+            "duration": 20,
+            "seed": 123456,
+        },
     )
     loader = patched["256"]["inputs"]
     assert loader["lora_1"] == {
@@ -62,6 +67,7 @@ def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
     assert patched["26:39"]["inputs"]["width"] == 640
     assert patched["26:39"]["inputs"]["height"] == 352
     assert patched["18"]["inputs"]["Xi"] == 20
+    assert patched["125"]["inputs"]["seed"] == 123456
     assert "#Audio\ndistant traffic" in patched["28"]["inputs"]["text"]
 
 
@@ -75,10 +81,12 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
             "duration": 20,
             "character_sheet": "owned-sheet.png",
             "character_description": "an adult woman with a short black bob and amber eyes",
+            "seed": 65608997764964,
         },
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
     assert patched["271"]["inputs"]["strength_model"] == 1.0
+    assert patched["123"]["inputs"]["noise_seed"] == 65608997764964
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
     assert "258" not in patched
     assert patched["271"]["inputs"]["model"] == ["256", 0]
@@ -126,6 +134,22 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert not negative.startswith("None")
     assert "#Identity Reference Exclusions" not in negative
     assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
+
+
+def test_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "scene",
+            "duration": 5,
+            "character_sheet": "owned-sheet.png",
+            "character_description": "an adult woman",
+        },
+    )
+
+    assert patched["123"]["inputs"]["noise_seed"] >= 0
 
 
 def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():

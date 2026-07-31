@@ -281,6 +281,7 @@ class LtxT2VRequest(BaseModel):
     fps: int = 24
     character_sheet: Optional[str] = None
     character_description: Optional[str] = None
+    seed: Optional[int] = Field(default=None, ge=0, le=18446744073709551615)
     priority: int = 0
 
 

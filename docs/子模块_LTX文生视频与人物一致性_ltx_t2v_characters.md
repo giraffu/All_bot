@@ -114,6 +114,10 @@ guide strength 固定 `1.0`、crop 固定 `disabled`，latent downscale factor �
 Ingredients LoRA 元数据读取。采样后的 `LTXVCropGuides` 删除追加的 guide latent，
 再直接 VAE 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
 `euler_ancestral_cfg_pp`、CFG 1 和官方 9 个 manual sigmas（8 次采样）。
+Web 可传入非负 `seed` 复现固定种子任务；该字段必须经过 task dispatcher、
+Web API client 与 Central `LtxT2VRequest` 原样进入 Worker。未指定时 Worker 只生成
+一次合法的非负随机种子，并写入普通 T2V 的 `Seed (rgthree)` 或 IC 的
+`RandomNoise.noise_seed`；workflow 模板中的 `-1` 不得提交给 ComfyUI。
 
 IC prompt 按官方可执行 workflow 的标题由 worker 组合为
 `### Reference Sheet Description` 与 `### Target Description` 两段：前者使用人物资产中
