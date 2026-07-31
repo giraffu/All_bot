@@ -73,10 +73,14 @@ LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
     "### Identity Reference Description\n"
     "The conditioning image is a three-quarter face portrait of one adult character. "
     "Preserve the exact facial identity, facial proportions, hairstyle, skin tone, "
-    "clothing and accessories. Treat it only as identity evidence: never reproduce "
-    "the reference image, black padding, grid, panels, contact sheet or studio layout "
-    "in any delivered frame. The output must be one continuous full-frame cinematic "
-    "shot containing one instance of this character."
+    "clothing and accessories. Generate one continuous full-frame cinematic shot "
+    "containing exactly one instance of this character."
+)
+LTX_T2V_IDENTITY_REFERENCE_NEGATIVE = (
+    "#Identity Reference Exclusions\n"
+    "reference image, identity sheet, black padding, grid, panel layout, contact "
+    "sheet, collage, split screen, inset, picture-in-picture, tiled image, duplicated "
+    "character, other people, background person, extra person, crowd, bystander"
 )
 
 
@@ -575,6 +579,15 @@ def _patch_ltx_t2v_workflow(
         prompt_node["inputs"]["text"] = (
             f"{LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
             f"### Target Description\n{target_description}"
+        )
+        negative_node = workflow.get("29")
+        if not isinstance(negative_node, dict):
+            raise ValueError("LTX negative prompt node 29 missing")
+        negative_text = str(
+            negative_node.setdefault("inputs", {}).get("text", "")
+        ).strip()
+        negative_node["inputs"]["text"] = (
+            f"{negative_text}\n\n{LTX_T2V_IDENTITY_REFERENCE_NEGATIVE}"
         )
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
