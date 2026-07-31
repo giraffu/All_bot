@@ -74,7 +74,10 @@ LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
     "clean panels on a black background. Top row: front face close-up, side face "
     "close-up, three-quarter face close-up. Bottom row: full-body front, full-body "
     "side, full-body back. Preserve the exact facial identity, hairstyle, skin tone, "
-    "body proportions, clothing and accessories shown in every panel."
+    "body proportions, clothing and accessories shown in every panel. Use the sheet "
+    "only as visual ingredients; never reproduce the sheet, grid, panels, or studio "
+    "layout in the generated video. The output must be one continuous full-frame "
+    "cinematic shot containing one instance of this character."
 )
 
 
@@ -451,9 +454,9 @@ def _patch_ltx_t2v_workflow(
     duration = _resolve_ltx_duration_seconds(params)
     if duration not in {5, 10, 15, 20}:
         raise ValueError("invalid ltx_t2v duration")
-    # The workflow's fixed spatial upscaler doubles the latent dimensions.
-    # Keep the API contract expressed as final output size.
-    width, height = (384, 224) if ingredients else (640, 352)
+    # Plain T2V uses the fixed x2 spatial pass. Ingredients follows Lightricks'
+    # official single-stage conditioning path and therefore starts at final size.
+    width, height = (768, 448) if ingredients else (640, 352)
     for node_id in ("26:93", "26:65", "26:39"):
         node = workflow.get(node_id)
         if isinstance(node, dict):
@@ -491,17 +494,53 @@ def _patch_ltx_t2v_workflow(
         if not sheet:
             raise ValueError("Ingredients character sheet missing")
         workflow["270"]["inputs"]["image"] = sheet
+        sheet_scale = workflow.get("274")
+        if not isinstance(sheet_scale, dict):
+            raise ValueError("Ingredients sheet scale node 274 missing")
+        sheet_scale["inputs"] = {
+            "image": ["270", 0],
+            "upscale_method": "lanczos",
+            "width": width,
+            "height": height,
+            "crop": "disabled",
+        }
         reference_video = workflow.get("273")
         if not isinstance(reference_video, dict):
             raise ValueError("Ingredients static reference video node 273 missing")
-        reference_video.setdefault("inputs", {})["image"] = ["270", 0]
+        reference_video.setdefault("inputs", {})["image"] = ["274", 0]
         reference_video["inputs"]["amount"] = duration * LTX_VIDEO_FPS + 1
+        preprocess = workflow.get("275")
+        if not isinstance(preprocess, dict):
+            raise ValueError("Ingredients preprocess node 275 missing")
+        preprocess["inputs"] = {
+            "image": ["274", 0],
+            "img_compression": 18,
+        }
+        image_condition = workflow.get("276")
+        if not isinstance(image_condition, dict):
+            raise ValueError("Ingredients image condition node 276 missing")
+        image_condition["inputs"] = {
+            "vae": ["283", 0],
+            "image": ["275", 0],
+            "latent": ["26:39", 0],
+            "strength": 1.0,
+            "bypass": False,
+        }
         guide = workflow.get("272")
         if not isinstance(guide, dict):
             raise ValueError("Ingredients guide node 272 missing")
         guide_inputs = guide.setdefault("inputs", {})
+        guide_inputs["latent"] = ["276", 0]
         guide_inputs["image"] = ["273", 0]
         guide_inputs["frame_idx"] = 0
+        decoder = workflow.get("26:149")
+        if not isinstance(decoder, dict):
+            raise ValueError("Ingredients video decoder node 26:149 missing")
+        decoder.setdefault("inputs", {})["latents"] = ["26:91", 2]
+        output = workflow.get("61")
+        if not isinstance(output, dict):
+            raise ValueError("Ingredients output node 61 missing")
+        output.setdefault("inputs", {})["audio"] = ["26:154", 0]
         prompt_node = workflow.get("28")
         if not isinstance(prompt_node, dict):
             raise ValueError("LTX prompt node 28 missing")

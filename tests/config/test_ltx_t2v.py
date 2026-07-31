@@ -86,17 +86,43 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     )
 
     assert "lora_2" not in workflow["256"]["inputs"]
+    assert workflow["274"]["class_type"] == "ImageScale"
+    assert workflow["274"]["inputs"] == {
+        "image": ["270", 0],
+        "upscale_method": "lanczos",
+        "width": 768,
+        "height": 448,
+        "crop": "disabled",
+    }
     assert workflow["273"]["class_type"] == "RepeatImageBatch"
     assert workflow["273"]["inputs"] == {
-        "image": ["270", 0],
+        "image": ["274", 0],
         "amount": 121,
     }
+    assert workflow["275"]["class_type"] == "LTXVPreprocess"
+    assert workflow["275"]["inputs"] == {
+        "image": ["274", 0],
+        "img_compression": 18,
+    }
+    assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
+    assert workflow["276"]["inputs"] == {
+        "vae": ["283", 0],
+        "image": ["275", 0],
+        "latent": ["26:39", 0],
+        "strength": 1.0,
+        "bypass": False,
+    }
+    assert workflow["272"]["inputs"]["latent"] == ["276", 0]
     assert workflow["272"]["inputs"]["image"] == ["273", 0]
     assert workflow["272"]["inputs"]["frame_idx"] == 0
-    # The reference-video guide must be cropped in latent space before
-    # upscaling and decoding, so the six-panel sheet cannot become frame zero.
+    assert workflow["26:39"]["inputs"]["width"] == 768
+    assert workflow["26:39"]["inputs"]["height"] == 448
+    # Ingredients follows the official single-stage path: crop the guide from
+    # the first pass and decode it directly instead of spatially upscaling the
+    # reference-sheet layout through the legacy second pass.
     assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
-    assert workflow["26:89"]["inputs"]["samples"] == ["26:91", 2]
+    assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
+    assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
 
 
 def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
@@ -117,12 +143,15 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
         assert ("271" in workflow) is has_ingredients
         assert ("272" in workflow) is has_ingredients
         if has_ingredients:
+            assert workflow["274"]["class_type"] == "ImageScale"
             assert workflow["273"]["class_type"] == "RepeatImageBatch"
+            assert workflow["275"]["class_type"] == "LTXVPreprocess"
+            assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
+            assert workflow["272"]["inputs"]["latent"] == ["276", 0]
             assert workflow["272"]["inputs"]["image"] == ["273", 0]
             assert workflow["272"]["inputs"]["frame_idx"] == 0
-            # Crop the appended IC guide token before x2 spatial upscaling;
-            # otherwise one latent guide frame decodes as eight extra frames.
+            # Ingredients decodes the first pass directly. The legacy x2
+            # second pass is deliberately orphaned for this profile.
             assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
-            assert workflow["26:89"]["inputs"]["samples"] == ["26:91", 2]
-            assert workflow["26:90"]["inputs"]["positive"] == ["26:91", 0]
-            assert workflow["26:149"]["inputs"]["latents"] == ["26:95", 0]
+            assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
+            assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
