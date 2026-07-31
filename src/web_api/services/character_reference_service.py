@@ -64,9 +64,14 @@ CHARACTER_VIEW_CATALOG = (
         "index": 3,
         "default_prompt": (
             "Same adult person as the source image; preserve exact identity, face, "
-            "hairstyle, skin tone, clothing and accessories. three-quarter close-up "
-            "face portrait with both eyes visible. Single view, pure black "
-            "background, no text, labels, border or collage."
+            "hairstyle, skin tone, clothing and accessories. True three-quarter "
+            "close-up face portrait: rotate the head 40-45 degrees toward the "
+            "viewer's left. Keep both eyes visible, with the far eye noticeably "
+            "narrower and smaller than the near eye; the nose tip clearly offset "
+            "from the facial centerline and one cheek dominant. The gaze follows "
+            "the head direction. Not front-facing, not symmetrical, and not a full "
+            "side profile. Single view, pure black background, no text, labels, "
+            "border or collage."
         ),
     },
     {

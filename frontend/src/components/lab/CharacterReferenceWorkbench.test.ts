@@ -95,6 +95,27 @@ describe('CharacterReferenceWorkbench', () => {
     fetchCapacity.mockResolvedValue({ limit: 3, active: 1, available: 2 })
   })
 
+  it('uses explicit asymmetric geometry for the three-quarter default prompt', () => {
+    const wrapper = mount(CharacterReferenceWorkbench, {
+      global: {
+        stubs: {
+          AButton: ButtonStub,
+          AInput: passthroughStub,
+          ATextarea: passthroughStub,
+          ARadioGroup: passthroughStub,
+          ARadioButton: passthroughStub,
+          AUpload: passthroughStub,
+        },
+      },
+    })
+    const prompt = (wrapper.vm as any).prompts.face_three_quarter
+
+    expect(prompt).toContain('40-45 degrees')
+    expect(prompt).toContain('far eye noticeably narrower and smaller')
+    expect(prompt).toContain('nose tip clearly offset from the facial centerline')
+    expect(prompt).toContain('Not front-facing, not symmetrical, and not a full side profile')
+  })
+
   it('submits every missing view through the live concurrency capacity', async () => {
     const wrapper = mount(CharacterReferenceWorkbench, {
       global: {
