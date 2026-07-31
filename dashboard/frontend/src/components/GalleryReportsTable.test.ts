@@ -182,6 +182,32 @@ describe('GalleryReportsTable', () => {
     })
   })
 
+  it('labels reports resolved by a user deleting the post', async () => {
+    apiMocks.fetchGalleryReports.mockResolvedValue({
+      items: [
+        {
+          ...sampleReport,
+          post_id: null,
+          post_is_active: null,
+          status: 'resolved',
+          resolved_at: '2026-07-31T11:32:20',
+          resolution_action: 'user_deleted',
+          media_type: null,
+          media_url: null,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+
+    const wrapper = mountReportsTable()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已处理')
+    expect(wrapper.text()).toContain('用户已删除')
+  })
+
   it('opens image and video media in a preview modal', async () => {
     apiMocks.fetchGalleryReports.mockResolvedValue({
       items: [

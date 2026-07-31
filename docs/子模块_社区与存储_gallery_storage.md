@@ -81,7 +81,10 @@ sequenceDiagram
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
 - Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `user_id` 精确筛选，以及 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
 - Dashboard 广场内容管理与举报管理统一通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts`、`affected_histories` 与 `resolved_reports`，并在同一事务中处理该作者全部 pending 举报。
-- 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
+- 用户删除投稿会硬删除 `GalleryPost` 和互动、提示词解锁、评论关联，但保留
+  `History` 并取消公开状态；同作品 pending 举报会在同一事务内以
+  `resolution_action=user_deleted` 自动转为 resolved，举报快照继续保留在
+  Dashboard“已处理”列表。
 
 ### 4.2 互动系统
 
@@ -106,6 +109,9 @@ sequenceDiagram
 - Dashboard 标记处理只更新举报状态；“仅下架此条”只下架当前
   `GalleryPost`、同步对应 `History.is_public=False` 并处理同作品 pending 举报，
   不封禁作者或影响其其它投稿；举报页“封禁并下架”复用用户级治理接口，设置用户投稿封禁、下架该用户全部 `GalleryPost`、同步关联 `History.is_public=False`，并把该作者全部 pending 举报以 `ban_and_takedown` 置为 resolved。
+- 用户主动删除被举报投稿时，删除事务先把该作品全部 pending 举报置为
+  `resolved`，写入 `resolved_at` 与 `resolution_action=user_deleted`，再删除
+  `GalleryPost`；举报行不删除，Dashboard 显示为“已处理 / 用户已删除”。
 - 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
 
 ### 4.5 收藏与个人视图
