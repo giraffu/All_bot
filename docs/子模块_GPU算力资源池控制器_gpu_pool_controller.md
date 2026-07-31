@@ -144,6 +144,11 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
 
 - canonical 镜像由受保护 main 的 exact SHA 构建，包含 workflow/custom node
   依赖并以 digest 固定；模型权重不入镜像。
+- `all` 的 LTX 子栈与 `ltx_unified` 使用同一份
+  `ltx_unified/2026-07-29/manifest.json` 和三份 extracted-10Eros workflow；
+  不再同时声明旧 `ltx_video` 与 `ltx_t2v` manifest。多 manifest 同步继续按
+  相对路径、大小和 SHA-256 复用既有对象，只补统一 manifest 的真实差集，
+  T2V/IC 仍使用 Sulphur/Ingredients workflow。
 - 仅 baked worker runtime 变化且依赖清单未变时，可使用
   `lan_all_runtime_refresh`：它以已经验证的 LAN `all` exact digest 为基础，
   对旧/新 `requirements.txt` 做固定 SHA-256 双向门禁后完整替换 runtime，

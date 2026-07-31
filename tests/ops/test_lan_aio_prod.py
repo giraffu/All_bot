@@ -299,7 +299,13 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     config = load_controller_config()
     profile = config.profiles["all"]
     assert profile.task_types == LAN_ALL_TASK_TYPES
-    assert len(profile.model_manifest_keys) == 7
+    assert len(profile.model_manifest_keys) == 6
+    assert "ltx_unified/2026-07-29/manifest.json" in profile.model_manifest_keys
+    assert "ltx_video/2026-06-10/manifest.json" not in profile.model_manifest_keys
+    assert "ltx_t2v/2026-07-22/manifest.json" not in profile.model_manifest_keys
+    assert "ltx_unified_runtime" in profile.model_bundles
+    assert "ltx_video_baseline" not in profile.model_bundles
+    assert "ltx_t2v_runtime" not in profile.model_bundles
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:"
         "c6756b3ab6981b37058f8e2fe2ef59c556f326872ab1ad75dd9d7a1398b21d33"
@@ -329,6 +335,18 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
         profile.model_manifest_keys
     )
     assert environment["POOL_RUNTIME_PROFILE"] == "all"
+    workflow_overrides = json.loads(
+        environment["TASK_TYPE_WORKFLOW_OVERRIDES"]
+    )
+    assert workflow_overrides["ltx_video"] == "LTX 2.3 I2V 10Eros LoRA.json"
+    assert (
+        workflow_overrides["ltx_video_flf2v"]
+        == "LTX 2.3 FLF2V 10Eros LoRA.json"
+    )
+    assert (
+        workflow_overrides["ltx_video_v2v_audio"]
+        == "LTX 2.3 V2V Audio 10Eros LoRA.json"
+    )
     assert (
         "/home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/"
         "all/workspace/ComfyUI/models:/opt/ComfyUI/models"

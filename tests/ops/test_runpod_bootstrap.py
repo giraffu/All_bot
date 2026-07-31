@@ -184,6 +184,9 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "allbot.runpod.profile" not in dockerfile
     assert "--cpu --quick-test-for-ci --disable-auto-launch" in dockerfile
     assert "Business model files must stay out of the LAN all image" in dockerfile
+    assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in dockerfile
+    assert "character_description" in dockerfile
+    assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
     assert (
         "cd /opt/allbot/runtime/runpod_worker && "
         "git apply /opt/allbot/runpod_sync_models_multi_manifest.patch"

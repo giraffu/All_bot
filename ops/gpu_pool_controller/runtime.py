@@ -61,7 +61,7 @@ LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES = json.dumps(
 LAN_AIO_ALL_WORKFLOW_OVERRIDES = json.dumps(
     {
         **json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
-        **json.loads(RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES),
+        **json.loads(LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES),
         **json.loads(LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES),
     },
     separators=(",", ":"),
