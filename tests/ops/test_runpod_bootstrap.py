@@ -194,6 +194,10 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "git apply --directory=/opt/" not in dockerfile
     assert "all)" in build_script
     assert "allbot/comfy-lan-all:local" in build_script
+    assert (
+        "cp -a workers/runpod_profiles/ltx_unified"
+        in build_script
+    )
 
 
 def test_lan_all_profile_can_reuse_digest_pinned_lan_source_images():
