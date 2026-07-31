@@ -75,6 +75,30 @@ def test_generated_workflows_have_only_the_fixed_lora_stack():
     }
 
 
+def test_generated_ingredients_workflow_uses_official_static_reference_video():
+    import json
+    from pathlib import Path
+
+    workflow = json.loads(
+        Path(
+            "workers/comfy_agent/workflows/LTX 2.3 Sulphur Ingredients T2V.json"
+        ).read_text()
+    )
+
+    assert "lora_2" not in workflow["256"]["inputs"]
+    assert workflow["273"]["class_type"] == "RepeatImageBatch"
+    assert workflow["273"]["inputs"] == {
+        "image": ["270", 0],
+        "amount": 121,
+    }
+    assert workflow["272"]["inputs"]["image"] == ["273", 0]
+    assert workflow["272"]["inputs"]["frame_idx"] == 0
+    # The reference-video guide must be cropped in latent space before
+    # upscaling and decoding, so the six-panel sheet cannot become frame zero.
+    assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
+    assert workflow["26:89"]["inputs"]["samples"] == ["26:91", 2]
+
+
 def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
     import json
     from pathlib import Path
@@ -93,6 +117,9 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
         assert ("271" in workflow) is has_ingredients
         assert ("272" in workflow) is has_ingredients
         if has_ingredients:
+            assert workflow["273"]["class_type"] == "RepeatImageBatch"
+            assert workflow["272"]["inputs"]["image"] == ["273", 0]
+            assert workflow["272"]["inputs"]["frame_idx"] == 0
             # Crop the appended IC guide token before x2 spatial upscaling;
             # otherwise one latent guide frame decodes as eight extra frames.
             assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]

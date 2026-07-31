@@ -255,11 +255,6 @@
         "on": true,
         "lora": "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
         "strength": 0.5
-      },
-      "lora_2": {
-        "on": true,
-        "lora": "ltx2.3/sulphur_lora_rank_768.safetensors",
-        "strength": 1.0
       }
     },
     "class_type": "Power Lora Loader (rgthree)",
@@ -967,6 +962,19 @@
       "title": "Ingredients IC LoRA (fixed 1.0)"
     }
   },
+  "273": {
+    "inputs": {
+      "image": [
+        "270",
+        0
+      ],
+      "amount": 121
+    },
+    "class_type": "RepeatImageBatch",
+    "_meta": {
+      "title": "Ingredients static reference video"
+    }
+  },
   "272": {
     "inputs": {
       "positive": [
@@ -986,7 +994,7 @@
         0
       ],
       "image": [
-        "270",
+        "273",
         0
       ],
       "frame_idx": 0,

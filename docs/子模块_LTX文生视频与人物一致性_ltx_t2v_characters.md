@@ -31,12 +31,14 @@ RunPod 容量：`ltx_t2v` 在 prod 仍默认关闭，只允许 operator canary �
 ## 2. 固定模型栈
 
 模型 bundle 为 `ltx_t2v_runtime/2026-07-22`，LAN model-cache 前缀为
-`ltx_t2v/2026-07-22`。运行栈顺序固定为：
+`ltx_t2v/2026-07-22`。运行栈以官方 dev + distilled 为公共基座，两个任务分支
+固定为：
 
 1. 官方 `ltx-2.3-22b-dev-fp8.safetensors`；
 2. 官方 distilled LoRA，强度 `0.5`；
-3. Sulphur rank-768 LoRA，强度 `1.0`；
-4. 仅 IC 任务追加 Ingredients 0.9，强度 `1.0`。
+3. 普通 `ltx_t2v` 追加 Sulphur rank-768 LoRA，强度 `1.0`；
+4. `ltx_t2v_ic` 不叠加 Sulphur，只追加 Ingredients 0.9，强度 `1.0`，
+   与 Lightricks 官方 Ingredients ComfyUI 工作流一致。
 
 用户不能在这个固定栈上继续叠加 LoRA。Gemma、视频/音频 VAE 和空间
 upscaler 复用 content-addressed registry 既有 blobs，不重复下载。权重不 baked
@@ -91,16 +93,24 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 
 `workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format、双阶段、
 同步音频输出；T2V 是 `1280x704`，IC 是 `768x448`，交付规格均为
-`24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。人物参考表只作隐藏条件：
-workflow 在请求时长之外额外生成一秒并把 guide 固定在尾端，统一结果物化层在上传
-前重编码裁掉该一秒。裁剪、AAC 音轨或输出生成失败必须 fail closed，禁止回退上传
-含参考表的原 MP4；fallback last frame 只能从裁剪后的交付 MP4 提取。
+`24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
+
+IC workflow 按官方 Ingredients ComfyUI 语义处理人物参考：`RepeatImageBatch`
+把 3×2 人物表复制成与目标帧数相同的静态参考视频，`LTXAddVideoICLoRAGuide`
+在 `frame_idx=0` 注入整段条件，采样后由 `LTXVCropGuides` 在空间放大和解码前
+移除全部 guide latent。请求不额外增加一秒，结果物化层不裁尾、不二次编码；
+因此参考表能约束完整时段，但不会成为首帧、尾帧或任何交付帧。fallback last
+frame 直接从 workflow 已裁 guide 的 MP4 提取。
+
+IC prompt 由 worker 组合为 `### Reference Sheet Description` 与
+`### Target Description` 两段：前者明确六格顺序和需保持的身份、发型、肤色、
+体型、服装与配件，后者原样承载用户场景；可选音频描述继续追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
-`ops/gpu_pool_controller/validation_workflows/ltx_t2v/`。第 1/3 组只是官方
-baseline；只有第 2 组完整 Sulphur T2V 和第 4 组完整 Sulphur + Ingredients
-均产出可播放、带音轨 MP4，目标栈才通过。
+`ops/gpu_pool_controller/validation_workflows/ltx_t2v/`。第 1 组是普通官方
+baseline，第 4 组只保留历史 A/B 比较；第 2 组 Sulphur T2V 和第 3 组官方
+distilled + Ingredients 均产出可播放、带音轨 MP4，当前目标栈才通过。
 
 镜像入口：
 

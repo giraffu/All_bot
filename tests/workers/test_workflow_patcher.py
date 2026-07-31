@@ -75,10 +75,23 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
     assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
-    assert patched["272"]["inputs"]["frame_idx"] == -1
+    assert "lora_2" not in patched["256"]["inputs"]
+    assert patched["273"]["class_type"] == "RepeatImageBatch"
+    assert patched["273"]["inputs"] == {
+        "image": ["270", 0],
+        "amount": 481,
+    }
+    assert patched["272"]["inputs"]["image"] == ["273", 0]
+    assert patched["272"]["inputs"]["frame_idx"] == 0
     assert patched["26:39"]["inputs"]["width"] == 384
     assert patched["26:39"]["inputs"]["height"] == 224
-    assert patched["18"]["inputs"]["Xi"] == 21
+    assert patched["18"]["inputs"]["Xi"] == 20
+    assert patched["18"]["inputs"]["Xf"] == 20
+    prompt = patched["28"]["inputs"]["text"]
+    assert prompt.startswith("### Reference Sheet Description\n")
+    assert "Top row: front face close-up, side face close-up" in prompt
+    assert "Bottom row: full-body front, full-body side, full-body back." in prompt
+    assert prompt.endswith("### Target Description\nscene")
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():

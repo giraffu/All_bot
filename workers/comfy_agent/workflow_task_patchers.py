@@ -68,6 +68,14 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
+    "### Reference Sheet Description\n"
+    "This reference sheet contains one adult character shown consistently in six "
+    "clean panels on a black background. Top row: front face close-up, side face "
+    "close-up, three-quarter face close-up. Bottom row: full-body front, full-body "
+    "side, full-body back. Preserve the exact facial identity, hairstyle, skin tone, "
+    "body proportions, clothing and accessories shown in every panel."
+)
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -443,7 +451,6 @@ def _patch_ltx_t2v_workflow(
     duration = _resolve_ltx_duration_seconds(params)
     if duration not in {5, 10, 15, 20}:
         raise ValueError("invalid ltx_t2v duration")
-    generation_duration = duration + 1 if ingredients else duration
     # The workflow's fixed spatial upscaler doubles the latent dimensions.
     # Keep the API contract expressed as final output size.
     width, height = (384, 224) if ingredients else (640, 352)
@@ -455,8 +462,8 @@ def _patch_ltx_t2v_workflow(
     for node_id in ("18",):
         node = workflow.get(node_id)
         if isinstance(node, dict):
-            node.setdefault("inputs", {})["Xi"] = generation_duration
-            node["inputs"]["Xf"] = generation_duration
+            node.setdefault("inputs", {})["Xi"] = duration
+            node["inputs"]["Xf"] = duration
     loader = workflow.get("256")
     if not isinstance(loader, dict):
         raise ValueError("fixed LTX LoRA loader node 256 missing")
@@ -466,11 +473,14 @@ def _patch_ltx_t2v_workflow(
         "lora": LTX_T2V_DISTILLED_LORA,
         "strength": 0.5,
     }
-    loader_inputs["lora_2"] = {
-        "on": True,
-        "lora": LTX_T2V_SULPHUR_LORA,
-        "strength": 1.0,
-    }
+    if ingredients:
+        loader_inputs.pop("lora_2", None)
+    else:
+        loader_inputs["lora_2"] = {
+            "on": True,
+            "lora": LTX_T2V_SULPHUR_LORA,
+            "strength": 1.0,
+        }
     if ingredients:
         ic_loader = workflow.get("271")
         if not isinstance(ic_loader, dict):
@@ -481,12 +491,27 @@ def _patch_ltx_t2v_workflow(
         if not sheet:
             raise ValueError("Ingredients character sheet missing")
         workflow["270"]["inputs"]["image"] = sheet
+        reference_video = workflow.get("273")
+        if not isinstance(reference_video, dict):
+            raise ValueError("Ingredients static reference video node 273 missing")
+        reference_video.setdefault("inputs", {})["image"] = ["270", 0]
+        reference_video["inputs"]["amount"] = duration * LTX_VIDEO_FPS + 1
         guide = workflow.get("272")
         if not isinstance(guide, dict):
             raise ValueError("Ingredients guide node 272 missing")
-        # Keep the identity sheet outside the delivered time range. The result
-        # materializer removes the final one-second guide buffer fail-closed.
-        guide.setdefault("inputs", {})["frame_idx"] = -1
+        guide_inputs = guide.setdefault("inputs", {})
+        guide_inputs["image"] = ["273", 0]
+        guide_inputs["frame_idx"] = 0
+        prompt_node = workflow.get("28")
+        if not isinstance(prompt_node, dict):
+            raise ValueError("LTX prompt node 28 missing")
+        target_description = str(
+            prompt_node.setdefault("inputs", {}).get("text", "")
+        ).strip()
+        prompt_node["inputs"]["text"] = (
+            f"{LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
+            f"### Target Description\n{target_description}"
+        )
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
         prompt_node = workflow.get("28")

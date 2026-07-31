@@ -962,6 +962,19 @@
       "title": "Ingredients IC LoRA (fixed 1.0)"
     }
   },
+  "273": {
+    "inputs": {
+      "image": [
+        "270",
+        0
+      ],
+      "amount": 121
+    },
+    "class_type": "RepeatImageBatch",
+    "_meta": {
+      "title": "Ingredients static reference video"
+    }
+  },
   "272": {
     "inputs": {
       "positive": [
@@ -981,7 +994,7 @@
         0
       ],
       "image": [
-        "270",
+        "273",
         0
       ],
       "frame_idx": 0,
