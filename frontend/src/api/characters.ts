@@ -25,8 +25,6 @@ export type CharacterReferenceView = {
 
 export type CharacterViewType =
   | 'face_front'
-  | 'face_side'
-  | 'face_three_quarter'
   | 'body_front'
   | 'body_side'
   | 'body_back'
@@ -71,6 +69,16 @@ export const generateCharacterView = async (
   engine: CharacterViewEngine,
 ) => (
   await api.post(`/characters/${id}/views/${viewType}/generate`, { prompt, engine })
+).data
+
+export const uploadCharacterView = async (
+  id: string,
+  viewType: CharacterViewType,
+  sourceObjectKey: string,
+): Promise<CharacterReferenceView> => (
+  await api.post(`/characters/${id}/views/${viewType}/upload`, {
+    source_object_key: sourceObjectKey,
+  })
 ).data
 
 export const saveCharacterReference = async (

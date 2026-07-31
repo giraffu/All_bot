@@ -155,14 +155,10 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 
 `POST /api/characters/drafts` 只接受当前用户
 `web_uploads/{internal_user_id}/...` 下不超过 20 MiB 的 PNG/JPEG/WebP，创建草稿
-不扣费。用户按需对下列固定槽位调用子图生成接口：
-
-1. 正脸图；2. 侧脸图；3. 3/4 侧脸图；
-4. 全身正面图；5. 全身侧面图；6. 全身背面图。
-
-3/4 侧脸默认词必须使用可观察的非对称几何约束：头部固定向一侧偏转约
-40–45°、鼻尖离开面部中线、远侧眼睛明显窄于近侧眼睛，并同时排除正脸和纯侧脸；
-不能只用泛化的 `three-quarter` 或“两眼可见”描述。
+不扣费。用户按需处理四个官方面板固定槽位：正脸图、全身正面图、全身侧面图、
+全身背面图。服务端目录是默认提示词事实源；四条默认词均使用中文，要求同一位
+成年人、完全裸体、单一人物、纯黑背景和明确视角，不再保留侧脸近景与 3/4 侧脸
+槽位。
 
 每个子图都是独立的标准生成任务。`POST
 /api/characters/{id}/views/{view_type}/generate` 接受 `engine=free_edit |
@@ -174,6 +170,11 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 不会污染闪回瓶，也不允许投稿；前端把返回的根 task ID 登记到统一任务 store，
 因此与普通生成任务一样显示悬浮球、状态和取消入口。
 
+每个槽位也可调用 `POST /api/characters/{id}/views/{view_type}/upload` 直接写入
+当前用户已上传的 PNG/JPEG/WebP。服务端再次验证 owner、扩展名、存在性和 20 MiB
+上限，再复制到人物持久目录并把该槽位置为 `ready`；直传不创建生成任务、不扣费、
+不显示悬浮任务。正在生成的同一槽位拒绝覆盖，生成与直传结果可以混合组成面板。
+
 练功房支持批量生成当前草稿中尚未生成或已失败的子图，已 `ready/pending` 的
 槽位不会重复提交。前端每轮读取 `GET /api/characters/batch-capacity` 返回的
 后端权威 `limit/active/available`，只补满实时可用任务锁；没有槽位时等待已有
@@ -184,20 +185,19 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 `character_view_index` patcher 和结果物化只保留一次六图兼容语义；新子图入口
 不得再路由到该专用 worker type。
 
-单张正面半身源图是受支持且必须覆盖的验收输入，但它不意味着六格都可以复制
-正面半身构图。materializer 使用视觉感知差异门禁拒绝近似重复视图，但不把该门禁
-冒充姿态语义识别；真实 canary 仍须
-人工确认至少正面、3/4、侧面、背面和景别变化均成立。完整参考面板用于官方
+单张正面半身源图是受支持且必须覆盖的验收输入，但四个槽位不得复制同一正面
+半身构图。真实 canary 仍须人工确认正脸与全身正面、侧面、背面及景别变化均成立。
+完整参考面板用于官方
 Ingredients 静态参考视频条件，但参考表、拼贴边框或任一格不得出现在交付视频
 首帧、尾帧或场景切换附近。
 
-至少两个子图为 `ready` 后，`POST /api/characters/{id}/save` 才允许保存。服务端
+四个固定槽位全部为 `ready` 后，`POST /api/characters/{id}/save` 才允许保存。服务端
 通过 `shared/character_reference_sheet.py` 合成
 `ingredients-character-panel-v2.png`：优先选择正脸作为左侧大幅身份锚点，右侧
 依次放置全身正面、侧面和背面。多张人物素材属于一个 character ingredient，
 禁止再输出六个等权场景面板，否则模型可能把它解释为多人物或直接复现参考表。
 人物图库可选择已有子图修改 prompt 后重新生成，再显式“更新人物参考图”重建面板；
-旧 `sheet.png` 在下一次被选择时使用已有 ready 子图惰性迁移，不重新生成、不扣费。
+旧参考表不再惰性迁移，非当前面板版本会要求用户重新完成四张子图并保存。
 身体视图对横幅输入只居中裁掉空白两侧，对竖幅输入完整 contain，必须保留头顶和
 脚部。控制面、共享 worker 与 `workers/runpod_runtime` 复用同一合成函数。
 共享 RunPod runtime 保留人物单子图裁枝与物化兼容逻辑；只有实际声明
@@ -219,7 +219,8 @@ Ingredients 静态参考视频条件，但参考表、拼贴边框或任一格�
 - `GET /api/characters/batch-capacity`：只读返回当前用户任务锁的
   `limit/active/available`；
 - `POST /api/characters/{id}/views/{view_type}/generate`：生成或重生一个子图；
-- `POST /api/characters/{id}/save`：至少两个 ready 子图后合成/更新参考表；
+- `POST /api/characters/{id}/views/{view_type}/upload`：直接上传并完成一个槽位；
+- `POST /api/characters/{id}/save`：四个固定槽位全部 ready 后合成/更新参考表；
 - `GET /api/characters`、`PATCH /api/characters/{id}`、
   `DELETE /api/characters/{id}`：列表、改名/描述与软删除；
 - `POST /api/characters/build`：旧版一次六图兼容入口。
@@ -239,10 +240,10 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 
 ## 6. Web 与验收
 
-测试 Web 发布后，“练功房 → 人物参考图”提供上传、六个子图 tab、各槽位默认
-prompt 编辑、自由 P 图三模式选择、独立生成/重生、按实时并发锁补位的未生成子图
-批量提交、统一悬浮球状态和至少两图保存。
-“修仙笔记 → 人物图库”提供合成表与六子图查看、同样的三模式重生和重新合成。
+测试 Web 发布后，“练功房 → 人物参考图”提供源图上传、四个子图 tab、中文裸体
+默认 prompt 编辑、自由 P 图三模式选择、独立生成/重生、单槽位直接上传、按实时
+并发锁补位的未生成子图批量提交、统一悬浮球状态和四图齐全后保存。
+“修仙笔记 → 人物图库”提供合成表与四子图查看、同样的三模式重生和重新合成。
 每张人物卡直接提供资料编辑与删除入口：资料编辑复用
 `PATCH /api/characters/{id}` 修改名称和描述，不触发生成或扣费；删除必须二次
 确认并复用 `DELETE /api/characters/{id}` 软删除，删除后从人物图库和人物选择器

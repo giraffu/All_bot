@@ -8,10 +8,10 @@ import {
 describe('character view batch generation', () => {
   it('selects only views that are not ready or pending', () => {
     expect(getMissingCharacterViewTypes(
-      ['face_front', 'face_side', 'body_front'],
+      ['face_front', 'body_side', 'body_front'],
       [
         { type: 'face_front', status: 'ready' },
-        { type: 'face_side', status: 'pending' },
+        { type: 'body_side', status: 'pending' },
       ],
     )).toEqual(['body_front'])
   })
@@ -25,7 +25,7 @@ describe('character view batch generation', () => {
     const progress: Array<{ submitted: number; remaining: number }> = []
 
     const result = await runCharacterViewBatch({
-      viewTypes: ['face_front', 'face_side', 'body_front'],
+      viewTypes: ['face_front', 'body_side', 'body_front'],
       getCapacity,
       submit,
       waitForCapacity,
@@ -35,7 +35,7 @@ describe('character view batch generation', () => {
 
     expect(submit.mock.calls.map(call => call[0])).toEqual([
       'face_front',
-      'face_side',
+      'body_side',
       'body_front',
     ])
     expect(waitForCapacity).toHaveBeenCalledOnce()

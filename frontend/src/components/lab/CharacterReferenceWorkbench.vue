@@ -32,32 +32,22 @@ const VIEW_DEFINITIONS: ViewDefinition[] = [
   {
     type: 'face_front',
     labelKey: 'characters.views.face_front',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. front close-up face portrait, looking directly at camera. Single view, pure black background, no text, labels, border or collage.',
-  },
-  {
-    type: 'face_side',
-    labelKey: 'characters.views.face_side',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. strict side-profile close-up face portrait, looking left. Single view, pure black background, no text, labels, border or collage.',
-  },
-  {
-    type: 'face_three_quarter',
-    labelKey: 'characters.views.face_three_quarter',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, clothing and accessories. True three-quarter close-up face portrait: rotate the head 40-45 degrees toward the viewer\'s left. Keep both eyes visible, with the far eye noticeably narrower and smaller than the near eye; the nose tip clearly offset from the facial centerline and one cheek dominant. The gaze follows the head direction. Not front-facing, not symmetrical, and not a full side profile. Single view, pure black background, no text, labels, border or collage.',
+    defaultPrompt: '生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，直视镜头，画面包括完整头部、裸露肩部和上胸。仅一个人物，纯黑背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_front',
     labelKey: 'characters.views.body_front',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. front full-body standing view, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+    defaultPrompt: '生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，正对镜头自然站立，从头顶到双脚完整可见。仅一个人物，纯黑背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_side',
     labelKey: 'characters.views.body_side',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, face, hairstyle, skin tone, body shape, clothing and accessories. strict side-profile full-body standing view, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+    defaultPrompt: '生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，身体与头部均向左旋转九十度，呈严格侧面，从头顶到双脚完整可见。仅一个人物，纯黑背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_back',
     labelKey: 'characters.views.body_back',
-    defaultPrompt: 'Same adult person as the source image; preserve exact identity, hairstyle, body shape, clothing and accessories. full-body back view facing away from camera, head and feet fully visible. Single view, pure black background, no text, labels, border or collage.',
+    defaultPrompt: '生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，背对镜头自然站立，不回头，从头顶到双脚完整可见。仅一个人物，纯黑背景，不要文字、标签、边框或拼贴。',
   },
 ]
 
@@ -73,6 +63,7 @@ const draftId = ref<string | null>(null)
 const activeViewType = ref<CharacterViewType>('face_front')
 const creatingDraft = ref(false)
 const generatingView = ref<CharacterViewType | null>(null)
+const uploadingView = ref<CharacterViewType | null>(null)
 const selectedEngine = ref<CharacterViewEngine>('free_edit_v2_5')
 const saving = ref(false)
 const batchGenerating = ref(false)
@@ -176,6 +167,31 @@ const generateView = async () => {
   }
 }
 
+const beforeViewUpload = async (file: File) => {
+  if (!draftId.value) return false
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    message.error(t('characters.image_type_error'))
+    return false
+  }
+  const viewType = activeViewType.value
+  uploadingView.value = viewType
+  try {
+    const objectKey = await uploadFile(file, {
+      maxSizeBytes: 20 * 1024 * 1024,
+      maxSizeLabel: '20MB',
+    })
+    if (!objectKey || !draftId.value) return false
+    await store.uploadView(draftId.value, viewType, objectKey)
+    message.success(t('characters.view_uploaded', {
+      view: t(activeDefinition.value.labelKey),
+    }))
+    await refreshDraft()
+  } finally {
+    uploadingView.value = null
+  }
+  return false
+}
+
 const isConcurrencyLimitError = (error: unknown) => {
   const response = (error as {
     response?: { status?: number; data?: { detail?: unknown } }
@@ -248,7 +264,7 @@ const generateMissingViews = async () => {
 }
 
 const saveReference = async () => {
-  if (!draftId.value || readyCount.value < 2) return
+  if (!draftId.value || readyCount.value !== VIEW_DEFINITIONS.length) return
   saving.value = true
   try {
     await store.saveReference(draftId.value)
@@ -361,7 +377,7 @@ onBeforeUnmount(() => {
         <div>
           <div class="font-semibold">{{ draft.name }}</div>
           <div class="mt-1 text-xs">
-            {{ t('characters.ready_progress', { ready: readyCount, total: 6 }) }}
+            {{ t('characters.ready_progress', { ready: readyCount, total: VIEW_DEFINITIONS.length }) }}
           </div>
         </div>
         <a-button size="small" class="rounded-full" @click="resetWorkspace">
@@ -369,7 +385,7 @@ onBeforeUnmount(() => {
         </a-button>
       </div>
 
-      <div class="character-workbench__tabs mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div class="character-workbench__tabs mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
         <button
           v-for="definition in VIEW_DEFINITIONS"
           :key="definition.type"
@@ -451,17 +467,37 @@ onBeforeUnmount(() => {
               </a-radio-button>
             </a-radio-group>
           </div>
-          <a-button
-            type="primary"
-            size="large"
-            class="mt-4 h-12 rounded-2xl font-semibold"
-            :loading="generatingView === activeViewType || activeView?.status === 'pending'"
-            :disabled="!prompts[activeViewType].trim() || hasPendingView || batchGenerating"
-            @click="generateView"
-          >
-            {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
-            · {{ selectedEngineCost }} {{ t('app.credits') }}
-          </a-button>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <a-button
+              type="primary"
+              size="large"
+              class="h-12 rounded-2xl font-semibold"
+              :loading="generatingView === activeViewType || activeView?.status === 'pending'"
+              :disabled="!prompts[activeViewType].trim() || hasPendingView || batchGenerating || uploadingView !== null"
+              @click="generateView"
+            >
+              {{ activeView?.status === 'ready' ? t('characters.regenerate_view') : t('characters.generate_view') }}
+              · {{ selectedEngineCost }} {{ t('app.credits') }}
+            </a-button>
+            <a-upload
+              class="character-workbench__view-upload"
+              :show-upload-list="false"
+              :before-upload="beforeViewUpload"
+              accept="image/png,image/jpeg,image/webp"
+            >
+              <a-button
+                size="large"
+                class="h-12 w-full rounded-2xl font-semibold"
+                :loading="uploadingView === activeViewType"
+                :disabled="activeView?.status === 'pending' || batchGenerating || generatingView !== null"
+              >
+                {{ activeView?.status === 'ready' ? t('characters.replace_view_upload') : t('characters.upload_view') }}
+              </a-button>
+            </a-upload>
+          </div>
+          <div class="mt-2 text-center text-xs opacity-70">
+            {{ t('characters.upload_view_hint') }}
+          </div>
           <a-button
             type="primary"
             ghost
@@ -494,14 +530,14 @@ onBeforeUnmount(() => {
             <div>
               <div class="font-semibold">{{ t('characters.save_reference_title') }}</div>
               <div class="mt-1 text-xs opacity-70">
-                {{ readyCount >= 2 ? t('characters.save_ready_hint') : t('characters.save_need_two') }}
+                {{ readyCount === VIEW_DEFINITIONS.length ? t('characters.save_ready_hint') : t('characters.save_need_four') }}
               </div>
             </div>
             <a-button
               type="primary"
               ghost
               class="shrink-0 rounded-xl"
-              :disabled="readyCount < 2 || hasPendingView"
+              :disabled="readyCount !== VIEW_DEFINITIONS.length || hasPendingView"
               :loading="saving"
               @click="saveReference"
             >
@@ -547,7 +583,9 @@ onBeforeUnmount(() => {
 }
 
 .character-workbench__upload,
-.character-workbench__upload :deep(.ant-upload-select) {
+.character-workbench__upload :deep(.ant-upload-select),
+.character-workbench__view-upload,
+.character-workbench__view-upload :deep(.ant-upload-select) {
   display: block;
   width: 100%;
 }

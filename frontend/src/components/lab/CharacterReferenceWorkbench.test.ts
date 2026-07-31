@@ -11,11 +11,15 @@ const {
   generateView,
   refresh,
   storeItems,
+  uploadFile,
+  uploadView,
 } = vi.hoisted(() => ({
   fetchCapacity: vi.fn(),
   generateView: vi.fn(),
   refresh: vi.fn(),
   storeItems: [] as any[],
+  uploadFile: vi.fn(),
+  uploadView: vi.fn(),
 }))
 
 vi.mock('@/stores/characters', () => ({
@@ -24,13 +28,14 @@ vi.mock('@/stores/characters', () => ({
     refresh,
     generateView,
     getBatchCapacity: fetchCapacity,
+    uploadView,
   }),
 }))
 
 vi.mock('@/composables/useUpload', () => ({
   useUpload: () => ({
     uploading: ref(false),
-    uploadFile: vi.fn(),
+    uploadFile,
   }),
 }))
 
@@ -85,17 +90,17 @@ describe('CharacterReferenceWorkbench', () => {
       preview_url: null,
       views: [
         { type: 'face_front', status: 'ready', preview_url: 'front.png' },
-        { type: 'face_side', status: 'ready', preview_url: 'side.png' },
-        { type: 'face_three_quarter', status: 'ready', preview_url: 'three.png' },
         { type: 'body_front', status: 'ready', preview_url: 'body.png' },
       ],
     })
     refresh.mockResolvedValue(undefined)
     generateView.mockResolvedValue(undefined)
+    uploadFile.mockResolvedValue('web_uploads/123/front.png')
+    uploadView.mockResolvedValue(undefined)
     fetchCapacity.mockResolvedValue({ limit: 3, active: 1, available: 2 })
   })
 
-  it('uses explicit asymmetric geometry for the three-quarter default prompt', () => {
+  it('uses four Chinese nude prompts for the official character panel', () => {
     const wrapper = mount(CharacterReferenceWorkbench, {
       global: {
         stubs: {
@@ -108,12 +113,50 @@ describe('CharacterReferenceWorkbench', () => {
         },
       },
     })
-    const prompt = (wrapper.vm as any).prompts.face_three_quarter
+    const prompts = (wrapper.vm as any).prompts
 
-    expect(prompt).toContain('40-45 degrees')
-    expect(prompt).toContain('far eye noticeably narrower and smaller')
-    expect(prompt).toContain('nose tip clearly offset from the facial centerline')
-    expect(prompt).toContain('Not front-facing, not symmetrical, and not a full side profile')
+    expect(Object.keys(prompts)).toEqual([
+      'face_front',
+      'body_front',
+      'body_side',
+      'body_back',
+    ])
+    for (const prompt of Object.values(prompts) as string[]) {
+      expect(prompt).toContain('同一位成年人')
+      expect(prompt).toContain('完全裸体')
+      expect(prompt).toContain('纯黑背景')
+    }
+  })
+
+  it('uploads the active view directly without submitting a generation task', async () => {
+    const wrapper = mount(CharacterReferenceWorkbench, {
+      global: {
+        stubs: {
+          AButton: ButtonStub,
+          AInput: passthroughStub,
+          ATextarea: passthroughStub,
+          ARadioGroup: passthroughStub,
+          ARadioButton: passthroughStub,
+          AUpload: passthroughStub,
+        },
+      },
+    })
+    ;(wrapper.vm as any).draftId = 'character-1'
+    await nextTick()
+
+    const file = new File(['front'], 'front.png', { type: 'image/png' })
+    await (wrapper.vm as any).beforeViewUpload(file)
+
+    expect(uploadFile).toHaveBeenCalledWith(file, {
+      maxSizeBytes: 20 * 1024 * 1024,
+      maxSizeLabel: '20MB',
+    })
+    expect(uploadView).toHaveBeenCalledWith(
+      'character-1',
+      'face_front',
+      'web_uploads/123/front.png',
+    )
+    expect(generateView).not.toHaveBeenCalled()
   })
 
   it('submits every missing view through the live concurrency capacity', async () => {
