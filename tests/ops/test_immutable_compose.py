@@ -147,8 +147,10 @@ def test_dashboard_runpod_release_pin_contract_matches_admin_profile_catalog():
         (ROOT / "deploy" / "service-env-contract.yml").read_text(encoding="utf-8")
     )
     configured = contract["services"]["dashboard-backend"][
-        "json_digest_pin_sets"
-    ]["RUNPOD_RELEASE_PROFILE_PINS_JSON"]
+        "json_digest_pin_sets_by_environment"
+    ]["prod"][
+        "RUNPOD_RELEASE_PROFILE_PINS_JSON"
+    ]
 
     assert set(configured) == RUNPOD_RELEASE_PROFILE_IMAGE_ENVS
 

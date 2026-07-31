@@ -151,6 +151,34 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     }
 
 
+def test_test_dashboard_does_not_require_production_runpod_release_pins():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values.pop("RUNPOD_RELEASE_PROFILE_PINS_JSON")
+
+    snapshot = module.build_snapshot(contract, "test", values)
+
+    assert "dashboard-backend" in snapshot.projections
+    assert (
+        "RUNPOD_RELEASE_PROFILE_PINS_JSON"
+        not in snapshot.projections["dashboard-backend"]
+    )
+
+
+def test_prod_dashboard_still_requires_runpod_release_pins():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    values.pop("RUNPOD_RELEASE_PROFILE_PINS_JSON")
+
+    with pytest.raises(
+        module.ContractError,
+        match="RUNPOD_RELEASE_PROFILE_PINS_JSON",
+    ):
+        module.build_snapshot(contract, "prod", values)
+
+
 def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)

@@ -59,6 +59,21 @@ def load_contract(path: Path) -> dict[str, Any]:
         _service_environments(config)
         _conditional_contract_keys(config)
         _json_digest_pin_sets(config)
+        raw_environment_sets = config.get(
+            "json_digest_pin_sets_by_environment", {}
+        )
+        if not isinstance(raw_environment_sets, Mapping) or any(
+            environment not in {"test", "prod"}
+            or not isinstance(environment_config, Mapping)
+            for environment, environment_config in raw_environment_sets.items()
+        ):
+            raise ContractError(
+                "service json_digest_pin_sets_by_environment contract is invalid"
+            )
+        for environment_config in raw_environment_sets.values():
+            _json_digest_pin_sets(
+                {"json_digest_pin_sets": environment_config}
+            )
     return value
 
 
@@ -197,8 +212,22 @@ def _validate_json_digest_pin_sets(
     name: str,
     config: Mapping[str, Any],
     values: Mapping[str, str],
+    environment: str,
 ) -> None:
-    for key, expected_keys in _json_digest_pin_sets(config).items():
+    pin_sets = _json_digest_pin_sets(config)
+    environment_sets = config.get(
+        "json_digest_pin_sets_by_environment", {}
+    )
+    pin_sets.update(
+        _json_digest_pin_sets(
+            {
+                "json_digest_pin_sets": environment_sets.get(
+                    environment, {}
+                )
+            }
+        )
+    )
+    for key, expected_keys in pin_sets.items():
         raw_value = values.get(key, "").strip()
         try:
             pins = json.loads(raw_value)
@@ -231,6 +260,7 @@ def _projection(
     config: Mapping[str, Any],
     values: Mapping[str, str],
     *,
+    environment: str,
     included_keys: Iterable[str] = (),
 ) -> dict[str, str]:
     required = {str(key) for key in config.get("required", [])}
@@ -240,7 +270,7 @@ def _projection(
         raise ContractError(
             f"{name} is missing required environment keys: " + ", ".join(missing)
         )
-    _validate_json_digest_pin_sets(name, config, values)
+    _validate_json_digest_pin_sets(name, config, values, environment)
     patterns = [str(pattern) for pattern in config.get("patterns", [])]
     included = {str(key) for key in included_keys}
     included.update(_conditional_condition_keys(config))
@@ -320,6 +350,7 @@ def build_snapshot(
             name,
             config,
             values,
+            environment=environment,
             included_keys=default_keys if name in default_services else (),
         )
         revision = _digest(projection)
