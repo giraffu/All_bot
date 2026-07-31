@@ -104,9 +104,11 @@ IC workflow 保留官方 Ingredients 的 loader、guide 和
 也不经二次转码裁尾。Ingredients 第一阶段直接以最终 `768x448` 采样并解码，
 旧 x2 空间放大与第二阶段在执行图中保持 orphan。
 
-IC prompt 按官方训练格式由 worker 组合为 `Reference sheet: ...` 与
-`Generated video: ...` 两段：前者准确描述黑底六面板中的正面、侧面、3/4 面部
-近景和全身正面、侧面、背面，后者原样承载用户场景。负向追加官方建议的
+IC prompt 按官方可执行 workflow 与训练样例格式由 worker 组合为
+`### Reference Sheet Description` 与 `### Target Description` 两段：前者准确
+描述黑底六面板中的正面、侧面、3/4 面部近景和全身正面、侧面、背面，后者原样
+承载用户场景。缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入
+conditioning；负向追加官方建议的
 `worst quality, inconsistent motion, blurry, jittery, distorted`，不再用否定句
 重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述继续追加为
 `#Audio`。
