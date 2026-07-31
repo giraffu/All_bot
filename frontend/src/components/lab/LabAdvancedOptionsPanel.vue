@@ -38,6 +38,7 @@ const props = defineProps<{
   selectedWan22ResolutionPreset: string
   isTemplateEditSettingsLocked: boolean
   isTemplateVideoSettingsLocked: boolean
+  isVideoResolutionLocked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -224,7 +225,7 @@ const showStandardResolutionOptions = computed(() => (
             :value="selectedResolution"
             button-style="solid"
             class="lab-advanced-panel__radio-group"
-            :disabled="isTemplateVideoSettingsLocked"
+            :disabled="isTemplateVideoSettingsLocked || isVideoResolutionLocked"
             @update:value="emit('update:selectedResolution', $event as string)"
           >
             <a-radio-button

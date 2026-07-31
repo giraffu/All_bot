@@ -728,7 +728,7 @@
     "status_failed": "Build failed; create again",
     "selector_title": "Character consistency (optional)",
     "selector_placeholder": "Leave empty for standard text-to-video",
-    "ic_locked_hint": "Ingredients enabled: fixed 768x448, 5 seconds, 12 credits.",
+    "ic_locked_hint": "Ingredients enabled: resolution is fixed at 768x448; duration can be 5/10/15/20 seconds.",
     "t2v_hint": "No character: 1280x704 with 5/10/15/20 second options.",
     "audio_prompt": "Optional: describe dialogue, ambience, music, and audio timing"
   },
@@ -877,7 +877,7 @@
         "custom_video": "Img2Video supports 5s/8s/10s clips and is priced by resolution and duration.",
         "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
-        "ltx_t2v": "Standard T2V costs 10/20/30/40 credits for 5/10/15/20 seconds; character mode is fixed at 5 seconds for 12 credits.",
+        "ltx_t2v": "Standard T2V costs 10/20/30/40 credits for 5/10/15/20 seconds; character mode costs 12/24/36/48 credits.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
         "scail2_video": "Fixed at 512x896. Action Transfer supports 5s/8s/10s/15s/20s for 40/80/120/180/260 credits. Video Replacement and Video Face Swap support 5s/8s."
       },

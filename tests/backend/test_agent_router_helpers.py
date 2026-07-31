@@ -71,6 +71,53 @@ async def test_pop_task_payload_returns_missing_message_when_task_details_absent
 
 
 @pytest.mark.asyncio
+async def test_pop_task_payload_binds_dequeued_task_before_returning_it_to_agent():
+    task = {"task_id": "task-1", "type": "ltx_t2v_ic", "status": "running"}
+    queue_manager = SimpleNamespace(
+        is_agent_pop_enabled=AsyncMock(return_value=(True, "")),
+        dequeue_task=AsyncMock(return_value=("task-1", 1.0)),
+        get_task_status=AsyncMock(return_value=task),
+        reserve_agent_task_delivery=AsyncMock(),
+    )
+
+    payload = await pop_task_payload(
+        types="ltx_t2v_ic",
+        agent_id="agent-1",
+        queue_manager=queue_manager,
+        cancel_lock=True,
+    )
+
+    assert payload == {"task": task}
+    queue_manager.reserve_agent_task_delivery.assert_awaited_once_with(
+        "task-1",
+        "agent-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_pop_task_payload_redelivers_running_claim_after_response_loss():
+    task = {"task_id": "task-1", "type": "ltx_t2v_ic", "status": "running"}
+    queue_manager = SimpleNamespace(
+        is_agent_pop_enabled=AsyncMock(return_value=(True, "")),
+        get_pending_agent_task_claim=AsyncMock(return_value="task-1"),
+        get_task_status=AsyncMock(return_value=task),
+        update_task_heartbeat=AsyncMock(),
+        dequeue_task=AsyncMock(),
+    )
+
+    payload = await pop_task_payload(
+        types="ltx_t2v_ic",
+        agent_id="agent-1",
+        queue_manager=queue_manager,
+        cancel_lock=True,
+    )
+
+    assert payload == {"task": task}
+    queue_manager.update_task_heartbeat.assert_awaited_once_with("task-1")
+    queue_manager.dequeue_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_pop_task_payload_respects_agent_draining_state():
     queue_manager = SimpleNamespace(
         is_agent_pop_enabled=AsyncMock(return_value=(False, "maintenance")),
