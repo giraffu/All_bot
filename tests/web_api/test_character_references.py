@@ -84,6 +84,19 @@ def test_character_view_catalog_exposes_six_distinct_editable_targets():
     )
 
 
+def test_three_quarter_default_prompt_requires_visible_asymmetric_yaw():
+    prompt = next(
+        item["default_prompt"]
+        for item in service.CHARACTER_VIEW_CATALOG
+        if item["type"] == "face_three_quarter"
+    )
+
+    assert "40-45 degrees" in prompt
+    assert "far eye noticeably narrower and smaller" in prompt
+    assert "nose tip clearly offset from the facial centerline" in prompt
+    assert "Not front-facing, not symmetrical, and not a full side profile" in prompt
+
+
 @pytest.mark.asyncio
 async def test_character_draft_upload_creates_editable_workspace_without_charging(
     monkeypatch,
