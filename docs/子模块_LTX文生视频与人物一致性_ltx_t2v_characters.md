@@ -41,9 +41,10 @@ extracted-10Eros workflow，T2V/IC 继续映射到 Sulphur/Ingredients workflow�
 1. 官方 `ltx-2.3-22b-dev-fp8.safetensors`；
 2. 官方 distilled LoRA，强度 `0.5`；
 3. 普通 `ltx_t2v` 追加 Sulphur rank-768 LoRA，强度 `1.0`；
-4. `ltx_t2v_ic` 保留相同 Sulphur，再追加 Ingredients 0.9，强度 `1.4`。
-   Sulphur 保留成人生成能力；Ingredients 的条件接入、参考静态视频和 guide
-   裁除遵循 Lightricks 官方单阶段工作流。
+4. `ltx_t2v_ic` 使用 distilled LoRA `0.5` + Ingredients 0.9 `1.0`，不叠加
+   Sulphur。固定种子对照确认 Sulphur `1.0` 会让目标场景消失并复现人物参考表；
+   普通 `ltx_t2v` 继续保留 Sulphur，Ingredients + Sulphur 只保留隔离 A/B 图，
+   不进入用户工作流。
 
 用户不能在这个固定栈上继续叠加 LoRA。Gemma、视频/音频 VAE 和空间
 upscaler 复用 content-addressed registry 既有 blobs，不重复下载。权重不 baked
@@ -101,25 +102,28 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒；Web 选择人物后只锁定
 IC 的 768×448 分辨率，时长仍可编辑，费用随四档时长按领域配置计算。
 
-IC workflow 保留官方 Ingredients 的 loader、guide 和
-`LTXVCropGuides` 语义。worker 将固定 1536×896 的单一黑底人物 ingredient
-面板完整缩放为 768×448，并用 `RepeatImageBatch` 复制成与输出完全同帧数
+IC workflow 是从 Lightricks 官方 Ingredients 单阶段图重新生成的干净 API 图，
+只保留可达的推理与交付节点，不包含 NAG、第二阶段、latent upscaler、switch、
+chunk feed-forward 或 preview override。worker 将单一人物 ingredient 面板保持
+宽高比缩放到短边 448，并以缩放后的实际宽高驱动输出 latent；标准 1536×896
+面板仍得到 768×448。随后用 `RepeatImageBatch` 复制成与输出完全同帧数
 （`24 * seconds + 1`）的静态参考视频；该视频在 `frame_idx=0` 接入
 `LTXAddVideoICLoRAGuide`。
 `LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
-采样后的 `LTXVCropGuides` 删除 guide latent，交付结果无需添加 8 秒保护尾段，
-也不经二次转码裁尾。Ingredients 第一阶段直接以最终 `768x448` 采样并解码，
-旧 x2 空间放大与第二阶段在执行图中保持 orphan。
+guide strength 固定 `1.0`、crop 固定 `disabled`，latent downscale factor 从
+Ingredients LoRA 元数据读取。采样后的 `LTXVCropGuides` 删除追加的 guide latent，
+再直接 VAE 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
+`euler_ancestral_cfg_pp`、CFG 1 和官方 9 个 manual sigmas（8 次采样）。
 
-IC prompt 按官方模型卡的训练标签由 worker 组合为
-`Reference sheet: ...` 与 `Generated video: ...` 两段：前者使用人物资产中
+IC prompt 按官方可执行 workflow 的标题由 worker 组合为
+`### Reference Sheet Description` 与 `### Target Description` 两段：前者使用人物资产中
 必填的稳定外观描述，后者原样承载用户场景。人物描述由服务端按 owner 和
 `character_id` 读取，客户端不能为一次视频任务覆盖它。
 缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入 conditioning；
-负向追加官方质量词，并明确排除 split screen、grid、collage、character sheet、
-重复角色、文字、字幕、logo 和 watermark。
-重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述作为第三段
-继续追加为 `#Audio`。
+Ingredients 基线负向固定为
+`worst quality, inconsistent motion, blurry, jittery, distorted`；不默认追加与
+reference-sheet 训练语义冲突的 grid/collage/character-sheet 排除词。可选音频描述
+作为第三段继续追加为 `#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
@@ -261,7 +265,8 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
 可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
 和价格。练功房仍保留视觉 prompt 与可选 audio prompt 两个任务输入；服务端把
-人物资产描述作为 `Reference sheet:`，视觉 prompt 作为 `Generated video:`，
+人物资产描述作为 `### Reference Sheet Description`，视觉 prompt 作为
+`### Target Description`，
 可选 audio prompt 作为 `#Audio`，默认生成同步音频。
 
 LAN mutation 只能通过 `scripts/lan_aio_fleet_prod_ops.py`。先核对 live、ledger、

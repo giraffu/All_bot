@@ -78,13 +78,10 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         },
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
-    assert patched["271"]["inputs"]["strength_model"] == 1.4
+    assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
-    assert patched["256"]["inputs"]["lora_2"] == {
-        "on": True,
-        "lora": "ltx2.3/sulphur_lora_rank_768.safetensors",
-        "strength": 1.0,
-    }
+    assert "258" not in patched
+    assert patched["271"]["inputs"]["model"] == ["256", 0]
     assert "277" not in patched
     assert "278" not in patched
     assert patched["273"]["class_type"] == "RepeatImageBatch"
@@ -93,11 +90,10 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         "amount": 481,
     }
     assert patched["274"]["inputs"] == {
-        "image": ["270", 0],
-        "upscale_method": "lanczos",
-        "width": 768,
-        "height": 448,
-        "crop": "disabled",
+        "input": ["270", 0],
+        "resize_type": "scale shorter dimension",
+        "resize_type.shorter_size": 448,
+        "scale_method": "lanczos",
     }
     assert patched["275"]["inputs"] == {
         "image": ["274", 0],
@@ -113,23 +109,23 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["272"]["inputs"]["latent"] == ["276", 0]
     assert patched["272"]["inputs"]["image"] == ["273", 0]
     assert patched["272"]["inputs"]["frame_idx"] == 0
-    assert patched["26:39"]["inputs"]["width"] == 768
-    assert patched["26:39"]["inputs"]["height"] == 448
+    assert patched["272"]["inputs"]["crop"] == "disabled"
+    assert patched["26:39"]["inputs"]["width"] == ["5100", 0]
+    assert patched["26:39"]["inputs"]["height"] == ["5100", 1]
     assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
     assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
-    assert patched["18"]["inputs"]["Xi"] == 20
-    assert patched["18"]["inputs"]["Xf"] == 20
+    assert patched["26:39"]["inputs"]["length"] == 481
+    assert patched["26:40"]["inputs"]["frames_number"] == 481
     prompt = patched["28"]["inputs"]["text"]
     assert prompt.startswith(
-        "Reference sheet: an adult woman with a short black bob and amber eyes"
+        "### Reference Sheet Description\n"
+        "an adult woman with a short black bob and amber eyes"
     )
-    assert prompt.endswith("Generated video: scene")
+    assert prompt.endswith("### Target Description\nscene")
     negative = patched["29"]["inputs"]["text"]
     assert not negative.startswith("None")
     assert "#Identity Reference Exclusions" not in negative
-    assert "worst quality, inconsistent motion, blurry, jittery, distorted" in negative
-    assert "split screen, grid, collage, character sheet" in negative
-    assert "text, subtitles, logo, watermark" in negative
+    assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
 
 
 def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
@@ -146,7 +142,9 @@ def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
         },
     )
 
-    assert patched["29"]["inputs"]["text"].startswith("#Ingredients\n")
+    assert patched["29"]["inputs"]["text"] == (
+        "worst quality, inconsistent motion, blurry, jittery, distorted"
+    )
     assert "None" not in patched["29"]["inputs"]["text"]
 
 

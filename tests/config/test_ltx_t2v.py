@@ -98,15 +98,19 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
         ).read_text()
     )
 
-    assert "lora_2" not in workflow["256"]["inputs"]
-    assert workflow["274"]["class_type"] == "ImageScale"
+    assert workflow["256"]["class_type"] == "LoraLoaderModelOnly"
+    assert workflow["256"]["inputs"]["model"] == ["257", 0]
+    assert workflow["256"]["inputs"]["strength_model"] == 0.5
+    assert "258" not in workflow
+    assert workflow["271"]["inputs"]["model"] == ["256", 0]
+    assert workflow["274"]["class_type"] == "ResizeImageMaskNode"
     assert workflow["274"]["inputs"] == {
-        "image": ["270", 0],
-        "upscale_method": "lanczos",
-        "width": 768,
-        "height": 448,
-        "crop": "disabled",
+        "input": ["270", 0],
+        "resize_type": "scale shorter dimension",
+        "resize_type.shorter_size": 448,
+        "scale_method": "lanczos",
     }
+    assert workflow["5100"]["inputs"] == {"image": ["274", 0]}
     assert workflow["273"]["class_type"] == "RepeatImageBatch"
     assert workflow["273"]["inputs"] == {
         "image": ["274", 0],
@@ -130,14 +134,46 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     assert workflow["272"]["inputs"]["latent"] == ["276", 0]
     assert workflow["272"]["inputs"]["image"] == ["273", 0]
     assert workflow["272"]["inputs"]["frame_idx"] == 0
-    assert workflow["26:39"]["inputs"]["width"] == 768
-    assert workflow["26:39"]["inputs"]["height"] == 448
+    assert workflow["272"]["inputs"]["strength"] == 1.0
+    assert workflow["272"]["inputs"]["crop"] == "disabled"
+    assert workflow["26:39"]["inputs"]["width"] == ["5100", 0]
+    assert workflow["26:39"]["inputs"]["height"] == ["5100", 1]
     # Ingredients follows the official single-stage path: crop the guide from
     # the first pass and decode it directly instead of spatially upscaling the
     # reference-sheet layout through the legacy second pass.
     assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
     assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
     assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
+    assert workflow["26:50"]["inputs"]["sampler_name"] == "euler_ancestral_cfg_pp"
+    assert workflow["26:49"]["inputs"]["cfg"] == 1
+    assert workflow["26:292"]["class_type"] == "ManualSigmas"
+    assert workflow["26:292"]["inputs"]["sigmas"] == (
+        "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, "
+        "0.421875, 0.0"
+    )
+
+    forbidden = {
+        "LTX2_NAG",
+        "LTXVScheduler",
+        "LTXVLatentUpsampler",
+        "ComfySwitchNode",
+        "TwoWaySwitch",
+        "LTXVChunkFeedForward",
+        "LTX2SamplingPreviewOverride",
+    }
+    assert not {node["class_type"] for node in workflow.values()} & forbidden
+
+    reachable = set()
+    pending = ["61"]
+    while pending:
+        node_id = pending.pop()
+        if node_id in reachable:
+            continue
+        reachable.add(node_id)
+        for value in workflow[node_id].get("inputs", {}).values():
+            if isinstance(value, list) and value and value[0] in workflow:
+                pending.append(value[0])
+    assert reachable == set(workflow)
 
 
 def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
@@ -153,12 +189,15 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
     }
     for filename, (has_sulphur, has_ingredients) in expected.items():
         workflow = json.loads((root / filename).read_text())
-        lora_inputs = workflow["256"]["inputs"]
-        assert ("lora_2" in lora_inputs) is has_sulphur
+        if has_ingredients:
+            assert ("258" in workflow) is has_sulphur
+        else:
+            lora_inputs = workflow["256"]["inputs"]
+            assert ("lora_2" in lora_inputs) is has_sulphur
         assert ("271" in workflow) is has_ingredients
         assert ("272" in workflow) is has_ingredients
         if has_ingredients:
-            assert workflow["274"]["class_type"] == "ImageScale"
+            assert workflow["274"]["class_type"] == "ResizeImageMaskNode"
             assert "277" not in workflow
             assert "278" not in workflow
             assert workflow["273"]["class_type"] == "RepeatImageBatch"
@@ -171,6 +210,7 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
             assert workflow["272"]["inputs"]["latent"] == ["276", 0]
             assert workflow["272"]["inputs"]["image"] == ["273", 0]
             assert workflow["272"]["inputs"]["frame_idx"] == 0
+            assert workflow["272"]["inputs"]["crop"] == "disabled"
             # Ingredients decodes the first pass directly. The legacy x2
             # second pass is deliberately orphaned for this profile.
             assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]

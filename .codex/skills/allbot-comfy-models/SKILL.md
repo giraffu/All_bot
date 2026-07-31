@@ -91,10 +91,11 @@ manifest 和专项文档读取，不在此维护快照。
   参考视频并在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`；可见 I2V 条件保持
   `bypass=true`，采样后必须由 `LTXVCropGuides` 删除 guide latent。禁止把人物表
   设为首帧、只裁单张身份子图，或生成额外尾段后再二次转码裁除。
-- Ingredients 正向提示必须使用官方可执行 workflow 与训练样例的
-  `Reference sheet:` / `Generated video:` 两段标签，准确描述一个人物 ingredient
-  和目标动作；负向使用官方质量词，并排除 split screen、grid、collage、
-  character sheet、重复角色和文字水印。
+- Ingredients 正向提示必须使用官方可执行 workflow 的
+  `### Reference Sheet Description` / `### Target Description` 两段标题，准确
+  描述一个人物 ingredient 和目标动作；基线负向只使用官方质量词
+  `worst quality, inconsistent motion, blurry, jittery, distorted`。布局排除词必须
+  单独 A/B 验证后才能加入，不能默认与参考表训练语义对冲。
   人物素材必须合成为一张左侧大幅正脸、右侧全身正/侧/背的单一人物面板，禁止
   把六张同角色素材作为六个等权 scene panel。
   单张正面半身照可作为人物构建输入；人物面板固定使用正脸、全身正面、全身
