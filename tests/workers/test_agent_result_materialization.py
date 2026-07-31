@@ -1,5 +1,4 @@
 import sys
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -73,12 +72,8 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_materialize_ltx_t2v_ic_removes_hidden_guide_tail(monkeypatch):
-    monkeypatch.setattr(
-        materialization,
-        "_trim_ltx_t2v_ic_guide_tail",
-        lambda video_bytes, _logger: b"trimmed-video:" + video_bytes,
-    )
+async def test_materialize_ltx_t2v_ic_preserves_official_ingredients_output(monkeypatch):
+    assert not hasattr(materialization, "_trim_ltx_t2v_ic_guide_tail")
     monkeypatch.setattr(
         materialization,
         "_extract_last_frame_from_video_bytes",
@@ -101,50 +96,10 @@ async def test_materialize_ltx_t2v_ic_removes_hidden_guide_tail(monkeypatch):
         ),
     )
 
-    assert outputs.primary.file_data == b"trimmed-video:video-bytes"
+    assert outputs.primary.file_data == b"video-bytes"
     assert outputs.extra_outputs["last_frame"].file_data == (
-        b"last-frame:trimmed-video:video-bytes"
+        b"last-frame:video-bytes"
     )
-
-
-def test_ic_guide_tail_trim_is_exact_and_preserves_required_audio(monkeypatch):
-    commands = []
-
-    def fake_run(command, **_kwargs):
-        commands.append(command)
-        if command[0] == "ffprobe":
-            return subprocess.CompletedProcess(command, 0, stdout="13.041667\n")
-        Path(command[-1]).write_bytes(b"trimmed")
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(materialization.subprocess, "run", fake_run)
-    result = materialization._trim_ltx_t2v_ic_guide_tail(
-        b"original",
-        SimpleNamespace(error=lambda *args, **kwargs: None),
-    )
-
-    assert result == b"trimmed"
-    ffmpeg = commands[-1]
-    assert ffmpeg[ffmpeg.index("-t") + 1] == "5.042"
-    assert ffmpeg[ffmpeg.index("-frames:v") + 1] == "121"
-    assert ["-map", "0:a:0"] == ffmpeg[
-        ffmpeg.index("0:a:0") - 1 : ffmpeg.index("0:a:0") + 1
-    ]
-    assert ffmpeg[ffmpeg.index("-c:a") + 1] == "aac"
-
-
-def test_ic_guide_tail_trim_fails_closed(monkeypatch):
-    monkeypatch.setattr(
-        materialization,
-        "_probe_video_duration_seconds",
-        lambda _path: None,
-    )
-
-    with pytest.raises(RuntimeError, match="too short"):
-        materialization._trim_ltx_t2v_ic_guide_tail(
-            b"original",
-            SimpleNamespace(error=lambda *args, **kwargs: None),
-        )
 
 
 def _png(color):
