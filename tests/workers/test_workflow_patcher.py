@@ -76,10 +76,25 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
     assert "lora_2" not in patched["256"]["inputs"]
+    assert patched["277"]["inputs"] == {
+        "image": ["270", 0],
+        "width": 512,
+        "height": 448,
+        "x": 1024,
+        "y": 0,
+    }
+    assert patched["278"]["inputs"] == {
+        "image": ["277", 0],
+        "left": 128,
+        "top": 0,
+        "right": 128,
+        "bottom": 0,
+        "feathering": 0,
+    }
     assert patched["273"]["class_type"] == "RepeatImageBatch"
     assert patched["273"]["inputs"] == {
-        "image": ["274", 0],
-        "amount": 481,
+        "image": ["278", 0],
+        "amount": 1,
     }
     assert patched["274"]["inputs"] == {
         "image": ["270", 0],
@@ -89,7 +104,7 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         "crop": "disabled",
     }
     assert patched["275"]["inputs"] == {
-        "image": ["274", 0],
+        "image": ["278", 0],
         "img_compression": 18,
     }
     assert patched["276"]["inputs"] == {
@@ -97,22 +112,22 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         "image": ["275", 0],
         "latent": ["26:39", 0],
         "strength": 1.0,
-        "bypass": False,
+        "bypass": True,
     }
     assert patched["272"]["inputs"]["latent"] == ["276", 0]
     assert patched["272"]["inputs"]["image"] == ["273", 0]
-    assert patched["272"]["inputs"]["frame_idx"] == 0
+    assert patched["272"]["inputs"]["frame_idx"] == -1
     assert patched["26:39"]["inputs"]["width"] == 768
     assert patched["26:39"]["inputs"]["height"] == 448
     assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
     assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
-    assert patched["18"]["inputs"]["Xi"] == 20
-    assert patched["18"]["inputs"]["Xf"] == 20
+    assert patched["18"]["inputs"]["Xi"] == 28
+    assert patched["18"]["inputs"]["Xf"] == 28
     prompt = patched["28"]["inputs"]["text"]
-    assert prompt.startswith("### Reference Sheet Description\n")
-    assert "Top row: front face close-up, side face close-up" in prompt
-    assert "Bottom row: full-body front, full-body side, full-body back." in prompt
-    assert "never reproduce the sheet, grid, panels, or studio layout" in prompt
+    assert prompt.startswith("### Identity Reference Description\n")
+    assert "three-quarter face portrait" in prompt
+    assert "Treat it only as identity evidence" in prompt
+    assert "never reproduce the reference image" in prompt
     assert prompt.endswith("### Target Description\nscene")
 
 
