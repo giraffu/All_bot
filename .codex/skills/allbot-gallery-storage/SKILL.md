@@ -49,8 +49,9 @@ description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举
 - 举报 reason 使用当前 API allowlist；同一举报人和帖子唯一。Dashboard
   下架必须同步 `GalleryPost.is_active=False` 与同作者/任务 History 的
   `is_public=False`，并在同事务收口相关 pending 举报。
-- 用户级封禁下架同样同步全部帖子、History 与 pending 举报。硬删除帖子前
-  清理互动、提示词解锁和评论，避免外键阻断。
+- 用户级封禁下架同样同步全部帖子、History 与 pending 举报。用户硬删除投稿
+  时，必须先把该作品 pending 举报以 `user_deleted` 收口为 resolved，保留
+  举报快照供 Dashboard 已处理列表查看，再清理互动、提示词解锁和评论。
 - `my-favorites` 和 `my-prompt-unlocks` 是现有互动/解锁记录的视图，不新增
   重复收藏或解锁表。
 - 关注/粉丝方向必须保持清楚：我的关注按 follower 查询，我的粉丝按

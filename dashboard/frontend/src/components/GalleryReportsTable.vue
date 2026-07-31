@@ -144,6 +144,7 @@ const getResolutionLabel = (action: string | null) => {
   if (action === 'already_inactive') return '作品已下架'
   if (action === 'post_missing') return '作品不存在'
   if (action === 'manual_resolve') return '人工处理'
+  if (action === 'user_deleted') return '用户已删除'
   return action || '-'
 }
 

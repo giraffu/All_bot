@@ -17,7 +17,9 @@
 - **社区展示与过滤**：支持按类型、时间范围、热度等维度筛选。
 - **原始输入预览**：市集、修仙笔记、我的投稿和用户主页作品卡片会展示输入素材缩略图，详情中可查看完整输入素材列表。
 - **社交互动**：点赞、点踩、收藏与一键应用模板。
-- **举报治理**：用户可在作品详情举报儿童、血腥、恶心或其他违规内容；Dashboard 可查看举报、标记处理并联动软下架作品。
+- **举报治理**：用户可在作品详情举报儿童、血腥、恶心或其他违规内容；
+  Dashboard 可查看举报、标记处理并联动软下架作品；作者主动删除被举报投稿
+  时，待处理举报自动进入“已处理”，举报快照继续保留。
 - **关注与粉丝**：用户可关注创作者，在个人中心查看“我的关注”和“我的粉丝”；粉丝列表支持进入对方主页与回关/取消关注。
 - **用户公开主页**：公开主页展示创作者资料和公开投稿分页，投稿详情与广场详情共享提示词解锁能力。
 - **提示词解锁**：未解锁提示词在市集详情中只展示半公开遮罩内容；用户可支付 1 灵石解锁完整提示词，消耗转给作者，并在修仙笔记的“提示词模版”中长期查看；命中 `low_trust_free_tier` 的用户不能新增解锁转账，但作者自看和已解锁记录再次查看不受影响。
@@ -71,6 +73,9 @@ sequenceDiagram
 - SCAIL-2 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。展示两份原始输入不代表 apply-context 复用两份输入。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
 - 举报入口为 `POST /api/gallery/posts/{post_id}/reports`，请求体只包含 `reason=children|gore|gross|other`；同一用户对同一作品重复举报返回 `409`，不覆盖旧原因，作品已下架或不存在时不可举报。
+- 作者调用投稿删除入口时，系统在删除 `GalleryPost` 前把同作品 pending 举报
+  统一写为 `status=resolved`、`resolution_action=user_deleted` 并保留举报行；
+  Dashboard“已处理”筛选继续可见，处理动作展示为“用户已删除”。
 - 提示词解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，依赖 `gallery_prompt_unlocks.user_id + post_id` 唯一约束防重复扣费；解锁不再按低信任免费层拦截，首次解锁只受余额、帖子有效性和转账事务约束；修仙笔记“提示词模版”入口读取 `GET /api/gallery/my-prompt-unlocks`。
 - 用户公开主页入口为 `GET /api/users/{user_id}/public-profile?page=&size=`，返回用户摘要和公开投稿分页 `posts`；兼容字段 `recent_posts` 只等于当前页 items。公开主页投稿详情也必须显示可解锁提示词入口。
 - 用户中心关注入口为 `GET /api/users/me/follows`，粉丝入口为 `GET /api/users/me/followers`；粉丝列表中的 `is_following` 表示当前用户是否已回关该粉丝。

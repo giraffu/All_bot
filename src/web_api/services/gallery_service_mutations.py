@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select, update
@@ -8,6 +9,7 @@ from src.database.models import (
     GalleryComment,
     GalleryPost,
     GalleryPromptUnlock,
+    GalleryReport,
     History,
     User,
     UserInteraction,
@@ -194,6 +196,19 @@ async def delete_gallery_post(
             )
             .values(is_public=False)
         )
+
+    await db.execute(
+        update(GalleryReport)
+        .where(
+            GalleryReport.post_id == post_id,
+            GalleryReport.status == "pending",
+        )
+        .values(
+            status="resolved",
+            resolved_at=datetime.now(),
+            resolution_action="user_deleted",
+        )
+    )
 
     await db.execute(
         delete(UserInteraction).where(UserInteraction.post_id == post_id)
