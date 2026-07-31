@@ -96,25 +96,20 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
 
 IC workflow 保留官方 Ingredients 的 loader、guide 和
-`LTXVCropGuides` 语义，但人物表不能直接作为可见首帧条件。worker 从固定
-1536×896、3×2 人物表裁出右上角 512×448 的 3/4 面部子图，左右补黑到
-768×448 后以单帧 `RepeatImageBatch` 接入 `LTXAddVideoICLoRAGuide`；
-`LTXVImgToVideoConditionOnly` 明确 `bypass=true`，guide 使用
-`frame_idx=-1`，所以首帧不锁定参考图，也不把六宫格复制到输出。
+`LTXVCropGuides` 语义。worker 将固定 1536×896、3×2 黑底人物表完整缩放为
+768×448，并用 `RepeatImageBatch` 复制成与输出完全同帧数（`24 * seconds + 1`）
+的静态参考视频；该视频在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`。
+`LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
+采样后的 `LTXVCropGuides` 删除 guide latent，交付结果无需添加 8 秒保护尾段，
+也不经二次转码裁尾。Ingredients 第一阶段直接以最终 `768x448` 采样并解码，
+旧 x2 空间放大与第二阶段在执行图中保持 orphan。
 
-强 Ingredients guide 即使经 `LTXVCropGuides` 删除追加的 guide latent，仍会
-向末端若干秒扩散参考构图。为把这段影响隔离在交付区间外，IC 生成时长固定为
-请求时长加 8 秒，结果物化层必须 fail-closed 地裁掉末尾 8 秒并保留 AAC；
-探测或裁剪失败时任务失败，禁止回退交付原始 MP4。Ingredients 第一阶段直接以
-最终 `768x448` 采样并解码，旧 x2 空间放大与第二阶段在执行图中保持 orphan。
-fallback last frame 只从裁尾后的交付 MP4 提取。
-
-IC prompt 由 worker 组合为 `### Identity Reference Description` 与
-`### Target Description` 两段：前者说明条件图是 3/4 面部身份子图，要求保持
-身份、脸部比例、发型、肤色、服装与配件；后者原样承载用户场景。参考图、补边、
-grid、panels/contact sheet/collage 等禁用构图词只追加到负向提示词的
-`#Identity Reference Exclusions`，禁止在正向提示词用否定句重复这些名词，以免
-模型反向激活网格构图；可选音频描述继续追加为 `#Audio`。
+IC prompt 按官方训练格式由 worker 组合为 `Reference sheet: ...` 与
+`Generated video: ...` 两段：前者准确描述黑底六面板中的正面、侧面、3/4 面部
+近景和全身正面、侧面、背面，后者原样承载用户场景。负向追加官方建议的
+`worst quality, inconsistent motion, blurry, jittery, distorted`，不再用否定句
+重复参考表/grid/panel/contact sheet/collage 等构图名词；可选音频描述继续追加为
+`#Audio`。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
@@ -188,8 +183,9 @@ free_edit_v2_5 | free_edit_v3`，分别提交既有 `edit`、`free_edit_v2_5`、
 单张正面半身源图是受支持且必须覆盖的验收输入，但它不意味着六格都可以复制
 正面半身构图。materializer 使用视觉感知差异门禁拒绝近似重复视图，但不把该门禁
 冒充姿态语义识别；真实 canary 仍须
-人工确认至少正面、3/4、侧面、背面和景别变化均成立。参考表、拼贴边框或任一格
-不得出现在交付视频首帧、尾帧或场景切换附近。
+人工确认至少正面、3/4、侧面、背面和景别变化均成立。完整参考表用于官方
+Ingredients 静态参考视频条件，但参考表、拼贴边框或任一格不得出现在交付视频
+首帧、尾帧或场景切换附近。
 
 至少两个子图为 `ready` 后，`POST /api/characters/{id}/save` 才允许保存。服务端
 按固定 3×2 槽位合成 `1536x896` PNG；未生成的槽位保持纯黑，因此不同数量和重试

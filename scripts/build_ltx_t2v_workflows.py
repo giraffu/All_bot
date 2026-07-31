@@ -87,34 +87,11 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
         }
         workflow["273"] = {
             "inputs": {
-                "image": ["278", 0],
-                "amount": 1,
+                "image": ["274", 0],
+                "amount": 121,
             },
             "class_type": "RepeatImageBatch",
-            "_meta": {"title": "Ingredients single identity guide"},
-        }
-        workflow["277"] = {
-            "inputs": {
-                "image": ["270", 0],
-                "width": 512,
-                "height": 448,
-                "x": 1024,
-                "y": 0,
-            },
-            "class_type": "ImageCrop",
-            "_meta": {"title": "Crop 3/4 face identity panel"},
-        }
-        workflow["278"] = {
-            "inputs": {
-                "image": ["277", 0],
-                "left": 128,
-                "top": 0,
-                "right": 128,
-                "bottom": 0,
-                "feathering": 0,
-            },
-            "class_type": "ImagePadForOutpaint",
-            "_meta": {"title": "Pad identity panel to target aspect"},
+            "_meta": {"title": "Ingredients static reference video"},
         }
         workflow["274"] = {
             "inputs": {
@@ -129,7 +106,7 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
         }
         workflow["275"] = {
             "inputs": {
-                "image": ["278", 0],
+                "image": ["274", 0],
                 "img_compression": 18,
             },
             "class_type": "LTXVPreprocess",
@@ -154,7 +131,7 @@ def build_t2v(*, ingredients: bool, sulphur: bool = True) -> dict:
                 "vae": ["283", 0],
                 "latent": ["276", 0],
                 "image": ["273", 0],
-                "frame_idx": -1,
+                "frame_idx": 0,
                 "strength": 1.0,
                 "latent_downscale_factor": ["271", 1],
                 "crop": "center",

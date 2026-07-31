@@ -86,11 +86,14 @@ manifest 和专项文档读取，不在此维护快照。
   Worker 仍做防御性校验。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
-- 人物参考表属于条件输入而非交付帧。IC workflow 必须使用单张身份子图，关闭
-  可见首帧 I2V 条件，把强时序 guide 放在交付区间之外，并由共享结果物化层
-  fail-closed 移除；禁止直接注入六宫格或在各入口分别裁首帧。
-- grid、panel、contact sheet、collage 与额外人物等禁用构图词只能进入负向
-  conditioning；禁止在正向提示词用“不要出现……”重复这些名词。
+- 人物参考表属于 Ingredients 条件输入而非交付帧。IC workflow 必须按官方
+  reference-sheet 契约使用完整黑底多面板人物表，将其复制成与输出同帧数的静态
+  参考视频并在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`；可见 I2V 条件保持
+  `bypass=true`，采样后必须由 `LTXVCropGuides` 删除 guide latent。禁止把人物表
+  设为首帧、只裁单张身份子图，或生成额外尾段后再二次转码裁除。
+- Ingredients 正向提示必须使用官方 `Reference sheet: ...` /
+  `Generated video: ...` 两段结构，准确描述面板和目标动作；负向使用官方质量词，
+  不用否定句重复 grid、panel、contact sheet、collage 等参考表构图名词。
   单张正面半身照可作为人物构建输入，但六视图结果必须经过重复视图门禁和人工
   正面/3/4/侧面/背面语义检查。
 

@@ -68,19 +68,16 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
-LTX_T2V_IC_GUIDE_TAIL_SECONDS = 8
 LTX_T2V_REFERENCE_SHEET_DESCRIPTION = (
-    "### Identity Reference Description\n"
-    "The conditioning image is a three-quarter face portrait of one adult character. "
-    "Preserve the exact facial identity, facial proportions, hairstyle, skin tone, "
-    "clothing and accessories. Generate one continuous full-frame cinematic shot "
-    "containing exactly one instance of this character."
+    "This reference sheet contains one adult character in six clean panels on a "
+    "black background. The top row shows front, side, and three-quarter face "
+    "close-ups. The bottom row shows full-body front, side, and back turnarounds. "
+    "All panels depict the same exact facial identity, facial proportions, "
+    "hairstyle, skin tone, body proportions, clothing, and accessories."
 )
-LTX_T2V_IDENTITY_REFERENCE_NEGATIVE = (
-    "#Identity Reference Exclusions\n"
-    "reference image, identity sheet, black padding, grid, panel layout, contact "
-    "sheet, collage, split screen, inset, picture-in-picture, tiled image, duplicated "
-    "character, other people, background person, extra person, crowd, bystander"
+LTX_T2V_INGREDIENTS_NEGATIVE = (
+    "#Ingredients\n"
+    "worst quality, inconsistent motion, blurry, jittery, distorted"
 )
 
 
@@ -457,9 +454,6 @@ def _patch_ltx_t2v_workflow(
     duration = _resolve_ltx_duration_seconds(params)
     if duration not in {5, 10, 15, 20}:
         raise ValueError("invalid ltx_t2v duration")
-    generation_duration = (
-        duration + LTX_T2V_IC_GUIDE_TAIL_SECONDS if ingredients else duration
-    )
     # Plain T2V uses the fixed x2 spatial pass. Ingredients follows Lightricks'
     # official single-stage conditioning path and therefore starts at final size.
     width, height = (768, 448) if ingredients else (640, 352)
@@ -471,8 +465,8 @@ def _patch_ltx_t2v_workflow(
     for node_id in ("18",):
         node = workflow.get(node_id)
         if isinstance(node, dict):
-            node.setdefault("inputs", {})["Xi"] = generation_duration
-            node["inputs"]["Xf"] = generation_duration
+            node.setdefault("inputs", {})["Xi"] = duration
+            node["inputs"]["Xf"] = duration
     loader = workflow.get("256")
     if not isinstance(loader, dict):
         raise ValueError("fixed LTX LoRA loader node 256 missing")
@@ -510,39 +504,20 @@ def _patch_ltx_t2v_workflow(
             "height": height,
             "crop": "disabled",
         }
-        identity_crop = workflow.get("277")
-        if not isinstance(identity_crop, dict):
-            raise ValueError("Ingredients identity crop node 277 missing")
-        identity_crop["inputs"] = {
-            "image": ["270", 0],
-            "width": 512,
-            "height": 448,
-            "x": 1024,
-            "y": 0,
-        }
-        identity_pad = workflow.get("278")
-        if not isinstance(identity_pad, dict):
-            raise ValueError("Ingredients identity pad node 278 missing")
-        identity_pad["inputs"] = {
-            "image": ["277", 0],
-            "left": 128,
-            "top": 0,
-            "right": 128,
-            "bottom": 0,
-            "feathering": 0,
-        }
+        workflow.pop("277", None)
+        workflow.pop("278", None)
         reference_video = workflow.get("273")
         if not isinstance(reference_video, dict):
             raise ValueError("Ingredients static reference video node 273 missing")
         reference_video["inputs"] = {
-            "image": ["278", 0],
-            "amount": 1,
+            "image": ["274", 0],
+            "amount": duration * LTX_VIDEO_FPS + 1,
         }
         preprocess = workflow.get("275")
         if not isinstance(preprocess, dict):
             raise ValueError("Ingredients preprocess node 275 missing")
         preprocess["inputs"] = {
-            "image": ["278", 0],
+            "image": ["274", 0],
             "img_compression": 18,
         }
         image_condition = workflow.get("276")
@@ -561,7 +536,7 @@ def _patch_ltx_t2v_workflow(
         guide_inputs = guide.setdefault("inputs", {})
         guide_inputs["latent"] = ["276", 0]
         guide_inputs["image"] = ["273", 0]
-        guide_inputs["frame_idx"] = -1
+        guide_inputs["frame_idx"] = 0
         decoder = workflow.get("26:149")
         if not isinstance(decoder, dict):
             raise ValueError("Ingredients video decoder node 26:149 missing")
@@ -577,8 +552,8 @@ def _patch_ltx_t2v_workflow(
             prompt_node.setdefault("inputs", {}).get("text", "")
         ).strip()
         prompt_node["inputs"]["text"] = (
-            f"{LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
-            f"### Target Description\n{target_description}"
+            f"Reference sheet: {LTX_T2V_REFERENCE_SHEET_DESCRIPTION}\n\n"
+            f"Generated video: {target_description}"
         )
         negative_node = workflow.get("29")
         if not isinstance(negative_node, dict):
@@ -587,7 +562,7 @@ def _patch_ltx_t2v_workflow(
             negative_node.setdefault("inputs", {}).get("text", "")
         ).strip()
         negative_node["inputs"]["text"] = (
-            f"{negative_text}\n\n{LTX_T2V_IDENTITY_REFERENCE_NEGATIVE}"
+            f"{negative_text}\n\n{LTX_T2V_INGREDIENTS_NEGATIVE}"
         )
     audio_prompt = str(params.get("audio_prompt") or "").strip()
     if audio_prompt:
