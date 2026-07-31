@@ -186,7 +186,10 @@ const mountView = () => mount(CustomFeatures, {
       $t: (key: string) => labels[key] ?? key,
     },
     stubs: {
-      LabPromptComposer: { template: '<div class="composer-stub"></div>' },
+      LabPromptComposer: {
+        methods: { close() {} },
+        template: '<div class="composer-stub"><slot name="advanced-panel" :close="close" /></div>',
+      },
       LabAdvancedOptionsPanel: true,
       LabModeRail: true,
       TaskResultPreviewPanel: {
@@ -270,5 +273,34 @@ describe('CustomFeatures LTX result actions', () => {
     const buttons = wrapper.findAll('button')
     const extendButton = buttons.find(button => button.text().includes('扩展生成'))
     expect(extendButton?.attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('CustomFeatures LTX character settings', () => {
+  it('locks the Ingredients resolution without locking supported durations', () => {
+    workbench = {
+      ...createWorkbench(),
+      currentMode: computed(() => ({
+        ...baseMode,
+        id: 'ltx_t2v',
+        taskType: 'ltx_t2v',
+      })),
+      currentModeId: ref('ltx_t2v'),
+      selectedCharacterId: ref('character-1'),
+      videoResolutionOptions: [{ value: '768x448', label: '768x448' }],
+      resolution: ref('768x448'),
+      videoDurationOptions: [
+        { value: '5', label: '5 秒' },
+        { value: '10', label: '10 秒' },
+        { value: '15', label: '15 秒' },
+        { value: '20', label: '20 秒' },
+      ],
+    }
+
+    const wrapper = mountView()
+    const optionsPanel = wrapper.findComponent({ name: 'LabAdvancedOptionsPanel' })
+
+    expect(optionsPanel.props('isTemplateVideoSettingsLocked')).toBe(false)
+    expect(optionsPanel.props('isVideoResolutionLocked')).toBe(true)
   })
 })

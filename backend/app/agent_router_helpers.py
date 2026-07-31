@@ -69,6 +69,14 @@ async def pop_task_payload(
                 "message": f"Agent {agent_id} is not accepting new tasks: {reason}",
             }
 
+    if agent_id and hasattr(queue_manager, "get_pending_agent_task_claim"):
+        claimed_task_id = await queue_manager.get_pending_agent_task_claim(agent_id)
+        if claimed_task_id:
+            claimed_task = await queue_manager.get_task_status(claimed_task_id)
+            if claimed_task and claimed_task.get("status") == "running":
+                await queue_manager.update_task_heartbeat(claimed_task_id)
+                return {"task": claimed_task}
+
     task_data = await queue_manager.dequeue_task(
         allowed_types=allowed,
         preferred_types=preferred,
@@ -81,6 +89,8 @@ async def pop_task_payload(
     task_details = await queue_manager.get_task_status(task_id)
     if not task_details:
         return {"task": None, "message": "Task details not found"}
+    if agent_id:
+        await queue_manager.reserve_agent_task_delivery(task_id, agent_id)
     return {"task": task_details}
 
 

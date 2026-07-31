@@ -993,6 +993,52 @@ class QueueManager:
             "current_task_id",
             task_id,
         )
+        await self._retry_redis_call(
+            "confirm_agent_task_delivery",
+            self.redis.hdel,
+            self._task_key(task_id),
+            "claim_delivery_pending",
+        )
+
+    async def reserve_agent_task_delivery(self, task_id: str, agent_id: str):
+        await self.record_task_worker(task_id, agent_id)
+        await self._retry_redis_call(
+            "reserve_agent_task_delivery",
+            self.redis.hset,
+            self._agent_heartbeat_key(agent_id),
+            "current_task_id",
+            task_id,
+        )
+        await self._retry_redis_call(
+            "mark_agent_task_delivery_pending",
+            self.redis.hset,
+            self._task_key(task_id),
+            "claim_delivery_pending",
+            1,
+        )
+
+    async def get_agent_current_task_id(self, agent_id: str) -> str | None:
+        current_task_id = await self._retry_redis_call(
+            "get_agent_current_task_id",
+            self.redis.hget,
+            self._agent_heartbeat_key(agent_id),
+            "current_task_id",
+        )
+        if current_task_id in (None, "", b""):
+            return None
+        return str(self._decode_redis_value(current_task_id))
+
+    async def get_pending_agent_task_claim(self, agent_id: str) -> str | None:
+        current_task_id = await self.get_agent_current_task_id(agent_id)
+        if not current_task_id:
+            return None
+        delivery_pending = await self._retry_redis_call(
+            "get_pending_agent_task_claim",
+            self.redis.hget,
+            self._task_key(current_task_id),
+            "claim_delivery_pending",
+        )
+        return current_task_id if self._as_bool(delivery_pending) else None
 
     async def record_task_worker(self, task_id: str, agent_id: str):
         await self._retry_redis_call(

@@ -31,7 +31,8 @@
 - `task_core` 是统一门面，负责业务编排，不是 Central API
 - Central API 是执行面，不负责上游计费、并发锁和历史持久化
 - Worker 通过主动 `pop` 拉取任务，不是上游直接把 workflow 推到 Worker
-- 新版 worker 的 `pop` 会带 `agent_id`；GPU Pool Controller 可把单个 worker 标记为 `draining/disabled`，用于模型同步、任务能力切换和 canary 前停止接新单
+- 新版 worker 的 `pop` 会带 `agent_id`；Central 在返回已出队任务前记录一个待确认的 delivery claim。若响应途中断线，同一 agent 的下一次 `pop` 会重放该 running claim，并刷新任务 heartbeat；Worker 首次 status/heartbeat 会确认 delivery 并清除重放标记。该语义只覆盖“已出队但响应未送达”的窄窗口，不把已确认的 pipeline claim 串行化。
+- GPU Pool Controller 可把单个 worker 标记为 `draining/disabled`，用于模型同步、任务能力切换和 canary 前停止接新单
 - `agent_id`、`draining/disabled`、GPU pool heartbeat 元数据只作用于 Worker Agent 层；它不会自动重启或替换目标 ComfyUI。`cloud_prod_worker_01` 的 agent 容器已支持新协议，但它调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
 - 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
 - 本地 relay `/health` 是轻量存活检查，`/ready` 会检查云 Central 与上传 client；worker 到 relay/Central 的控制面半断持续超过默认阈值时，agent 会退出并交给 Docker restart。这个自愈只恢复 worker 进程，不改变任务成功必须 `/complete` 的语义

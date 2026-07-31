@@ -94,7 +94,8 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 
 `workers/runpod_runtime/` 保持镜像内副本同步。两张 LTX 图均为 API-format
 同步音频输出；T2V 是 `1280x704` 双阶段，IC 是 `768x448` 单阶段，交付规格
-均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒。
+均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒；Web 选择人物后只锁定
+IC 的 768×448 分辨率，时长仍可编辑，费用随四档时长按领域配置计算。
 
 IC workflow 保留官方 Ingredients 的 loader、guide 和
 `LTXVCropGuides` 语义。worker 将固定 1536×896 的单一黑底人物 ingredient

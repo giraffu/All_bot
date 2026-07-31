@@ -14,6 +14,7 @@ import {
   EDIT_LORA_DEFAULT_STRENGTHS,
   EDIT_LORA_OPTIONS,
   FACE_VIDEO_RESOLUTION_OPTIONS,
+  LTX_T2V_IC_RESOLUTION_OPTIONS,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
   type LabModeConfig,
@@ -197,6 +198,8 @@ export function useLabWorkbench() {
   const videoResolutionOptions = computed(() => (
     currentMode.value.id === 'face_video'
       ? FACE_VIDEO_RESOLUTION_OPTIONS
+      : currentMode.value.id === 'ltx_t2v' && selectedCharacterId.value
+        ? LTX_T2V_IC_RESOLUTION_OPTIONS
       : isLtxLabModeId(currentMode.value.id)
         ? LTX_VIDEO_RESOLUTION_OPTIONS
         : VIDEO_RESOLUTION_OPTIONS

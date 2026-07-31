@@ -1133,6 +1133,20 @@ async def test_clear_agent_current_task_compare_and_clear_preserves_newer_task()
 
 
 @pytest.mark.asyncio
+async def test_agent_task_delivery_claim_replays_until_worker_status_binds_task():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await manager.reserve_agent_task_delivery("task-1", "agent-1")
+
+    assert await manager.get_pending_agent_task_claim("agent-1") == "task-1"
+
+    await manager.bind_agent_task("task-1", "agent-1")
+
+    assert await manager.get_pending_agent_task_claim("agent-1") is None
+
+
+@pytest.mark.asyncio
 async def test_get_active_workers_count_counts_agent_heartbeat_keys_only():
     redis = _FakeRedis()
     manager = QueueManager(redis)

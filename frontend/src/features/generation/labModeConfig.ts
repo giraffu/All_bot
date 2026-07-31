@@ -105,6 +105,10 @@ export const LTX_VIDEO_RESOLUTION_OPTIONS = [
   { value: '1280x704', label: '1280x704' },
 ] as const
 
+export const LTX_T2V_IC_RESOLUTION_OPTIONS = [
+  { value: '768x448', label: '768x448' },
+] as const
+
 export const LTX_VIDEO_DURATION_OPTIONS = [
   { value: '5', label: '5 秒' },
   { value: '10', label: '10 秒' },
