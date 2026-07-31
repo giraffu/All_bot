@@ -398,7 +398,19 @@ def _parse_args() -> argparse.Namespace:
             "and commission ledger entries for a target inviter user."
         )
     )
-    parser.add_argument("--inviter-user-id", type=int, required=True, help="Target inviter user ID.")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--inviter-user-id", type=int, help="Target inviter user ID.")
+    target.add_argument(
+        "--inviter-username",
+        type=str,
+        help="Target inviter username, case-insensitive and without @.",
+    )
+    parser.add_argument(
+        "--minimum-available-usdt",
+        type=Decimal,
+        default=None,
+        help="Fail if the final available balance is below this value.",
+    )
     parser.add_argument(
         "--invitee-count",
         type=int,
@@ -435,15 +447,37 @@ def _parse_args() -> argparse.Namespace:
 
 async def _main() -> None:
     args = _parse_args()
+    inviter_user_id = args.inviter_user_id
+    if inviter_user_id is None:
+        normalized_username = str(args.inviter_username or "").strip().lstrip("@")
+        async with AsyncSessionLocal() as session:
+            inviter_user_id = (
+                await session.execute(
+                    select(User.id).where(
+                        func.lower(User.username) == normalized_username.lower()
+                    )
+                )
+            ).scalar_one_or_none()
+        if inviter_user_id is None:
+            raise ValueError(f"inviter_username=@{normalized_username} not found")
     batch_tag = _normalize_batch_tag(args.batch_tag)
     summary = await seed_affiliate_data(
-        inviter_user_id=args.inviter_user_id,
+        inviter_user_id=inviter_user_id,
         invitee_count=args.invitee_count,
         payment_channel=args.payment_channel,
         final_price=args.final_price,
         batch_tag=batch_tag,
         plan_id=args.plan_id,
     )
+    if (
+        args.minimum_available_usdt is not None
+        and summary.available_balance_usdt
+        < Decimal(str(args.minimum_available_usdt)).quantize(COMMISSION_QUANT)
+    ):
+        raise ValueError(
+            "seeded affiliate balance is below --minimum-available-usdt: "
+            f"{summary.available_balance_usdt}"
+        )
     print("=== Seed Affiliate Test Data Summary ===")
     print(f"inviter_user_id: {summary.inviter_user_id}")
     print(f"invitees_total: {summary.invitees_total}")

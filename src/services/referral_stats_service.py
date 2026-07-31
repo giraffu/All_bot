@@ -64,6 +64,22 @@ async def query_invitation_recharge_stats(
                     (
                         and_(
                             AffiliateTransaction.direction == "OUT",
+                            AffiliateTransaction.status == "PENDING",
+                            AffiliateTransaction.transaction_type == "USDT_REDEEM",
+                        ),
+                        AffiliateTransaction.amount_usdt,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(
+                            AffiliateTransaction.direction == "OUT",
                             AffiliateTransaction.status == "SUCCESS",
                         ),
                         AffiliateTransaction.amount_usdt,
@@ -98,6 +114,7 @@ async def query_invitation_recharge_stats(
     ).where(AffiliateTransaction.user_id == inviter_id)
     (
         total_commission_ledger_usdt,
+        frozen_commission_usdt,
         spent_commission_usdt,
         available_balance_usdt,
     ) = (
@@ -133,8 +150,12 @@ async def query_invitation_recharge_stats(
         "commission_usdt": total_commission,
         "total_commission_usdt": total_commission,
         "spent_commission_usdt": _round_money(Decimal(str(spent_commission_usdt or 0))),
+        "frozen_commission_usdt": _round_money(
+            Decimal(str(frozen_commission_usdt or 0))
+        ),
         "available_balance_usdt": _round_money(
             Decimal(str(available_balance_usdt or 0))
+            - Decimal(str(frozen_commission_usdt or 0))
         ),
     }
 
@@ -218,6 +239,7 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
     }
     inviter_ids = {inviter.id for _order, inviter, _invitee in rows}
     spent_commission_map: dict[int, float] = {}
+    frozen_commission_map: dict[int, float] = {}
     if inviter_ids:
         spent_stmt = (
             select(
@@ -237,14 +259,36 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
                     ),
                     0,
                 ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                and_(
+                                    AffiliateTransaction.direction == "OUT",
+                                    AffiliateTransaction.status == "PENDING",
+                                    AffiliateTransaction.transaction_type
+                                    == "USDT_REDEEM",
+                                ),
+                                AffiliateTransaction.amount_usdt,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
             )
             .where(AffiliateTransaction.user_id.in_(inviter_ids))
             .group_by(AffiliateTransaction.user_id)
         )
-        spent_commission_map = {
-            int(user_id): _round_money(Decimal(str(spent_usdt or 0)))
-            for user_id, spent_usdt in (await session.execute(spent_stmt)).all()
-        }
+        for user_id, spent_usdt, frozen_usdt in (
+            await session.execute(spent_stmt)
+        ).all():
+            spent_commission_map[int(user_id)] = _round_money(
+                Decimal(str(spent_usdt or 0))
+            )
+            frozen_commission_map[int(user_id)] = _round_money(
+                Decimal(str(frozen_usdt or 0))
+            )
 
     rates = await get_exchange_rates()
     ton_to_usdt = rates.get("ton_to_usdt", 1.4)
@@ -265,6 +309,9 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
                 "total_ton": 0.0,
                 "total_rmb": 0.0,
                 "spent_commission_usdt": spent_commission_map.get(inviter.id, 0.0),
+                "frozen_commission_usdt": frozen_commission_map.get(
+                    inviter.id, 0.0
+                ),
                 "invitees": {},
             },
         )
@@ -365,6 +412,7 @@ async def query_affiliate_redeem_records(
     page_size: int = 20,
     query: str | None = None,
     redeem_type: str | None = None,
+    status: str | None = None,
 ) -> dict:
     stmt = select(AffiliateRedeem, User).join(User, User.id == AffiliateRedeem.user_id)
 
@@ -381,6 +429,8 @@ async def query_affiliate_redeem_records(
 
     if redeem_type:
         stmt = stmt.where(AffiliateRedeem.redeem_type == redeem_type)
+    if status:
+        stmt = stmt.where(AffiliateRedeem.status == status)
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await session.execute(count_stmt)).scalar() or 0
@@ -410,6 +460,15 @@ async def query_affiliate_redeem_records(
                 "target_identity": redeem.target_identity,
                 "duration_days": redeem.duration_days,
                 "status": redeem.status,
+                "payout_network": redeem.payout_network,
+                "payout_address": redeem.payout_address,
+                "payout_tx_hash": redeem.payout_tx_hash,
+                "admin_note": redeem.admin_note,
+                "rejection_reason": redeem.rejection_reason,
+                "processed_by": redeem.processed_by,
+                "processed_at": redeem.processed_at.strftime("%Y-%m-%d %H:%M:%S")
+                if redeem.processed_at
+                else "",
                 "created_at": redeem.created_at.strftime("%Y-%m-%d %H:%M:%S")
                 if redeem.created_at
                 else "",

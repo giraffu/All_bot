@@ -38,16 +38,16 @@
 | `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路 | Web/Bot、Central、Worker、History | current | 跨层任务改动 |
 | `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 协议 | `backend/app`、API client、Worker | current | 队列或 worker 协议 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
-| `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
+| `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、返佣兑 USDT | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env | current | Telegram 文件/代理 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | 官方 QQCC 与 Config | QQCC code、config service、focused tests | current | QQCC 功能 |
 | `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md` | 私有 Bot webhook/租户 | schema、credentials、worker、owner/admin API | current | 私有 QQCC |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | 独立审核 Bot | paid group code/config | current | 入群审核 |
 | `docs/子模块_客服Bot_support_bot.md` | 客服工单 Bot | support bot、Dashboard、schema | current | 客服能力 |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | JWT/密码/权限 | auth core、Web security | current | 鉴权 |
-| `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
+| `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery、R2、apply-context | Gallery core/services、storage、R2 scripts | current | 社区/媒体 |
-| `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理 | Dashboard backend/frontend | current | 管理后台 |
+| `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台 | local analytics code、shadow pipeline | runtime-verification-required | 本地分析 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
 
@@ -72,7 +72,7 @@
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | 独立模块发布、Compose 与一般运维 | module catalog、release CLI、compose adapters | current | 容器运维 |
-| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑与单模块 exact-digest SOP | test overlay/env contract、remote module state | runtime-verification-required | 测试环境 |
+| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、remote module state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与单模块 exact-digest SOP | prod overlay/env contract、remote module state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |

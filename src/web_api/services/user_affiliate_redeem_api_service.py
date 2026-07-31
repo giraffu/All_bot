@@ -13,8 +13,17 @@ from src.services.affiliate_redeem_service import (
     redeem_affiliate_balance_to_membership,
 )
 from src.web_api.schemas.affiliate_redeem_schema import (
+    AffiliateBalanceSummaryResponse,
     AffiliateCreditsRedeemResponse,
     AffiliateMembershipRedeemResponse,
+    AffiliateUsdtRedeemListResponse,
+    AffiliateUsdtRedeemResponse,
+)
+from src.services.affiliate_usdt_redeem_service import (
+    AffiliateUsdtRedeemConflictError,
+    AffiliateUsdtRedeemInsufficientBalanceError,
+    create_affiliate_usdt_redeem,
+    list_user_affiliate_usdt_redeems,
 )
 
 
@@ -174,4 +183,77 @@ async def redeem_current_user_affiliate_membership_payload(
         user_id=current_user.id,
         option_key=payload.option_key,
         idempotency_key=payload.idempotency_key,
+    )
+
+
+def _balance_response(balance) -> AffiliateBalanceSummaryResponse:
+    return AffiliateBalanceSummaryResponse(
+        total_usdt=f"{balance.total_usdt:.4f}",
+        spent_usdt=f"{balance.spent_usdt:.4f}",
+        frozen_usdt=f"{balance.frozen_usdt:.4f}",
+        available_usdt=f"{balance.available_usdt:.4f}",
+    )
+
+
+def build_affiliate_usdt_redeem_response(result) -> AffiliateUsdtRedeemResponse:
+    return AffiliateUsdtRedeemResponse(
+        redeem_id=result.redeem_id,
+        amount_usdt=f"{result.amount_usdt:.4f}",
+        payout_network=result.payout_network,
+        payout_address=result.payout_address,
+        payout_tx_hash=result.payout_tx_hash,
+        status=result.status,
+        idempotency_key=result.idempotency_key,
+        created_at=result.created_at.isoformat() if result.created_at else None,
+        processed_at=result.processed_at.isoformat() if result.processed_at else None,
+        rejection_reason=result.rejection_reason,
+        balance=_balance_response(result.balance),
+    )
+
+
+async def redeem_current_user_affiliate_usdt_payload(*, payload, current_user, db):
+    try:
+        result = await create_affiliate_usdt_redeem(
+            db,
+            user_id=current_user.id,
+            amount_usdt=payload.amount_usdt,
+            payout_address=payload.payout_address,
+            idempotency_key=payload.idempotency_key,
+        )
+        committed_here = await _commit_if_needed(db)
+    except AffiliateUsdtRedeemConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AffiliateUsdtRedeemInsufficientBalanceError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "AFFILIATE_BALANCE_INSUFFICIENT",
+                "available_balance_usdt": f"{exc.available:.4f}",
+                "requested_amount_usdt": f"{exc.requested:.4f}",
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _invalidate_redeem_cache_if_needed(
+        user_id=current_user.id,
+        committed_here=committed_here,
+    )
+    return build_affiliate_usdt_redeem_response(result)
+
+
+async def list_current_user_affiliate_usdt_redeems_payload(
+    *, current_user, db, page: int, page_size: int
+) -> AffiliateUsdtRedeemListResponse:
+    result = await list_user_affiliate_usdt_redeems(
+        db,
+        user_id=current_user.id,
+        page=page,
+        page_size=page_size,
+    )
+    return AffiliateUsdtRedeemListResponse(
+        items=[build_affiliate_usdt_redeem_response(item) for item in result["items"]],
+        total=result["total"],
+        page=result["page"],
+        page_size=result["page_size"],
+        balance=_balance_response(result["balance"]),
     )

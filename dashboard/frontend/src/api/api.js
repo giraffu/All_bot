@@ -400,15 +400,23 @@ export const fetchAffiliateRedeemRecords = async ({
   page = 1,
   pageSize = 20,
   query = '',
-  redeemType = ''
+  redeemType = '',
+  status = ''
 } = {}) => {
   return get(withQuery('/api/referrals/redeems', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
     appendQueryParam(params, 'query', query)
     appendQueryParam(params, 'redeem_type', redeemType)
+    appendQueryParam(params, 'status', status)
   }))
 }
+
+export const completeAffiliateUsdtRedeem = async (redeemId, payload) =>
+  post(`/api/referrals/redeems/${redeemId}/complete`, payload)
+
+export const rejectAffiliateUsdtRedeem = async (redeemId, payload) =>
+  post(`/api/referrals/redeems/${redeemId}/reject`, payload)
 
 export { apiBaseUrl }
 export default api

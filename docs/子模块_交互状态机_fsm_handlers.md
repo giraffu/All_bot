@@ -14,6 +14,9 @@
   分别携带 `method=usdt-ton&kind=membership|credits`；旧原生 TON 深链保持
   `method=ton&kind=membership`，不得把两种链上资产混成同一按钮。
 - 文件下载、临时目录创建与清理由服务层承接，不应在各 FSM 内重复实现。
+- 主 Bot 返佣面板提供 USDT-TON 人工兑换申请：金额、主网钱包地址、确认三步，
+  最低 5 USDT，300 秒超时并支持全局菜单打断；冻结统一进入
+  `affiliate_usdt_redeem_service`，FSM 不直接写账本。
 
 ## 2. 当前架构图
 

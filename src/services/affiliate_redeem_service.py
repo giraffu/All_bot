@@ -85,6 +85,16 @@ class AffiliateRedeemInsufficientBalanceError(AffiliateRedeemError):
 async def query_affiliate_available_balance(
     session: AsyncSession, user_id: int
 ) -> Decimal:
+    from src.services.affiliate_usdt_redeem_service import (
+        query_affiliate_balance_summary,
+    )
+
+    return (await query_affiliate_balance_summary(session, user_id)).available_usdt
+
+
+async def _query_affiliate_available_balance_legacy(
+    session: AsyncSession, user_id: int
+) -> Decimal:
     stmt = select(
         func.coalesce(
             func.sum(

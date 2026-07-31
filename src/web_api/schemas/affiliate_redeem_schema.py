@@ -54,3 +54,38 @@ class AffiliateMembershipRedeemResponse(BaseModel):
     current_credits: int
     converted_days: int
     settlement_reason: str
+
+
+class AffiliateUsdtRedeemRequest(BaseModel):
+    amount_usdt: Decimal = Field(ge=Decimal("5.0000"), max_digits=10, decimal_places=4)
+    payout_address: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class AffiliateBalanceSummaryResponse(BaseModel):
+    total_usdt: str
+    spent_usdt: str
+    frozen_usdt: str
+    available_usdt: str
+
+
+class AffiliateUsdtRedeemResponse(BaseModel):
+    redeem_id: int
+    amount_usdt: str
+    payout_network: str
+    payout_address: str
+    payout_tx_hash: str | None
+    status: str
+    idempotency_key: str
+    created_at: str | None
+    processed_at: str | None
+    rejection_reason: str | None
+    balance: AffiliateBalanceSummaryResponse
+
+
+class AffiliateUsdtRedeemListResponse(BaseModel):
+    items: list[AffiliateUsdtRedeemResponse]
+    total: int
+    page: int
+    page_size: int
+    balance: AffiliateBalanceSummaryResponse

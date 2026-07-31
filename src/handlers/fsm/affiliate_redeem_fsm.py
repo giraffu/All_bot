@@ -23,6 +23,15 @@ from src.services.telegram_affiliate_service import (
     query_affiliate_available_balance_for_telegram_user,
     redeem_affiliate_credits_for_telegram_user,
     resolve_internal_user_id_for_telegram_user,
+    request_affiliate_usdt_for_telegram_user,
+)
+from src.services.affiliate_redeem_rules import (
+    normalize_usdt_payout_address,
+    normalize_usdt_redeem_amount,
+)
+from src.services.affiliate_usdt_redeem_service import (
+    AffiliateUsdtRedeemConflictError,
+    AffiliateUsdtRedeemInsufficientBalanceError,
 )
 from src.utils import robust_edit_text, robust_reply_text, safe_answer_query
 
@@ -72,6 +81,143 @@ def _try_acquire_busy_lock(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 def _release_busy_lock(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop(AFFILIATE_REDEEM_BUSY_KEY, None)
+
+
+async def start_usdt_redeem(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await safe_answer_query(query)
+    context.user_data[AFFILIATE_REDEEM_FSM_KEY] = {}
+    context.user_data["in_conversation"] = True
+    await robust_edit_text(
+        query.message,
+        (
+            "💵 **返佣兑 USDT（TON 网络）**\n\n"
+            "请输入兑换金额，最低 `5.0000 USDT`。\n"
+            "提交后对应返佣会冻结，等待管理员人工打款。"
+        ),
+        parse_mode="Markdown",
+    )
+    return AffiliateRedeemState.WAIT_USDT_AMOUNT
+
+
+async def receive_usdt_amount(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    text = (update.message.text or "").strip()
+    if is_global_menu_command(text):
+        _cleanup_context(context)
+        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        return ConversationHandler.END
+    try:
+        amount = normalize_usdt_redeem_amount(Decimal(text))
+    except (InvalidOperation, ValueError) as exc:
+        await robust_reply_text(update.message, f"❌ {exc}")
+        return AffiliateRedeemState.WAIT_USDT_AMOUNT
+    context.user_data[AFFILIATE_REDEEM_FSM_KEY] = {"amount_usdt": amount}
+    await robust_reply_text(
+        update.message,
+        "请输入接收 USDT 的 **TON 主网钱包地址**：",
+        parse_mode="Markdown",
+    )
+    return AffiliateRedeemState.WAIT_USDT_ADDRESS
+
+
+async def receive_usdt_address(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    text = (update.message.text or "").strip()
+    if is_global_menu_command(text):
+        _cleanup_context(context)
+        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        return ConversationHandler.END
+    try:
+        address = normalize_usdt_payout_address(text)
+    except ValueError as exc:
+        await robust_reply_text(update.message, f"❌ {exc}")
+        return AffiliateRedeemState.WAIT_USDT_ADDRESS
+    data = context.user_data.setdefault(AFFILIATE_REDEEM_FSM_KEY, {})
+    data["payout_address"] = address
+    await robust_reply_text(
+        update.message,
+        (
+            "请确认兑换申请：\n\n"
+            f"金额：`{data['amount_usdt']:.4f} USDT`\n"
+            "网络：`TON`\n"
+            f"地址：`{address}`"
+        ),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "确认提交", callback_data="affiliate_redeem_usdt_confirm"
+                    ),
+                    InlineKeyboardButton(
+                        "取消", callback_data="affiliate_redeem_usdt_cancel"
+                    ),
+                ]
+            ]
+        ),
+    )
+    return AffiliateRedeemState.WAIT_USDT_CONFIRM
+
+
+async def confirm_usdt_redeem(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await safe_answer_query(query)
+    if query.data == "affiliate_redeem_usdt_cancel":
+        _cleanup_context(context)
+        await robust_edit_text(query.message, "🚫 USDT 兑换申请已取消。")
+        return ConversationHandler.END
+    if not _try_acquire_busy_lock(context):
+        await robust_edit_text(query.message, "⚠️ 当前已有兑换请求正在处理中。")
+        return AffiliateRedeemState.WAIT_USDT_CONFIRM
+    try:
+        data = context.user_data.get(AFFILIATE_REDEEM_FSM_KEY) or {}
+        tg_user = update.effective_user
+        internal_user_id = await _get_internal_user_id(update)
+        result = await request_affiliate_usdt_for_telegram_user(
+            telegram_user_id=tg_user.id,
+            username=tg_user.username,
+            full_name=tg_user.full_name,
+            language_code=tg_user.language_code,
+            amount_usdt=data["amount_usdt"],
+            payout_address=data["payout_address"],
+            idempotency_key=f"tg_affiliate_usdt:{internal_user_id}:{uuid.uuid4().hex}",
+        )
+        await robust_edit_text(
+            query.message,
+            (
+                "✅ **USDT 兑换申请已提交**\n\n"
+                f"申请编号：`{result.redeem_id}`\n"
+                f"冻结返佣：`{result.amount_usdt:.4f} USDT`\n"
+                f"剩余可用：`{result.balance.available_usdt:.4f} USDT`\n"
+                "管理员处理后会通过 Bot 通知您。"
+            ),
+            parse_mode="Markdown",
+            reply_markup=_build_followup_keyboard(),
+        )
+        _cleanup_context(context)
+        return ConversationHandler.END
+    except (
+        AffiliateUsdtRedeemConflictError,
+        AffiliateUsdtRedeemInsufficientBalanceError,
+        ValueError,
+    ) as exc:
+        await robust_edit_text(query.message, f"❌ 申请失败：{exc}")
+        _cleanup_context(context)
+        return ConversationHandler.END
+    except Exception:
+        logger.exception("TG affiliate USDT redeem request failed")
+        await robust_edit_text(query.message, "❌ 系统繁忙，请稍后重试。")
+        _cleanup_context(context)
+        return ConversationHandler.END
+    finally:
+        _release_busy_lock(context)
 
 
 async def _get_internal_user_id(update: Update) -> int:
@@ -278,9 +424,25 @@ def get_affiliate_redeem_fsm_handler() -> ConversationHandler:
             CallbackQueryHandler(
                 start_custom_credits_redeem,
                 pattern="^affiliate_redeem_credits_custom$",
-            )
+            ),
+            CallbackQueryHandler(
+                start_usdt_redeem,
+                pattern="^affiliate_redeem_usdt_start$",
+            ),
         ],
         states={
+            AffiliateRedeemState.WAIT_USDT_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_usdt_amount),
+            ],
+            AffiliateRedeemState.WAIT_USDT_ADDRESS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_usdt_address),
+            ],
+            AffiliateRedeemState.WAIT_USDT_CONFIRM: [
+                CallbackQueryHandler(
+                    confirm_usdt_redeem,
+                    pattern="^affiliate_redeem_usdt_(confirm|cancel)$",
+                ),
+            ],
             AffiliateRedeemState.WAIT_CREDITS_AMOUNT: [
                 CallbackQueryHandler(
                     handle_input_navigation,

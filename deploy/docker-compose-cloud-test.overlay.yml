@@ -44,6 +44,15 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       central-api: {condition: service_healthy}
+  dashboard-backend:
+    ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8043:8043"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  dashboard-frontend:
+    ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8086:8086"]
+    depends_on:
+      dashboard-backend: {condition: service_healthy}
   qqcc-config-backend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"]
   qqcc-config-frontend:

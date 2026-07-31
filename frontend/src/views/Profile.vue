@@ -96,19 +96,26 @@ const { checkinLoading, handleCheckin } = useDailyCheckin({
 const {
   redeemCreditsLoading,
   redeemMembershipLoading,
+  redeemUsdtLoading,
   showRedeemCreditsModal,
   showRedeemMembershipModal,
+  showRedeemUsdtModal,
   redeemCreditsForm,
   redeemMembershipForm,
+  redeemUsdtForm,
+  usdtRedeemRecords,
   redeemCreditsPackages,
   membershipRedeemOptions,
   availableCommissionUsdt,
+  frozenCommissionUsdt,
   totalCommissionUsdt,
   spentCommissionUsdt,
   openRedeemCreditsModal,
   openRedeemMembershipModal,
+  openRedeemUsdtModal,
   handleRedeemCredits,
-  handleRedeemMembership
+  handleRedeemMembership,
+  handleRedeemUsdt
 } = useAffiliateRedeem({
   user: currentUser,
   refreshUser: authStore.fetchUser
@@ -136,6 +143,7 @@ const { quickActions } = useProfileQuickActions({
   router,
   openRedeemCreditsModal,
   openRedeemMembershipModal,
+  openRedeemUsdtModal,
   handleBindPasswordModalOpen,
   openFollowingModal: () => {
     showFollowingModal.value = true
@@ -214,15 +222,21 @@ onMounted(async () => {
       :is-mobile="isMobile"
       v-model:show-redeem-credits-modal="showRedeemCreditsModal"
       v-model:show-redeem-membership-modal="showRedeemMembershipModal"
+      v-model:show-redeem-usdt-modal="showRedeemUsdtModal"
       :redeem-credits-loading="redeemCreditsLoading"
       :redeem-membership-loading="redeemMembershipLoading"
+      :redeem-usdt-loading="redeemUsdtLoading"
       :redeem-credits-form="redeemCreditsForm"
       :redeem-membership-form="redeemMembershipForm"
+      :redeem-usdt-form="redeemUsdtForm"
+      :usdt-redeem-records="usdtRedeemRecords"
       :redeem-credits-packages="redeemCreditsPackages"
       :membership-redeem-options="membershipRedeemOptions"
       :available-commission-usdt="availableCommissionUsdt"
+      :frozen-commission-usdt="frozenCommissionUsdt"
       :handle-redeem-credits="handleRedeemCredits"
       :handle-redeem-membership="handleRedeemMembership"
+      :handle-redeem-usdt="handleRedeemUsdt"
     />
 
     <ProfilePasswordOverlay

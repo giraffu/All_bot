@@ -15,6 +15,7 @@ AllBot 的 Web 静态站统一由 Cloudflare Pages 承载，API、支付、Worke
 | `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 测试 RunPod Central |
 | `qqcc-admin.aivison.it.com` | Tunnel + Access | 正式 QQCC 管理后台 |
 | `qqcc-admin-test.aivison.it.com` | Tunnel + Access | 测试 QQCC 管理后台 |
+| `admin-test.aivison.it.com` | Tunnel + Access | 测试 Dashboard 管理后台 |
 | `private-bot.aivison.it.com` | Cloudflare Tunnel | 私有 Bot owner WebApp |
 | `analytics.aivison.it.com` | Tunnel + Access | 本地只读分析平台 |
 | Telegram Local API | 独立 VPS `69.63.220.115` | Bot API `8081` 与文件服务 `8082` |

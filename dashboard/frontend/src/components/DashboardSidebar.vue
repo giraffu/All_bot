@@ -50,6 +50,7 @@ const emit = defineEmits([
         v-for="item in menuItems"
         :key="item.key"
         :disabled="item.disabled"
+        @click="emit('update:activeTab', [item.key])"
       >
         <template #icon>
           <component :is="item.icon" />

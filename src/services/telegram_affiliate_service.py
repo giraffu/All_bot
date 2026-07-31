@@ -9,6 +9,7 @@ from src.services.affiliate_redeem_service import (
     redeem_affiliate_balance_to_credits,
     redeem_affiliate_balance_to_membership,
 )
+from src.services.affiliate_usdt_redeem_service import create_affiliate_usdt_redeem
 
 
 async def resolve_internal_user_id_for_telegram_user(
@@ -88,5 +89,31 @@ async def redeem_affiliate_membership_for_telegram_user(
             session,
             user_id=internal_user_id,
             option_key=option_key,
+            idempotency_key=idempotency_key,
+        )
+
+
+async def request_affiliate_usdt_for_telegram_user(
+    *,
+    telegram_user_id: int,
+    amount_usdt: Decimal,
+    payout_address: str,
+    idempotency_key: str,
+    username: str | None = None,
+    full_name: str | None = None,
+    language_code: str | None = None,
+):
+    internal_user_id = await resolve_internal_user_id_for_telegram_user(
+        telegram_user_id=telegram_user_id,
+        username=username,
+        full_name=full_name,
+        language_code=language_code,
+    )
+    async with AsyncSessionLocal() as session:
+        return await create_affiliate_usdt_redeem(
+            session,
+            user_id=internal_user_id,
+            amount_usdt=amount_usdt,
+            payout_address=payout_address,
             idempotency_key=idempotency_key,
         )

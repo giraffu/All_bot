@@ -1,11 +1,19 @@
 import os
 from decimal import Decimal, ROUND_HALF_UP
 
+from pytoniq_core import Address
+
 REDEEM_USDT_QUANT = Decimal("0.0001")
+AFFILIATE_USDT_REDEEM_MIN_AMOUNT = Decimal("5.0000")
 REDEEM_CREDITS_QUANT = Decimal("1")
 AFFILIATE_REDEEM_ROUNDING_MODE = "FIXED_PACKAGE"
 AFFILIATE_REDEEM_TYPE_CREDITS = "CREDITS"
 AFFILIATE_REDEEM_TYPE_MEMBERSHIP = "MEMBERSHIP"
+AFFILIATE_REDEEM_TYPE_USDT = "USDT"
+AFFILIATE_REDEEM_OPTION_USDT_TON = "USDT_TON"
+AFFILIATE_REDEEM_NETWORK_TON = "TON"
+AFFILIATE_REDEEM_PENDING = "PENDING"
+AFFILIATE_REDEEM_REJECTED = "REJECTED"
 AFFILIATE_REDEEM_OPTION_FLEXIBLE_USDT = "FLEXIBLE_USDT"
 AFFILIATE_REDEEM_SUCCESS = "SUCCESS"
 AFFILIATE_MEMBERSHIP_REDEEM_ENABLED_ENV = "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED"
@@ -95,6 +103,31 @@ def normalize_redeem_amount_usdt(amount_usdt: Decimal) -> Decimal:
     if normalized <= 0:
         raise ValueError("amount_usdt must be positive")
     return normalized
+
+
+def normalize_usdt_redeem_amount(amount_usdt: Decimal) -> Decimal:
+    normalized = Decimal(str(amount_usdt)).quantize(REDEEM_USDT_QUANT)
+    if normalized < AFFILIATE_USDT_REDEEM_MIN_AMOUNT:
+        raise ValueError("USDT 兑换金额必须不少于 5.0000 USDT")
+    return normalized
+
+
+def normalize_usdt_payout_address(value: str) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        raise ValueError("TON 收款地址不能为空")
+    try:
+        address = Address(raw_value)
+    except Exception as exc:
+        raise ValueError("TON 收款地址无效") from exc
+    if address.is_test_only:
+        raise ValueError("TON 收款地址必须是主网地址")
+    return address.to_str(
+        is_user_friendly=True,
+        is_url_safe=True,
+        is_bounceable=False,
+        is_test_only=False,
+    )
 
 
 def build_exchange_rate_snapshot(amount_usdt: Decimal, credits_granted: int) -> str:

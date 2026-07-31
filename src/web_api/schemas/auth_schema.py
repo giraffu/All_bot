@@ -50,6 +50,7 @@ class InvitationRechargeStats(BaseModel):
     total_commission_usdt: float = 0.0
     spent_commission_usdt: float = 0.0
     available_balance_usdt: float = 0.0
+    frozen_commission_usdt: float = 0.0
 
 
 class BreakthroughConditionDTO(BaseModel):
