@@ -99,6 +99,15 @@ SSH_BATCH_OPTIONS = (
     "StrictHostKeyChecking=accept-new",
 )
 
+
+def _release_profile_for_slot(slot_profile: str) -> str:
+    """Translate LAN runtime profile ids to immutable release module ids."""
+
+    return {
+        "img2img_lora": "img2img",
+        "all": "lan_all",
+    }.get(slot_profile, slot_profile)
+
 ENV_ALLOWLIST = {
     "AGENT_SECRET_TOKEN",
     "MINIO_ENDPOINT",
@@ -1769,9 +1778,7 @@ class LanAioProdOps:
     ) -> dict[str, Any]:
         """Recreate one LAN slot from an exact release digest with local rollback."""
 
-        release_profile = {
-            "img2img_lora": "img2img",
-        }.get(slot.target_profile_id, slot.target_profile_id)
+        release_profile = _release_profile_for_slot(slot.target_profile_id)
         if release_profile != resolved["profile"]:
             raise RuntimeError(
                 "release profile does not match selected LAN slot: "
@@ -2223,9 +2230,7 @@ class LanAioProdOps:
     ) -> dict[str, Any]:
         """Start one exact release digest for validation without enabling intake."""
 
-        release_profile = {
-            "img2img_lora": "img2img",
-        }.get(slot.target_profile_id, slot.target_profile_id)
+        release_profile = _release_profile_for_slot(slot.target_profile_id)
         if release_profile != resolved["profile"]:
             raise RuntimeError(
                 "release profile does not match selected LAN slot: "

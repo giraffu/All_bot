@@ -10,6 +10,7 @@ from ops.gpu_pool_controller.config_loader import load_controller_config
 from ops.gpu_pool_controller.lan_aio_prod import (
     LanAioProdOps,
     MANAGED_MUTATION_ACTIONS,
+    _release_profile_for_slot,
     assert_prod_compose,
     load_lan_aio_prod_slots,
     main as lan_aio_main,
@@ -70,6 +71,18 @@ SCAIL2_FLEX_TASK_TYPES = (
     "img2img",
     "img2img_lora",
 )
+
+
+@pytest.mark.parametrize(
+    ("slot_profile", "release_profile"),
+    [
+        ("img2img_lora", "img2img"),
+        ("all", "lan_all"),
+        ("ltx_unified", "ltx_unified"),
+    ],
+)
+def test_lan_release_profile_mapping(slot_profile, release_profile):
+    assert _release_profile_for_slot(slot_profile) == release_profile
 
 
 def test_gpu002_scail2_flex_renders_preferred_queue_without_fallback_prefetch():
