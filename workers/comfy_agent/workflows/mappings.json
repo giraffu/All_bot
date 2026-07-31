@@ -83,6 +83,8 @@
         "prompt_input": "text",
         "negative_prompt": "29",
         "negative_prompt_input": "text",
+        "seed": "125",
+        "seed_input": "seed",
         "length": "18",
         "length_input": "Xi",
         "width": "19",
@@ -226,6 +228,8 @@
         "prompt_input": "text",
     "negative_prompt": "29",
     "negative_prompt_input": "text",
+    "seed": "123",
+    "seed_input": "noise_seed",
     "character_sheet": "270",
         "character_sheet_input": "image"
     },
