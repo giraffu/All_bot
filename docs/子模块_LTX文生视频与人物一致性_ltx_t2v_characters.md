@@ -181,6 +181,8 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 成年人、完全裸体、单一人物、纯白背景和明确视角，不再保留侧脸近景与 3/4 侧脸
 槽位。API presenter 会把数据库中完全等于旧版黑底默认词的历史 prompt 映射为
 对应白底默认词，使现有角色刷新后可直接重生；用户自行编辑过的黑底提示保持原样。
+练功房 `CharacterReferenceWorkbench` 的新草稿占位词必须与服务端四条白底默认词
+保持一致，不能在前端重复保留旧黑底词。
 
 每个子图都是独立的标准生成任务。`POST
 /api/characters/{id}/views/{view_type}/generate` 接受 `engine=free_edit |

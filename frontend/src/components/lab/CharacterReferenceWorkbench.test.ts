@@ -130,7 +130,8 @@ describe('CharacterReferenceWorkbench', () => {
     for (const prompt of Object.values(prompts) as string[]) {
       expect(prompt).toContain('同一位成年人')
       expect(prompt).toContain('完全裸体')
-      expect(prompt).toContain('纯黑背景')
+      expect(prompt).toContain('纯白背景')
+      expect(prompt).not.toContain('纯黑背景')
     }
   })
 
