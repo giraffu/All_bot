@@ -546,8 +546,23 @@ def _patch_ltx_t2v_workflow(
         ic_loader = workflow.get("195")
         if not isinstance(ic_loader, dict):
             raise ValueError("Ingredients loader node 195 missing")
+        sulphur_loader = workflow.get("258")
+        ic_model_source = ["127", 0]
+        if sulphur_loader is not None:
+            expected_sulphur_inputs = {
+                "model": ["127", 0],
+                "lora_name": LTX_T2V_SULPHUR_LORA,
+                "strength_model": 1.0,
+            }
+            if (
+                not isinstance(sulphur_loader, dict)
+                or sulphur_loader.get("class_type") != "LoraLoaderModelOnly"
+                or sulphur_loader.get("inputs") != expected_sulphur_inputs
+            ):
+                raise ValueError("invalid isolated Ingredients Sulphur loader node 258")
+            ic_model_source = ["258", 0]
         ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
-        ic_loader["inputs"]["model"] = ["127", 0]
+        ic_loader["inputs"]["model"] = ic_model_source
         ic_loader["inputs"]["strength_model"] = 1.0
         sheet = str(params.get("character_sheet") or "").strip()
         if not sheet:

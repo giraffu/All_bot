@@ -144,6 +144,70 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
 
 
+def test_ltx_t2v_ic_patcher_preserves_isolated_sulphur_validation_chain():
+    repo_root = Path(__file__).resolve().parents[2]
+    validation_workflow = json.loads(
+        (
+            repo_root
+            / "ops/gpu_pool_controller/validation_workflows/ltx_t2v"
+            / "04_dev_distilled_sulphur_ingredients_t2v.json"
+        ).read_text(encoding="utf-8")
+    )
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        validation_workflow,
+        {
+            "prompt": "scene",
+            "duration": 10,
+            "character_sheet": "owned-sheet.png",
+            "character_description": "an adult woman with short black hair",
+            "seed": 20260802,
+        },
+    )
+
+    assert patched["258"] == {
+        "inputs": {
+            "model": ["127", 0],
+            "lora_name": "ltx2.3/sulphur_lora_rank_768.safetensors",
+            "strength_model": 1.0,
+        },
+        "class_type": "LoraLoaderModelOnly",
+        "_meta": {"title": "Sulphur LoRA 1.0"},
+    }
+    assert patched["195"]["inputs"]["model"] == ["258", 0]
+    assert patched["196"]["inputs"]["iclora_model"] == ["195", 0]
+    assert patched["704"]["inputs"]["model"] == ["195", 0]
+    assert patched["273"]["inputs"]["amount"] == 241
+
+
+def test_ltx_t2v_ic_patcher_rejects_modified_isolated_sulphur_loader():
+    repo_root = Path(__file__).resolve().parents[2]
+    validation_workflow = json.loads(
+        (
+            repo_root
+            / "ops/gpu_pool_controller/validation_workflows/ltx_t2v"
+            / "04_dev_distilled_sulphur_ingredients_t2v.json"
+        ).read_text(encoding="utf-8")
+    )
+    validation_workflow["258"]["inputs"]["strength_model"] = 0.7
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+
+    with pytest.raises(ValueError, match="invalid isolated Ingredients Sulphur"):
+        patcher.patch_workflow(
+            "ltx_t2v_ic",
+            validation_workflow,
+            {
+                "prompt": "scene",
+                "duration": 5,
+                "character_sheet": "owned-sheet.png",
+                "character_description": "an adult woman",
+                "seed": 20260802,
+            },
+        )
+
+
 def test_ltx_t2v_ic_patcher_removes_reference_layout_sentences_from_identity_text():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
