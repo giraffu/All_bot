@@ -87,7 +87,7 @@ def test_character_description_is_required(description):
         CharacterBuildRequest(**payload)
 
 
-def test_character_view_catalog_exposes_four_official_nude_character_targets():
+def test_character_view_catalog_exposes_four_white_background_character_targets():
     assert [item["type"] for item in service.CHARACTER_VIEW_CATALOG] == [
         "face_front",
         "body_front",
@@ -102,7 +102,8 @@ def test_character_view_catalog_exposes_four_official_nude_character_targets():
         prompt = item["default_prompt"]
         assert "同一位成年人" in prompt
         assert "完全裸体" in prompt
-        assert "纯黑背景" in prompt
+        assert "纯白背景" in prompt
+        assert "纯黑背景" not in prompt
         assert not any("a" <= char.lower() <= "z" for char in prompt)
 
 
@@ -416,10 +417,10 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
 
     assert result["status"] == "ready"
     assert result["sheet_object_key"].endswith(
-        "/character-1/ingredients-character-panel-v2.png"
+        "/character-1/ingredients-character-panel-v3.png"
     )
     assert result["preview_url"].endswith(
-        "/character-1/ingredients-character-panel-v2.png"
+        "/character-1/ingredients-character-panel-v3.png"
     )
     assert upload.call_count == 1
     with Image.open(io.BytesIO(upload.call_args.args[0])) as panel:
@@ -428,6 +429,7 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         assert panel.getpixel((736, 448)) == (0, 128, 0)
         assert panel.getpixel((1056, 448)) == (0, 0, 255)
         assert panel.getpixel((1376, 448)) == (255, 255, 0)
+        assert panel.getpixel((600, 32)) == (255, 255, 255)
 
 
 @pytest.mark.asyncio
@@ -540,7 +542,7 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
                 status="ready",
                 description="an adult woman with short black hair",
                 sheet_object_key=(
-                    "bot-data/private/ingredients-character-panel-v2.png"
+                    "bot-data/private/ingredients-character-panel-v3.png"
                 ),
             ),
         ]
@@ -551,7 +553,7 @@ async def test_ready_character_resolution_rejects_non_ready_and_returns_owned_sh
         character_id="character-1",
     )
     assert ingredient.sheet_object_key == (
-        "bot-data/private/ingredients-character-panel-v2.png"
+        "bot-data/private/ingredients-character-panel-v3.png"
     )
     assert ingredient.description == "an adult woman with short black hair"
     db.commit.assert_awaited_once()
@@ -563,7 +565,7 @@ async def test_ready_character_resolution_rejects_obsolete_sheet_layout():
         id="character-1",
         user_id=123,
         status="ready",
-        sheet_object_key="bot-data/private/sheet.png",
+        sheet_object_key="bot-data/private/ingredients-character-panel-v2.png",
     )
     with pytest.raises(HTTPException, match="重新保存"):
         await service.resolve_ready_character_sheet(
