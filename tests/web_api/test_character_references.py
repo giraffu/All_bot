@@ -108,6 +108,46 @@ def test_character_view_catalog_exposes_four_white_background_character_targets(
 
 
 @pytest.mark.asyncio
+async def test_character_list_upgrades_only_the_previous_default_black_prompt():
+    config = service.CHARACTER_VIEW_BY_TYPE["face_front"]
+    previous_default = config["default_prompt"].replace("纯白背景", "纯黑背景")
+    character = SimpleNamespace(
+        id="character-1",
+        name="Alice",
+        description="adult woman",
+        status="draft",
+        task_id="draft-1",
+        source_object_key="bot-data/source.png",
+        sheet_object_key=None,
+        created_at=None,
+        views=[
+            SimpleNamespace(
+                view_type="face_front",
+                prompt=previous_default,
+                status="ready",
+                task_id=None,
+                object_key=None,
+            ),
+            SimpleNamespace(
+                view_type="body_front",
+                prompt="自定义保留纯黑背景",
+                status="ready",
+                task_id=None,
+                object_key=None,
+            ),
+        ],
+    )
+
+    result = await service.list_characters(
+        db=_Session([[character]]),
+        user_id=123,
+    )
+
+    assert result[0]["views"][0]["prompt"] == config["default_prompt"]
+    assert result[0]["views"][1]["prompt"] == "自定义保留纯黑背景"
+
+
+@pytest.mark.asyncio
 async def test_character_draft_upload_creates_editable_workspace_without_charging(
     monkeypatch,
 ):

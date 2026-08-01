@@ -138,10 +138,14 @@ def _presigned_object_url(value: str | None) -> str | None:
 
 def _view_response(row: CharacterReferenceView) -> dict:
     config = CHARACTER_VIEW_BY_TYPE[row.view_type]
+    prompt = str(row.prompt or "").strip()
+    previous_default = config["default_prompt"].replace("纯白背景", "纯黑背景")
+    if prompt == previous_default:
+        prompt = config["default_prompt"]
     return {
         "type": row.view_type,
         "label": config["label"],
-        "prompt": row.prompt,
+        "prompt": prompt,
         "default_prompt": config["default_prompt"],
         "status": row.status,
         "task_id": row.task_id,
