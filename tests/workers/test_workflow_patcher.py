@@ -120,7 +120,12 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["272"]["inputs"]["crop"] == "disabled"
     assert patched["26:39"]["inputs"]["width"] == ["5100", 0]
     assert patched["26:39"]["inputs"]["height"] == ["5100", 1]
-    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
+    assert patched["26:91"]["class_type"] == "AllBotLTXCropGuideLatentsExact"
+    assert patched["26:91"]["inputs"] == {
+        "latent": ["26:153", 0],
+        "output_frames": 481,
+    }
+    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 0]
     assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
     assert patched["26:39"]["inputs"]["length"] == 481
     assert patched["26:40"]["inputs"]["frames_number"] == 481

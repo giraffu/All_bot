@@ -206,11 +206,10 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
         },
         "26:91": {
             "inputs": {
-                "positive": ["272", 0],
-                "negative": ["272", 1],
                 "latent": ["26:153", 0],
+                "output_frames": 121,
             },
-            "class_type": "LTXVCropGuides",
+            "class_type": "AllBotLTXCropGuideLatentsExact",
         },
         "26:154": {
             "inputs": {"samples": ["26:153", 1], "audio_vae": ["282", 0]},
@@ -219,7 +218,7 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
         "26:149": {
             "inputs": {
                 "vae": ["283", 0],
-                "latents": ["26:91", 2],
+                "latents": ["26:91", 0],
                 "horizontal_tiles": 2,
                 "vertical_tiles": 2,
                 "overlap": 6,

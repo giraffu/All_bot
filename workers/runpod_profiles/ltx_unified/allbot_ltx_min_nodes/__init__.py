@@ -206,6 +206,45 @@ class IntToFloat:
         return (float(int_value),)
 
 
+class AllBotLTXCropGuideLatentsExact:
+    """Remove appended Ingredients guide latents using the requested output boundary."""
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, dict[str, Any]]:
+        return {
+            "required": {
+                "latent": ("LATENT",),
+                "output_frames": (
+                    "INT",
+                    {"default": 121, "min": 1, "max": 10000, "step": 8},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    RETURN_NAMES = ("latent",)
+    FUNCTION = "crop"
+    CATEGORY = "AllBot/LTX/conditioning"
+
+    def crop(self, latent: dict[str, Any], output_frames: int) -> tuple[dict[str, Any]]:
+        target_latents = ((int(output_frames) - 1) // 8) + 1
+        samples = latent.get("samples")
+        if samples is None or len(samples.shape) != 5:
+            raise ValueError("LTX latent samples must have shape B,C,T,H,W")
+        if int(samples.shape[2]) < target_latents:
+            raise ValueError(
+                "LTX latent is shorter than the requested output boundary: "
+                f"{samples.shape[2]} < {target_latents}"
+            )
+
+        cropped = dict(latent)
+        cropped["samples"] = samples[:, :, :target_latents, :, :]
+        noise_mask = latent.get("noise_mask")
+        if noise_mask is not None:
+            cropped["noise_mask"] = noise_mask[:, :, :target_latents, :, :]
+        return (cropped,)
+
+
 class SigmasSigmoid:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, Any]]:
@@ -345,6 +384,7 @@ NODE_CLASS_MAPPINGS = {
     "VRAMCleanup": VRAMCleanup,
     "Float": FloatLiteral,
     "IntToFloat": IntToFloat,
+    "AllBotLTXCropGuideLatentsExact": AllBotLTXCropGuideLatentsExact,
     "Sigmas Sigmoid": SigmasSigmoid,
     "MathExpression|pysssss": MathExpressionPysssss,
 }

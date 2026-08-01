@@ -549,10 +549,18 @@ def _patch_ltx_t2v_workflow(
         guide_inputs["frame_idx"] = 0
         guide_inputs["strength"] = 1.0
         guide_inputs["crop"] = "disabled"
+        crop = workflow.get("26:91")
+        if not isinstance(crop, dict):
+            raise ValueError("Ingredients exact crop node 26:91 missing")
+        crop["class_type"] = "AllBotLTXCropGuideLatentsExact"
+        crop["inputs"] = {
+            "latent": ["26:153", 0],
+            "output_frames": frame_count,
+        }
         decoder = workflow.get("26:149")
         if not isinstance(decoder, dict):
             raise ValueError("Ingredients video decoder node 26:149 missing")
-        decoder.setdefault("inputs", {})["latents"] = ["26:91", 2]
+        decoder.setdefault("inputs", {})["latents"] = ["26:91", 0]
         output = workflow.get("61")
         if not isinstance(output, dict):
             raise ValueError("Ingredients output node 61 missing")

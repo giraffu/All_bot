@@ -89,7 +89,10 @@ manifest 和专项文档读取，不在此维护快照。
 - 人物参考表属于 Ingredients 条件输入而非交付帧。IC workflow 必须按官方
   reference-sheet 契约使用完整黑底单一 character ingredient 面板，将其复制成与输出同帧数的静态
   参考视频并在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`；可见 I2V 条件保持
-  `bypass=true`，采样后必须由 `LTXVCropGuides` 删除 guide latent。禁止把人物表
+  `bypass=true`。采样后必须按目标输出帧数精确保留
+  `((frames - 1) // 8) + 1` 个视频 latent，不能依赖 `LTXVCropGuides` 从完整
+  空间 token 数反推 guide 长度；Ingredients 的缩小参考 latent 会使该反推少裁。
+  禁止把人物表
   设为首帧、只裁单张身份子图，或生成额外尾段后再二次转码裁除。
 - Ingredients 正向提示必须使用官方可执行 workflow 的
   `### Reference Sheet Description` / `### Target Description` 两段标题，准确

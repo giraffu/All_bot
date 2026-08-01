@@ -111,8 +111,11 @@ chunk feed-forward 或 preview override。worker 将单一人物 ingredient 面�
 `LTXAddVideoICLoRAGuide`。
 `LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
 guide strength 固定 `1.0`、crop 固定 `disabled`，latent downscale factor 从
-Ingredients LoRA 元数据读取。采样后的 `LTXVCropGuides` 删除追加的 guide latent，
-再直接 VAE 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
+Ingredients LoRA 元数据读取。采样后的 `AllBotLTXCropGuideLatentsExact` 不根据
+空间 token 数猜测 guide 长度，而是按目标输出帧数精确保留
+`((frames - 1) // 8) + 1` 个视频 latent，再直接 VAE 解码。这样可正确裁除因
+Ingredients 下采样而追加的参考 latent，避免参考表进入成片；音频 latent 在裁除前
+已独立拆分，不受影响。交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
 `euler_ancestral_cfg_pp`、CFG 1 和官方 9 个 manual sigmas（8 次采样）。
 Web 可传入非负 `seed` 复现固定种子任务；该字段必须经过 task dispatcher、
 Web API client 与 Central `LtxT2VRequest` 原样进入 Worker。未指定时 Worker 只生成
