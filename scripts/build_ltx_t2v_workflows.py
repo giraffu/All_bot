@@ -17,13 +17,11 @@ IC_NAME = "LTX 2.3 Sulphur Ingredients T2V.json"
 CHARACTER_NAME = "Character Reference Six Views.json"
 
 DEV_MODEL = "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+OFFICIAL_FAST_CHECKPOINT = "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
+OFFICIAL_FAST_TEXT_ENCODER = "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
 DISTILLED = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 SULPHUR = "ltx2.3/sulphur_lora_rank_768.safetensors"
 INGREDIENTS = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
-OFFICIAL_INGREDIENTS_SIGMAS = (
-    "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, "
-    "0.421875, 0.0"
-)
 
 
 def _replace_refs(workflow: dict, old: str, new: str, output: int = 0) -> None:
@@ -36,47 +34,51 @@ def _replace_refs(workflow: dict, old: str, new: str, output: int = 0) -> None:
 
 
 def build_ingredients_t2v(*, sulphur: bool) -> dict:
-    """Build the executable Lightricks single-stage Ingredients graph.
+    """Build the Comfy official fast Ingredients graph.
 
-    The model/text/VAE loaders intentionally reuse the model layout already present
-    in the AllBot GPU profiles. Everything after those loaders mirrors the official
-    distilled Ingredients workflow, with VHS retained only as the delivery adapter.
+    The character-sheet loader/resize remains AllBot-owned. Model loading, IC-LoRA
+    parameter extraction, guide injection and sampling mirror the Comfy template;
+    VHS remains the worker delivery adapter.
     """
-    source = json.loads((LOCAL / "LTX 2.3 I2V 6.1.json").read_text())
-    model_after_distilled = "256"
-    model_before_ingredients = "258" if sulphur else model_after_distilled
+    model_before_ingredients = "258" if sulphur else "127"
     workflow = {
-        "257": copy.deepcopy(source["257"]),
-        "189": copy.deepcopy(source["189"]),
-        "283": copy.deepcopy(source["283"]),
-        "282": copy.deepcopy(source["282"]),
-        "256": {
-            "inputs": {
-                "model": ["257", 0],
-                "lora_name": DISTILLED,
-                "strength_model": 0.5,
-            },
-            "class_type": "LoraLoaderModelOnly",
-            "_meta": {"title": "Official distilled LoRA 0.5"},
+        "127": {
+            "inputs": {"ckpt_name": OFFICIAL_FAST_CHECKPOINT},
+            "class_type": "CheckpointLoaderSimple",
         },
-        "271": {
+        "126": {
+            "inputs": {"ckpt_name": OFFICIAL_FAST_CHECKPOINT},
+            "class_type": "LTXVAudioVAELoader",
+        },
+        "103": {
+            "inputs": {
+                "text_encoder": OFFICIAL_FAST_TEXT_ENCODER,
+                "ckpt_name": OFFICIAL_FAST_CHECKPOINT,
+                "device": "default",
+            },
+            "class_type": "LTXAVTextEncoderLoader",
+        },
+        "195": {
             "inputs": {
                 "model": [model_before_ingredients, 0],
                 "lora_name": INGREDIENTS,
                 "strength_model": 1.0,
             },
-            "class_type": "LTXICLoRALoaderModelOnly",
-            "_meta": {"title": "Official Ingredients IC-LoRA 1.0"},
+            "class_type": "LoraLoaderModelOnly",
+        },
+        "196": {
+            "inputs": {"iclora_model": ["195", 0]},
+            "class_type": "GetICLoRAParameters",
         },
         "28": {
-            "inputs": {"text": "scene", "clip": ["189", 0]},
+            "inputs": {"text": "scene", "clip": ["103", 0]},
             "class_type": "CLIPTextEncode",
             "_meta": {"title": "Positive Video"},
         },
         "29": {
             "inputs": {
                 "text": "worst quality, inconsistent motion, blurry, jittery, distorted",
-                "clip": ["189", 0],
+                "clip": ["103", 0],
             },
             "class_type": "CLIPTextEncode",
             "_meta": {"title": "Negative Video"},
@@ -113,9 +115,9 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
             "class_type": "RepeatImageBatch",
             "_meta": {"title": "Static reference video"},
         },
-        "275": {
-            "inputs": {"image": ["274", 0], "img_compression": 18},
-            "class_type": "LTXVPreprocess",
+        "712": {
+            "inputs": {"width": 512, "height": 512, "batch_size": 1, "color": 0},
+            "class_type": "EmptyImage",
         },
         "26:39": {
             "inputs": {
@@ -126,108 +128,86 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
             },
             "class_type": "EmptyLTXVLatentVideo",
         },
-        "276": {
+        "198": {
             "inputs": {
-                "vae": ["283", 0],
-                "image": ["275", 0],
+                "vae": ["127", 2],
+                "image": ["712", 0],
                 "latent": ["26:39", 0],
                 "strength": 1.0,
                 "bypass": True,
             },
-            "class_type": "LTXVImgToVideoConditionOnly",
+            "class_type": "LTXVImgToVideoInplace",
         },
-        "272": {
+        "115": {
             "inputs": {
                 "positive": ["26:46", 0],
                 "negative": ["26:46", 1],
-                "vae": ["283", 0],
-                "latent": ["276", 0],
+                "vae": ["127", 2],
+                "latent": ["198", 0],
                 "image": ["273", 0],
                 "frame_idx": 0,
                 "strength": 1.0,
-                "latent_downscale_factor": ["271", 1],
-                "crop": "disabled",
-                "use_tiled_encode": False,
-                "tile_size": 256,
-                "tile_overlap": 64,
+                "iclora_parameters": ["196", 0],
             },
-            "class_type": "LTXAddVideoICLoRAGuide",
+            "class_type": "LTXVAddGuide",
         },
         "26:40": {
             "inputs": {
                 "frames_number": 121,
                 "frame_rate": 24,
                 "batch_size": 1,
-                "audio_vae": ["282", 0],
+                "audio_vae": ["126", 0],
             },
             "class_type": "LTXVEmptyLatentAudio",
         },
-        "26:45": {
+        "119": {
             "inputs": {
-                "video_latent": ["272", 2],
+                "video_latent": ["115", 2],
                 "audio_latent": ["26:40", 0],
             },
             "class_type": "LTXVConcatAVLatent",
         },
-        "123": {
-            "inputs": {"noise_seed": -1},
-            "class_type": "RandomNoise",
-        },
-        "26:49": {
+        "704": {
             "inputs": {
-                "cfg": 1,
-                "model": ["271", 0],
-                "positive": ["272", 0],
-                "negative": ["272", 1],
+                "model": ["195", 0],
+                "positive": ["115", 0],
+                "negative": ["115", 1],
+                "latent_image": ["119", 0],
+                "seed": -1,
+                "steps": 8,
+                "cfg": 1.0,
+                "sampler_name": "euler_ancestral",
+                "scheduler": "linear_quadratic",
+                "denoise": 1.0,
             },
-            "class_type": "CFGGuider",
+            "class_type": "KSampler",
         },
-        "26:50": {
-            "inputs": {"sampler_name": "euler_ancestral_cfg_pp"},
-            "class_type": "KSamplerSelect",
-        },
-        "26:292": {
-            "inputs": {"sigmas": OFFICIAL_INGREDIENTS_SIGMAS},
-            "class_type": "ManualSigmas",
-        },
-        "26:51": {
-            "inputs": {
-                "noise": ["123", 0],
-                "guider": ["26:49", 0],
-                "sampler": ["26:50", 0],
-                "sigmas": ["26:292", 0],
-                "latent_image": ["26:45", 0],
-            },
-            "class_type": "SamplerCustomAdvanced",
-        },
-        "26:153": {
-            "inputs": {"av_latent": ["26:51", 0]},
+        "121": {
+            "inputs": {"av_latent": ["704", 0]},
             "class_type": "LTXVSeparateAVLatent",
         },
-        "26:91": {
+        "106": {
             "inputs": {
-                "positive": ["272", 0],
-                "negative": ["272", 1],
-                "latent": ["26:153", 0],
+                "positive": ["115", 0],
+                "negative": ["115", 1],
+                "latent": ["121", 0],
             },
             "class_type": "LTXVCropGuides",
         },
-        "26:154": {
-            "inputs": {"samples": ["26:153", 1], "audio_vae": ["282", 0]},
+        "107": {
+            "inputs": {"samples": ["121", 1], "audio_vae": ["126", 0]},
             "class_type": "LTXVAudioVAEDecode",
         },
-        "26:149": {
+        "105": {
             "inputs": {
-                "vae": ["283", 0],
-                "latents": ["26:91", 2],
-                "horizontal_tiles": 2,
-                "vertical_tiles": 2,
-                "overlap": 6,
-                "last_frame_fix": False,
-                "working_device": "auto",
-                "working_dtype": "auto",
+                "samples": ["106", 2],
+                "vae": ["127", 2],
+                "tile_size": 768,
+                "overlap": 64,
+                "temporal_size": 4096,
+                "temporal_overlap": 64,
             },
-            "class_type": "LTXVTiledVAEDecode",
+            "class_type": "VAEDecodeTiled",
         },
         "61": {
             "inputs": {
@@ -241,18 +221,16 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
                 "trim_to_audio": False,
                 "pingpong": False,
                 "save_output": True,
-                "images": ["26:149", 0],
-                "audio": ["26:154", 0],
+                "images": ["105", 0],
+                "audio": ["107", 0],
             },
             "class_type": "VHS_VideoCombine",
         },
     }
-    workflow["257"]["inputs"]["model_name"] = DEV_MODEL
-    workflow["257"]["inputs"]["weight_dtype"] = "fp8_e4m3fn"
     if sulphur:
         workflow["258"] = {
             "inputs": {
-                "model": [model_after_distilled, 0],
+                "model": ["127", 0],
                 "lora_name": SULPHUR,
                 "strength_model": 1.0,
             },

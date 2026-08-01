@@ -62,7 +62,7 @@ def test_unified_manifest_deduplicates_shared_models_and_excludes_full_checkpoin
     )
     registry.write_bundle_manifest(
         bundle="ltx_t2v_runtime",
-        version="2026-07-22",
+        version="2026-08-01-comfy-fast",
         profiles=["ltx_t2v"],
         source={},
         files=[
@@ -106,13 +106,10 @@ def test_unified_release_constants_pin_the_approved_extracted_lora():
     module = _load_module()
 
     assert module.BUNDLE == "ltx_unified_runtime"
-    assert module.VERSION == "2026-07-29"
+    assert module.VERSION == "2026-08-01-comfy-fast"
     assert (
         module.EXTRACTED_LORA["sha256"]
         == "ac98553c007ea949603765d0e2a4ed97c6d5758bb2bb4d5e0c2cfdce0e4b3e76"
     )
     assert module.EXTRACTED_LORA["size_bytes"] == 3_162_331_448
-    assert "7170ebca094fcb73e8f621e88ee38fc0524c9fcf" in module.EXTRACTED_LORA[
-        "url"
-    ]
-
+    assert "7170ebca094fcb73e8f621e88ee38fc0524c9fcf" in module.EXTRACTED_LORA["url"]

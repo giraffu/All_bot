@@ -39,17 +39,20 @@ bundles:
     files: []
 
   ltx_t2v_runtime:
-    version: 2026-07-22
+    version: 2026-08-01-comfy-fast
     profiles:
       - ltx_t2v
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/ltx_t2v_runtime/2026-07-22/files
-      discovered_size_gb: 64.8
+      model_dir: /srv/allbot/model-registry/bundles/ltx_t2v_runtime/2026-08-01-comfy-fast/files
+      discovered_size_gb: 98.4
       import_status: gated_pending
-      notes: Official FP8 dev plus fixed distilled, Sulphur and gated Ingredients LoRAs. Shared Gemma, projection, VAEs and spatial upscaler are content-addressed hardlinks; no model is baked into the image.
+      notes: Official Comfy fast distilled FP8 checkpoint and FP4 Gemma plus the plain T2V dev/Sulphur stack and gated Ingredients LoRA. Shared projection, VAEs and spatial upscaler are content-addressed hardlinks; no model is baked into the image.
     files:
+      - relative_path: checkpoints/LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors
+        sha256: d9646b6f2d5c42d337b23671634c43bfeece6989644f51b4a3aa088465ccd3b2
+        size_bytes: 29531884062
       - relative_path: diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors
         sha256: 28606c5b5a06ce56f896d4dfcb20f212739e07a68fbe48e53638188449d26450
         size_bytes: 29145431166
@@ -65,6 +68,9 @@ bundles:
       - relative_path: clip/LTX 2.3/gemma_3_12B_it_fp8_e4m3fn.safetensors
         sha256: 38c8ca98d01afc93a04f9fb18255755884b9eb52b7b40080076e9c892609751b
         size_bytes: 13210008986
+      - relative_path: clip/LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors
+        sha256: aaca463d11e6d8d2a4bdb0d6299214c15ef78a3f73e0ef8113d5a9d0219b3f6d
+        size_bytes: 9447702218
       - relative_path: clip/LTX 2.3/ltx-2.3_text_projection_bf16.safetensors
         sha256: 911d59bb4cb7708179c9a0045ea0fe41212ecfb77aed3a02702b7c0a8274911f
         size_bytes: 2312149072
@@ -82,14 +88,14 @@ bundles:
         size_bytes: 23531296
 
   ltx_unified_runtime:
-    version: 2026-07-29
+    version: 2026-08-01-comfy-fast
     profiles:
       - ltx_unified
     source:
       node_id: local-model-registry
       comfy_id: content-addressed-union
-      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-07-29/files
-      discovered_size_gb: 92.78
+      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-08-01-comfy-fast/files
+      discovered_size_gb: 129.08
       import_status: prepared_by_script
       notes: Deduplicated union of the LTX video and T2V bundles. Full 10Eros checkpoints are excluded; the pinned v1.2 fro99-avgrank91 extracted LoRA is a branch asset.
     files: []

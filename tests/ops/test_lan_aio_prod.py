@@ -191,7 +191,9 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
 
     assert profile.task_types == LTX_UNIFIED_TASK_TYPES
     assert profile.lan_model_workspace_key == "ltx_video"
-    assert profile.model_manifest_key == "ltx_unified/2026-07-29/manifest.json"
+    assert profile.model_manifest_key == (
+        "ltx_unified/2026-08-01-comfy-fast/manifest.json"
+    )
     assert profile.min_vram_gb == 24
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-ltx-unified"
@@ -313,7 +315,10 @@ def test_gpu226_all_profile_is_lan_only_and_renders_multi_manifest_pipeline():
     profile = config.profiles["all"]
     assert profile.task_types == LAN_ALL_TASK_TYPES
     assert len(profile.model_manifest_keys) == 6
-    assert "ltx_unified/2026-07-29/manifest.json" in profile.model_manifest_keys
+    assert (
+        "ltx_unified/2026-08-01-comfy-fast/manifest.json"
+        in profile.model_manifest_keys
+    )
     assert "ltx_video/2026-06-10/manifest.json" not in profile.model_manifest_keys
     assert "ltx_t2v/2026-07-22/manifest.json" not in profile.model_manifest_keys
     assert "ltx_unified_runtime" in profile.model_bundles

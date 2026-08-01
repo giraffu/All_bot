@@ -102,15 +102,15 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="ltx_t2v",
-        prefix="ltx_t2v/2026-07-22",
-        manifest_key="ltx_t2v/2026-07-22/manifest.json",
-        bundle_versions=(("ltx_t2v_runtime", "2026-07-22"),),
+        prefix="ltx_t2v/2026-08-01-comfy-fast",
+        manifest_key="ltx_t2v/2026-08-01-comfy-fast/manifest.json",
+        bundle_versions=(("ltx_t2v_runtime", "2026-08-01-comfy-fast"),),
     ),
     TargetSpec(
         name="ltx_unified",
-        prefix="ltx_unified/2026-07-29",
-        manifest_key="ltx_unified/2026-07-29/manifest.json",
-        bundle_versions=(("ltx_unified_runtime", "2026-07-29"),),
+        prefix="ltx_unified/2026-08-01-comfy-fast",
+        manifest_key="ltx_unified/2026-08-01-comfy-fast/manifest.json",
+        bundle_versions=(("ltx_unified_runtime", "2026-08-01-comfy-fast"),),
     ),
 )
 TARGETS_BY_NAME = {
@@ -510,7 +510,9 @@ def upload_all_task_models(
         verification_failures = []
         for entry in unique_entries.values():
             head = _head_object(client, bucket=bucket, key=str(entry["key"]))
-            metadata_sha = _metadata_value(head.get("Metadata"), "sha256") if head else ""
+            metadata_sha = (
+                _metadata_value(head.get("Metadata"), "sha256") if head else ""
+            )
             if (
                 not head
                 or int(head.get("ContentLength") or 0) != int(entry["size_bytes"])
@@ -559,8 +561,7 @@ def upload_all_task_models(
             if (
                 not manifest_head
                 or int(manifest_head.get("ContentLength") or 0) != len(body)
-                or _metadata_value(manifest_head.get("Metadata"), "sha256")
-                != checksum
+                or _metadata_value(manifest_head.get("Metadata"), "sha256") != checksum
             ):
                 raise RuntimeError(
                     f"LAN manifest HEAD verification failed: {manifest_key}"

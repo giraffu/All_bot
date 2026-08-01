@@ -84,16 +84,18 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
             "seed": 65608997764964,
         },
     )
-    assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
-    assert patched["257"]["inputs"]["model_name"] == (
-        "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+    assert patched["195"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
+    assert patched["127"]["inputs"]["ckpt_name"] == (
+        "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
     )
-    assert patched["257"]["inputs"]["weight_dtype"] == "fp8_e4m3fn"
-    assert patched["271"]["inputs"]["strength_model"] == 1.0
-    assert patched["123"]["inputs"]["noise_seed"] == 65608997764964
+    assert patched["103"]["inputs"]["text_encoder"] == (
+        "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
+    )
+    assert patched["195"]["inputs"]["strength_model"] == 1.0
+    assert patched["704"]["inputs"]["seed"] == 65608997764964
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
     assert "258" not in patched
-    assert patched["271"]["inputs"]["model"] == ["256", 0]
+    assert patched["195"]["inputs"]["model"] == ["127", 0]
     assert "277" not in patched
     assert "278" not in patched
     assert patched["273"]["class_type"] == "RepeatImageBatch"
@@ -107,25 +109,21 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         "resize_type.shorter_size": 448,
         "scale_method": "lanczos",
     }
-    assert patched["275"]["inputs"] == {
-        "image": ["274", 0],
-        "img_compression": 18,
-    }
-    assert patched["276"]["inputs"] == {
-        "vae": ["283", 0],
-        "image": ["275", 0],
+    assert patched["198"]["inputs"] == {
+        "vae": ["127", 2],
+        "image": ["712", 0],
         "latent": ["26:39", 0],
         "strength": 1.0,
         "bypass": True,
     }
-    assert patched["272"]["inputs"]["latent"] == ["276", 0]
-    assert patched["272"]["inputs"]["image"] == ["273", 0]
-    assert patched["272"]["inputs"]["frame_idx"] == 0
-    assert patched["272"]["inputs"]["crop"] == "disabled"
+    assert patched["115"]["inputs"]["latent"] == ["198", 0]
+    assert patched["115"]["inputs"]["image"] == ["273", 0]
+    assert patched["115"]["inputs"]["frame_idx"] == 0
+    assert patched["115"]["inputs"]["iclora_parameters"] == ["196", 0]
     assert patched["26:39"]["inputs"]["width"] == ["5100", 0]
     assert patched["26:39"]["inputs"]["height"] == ["5100", 1]
-    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
-    assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
+    assert patched["105"]["inputs"]["samples"] == ["106", 2]
+    assert patched["61"]["inputs"]["audio"] == ["107", 0]
     assert patched["26:39"]["inputs"]["length"] == 481
     assert patched["26:40"]["inputs"]["frames_number"] == 481
     prompt = patched["28"]["inputs"]["text"]
@@ -189,7 +187,7 @@ def test_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():
         },
     )
 
-    assert patched["123"]["inputs"]["noise_seed"] >= 0
+    assert patched["704"]["inputs"]["seed"] >= 0
 
 
 def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():

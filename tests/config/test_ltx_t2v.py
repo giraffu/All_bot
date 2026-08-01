@@ -98,14 +98,7 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
         ).read_text()
     )
 
-    assert workflow["256"]["class_type"] == "LoraLoaderModelOnly"
-    assert workflow["257"]["inputs"]["model_name"] == (
-        "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
-    )
-    assert workflow["256"]["inputs"]["model"] == ["257", 0]
-    assert workflow["256"]["inputs"]["strength_model"] == 0.5
     assert "258" not in workflow
-    assert workflow["271"]["inputs"]["model"] == ["256", 0]
     assert workflow["274"]["class_type"] == "ResizeImageMaskNode"
     assert workflow["274"]["inputs"] == {
         "input": ["270", 0],
@@ -121,39 +114,23 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     }
     assert "277" not in workflow
     assert "278" not in workflow
-    assert workflow["275"]["class_type"] == "LTXVPreprocess"
-    assert workflow["275"]["inputs"] == {
-        "image": ["274", 0],
-        "img_compression": 18,
-    }
-    assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
-    assert workflow["276"]["inputs"] == {
-        "vae": ["283", 0],
-        "image": ["275", 0],
+    assert workflow["198"]["class_type"] == "LTXVImgToVideoInplace"
+    assert workflow["198"]["inputs"] == {
+        "vae": ["127", 2],
+        "image": ["712", 0],
         "latent": ["26:39", 0],
         "strength": 1.0,
         "bypass": True,
     }
-    assert workflow["272"]["inputs"]["latent"] == ["276", 0]
-    assert workflow["272"]["inputs"]["image"] == ["273", 0]
-    assert workflow["272"]["inputs"]["frame_idx"] == 0
-    assert workflow["272"]["inputs"]["strength"] == 1.0
-    assert workflow["272"]["inputs"]["crop"] == "disabled"
+    assert workflow["115"]["inputs"]["latent"] == ["198", 0]
+    assert workflow["115"]["inputs"]["image"] == ["273", 0]
+    assert workflow["115"]["inputs"]["frame_idx"] == 0
+    assert workflow["115"]["inputs"]["strength"] == 1.0
     assert workflow["26:39"]["inputs"]["width"] == ["5100", 0]
     assert workflow["26:39"]["inputs"]["height"] == ["5100", 1]
-    # Ingredients follows the official single-stage path: crop the guide from
-    # the first pass and decode it directly instead of spatially upscaling the
-    # reference-sheet layout through the legacy second pass.
-    assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
-    assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
-    assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
-    assert workflow["26:50"]["inputs"]["sampler_name"] == "euler_ancestral_cfg_pp"
-    assert workflow["26:49"]["inputs"]["cfg"] == 1
-    assert workflow["26:292"]["class_type"] == "ManualSigmas"
-    assert workflow["26:292"]["inputs"]["sigmas"] == (
-        "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, "
-        "0.421875, 0.0"
-    )
+    assert workflow["106"]["inputs"]["latent"] == ["121", 0]
+    assert workflow["105"]["inputs"]["samples"] == ["106", 2]
+    assert workflow["61"]["inputs"]["audio"] == ["107", 0]
 
     forbidden = {
         "LTX2_NAG",
@@ -163,6 +140,8 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
         "TwoWaySwitch",
         "LTXVChunkFeedForward",
         "LTX2SamplingPreviewOverride",
+        "LTXICLoRALoaderModelOnly",
+        "LTXAddVideoICLoRAGuide",
     }
     assert not {node["class_type"] for node in workflow.values()} & forbidden
 
@@ -177,6 +156,69 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
             if isinstance(value, list) and value and value[0] in workflow:
                 pending.append(value[0])
     assert reachable == set(workflow)
+
+
+def test_generated_ingredients_workflow_matches_comfy_official_fast_pipeline():
+    import json
+    from pathlib import Path
+
+    workflow = json.loads(
+        Path(
+            "workers/comfy_agent/workflows/LTX 2.3 Sulphur Ingredients T2V.json"
+        ).read_text()
+    )
+
+    assert workflow["127"] == {
+        "inputs": {"ckpt_name": "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"},
+        "class_type": "CheckpointLoaderSimple",
+    }
+    assert workflow["126"] == {
+        "inputs": {"ckpt_name": "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"},
+        "class_type": "LTXVAudioVAELoader",
+    }
+    assert workflow["103"]["class_type"] == "LTXAVTextEncoderLoader"
+    assert workflow["103"]["inputs"] == {
+        "text_encoder": "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors",
+        "ckpt_name": "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors",
+        "device": "default",
+    }
+    assert workflow["195"] == {
+        "inputs": {
+            "model": ["127", 0],
+            "lora_name": "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors",
+            "strength_model": 1.0,
+        },
+        "class_type": "LoraLoaderModelOnly",
+    }
+    assert workflow["196"] == {
+        "inputs": {"iclora_model": ["195", 0]},
+        "class_type": "GetICLoRAParameters",
+    }
+    assert workflow["198"]["class_type"] == "LTXVImgToVideoInplace"
+    assert workflow["198"]["inputs"]["bypass"] is True
+    assert workflow["115"]["class_type"] == "LTXVAddGuide"
+    assert workflow["115"]["inputs"]["iclora_parameters"] == ["196", 0]
+    assert workflow["704"]["class_type"] == "KSampler"
+    assert workflow["704"]["inputs"] == {
+        "model": ["195", 0],
+        "positive": ["115", 0],
+        "negative": ["115", 1],
+        "latent_image": ["119", 0],
+        "seed": -1,
+        "steps": 8,
+        "cfg": 1.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "linear_quadratic",
+        "denoise": 1.0,
+    }
+    forbidden = {
+        "DiffusionModelLoaderKJ",
+        "LTXICLoRALoaderModelOnly",
+        "LTXAddVideoICLoRAGuide",
+        "ManualSigmas",
+        "SamplerCustomAdvanced",
+    }
+    assert not {node["class_type"] for node in workflow.values()} & forbidden
 
 
 def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
@@ -197,8 +239,8 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
         else:
             lora_inputs = workflow["256"]["inputs"]
             assert ("lora_2" in lora_inputs) is has_sulphur
-        assert ("271" in workflow) is has_ingredients
-        assert ("272" in workflow) is has_ingredients
+        assert ("195" in workflow) is has_ingredients
+        assert ("115" in workflow) is has_ingredients
         if has_ingredients:
             assert workflow["274"]["class_type"] == "ResizeImageMaskNode"
             assert "277" not in workflow
@@ -208,14 +250,11 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
                 "image": ["274", 0],
                 "amount": 121,
             }
-            assert workflow["275"]["class_type"] == "LTXVPreprocess"
-            assert workflow["276"]["class_type"] == "LTXVImgToVideoConditionOnly"
-            assert workflow["272"]["inputs"]["latent"] == ["276", 0]
-            assert workflow["272"]["inputs"]["image"] == ["273", 0]
-            assert workflow["272"]["inputs"]["frame_idx"] == 0
-            assert workflow["272"]["inputs"]["crop"] == "disabled"
-            # Ingredients decodes the first pass directly. The legacy x2
-            # second pass is deliberately orphaned for this profile.
-            assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
-            assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
-            assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
+            assert workflow["198"]["class_type"] == "LTXVImgToVideoInplace"
+            assert workflow["115"]["inputs"]["latent"] == ["198", 0]
+            assert workflow["115"]["inputs"]["image"] == ["273", 0]
+            assert workflow["115"]["inputs"]["frame_idx"] == 0
+            assert workflow["115"]["inputs"]["iclora_parameters"] == ["196", 0]
+            assert workflow["106"]["inputs"]["latent"] == ["121", 0]
+            assert workflow["105"]["inputs"]["samples"] == ["106", 2]
+            assert workflow["61"]["inputs"]["audio"] == ["107", 0]

@@ -25,7 +25,7 @@ LAN 可使用 `ltx_unified` 作为执行层聚合 profile，同时承接三类 `
 和两类 `ltx_t2v`。这不合并用户侧逻辑 profile、计费、路由、公共开关或
 RunPod 容量：`ltx_t2v` 在 prod 仍默认关闭，只允许 operator canary 通道提交。
 统一 profile 的模型事实源是
-`ltx_unified/2026-07-29/manifest.json`，其中 Sulphur、Ingredients 与 extracted
+`ltx_unified/2026-08-01-comfy-fast/manifest.json`，其中 Sulphur、Ingredients 与 extracted
 10Eros LoRA 是独立分支资产，公共 CLIP/VAE/upscaler 只引用一次。
 LAN-only `all` profile 的 LTX 子栈也复用这份统一 manifest：它保留其它任务的
 五份 manifest，只用统一 LTX manifest 替换原先分别声明的 `ltx_video` 与
@@ -34,17 +34,18 @@ extracted-10Eros workflow，T2V/IC 继续映射到 Sulphur/Ingredients workflow�
 
 ## 2. 固定模型栈
 
-模型 bundle 为 `ltx_t2v_runtime/2026-07-22`，LAN model-cache 前缀为
-`ltx_t2v/2026-07-22`。运行栈以官方 dev + distilled 为公共基座，两个任务分支
+模型 bundle 为 `ltx_t2v_runtime/2026-08-01-comfy-fast`，LAN model-cache 前缀为
+`ltx_t2v/2026-08-01-comfy-fast`。普通 T2V 和 IC 使用各自的官方基座，两个任务分支
 固定为：
 
 1. 官方 `ltx-2.3-22b-dev-fp8.safetensors`；
 2. 官方 distilled LoRA，强度 `0.5`；
 3. 普通 `ltx_t2v` 追加 Sulphur rank-768 LoRA，强度 `1.0`；
-4. `ltx_t2v_ic` 必须显式加载官方 dev FP8，再使用 distilled LoRA `0.5` +
-   Ingredients 0.9 `1.0`，不叠加 Sulphur，也不能以 `ltx2310eros_v1` 作为底模。
-   三场景固定种子对照确认 Eros checkpoint 或 Sulphur `1.0` 会让目标场景消失、
-   复现人物参考表或产生分栏；
+4. `ltx_t2v_ic` 与官方 ComfyUI 快速模板一致：使用
+   `ltx-2.3-22b-distilled-fp8.safetensors` checkpoint、
+   `gemma_3_12B_it_fp4_mixed.safetensors` 和 Ingredients 0.9 `1.0`；不再加载
+   dev checkpoint 或 distilled LoRA，不叠加 Sulphur，也不能以
+   `ltx2310eros_v1` 作为底模；
    普通 `ltx_t2v` 继续保留 Sulphur，Ingredients + Sulphur 只保留隔离 A/B 图，
    不进入用户工作流。
 
@@ -61,7 +62,7 @@ python scripts/prepare_ltx_t2v_model_bundle.py \
   --registry-root /srv/allbot/model-registry
 ```
 
-脚本在下载前要求 registry 同文件系统至少 75 GiB 可用空间，流式写临时文件，
+脚本在下载前要求 registry 同文件系统至少 115 GiB 可用空间，流式写临时文件，
 校验 size/SHA256 后用硬链接导入 blob store，再移除临时文件。
 
 发布到 LAN model-cache 必须复用共享 SHA 对象池，禁止按新 profile 前缀重复上传
@@ -75,12 +76,13 @@ python scripts/upload_all_task_models_to_lan_cache.py \
 # 核对 dry-run 的 upload_count / upload_total_size_bytes 与宿主余量后才追加 --execute
 ```
 
-`--target ltx_t2v` 只构建 `ltx_t2v/2026-07-22/manifest.json`，模型对象使用
+`--target ltx_t2v` 只构建 `ltx_t2v/2026-08-01-comfy-fast/manifest.json`，模型对象使用
 `models/by-sha256/<sha[:2]>/<sha>`；manifest 只有在全部对象 HEAD 的大小和 SHA
 metadata 都通过后才发布。
 
-cloud-test 的 R2 bundle 固定为 `ltx_t2v/2026-07-22/manifest.json`。临时
-model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，Ingredients
+cloud-test 的 R2 bundle 固定为 `ltx_t2v/2026-08-01-comfy-fast/manifest.json`。临时
+model-transfer Pod 只可直传公开的 dev FP8、distilled FP8 checkpoint、
+FP4 Gemma 与 Sulphur，Ingredients
 及复用文件必须从本地已校验 content-addressed registry 上传；任何 gated
 凭据不得进入 Pod、batch 或日志。10/10 对象通过 size、SHA256 metadata 与 HEAD
 之前不得发布 manifest，失败后必须清理 Pod 和 multipart upload。
@@ -104,22 +106,22 @@ model-transfer Pod 只可直传公开的 dev FP8 与 Sulphur 两个大文件，I
 均为 `24 * seconds + 1` 帧、24fps。IC 支持 5/10/15/20 秒；Web 选择人物后只锁定
 IC 的 768×448 分辨率，时长仍可编辑，费用随四档时长按领域配置计算。
 
-IC workflow 是从 Lightricks 官方 Ingredients 单阶段图重新生成的干净 API 图，
+IC workflow 是从 ComfyUI 官方 Ingredients 快速模板重新生成的干净 API 图，
 只保留可达的推理与交付节点，不包含 NAG、第二阶段、latent upscaler、switch、
 chunk feed-forward 或 preview override。worker 将单一人物 ingredient 面板保持
 宽高比缩放到短边 448，并以缩放后的实际宽高驱动输出 latent；标准 1536×896
 面板仍得到 768×448。随后用 `RepeatImageBatch` 复制成与输出完全同帧数
-（`24 * seconds + 1`）的静态参考视频；该视频在 `frame_idx=0` 接入
-`LTXAddVideoICLoRAGuide`。
-`LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
-guide strength 固定 `1.0`、crop 固定 `disabled`，latent downscale factor 从
-Ingredients LoRA 元数据读取。采样后的 `LTXVCropGuides` 删除追加的 guide latent，
-再直接 VAE 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
-`euler_ancestral_cfg_pp`、CFG 1 和官方 9 个 manual sigmas（8 次采样）。
+（`24 * seconds + 1`）的静态参考视频；`GetICLoRAParameters` 从 Ingredients
+LoRA 读取 guide 参数，该视频在 `frame_idx=0` 通过 `LTXVAddGuide`
+接入。`LTXVImgToVideoInplace` 明确 `bypass=true`，因此人物表不是可见首帧；
+采样后的 `LTXVCropGuides` 删除追加的 guide latent，再由标准
+`VAEDecodeTiled` 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。
+采样固定使用标准 `KSampler`、8 steps、CFG 1、`euler_ancestral`、
+`linear_quadratic`、denoise 1。
 Web 可传入非负 `seed` 复现固定种子任务；该字段必须经过 task dispatcher、
 Web API client 与 Central `LtxT2VRequest` 原样进入 Worker。未指定时 Worker 只生成
 一次合法的非负随机种子，并写入普通 T2V 的 `Seed (rgthree)` 或 IC 的
-`RandomNoise.noise_seed`；workflow 模板中的 `-1` 不得提交给 ComfyUI。
+`KSampler.seed`；workflow 模板中的 `-1` 不得提交给 ComfyUI。
 
 IC prompt 按官方可执行 workflow 的标题由 worker 组合为
 `### Reference Sheet Description` 与 `### Target Description` 两段：前者使用人物资产中
