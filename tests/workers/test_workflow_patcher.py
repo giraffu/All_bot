@@ -85,6 +85,10 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
         },
     )
     assert patched["271"]["inputs"]["lora_name"].endswith("ingredients-0.9.safetensors")
+    assert patched["257"]["inputs"]["model_name"] == (
+        "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+    )
+    assert patched["257"]["inputs"]["weight_dtype"] == "fp8_e4m3fn"
     assert patched["271"]["inputs"]["strength_model"] == 1.0
     assert patched["123"]["inputs"]["noise_seed"] == 65608997764964
     assert patched["270"]["inputs"]["image"] == "owned-sheet.png"
@@ -120,25 +124,56 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert patched["272"]["inputs"]["crop"] == "disabled"
     assert patched["26:39"]["inputs"]["width"] == ["5100", 0]
     assert patched["26:39"]["inputs"]["height"] == ["5100", 1]
-    assert patched["26:91"]["class_type"] == "AllBotLTXCropGuideLatentsExact"
-    assert patched["26:91"]["inputs"] == {
-        "latent": ["26:153", 0],
-        "output_frames": 481,
-    }
-    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 0]
+    assert patched["26:149"]["inputs"]["latents"] == ["26:91", 2]
     assert patched["61"]["inputs"]["audio"] == ["26:154", 0]
     assert patched["26:39"]["inputs"]["length"] == 481
     assert patched["26:40"]["inputs"]["frames_number"] == 481
     prompt = patched["28"]["inputs"]["text"]
     assert prompt.startswith(
         "### Reference Sheet Description\n"
-        "an adult woman with a short black bob and amber eyes"
+        "**Left Panel (Character Face):** A clear front-facing close-up of "
+        "one adult character. an adult woman with "
+        "a short black bob and amber eyes\n"
+        "**Right Panel (Character Turnaround):** Full-body front, side, and "
+        "back views of the exact same character, preserving the same facial "
+        "identity, facial proportions, hairstyle, skin tone, body shape, and "
+        "body proportions."
     )
     assert prompt.endswith("### Target Description\nscene")
     negative = patched["29"]["inputs"]["text"]
     assert not negative.startswith("None")
     assert "#Identity Reference Exclusions" not in negative
     assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
+
+
+def test_ltx_t2v_ic_patcher_removes_reference_layout_sentences_from_identity_text():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "a beach scene",
+            "duration": 5,
+            "character_sheet": "owned-sheet.png",
+            "character_description": (
+                "A single adult woman is shown against a clean black background. "
+                "The dominant left panel contains a clear face close-up. "
+                "She has a softly oval face, natural dark eyes, and warm skin. "
+                "The right panels show front, side, and back turnaround views. "
+                "She has natural slim body proportions. "
+                "Every panel depicts the same identity."
+            ),
+            "seed": 123,
+        },
+    )
+
+    prompt = patched["28"]["inputs"]["text"]
+    assert "softly oval face, natural dark eyes, and warm skin" in prompt
+    assert "natural slim body proportions" in prompt
+    assert "clean black background" not in prompt
+    assert "dominant left panel" not in prompt
+    assert "right panels show" not in prompt
+    assert "Every panel" not in prompt
 
 
 def test_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():

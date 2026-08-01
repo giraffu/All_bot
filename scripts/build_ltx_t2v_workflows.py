@@ -206,10 +206,11 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
         },
         "26:91": {
             "inputs": {
+                "positive": ["272", 0],
+                "negative": ["272", 1],
                 "latent": ["26:153", 0],
-                "output_frames": 121,
             },
-            "class_type": "AllBotLTXCropGuideLatentsExact",
+            "class_type": "LTXVCropGuides",
         },
         "26:154": {
             "inputs": {"samples": ["26:153", 1], "audio_vae": ["282", 0]},
@@ -218,7 +219,7 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
         "26:149": {
             "inputs": {
                 "vae": ["283", 0],
-                "latents": ["26:91", 0],
+                "latents": ["26:91", 2],
                 "horizontal_tiles": 2,
                 "vertical_tiles": 2,
                 "overlap": 6,
@@ -246,6 +247,8 @@ def build_ingredients_t2v(*, sulphur: bool) -> dict:
             "class_type": "VHS_VideoCombine",
         },
     }
+    workflow["257"]["inputs"]["model_name"] = DEV_MODEL
+    workflow["257"]["inputs"]["weight_dtype"] = "fp8_e4m3fn"
     if sulphur:
         workflow["258"] = {
             "inputs": {

@@ -1,3 +1,4 @@
+import re
 from typing import Any, Callable
 
 from src.domain_config.scail2_video import (
@@ -71,6 +72,55 @@ LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetenso
 LTX_T2V_INGREDIENTS_NEGATIVE = (
     "worst quality, inconsistent motion, blurry, jittery, distorted"
 )
+LTX_T2V_INGREDIENTS_DEV_MODEL = (
+    "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+)
+
+
+_LTX_REFERENCE_LAYOUT_MARKERS = (
+    "background",
+    "panel",
+    "turnaround view",
+    "reference sheet",
+    "背景",
+    "左侧",
+    "右侧",
+    "面板",
+    "画面",
+    "参考表",
+    "参考图",
+)
+
+
+def _identity_only_description(character_description: str) -> str:
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?。！？；;])\s*", character_description)
+        if part.strip()
+    ]
+    identity_sentences = [
+        sentence
+        for sentence in sentences
+        if not any(
+            marker in sentence.casefold()
+            for marker in _LTX_REFERENCE_LAYOUT_MARKERS
+        )
+    ]
+    return " ".join(identity_sentences) or character_description
+
+
+def _format_ltx_reference_sheet_description(character_description: str) -> str:
+    """Wrap user-authored identity text in the IC-LoRA training headings."""
+    identity_description = _identity_only_description(character_description)
+    return (
+        "**Left Panel (Character Face):** A clear front-facing close-up of "
+        "one adult character. "
+        f"{identity_description}\n"
+        "**Right Panel (Character Turnaround):** Full-body front, side, and "
+        "back views of the exact same character, preserving the same facial "
+        "identity, facial proportions, hairstyle, skin tone, body shape, and "
+        "body proportions."
+    )
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -465,6 +515,13 @@ def _patch_ltx_t2v_workflow(
         raise ValueError("fixed LTX LoRA loader node 256 missing")
     loader_inputs = loader.setdefault("inputs", {})
     if ingredients:
+        model_loader = workflow.get("257")
+        if not isinstance(model_loader, dict):
+            raise ValueError("Ingredients model loader node 257 missing")
+        model_loader.setdefault("inputs", {})["model_name"] = (
+            LTX_T2V_INGREDIENTS_DEV_MODEL
+        )
+        model_loader["inputs"]["weight_dtype"] = "fp8_e4m3fn"
         loader_inputs.update(
             {
                 "model": ["257", 0],
@@ -549,18 +606,10 @@ def _patch_ltx_t2v_workflow(
         guide_inputs["frame_idx"] = 0
         guide_inputs["strength"] = 1.0
         guide_inputs["crop"] = "disabled"
-        crop = workflow.get("26:91")
-        if not isinstance(crop, dict):
-            raise ValueError("Ingredients exact crop node 26:91 missing")
-        crop["class_type"] = "AllBotLTXCropGuideLatentsExact"
-        crop["inputs"] = {
-            "latent": ["26:153", 0],
-            "output_frames": frame_count,
-        }
         decoder = workflow.get("26:149")
         if not isinstance(decoder, dict):
             raise ValueError("Ingredients video decoder node 26:149 missing")
-        decoder.setdefault("inputs", {})["latents"] = ["26:91", 0]
+        decoder.setdefault("inputs", {})["latents"] = ["26:91", 2]
         output = workflow.get("61")
         if not isinstance(output, dict):
             raise ValueError("Ingredients output node 61 missing")
@@ -576,8 +625,11 @@ def _patch_ltx_t2v_workflow(
         ).strip()
         if not character_description:
             raise ValueError("Ingredients character description missing")
+        reference_sheet_description = _format_ltx_reference_sheet_description(
+            character_description
+        )
         prompt_node["inputs"]["text"] = (
-            f"### Reference Sheet Description\n{character_description}\n\n"
+            f"### Reference Sheet Description\n{reference_sheet_description}\n\n"
             f"### Target Description\n{target_description}"
         )
         negative_node = workflow.get("29")

@@ -41,8 +41,10 @@ extracted-10Eros workflow，T2V/IC 继续映射到 Sulphur/Ingredients workflow�
 1. 官方 `ltx-2.3-22b-dev-fp8.safetensors`；
 2. 官方 distilled LoRA，强度 `0.5`；
 3. 普通 `ltx_t2v` 追加 Sulphur rank-768 LoRA，强度 `1.0`；
-4. `ltx_t2v_ic` 使用 distilled LoRA `0.5` + Ingredients 0.9 `1.0`，不叠加
-   Sulphur。固定种子对照确认 Sulphur `1.0` 会让目标场景消失并复现人物参考表；
+4. `ltx_t2v_ic` 必须显式加载官方 dev FP8，再使用 distilled LoRA `0.5` +
+   Ingredients 0.9 `1.0`，不叠加 Sulphur，也不能以 `ltx2310eros_v1` 作为底模。
+   三场景固定种子对照确认 Eros checkpoint 或 Sulphur `1.0` 会让目标场景消失、
+   复现人物参考表或产生分栏；
    普通 `ltx_t2v` 继续保留 Sulphur，Ingredients + Sulphur 只保留隔离 A/B 图，
    不进入用户工作流。
 
@@ -111,11 +113,8 @@ chunk feed-forward 或 preview override。worker 将单一人物 ingredient 面�
 `LTXAddVideoICLoRAGuide`。
 `LTXVImgToVideoConditionOnly` 明确 `bypass=true`，因此人物表不是可见首帧；
 guide strength 固定 `1.0`、crop 固定 `disabled`，latent downscale factor 从
-Ingredients LoRA 元数据读取。采样后的 `AllBotLTXCropGuideLatentsExact` 不根据
-空间 token 数猜测 guide 长度，而是按目标输出帧数精确保留
-`((frames - 1) // 8) + 1` 个视频 latent，再直接 VAE 解码。这样可正确裁除因
-Ingredients 下采样而追加的参考 latent，避免参考表进入成片；音频 latent 在裁除前
-已独立拆分，不受影响。交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
+Ingredients LoRA 元数据读取。采样后的 `LTXVCropGuides` 删除追加的 guide latent，
+再直接 VAE 解码；交付结果无需添加保护尾段，也不经二次转码裁尾。采样固定使用
 `euler_ancestral_cfg_pp`、CFG 1 和官方 9 个 manual sigmas（8 次采样）。
 Web 可传入非负 `seed` 复现固定种子任务；该字段必须经过 task dispatcher、
 Web API client 与 Central `LtxT2VRequest` 原样进入 Worker。未指定时 Worker 只生成
@@ -124,7 +123,10 @@ Web API client 与 Central `LtxT2VRequest` 原样进入 Worker。未指定时 Wo
 
 IC prompt 按官方可执行 workflow 的标题由 worker 组合为
 `### Reference Sheet Description` 与 `### Target Description` 两段：前者使用人物资产中
-必填的稳定外观描述，后者原样承载用户场景。人物描述由服务端按 owner 和
+必填的稳定外观描述，并规范化为 `Left Panel (Character Face)` 与
+`Right Panel (Character Turnaround)` 两个训练子标题；人物身份文字中的
+background/panel/参考图等布局句在组合时移除，避免目标 latent 把参考表布局当作场景。
+后者原样承载用户场景。人物描述由服务端按 owner 和
 `character_id` 读取，客户端不能为一次视频任务覆盖它。
 缺失的用户负向提示按空字符串处理，禁止把 Python `None` 编入 conditioning；
 Ingredients 基线负向固定为
@@ -272,7 +274,8 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
 可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
 和价格。练功房仍保留视觉 prompt 与可选 audio prompt 两个任务输入；服务端把
-人物资产描述作为 `### Reference Sheet Description`，视觉 prompt 作为
+人物资产描述由 Worker 规范化为含 face/turnaround 两个面板子标题的
+`### Reference Sheet Description`，视觉 prompt 作为
 `### Target Description`，
 可选 audio prompt 作为 `#Audio`，默认生成同步音频。
 

@@ -1,8 +1,8 @@
 {
   "257": {
     "inputs": {
-      "model_name": "LTX 2.3/ltx2310eros_v1.safetensors",
-      "weight_dtype": "default",
+      "model_name": "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors",
+      "weight_dtype": "fp8_e4m3fn",
       "compute_dtype": "default",
       "patch_cublaslinear": false,
       "sage_attention": "auto",
@@ -337,13 +337,20 @@
   },
   "26:91": {
     "inputs": {
+      "positive": [
+        "272",
+        0
+      ],
+      "negative": [
+        "272",
+        1
+      ],
       "latent": [
         "26:153",
         0
-      ],
-      "output_frames": 121
+      ]
     },
-    "class_type": "AllBotLTXCropGuideLatentsExact"
+    "class_type": "LTXVCropGuides"
   },
   "26:154": {
     "inputs": {
@@ -366,7 +373,7 @@
       ],
       "latents": [
         "26:91",
-        0
+        2
       ],
       "horizontal_tiles": 2,
       "vertical_tiles": 2,

@@ -99,6 +99,9 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     )
 
     assert workflow["256"]["class_type"] == "LoraLoaderModelOnly"
+    assert workflow["257"]["inputs"]["model_name"] == (
+        "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
+    )
     assert workflow["256"]["inputs"]["model"] == ["257", 0]
     assert workflow["256"]["inputs"]["strength_model"] == 0.5
     assert "258" not in workflow
@@ -141,12 +144,8 @@ def test_generated_ingredients_workflow_uses_official_static_reference_video():
     # Ingredients follows the official single-stage path: crop the guide from
     # the first pass and decode it directly instead of spatially upscaling the
     # reference-sheet layout through the legacy second pass.
-    assert workflow["26:91"]["class_type"] == "AllBotLTXCropGuideLatentsExact"
-    assert workflow["26:91"]["inputs"] == {
-        "latent": ["26:153", 0],
-        "output_frames": 121,
-    }
-    assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 0]
+    assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
+    assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
     assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
     assert workflow["26:50"]["inputs"]["sampler_name"] == "euler_ancestral_cfg_pp"
     assert workflow["26:49"]["inputs"]["cfg"] == 1
@@ -217,10 +216,6 @@ def test_ltx_t2v_ab_validation_workflows_encode_the_four_required_stacks():
             assert workflow["272"]["inputs"]["crop"] == "disabled"
             # Ingredients decodes the first pass directly. The legacy x2
             # second pass is deliberately orphaned for this profile.
-            assert workflow["26:91"]["class_type"] == (
-                "AllBotLTXCropGuideLatentsExact"
-            )
             assert workflow["26:91"]["inputs"]["latent"] == ["26:153", 0]
-            assert workflow["26:91"]["inputs"]["output_frames"] == 121
-            assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 0]
+            assert workflow["26:149"]["inputs"]["latents"] == ["26:91", 2]
             assert workflow["61"]["inputs"]["audio"] == ["26:154", 0]
