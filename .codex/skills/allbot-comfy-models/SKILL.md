@@ -88,8 +88,10 @@ manifest 和专项文档读取，不在此维护快照。
   的终态与退款语义。
 - 人物参考表属于 Ingredients 条件输入而非交付帧。IC workflow 必须按官方
   ComfyUI 快速模板使用 distilled FP8 checkpoint、FP4 Gemma 和 Ingredients 1.0；
-  不得复用 Eros checkpoint、dev + distilled LoRA 或叠加 Sulphur，普通无人物
-  T2V 才保留 Sulphur 能力。IC workflow 还必须按官方 reference-sheet 契约使用
+  用户工作流不得复用 Eros checkpoint、dev + distilled LoRA 或叠加 Sulphur，
+  普通无人物 T2V 才保留 Sulphur 能力。Sulphur + Ingredients 只能使用仓库固定
+  validation graph 和隔离 runner 在 intake disabled 的单槽 canary 中 A/B，不能
+  通过 workflow mapping、Web 参数或静默 patch 进入用户任务。IC workflow 还必须按官方 reference-sheet 契约使用
   完整纯白底单一 character ingredient 面板，将其复制成与输出同帧数的静态参考
   视频，并通过 `GetICLoRAParameters`、`LTXVAddGuide(frame_idx=0)` 接入 guide；
   `LTXVImgToVideoInplace` 保持 `bypass=true`，采样后必须由 `LTXVCropGuides` 删除

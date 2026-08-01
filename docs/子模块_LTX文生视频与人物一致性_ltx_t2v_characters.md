@@ -141,6 +141,13 @@ reference-sheet 训练语义冲突的 grid/collage/character-sheet 排除词。�
 `ops/gpu_pool_controller/validation_workflows/ltx_t2v/`。第 1 组是普通官方
 baseline，第 4 组只保留历史 A/B 比较；第 2 组 Sulphur T2V 和第 3 组官方
 distilled + Ingredients 均产出可播放、带音轨 MP4，当前目标栈才通过。
+第 3/4 组人物 A/B 必须通过 `scripts/ltx_t2v_ic_ab_smoke.py` 在 intake disabled
+的单槽运行：patcher 对第 3 组保持 `checkpoint → Ingredients`，只在第 4 组存在且
+严格匹配固定节点 `258` 时保留 `checkpoint → Sulphur 1.0 → Ingredients 1.0`；
+节点缺失或模型名、强度、输入链不符时 fail closed。runner 只把 workflow checksum、
+种子、时长、Comfy prompt ID、媒体规格和 GPU 遥测写入 XDG evidence，不持久化人物
+描述、场景提示词、私有 object key 或签名 URL。通过该 A/B 也不能修改用户侧
+`ltx_t2v_ic` mapping，是否增加测试 Web 实验选项必须另行决策。
 
 镜像入口：
 
