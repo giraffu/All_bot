@@ -87,11 +87,14 @@ manifest 和专项文档读取，不在此维护快照。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
 - 人物参考表属于 Ingredients 条件输入而非交付帧。IC workflow 必须按官方
-  dev FP8 + distilled 0.5 + Ingredients 1.0 模型栈运行；不得复用 Eros checkpoint
-  或叠加 Sulphur，普通无人物 T2V 才保留 Sulphur 能力。IC workflow 还必须按官方
-  reference-sheet 契约使用完整黑底单一 character ingredient 面板，将其复制成与输出同帧数的静态
-  参考视频并在 `frame_idx=0` 接入 `LTXAddVideoICLoRAGuide`；可见 I2V 条件保持
-  `bypass=true`，采样后必须由 `LTXVCropGuides` 删除 guide latent。禁止把人物表
+  ComfyUI 快速模板使用 distilled FP8 checkpoint、FP4 Gemma 和 Ingredients 1.0；
+  不得复用 Eros checkpoint、dev + distilled LoRA 或叠加 Sulphur，普通无人物
+  T2V 才保留 Sulphur 能力。IC workflow 还必须按官方 reference-sheet 契约使用
+  完整黑底单一 character ingredient 面板，将其复制成与输出同帧数的静态参考
+  视频，并通过 `GetICLoRAParameters`、`LTXVAddGuide(frame_idx=0)` 接入 guide；
+  `LTXVImgToVideoInplace` 保持 `bypass=true`，采样后必须由 `LTXVCropGuides` 删除
+  guide latent。采样固定为标准 `KSampler` 8 steps、CFG 1、
+  `euler_ancestral` + `linear_quadratic`。禁止把人物表
   设为首帧、只裁单张身份子图，或生成额外尾段后再二次转码裁除。
 - Ingredients 正向提示必须使用官方可执行 workflow 的
   `### Reference Sheet Description` / `### Target Description` 两段标题；人物段内部还必须由 Worker 规范化为

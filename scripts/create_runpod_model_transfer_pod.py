@@ -17,7 +17,9 @@ DEFAULT_SOURCE_URL = (
     "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/"
     "v23/Qwen-Rapid-AIO-NSFW-v23.safetensors"
 )
-DEFAULT_KEY = "img2img_lora/2026-06-10/models/checkpoints/Qwen-Rapid-AIO-NSFW-v23.safetensors"
+DEFAULT_KEY = (
+    "img2img_lora/2026-06-10/models/checkpoints/Qwen-Rapid-AIO-NSFW-v23.safetensors"
+)
 DEFAULT_RELATIVE_PATH = "checkpoints/Qwen-Rapid-AIO-NSFW-v23.safetensors"
 DEFAULT_SHA256 = "fdb919fc81bea63f13759967fc92c9118142e5c70d4e6795199233a35eefa233"
 DEFAULT_SIZE_BYTES = 28431840023
@@ -33,8 +35,7 @@ PORNMASTER_FLUX2_EDIT_BF16_TRANSFERS = (
             "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
         ),
         "relative_path": (
-            "diffusion_models/flux2/"
-            "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+            "diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
         ),
         "sha256": "5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e",
         "size_bytes": 18157213600,
@@ -68,7 +69,7 @@ PORNMASTER_FLUX2_EDIT_BF16_TRANSFERS = (
         "size_bytes": 249519092,
     },
 )
-LTX_T2V_PREFIX = "ltx_t2v/2026-07-22"
+LTX_T2V_PREFIX = "ltx_t2v/2026-08-01-comfy-fast"
 LTX_T2V_TRANSFERS = (
     {
         "source_url": (
@@ -80,9 +81,7 @@ LTX_T2V_TRANSFERS = (
             f"{LTX_T2V_PREFIX}/models/diffusion_models/LTX 2.3/"
             "ltx-2.3-22b-dev-fp8.safetensors"
         ),
-        "relative_path": (
-            "diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
-        ),
+        "relative_path": ("diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"),
         "sha256": "28606c5b5a06ce56f896d4dfcb20f212739e07a68fbe48e53638188449d26450",
         "size_bytes": 29145431166,
     },
@@ -93,8 +92,7 @@ LTX_T2V_TRANSFERS = (
             "sulphur_lora_rank_768.safetensors"
         ),
         "key": (
-            f"{LTX_T2V_PREFIX}/models/loras/ltx2.3/"
-            "sulphur_lora_rank_768.safetensors"
+            f"{LTX_T2V_PREFIX}/models/loras/ltx2.3/sulphur_lora_rank_768.safetensors"
         ),
         "relative_path": "loras/ltx2.3/sulphur_lora_rank_768.safetensors",
         "sha256": "b7151fc78066457a38153f3f1c899851c667527aa2108e39a7f4be3e3b5e4f2d",
@@ -104,15 +102,26 @@ LTX_T2V_TRANSFERS = (
 
 
 def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
-    source_url = str(raw_item.get("source_url") or raw_item.get("sourceUrl") or "").strip()
-    key = str(raw_item.get("key") or raw_item.get("object_key") or raw_item.get("objectKey") or "").strip()
-    relative_path = str(
-        raw_item.get("relative_path")
-        or raw_item.get("relativePath")
+    source_url = str(
+        raw_item.get("source_url") or raw_item.get("sourceUrl") or ""
+    ).strip()
+    key = str(
+        raw_item.get("key")
+        or raw_item.get("object_key")
+        or raw_item.get("objectKey")
         or ""
     ).strip()
-    sha256 = str(raw_item.get("sha256") or raw_item.get("expected_sha256") or "").strip()
-    size_value = raw_item.get("size_bytes") or raw_item.get("sizeBytes") or raw_item.get("expected_size")
+    relative_path = str(
+        raw_item.get("relative_path") or raw_item.get("relativePath") or ""
+    ).strip()
+    sha256 = str(
+        raw_item.get("sha256") or raw_item.get("expected_sha256") or ""
+    ).strip()
+    size_value = (
+        raw_item.get("size_bytes")
+        or raw_item.get("sizeBytes")
+        or raw_item.get("expected_size")
+    )
     missing = [
         name
         for name, value in {
@@ -125,7 +134,9 @@ def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
         if value in {"", None}
     ]
     if missing:
-        raise ValueError(f"model transfer item missing required field(s): {','.join(missing)}")
+        raise ValueError(
+            f"model transfer item missing required field(s): {','.join(missing)}"
+        )
     item = {
         "source_url": source_url,
         "key": key.strip("/"),
@@ -133,7 +144,9 @@ def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
         "sha256": sha256,
         "size_bytes": int(size_value),
     }
-    source_token_env = str(raw_item.get("source_token_env") or raw_item.get("sourceTokenEnv") or "").strip()
+    source_token_env = str(
+        raw_item.get("source_token_env") or raw_item.get("sourceTokenEnv") or ""
+    ).strip()
     source_token_query_param = str(
         raw_item.get("source_token_query_param")
         or raw_item.get("sourceTokenQueryParam")
@@ -459,7 +472,9 @@ tail -f /dev/null
 """
 
 
-def _create_body(args: argparse.Namespace, items: list[dict[str, Any]]) -> dict[str, Any]:
+def _create_body(
+    args: argparse.Namespace, items: list[dict[str, Any]]
+) -> dict[str, Any]:
     endpoint = os.getenv("RUNPOD_MODEL_ENDPOINT") or os.getenv("MINIO_ENDPOINT") or ""
     first_item = items[0]
     env = {
@@ -475,7 +490,9 @@ def _create_body(args: argparse.Namespace, items: list[dict[str, Any]]) -> dict[
         "RUNPOD_MODEL_TRANSFER_EXIT_ON_COMPLETE": (
             "false" if args.keepalive_on_complete else "true"
         ),
-        "RUNPOD_MODEL_TRANSFERS_JSON": json.dumps(items, ensure_ascii=False, separators=(",", ":")),
+        "RUNPOD_MODEL_TRANSFERS_JSON": json.dumps(
+            items, ensure_ascii=False, separators=(",", ":")
+        ),
         "RUNPOD_MODEL_KEY": first_item["key"],
         "RUNPOD_MODEL_RELATIVE_PATH": first_item["relative_path"],
         "RUNPOD_MODEL_EXPECTED_SHA256": first_item["sha256"],
@@ -507,7 +524,11 @@ def _redacted_body(body: dict[str, Any]) -> dict[str, Any]:
     env = redacted.get("env") or {}
     for key in list(env):
         normalized = key.upper()
-        if "TOKEN" in normalized or "SECRET_KEY" in normalized or "ACCESS_KEY" in normalized:
+        if (
+            "TOKEN" in normalized
+            or "SECRET_KEY" in normalized
+            or "ACCESS_KEY" in normalized
+        ):
             env[key] = "<redacted>"
     if "MODEL_SOURCE_URL" in env:
         env["MODEL_SOURCE_URL"] = "<source-url>"
@@ -544,7 +565,9 @@ def _delete_guard_reasons(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create a temporary RunPod Pod to transfer a model URL into R2")
+    parser = argparse.ArgumentParser(
+        description="Create a temporary RunPod Pod to transfer a model URL into R2"
+    )
     parser.add_argument("--env-file", type=Path, default=Path(".env.cloud.test"))
     parser.add_argument(
         "--batch-file",
@@ -574,7 +597,9 @@ def main() -> int:
     parser.add_argument("--relative-path", default=DEFAULT_RELATIVE_PATH)
     parser.add_argument("--sha256", default=DEFAULT_SHA256)
     parser.add_argument("--size-bytes", type=int, default=DEFAULT_SIZE_BYTES)
-    parser.add_argument("--name", default=f"allbot-model-transfer-qwen-v23-{int(time.time())}")
+    parser.add_argument(
+        "--name", default=f"allbot-model-transfer-qwen-v23-{int(time.time())}"
+    )
     parser.add_argument("--image", default="python:3.11-slim")
     parser.add_argument(
         "--civitai-token-secret-ref",
@@ -586,7 +611,9 @@ def main() -> int:
         action="store_true",
         help="Keep the transfer Pod alive after completion for manual inspection.",
     )
-    parser.add_argument("--cloud-type", default=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE"))
+    parser.add_argument(
+        "--cloud-type", default=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE")
+    )
     parser.add_argument("--container-disk-gb", type=int, default=20)
     parser.add_argument(
         "--gpu-type-id",
@@ -626,7 +653,9 @@ def main() -> int:
 
     base_url = os.getenv("RUNPOD_API_BASE_URL", RUNPOD_API_BASE_URL)
     dry_run = _bool_env(os.getenv("RUNPOD_DRY_RUN"), default=True)
-    autoscaler_enabled = _bool_env(os.getenv("RUNPOD_AUTOSCALER_ENABLED"), default=False)
+    autoscaler_enabled = _bool_env(
+        os.getenv("RUNPOD_AUTOSCALER_ENABLED"), default=False
+    )
     max_pods_total = _int_env(os.getenv("RUNPOD_MAX_PODS_TOTAL"), default=1)
     if args.ltx_t2v:
         max_pods_total = 1
@@ -677,7 +706,9 @@ def main() -> int:
     try:
         transfer_items = _load_transfer_items(args)
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2)
+        )
         return 2
 
     existing: list[dict[str, Any]] = []
@@ -741,7 +772,8 @@ def main() -> int:
                 "pod": {
                     "id": created.get("id"),
                     "name": created.get("name"),
-                    "desiredStatus": created.get("desiredStatus") or created.get("status"),
+                    "desiredStatus": created.get("desiredStatus")
+                    or created.get("status"),
                 },
             },
             ensure_ascii=False,

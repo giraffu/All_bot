@@ -13,7 +13,9 @@ MODULE_PATH = Path("scripts/create_runpod_model_transfer_pod.py")
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("create_runpod_model_transfer_pod", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "create_runpod_model_transfer_pod", MODULE_PATH
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -128,7 +130,8 @@ def test_ltx_t2v_batch_streams_only_two_public_large_files_without_source_token(
         "loras/ltx2.3/sulphur_lora_rank_768.safetensors",
     }
     assert all(
-        item["key"].startswith("ltx_t2v/2026-07-22/models/") for item in items
+        item["key"].startswith("ltx_t2v/2026-08-01-comfy-fast/models/")
+        for item in items
     )
     assert all("source_token_env" not in item for item in items)
 

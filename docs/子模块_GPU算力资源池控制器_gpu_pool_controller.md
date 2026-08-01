@@ -148,7 +148,7 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
   `release-rollout` 和 disabled canary 必须通过统一映射接受这对 id，
   不能以字符串不相等拒绝合法的 exact-digest 发布。
 - `all` 的 LTX 子栈与 `ltx_unified` 使用同一份
-  `ltx_unified/2026-07-29/manifest.json` 和三份 extracted-10Eros workflow；
+  `ltx_unified/2026-08-01-comfy-fast/manifest.json` 和三份 extracted-10Eros workflow；
   不再同时声明旧 `ltx_video` 与 `ltx_t2v` manifest。多 manifest 同步继续按
   相对路径、大小和 SHA-256 复用既有对象，只补统一 manifest 的真实差集，
   普通 T2V 保留 Sulphur workflow，IC 使用纯官方单阶段 Ingredients

@@ -21,10 +21,10 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 
 BUNDLE = "ltx_unified_runtime"
-VERSION = "2026-07-29"
+VERSION = "2026-08-01-comfy-fast"
 SOURCE_BUNDLES = (
     ("ltx_video_baseline", "2026-06-10"),
-    ("ltx_t2v_runtime", "2026-07-22"),
+    ("ltx_t2v_runtime", "2026-08-01-comfy-fast"),
 )
 EXCLUDED_FULL_CHECKPOINTS = frozenset(
     {
@@ -33,9 +33,7 @@ EXCLUDED_FULL_CHECKPOINTS = frozenset(
     }
 )
 EXTRACTED_LORA = {
-    "relative_path": (
-        "loras/ltx2.3/LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors"
-    ),
+    "relative_path": ("loras/ltx2.3/LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors"),
     "sha256": "ac98553c007ea949603765d0e2a4ed97c6d5758bb2bb4d5e0c2cfdce0e4b3e76",
     "size_bytes": 3_162_331_448,
     "url": (
@@ -44,8 +42,8 @@ EXTRACTED_LORA = {
         "LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors"
     ),
 }
-EXPECTED_FILE_COUNT = 48
-EXPECTED_TOTAL_SIZE_BYTES = 99_621_123_430
+EXPECTED_FILE_COUNT = 50
+EXPECTED_TOTAL_SIZE_BYTES = 138_600_709_710
 MIN_FREE_BYTES = 8 * 1024**3
 
 
@@ -82,9 +80,7 @@ def build_manifest_files(
     extracted = _validated_item(extracted_lora)
     existing = files_by_path.get(extracted["relative_path"])
     if existing and existing != extracted:
-        raise RuntimeError(
-            f"conflicting LTX model path: {extracted['relative_path']}"
-        )
+        raise RuntimeError(f"conflicting LTX model path: {extracted['relative_path']}")
     files_by_path[extracted["relative_path"]] = extracted
 
     result = []
@@ -113,9 +109,10 @@ def _download_extracted_lora(registry: ModelRegistry) -> None:
     try:
         digest = hashlib.sha256()
         size = 0
-        with urllib.request.urlopen(request, timeout=120) as response, partial.open(
-            "wb"
-        ) as output:
+        with (
+            urllib.request.urlopen(request, timeout=120) as response,
+            partial.open("wb") as output,
+        ):
             while chunk := response.read(8 * 1024 * 1024):
                 output.write(chunk)
                 digest.update(chunk)
@@ -164,9 +161,7 @@ def main() -> int:
                 for bundle, version in SOURCE_BUNDLES
             ],
             "excluded_full_checkpoints": sorted(EXCLUDED_FULL_CHECKPOINTS),
-            "extracted_lora_revision": (
-                "7170ebca094fcb73e8f621e88ee38fc0524c9fcf"
-            ),
+            "extracted_lora_revision": ("7170ebca094fcb73e8f621e88ee38fc0524c9fcf"),
         },
         files=files,
     )
@@ -176,4 +171,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -20,10 +20,32 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "ltx_t2v_runtime"
-VERSION = "2026-07-22"
-MIN_FREE_BYTES = 75 * 1024**3
+VERSION = "2026-08-01-comfy-fast"
+MIN_FREE_BYTES = 115 * 1024**3
 
 FILES = (
+    {
+        "relative_path": ("checkpoints/LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"),
+        "sha256": "d9646b6f2d5c42d337b23671634c43bfeece6989644f51b4a3aa088465ccd3b2",
+        "size_bytes": 29_531_884_062,
+        "url": (
+            "https://huggingface.co/Lightricks/LTX-2.3-fp8/resolve/"
+            "1d756cd27fa11c0896c4dfee093cd1bf36c7f7a1/"
+            "ltx-2.3-22b-distilled-fp8.safetensors"
+        ),
+        "gated": False,
+    },
+    {
+        "relative_path": "clip/LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors",
+        "sha256": "aaca463d11e6d8d2a4bdb0d6299214c15ef78a3f73e0ef8113d5a9d0219b3f6d",
+        "size_bytes": 9_447_702_218,
+        "url": (
+            "https://huggingface.co/Comfy-Org/ltx-2/resolve/"
+            "bd5f9c87fcb0360ae7112f9784562670894d9492/split_files/"
+            "text_encoders/gemma_3_12B_it_fp4_mixed.safetensors"
+        ),
+        "gated": False,
+    },
     {
         "relative_path": "diffusion_models/LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors",
         "sha256": "28606c5b5a06ce56f896d4dfcb20f212739e07a68fbe48e53638188449d26450",
@@ -190,6 +212,7 @@ def main() -> None:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "revisions": {
                 "ltx_fp8": "1d756cd27fa11c0896c4dfee093cd1bf36c7f7a1",
+                "comfy_ltx_text_encoder": "bd5f9c87fcb0360ae7112f9784562670894d9492",
                 "sulphur": "875e886e556b955d21149316fd631cc121db6cc1",
                 "ingredients": "08896e49f7620d7d250c37a3a1e7b1edd7322bd4",
             },

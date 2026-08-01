@@ -69,11 +69,10 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+LTX_T2V_INGREDIENTS_FAST_CHECKPOINT = "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
+LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER = "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
 LTX_T2V_INGREDIENTS_NEGATIVE = (
     "worst quality, inconsistent motion, blurry, jittery, distorted"
-)
-LTX_T2V_INGREDIENTS_DEV_MODEL = (
-    "LTX 2.3/ltx-2.3-22b-dev-fp8.safetensors"
 )
 
 
@@ -102,8 +101,7 @@ def _identity_only_description(character_description: str) -> str:
         sentence
         for sentence in sentences
         if not any(
-            marker in sentence.casefold()
-            for marker in _LTX_REFERENCE_LAYOUT_MARKERS
+            marker in sentence.casefold() for marker in _LTX_REFERENCE_LAYOUT_MARKERS
         )
     ]
     return " ".join(identity_sentences) or character_description
@@ -510,26 +508,30 @@ def _patch_ltx_t2v_workflow(
         if isinstance(node, dict):
             node.setdefault("inputs", {})["Xi"] = duration
             node["inputs"]["Xf"] = duration
-    loader = workflow.get("256")
-    if not isinstance(loader, dict):
-        raise ValueError("fixed LTX LoRA loader node 256 missing")
-    loader_inputs = loader.setdefault("inputs", {})
     if ingredients:
-        model_loader = workflow.get("257")
-        if not isinstance(model_loader, dict):
-            raise ValueError("Ingredients model loader node 257 missing")
-        model_loader.setdefault("inputs", {})["model_name"] = (
-            LTX_T2V_INGREDIENTS_DEV_MODEL
+        checkpoint = workflow.get("127")
+        audio_vae = workflow.get("126")
+        text_encoder = workflow.get("103")
+        if not all(
+            isinstance(node, dict) for node in (checkpoint, audio_vae, text_encoder)
+        ):
+            raise ValueError("Ingredients official fast loaders missing")
+        checkpoint.setdefault("inputs", {})["ckpt_name"] = (
+            LTX_T2V_INGREDIENTS_FAST_CHECKPOINT
         )
-        model_loader["inputs"]["weight_dtype"] = "fp8_e4m3fn"
-        loader_inputs.update(
-            {
-                "model": ["257", 0],
-                "lora_name": LTX_T2V_DISTILLED_LORA,
-                "strength_model": 0.5,
-            }
+        audio_vae.setdefault("inputs", {})["ckpt_name"] = (
+            LTX_T2V_INGREDIENTS_FAST_CHECKPOINT
         )
+        text_encoder["inputs"] = {
+            "text_encoder": LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER,
+            "ckpt_name": LTX_T2V_INGREDIENTS_FAST_CHECKPOINT,
+            "device": "default",
+        }
     else:
+        loader = workflow.get("256")
+        if not isinstance(loader, dict):
+            raise ValueError("fixed LTX LoRA loader node 256 missing")
+        loader_inputs = loader.setdefault("inputs", {})
         loader_inputs["lora_1"] = {
             "on": True,
             "lora": LTX_T2V_DISTILLED_LORA,
@@ -541,11 +543,11 @@ def _patch_ltx_t2v_workflow(
             "strength": 1.0,
         }
     if ingredients:
-        ic_loader = workflow.get("271")
+        ic_loader = workflow.get("195")
         if not isinstance(ic_loader, dict):
-            raise ValueError("Ingredients loader node 271 missing")
+            raise ValueError("Ingredients loader node 195 missing")
         ic_loader["inputs"]["lora_name"] = LTX_T2V_INGREDIENTS_LORA
-        ic_loader["inputs"]["model"] = ["256", 0]
+        ic_loader["inputs"]["model"] = ["127", 0]
         ic_loader["inputs"]["strength_model"] = 1.0
         sheet = str(params.get("character_sheet") or "").strip()
         if not sheet:
@@ -580,49 +582,40 @@ def _patch_ltx_t2v_workflow(
         workflow["26:40"]["inputs"].update(
             {"frames_number": frame_count, "frame_rate": LTX_VIDEO_FPS}
         )
-        preprocess = workflow.get("275")
-        if not isinstance(preprocess, dict):
-            raise ValueError("Ingredients preprocess node 275 missing")
-        preprocess["inputs"] = {
-            "image": ["274", 0],
-            "img_compression": 18,
-        }
-        image_condition = workflow.get("276")
+        image_condition = workflow.get("198")
         if not isinstance(image_condition, dict):
-            raise ValueError("Ingredients image condition node 276 missing")
+            raise ValueError("Ingredients image condition node 198 missing")
         image_condition["inputs"] = {
-            "vae": ["283", 0],
-            "image": ["275", 0],
+            "vae": ["127", 2],
+            "image": ["712", 0],
             "latent": ["26:39", 0],
             "strength": 1.0,
             "bypass": True,
         }
-        guide = workflow.get("272")
+        guide = workflow.get("115")
         if not isinstance(guide, dict):
-            raise ValueError("Ingredients guide node 272 missing")
+            raise ValueError("Ingredients guide node 115 missing")
         guide_inputs = guide.setdefault("inputs", {})
-        guide_inputs["latent"] = ["276", 0]
+        guide_inputs["latent"] = ["198", 0]
         guide_inputs["image"] = ["273", 0]
         guide_inputs["frame_idx"] = 0
         guide_inputs["strength"] = 1.0
-        guide_inputs["crop"] = "disabled"
-        decoder = workflow.get("26:149")
+        guide_inputs["iclora_parameters"] = ["196", 0]
+        decoder = workflow.get("105")
         if not isinstance(decoder, dict):
-            raise ValueError("Ingredients video decoder node 26:149 missing")
-        decoder.setdefault("inputs", {})["latents"] = ["26:91", 2]
+            raise ValueError("Ingredients video decoder node 105 missing")
+        decoder.setdefault("inputs", {})["samples"] = ["106", 2]
         output = workflow.get("61")
         if not isinstance(output, dict):
             raise ValueError("Ingredients output node 61 missing")
-        output.setdefault("inputs", {})["audio"] = ["26:154", 0]
+        output.setdefault("inputs", {})["audio"] = ["107", 0]
         prompt_node = workflow.get("28")
         if not isinstance(prompt_node, dict):
             raise ValueError("LTX prompt node 28 missing")
         target_description = str(
             prompt_node.setdefault("inputs", {}).get("text", "")
         ).strip()
-        character_description = str(
-            params.get("character_description") or ""
-        ).strip()
+        character_description = str(params.get("character_description") or "").strip()
         if not character_description:
             raise ValueError("Ingredients character description missing")
         reference_sheet_description = _format_ltx_reference_sheet_description(
