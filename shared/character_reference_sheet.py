@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from PIL import Image, ImageOps
 
 INGREDIENTS_CHARACTER_PANEL_SIZE = (1536, 896)
-INGREDIENTS_CHARACTER_PANEL_VERSION = "ingredients-character-panel-v2"
+INGREDIENTS_CHARACTER_PANEL_VERSION = "ingredients-character-panel-v3"
 
 _FACE_SLOT_PRIORITY = (0, 2, 1)
 _BODY_SLOT_PRIORITY = (3, 4, 5)
@@ -21,7 +21,7 @@ def _decode_view(slot: int, payload: bytes) -> Image.Image:
         raise RuntimeError(f"corrupt character view in slot {slot + 1}") from exc
 
 
-def _contain_on_black(
+def _contain_on_white(
     source: Image.Image,
     *,
     size: tuple[int, int],
@@ -36,7 +36,7 @@ def _contain_on_black(
             centering=(0.5, 0.5),
         )
     contained = ImageOps.contain(source, size, Image.Resampling.LANCZOS)
-    tile = Image.new("RGB", size, "black")
+    tile = Image.new("RGB", size, "white")
     tile.paste(
         contained,
         ((size[0] - contained.width) // 2, (size[1] - contained.height) // 2),
@@ -81,7 +81,7 @@ def compose_ingredients_character_panel(
 
     canvas_width, canvas_height = INGREDIENTS_CHARACTER_PANEL_SIZE
     primary_width = 576
-    canvas = Image.new("RGB", INGREDIENTS_CHARACTER_PANEL_SIZE, "black")
+    canvas = Image.new("RGB", INGREDIENTS_CHARACTER_PANEL_SIZE, "white")
     primary = ImageOps.fit(
         decoded[primary_slot],
         (primary_width, canvas_height),
@@ -100,7 +100,7 @@ def compose_ingredients_character_panel(
             if index == len(secondary_slots) - 1
             else column_width
         )
-        tile = _contain_on_black(
+        tile = _contain_on_white(
             decoded[slot],
             size=(width, body_height),
         )

@@ -90,7 +90,7 @@ manifest 和专项文档读取，不在此维护快照。
   ComfyUI 快速模板使用 distilled FP8 checkpoint、FP4 Gemma 和 Ingredients 1.0；
   不得复用 Eros checkpoint、dev + distilled LoRA 或叠加 Sulphur，普通无人物
   T2V 才保留 Sulphur 能力。IC workflow 还必须按官方 reference-sheet 契约使用
-  完整黑底单一 character ingredient 面板，将其复制成与输出同帧数的静态参考
+  完整纯白底单一 character ingredient 面板，将其复制成与输出同帧数的静态参考
   视频，并通过 `GetICLoRAParameters`、`LTXVAddGuide(frame_idx=0)` 接入 guide；
   `LTXVImgToVideoInplace` 保持 `bypass=true`，采样后必须由 `LTXVCropGuides` 删除
   guide latent。采样固定为标准 `KSampler` 8 steps、CFG 1、
