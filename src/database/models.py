@@ -508,6 +508,7 @@ class CharacterReference(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(60), nullable=False)
     description = Column(String(500), nullable=True)
+    prompt_profile = Column(JSON, nullable=True)
     source_object_key = Column(String(1024), nullable=False)
     sheet_object_key = Column(String(1024), nullable=True)
     task_id = Column(String(64), nullable=False)

@@ -9,7 +9,16 @@ export type CharacterReference = {
   source_object_key: string
   sheet_object_key: string | null
   preview_url: string | null
+  prompt_profile: CharacterPromptProfile | null
+  default_prompts: Record<CharacterViewType, string>
   views: CharacterReferenceView[]
+}
+
+export type CharacterPromptProfile = {
+  gender: 'female' | 'male'
+  breast_size?: 'large' | 'natural' | 'flat'
+  pubic_hair?: 'full' | 'natural' | 'none'
+  skin_tone?: 'fair' | 'asian_yellow' | 'asian_tan'
 }
 
 export type CharacterReferenceView = {
@@ -52,12 +61,14 @@ export const buildCharacter = async (payload: {
   name: string
   description: string
   source_object_key: string
+  prompt_profile?: CharacterPromptProfile
 }) => (await api.post('/characters/build', payload)).data
 
 export const createCharacterDraft = async (payload: {
   name: string
   description: string
   source_object_key: string
+  prompt_profile?: CharacterPromptProfile
 }): Promise<CharacterReference> => (
   await api.post('/characters/drafts', payload)
 ).data

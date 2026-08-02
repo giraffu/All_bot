@@ -657,6 +657,25 @@
     "name_placeholder": "Character name (1–60 characters)",
     "description_placeholder": "Describe age, face, hairstyle, skin tone, build, and stable visual traits",
     "description_required": "Enter a character description for video reference",
+    "profile_title": "Body Trait Tags",
+    "profile_hint": "Your selections are composed server-side into four canonical view prompts",
+    "gender": {
+      "female": "Female",
+      "female_hint": "Choose breasts, pubic hair, and skin tone",
+      "male": "Male",
+      "male_hint": "Uses explicit adult male anatomy prompts"
+    },
+    "profile_groups": {
+      "breast_size": "Breasts",
+      "pubic_hair": "Pubic hair",
+      "skin_tone": "Skin tone"
+    },
+    "profile_options": {
+      "breast_size": { "large": "Large", "natural": "Natural", "flat": "Flat" },
+      "pubic_hair": { "full": "Full", "natural": "Natural", "none": "None" },
+      "skin_tone": { "fair": "Fair", "asian_yellow": "Natural Asian", "asian_tan": "Tanned Asian" }
+    },
+    "male_prompt_note": "Male characters need no extra tags. Front and side full-body prompts explicitly require an unobstructed, naturally erect penis and visible scrotum.",
     "billing_hint": "Drafts are free. Each view can use Free Edit, Free Edit v2.5, or Free Edit v3 and is billed by the selected flow; failed tasks use the existing automatic refund flow.",
     "engine_label": "View generation model",
     "engines": {
