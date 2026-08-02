@@ -197,7 +197,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert profile.min_vram_gb == 24
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-ltx-unified"
-        "@sha256:432268ca2d789cce5823d8d2a20bfe125c742b83cde689fb6d3dedd779b77afa"
+        "@sha256:6672adc60eb78c4fbd5966dbdf91161e3d91b0d26223714557ffb4bd11b64202"
     )
     assert rollback_profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/comfy-runpod-ltx-video"
