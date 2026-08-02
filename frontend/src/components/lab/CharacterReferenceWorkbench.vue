@@ -683,6 +683,23 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.character-workbench__upload {
+  max-width: 260px;
+  justify-self: center;
+}
+
+@media (min-width: 640px) {
+  .character-workbench__upload {
+    max-width: 280px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .character-workbench__upload {
+    max-width: none;
+  }
+}
+
 .character-workbench__source,
 .character-workbench__preview {
   background: var(--theme-panel-strong-bg);
