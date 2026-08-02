@@ -19,6 +19,7 @@ os.environ.setdefault("AGENT_SECRET_TOKEN", "test-token")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
 os.environ.setdefault("MINIO_SECRET_KEY", "test-secret")
 
+from workers.prompt_optimizer import worker_main  # noqa: E402
 from workers.prompt_optimizer.worker_main import CentralClient  # noqa: E402
 
 
@@ -156,3 +157,15 @@ async def test_central_heartbeat_is_scalar_and_fails_closed_on_http_error():
             "lane", ready=True, reason="ready"
         )
     await failed_client.aclose()
+
+
+def test_lane_readiness_stays_ready_between_successful_probes():
+    worker_main._lane_readiness.clear()
+    for lane in range(1, worker_main.LANE_COUNT + 1):
+        worker_main._set_lane_readiness(lane, True, "ready")
+    assert worker_main._state["ready"] is True
+
+    worker_main._set_lane_readiness(1, False, "central_unavailable")
+    assert worker_main._state["ready"] is False
+    worker_main._set_lane_readiness(1, True, "ready")
+    assert worker_main._state["ready"] is True
