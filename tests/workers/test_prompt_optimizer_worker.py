@@ -129,6 +129,91 @@ async def test_lmstudio_readiness_requires_vision_context_and_parallel_four():
 
 
 @pytest.mark.asyncio
+async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
+    requests = []
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        requests.append((request.url.path, payload))
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [
+                                {"type": "output_text", "text": "subject faces camera"}
+                            ],
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = LMStudioChatProvider(
+        base_url="http://lmstudio",
+        model="ltx-prompt-optimizer",
+        client=client,
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "optimized_fields": {"type": "object"},
+            "warnings": {"type": "array"},
+        },
+        "required": ["optimized_fields", "warnings"],
+    }
+
+    result = await provider.optimize(
+        system_prompt="system",
+        user_prompt="user",
+        image_data_urls=["data:image/jpeg;base64,aW1hZ2U="],
+        json_schema=schema,
+    )
+
+    assert result["optimized_fields"]["positive_prompt"] == "done"
+    assert [path for path, _payload in requests] == ["/v1/responses", "/v1/responses"]
+    visual_payload = requests[0][1]
+    assert visual_payload["reasoning"] == {"effort": "none"}
+    assert visual_payload["store"] is False
+    assert any(
+        item["type"] == "input_image"
+        for message in visual_payload["input"]
+        for item in message["content"]
+    )
+    structured_payload = requests[1][1]
+    assert structured_payload["reasoning"] == {"effort": "none"}
+    assert structured_payload["store"] is False
+    assert structured_payload["text"]["format"]["schema"] == schema
+    assert "subject faces camera" in structured_payload["input"][1]["content"][0]["text"]
+    assert all(
+        item["type"] != "input_image"
+        for message in structured_payload["input"]
+        for item in message["content"]
+    )
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_central_heartbeat_is_scalar_and_fails_closed_on_http_error():
     requests = []
 

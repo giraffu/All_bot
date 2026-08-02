@@ -71,10 +71,13 @@ readiness 通过 LM Studio `/api/v1/models` 验证别名 `ltx-prompt-optimizer` 
 vision=true、context>=16384、parallel>=4。不满足时所有 lane heartbeat=error 并
 停止 pop，不自动加载或卸载模型。
 
-图片在内存转 JPEG 并缩至长边 1536px，以 data URL 调用
-`/v1/chat/completions`。使用 JSON Schema structured output，超时 180 秒；只对
-429、5xx、网络错误或 timeout 重试一次。非法 JSON、未知字段、空文本或超过 2000
-字符直接失败。
+图片在内存转 JPEG 并缩至长边 1536px，以 data URL 调用 LM Studio
+`/v1/responses`。当前 Qwen3.6 VLM 采用 Provider 内部两阶段：第一阶段在
+`reasoning.effort=none` 下提取不落盘的视觉观察，第二阶段把视觉观察、原始输入和
+版本化模板合并为纯文本请求，再使用 JSON Schema structured output。纯文本 Profile
+跳过第一阶段。两个请求都必须 `store=false`，不得把原始响应写日志；超时 180 秒，
+只对 429、5xx、网络错误或 timeout 重试一次。非法 JSON、未知字段、空文本或超过
+2000 字符直接失败。不得通过剥离 Markdown fence 等宽松解析绕过 fail-closed。
 
 健康入口：`127.0.0.1:8097/health` 和 `/ready`，只暴露 ready reason 与 active
 lane 数，不暴露提示词或媒体。
