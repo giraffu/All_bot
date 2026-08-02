@@ -55,6 +55,9 @@ async def test_ltx_t2v_api_client_forwards_fixed_seed(monkeypatch):
         audio_prompt="waves",
         character_sheet="sheet.png",
         character_description="adult woman",
+        character_sheets=(),
+        character_descriptions=(),
+        sulphur_strength=None,
         seed=65608997764964,
         width=768,
         height=448,
@@ -64,6 +67,39 @@ async def test_ltx_t2v_api_client_forwards_fixed_seed(monkeypatch):
     )
 
     assert request.await_args.kwargs["json"]["seed"] == 65608997764964
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_api_client_forwards_ordered_msr_inputs(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=SimpleNamespace(json=lambda: {"task_id": "task-msr"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    await client.submit_ltx_t2v(
+        "task-msr",
+        task_type="ltx_t2v_ic",
+        prompt="图1与图2在室内交谈",
+        negative_prompt=None,
+        audio_prompt=None,
+        character_sheet=None,
+        character_description=None,
+        character_sheets=("wang-panel.png", "man-panel.png"),
+        character_descriptions=("adult woman Wang", "adult man"),
+        sulphur_strength=0.5,
+        seed=7,
+        width=768,
+        height=448,
+        length=5,
+        frame_count=121,
+        fps=24,
+    )
+
+    payload = request.await_args.kwargs["json"]
+    assert payload["character_sheets"] == ["wang-panel.png", "man-panel.png"]
+    assert payload["character_descriptions"] == ["adult woman Wang", "adult man"]
+    assert payload["sulphur_strength"] == 0.5
 
 
 @pytest.mark.asyncio

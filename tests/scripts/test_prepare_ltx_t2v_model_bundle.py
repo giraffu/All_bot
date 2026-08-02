@@ -114,6 +114,14 @@ def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
     assert "--filter=blob:none" not in dockerfile
 
 
+def test_lan_all_dockerfile_includes_pinned_msr_node_runtime():
+    dockerfile = (ROOT / "workers/runpod_profiles/all/Dockerfile").read_text()
+
+    assert "94a52bfec735ff6f802c480f7fe8fdac1d279a7f" in dockerfile
+    assert "ComfyUI-Licon-MSR" in dockerfile
+    assert 'assert "LiconMSR" in m.NODE_CLASS_MAPPINGS' in dockerfile
+
+
 def test_runpod_profile_staging_includes_shared_aspect_adapter():
     build_script = (ROOT / "scripts/build_runpod_profile_image.sh").read_text(
         encoding="utf-8"

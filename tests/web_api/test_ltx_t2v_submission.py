@@ -168,6 +168,119 @@ async def test_ltx_t2v_ic_resolves_character_server_side(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatch):
+    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
+    submit = AsyncMock(return_value={"task_id": "task-msr", "cost": 12})
+    monkeypatch.setattr(service, "process_and_submit_task", submit)
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    from src.database import core as db_core
+    from src.web_api.services import character_reference_service
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
+    resolve = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                sheet_object_key="bot-data/private/wang-panel.png",
+                description="adult woman Wang with a short black bob",
+            ),
+            SimpleNamespace(
+                sheet_object_key="bot-data/private/man-panel.png",
+                description="adult man with short brown hair",
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        character_reference_service, "resolve_ready_character_sheet", resolve
+    )
+
+    await service.submit_generation_task(
+        req=TaskGenerateRequest(
+            task_type="ltx_t2v_ic",
+            prompt="图1与图2在客厅中交谈",
+            inputs={
+                "duration": 5,
+                "resolution": "768x448",
+                "character_ids": ["wang", "man"],
+                "sulphur_strength": 0.5,
+            },
+        ),
+        current_user=_user(),
+        get_balance=AsyncMock(return_value=88),
+    )
+
+    submitted = submit.await_args.kwargs["inputs"]
+    assert submitted["character_sheets"] == [
+        "bot-data/private/wang-panel.png",
+        "bot-data/private/man-panel.png",
+    ]
+    assert submitted["character_descriptions"] == [
+        "adult woman Wang with a short black bob",
+        "adult man with short brown hair",
+    ]
+    assert "character_ids" not in submitted
+    assert [call.kwargs["character_id"] for call in resolve.await_args_list] == [
+        "wang",
+        "man",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_ic_msr_flag_defaults_closed(monkeypatch):
+    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
+    monkeypatch.delenv("LTX_T2V_MSR_ENABLED", raising=False)
+
+    with pytest.raises(CoreDomainError, match="MSR 多人物模式当前未开放"):
+        await service.submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type="ltx_t2v_ic",
+                prompt="scene",
+                inputs={
+                    "duration": 5,
+                    "resolution": "768x448",
+                    "character_ids": ["wang", "man"],
+                    "sulphur_strength": 0.5,
+                },
+            ),
+            current_user=_user(),
+            get_balance=AsyncMock(return_value=100),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        {"character_id": "wang", "character_ids": ["wang", "man"]},
+        {"character_ids": ["wang", "wang"]},
+        {"character_ids": ["wang", "man"], "character_sheets": ["private.png"]},
+        {"character_ids": ["wang", "man"], "character_descriptions": ["private"]},
+    ],
+)
+async def test_ltx_t2v_ic_rejects_unsafe_msr_selection(monkeypatch, inputs):
+    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
+
+    with pytest.raises(CoreDomainError):
+        await service.submit_generation_task(
+            req=TaskGenerateRequest(
+                task_type="ltx_t2v_ic",
+                prompt="scene",
+                inputs={"duration": 5, "resolution": "768x448", **inputs},
+            ),
+            current_user=_user(),
+            get_balance=AsyncMock(return_value=100),
+        )
+
+
+@pytest.mark.asyncio
 async def test_ltx_t2v_ic_rejects_client_storage_path(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
 

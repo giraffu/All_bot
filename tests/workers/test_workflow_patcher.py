@@ -144,6 +144,97 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
 
 
+def test_ltx_t2v_ic_patcher_builds_two_character_msr_sulphur_graph():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "图1和图2在明亮客厅中交谈，镜头缓慢环绕。",
+            "negative_prompt": "flicker, duplicate people",
+            "duration": 5,
+            "character_sheets": ["wang-panel.png", "man-panel.png"],
+            "character_descriptions": [
+                "成年女性王，黑色短发，戴圆框眼镜。",
+                "成年男性，棕色短发，高大健壮。",
+            ],
+            "sulphur_strength": 0.5,
+            "seed": 20260802,
+        },
+    )
+
+    for removed in ("195", "196", "270", "274", "5100", "273", "712", "198", "115"):
+        assert removed not in patched
+    assert patched["800"] == {
+        "class_type": "LTXICLoRALoaderModelOnly",
+        "inputs": {
+            "model": ["127", 0],
+            "lora_name": "ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors",
+            "strength_model": 1.0,
+        },
+    }
+    assert patched["802"]["inputs"]["image"] == "wang-panel.png"
+    assert patched["803"]["inputs"]["image"] == "man-panel.png"
+    assert "804" not in patched
+    assert "805" not in patched
+    assert patched["801"]["inputs"] == {
+        "width": 768,
+        "height": 448,
+        "frame_count": "41",
+        "1": ["802", 0],
+        "2": ["803", 0],
+        "background": ["806", 0],
+    }
+    assert patched["806"]["inputs"]["color"] == 16777215
+    assert patched["808"] == {
+        "class_type": "LoraLoaderModelOnly",
+        "inputs": {
+            "model": ["800", 0],
+            "lora_name": "ltx2.3/sulphur_lora_rank_768.safetensors",
+            "strength_model": 0.5,
+        },
+    }
+    assert patched["704"]["inputs"]["model"] == ["808", 0]
+    assert patched["704"]["inputs"]["positive"] == ["807", 0]
+    assert patched["704"]["inputs"]["negative"] == ["807", 1]
+    assert patched["119"]["inputs"]["video_latent"] == ["807", 2]
+    assert patched["106"]["inputs"]["positive"] == ["807", 0]
+    assert patched["106"]["inputs"]["negative"] == ["807", 1]
+    assert patched["26:39"]["inputs"] == {
+        "width": 768,
+        "height": 448,
+        "length": 121,
+        "batch_size": 1,
+    }
+    assert patched["28"]["inputs"]["text"] == (
+        "图1和图2在明亮客厅中交谈，镜头缓慢环绕。\n\n"
+        "图1：成年女性王，黑色短发，戴圆框眼镜。\n"
+        "图2：成年男性，棕色短发，高大健壮。"
+    )
+    assert patched["29"]["inputs"]["text"] == "flicker, duplicate people"
+
+
+def test_ltx_t2v_ic_patcher_omits_sulphur_node_at_zero_strength():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "图1与图2并肩站立。",
+            "duration": 10,
+            "character_sheets": ["one-panel.png", "two-panel.png"],
+            "character_descriptions": ["成年女性。", "成年男性。"],
+            "sulphur_strength": 0,
+            "seed": 7,
+        },
+    )
+
+    assert "808" not in patched
+    assert patched["704"]["inputs"]["model"] == ["800", 0]
+    assert patched["26:39"]["inputs"]["length"] == 241
+    assert patched["26:40"]["inputs"]["frames_number"] == 241
+
+
 def test_ltx_t2v_ic_patcher_preserves_isolated_sulphur_validation_chain():
     repo_root = Path(__file__).resolve().parents[2]
     validation_workflow = json.loads(

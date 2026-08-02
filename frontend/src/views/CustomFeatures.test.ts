@@ -67,6 +67,8 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   prompt: ref(''),
   audioPrompt: ref(''),
   selectedCharacterId: ref(null),
+  selectedCharacterIds: ref([]),
+  sulphurStrength: ref(0.5),
   displayedReferences: ref([]),
   isSubmitting: ref(false),
   currentTask: ref({
@@ -287,6 +289,7 @@ describe('CustomFeatures LTX character settings', () => {
       })),
       currentModeId: ref('ltx_t2v'),
       selectedCharacterId: ref('character-1'),
+      selectedCharacterIds: ref(['character-1']),
       videoResolutionOptions: [{ value: '768x448', label: '768x448' }],
       resolution: ref('768x448'),
       videoDurationOptions: [

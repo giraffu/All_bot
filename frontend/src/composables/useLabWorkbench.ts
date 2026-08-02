@@ -82,7 +82,12 @@ export function useLabWorkbench() {
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
   const resolution = ref(getDefaultResolutionForMode(DEFAULT_LAB_MODE_ID))
   const duration = ref(DEFAULT_VIDEO_DURATION)
-  const selectedCharacterId = ref<string | null>(null)
+  const selectedCharacterIds = ref<string[]>([])
+  const sulphurStrength = ref(0.5)
+  const selectedCharacterId = computed<string | null>({
+    get: () => selectedCharacterIds.value[0] ?? null,
+    set: value => { selectedCharacterIds.value = value ? [value] : [] },
+  })
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -118,7 +123,8 @@ export function useLabWorkbench() {
     wan22ResolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
-    selectedCharacterId.value = null
+    selectedCharacterIds.value = []
+    sulphurStrength.value = 0.5
     template.resetTemplateState()
     wan22.resetWan22ChainState()
     ltx.resetLtxExtensionState()
@@ -198,7 +204,7 @@ export function useLabWorkbench() {
   const videoResolutionOptions = computed(() => (
     currentMode.value.id === 'face_video'
       ? FACE_VIDEO_RESOLUTION_OPTIONS
-      : currentMode.value.id === 'ltx_t2v' && selectedCharacterId.value
+      : currentMode.value.id === 'ltx_t2v' && selectedCharacterIds.value.length > 0
         ? LTX_T2V_IC_RESOLUTION_OPTIONS
       : isLtxLabModeId(currentMode.value.id)
         ? LTX_VIDEO_RESOLUTION_OPTIONS
@@ -231,7 +237,7 @@ export function useLabWorkbench() {
     resolution: resolution.value,
     duration: duration.value,
     wan22ResolutionPreset: wan22ResolutionPreset.value,
-    hasCharacter: Boolean(selectedCharacterId.value),
+    hasCharacter: selectedCharacterIds.value.length > 0,
   }))
 
   const costHint = computed(() => {
@@ -263,7 +269,7 @@ export function useLabWorkbench() {
     || resolution.value !== getDefaultResolutionForMode(currentModeId.value)
     || duration.value !== DEFAULT_VIDEO_DURATION
     || template.isTemplateApplied.value
-    || selectedCharacterId.value !== null
+    || selectedCharacterIds.value.length > 0
   ))
 
   watch(selectedEditLora, (nextValue) => {
@@ -285,9 +291,9 @@ export function useLabWorkbench() {
     }
   }, { immediate: true })
 
-  watch(selectedCharacterId, (characterId) => {
+  watch(selectedCharacterIds, (characterIds) => {
     if (currentMode.value.id !== 'ltx_t2v') return
-    resolution.value = characterId ? '768x448' : '1280x704'
+    resolution.value = characterIds.length > 0 ? '768x448' : '1280x704'
   })
 
   watch(
@@ -389,6 +395,8 @@ export function useLabWorkbench() {
     resolution,
     duration,
     selectedCharacterId,
+    selectedCharacterIds,
+    sulphurStrength,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -460,6 +468,8 @@ export function useLabWorkbench() {
     videoDurationOptions,
     duration,
     selectedCharacterId,
+    selectedCharacterIds,
+    sulphurStrength,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

@@ -910,6 +910,9 @@ class LtxT2VStrategy(BaseTaskStrategy):
             "character_id": inputs.get("character_id"),
             "character_sheet": spec.character_sheet,
             "character_description": spec.character_description,
+            "character_sheets": list(spec.character_sheets),
+            "character_descriptions": list(spec.character_descriptions),
+            "sulphur_strength": spec.sulphur_strength,
         }
 
     async def submit_task(
@@ -924,6 +927,9 @@ class LtxT2VStrategy(BaseTaskStrategy):
             audio_prompt=str(inputs.get("audio_prompt") or "").strip() or None,
             character_sheet=spec.character_sheet,
             character_description=spec.character_description,
+            character_sheets=spec.character_sheets,
+            character_descriptions=spec.character_descriptions,
+            sulphur_strength=spec.sulphur_strength,
             seed=inputs.get("seed"),
             width=spec.width,
             height=spec.height,

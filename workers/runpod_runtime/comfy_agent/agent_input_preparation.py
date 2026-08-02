@@ -198,5 +198,23 @@ async def prepare_task_inputs(
                     param_key=key,
                 )
             )
+    character_sheets = params.get("character_sheets")
+    character_sheet_keys = []
+    if isinstance(character_sheets, list):
+        for index, img_filename in enumerate(character_sheets[:4], start=1):
+            if not img_filename:
+                continue
+            param_key = f"character_sheet_{index}"
+            character_sheet_keys.append(param_key)
+            other_tasks.append(
+                process_single_input_asset_func(
+                    params=params,
+                    downloaded_input_paths=downloaded_input_paths,
+                    img_filename=img_filename,
+                    param_key=param_key,
+                )
+            )
     if other_tasks:
         await asyncio.gather(*other_tasks)
+    if character_sheet_keys:
+        params["character_sheets"] = [params[key] for key in character_sheet_keys]

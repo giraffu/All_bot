@@ -19,8 +19,8 @@ def test_build_cases_encodes_one_ingredients_and_three_msr_variants():
     cases = module.build_cases(
         repo_root=ROOT,
         ingredients_sheet_name="private-sheet.png",
-        msr_reference_names=[f"private-{index}.png" for index in range(4)],
-        character_description="same private character",
+        msr_panel_names=["private-wang-panel.png", "private-man-panel.png"],
+        character_descriptions=["same private woman", "same private man"],
         prompt="same private scene",
         seed=20260802,
     )
@@ -39,6 +39,9 @@ def test_build_cases_encodes_one_ingredients_and_three_msr_variants():
         assert workflow["800"]["class_type"] == "LTXICLoRALoaderModelOnly"
         assert workflow["801"]["class_type"] == "LiconMSR"
         assert workflow["801"]["inputs"]["background"] == ["806", 0]
+        assert workflow["801"]["inputs"]["1"] == ["802", 0]
+        assert workflow["801"]["inputs"]["2"] == ["803", 0]
+        assert "3" not in workflow["801"]["inputs"]
         assert workflow["807"]["class_type"] == "LTXAddVideoICLoRAGuide"
         assert workflow["807"]["inputs"]["latent_downscale_factor"] == ["800", 1]
         assert workflow["704"]["inputs"]["model"] in (["800", 0], ["808", 0])
@@ -54,8 +57,8 @@ def test_evidence_does_not_contain_private_inputs():
     cases = module.build_cases(
         repo_root=ROOT,
         ingredients_sheet_name="secret-sheet.png",
-        msr_reference_names=[f"secret-{index}.png" for index in range(4)],
-        character_description="secret-description",
+        msr_panel_names=["secret-wang-panel.png", "secret-man-panel.png"],
+        character_descriptions=["secret-woman", "secret-man"],
         prompt="secret-prompt",
         seed=7,
     )
