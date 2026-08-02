@@ -9,6 +9,10 @@ services:
     environment:
       DB_POOL_SIZE: "4"
       DB_MAX_OVERFLOW: "4"
+  qqcc-bot:
+    environment:
+      DB_POOL_SIZE: "4"
+      DB_MAX_OVERFLOW: "4"
   dashboard-backend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"]
     environment:

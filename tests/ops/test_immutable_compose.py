@@ -403,15 +403,16 @@ def test_prod_runtime_uses_host_projections_for_python_consumers():
             assert "API_BASE" not in environment
 
 
-def test_prod_main_bot_uses_its_documented_database_pool_budget():
+def test_prod_polling_bots_use_their_documented_database_pool_budgets():
     services = _compose(OVERLAYS[1])["services"]
 
-    assert services["bot"]["environment"] == {
-        "DB_POOL_SIZE": "4",
-        "DB_MAX_OVERFLOW": "4",
-    }
+    for name in ("bot", "qqcc-bot"):
+        assert services[name]["environment"] == {
+            "DB_POOL_SIZE": "4",
+            "DB_MAX_OVERFLOW": "4",
+        }
     for name, service in services.items():
-        if name != "bot":
+        if name not in {"bot", "qqcc-bot"}:
             environment = service.get("environment", {})
             assert "DB_POOL_SIZE" not in environment
             assert "DB_MAX_OVERFLOW" not in environment

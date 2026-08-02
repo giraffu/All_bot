@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import threading
@@ -13,7 +12,7 @@ logger = logging.getLogger("qqcc_bot.polling_liveness")
 
 
 class QqccPollingLivenessWatchdog:
-    """Restart only the official QQCC process when polling or processing stalls."""
+    """Restart the official QQCC process only when getUpdates polling stalls."""
 
     def __init__(
         self,
@@ -31,54 +30,16 @@ class QqccPollingLivenessWatchdog:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_poll_completed_at = self._clock()
-        self._latest_fetched_update_id: int | None = None
-        self._latest_completed_update_id: int | None = None
-        self._unprocessed_since: float | None = None
         self._tripped = False
 
     def record_poll_success(self, payload: bytes) -> None:
-        now = self._clock()
-        update_ids: list[int] = []
-        try:
-            decoded = json.loads(payload)
-            results = decoded.get("result", []) if isinstance(decoded, dict) else []
-            update_ids = [
-                int(item["update_id"])
-                for item in results
-                if isinstance(item, dict) and isinstance(item.get("update_id"), int)
-            ]
-        except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError):
-            logger.warning("QQCC polling heartbeat response could not be decoded")
-
         with self._lock:
-            self._last_poll_completed_at = now
-            if not update_ids:
-                return
-            latest = max(update_ids)
-            if (
-                self._latest_completed_update_id is None
-                or latest > self._latest_completed_update_id
-            ):
-                if self._unprocessed_since is None:
-                    self._unprocessed_since = now
-                if (
-                    self._latest_fetched_update_id is None
-                    or latest > self._latest_fetched_update_id
-                ):
-                    self._latest_fetched_update_id = latest
+            self._last_poll_completed_at = self._clock()
 
     def mark_update_completed(self, update_id: int) -> None:
-        with self._lock:
-            if (
-                self._latest_completed_update_id is None
-                or update_id > self._latest_completed_update_id
-            ):
-                self._latest_completed_update_id = update_id
-            if (
-                self._latest_fetched_update_id is None
-                or self._latest_completed_update_id >= self._latest_fetched_update_id
-            ):
-                self._unprocessed_since = None
+        # Kept as a compatibility hook for the final handler group. Business
+        # backlog is not a polling failure and must never restart the process.
+        return None
 
     def check_once(self) -> bool:
         now = self._clock()
@@ -86,26 +47,14 @@ class QqccPollingLivenessWatchdog:
             if self._tripped:
                 return True
             poll_age = now - self._last_poll_completed_at
-            backlog_age = (
-                now - self._unprocessed_since
-                if self._unprocessed_since is not None
-                else 0.0
-            )
-            reason = None
-            if poll_age > self._stale_after_seconds:
-                reason = "get_updates_stalled"
-            elif backlog_age > self._stale_after_seconds:
-                reason = "update_processing_stalled"
-            if reason is None:
+            if poll_age <= self._stale_after_seconds:
                 return False
             self._tripped = True
 
         logger.critical(
-            "QQCC polling liveness failed reason=%s poll_age_seconds=%.1f "
-            "backlog_age_seconds=%.1f action=process_restart",
-            reason,
+            "QQCC polling liveness failed reason=get_updates_stalled "
+            "poll_age_seconds=%.1f action=process_restart",
             poll_age,
-            backlog_age,
         )
         self._exit_func(75)
         return True
