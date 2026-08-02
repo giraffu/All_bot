@@ -19,6 +19,7 @@ manifest 和专项文档读取，不在此维护快照。
 | --- | --- |
 | task type、workflow 映射、LoRA/ControlNet 注入 | `docs/子模块_附加模型配置指南_comfy_models.md` |
 | LTX 文生视频/人物一致性 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` |
+| 本地多模态 LLM 提示词优化、task profile | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` |
 | 用户提交到 Worker 结果回流 | `docs/子模块_生成任务全链路_task_full_chain.md` |
 | GPU profile、artifact、RunPod/LAN | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
 | QQCC 场景/选项 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` |
@@ -38,6 +39,10 @@ manifest 和专项文档读取，不在此维护快照。
   运行时只读探测和 canary evidence。控制面出现选项不等于 GPU 已可加载。
 - 价格、History 类型、扣费退款：billing/task 领域事实源；workflow override
   不能改变业务类型或价格。
+- 提示词优化器只是可选预处理 seam，输出必须按 task profile 重新校验；它不得
+  选择或改写业务 task type、workflow、模型/LoRA、时长、分辨率和计费字段。
+- 本地 LLM 是否已加载、视觉能力、并发与显存占用属于运行态，必须实时探测；
+  Skill 不保存绝对模型路径、进程状态或一次性容量结论。
 
 ## 3. 分层与复用
 
