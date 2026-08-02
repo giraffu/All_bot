@@ -93,12 +93,12 @@ const TextareaStub = defineComponent({
 
 const ModalStub = defineComponent({
   name: 'AModal',
-  props: ['open', 'confirmLoading'],
+  props: ['open', 'confirmLoading', 'footer'],
   emits: ['ok', 'cancel', 'update:open'],
   template: `
     <section v-if="open" data-testid="edit-character-dialog">
       <slot />
-      <button data-testid="confirm-edit-character" @click="$emit('ok')">ok</button>
+      <button v-if="footer !== null" data-testid="confirm-edit-character" @click="$emit('ok')">ok</button>
     </section>
   `,
 })
@@ -118,7 +118,40 @@ describe('CharacterLibraryPanel', () => {
       source_object_key: 'source.png',
       sheet_object_key: 'sheet.png',
       preview_url: 'preview.png',
-      views: [],
+      views: [
+        {
+          type: 'face_front',
+          label: '正脸图',
+          status: 'ready',
+          preview_url: 'face-front.png',
+          prompt: 'face prompt',
+          default_prompt: 'default face prompt',
+        },
+        {
+          type: 'body_front',
+          label: '全身正面图',
+          status: 'ready',
+          preview_url: 'body-front.png',
+          prompt: 'front prompt',
+          default_prompt: 'default front prompt',
+        },
+        {
+          type: 'body_side',
+          label: '全身侧面图',
+          status: 'ready',
+          preview_url: 'body-side.png',
+          prompt: 'side prompt',
+          default_prompt: 'default side prompt',
+        },
+        {
+          type: 'body_back',
+          label: '全身背面图',
+          status: 'ready',
+          preview_url: 'body-back.png',
+          prompt: 'back prompt',
+          default_prompt: 'default back prompt',
+        },
+      ],
     })
   })
 
@@ -136,10 +169,31 @@ describe('CharacterLibraryPanel', () => {
     },
   })
 
+  it('uses the front-face view as a compact cover and opens four-view management on demand', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="character-cover-character-1"]').attributes('src')).toBe('face-front.png')
+    expect(wrapper.find('[data-testid="character-detail-dialog"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="open-character-character-1"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="character-detail-dialog"]').isVisible()).toBe(true)
+    expect(wrapper.findAll('[data-testid^="character-detail-view-"]')).toHaveLength(4)
+    expect(wrapper.find('[data-testid="edit-character-character-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="delete-character-character-1"]').exists()).toBe(true)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('face prompt')
+
+    await wrapper.get('[data-testid="character-detail-view-body_side"]').trigger('click')
+
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('side prompt')
+  })
+
   it('edits both character name and description from the library card', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
+    await wrapper.get('[data-testid="open-character-character-1"]').trigger('click')
     await wrapper.get('[data-testid="edit-character-character-1"]').trigger('click')
     await wrapper.get('[data-testid="edit-character-name"]').setValue('鹿小草新版')
     await wrapper.get('[data-testid="edit-character-description"]').setValue('新描述')
@@ -156,6 +210,7 @@ describe('CharacterLibraryPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
+    await wrapper.get('[data-testid="open-character-character-1"]').trigger('click')
     await wrapper.get('[data-testid="edit-character-character-1"]').trigger('click')
     await wrapper.get('[data-testid="edit-character-description"]').setValue('   ')
     await wrapper.get('[data-testid="confirm-edit-character"]').trigger('click')
@@ -169,6 +224,7 @@ describe('CharacterLibraryPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
+    await wrapper.get('[data-testid="open-character-character-1"]').trigger('click')
     await wrapper.get('[data-testid="delete-character-character-1"]').trigger('click')
     await flushPromises()
 

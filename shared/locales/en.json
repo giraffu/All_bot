@@ -646,7 +646,7 @@
     "lab_title": "Create a Character Reference",
     "lab_description": "Upload a source image, then generate or directly upload a front face plus front, side, and back full-body views. All four compose one official-style character panel.",
     "library_eyebrow": "My Notes · Private Character Assets",
-    "library_description": "Manage characters and the four views in their official-style panel. Edit details, delete characters, or regenerate a selected view.",
+    "library_description": "Browse characters by front-face cover. Open a cover to view all four images and manage details, views, or the character.",
     "create_in_lab": "Create in Lab",
     "library_empty": "No character references yet",
     "library_empty_hint": "Open the Lab, upload a character image, and complete all four panel views.",
