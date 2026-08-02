@@ -674,6 +674,23 @@ def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
     assert module.result_asset_priority(asset, task_type="wan22_video_v2") == 3
 
 
+@pytest.mark.parametrize("task_type", ["ltx_video_v2", "ltx_video_v2_flf2v"])
+def test_ltx_v2_result_pick_prefers_video_over_last_frame(monkeypatch, task_type):
+    module = build_agent_module(monkeypatch)
+    outputs = {
+        "last_frame_node": {
+            "images": [{"filename": f"{task_type}_42_last_frame_00001.png"}]
+        },
+        "video_node": {"videos": [{"filename": "result.mp4"}]},
+    }
+
+    asset = module.pick_first_output_asset(outputs, task_type=task_type)
+
+    assert asset is not None
+    assert asset["filename"] == "result.mp4"
+    assert module.result_asset_priority(asset, task_type=task_type) == 3
+
+
 @pytest.mark.parametrize(
     "task_type",
     [
