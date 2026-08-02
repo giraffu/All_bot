@@ -116,10 +116,17 @@ def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
 
 def test_lan_all_dockerfile_includes_pinned_msr_node_runtime():
     dockerfile = (ROOT / "workers/runpod_profiles/all/Dockerfile").read_text()
+    min_nodes = (
+        ROOT
+        / "workers/runpod_profiles/ltx_unified/allbot_ltx_min_nodes/__init__.py"
+    ).read_text()
 
     assert "94a52bfec735ff6f802c480f7fe8fdac1d279a7f" in dockerfile
     assert "ComfyUI-Licon-MSR" in dockerfile
     assert 'assert "LiconMSR" in m.NODE_CLASS_MAPPINGS' in dockerfile
+    assert '"MathExpression|pysssss","LiconMSR"' in dockerfile
+    assert "_load_licon_msr_class" in min_nodes
+    assert 'NODE_CLASS_MAPPINGS["LiconMSR"]' in min_nodes
 
 
 def test_runpod_profile_staging_includes_shared_aspect_adapter():
