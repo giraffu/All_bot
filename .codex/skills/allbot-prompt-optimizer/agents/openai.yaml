@@ -1,0 +1,5 @@
+interface:
+  display_name: "AllBot Prompt Optimizer"
+  short_description: "维护版本化多模态提示词优化注册表、任务链路与独立Worker平台"
+  brand_color: "#2563EB"
+  default_prompt: "Use $allbot-prompt-optimizer to add or operate a versioned prompt optimization profile safely."

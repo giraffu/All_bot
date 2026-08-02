@@ -114,7 +114,7 @@ def test_unified_release_constants_pin_the_approved_extracted_lora():
     module = _load_module()
 
     assert module.BUNDLE == "ltx_unified_runtime"
-    assert module.VERSION == "2026-08-02-msr-v2-canary"
+    assert module.VERSION == "2026-08-03-10eros-v14"
     assert (
         module.EXTRACTED_LORA["sha256"]
         == "ac98553c007ea949603765d0e2a4ed97c6d5758bb2bb4d5e0c2cfdce0e4b3e76"
@@ -129,5 +129,15 @@ def test_unified_release_constants_pin_the_approved_extracted_lora():
             "https://huggingface.co/LiconStudio/LTX-2.3-Multiple-Subject-Reference/"
             "resolve/593b0b7d2b912e8ecdb2825a34732cee36e720ba/"
             "LTX-2.3-Licon-MSR-V2.safetensors"
+        ),
+    }
+    assert module.EROS_V14_DMD_INT8 == {
+        "relative_path": "diffusion_models/LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors",
+        "sha256": "dc7b2809eb349f26aada43e40d140d778b8025d0f94550c97912b022222b8f81",
+        "size_bytes": 29_161_842_398,
+        "url": (
+            "https://huggingface.co/TenStrip/LTX2.3-10Eros/resolve/"
+            "a1ab190fe39a88347029ee427390517e03be1f06/INT8%20diffusion_models/"
+            "10Eros_v1.4_DMD_int8_convrot.safetensors"
         ),
     }

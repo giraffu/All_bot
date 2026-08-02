@@ -8,6 +8,44 @@ from src.domain_config.wan22_aio_video import (
 
 
 class ImageService:
+    async def submit_ltx_video_v2_task(
+        self,
+        task_id: str,
+        *,
+        prompt: str,
+        image_path: str,
+        end_image_path: str | None = None,
+        negative_prompt: str | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        return await api_client.submit_ltx_video_v2(
+            task_id,
+            prompt=prompt,
+            image_path=image_path,
+            end_image_path=end_image_path,
+            negative_prompt=negative_prompt,
+            width=width,
+            height=height,
+            length=length,
+            priority=priority,
+        )
+
+    async def submit_prompt_optimization_task(
+        self,
+        task_id: str,
+        *,
+        payload: dict[str, Any],
+        priority: int = 0,
+    ) -> str:
+        return await api_client.submit_prompt_optimization_task(
+            task_id,
+            payload=payload,
+            priority=priority,
+        )
+
     async def submit_ltx_t2v_task(
         self,
         task_id: str,

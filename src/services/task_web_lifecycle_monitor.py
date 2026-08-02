@@ -61,6 +61,9 @@ async def monitor_task_and_release_lock(
                         status=normalized_status,
                         result_path=progress.get("result_path"),
                         extra_outputs=progress.get("extra_outputs"),
+                        result_kind=progress.get("result_kind"),
+                        result_text=progress.get("result_text"),
+                        result_meta=progress.get("result_meta"),
                         error=progress.get("error") or progress.get("error_msg"),
                         message=progress.get("message"),
                     )

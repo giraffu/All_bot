@@ -77,6 +77,17 @@ class RedisClient:
         tasks_raw = await self.redis.hgetall(key)
         return {k: json.loads(v) for k, v in tasks_raw.items()}
 
+    async def set_prompt_result(
+        self, task_id: str, payload: Dict[str, Any], *, ttl_seconds: int
+    ) -> None:
+        key = f"{REDIS_PREFIX}prompt_result:{task_id}"
+        await self.redis.setex(key, ttl_seconds, json.dumps(payload, ensure_ascii=False))
+
+    async def get_prompt_result(self, task_id: str) -> Dict[str, Any] | None:
+        key = f"{REDIS_PREFIX}prompt_result:{task_id}"
+        raw = await self.redis.get(key)
+        return json.loads(raw) if raw else None
+
     async def get_active_tasks(self) -> Dict[str, Any]:
         """获取所有运行中的任务"""
         try:

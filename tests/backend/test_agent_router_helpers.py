@@ -502,6 +502,35 @@ async def test_complete_task_payload_forwards_extra_outputs():
     )
 
 
+@pytest.mark.asyncio
+async def test_complete_task_payload_forwards_text_result_contract():
+    queue_manager = SimpleNamespace(
+        record_task_worker=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
+        complete_task=AsyncMock(),
+    )
+
+    payload = await complete_task_payload(
+        task_id="prompt-1",
+        agent_id="optimizer-1",
+        result="",
+        result_kind="text",
+        result_text="optimized prompt",
+        result_meta={"prompt_optimizer": {"profile_ref": "profile@1"}},
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    queue_manager.complete_task.assert_awaited_once_with(
+        "prompt-1",
+        "",
+        extra_outputs=None,
+        result_kind="text",
+        result_text="optimized prompt",
+        result_meta={"prompt_optimizer": {"profile_ref": "profile@1"}},
+    )
+
+
 def test_verify_agent_token_checks_configuration_and_bearer_value():
     logger = MagicMock()
 

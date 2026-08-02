@@ -1,0 +1,2 @@
+"""Generic prompt optimization worker."""
+

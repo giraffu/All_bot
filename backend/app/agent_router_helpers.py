@@ -185,6 +185,9 @@ async def complete_task_payload(
     agent_id: str,
     result: str,
     extra_outputs: dict | None = None,
+    result_kind: str | None = None,
+    result_text: str | None = None,
+    result_meta: dict | None = None,
     queue_manager,
 ) -> dict:
     await queue_manager.record_task_worker(task_id, agent_id)
@@ -193,7 +196,14 @@ async def complete_task_payload(
         agent_id=agent_id,
         task_id=task_id,
     )
-    await queue_manager.complete_task(task_id, result, extra_outputs=extra_outputs)
+    completion_kwargs = {"extra_outputs": extra_outputs}
+    if result_kind is not None:
+        completion_kwargs["result_kind"] = result_kind
+    if result_text is not None:
+        completion_kwargs["result_text"] = result_text
+    if result_meta is not None:
+        completion_kwargs["result_meta"] = result_meta
+    await queue_manager.complete_task(task_id, result, **completion_kwargs)
     return {"status": "ok"}
 
 

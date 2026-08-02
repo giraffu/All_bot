@@ -58,6 +58,11 @@ async def submit_generation_task(
 
         _raise_if_web_generation_task_disabled(req.task_type)
 
+        if req.task_type in {"ltx_video_v2", "ltx_video_v2_flf2v"} and not _env_enabled(
+            "ENABLE_LTX_VIDEO_V2"
+        ):
+            raise CoreDomainError("高级图生视频 v2 当前未开放。")
+
         if (
             req.task_type
             in {

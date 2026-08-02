@@ -43,6 +43,9 @@ MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
 MODE_IMAGE_TO_VIDEO_LITERAL = "image_to_video"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_LTX_VIDEO_FLF2V = "ltx_video_flf2v"
+MODE_LTX_VIDEO_V2 = "ltx_video_v2"
+MODE_LTX_VIDEO_V2_FLF2V = "ltx_video_v2_flf2v"
+MODE_PROMPT_OPTIMIZE = "prompt_optimize"
 MODE_LTX_T2V = "ltx_t2v"
 MODE_LTX_T2V_IC = "ltx_t2v_ic"
 MODE_CHARACTER_REFERENCE_BUILD = "character_reference_build"
@@ -93,6 +96,8 @@ MODE_NAME_MAP = {
     MODE_CUSTOM_VIDEO: "task.mode_custom_video",
     MODE_LTX_VIDEO: "task.mode_ltx_video",
     MODE_LTX_VIDEO_FLF2V: "task.mode_ltx_video",
+    MODE_LTX_VIDEO_V2: "task.mode_ltx_video_v2",
+    MODE_LTX_VIDEO_V2_FLF2V: "task.mode_ltx_video_v2",
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_SCAIL2_ACTION_TRANSFER: "task.mode_scail2_action_transfer",
     MODE_SCAIL2_ACTION_TRANSFER_LONG: "task.mode_scail2_action_transfer",
@@ -122,6 +127,8 @@ TASK_COSTS = {
     MODE_CLOSEUP_BLOWJOB: 6,
     MODE_CUSTOM_VIDEO: 6,
     MODE_LTX_VIDEO: 10,
+    MODE_LTX_VIDEO_V2: 10,
+    MODE_LTX_VIDEO_V2_FLF2V: 10,
     MODE_LTX_T2V: 10,
     MODE_LTX_T2V_IC: 12,
     MODE_CHARACTER_REFERENCE_BUILD: 18,
@@ -417,6 +424,8 @@ VIDEO_TASK_TYPES = [
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_LTX_VIDEO,
     MODE_LTX_VIDEO_FLF2V,
+    MODE_LTX_VIDEO_V2,
+    MODE_LTX_VIDEO_V2_FLF2V,
     MODE_LTX_T2V,
     MODE_LTX_T2V_IC,
     MODE_WAN22_VIDEO_V2,

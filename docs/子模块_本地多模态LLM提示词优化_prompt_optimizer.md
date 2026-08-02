@@ -1,8 +1,10 @@
 # 子模块：本地多模态 LLM 提示词优化
 
 本文定义 AllBot 后续接入本地 LM Studio/VLM 时的模型口径、统一输出契约和按
-`task_type` 选择的提示词生成策略。它是设计与接入目录，不代表提示词优化服务已
-接入提交链路，也不代表候选 ComfyUI 模型已经部署。
+`task_type` 选择的提示词生成策略。通用提交链路和首批 LTX v2 Profile 已接入；
+Worker/API/版本规则以
+[`子模块_Prompt_Optimizer_Worker.md`](子模块_Prompt_Optimizer_Worker.md) 为准。
+本文仍不代表某个 Comfy checkpoint 已在当前 LAN runtime 可见。
 
 ## 1. 边界与事实源
 
@@ -17,16 +19,15 @@
   为准。本文不固化易变节点 ID。
 - 不接受自由提示词的任务（普通换脸、`face_video` 等）不调用优化器。
 
-建议服务层使用如下结构化结果，避免模型把解释文字混入实际提示词：
+服务层使用统一结构化结果，避免模型把解释文字混入实际提示词：
 
 ```json
 {
   "schema_version": "allbot.prompt_optimizer.v1",
-  "task_profile": "ltx_i2v",
-  "image_facts": ["仅记录输入中可观察的事实"],
-  "preserved_constraints": ["必须保持的身份、构图或时序条件"],
-  "positive_prompt": "最终正向提示词",
-  "negative_prompt": "仅在该任务支持时生成",
+  "profile_ref": "ltx_eros_v14_i2v@1",
+  "template_ref": "ltx_scene_script_cinematic@1",
+  "primary_field": "positive_prompt",
+  "optimized_fields": {"positive_prompt": "最终正向提示词"},
   "warnings": []
 }
 ```

@@ -13,6 +13,9 @@ from src.constants import (
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
+    MODE_PROMPT_OPTIMIZE,
+    MODE_LTX_VIDEO_V2,
+    MODE_LTX_VIDEO_V2_FLF2V,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
@@ -478,6 +481,32 @@ class DefaultImageStrategy(BaseTaskStrategy):
             )
 
 
+class PromptOptimizeStrategy(BaseTaskStrategy):
+    """Dispatches the generic optimizer envelope without target-specific branches."""
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return 1
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "saved_inputs": [],
+            "record_history": False,
+            "result_kind": "text",
+        }
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return []
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        return await _get_dispatch_image_service().submit_prompt_optimization_task(
+            task_id,
+            payload=inputs,
+            priority=priority,
+        )
+
+
 class PornmasterFlux2EditStrategy(BaseTaskStrategy):
     def __init__(
         self,
@@ -883,6 +912,42 @@ class LtxVideoStrategy(BaseTaskStrategy):
         )
 
 
+class LtxVideoV2Strategy(LtxVideoStrategy):
+    def __init__(self, task_type: str):
+        self.task_type = task_type
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = super().get_metadata(inputs)
+        metadata["ltx_profile"] = "10eros_v1.4_dmd_int8"
+        metadata["gallery_supported"] = False
+        return metadata
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        if inputs.get("lora_name") or inputs.get("lora_items"):
+            raise CoreDomainError("高级图生视频 v2 首版不支持 LoRA。")
+        submission = _build_ltx_submission_context(inputs)
+        expected_flf2v = self.task_type == MODE_LTX_VIDEO_V2_FLF2V
+        if expected_flf2v != (submission.mode == LTX_VIDEO_MODE_FLF2V):
+            raise CoreDomainError("高级图生视频 v2 的首尾帧输入与任务类型不匹配。")
+        if not submission.image_path:
+            raise CoreDomainError("高级图生视频 v2 需要上传起始图片。")
+        if expected_flf2v and not submission.end_image_path:
+            raise CoreDomainError("高级图生视频 v2 首尾帧模式需要终止图片。")
+        return await _get_dispatch_image_service().submit_ltx_video_v2_task(
+            task_id,
+            prompt=submission.prompt,
+            image_path=submission.image_path,
+            end_image_path=submission.end_image_path if expected_flf2v else None,
+            negative_prompt=submission.negative_prompt,
+            width=submission.width,
+            height=submission.height,
+            length=submission.requested_seconds,
+            priority=priority,
+        )
+
+
 class LtxT2VStrategy(BaseTaskStrategy):
     def __init__(self, task_type: str):
         self.task_type = task_type
@@ -1090,7 +1155,10 @@ def _build_video_strategy(
 STRATEGY_BUILDERS: dict[str, callable] = {
     MODE_FACE_SWAP: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
     MODE_FACE_SWAP_V2: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
+    MODE_PROMPT_OPTIMIZE: lambda _task_type, _feature_flags: PromptOptimizeStrategy(),
     "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
+    MODE_LTX_VIDEO_V2: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
+    MODE_LTX_VIDEO_V2_FLF2V: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
     LTX_T2V_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
     LTX_T2V_IC_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
     CHARACTER_REFERENCE_BUILD_TASK_TYPE: (
