@@ -169,6 +169,9 @@ Sulphur 0.5。MSR 读取 2–4 张有序角色面板；每张面板内部已包�
 `94a52bfec735ff6f802c480f7fe8fdac1d279a7f`，V2 LoRA 固定 revision
 `593b0b7d2b912e8ecdb2825a34732cee36e720ba` 和 SHA256
 `6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98`。
+`all` profile 还通过 `allbot_ltx_min_nodes` 从该固定插件导入同一个
+`LiconMSR` 类并重复注册，避免宽节点集合启动时插件已成功导入、但 live
+`/object_info` 丢失 MSR 映射；镜像 smoke 必须同时断言 bridge 与上游映射存在。
 该栈复用既有 `ltx_t2v_ic` task type 与计费，不新增公共任务类型；只有测试 Web
 双重开关开启时可提交多角色参数，正式环境默认拒绝。
 

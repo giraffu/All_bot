@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import gc
+import importlib.util
 import math
 import random
+import sys
+from pathlib import Path
 from typing import Any
 
 try:
@@ -12,6 +15,38 @@ except Exception:  # pragma: no cover - ComfyUI images are expected to include t
 
 
 ANY_TYPE = "*"
+
+
+def _load_licon_msr_class() -> type[Any] | None:
+    """Bridge the pinned MSR node into the stable AllBot node package.
+
+    Some broad ComfyUI profiles import the upstream extension successfully but
+    do not retain its mapping in the live object registry. Loading the exact
+    pinned sibling package here makes the mapping deterministic while leaving
+    the upstream extension as the implementation owner.
+    """
+
+    plugin_dir = Path(__file__).resolve().parent.parent / "ComfyUI-Licon-MSR"
+    plugin_init = plugin_dir / "__init__.py"
+    if not plugin_init.is_file():
+        return None
+    module_name = "allbot_licon_msr_bridge"
+    module = sys.modules.get(module_name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            plugin_init,
+            submodule_search_locations=[str(plugin_dir)],
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("unable to load pinned ComfyUI-Licon-MSR extension")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    node_class = module.NODE_CLASS_MAPPINGS.get("LiconMSR")
+    if node_class is None:
+        raise RuntimeError("pinned ComfyUI-Licon-MSR lacks LiconMSR")
+    return node_class
 
 
 class ImpactDummyInput:
@@ -348,6 +383,10 @@ NODE_CLASS_MAPPINGS = {
     "Sigmas Sigmoid": SigmasSigmoid,
     "MathExpression|pysssss": MathExpressionPysssss,
 }
+
+_licon_msr_class = _load_licon_msr_class()
+if _licon_msr_class is not None:
+    NODE_CLASS_MAPPINGS["LiconMSR"] = _licon_msr_class
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     key: key
