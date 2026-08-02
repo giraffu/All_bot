@@ -386,6 +386,11 @@ docker compose --env-file .env.cloud.test \
 2026-06-22 LTX 10Eros v1.2 云测试 canary：
 
 - `cloud-comfy-agent-test-3` / `cloud_worker_test_03` 是当前测试 LTX AIO worker，指向 `http://192.168.1.177:8191`。本次只通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖测试 worker3，默认 `TASK_TYPE_WORKFLOW_FILENAMES` 不变。
+- 任一 `*_TASK_TYPE_WORKFLOW_OVERRIDES` 在进入 Worker compose 前必须通过
+  config contract 的 JSON object 校验，且值只能是非空 task type 到非空
+  workflow 文件名的字符串映射。临时单 Worker env 也不得绕过该预检；shell
+  生成 env 文件时必须保留 JSON 双引号，禁止把
+  `{task_type:workflow.json}` 之类的 shell 伪对象交给 Compose。
 - 三个 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，分别覆盖 `ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio`；旧 `LTX 2.3 *.json` 只作为历史默认 workflow 资产保留，不作为新 RunPod 的回退路径，不得覆盖。FLF2V canary 必须验证时空 VAE `last_frame_fix=true`，并抽样对比上传终止帧、VAE 尾帧与 MP4 解码尾帧。
 - 10Eros v1.2 主模型文件名为 `models/diffusion_models/LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`。LAN AIO LTX 镜像不 baked 权重，测试前必须确认该文件在 AIO `/workspace/ComfyUI/models` 持久化挂载下可见；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 v1.2-only，旧 v1 不再作为 RunPod 回退，不要依赖手工容器层文件。
 - RunPod `ltx_video` profile 的镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到仓库 Actions 可写的 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:<tag>`；旧无 `-v2` 包只作为历史回滚来源，不得承接新 SHA。Dockerfile 默认从公网 GHCR Wan22 镜像复制节点，不依赖 LAN registry。RunPod env 需渲染为 `RUNPOD_TASK_TYPE=ltx_video`、`SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`、`POOL_RUNTIME_PROFILE=ltx_video`、`RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO=ltx_video/2026-06-10/manifest.json`、`containerDiskInGb>=180`、GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，并带三份 v1.2 `TASK_TYPE_WORKFLOW_OVERRIDES` 和标准 `dockerStartCmd`。

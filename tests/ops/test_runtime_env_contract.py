@@ -224,6 +224,52 @@ def test_environment_accepts_its_canonical_mini_app_url(
     module.validate_environment_semantics(environment, values)
 
 
+def test_environment_rejects_invalid_worker_workflow_override_json():
+    module = _load_module()
+    values = _environment("test")
+    values["ALLBOT_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES"] = (
+        "{ltx_video:LTX 2.3 I2V 10Eros LoRA.json}"
+    )
+
+    with pytest.raises(
+        module.ContractError,
+        match="ALLBOT_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES must be a JSON object",
+    ):
+        module.validate_environment_semantics("test", values)
+
+
+def test_environment_accepts_worker_workflow_override_string_mapping():
+    module = _load_module()
+    values = _environment("test")
+    values["ALLBOT_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES"] = json.dumps(
+        {"ltx_video": "LTX 2.3 I2V 10Eros LoRA.json"}
+    )
+
+    module.validate_environment_semantics("test", values)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["DASHBOARD_REDIS_URL", "DASHBOARD_WORKER_REDIS_URL"],
+)
+def test_environment_rejects_dashboard_loopback_redis_aliases(key):
+    module = _load_module()
+    values = _environment("prod")
+    values[key] = "redis://127.0.0.1:6379/1"
+
+    with pytest.raises(module.ContractError, match=key):
+        module.validate_environment_semantics("prod", values)
+
+
+def test_environment_accepts_non_loopback_dashboard_redis_aliases():
+    module = _load_module()
+    values = _environment("prod")
+    values["DASHBOARD_REDIS_URL"] = "rediss://valkey.internal:25061/1"
+    values["DASHBOARD_WORKER_REDIS_URL"] = "rediss://valkey.internal:25061/2"
+
+    module.validate_environment_semantics("prod", values)
+
+
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])
 def test_ton_merchant_address_is_conditionally_required(service):
     module = _load_module()
