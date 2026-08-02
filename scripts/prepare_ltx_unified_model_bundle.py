@@ -21,7 +21,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 
 BUNDLE = "ltx_unified_runtime"
-VERSION = "2026-08-01-comfy-fast"
+VERSION = "2026-08-02-msr-v2-canary"
 SOURCE_BUNDLES = (
     ("ltx_video_baseline", "2026-06-10"),
     ("ltx_t2v_runtime", "2026-08-01-comfy-fast"),
@@ -42,8 +42,19 @@ EXTRACTED_LORA = {
         "LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors"
     ),
 }
-EXPECTED_FILE_COUNT = 50
-EXPECTED_TOTAL_SIZE_BYTES = 138_600_709_710
+MSR_V2_LORA = {
+    "relative_path": "loras/ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors",
+    "sha256": "6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98",
+    "size_bytes": 654_443_392,
+    "url": (
+        "https://huggingface.co/LiconStudio/LTX-2.3-Multiple-Subject-Reference/"
+        "resolve/593b0b7d2b912e8ecdb2825a34732cee36e720ba/"
+        "LTX-2.3-Licon-MSR-V2.safetensors"
+    ),
+}
+EXTRA_LORAS = (EXTRACTED_LORA, MSR_V2_LORA)
+EXPECTED_FILE_COUNT = 51
+EXPECTED_TOTAL_SIZE_BYTES = 139_255_153_102
 MIN_FREE_BYTES = 8 * 1024**3
 
 
@@ -58,7 +69,7 @@ def _validated_item(item: dict[str, Any]) -> dict[str, Any]:
 def build_manifest_files(
     registry: ModelRegistry,
     *,
-    extracted_lora: dict[str, Any] = EXTRACTED_LORA,
+    extracted_loras: tuple[dict[str, Any], ...] = EXTRA_LORAS,
     require_blobs: bool = True,
 ) -> list[dict[str, Any]]:
     files_by_path: dict[str, dict[str, Any]] = {}
@@ -77,11 +88,12 @@ def build_manifest_files(
                 raise RuntimeError(f"conflicting LTX model path: {path}")
             files_by_path[path] = item
 
-    extracted = _validated_item(extracted_lora)
-    existing = files_by_path.get(extracted["relative_path"])
-    if existing and existing != extracted:
-        raise RuntimeError(f"conflicting LTX model path: {extracted['relative_path']}")
-    files_by_path[extracted["relative_path"]] = extracted
+    for raw_extra in extracted_loras:
+        extracted = _validated_item(raw_extra)
+        existing = files_by_path.get(extracted["relative_path"])
+        if existing and existing != extracted:
+            raise RuntimeError(f"conflicting LTX model path: {extracted['relative_path']}")
+        files_by_path[extracted["relative_path"]] = extracted
 
     result = []
     for path in sorted(files_by_path):
@@ -95,15 +107,15 @@ def build_manifest_files(
     return result
 
 
-def _download_extracted_lora(registry: ModelRegistry) -> None:
-    blob = registry.blob_path(EXTRACTED_LORA["sha256"])
-    if blob.is_file() and blob.stat().st_size == EXTRACTED_LORA["size_bytes"]:
+def _download_extra_lora(registry: ModelRegistry, item: dict[str, Any]) -> None:
+    blob = registry.blob_path(item["sha256"])
+    if blob.is_file() and blob.stat().st_size == item["size_bytes"]:
         return
     temp_root = registry.root / "tmp" / f"{BUNDLE}-{VERSION}"
     temp_root.mkdir(parents=True, exist_ok=True)
-    partial = temp_root / f"{EXTRACTED_LORA['sha256']}.part"
+    partial = temp_root / f"{item['sha256']}.part"
     request = urllib.request.Request(
-        EXTRACTED_LORA["url"],
+        item["url"],
         headers={"User-Agent": "allbot-model-bundle/1"},
     )
     try:
@@ -117,10 +129,10 @@ def _download_extracted_lora(registry: ModelRegistry) -> None:
                 output.write(chunk)
                 digest.update(chunk)
                 size += len(chunk)
-        if size != EXTRACTED_LORA["size_bytes"]:
-            raise RuntimeError("size mismatch for extracted 10Eros LoRA")
-        if digest.hexdigest() != EXTRACTED_LORA["sha256"]:
-            raise RuntimeError("SHA256 mismatch for extracted 10Eros LoRA")
+        if size != item["size_bytes"]:
+            raise RuntimeError(f"size mismatch for extra LoRA {item['relative_path']}")
+        if digest.hexdigest() != item["sha256"]:
+            raise RuntimeError(f"SHA256 mismatch for extra LoRA {item['relative_path']}")
         blob.parent.mkdir(parents=True, exist_ok=True)
         blob.unlink(missing_ok=True)
         try:
@@ -142,7 +154,8 @@ def main() -> int:
         raise SystemExit(
             f"refusing download: registry filesystem has {free / 1024**3:.1f} GiB free"
         )
-    _download_extracted_lora(registry)
+    for item in EXTRA_LORAS:
+        _download_extra_lora(registry, item)
     files = build_manifest_files(registry)
     total_size = sum(item["size_bytes"] for item in files)
     if len(files) != EXPECTED_FILE_COUNT or total_size != EXPECTED_TOTAL_SIZE_BYTES:
@@ -162,6 +175,7 @@ def main() -> int:
             ],
             "excluded_full_checkpoints": sorted(EXCLUDED_FULL_CHECKPOINTS),
             "extracted_lora_revision": ("7170ebca094fcb73e8f621e88ee38fc0524c9fcf"),
+            "msr_v2_revision": "593b0b7d2b912e8ecdb2825a34732cee36e720ba",
         },
         files=files,
     )

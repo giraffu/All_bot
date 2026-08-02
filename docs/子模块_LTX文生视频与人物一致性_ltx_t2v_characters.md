@@ -149,6 +149,17 @@ distilled + Ingredients 均产出可播放、带音轨 MP4，当前目标栈才�
 描述、场景提示词、私有 object key 或签名 URL。通过该 A/B 也不能修改用户侧
 `ltx_t2v_ic` mapping，是否增加测试 Web 实验选项必须另行决策。
 
+MSR V2 只存在于隔离验证栈。`scripts/ltx_t2v_msr_ab_smoke.py` 固定生成 4 个
+5 秒样本：官方 Ingredients、MSR V2、MSR V2 + Sulphur 0.25、MSR V2 +
+Sulphur 0.5。MSR 读取正脸、全身正面、侧面、背面 4 张原始白底图，使用纯白
+空图满足其 background 输入，不复用 Ingredients 合成表；四组保持提示词、种子、
+负向词、分辨率与时长一致。`ComfyUI-Licon-MSR` 固定 revision
+`94a52bfec735ff6f802c480f7fe8fdac1d279a7f`，V2 LoRA 固定 revision
+`593b0b7d2b912e8ecdb2825a34732cee36e720ba` 和 SHA256
+`6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98`。
+该栈不得进入公共 workflow patcher、task type、Web 参数或计费映射；验证通过也
+只能支持下一轮测试环境选项评估。
+
 镜像入口：
 
 - RunPod：`workers/runpod_profiles/ltx_t2v/Dockerfile`，发布为

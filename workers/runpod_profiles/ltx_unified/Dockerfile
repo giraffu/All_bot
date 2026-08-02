@@ -7,6 +7,7 @@ LABEL allbot.runpod.profile="ltx_unified"
 LABEL allbot.runpod.models="external-lan-manifest"
 LABEL allbot.runpod.scope="ltx-video-and-t2v"
 ARG ALLBOT_GIT_SHA
+ARG LICON_MSR_REVISION=94a52bfec735ff6f802c480f7fe8fdac1d279a7f
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
@@ -28,11 +29,19 @@ RUN set -euo pipefail; \
     test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
     test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
     test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"; \
+    git clone https://github.com/liconstudio/ComfyUI-Licon-MSR.git \
+      "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR"; \
+    git -C "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR" checkout --detach \
+      "${LICON_MSR_REVISION}"; \
+    test "$(git -C "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR" rev-parse HEAD)" = \
+      "${LICON_MSR_REVISION}"; \
+    rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR/.git"; \
     rm -rf "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"; \
     cp -a /opt/allbot/allbot_ltx_min_nodes "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runpod_worker/requirements.txt; \
     python3 -c 'import fastapi, minio, uvicorn, websockets; from sageattention import sageattn; assert callable(sageattn)'; \
+    COMFYUI_DIR="${comfyui_dir}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; p=Path(os.environ["COMFYUI_DIR"])/"custom_nodes/ComfyUI-Licon-MSR"; s=importlib.util.spec_from_file_location("allbot_licon_msr",p/"__init__.py",submodule_search_locations=[str(p)]); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); assert "LiconMSR" in m.NODE_CLASS_MAPPINGS'; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; assert {"ltx_video","ltx_video_flf2v","ltx_video_v2v_audio","ltx_t2v","ltx_t2v_ic"} <= set(p); assert callable(compose_ingredients_character_panel)'; \
     python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); expected={"LTX 2.3 I2V 10Eros LoRA.json","LTX 2.3 FLF2V 10Eros LoRA.json","LTX 2.3 V2V Audio 10Eros LoRA.json","LTX 2.3 Sulphur T2V.json","LTX 2.3 Sulphur Ingredients T2V.json"}; assert all((root/name).is_file() and isinstance(json.loads((root/name).read_text()),dict) for name in expected)'; \
     if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then \
