@@ -41,6 +41,7 @@ from src.services.telegram_runtime_bootstrap import (
     install_telegram_runtime_patches,
     resolve_telegram_file_base_url,
 )
+from src.services.telegram_update_processor import build_qqcc_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger("qqcc_bot.core")
@@ -189,7 +190,7 @@ def build_application(
             read_timeout=120.0,
             write_timeout=120.0,
         )
-    app = (
+    builder = (
         ApplicationBuilder()
         .token(token)
         .base_url(telegram_base_url or build_telegram_bot_base_url())
@@ -198,8 +199,10 @@ def build_application(
         .get_updates_request(get_updates_request)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
-        .build()
     )
+    if bot_client_type == QQCC_BOT_CLIENT_TYPE:
+        builder = builder.concurrent_updates(build_qqcc_bot_update_processor())
+    app = builder.build()
     app.bot_data["bot_client_type"] = bot_client_type
     app.bot_data["recover_tasks"] = recover_tasks
     app.bot_data["close_shared_redis_on_shutdown"] = close_shared_redis_on_shutdown

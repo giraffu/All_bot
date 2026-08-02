@@ -145,6 +145,10 @@ sequenceDiagram
 - 面向公网访问管理后台时，必须使用 Cloudflare Tunnel + Cloudflare Access 或等价身份层保护，回源到 `100.107.220.127:8086`；不要把 `8086` 或 `8043` 裸露到公网。
 - 本地管理后台入口由 `dashboard/docker-compose-local-gateway.yml` 管理，可作为局域网/回退入口。原本地上线流程是先启动 `dashboard-local-gateway-8085` canary，验证后停止旧 `8086` Vite dev 进程，再启动 `dashboard-local-gateway-8086`；该流程不需要重建云端正式 Dashboard Backend。
 - 本地 `dashboard/docker-compose.yml` 运行在 host network，必须显式提供 `DASHBOARD_REDIS_URL` 与 `DASHBOARD_WORKER_REDIS_URL`；不得把 Redis 写死为本机 loopback。局域网网关健康检查只探测公开的 `/api/health`，根路径访问控制不能作为 readiness 信号。
+- config contract 会拒绝指向 `localhost`、`127.0.0.0/8` 或 `::1` 的本地
+  Dashboard Redis 别名。目标 Redis/Valkey 必须先从本机完成只读 TCP/TLS
+  连通性验证；若局域网入口仅由 gateway 回源云 Dashboard Backend，则不要同时
+  保留一个没有可达 Redis 的旧本地 Backend 实例制造 503 与日志风暴。
 - 旧的 `0.0.0.0:8043` SSH 转发只作为临时兼容入口；长期应移除或收紧到 `127.0.0.1`，避免绕过受控网关直连云后端。
 
 ## 7. 告警建议

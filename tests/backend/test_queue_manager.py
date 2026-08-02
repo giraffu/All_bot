@@ -1242,9 +1242,12 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
         json.dumps(
             {
                 "status": "done",
-                "result_path": "outputs/result.mp4",
-                "extra_outputs": None,
-                "progress": 1.0,
+                    "result_path": "outputs/result.mp4",
+                    "extra_outputs": None,
+                    "result_kind": "media",
+                    "result_text": None,
+                    "result_meta": None,
+                    "progress": 1.0,
                 "task_type": TaskType.LTX_VIDEO,
                 "worker_id": "worker-1",
                 "created_at": 123.0,

@@ -1,0 +1,31 @@
+services:
+  ltx-v2-test-agent:
+    image: ${ALLBOT_LTX_V2_TEST_AGENT_IMAGE:?exact digest-pinned image is required}
+    container_name: cloud-comfy-agent-test-ltx-v2-01
+    restart: "no"
+    network_mode: host
+    env_file:
+      - ${ALLBOT_LTX_V2_TEST_AGENT_ENV_FILE:?environment file is required}
+    environment:
+      TZ: Asia/Shanghai
+      MASTER_API_URL: http://127.0.0.1:${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
+      UPLOAD_SIDECAR_URL: http://127.0.0.1:${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
+      RESULT_SPOOL_DIR: /app/spool
+      AGENT_ID: cloud_worker_test_ltx_v2_01
+      POOL_MANAGED: "false"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ltx_unified
+      PREFETCH_ENABLED: "false"
+      PIPELINE_ENABLED: "false"
+      PIPELINE_MAX_RUNNING_TASKS: "1"
+      CANCEL_LOCK_ON_POP: "true"
+      SUPPORTED_TASK_TYPES: ltx_video_v2,ltx_video_v2_flf2v
+      COMFY_API_URL: http://192.168.1.177:8191
+      COMFY_WS_URL: ws://192.168.1.177:8191/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+    volumes:
+      - ${ALLBOT_LTX_V2_TEST_AGENT_STATE_ROOT:-/var/lib/allbot/test-worker}/logs:/app/logs
+      - ${ALLBOT_LTX_V2_TEST_AGENT_STATE_ROOT:-/var/lib/allbot/test-worker}/spool:/app/spool

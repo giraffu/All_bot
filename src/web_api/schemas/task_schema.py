@@ -47,6 +47,8 @@ class TaskResultResponse(BaseModel):
     task_type: Optional[str] = None
     media_type: Optional[str] = None
     result_url: Optional[str] = None
+    result_kind: Optional[str] = None
+    result_text: Optional[str] = None
     extra_outputs: Dict[str, Any] = Field(default_factory=dict)
     result_meta: Dict[str, Any] = Field(default_factory=dict)
 

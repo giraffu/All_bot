@@ -58,6 +58,7 @@ from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
     is_ltx_stitched_result,
 )
+from src.services.qqcc_runtime_context import run_qqcc_interaction_io
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.task_service_generation_image import process_standard_generation_task
@@ -455,14 +456,18 @@ async def display_qqcc_market_page(
             has_next=has_next,
         )
         media_source = await resolve_gallery_media_source(post=post, history=history)
-        sent_msg = await send_gallery_media_message(
-            context=context,
-            chat_id=query.message.chat_id,
-            post=post,
-            caption=caption,
-            reply_markup=reply_markup,
-            media_source=media_source,
-            session_factory=session_factory,
+        sent_msg = await run_qqcc_interaction_io(
+            send_gallery_media_message(
+                context=context,
+                chat_id=query.message.chat_id,
+                post=post,
+                caption=caption,
+                reply_markup=reply_markup,
+                media_source=media_source,
+                session_factory=session_factory,
+            ),
+            operation="gallery_market_media_send",
+            logger=logger,
         )
         if sent_msg:
             await robust_delete_message(query.message)

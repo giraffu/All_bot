@@ -36,6 +36,9 @@ class TaskType(str, Enum):
     LTX_VIDEO = "ltx_video"
     LTX_VIDEO_FLF2V = "ltx_video_flf2v"
     LTX_VIDEO_V2V_AUDIO = "ltx_video_v2v_audio"
+    LTX_VIDEO_V2 = "ltx_video_v2"
+    LTX_VIDEO_V2_FLF2V = "ltx_video_v2_flf2v"
+    PROMPT_OPTIMIZE = "prompt_optimize"
     LTX_T2V = "ltx_t2v"
     LTX_T2V_IC = "ltx_t2v_ic"
     CHARACTER_REFERENCE_BUILD = "character_reference_build"
@@ -65,6 +68,18 @@ class Txt2ImgRequest(BaseModel):
     priority: int = 0
 
 
+class PromptOptimizeRequest(BaseModel):
+    task_id: str
+    profile_ref: str
+    template_ref: str
+    template_hash: str
+    target_task_type: str
+    prompt: str
+    context: Dict[str, Any]
+    media: List[Dict[str, str]]
+    priority: int = 0
+
+
 class TaskStatusResponse(BaseModel):
     status: TaskStatus
     queue_pos: Optional[int] = None
@@ -76,6 +91,9 @@ class TaskStatusResponse(BaseModel):
     image_url: Optional[str] = None
     task_type: Optional[str] = None
     extra_outputs: Optional[Dict[str, Any]] = None
+    result_kind: Optional[str] = None
+    result_text: Optional[str] = None
+    result_meta: Optional[Dict[str, Any]] = None
     cancel_requested: Optional[bool] = None
     cancel_requested_at: Optional[float] = None
     cancel_locked: Optional[bool] = None

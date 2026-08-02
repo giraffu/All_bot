@@ -531,3 +531,59 @@ async def test_gallery_apply_media_submits_generation_in_background(monkeypatch)
 
     await background_tasks[0]
     submit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_market_page_bounds_media_send_as_qqcc_interaction_io(monkeypatch):
+    post = SimpleNamespace(id=1, tags=[], media_type="video")
+    query = SimpleNamespace(
+        data="qg:p:ltx:new:0",
+        message=SimpleNamespace(chat_id=123),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(t=lambda key, **_kwargs: key, bot=object())
+    session = object()
+    session_context = MagicMock()
+    session_context.__aenter__ = AsyncMock(return_value=session)
+    session_context.__aexit__ = AsyncMock(return_value=None)
+    send_media = AsyncMock(return_value=SimpleNamespace())
+    operations = []
+
+    async def interaction_io(awaitable, *, operation, logger):
+        operations.append(operation)
+        return await awaitable
+
+    monkeypatch.setattr(gallery_market, "safe_answer_query", AsyncMock())
+    monkeypatch.setattr(
+        gallery_market,
+        "fetch_qqcc_market_page",
+        AsyncMock(return_value=([post], 1)),
+    )
+    monkeypatch.setattr(
+        gallery_market,
+        "get_history_for_gallery_post",
+        AsyncMock(return_value=SimpleNamespace(type=MODE_LTX_VIDEO)),
+    )
+    monkeypatch.setattr(gallery_market, "_build_post_caption", lambda **_kwargs: "x")
+    monkeypatch.setattr(
+        gallery_market,
+        "build_qqcc_market_post_markup",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        gallery_market,
+        "resolve_gallery_media_source",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(gallery_market, "send_gallery_media_message", send_media)
+    monkeypatch.setattr(gallery_market, "run_qqcc_interaction_io", interaction_io)
+    monkeypatch.setattr(gallery_market, "robust_delete_message", AsyncMock())
+
+    await gallery_market.display_qqcc_market_page(
+        update,
+        context,
+        session_factory=MagicMock(return_value=session_context),
+    )
+
+    assert operations == ["gallery_market_media_send"]
+    send_media.assert_awaited_once()

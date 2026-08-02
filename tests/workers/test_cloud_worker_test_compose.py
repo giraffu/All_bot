@@ -24,6 +24,12 @@ def test_cloud_test_workers_and_release_relay_share_the_same_spool_mount():
         assert SHARED_SPOOL_MOUNT in service["volumes"], service_name
 
 
+def test_ltx_v2_canary_is_not_exposed_through_the_source_mount_compose():
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+
+    assert "cloud-comfy-agent-test-ltx-v2-01" not in compose["services"]
+
+
 def test_cloud_worker_preferred_types_default_is_dormant():
     for compose_path in (
         COMPOSE_PATH,

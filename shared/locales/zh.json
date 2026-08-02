@@ -647,7 +647,7 @@
     "lab_title": "创建人物参考图",
     "lab_description": "上传一张源图后，分别生成或直接上传正脸、全身正面、全身侧面和全身背面图。四张完成后合成为官方风格单人物面板。",
     "library_eyebrow": "修仙笔记 · 私有人物资产",
-    "library_description": "管理已创建的人物与四张官方面板子图；可编辑名称和描述、删除人物，或选择子图重新生成。",
+    "library_description": "以正脸图为封面浏览角色；点击封面后查看四视图，并管理资料、子图和角色。",
     "create_in_lab": "去练功房创建",
     "library_empty": "还没有人物参考图",
     "library_empty_hint": "前往练功房上传人物图片，并完成四张官方面板子图。",
@@ -658,6 +658,25 @@
     "name_placeholder": "人物名称（1–60 字）",
     "description_placeholder": "描述人物的年龄、面部、发型、肤色、体型和稳定外观特征",
     "description_required": "请填写人物描述，用于视频人物参考",
+    "profile_title": "身体特征标签",
+    "profile_hint": "选择后将由服务端组合为四个视角的默认提示词",
+    "gender": {
+      "female": "女性",
+      "female_hint": "可选择乳房、阴毛和肤色",
+      "male": "男性",
+      "male_hint": "使用明确的成年男性解剖提示"
+    },
+    "profile_groups": {
+      "breast_size": "乳房",
+      "pubic_hair": "阴毛",
+      "skin_tone": "肤色"
+    },
+    "profile_options": {
+      "breast_size": { "large": "巨乳", "natural": "正常乳房", "flat": "平乳" },
+      "pubic_hair": { "full": "多阴毛", "natural": "正常阴毛", "none": "无阴毛" },
+      "skin_tone": { "fair": "白皙", "asian_yellow": "亚洲的黄色肤色", "asian_tan": "亚洲晒黑的肤色" }
+    },
+    "male_prompt_note": "男性无需额外子标签。全身正面和侧面提示词会明确要求自然勃起阴茎、阴囊完整可见且无遮挡。",
     "billing_hint": "创建草稿不扣费。每个视角可选择自由P图、自由P图 v2.5 或自由P图 v3，并按所选流程计费；任务失败按现有账本自动退款。",
     "engine_label": "子图生成模型",
     "engines": {
@@ -769,6 +788,8 @@
       "img2video_desc": "上传图像，选择动作模型或“无”，即可生成对应的图生视频。",
       "high_res_video_title": "高级图生视频",
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。",
+      "high_res_video_v2_title": "高级图生视频 v2",
+      "high_res_video_v2_desc": "使用 LTX 10Eros v1.4 DMD，支持首帧或首尾帧，并可用视觉模型优化视频提示词。",
       "ltx_t2v_title": "文生视频",
       "ltx_t2v_desc": "直接描述画面、镜头、对白和环境音；可选人物参考表保持角色一致。",
       "character_reference_title": "人物参考图",
@@ -804,6 +825,8 @@
       "no_advanced_options": "当前模式暂不需要额外参数，直接写提示词并提交即可。",
       "cost_label": "预计消耗",
       "uploading": "正在上传参考图...",
+      "optimize_prompt": "优化提示词",
+      "restore_original_prompt": "恢复原提示词",
       "ltx_lora_placeholder": "选择附加模型",
       "ltx_lora_hint": "最多可叠加 3 个附加模型，每个模型可单独调整强度。",
       "negative_prompt": "负面提示词",

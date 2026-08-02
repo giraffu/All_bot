@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import type {
   CharacterReference,
   CharacterReferenceView,
+  CharacterPromptProfile,
   CharacterViewEngine,
   CharacterViewType,
 } from '@/api/characters'
@@ -25,31 +26,32 @@ import { useCharactersStore } from '@/stores/characters'
 type ViewDefinition = {
   type: CharacterViewType
   labelKey: string
-  defaultPrompt: string
 }
 
 const VIEW_DEFINITIONS: ViewDefinition[] = [
   {
     type: 'face_front',
     labelKey: 'characters.views.face_front',
-    defaultPrompt: '生成与源图为同一位成年人的正面脸部近景，严格保持身份、五官、发型、肤色和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，直视镜头，画面包括完整头部、裸露肩部和上胸。仅一个人物，纯白背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_front',
     labelKey: 'characters.views.body_front',
-    defaultPrompt: '生成与源图为同一位成年人的全身正面站立图，严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，正对镜头自然站立，从头顶到双脚完整可见。仅一个人物，纯白背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_side',
     labelKey: 'characters.views.body_side',
-    defaultPrompt: '生成与源图为同一位成年人的全身侧面站立图，严格保持身份、五官、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，身体与头部均向左旋转九十度，呈严格侧面，从头顶到双脚完整可见。仅一个人物，纯白背景，不要文字、标签、边框或拼贴。',
   },
   {
     type: 'body_back',
     labelKey: 'characters.views.body_back',
-    defaultPrompt: '生成与源图为同一位成年人的全身背面站立图，严格保持身份、发型、肤色、身材比例和身体特征一致。人物完全裸体，不穿任何衣物，不佩戴任何配饰，背对镜头自然站立，不回头，从头顶到双脚完整可见。仅一个人物，纯白背景，不要文字、标签、边框或拼贴。',
   },
 ]
+const GENDER_OPTIONS = ['female', 'male'] as const
+const FEMALE_TAG_GROUPS = [
+  { key: 'breast_size', values: ['large', 'natural', 'flat'] },
+  { key: 'pubic_hair', values: ['full', 'natural', 'none'] },
+  { key: 'skin_tone', values: ['fair', 'asian_yellow', 'asian_tan'] },
+] as const
 
 const { t } = useI18n()
 const router = useRouter()
@@ -57,6 +59,12 @@ const store = useCharactersStore()
 const { uploading, uploadFile } = useUpload()
 const name = ref('')
 const description = ref('')
+const promptProfile = reactive<Required<CharacterPromptProfile>>({
+  gender: 'female',
+  breast_size: 'natural',
+  pubic_hair: 'natural',
+  skin_tone: 'asian_yellow',
+})
 const sourceKey = ref<string | null>(null)
 const sourcePreview = ref<string | null>(null)
 const draftId = ref<string | null>(null)
@@ -71,7 +79,7 @@ const batchSubmitted = ref(0)
 const batchTotal = ref(0)
 const prompts = reactive<Record<CharacterViewType, string>>(
   Object.fromEntries(
-    VIEW_DEFINITIONS.map(view => [view.type, view.defaultPrompt]),
+    VIEW_DEFINITIONS.map(view => [view.type, '']),
   ) as Record<CharacterViewType, string>,
 )
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -103,6 +111,36 @@ const missingViewTypes = computed(() => getMissingCharacterViewTypes(
 const batchEstimatedCost = computed(() => (
   missingViewTypes.value.length * selectedEngineCost.value
 ))
+
+const profilePayload = computed<CharacterPromptProfile>(() => (
+  promptProfile.gender === 'male'
+    ? { gender: 'male' }
+    : {
+        gender: 'female',
+        breast_size: promptProfile.breast_size,
+        pubic_hair: promptProfile.pubic_hair,
+        skin_tone: promptProfile.skin_tone,
+      }
+))
+
+const restorePrompt = (viewType: CharacterViewType) => {
+  prompts[viewType] = draft.value?.default_prompts?.[viewType] ?? ''
+}
+const selectGender = (gender: 'female' | 'male') => {
+  promptProfile.gender = gender
+}
+const selectFemaleTag = (
+  key: 'breast_size' | 'pubic_hair' | 'skin_tone',
+  value: string,
+) => {
+  if (key === 'breast_size') {
+    promptProfile.breast_size = value as Required<CharacterPromptProfile>['breast_size']
+  } else if (key === 'pubic_hair') {
+    promptProfile.pubic_hair = value as Required<CharacterPromptProfile>['pubic_hair']
+  } else {
+    promptProfile.skin_tone = value as Required<CharacterPromptProfile>['skin_tone']
+  }
+}
 
 const refreshDraft = async () => {
   await store.refresh()
@@ -138,8 +176,12 @@ const createDraft = async () => {
       name: name.value.trim(),
       description: characterDescription,
       source_object_key: sourceKey.value,
+      prompt_profile: profilePayload.value,
     })
     draftId.value = created.id
+    for (const definition of VIEW_DEFINITIONS) {
+      prompts[definition.type] = created.default_prompts?.[definition.type] ?? ''
+    }
     message.success(t('characters.draft_created'))
   } finally {
     creatingDraft.value = false
@@ -291,8 +333,12 @@ const resetWorkspace = () => {
   sourcePreview.value = null
   activeViewType.value = 'face_front'
   selectedEngine.value = 'free_edit_v2_5'
+  promptProfile.gender = 'female'
+  promptProfile.breast_size = 'natural'
+  promptProfile.pubic_hair = 'natural'
+  promptProfile.skin_tone = 'asian_yellow'
   for (const definition of VIEW_DEFINITIONS) {
-    prompts[definition.type] = definition.defaultPrompt
+    prompts[definition.type] = ''
   }
 }
 
@@ -360,6 +406,48 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 3, maxRows: 5 }"
             :placeholder="t('characters.description_placeholder')"
           />
+        </div>
+        <div class="character-workbench__profile rounded-3xl border p-4 sm:p-5">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold">{{ t('characters.profile_title') }}</div>
+              <div class="mt-1 text-xs opacity-70">{{ t('characters.profile_hint') }}</div>
+            </div>
+            <span class="character-workbench__adult-badge rounded-full px-3 py-1 text-xs font-semibold">18+</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2" data-testid="gender-options">
+            <button
+              v-for="gender in GENDER_OPTIONS"
+              :key="gender"
+              type="button"
+              class="character-workbench__choice rounded-2xl border px-4 py-3 text-left"
+              :class="{ 'character-workbench__choice--active': promptProfile.gender === gender }"
+              @click="selectGender(gender)"
+            >
+              <div class="font-semibold">{{ t(`characters.gender.${gender}`) }}</div>
+              <div class="mt-1 text-xs opacity-70">{{ t(`characters.gender.${gender}_hint`) }}</div>
+            </button>
+          </div>
+          <div v-if="promptProfile.gender === 'female'" class="mt-4 grid gap-4" data-testid="female-options">
+            <div v-for="group in FEMALE_TAG_GROUPS" :key="group.key">
+              <div class="mb-2 text-xs font-semibold opacity-75">{{ t(`characters.profile_groups.${group.key}`) }}</div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="value in group.values"
+                  :key="value"
+                  type="button"
+                  class="character-workbench__pill rounded-full border px-3 py-2 text-xs font-semibold"
+                  :class="{ 'character-workbench__pill--active': promptProfile[group.key] === value }"
+                  @click="selectFemaleTag(group.key, value)"
+                >
+                  {{ t(`characters.profile_options.${group.key}.${value}`) }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="character-workbench__male-note mt-4 rounded-2xl px-4 py-3 text-xs leading-5" data-testid="male-note">
+            {{ t('characters.male_prompt_note') }}
+          </div>
         </div>
         <div class="character-workbench__notice rounded-2xl px-4 py-3 text-sm leading-6">
           {{ t('characters.billing_hint') }}
@@ -443,7 +531,7 @@ onBeforeUnmount(() => {
             <a-button
               size="small"
               class="rounded-full"
-              @click="prompts[activeViewType] = activeDefinition.defaultPrompt"
+              @click="restorePrompt(activeViewType)"
             >
               {{ t('characters.restore_default') }}
             </a-button>
@@ -595,6 +683,23 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.character-workbench__upload {
+  max-width: 260px;
+  justify-self: center;
+}
+
+@media (min-width: 640px) {
+  .character-workbench__upload {
+    max-width: 280px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .character-workbench__upload {
+    max-width: none;
+  }
+}
+
 .character-workbench__source,
 .character-workbench__preview {
   background: var(--theme-panel-strong-bg);
@@ -604,9 +709,42 @@ onBeforeUnmount(() => {
 
 .character-workbench__notice,
 .character-workbench__progress,
-.character-workbench__save {
+.character-workbench__save,
+.character-workbench__profile {
   background: var(--theme-card-strong-bg);
   border: 1px solid var(--theme-border);
+}
+
+.character-workbench__choice,
+.character-workbench__pill {
+  background: var(--theme-pill-bg);
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  transition: 160ms ease;
+}
+
+.character-workbench__choice:hover,
+.character-workbench__pill:hover {
+  border-color: rgba(34, 211, 238, 0.6);
+  color: var(--theme-text-primary);
+}
+
+.character-workbench__choice--active,
+.character-workbench__pill--active {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(139, 92, 246, 0.16));
+  border-color: rgba(34, 211, 238, 0.72);
+  color: var(--theme-text-primary);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.12), 0 8px 24px rgba(14, 165, 233, 0.12);
+}
+
+.character-workbench__adult-badge {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fb7185;
+}
+
+.character-workbench__male-note {
+  background: rgba(14, 165, 233, 0.09);
+  color: var(--theme-text-secondary);
 }
 
 .character-workbench__tab {

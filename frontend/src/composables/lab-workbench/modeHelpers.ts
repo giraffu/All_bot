@@ -23,7 +23,7 @@ export const isScail2ModeId = (modeId: UnifiedLabModeId) => (
 )
 
 export const isLtxLabModeId = (modeId: UnifiedLabModeId) => (
-  modeId === 'ltx_video' || modeId === 'ltx_t2v'
+  modeId === 'ltx_video' || modeId === 'ltx_video_v2' || modeId === 'ltx_t2v'
 )
 
 export const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (

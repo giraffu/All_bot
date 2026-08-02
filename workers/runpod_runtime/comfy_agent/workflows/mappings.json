@@ -226,11 +226,11 @@
     "ltx_t2v_ic": {
         "prompt": "28",
         "prompt_input": "text",
-    "negative_prompt": "29",
-    "negative_prompt_input": "text",
-    "seed": "704",
-    "seed_input": "seed",
-    "character_sheet": "270",
+        "negative_prompt": "29",
+        "negative_prompt_input": "text",
+        "seed": "704",
+        "seed_input": "seed",
+        "character_sheet": "270",
         "character_sheet_input": "image"
     },
     "character_reference_build": {},
@@ -246,5 +246,35 @@
         "width_input": "width",
         "height": "9",
         "height_input": "height"
+    },
+    "ltx_video_v2": {
+        "image": "15",
+        "prompt": "28",
+        "prompt_input": "text",
+        "negative_prompt": "29",
+        "negative_prompt_input": "text",
+        "seed": "125",
+        "seed_input": "seed",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
+    },
+    "ltx_video_v2_flf2v": {
+        "image": "15",
+        "end_image": "16",
+        "end_image_input": "image",
+        "prompt": "28",
+        "prompt_input": "text",
+        "negative_prompt": "29",
+        "negative_prompt_input": "text",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
     }
 }

@@ -106,8 +106,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
 - owner WebApp 只允许受控 Telegram WebView frame ancestor，`connect-src`
   保持 `'self'`；admin/unknown 保持禁止嵌入。
 - 官方 QQCC 是唯一 polling 实例。成功空轮询也刷新 liveness；private
-  Application 不启用 polling watchdog。任何启动或重建前先确认没有相同
-  token 的第二个 polling 进程。
+  Application 不启用 polling watchdog。官方 liveness 只判断 `getUpdates`
+  是否停滞，业务 backlog 不得触发进程重启；官方 update 按用户串行、跨用户
+  有界并发。任何启动或重建前先确认没有相同 token 的第二个 polling 进程。
 - `private-bot-worker` 镜像与 artifact inputs 必须同时包含
   `qqcc_private_bot/` 和 `qqcc_bot/`，因为租户复用官方 Application factory。
 
@@ -138,5 +139,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   token 救援轮换、tenant cleaner 和 bounded stream。
 - 安全：gate 开/关、validator、HTTPS/Host、秘密不落输出、官方 checker
   无 polling。
+- 运行时：同用户 update 串行、跨用户有界并发、慢媒体 I/O 有界，以及业务
+  backlog 不触发 polling watchdog 重启。
 - 发布：focused tests、compose `config -q`、脚本语法、目标健康与 single
   polling；不得把代码支持或本地测试写成已部署/已完成线上验收。

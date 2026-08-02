@@ -11,6 +11,7 @@ from config import MINIO_BUCKET
 from src.core.task_core import ConcurrencyLimitError
 from src.web_api.schemas.character_schema import (
     CharacterBuildRequest,
+    CharacterPromptProfile,
     CharacterViewUploadRequest,
 )
 from src.web_api.services import character_reference_service as service
@@ -107,6 +108,42 @@ def test_character_view_catalog_exposes_four_white_background_character_targets(
         assert not any("a" <= char.lower() <= "z" for char in prompt)
 
 
+def test_female_prompt_profile_composes_selected_anatomy_and_skin_tags():
+    profile = CharacterPromptProfile(
+        gender="female",
+        breast_size="large",
+        pubic_hair="full",
+        skin_tone="asian_tan",
+    )
+
+    prompts = service.compose_character_view_prompts(profile.model_dump())
+
+    assert "成年女性" in prompts["face_front"]
+    for view_type in ("body_front", "body_side", "body_back"):
+        assert "巨乳" in prompts[view_type]
+        assert "浓密自然阴毛" in prompts[view_type]
+        assert "亚洲晒黑肤色" in prompts[view_type]
+        assert "勃起阴茎" not in prompts[view_type]
+
+
+def test_male_prompt_profile_has_no_female_options_and_requires_visible_erect_anatomy():
+    profile = CharacterPromptProfile(gender="male")
+
+    prompts = service.compose_character_view_prompts(profile.model_dump())
+
+    assert "成年男性" in prompts["face_front"]
+    for view_type in ("body_front", "body_side"):
+        assert "勃起阴茎" in prompts[view_type]
+        assert "阴囊" in prompts[view_type]
+        assert "无遮挡" in prompts[view_type]
+    assert "女性生殖器" in prompts["body_front"]
+
+
+def test_male_prompt_profile_rejects_female_only_tags():
+    with pytest.raises(ValidationError):
+        CharacterPromptProfile(gender="male", breast_size="large")
+
+
 @pytest.mark.asyncio
 async def test_character_list_upgrades_only_the_previous_default_black_prompt():
     config = service.CHARACTER_VIEW_BY_TYPE["face_front"]
@@ -168,12 +205,21 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
             name="Alice",
             description="adult woman with short black hair",
             source_object_key="web_uploads/123/source.webp",
+            prompt_profile=CharacterPromptProfile(
+                gender="female",
+                breast_size="large",
+                pubic_hair="full",
+                skin_tone="asian_tan",
+            ),
         ),
     )
 
     assert result["status"] == "draft"
     assert result["views"] == []
+    assert result["prompt_profile"]["gender"] == "female"
+    assert "巨乳" in result["default_prompts"]["body_front"]
     assert db.added[0].status == "draft"
+    assert db.added[0].prompt_profile["skin_tone"] == "asian_tan"
     assert db.added[0].sheet_object_key is None
 
 

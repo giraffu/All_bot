@@ -66,6 +66,24 @@ const selectedPrompt = computed({
 })
 const selectedEngineCost = computed(() => getCharacterViewEngineCost(selectedEngine.value))
 
+const getFaceFrontView = (character: CharacterReference) => (
+  character.views.find(view => view.type === 'face_front') ?? null
+)
+
+const openCharacterDetails = (character: CharacterReference) => {
+  const initialView = getFaceFrontView(character) ?? character.views[0]
+  selectedCharacterId.value = character.id
+  if (initialView) selectView(character, initialView)
+}
+
+const closeCharacterDetails = () => {
+  selectedCharacterId.value = null
+}
+
+const handleDetailsOpenChange = (value: boolean) => {
+  if (!value) closeCharacterDetails()
+}
+
 const schedulePoll = () => {
   if (pollTimer) clearTimeout(pollTimer)
   if (hasPending.value) {
@@ -216,148 +234,168 @@ onBeforeUnmount(() => {
       <div class="mt-2 text-sm opacity-70">{{ t('characters.library_empty_hint') }}</div>
     </div>
 
-    <template v-else>
-    <article
-      v-for="character in characters"
-      :key="character.id"
-      class="character-library__card mb-5 overflow-hidden rounded-3xl border"
-    >
-      <div class="grid lg:grid-cols-[300px_minmax(0,1fr)]">
-        <div class="character-library__sheet flex min-h-[250px] items-center justify-center border-b p-3 lg:border-b-0 lg:border-r">
+    <div v-else class="character-library__grid grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+      <button
+        v-for="character in characters"
+        :key="character.id"
+        type="button"
+        class="character-library__card group min-w-0 overflow-hidden rounded-3xl border text-left"
+        :data-testid="`open-character-${character.id}`"
+        @click="openCharacterDetails(character)"
+      >
+        <div class="character-library__cover relative aspect-[4/5] overflow-hidden">
           <img
-            v-if="character.preview_url"
-            :src="character.preview_url"
+            v-if="getFaceFrontView(character)?.preview_url"
+            :src="getFaceFrontView(character)?.preview_url ?? ''"
             :alt="character.name"
-            class="max-h-[310px] w-full object-contain"
+            :data-testid="`character-cover-${character.id}`"
+            class="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
           />
-          <div v-else class="text-center opacity-65">
-            <RefreshCw v-if="character.views.some(view => view.status === 'pending')" :size="34" class="mx-auto animate-spin" />
-            <ImagePlus v-else :size="34" class="mx-auto" />
-            <div class="mt-3 text-sm">{{ t(`characters.status_${character.status}`) }}</div>
+          <div v-else class="flex h-full flex-col items-center justify-center text-center opacity-65">
+            <RefreshCw v-if="character.views.some(view => view.status === 'pending')" :size="30" class="animate-spin" />
+            <ImagePlus v-else :size="30" />
+            <span class="mt-3 px-3 text-xs">{{ t(`characters.status_${character.status}`) }}</span>
+          </div>
+          <span class="character-library__status absolute right-2 top-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold">
+            {{ t(`characters.status_${character.status}`) }}
+          </span>
+        </div>
+        <div class="min-w-0 p-3 sm:p-4">
+          <h3 class="truncate text-sm font-bold sm:text-base">{{ character.name }}</h3>
+          <p v-if="character.description" class="mt-1 line-clamp-2 text-xs leading-5 opacity-65">
+            {{ character.description }}
+          </p>
+        </div>
+      </button>
+    </div>
+
+    <a-modal
+      :open="selectedCharacter !== null"
+      :title="selectedCharacter?.name"
+      :footer="null"
+      :width="900"
+      data-testid="character-detail-dialog"
+      @cancel="closeCharacterDetails"
+      @update:open="handleDetailsOpenChange"
+    >
+      <div v-if="selectedCharacter" class="max-h-[72vh] space-y-4 overflow-y-auto pr-1 pt-2">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <p v-if="selectedCharacter.description" class="text-sm leading-6 opacity-70">
+              {{ selectedCharacter.description }}
+            </p>
+          </div>
+          <div class="character-library__management flex flex-wrap items-center justify-end gap-2">
+            <span class="character-library__status rounded-full border px-3 py-1 text-xs font-semibold">
+              {{ t(`characters.status_${selectedCharacter.status}`) }}
+            </span>
+            <a-button
+              size="small"
+              class="inline-flex items-center gap-1.5 rounded-xl"
+              :data-testid="`edit-character-${selectedCharacter.id}`"
+              @click="openMetadataEditor(selectedCharacter)"
+            >
+              <span class="character-library__button-content items-center gap-1.5">
+                <Pencil :size="14" />
+                {{ t('characters.edit_details') }}
+              </span>
+            </a-button>
+            <a-button
+              danger
+              size="small"
+              class="inline-flex items-center gap-1.5 rounded-xl"
+              :disabled="selectedCharacter.status === 'pending'"
+              :loading="deletingCharacterId === selectedCharacter.id"
+              :data-testid="`delete-character-${selectedCharacter.id}`"
+              @click="confirmDelete(selectedCharacter)"
+            >
+              <span class="character-library__button-content items-center gap-1.5">
+                <Trash2 :size="14" />
+                {{ t('characters.delete') }}
+              </span>
+            </a-button>
           </div>
         </div>
 
-        <div class="min-w-0 p-4 sm:p-5">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <h3 class="text-lg font-bold">{{ character.name }}</h3>
-              <p v-if="character.description" class="mt-1 text-sm opacity-70">{{ character.description }}</p>
-            </div>
-            <div class="character-library__management flex flex-wrap items-center justify-end gap-2">
-              <span class="character-library__status rounded-full border px-3 py-1 text-xs font-semibold">
-                {{ t(`characters.status_${character.status}`) }}
-              </span>
-              <a-button
-                size="small"
-                class="inline-flex items-center gap-1.5 rounded-xl"
-                :data-testid="`edit-character-${character.id}`"
-                @click="openMetadataEditor(character)"
-              >
-                <span class="character-library__button-content items-center gap-1.5">
-                  <Pencil :size="14" />
-                  {{ t('characters.edit_details') }}
-                </span>
-              </a-button>
-              <a-button
-                danger
-                size="small"
-                class="inline-flex items-center gap-1.5 rounded-xl"
-                :disabled="character.status === 'pending'"
-                :loading="deletingCharacterId === character.id"
-                :data-testid="`delete-character-${character.id}`"
-                @click="confirmDelete(character)"
-              >
-                <span class="character-library__button-content items-center gap-1.5">
-                  <Trash2 :size="14" />
-                  {{ t('characters.delete') }}
-                </span>
-              </a-button>
-            </div>
-          </div>
-
-          <div class="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
-            <button
-              v-for="view in character.views"
-              :key="view.type"
-              type="button"
-              class="character-library__view overflow-hidden rounded-2xl border text-left"
-              :class="{ 'character-library__view--active': selectedCharacterId === character.id && selectedViewType === view.type }"
-              @click="selectView(character, view)"
-            >
-              <div class="aspect-[4/5]">
-                <img v-if="view.preview_url" :src="view.preview_url" class="h-full w-full object-cover" />
-                <div v-else class="flex h-full items-center justify-center">
-                  <RefreshCw v-if="view.status === 'pending'" :size="18" class="animate-spin text-cyan-400" />
-                  <ImagePlus v-else :size="18" class="opacity-45" />
-                </div>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <button
+            v-for="view in selectedCharacter.views"
+            :key="view.type"
+            type="button"
+            class="character-library__view overflow-hidden rounded-2xl border text-left"
+            :class="{ 'character-library__view--active': selectedViewType === view.type }"
+            :data-testid="`character-detail-view-${view.type}`"
+            @click="selectView(selectedCharacter, view)"
+          >
+            <div class="aspect-[4/5]">
+              <img v-if="view.preview_url" :src="view.preview_url" :alt="view.label" class="h-full w-full object-cover" />
+              <div v-else class="flex h-full items-center justify-center">
+                <RefreshCw v-if="view.status === 'pending'" :size="18" class="animate-spin text-cyan-400" />
+                <ImagePlus v-else :size="18" class="opacity-45" />
               </div>
-              <div class="truncate px-2 py-2 text-[11px] font-semibold">{{ view.label }}</div>
+            </div>
+            <div class="truncate px-2 py-2 text-[11px] font-semibold sm:text-xs">{{ view.label }}</div>
+          </button>
+        </div>
+
+        <div v-if="selectedView" class="character-library__editor rounded-2xl border p-4">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <div class="text-sm font-semibold">
+              {{ t('characters.regenerate_named_view', { view: selectedView.label }) }}
+            </div>
+            <button
+              type="button"
+              class="text-xs font-semibold text-cyan-400 hover:text-cyan-300"
+              @click="selectedPrompt = selectedView.default_prompt"
+            >
+              {{ t('characters.restore_default') }}
             </button>
           </div>
-
-          <div
-            v-if="selectedCharacterId === character.id && selectedView"
-            class="character-library__editor mt-4 rounded-2xl border p-4"
-          >
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div class="text-sm font-semibold">
-                {{ t('characters.regenerate_named_view', { view: selectedView.label }) }}
-              </div>
-              <button
-                type="button"
-                class="text-xs font-semibold text-cyan-400 hover:text-cyan-300"
-                @click="selectedPrompt = selectedView.default_prompt"
-              >
-                {{ t('characters.restore_default') }}
-              </button>
+          <a-textarea
+            v-model:value="selectedPrompt"
+            :maxlength="1200"
+            :auto-size="{ minRows: 4, maxRows: 8 }"
+          />
+          <div class="mt-3">
+            <div class="mb-2 text-xs font-semibold">
+              {{ t('characters.engine_label') }}
             </div>
-            <a-textarea
-              v-model:value="selectedPrompt"
-              :maxlength="1200"
-              :auto-size="{ minRows: 4, maxRows: 8 }"
-            />
-            <div class="mt-3">
-              <div class="mb-2 text-xs font-semibold">
-                {{ t('characters.engine_label') }}
-              </div>
-              <a-radio-group
-                v-model:value="selectedEngine"
-                button-style="solid"
-                class="flex flex-wrap gap-2"
+            <a-radio-group
+              v-model:value="selectedEngine"
+              button-style="solid"
+              class="flex flex-wrap gap-2"
+            >
+              <a-radio-button
+                v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS"
+                :key="option.value"
+                :value="option.value"
               >
-                <a-radio-button
-                  v-for="option in CHARACTER_VIEW_ENGINE_OPTIONS"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ t(option.labelKey) }} · {{ option.cost }} {{ t('app.credits') }}
-                </a-radio-button>
-              </a-radio-group>
-            </div>
-            <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <a-button
-                :disabled="readyCount !== VIEW_TYPES.length || character.views.some(view => view.status === 'pending')"
-                :loading="saving"
-                class="rounded-xl"
-                @click="saveReference"
-              >
-                {{ t('characters.update_reference') }}
-              </a-button>
-              <a-button
-                type="primary"
-                :disabled="!selectedPrompt.trim() || selectedView.status === 'pending'"
-                :loading="regenerating || selectedView.status === 'pending'"
-                class="rounded-xl"
-                @click="regenerate"
-              >
-                {{ t('characters.regenerate_view') }} · {{ selectedEngineCost }} {{ t('app.credits') }}
-              </a-button>
-            </div>
+                {{ t(option.labelKey) }} · {{ option.cost }} {{ t('app.credits') }}
+              </a-radio-button>
+            </a-radio-group>
+          </div>
+          <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <a-button
+              :disabled="readyCount !== VIEW_TYPES.length || selectedCharacter.views.some(view => view.status === 'pending')"
+              :loading="saving"
+              class="rounded-xl"
+              @click="saveReference"
+            >
+              {{ t('characters.update_reference') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :disabled="!selectedPrompt.trim() || selectedView.status === 'pending'"
+              :loading="regenerating || selectedView.status === 'pending'"
+              class="rounded-xl"
+              @click="regenerate"
+            >
+              {{ t('characters.regenerate_view') }} · {{ selectedEngineCost }} {{ t('app.credits') }}
+            </a-button>
           </div>
         </div>
       </div>
-    </article>
-    </template>
+    </a-modal>
 
     <a-modal
       :open="editingCharacterId !== null"
@@ -426,9 +464,27 @@ onBeforeUnmount(() => {
   display: inline-flex;
 }
 
-.character-library__sheet {
+.character-library__card {
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.character-library__card:hover {
+  border-color: var(--theme-tab-active-border);
+  box-shadow: var(--theme-tab-active-shadow);
+  transform: translateY(-2px);
+}
+
+.character-library__card:focus-visible {
+  border-color: var(--theme-tab-active-border);
+  box-shadow: var(--theme-tab-active-shadow);
+  outline: 2px solid var(--theme-tab-active-border);
+  outline-offset: 2px;
+}
+
+.character-library__cover {
   background: var(--theme-panel-strong-bg);
-  border-color: var(--theme-border);
 }
 
 .character-library__status,

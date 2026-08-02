@@ -20,6 +20,8 @@ from config import (
     IMG2IMG_ENDPOINT,
     IMG2IMG_LORA_ENDPOINT,
     LTX_VIDEO_FLF2V_ENDPOINT,
+    LTX_VIDEO_V2_ENDPOINT,
+    LTX_VIDEO_V2_FLF2V_ENDPOINT,
     LTX_VIDEO_ENDPOINT,
     LTX_VIDEO_V2V_AUDIO_ENDPOINT,
     LTX_T2V_ENDPOINT,
@@ -104,6 +106,23 @@ class APIClient:
         # Create a single persistent client to reuse connections
         limits = httpx.Limits(max_keepalive_connections=200, max_connections=500)
         self.client = httpx.AsyncClient(trust_env=False, timeout=60, limits=limits)
+
+    @async_retry(max_retries=3)
+    async def submit_prompt_optimization_task(
+        self,
+        task_id: str,
+        *,
+        payload: dict[str, Any],
+        priority: int = 0,
+    ) -> str:
+        data = {"task_id": task_id, "priority": priority, **payload}
+        response = await self._request(
+            "POST",
+            f"{API_BASE}/api/v1/prompt_optimize",
+            json=data,
+            circuit_breaker_key="submit",
+        )
+        return response.json()["task_id"]
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """
@@ -618,6 +637,41 @@ class APIClient:
             circuit_breaker_key="submit",
         )
         return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_ltx_video_v2(
+        self,
+        task_id: str,
+        *,
+        prompt: str,
+        image_path: str,
+        end_image_path: str | None = None,
+        negative_prompt: str | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        data = {
+            "task_id": task_id,
+            "image": image_path,
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+            "priority": priority,
+        }
+        endpoint = LTX_VIDEO_V2_ENDPOINT
+        if end_image_path:
+            data["end_image"] = end_image_path
+            data["use_end_frame"] = True
+            endpoint = LTX_VIDEO_V2_FLF2V_ENDPOINT
+        if isinstance(negative_prompt, str) and negative_prompt.strip():
+            data["negative_prompt"] = negative_prompt.strip()
+        response = await self._request(
+            "POST", endpoint, json=data, circuit_breaker_key="submit"
+        )
+        return response.json()["task_id"]
 
     @async_retry(max_retries=3)
     async def submit_ltx_t2v(

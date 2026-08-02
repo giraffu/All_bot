@@ -56,6 +56,8 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | workflow JSON、mapping、patcher | current | 模型/workflow |
+| `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
+| `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker | current | 扩展或运维提示词优化平台 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
 | `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、人物草稿/四槽位子图表、workflow、profile、`shared/character_reference_sheet.py`、结果物化、RunPod canary | current | LTX 专项；角色四子图合成 v3 纯白底单一面板；单角色 IC 固定 distilled FP8 + FP4 Gemma + Ingredients 1.0；test-only 多角色按选择顺序输入 2–4 张完整角色面板，使用 MSR V2 1.0 + Sulphur 0–1（默认 0.5），服务端保留原人物描述并追加图1/图2标识；正式 MSR 双开关默认关闭 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
@@ -116,6 +118,7 @@
 | `.codex/skills/allbot-cloudflare-ops/SKILL.md` | Cloudflare 路由 | Cloudflare config/docs | current | 公网入口 |
 | `.codex/skills/allbot-cloud-ssh/SKILL.md` | 云 SSH 诊断与恢复路由 | SSH config、云控制台、访问文档 | current | 云 SSH 故障或配置 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | 模型/workflow 路由 | workflow/mapping/profile | current | AI 模型 |
+| `.codex/skills/allbot-prompt-optimizer/SKILL.md` | 通用提示词优化路由 | Registry/API/Prompt Worker | current | 提示词优化 |
 | `.codex/skills/allbot-media-enhance-platform/SKILL.md` | 独立媒体增强平台路由 | `media_enhance_platform/`、专项文档 | current | 媒体增强平台 |
 | `.codex/skills/allbot-avatar-miniapp/SKILL.md` | 3D Mini App 路由 | Mini App API/Worker/Vue/Compose | current | 3D 角色工作室 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` | LAN AIO 操作红线 | catalog/ledger/helper | current | LAN mutation |

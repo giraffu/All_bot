@@ -646,7 +646,7 @@
     "lab_title": "Create a Character Reference",
     "lab_description": "Upload a source image, then generate or directly upload a front face plus front, side, and back full-body views. All four compose one official-style character panel.",
     "library_eyebrow": "My Notes · Private Character Assets",
-    "library_description": "Manage characters and the four views in their official-style panel. Edit details, delete characters, or regenerate a selected view.",
+    "library_description": "Browse characters by front-face cover. Open a cover to view all four images and manage details, views, or the character.",
     "create_in_lab": "Create in Lab",
     "library_empty": "No character references yet",
     "library_empty_hint": "Open the Lab, upload a character image, and complete all four panel views.",
@@ -657,6 +657,25 @@
     "name_placeholder": "Character name (1–60 characters)",
     "description_placeholder": "Describe age, face, hairstyle, skin tone, build, and stable visual traits",
     "description_required": "Enter a character description for video reference",
+    "profile_title": "Body Trait Tags",
+    "profile_hint": "Your selections are composed server-side into four canonical view prompts",
+    "gender": {
+      "female": "Female",
+      "female_hint": "Choose breasts, pubic hair, and skin tone",
+      "male": "Male",
+      "male_hint": "Uses explicit adult male anatomy prompts"
+    },
+    "profile_groups": {
+      "breast_size": "Breasts",
+      "pubic_hair": "Pubic hair",
+      "skin_tone": "Skin tone"
+    },
+    "profile_options": {
+      "breast_size": { "large": "Large", "natural": "Natural", "flat": "Flat" },
+      "pubic_hair": { "full": "Full", "natural": "Natural", "none": "None" },
+      "skin_tone": { "fair": "Fair", "asian_yellow": "Natural Asian", "asian_tan": "Tanned Asian" }
+    },
+    "male_prompt_note": "Male characters need no extra tags. Front and side full-body prompts explicitly require an unobstructed, naturally erect penis and visible scrotum.",
     "billing_hint": "Drafts are free. Each view can use Free Edit, Free Edit v2.5, or Free Edit v3 and is billed by the selected flow; failed tasks use the existing automatic refund flow.",
     "engine_label": "View generation model",
     "engines": {
@@ -768,6 +787,8 @@
       "img2video_desc": "Upload an image, choose an action model or None, and generate the matching video.",
       "high_res_video_title": "High-Res Video",
       "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video.",
+      "high_res_video_v2_title": "High-Res Video v2",
+      "high_res_video_v2_desc": "Uses LTX 10Eros v1.4 DMD with start or start/end frames and optional vision prompt optimization.",
       "ltx_t2v_title": "Text to Video",
       "ltx_t2v_desc": "Describe visuals, camera motion, dialogue, and ambience; optionally select a character sheet for consistency.",
       "character_reference_title": "Character Reference",
@@ -803,6 +824,8 @@
       "no_advanced_options": "This mode does not need extra parameters yet. Write the prompt and submit directly.",
       "cost_label": "Estimated Cost",
       "uploading": "Uploading reference image...",
+      "optimize_prompt": "Optimize prompt",
+      "restore_original_prompt": "Restore original prompt",
       "ltx_lora_placeholder": "Choose addon models",
       "ltx_lora_hint": "Up to 3 addon models can be stacked, each with its own strength.",
       "negative_prompt": "Negative Prompt",

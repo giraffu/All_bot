@@ -25,6 +25,7 @@ from src.web_api.routers import (
     characters,
     gallery,
     payment,
+    prompt_optimizations,
     private_bots,
     site_notice,
     storage,
@@ -221,6 +222,11 @@ async def domain_exception_handler(request, exc: DomainException):
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(storage.router, prefix="/api/storage", tags=["Storage"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(
+    prompt_optimizations.router,
+    prefix="/api/prompt-optimizations",
+    tags=["Prompt Optimizations"],
+)
 app.include_router(characters.router, prefix="/api/characters", tags=["Characters"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])

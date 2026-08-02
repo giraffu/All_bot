@@ -18,6 +18,15 @@ COPY shared /app/shared
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=worker-agent
 CMD ["python", "/app/worker/agent_main.py"]
 
+FROM python-worker-base AS prompt-optimizer-worker
+ARG ALLBOT_GIT_SHA
+COPY workers/prompt_optimizer /app/workers/prompt_optimizer
+COPY src/prompt_optimizer /app/src/prompt_optimizer
+RUN mkdir -p /app/workers && touch /app/workers/__init__.py
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.release.module=prompt-optimizer-worker
+CMD ["python", "-m", "workers.prompt_optimizer.worker_main"]
+
 FROM ${RUNTIME_BASE_IMAGE} AS worker-relay
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot

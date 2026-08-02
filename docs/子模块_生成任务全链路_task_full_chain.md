@@ -603,6 +603,7 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
 - 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
+- Central 完成契约同时支持 `result_kind=media + result_path` 与 `result_kind=text + result_text + result_meta`。`prompt_optimize` 文本终态由 Web finalizer 按 owner 写入 24 小时 Redis result store，跳过 History/R2/Gallery；媒体任务继续保持原结果路径和 History 语义。Worker 上报文本结果时必须携带 Profile/Template refs 和字段白名单元数据，Web 在存储前再次 fail closed 校验。
 - Web 成功 finalizer 不能吞掉历史落库异常；`persist_successful_web_history` 失败必须抛出，让 Redis `pending_web_finalizers` 保持可重试，runtime cleanup 只能在历史持久化成功后执行。排查“ComfyUI 已生成但 Web 没结果”时，要同时查 pending finalizer、history 落库错误和 R2 对象。
 - 人物参考子图等私有资产通过 `TaskPersistencePostprocessPlan(record_history=false)` 继续完成结果物化，但跳过 History、生成次数和 Web history warmup；`persist_successful_web_history_default(...)` 必须接收并透传该 plan，不能在默认门面丢失这一终态契约。
 - `History.type` 当前为 `String(64)`，用于保存真实业务 task type；新增长 task type（例如 SCAIL-2 的 `scail2_face_swap_v2`）时不得沿用旧的 20 字符假设，否则会出现结果对象已保存但历史插入失败。

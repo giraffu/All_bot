@@ -44,6 +44,9 @@ class CompleteRequest(BaseModel):
     agent_id: str
     result: str
     extra_outputs: Optional[Dict[str, Any]] = None
+    result_kind: Optional[str] = None
+    result_text: Optional[str] = None
+    result_meta: Optional[Dict[str, Any]] = None
 
 
 class HeartbeatRequest(BaseModel):
@@ -151,6 +154,9 @@ async def complete_task(
         agent_id=req.agent_id,
         result=req.result,
         extra_outputs=req.extra_outputs,
+        result_kind=req.result_kind,
+        result_text=req.result_text,
+        result_meta=req.result_meta,
         queue_manager=queue_manager,
     )
 
