@@ -26,9 +26,14 @@ async def route_backend_terminal_snapshot(
     handle_cancelled: Callable[[TaskTerminalSnapshot], Awaitable[T]],
     handle_failure: Callable[[TaskTerminalSnapshot], Awaitable[T]],
 ) -> T:
-    if (
-        is_backend_success_status(terminal_snapshot.status)
-        and terminal_snapshot.result_path
+    has_media_result = bool(terminal_snapshot.result_path)
+    has_text_result = (
+        terminal_snapshot.result_kind == "text"
+        and isinstance(terminal_snapshot.result_text, str)
+        and bool(terminal_snapshot.result_text.strip())
+    )
+    if is_backend_success_status(terminal_snapshot.status) and (
+        has_media_result or has_text_result
     ):
         return await handle_success(terminal_snapshot)
 

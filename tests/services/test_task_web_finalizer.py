@@ -1,9 +1,11 @@
 from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
 import pytest
 
 from src.services import task_web_finalizer
 from src.web_api.services import character_reference_service
+from src.web_api.services import prompt_result_store
 
 
 def _build_record(
@@ -246,6 +248,85 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
 
 
 @pytest.mark.asyncio
+async def test_prompt_optimizer_text_result_is_stored_without_media_path(monkeypatch):
+    record = _build_record(
+        registry_task_id="prompt-task",
+        backend_task_id="prompt-task",
+        cost=1,
+    )
+    optimizer_metadata = {
+        "profile_ref": "ltx_eros_v14_i2v@1",
+        "template_ref": "ltx_scene_script_cinematic@1",
+        "allowed_output_fields": ["positive_prompt"],
+    }
+    record["submission_context"].update(
+        {
+            "task_type": "prompt_optimize",
+            "metadata": {"_prompt_optimizer": optimizer_metadata},
+        }
+    )
+    result_meta = {
+        "prompt_optimizer": {
+            "schema_version": "allbot.prompt_optimizer.v1",
+            "profile_ref": optimizer_metadata["profile_ref"],
+            "template_ref": optimizer_metadata["template_ref"],
+            "primary_field": "positive_prompt",
+            "optimized_fields": {"positive_prompt": "optimized prompt"},
+            "warnings": [],
+        }
+    }
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(
+            return_value={
+                "status": "done",
+                "result_kind": "text",
+                "result_text": "optimized prompt",
+                "result_meta": result_meta,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer,
+        "_deserialize_submission_context",
+        lambda **_kwargs: SimpleNamespace(
+            metadata={"_prompt_optimizer": optimizer_metadata}
+        ),
+    )
+    store_result = AsyncMock()
+    monkeypatch.setattr(prompt_result_store, "store_prompt_result", store_result)
+    cleanup = AsyncMock()
+    monkeypatch.setattr(task_web_finalizer, "cleanup_task_runtime_state", cleanup)
+    remove = AsyncMock()
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "remove_pending_web_finalizer",
+        remove,
+    )
+
+    finalized = await task_web_finalizer.process_pending_web_finalizer("prompt-task")
+
+    assert finalized is True
+    store_result.assert_awaited_once_with(
+        task_id="prompt-task",
+        user_id=123,
+        task_type="prompt_optimize",
+        result_kind="text",
+        result_text="optimized prompt",
+        result_meta=result_meta,
+        expected_optimizer_metadata=optimizer_metadata,
+    )
+    cleanup.assert_awaited_once_with(
+        internal_user_id=123,
+        registry_task_id="prompt-task",
+    )
+    remove.assert_awaited_once_with("prompt-task")
+
+
+@pytest.mark.asyncio
 async def test_process_pending_web_finalizer_finalizes_error_and_removes_record(
     monkeypatch,
 ):
@@ -430,7 +511,9 @@ async def test_process_pending_web_finalizer_skips_when_lock_is_already_claimed(
 
 
 @pytest.mark.asyncio
-async def test_process_all_pending_web_finalizers_handles_recovered_records(monkeypatch):
+async def test_process_all_pending_web_finalizers_handles_recovered_records(
+    monkeypatch,
+):
     pending_records = {
         "registry-done": _build_record(
             registry_task_id="registry-done",
@@ -462,7 +545,9 @@ async def test_process_all_pending_web_finalizers_handles_recovered_records(monk
     monkeypatch.setattr(
         task_web_finalizer.redis_client,
         "get_pending_web_finalizer",
-        AsyncMock(side_effect=lambda registry_task_id: pending_records.get(registry_task_id)),
+        AsyncMock(
+            side_effect=lambda registry_task_id: pending_records.get(registry_task_id)
+        ),
     )
     monkeypatch.setattr(
         task_web_finalizer.image_service,
@@ -752,8 +837,7 @@ async def test_scail2_face_swap_stage2_uses_normal_priority_and_preprocessed_con
     )
 
     assert (
-        await task_web_finalizer.process_pending_web_finalizer("logical-video")
-        is True
+        await task_web_finalizer.process_pending_web_finalizer("logical-video") is True
     )
     submit_scail2.assert_awaited_once_with(
         "stage2-video",
@@ -778,6 +862,4 @@ async def test_scail2_face_swap_stage2_uses_normal_priority_and_preprocessed_con
         user_cancel_allowed=False,
         status="pending",
     )
-    assert add_record.await_args_list[-1].args[1]["continuation"]["stage"] == (
-        "scail2"
-    )
+    assert add_record.await_args_list[-1].args[1]["continuation"]["stage"] == ("scail2")
