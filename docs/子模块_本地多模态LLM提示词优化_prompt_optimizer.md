@@ -40,6 +40,13 @@ Q4_K_P GGUF + 对应 F16 mmproj**，通过 LM Studio 的 OpenAI-compatible API
 `http://127.0.0.1:1234/v1`。该组合用于“图片 + 原始提示词 → 优化提示词”，
 不是 ComfyUI 生成模型，也不进入 GPU artifact 或 Git。
 
+当前 HauhauCS chat template 在 `/v1/chat/completions` 的视觉 structured-output 请求中
+仍可能输出 reasoning 或 Markdown fence，不能据此放宽 JSON 解析。稳定 Provider
+路径使用 `/v1/responses` 两阶段：先关闭 reasoning 生成仅驻内存的视觉观察，再用
+纯文本 structured-output 请求生成最终 schema；两个请求均 `store=false`。如果后续
+LM Studio/模型版本能对视觉请求直接执行 grammar，必须先补真实带图 canary 和回归
+测试，再考虑合并为单请求。
+
 推荐运行基线：16K context、并发 4、GPU full offload；请求输出上限从 1024
 tokens 起步。并发数、实际显存占用和模型是否已加载属于运行态，调用前必须通过
 `GET /v1/models`、一次文本 canary 和一次带图 canary 重新验证，不能从本文推断
