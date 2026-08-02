@@ -291,6 +291,9 @@ async def test_ltx_t2v_submits_audio_video_spec(monkeypatch):
         audio_prompt="quiet room tone",
         character_sheet=None,
         character_description=None,
+        character_sheets=(),
+        character_descriptions=(),
+        sulphur_strength=None,
         seed=65608997764964,
         width=1280,
         height=704,
@@ -298,6 +301,46 @@ async def test_ltx_t2v_submits_audio_video_spec(monkeypatch):
         frame_count=241,
         fps=24,
         priority=8,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx_t2v_ic_submits_ordered_msr_spec(monkeypatch):
+    submit = AsyncMock(return_value="backend-task")
+    _patch_dispatch_image_service(monkeypatch, submit_ltx_t2v_task=submit)
+
+    result = await StrategyFactory.get_strategy("ltx_t2v_ic").submit_task(
+        "task-msr",
+        {
+            "prompt": "图1与图2在室内交谈",
+            "character_sheets": ["wang-panel.png", "man-panel.png"],
+            "character_descriptions": ["adult woman Wang", "adult man"],
+            "sulphur_strength": 0.5,
+            "duration": 5,
+            "resolution": "768x448",
+        },
+        3,
+    )
+
+    assert result == "backend-task"
+    submit.assert_awaited_once_with(
+        "task-msr",
+        task_type="ltx_t2v_ic",
+        prompt="图1与图2在室内交谈",
+        negative_prompt=None,
+        audio_prompt=None,
+        character_sheet=None,
+        character_description=None,
+        character_sheets=("wang-panel.png", "man-panel.png"),
+        character_descriptions=("adult woman Wang", "adult man"),
+        sulphur_strength=0.5,
+        seed=None,
+        width=768,
+        height=448,
+        length=5,
+        frame_count=121,
+        fps=24,
+        priority=3,
     )
 
 

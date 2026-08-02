@@ -8,7 +8,8 @@
     "tonconnect_twa_return_url": "https://t.me/testAIvison_bot",
     "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true,
-    "enable_ltx_t2v": true
+    "enable_ltx_t2v": true,
+    "enable_ltx_t2v_msr": true
   },
   "prod": {
     "api_base_url": "https://api.aivison.it.com/api",
@@ -18,6 +19,7 @@
     "tonconnect_twa_return_url": "https://t.me/AIVision1111_bot",
     "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true,
-    "enable_ltx_t2v": false
+    "enable_ltx_t2v": false,
+    "enable_ltx_t2v_msr": false
   }
 }

@@ -69,6 +69,7 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
+LTX_T2V_MSR_LORA = "ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors"
 LTX_T2V_INGREDIENTS_FAST_CHECKPOINT = "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
 LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER = "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
 LTX_T2V_INGREDIENTS_NEGATIVE = (
@@ -527,6 +528,25 @@ def _patch_ltx_t2v_workflow(
             "ckpt_name": LTX_T2V_INGREDIENTS_FAST_CHECKPOINT,
             "device": "default",
         }
+        if params.get("character_sheets"):
+            _patch_ltx_t2v_msr_workflow(
+                workflow,
+                params=params,
+                duration=duration,
+                width=width,
+                height=height,
+            )
+            audio_prompt = str(params.get("audio_prompt") or "").strip()
+            if audio_prompt:
+                workflow["28"]["inputs"]["text"] = (
+                    f"{workflow['28']['inputs'].get('text', '')}\n\n#Audio\n{audio_prompt}"
+                )
+            _set_ltx_output_prefixes(
+                workflow,
+                unique_id=unique_id,
+                output_task_prefix="ltx_t2v_ic",
+            )
+            return
     else:
         loader = workflow.get("256")
         if not isinstance(loader, dict):
@@ -655,6 +675,122 @@ def _patch_ltx_t2v_workflow(
         unique_id=unique_id,
         output_task_prefix="ltx_t2v_ic" if ingredients else "ltx_t2v",
     )
+
+
+def _patch_ltx_t2v_msr_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    duration: int,
+    width: int,
+    height: int,
+) -> None:
+    sheets = params.get("character_sheets")
+    descriptions = params.get("character_descriptions")
+    if not isinstance(sheets, (list, tuple)) or not 2 <= len(sheets) <= 4:
+        raise ValueError("MSR requires 2 to 4 ordered character panels")
+    if not isinstance(descriptions, (list, tuple)) or len(descriptions) != len(sheets):
+        raise ValueError("MSR character panels and descriptions must match")
+    sheets = [str(value or "").strip() for value in sheets]
+    descriptions = [str(value or "").strip() for value in descriptions]
+    if not all(sheets) or not all(descriptions):
+        raise ValueError("MSR character panels and descriptions cannot be blank")
+    try:
+        sulphur_strength = float(params.get("sulphur_strength", 0.5))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MSR Sulphur strength must be between 0 and 1") from exc
+    if not 0 <= sulphur_strength <= 1:
+        raise ValueError("MSR Sulphur strength must be between 0 and 1")
+
+    for node_id in ("195", "196", "270", "274", "5100", "273", "712", "198", "115"):
+        workflow.pop(node_id, None)
+    frame_count = duration * LTX_VIDEO_FPS + 1
+    workflow["26:39"]["inputs"].update(
+        width=width,
+        height=height,
+        length=frame_count,
+    )
+    workflow["26:40"]["inputs"].update(
+        frames_number=frame_count,
+        frame_rate=LTX_VIDEO_FPS,
+    )
+    workflow["800"] = {
+        "class_type": "LTXICLoRALoaderModelOnly",
+        "inputs": {
+            "model": ["127", 0],
+            "lora_name": LTX_T2V_MSR_LORA,
+            "strength_model": 1.0,
+        },
+    }
+    msr_inputs: dict[str, Any] = {
+        "width": width,
+        "height": height,
+        "frame_count": "41",
+    }
+    for index, sheet in enumerate(sheets, start=1):
+        node_id = str(801 + index)
+        workflow[node_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": sheet},
+        }
+        msr_inputs[str(index)] = [node_id, 0]
+    workflow["806"] = {
+        "class_type": "EmptyImage",
+        "inputs": {
+            "width": width,
+            "height": height,
+            "batch_size": 1,
+            "color": 16777215,
+        },
+    }
+    msr_inputs["background"] = ["806", 0]
+    workflow["801"] = {"class_type": "LiconMSR", "inputs": msr_inputs}
+    workflow["807"] = {
+        "class_type": "LTXAddVideoICLoRAGuide",
+        "inputs": {
+            "positive": ["26:46", 0],
+            "negative": ["26:46", 1],
+            "vae": ["127", 2],
+            "latent": ["26:39", 0],
+            "image": ["801", 0],
+            "frame_idx": 0,
+            "strength": 1.0,
+            "latent_downscale_factor": ["800", 1],
+            "crop": "center",
+            "use_tiled_encode": False,
+            "tile_size": 256,
+            "tile_overlap": 64,
+        },
+    }
+    model = ["800", 0]
+    if sulphur_strength > 0:
+        workflow["808"] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["800", 0],
+                "lora_name": LTX_T2V_SULPHUR_LORA,
+                "strength_model": sulphur_strength,
+            },
+        }
+        model = ["808", 0]
+    else:
+        workflow.pop("808", None)
+    workflow["119"]["inputs"]["video_latent"] = ["807", 2]
+    workflow["704"]["inputs"].update(
+        model=model,
+        positive=["807", 0],
+        negative=["807", 1],
+    )
+    workflow["106"]["inputs"].update(
+        positive=["807", 0],
+        negative=["807", 1],
+    )
+    target_description = str(workflow["28"]["inputs"].get("text", "")).strip()
+    identities = "\n".join(
+        f"图{index}：{description}"
+        for index, description in enumerate(descriptions, start=1)
+    )
+    workflow["28"]["inputs"]["text"] = f"{target_description}\n\n{identities}"
 
 
 def patch_ltx_t2v_workflow(workflow: dict[str, Any], **kwargs: Any) -> None:

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import os
@@ -53,118 +52,71 @@ def _canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def _to_msr(
-    ingredients: dict[str, Any],
-    *,
-    reference_names: list[str],
-    sulphur_strength: float | None,
-) -> dict[str, Any]:
-    if len(reference_names) != 4 or any(not value.strip() for value in reference_names):
-        raise AbCanaryError("MSR V2 requires exactly four reference filenames")
-    workflow = copy.deepcopy(ingredients)
-    for node_id in ("195", "196", "270", "274", "5100", "273", "712", "198", "115"):
-        workflow.pop(node_id, None)
-    workflow["26:39"]["inputs"].update(width=768, height=448, length=121)
-    workflow["800"] = {
-        "class_type": "LTXICLoRALoaderModelOnly",
-        "inputs": {
-            "model": ["127", 0],
-            "lora_name": MSR_LORA,
-            "strength_model": 1.0,
-        },
-    }
-    for offset, remote_name in enumerate(reference_names, start=2):
-        workflow[str(800 + offset)] = {
-            "class_type": "LoadImage",
-            "inputs": {"image": remote_name},
-        }
-    workflow["806"] = {
-        "class_type": "EmptyImage",
-        "inputs": {"width": 768, "height": 448, "batch_size": 1, "color": 16777215},
-    }
-    workflow["801"] = {
-        "class_type": "LiconMSR",
-        "inputs": {
-            "width": 768,
-            "height": 448,
-            "frame_count": "41",
-            "1": ["802", 0],
-            "2": ["803", 0],
-            "3": ["804", 0],
-            "4": ["805", 0],
-            "background": ["806", 0],
-        },
-    }
-    workflow["807"] = {
-        "class_type": "LTXAddVideoICLoRAGuide",
-        "inputs": {
-            "positive": ["26:46", 0],
-            "negative": ["26:46", 1],
-            "vae": ["127", 2],
-            "latent": ["26:39", 0],
-            "image": ["801", 0],
-            "frame_idx": 0,
-            "strength": 1.0,
-            "latent_downscale_factor": ["800", 1],
-            "crop": "center",
-            "use_tiled_encode": False,
-            "tile_size": 256,
-            "tile_overlap": 64,
-        },
-    }
-    model = ["800", 0]
-    if sulphur_strength is not None:
-        workflow["808"] = {
-            "class_type": "LoraLoaderModelOnly",
-            "inputs": {
-                "model": ["800", 0],
-                "lora_name": SULPHUR_LORA,
-                "strength_model": sulphur_strength,
-            },
-        }
-        model = ["808", 0]
-    workflow["119"]["inputs"]["video_latent"] = ["807", 2]
-    workflow["704"]["inputs"].update(
-        model=model, positive=["807", 0], negative=["807", 1]
-    )
-    workflow["106"]["inputs"].update(
-        positive=["807", 0], negative=["807", 1]
-    )
-    return workflow
-
-
 def build_cases(
     *,
     repo_root: Path,
     ingredients_sheet_name: str,
-    msr_reference_names: list[str],
-    character_description: str,
+    msr_panel_names: list[str],
+    character_descriptions: list[str],
     prompt: str,
     seed: int,
 ) -> list[dict[str, Any]]:
-    if seed < 0 or not character_description.strip() or not prompt.strip():
-        raise AbCanaryError("seed, character description and prompt are required")
+    if (
+        seed < 0
+        or not prompt.strip()
+        or not 2 <= len(msr_panel_names) <= 4
+        or len(character_descriptions) != len(msr_panel_names)
+        or not all(value.strip() for value in character_descriptions)
+    ):
+        raise AbCanaryError(
+            "seed, 2 to 4 panels, matching descriptions and prompt are required"
+        )
     path = repo_root / BASELINE_WORKFLOW
     baseline = json.loads(path.read_text(encoding="utf-8"))
-    baseline = WorkflowPatcher(str(repo_root / "workers/comfy_agent/workflows")).patch_workflow(
+    baseline = WorkflowPatcher(
+        str(repo_root / "workers/comfy_agent/workflows")
+    ).patch_workflow(
         "ltx_t2v_ic",
         baseline,
         {
             "prompt": prompt,
             "duration": 5,
             "character_sheet": ingredients_sheet_name,
-            "character_description": character_description,
+            "character_description": character_descriptions[0],
             "seed": seed,
         },
     )
+
+    def msr(strength: float) -> dict[str, Any]:
+        return WorkflowPatcher(
+            str(repo_root / "workers/comfy_agent/workflows")
+        ).patch_workflow(
+            "ltx_t2v_ic",
+            json.loads(path.read_text(encoding="utf-8")),
+            {
+                "prompt": prompt,
+                "duration": 5,
+                "character_sheets": msr_panel_names,
+                "character_descriptions": character_descriptions,
+                "sulphur_strength": strength,
+                "seed": seed,
+            },
+        )
+
     specs = (
         ("ingredients_5s", None, baseline),
-        ("msr_v2_5s", None, _to_msr(baseline, reference_names=msr_reference_names, sulphur_strength=None)),
-        ("msr_v2_sulphur_025_5s", 0.25, _to_msr(baseline, reference_names=msr_reference_names, sulphur_strength=0.25)),
-        ("msr_v2_sulphur_050_5s", 0.5, _to_msr(baseline, reference_names=msr_reference_names, sulphur_strength=0.5)),
+        ("msr_v2_5s", None, msr(0)),
+        ("msr_v2_sulphur_025_5s", 0.25, msr(0.25)),
+        ("msr_v2_sulphur_050_5s", 0.5, msr(0.5)),
     )
     return [
-        {"label": label, "duration": 5, "seed": seed, "sulphur_strength": strength, "workflow": workflow}
+        {
+            "label": label,
+            "duration": 5,
+            "seed": seed,
+            "sulphur_strength": strength,
+            "workflow": workflow,
+        }
         for label, strength, workflow in specs
     ]
 
@@ -192,6 +144,7 @@ def validate_runtime(object_info: dict[str, Any]) -> None:
     missing = sorted(REQUIRED_NODES - set(object_info))
     if missing:
         raise AbCanaryError("missing ComfyUI node types: " + ", ".join(missing))
+
     def combo_options(node: str) -> set[str]:
         spec = object_info[node]["input"]["required"]["lora_name"]
         if spec[0] == "COMBO":
@@ -209,8 +162,10 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--comfy-url", default="http://192.168.1.177:8191")
     parser.add_argument("--character-sheet", type=Path, required=True)
-    parser.add_argument("--msr-reference", type=Path, action="append", required=True)
-    parser.add_argument("--character-description-file", type=Path, required=True)
+    parser.add_argument("--msr-panel", type=Path, action="append", required=True)
+    parser.add_argument(
+        "--character-description-file", type=Path, action="append", required=True
+    )
     parser.add_argument("--prompt-file", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260802)
     parser.add_argument("--gpu-ssh-host", default="allbot-gpu-177")
@@ -219,61 +174,110 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
-    if len(args.msr_reference) != 4:
-        raise SystemExit("exactly four --msr-reference values are required")
-    description = args.character_description_file.read_text(encoding="utf-8").strip()
+    if not 2 <= len(args.msr_panel) <= 4:
+        raise SystemExit("2 to 4 --msr-panel values are required")
+    if len(args.character_description_file) != len(args.msr_panel):
+        raise SystemExit("one --character-description-file is required per panel")
+    descriptions = [
+        path.read_text(encoding="utf-8").strip()
+        for path in args.character_description_file
+    ]
     prompt = args.prompt_file.read_text(encoding="utf-8").strip()
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     sheet_remote = f"allbot-msr-ab-{run_id}-sheet.png"
-    ref_remotes = [f"allbot-msr-ab-{run_id}-ref-{index}.png" for index in range(1, 5)]
+    panel_remotes = [
+        f"allbot-msr-ab-{run_id}-panel-{index}.png"
+        for index in range(1, len(args.msr_panel) + 1)
+    ]
     cases = build_cases(
         repo_root=ROOT,
         ingredients_sheet_name=sheet_remote,
-        msr_reference_names=ref_remotes,
-        character_description=description,
+        msr_panel_names=panel_remotes,
+        character_descriptions=descriptions,
         prompt=prompt,
         seed=args.seed,
     )
-    summary = {"ok": True, "dry_run": not args.execute, "seed": args.seed, "cases": [case_evidence_metadata(c) for c in cases]}
+    summary = {
+        "ok": True,
+        "dry_run": not args.execute,
+        "seed": args.seed,
+        "cases": [case_evidence_metadata(c) for c in cases],
+    }
     if not args.execute:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
-    output_dir = args.output_dir or Path(os.getenv("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "allbot/ltx-msr-sulphur-ab" / run_id
+    output_dir = (
+        args.output_dir
+        or Path(os.getenv("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+        / "allbot/ltx-msr-sulphur-ab"
+        / run_id
+    )
     output_dir.mkdir(parents=True, exist_ok=False)
-    evidence = {**summary, "dry_run": False, "status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "results": []}
+    evidence = {
+        **summary,
+        "dry_run": False,
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "results": [],
+    }
     _write_json(output_dir / "evidence.json", evidence)
     try:
         validate_runtime(_http_json("GET", f"{args.comfy_url.rstrip('/')}/object_info"))
-        uploaded_sheet = _upload_image(comfy_url=args.comfy_url, path=args.character_sheet, remote_name=sheet_remote)
-        uploaded_refs = [
+        uploaded_sheet = _upload_image(
+            comfy_url=args.comfy_url,
+            path=args.character_sheet,
+            remote_name=sheet_remote,
+        )
+        uploaded_panels = [
             _upload_image(comfy_url=args.comfy_url, path=path, remote_name=remote)
-            for path, remote in zip(args.msr_reference, ref_remotes)
+            for path, remote in zip(args.msr_panel, panel_remotes)
         ]
         for case in cases:
             if "270" in case["workflow"]:
                 case["workflow"]["270"]["inputs"]["image"] = uploaded_sheet
-            for node_id, name in zip(("802", "803", "804", "805"), uploaded_refs):
+            for node_id, name in zip(("802", "803", "804", "805"), uploaded_panels):
                 if node_id in case["workflow"]:
                     case["workflow"][node_id]["inputs"]["image"] = name
             before = _gpu_stats(ssh_host=args.gpu_ssh_host, gpu_index=args.gpu_index)
             started = time.monotonic()
-            result = submit_and_wait(comfy_url=args.comfy_url, workflow=case["workflow"], timeout_seconds=args.timeout_seconds, poll_seconds=args.poll_seconds)
+            result = submit_and_wait(
+                comfy_url=args.comfy_url,
+                workflow=case["workflow"],
+                timeout_seconds=args.timeout_seconds,
+                poll_seconds=args.poll_seconds,
+            )
             video = output_dir / f"{case['label']}.mp4"
-            _download_output(comfy_url=args.comfy_url, output=result["videos"][0], target=video)
+            _download_output(
+                comfy_url=args.comfy_url, output=result["videos"][0], target=video
+            )
             media = validate_media_contract(_ffprobe(video), expected_duration=5)
             contact = output_dir / f"{case['label']}-contact.png"
             _make_contact_sheet(video=video, target=contact, duration=5)
-            evidence["results"].append({
-                **case_evidence_metadata(case), "prompt_id": result["prompt_id"],
-                "elapsed_seconds": round(time.monotonic() - started, 3), "video_file": video.name,
-                "contact_sheet_file": contact.name, "media": media, "gpu_before": before,
-                "gpu_after": _gpu_stats(ssh_host=args.gpu_ssh_host, gpu_index=args.gpu_index),
-            })
+            evidence["results"].append(
+                {
+                    **case_evidence_metadata(case),
+                    "prompt_id": result["prompt_id"],
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                    "video_file": video.name,
+                    "contact_sheet_file": contact.name,
+                    "media": media,
+                    "gpu_before": before,
+                    "gpu_after": _gpu_stats(
+                        ssh_host=args.gpu_ssh_host, gpu_index=args.gpu_index
+                    ),
+                }
+            )
             _write_json(output_dir / "evidence.json", evidence)
-        evidence.update(status="passed", completed_at=datetime.now(timezone.utc).isoformat())
+        evidence.update(
+            status="passed", completed_at=datetime.now(timezone.utc).isoformat()
+        )
         _write_json(output_dir / "evidence.json", evidence)
     except Exception as exc:
-        evidence.update(status="failed", completed_at=datetime.now(timezone.utc).isoformat(), error_type=type(exc).__name__)
+        evidence.update(
+            status="failed",
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            error_type=type(exc).__name__,
+        )
         _write_json(output_dir / "evidence.json", evidence)
         raise
     print(json.dumps({"ok": True, "output_dir": str(output_dir)}, ensure_ascii=False))

@@ -730,6 +730,10 @@
     "selector_title": "Character consistency (optional)",
     "selector_placeholder": "Leave empty for standard text-to-video",
     "ic_locked_hint": "Ingredients enabled: resolution is fixed at 768x448; duration can be 5/10/15/20 seconds.",
+    "msr_image_label": "Image {index}",
+    "msr_hint": "MSR V2 1.0 enabled: refer to characters as Image 1, Image 2, etc. in selection order; each input is that character's complete white-background four-view panel.",
+    "sulphur_strength": "Sulphur strength",
+    "sulphur_hint": "Defaults to 0.50; 0 disables Sulphur and only affects multi-character MSR test mode.",
     "t2v_hint": "No character: 1280x704 with 5/10/15/20 second options.",
     "audio_prompt": "Optional: describe dialogue, ambience, music, and audio timing"
   },

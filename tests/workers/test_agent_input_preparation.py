@@ -38,6 +38,36 @@ async def test_prepare_task_inputs_downloads_character_sheet_reference():
 
 
 @pytest.mark.asyncio
+async def test_prepare_task_inputs_downloads_ordered_character_panels():
+    calls = []
+    params = {
+        "character_sheets": [
+            "bucket/wang-panel.png",
+            "bucket/man-panel.png",
+        ]
+    }
+
+    async def process(**kwargs):
+        calls.append((kwargs["param_key"], kwargs["img_filename"]))
+        kwargs["params"][kwargs["param_key"]] = f"local-{kwargs['param_key']}.png"
+
+    await prepare_task_inputs(
+        params=params,
+        downloaded_input_paths=[],
+        process_single_input_asset_func=process,
+    )
+
+    assert calls == [
+        ("character_sheet_1", "bucket/wang-panel.png"),
+        ("character_sheet_2", "bucket/man-panel.png"),
+    ]
+    assert params["character_sheets"] == [
+        "local-character_sheet_1.png",
+        "local-character_sheet_2.png",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_process_single_input_asset_times_out_download(tmp_path):
     def slow_download(_object_name, _local_path):
         time.sleep(0.2)

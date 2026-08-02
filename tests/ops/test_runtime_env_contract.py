@@ -98,6 +98,7 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_SITENAME": f"AllBot {suffix}",
         "RMB_RECONCILIATION_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
+        "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "UNRELATED_OPERATOR_SECRET": "must-not-enter-containers",
     }

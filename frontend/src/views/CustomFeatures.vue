@@ -68,6 +68,8 @@ const {
   videoDurationOptions,
   duration,
   selectedCharacterId,
+  selectedCharacterIds,
+  sulphurStrength,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -143,7 +145,10 @@ const promptLockedHint = computed(() => (
       >
         <template v-if="currentModeId === 'ltx_t2v'" #before-prompt>
           <div class="mb-3 space-y-3">
-            <LtxT2VCharacterSelector v-model="selectedCharacterId" />
+            <LtxT2VCharacterSelector
+              v-model="selectedCharacterIds"
+              v-model:sulphur-strength="sulphurStrength"
+            />
             <a-textarea
               v-model:value="audioPrompt"
               :maxlength="500"

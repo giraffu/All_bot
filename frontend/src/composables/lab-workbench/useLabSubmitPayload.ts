@@ -38,6 +38,8 @@ type UseLabSubmitPayloadOptions = {
   resolution: Ref<string>
   duration: Ref<string>
   selectedCharacterId?: Ref<string | null>
+  selectedCharacterIds?: Ref<string[]>
+  sulphurStrength?: Ref<number>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -67,6 +69,8 @@ export function useLabSubmitPayload({
   resolution,
   duration,
   selectedCharacterId,
+  selectedCharacterIds,
+  sulphurStrength,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -171,17 +175,30 @@ export function useLabSubmitPayload({
     }
 
     if (currentMode.value.id === 'ltx_t2v') {
-      const characterId = selectedCharacterId?.value ?? null
+      const characterIds = selectedCharacterIds?.value.length
+        ? selectedCharacterIds.value
+        : selectedCharacterId?.value
+          ? [selectedCharacterId.value]
+          : []
+      const usesCharacter = characterIds.length > 0
+      const usesMsr = characterIds.length >= 2
       await submitAndTrack(buildGenerationTaskPayload({
-        taskType: characterId ? 'ltx_t2v_ic' : 'ltx_t2v',
+        taskType: usesCharacter ? 'ltx_t2v_ic' : 'ltx_t2v',
         images: [],
         prompt: prompt.value,
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',
-        resolution: characterId ? '768x448' : '1280x704',
+        resolution: usesCharacter ? '768x448' : '1280x704',
         duration: Number(duration.value),
         extraInputs: {
-          ...(characterId ? { character_id: characterId } : {}),
+          ...(usesMsr
+            ? {
+                character_ids: characterIds,
+                sulphur_strength: sulphurStrength?.value ?? 0.5,
+              }
+            : characterIds[0]
+              ? { character_id: characterIds[0] }
+              : {}),
           ...(audioPrompt?.value.trim() ? { audio_prompt: audioPrompt.value.trim() } : {}),
         },
       }))

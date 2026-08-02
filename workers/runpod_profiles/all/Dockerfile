@@ -10,6 +10,7 @@ ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
 ARG COMFYUI_REF=7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1
 ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
 ARG LTXVIDEO_REF=aceeae9635f6d493f2893ba3c411a1c36031788a
+ARG LICON_MSR_REVISION=94a52bfec735ff6f802c480f7fe8fdac1d279a7f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG SAGEATTENTION_VERSION=1.0.6
 ARG REUSE_BASE_CUSTOM_NODES=false
@@ -110,6 +111,14 @@ RUN set -euo pipefail; \
       python3 -m pip install --no-cache-dir -r "${ltxvideo_dir}/requirements.txt"; \
       rm -rf "${ltxvideo_dir}/.git"; \
     fi; \
+    rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR"; \
+    git clone https://github.com/liconstudio/ComfyUI-Licon-MSR.git \
+      "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR"; \
+    git -C "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR" checkout --detach \
+      "${LICON_MSR_REVISION}"; \
+    test "$(git -C "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR" rev-parse HEAD)" = \
+      "${LICON_MSR_REVISION}"; \
+    rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR/.git"; \
     COMFYUI_DIR="${comfyui_dir}" python3 /opt/allbot/patch_flux2_small_decoder.py; \
     (cd /opt/allbot/runtime/runpod_worker && git apply /opt/allbot/runpod_sync_models_multi_manifest.patch); \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
@@ -125,6 +134,7 @@ RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'import inspect; import comfy_agent.workflow_task_patchers as m; from shared.character_reference_sheet import compose_ingredients_character_panel; assert "character_description" in inspect.getsource(m); assert callable(compose_ingredients_character_panel)'; \
     COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${ltxvideo_dir}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; import comfy.cli_args; comfy.cli_args.args.cpu=True; root=Path(os.environ["COMFYUI_DIR"]); node_dir=Path(os.environ["LTXVIDEO_NODE_DIR"]); spec=importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir/"__init__.py", submodule_search_locations=[str(node_dir)]); module=importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name]=module; spec.loader.exec_module(module); expected={"LTXVSpatioTemporalTiledVAEDecode","LTXICLoRALoaderModelOnly","LTXAddVideoICLoRAGuide"}; assert expected <= set(module.NODE_CLASS_MAPPINGS), expected-set(module.NODE_CLASS_MAPPINGS); core=(root/"comfy_extras"/"nodes_lt.py").read_text(encoding="utf-8"); assert all(name in core for name in ("GetICLoRAParameters","LTXVAddGuide","LTXVImgToVideoInplace")); scail=(root/"comfy_extras"/"nodes_scail.py").read_text(encoding="utf-8"); assert "WanSCAILToVideo" in scail and "SCAIL2ColoredMask" in scail; kj=(root/"custom_nodes"/"ComfyUI-KJNodes"/"__init__.py").read_text(encoding="utf-8"); assert "DiffusionModelLoaderKJ" in kj and "VAELoaderKJ" in kj'; \
+    COMFYUI_DIR="${comfyui_dir}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; p=Path(os.environ["COMFYUI_DIR"])/"custom_nodes/ComfyUI-Licon-MSR"; s=importlib.util.spec_from_file_location("allbot_licon_msr",p/"__init__.py",submodule_search_locations=[str(p)]); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); assert "LiconMSR" in m.NODE_CLASS_MAPPINGS'; \
     LTX_MIN_NODE_DIR="${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes" python3 -c 'import importlib.util, os; from pathlib import Path; spec=importlib.util.spec_from_file_location("allbot_ltx_min_nodes_smoke", Path(os.environ["LTX_MIN_NODE_DIR"])/"__init__.py"); module=importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(module); expected={"ImpactDummyInput","TwoWaySwitch","easy int","mxSlider","RAMCleanup","VRAMCleanup","Float","IntToFloat","Sigmas Sigmoid","MathExpression|pysssss"}; assert expected <= set(module.NODE_CLASS_MAPPINGS)'; \
     COMFYUI_DIR="${comfyui_dir}" python3 -c 'from pathlib import Path; import os, sys; root=Path(os.environ["COMFYUI_DIR"]); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; sys.exit("missing all-profile core node sources: "+",".join(missing)) if missing else None'; \
     python3 "${comfyui_dir}/main.py" --cpu --quick-test-for-ci --disable-auto-launch; \

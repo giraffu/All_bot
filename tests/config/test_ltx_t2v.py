@@ -53,6 +53,91 @@ def test_ltx_t2v_ic_requires_character_description():
         )
 
 
+def test_ltx_t2v_ic_accepts_ordered_multi_character_msr_inputs():
+    spec = build_ltx_t2v_spec(
+        "ltx_t2v_ic",
+        {
+            "duration": 5,
+            "resolution": "768x448",
+            "character_sheets": ["private/wang.png", "private/man.png"],
+            "character_descriptions": [
+                "an adult woman with a short black bob",
+                "an adult man with short brown hair",
+            ],
+            "sulphur_strength": 0.5,
+        },
+    )
+
+    assert spec.character_sheet is None
+    assert spec.character_description is None
+    assert spec.character_sheets == (
+        "private/wang.png",
+        "private/man.png",
+    )
+    assert spec.character_descriptions == (
+        "an adult woman with a short black bob",
+        "an adult man with short brown hair",
+    )
+    assert spec.sulphur_strength == 0.5
+    assert spec.uses_msr is True
+
+
+@pytest.mark.parametrize(
+    ("inputs", "message"),
+    [
+        (
+            {
+                "character_sheets": ["a.png"],
+                "character_descriptions": ["adult woman"],
+            },
+            "2 至 4",
+        ),
+        (
+            {
+                "character_sheets": ["a.png", "b.png"],
+                "character_descriptions": ["adult woman"],
+            },
+            "一一对应",
+        ),
+        (
+            {
+                "character_sheet": "legacy.png",
+                "character_description": "adult woman",
+                "character_sheets": ["a.png", "b.png"],
+                "character_descriptions": ["adult woman", "adult man"],
+            },
+            "不能同时",
+        ),
+        (
+            {
+                "character_sheets": ["a.png", "b.png"],
+                "character_descriptions": ["adult woman", "adult man"],
+                "sulphur_strength": 1.01,
+            },
+            "0 到 1",
+        ),
+    ],
+)
+def test_ltx_t2v_ic_rejects_invalid_multi_character_inputs(inputs, message):
+    with pytest.raises(LtxT2VValidationError, match=message):
+        build_ltx_t2v_spec(
+            "ltx_t2v_ic",
+            {"duration": 5, "resolution": "768x448", **inputs},
+        )
+
+
+def test_regular_ltx_t2v_rejects_multi_character_inputs():
+    with pytest.raises(LtxT2VValidationError, match="多人物"):
+        build_ltx_t2v_spec(
+            "ltx_t2v",
+            {
+                "duration": 5,
+                "character_sheets": ["a.png", "b.png"],
+                "character_descriptions": ["adult woman", "adult man"],
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "extra", [{"lora_name": "x.safetensors"}, {"lora_items": [{"name": "x"}]}]
 )

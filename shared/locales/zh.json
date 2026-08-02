@@ -731,6 +731,10 @@
     "selector_title": "人物一致性（可选）",
     "selector_placeholder": "不选择则使用普通文生视频",
     "ic_locked_hint": "已启用 Ingredients：分辨率锁定 768x448，时长可选 5/10/15/20 秒。",
+    "msr_image_label": "图{index}",
+    "msr_hint": "已启用 MSR V2 1.0：按选择顺序在提示词中使用图1、图2……指代角色；每个角色输入其完整白底四视图面板。",
+    "sulphur_strength": "Sulphur 强度",
+    "sulphur_hint": "默认 0.50；0 表示不加载 Sulphur，仅影响多角色 MSR 测试模式。",
     "t2v_hint": "未选择人物：1280x704，可选 5/10/15/20 秒。",
     "audio_prompt": "可选：描述对白、环境音、音乐与声音节奏"
   },

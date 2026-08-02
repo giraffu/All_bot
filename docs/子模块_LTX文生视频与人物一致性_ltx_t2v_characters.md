@@ -14,6 +14,8 @@
 本阶段允许已授权的 cloud-test disabled canary、测试 Web 人工验收，并继续支持
 本地 LAN 验收。后端 `LTX_T2V_BACKEND_ENABLED` 默认关闭，由云测试环境显式开启；
 Web runtime flag `enable_ltx_t2v` 只在 test 为 `true`，prod 固定为 `false`。
+多角色 MSR 另由后端 `LTX_T2V_MSR_ENABLED` 与 Web runtime
+`enable_ltx_t2v_msr` 双重控制：test 显式开启，prod 固定关闭。
 关闭时，练功房不展示“人物参考图”和“文生视频”，修仙笔记不展示
 “人物图库”，并且前端不注册人物图库路由；直接访问旧入口也不能绕过
 Web API 的 backend flag。
@@ -46,8 +48,10 @@ extracted-10Eros workflow，T2V/IC 继续映射到 Sulphur/Ingredients workflow�
    `gemma_3_12B_it_fp4_mixed.safetensors` 和 Ingredients 0.9 `1.0`；不再加载
    dev checkpoint 或 distilled LoRA，不叠加 Sulphur，也不能以
    `ltx2310eros_v1` 作为底模；
-   普通 `ltx_t2v` 继续保留 Sulphur，Ingredients + Sulphur 只保留隔离 A/B 图，
-   不进入用户工作流。
+   普通 `ltx_t2v` 继续保留 Sulphur；单角色 Ingredients 不叠加 Sulphur。
+5. test-only 多角色 IC 使用同一 distilled FP8 checkpoint 与 FP4 Gemma，模型链为
+   `checkpoint → Licon MSR V2 1.0 → Sulphur`。Sulphur 允许 `0–1`，默认 `0.5`；
+   强度为 `0` 时不创建 Sulphur 节点。每个角色输入一张完整白底四视图面板。
 
 用户不能在这个固定栈上继续叠加 LoRA。Gemma、视频/音频 VAE 和空间
 upscaler 复用 content-addressed registry 既有 blobs，不重复下载。权重不 baked
@@ -135,6 +139,14 @@ Ingredients 基线负向固定为
 `worst quality, inconsistent motion, blurry, jittery, distorted`；不默认追加与
 reference-sheet 训练语义冲突的 grid/collage/character-sheet 排除词。可选音频描述
 作为第三段继续追加为 `#Audio`。
+
+当服务端解析到 2–4 个有序角色时，patcher 从同一官方快速模板动态移除 Ingredients
+guide 分支，改接 `LiconMSR` 与 `LTXAddVideoICLoRAGuide`。一个角色对应一个 MSR
+槽位，输入是该角色完整的 v3 白底四视图面板，不把面板内四张子图拆成四个主体。
+用户视觉 prompt 保持原样，随后按角色选择顺序追加资产原描述：`图1：…`、
+`图2：…`。用户可直接用图号指代角色，但人物描述仍保留，用于加强身份消歧。
+MSR background 固定纯白，guide 在采样后继续由 `LTXVCropGuides` 删除；负向词保留
+用户提交值，未提交时使用模板质量词。
 候选 ComfyUI 使用 `--reserve-vram 5`。
 
 四组有序 LAN A/B 图位于
@@ -149,16 +161,16 @@ distilled + Ingredients 均产出可播放、带音轨 MP4，当前目标栈才�
 描述、场景提示词、私有 object key 或签名 URL。通过该 A/B 也不能修改用户侧
 `ltx_t2v_ic` mapping，是否增加测试 Web 实验选项必须另行决策。
 
-MSR V2 只存在于隔离验证栈。`scripts/ltx_t2v_msr_ab_smoke.py` 固定生成 4 个
+`scripts/ltx_t2v_msr_ab_smoke.py` 固定生成 4 个
 5 秒样本：官方 Ingredients、MSR V2、MSR V2 + Sulphur 0.25、MSR V2 +
-Sulphur 0.5。MSR 读取正脸、全身正面、侧面、背面 4 张原始白底图，使用纯白
-空图满足其 background 输入，不复用 Ingredients 合成表；四组保持提示词、种子、
+Sulphur 0.5。MSR 读取 2–4 张有序角色面板；每张面板内部已包含该角色的正脸、
+全身正面、侧面和背面四张子图。它使用纯白空图满足 background 输入；四组保持提示词、种子、
 负向词、分辨率与时长一致。`ComfyUI-Licon-MSR` 固定 revision
 `94a52bfec735ff6f802c480f7fe8fdac1d279a7f`，V2 LoRA 固定 revision
 `593b0b7d2b912e8ecdb2825a34732cee36e720ba` 和 SHA256
 `6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98`。
-该栈不得进入公共 workflow patcher、task type、Web 参数或计费映射；验证通过也
-只能支持下一轮测试环境选项评估。
+该栈复用既有 `ltx_t2v_ic` task type 与计费，不新增公共任务类型；只有测试 Web
+双重开关开启时可提交多角色参数，正式环境默认拒绝。
 
 镜像入口：
 
@@ -278,10 +290,12 @@ pending 子图存在时删除返回 409。
 - 人物子图与重生按所选标准流程计费：自由 P 图 2 灵石、自由 P 图 v2.5
   3 灵石、自由 P 图 v3 5 灵石；失败沿用根任务幂等退款。
 
-IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`ready` 状态和
+IC 客户端单角色提交 `character_id`；测试 MSR 提交有序 `character_ids`（2–4 个）
+与 `sulphur_strength`。服务端在扣费前逐个验证 owner、`ready` 状态和
 未删除状态，并解析真实 `sheet_object_key` 与非空人物描述；legacy 人物缺少描述时
 要求先在人物图库补充。任何客户端直传 `character_sheet`
-都拒绝。所有权读事务先释放，再进入扣费和入队 Saga。
+或 `character_sheets/character_descriptions` 都拒绝。单双字段混传、重复角色和越界
+强度同样拒绝。所有权读事务先释放，再进入扣费和入队 Saga。
 
 ## 6. Web 与验收
 
@@ -297,8 +311,9 @@ IC 客户端只能提交 `character_id`。服务端在扣费前验证 owner、`r
 持久化状态负责收口该悬浮任务。由于子图使用 `record_history=false`，通用任务
 运行态清理后的 404 不是失败证据，前端必须以人物子图持久化终态纠正悬浮球。
 旧 `/characters` 只重定向到该 tab，不再保留独立人物页。统一工作台的“文生视频”
-可清空人物选择：无人物提交 `ltx_t2v`；有人物自动提交 `ltx_t2v_ic` 并锁定规格
-和价格。练功房仍保留视觉 prompt 与可选 audio prompt 两个任务输入；服务端把
+可清空人物选择：无人物提交 `ltx_t2v`；一个人物走 Ingredients；测试环境选择
+2–4 个时走 MSR，并按选择顺序展示图1、图2……和 Sulphur 0–1 滑杆（默认 0.5）。
+有人物均提交 `ltx_t2v_ic` 并锁定规格和价格。练功房仍保留视觉 prompt 与可选 audio prompt 两个任务输入；单角色时服务端把
 人物资产描述由 Worker 规范化为含 face/turnaround 两个面板子标题的
 `### Reference Sheet Description`，视觉 prompt 作为
 `### Target Description`，
@@ -331,7 +346,8 @@ autoscaler 仍属于单独授权边界。
 测试人工验收使用同一套发布和任务链，不增加旁路：
 
 1. main 同 SHA 的 control-plane/public-web 发布到 test；
-2. 云测试 host 显式设置 `LTX_T2V_BACKEND_ENABLED=true`，prod 保持默认 false；
+2. 云测试 host 显式设置 `LTX_T2V_BACKEND_ENABLED=true` 与
+   `LTX_T2V_MSR_ENABLED=true`，prod 两项保持默认 false；
 3. 通过专用 operator 创建 `runpod_test_ltx_t2v_*`，确认 disabled heartbeat 后
    人工 enable；不得用 Dashboard 的正式手动池命令创建测试 Pod；
 4. 从 `https://web-cf-test.aivison.it.com` 登录，分别提交普通 T2V、创建人物参考表

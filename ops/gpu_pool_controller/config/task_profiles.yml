@@ -41,6 +41,7 @@ profiles:
       - Power Lora Loader (rgthree)
       - LTXICLoRALoaderModelOnly
       - LTXAddVideoICLoRAGuide
+      - LiconMSR
       - DiffusionModelLoaderKJ
       - VAELoaderKJ
     min_vram_gb: 32

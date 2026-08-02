@@ -281,6 +281,9 @@ class LtxT2VRequest(BaseModel):
     fps: int = 24
     character_sheet: Optional[str] = None
     character_description: Optional[str] = None
+    character_sheets: list[str] = Field(default_factory=list, max_length=4)
+    character_descriptions: list[str] = Field(default_factory=list, max_length=4)
+    sulphur_strength: Optional[float] = Field(default=None, ge=0, le=1)
     seed: Optional[int] = Field(default=None, ge=0, le=18446744073709551615)
     priority: int = 0
 
