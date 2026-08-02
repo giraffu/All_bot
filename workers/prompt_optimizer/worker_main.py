@@ -174,7 +174,8 @@ async def _lane(
     agent_id = f"prompt_optimizer_test_{lane_number:02d}"
     while True:
         readiness = await provider.readiness()
-        _set_lane_readiness(lane_number, False, readiness.reason)
+        if not readiness.ready:
+            _set_lane_readiness(lane_number, False, readiness.reason)
         try:
             await central.heartbeat(
                 agent_id, ready=readiness.ready, reason=readiness.reason
