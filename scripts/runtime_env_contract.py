@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import ipaddress
 import json
 import os
 import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+from urllib.parse import urlparse
 
 
 SERVICE_CONTRACT_REVISION_KEY = "ALLBOT_SERVICE_CONTRACT_REVISION"
@@ -842,6 +844,33 @@ def validate_environment_semantics(environment: str, values: Mapping[str, str]) 
         raise ContractError(
             f"MINI_APP_URL does not match the canonical {environment} Web"
         )
+    for key, raw_value in values.items():
+        if not key.endswith("_TASK_TYPE_WORKFLOW_OVERRIDES") or not raw_value.strip():
+            continue
+        try:
+            overrides = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise ContractError(f"{key} must be a JSON object") from exc
+        if not isinstance(overrides, dict) or any(
+            not isinstance(task_type, str)
+            or not task_type.strip()
+            or not isinstance(workflow, str)
+            or not workflow.strip()
+            for task_type, workflow in overrides.items()
+        ):
+            raise ContractError(f"{key} must be a JSON object of string mappings")
+    for key in ("DASHBOARD_REDIS_URL", "DASHBOARD_WORKER_REDIS_URL"):
+        raw_value = values.get(key, "").strip()
+        if not raw_value:
+            continue
+        hostname = (urlparse(raw_value).hostname or "").strip().lower()
+        is_loopback = hostname == "localhost" or hostname.endswith(".localhost")
+        try:
+            is_loopback = is_loopback or ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            pass
+        if is_loopback:
+            raise ContractError(f"{key} must not target loopback")
     if environment != "prod":
         return
     test_keys = sorted(
