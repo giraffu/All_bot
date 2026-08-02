@@ -142,9 +142,12 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
                     "status": "completed",
                     "output": [
                         {
-                            "type": "message",
+                            "type": "reasoning",
                             "content": [
-                                {"type": "output_text", "text": "subject faces camera"}
+                                {
+                                    "type": "reasoning_text",
+                                    "text": "subject faces camera",
+                                }
                             ],
                         }
                     ],
@@ -204,6 +207,9 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
     assert structured_payload["reasoning"] == {"effort": "none"}
     assert structured_payload["store"] is False
     assert structured_payload["text"]["format"]["schema"] == schema
+    structured_system = structured_payload["input"][0]["content"][0]["text"]
+    assert '"optimized_fields"' in structured_system
+    assert '"warnings"' in structured_system
     assert "subject faces camera" in structured_payload["input"][1]["content"][0]["text"]
     assert all(
         item["type"] != "input_image"
