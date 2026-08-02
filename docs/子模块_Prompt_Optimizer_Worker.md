@@ -92,6 +92,14 @@ lane 数，不暴露提示词或媒体。
 Compose 禁止源码 bind mount，镜像必须 digest pinned。rollback 只回退到状态账本中的
 上一 exact digest。prod mutation 仍需用户明确确认。
 
+LTX v2 canary Agent 也使用单独的不可变入口
+`deploy/docker-compose-ltx-v2-test-agent.yml`，由
+`scripts/ltx_v2_test_agent_ops.py` 精确部署或回滚。该入口只声明
+`ltx_video_v2,ltx_video_v2_flf2v`，不继承开发用 cloud-worker compose 的 build、
+workflow 或 `src` 挂载；仅保留与本地 test relay 共享的日志和结果 spool 运行态目录。
+它固定连接 gpu-177 GPU1 的 `ltx_unified` Comfy API，`restart=no`，只在 canary
+窗口显式启动，不能替代或重启正式 LTX Agent。
+
 ## 6. 新任务接入 checklist
 
 1. Registry 增加 Profile/模板版本。
@@ -101,4 +109,3 @@ Compose 禁止源码 bind mount，镜像必须 digest pinned。rollback 只回�
 5. Central/API 保持 `prompt_optimize`，不要新增队列类型。
 6. Web 最后激活 capability，并提供字段到 UI 控件的 typed mapping。
 7. 运行 focused tests、`python scripts/doc_quality_checker.py` 和 Skill validator。
-

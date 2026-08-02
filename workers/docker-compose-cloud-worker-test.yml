@@ -120,29 +120,6 @@ services:
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
-  cloud-comfy-agent-test-ltx-v2-01:
-    <<: *worker-base-cloud-test
-    container_name: cloud-comfy-agent-test-ltx-v2-01
-    profiles:
-      - ltx-v2-canary
-    restart: "no"
-    environment:
-      <<: *worker-cloud-env
-      AGENT_ID: cloud_worker_test_ltx_v2_01
-      POOL_MANAGED: "false"
-      POOL_PROVIDER: lan_ssh
-      POOL_NODE_ID: gpu-177
-      POOL_GPU_INDEX: "1"
-      POOL_RUNTIME_PROFILE: ltx_unified
-      PREFETCH_ENABLED: "false"
-      PIPELINE_ENABLED: "false"
-      PIPELINE_MAX_RUNNING_TASKS: "1"
-      SUPPORTED_TASK_TYPES: ltx_video_v2,ltx_video_v2_flf2v
-      COMFY_API_URL: http://192.168.1.177:8191
-      COMFY_WS_URL: ws://192.168.1.177:8191/ws
-      COMFY_INPUT_DIR: /tmp/input
-      COMFY_OUTPUT_DIR: /tmp/output
-
   cloud-comfy-agent-test-4:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-4
