@@ -88,16 +88,16 @@ bundles:
         size_bytes: 23531296
 
   ltx_unified_runtime:
-    version: 2026-08-01-comfy-fast
+    version: 2026-08-02-msr-v2-canary
     profiles:
       - ltx_unified
     source:
       node_id: local-model-registry
       comfy_id: content-addressed-union
-      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-08-01-comfy-fast/files
-      discovered_size_gb: 129.08
+      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-08-02-msr-v2-canary/files
+      discovered_size_gb: 129.69
       import_status: prepared_by_script
-      notes: Deduplicated union of the LTX video and T2V bundles. Full 10Eros checkpoints are excluded; the pinned v1.2 fro99-avgrank91 extracted LoRA is a branch asset.
+      notes: Deduplicated union of the LTX video and T2V bundles. Full 10Eros checkpoints are excluded; pinned 10Eros and MSR V2 LoRAs are validation assets.
     files: []
 
   img2img_lora_baseline:

@@ -93,6 +93,8 @@ manifest 和专项文档读取，不在此维护快照。
   validation graph 和隔离 runner 在 intake disabled 的单槽 canary 中 A/B，不能
   通过 workflow mapping、Web 参数或静默 patch 进入用户任务。IC workflow 还必须按官方 reference-sheet 契约使用
   完整纯白底单一 character ingredient 面板，将其复制成与输出同帧数的静态参考
+  。Licon MSR V2 及其与 Sulphur 的叠加也只允许专用隔离 runner，不得加入正式
+  `ltx_t2v_ic` mapping、公共 Web 参数或默认 Ingredients 图。
   视频，并通过 `GetICLoRAParameters`、`LTXVAddGuide(frame_idx=0)` 接入 guide；
   `LTXVImgToVideoInplace` 保持 `bypass=true`，采样后必须由 `LTXVCropGuides` 删除
   guide latent。采样固定为标准 `KSampler` 8 steps、CFG 1、

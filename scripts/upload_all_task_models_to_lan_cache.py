@@ -108,9 +108,9 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="ltx_unified",
-        prefix="ltx_unified/2026-08-01-comfy-fast",
-        manifest_key="ltx_unified/2026-08-01-comfy-fast/manifest.json",
-        bundle_versions=(("ltx_unified_runtime", "2026-08-01-comfy-fast"),),
+        prefix="ltx_unified/2026-08-02-msr-v2-canary",
+        manifest_key="ltx_unified/2026-08-02-msr-v2-canary/manifest.json",
+        bundle_versions=(("ltx_unified_runtime", "2026-08-02-msr-v2-canary"),),
     ),
 )
 TARGETS_BY_NAME = {
