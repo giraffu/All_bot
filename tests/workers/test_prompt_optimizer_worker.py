@@ -1,4 +1,6 @@
 import asyncio
+import json
+import os
 from io import BytesIO
 
 import httpx
@@ -12,6 +14,12 @@ from workers.prompt_optimizer.executor import (
 )
 from workers.prompt_optimizer.media import image_bytes_to_data_url
 from workers.prompt_optimizer.provider import LMStudioChatProvider
+
+os.environ.setdefault("AGENT_SECRET_TOKEN", "test-token")
+os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
+os.environ.setdefault("MINIO_SECRET_KEY", "test-secret")
+
+from workers.prompt_optimizer.worker_main import CentralClient  # noqa: E402
 
 
 class FakeProvider:
@@ -117,3 +125,34 @@ async def test_lmstudio_readiness_requires_vision_context_and_parallel_four():
     readiness = await provider.readiness()
     assert readiness.ready is True
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_central_heartbeat_is_scalar_and_fails_closed_on_http_error():
+    requests = []
+
+    async def ok_handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = httpx.AsyncClient(
+        base_url="http://central", transport=httpx.MockTransport(ok_handler)
+    )
+    central = CentralClient(client=client)
+    await central.heartbeat("lane", ready=True, reason="ready")
+    payload = json.loads(requests[0].content)
+    assert isinstance(payload["model_bundle_versions"], str)
+    assert json.loads(payload["model_bundle_versions"])["model"]
+    await client.aclose()
+
+    async def failed_handler(_request):
+        return httpx.Response(500, text="failed")
+
+    failed_client = httpx.AsyncClient(
+        base_url="http://central", transport=httpx.MockTransport(failed_handler)
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await CentralClient(client=failed_client).heartbeat(
+            "lane", ready=True, reason="ready"
+        )
+    await failed_client.aclose()

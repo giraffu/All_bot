@@ -28,7 +28,18 @@ POLL_SECONDS = float(os.getenv("PROMPT_OPTIMIZER_POLL_SECONDS", "1.0"))
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "user-data-test")
 
 _state: dict[str, Any] = {"ready": False, "reason": "starting", "active_lanes": 0}
+_lane_readiness: dict[int, tuple[bool, str]] = {}
 _state_lock = threading.Lock()
+
+
+def _set_lane_readiness(lane_number: int, ready: bool, reason: str) -> None:
+    with _state_lock:
+        _lane_readiness[lane_number] = (ready, reason)
+        all_ready = len(_lane_readiness) == LANE_COUNT and all(
+            value[0] for value in _lane_readiness.values()
+        )
+        _state["ready"] = all_ready
+        _state["reason"] = "ready" if all_ready else reason
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -81,8 +92,8 @@ async def _load_object(client: Minio, object_key: str) -> bytes:
 
 
 class CentralClient:
-    def __init__(self) -> None:
-        self.client = httpx.AsyncClient(
+    def __init__(self, *, client: httpx.AsyncClient | None = None) -> None:
+        self.client = client or httpx.AsyncClient(
             base_url=MASTER_API_URL,
             headers={"Authorization": f"Bearer {AGENT_SECRET_TOKEN}"},
             timeout=30,
@@ -90,7 +101,7 @@ class CentralClient:
         )
 
     async def heartbeat(self, agent_id: str, *, ready: bool, reason: str) -> None:
-        await self.client.post(
+        response = await self.client.post(
             "/api/agent/task/heartbeat",
             json={
                 "agent_id": agent_id,
@@ -99,9 +110,12 @@ class CentralClient:
                 "health_reason": reason,
                 "provider": "lmstudio",
                 "runtime_profile": "prompt_optimizer",
-                "model_bundle_versions": {"model": LM_STUDIO_MODEL},
+                "model_bundle_versions": json.dumps(
+                    {"model": LM_STUDIO_MODEL}, separators=(",", ":")
+                ),
             },
         )
+        response.raise_for_status()
 
     async def pop(self, agent_id: str) -> dict[str, Any] | None:
         response = await self.client.get(
@@ -160,9 +174,7 @@ async def _lane(
     agent_id = f"prompt_optimizer_test_{lane_number:02d}"
     while True:
         readiness = await provider.readiness()
-        with _state_lock:
-            _state["ready"] = readiness.ready
-            _state["reason"] = readiness.reason
+        _set_lane_readiness(lane_number, False, readiness.reason)
         try:
             await central.heartbeat(
                 agent_id, ready=readiness.ready, reason=readiness.reason
@@ -170,6 +182,7 @@ async def _lane(
             if not readiness.ready:
                 await asyncio.sleep(5)
                 continue
+            _set_lane_readiness(lane_number, True, "ready")
             task = await central.pop(agent_id)
             if task is None:
                 await asyncio.sleep(POLL_SECONDS)
@@ -192,6 +205,9 @@ async def _lane(
                 with _state_lock:
                     _state["active_lanes"] -= 1
         except Exception as exc:
+            _set_lane_readiness(
+                lane_number, False, f"central_unavailable:{type(exc).__name__}"
+            )
             logger.warning("lane unavailable lane=%s reason=%s", lane_number, type(exc).__name__)
             await asyncio.sleep(2)
 
