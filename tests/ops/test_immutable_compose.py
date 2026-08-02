@@ -403,6 +403,20 @@ def test_prod_runtime_uses_host_projections_for_python_consumers():
             assert "API_BASE" not in environment
 
 
+def test_prod_main_bot_uses_its_documented_database_pool_budget():
+    services = _compose(OVERLAYS[1])["services"]
+
+    assert services["bot"]["environment"] == {
+        "DB_POOL_SIZE": "4",
+        "DB_MAX_OVERFLOW": "4",
+    }
+    for name, service in services.items():
+        if name != "bot":
+            environment = service.get("environment", {})
+            assert "DB_POOL_SIZE" not in environment
+            assert "DB_MAX_OVERFLOW" not in environment
+
+
 @pytest.mark.skip(reason="superseded release-v2 workflow contract")
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(

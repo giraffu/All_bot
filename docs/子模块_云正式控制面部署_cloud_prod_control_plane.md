@@ -245,7 +245,9 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - 托管 PostgreSQL 当前按 `max_connections=100`、`superuser_reserved_connections=3` 估算，可用业务连接约 `97`。
 - 2026-06-16 云控制面扩到 8C16G 后，生产连接池采用“增强但不贴顶”的预算，目标峰值约 `73/97`：Web API `4 * (6+6) = 48`，Dashboard Backend `6+4 = 10`，Payment API `4+3 = 7`，Bot `4+4 = 8`。
 - 本轮只提升 DB 连接池，不同时提高 `uvicorn --workers` 或 Dashboard `gunicorn -w`，避免进程数和连接池同时放大。
-- Bot 必须显式设置 `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4`，避免继续继承 `.env.cloud.prod` 的较小默认值。
+- Bot 必须由 `deploy/docker-compose-cloud-prod.overlay.yml` 显式覆盖
+  `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4`，避免继承逐服务投影中的共享较小默认值；
+  该覆盖只属于 `bot` service，调整主 Bot 预算不得顺带改变其它控制面服务。
 - 托管 Valkey 当前近期观测约 73MB/2GB、connected_clients 约 53，且无 blocked/rejected/evicted；本轮不提升 Valkey 规格或客户端池参数。
 - 若后续确认 PostgreSQL CPU、IO、锁等待和 idle-in-transaction 长期很轻，可单独评估把峰值预算升至 `80-85`，不要和 Web worker 数调整混在同一个短维护窗口。
 
