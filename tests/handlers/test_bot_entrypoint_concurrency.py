@@ -6,12 +6,14 @@ import qqcc_bot.main as qqcc_main
 from src import bot_main
 
 
-def test_main_bot_uses_per_user_update_processor_and_qqcc_stays_serial():
+def test_main_and_qqcc_bots_use_keyed_update_processors():
     source = inspect.getsource(bot_main)
+    qqcc_source = inspect.getsource(qqcc_main)
 
     assert ".concurrent_updates(build_main_bot_update_processor())" in source
     assert ".concurrent_updates(True)" not in source
-    assert ".concurrent_updates(True)" not in inspect.getsource(qqcc_main)
+    assert ".concurrent_updates(build_qqcc_bot_update_processor())" in qqcc_source
+    assert ".concurrent_updates(True)" not in qqcc_source
 
 
 def test_paid_group_guard_bot_keeps_concurrent_updates_enabled():

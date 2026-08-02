@@ -59,7 +59,7 @@ def test_watchdog_restarts_when_get_updates_stops_completing():
     assert exits == [75]
 
 
-def test_watchdog_restarts_when_fetched_update_is_not_processed():
+def test_watchdog_does_not_restart_for_business_backlog_while_polling_is_healthy():
     clock = _Clock()
     exits = []
     watchdog = QqccPollingLivenessWatchdog(
@@ -69,10 +69,12 @@ def test_watchdog_restarts_when_fetched_update_is_not_processed():
     )
 
     watchdog.record_poll_success(_poll_payload(41))
+    clock.now = 8
+    watchdog.record_poll_success(_poll_payload())
     clock.now = 11
 
-    assert watchdog.check_once() is True
-    assert exits == [75]
+    assert watchdog.check_once() is False
+    assert exits == []
 
 
 def test_watchdog_clears_backlog_after_update_finishes_processing():

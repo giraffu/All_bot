@@ -4,7 +4,20 @@
 
 QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；正式使用 main-bot 专属 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`。旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。
 
-官方 polling 入口通过 `qqcc_bot.polling_liveness` 同时观测两类进度：Local Bot API `getUpdates` 成功完成，以及已拉取 update 经过全部 handler group 处理完成。任一进度连续 180 秒停滞时，独立 watchdog 线程以专用退出码终止 QQCC 进程，由容器 `restart: always` 只重建该服务；正常空轮询持续刷新 heartbeat，因此安静时段不会误重启。watchdog 是最后防线，不是正常的交互恢复机制：官方 QQCC callback 共享路由有 45 秒总预算；可选示范媒体发送，以及场景上传提示、视频提交状态等非关键 Telegram I/O 分别有 15 秒总预算。quick image/video 与修仙市集一键应用的用户图片接收，其 `get_file`、Telegram 文件下载和 FSM 临时文件落盘也共用一个 15 秒 QQCC 总预算；超时取消或下载异常会删除可能已写入的半文件、提示下载失败并保持当前上传状态，用户可直接重试。市集一键应用下载成功后只在当前 update 内完成受限接收，完整生成与终态监视由受管后台任务继续；后台异常仍清理临时文件并提示用户，media handler 不同步等待数分钟的任务终态。后一类超时只记录 operation，不记录用户/token/消息正文，并继续进入等待图片状态或创建后台生成任务，避免单个慢请求占住官方单 update 通道直到 watchdog 重启。交互预算只作用于 QQCC 上下文，不改变主 Bot 行为。私有 Bot 使用 webhook worker，不启用 polling watchdog，但复用 QQCC 上下文的非关键交互预算。
+官方 polling 入口的 `qqcc_bot.polling_liveness` 只观测 Local Bot API
+`getUpdates` 是否持续成功；polling 连续 180 秒停滞时，独立 watchdog 线程以专用
+退出码终止 QQCC 进程，由容器 `restart: always` 只重建该服务。业务 update
+积压或媒体发送慢不得触发进程重启。官方 QQCC 使用
+`PerUserUpdateProcessor`，同一用户严格串行、不同用户默认最多并发 16 个；
+`concurrent_updates(True)` 仍被禁止。官方 QQCC callback 共享路由有 45 秒总预算；
+可选示范媒体、修仙市集媒体发送、场景上传提示和视频提交状态等非关键 Telegram
+I/O 分别有 15 秒总预算。quick image/video 与修仙市集一键应用的用户图片接收，
+其 `get_file`、Telegram 文件下载和 FSM 临时文件落盘也共用一个 15 秒 QQCC
+总预算；超时取消或下载异常会删除可能已写入的半文件、提示下载失败并保持当前
+上传状态，用户可直接重试。市集一键应用下载成功后只在当前 update 内完成受限
+接收，完整生成与终态监视由受管后台任务继续；后台异常仍清理临时文件并提示
+用户。交互预算只作用于 QQCC 上下文，不改变主 Bot 行为。私有 Bot 使用 webhook
+worker，不启用 polling watchdog，但复用 QQCC 上下文的非关键交互预算。
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
@@ -201,7 +214,10 @@ YuNet 2023 ONNX，模型在镜像构建时按 SHA-256 校验，focused image smo
 - `dashboard/frontend/src/data/wan22LoraHelp.zh-CN.json`：AI动图 49 个 Wan22 附加模型的版本化中文帮助数据，只供配置页说明弹窗使用；选项可用性、默认强度和运行时路径仍以服务端 catalog 为准。
 
 主 Bot 入口仍是 `src/bot_main.py`。不要在 `qqcc_bot/` 中导入 `src.bot_main`，否则会把主 Bot 的完整 handler 面一起注册进来。
-QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 不得启用 PTB `concurrent_updates(True)`；`/cancel` 必须调用 `cleanup_fsm_user_data(...)` 清理 `*_data` 与临时文件，再清理 `qqcc_gallery_apply` session。
+QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 使用按
+用户串行的 keyed update processor，不得启用 PTB `concurrent_updates(True)`；
+`/cancel` 必须调用 `cleanup_fsm_user_data(...)` 清理 `*_data` 与临时文件，再清理
+`qqcc_gallery_apply` session。
 
 ## 4. 任务来源归属
 

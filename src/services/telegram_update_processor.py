@@ -11,6 +11,7 @@ from telegram.ext import BaseUpdateProcessor
 logger = logging.getLogger("bot.update_processor")
 
 DEFAULT_MAIN_BOT_MAX_CONCURRENT_UPDATES = 32
+DEFAULT_QQCC_BOT_MAX_CONCURRENT_UPDATES = 16
 MAX_MAIN_BOT_MAX_CONCURRENT_UPDATES = 256
 MIN_ADMITTED_UPDATES = 256
 MAX_ADMITTED_UPDATES = 4096
@@ -116,19 +117,33 @@ class PerUserUpdateProcessor(BaseUpdateProcessor):
 
 
 def build_main_bot_update_processor() -> PerUserUpdateProcessor:
-    raw_limit = os.getenv(
-        "MAIN_BOT_MAX_CONCURRENT_UPDATES",
-        str(DEFAULT_MAIN_BOT_MAX_CONCURRENT_UPDATES),
+    return _build_update_processor(
+        env_name="MAIN_BOT_MAX_CONCURRENT_UPDATES",
+        default_limit=DEFAULT_MAIN_BOT_MAX_CONCURRENT_UPDATES,
     )
+
+
+def build_qqcc_bot_update_processor() -> PerUserUpdateProcessor:
+    return _build_update_processor(
+        env_name="QQCC_BOT_MAX_CONCURRENT_UPDATES",
+        default_limit=DEFAULT_QQCC_BOT_MAX_CONCURRENT_UPDATES,
+    )
+
+
+def _build_update_processor(
+    *, env_name: str, default_limit: int
+) -> PerUserUpdateProcessor:
+    raw_limit = os.getenv(env_name, str(default_limit))
     try:
         limit = int(raw_limit)
     except ValueError:
         logger.warning(
-            "Invalid MAIN_BOT_MAX_CONCURRENT_UPDATES=%r; using %s",
+            "Invalid %s=%r; using %s",
+            env_name,
             raw_limit,
-            DEFAULT_MAIN_BOT_MAX_CONCURRENT_UPDATES,
+            default_limit,
         )
-        limit = DEFAULT_MAIN_BOT_MAX_CONCURRENT_UPDATES
+        limit = default_limit
 
     limit = max(1, min(limit, MAX_MAIN_BOT_MAX_CONCURRENT_UPDATES))
     return PerUserUpdateProcessor(max_concurrent_updates=limit)
