@@ -21,7 +21,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 
 BUNDLE = "ltx_unified_runtime"
-VERSION = "2026-08-02-msr-v2-canary"
+VERSION = "2026-08-03-10eros-v14"
 SOURCE_BUNDLES = (
     ("ltx_video_baseline", "2026-06-10"),
     ("ltx_t2v_runtime", "2026-08-01-comfy-fast"),
@@ -52,9 +52,19 @@ MSR_V2_LORA = {
         "LTX-2.3-Licon-MSR-V2.safetensors"
     ),
 }
-EXTRA_LORAS = (EXTRACTED_LORA, MSR_V2_LORA)
-EXPECTED_FILE_COUNT = 51
-EXPECTED_TOTAL_SIZE_BYTES = 139_255_153_102
+EROS_V14_DMD_INT8 = {
+    "relative_path": "diffusion_models/LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors",
+    "sha256": "dc7b2809eb349f26aada43e40d140d778b8025d0f94550c97912b022222b8f81",
+    "size_bytes": 29_161_842_398,
+    "url": (
+        "https://huggingface.co/TenStrip/LTX2.3-10Eros/resolve/"
+        "a1ab190fe39a88347029ee427390517e03be1f06/INT8%20diffusion_models/"
+        "10Eros_v1.4_DMD_int8_convrot.safetensors"
+    ),
+}
+EXTRA_LORAS = (EXTRACTED_LORA, MSR_V2_LORA, EROS_V14_DMD_INT8)
+EXPECTED_FILE_COUNT = 52
+EXPECTED_TOTAL_SIZE_BYTES = 168_416_995_500
 MIN_FREE_BYTES = 8 * 1024**3
 
 
@@ -176,6 +186,7 @@ def main() -> int:
             "excluded_full_checkpoints": sorted(EXCLUDED_FULL_CHECKPOINTS),
             "extracted_lora_revision": ("7170ebca094fcb73e8f621e88ee38fc0524c9fcf"),
             "msr_v2_revision": "593b0b7d2b912e8ecdb2825a34732cee36e720ba",
+            "10eros_v14_revision": "a1ab190fe39a88347029ee427390517e03be1f06",
         },
         files=files,
     )

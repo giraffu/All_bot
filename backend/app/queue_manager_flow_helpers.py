@@ -229,6 +229,9 @@ async def complete_task_flow(
     task_id: str,
     result_path: str,
     extra_outputs: dict[str, Any] | None,
+    result_kind: str | None,
+    result_text: str | None,
+    result_meta: dict[str, Any] | None,
     get_task_type_func,
     persist_task_update_func,
     done_status,
@@ -237,12 +240,18 @@ async def complete_task_flow(
     serialized_extra_outputs = (
         json.dumps(extra_outputs) if isinstance(extra_outputs, dict) else ""
     )
+    serialized_result_meta = (
+        json.dumps(result_meta) if isinstance(result_meta, dict) else ""
+    )
     await persist_task_update_func(
         task_id,
         task_mapping={
             "status": done_status,
             "result_path": result_path,
             "extra_outputs": serialized_extra_outputs,
+            "result_kind": result_kind or ("media" if result_path else ""),
+            "result_text": result_text or "",
+            "result_meta": serialized_result_meta,
             "progress": 1.0,
             "cancel_requested": 0,
             "cancel_requested_at": "",
@@ -254,6 +263,9 @@ async def complete_task_flow(
             "status": "done",
             "result_path": result_path,
             "extra_outputs": extra_outputs if isinstance(extra_outputs, dict) else None,
+            "result_kind": result_kind or ("media" if result_path else None),
+            "result_text": result_text,
+            "result_meta": result_meta if isinstance(result_meta, dict) else None,
             "progress": 1.0,
             "task_type": task_type,
         },

@@ -54,6 +54,7 @@ import { useWan22ChainEditor } from './lab-workbench/useWan22ChainEditor'
 import { useLtxChainEditor } from './lab-workbench/useLtxChainEditor'
 import { useLabTemplateHydration } from './lab-workbench/useLabTemplateHydration'
 import { useLabSubmitPayload } from './lab-workbench/useLabSubmitPayload'
+import { usePromptOptimizer } from './lab-workbench/usePromptOptimizer'
 
 export {
   SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
@@ -107,6 +108,12 @@ export function useLabWorkbench() {
     uploadProgress,
     uploadFile,
     t,
+  })
+  const promptOptimizer = usePromptOptimizer({
+    currentModeId,
+    prompt,
+    duration,
+    uploadedReferences: references.uploadedReferences,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {
@@ -222,9 +229,9 @@ export function useLabWorkbench() {
   ))
 
   const uploadButtonLabel = computed(() => (
-    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video') && references.uploadedReferences.value.length === 0
+    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2') && references.uploadedReferences.value.length === 0
       ? t('lab.workbench.add_start_frame')
-      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video') && references.uploadedReferences.value.length === 1
+      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2') && references.uploadedReferences.value.length === 1
         ? t('lab.workbench.add_end_frame')
         : currentMode.value.maxImages > 1 && references.uploadedReferences.value.length === 1
           ? t('lab.workbench.add_second_reference')
@@ -487,6 +494,7 @@ export function useLabWorkbench() {
     wan22ChainLoading: wan22.wan22ChainLoading,
     wan22ChainStitching: wan22.wan22ChainStitching,
     ltxChainStitching: ltx.ltxChainStitching,
+    ...promptOptimizer,
     openWan22CurrentTaskEditor: wan22.openWan22CurrentTaskEditor,
     openLtxCurrentTaskEditor: ltx.openLtxCurrentTaskEditor,
     stitchCurrentWan22Chain: wan22.stitchCurrentWan22Chain,

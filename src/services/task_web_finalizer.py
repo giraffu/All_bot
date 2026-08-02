@@ -19,6 +19,7 @@ from src.services.scail2_face_swap_pipeline_service import (
     cleanup_scail2_face_swap_first_frame,
 )
 from src.services.task_registry import TaskRegistry
+from src.core.task_core_runtime import cleanup_task_runtime_state
 from src.services.task_web_terminal_finalization import (
     finalize_monitored_web_task_cancellation_default,
     finalize_monitored_web_task_failure_default,
@@ -312,16 +313,41 @@ async def _finalize_pending_web_success(
     terminal_snapshot,
     remove_record_func,
 ) -> None:
+    submission_context = _deserialize_submission_context(
+        internal_user_id=record["internal_user_id"],
+        username=record["username"],
+        payload=record["submission_context"],
+    )
+    submission_metadata = getattr(submission_context, "metadata", {})
+    optimizer_metadata = (
+        submission_metadata.get("_prompt_optimizer")
+        if isinstance(submission_metadata, dict)
+        else None
+    )
+    if isinstance(optimizer_metadata, dict):
+        from src.web_api.services.prompt_result_store import store_prompt_result
+
+        await store_prompt_result(
+            task_id=registry_task_id,
+            user_id=record["internal_user_id"],
+            task_type="prompt_optimize",
+            result_kind=terminal_snapshot.result_kind,
+            result_text=terminal_snapshot.result_text,
+            result_meta=terminal_snapshot.result_meta,
+            expected_optimizer_metadata=optimizer_metadata,
+        )
+        await cleanup_task_runtime_state(
+            internal_user_id=record["internal_user_id"],
+            registry_task_id=registry_task_id,
+        )
+        await remove_record_func()
+        return
     await finalize_monitored_web_task_success_default(
         backend_task_id=record["backend_task_id"],
         internal_user_id=record["internal_user_id"],
         username=record["username"],
         registry_task_id=registry_task_id,
-        submission_context=_deserialize_submission_context(
-            internal_user_id=record["internal_user_id"],
-            username=record["username"],
-            payload=record["submission_context"],
-        ),
+        submission_context=submission_context,
         result_path=terminal_snapshot.result_path,
         extra_outputs=terminal_snapshot.extra_outputs,
         logger_override=logger,
@@ -372,6 +398,9 @@ async def _finalize_terminal_record(
         status=final_status,
         result_path=status_data.get("result_path"),
         extra_outputs=status_data.get("extra_outputs"),
+        result_kind=status_data.get("result_kind"),
+        result_text=status_data.get("result_text"),
+        result_meta=status_data.get("result_meta"),
         error=status_data.get("error") or status_data.get("error_msg"),
         message=status_data.get("message"),
     )

@@ -48,6 +48,6 @@ def test_ltx_unified_target_is_opt_in_and_uses_one_manifest():
     target = TARGETS_BY_NAME["ltx_unified"]
 
     assert target in OPTIONAL_TARGETS
-    assert target.prefix == "ltx_unified/2026-08-02-msr-v2-canary"
-    assert target.manifest_key == ("ltx_unified/2026-08-02-msr-v2-canary/manifest.json")
-    assert target.bundle_versions == (("ltx_unified_runtime", "2026-08-02-msr-v2-canary"),)
+    assert target.prefix == "ltx_unified/2026-08-03-10eros-v14"
+    assert target.manifest_key == ("ltx_unified/2026-08-03-10eros-v14/manifest.json")
+    assert target.bundle_versions == (("ltx_unified_runtime", "2026-08-03-10eros-v14"),)

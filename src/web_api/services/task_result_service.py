@@ -203,6 +203,22 @@ async def _resolve_visible_extra_outputs(hist: _HistorySnapshot) -> dict[str, di
 
 async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
     user_id = current_user.id
+    from src.web_api.services.prompt_result_store import get_owned_prompt_result
+
+    try:
+        prompt_result = await get_owned_prompt_result(task_id, user_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="任务不存在或无权限") from exc
+    if prompt_result is not None:
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "task_type": prompt_result.get("task_type"),
+            "result_kind": "text",
+            "result_text": prompt_result.get("result_text"),
+            "result_meta": prompt_result.get("result_meta") or {},
+            "extra_outputs": {},
+        }
     hist = (
         (
             await db.execute(

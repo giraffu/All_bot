@@ -1371,6 +1371,69 @@ def test_ltx_video_strategy_metadata_marks_last_frame_for_extension():
 
 
 @pytest.mark.asyncio
+async def test_ltx_video_v2_routes_i2v_without_lora_stack(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video_v2")
+    submit_mock = AsyncMock(return_value="backend-v2")
+    _patch_dispatch_image_service(monkeypatch, submit_ltx_video_v2_task=submit_mock)
+
+    result = await strategy.submit_task(
+        "task-v2",
+        {
+            "prompt": "cinematic turn",
+            "saved_input_images": ["demo/start.png"],
+            "resolution": "1280x704",
+            "duration": 5,
+            "ltx_mode": "i2v",
+        },
+        priority=3,
+    )
+
+    assert result == "backend-v2"
+    submit_mock.assert_awaited_once_with(
+        "task-v2",
+        prompt="cinematic turn",
+        image_path="demo/start.png",
+        end_image_path=None,
+        negative_prompt=None,
+        width=1280,
+        height=704,
+        length=5,
+        priority=3,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_v2_flf2v_requires_matching_two_frame_contract(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video_v2_flf2v")
+    submit_mock = AsyncMock(return_value="backend-v2")
+    _patch_dispatch_image_service(monkeypatch, submit_ltx_video_v2_task=submit_mock)
+
+    await strategy.submit_task(
+        "task-v2",
+        {
+            "prompt": "continuous movement",
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "duration": 5,
+            "ltx_mode": "flf2v",
+        },
+        priority=0,
+    )
+    assert submit_mock.await_args.kwargs["end_image_path"] == "demo/end.png"
+
+    with pytest.raises(CoreDomainError, match="LoRA"):
+        await strategy.submit_task(
+            "task-v2-lora",
+            {
+                "prompt": "motion",
+                "saved_input_images": ["demo/start.png", "demo/end.png"],
+                "ltx_mode": "flf2v",
+                "lora_items": [{"name": "forbidden", "strength": 1}],
+            },
+            priority=0,
+        )
+
+
+@pytest.mark.asyncio
 async def test_base_video_strategy_face_video_coerces_duration_string(monkeypatch):
     strategy = StrategyFactory.get_strategy("face_video_step1")
     submit_mock = AsyncMock(return_value="backend-face-video")

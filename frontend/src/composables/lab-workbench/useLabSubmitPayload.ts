@@ -207,28 +207,34 @@ export function useLabSubmitPayload({
 
     const uploadedReferenceKeys = uploadedReferences.value.map(item => item.key)
 
+    const isLtxVideo = currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2'
+    const isLtxVideoV2 = currentMode.value.id === 'ltx_video_v2'
     await submitAndTrack(buildGenerationTaskPayload({
-      taskType: currentMode.value.taskType,
+      taskType: isLtxVideoV2 && uploadedReferenceKeys.length >= 2
+        ? 'ltx_video_v2_flf2v'
+        : currentMode.value.taskType,
       images: uploadedReferenceKeys,
       prompt: prompt.value,
-      negativePrompt: currentMode.value.id === 'ltx_video' ? negativePrompt.value : undefined,
+      negativePrompt: isLtxVideo ? negativePrompt.value : undefined,
       promptTarget: currentMode.value.promptTarget,
       loraName: currentMode.value.id === 'edit'
         ? (selectedEditLora.value || undefined)
-        : getImageToVideoPayloadLoraName(currentMode.value.taskType, selectedVideoLora.value),
+        : isLtxVideoV2
+          ? undefined
+          : getImageToVideoPayloadLoraName(currentMode.value.taskType, selectedVideoLora.value),
       loraStrength: currentMode.value.id === 'edit' && selectedEditLora.value
         ? Number(customEditLoraStrength.value)
         : currentMode.value.id === 'ltx_video'
           ? getImageToVideoPayloadLoraStrength(currentMode.value.taskType, selectedVideoLora.value)
           : undefined,
-      resolution: currentMode.value.id === 'ltx_video'
+      resolution: isLtxVideo
         ? resolution.value
         : undefined,
-      duration: currentMode.value.id === 'ltx_video'
+      duration: isLtxVideo
         ? Number(duration.value)
         : undefined,
       loraItems: currentMode.value.id === 'ltx_video' ? ltxLoraItems.value : undefined,
-      extraInputs: currentMode.value.id === 'ltx_video'
+      extraInputs: isLtxVideo
         ? {
             ltx_mode: uploadedReferences.value.length >= 2 ? 'flf2v' : 'i2v',
             use_end_frame: uploadedReferences.value.length >= 2,

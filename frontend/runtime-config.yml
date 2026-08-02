@@ -9,7 +9,8 @@
     "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true,
     "enable_ltx_t2v": true,
-    "enable_ltx_t2v_msr": true
+    "enable_ltx_t2v_msr": true,
+    "enable_ltx_video_v2": true
   },
   "prod": {
     "api_base_url": "https://api.aivison.it.com/api",
@@ -20,6 +21,7 @@
     "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true,
     "enable_ltx_t2v": false,
-    "enable_ltx_t2v_msr": false
+    "enable_ltx_t2v_msr": false,
+    "enable_ltx_video_v2": false
   }
 }

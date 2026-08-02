@@ -478,6 +478,9 @@ class QueueManager:
             "error_msg": "",
             "result_path": "",
             "extra_outputs": "",
+            "result_kind": "",
+            "result_text": "",
+            "result_meta": "",
             "trace_id": trace_id,
         }
 
@@ -717,11 +720,17 @@ class QueueManager:
         result_path: str,
         *,
         extra_outputs: dict[str, Any] | None = None,
+        result_kind: str | None = None,
+        result_text: str | None = None,
+        result_meta: dict[str, Any] | None = None,
     ):
         await complete_task_flow(
             task_id=task_id,
             result_path=result_path,
             extra_outputs=extra_outputs,
+            result_kind=result_kind,
+            result_text=result_text,
+            result_meta=result_meta,
             get_task_type_func=self._get_task_type,
             persist_task_update_func=self._persist_task_update,
             done_status=TaskStatus.DONE,

@@ -23,6 +23,9 @@ class TaskTerminalSnapshot:
     status: str | None
     result_path: str | None = None
     extra_outputs: dict[str, Any] | None = None
+    result_kind: str | None = None
+    result_text: str | None = None
+    result_meta: dict[str, Any] | None = None
     error: str | None = None
     message: str | None = None
 
@@ -56,6 +59,9 @@ def build_task_terminal_snapshot(
     status: str | None,
     result_path: str | None = None,
     extra_outputs: dict[str, Any] | None = None,
+    result_kind: str | None = None,
+    result_text: str | None = None,
+    result_meta: dict[str, Any] | None = None,
     error: str | None = None,
     message: str | None = None,
 ) -> TaskTerminalSnapshot:
@@ -63,6 +69,9 @@ def build_task_terminal_snapshot(
         status=normalize_backend_status(status),
         result_path=result_path,
         extra_outputs=extra_outputs,
+        result_kind=result_kind,
+        result_text=result_text,
+        result_meta=result_meta,
         error=error,
         message=message,
     )

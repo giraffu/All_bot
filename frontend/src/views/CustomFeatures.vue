@@ -90,6 +90,14 @@ const {
   openLtxCurrentTaskEditor,
   stitchCurrentWan22Chain,
   stitchCurrentLtxChain,
+  promptOptimizerTemplates,
+  selectedPromptTemplateRef,
+  isPromptOptimizerAvailable,
+  canOptimizePrompt,
+  canRestoreOriginalPrompt,
+  isOptimizingPrompt,
+  optimizePrompt,
+  restoreOriginalPrompt,
 } = useLabWorkbench()
 
 const isVideoMode = computed(() => currentMode.value.kindKey === 'lab.workbench.mode_kinds.video')
@@ -137,11 +145,20 @@ const promptLockedHint = computed(() => (
         :has-advanced-options="hasAdvancedOptions"
         :notice="composerNotice || templateNotice"
         :warning="composerWarning || templateWarning"
+        :prompt-optimizer-templates="promptOptimizerTemplates"
+        :selected-prompt-template-ref="selectedPromptTemplateRef"
+        :show-prompt-optimizer="isPromptOptimizerAvailable"
+        :optimize-prompt-disabled="!canOptimizePrompt"
+        :optimize-prompt-loading="isOptimizingPrompt"
+        :can-restore-original-prompt="canRestoreOriginalPrompt"
         @update:prompt="prompt = $event"
         @asset-video-metadata="handleAssetVideoMetadata"
         @remove-reference="handleRemoveReference"
         @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"
+        @update:selected-prompt-template-ref="selectedPromptTemplateRef = $event"
+        @optimize-prompt="optimizePrompt"
+        @restore-original-prompt="restoreOriginalPrompt"
       >
         <template v-if="currentModeId === 'ltx_t2v'" #before-prompt>
           <div class="mb-3 space-y-3">

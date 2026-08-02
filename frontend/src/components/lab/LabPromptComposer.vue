@@ -6,6 +6,8 @@ import {
   LockOutlined,
   PictureOutlined,
   PlusOutlined,
+  ThunderboltOutlined,
+  UndoOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
@@ -14,6 +16,7 @@ import { useI18n } from 'vue-i18n'
 import LabReferenceTray from '@/components/lab/LabReferenceTray.vue'
 import { useViewport } from '@/composables/useViewport'
 import type { LabUploadSlotId } from '@/features/generation/labModeConfig'
+import type { PromptOptimizerTemplate } from '@/composables/lab-workbench/usePromptOptimizer'
 
 interface UploadedReferenceItem {
   key: string
@@ -61,6 +64,12 @@ const props = defineProps<{
   hasAdvancedOptions: boolean
   notice?: string
   warning?: string
+  promptOptimizerTemplates?: PromptOptimizerTemplate[]
+  selectedPromptTemplateRef?: string
+  showPromptOptimizer?: boolean
+  optimizePromptDisabled?: boolean
+  optimizePromptLoading?: boolean
+  canRestoreOriginalPrompt?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -69,6 +78,9 @@ const emit = defineEmits<{
   removeReference: [index: number]
   removeUploadSlot: [slotId: LabUploadSlotId]
   assetVideoMetadata: [slotId: LabUploadSlotId, durationSeconds: number | null]
+  optimizePrompt: []
+  restoreOriginalPrompt: []
+  'update:selectedPromptTemplateRef': [value: string]
 }>()
 
 const { t } = useI18n()
@@ -263,6 +275,39 @@ const compactUploadLabel = (label: string) => label
               {{ compactUploadLabel(uploadButtonLabel) }}
             </a-button>
           </a-upload>
+
+          <a-select
+            v-if="showPromptOptimizer"
+            :value="selectedPromptTemplateRef"
+            class="min-w-[132px] max-w-[190px]"
+            size="middle"
+            :options="(promptOptimizerTemplates || []).map(item => ({
+              value: `${item.id}@${item.version}`,
+              label: item.label,
+              title: item.description,
+            }))"
+            @update:value="emit('update:selectedPromptTemplateRef', String($event))"
+          />
+
+          <a-button
+            v-if="showPromptOptimizer"
+            class="lab-composer__compact-btn lab-composer__ghost-btn rounded-full"
+            :disabled="optimizePromptDisabled"
+            :loading="optimizePromptLoading"
+            @click="emit('optimizePrompt')"
+          >
+            <template #icon><ThunderboltOutlined /></template>
+            {{ t('lab.workbench.optimize_prompt') }} · 1 {{ t('app.credits') }}
+          </a-button>
+
+          <a-button
+            v-if="showPromptOptimizer && canRestoreOriginalPrompt"
+            class="lab-composer__icon-only-btn lab-composer__ghost-btn rounded-full"
+            :title="t('lab.workbench.restore_original_prompt')"
+            @click="emit('restoreOriginalPrompt')"
+          >
+            <template #icon><UndoOutlined /></template>
+          </a-button>
 
           <a-popover
             v-if="hasAdvancedOptions && canShowAdvancedAsPopover"
