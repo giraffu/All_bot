@@ -201,8 +201,9 @@ LTX 镜像固定 ComfyUI revision `7bf8bfcd078c7f4ae50ca5149c9ff7d8613e1fb1`
 
 ## 4. 人物资产与任务链
 
-`character_references` 记录 UUID、owner、名称、必填人物描述、源图 key、最终参考表 key、
-兼容任务 ID、状态与时间戳；`character_reference_views` 以
+`character_references` 记录 UUID、owner、名称、必填人物描述、可组合提示词标签
+`prompt_profile`、源图 key、最终参考表 key、兼容任务 ID、状态与时间戳；
+`character_reference_views` 以
 `(character_id, view_type)` 唯一保存每张子图的可编辑 prompt、task ID、object
 key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留 20 个 `draft/ready`
 人物，子图生成仍受普通任务并发限制。
@@ -212,10 +213,13 @@ key 与终态。资产只能由 owner 访问，不可投稿；每人最多保留
 不扣费；名称和人物描述均为必填，人物描述最多 500 字。用户按需处理四个官方面板固定槽位：正脸图、全身正面图、全身侧面图、
 全身背面图。服务端目录是默认提示词事实源；四条默认词均使用中文，要求同一位
 成年人、完全裸体、单一人物、纯白背景和明确视角，不再保留侧脸近景与 3/4 侧脸
-槽位。API presenter 会把数据库中完全等于旧版黑底默认词的历史 prompt 映射为
+槽位。新草稿可选择女性或男性：女性必须组合乳房、阴毛和肤色三个标签组；男性
+不接受女性专属标签，正面和侧面全身默认词明确要求自然勃起阴茎、阴囊完整可见且
+无遮挡。标签随人物记录持久化，响应中的 `default_prompts` 由服务端组合，前端不得
+复制维护另一套提示词。API presenter 会把数据库中完全等于旧版黑底默认词的历史 prompt 映射为
 对应白底默认词，使现有角色刷新后可直接重生；用户自行编辑过的黑底提示保持原样。
-练功房 `CharacterReferenceWorkbench` 的新草稿占位词必须与服务端四条白底默认词
-保持一致，不能在前端重复保留旧黑底词。
+练功房 `CharacterReferenceWorkbench` 只能使用响应中的服务端默认词，不能在前端
+重复保留旧黑底词或另一套白底词。
 
 每个子图都是独立的标准生成任务。`POST
 /api/characters/{id}/views/{view_type}/generate` 接受 `engine=free_edit |

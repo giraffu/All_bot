@@ -658,6 +658,25 @@
     "name_placeholder": "人物名称（1–60 字）",
     "description_placeholder": "描述人物的年龄、面部、发型、肤色、体型和稳定外观特征",
     "description_required": "请填写人物描述，用于视频人物参考",
+    "profile_title": "身体特征标签",
+    "profile_hint": "选择后将由服务端组合为四个视角的默认提示词",
+    "gender": {
+      "female": "女性",
+      "female_hint": "可选择乳房、阴毛和肤色",
+      "male": "男性",
+      "male_hint": "使用明确的成年男性解剖提示"
+    },
+    "profile_groups": {
+      "breast_size": "乳房",
+      "pubic_hair": "阴毛",
+      "skin_tone": "肤色"
+    },
+    "profile_options": {
+      "breast_size": { "large": "巨乳", "natural": "正常乳房", "flat": "平乳" },
+      "pubic_hair": { "full": "多阴毛", "natural": "正常阴毛", "none": "无阴毛" },
+      "skin_tone": { "fair": "白皙", "asian_yellow": "亚洲的黄色肤色", "asian_tan": "亚洲晒黑的肤色" }
+    },
+    "male_prompt_note": "男性无需额外子标签。全身正面和侧面提示词会明确要求自然勃起阴茎、阴囊完整可见且无遮挡。",
     "billing_hint": "创建草稿不扣费。每个视角可选择自由P图、自由P图 v2.5 或自由P图 v3，并按所选流程计费；任务失败按现有账本自动退款。",
     "engine_label": "子图生成模型",
     "engines": {

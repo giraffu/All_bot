@@ -93,6 +93,13 @@ describe('CharacterReferenceWorkbench', () => {
       source_object_key: 'source.png',
       sheet_object_key: null,
       preview_url: null,
+      prompt_profile: null,
+      default_prompts: {
+        face_front: '正脸默认提示词',
+        body_front: '正面默认提示词',
+        body_side: '侧面默认提示词',
+        body_back: '背面默认提示词',
+      },
       views: [
         { type: 'face_front', status: 'ready', preview_url: 'front.png' },
         { type: 'body_front', status: 'ready', preview_url: 'body.png' },
@@ -103,10 +110,18 @@ describe('CharacterReferenceWorkbench', () => {
     uploadFile.mockResolvedValue('web_uploads/123/front.png')
     uploadView.mockResolvedValue(undefined)
     fetchCapacity.mockResolvedValue({ limit: 3, active: 1, available: 2 })
-    createDraft.mockResolvedValue({ id: 'character-2' })
+    createDraft.mockResolvedValue({
+      id: 'character-2',
+      default_prompts: {
+        face_front: '女性正脸默认提示词',
+        body_front: '女性正面默认提示词',
+        body_side: '女性侧面默认提示词',
+        body_back: '女性背面默认提示词',
+      },
+    })
   })
 
-  it('uses four Chinese nude prompts for the official character panel', () => {
+  it('shows female trait groups and hides them for male characters', async () => {
     const wrapper = mount(CharacterReferenceWorkbench, {
       global: {
         stubs: {
@@ -119,20 +134,47 @@ describe('CharacterReferenceWorkbench', () => {
         },
       },
     })
-    const prompts = (wrapper.vm as any).prompts
+    expect(wrapper.find('[data-testid="female-options"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="male-note"]').exists()).toBe(false)
 
-    expect(Object.keys(prompts)).toEqual([
-      'face_front',
-      'body_front',
-      'body_side',
-      'body_back',
-    ])
-    for (const prompt of Object.values(prompts) as string[]) {
-      expect(prompt).toContain('同一位成年人')
-      expect(prompt).toContain('完全裸体')
-      expect(prompt).toContain('纯白背景')
-      expect(prompt).not.toContain('纯黑背景')
-    }
+    ;(wrapper.vm as any).selectGender('male')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="female-options"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="male-note"]').exists()).toBe(true)
+  })
+
+  it('submits selected tags and hydrates prompts from the backend response', async () => {
+    const wrapper = mount(CharacterReferenceWorkbench, {
+      global: {
+        stubs: {
+          AButton: ButtonStub,
+          AInput: passthroughStub,
+          ATextarea: passthroughStub,
+          ARadioGroup: passthroughStub,
+          ARadioButton: passthroughStub,
+          AUpload: passthroughStub,
+        },
+      },
+    })
+    ;(wrapper.vm as any).name = 'Alice'
+    ;(wrapper.vm as any).description = 'adult woman'
+    ;(wrapper.vm as any).sourceKey = 'web_uploads/123/source.png'
+    ;(wrapper.vm as any).selectFemaleTag('breast_size', 'large')
+    ;(wrapper.vm as any).selectFemaleTag('pubic_hair', 'full')
+    ;(wrapper.vm as any).selectFemaleTag('skin_tone', 'asian_tan')
+
+    await (wrapper.vm as any).createDraft()
+
+    expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      prompt_profile: {
+        gender: 'female',
+        breast_size: 'large',
+        pubic_hair: 'full',
+        skin_tone: 'asian_tan',
+      },
+    }))
+    expect((wrapper.vm as any).prompts.body_front).toBe('女性正面默认提示词')
   })
 
   it('requires a character description before creating a draft', async () => {
@@ -172,6 +214,9 @@ describe('CharacterReferenceWorkbench', () => {
       },
     })
     ;(wrapper.vm as any).draftId = 'character-1'
+    for (const [viewType, prompt] of Object.entries(storeItems[0].default_prompts)) {
+      ;(wrapper.vm as any).prompts[viewType] = prompt
+    }
     await nextTick()
 
     const file = new File(['front'], 'front.png', { type: 'image/png' })
@@ -204,6 +249,9 @@ describe('CharacterReferenceWorkbench', () => {
     })
     await flushPromises()
     ;(wrapper.vm as any).draftId = 'character-1'
+    for (const [viewType, prompt] of Object.entries(storeItems[0].default_prompts)) {
+      ;(wrapper.vm as any).prompts[viewType] = prompt
+    }
     await nextTick()
 
     await wrapper.get('[data-testid="generate-missing-views"]').trigger('click')

@@ -1,12 +1,31 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class CharacterPromptProfile(BaseModel):
+    gender: Literal["female", "male"]
+    breast_size: Literal["large", "natural", "flat"] | None = None
+    pubic_hair: Literal["full", "natural", "none"] | None = None
+    skin_tone: Literal["fair", "asian_yellow", "asian_tan"] | None = None
+
+    @model_validator(mode="after")
+    def validate_gender_tags(self):
+        female_values = (self.breast_size, self.pubic_hair, self.skin_tone)
+        if self.gender == "male" and any(value is not None for value in female_values):
+            raise ValueError("男性人物不能设置女性专属标签")
+        if self.gender == "female":
+            self.breast_size = self.breast_size or "natural"
+            self.pubic_hair = self.pubic_hair or "natural"
+            self.skin_tone = self.skin_tone or "asian_yellow"
+        return self
 
 
 class CharacterBuildRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     description: str = Field(min_length=1, max_length=500)
     source_object_key: str = Field(min_length=1, max_length=1024)
+    prompt_profile: CharacterPromptProfile | None = None
 
     @field_validator("name")
     @classmethod
@@ -93,6 +112,8 @@ class CharacterResponse(BaseModel):
     source_object_key: str
     sheet_object_key: str | None
     preview_url: str | None = None
+    prompt_profile: CharacterPromptProfile | None = None
+    default_prompts: dict[str, str] = Field(default_factory=dict)
     views: list[CharacterViewResponse] = Field(default_factory=list)
 
 

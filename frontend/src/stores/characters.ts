@@ -12,6 +12,7 @@ import {
   uploadCharacterView,
   updateCharacter,
   type CharacterReference,
+  type CharacterPromptProfile,
   type CharacterViewEngine,
   type CharacterViewType,
 } from '@/api/characters'
@@ -53,13 +54,13 @@ export const useCharactersStore = defineStore('characters', () => {
     }
   }
 
-  const create = async (payload: { name: string; description: string; source_object_key: string }) => {
+  const create = async (payload: { name: string; description: string; source_object_key: string; prompt_profile?: CharacterPromptProfile }) => {
     const result = await buildCharacter(payload)
     await refresh()
     return result
   }
 
-  const createDraft = async (payload: { name: string; description: string; source_object_key: string }) => {
+  const createDraft = async (payload: { name: string; description: string; source_object_key: string; prompt_profile?: CharacterPromptProfile }) => {
     const result = await createCharacterDraft(payload)
     items.value = [result, ...items.value.filter(item => item.id !== result.id)]
     return result
