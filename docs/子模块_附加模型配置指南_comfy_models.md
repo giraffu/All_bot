@@ -4,6 +4,10 @@
 
 整个过程主要是一个**配置驱动**的过程，无需重构核心逻辑。下面分别介绍“图生图”与“图生视频”附加模型的具体配置路径。
 
+本地多模态 LLM 根据图片和原始提示词生成模型专用提示词时，使用独立的
+[`子模块_本地多模态LLM提示词优化_prompt_optimizer.md`](子模块_本地多模态LLM提示词优化_prompt_optimizer.md)。
+提示词 profile 不能替代本指南的 workflow、checkpoint、LoRA 或发布事实源。
+
 ---
 
 ## 0. workflow 资产事实源红线
