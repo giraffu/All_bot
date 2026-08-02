@@ -72,7 +72,10 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_materialize_ltx_t2v_ic_preserves_official_ingredients_output(monkeypatch):
+@pytest.mark.parametrize("task_type", ["ltx_t2v_ic", "ltx_video_v2"])
+async def test_materialize_ltx_video_extracts_fallback_last_frame(
+    monkeypatch, task_type
+):
     assert not hasattr(materialization, "_trim_ltx_t2v_ic_guide_tail")
     monkeypatch.setattr(
         materialization,
@@ -89,7 +92,7 @@ async def test_materialize_ltx_t2v_ic_preserves_official_ingredients_output(monk
     outputs = await materialization.materialize_task_outputs(
         comfy_client=DummyComfyClient(),
         execution=execution,
-        task_type="ltx_t2v_ic",
+        task_type=task_type,
         logger=SimpleNamespace(
             warning=lambda *args, **kwargs: None,
             info=lambda *args, **kwargs: None,
