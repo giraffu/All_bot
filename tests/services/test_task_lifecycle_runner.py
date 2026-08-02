@@ -44,6 +44,28 @@ async def test_route_backend_terminal_snapshot_prefers_success_when_result_exist
 
 
 @pytest.mark.asyncio
+async def test_route_backend_terminal_snapshot_accepts_text_result_without_path():
+    success = AsyncMock(return_value="success")
+    failure = AsyncMock()
+
+    result = await task_lifecycle_runner.route_backend_terminal_snapshot(
+        terminal_snapshot=build_task_terminal_snapshot(
+            status="done",
+            result_kind="text",
+            result_text="optimized prompt",
+            result_meta={"prompt_optimizer": {"profile_ref": "profile@1"}},
+        ),
+        handle_success=success,
+        handle_cancelled=AsyncMock(),
+        handle_failure=failure,
+    )
+
+    assert result == "success"
+    success.assert_awaited_once()
+    failure.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_route_backend_terminal_snapshot_routes_cancelled_and_failure():
     cancelled = AsyncMock(return_value="cancelled")
     failure = AsyncMock(return_value="failed")
