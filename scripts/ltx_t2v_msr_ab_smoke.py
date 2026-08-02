@@ -192,8 +192,14 @@ def validate_runtime(object_info: dict[str, Any]) -> None:
     missing = sorted(REQUIRED_NODES - set(object_info))
     if missing:
         raise AbCanaryError("missing ComfyUI node types: " + ", ".join(missing))
-    loras = set(object_info["LTXICLoRALoaderModelOnly"]["input"]["required"]["lora_name"][0])
-    generic_loras = set(object_info["LoraLoaderModelOnly"]["input"]["required"]["lora_name"][0])
+    def combo_options(node: str) -> set[str]:
+        spec = object_info[node]["input"]["required"]["lora_name"]
+        if spec[0] == "COMBO":
+            return set(spec[1].get("options") or [])
+        return set(spec[0])
+
+    loras = combo_options("LTXICLoRALoaderModelOnly")
+    generic_loras = combo_options("LoraLoaderModelOnly")
     if MSR_LORA not in loras or SULPHUR_LORA not in generic_loras:
         raise AbCanaryError("MSR V2 or Sulphur LoRA is absent from runtime")
 
