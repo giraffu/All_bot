@@ -79,6 +79,9 @@ FLF 模板。
 单文件 20 MB；published 官方素材由服务端直接解析。IC 接受恰好两个 typed 角色引用
 （private/official 可混合）和一个环境引用（official/upload 互斥），并固定按角色 1、
 角色 2、环境三图顺序发送。服务端可信人物/环境描述一并进入渲染快照。
+数据库中的可信角色或环境媒体键可以保留兼容的 `bucket/object_key` 形式，但 Web 在
+写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
+对象键，不能再次包含桶名。
 
 任务扣 1 灵石；Task Core 的扣费、派发补偿、pending 取消和失败退款负责 exactly
 once。文本结果只保存在 `allbot:prompt_result:{task_id}` 类 owner-fenced Redis key，

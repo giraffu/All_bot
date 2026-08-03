@@ -35,6 +35,11 @@ def normalize_owned_prompt_media_key(value: str, user_id: int) -> str:
     return object_key
 
 
+def normalize_prompt_media_object_key(value: str) -> str:
+    raw = str(value or "").strip().lstrip("/")
+    return raw.removeprefix(f"{MINIO_BUCKET}/")
+
+
 async def validate_prompt_media_objects(
     media: list[dict[str, str]],
     *,
@@ -115,7 +120,7 @@ async def submit_prompt_optimization(
         media = [
             {
                 "role": f"reference_character_{index}",
-                "object_key": object_key,
+                "object_key": normalize_prompt_media_object_key(object_key),
             }
             for index, object_key in enumerate(
                 resolved_references.character_sheets, start=1
@@ -123,7 +128,9 @@ async def submit_prompt_optimization(
         ] + [
             {
                 "role": "scene_background",
-                "object_key": resolved_references.environment_object_key,
+                "object_key": normalize_prompt_media_object_key(
+                    resolved_references.environment_object_key
+                ),
             }
         ]
     else:
