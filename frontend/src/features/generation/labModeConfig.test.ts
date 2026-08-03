@@ -69,6 +69,13 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('image_to_video')).toBe('custom_video')
   })
 
+  it('allows one uploaded environment image for LTX text-to-video references', () => {
+    const mode = getLabModeConfig('ltx_t2v')
+
+    expect(mode.supportsUpload).toBe(true)
+    expect(mode.maxImages).toBe(1)
+  })
+
   it('configures scail2 modes with reference image and motion video slots', () => {
     const actionTransfer = getLabModeConfig('scail2_action_transfer')
     const replacement = getLabModeConfig('scail2_video_replacement')

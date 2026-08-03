@@ -50,6 +50,9 @@ checkpoint；`LTX2.3-Licon-MSR-test_version.safetensors` 只提供人物身份�
 角色面板、人物描述和背景 object key 写入不可变任务载荷。客户端不能直接提交面板
 路径、描述、模型、LoRA 或强度。
 
+练功房选择“上传环境”后，应在环境来源控件下直接显示单图上传按钮；该入口复用
+通用预签名上传链路，最多保留一张环境图。纯 T2V 与“官方环境”模式不显示该按钮。
+
 纯 T2V 不能携带角色或背景；IC 模式不能少于或多于两个角色，也不能缺少背景。
 这些限制由前端体验层、Web submission service、domain config 和 Worker patcher
 重复校验，任何不一致都 fail closed。

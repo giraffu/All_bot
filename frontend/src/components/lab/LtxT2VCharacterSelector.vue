@@ -15,7 +15,14 @@ const props = withDefaults(defineProps<{
   enabled?: boolean
   environmentSource?: 'official' | 'upload'
   environmentId?: string
-}>(), { enabled: true, environmentSource: 'upload', environmentId: '' })
+  canUploadEnvironment?: boolean
+  beforeUploadEnvironment?: (file: File) => boolean | Promise<boolean>
+}>(), {
+  enabled: true,
+  environmentSource: 'upload',
+  environmentId: '',
+  canUploadEnvironment: false,
+})
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
   'update:enabled': [value: boolean]
@@ -110,7 +117,17 @@ onMounted(async () => {
           {{ environment.name }}
         </a-select-option>
       </a-select>
-      <div v-else class="mt-2 text-xs opacity-70">请使用下方“上传参考图”按钮上传一张环境图；不需要多视角。</div>
+      <div v-else class="mt-3">
+        <a-upload
+          v-if="canUploadEnvironment && beforeUploadEnvironment"
+          accept="image/png,image/jpeg,image/webp"
+          :show-upload-list="false"
+          :before-upload="beforeUploadEnvironment"
+        >
+          <a-button type="primary" ghost>上传环境图</a-button>
+        </a-upload>
+        <div class="mt-2 text-xs opacity-70">上传一张 PNG、JPEG 或 WebP 环境图；不需要多视角。</div>
+      </div>
     </div>
     </template>
     <div v-else class="text-xs opacity-70">关闭后使用纯文生视频，不会携带任何角色或环境素材。</div>
