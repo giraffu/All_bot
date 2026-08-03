@@ -136,6 +136,13 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
         "${RUNPOD_RELEASE_PROFILE_PINS_JSON:?"
         "RUNPOD_RELEASE_PROFILE_PINS_JSON is required}"
     )
+    assert environment["RUNPOD_CONTAINER_REGISTRY_AUTH_ID"] == (
+        "${RUNPOD_CONTAINER_REGISTRY_AUTH_ID:?"
+        "RUNPOD_CONTAINER_REGISTRY_AUTH_ID is required}"
+    )
+    assert environment["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == (
+        "${RUNPOD_MODEL_DOWNLOAD_CONCURRENCY:-4}"
+    )
 
 
 def test_dashboard_runpod_release_pin_contract_matches_admin_profile_catalog():
