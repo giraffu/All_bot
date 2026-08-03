@@ -28,6 +28,7 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   `dashboard/backend/routers/prompt_optimizer.py`
 - owner-fenced 结果：`src/web_api/services/prompt_result_store.py`
 - Worker：`workers/prompt_optimizer/`
+- Worker Relay：`workers/local_relay/relay_main.py`
 - 文本增量存储：`src/services/task_text_stream_store.py`
 - Worker 镜像/Compose：`deploy/docker/Dockerfile.test-execution`、
   `deploy/docker-compose-prompt-optimizer-test.yml`

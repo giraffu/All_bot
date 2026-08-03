@@ -187,6 +187,32 @@ async def test_relay_drops_queued_progress_before_forwarding_complete(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_relay_forwards_prompt_optimizer_text_delta(monkeypatch):
+    calls = []
+
+    async def fake_forward(method, path, *, params=None, json_body=None, retry=True):
+        calls.append((method, path, json_body, retry))
+        return JSONResponse({"status": "ok", "sequence": 1})
+
+    monkeypatch.setattr(relay, "_forward_request", fake_forward)
+    payload = {
+        "task_id": "task-1",
+        "agent_id": "prompt_optimizer_test_01",
+        "attempt_id": "attempt-1",
+        "sequence": 1,
+        "field": "positive_prompt",
+        "delta": "A cinematic scene",
+    }
+
+    response = await relay.text_delta(FakeRequest(payload))
+
+    assert response.status_code == 200
+    assert calls == [
+        ("POST", "/api/agent/task/text-delta", payload, True),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
     primary_path = tmp_path / "primary.png"
     extra_path = tmp_path / "last_frame.png"
