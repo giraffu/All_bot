@@ -269,6 +269,10 @@ class RunPodPodRequestBuilder:
             body["templateId"] = template_id
         else:
             body["imageName"] = image_name
+            if self.settings.container_registry_auth_id:
+                body["containerRegistryAuthId"] = (
+                    self.settings.container_registry_auth_id
+                )
         if self.settings.pod_ports:
             body["ports"] = list(self.settings.pod_ports)
         docker_start_cmd = self.docker_start_cmd_for(profile)

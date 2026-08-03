@@ -387,6 +387,36 @@ def test_render_create_can_use_bootstrap_image_without_template():
     assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "true"
 
 
+def test_render_create_injects_private_registry_auth_for_explicit_image():
+    provider = RunPodProvider(
+        _settings(
+            use_template_img2img_lora=False,
+            image_name_img2img_lora="ghcr.io/giraffu/allbot-gpu-img2img-lora@sha256:abc",
+            container_registry_auth_id="registry-auth-id",
+        )
+    )
+
+    body = provider.render_create_pod_request(
+        task_type="img2img_lora",
+        environment="cloud-prod",
+    )["json"]
+
+    assert body["containerRegistryAuthId"] == "registry-auth-id"
+
+
+def test_render_create_does_not_inject_registry_auth_for_template():
+    provider = RunPodProvider(
+        _settings(container_registry_auth_id="registry-auth-id")
+    )
+
+    body = provider.render_create_pod_request(
+        task_type="img2img_lora",
+        environment="cloud-test",
+    )["json"]
+
+    assert "containerRegistryAuthId" not in body
+
+
 def test_render_create_can_use_baked_runpod_profile_image_without_runtime_custom_node_install():
     provider = RunPodProvider(
         _settings(
