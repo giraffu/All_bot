@@ -16,6 +16,9 @@ PROFILE_LOCAL_DOCKERFILE = Path(
 )
 WAN22_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/wan22_aio_video/Dockerfile")
 I2I_PRO_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/i2i_pro/Dockerfile")
+PORNMASTER_PROFILE_DOCKERFILE = Path(
+    "workers/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
+)
 LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
 )
@@ -314,6 +317,16 @@ def test_pornmaster_profile_smoke_requires_bf16_workflow_and_mapping():
     assert '\\"pornmaster_flux2_multi_edit_bf16\\" in validation' in build_script
     assert "BF16_WORKFLOW_AND_MAPPING_PRESENT=true" in build_script
     assert "'" not in smoke_command
+
+
+def test_pornmaster_profile_uses_cloud_resolvable_immutable_base():
+    dockerfile = PORNMASTER_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert (
+        "ARG BASE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro@sha256:"
+        in dockerfile
+    )
+    assert "ARG BASE_IMAGE=192.168.1.115:5000" not in dockerfile
 
 
 def test_img2img_lora_profile_image_bakes_custom_nodes_not_business_models():

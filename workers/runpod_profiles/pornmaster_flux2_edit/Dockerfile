@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
+ARG BASE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro@sha256:707df40a8deea75fc463d8140ab9172969e0ca2ea71cac51ada7906e68e982cb
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="AllBot RunPod PornMaster Flux2 edit ComfyUI profile"
