@@ -25,9 +25,9 @@ description: "处理独立模块不可变构建、精确 digest 部署、目标�
 build-only base 使用 Dockerfile、显式 `build_inputs` 与上游精确 digest 的
 内容身份，不跟随应用 SHA；最终业务产物仍用 SHA 并返回精确 digest。loopback
 代理必须在 build 前拒绝。GitHub self-hosted workflow 只允许手动 protected
-main，拒绝 PR/fork；包括 GPU/ComfyUI 在内的 catalog 模块统一使用云端
-`allbot-sgp1` Buildx 构建器。构建 GPU artifact 不授权或触发任何 RunPod/LAN
-runtime rollout。
+main，拒绝 PR/fork 和 GPU kind。GPU/ComfyUI 由 operator 直接调用
+`release.py build`，可显式选择云端 `allbot-sgp1` Buildx builder；构建 artifact
+不授权或触发任何 RunPod/LAN runtime rollout。
 
 部署一次只替换一个模块的精确 `repository@sha256:digest`。test 人工验收是
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有

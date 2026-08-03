@@ -170,10 +170,10 @@ state backend，把状态原子写入目标主机
 
 `.github/workflows/module-build.yml` 与 `module-deploy.yml` 只有
 `workflow_dispatch`，self-hosted job 不接收 PR/fork。build workflow 要求输入
-SHA 等于当前 `origin/main`；包括 GPU/ComfyUI 在内的 catalog 模块统一使用云端
-`allbot-sgp1` Buildx 构建器和 registry cache。构建 artifact 不等于切换 GPU
-运行态，RunPod/LAN rollout 仍必须指定 operator 和精确 slot。deploy workflow
-绑定 `test`/`production` GitHub Environment，校验精确 digest；
+SHA 等于当前 `origin/main` 并拒绝 GPU kind。GPU/ComfyUI 由 operator 直接调用
+`release.py build`，可通过 `--builder allbot-sgp1` 使用云端 BuildKit，但构建本身
+不授权或触发 RunPod/LAN rollout。deploy workflow 绑定 `test`/`production`
+GitHub Environment，校验精确 digest；
 production mutation 还需 Environment 人工批准、布尔确认和
 `--confirm-prod`。Environment 凭据只解码到 `/dev/shm` 并在 job 结束清理。
 
