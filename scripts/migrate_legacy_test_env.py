@@ -40,10 +40,7 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
         "NODE_ID": "gpu-177",
         "GPU_INDEX": "1",
         "RUNTIME_PROFILE": "ltx_unified",
-        "TASK_TYPES": (
-            "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,"
-            "ltx_t2v,ltx_t2v_ic"
-        ),
+        "TASK_TYPES": "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio",
         "COMFY_API_URL": "http://192.168.1.177:8191",
         "COMFY_WS_URL": "ws://192.168.1.177:8191/ws",
     },
@@ -73,8 +70,7 @@ SLOT_DEFAULTS: dict[str, dict[str, str]] = {
             "scail2_action_transfer,scail2_action_transfer_long,"
             "scail2_video_replacement,scail2_face_swap_v2,"
             "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,"
-            "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap,"
-            "ltx_t2v,ltx_t2v_ic"
+            "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"
         ),
         "COMFY_API_URL": "http://192.168.1.226:8190",
         "COMFY_WS_URL": "ws://192.168.1.226:8190/ws",

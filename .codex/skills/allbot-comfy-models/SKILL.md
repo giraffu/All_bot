@@ -84,7 +84,9 @@ manifest 和专项文档读取，不在此维护快照。
   feature flag。
 - `ltx_t2v` 的测试 Web/后端可在 cloud-test 显式开启并连接专用测试 worker；
   Dashboard 只登记独立手动 profile。prod Web、正式 Pod 与 autoscaler 默认关闭，
-  不得因测试开关或后台可见性自动晋级。
+  不得因测试开关或后台可见性自动晋级。测试环境的 `ltx_t2v` / `ltx_t2v_ic`
+  只能由该专用 worker 声明；legacy LTX worker 和通用 `all` worker 默认不得消费，
+  避免同一 Central 类型被旧 patcher 或不匹配 profile 随机领取。
 - 节点缺失、模型路径不匹配、目标 profile 不支持或 manifest 不完整时 fail
   closed；不要静默忽略用户参数或回退到另一模型。
 - 参数数量、强度、分辨率、时长与输入张数必须由服务端/domain config 校验；
