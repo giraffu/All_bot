@@ -54,8 +54,10 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     )
     assert values["ALLBOT_WORKER_03_RUNTIME_PROFILE"] == "ltx_unified"
     assert values["ALLBOT_WORKER_03_TASK_TYPES"] == (
-        "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,ltx_t2v,ltx_t2v_ic"
+        "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio"
     )
+    assert "ltx_t2v" not in values["ALLBOT_WORKER_06_TASK_TYPES"].split(",")
+    assert "ltx_t2v_ic" not in values["ALLBOT_WORKER_06_TASK_TYPES"].split(",")
     assert values["ALLBOT_WORKER_06_NODE_ID"] == "gpu-226"
     assert values["ALLBOT_WORKER_06_RUNTIME_PROFILE"] == "all"
     assert values["ALLBOT_WORKER_06_COMFY_API_URL"] == (

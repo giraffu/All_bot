@@ -69,7 +69,7 @@ def test_shared_ltx_worker_targets_the_unified_runtime():
     )
     assert environment["SUPPORTED_TASK_TYPES"] == (
         "${CLOUD_TEST_WORKER_03_TASK_TYPES:-"
-        "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,ltx_t2v,ltx_t2v_ic}"
+        "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio}"
     )
     assert environment["COMFY_API_URL"] == (
         "${CLOUD_TEST_WORKER_03_COMFY_API_URL:-http://192.168.1.177:8191}"
@@ -86,8 +86,7 @@ def test_shared_gpu226_worker_exposes_the_all_profile_to_cloud_test():
         "scail2_action_transfer,scail2_action_transfer_long,"
         "scail2_video_replacement,scail2_face_swap_v2,"
         "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,"
-        "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap,"
-        "ltx_t2v,ltx_t2v_ic"
+        "i2i_pro,t2i-pornmaster-turbo,face_swap_v2,face_swap"
     )
 
     assert "profiles" not in service
