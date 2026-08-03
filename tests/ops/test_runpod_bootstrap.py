@@ -15,6 +15,7 @@ PROFILE_LOCAL_DOCKERFILE = Path(
     "workers/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
 )
 WAN22_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/wan22_aio_video/Dockerfile")
+I2I_PRO_PROFILE_DOCKERFILE = Path("workers/runpod_profiles/i2i_pro/Dockerfile")
 LTX_T2V_RUNTIME_REFRESH_DOCKERFILE = Path(
     "workers/runpod_profiles/ltx_t2v/Dockerfile.runtime-refresh"
 )
@@ -26,6 +27,20 @@ SCAIL2_FLEX_DOCKERFILE = Path("workers/runpod_profiles/scail2_flex/Dockerfile")
 MODULE_CATALOG = Path("deploy/module-catalog.json")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
 WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
+
+
+def test_i2i_pro_profile_uses_the_regional_pypi_mirror_for_comfyui_dependencies():
+    dockerfile = I2I_PRO_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+
+    install_at = dockerfile.index("python3 -m pip install --no-cache-dir")
+    mirror_at = dockerfile.index(
+        "-i https://mirrors.aliyun.com/pypi/simple/", install_at
+    )
+    requirements_at = dockerfile.index(
+        '-r "${comfyui_dir}/requirements.txt"', mirror_at
+    )
+
+    assert install_at < mirror_at < requirements_at
 
 
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
