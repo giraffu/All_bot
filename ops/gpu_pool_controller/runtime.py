@@ -471,7 +471,11 @@ class RuntimePlanner:
             profile.runtime_profile, {}
         )
         pipeline_environment = pipeline_environment_for_profile(profile.id)
-        comfyui_dir = str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
+        comfyui_dir = (
+            "/opt/ComfyUI"
+            if node.accelerator == "rocm"
+            else str(extra_environment.get("COMFYUI_DIR") or "/workspace/ComfyUI")
+        )
         model_target_dir = f"{comfyui_dir.rstrip('/')}/models"
         # Keep the model cache as an explicit mount even when the model and
         # runtime workspaces share the same profile directory.  The baked

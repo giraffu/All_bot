@@ -718,6 +718,10 @@ def test_lan_aio_fleet_render_uses_rocm_devices_for_local_max395():
     assert service["environment"]["HIP_VISIBLE_DEVICES"] == "0"
     assert service["environment"]["ROCR_VISIBLE_DEVICES"] == "0"
     assert service["environment"]["POOL_ACCELERATOR"] == "rocm"
+    assert service["environment"]["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
+    assert any(
+        mount.endswith(":/opt/ComfyUI/models") for mount in service["volumes"]
+    )
 
 
 def test_lan_aio_local_transport_executes_without_self_ssh(tmp_path):
