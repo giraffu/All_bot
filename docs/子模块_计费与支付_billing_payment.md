@@ -185,6 +185,7 @@ sequenceDiagram
 - 被邀请用户首次确认入群时，邀请人奖励目标为累计 5 灵石，审计类型为 `referral_reward_channel`。
 - 被邀请用户首次成功生成内容时，邀请人奖励目标为累计 10 灵石，审计类型为 `referral_reward_generation`。
 - 奖励发放按同一邀请关系的历史 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 流水补差额，`extra_info.invitee_id` 是幂等核对字段；老数据中已发过的注册 +5 会计入目标，不会因新规则重复发放。
+- Dashboard 用户转移保留源用户及其 Telegram / Web 登录身份，只把资产与业务记录并入目标并净化源账户；源 Telegram ID 再次访问时仍解析为既有用户并返回 `is_new=false`，不得因账户合并重新获得默认新手资产、建立新邀请关系或触发入群/首次生成邀请奖励。封禁状态不能随净化清除。
 
 ### 4.6 Provider 注册入口
 
