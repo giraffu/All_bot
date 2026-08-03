@@ -21,7 +21,7 @@ ARG GGUF_REF=main
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=main
 ARG WHITERABBIT_REPO=https://github.com/Artificial-Sweetener/comfyui-WhiteRabbit.git
-ARG WHITERABBIT_REF=master
+ARG WHITERABBIT_REF=4815da41473c99400da6ca4127f0e324dbfd865a
 ARG REUSE_BASE_CUSTOM_NODES=false
 
 LABEL org.opencontainers.image.title="AllBot RunPod wan22_aio_video ComfyUI profile"

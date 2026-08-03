@@ -389,6 +389,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "ComfyUI-GGUF" in dockerfile
     assert "ComfyUI-DaSiWa-Nodes" in dockerfile
     assert "comfyui-WhiteRabbit" in dockerfile
+    assert "4815da41473c99400da6ca4127f0e324dbfd865a" in dockerfile
     assert "ffmpeg" in dockerfile
     assert "torchlanc" in dockerfile
     assert "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors" in dockerfile
