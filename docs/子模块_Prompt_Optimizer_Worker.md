@@ -95,6 +95,8 @@ TTL 24 小时；不写 History、R2 或 Gallery。
 Central 原子检查 running、worker owner、Profile 字段和累计长度。重复序号幂等忽略，
 跳号返回期望序号，Web SSE 通过 `text_snapshot` 恢复后继续接收 `text_delta`。
 增量快照 TTL 24 小时，不包含原始 prompt、图片或完整 LLM JSON。
+本地 Worker Relay 必须同步转发 `/api/agent/task/text-delta` 的请求体、上游状态码与
+响应体；不能只覆盖传统媒体 Worker 的 pop/status/complete/heartbeat 路由。
 
 前端只把增量作为只读预览；最终 `/result` 成功才替换真实输入。部分输出后失败时，
 原文恢复，片段以 `partial_unvalidated=true` 只读返回，退款状态只有账本确认后才显示

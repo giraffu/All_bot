@@ -338,6 +338,16 @@ async def complete_task(request: Request) -> JSONResponse:
     )
 
 
+@app.post("/api/agent/task/text-delta")
+async def text_delta(request: Request) -> JSONResponse:
+    return await _forward_request(
+        "POST",
+        "/api/agent/task/text-delta",
+        json_body=await request.json(),
+        retry=True,
+    )
+
+
 @app.post("/api/agent/task/heartbeat")
 async def heartbeat(request: Request) -> JSONResponse:
     return await _forward_request(
