@@ -27,7 +27,7 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "ltx_video_v2": "LTX 2.3 10Eros v1.4 DMD I2V.json",
     "ltx_video_v2_flf2v": "LTX 2.3 10Eros v1.4 DMD FLF2V.json",
     "ltx_t2v": "LTX 2.3 Sulphur T2V.json",
-    "ltx_t2v_ic": "LTX 2.3 Sulphur Ingredients T2V.json",
+    "ltx_t2v_ic": "LTX 2.3 Sulphur T2V.json",
     "character_reference_build": "Character Reference Six Views.json",
     "wan22_video_v2": "Wan22AioV82.json",
     "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",

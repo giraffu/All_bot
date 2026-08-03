@@ -84,11 +84,6 @@ export function useLabWorkbench() {
   const resolution = ref(getDefaultResolutionForMode(DEFAULT_LAB_MODE_ID))
   const duration = ref(DEFAULT_VIDEO_DURATION)
   const selectedCharacterIds = ref<string[]>([])
-  const sulphurStrength = ref(0.5)
-  const selectedCharacterId = computed<string | null>({
-    get: () => selectedCharacterIds.value[0] ?? null,
-    set: value => { selectedCharacterIds.value = value ? [value] : [] },
-  })
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -114,6 +109,7 @@ export function useLabWorkbench() {
     prompt,
     duration,
     uploadedReferences: references.uploadedReferences,
+    selectedCharacterIds,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {
@@ -131,7 +127,6 @@ export function useLabWorkbench() {
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
     selectedCharacterIds.value = []
-    sulphurStrength.value = 0.5
     template.resetTemplateState()
     wan22.resetWan22ChainState()
     ltx.resetLtxExtensionState()
@@ -229,7 +224,9 @@ export function useLabWorkbench() {
   ))
 
   const uploadButtonLabel = computed(() => (
-    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2') && references.uploadedReferences.value.length === 0
+    currentMode.value.id === 'ltx_t2v'
+      ? t('characters.add_scene_background')
+      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2') && references.uploadedReferences.value.length === 0
       ? t('lab.workbench.add_start_frame')
       : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video' || currentMode.value.id === 'ltx_video_v2') && references.uploadedReferences.value.length === 1
         ? t('lab.workbench.add_end_frame')
@@ -257,7 +254,11 @@ export function useLabWorkbench() {
   ))
   const canSubmit = computed(() => {
     const hasPrompt = !currentMode.value.promptRequired || template.isTemplatePromptLocked.value || prompt.value.trim().length > 0
-    const hasRequiredUpload = !currentMode.value.supportsUpload || references.uploadedReferences.value.length > 0
+    const hasRequiredUpload = currentMode.value.id === 'ltx_t2v'
+      ? selectedCharacterIds.value.length === 0
+        ? references.uploadedReferences.value.length === 0
+        : selectedCharacterIds.value.length === 2 && references.uploadedReferences.value.length === 1
+      : !currentMode.value.supportsUpload || references.uploadedReferences.value.length > 0
     const hasRequiredSlots = slots.assetUploadSlots.value.every(slot => !slot.required || !!slot.item?.key)
     return hasPrompt && hasRequiredUpload && hasRequiredSlots && pendingUploads.value === 0 && !uploading.value
   })
@@ -401,9 +402,7 @@ export function useLabWorkbench() {
     wan22ResolutionPreset,
     resolution,
     duration,
-    selectedCharacterId,
     selectedCharacterIds,
-    sulphurStrength,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -474,9 +473,7 @@ export function useLabWorkbench() {
     resolution,
     videoDurationOptions,
     duration,
-    selectedCharacterId,
     selectedCharacterIds,
-    sulphurStrength,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

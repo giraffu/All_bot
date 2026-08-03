@@ -37,9 +37,7 @@ type UseLabSubmitPayloadOptions = {
   wan22ResolutionPreset: Ref<Wan22VideoV2ResolutionPreset>
   resolution: Ref<string>
   duration: Ref<string>
-  selectedCharacterId?: Ref<string | null>
   selectedCharacterIds?: Ref<string[]>
-  sulphurStrength?: Ref<number>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -68,9 +66,7 @@ export function useLabSubmitPayload({
   wan22ResolutionPreset,
   resolution,
   duration,
-  selectedCharacterId,
   selectedCharacterIds,
-  sulphurStrength,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -95,7 +91,7 @@ export function useLabSubmitPayload({
       return
     }
 
-    if (currentMode.value.supportsUpload && uploadedReferences.value.length === 0) {
+    if (currentMode.value.supportsUpload && currentMode.value.id !== 'ltx_t2v' && uploadedReferences.value.length === 0) {
       message.warning(t('lab.workbench.validation.upload_first'))
       return
     }
@@ -175,13 +171,16 @@ export function useLabSubmitPayload({
     }
 
     if (currentMode.value.id === 'ltx_t2v') {
-      const characterIds = selectedCharacterIds?.value.length
-        ? selectedCharacterIds.value
-        : selectedCharacterId?.value
-          ? [selectedCharacterId.value]
-          : []
+      const characterIds = selectedCharacterIds?.value ?? []
       const usesCharacter = characterIds.length > 0
-      const usesMsr = characterIds.length >= 2
+      if (usesCharacter && (characterIds.length !== 2 || uploadedReferences.value.length !== 1)) {
+        message.warning(t('characters.msr_requires_two_and_background'))
+        return
+      }
+      if (!usesCharacter && uploadedReferences.value.length > 0) {
+        message.warning(t('characters.background_requires_two'))
+        return
+      }
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: usesCharacter ? 'ltx_t2v_ic' : 'ltx_t2v',
         images: [],
@@ -191,14 +190,12 @@ export function useLabSubmitPayload({
         resolution: usesCharacter ? '768x448' : '1280x704',
         duration: Number(duration.value),
         extraInputs: {
-          ...(usesMsr
+          ...(usesCharacter
             ? {
                 character_ids: characterIds,
-                sulphur_strength: sulphurStrength?.value ?? 0.5,
+                background_object_key: uploadedReferences.value[0]?.key,
               }
-            : characterIds[0]
-              ? { character_id: characterIds[0] }
-              : {}),
+            : {}),
           ...(audioPrompt?.value.trim() ? { audio_prompt: audioPrompt.value.trim() } : {}),
         },
       }))

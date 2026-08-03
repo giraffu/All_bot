@@ -88,13 +88,13 @@ bundles:
         size_bytes: 23531296
 
   ltx_unified_runtime:
-    version: 2026-08-03-10eros-v14
+    version: 2026-08-03-10eros-v14-runexx-msr
     profiles:
       - ltx_unified
     source:
       node_id: local-model-registry
       comfy_id: content-addressed-union
-      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-08-03-10eros-v14/files
+      model_dir: /srv/allbot/model-registry/bundles/ltx_unified_runtime/2026-08-03-10eros-v14-runexx-msr/files
       discovered_size_gb: 156.85
       import_status: prepared_by_script
       notes: Deduplicated LTX video/T2V union with the pinned 10Eros v1.4 DMD INT8 checkpoint and MSR V2 validation assets.

@@ -51,6 +51,10 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且
   停止 pop；Worker 不自动装卸 LM Studio 模型。
+- 当前 LTX 模板分为不可变 @3 与 @4：@3 只服务 I2V/FLF2V 首尾帧语义；@4
+  服务纯 `ltx_t2v` 和双角色 `ltx_t2v_ic`。@4 的人物面板与背景仅是身份/环境
+  reference，绝不能渲染为首帧指令。IC Web 请求只提交两个角色 ID 和一张用户
+  背景，服务端 owner-fenced 解析三张实际媒体后再进入通用 Registry。
 
 ## 扩展流程
 

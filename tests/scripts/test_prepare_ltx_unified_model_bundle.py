@@ -88,7 +88,7 @@ def test_unified_manifest_deduplicates_shared_models_and_excludes_full_checkpoin
                 "size_bytes": 3,
             },
             {
-                "relative_path": module.MSR_V2_LORA["relative_path"],
+                "relative_path": module.MSR_TEST_LORA["relative_path"],
                 "sha256": "f" * 64,
                 "size_bytes": 7,
             },
@@ -102,7 +102,7 @@ def test_unified_manifest_deduplicates_shared_models_and_excludes_full_checkpoin
             "loras/video.safetensors",
             "loras/t2v.safetensors",
             module.EXTRACTED_LORA["relative_path"],
-            module.MSR_V2_LORA["relative_path"],
+            module.MSR_TEST_LORA["relative_path"],
         ]
     )
     assert not set(item["relative_path"] for item in files) & set(
@@ -114,21 +114,21 @@ def test_unified_release_constants_pin_the_approved_extracted_lora():
     module = _load_module()
 
     assert module.BUNDLE == "ltx_unified_runtime"
-    assert module.VERSION == "2026-08-03-10eros-v14"
+    assert module.VERSION == "2026-08-03-10eros-v14-runexx-msr"
     assert (
         module.EXTRACTED_LORA["sha256"]
         == "ac98553c007ea949603765d0e2a4ed97c6d5758bb2bb4d5e0c2cfdce0e4b3e76"
     )
     assert module.EXTRACTED_LORA["size_bytes"] == 3_162_331_448
     assert "7170ebca094fcb73e8f621e88ee38fc0524c9fcf" in module.EXTRACTED_LORA["url"]
-    assert module.MSR_V2_LORA == {
-        "relative_path": "loras/ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors",
-        "sha256": "6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98",
-        "size_bytes": 654_443_392,
+    assert module.MSR_TEST_LORA == {
+        "relative_path": "loras/ltx2.3/LTX2.3-Licon-MSR-test_version.safetensors",
+        "sha256": "51121a7e9d9579734943db1ebf89df12592ef7e6cdda460eca4f9ab8ef989859",
+        "size_bytes": 805_412_808,
         "url": (
             "https://huggingface.co/LiconStudio/LTX-2.3-Multiple-Subject-Reference/"
             "resolve/593b0b7d2b912e8ecdb2825a34732cee36e720ba/"
-            "LTX-2.3-Licon-MSR-V2.safetensors"
+            "LTX2.3-Licon-MSR-test_version.safetensors"
         ),
     }
     assert module.EROS_V14_DMD_INT8 == {

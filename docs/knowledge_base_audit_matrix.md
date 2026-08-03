@@ -59,7 +59,7 @@
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker | current | 扩展或运维提示词优化平台 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
-| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、人物草稿/四槽位子图表、workflow、profile、`shared/character_reference_sheet.py`、结果物化、RunPod canary | current | LTX 专项；角色四子图合成 v3 纯白底单一面板；单角色 IC 固定 distilled FP8 + FP4 Gemma + Ingredients 1.0；test-only 多角色按选择顺序输入 2–4 张完整角色面板，使用 MSR V2 1.0 + Sulphur 0–1（默认 0.5），服务端保留原人物描述并追加图1/图2标识；正式 MSR 双开关默认关闭 |
+| `docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md` | LTX T2V/人物一致性 | domain config、人物四视图面板、Runexx 两阶段 workflow、10Eros/Licon manifest、Prompt Optimizer @4、LAN canary | current | 纯 T2V 无媒体；test-only IC 固定两个有序人物面板加一张背景，10Eros v1.4 DMD 提供成人能力、Licon MSR test 只维持身份，不叠加 distilled/Sulphur；三张图均不是首尾帧 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | GPU/RunPod/LAN 稳定边界 | release manifest、provider、catalog、ledger、LAN-only `all` profile | runtime-verification-required | GPU 设计/运维；`all` 只允许 LAN AIO exact-digest takeover |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |

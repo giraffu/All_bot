@@ -21,7 +21,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 
 BUNDLE = "ltx_unified_runtime"
-VERSION = "2026-08-03-10eros-v14"
+VERSION = "2026-08-03-10eros-v14-runexx-msr"
 SOURCE_BUNDLES = (
     ("ltx_video_baseline", "2026-06-10"),
     ("ltx_t2v_runtime", "2026-08-01-comfy-fast"),
@@ -42,14 +42,14 @@ EXTRACTED_LORA = {
         "LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors"
     ),
 }
-MSR_V2_LORA = {
-    "relative_path": "loras/ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors",
-    "sha256": "6f61d3b5c61b160c409b45ebaa72fd7ab9bb38bf3bf7f09edaddc87762d5fa98",
-    "size_bytes": 654_443_392,
+MSR_TEST_LORA = {
+    "relative_path": "loras/ltx2.3/LTX2.3-Licon-MSR-test_version.safetensors",
+    "sha256": "51121a7e9d9579734943db1ebf89df12592ef7e6cdda460eca4f9ab8ef989859",
+    "size_bytes": 805_412_808,
     "url": (
         "https://huggingface.co/LiconStudio/LTX-2.3-Multiple-Subject-Reference/"
         "resolve/593b0b7d2b912e8ecdb2825a34732cee36e720ba/"
-        "LTX-2.3-Licon-MSR-V2.safetensors"
+        "LTX2.3-Licon-MSR-test_version.safetensors"
     ),
 }
 EROS_V14_DMD_INT8 = {
@@ -62,9 +62,9 @@ EROS_V14_DMD_INT8 = {
         "10Eros_v1.4_DMD_int8_convrot.safetensors"
     ),
 }
-EXTRA_LORAS = (EXTRACTED_LORA, MSR_V2_LORA, EROS_V14_DMD_INT8)
+EXTRA_LORAS = (EXTRACTED_LORA, MSR_TEST_LORA, EROS_V14_DMD_INT8)
 EXPECTED_FILE_COUNT = 52
-EXPECTED_TOTAL_SIZE_BYTES = 168_416_995_500
+EXPECTED_TOTAL_SIZE_BYTES = 168_567_964_916
 MIN_FREE_BYTES = 8 * 1024**3
 
 

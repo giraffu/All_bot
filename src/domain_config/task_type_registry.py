@@ -512,7 +512,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
     MODE_LTX_T2V_IC: _entry(
         MODE_LTX_T2V_IC,
         central_type=MODE_LTX_T2V_IC,
-        workflow_filename="LTX 2.3 Sulphur Ingredients T2V.json",
+        workflow_filename="LTX 2.3 Sulphur T2V.json",
         is_generation=True,
         is_video=True,
         cost=12,

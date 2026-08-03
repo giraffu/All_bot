@@ -1,8 +1,8 @@
 # 子模块：Prompt Optimizer Worker
 
-本文是通用提示词优化平台的当前架构与扩展 SOP。首个消费者是
-`ltx_video_v2`，但 Registry、任务类型、结果存储和 Worker 主循环不得出现以 LTX
-为条件的队列分支。
+本文是通用提示词优化平台的当前架构与扩展 SOP。当前消费者包括
+`ltx_video_v2`、纯 `ltx_t2v` 与双角色 `ltx_t2v_ic`，但 Registry、任务类型、
+结果存储和 Worker 主循环不得出现以 LTX 为条件的队列分支。
 
 ## 1. 组件与事实源
 
@@ -43,6 +43,12 @@ primary field、model route、兼容模板和长度限制。Template 声明展�
 - `start_image` -> `ltx_eros_v14_i2v@1`
 - `start_image,end_image` -> `ltx_eros_v14_flf2v@1`
 
+文生视频使用独立的参考语义：
+
+- 无媒体 -> `ltx_eros_t2v@1`
+- `reference_character_1,reference_character_2,scene_background` ->
+  `ltx_eros_t2v_ic_msr@1`
+
 当前新任务只开放 `ltx_scene_script_cinematic@3`。它使用中文规则理解图片、原始
 要求与时长，默认增强成年 NSFW 场景的明确动作、镜头、多人归属、对白、声音与身体
 连续性，并只输出英文 `positive_prompt`。Web 不展示模板选择器，由
@@ -50,6 +56,11 @@ primary field、model route、兼容模板和长度限制。Template 声明展�
 `ltx_timestamp_motion@1` 和 `ltx_scene_script_cinematic@2` 保留为 inactive，只用于
 已排队任务和审计重放。FLF2V 的终帧硬约束仍在渲染时由 Profile 叠加，不复制一套
 FLF 模板。
+
+文生视频只开放 `ltx_scene_script_cinematic@4`。它沿用 @3 的中文成人场景规则和
+英文 `positive_prompt` 输出，但人物图只定义两个稳定身份、背景图只定义场景，明确
+禁止把任何 reference 写成视频首帧。IC 请求中的角色 ID 由 Web owner-fenced 解析
+为实际面板；浏览器不能提交私有面板路径。@3 与 @4 互不兼容，防止帧语义串用。
 
 ## 3. API 与隐私
 

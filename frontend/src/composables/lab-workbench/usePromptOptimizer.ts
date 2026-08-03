@@ -38,6 +38,7 @@ export function usePromptOptimizer(options: {
   prompt: Ref<string>
   duration: Ref<string>
   uploadedReferences: Ref<UploadedReference[]>
+  selectedCharacterIds: Ref<string[]>
 }) {
   const templates = ref<PromptOptimizerTemplate[]>([])
   const selectedTemplateRef = ref('')
@@ -50,16 +51,33 @@ export function usePromptOptimizer(options: {
   let streamController: AbortController | null = null
   let stopped = false
 
-  const isAvailable = computed(() => options.currentModeId.value === 'ltx_video_v2')
+  const isAvailable = computed(() => ['ltx_video_v2', 'ltx_t2v'].includes(options.currentModeId.value))
+  const targetTaskType = computed(() => (
+    options.currentModeId.value === 'ltx_t2v'
+      ? options.selectedCharacterIds.value.length > 0 ? 'ltx_t2v_ic' : 'ltx_t2v'
+      : 'ltx_video_v2'
+  ))
   const mediaFingerprint = () => JSON.stringify({
     duration: Number(options.duration.value),
     media: options.uploadedReferences.value.map(item => item.key),
+    characters: options.selectedCharacterIds.value,
+  })
+  const mediaContractReady = computed(() => {
+    if (options.currentModeId.value === 'ltx_video_v2') {
+      return options.uploadedReferences.value.length >= 1
+    }
+    if (targetTaskType.value === 'ltx_t2v') {
+      return options.selectedCharacterIds.value.length === 0
+        && options.uploadedReferences.value.length === 0
+    }
+    return options.selectedCharacterIds.value.length === 2
+      && options.uploadedReferences.value.length === 1
   })
   const canOptimize = computed(() => (
     isAvailable.value
     && !isOptimizing.value
     && options.prompt.value.trim().length > 0
-    && options.uploadedReferences.value.length >= 1
+    && mediaContractReady.value
     && templates.value.length > 0
   ))
   const canRestore = computed(() => originalPrompt.value !== null)
@@ -67,7 +85,7 @@ export function usePromptOptimizer(options: {
   const loadCapabilities = async () => {
     if (!isAvailable.value) return
     const response = await api.get('/prompt-optimizations/capabilities', {
-      params: { target_task_type: 'ltx_video_v2' },
+      params: { target_task_type: targetTaskType.value },
     })
     templates.value = response.data.templates ?? []
     textStreamCapability.value = response.data.text_stream ?? null
@@ -224,16 +242,22 @@ export function usePromptOptimizer(options: {
     }
     isOptimizing.value = true
     try {
+      const isT2vIc = targetTaskType.value === 'ltx_t2v_ic'
       const response = await api.post('/prompt-optimizations/tasks', {
         client_request_id: clientRequestId,
-        target_task_type: 'ltx_video_v2',
+        target_task_type: targetTaskType.value,
         template: templateRef,
         prompt: original,
         context: { duration_seconds: Number(options.duration.value) },
-        media: options.uploadedReferences.value.map((item, index) => ({
-          role: index === 0 ? 'start_image' : 'end_image',
-          object_key: item.key,
-        })),
+        media: isT2vIc
+          ? [{ role: 'scene_background', object_key: options.uploadedReferences.value[0].key }]
+          : targetTaskType.value === 'ltx_t2v'
+            ? []
+            : options.uploadedReferences.value.map((item, index) => ({
+                role: index === 0 ? 'start_image' : 'end_image',
+                object_key: item.key,
+              })),
+        character_ids: isT2vIc ? options.selectedCharacterIds.value : [],
       })
       const pending: PendingOptimizerTask = {
         ...pendingBase,
@@ -272,8 +296,8 @@ export function usePromptOptimizer(options: {
   }
 
   watch(
-    isAvailable,
-    async available => {
+    [isAvailable, targetTaskType],
+    async ([available]) => {
       if (!available) return
       try {
         await loadCapabilities()

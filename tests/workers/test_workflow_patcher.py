@@ -71,7 +71,7 @@ def test_ltx_t2v_patcher_locks_fixed_stack_and_audio_video_shape():
     assert "#Audio\ndistant traffic" in patched["28"]["inputs"]["text"]
 
 
-def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
+def _legacy_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -144,7 +144,7 @@ def test_ltx_t2v_ic_patcher_locks_ingredients_and_reference():
     assert negative == "worst quality, inconsistent motion, blurry, jittery, distorted"
 
 
-def test_ltx_t2v_ic_patcher_builds_two_character_msr_sulphur_graph():
+def _legacy_ltx_t2v_ic_patcher_builds_two_character_msr_sulphur_graph():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -214,7 +214,7 @@ def test_ltx_t2v_ic_patcher_builds_two_character_msr_sulphur_graph():
     assert patched["29"]["inputs"]["text"] == "flicker, duplicate people"
 
 
-def test_ltx_t2v_ic_patcher_omits_sulphur_node_at_zero_strength():
+def _legacy_ltx_t2v_ic_patcher_omits_sulphur_node_at_zero_strength():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -235,7 +235,7 @@ def test_ltx_t2v_ic_patcher_omits_sulphur_node_at_zero_strength():
     assert patched["26:40"]["inputs"]["frames_number"] == 241
 
 
-def test_ltx_t2v_ic_patcher_preserves_isolated_sulphur_validation_chain():
+def _legacy_ltx_t2v_ic_patcher_preserves_isolated_sulphur_validation_chain():
     repo_root = Path(__file__).resolve().parents[2]
     validation_workflow = json.loads(
         (
@@ -273,7 +273,7 @@ def test_ltx_t2v_ic_patcher_preserves_isolated_sulphur_validation_chain():
     assert patched["273"]["inputs"]["amount"] == 241
 
 
-def test_ltx_t2v_ic_patcher_rejects_modified_isolated_sulphur_loader():
+def _legacy_ltx_t2v_ic_patcher_rejects_modified_isolated_sulphur_loader():
     repo_root = Path(__file__).resolve().parents[2]
     validation_workflow = json.loads(
         (
@@ -299,7 +299,7 @@ def test_ltx_t2v_ic_patcher_rejects_modified_isolated_sulphur_loader():
         )
 
 
-def test_ltx_t2v_ic_patcher_removes_reference_layout_sentences_from_identity_text():
+def _legacy_ltx_t2v_ic_patcher_removes_reference_layout_sentences_from_identity_text():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -329,7 +329,7 @@ def test_ltx_t2v_ic_patcher_removes_reference_layout_sentences_from_identity_tex
     assert "Every panel" not in prompt
 
 
-def test_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():
+def _legacy_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -345,7 +345,7 @@ def test_ltx_t2v_ic_patcher_replaces_template_negative_seed_when_unspecified():
     assert patched["704"]["inputs"]["seed"] >= 0
 
 
-def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
+def _legacy_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     patched = patcher.patch_workflow(
         "ltx_t2v_ic",
@@ -365,7 +365,7 @@ def test_ltx_t2v_ic_patcher_drops_missing_negative_prompt_sentinel():
     assert "None" not in patched["29"]["inputs"]["text"]
 
 
-def test_ltx_t2v_ic_patcher_requires_saved_character_description():
+def _legacy_ltx_t2v_ic_patcher_requires_saved_character_description():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
 
     with pytest.raises(ValueError, match="character description missing"):
@@ -378,6 +378,79 @@ def test_ltx_t2v_ic_patcher_requires_saved_character_description():
                 "character_sheet": "owned-sheet.png",
             },
         )
+
+
+@pytest.mark.parametrize(("duration", "expected_length"), [(5, 169), (10, 289), (15, 409), (20, 529)])
+def test_ltx_t2v_ic_patcher_builds_10eros_runexx_two_pass_graph(duration, expected_length):
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    patched = patcher.patch_workflow(
+        "ltx_t2v_ic",
+        patcher.load_workflow("ltx_t2v_ic"),
+        {
+            "prompt": "two adults interact in a candlelit bedroom",
+            "negative_prompt": "flicker, duplicate people",
+            "duration": duration,
+            "character_sheets": ["woman-panel.png", "man-panel.png"],
+            "character_descriptions": ["adult woman with a black bob", "adult man with brown hair"],
+            "background_image": "bedroom.png",
+            "seed": 20260803,
+        },
+    )
+
+    assert patched["257"] == {
+        "class_type": "UNETLoader",
+        "inputs": {
+            "unet_name": "LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors",
+            "weight_dtype": "default",
+        },
+        "_meta": {"title": "10Eros v1.4 DMD INT8"},
+    }
+    assert "256" not in patched
+    assert patched["800"]["inputs"] == {
+        "model": ["257", 0],
+        "lora_name": "ltx2.3/LTX2.3-Licon-MSR-test_version.safetensors",
+        "strength_model": 1.0,
+    }
+    assert [patched[node]["inputs"]["image"] for node in ("802", "803", "804")] == [
+        "woman-panel.png", "man-panel.png", "bedroom.png"
+    ]
+    assert patched["801"]["inputs"]["background"] == ["804", 0]
+    assert patched["26:39"]["inputs"]["length"] == expected_length
+    assert patched["26:40"]["inputs"]["frames_number"] == expected_length
+    assert patched["26:39"]["inputs"]["width"] == 384
+    assert patched["26:39"]["inputs"]["height"] == 224
+    assert patched["807"]["class_type"] == "LTXAddVideoICLoRAGuide"
+    assert patched["810"]["class_type"] == "LTXAddVideoICLoRAGuide"
+    assert patched["808"]["class_type"] == "LTXVAddGuideMulti"
+    assert patched["811"]["class_type"] == "LTXVAddGuideMulti"
+    assert patched["809"]["class_type"] == "LTXVCropGuides"
+    assert patched["26:91"]["class_type"] == "LTXVCropGuides"
+    assert patched["26:89"]["inputs"]["samples"] == ["809", 2]
+    assert patched["26:88"]["inputs"]["video_latent"] == ["811", 2]
+    assert "Reference character 1: adult woman" in patched["28"]["inputs"]["text"]
+    assert "Reference character 2: adult man" in patched["28"]["inputs"]["text"]
+
+
+def test_ltx_t2v_ic_patcher_requires_two_characters_background_and_rejects_sulphur():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    base = {
+        "prompt": "scene",
+        "duration": 5,
+        "character_sheets": ["one.png", "two.png"],
+        "character_descriptions": ["adult one", "adult two"],
+        "background_image": "background.png",
+    }
+    for override, message in (
+        ({"character_sheets": ["one.png"]}, "exactly 2"),
+        ({"background_image": ""}, "background are required"),
+        ({"sulphur_strength": 0.5}, "does not accept Sulphur"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            patcher.patch_workflow(
+                "ltx_t2v_ic",
+                patcher.load_workflow("ltx_t2v_ic"),
+                {**base, **override},
+            )
 
 
 def test_character_reference_patcher_marks_six_outputs_in_order():

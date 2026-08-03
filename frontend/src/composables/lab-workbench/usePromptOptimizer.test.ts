@@ -50,11 +50,13 @@ describe('usePromptOptimizer', () => {
     const prompt = ref('original prompt')
     const duration = ref('5')
     const references = ref([{ key: 'web_uploads/7/start.png', preview: '', name: 'start' }])
+    const selectedCharacterIds = ref<string[]>([])
     const optimizer = scope.run(() => usePromptOptimizer({
       currentModeId: mode,
       prompt,
       duration,
       uploadedReferences: references,
+      selectedCharacterIds,
     }))!
 
     await nextTick()
@@ -70,6 +72,43 @@ describe('usePromptOptimizer', () => {
     expect(prompt.value).toBe('optimized prompt')
     optimizer.restoreOriginalPrompt()
     expect(prompt.value).toBe('original prompt')
+    scope.stop()
+  })
+
+  it('uses v4 with two character ids and one scene background for IC T2V', async () => {
+    get
+      .mockResolvedValueOnce({
+        data: {
+          templates: [{
+            id: 'ltx_scene_script_cinematic', version: 4,
+            label: '成人文生视频提示词', description: '', is_default: true,
+          }],
+        },
+      })
+      .mockResolvedValueOnce({ data: { status: 'success', result_text: 'optimized t2v' } })
+    post.mockResolvedValueOnce({ data: { task_id: 'task-t2v' } })
+
+    const scope = effectScope()
+    const optimizer = scope.run(() => usePromptOptimizer({
+      currentModeId: ref('ltx_t2v'),
+      prompt: ref('original t2v'),
+      duration: ref('15'),
+      uploadedReferences: ref([{
+        key: 'web_uploads/7/room.png', preview: '', name: 'room',
+      }]),
+      selectedCharacterIds: ref(['character-1', 'character-2']),
+    }))!
+    await nextTick()
+    await Promise.resolve()
+    await optimizer.optimizePrompt()
+
+    expect(get.mock.calls[0][1]).toEqual({ params: { target_task_type: 'ltx_t2v_ic' } })
+    expect(post.mock.calls[0][1]).toMatchObject({
+      target_task_type: 'ltx_t2v_ic',
+      template: { id: 'ltx_scene_script_cinematic', version: 4 },
+      media: [{ role: 'scene_background', object_key: 'web_uploads/7/room.png' }],
+      character_ids: ['character-1', 'character-2'],
+    })
     scope.stop()
   })
 })

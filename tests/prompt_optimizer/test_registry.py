@@ -61,6 +61,79 @@ def test_resolver_selects_i2v_or_flf2v_profile_from_media_roles():
     assert flf2v.template.content_hash
 
 
+def test_t2v_capabilities_and_profiles_use_v4_without_frame_semantics():
+    pure_capability = get_prompt_optimizer_capability("ltx_t2v")
+    ic_capability = get_prompt_optimizer_capability("ltx_t2v_ic")
+
+    assert pure_capability["media_contract"] == {"required": [], "optional": []}
+    assert ic_capability["media_contract"] == {
+        "required": [
+            "reference_character_1",
+            "reference_character_2",
+            "scene_background",
+        ],
+        "optional": [],
+    }
+    assert pure_capability["templates"][0]["version"] == 4
+    pure = resolve_prompt_optimization(
+        target_task_type="ltx_t2v",
+        template_id="ltx_scene_script_cinematic",
+        template_version=4,
+        media=[],
+        context={"duration_seconds": 10},
+    )
+    ic = resolve_prompt_optimization(
+        target_task_type="ltx_t2v_ic",
+        template_id="ltx_scene_script_cinematic",
+        template_version=4,
+        media=_media(
+            "reference_character_1", "reference_character_2", "scene_background"
+        ),
+        context={"duration_seconds": 20},
+    )
+    assert pure.profile.ref == "ltx_eros_t2v@1"
+    assert ic.profile.ref == "ltx_eros_t2v_ic_msr@1"
+
+    template = get_template_by_ref("ltx_scene_script_cinematic@4")
+    pure_system, pure_user = render_prompt_messages(
+        profile=pure.profile,
+        template=template,
+        prompt="Two adults meet in a bedroom.",
+        context={"duration_seconds": 10},
+    )
+    _, ic_user = render_prompt_messages(
+        profile=ic.profile,
+        template=template,
+        prompt="They move toward each other.",
+        context={"duration_seconds": 20},
+    )
+    assert "此任务是文生视频" in pure_system
+    assert "Use the provided start image exactly as the first frame" not in pure_system
+    assert "No reference images are provided" in pure_user
+    assert "reference_character_1" in ic_user
+    assert "scene_background" in ic_user
+    assert "not video frames" in ic_user
+
+
+def test_t2v_profiles_fail_closed_on_wrong_media_or_template_version():
+    with pytest.raises(PromptOptimizerRegistryError):
+        resolve_prompt_optimization(
+            target_task_type="ltx_t2v",
+            template_id="ltx_scene_script_cinematic",
+            template_version=3,
+            media=[],
+            context={"duration_seconds": 5},
+        )
+    with pytest.raises(PromptOptimizerRegistryError):
+        resolve_prompt_optimization(
+            target_task_type="ltx_t2v_ic",
+            template_id="ltx_scene_script_cinematic",
+            template_version=4,
+            media=_media("reference_character_1", "scene_background"),
+            context={"duration_seconds": 5},
+        )
+
+
 def test_v3_template_preserves_approved_chinese_prompt_and_profile_frame_constraints():
     template = get_template_by_ref("ltx_scene_script_cinematic@3")
     i2v_profile = get_profile_by_ref("ltx_eros_v14_i2v@1")

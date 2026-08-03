@@ -12,7 +12,13 @@ class PromptTemplateRef(BaseModel):
 
 class PromptMediaInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    role: Literal["start_image", "end_image"]
+    role: Literal[
+        "start_image",
+        "end_image",
+        "reference_character_1",
+        "reference_character_2",
+        "scene_background",
+    ]
     object_key: str
 
 
@@ -23,7 +29,8 @@ class PromptOptimizationTaskRequest(BaseModel):
     template: PromptTemplateRef
     prompt: str = Field(min_length=1, max_length=2000)
     context: dict[str, Any]
-    media: list[PromptMediaInput] = Field(min_length=1, max_length=2)
+    media: list[PromptMediaInput] = Field(default_factory=list, max_length=3)
+    character_ids: list[str] = Field(default_factory=list, max_length=2)
 
     @field_validator("prompt")
     @classmethod
@@ -39,4 +46,3 @@ class PromptOptimizationTaskResponse(BaseModel):
     status: str
     cost: int
     balance_remaining: int
-
