@@ -630,6 +630,7 @@ class RuntimePlanner:
                         "COMFY_EXTRA_ARGS": self._runpod_aio_comfy_extra_args(
                             profile=profile,
                             state_root=state_root,
+                            accelerator=node.accelerator,
                         ),
                         "RESULT_SPOOL_DIR": f"{state_root}/spool/{agent_id}",
                         "AGENT_LOG_DIR": f"{state_root}/logs",
@@ -775,6 +776,7 @@ class RuntimePlanner:
         *,
         profile: TaskProfile,
         state_root: str,
+        accelerator: str,
     ) -> str:
         args = [
             "--input-directory",
@@ -789,6 +791,8 @@ class RuntimePlanner:
         reserve_vram = LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE.get(profile.runtime_profile)
         if reserve_vram is not None:
             args.extend(["--reserve-vram", str(reserve_vram)])
+        if accelerator == "rocm":
+            args.extend(["--lowvram", "--disable-pinned-memory"])
         return " ".join(args)
 
     def build_dry_run_action(

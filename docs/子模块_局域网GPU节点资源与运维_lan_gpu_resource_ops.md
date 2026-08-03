@@ -135,6 +135,9 @@ Ryzen AI Max+ 395 使用独立 `img2img_lora_rocm_gfx1151` LAN profile 和
 `/dev/kfd`、`/dev/dri`，加入 `video`/`render` group，使用 host IPC 与
 `seccomp=unconfined`，且不得生成 NVIDIA `gpus` reservation。该节点通过明确的
 `local://` transport 由同机 operator 执行，禁止为了自连接临时配置 SSH 密钥。
+`gfx1151` 的 ComfyUI 启动参数固定追加 AMD 官方建议的 `--lowvram` 与
+`--disable-pinned-memory`，降低统一内存下模型加载触发 GPUVM page fault 的风险；
+这两个参数只属于 ROCm 节点，不得改变 CUDA profile 的显存策略。
 主机 driver/kernel 与容器 userland 分层：宿主只需满足 AMD 支持矩阵，ComfyUI、
 PyTorch 与 ROCm userland 随不可变镜像发布；任何 host kernel/driver 更新若需重启，
 必须作为独立维护动作，不得夹带在单槽 takeover 中。
