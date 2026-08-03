@@ -9,6 +9,9 @@ from src.core.video_billing import (
 LEGACY_FACE_VIDEO_FRAME_DURATION_TASK_TYPES = frozenset(
     {"face_video", "face_video_step1", "face_video_step2"}
 )
+LTX_HIGH_RESOURCE_COMBO_EXEMPT_TASK_TYPES = frozenset(
+    {"ltx_video", "ltx_video_v2", "ltx_video_v2_flf2v"}
+)
 
 
 def infer_requested_output_metadata(
@@ -77,7 +80,7 @@ def parse_duration_seconds(duration: object) -> int:
 
 def should_enforce_high_resource_combo_limit(task_type: str) -> bool:
     return (
-        task_type != "ltx_video"
+        task_type not in LTX_HIGH_RESOURCE_COMBO_EXEMPT_TASK_TYPES
         and task_type not in LEGACY_FACE_VIDEO_FRAME_DURATION_TASK_TYPES
     )
 

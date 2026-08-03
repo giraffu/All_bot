@@ -119,6 +119,23 @@ def test_build_video_task_request_still_rejects_standard_1024p_10s_combo():
         )
 
 
+@pytest.mark.parametrize("task_type", ["ltx_video_v2", "ltx_video_v2_flf2v"])
+@pytest.mark.parametrize("duration", [10, 15, 20])
+def test_build_video_task_request_allows_ltx_v2_1280x704_at_supported_durations(
+    task_type,
+    duration,
+):
+    request = build_video_task_request(
+        task_type,
+        {"resolution": "1280x704", "duration": duration},
+    )
+
+    assert request.output_width == 1280
+    assert request.output_height == 704
+    assert request.output_duration == duration
+    assert request.requested_duration == duration
+
+
 @pytest.mark.asyncio
 async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_saved_inputs():
     strategy = MagicMock()
