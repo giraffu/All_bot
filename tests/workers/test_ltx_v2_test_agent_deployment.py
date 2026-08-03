@@ -30,7 +30,7 @@ def test_ltx_v2_test_agent_has_a_narrow_canary_contract():
     assert service["container_name"] == "cloud-comfy-agent-test-ltx-v2-01"
     assert environment["AGENT_ID"] == "cloud_worker_test_ltx_v2_01"
     assert environment["SUPPORTED_TASK_TYPES"] == (
-        "ltx_video_v2,ltx_video_v2_flf2v"
+        "ltx_video_v2,ltx_video_v2_flf2v,ltx_t2v,ltx_t2v_ic"
     )
     assert environment["POOL_MANAGED"] == "false"
     assert environment["POOL_NODE_ID"] == "gpu-177"
