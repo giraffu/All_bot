@@ -93,6 +93,10 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
   `RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=1..8` 调整；旧 Pod 不因配置或镜像引用更新
   自动生效。验收应区分下载阶段聚合速率、逐文件重试和后续串行 SHA-256 阶段，
   不能把 bootstrap 总时长全部解释为 R2 网速。
+- 使用私有 GHCR 镜像时，正式 env 必须配置
+  `RUNPOD_CONTAINER_REGISTRY_AUTH_ID`，指向 RunPod 账户中的只读 registry auth。
+  新建 Pod 的 create payload 必须包含 `containerRegistryAuthId`；凭据本身不进入
+  Git、正式 env、Pod env 或 operation 日志。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 媒体只使用当前 R2/S3 URL；R2 miss 后只允许短签、空值或 `pending_result`，worker 只写 R2。
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。

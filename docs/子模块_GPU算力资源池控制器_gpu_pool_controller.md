@@ -74,6 +74,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   保留 partial，整个 bootstrap fail closed。
 - 并发配置与 runtime 只在新建 Pod 的精确 digest/env 中生效；不得用 restart
   假定旧 Pod 已获得新代码，也不得为启用并行而批量替换现有 slot。
+- 私有镜像必须通过 `RUNPOD_CONTAINER_REGISTRY_AUTH_ID` 引用 RunPod 中已建的
+  registry auth；provider 只在显式 `imageName` 请求上注入
+  `containerRegistryAuthId`，不将 registry 凭据或 token 放入 Pod env 和日志。
 - Pod 内诊断优先使用 Dashboard 提供的 `ssh.runpod.io` 代理入口；连接、有限重试、
   PTY 与标准输入命令模板见 `allbot-ops-deployment` 的
   `references/runpod-lan-runtime.md`。当次 Pod 页面是用户名和直连端口的事实源，

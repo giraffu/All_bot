@@ -442,6 +442,7 @@ class RunPodSettings:
     volume_gb: int = 0
     volume_mount_path: str = "/workspace"
     network_volume_id: str = ""
+    container_registry_auth_id: str = ""
     pod_ports: tuple[str, ...] = ()
     use_template_img2img_lora: bool = True
     use_template_wan22_aio_video: bool = False
@@ -714,6 +715,9 @@ class RunPodSettings:
             volume_gb=_int_env(os.getenv("RUNPOD_VOLUME_GB"), default=0),
             volume_mount_path=os.getenv("RUNPOD_VOLUME_MOUNT_PATH", "/workspace"),
             network_volume_id=os.getenv("RUNPOD_NETWORK_VOLUME_ID", ""),
+            container_registry_auth_id=os.getenv(
+                "RUNPOD_CONTAINER_REGISTRY_AUTH_ID", ""
+            ).strip(),
             pod_ports=_csv(os.getenv("RUNPOD_PORTS")),
             use_template_img2img_lora=_bool_env(
                 os.getenv("RUNPOD_USE_TEMPLATE_IMG2IMG_LORA"),
