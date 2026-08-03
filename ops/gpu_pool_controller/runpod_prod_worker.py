@@ -99,6 +99,13 @@ PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
 PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
+RUNPOD_RELEASE_I2I_PRO_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-i2i-pro:"
+RUNPOD_RELEASE_IMG2IMG_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-img2img-lora:"
+RUNPOD_RELEASE_SCAIL2_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-scail2:"
+RUNPOD_RELEASE_LTX_VIDEO_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-ltx-video-v2:"
+RUNPOD_RELEASE_PORNMASTER_IMAGE_PREFIX = (
+    "ghcr.io/giraffu/allbot-gpu-pornmaster-flux2-edit-bf16:"
+)
 
 
 class RunPodProdWorkerError(ValueError):
@@ -2451,25 +2458,31 @@ def _prod_task_type_for_profile(profile: str) -> str:
 
 def _verified_img2img_image_exact(settings: Any) -> str:
     configured = str(settings.image_name_img2img_lora or "").strip()
-    image_repository = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE.rsplit(":", 1)[0]
-    digest_prefix = f"{image_repository}@sha256:"
-    if configured.startswith(digest_prefix) and re.fullmatch(
-        r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
-    ):
-        return configured
+    image_repositories = (
+        RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE.rsplit(":", 1)[0],
+        RUNPOD_RELEASE_IMG2IMG_IMAGE_PREFIX.removesuffix(":"),
+    )
+    for image_repository in image_repositories:
+        digest_prefix = f"{image_repository}@sha256:"
+        if configured.startswith(digest_prefix) and re.fullmatch(
+            r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
+        ):
+            return configured
     return RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
 
 
 def _verified_pornmaster_image_exact(settings: Any) -> str:
     configured = str(settings.image_name_pornmaster_flux2_edit or "").strip()
-    image_repository = RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX.removesuffix(
-        ":"
+    image_repositories = (
+        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX.removesuffix(":"),
+        RUNPOD_RELEASE_PORNMASTER_IMAGE_PREFIX.removesuffix(":"),
     )
-    digest_prefix = f"{image_repository}@sha256:"
-    if configured.startswith(digest_prefix) and re.fullmatch(
-        r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
-    ):
-        return configured
+    for image_repository in image_repositories:
+        digest_prefix = f"{image_repository}@sha256:"
+        if configured.startswith(digest_prefix) and re.fullmatch(
+            r"[0-9a-f]{64}", configured.removeprefix(digest_prefix)
+        ):
+            return configured
     return ""
 
 
@@ -2481,6 +2494,19 @@ def _matches_verified_image_repository(image_name: str, image_prefix: str) -> bo
     return image_name.startswith(digest_prefix) and bool(
         re.fullmatch(r"[0-9a-f]{64}", image_name.removeprefix(digest_prefix))
     )
+
+
+def _verified_configured_image_exact(
+    configured: Any,
+    *image_prefixes: str,
+) -> str:
+    image_name = str(configured or "").strip()
+    if any(
+        _matches_verified_image_repository(image_name, image_prefix)
+        for image_prefix in image_prefixes
+    ):
+        return image_name
+    return ""
 
 
 def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
@@ -2530,7 +2556,11 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "model_manifest_key": (
                 settings.model_manifest_key_i2i_pro or RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_i2i_pro,
+                "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:",
+                RUNPOD_RELEASE_I2I_PRO_IMAGE_PREFIX,
+            ),
             "image_prefix": "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:",
             "workflow_overrides": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
         }
@@ -2543,7 +2573,11 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "model_manifest_key": (
                 settings.model_manifest_key_scail2 or RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_scail2,
+                RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
+                RUNPOD_RELEASE_SCAIL2_IMAGE_PREFIX,
+            ),
             "image_prefix": RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
@@ -2559,7 +2593,11 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_manifest_key_ltx_video
                 or RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_ltx_video,
+                RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+                RUNPOD_RELEASE_LTX_VIDEO_IMAGE_PREFIX,
+            ),
             "image_prefix": RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
             "workflow_overrides": (
                 settings.task_type_workflow_overrides_ltx_video
@@ -2577,7 +2615,10 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "model_manifest_key": (
                 settings.model_manifest_key_ltx_t2v or RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_ltx_t2v,
+                RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+            ),
             "image_prefix": RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
