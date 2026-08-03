@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.agent_router_helpers import (
+    append_text_delta_payload,
     check_task_payload,
     complete_task_payload,
     get_agent_control_payload,
@@ -47,6 +48,24 @@ def test_heartbeat_request_accepts_pool_bundle_versions_json_string():
     )
 
     assert request.model_bundle_versions == '{"wan22_video_v2_baseline":"2026-06-10"}'
+
+
+@pytest.mark.asyncio
+async def test_text_delta_payload_uses_additive_queue_manager_protocol():
+    queue_manager = SimpleNamespace(append_task_text_delta=AsyncMock(return_value={
+        "status": "ok", "accepted": True, "last_sequence": 1
+    }))
+    result = await append_text_delta_payload(
+        task_id="task-1",
+        agent_id="prompt_optimizer_test_01",
+        attempt_id="f62d88b8-bfac-40b6-a1e1-e9fb49abf619",
+        sequence=1,
+        field="positive_prompt",
+        delta="Use the provided",
+        queue_manager=queue_manager,
+    )
+    assert result["accepted"] is True
+    queue_manager.append_task_text_delta.assert_awaited_once()
 
 
 @pytest.mark.asyncio

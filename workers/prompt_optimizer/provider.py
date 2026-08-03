@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
+
+from workers.prompt_optimizer.json_stream import OptimizedFieldsJsonExtractor
 
 
 class ModelNotReadyError(RuntimeError):
@@ -92,6 +95,8 @@ class LMStudioChatProvider:
         user_prompt: str,
         image_data_urls: list[str],
         json_schema: dict[str, Any],
+        output_fields: tuple[str, ...] = (),
+        on_text_delta: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         visual_notes = ""
         if image_data_urls:
@@ -157,7 +162,7 @@ class LMStudioChatProvider:
             ],
             "reasoning": {"effort": "none"},
             "store": False,
-            "stream": False,
+            "stream": on_text_delta is not None,
             "temperature": 0.35,
             "max_output_tokens": 3072,
             "text": {
@@ -169,14 +174,77 @@ class LMStudioChatProvider:
                 }
             },
         }
-        content_value = await self._responses_text(payload)
+        extractor = OptimizedFieldsJsonExtractor(output_fields)
+
+        async def consume_content_delta(content_delta: str) -> None:
+            for field, delta in extractor.feed(content_delta).items():
+                if on_text_delta is not None:
+                    await on_text_delta(field, delta)
+
+        content_value = (
+            await self._responses_text_stream(payload, consume_content_delta)
+            if on_text_delta is not None
+            else await self._responses_text(payload)
+        )
         try:
             parsed = json.loads(content_value)
         except (TypeError, json.JSONDecodeError) as exc:
             raise ModelResponseError("lmstudio_invalid_json") from exc
         if not isinstance(parsed, dict):
             raise ModelResponseError("lmstudio_output_not_object")
+        if on_text_delta is not None:
+            extractor.verify(parsed)
         return parsed
+
+    async def _responses_text_stream(
+        self,
+        payload: dict[str, Any],
+        on_content_delta: Callable[[str], Awaitable[None]],
+    ) -> str:
+        emitted = False
+        for attempt in range(2):
+            content_parts: list[str] = []
+            try:
+                async with self.client.stream(
+                    "POST", f"{self.base_url}/v1/responses", json=payload
+                ) as response:
+                    if response.status_code == 429 or response.status_code >= 500:
+                        response.raise_for_status()
+                    if response.status_code >= 400:
+                        raise ModelResponseError(f"lmstudio_http_{response.status_code}")
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == "[DONE]":
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except json.JSONDecodeError as exc:
+                            raise ModelResponseError("lmstudio_invalid_stream_event") from exc
+                        delta = ""
+                        if event.get("type") == "response.output_text.delta":
+                            delta = str(event.get("delta") or "")
+                        elif event.get("choices"):
+                            delta = str(
+                                ((event["choices"][0].get("delta") or {}).get("content"))
+                                or ""
+                            )
+                        if not delta:
+                            continue
+                        content_parts.append(delta)
+                        await on_content_delta(delta)
+                        emitted = True
+                content_value = "".join(content_parts)
+                if not content_value.strip():
+                    raise ModelResponseError("lmstudio_empty_output")
+                return content_value
+            except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError):
+                if attempt == 0 and not emitted:
+                    await asyncio.sleep(0)
+                    continue
+                raise
+        raise ModelResponseError("lmstudio_request_failed")
 
     async def _responses_text(
         self,

@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import time
+import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from app.models import TaskStatus, TaskType
@@ -32,6 +33,10 @@ from app.queue_manager_flow_helpers import (
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
+from src.services.task_text_stream_store import (
+    append_text_delta,
+    serialize_text_stream_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +109,20 @@ if fallback_id and redis.call('ZREM', KEYS[1], fallback_id) == 1 then
     return {fallback_id, fallback_score}
 end
 return {}
+"""
+
+_TRANSITION_TASK_TERMINAL_SCRIPT = """
+local current = redis.call('HGET', KEYS[1], 'status')
+if not current then return -1 end
+if current == 'done' or current == 'error' or current == 'cancelled' then
+    return 0
+end
+local task_data = cjson.decode(ARGV[1])
+for field, value in pairs(task_data) do
+    redis.call('HSET', KEYS[1], field, tostring(value))
+end
+if ARGV[2] == '1' then redis.call('SREM', KEYS[2], ARGV[3]) end
+return 1
 """
 
 
@@ -207,6 +226,50 @@ class QueueManager:
             json.dumps(payload),
         )
 
+    async def append_task_text_delta(
+        self,
+        *,
+        task_id: str,
+        agent_id: str,
+        attempt_id: str,
+        sequence: int,
+        field: str,
+        delta: str,
+    ) -> dict[str, Any]:
+        # Validate UUID at the protocol boundary even when this method is called directly.
+        uuid.UUID(attempt_id)
+        result = await append_text_delta(
+            self.redis,
+            task_key=self._task_key(task_id),
+            task_id=task_id,
+            agent_id=agent_id,
+            attempt_id=attempt_id,
+            sequence=sequence,
+            field=field,
+            delta=delta,
+            updated_at=time.time(),
+        )
+        if result.accepted:
+            payload = {
+                "event_type": "text_delta",
+                "schema_version": "allbot.text_stream.v1",
+                "attempt_id": attempt_id,
+                "sequence": sequence,
+                "field": field,
+                "delta": delta,
+            }
+            await self._retry_redis_call(
+                "publish_task_text_delta",
+                self.redis.publish,
+                self._task_event_channel(task_id),
+                serialize_text_stream_event(payload),
+            )
+        return {
+            "status": "ok",
+            "accepted": result.accepted,
+            "last_sequence": result.last_sequence,
+        }
+
     async def _persist_task_update(
         self,
         task_id: str,
@@ -240,19 +303,38 @@ class QueueManager:
                 except (TypeError, ValueError):
                     enriched_event_payload["created_at"] = created_at
 
-        await self._retry_redis_call(
-            "persist_task_update_hset",
-            self.redis.hset,
-            self._task_key(task_id),
-            mapping=task_mapping,
-        )
-        if remove_from_running:
-            await self._retry_redis_call(
-                "persist_task_update_srem",
-                self.redis.srem,
+        is_terminal = enriched_event_payload.get("status") in {"done", "error"}
+        if is_terminal:
+            normalized_mapping = {
+                key: "" if value is None else value for key, value in task_mapping.items()
+            }
+            transitioned = await self._retry_redis_call(
+                "persist_task_terminal_transition",
+                self.redis.eval,
+                _TRANSITION_TASK_TERMINAL_SCRIPT,
+                2,
+                self._task_key(task_id),
                 self.running_key,
+                json.dumps(normalized_mapping, default=str),
+                "1" if remove_from_running else "0",
                 task_id,
             )
+            if int(transitioned) <= 0:
+                return
+        else:
+            await self._retry_redis_call(
+                "persist_task_update_hset",
+                self.redis.hset,
+                self._task_key(task_id),
+                mapping=task_mapping,
+            )
+            if remove_from_running:
+                await self._retry_redis_call(
+                    "persist_task_update_srem",
+                    self.redis.srem,
+                    self.running_key,
+                    task_id,
+                )
         await self._publish_task_event(task_id, enriched_event_payload)
 
     async def _get_task_type(self, task_id: str) -> Optional[str]:

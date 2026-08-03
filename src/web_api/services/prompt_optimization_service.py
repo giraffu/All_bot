@@ -15,6 +15,7 @@ from src.prompt_optimizer.registry import (
     resolve_prompt_optimization,
 )
 from src.services.storage import storage
+from src.services.task_text_stream_store import build_text_stream_contract
 
 PROMPT_MEDIA_MAX_BYTES = 20 * 1024 * 1024
 PROMPT_RESULT_TTL_SECONDS = 24 * 60 * 60
@@ -103,6 +104,10 @@ async def submit_prompt_optimization(
         "prompt": request.prompt,
         "context": dict(resolved.normalized_context),
         "media": [dict(item) for item in resolved.normalized_media],
+        "text_stream_contract": build_text_stream_contract(
+            resolved.profile.output_fields,
+            resolved.profile.max_output_characters,
+        ),
     }
     result = await submit_task_func(
         user_id=current_user.id,

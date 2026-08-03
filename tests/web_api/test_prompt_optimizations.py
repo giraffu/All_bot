@@ -33,6 +33,12 @@ def test_capability_does_not_expose_template_bodies():
     assert payload["templates"][0]["is_default"] is True
     assert "system_template" not in str(payload)
     assert "user_template" not in str(payload)
+    assert payload["text_stream"] == {
+        "enabled": True,
+        "schema_version": "allbot.text_stream.v1",
+        "events": ["text_snapshot", "text_delta"],
+        "fields": ["positive_prompt"],
+    }
 
 
 @pytest.mark.asyncio
@@ -58,6 +64,11 @@ async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
     assert kwargs["inputs"]["profile_ref"] == "ltx_eros_v14_i2v@1"
     assert kwargs["inputs"]["template_ref"] == "ltx_scene_script_cinematic@3"
     assert len(kwargs["inputs"]["template_hash"]) == 64
+    assert kwargs["inputs"]["text_stream_contract"] == {
+        "schema_version": "allbot.text_stream.v1",
+        "fields": ["positive_prompt"],
+        "max_chars": 2000,
+    }
     assert kwargs["registry_metadata"]["record_history"] is False
     assert kwargs["allow_contribute_override"] is False
     assert "761206f6-50ed-437c-855a-af14544352f9" in kwargs[

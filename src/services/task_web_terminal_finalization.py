@@ -165,7 +165,7 @@ async def finalize_monitored_web_task_failure(
     logger: logging.Logger,
 ):
     try:
-        await finalize_task_failure_func(
+        return await finalize_task_failure_func(
             internal_user_id=internal_user_id,
             username=username,
             cost=cost,
@@ -179,6 +179,7 @@ async def finalize_monitored_web_task_failure(
             internal_user_id,
             refund_err,
         )
+        return None
 
 
 async def finalize_monitored_web_task_success_default(
@@ -233,7 +234,7 @@ async def finalize_monitored_web_task_failure_default(
     final_status: str | None,
     logger_override: logging.Logger | None = None,
 ):
-    await finalize_monitored_web_task_failure(
+    return await finalize_monitored_web_task_failure(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,

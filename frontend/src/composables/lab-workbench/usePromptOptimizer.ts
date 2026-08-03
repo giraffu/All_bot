@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 import api from '@/api'
+import { getRuntimeConfig } from '@/config/runtime'
 import type { UnifiedLabModeId } from '@/features/generation/labModeConfig'
 import type { UploadedReference } from './types'
 
@@ -13,12 +14,21 @@ export type PromptOptimizerTemplate = {
   is_default: boolean
 }
 
+type PromptTextStreamCapability = {
+  enabled: boolean
+  schema_version: string
+  events: string[]
+  fields: string[]
+}
+
 type PendingOptimizerTask = {
   taskId: string
   clientRequestId: string
   originalPrompt: string
   templateRef: { id: string; version: number }
   contextFingerprint: string
+  streamAttemptId?: string
+  lastSequence?: number
 }
 
 const STORAGE_KEY = 'allbot.prompt-optimizer.pending.v1'
@@ -32,7 +42,12 @@ export function usePromptOptimizer(options: {
   const templates = ref<PromptOptimizerTemplate[]>([])
   const selectedTemplateRef = ref('')
   const isOptimizing = ref(false)
+  const streamPreview = ref('')
+  const failedPartial = ref('')
+  const refundStatus = ref<'pending' | 'refunded' | ''>('')
   const originalPrompt = ref<string | null>(null)
+  const textStreamCapability = ref<PromptTextStreamCapability | null>(null)
+  let streamController: AbortController | null = null
   let stopped = false
 
   const isAvailable = computed(() => options.currentModeId.value === 'ltx_video_v2')
@@ -55,11 +70,106 @@ export function usePromptOptimizer(options: {
       params: { target_task_type: 'ltx_video_v2' },
     })
     templates.value = response.data.templates ?? []
+    textStreamCapability.value = response.data.text_stream ?? null
     const defaultTemplate = templates.value.find(item => item.is_default) ?? templates.value[0]
     if (!templates.value.some(item => `${item.id}@${item.version}` === selectedTemplateRef.value)) {
       selectedTemplateRef.value = defaultTemplate
         ? `${defaultTemplate.id}@${defaultTemplate.version}`
         : ''
+    }
+  }
+
+  const persistPending = (pending: PendingOptimizerTask) => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pending))
+  }
+
+  const primaryStreamField = () => textStreamCapability.value?.fields[0] ?? ''
+
+  const processStreamEvent = (
+    eventName: string,
+    eventData: string,
+    pending: PendingOptimizerTask,
+  ) => {
+    if (!['text_snapshot', 'text_delta'].includes(eventName) || !eventData) return
+    const payload = JSON.parse(eventData) as {
+      attempt_id?: string
+      sequence?: number
+      field?: string
+      delta?: string
+      fields?: Record<string, string>
+    }
+    const attemptId = String(payload.attempt_id ?? '')
+    const sequence = Number(payload.sequence ?? 0)
+    if (!attemptId || !Number.isInteger(sequence)) return
+    if (eventName === 'text_snapshot') {
+      pending.streamAttemptId = attemptId
+      pending.lastSequence = sequence
+      streamPreview.value = String(payload.fields?.[primaryStreamField()] ?? '')
+      persistPending(pending)
+      return
+    }
+    if (pending.streamAttemptId && pending.streamAttemptId !== attemptId) return
+    const lastSequence = pending.lastSequence ?? 0
+    if (sequence <= lastSequence) return
+    if (sequence !== lastSequence + 1 || payload.field !== primaryStreamField()) {
+      streamController?.abort()
+      return
+    }
+    pending.streamAttemptId = attemptId
+    pending.lastSequence = sequence
+    streamPreview.value += String(payload.delta ?? '')
+    persistPending(pending)
+  }
+
+  const streamTask = async (pending: PendingOptimizerTask) => {
+    if (!textStreamCapability.value?.enabled) return
+    const delays = [1000, 2000, 4000, 8000, 10000]
+    let retry = 0
+    while (!stopped && isOptimizing.value) {
+      const controller = new AbortController()
+      streamController = controller
+      try {
+        const apiBase = String(getRuntimeConfig('api_base_url', '/api')).replace(/\/$/, '')
+        const response = await fetch(`${apiBase}/tasks/${pending.taskId}/stream`, {
+          headers: {
+            Accept: 'text/event-stream',
+            Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
+            ...(pending.streamAttemptId && pending.lastSequence
+              ? { 'Last-Event-ID': `${pending.streamAttemptId}:${pending.lastSequence}` }
+              : {}),
+          },
+          signal: controller.signal,
+          credentials: 'same-origin',
+        })
+        if (!response.ok || !response.body) throw new Error(`stream_http_${response.status}`)
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        retry = 0
+        while (isOptimizing.value) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r/g, '')
+          let boundary = buffer.indexOf('\n\n')
+          while (boundary >= 0) {
+            const block = buffer.slice(0, boundary)
+            buffer = buffer.slice(boundary + 2)
+            let eventName = 'message'
+            const data: string[] = []
+            block.split('\n').forEach(line => {
+              if (line.startsWith('event:')) eventName = line.slice(6).trim()
+              if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+            })
+            processStreamEvent(eventName, data.join('\n'), pending)
+            boundary = buffer.indexOf('\n\n')
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted && !isOptimizing.value) return
+      }
+      if (!isOptimizing.value || stopped) return
+      await new Promise(resolve => window.setTimeout(resolve, delays[Math.min(retry, delays.length - 1)]))
+      retry += 1
     }
   }
 
@@ -84,10 +194,14 @@ export function usePromptOptimizer(options: {
           message.info('提示词优化已完成，但当前输入已变化，未自动替换。')
         }
         sessionStorage.removeItem(STORAGE_KEY)
+        streamPreview.value = ''
         isOptimizing.value = false
+        streamController?.abort()
         return
       }
       if (['failed', 'error', 'cancelled'].includes(response.data.status)) {
+        failedPartial.value = String(response.data.partial_result_text || streamPreview.value || '')
+        refundStatus.value = response.data.refund_status === 'refunded' ? 'refunded' : 'pending'
         throw new Error(response.data.message || response.data.error || 'optimizer failed')
       }
       await new Promise(resolve => window.setTimeout(resolve, 1200))
@@ -97,6 +211,9 @@ export function usePromptOptimizer(options: {
   const optimizePrompt = async () => {
     if (!canOptimize.value) return
     const original = options.prompt.value
+    failedPartial.value = ''
+    refundStatus.value = ''
+    streamPreview.value = ''
     const templateRef = parseSelectedTemplate()
     const clientRequestId = crypto.randomUUID()
     const pendingBase = {
@@ -122,12 +239,14 @@ export function usePromptOptimizer(options: {
         ...pendingBase,
         taskId: response.data.task_id,
       }
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pending))
+      persistPending(pending)
+      void streamTask(pending)
       await pollResult(pending)
     } catch (error) {
       isOptimizing.value = false
-      message.error('提示词优化失败，已自动退款或不会重复扣费。')
-      throw error
+      streamController?.abort()
+      const refundConfirmed = String(refundStatus.value) === 'refunded'
+      message.error(refundConfirmed ? '提示词优化失败，1 灵石已退回。' : '提示词优化失败，退款处理中。')
     }
   }
 
@@ -144,6 +263,7 @@ export function usePromptOptimizer(options: {
       const pending = JSON.parse(raw) as PendingOptimizerTask
       isOptimizing.value = true
       selectedTemplateRef.value = `${pending.templateRef.id}@${pending.templateRef.version}`
+      void streamTask(pending)
       await pollResult(pending)
     } catch {
       sessionStorage.removeItem(STORAGE_KEY)
@@ -165,13 +285,19 @@ export function usePromptOptimizer(options: {
     { immediate: true },
   )
 
-  onBeforeUnmount(() => { stopped = true })
+  onBeforeUnmount(() => {
+    stopped = true
+    streamController?.abort()
+  })
 
   return {
     isPromptOptimizerAvailable: isAvailable,
     canOptimizePrompt: canOptimize,
     canRestoreOriginalPrompt: canRestore,
     isOptimizingPrompt: isOptimizing,
+    promptOptimizerStreamPreview: streamPreview,
+    promptOptimizerFailedPartial: failedPartial,
+    promptOptimizerRefundStatus: refundStatus,
     optimizePrompt,
     restoreOriginalPrompt,
   }

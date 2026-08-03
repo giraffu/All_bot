@@ -84,6 +84,10 @@ sequenceDiagram
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。Redis client 必须通过 `src.services.redis_connection.build_redis_client(...)` 创建，默认带 `socket_connect_timeout=5`、`socket_timeout=5`、`health_check_interval=15`、`socket_keepalive=true` 与 `retry_on_timeout=true`，不要把 `get_redis()` 再改回每请求新建连接或裸 `Redis.from_url(...)` 模式。
 - Central Redis 连接瞬断重试耗尽时，执行面 API 统一返回 `503 Service Unavailable` 与 `Retry-After: 2`，语义是控制面 Redis 暂时不可用、上游可按忙碌/补偿路径处理；排障时应区别于业务参数错误和 Worker 执行失败。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
+- `/api/agent/task/text-delta` 是 `prompt_optimize` 的可选增量协议，只写运行态快照，
+  不构成成功。Central 以 task owner、attempt、连续 sequence、服务端字段契约和长度
+  做原子校验；重复 sequence 幂等确认，跳号拒绝并返回期望值。终态写入采用 CAS，
+  late fail 不得覆盖 done。旧 Worker 不调用此接口时继续只用 `/complete`。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
 - `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
 - `/api/agent/task/pop` 与 `/peek` 可选携带 `preferred_types`，但必须同时携带 `types` 且前者是后者的子集，否则返回 422。参数缺失或清洗后为空时完全沿用旧 score 顺序。参数有效时，Central 在单次 Redis Lua 中按 score 扫描候选：记录最早 fallback，但只要领取瞬间存在 preferred 就优先原子 `ZREM` 最早 preferred；没有 preferred 才领取最早 fallback。已经 running 的 fallback 不抢占，下一次领取重新判断。真实原子出队失败不盲 retry；`peek` 使用相同分组顺序但不修改队列。

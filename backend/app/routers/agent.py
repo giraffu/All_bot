@@ -5,6 +5,7 @@ from typing import Annotated, Any, Dict, Optional
 # User-facing Web APIs must stay in `src/web_api` to keep the entrypoint split clear.
 
 from app.agent_router_helpers import (
+    append_text_delta_payload,
     check_task_payload,
     complete_task_payload,
     get_agent_control_payload,
@@ -19,8 +20,10 @@ from app.agent_router_helpers import (
 from app.config import settings
 from app.dependencies import get_queue_manager
 from app.queue_manager import QueueManager
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
+from pydantic import Field
+from src.services.task_text_stream_store import TextStreamConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,7 @@ class StatusUpdateRequest(BaseModel):
     execution_phase: Optional[str] = None
     cancel_locked: Optional[bool] = None
     set_current: bool = True
+    attempt_id: Optional[str] = None
 
 
 class CompleteRequest(BaseModel):
@@ -47,6 +51,16 @@ class CompleteRequest(BaseModel):
     result_kind: Optional[str] = None
     result_text: Optional[str] = None
     result_meta: Optional[Dict[str, Any]] = None
+    attempt_id: Optional[str] = None
+
+
+class TextDeltaRequest(BaseModel):
+    task_id: str
+    agent_id: str
+    attempt_id: str
+    sequence: int = Field(ge=1)
+    field: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    delta: str = Field(min_length=1, max_length=2000)
 
 
 class HeartbeatRequest(BaseModel):
@@ -159,6 +173,31 @@ async def complete_task(
         result_meta=req.result_meta,
         queue_manager=queue_manager,
     )
+
+
+@router.post("/text-delta")
+async def append_text_delta(
+    req: TextDeltaRequest,
+    _authorized: bool = Depends(verify_token),
+    queue_manager: QueueManagerDep = None,
+):
+    try:
+        return await append_text_delta_payload(
+            task_id=req.task_id,
+            agent_id=req.agent_id,
+            attempt_id=req.attempt_id,
+            sequence=req.sequence,
+            field=req.field,
+            delta=req.delta,
+            queue_manager=queue_manager,
+        )
+    except (ValueError, TextStreamConflictError) as exc:
+        code = getattr(exc, "code", "invalid_attempt_id")
+        detail: dict[str, Any] = {"code": code}
+        expected_sequence = getattr(exc, "expected_sequence", None)
+        if expected_sequence is not None:
+            detail["expected_sequence"] = expected_sequence
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 class TaskHeartbeatRequest(BaseModel):

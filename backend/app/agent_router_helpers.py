@@ -207,6 +207,26 @@ async def complete_task_payload(
     return {"status": "ok"}
 
 
+async def append_text_delta_payload(
+    *,
+    task_id: str,
+    agent_id: str,
+    attempt_id: str,
+    sequence: int,
+    field: str,
+    delta: str,
+    queue_manager,
+) -> dict:
+    return await queue_manager.append_task_text_delta(
+        task_id=task_id,
+        agent_id=agent_id,
+        attempt_id=attempt_id,
+        sequence=sequence,
+        field=field,
+        delta=delta,
+    )
+
+
 async def task_heartbeat_payload(*, task_id: str, agent_id: str | None, queue_manager) -> dict:
     await queue_manager.update_task_heartbeat(task_id)
     if agent_id:

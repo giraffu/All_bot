@@ -159,6 +159,27 @@ async def _collect_stream_events(response):
     return events
 
 
+@pytest.mark.asyncio
+async def test_pubsub_text_delta_uses_distinct_sse_event_and_sequence_id():
+    event, became_running, should_stop = await task_stream_service._build_pubsub_stream_transition(
+        message={"data": json.dumps({
+            "event_type": "text_delta",
+            "schema_version": "allbot.text_stream.v1",
+            "attempt_id": "attempt-1",
+            "sequence": 3,
+            "field": "positive_prompt",
+            "delta": "camera moves",
+        })},
+        task_id="task-1",
+        build_terminal_progress_payload=task_stream_api_service.build_terminal_progress_payload,
+    )
+    assert event["event"] == "text_delta"
+    assert event["id"] == "attempt-1:3"
+    assert json.loads(event["data"])["delta"] == "camera moves"
+    assert became_running is True
+    assert should_stop is False
+
+
 @pytest.fixture(autouse=True)
 def _clear_task_stream_status_cache(monkeypatch):
     monkeypatch.setattr(
