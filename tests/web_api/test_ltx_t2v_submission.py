@@ -70,104 +70,6 @@ async def test_ltx_t2v_operator_canary_bypasses_closed_user_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ltx_t2v_ic_operator_canary_accepts_only_isolated_fixture(monkeypatch):
-    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "false")
-    submit = AsyncMock(return_value={"task_id": "task-canary", "cost": 12})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
-
-    await service.submit_generation_task(
-        req=TaskGenerateRequest(
-            task_type="ltx_t2v_ic",
-            prompt="the same adult character walks through a room",
-            inputs={
-                "duration": 5,
-                "resolution": "768x448",
-                "character_sheet": (
-                    "runpod-canary/ltx-t2v/20260727T032529Z/character_reference.png"
-                ),
-                "character_description": "an adult woman with short black hair",
-            },
-        ),
-        current_user=_user(),
-        get_balance=AsyncMock(return_value=88),
-        operator_canary_authorized=True,
-    )
-
-    assert submit.await_args.kwargs["inputs"]["character_sheet"].startswith(
-        "runpod-canary/ltx-t2v/"
-    )
-
-    with pytest.raises(CoreDomainError, match="隔离测试前缀"):
-        await service.submit_generation_task(
-            req=TaskGenerateRequest(
-                task_type="ltx_t2v_ic",
-                prompt="scene",
-                inputs={
-                    "duration": 5,
-                    "resolution": "768x448",
-                    "character_sheet": "web_uploads/another-user/private.png",
-                },
-            ),
-            current_user=_user(),
-            get_balance=AsyncMock(return_value=88),
-            operator_canary_authorized=True,
-        )
-
-
-@pytest.mark.asyncio
-async def test_ltx_t2v_ic_resolves_character_server_side(monkeypatch):
-    monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
-    submit = AsyncMock(return_value={"task_id": "task-1", "cost": 12})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
-
-    class _Session:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-    from src.database import core as db_core
-    from src.web_api.services import character_reference_service
-
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
-    resolve = AsyncMock(
-        return_value=SimpleNamespace(
-            sheet_object_key="bot-data/private/owned-sheet.png",
-            description="an adult woman with short black hair",
-        )
-    )
-    monkeypatch.setattr(
-        character_reference_service, "resolve_ready_character_sheet", resolve
-    )
-
-    response = await service.submit_generation_task(
-        req=TaskGenerateRequest(
-            task_type="ltx_t2v_ic",
-            prompt="the same adult character walks through a room",
-            inputs={
-                "duration": 5,
-                "resolution": "768x448",
-                "character_id": "character-1",
-            },
-        ),
-        current_user=_user(),
-        get_balance=AsyncMock(return_value=88),
-    )
-
-    assert response.cost == 12
-    assert submit.await_args.kwargs["inputs"]["character_sheet"] == (
-        "bot-data/private/owned-sheet.png"
-    )
-    assert submit.await_args.kwargs["inputs"]["character_description"] == (
-        "an adult woman with short black hair"
-    )
-    resolve.assert_awaited_once()
-    assert resolve.await_args.kwargs["user_id"] == 123
-    assert resolve.await_args.kwargs["character_id"] == "character-1"
-
-
-@pytest.mark.asyncio
 async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
     monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
@@ -182,6 +84,7 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
             return False
 
     from src.database import core as db_core
+    from src.services.storage import storage
     from src.web_api.services import character_reference_service
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
@@ -200,6 +103,7 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
     monkeypatch.setattr(
         character_reference_service, "resolve_ready_character_sheet", resolve
     )
+    monkeypatch.setattr(storage, "async_object_size", AsyncMock(return_value=2048))
 
     await service.submit_generation_task(
         req=TaskGenerateRequest(
@@ -209,7 +113,7 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
                 "duration": 5,
                 "resolution": "768x448",
                 "character_ids": ["wang", "man"],
-                "sulphur_strength": 0.5,
+                "background_object_key": "web_uploads/123/bedroom.png",
             },
         ),
         current_user=_user(),
@@ -225,7 +129,9 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
         "adult woman Wang with a short black bob",
         "adult man with short brown hair",
     ]
+    assert submitted["background_image"] == "web_uploads/123/bedroom.png"
     assert "character_ids" not in submitted
+    assert "background_object_key" not in submitted
     assert [call.kwargs["character_id"] for call in resolve.await_args_list] == [
         "wang",
         "man",
@@ -237,7 +143,7 @@ async def test_ltx_t2v_ic_msr_flag_defaults_closed(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
     monkeypatch.delenv("LTX_T2V_MSR_ENABLED", raising=False)
 
-    with pytest.raises(CoreDomainError, match="MSR 多人物模式当前未开放"):
+    with pytest.raises(CoreDomainError, match="MSR 双角色模式当前未开放"):
         await service.submit_generation_task(
             req=TaskGenerateRequest(
                 task_type="ltx_t2v_ic",
@@ -246,7 +152,7 @@ async def test_ltx_t2v_ic_msr_flag_defaults_closed(monkeypatch):
                     "duration": 5,
                     "resolution": "768x448",
                     "character_ids": ["wang", "man"],
-                    "sulphur_strength": 0.5,
+                    "background_object_key": "web_uploads/123/bedroom.png",
                 },
             ),
             current_user=_user(),
@@ -262,6 +168,7 @@ async def test_ltx_t2v_ic_msr_flag_defaults_closed(monkeypatch):
         {"character_ids": ["wang", "wang"]},
         {"character_ids": ["wang", "man"], "character_sheets": ["private.png"]},
         {"character_ids": ["wang", "man"], "character_descriptions": ["private"]},
+        {"character_ids": ["wang", "man"], "sulphur_strength": 0.5},
     ],
 )
 async def test_ltx_t2v_ic_rejects_unsafe_msr_selection(monkeypatch, inputs):
@@ -283,6 +190,7 @@ async def test_ltx_t2v_ic_rejects_unsafe_msr_selection(monkeypatch, inputs):
 @pytest.mark.asyncio
 async def test_ltx_t2v_ic_rejects_client_storage_path(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
 
     with pytest.raises(CoreDomainError, match="不得直接指定"):
         await service.submit_generation_task(
@@ -292,8 +200,9 @@ async def test_ltx_t2v_ic_rejects_client_storage_path(monkeypatch):
                 inputs={
                     "duration": 5,
                     "resolution": "768x448",
-                    "character_id": "character-1",
+                    "character_ids": ["character-1", "character-2"],
                     "character_sheet": "bot-data/another-user/sheet.png",
+                    "background_object_key": "web_uploads/123/bedroom.png",
                 },
             ),
             current_user=_user(),
@@ -304,6 +213,7 @@ async def test_ltx_t2v_ic_rejects_client_storage_path(monkeypatch):
 @pytest.mark.asyncio
 async def test_ltx_t2v_ic_maps_non_ready_character_to_domain_error(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
 
     class _Session:
         async def __aenter__(self):
@@ -313,6 +223,7 @@ async def test_ltx_t2v_ic_maps_non_ready_character_to_domain_error(monkeypatch):
             return False
 
     from src.database import core as db_core
+    from src.services.storage import storage
     from src.web_api.services import character_reference_service
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", _Session)
@@ -321,6 +232,7 @@ async def test_ltx_t2v_ic_maps_non_ready_character_to_domain_error(monkeypatch):
         "resolve_ready_character_sheet",
         AsyncMock(side_effect=HTTPException(status_code=400, detail="人物未就绪。")),
     )
+    monkeypatch.setattr(storage, "async_object_size", AsyncMock(return_value=2048))
 
     with pytest.raises(CoreDomainError, match="人物未就绪"):
         await service.submit_generation_task(
@@ -330,7 +242,8 @@ async def test_ltx_t2v_ic_maps_non_ready_character_to_domain_error(monkeypatch):
                 inputs={
                     "duration": 5,
                     "resolution": "768x448",
-                    "character_id": "character-1",
+                    "character_ids": ["character-1", "character-2"],
+                    "background_object_key": "web_uploads/123/bedroom.png",
                 },
             ),
             current_user=_user(),

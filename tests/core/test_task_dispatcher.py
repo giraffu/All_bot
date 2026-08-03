@@ -256,8 +256,9 @@ def test_ltx_t2v_ic_uses_supported_duration_costs(duration, expected_cost):
             {
                 "duration": duration,
                 "resolution": "768x448",
-                "character_sheet": "bucket/character.png",
-                "character_description": "an adult woman with short black hair",
+                "character_sheets": ["bucket/a.png", "bucket/b.png"],
+                "character_descriptions": ["adult A", "adult B"],
+                "background_image": "bucket/room.png",
             }
         )
         == expected_cost
@@ -293,6 +294,7 @@ async def test_ltx_t2v_submits_audio_video_spec(monkeypatch):
         character_description=None,
         character_sheets=(),
         character_descriptions=(),
+        background_image=None,
         sulphur_strength=None,
         seed=65608997764964,
         width=1280,
@@ -315,7 +317,7 @@ async def test_ltx_t2v_ic_submits_ordered_msr_spec(monkeypatch):
             "prompt": "图1与图2在室内交谈",
             "character_sheets": ["wang-panel.png", "man-panel.png"],
             "character_descriptions": ["adult woman Wang", "adult man"],
-            "sulphur_strength": 0.5,
+            "background_image": "room.png",
             "duration": 5,
             "resolution": "768x448",
         },
@@ -333,7 +335,8 @@ async def test_ltx_t2v_ic_submits_ordered_msr_spec(monkeypatch):
         character_description=None,
         character_sheets=("wang-panel.png", "man-panel.png"),
         character_descriptions=("adult woman Wang", "adult man"),
-        sulphur_strength=0.5,
+        background_image="room.png",
+        sulphur_strength=None,
         seed=None,
         width=768,
         height=448,

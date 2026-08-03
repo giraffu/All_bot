@@ -29,17 +29,15 @@ describe('LtxT2VCharacterSelector', () => {
     window.__ALLBOT_CONFIG__ = { enable_ltx_t2v_msr: true }
   })
 
-  it('shows ordered image labels and the Sulphur control for two panels', () => {
+  it('shows two ordered character labels without a separate LoRA control', () => {
     const wrapper = mount(LtxT2VCharacterSelector, {
       props: {
         modelValue: ['wang', 'man'],
-        sulphurStrength: 0.5,
       },
       global: {
         stubs: {
           'a-select': { template: '<div><slot /></div>' },
           'a-select-option': { template: '<div><slot /></div>' },
-          'a-slider': { template: '<div data-testid="sulphur-slider" />' },
         },
       },
     })
@@ -48,7 +46,7 @@ describe('LtxT2VCharacterSelector', () => {
     expect(wrapper.text()).toContain('characters.msr_image_label:2')
     expect(wrapper.text()).toContain('王')
     expect(wrapper.text()).toContain('男角色')
-    expect(wrapper.find('[data-testid="sulphur-slider"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('0.50')
+    expect(wrapper.find('[data-testid="sulphur-slider"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('characters.msr_hint')
   })
 })

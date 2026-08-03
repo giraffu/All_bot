@@ -29,8 +29,12 @@ def test_ltx_t2v_ic_duration_cost_and_frames(duration, cost, frames):
         {
             "duration": duration,
             "resolution": "768x448",
-            "character_sheet": "private/sheet.png",
-            "character_description": "an adult woman with a short black bob",
+            "character_sheets": ["private/woman.png", "private/man.png"],
+            "character_descriptions": [
+                "an adult woman with a short black bob",
+                "an adult man with short brown hair",
+            ],
+            "background_image": "web_uploads/123/bedroom.png",
         },
     )
     assert (spec.width, spec.height, spec.cost, spec.frame_count) == (
@@ -41,14 +45,15 @@ def test_ltx_t2v_ic_duration_cost_and_frames(duration, cost, frames):
     )
 
 
-def test_ltx_t2v_ic_requires_character_description():
-    with pytest.raises(LtxT2VValidationError, match="人物描述"):
+def test_ltx_t2v_ic_requires_scene_background():
+    with pytest.raises(LtxT2VValidationError, match="场景背景图"):
         build_ltx_t2v_spec(
             "ltx_t2v_ic",
             {
                 "duration": 5,
                 "resolution": "768x448",
-                "character_sheet": "private/sheet.png",
+                "character_sheets": ["private/woman.png", "private/man.png"],
+                "character_descriptions": ["adult woman", "adult man"],
             },
         )
 
@@ -64,7 +69,7 @@ def test_ltx_t2v_ic_accepts_ordered_multi_character_msr_inputs():
                 "an adult woman with a short black bob",
                 "an adult man with short brown hair",
             ],
-            "sulphur_strength": 0.5,
+            "background_image": "web_uploads/123/bedroom.png",
         },
     )
 
@@ -78,7 +83,8 @@ def test_ltx_t2v_ic_accepts_ordered_multi_character_msr_inputs():
         "an adult woman with a short black bob",
         "an adult man with short brown hair",
     )
-    assert spec.sulphur_strength == 0.5
+    assert spec.background_image == "web_uploads/123/bedroom.png"
+    assert spec.sulphur_strength is None
     assert spec.uses_msr is True
 
 
@@ -90,14 +96,14 @@ def test_ltx_t2v_ic_accepts_ordered_multi_character_msr_inputs():
                 "character_sheets": ["a.png"],
                 "character_descriptions": ["adult woman"],
             },
-            "2 至 4",
+            "恰好 2",
         ),
         (
             {
                 "character_sheets": ["a.png", "b.png"],
                 "character_descriptions": ["adult woman"],
             },
-            "一一对应",
+            "分别提供人物描述",
         ),
         (
             {
@@ -105,16 +111,18 @@ def test_ltx_t2v_ic_accepts_ordered_multi_character_msr_inputs():
                 "character_description": "adult woman",
                 "character_sheets": ["a.png", "b.png"],
                 "character_descriptions": ["adult woman", "adult man"],
+                "background_image": "background.png",
             },
-            "不能同时",
+            "旧的单人物",
         ),
         (
             {
                 "character_sheets": ["a.png", "b.png"],
                 "character_descriptions": ["adult woman", "adult man"],
+                "background_image": "background.png",
                 "sulphur_strength": 1.01,
             },
-            "0 到 1",
+            "不支持 Sulphur",
         ),
     ],
 )

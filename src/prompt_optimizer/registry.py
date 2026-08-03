@@ -10,6 +10,8 @@ PROMPT_OPTIMIZATION_COST = 1
 PROMPT_OPTIMIZE_TASK_TYPE = "prompt_optimize"
 LTX_VIDEO_V2_TASK_TYPE = "ltx_video_v2"
 LTX_VIDEO_V2_FLF2V_TASK_TYPE = "ltx_video_v2_flf2v"
+LTX_T2V_TASK_TYPE = "ltx_t2v"
+LTX_T2V_IC_TASK_TYPE = "ltx_t2v_ic"
 
 
 class PromptOptimizerRegistryError(ValueError):
@@ -289,7 +291,46 @@ _ADULT_CINEMATIC_USER = """目标 Profile：{profile_ref}
 
 请根据参考图片和以上要求生成最终英文 positive_prompt。"""
 
-_PROFILE_REFS = frozenset({"ltx_eros_v14_i2v@1", "ltx_eros_v14_flf2v@1"})
+_T2V_REFERENCE_SECTION = """一、角色与场景参考
+
+此任务是文生视频，参考图片不是视频首帧或终帧。绝对不要要求视频复制任何参考图的构图或姿势。
+
+当提供 reference_character_1 和 reference_character_2 时，它们分别是两名成年角色的身份事实。必须保留各自可见的脸部、发型、身体特征和稳定身份，使用可靠特征分别追踪角色，禁止交换、融合、复制或凭空增加人物。
+
+scene_background 只定义场景、空间布局、光线、氛围和可见环境。人物必须自然地处于该场景中，但不要求复刻背景图中的人物、姿势或拍摄时刻。
+
+纯文生视频没有参考图片时，只根据用户原始要求建立角色和场景，不要声称看到了不存在的视觉事实。
+
+所有人物、服装、姿势、接触和镜头变化都必须经过连续、可见且符合身体力学的动作发展，禁止瞬间变化或无原因跳转。
+
+"""
+
+_T2V_ADULT_CINEMATIC_SYSTEM = (
+    _ADULT_CINEMATIC_SYSTEM.split("一、参考图片与首尾帧", 1)[0]
+    + _T2V_REFERENCE_SECTION
+    + "二、默认成人 NSFW 方向"
+    + _ADULT_CINEMATIC_SYSTEM.split("二、默认成人 NSFW 方向", 1)[1]
+).replace(
+    "Use the provided start image exactly as the first frame. [用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
+    "[用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
+).replace(
+    "从图片可见初始姿势开始", "从用户设定的初始状态开始"
+).replace(
+    "从第一帧的初始姿势开始", "从用户设定的初始状态开始"
+)
+
+_T2V_ADULT_CINEMATIC_USER = """目标 Profile：{profile_ref}
+视频时长：{duration_seconds} 秒
+参考媒体语义：
+{media_frame_instructions}
+
+用户原始要求：
+{original_prompt}
+
+请生成最终英文 positive_prompt。不要把角色参考图或背景参考图描述为视频首帧。"""
+
+_I2V_PROFILE_REFS = frozenset({"ltx_eros_v14_i2v@1", "ltx_eros_v14_flf2v@1"})
+_T2V_PROFILE_REFS = frozenset({"ltx_eros_t2v@1", "ltx_eros_t2v_ic_msr@1"})
 
 _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
     {
@@ -306,7 +347,7 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "end_frame_clause",
                 "original_prompt",
             ),
-            compatible_profile_refs=_PROFILE_REFS,
+            compatible_profile_refs=_I2V_PROFILE_REFS,
             active=False,
         ),
         "ltx_timestamp_motion@1": PromptOptimizationTemplate(
@@ -322,7 +363,7 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "end_frame_clause",
                 "original_prompt",
             ),
-            compatible_profile_refs=_PROFILE_REFS,
+            compatible_profile_refs=_I2V_PROFILE_REFS,
             active=False,
         ),
         "ltx_scene_script_cinematic@2": PromptOptimizationTemplate(
@@ -338,7 +379,7 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "media_frame_instructions",
                 "original_prompt",
             ),
-            compatible_profile_refs=_PROFILE_REFS,
+            compatible_profile_refs=_I2V_PROFILE_REFS,
             active=False,
         ),
         "ltx_scene_script_cinematic@3": PromptOptimizationTemplate(
@@ -354,12 +395,29 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "media_frame_instructions",
                 "original_prompt",
             ),
-            compatible_profile_refs=_PROFILE_REFS,
+            compatible_profile_refs=_I2V_PROFILE_REFS,
+        ),
+        "ltx_scene_script_cinematic@4": PromptOptimizationTemplate(
+            id="ltx_scene_script_cinematic",
+            version=4,
+            label="成人文生视频提示词",
+            description="10Eros 成人场景、双角色身份与背景连续性",
+            system_template=_T2V_ADULT_CINEMATIC_SYSTEM,
+            user_template=_T2V_ADULT_CINEMATIC_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "original_prompt",
+            ),
+            compatible_profile_refs=_T2V_PROFILE_REFS,
         ),
     }
 )
 
-_ALLOWED_TEMPLATE_REFS = frozenset(_TEMPLATES)
+_I2V_ALLOWED_TEMPLATE_REFS = frozenset(
+    ref for ref in _TEMPLATES if ref != "ltx_scene_script_cinematic@4"
+)
 _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
     {
         "ltx_eros_v14_i2v@1": PromptOptimizationProfile(
@@ -372,7 +430,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             output_fields=("positive_prompt",),
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
-            allowed_template_refs=_ALLOWED_TEMPLATE_REFS,
+            allowed_template_refs=_I2V_ALLOWED_TEMPLATE_REFS,
             default_template_ref="ltx_scene_script_cinematic@3",
         ),
         "ltx_eros_v14_flf2v@1": PromptOptimizationProfile(
@@ -385,8 +443,38 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             output_fields=("positive_prompt",),
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
-            allowed_template_refs=_ALLOWED_TEMPLATE_REFS,
+            allowed_template_refs=_I2V_ALLOWED_TEMPLATE_REFS,
             default_template_ref="ltx_scene_script_cinematic@3",
+        ),
+        "ltx_eros_t2v@1": PromptOptimizationProfile(
+            id="ltx_eros_t2v",
+            version=1,
+            supported_target_task_types=frozenset({LTX_T2V_TASK_TYPE}),
+            required_media_roles=(),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15, 20}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"ltx_scene_script_cinematic@4"}),
+            default_template_ref="ltx_scene_script_cinematic@4",
+        ),
+        "ltx_eros_t2v_ic_msr@1": PromptOptimizationProfile(
+            id="ltx_eros_t2v_ic_msr",
+            version=1,
+            supported_target_task_types=frozenset({LTX_T2V_IC_TASK_TYPE}),
+            required_media_roles=(
+                "reference_character_1",
+                "reference_character_2",
+                "scene_background",
+            ),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15, 20}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"ltx_scene_script_cinematic@4"}),
+            default_template_ref="ltx_scene_script_cinematic@4",
         ),
     }
 )
@@ -420,13 +508,23 @@ def _resolve_profile(
     media: tuple[Mapping[str, str], ...],
 ) -> PromptOptimizationProfile:
     roles = tuple(item["role"] for item in media)
-    profile_ref = (
-        "ltx_eros_v14_flf2v@1"
-        if roles == ("start_image", "end_image")
-        else "ltx_eros_v14_i2v@1"
-        if roles == ("start_image",)
-        else ""
-    )
+    profile_ref = ""
+    if target_task_type == LTX_VIDEO_V2_TASK_TYPE:
+        profile_ref = (
+            "ltx_eros_v14_flf2v@1"
+            if roles == ("start_image", "end_image")
+            else "ltx_eros_v14_i2v@1"
+            if roles == ("start_image",)
+            else ""
+        )
+    elif target_task_type == LTX_T2V_TASK_TYPE and not roles:
+        profile_ref = "ltx_eros_t2v@1"
+    elif target_task_type == LTX_T2V_IC_TASK_TYPE and roles == (
+        "reference_character_1",
+        "reference_character_2",
+        "scene_background",
+    ):
+        profile_ref = "ltx_eros_t2v_ic_msr@1"
     profile = _PROFILES.get(profile_ref)
     if (
         profile is None
@@ -498,12 +596,27 @@ def get_prompt_optimizer_capability(target_task_type: str) -> dict[str, Any]:
     ]
     templates.sort(key=lambda item: (item.ref != default_ref, item.id, item.version))
     stream_fields = set.intersection(*(set(profile.output_fields) for profile in profiles))
+    required_roles = set.intersection(
+        *(set(profile.required_media_roles) for profile in profiles)
+    )
+    all_roles = set().union(
+        *(set(profile.required_media_roles) | set(profile.optional_media_roles) for profile in profiles)
+    )
+    ordered_roles = [
+        "start_image",
+        "end_image",
+        "reference_character_1",
+        "reference_character_2",
+        "scene_background",
+    ]
     return {
         "target_task_type": target_task_type,
         "cost": PROMPT_OPTIMIZATION_COST,
         "media_contract": {
-            "required": ["start_image"],
-            "optional": ["end_image"],
+            "required": [role for role in ordered_roles if role in required_roles],
+            "optional": [
+                role for role in ordered_roles if role in all_roles - required_roles
+            ],
         },
         "text_stream": {
             "enabled": True,
@@ -545,6 +658,25 @@ def render_prompt_messages(
     prompt: str,
     context: Mapping[str, Any],
 ) -> tuple[str, str]:
+    if profile.ref == "ltx_eros_t2v@1":
+        media_frame_instructions = (
+            "No reference images are provided. Create the characters and scene only from "
+            "the user's request."
+        )
+    elif profile.ref == "ltx_eros_t2v_ic_msr@1":
+        media_frame_instructions = (
+            "Image 1 is reference_character_1 and defines the first adult character's identity.\n"
+            "Image 2 is reference_character_2 and defines the second adult character's identity.\n"
+            "Image 3 is scene_background and defines only the setting, layout and lighting.\n"
+            "These images are identity and environment references, not video frames."
+        )
+    else:
+        media_frame_instructions = (
+            "Image 1 is start_image and must be used exactly as the first frame.\n"
+            "Image 2 is end_image and must be used exactly as the final frame."
+            if "end_image" in profile.required_media_roles
+            else "Image 1 is start_image and must be used exactly as the first frame."
+        )
     variables = {
         "profile_ref": profile.ref,
         "duration_seconds": context["duration_seconds"],
@@ -553,12 +685,7 @@ def render_prompt_messages(
             if "end_image" in profile.required_media_roles
             else ""
         ),
-        "media_frame_instructions": (
-            "Image 1 is start_image and must be used exactly as the first frame.\n"
-            "Image 2 is end_image and must be used exactly as the final frame."
-            if "end_image" in profile.required_media_roles
-            else "Image 1 is start_image and must be used exactly as the first frame."
-        ),
+        "media_frame_instructions": media_frame_instructions,
         "original_prompt": str(prompt).strip(),
     }
     missing = set(template.required_variables) - set(variables)

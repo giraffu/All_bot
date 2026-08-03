@@ -748,11 +748,12 @@
     "status_failed": "Build failed; create again",
     "selector_title": "Character consistency (optional)",
     "selector_placeholder": "Leave empty for standard text-to-video",
-    "ic_locked_hint": "Ingredients enabled: resolution is fixed at 768x448; duration can be 5/10/15/20 seconds.",
     "msr_image_label": "Image {index}",
-    "msr_hint": "MSR V2 1.0 enabled: refer to characters as Image 1, Image 2, etc. in selection order; each input is that character's complete white-background four-view panel.",
-    "sulphur_strength": "Sulphur strength",
-    "sulphur_hint": "Defaults to 0.50; 0 disables Sulphur and only affects multi-character MSR test mode.",
+    "msr_hint": "Licon MSR two-character consistency is enabled: Image 1 and Image 2 follow selection order, with the upload used as the scene background.",
+    "msr_requires_two_hint": "IC mode requires exactly two characters and one scene background image.",
+    "msr_requires_two_and_background": "Select exactly two characters and upload one scene background image.",
+    "background_requires_two": "Scene backgrounds are only used by two-character IC mode; select exactly two characters first.",
+    "add_scene_background": "Scene Background",
     "t2v_hint": "No character: 1280x704 with 5/10/15/20 second options.",
     "audio_prompt": "Optional: describe dialogue, ambience, music, and audio timing"
   },
@@ -919,7 +920,8 @@
       },
       "reference_titles": {
         "portrait": "Portrait Reference",
-        "start_frame": "Start / End Frame"
+        "start_frame": "Start / End Frame",
+        "scene_background": "Scene Background (required for two characters)"
       },
       "prompt_placeholders": {
         "edit": "Describe how AI should edit the image, for example: change the background to a beach, add sunglasses, and make it feel like a cinematic still.",

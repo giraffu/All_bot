@@ -91,21 +91,15 @@ manifest 和专项文档读取，不在此维护快照。
   Worker 仍做防御性校验。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
-- 人物参考表属于身份条件输入而非交付帧。单角色 IC 必须按官方 ComfyUI 快速模板
-  使用 distilled FP8 checkpoint、FP4 Gemma 和 Ingredients 1.0；不得复用 Eros
-  checkpoint、dev + distilled LoRA 或叠加 Sulphur。它按官方 reference-sheet
-  契约使用完整纯白底单一 character ingredient 面板，将其复制成与输出同帧数的
-  静态参考视频，并通过 `GetICLoRAParameters`、`LTXVAddGuide(frame_idx=0)` 接入 guide；
-  `LTXVImgToVideoInplace` 保持 `bypass=true`，采样后必须由 `LTXVCropGuides` 删除
-  guide latent。采样固定为标准 `KSampler` 8 steps、CFG 1、
-  `euler_ancestral` + `linear_quadratic`。禁止把人物表
-  设为首帧、只裁单张身份子图，或生成额外尾段后再二次转码裁除。
-- 测试环境可在独立 `LTX_T2V_MSR_ENABLED` / `enable_ltx_t2v_msr` 开关下，为
-  `ltx_t2v_ic` 接受 2–4 个有序角色。每个角色只占一个 MSR 槽位，输入该角色完整
-  白底四视图面板；模型链固定为 distilled FP8 checkpoint → Licon MSR V2 1.0 →
-  Sulphur 0–1（默认 0.5）。Worker 在用户场景词后按选择顺序追加原人物描述为
-  `图1：…`、`图2：…`。浏览器只能提交角色 ID，私有面板和描述由服务端 owner 校验
-  后解析。正式 Web 的 MSR 开关默认关闭；不得因测试通过自动改成正式默认栈。
+- 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试
+  `ltx_t2v_ic` 固定恰好两个有序人物面板和一张用户自有背景图，采用 Runexx 的
+  两阶段 guide/crop/sampler 拓扑，模型链固定为 10Eros v1.4 DMD →
+  `LTX2.3-Licon-MSR-test_version.safetensors`。10Eros 提供成人生成能力，Licon
+  只维持身份；不叠加 distilled、Sulphur 或其它 NSFW LoRA。
+- 浏览器只能提交两个角色 ID 和背景 upload key。服务端 owner-fenced 解析完整
+  四视图面板与人物描述；Worker 按选择顺序追加稳定英文角色描述。两阶段都必须
+  使用 `LTXAddVideoICLoRAGuide`、`LTXVAddGuideMulti` 与 `LTXVCropGuides`，最终裁除
+  guide latent。少/多角色、缺背景、客户端面板路径或强度字段全部 fail closed。
 - Ingredients 正向提示必须使用官方可执行 workflow 的
   `### Reference Sheet Description` / `### Target Description` 两段标题；人物段内部还必须由 Worker 规范化为
   `Left Panel (Character Face)` / `Right Panel (Character Turnaround)` 两个训练子标题，并从身份文字中移除

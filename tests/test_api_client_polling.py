@@ -57,6 +57,7 @@ async def test_ltx_t2v_api_client_forwards_fixed_seed(monkeypatch):
         character_description="adult woman",
         character_sheets=(),
         character_descriptions=(),
+        background_image=None,
         sulphur_strength=None,
         seed=65608997764964,
         width=768,
@@ -87,7 +88,8 @@ async def test_ltx_t2v_api_client_forwards_ordered_msr_inputs(monkeypatch):
         character_description=None,
         character_sheets=("wang-panel.png", "man-panel.png"),
         character_descriptions=("adult woman Wang", "adult man"),
-        sulphur_strength=0.5,
+        background_image="room.png",
+        sulphur_strength=None,
         seed=7,
         width=768,
         height=448,
@@ -99,7 +101,8 @@ async def test_ltx_t2v_api_client_forwards_ordered_msr_inputs(monkeypatch):
     payload = request.await_args.kwargs["json"]
     assert payload["character_sheets"] == ["wang-panel.png", "man-panel.png"]
     assert payload["character_descriptions"] == ["adult woman Wang", "adult man"]
-    assert payload["sulphur_strength"] == 0.5
+    assert payload["background_image"] == "room.png"
+    assert payload["sulphur_strength"] is None
 
 
 @pytest.mark.asyncio

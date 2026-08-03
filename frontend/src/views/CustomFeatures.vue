@@ -67,9 +67,7 @@ const {
   resolution,
   videoDurationOptions,
   duration,
-  selectedCharacterId,
   selectedCharacterIds,
-  sulphurStrength,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -165,7 +163,6 @@ const promptLockedHint = computed(() => (
           <div class="mb-3 space-y-3">
             <LtxT2VCharacterSelector
               v-model="selectedCharacterIds"
-              v-model:sulphur-strength="sulphurStrength"
             />
             <a-textarea
               v-model:value="audioPrompt"
@@ -195,7 +192,7 @@ const promptLockedHint = computed(() => (
             :selected-wan22-resolution-preset="wan22ResolutionPreset"
             :is-template-edit-settings-locked="isTemplateEditSettingsLocked"
             :is-template-video-settings-locked="isTemplateVideoSettingsLocked"
-            :is-video-resolution-locked="currentModeId === 'ltx_t2v' && !!selectedCharacterId"
+            :is-video-resolution-locked="currentModeId === 'ltx_t2v' && selectedCharacterIds.length > 0"
             @update:selected-edit-lora="selectedEditLora = $event"
             @update:edit-lora-strength="customEditLoraStrength = $event"
             @update:selected-video-lora="selectedVideoLora = $event"

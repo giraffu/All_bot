@@ -26,7 +26,6 @@ WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS = {
 WEB_FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 WEB_FREE_EDIT_V3_COST = 5
 WEB_FREE_EDIT_V2_5_TASK_TYPE = "free_edit_v2_5"
-LTX_T2V_CANARY_OBJECT_PREFIX = "runpod-canary/ltx-t2v/"
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -83,78 +82,72 @@ async def submit_generation_task(
         if req.task_type == "character_reference_build":
             raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
         if req.task_type == "ltx_t2v_ic":
-            character_sheet = str(inputs.get("character_sheet") or "").strip()
-            has_character_ids = "character_ids" in inputs
-            if has_character_ids and not _env_enabled("LTX_T2V_MSR_ENABLED"):
-                raise CoreDomainError("MSR 多人物模式当前未开放。")
-            if has_character_ids:
-                if inputs.get("character_id"):
-                    raise CoreDomainError("单人物与多人物选择不能同时提交。")
-                if inputs.get("character_sheets") or inputs.get(
-                    "character_descriptions"
-                ):
-                    raise CoreDomainError("不得直接指定多人物参考表或人物描述。")
-                character_ids = inputs.get("character_ids")
-                if not isinstance(character_ids, (list, tuple)):
-                    raise CoreDomainError("多人物选择必须为有序数组。")
-                character_ids = [str(value or "").strip() for value in character_ids]
-                if not 2 <= len(character_ids) <= 4 or not all(character_ids):
-                    raise CoreDomainError("请选择 2 至 4 个已就绪人物。")
-                if len(set(character_ids)) != len(character_ids):
-                    raise CoreDomainError("多人物选择不得包含重复角色。")
+            if not _env_enabled("LTX_T2V_MSR_ENABLED") and not operator_canary_authorized:
+                raise CoreDomainError("MSR 双角色模式当前未开放。")
+            forbidden = {
+                "character_id",
+                "character_sheet",
+                "character_sheets",
+                "character_description",
+                "character_descriptions",
+                "background_image",
+                "sulphur_strength",
+            }
+            if any(inputs.get(key) is not None for key in forbidden):
+                raise CoreDomainError("不得直接指定角色参考表、背景存储路径或 LoRA 强度。")
+            character_ids = inputs.get("character_ids")
+            if not isinstance(character_ids, (list, tuple)):
+                raise CoreDomainError("双角色选择必须为有序数组。")
+            character_ids = [str(value or "").strip() for value in character_ids]
+            if len(character_ids) != 2 or not all(character_ids):
+                raise CoreDomainError("请选择恰好 2 个已就绪人物。")
+            if len(set(character_ids)) != 2:
+                raise CoreDomainError("双角色选择不得包含重复角色。")
 
-                from src.database.core import AsyncSessionLocal
-                from src.web_api.services.character_reference_service import (
-                    resolve_ready_character_sheet,
-                )
+            from config import MINIO_BUCKET
+            from src.database.core import AsyncSessionLocal
+            from src.services.storage import storage
+            from src.web_api.services.character_reference_service import (
+                resolve_ready_character_sheet,
+            )
+            from src.web_api.services.prompt_optimization_service import (
+                PROMPT_MEDIA_MAX_BYTES,
+                normalize_owned_prompt_media_key,
+            )
 
-                ingredients = []
-                async with AsyncSessionLocal() as character_db:
-                    try:
-                        for character_id in character_ids:
-                            ingredients.append(
-                                await resolve_ready_character_sheet(
-                                    db=character_db,
-                                    user_id=current_user.id,
-                                    character_id=character_id,
-                                )
+            background_object_key = normalize_owned_prompt_media_key(
+                str(inputs.get("background_object_key") or ""), current_user.id
+            )
+            background_size = await storage.async_object_size(
+                MINIO_BUCKET, background_object_key
+            )
+            if background_size is None:
+                raise CoreDomainError("场景背景图不存在或暂不可读取。")
+            if background_size > PROMPT_MEDIA_MAX_BYTES:
+                raise CoreDomainError("场景背景图不能超过 20 MB。")
+
+            ingredients = []
+            async with AsyncSessionLocal() as character_db:
+                try:
+                    for character_id in character_ids:
+                        ingredients.append(
+                            await resolve_ready_character_sheet(
+                                db=character_db,
+                                user_id=current_user.id,
+                                character_id=character_id,
                             )
-                    except HTTPException as exc:
-                        raise CoreDomainError(str(exc.detail)) from exc
-                inputs.pop("character_ids", None)
-                inputs["character_sheets"] = [
-                    ingredient.sheet_object_key for ingredient in ingredients
-                ]
-                inputs["character_descriptions"] = [
-                    ingredient.description for ingredient in ingredients
-                ]
-            elif inputs.get("character_sheets") or inputs.get("character_descriptions"):
-                raise CoreDomainError("不得直接指定多人物参考表或人物描述。")
-            elif character_sheet and not operator_canary_authorized:
-                raise CoreDomainError("不得直接指定人物参考表存储路径。")
-            elif character_sheet and operator_canary_authorized:
-                if not character_sheet.startswith(LTX_T2V_CANARY_OBJECT_PREFIX):
-                    raise CoreDomainError("IC canary 参考图必须位于隔离测试前缀。")
-            else:
-                character_id = str(inputs.get("character_id") or "").strip()
-                if not character_id:
-                    raise CoreDomainError("请选择一个已就绪人物。")
-                from src.database.core import AsyncSessionLocal
-                from src.web_api.services.character_reference_service import (
-                    resolve_ready_character_sheet,
-                )
-
-                async with AsyncSessionLocal() as character_db:
-                    try:
-                        ingredient = await resolve_ready_character_sheet(
-                            db=character_db,
-                            user_id=current_user.id,
-                            character_id=character_id,
                         )
-                        inputs["character_sheet"] = ingredient.sheet_object_key
-                        inputs["character_description"] = ingredient.description
-                    except HTTPException as exc:
-                        raise CoreDomainError(str(exc.detail)) from exc
+                except HTTPException as exc:
+                    raise CoreDomainError(str(exc.detail)) from exc
+            inputs.pop("character_ids", None)
+            inputs.pop("background_object_key", None)
+            inputs["character_sheets"] = [
+                ingredient.sheet_object_key for ingredient in ingredients
+            ]
+            inputs["character_descriptions"] = [
+                ingredient.description for ingredient in ingredients
+            ]
+            inputs["background_image"] = background_object_key
         images = list(inputs.get("images") or [])
         if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
             raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")

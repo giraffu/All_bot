@@ -4,6 +4,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from fastapi import HTTPException
+
 from config import MINIO_BUCKET
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError, TaskSubmissionSideEffectPlan
@@ -68,11 +70,51 @@ async def submit_prompt_optimization(
     object_size: Callable[[str, str], Awaitable[int | None]] = storage.async_object_size,
     submit_task_func=process_and_submit_task,
 ) -> dict[str, Any]:
-    media = await validate_prompt_media_objects(
-        [item.model_dump() for item in request.media],
-        user_id=current_user.id,
-        object_size=object_size,
-    )
+    requested_media = [item.model_dump() for item in request.media]
+    character_ids = [str(value or "").strip() for value in request.character_ids]
+    if request.target_task_type == "ltx_t2v_ic":
+        if len(character_ids) != 2 or not all(character_ids) or len(set(character_ids)) != 2:
+            raise CoreDomainError("提示词优化请选择恰好 2 个不同的已就绪人物。")
+        if [item["role"] for item in requested_media] != ["scene_background"]:
+            raise CoreDomainError("双角色提示词优化必须提供一张场景背景图。")
+        background_media = await validate_prompt_media_objects(
+            requested_media,
+            user_id=current_user.id,
+            object_size=object_size,
+        )
+        from src.database.core import AsyncSessionLocal
+        from src.web_api.services.character_reference_service import (
+            resolve_ready_character_sheet,
+        )
+
+        ingredients = []
+        async with AsyncSessionLocal() as character_db:
+            try:
+                for character_id in character_ids:
+                    ingredients.append(
+                        await resolve_ready_character_sheet(
+                            db=character_db,
+                            user_id=current_user.id,
+                            character_id=character_id,
+                        )
+                    )
+            except HTTPException as exc:
+                raise CoreDomainError(str(exc.detail)) from exc
+        media = [
+            {
+                "role": f"reference_character_{index}",
+                "object_key": ingredient.sheet_object_key,
+            }
+            for index, ingredient in enumerate(ingredients, start=1)
+        ] + background_media
+    else:
+        if character_ids:
+            raise CoreDomainError("当前提示词优化任务不接受人物图库选择。")
+        media = await validate_prompt_media_objects(
+            requested_media,
+            user_id=current_user.id,
+            object_size=object_size,
+        )
     try:
         resolved = resolve_prompt_optimization(
             target_task_type=request.target_task_type,

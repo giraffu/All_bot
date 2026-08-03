@@ -69,7 +69,8 @@ PORNMASTER_FLUX2_BF16_UNET_NAME = (
 LTX_T2V_DISTILLED_LORA = "ltx2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
 LTX_T2V_SULPHUR_LORA = "ltx2.3/sulphur_lora_rank_768.safetensors"
 LTX_T2V_INGREDIENTS_LORA = "ltx2.3/ltx-2.3-22b-ic-lora-ingredients-0.9.safetensors"
-LTX_T2V_MSR_LORA = "ltx2.3/LTX-2.3-Licon-MSR-V2.safetensors"
+LTX_T2V_MSR_LORA = "ltx2.3/LTX2.3-Licon-MSR-test_version.safetensors"
+LTX_T2V_EROS_V14_MODEL = "LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors"
 LTX_T2V_INGREDIENTS_FAST_CHECKPOINT = "LTX 2.3/ltx-2.3-22b-distilled-fp8.safetensors"
 LTX_T2V_INGREDIENTS_FAST_TEXT_ENCODER = "LTX 2.3/gemma_3_12B_it_fp4_mixed.safetensors"
 LTX_T2V_INGREDIENTS_NEGATIVE = (
@@ -495,20 +496,38 @@ def _patch_ltx_t2v_workflow(
     duration = _resolve_ltx_duration_seconds(params)
     if duration not in {5, 10, 15, 20}:
         raise ValueError("invalid ltx_t2v duration")
-    # Plain T2V uses the fixed x2 spatial pass. Ingredients follows Lightricks'
-    # official single-stage conditioning path and therefore starts at final size.
-    width, height = (768, 448) if ingredients else (640, 352)
-    if not ingredients:
-        for node_id in ("26:93", "26:65", "26:39"):
-            node = workflow.get(node_id)
-            if isinstance(node, dict):
-                node.setdefault("inputs", {})["width"] = width
-                node["inputs"]["height"] = height
+    # Both paths use the workflow's fixed x2 spatial pass. The public IC result
+    # is 768x448, so its first pass starts at 384x224.
+    width, height = (384, 224) if ingredients else (640, 352)
+    for node_id in ("26:93", "26:65", "26:39"):
+        node = workflow.get(node_id)
+        if isinstance(node, dict):
+            node.setdefault("inputs", {})["width"] = width
+            node["inputs"]["height"] = height
     for node_id in ("18",):
         node = workflow.get(node_id)
         if isinstance(node, dict):
             node.setdefault("inputs", {})["Xi"] = duration
             node["inputs"]["Xf"] = duration
+    if ingredients:
+        _patch_ltx_t2v_msr_workflow(
+            workflow,
+            params=params,
+            duration=duration,
+            width=width,
+            height=height,
+        )
+        audio_prompt = str(params.get("audio_prompt") or "").strip()
+        if audio_prompt:
+            workflow["28"]["inputs"]["text"] = (
+                f"{workflow['28']['inputs'].get('text', '')}\n\n#Audio\n{audio_prompt}"
+            )
+        _set_ltx_output_prefixes(
+            workflow,
+            unique_id=unique_id,
+            output_task_prefix="ltx_t2v_ic",
+        )
+        return
     if ingredients:
         checkpoint = workflow.get("127")
         audio_vae = workflow.get("126")
@@ -678,6 +697,76 @@ def _patch_ltx_t2v_workflow(
 
 
 def _patch_ltx_t2v_msr_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    duration: int,
+    width: int,
+    height: int,
+) -> None:
+    """Apply the Runexx two-pass Licon MSR topology to the T2V base graph."""
+    sheets = params.get("character_sheets")
+    descriptions = params.get("character_descriptions")
+    background = str(params.get("background_image") or "").strip()
+    if not isinstance(sheets, (list, tuple)) or len(sheets) != 2:
+        raise ValueError("Runexx MSR requires exactly 2 ordered character panels")
+    if not isinstance(descriptions, (list, tuple)) or len(descriptions) != 2:
+        raise ValueError("Runexx MSR requires exactly 2 character descriptions")
+    sheets = [str(value or "").strip() for value in sheets]
+    descriptions = [str(value or "").strip() for value in descriptions]
+    if not all(sheets) or not all(descriptions) or not background:
+        raise ValueError("Runexx MSR character panels, descriptions and background are required")
+    if params.get("sulphur_strength") is not None:
+        raise ValueError("Runexx 10Eros v1.4 path does not accept Sulphur")
+
+    workflow["257"] = {
+        "class_type": "UNETLoader",
+        "inputs": {"unet_name": LTX_T2V_EROS_V14_MODEL, "weight_dtype": "default"},
+        "_meta": {"title": "10Eros v1.4 DMD INT8"},
+    }
+    workflow.pop("191", None)
+    workflow.pop("256", None)
+    workflow["210"]["inputs"]["model"] = ["800", 0]
+    workflow["800"] = {
+        "class_type": "LTXICLoRALoaderModelOnly",
+        "inputs": {
+            "model": ["257", 0],
+            "lora_name": LTX_T2V_MSR_LORA,
+            "strength_model": 1.0,
+        },
+        "_meta": {"title": "Licon MSR IC-LoRA test version"},
+    }
+    output_frames = duration * LTX_VIDEO_FPS + 1
+    guide_frames = 41
+    raw_total = output_frames + guide_frames
+    extended_length = max(9, ((raw_total - 1 + 7) // 8) * 8 + 1)
+    workflow["26:39"]["inputs"].update(width=width, height=height, length=extended_length)
+    workflow["26:40"]["inputs"].update(frames_number=extended_length, frame_rate=LTX_VIDEO_FPS)
+    workflow["802"] = {"class_type": "LoadImage", "inputs": {"image": sheets[0]}}
+    workflow["803"] = {"class_type": "LoadImage", "inputs": {"image": sheets[1]}}
+    workflow["804"] = {"class_type": "LoadImage", "inputs": {"image": background}}
+    workflow["801"] = {
+        "class_type": "LiconMSR",
+        "inputs": {"width": width, "height": height, "frame_count": str(guide_frames), "1": ["802", 0], "2": ["803", 0], "background": ["804", 0]},
+    }
+    guide_common = {"vae": ["283", 0], "image": ["801", 0], "frame_idx": 0, "strength": 1.0, "latent_downscale_factor": ["800", 1], "crop": "center", "use_tiled_encode": False, "tile_size": 256, "tile_overlap": 64}
+    workflow["807"] = {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {**guide_common, "positive": ["26:46", 0], "negative": ["26:46", 1], "latent": ["26:39", 0]}, "_meta": {"title": "Runexx IC-LoRA Guide First Pass"}}
+    workflow["808"] = {"class_type": "LTXVAddGuideMulti", "inputs": {"num_guides": "3", "num_guides.frame_idx_1": 0, "num_guides.strength_1": 0.7, "num_guides.frame_idx_2": 0, "num_guides.strength_2": 0.7, "num_guides.frame_idx_3": 0, "num_guides.strength_3": 0.7, "positive": ["807", 0], "negative": ["807", 1], "vae": ["283", 0], "latent": ["807", 2], "num_guides.image_1": ["802", 0], "num_guides.image_2": ["803", 0], "num_guides.image_3": ["804", 0]}}
+    workflow["26:45"]["inputs"]["video_latent"] = ["808", 2]
+    workflow["26:49"]["inputs"].update(model=["8", 0], positive=["808", 0], negative=["808", 1])
+    workflow["809"] = {"class_type": "LTXVCropGuides", "inputs": {"positive": ["808", 0], "negative": ["808", 1], "latent": ["26:153", 0]}, "_meta": {"title": "Runexx Crop Guides First Pass"}}
+    workflow["26:89"]["inputs"]["samples"] = ["809", 2]
+    workflow["810"] = {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {**guide_common, "positive": ["809", 0], "negative": ["809", 1], "latent": ["26:89", 0]}, "_meta": {"title": "Runexx IC-LoRA Guide Final Pass"}}
+    workflow["811"] = {"class_type": "LTXVAddGuideMulti", "inputs": {"num_guides": "3", "num_guides.frame_idx_1": 0, "num_guides.strength_1": 0.7, "num_guides.frame_idx_2": 1, "num_guides.strength_2": 0.7, "num_guides.frame_idx_3": 2, "num_guides.strength_3": 0.7, "positive": ["810", 0], "negative": ["810", 1], "vae": ["283", 0], "latent": ["810", 2], "num_guides.image_1": ["802", 0], "num_guides.image_2": ["803", 0], "num_guides.image_3": ["804", 0]}}
+    workflow["26:88"]["inputs"]["video_latent"] = ["811", 2]
+    workflow["26:90"]["inputs"].update(model=["8", 0], positive=["811", 0], negative=["811", 1])
+    workflow["26:91"]["inputs"].update(positive=["811", 0], negative=["811", 1], latent=["26:95", 0])
+    target_description = str(workflow["28"]["inputs"].get("text", "")).strip()
+    identities = "\n".join(f"Reference character {index}: {description}" for index, description in enumerate(descriptions, start=1))
+    workflow["28"]["inputs"]["text"] = f"{target_description}\n\n{identities}"
+
+
+def _patch_ltx_t2v_msr_legacy_workflow(
     workflow: dict[str, Any],
     *,
     params: dict[str, Any],

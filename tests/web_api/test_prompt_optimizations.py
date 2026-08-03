@@ -107,3 +107,79 @@ async def test_submit_rejects_oversized_media():
             object_size=AsyncMock(return_value=PROMPT_MEDIA_MAX_BYTES + 1),
             submit_task_func=AsyncMock(),
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_pure_t2v_uses_v4_and_accepts_no_media():
+    submit = AsyncMock(return_value={"task_id": "central-t2v", "cost": 1})
+    await submit_prompt_optimization(
+        request=_request(
+            target_task_type="ltx_t2v",
+            template={"id": "ltx_scene_script_cinematic", "version": 4},
+            media=[],
+        ),
+        current_user=SimpleNamespace(id=7, username="alice"),
+        get_balance=AsyncMock(return_value=18),
+        object_size=AsyncMock(),
+        submit_task_func=submit,
+    )
+
+    inputs = submit.await_args.kwargs["inputs"]
+    assert inputs["profile_ref"] == "ltx_eros_t2v@1"
+    assert inputs["template_ref"] == "ltx_scene_script_cinematic@4"
+    assert inputs["media"] == []
+
+
+@pytest.mark.asyncio
+async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
+    class SessionFactory:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    resolve = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                sheet_object_key="character_references/7/a/v1.png",
+                description="adult A",
+            ),
+            SimpleNamespace(
+                sheet_object_key="character_references/7/b/v1.png",
+                description="adult B",
+            ),
+        ]
+    )
+    monkeypatch.setattr("src.database.core.AsyncSessionLocal", SessionFactory)
+    monkeypatch.setattr(
+        "src.web_api.services.character_reference_service.resolve_ready_character_sheet",
+        resolve,
+    )
+    submit = AsyncMock(return_value={"task_id": "central-ic", "cost": 1})
+    await submit_prompt_optimization(
+        request=_request(
+            target_task_type="ltx_t2v_ic",
+            template={"id": "ltx_scene_script_cinematic", "version": 4},
+            character_ids=["a", "b"],
+            media=[
+                {
+                    "role": "scene_background",
+                    "object_key": "web_uploads/7/bedroom.webp",
+                }
+            ],
+        ),
+        current_user=SimpleNamespace(id=7, username="alice"),
+        get_balance=AsyncMock(return_value=18),
+        object_size=AsyncMock(return_value=1024),
+        submit_task_func=submit,
+    )
+
+    inputs = submit.await_args.kwargs["inputs"]
+    assert inputs["profile_ref"] == "ltx_eros_t2v_ic_msr@1"
+    assert [item["role"] for item in inputs["media"]] == [
+        "reference_character_1",
+        "reference_character_2",
+        "scene_background",
+    ]
+    assert "character_ids" not in inputs

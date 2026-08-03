@@ -749,11 +749,12 @@
     "status_failed": "构建失败，可重新创建",
     "selector_title": "人物一致性（可选）",
     "selector_placeholder": "不选择则使用普通文生视频",
-    "ic_locked_hint": "已启用 Ingredients：分辨率锁定 768x448，时长可选 5/10/15/20 秒。",
     "msr_image_label": "图{index}",
-    "msr_hint": "已启用 MSR V2 1.0：按选择顺序在提示词中使用图1、图2……指代角色；每个角色输入其完整白底四视图面板。",
-    "sulphur_strength": "Sulphur 强度",
-    "sulphur_hint": "默认 0.50；0 表示不加载 Sulphur，仅影响多角色 MSR 测试模式。",
+    "msr_hint": "已启用 Licon MSR 双角色一致性：图1、图2按选择顺序对应角色，并使用上传图片作为场景背景。",
+    "msr_requires_two_hint": "IC 模式固定需要恰好 2 个角色，并上传 1 张场景背景图。",
+    "msr_requires_two_and_background": "请选择恰好 2 个角色并上传 1 张场景背景图。",
+    "background_requires_two": "场景背景图只用于双角色 IC 模式，请先选择恰好 2 个角色。",
+    "add_scene_background": "场景背景图",
     "t2v_hint": "未选择人物：1280x704，可选 5/10/15/20 秒。",
     "audio_prompt": "可选：描述对白、环境音、音乐与声音节奏"
   },
@@ -920,7 +921,8 @@
       },
       "reference_titles": {
         "portrait": "人物参考图",
-        "start_frame": "起始帧 / 终止帧"
+        "start_frame": "起始帧 / 终止帧",
+        "scene_background": "场景背景图（双角色模式必需）"
       },
       "prompt_placeholders": {
         "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",

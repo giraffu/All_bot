@@ -221,7 +221,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
   - 2026-06-22 新增的 10Eros v1.2 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，只通过单 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 测试覆盖；默认三份 `LTX 2.3 *.json` 仍保持旧主模型绑定。
   - 10Eros v1.2 主模型节点应指向 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 10Eros v1.2-only，旧 v1 不再作为正式 RunPod 回退。新增或切换主模型时，不要直接覆盖旧 workflow 文件名，先复制新 workflow 并用 override canary。
   - 统一 LTX 镜像使用三份独立 `* 10Eros LoRA.json` workflow：节点 `257` 加载官方 dev FP8，固定节点 `905` 以 `1.0` 加载 `LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors`，节点 `256` 仍只承接用户可选 LoRA。清空节点 `256` 时必须让下游回连 `191`，不得删除或绕过固定节点 `905`。旧完整 checkpoint workflow 保留为独立 profile 的回滚资产。
-  - `scripts/prepare_ltx_unified_model_bundle.py` 生成当前版本化 `ltx_unified_runtime` manifest：合并现有 LTX Video/T2V bundle、按路径和 SHA 去重，并加入 SHA 固定的 `10Eros_v1.4_DMD_int8_convrot.safetensors`。LAN cache 只消费 manifest/by-sha256，模型不进入镜像；当前版本号以脚本和上传目标为准。
+  - `scripts/prepare_ltx_unified_model_bundle.py` 生成当前版本化 `ltx_unified_runtime` manifest：合并现有 LTX Video/T2V bundle、按路径和 SHA 去重，并加入 SHA 固定的 `10Eros_v1.4_DMD_int8_convrot.safetensors` 与 `LTX2.3-Licon-MSR-test_version.safetensors`。前者是成人向主 checkpoint，后者仅为双角色身份 IC-LoRA；不得用官方 distilled 主模型或 Sulphur 覆盖当前测试契约。LAN cache 只消费 manifest/by-sha256，模型不进入镜像；当前版本号以脚本和上传目标为准。
   - Worker 结果物化会优先识别主 MP4，并保存 `extra_outputs.last_frame`；若 Comfy 未返回 `902` 图片，会用 ffmpeg 从主视频兜底抽最后一帧。
 - > ⚠️ **节点硬编码警告**：若你重导出了任一 LTX workflow，必须同步检查 `256`、`191`、`189`、`8`、`15`、`16`、`26:149`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足当前补丁逻辑；FLF2V 的 `26:149.inputs.last_frame_fix` 还必须保持开启，否则需要同步修正 workflow 或 patcher。
 

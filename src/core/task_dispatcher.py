@@ -977,6 +977,7 @@ class LtxT2VStrategy(BaseTaskStrategy):
             "character_description": spec.character_description,
             "character_sheets": list(spec.character_sheets),
             "character_descriptions": list(spec.character_descriptions),
+            "background_image": spec.background_image,
             "sulphur_strength": spec.sulphur_strength,
         }
 
@@ -994,6 +995,7 @@ class LtxT2VStrategy(BaseTaskStrategy):
             character_description=spec.character_description,
             character_sheets=spec.character_sheets,
             character_descriptions=spec.character_descriptions,
+            background_image=spec.background_image,
             sulphur_strength=spec.sulphur_strength,
             seed=inputs.get("seed"),
             width=spec.width,

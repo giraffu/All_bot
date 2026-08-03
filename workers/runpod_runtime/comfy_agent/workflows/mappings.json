@@ -228,10 +228,8 @@
         "prompt_input": "text",
         "negative_prompt": "29",
         "negative_prompt_input": "text",
-        "seed": "704",
-        "seed_input": "seed",
-        "character_sheet": "270",
-        "character_sheet_input": "image"
+        "seed": "123",
+        "seed_input": "noise_seed"
     },
     "character_reference_build": {},
     "img2img_lora": {

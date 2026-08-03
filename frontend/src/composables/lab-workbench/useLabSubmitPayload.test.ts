@@ -42,9 +42,7 @@ type SubmitHarness = {
   wan22ResolutionPreset: Ref<Wan22VideoV2ResolutionPreset>
   resolution: Ref<string>
   duration: Ref<string>
-  selectedCharacterId: Ref<string | null>
   selectedCharacterIds: Ref<string[]>
-  sulphurStrength: Ref<number>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -92,9 +90,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>('preview')
   const resolution = ref('512')
   const duration = ref('5')
-  const selectedCharacterId = ref<string | null>(null)
   const selectedCharacterIds = ref<string[]>([])
-  const sulphurStrength = ref(0.5)
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -123,9 +119,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ResolutionPreset,
     resolution,
     duration,
-    selectedCharacterId,
     selectedCharacterIds,
-    sulphurStrength,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -153,9 +147,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     wan22ResolutionPreset,
     resolution,
     duration,
-    selectedCharacterId,
     selectedCharacterIds,
-    sulphurStrength,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -204,24 +196,26 @@ describe('useLabSubmitPayload', () => {
       }),
     }), 'lab.cards.ltx_t2v_title')
 
-    harness.selectedCharacterId.value = 'character-1'
+    harness.selectedCharacterIds.value = ['character-1', 'character-2']
+    harness.uploadedReferences.value = [refImage('web_uploads/7/bedroom.webp')]
     harness.duration.value = '20'
     await harness.handleSubmit()
     expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
       task_type: 'ltx_t2v_ic',
       inputs: expect.objectContaining({
-        character_id: 'character-1',
+        character_ids: ['character-1', 'character-2'],
+        background_object_key: 'web_uploads/7/bedroom.webp',
         duration: 20,
         resolution: '768x448',
       }),
     }), 'lab.cards.ltx_t2v_title')
   })
 
-  it('submits ordered MSR character ids with adjustable Sulphur strength', async () => {
+  it('submits ordered MSR character ids with a required scene background', async () => {
     const harness = createHarness('ltx_t2v')
     harness.prompt.value = '图1与图2在客厅交谈'
     harness.selectedCharacterIds.value = ['wang', 'man']
-    harness.sulphurStrength.value = 0.35
+    harness.uploadedReferences.value = [refImage('web_uploads/7/room.png')]
 
     await harness.handleSubmit()
 
@@ -229,7 +223,7 @@ describe('useLabSubmitPayload', () => {
       task_type: 'ltx_t2v_ic',
       inputs: expect.objectContaining({
         character_ids: ['wang', 'man'],
-        sulphur_strength: 0.35,
+        background_object_key: 'web_uploads/7/room.png',
         resolution: '768x448',
       }),
     }), 'lab.cards.ltx_t2v_title')
