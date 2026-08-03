@@ -54,6 +54,49 @@ digest。构建器在真正 build 前验证 Buildx、registry namespace 和代�
 变量，发布器只把变量名作为 BuildKit 预定义 build arg 转发，不把代理值拼进
 命令或镜像历史；未设置时不新增 build arg。
 
+### 本地代理预检
+
+Buildx 的构建步骤运行在容器网络中，因此宿主 shell 中可用的
+`http://127.0.0.1:<port>` 对 Buildx 不可达。发布时必须在真正 build 前完成预检，
+不能先启动构建再用超时判断网络：
+
+1. 只核对 proxy 变量是否存在以及 URL 的 host/port，不输出凭据或完整 URL。
+2. 若 host 是 loopback，用 `ss -ltn` 确认代理端口监听 `0.0.0.0`、`*` 或 Docker
+   网桥可达地址；若只监听回环则停止。
+3. 使用 `docker network inspect bridge` 动态读取 gateway，把原 URL 的 scheme/port
+   临时映射到该 gateway，并仅对当前 `release.py build` 进程覆盖大小写
+   `HTTP_PROXY`/`HTTPS_PROXY`。保留原有 `NO_PROXY`，不修改用户全局 shell、env
+   文件、Compose 或 Git。
+4. 构建完成后临时环境随进程退出，不把真实代理端点写入发布状态或日志。
+
+例如本机代理已确认监听非回环端口时，可使用任务局部变量：
+
+```bash
+release_proxy_port=7890
+release_docker_gateway="$(docker network inspect bridge \
+  --format '{{(index .IPAM.Config 0).Gateway}}')"
+release_proxy_url="http://${release_docker_gateway}:${release_proxy_port}"
+HTTP_PROXY="$release_proxy_url" HTTPS_PROXY="$release_proxy_url" \
+http_proxy="$release_proxy_url" https_proxy="$release_proxy_url" \
+python scripts/release.py build --module <module> --sha <40位main-sha>
+```
+
+这里的端口只是调用时参数，不是稳定配置；应从当前 loopback proxy URL 解析，不应
+复制到 Skill、catalog 或 Compose 作为固定运行态。
+
+### 增量构建与“热更新”边界
+
+- 同一 build-only 输入身份已经存在于 registry 时，发布器直接复用，不执行 build。
+- 业务代码变化会产生新的完整 SHA tag 和 digest，但 BuildKit 应复用本地 layer；传入
+  `--registry-cache-prefix` 时还可跨 builder/Runner 复用 registry cache。改变代理地址
+  本身不会把代理值写入镜像历史，也不应作为业务层内容身份。
+- `COPY src` 等宽目录层只要目录内任一文件变化就会重建该层及其后继层，这是增量镜像
+  构建，不是从操作系统开始的完整冷构建。应通过缩小模块 `build_inputs`、稳定精确 base
+  和合理拆分 Dockerfile 层降低耗时，而不是在共享环境绕开镜像构建。
+- 本地开发可以使用独立开发 Compose 的 bind mount/hot reload；共享 test/prod 必须
+  可以按 digest 审计和回滚，所以禁止容器内热改、`docker cp`、rsync 源码或 mutable
+  tag。只切换到已经存在的 exact digest 时直接 deploy，不需要重新 build。
+
 ## 部署
 
 ```bash
