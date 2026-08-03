@@ -9,6 +9,7 @@ FAST_IMAGE_PIPELINE_PROFILES = frozenset(
     {
         "img2img",
         "img2img_lora",
+        "img2img_lora_rocm_gfx1151",
         "i2i_pro",
         "pornmaster_flux2_edit_bf16",
     }

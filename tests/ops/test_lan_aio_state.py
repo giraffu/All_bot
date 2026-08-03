@@ -727,6 +727,54 @@ def test_state_reconcile_can_record_one_explicitly_empty_physical_slot(
     assert report["status"] == "passed"
 
 
+def test_state_reconcile_can_register_new_catalog_slot_as_explicitly_empty(
+    tmp_path: Path,
+):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+
+        def live_current_snapshot(self, physical_slots):
+            assert physical_slots == {"gpu-115:gpu0"}
+            return {
+                "current": {"gpu-115:gpu0": None},
+                "errors": {},
+                "observations": {"gpu-115:gpu0": []},
+            }
+
+    ops = RecordingOps()
+    ops.state_store.write_current(
+        {
+            "catalog_sha256": "0" * 64,
+            "physical_slots": {
+                "gpu-252:gpu0": {"current": {"slot_id": "gpu-252-gpu0-i2i_pro"}}
+            },
+        },
+        operation_id="bootstrap",
+    )
+
+    result = ops.reconcile_state_from_live(
+        operation_id="register-local-max395",
+        reason="operator confirmed the new local gfx1151 slot is empty",
+        allow_empty_physical_slots={"gpu-115:gpu0"},
+    )
+
+    assert result["ok"] is True
+    current = ops.state_store.load_current()
+    assert current is not None
+    physical = current["physical_slots"]["gpu-115:gpu0"]
+    assert physical["current"] == {}
+    assert physical["intentionally_empty"]["operation_id"] == (
+        "register-local-max395"
+    )
+
+
 def test_state_reconcile_explicit_empty_is_scoped_to_target_physical_slot(
     tmp_path: Path,
 ):

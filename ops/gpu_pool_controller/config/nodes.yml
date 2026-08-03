@@ -38,6 +38,7 @@ nodes:
           - face_video
           - video_edit
           - image_to_video
+
           - t2i-pornmaster-turbo
       - id: aio-gpu0
         port: 8190
@@ -73,6 +74,42 @@ nodes:
           - video_insert
           - video_edit
           - image_to_video
+
+  gpu-115:
+    provider: lan_local
+    host: hfy-FAEX9
+    ssh_alias: local://
+    ip: 192.168.1.115
+    runtime: docker
+    accelerator: rocm
+    model_dir: /home/hfy/allbot-runpod-runtime/slots/gpu-115-gpu0/profiles/img2img_lora_rocm_gfx1151/workspace/ComfyUI/models
+    notes: Local Ryzen AI Max+ 395 128GB node with Radeon 8060S gfx1151 and ROCm.
+    gpus:
+      - index: 0
+        name: AMD Radeon 8060S gfx1151
+        vram_gb: 64
+    comfy:
+      - id: comfy0
+        port: 8195
+        gpu_index: 0
+        worker_id: lan_aio_prod_gpu115_gpu0_img2img_lora_rocm_01
+        api_url: http://192.168.1.115:8195
+        ws_url: ws://192.168.1.115:8195/ws
+        model_dir: /home/hfy/allbot-runpod-runtime/slots/gpu-115-gpu0/profiles/img2img_lora_rocm_gfx1151/workspace/ComfyUI/models
+        runtime: docker
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-lan-aio-gpu-115-gpu0-img2img-lora-rocm-prod
+        container_port: 8188
+        compose_template: runpod_all_in_one_v1
+        runtime_shape: runpod_all_in_one
+        slot_id: gpu-115-gpu0
+        runtime_root: /home/hfy/allbot-runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
+        supported_task_types:
+          - img2img
+          - img2img_lora
 
   gpu-177:
     provider: lan_ssh

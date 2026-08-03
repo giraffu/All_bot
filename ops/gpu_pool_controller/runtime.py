@@ -483,6 +483,37 @@ class RuntimePlanner:
             f"{model_workspace_host_dir}/ComfyUI/models:{model_target_dir}"
         )
         state_root = "/workspace/allbot-state"
+        gpu_device_id = self._effective_gpu_device_id(comfy, overrides)
+        accelerator_environment = (
+            {
+                "HIP_VISIBLE_DEVICES": gpu_device_id,
+                "ROCR_VISIBLE_DEVICES": gpu_device_id,
+                "POOL_ACCELERATOR": "rocm",
+            }
+            if node.accelerator == "rocm"
+            else {
+                "NVIDIA_VISIBLE_DEVICES": gpu_device_id,
+                "POOL_ACCELERATOR": "nvidia",
+            }
+        )
+        accelerator_service = (
+            {
+                "devices": ["/dev/kfd:/dev/kfd", "/dev/dri:/dev/dri"],
+                "group_add": ["video", "render"],
+                "ipc": "host",
+                "security_opt": ["seccomp=unconfined"],
+            }
+            if node.accelerator == "rocm"
+            else {
+                "gpus": [
+                    {
+                        "driver": "nvidia",
+                        "device_ids": [gpu_device_id],
+                        "capabilities": ["gpu"],
+                    }
+                ]
+            }
+        )
         compose = {
             "name": self._compose_project_name(
                 node=node,
@@ -540,9 +571,7 @@ class RuntimePlanner:
                     "ports": [f"{host_port}:8188"],
                     "environment": {
                         "TZ": "Asia/Shanghai",
-                        "NVIDIA_VISIBLE_DEVICES": str(
-                            self._effective_gpu_device_id(comfy, overrides)
-                        ),
+                        **accelerator_environment,
                         "ALLBOT_RUNPOD_MANAGED": "true",
                         "RUNPOD_ENVIRONMENT": environment,
                         "RUNPOD_TASK_TYPE": profile.runtime_profile,
@@ -684,15 +713,7 @@ class RuntimePlanner:
                         "retries": 5,
                         "start_period": "120s",
                     },
-                    "gpus": [
-                        {
-                            "driver": "nvidia",
-                            "device_ids": [
-                                self._effective_gpu_device_id(comfy, overrides)
-                            ],
-                            "capabilities": ["gpu"],
-                        }
-                    ],
+                    **accelerator_service,
                 }
             },
             "x-allbot-runtime": {
@@ -703,6 +724,7 @@ class RuntimePlanner:
                 "slot_id": slot_id,
                 "runtime_root": runtime_root,
                 "runtime_profile": profile.runtime_profile,
+                "accelerator": node.accelerator,
                 "environment": environment,
                 "image_ref": image_ref,
                 "model_cache_endpoint": model_cache_endpoint,

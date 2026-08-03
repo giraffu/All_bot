@@ -6,6 +6,7 @@ import os
 import posixpath
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -105,6 +106,7 @@ def _release_profile_for_slot(slot_profile: str) -> str:
 
     return {
         "img2img_lora": "img2img",
+        "img2img_lora_rocm_gfx1151": "img2img_rocm_gfx1151",
         "all": "lan_all",
     }.get(slot_profile, slot_profile)
 
@@ -907,7 +909,9 @@ class LanAioProdOps:
                     continue
                 expected_worker = {
                     "node_id": live_slot.node_id,
-                    "provider": "lan_ssh",
+                    "provider": self.config.assignments[
+                        live_slot.assignment_id
+                    ].provider,
                     "runtime_profile": self.config.profiles[
                         live_slot.target_profile_id
                     ].runtime_profile,
@@ -1258,10 +1262,13 @@ class LanAioProdOps:
             and not (physical_state.get("current") or {}).get("slot_id")
         }
         effective_allowed_empty = allowed_empty | preserved_empty
-        unknown_empty = allowed_empty - physical_slots
+        catalog_physical_slots = {
+            physical_slot_key(slot) for slot in self.slots.values()
+        }
+        unknown_empty = allowed_empty - catalog_physical_slots
         if unknown_empty:
             raise RuntimeError(
-                "state-reconcile empty physical slot is absent from current.yml: "
+                "state-reconcile empty physical slot is absent from the catalog: "
                 + ", ".join(sorted(unknown_empty))
             )
         inspection_slots = allowed_empty or physical_slots
@@ -3570,7 +3577,7 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
                 raise RuntimeError(f"{slot.agent_id} picked work while disabled")
             expected = {
                 "node_id": slot.node_id,
-                "provider": "lan_ssh",
+                "provider": self.config.assignments[slot.assignment_id].provider,
                 "runtime_profile": self.config.profiles[
                     slot.target_profile_id
                 ].runtime_profile,
@@ -3592,9 +3599,16 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         )
 
     def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+        if host == "local://":
+            return self._local(["bash", "-lc", command], capture=capture)
         return self._local(["ssh", *SSH_BATCH_OPTIONS, host, command], capture=capture)
 
     def _scp(self, source: Path, host: str, remote_path: str) -> None:
+        if host == "local://":
+            target = Path(remote_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            return
         self._local(
             ["scp", *SSH_BATCH_OPTIONS, str(source), f"{host}:{remote_path}"],
             capture=True,

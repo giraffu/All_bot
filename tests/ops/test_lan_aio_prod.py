@@ -695,6 +695,65 @@ def test_lan_aio_fleet_render_uses_stable_gpu_device_id_for_gpu_252():
     ]
 
 
+def test_lan_aio_fleet_render_uses_rocm_devices_for_local_max395():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-115-gpu0-img2img_lora_rocm_gfx1151"]
+
+    import yaml
+
+    compose = yaml.safe_load(ops.render_compose(slot))
+    service = compose["services"][slot.container_name]
+
+    assert service["devices"] == ["/dev/kfd:/dev/kfd", "/dev/dri:/dev/dri"]
+    assert service["group_add"] == ["video", "render"]
+    assert service["ipc"] == "host"
+    assert service["security_opt"] == ["seccomp=unconfined"]
+    assert "gpus" not in service
+    assert "NVIDIA_VISIBLE_DEVICES" not in service["environment"]
+    assert service["environment"]["HIP_VISIBLE_DEVICES"] == "0"
+    assert service["environment"]["ROCR_VISIBLE_DEVICES"] == "0"
+    assert service["environment"]["POOL_ACCELERATOR"] == "rocm"
+
+
+def test_lan_aio_local_transport_executes_without_self_ssh(tmp_path):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[list[str]] = []
+
+        def _local(
+            self,
+            cmd: list[str],
+            *,
+            capture: bool = False,
+            input_text: str | None = None,
+            extra_env: dict[str, str] | None = None,
+        ) -> str:
+            self.commands.append(cmd)
+            return "local-ok"
+
+    ops = RecordingOps()
+    source = tmp_path / "source.env"
+    target = tmp_path / "target.env"
+    source.write_text("KEY=value\n", encoding="utf-8")
+
+    assert ops._ssh("local://", "hostname", capture=True) == "local-ok"
+    ops._scp(source, "local://", str(target))
+
+    assert ops.commands == [["bash", "-lc", "hostname"]]
+    assert target.read_text(encoding="utf-8") == "KEY=value\n"
+
+
 @pytest.mark.parametrize(
     "slot_id",
     [
