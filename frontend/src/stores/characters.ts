@@ -23,7 +23,7 @@ export const useCharactersStore = defineStore('characters', () => {
   const tasksStore = useTasksStore()
   const items = ref<CharacterReference[]>([])
   const loading = ref(false)
-  const readyItems = computed(() => items.value.filter(item => item.status === 'ready'))
+  const readyItems = computed(() => items.value.filter(item => item.status === 'ready' && item.moderation_status !== 'disabled'))
 
   const reconcileViewTaskSessions = (characters: CharacterReference[]) => {
     characters.forEach(character => {

@@ -22,6 +22,19 @@ class PromptMediaInput(BaseModel):
     object_key: str
 
 
+class CharacterAssetRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["private", "official"]
+    id: str = Field(min_length=1, max_length=64)
+
+
+class EnvironmentAssetRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["official", "upload"]
+    id: str | None = Field(default=None, max_length=64)
+    object_key: str | None = Field(default=None, max_length=1024)
+
+
 class PromptOptimizationTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     client_request_id: UUID
@@ -31,6 +44,8 @@ class PromptOptimizationTaskRequest(BaseModel):
     context: dict[str, Any]
     media: list[PromptMediaInput] = Field(default_factory=list, max_length=3)
     character_ids: list[str] = Field(default_factory=list, max_length=2)
+    character_refs: list[CharacterAssetRef] | None = Field(default=None, max_length=2)
+    environment_ref: EnvironmentAssetRef | None = None
 
     @field_validator("prompt")
     @classmethod

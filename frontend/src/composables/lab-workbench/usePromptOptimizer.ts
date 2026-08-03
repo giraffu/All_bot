@@ -39,6 +39,9 @@ export function usePromptOptimizer(options: {
   duration: Ref<string>
   uploadedReferences: Ref<UploadedReference[]>
   selectedCharacterIds: Ref<string[]>
+  useT2VReferences?: Ref<boolean>
+  environmentSource?: Ref<'official' | 'upload'>
+  selectedEnvironmentId?: Ref<string>
 }) {
   const templates = ref<PromptOptimizerTemplate[]>([])
   const selectedTemplateRef = ref('')
@@ -54,24 +57,28 @@ export function usePromptOptimizer(options: {
   const isAvailable = computed(() => ['ltx_video_v2', 'ltx_t2v'].includes(options.currentModeId.value))
   const targetTaskType = computed(() => (
     options.currentModeId.value === 'ltx_t2v'
-      ? options.selectedCharacterIds.value.length > 0 ? 'ltx_t2v_ic' : 'ltx_t2v'
+      ? (options.useT2VReferences?.value ?? options.selectedCharacterIds.value.length > 0) ? 'ltx_t2v_ic' : 'ltx_t2v'
       : 'ltx_video_v2'
   ))
   const mediaFingerprint = () => JSON.stringify({
     duration: Number(options.duration.value),
     media: options.uploadedReferences.value.map(item => item.key),
     characters: options.selectedCharacterIds.value,
+    environmentSource: options.environmentSource?.value ?? 'upload',
+    environmentId: options.selectedEnvironmentId?.value ?? '',
   })
   const mediaContractReady = computed(() => {
     if (options.currentModeId.value === 'ltx_video_v2') {
       return options.uploadedReferences.value.length >= 1
     }
     if (targetTaskType.value === 'ltx_t2v') {
-      return options.selectedCharacterIds.value.length === 0
+      return !(options.useT2VReferences?.value ?? false)
         && options.uploadedReferences.value.length === 0
     }
     return options.selectedCharacterIds.value.length === 2
-      && options.uploadedReferences.value.length === 1
+      && ((options.environmentSource?.value ?? 'upload') === 'official'
+        ? Boolean(options.selectedEnvironmentId?.value) && options.uploadedReferences.value.length === 0
+        : options.uploadedReferences.value.length === 1)
   })
   const canOptimize = computed(() => (
     isAvailable.value
@@ -249,15 +256,22 @@ export function usePromptOptimizer(options: {
         template: templateRef,
         prompt: original,
         context: { duration_seconds: Number(options.duration.value) },
-        media: isT2vIc
-          ? [{ role: 'scene_background', object_key: options.uploadedReferences.value[0].key }]
+        media: isT2vIc ? []
           : targetTaskType.value === 'ltx_t2v'
             ? []
             : options.uploadedReferences.value.map((item, index) => ({
                 role: index === 0 ? 'start_image' : 'end_image',
                 object_key: item.key,
               })),
-        character_ids: isT2vIc ? options.selectedCharacterIds.value : [],
+        character_refs: isT2vIc ? options.selectedCharacterIds.value.map((value) => {
+          const [source, id] = value.includes(':') ? value.split(':', 2) : ['private', value]
+          return { source, id }
+        }) : undefined,
+        environment_ref: isT2vIc
+          ? (options.environmentSource?.value ?? 'upload') === 'official'
+            ? { source: 'official', id: options.selectedEnvironmentId?.value }
+            : { source: 'upload', object_key: options.uploadedReferences.value[0].key }
+          : undefined,
       })
       const pending: PendingOptimizerTask = {
         ...pendingBase,

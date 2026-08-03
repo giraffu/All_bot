@@ -127,9 +127,7 @@ def compose_character_view_prompts(
 ) -> dict[str, str]:
     """Compose canonical prompts; legacy characters keep the neutral defaults."""
     if not profile:
-        return {
-            item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG
-        }
+        return {item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG}
     gender = str(profile.get("gender") or "")
     if gender == "female":
         anatomy = "、".join(
@@ -159,9 +157,7 @@ def compose_character_view_prompts(
             "不要女性乳房或女性生殖器"
         )
     else:
-        return {
-            item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG
-        }
+        return {item["type"]: item["default_prompt"] for item in CHARACTER_VIEW_CATALOG}
     if gender == "female":
         back_detail = body_detail
 
@@ -265,15 +261,15 @@ def _response(
         "name": row.name,
         "description": row.description,
         "status": row.status,
+        "moderation_status": getattr(row, "moderation_status", "active"),
+        "moderation_reason": getattr(row, "moderation_reason", None),
         "task_id": row.task_id,
         "source_object_key": row.source_object_key,
         "sheet_object_key": row.sheet_object_key,
         "preview_url": preview,
         "prompt_profile": prompt_profile,
         "default_prompts": default_prompts,
-        "views": [
-            _view_response(view, default_prompts) for view in resolved_views
-        ],
+        "views": [_view_response(view, default_prompts) for view in resolved_views],
     }
 
 
@@ -644,7 +640,12 @@ async def resolve_ready_character_sheet(
             )
         )
     ).scalar_one_or_none()
-    if row is None or row.status != "ready" or not row.sheet_object_key:
+    if (
+        row is None
+        or row.status != "ready"
+        or getattr(row, "moderation_status", "active") != "active"
+        or not row.sheet_object_key
+    ):
         raise HTTPException(status_code=400, detail="人物不存在、未就绪或已删除。")
     if not row.sheet_object_key.endswith(f"/{INGREDIENTS_CHARACTER_PANEL_VERSION}.png"):
         raise HTTPException(

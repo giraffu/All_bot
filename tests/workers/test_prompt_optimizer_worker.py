@@ -8,6 +8,10 @@ import pytest
 from PIL import Image
 
 from src.prompt_optimizer.registry import get_template_by_ref
+from src.web_api.services.prompt_optimizer_config_service import (
+    get_default_config,
+    render_config_snapshot,
+)
 from workers.prompt_optimizer.executor import (
     PromptOptimizationExecutionError,
     execute_prompt_optimization,
@@ -99,6 +103,42 @@ async def test_executor_fails_closed_on_template_hash_mismatch():
         await execute_prompt_optimization(
             payload,
             provider=FakeProvider(),
+            load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+            preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        )
+
+
+@pytest.mark.asyncio
+async def test_executor_accepts_fenced_dynamic_snapshot_and_rejects_tampering():
+    payload = _payload()
+    payload["prompt_config_snapshot"] = render_config_snapshot(
+        config=get_default_config("ltx_video_v2"),
+        profile_ref=payload["profile_ref"],
+        variables={
+            "duration_seconds": 5,
+            "end_frame_clause": "",
+            "media_frame_instructions": "start image",
+            "original_prompt": "subject turns",
+            "character_descriptions": "",
+            "environment_description": "",
+        },
+    )
+    provider = FakeProvider()
+    await execute_prompt_optimization(
+        payload,
+        provider=provider,
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+    assert (
+        provider.calls[0]["system_prompt"]
+        == payload["prompt_config_snapshot"]["system_message"]
+    )
+    payload["prompt_config_snapshot"]["user_message"] += " tampered"
+    with pytest.raises(PromptOptimizationExecutionError, match="config_hash"):
+        await execute_prompt_optimization(
+            payload,
+            provider=provider,
             load_media=lambda _key: asyncio.sleep(0, result=b"image"),
             preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
         )
@@ -226,7 +266,9 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
     structured_system = structured_payload["input"][0]["content"][0]["text"]
     assert '"optimized_fields"' in structured_system
     assert '"warnings"' in structured_system
-    assert "subject faces camera" in structured_payload["input"][1]["content"][0]["text"]
+    assert (
+        "subject faces camera" in structured_payload["input"][1]["content"][0]["text"]
+    )
     assert all(
         item["type"] != "input_image"
         for message in structured_payload["input"]

@@ -306,17 +306,18 @@ scene_background 只定义场景、空间布局、光线、氛围和可见环境
 """
 
 _T2V_ADULT_CINEMATIC_SYSTEM = (
-    _ADULT_CINEMATIC_SYSTEM.split("一、参考图片与首尾帧", 1)[0]
-    + _T2V_REFERENCE_SECTION
-    + "二、默认成人 NSFW 方向"
-    + _ADULT_CINEMATIC_SYSTEM.split("二、默认成人 NSFW 方向", 1)[1]
-).replace(
-    "Use the provided start image exactly as the first frame. [用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
-    "[用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
-).replace(
-    "从图片可见初始姿势开始", "从用户设定的初始状态开始"
-).replace(
-    "从第一帧的初始姿势开始", "从用户设定的初始状态开始"
+    (
+        _ADULT_CINEMATIC_SYSTEM.split("一、参考图片与首尾帧", 1)[0]
+        + _T2V_REFERENCE_SECTION
+        + "二、默认成人 NSFW 方向"
+        + _ADULT_CINEMATIC_SYSTEM.split("二、默认成人 NSFW 方向", 1)[1]
+    )
+    .replace(
+        "Use the provided start image exactly as the first frame. [用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
+        "[用一句话描述电影化风格、镜头归属、POV、角度、构图以及一个简单明确的镜头运动。] [仅在相关时简要描述环境、灯光和氛围。]",
+    )
+    .replace("从图片可见初始姿势开始", "从用户设定的初始状态开始")
+    .replace("从第一帧的初始姿势开始", "从用户设定的初始状态开始")
 )
 
 _T2V_ADULT_CINEMATIC_USER = """目标 Profile：{profile_ref}
@@ -497,7 +498,9 @@ def _normalize_media(media: list[dict[str, Any]]) -> tuple[Mapping[str, str], ..
         role = str(item.get("role") or "").strip()
         object_key = str(item.get("object_key") or "").strip()
         if not role or not object_key or role in seen:
-            raise PromptOptimizerRegistryError("media roles and object keys must be unique")
+            raise PromptOptimizerRegistryError(
+                "media roles and object keys must be unique"
+            )
         seen.add(role)
         normalized.append(MappingProxyType({"role": role, "object_key": object_key}))
     return tuple(normalized)
@@ -544,7 +547,9 @@ def _normalize_context(
     try:
         duration = int(context["duration_seconds"])
     except (TypeError, ValueError) as exc:
-        raise PromptOptimizerRegistryError("duration_seconds must be an integer") from exc
+        raise PromptOptimizerRegistryError(
+            "duration_seconds must be an integer"
+        ) from exc
     if duration not in profile.allowed_durations:
         raise PromptOptimizerRegistryError("unsupported duration_seconds")
     return MappingProxyType({"duration_seconds": duration})
@@ -595,12 +600,17 @@ def get_prompt_optimizer_capability(target_task_type: str) -> dict[str, Any]:
         if ref in template_refs and template.active
     ]
     templates.sort(key=lambda item: (item.ref != default_ref, item.id, item.version))
-    stream_fields = set.intersection(*(set(profile.output_fields) for profile in profiles))
+    stream_fields = set.intersection(
+        *(set(profile.output_fields) for profile in profiles)
+    )
     required_roles = set.intersection(
         *(set(profile.required_media_roles) for profile in profiles)
     )
     all_roles = set().union(
-        *(set(profile.required_media_roles) | set(profile.optional_media_roles) for profile in profiles)
+        *(
+            set(profile.required_media_roles) | set(profile.optional_media_roles)
+            for profile in profiles
+        )
     )
     ordered_roles = [
         "start_image",
@@ -658,6 +668,19 @@ def render_prompt_messages(
     prompt: str,
     context: Mapping[str, Any],
 ) -> tuple[str, str]:
+    variables = build_prompt_variables(profile=profile, prompt=prompt, context=context)
+    missing = set(template.required_variables) - set(variables)
+    if missing:
+        raise PromptOptimizerRegistryError("template variables are unavailable")
+    return (
+        template.system_template.format_map(variables),
+        template.user_template.format_map(variables),
+    )
+
+
+def build_prompt_variables(
+    *, profile: PromptOptimizationProfile, prompt: str, context: Mapping[str, Any]
+) -> dict[str, Any]:
     if profile.ref == "ltx_eros_t2v@1":
         media_frame_instructions = (
             "No reference images are provided. Create the characters and scene only from "
@@ -677,7 +700,7 @@ def render_prompt_messages(
             if "end_image" in profile.required_media_roles
             else "Image 1 is start_image and must be used exactly as the first frame."
         )
-    variables = {
+    return {
         "profile_ref": profile.ref,
         "duration_seconds": context["duration_seconds"],
         "end_frame_clause": (
@@ -688,18 +711,15 @@ def render_prompt_messages(
         "media_frame_instructions": media_frame_instructions,
         "original_prompt": str(prompt).strip(),
     }
-    missing = set(template.required_variables) - set(variables)
-    if missing:
-        raise PromptOptimizerRegistryError("template variables are unavailable")
-    return (
-        template.system_template.format_map(variables),
-        template.user_template.format_map(variables),
-    )
 
 
 def build_output_json_schema(profile: PromptOptimizationProfile) -> dict[str, Any]:
     field_properties = {
-        field: {"type": "string", "minLength": 1, "maxLength": profile.max_output_characters}
+        field: {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": profile.max_output_characters,
+        }
         for field in profile.output_fields
     }
     return {

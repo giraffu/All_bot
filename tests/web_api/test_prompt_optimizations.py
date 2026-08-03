@@ -10,6 +10,11 @@ from src.web_api.services.prompt_optimization_service import (
     build_prompt_capability_payload,
     submit_prompt_optimization,
 )
+from src.web_api.services.prompt_optimizer_config_service import get_default_config
+
+
+async def _load_config(scene_key: str):
+    return get_default_config(scene_key)
 
 
 def _request(**overrides):
@@ -50,6 +55,7 @@ async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
         get_balance=AsyncMock(return_value=19),
         object_size=AsyncMock(return_value=1024),
         submit_task_func=submit,
+        load_config_func=_load_config,
     )
 
     assert result == {
@@ -93,6 +99,7 @@ async def test_submit_rejects_media_owned_by_another_user_before_storage_lookup(
             get_balance=AsyncMock(),
             object_size=object_size,
             submit_task_func=AsyncMock(),
+            load_config_func=_load_config,
         )
     object_size.assert_not_awaited()
 
@@ -106,6 +113,7 @@ async def test_submit_rejects_oversized_media():
             get_balance=AsyncMock(),
             object_size=AsyncMock(return_value=PROMPT_MEDIA_MAX_BYTES + 1),
             submit_task_func=AsyncMock(),
+            load_config_func=_load_config,
         )
 
 
@@ -122,6 +130,7 @@ async def test_submit_pure_t2v_uses_v4_and_accepts_no_media():
         get_balance=AsyncMock(return_value=18),
         object_size=AsyncMock(),
         submit_task_func=submit,
+        load_config_func=_load_config,
     )
 
     inputs = submit.await_args.kwargs["inputs"]
@@ -173,6 +182,7 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
         get_balance=AsyncMock(return_value=18),
         object_size=AsyncMock(return_value=1024),
         submit_task_func=submit,
+        load_config_func=_load_config,
     )
 
     inputs = submit.await_args.kwargs["inputs"]

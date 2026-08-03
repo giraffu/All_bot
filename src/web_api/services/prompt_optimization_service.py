@@ -3,9 +3,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
-
-from fastapi import HTTPException
-
 from config import MINIO_BUCKET
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError, TaskSubmissionSideEffectPlan
@@ -14,6 +11,7 @@ from src.prompt_optimizer.registry import (
     PROMPT_OPTIMIZE_TASK_TYPE,
     PromptOptimizerRegistryError,
     get_prompt_optimizer_capability,
+    build_prompt_variables,
     resolve_prompt_optimization,
 )
 from src.services.storage import storage
@@ -41,7 +39,9 @@ async def validate_prompt_media_objects(
     media: list[dict[str, str]],
     *,
     user_id: int,
-    object_size: Callable[[str, str], Awaitable[int | None]] = storage.async_object_size,
+    object_size: Callable[
+        [str, str], Awaitable[int | None]
+    ] = storage.async_object_size,
 ) -> list[dict[str, str]]:
     normalized: list[dict[str, str]] = []
     for item in media:
@@ -67,49 +67,68 @@ async def submit_prompt_optimization(
     request,
     current_user,
     get_balance: Callable[[int], Awaitable[int]],
-    object_size: Callable[[str, str], Awaitable[int | None]] = storage.async_object_size,
+    object_size: Callable[
+        [str, str], Awaitable[int | None]
+    ] = storage.async_object_size,
     submit_task_func=process_and_submit_task,
+    load_config_func=None,
 ) -> dict[str, Any]:
     requested_media = [item.model_dump() for item in request.media]
     character_ids = [str(value or "").strip() for value in request.character_ids]
     if request.target_task_type == "ltx_t2v_ic":
-        if len(character_ids) != 2 or not all(character_ids) or len(set(character_ids)) != 2:
-            raise CoreDomainError("提示词优化请选择恰好 2 个不同的已就绪人物。")
-        if [item["role"] for item in requested_media] != ["scene_background"]:
-            raise CoreDomainError("双角色提示词优化必须提供一张场景背景图。")
-        background_media = await validate_prompt_media_objects(
-            requested_media,
-            user_id=current_user.id,
-            object_size=object_size,
-        )
+        if request.character_refs is not None and character_ids:
+            raise CoreDomainError("新旧角色引用不能同时提交。")
+        if request.environment_ref is not None and requested_media:
+            raise CoreDomainError("新旧环境引用不能同时提交。")
         from src.database.core import AsyncSessionLocal
-        from src.web_api.services.character_reference_service import (
-            resolve_ready_character_sheet,
+        from src.web_api.services.reference_asset_service import (
+            normalize_reference_inputs,
+            resolve_reference_set,
         )
 
-        ingredients = []
+        legacy_background = (
+            requested_media[0]["object_key"]
+            if [item["role"] for item in requested_media] == ["scene_background"]
+            else None
+        )
+        reference_inputs = {
+            "character_refs": [item.model_dump() for item in request.character_refs]
+            if request.character_refs is not None
+            else None,
+            "environment_ref": request.environment_ref.model_dump(exclude_none=True)
+            if request.environment_ref
+            else None,
+            "character_ids": character_ids if request.character_refs is None else None,
+            "background_object_key": legacy_background
+            if request.environment_ref is None
+            else None,
+        }
+        character_refs, environment_ref = normalize_reference_inputs(reference_inputs)
         async with AsyncSessionLocal() as character_db:
-            try:
-                for character_id in character_ids:
-                    ingredients.append(
-                        await resolve_ready_character_sheet(
-                            db=character_db,
-                            user_id=current_user.id,
-                            character_id=character_id,
-                        )
-                    )
-            except HTTPException as exc:
-                raise CoreDomainError(str(exc.detail)) from exc
+            resolved_references = await resolve_reference_set(
+                db=character_db,
+                user_id=current_user.id,
+                character_refs=character_refs,
+                environment_ref=environment_ref,
+                object_size=object_size,
+            )
         media = [
             {
                 "role": f"reference_character_{index}",
-                "object_key": ingredient.sheet_object_key,
+                "object_key": object_key,
             }
-            for index, ingredient in enumerate(ingredients, start=1)
-        ] + background_media
+            for index, object_key in enumerate(
+                resolved_references.character_sheets, start=1
+            )
+        ] + [
+            {
+                "role": "scene_background",
+                "object_key": resolved_references.environment_object_key,
+            }
+        ]
     else:
-        if character_ids:
-            raise CoreDomainError("当前提示词优化任务不接受人物图库选择。")
+        if character_ids or request.character_refs is not None or request.environment_ref is not None:
+            raise CoreDomainError("当前提示词优化任务不接受角色或环境引用。")
         media = await validate_prompt_media_objects(
             requested_media,
             user_id=current_user.id,
@@ -146,11 +165,58 @@ async def submit_prompt_optimization(
         "prompt": request.prompt,
         "context": dict(resolved.normalized_context),
         "media": [dict(item) for item in resolved.normalized_media],
+        "trusted_context": (
+            {
+                "character_descriptions": list(
+                    resolved_references.character_descriptions
+                ),
+                "environment_description": resolved_references.environment_description,
+            }
+            if request.target_task_type == "ltx_t2v_ic"
+            else {}
+        ),
         "text_stream_contract": build_text_stream_contract(
             resolved.profile.output_fields,
             resolved.profile.max_output_characters,
         ),
     }
+    from src.database.core import AsyncSessionLocal
+    from src.web_api.services.prompt_optimizer_config_service import (
+        get_config,
+        render_config_snapshot,
+    )
+
+    scene_key = request.target_task_type
+    trusted_context = inputs["trusted_context"]
+    variables = build_prompt_variables(
+        profile=resolved.profile,
+        prompt=request.prompt,
+        context=resolved.normalized_context,
+    )
+    variables.update(
+        {
+            "character_descriptions": "\n".join(
+                f"Character {index}: {value}"
+                for index, value in enumerate(
+                    trusted_context.get("character_descriptions", []), start=1
+                )
+                if value
+            ),
+            "environment_description": trusted_context.get(
+                "environment_description", ""
+            ),
+        }
+    )
+    if load_config_func is None:
+        async with AsyncSessionLocal() as config_db:
+            config = await get_config(config_db, scene_key)
+    else:
+        config = await load_config_func(scene_key)
+    inputs["prompt_config_snapshot"] = render_config_snapshot(
+        config=config,
+        profile_ref=resolved.profile.ref,
+        variables=variables,
+    )
     result = await submit_task_func(
         user_id=current_user.id,
         username=current_user.username,

@@ -5,6 +5,8 @@ export type CharacterReference = {
   name: string
   description: string | null
   status: 'draft' | 'pending' | 'ready' | 'failed'
+  moderation_status: 'active' | 'disabled'
+  moderation_reason: string | null
   task_id: string | null
   source_object_key: string
   sheet_object_key: string | null

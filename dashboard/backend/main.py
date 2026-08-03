@@ -23,6 +23,8 @@ from dashboard.backend.routers import (
     main_bot_menu,
     paid_group_guard,
     plans,
+    prompt_optimizer,
+    reference_assets,
     referrals,
     runpod,
     site_notice,
@@ -168,6 +170,8 @@ app.include_router(gallery.router)
 app.include_router(referrals.router)
 app.include_router(site_notice.router)
 app.include_router(support_tickets.router)
+app.include_router(reference_assets.router)
+app.include_router(prompt_optimizer.router)
 
 
 def _build_auth_error_response(request: Request, detail: str):

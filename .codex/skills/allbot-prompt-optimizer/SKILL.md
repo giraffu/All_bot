@@ -24,6 +24,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
 - Registry：`src/prompt_optimizer/registry.py`
 - Web API：`src/web_api/routers/prompt_optimizations.py`
 - 提交服务：`src/web_api/services/prompt_optimization_service.py`
+- 管理端场景配置：`src/web_api/services/prompt_optimizer_config_service.py`、
+  `dashboard/backend/routers/prompt_optimizer.py`
 - owner-fenced 结果：`src/web_api/services/prompt_result_store.py`
 - Worker：`workers/prompt_optimizer/`
 - 文本增量存储：`src/services/task_text_stream_store.py`
@@ -35,7 +37,9 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
 
 - 客户端只能选择 active 的 `template id + version`；禁止提交自由 meta-prompt，
   capability 不返回模板正文。
-- 已发布 Profile/Template 不原地改内容；新内容增加版本，载荷固定 ref 与 hash。
+- Registry 中已发布 Profile/Template 不原地改内容；新内容增加版本。管理后台维护的
+  三个 scene config 是有意设计的可变“当前配置”，每次保存递增 revision/hash，
+  新任务必须保存渲染后的不可变 snapshot，运行中任务不得重新读取当前配置。
 - Worker 必须核对 Profile、Template 和 hash；未知版本、未知字段、空文本、超长
   文本或不兼容媒体角色一律失败。
 - `context` 按 Profile 严格白名单校验，不能选择模型、价格、workflow、LoRA、
@@ -51,10 +55,12 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且
   停止 pop；Worker 不自动装卸 LM Studio 模型。
-- 当前 LTX 模板分为不可变 @3 与 @4：@3 只服务 I2V/FLF2V 首尾帧语义；@4
-  服务纯 `ltx_t2v` 和双角色 `ltx_t2v_ic`。@4 的人物面板与背景仅是身份/环境
-  reference，绝不能渲染为首帧指令。IC Web 请求只提交两个角色 ID 和一张用户
-  背景，服务端 owner-fenced 解析三张实际媒体后再进入通用 Registry。
+- 当前 LTX 的 @3/@4 是兼容与默认正文基线；新任务按 `ltx_video_v2`、`ltx_t2v`、
+  `ltx_t2v_ic` 读取管理端当前 scene config 并写入 snapshot。IC Web 请求使用两个
+  typed character refs（私有/官方可混选）和一个 environment ref（官方/临时上传
+  互斥），服务端解析三张实际媒体及可信描述；这些 reference 绝不能渲染为首帧。
+- snapshot 必须包含 scene_key/revision/config hash/profile/rendered messages，Worker
+  核对 snapshot hash 与 Profile 后执行；无 snapshot 的旧任务继续走 template ref/hash。
 
 ## 扩展流程
 

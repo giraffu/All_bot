@@ -92,12 +92,14 @@ manifest 和专项文档读取，不在此维护快照。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
 - 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试
-  `ltx_t2v_ic` 固定恰好两个有序人物面板和一张用户自有背景图，采用 Runexx 的
+  `ltx_t2v_ic` 固定恰好两个有序人物面板和一张环境图；角色可混用用户私有与
+  published 官方角色，环境可选 published 官方单图或当前用户临时上传单图，采用 Runexx 的
   两阶段 guide/crop/sampler 拓扑，模型链固定为 10Eros v1.4 DMD →
   `LTX2.3-Licon-MSR-test_version.safetensors`。10Eros 提供成人生成能力，Licon
   只维持身份；不叠加 distilled、Sulphur 或其它 NSFW LoRA。
-- 浏览器只能提交两个角色 ID 和背景 upload key。服务端 owner-fenced 解析完整
-  四视图面板与人物描述；Worker 按选择顺序追加稳定英文角色描述。两阶段都必须
+- 浏览器提交 typed `character_refs` 与 `environment_ref`；旧 ID/upload key 只作
+  过渡兼容。服务端校验 owner/published/moderation，解析完整四视图面板、人物描述
+  与环境描述；Worker 按选择顺序追加稳定描述。两阶段都必须
   使用 `LTXAddVideoICLoRAGuide`、`LTXVAddGuideMulti` 与 `LTXVCropGuides`，最终裁除
   guide latent。少/多角色、缺背景、客户端面板路径或强度字段全部 fail closed。
 - Ingredients 正向提示必须使用官方可执行 workflow 的

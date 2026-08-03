@@ -38,6 +38,13 @@ primary field、model route、兼容模板和长度限制。Template 声明展�
 `template_hash`；Worker 缺少版本或 hash 不一致时失败。旧版本必须保留到所有排队
 任务和审计重放窗口结束，通常不主动删除。
 
+管理后台另外提供三个可变 scene config：`ltx_video_v2`、`ltx_t2v`、
+`ltx_t2v_ic`。它们允许管理员修改 system/user prompt、展示名称和说明，但不能修改
+Profile、媒体契约、模型、价格、workflow 或输出 schema。保存时校验占位符并递增
+revision/content hash；Web 在提交时读取当前配置、渲染正文并保存
+`prompt_config_snapshot`。Worker 校验 snapshot hash/Profile 后使用，旧静态
+template ref 任务仍可重放。配置保存只影响之后的新任务。
+
 当前 `ltx_video_v2` 根据媒体角色解析：
 
 - `start_image` -> `ltx_eros_v14_i2v@1`
@@ -68,8 +75,10 @@ FLF 模板。
 契约和 active 模板的展示信息，不返回 system/user 模板正文。
 
 `POST /api/prompt-optimizations/tasks` 使用用户范围的 `client_request_id` 幂等。
-媒体只允许当前用户的 `web_uploads/{user_id}/` 对象，格式 PNG/JPEG/WebP，单文件
-20 MB。context 拒绝未知字段。服务端解析后把不可变 refs/hash 放入 Central。
+用户临时媒体只允许当前用户的 `web_uploads/{user_id}/` 对象，格式 PNG/JPEG/WebP，
+单文件 20 MB；published 官方素材由服务端直接解析。IC 接受恰好两个 typed 角色引用
+（private/official 可混合）和一个环境引用（official/upload 互斥），并固定按角色 1、
+角色 2、环境三图顺序发送。服务端可信人物/环境描述一并进入渲染快照。
 
 任务扣 1 灵石；Task Core 的扣费、派发补偿、pending 取消和失败退款负责 exactly
 once。文本结果只保存在 `allbot:prompt_result:{task_id}` 类 owner-fenced Redis key，

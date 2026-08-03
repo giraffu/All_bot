@@ -84,6 +84,9 @@ export function useLabWorkbench() {
   const resolution = ref(getDefaultResolutionForMode(DEFAULT_LAB_MODE_ID))
   const duration = ref(DEFAULT_VIDEO_DURATION)
   const selectedCharacterIds = ref<string[]>([])
+  const useT2VReferences = ref(false)
+  const environmentSource = ref<'official' | 'upload'>('official')
+  const selectedEnvironmentId = ref('')
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -110,6 +113,9 @@ export function useLabWorkbench() {
     duration,
     uploadedReferences: references.uploadedReferences,
     selectedCharacterIds,
+    useT2VReferences,
+    environmentSource,
+    selectedEnvironmentId,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {
@@ -127,6 +133,9 @@ export function useLabWorkbench() {
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
     selectedCharacterIds.value = []
+    useT2VReferences.value = false
+    environmentSource.value = 'official'
+    selectedEnvironmentId.value = ''
     template.resetTemplateState()
     wan22.resetWan22ChainState()
     ltx.resetLtxExtensionState()
@@ -241,7 +250,7 @@ export function useLabWorkbench() {
     resolution: resolution.value,
     duration: duration.value,
     wan22ResolutionPreset: wan22ResolutionPreset.value,
-    hasCharacter: selectedCharacterIds.value.length > 0,
+    hasCharacter: useT2VReferences.value,
   }))
 
   const costHint = computed(() => {
@@ -255,9 +264,13 @@ export function useLabWorkbench() {
   const canSubmit = computed(() => {
     const hasPrompt = !currentMode.value.promptRequired || template.isTemplatePromptLocked.value || prompt.value.trim().length > 0
     const hasRequiredUpload = currentMode.value.id === 'ltx_t2v'
-      ? selectedCharacterIds.value.length === 0
+      ? !useT2VReferences.value
         ? references.uploadedReferences.value.length === 0
-        : selectedCharacterIds.value.length === 2 && references.uploadedReferences.value.length === 1
+        : selectedCharacterIds.value.length === 2 && (
+            environmentSource.value === 'official'
+              ? Boolean(selectedEnvironmentId.value) && references.uploadedReferences.value.length === 0
+              : references.uploadedReferences.value.length === 1
+          )
       : !currentMode.value.supportsUpload || references.uploadedReferences.value.length > 0
     const hasRequiredSlots = slots.assetUploadSlots.value.every(slot => !slot.required || !!slot.item?.key)
     return hasPrompt && hasRequiredUpload && hasRequiredSlots && pendingUploads.value === 0 && !uploading.value
@@ -278,6 +291,7 @@ export function useLabWorkbench() {
     || duration.value !== DEFAULT_VIDEO_DURATION
     || template.isTemplateApplied.value
     || selectedCharacterIds.value.length > 0
+    || useT2VReferences.value
   ))
 
   watch(selectedEditLora, (nextValue) => {
@@ -302,6 +316,17 @@ export function useLabWorkbench() {
   watch(selectedCharacterIds, (characterIds) => {
     if (currentMode.value.id !== 'ltx_t2v') return
     resolution.value = characterIds.length > 0 ? '768x448' : '1280x704'
+  })
+  watch(useT2VReferences, (enabled) => {
+    if (!enabled) {
+      selectedCharacterIds.value = []
+      selectedEnvironmentId.value = ''
+      references.clearReferences()
+    }
+  })
+  watch(environmentSource, () => {
+    selectedEnvironmentId.value = ''
+    references.clearReferences()
   })
 
   watch(
@@ -403,6 +428,9 @@ export function useLabWorkbench() {
     resolution,
     duration,
     selectedCharacterIds,
+    useT2VReferences,
+    environmentSource,
+    selectedEnvironmentId,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -474,6 +502,9 @@ export function useLabWorkbench() {
     videoDurationOptions,
     duration,
     selectedCharacterIds,
+    useT2VReferences,
+    environmentSource,
+    selectedEnvironmentId,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

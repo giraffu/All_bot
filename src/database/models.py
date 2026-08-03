@@ -500,6 +500,10 @@ class CharacterReference(Base):
             "status in ('draft', 'pending', 'ready', 'failed', 'deleted')",
             name="ck_character_references_status",
         ),
+        CheckConstraint(
+            "moderation_status in ('active', 'disabled')",
+            name="ck_character_references_moderation_status",
+        ),
         Index("ix_character_references_user_status", "user_id", "status"),
         Index("ix_character_references_task_id", "task_id", unique=True),
     )
@@ -518,6 +522,10 @@ class CharacterReference(Base):
         DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
     )
     deleted_at = Column(DateTime, nullable=True)
+    moderation_status = Column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
+    moderation_reason = Column(String(255), nullable=True)
 
     user = relationship("User", backref="character_references")
     views = relationship(
@@ -566,6 +574,116 @@ class CharacterReferenceView(Base):
     )
 
     character = relationship("CharacterReference", back_populates="views")
+
+
+class OfficialCharacterAsset(Base):
+    __tablename__ = "official_character_assets"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('draft', 'ready', 'published', 'archived')",
+            name="ck_official_character_assets_status",
+        ),
+        Index("ix_official_character_assets_status_sort", "status", "sort_order"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(80), nullable=False)
+    description = Column(String(1000), nullable=True)
+    tags = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    status = Column(String(16), nullable=False, default="draft")
+    source_object_key = Column(String(1024), nullable=True)
+    sheet_object_key = Column(String(1024), nullable=True)
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+    archived_at = Column(DateTime, nullable=True)
+    views = relationship(
+        "OfficialCharacterAssetView",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class OfficialCharacterAssetView(Base):
+    __tablename__ = "official_character_asset_views"
+    __table_args__ = (
+        CheckConstraint(
+            "view_type in ('face_front', 'body_front', 'body_side', 'body_back')",
+            name="ck_official_character_asset_views_type",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'ready', 'failed')",
+            name="ck_official_character_asset_views_status",
+        ),
+        UniqueConstraint(
+            "character_id", "view_type", name="uq_official_character_asset_view"
+        ),
+        Index("ix_official_character_asset_views_task_id", "task_id", unique=True),
+    )
+
+    id = Column(String(36), primary_key=True)
+    character_id = Column(
+        String(36),
+        ForeignKey("official_character_assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    view_type = Column(String(32), nullable=False)
+    prompt = Column(Text, nullable=False)
+    object_key = Column(String(1024), nullable=True)
+    task_id = Column(String(64), nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+    character = relationship("OfficialCharacterAsset", back_populates="views")
+
+
+class OfficialEnvironmentAsset(Base):
+    __tablename__ = "official_environment_assets"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('draft', 'ready', 'published', 'archived')",
+            name="ck_official_environment_assets_status",
+        ),
+        Index("ix_official_environment_assets_status_sort", "status", "sort_order"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(80), nullable=False)
+    description = Column(String(1000), nullable=True)
+    category = Column(String(80), nullable=True)
+    tags = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    status = Column(String(16), nullable=False, default="draft")
+    object_key = Column(String(1024), nullable=True)
+    task_id = Column(String(64), nullable=True)
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+    archived_at = Column(DateTime, nullable=True)
+
+
+class PromptOptimizerSceneConfig(Base):
+    __tablename__ = "prompt_optimizer_scene_configs"
+
+    scene_key = Column(String(64), primary_key=True)
+    display_name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+    system_template = Column(Text, nullable=False)
+    user_template = Column(Text, nullable=False)
+    revision = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    content_hash = Column(String(64), nullable=False)
+    updated_by = Column(String(100), nullable=False)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
 
 
 class CharacterModelAsset(Base):
@@ -921,9 +1039,7 @@ class AffiliateRedeem(Base):
             "uq_affiliate_redeems_user_pending_usdt",
             "user_id",
             unique=True,
-            postgresql_where=text(
-                "redeem_type = 'USDT' AND status = 'PENDING'"
-            ),
+            postgresql_where=text("redeem_type = 'USDT' AND status = 'PENDING'"),
         ),
     )
 

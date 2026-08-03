@@ -98,6 +98,8 @@ class CharacterViewResponse(BaseModel):
     prompt: str
     default_prompt: str
     status: str
+    moderation_status: str = "active"
+    moderation_reason: str | None = None
     task_id: str | None = None
     object_key: str | None = None
     preview_url: str | None = None

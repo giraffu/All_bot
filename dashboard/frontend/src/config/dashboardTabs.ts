@@ -35,6 +35,8 @@ export type DashboardTabKey =
   | 'referrals'
   | 'site_notice'
   | 'support_tickets'
+  | 'reference_assets'
+  | 'prompt_optimizer'
 
 export interface DashboardTabConfig {
   key: DashboardTabKey
@@ -137,6 +139,22 @@ export const dashboardTabs: DashboardTabConfig[] = [
     label: '模板共建',
     icon: PictureOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/TemplateManager.vue'))),
+    containerClass: PANEL_CONTAINER_CLASS,
+    scrollable: true,
+  },
+  {
+    key: 'reference_assets',
+    label: '官方素材库',
+    icon: PictureOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/ReferenceAssetManager.vue'))),
+    containerClass: PANEL_CONTAINER_CLASS,
+    scrollable: true,
+  },
+  {
+    key: 'prompt_optimizer',
+    label: '提示词优化配置',
+    icon: RobotOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/PromptOptimizerConfigManager.vue'))),
     containerClass: PANEL_CONTAINER_CLASS,
     scrollable: true,
   },
