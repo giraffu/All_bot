@@ -29,6 +29,7 @@ from .runpod_profile_catalog import (
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
+    RUNPOD_RELEASE_WAN22_AIO_VIDEO_REPOSITORY,
     RUNPOD_SCAIL2_CONTAINER_DISK_GB,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_TASK_PROFILES,
@@ -39,16 +40,22 @@ from .runpod_profile_catalog import (
 )
 
 
-_RUNPOD_PUBLIC_WAN22_AIO_VIDEO_DIGEST_RE = re.compile(
-    rf"^{re.escape(RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY)}"
-    r"@sha256:[0-9a-f]{64}$"
+_RUNPOD_WAN22_AIO_VIDEO_DIGEST_RES = tuple(
+    re.compile(rf"^{re.escape(repository)}@sha256:[0-9a-f]{{64}}$")
+    for repository in (
+        RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY,
+        RUNPOD_RELEASE_WAN22_AIO_VIDEO_REPOSITORY,
+    )
 )
 
 
 def is_allowed_cloud_prod_wan22_image(image_name: str) -> bool:
     return (
         image_name == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
-        or _RUNPOD_PUBLIC_WAN22_AIO_VIDEO_DIGEST_RE.fullmatch(image_name) is not None
+        or any(
+            pattern.fullmatch(image_name)
+            for pattern in _RUNPOD_WAN22_AIO_VIDEO_DIGEST_RES
+        )
     )
 
 
@@ -231,9 +238,8 @@ class RunPodPodRequestBuilder:
         ):
             raise ValueError(
                 f"{profile.image_env_key} must be the legacy image "
-                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE} or a canonical "
-                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY}@sha256:<digest> "
-                "reference for cloud-prod"
+                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE} or a canonical digest "
+                "from an allowed Wan22 release repository for cloud-prod"
             )
         if not template_id and not image_name:
             image_name = self.pending_image_name_for(profile)

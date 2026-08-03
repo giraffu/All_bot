@@ -44,6 +44,9 @@ RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
 RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video"
 )
+RUNPOD_RELEASE_WAN22_AIO_VIDEO_REPOSITORY = (
+    "ghcr.io/giraffu/allbot-gpu-wan22-aio-video"
+)
 RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX = (
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_REPOSITORY + ":"
 )
