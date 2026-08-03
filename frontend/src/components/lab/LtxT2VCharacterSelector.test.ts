@@ -62,4 +62,36 @@ describe('LtxT2VCharacterSelector', () => {
     expect(wrapper.find('[data-testid="sulphur-slider"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('characters.msr_hint')
   })
+
+  it('shows the environment file picker next to the upload source', () => {
+    const beforeUpload = vi.fn()
+    const wrapper = mount(LtxT2VCharacterSelector, {
+      props: {
+        modelValue: [],
+        environmentSource: 'upload',
+        canUploadEnvironment: true,
+        beforeUploadEnvironment: beforeUpload,
+      },
+      global: {
+        stubs: {
+          'a-select': { template: '<div><slot /></div>' },
+          'a-select-option': { template: '<div><slot /></div>' },
+          'a-select-opt-group': { template: '<div><slot /></div>' },
+          'a-switch': true,
+          'a-radio-group': { template: '<div><slot /></div>' },
+          'a-radio-button': { template: '<div><slot /></div>' },
+          'a-upload': {
+            name: 'AUpload',
+            props: ['beforeUpload'],
+            template: '<div data-testid="environment-upload"><slot /></div>',
+          },
+          'a-button': { template: '<button><slot /></button>' },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="environment-upload"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('上传环境图')
+    expect(wrapper.findComponent({ name: 'AUpload' }).props('beforeUpload')).toBe(beforeUpload)
+  })
 })

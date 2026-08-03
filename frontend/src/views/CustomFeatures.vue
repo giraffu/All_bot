@@ -134,7 +134,7 @@ const promptLockedHint = computed(() => (
         :references="displayedReferences"
         :asset-upload-slots="assetUploadSlots"
         :reference-title="referenceTitle"
-        :supports-upload="currentMode.supportsUpload && (currentModeId !== 'ltx_t2v' || (useT2VReferences && environmentSource === 'upload'))"
+        :supports-upload="currentMode.supportsUpload && currentModeId !== 'ltx_t2v'"
         :can-upload-reference="canUploadReference"
         :upload-button-label="uploadButtonLabel"
         :before-upload="beforeUpload"
@@ -169,6 +169,8 @@ const promptLockedHint = computed(() => (
               v-model:enabled="useT2VReferences"
               v-model:environment-source="environmentSource"
               v-model:environment-id="selectedEnvironmentId"
+              :can-upload-environment="canUploadReference"
+              :before-upload-environment="beforeUpload"
             />
             <a-textarea
               v-model:value="audioPrompt"
