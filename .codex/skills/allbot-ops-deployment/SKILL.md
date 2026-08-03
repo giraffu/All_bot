@@ -31,6 +31,23 @@ main，拒绝 PR/fork 和 GPU kind；GPU/ComfyUI 继续本地构建。
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
 test 目标时可拒绝 test，但不阻断直接部署 prod。
 
+## 构建前网络与缓存预检
+
+- 在调用 `release.py build` 前先检查标准大小写 proxy 变量；不要把第一次构建失败
+  当作代理探针。Buildx 使用容器网络，`127.0.0.1`、`localhost`、`::1` 对它指向
+  构建容器自身。
+- 若本机代理是 loopback URL，先用 `ss` 确认该端口监听非回环地址，再从 Docker
+  `bridge` 网络动态读取 gateway，将同一 scheme/port 临时映射到 gateway；只为本次
+  build 同时覆盖大小写 `HTTP_PROXY`/`HTTPS_PROXY`，保留原 `NO_PROXY`。禁止把代理
+  地址写入 Git、镜像、发布状态或普通日志。若代理只监听回环，停止并报告，不盲等。
+- `release.py build` 会先检查目标 tag：同一内容身份的 build-only base 直接复用；
+  业务模块仍按完整 Git SHA 产出新 digest。只构建本次部署需要的明确模块，不为
+  deploy、rollback 或重复部署重新 build。
+- 共享 test/prod 禁止源码 bind mount、容器内改代码和热重载。代码变化必须生成新
+  immutable digest，但这应是 BuildKit 增量构建：复用精确 base 和可用 layer/cache，
+  只重做被 `COPY` 或依赖变化影响的层。开发机临时热重载不具备发布身份，不能拿来
+  替代共享环境构建。
+
 Compose 只重建目标 service；Pages 只更新目标项目；GPU 必须明确
 `--operator runpod|lan --slot <exact-slot>`；config/compose contract 只切换
 自身 active identity；migration 独立执行。
