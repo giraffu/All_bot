@@ -215,11 +215,7 @@ def test_lan_all_profile_uses_pinned_union_image_contract():
     assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in dockerfile
     assert "character_description" in dockerfile
     assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
-    assert (
-        "cd /opt/allbot/runtime/runpod_worker && "
-        "git apply /opt/allbot/runpod_sync_models_multi_manifest.patch"
-    ) in dockerfile
-    assert "git apply --directory=/opt/" not in dockerfile
+    assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert "all)" in build_script
     assert "allbot/comfy-lan-all:local" in build_script
     assert (
@@ -278,10 +274,7 @@ def test_lan_all_runtime_refresh_is_local_digest_based_and_dependency_closed():
         "d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13"
         in dockerfile
     )
-    assert (
-        "git apply /opt/allbot/runpod_sync_models_multi_manifest.patch"
-        in dockerfile
-    )
+    assert "runpod_sync_models_multi_manifest.patch" not in dockerfile
     assert 'allbot.lan.profile="all"' in dockerfile
     assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in dockerfile
     assert '"lan_all_runtime_refresh"' in catalog

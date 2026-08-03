@@ -20,12 +20,9 @@ RUN set -euo pipefail; \
     rm -rf /opt/allbot/runtime/runpod_worker
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
-COPY workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch /opt/allbot/runpod_sync_models_multi_manifest.patch
 
 RUN set -euo pipefail; \
     echo "${RUNTIME_REQUIREMENTS_SHA256}  /opt/allbot/runtime/runpod_worker/requirements.txt" | sha256sum -c -; \
-    cd /opt/allbot/runtime/runpod_worker; \
-    git apply /opt/allbot/runpod_sync_models_multi_manifest.patch; \
     chmod +x \
       /opt/allbot/runtime/runpod_worker/scripts/runpod_bootstrap_from_git.sh \
       /opt/allbot/runtime/runpod_worker/scripts/runpod_baked_runtime_entrypoint.sh; \

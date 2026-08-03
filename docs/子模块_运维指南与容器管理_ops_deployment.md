@@ -89,6 +89,10 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
   production mutation 每个模块都要求 `--confirm-prod`。migration 与部署契约
   也是独立模块，不存在 direct/standard/emergency 风险策略或自动晋级。
 - 云正式执行池由本地 worker compose、LAN AIO 与 RunPod 构成。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 worker 数量当成验收标准。
+- 新建 RunPod 的模型同步默认使用最多 4 个文件级并行下载，可通过
+  `RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=1..8` 调整；旧 Pod 不因配置或镜像引用更新
+  自动生效。验收应区分下载阶段聚合速率、逐文件重试和后续串行 SHA-256 阶段，
+  不能把 bootstrap 总时长全部解释为 R2 网速。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 媒体只使用当前 R2/S3 URL；R2 miss 后只允许短签、空值或 `pending_result`，worker 只写 R2。
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。

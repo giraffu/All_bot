@@ -437,6 +437,7 @@ def test_render_create_injects_r2_model_cache_env_without_inline_secrets():
     rendered = json.dumps(payload, ensure_ascii=False)
 
     assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
+    assert env["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "4"
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache-test"
     assert env["RUNPOD_MODEL_PREFIX"] == "img2img_lora/2026-06-10"
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == "img2img_lora/2026-06-10/manifest.json"
@@ -445,6 +446,40 @@ def test_render_create_injects_r2_model_cache_env_without_inline_secrets():
     assert env["RUNPOD_MODEL_SECRET_KEY"] == "<redacted>"
     assert "inline_r2_access_value" not in rendered
     assert "inline_r2_secret_value" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, 4), ("0", 1), ("6", 6), ("99", 8)],
+)
+def test_runpod_settings_bounds_model_download_concurrency(
+    monkeypatch, configured, expected
+):
+    if configured is None:
+        monkeypatch.delenv("RUNPOD_MODEL_DOWNLOAD_CONCURRENCY", raising=False)
+    else:
+        monkeypatch.setenv("RUNPOD_MODEL_DOWNLOAD_CONCURRENCY", configured)
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.model_download_concurrency == expected
+
+
+def test_render_create_injects_custom_model_download_concurrency():
+    provider = RunPodProvider(_settings(model_download_concurrency=7))
+
+    payload = provider.render_create_pod_request(
+        task_type="img2img_lora",
+        environment="cloud-test",
+    )
+
+    assert payload["json"]["env"]["RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"] == "7"
+
+
+@pytest.mark.parametrize("value", [0, 9])
+def test_runpod_settings_rejects_out_of_range_model_download_concurrency(value):
+    with pytest.raises(ValueError, match="model_download_concurrency"):
+        _settings(model_download_concurrency=value)
 
 
 def test_render_create_wan22_aio_video_cloud_test_profile_uses_5090_and_test_refs():

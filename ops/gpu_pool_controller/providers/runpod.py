@@ -290,6 +290,16 @@ def _int_env(value: str | None, *, default: int) -> int:
     return int(value)
 
 
+def _bounded_int_env(
+    value: str | None,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    return min(maximum, max(minimum, _int_env(value, default=default)))
+
+
 def _float_env(value: str | None, *, default: float) -> float:
     if value is None or not value.strip():
         return default
@@ -493,6 +503,7 @@ class RunPodSettings:
     minio_access_key_ref: str = RUNPOD_R2_ACCESS_KEY_REF
     minio_secret_key_ref: str = RUNPOD_R2_SECRET_KEY_REF
     model_sync_enabled: bool = False
+    model_download_concurrency: int = 4
     model_bucket: str = ""
     model_prefix: str = "img2img_lora/2026-06-10"
     model_manifest_key: str = ""
@@ -530,6 +541,10 @@ class RunPodSettings:
     comfy_custom_nodes_enabled: bool = True
     comfy_kjnodes_enabled: bool = True
     extra_env: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.model_download_concurrency <= 8:
+            raise ValueError("model_download_concurrency must be between 1 and 8")
 
     @classmethod
     def from_env(cls) -> "RunPodSettings":
@@ -890,6 +905,12 @@ class RunPodSettings:
             model_sync_enabled=_bool_env(
                 os.getenv("RUNPOD_MODEL_SYNC_ENABLED"),
                 default=bool(model_bucket.strip()),
+            ),
+            model_download_concurrency=_bounded_int_env(
+                os.getenv("RUNPOD_MODEL_DOWNLOAD_CONCURRENCY"),
+                default=4,
+                minimum=1,
+                maximum=8,
             ),
             model_bucket=model_bucket,
             model_prefix=global_model_prefix,
