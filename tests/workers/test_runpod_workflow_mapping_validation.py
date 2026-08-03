@@ -248,6 +248,19 @@ def test_runpod_worker_resolves_i2i_pro_task_type_workflow_overrides(monkeypatch
     assert {"face_swap_v2", "t2i-pornmaster-turbo", "i2i_pro"}.issubset(mappings)
 
 
+@pytest.mark.parametrize(
+    ("task_type", "filename"),
+    [
+        ("ltx_video_v2", "LTX 2.3 10Eros v1.4 DMD I2V.json"),
+        ("ltx_video_v2_flf2v", "LTX 2.3 10Eros v1.4 DMD FLF2V.json"),
+    ],
+)
+def test_runpod_worker_resolves_ltx_v2_workflow_filenames(task_type, filename):
+    validation = _load_runpod_validation_module()
+
+    assert validation.resolve_workflow_filename(task_type) == filename
+
+
 def test_face_swap_profile_routes_v1_and_v2_to_v2_workflow(monkeypatch):
     validation = _load_runpod_validation_module()
     overrides = json.loads(RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES)
