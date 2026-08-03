@@ -412,6 +412,11 @@ PornMaster Flux2 图片编辑是测试期新增执行类型，simple route 为 `
 
 LTX I2V、FLF2V 和 V2V Audio 请求链都接受可选 `negative_prompt`。Web/QQCC/actor 入口先 trim，非空才进入 task inputs；API client 同样只在非空时发送。worker 的本地与远端 mapping 将它写入节点 `29.text`，字段缺省时不得修改 workflow 原值。现有 Telegram 高级 LTX FSM 不收集该字段。
 
+测试专用高级图生视频 v2 的 `ltx_video_v2` / `ltx_video_v2_flf2v`
+使用 `1280x704` 规格并支持 5/10/15/20 秒。Task Core 不得将该宽高的
+1280 长边误认为旧通用 `1024p + >=10s` 高资源组合；豁免只属于 LTX
+任务类型，其它视频类型仍在扣费和入队前拒绝该组合。
+
 SCAIL-2 长动作迁移的 Context Windows workflow 保持 81/29 窗口与 `standard_static`
 调度，`freenoise=true`。这会恢复较快生成路径，但长动作迁移仍可能出现后续窗口复用前段噪声导致的动作循环。
 
