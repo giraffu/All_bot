@@ -27,6 +27,7 @@
     "dashboard-backend": {
       "environments": ["test", "prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "AGENT_SECRET_TOKEN", "DASHBOARD_SECRET_KEY", "DASHBOARD_ADMIN_USERNAME", "DASHBOARD_ADMIN_PASSWORD_HASH", "SUPPORT_BOT_TOKEN"],
+      "bcrypt_hash_keys": ["DASHBOARD_ADMIN_PASSWORD_HASH"],
       "json_digest_pin_sets_by_environment": {
         "prod": {
           "RUNPOD_RELEASE_PROFILE_PINS_JSON": [
@@ -65,6 +66,7 @@
     },
     "qqcc-config-backend": {
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "API_TOKEN", "QQCC_CONFIG_SECRET_KEY", "QQCC_CONFIG_ADMIN_USERNAME", "QQCC_CONFIG_ADMIN_PASSWORD_HASH", "QQCC_CONFIG_ADMIN_HOST", "PRIVATE_QQCC_BOT_OWNER_HOST"],
+      "bcrypt_hash_keys": ["QQCC_CONFIG_ADMIN_PASSWORD_HASH"],
       "patterns": ["QQCC_*", "PRIVATE_QQCC_BOT_*", "DATABASE_*", "REDIS_*", "JWT_*", "MINIO_*", "R2_*"]
     },
     "qqcc-config-frontend": {

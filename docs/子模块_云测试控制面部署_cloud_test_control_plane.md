@@ -36,6 +36,9 @@
 - Compose 业务模块默认读取测试环境 active `compose-contract/current`，不再读取
   云主机旧 release repo。端口、profile 或服务接线变更必须先激活新 contract，再
   重新部署对应模块；active contract 缺失或不完整时部署应明确失败。
+- 管理后台 bcrypt 哈希在 `/etc/allbot/test.env` 中使用单引号保护标准单 `$` 值；
+  `config-contract` 激活时拒绝旧式双 `$` Compose 转义。配置 revision 改变后仍需
+  重新部署目标模块；发布器会在同 digest 下强制重建该容器。
 - GPU/Worker 测试继续使用显式本地 operator 和 exact slot。
 - Web 自由P图 v2.5/v3 人工验收共用运行时开关 `enable_free_edit_v3` 和
   BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、
