@@ -68,6 +68,27 @@ async def test_prepare_task_inputs_downloads_ordered_character_panels():
 
 
 @pytest.mark.asyncio
+async def test_prepare_task_inputs_downloads_ltx_character_background():
+    calls = []
+    params = {"background_image": "web_uploads/user/scene.jpeg"}
+
+    async def process(**kwargs):
+        calls.append((kwargs["param_key"], kwargs["img_filename"]))
+        kwargs["params"][kwargs["param_key"]] = "local-background.png"
+
+    await prepare_task_inputs(
+        params=params,
+        downloaded_input_paths=[],
+        process_single_input_asset_func=process,
+    )
+
+    assert calls == [
+        ("background_image", "web_uploads/user/scene.jpeg"),
+    ]
+    assert params["background_image"] == "local-background.png"
+
+
+@pytest.mark.asyncio
 async def test_process_single_input_asset_times_out_download(tmp_path):
     def slow_download(_object_name, _local_path):
         time.sleep(0.2)
