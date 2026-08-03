@@ -26,8 +26,9 @@ python scripts/release.py deploy \
 
 禁止旧同步脚本、rsync、现场 build、源码 bind mount、mutable tag 和自由
 Compose。代码发布不修改 `/etc/allbot/test.env` 或 `/etc/allbot/prod.env`。
-GitHub 手动入口为 `module-build.yml` 和 `module-deploy.yml`；GPU/ComfyUI
-仍由本地 operator 构建和发布。
+GitHub 手动入口为 `module-build.yml` 和 `module-deploy.yml`；包括 GPU/ComfyUI
+在内的 catalog 模块均可由 `module-build.yml` 使用云端 `allbot-sgp1` Buildx
+构建器发布。GPU 运行态切换仍必须通过明确的 RunPod/LAN operator 和精确 slot。
 
 本地 `safe_deploy.sh` 仅用于云正式整体故障时的受控灾备，必须按
 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 单独授权。
