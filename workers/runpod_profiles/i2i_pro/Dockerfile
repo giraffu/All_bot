@@ -51,7 +51,9 @@ RUN set -euo pipefail; \
     done; \
     git -C "${comfyui_dir}" checkout --force "${COMFYUI_REF}"; \
     if [ -f "${comfyui_dir}/requirements.txt" ]; then \
-      python3 -m pip install --no-cache-dir -r "${comfyui_dir}/requirements.txt"; \
+      python3 -m pip install --no-cache-dir \
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+        -r "${comfyui_dir}/requirements.txt"; \
     fi; \
     rm -rf "${comfyui_dir}/.git"; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
