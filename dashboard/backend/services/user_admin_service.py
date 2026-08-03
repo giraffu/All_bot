@@ -79,6 +79,7 @@ class UserListQuery:
 @dataclass(frozen=True)
 class UserTransferPlan:
     source_snapshot: dict
+    source_after_profile: dict
     target_before_snapshot: dict
     target_after_profile: dict
     membership_decision: dict
@@ -796,6 +797,22 @@ def _merge_transfer_profile(*, source_user: User, target_user: User) -> None:
     )
 
 
+def _sanitize_transferred_source_user(source_user: User) -> None:
+    """Keep the login identity while removing all transferred account value."""
+    source_user.credits = 0
+    source_user.checkin_count = 0
+    source_user.generation_count = 0
+    source_user.total_contributions = 0
+    source_user.approved_contributions = 0
+    source_user.referral_count = 0
+    source_user.last_checkin = None
+    source_user.is_channel_member = False
+    source_user.current_identity = DEFAULT_IDENTITY
+    source_user.identity_expire_at = None
+    source_user.user_group = "凡人"
+    source_user.invited_by = None
+
+
 def _json_safe(value):
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -805,6 +822,7 @@ def _json_safe(value):
 def _snapshot_transfer_user(user: User) -> dict:
     keys = [
         "id",
+        "telegram_id",
         "username",
         "full_name",
         "credits",
@@ -824,6 +842,7 @@ def _snapshot_transfer_user(user: User) -> dict:
         "identity_expire_at",
         "user_group",
         "referral_count",
+        "invited_by",
     ]
     return {key: _json_safe(getattr(user, key, None)) for key in keys}
 
@@ -831,6 +850,7 @@ def _snapshot_transfer_user(user: User) -> dict:
 def _clone_transfer_user(user: User) -> SimpleNamespace:
     return SimpleNamespace(
         id=user.id,
+        telegram_id=user.telegram_id,
         username=user.username,
         full_name=user.full_name,
         credits=user.credits,
@@ -850,6 +870,7 @@ def _clone_transfer_user(user: User) -> SimpleNamespace:
         identity_expire_at=user.identity_expire_at,
         user_group=user.user_group,
         referral_count=user.referral_count,
+        invited_by=user.invited_by,
     )
 
 
@@ -863,9 +884,11 @@ def _build_user_transfer_plan(
     preview_target = _clone_transfer_user(target_user)
     before = _snapshot_transfer_user(target_user)
     _merge_transfer_profile(source_user=preview_source, target_user=preview_target)
+    _sanitize_transferred_source_user(preview_source)
     after = _snapshot_transfer_user(preview_target)
     return UserTransferPlan(
         source_snapshot=_snapshot_transfer_user(source_user),
+        source_after_profile=_snapshot_transfer_user(preview_source),
         target_before_snapshot=before,
         target_after_profile=after,
         membership_decision={
@@ -902,6 +925,7 @@ def _build_user_transfer_plan(
 def _transfer_plan_to_dict(plan: UserTransferPlan) -> dict:
     return {
         "source_snapshot": plan.source_snapshot,
+        "source_after_profile": plan.source_after_profile,
         "target_before_snapshot": plan.target_before_snapshot,
         "target_after_profile": plan.target_after_profile,
         "membership_decision": plan.membership_decision,
@@ -984,7 +1008,8 @@ async def _estimate_transfer_counts(
     counts["duplicate_or_self_follower_links_deleted"] = int(
         duplicate_follower_result.scalar() or 0
     )
-    counts["source_user_deleted"] = 1
+    counts["source_user_sanitized"] = 1
+    counts["source_user_deleted"] = 0
     return counts
 
 
@@ -1004,7 +1029,7 @@ async def _write_user_transfer_log(
             user_id=target_user.id,
             username=target_user.username or target_user.full_name,
             operation_type="admin_transfer_user_data",
-            credit_change=int(source_user.credits or 0),
+            credit_change=int(transfer_plan.source_snapshot.get("credits") or 0),
             current_balance=int(target_user.credits or 0),
             extra_info={
                 "source_user_id": source_user.id,
@@ -1014,7 +1039,8 @@ async def _write_user_transfer_log(
                 "note": note,
                 "moved_counts": moved_counts,
                 "transfer_plan": _transfer_plan_to_dict(transfer_plan),
-                "source_deleted": True,
+                "source_deleted": False,
+                "source_sanitized": True,
             },
         )
     except Exception as log_exc:
@@ -1039,7 +1065,10 @@ def _build_transfer_user_response(
         "message": (
             f"已预演用户 {source_user_id} 到用户 {target_user_id} 的业务数据转移"
             if transfer_plan.dry_run
-            else f"已将用户 {source_user_id} 的业务数据转移到用户 {target_user_id}，并删除源用户"
+            else (
+                f"已将用户 {source_user_id} 的业务数据转移到用户 {target_user_id}，"
+                "并保留登录身份、清空源账户价值数据"
+            )
         ),
         "source_user_id": source_user_id,
         "target_user_id": target_user_id,
@@ -1368,11 +1397,12 @@ async def transfer_user_data_payload(
             source_user=source_user,
             target_user=target_user,
         )
+        _sanitize_transferred_source_user(source_user)
 
-        await db.delete(source_user)
         await db.commit()
 
-        moved_counts["source_user_deleted"] = 1
+        moved_counts["source_user_sanitized"] = 1
+        moved_counts["source_user_deleted"] = 0
         await _write_user_transfer_log(
             source_user=source_user,
             target_user=target_user,

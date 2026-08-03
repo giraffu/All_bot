@@ -64,7 +64,7 @@ async def _create_transfer_session():
 
 
 @pytest.mark.asyncio
-async def test_transfer_user_data_payload_moves_business_data_and_deletes_source(
+async def test_transfer_user_data_payload_moves_business_data_and_sanitizes_source(
     monkeypatch,
 ):
     engine, session = await _create_transfer_session()
@@ -75,8 +75,12 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     inviter = User(id=9, username="master", full_name="Master", credits=99)
     source = User(
         id=1,
+        telegram_id=111,
         username="source",
         full_name="Source User",
+        language_code="zh",
+        hashed_password="source-password-hash",
+        password_version=3,
         credits=10,
         checkin_count=2,
         generation_count=5,
@@ -88,6 +92,9 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
         last_checkin=date(2026, 5, 20),
         last_activity=now - timedelta(days=2),
         invited_by=9,
+        is_submission_banned=True,
+        submission_banned_at=now - timedelta(days=3),
+        submission_ban_reason="existing safety restriction",
         created_at=now - timedelta(days=10),
     )
     target = User(
@@ -243,10 +250,53 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert result["moved_counts"]["user_follower_links"] == 1
     assert result["moved_counts"]["duplicate_or_self_following_links_deleted"] == 2
     assert result["moved_counts"]["duplicate_or_self_follower_links_deleted"] == 2
-    assert result["moved_counts"]["source_user_deleted"] == 1
+    assert result["moved_counts"]["source_user_sanitized"] == 1
+    assert result["moved_counts"]["source_user_deleted"] == 0
+    assert result["transfer_plan"]["source_after_profile"]["telegram_id"] == 111
+    assert result["transfer_plan"]["source_after_profile"]["credits"] == 0
+    assert result["transfer_plan"]["source_after_profile"]["invited_by"] is None
     log_action.assert_awaited_once()
+    audit_kwargs = log_action.await_args.kwargs
+    assert audit_kwargs["credit_change"] == 10
+    assert audit_kwargs["extra_info"]["source_deleted"] is False
+    assert audit_kwargs["extra_info"]["source_sanitized"] is True
 
-    assert await session.get(User, 1) is None
+    sanitized_source = await session.get(User, 1)
+    assert sanitized_source is not None
+    assert sanitized_source.telegram_id == 111
+    assert sanitized_source.username == "source"
+    assert sanitized_source.full_name == "Source User"
+    assert sanitized_source.language_code == "zh"
+    assert sanitized_source.hashed_password == "source-password-hash"
+    assert sanitized_source.password_version == 3
+    assert sanitized_source.credits == 0
+    assert sanitized_source.checkin_count == 0
+    assert sanitized_source.generation_count == 0
+    assert sanitized_source.total_contributions == 0
+    assert sanitized_source.approved_contributions == 0
+    assert sanitized_source.referral_count == 0
+    assert sanitized_source.last_checkin is None
+    assert sanitized_source.is_channel_member is False
+    assert sanitized_source.current_identity == "外门弟子"
+    assert sanitized_source.identity_expire_at is None
+    assert sanitized_source.user_group == "凡人"
+    assert sanitized_source.invited_by is None
+    assert sanitized_source.is_submission_banned is True
+    assert sanitized_source.submission_ban_reason == "existing safety restriction"
+    assert sanitized_source.created_at == now - timedelta(days=10)
+
+    persistence_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        "src.services.user_persistence_service.AsyncSessionLocal",
+        persistence_session_factory,
+    )
+    from src.services.user_persistence_service import get_or_create_user_by_telegram
+
+    resolved_source, is_new = await get_or_create_user_by_telegram(111)
+    assert resolved_source.id == 1
+    assert resolved_source.credits == 0
+    assert is_new is False
+
     merged_target = await session.get(User, 2)
     assert merged_target.credits == 16
     assert merged_target.checkin_count == 5
@@ -258,6 +308,8 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert merged_target.user_group == "练气期"
     assert merged_target.referral_count == 1
     assert merged_target.is_channel_member is True
+    assert merged_target.is_submission_banned is True
+    assert merged_target.submission_ban_reason == "existing safety restriction"
     assert merged_target.last_checkin == date(2026, 5, 20)
     assert merged_target.created_at == now - timedelta(days=10)
 
@@ -324,6 +376,15 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
         )
     ).scalar_one()
     assert target_inviter == 9
+
+    source_referral_count = (
+        await session.execute(
+            select(func.count(Referral.id)).where(
+                (Referral.inviter_id == 1) | (Referral.invitee_id == 1)
+            )
+        )
+    ).scalar_one()
+    assert source_referral_count == 0
 
     likes_count = (
         await session.execute(
@@ -435,8 +496,14 @@ async def test_transfer_user_data_payload_dry_run_does_not_mutate(monkeypatch):
     assert result["status"] == "ok"
     assert result["dry_run"] is True
     assert result["moved_counts"]["history_rows"] == 1
+    assert result["moved_counts"]["source_user_sanitized"] == 1
+    assert result["moved_counts"]["source_user_deleted"] == 0
     assert result["merged_profile"]["credits"] == 16
     assert result["transfer_plan"]["dry_run"] is True
+    assert result["transfer_plan"]["source_after_profile"]["credits"] == 0
+    assert result["transfer_plan"]["source_after_profile"]["current_identity"] == (
+        "外门弟子"
+    )
     log_action.assert_not_awaited()
 
     assert await session.get(User, 1) is not None

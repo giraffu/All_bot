@@ -92,8 +92,9 @@ sequenceDiagram
 
 - 用户列表入口的查询条件应先归一化为 `UserListQuery`，再进入查询与 presenter，保持路由参数和响应字段兼容。
 - 用户转移先计算 `UserTransferPlan`，再执行真实迁移；`dry_run=true` 时只返回 before/after、预计 moved_counts 与合并决策，不写库、不写审计日志。
-- 真实转移会把历史、模板共建、签到、账本日志、订单、affiliate 流水、广场投稿/评论/互动、提示词解锁、关注关系与邀请关系并入目标用户；`gallery_prompt_unlocks.user_id + post_id`、`user_follows.follower_id + followee_id` 等唯一锚点在迁移前必须先去重，避免删除源用户时触发非空外键或唯一约束错误。
-- 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts，以及 membership / ban / stats 的合并决策，便于后续追溯。
+- 真实转移会把灵石、会员身份、历史、模板共建、签到、账本日志、订单、affiliate 流水、广场投稿/评论/互动、提示词解锁、关注关系与邀请关系并入目标用户；`gallery_prompt_unlocks.user_id + post_id`、`user_follows.follower_id + followee_id` 等唯一锚点在迁移前必须先去重。
+- 源用户不再物理删除：保留 Telegram / Web 登录身份、基础资料、创建时间与封禁状态，清零灵石、会员身份、成长/签到/邀请/贡献统计和频道成员缓存。这样原 Telegram 身份仍由既有用户占用，再次 `/start` 必须返回 `is_new=false`，不能重复领取新手或邀请奖励。源封禁同时合并到目标并继续保留在源账户，禁止通过转移洗掉处罚。
+- 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts、`source_sanitized=true`、`source_deleted=false`，以及 membership / ban / stats 的合并决策，便于后续追溯。
 
 ### 4.4 RunPod 管理
 
