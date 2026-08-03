@@ -97,6 +97,9 @@ manifest 和专项文档读取，不在此维护快照。
   两阶段 guide/crop/sampler 拓扑，模型链固定为 10Eros v1.4 DMD →
   `LTX2.3-Licon-MSR-test_version.safetensors`。10Eros 提供成人生成能力，Licon
   只维持身份；不叠加 distilled、Sulphur 或其它 NSFW LoRA。
+- `ltx_t2v_ic` 的两张人物面板和背景图都必须先由 Worker 从对象存储下载并上传到
+  目标 ComfyUI input，再把本地文件名注入 `LoadImage`；远端 object key 不得直接
+  进入 workflow，也不得把无媒体输出的 Comfy success 当成任务成功。
 - 浏览器提交 typed `character_refs` 与 `environment_ref`；旧 ID/upload key 只作
   过渡兼容。服务端校验 owner/published/moderation，解析完整四视图面板、人物描述
   与环境描述；Worker 按选择顺序追加稳定描述。两阶段都必须

@@ -26,7 +26,9 @@ checkpoint；`LTX2.3-Licon-MSR-test_version.safetensors` 只提供人物身份�
 
 三张媒体的稳定顺序是：角色参考图 1、角色参考图 2、场景背景图。人物参考图是人物
 图库生成的完整四视图面板；背景只定义环境、布局和光线。三者都不是视频首帧或
-终帧。
+终帧。Worker 输入准备必须对 `character_sheets` 和 `background_image` 分别执行
+对象存储下载、图片规范化和 ComfyUI input 上传，再把 workflow 的 `LoadImage`
+参数替换为 ComfyUI 本地文件名；远端 object key 不得直接进入 workflow。
 
 ## 输入与授权边界
 
