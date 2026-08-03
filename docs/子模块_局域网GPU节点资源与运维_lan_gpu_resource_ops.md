@@ -46,7 +46,7 @@
 
 | 服务器 | SSH Host | CPU | 内存 | GPU | 磁盘快照 | 主要功能 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.6T，可用 1.9T | worker/relay、spool、legacy 数据、开发运维 |
+| 主服务器 `hfy-FAEX9` / `192.168.1.115` | 本机 | Ryzen AI MAX+ 395，16C/32T | 128GiB unified memory | Radeon 8060S `gfx1151`，64GiB BIOS VRAM aperture | 以当次 `df` 为准 | worker/relay、registry、model cache、开发运维；也可作为 `lan_local` ROCm 单槽节点，img2img 候选端口 `8195` |
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
 | `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用约 918G，可用约 821G | PornMaster Flux2 BF16 LAN AIO `8190`；image_to_video/SCAIL-2 为同卡回切候选；旧宿主机 ComfyUI `8188` / worker 01 为 stopped rollback 元数据 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 190G，可用 680G | LAN AIO `8190/8191` only；legacy 02/03 已退役 |
@@ -128,6 +128,16 @@ LAN AIO 容器冷启动若需通过本地主 VPN 获取公开依赖，只能在�
 每个 slot 必须先 `preflight`、准备目标镜像、预拉或加载镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。`preflight` 的 legacy `/system_stats` 与 `/queue` 对刚重启的 ComfyUI 会短重试，只有连续失败才阻断切换；镜像门禁接受目标节点已配置 Docker insecure registry、目标镜像已存在，或本地主 runner 已有同 tag 镜像可通过 `docker save | ssh docker load` 流式加载。`preflight` 还会检查 host port 的 Docker published owner，只允许当前目标容器或声明的 `old_runtime_container` 占用；若同卡残留旧 prod/canary 容器占用端口，必须先人工确认队列、agent 与容器归属，再清理残留容器后重试。禁止一次性接管整台节点或跨节点批量启用。新增候选不由 Dashboard 直接写生产配置，先用 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id <node> --profile <profile> --replace-slot <current-slot>` 生成 YAML patch、渲染摘要和预检命令，审阅并提交 `lan_aio_prod_slots.yml` 后再由本地主 AI operator/CLI 执行后续管理。
 
 LAN-only `all` 镜像不得由 GPU 节点现场构建，也不得让 GPU 节点从 GHCR 拉取。可信 main 构建节点使用 `scripts/build_runpod_profile_image.sh --profile all --reuse-base-custom-nodes`，以本地 registry 中 digest-pinned 的 LTX 基线、Wan 节点源镜像和已通过 RTX 5090/SM120 attention 验证的 SCAIL xFormers 源镜像为输入，直接向 `localhost:5000` 推送；该模式拒绝公网 registry、mutable tag、缺少 `@sha256` 的任一 source ref，并把三个 source digest 写入 OCI labels。SCAIL 源只提供与 Torch 2.11/CUDA 12.8 匹配的本地 xFormers 包，不把模型权重或旧 workspace 复制进 `all`。完成 smoke、revision 与目标 manifest digest 核验并把 LAN digest 固定到 catalog 后，GPU 节点才可从 `192.168.1.115:5000` 预拉。模型权重不进入镜像，只通过 LAN cache manifest 与内容寻址对象在内网同步。`all` 不设置 `--disable-dynamic-vram` 或 `--reserve-vram`：混合 GGUF/FP8 模型在 RTX 5090 32GB 上必须允许 ComfyUI 动态卸载，避免 active memory 很低时 allocator 仍保留接近整卡显存；独立 Wan/image-to-video profile 仍保留其原有参数，独立 `ltx_t2v` profile 继续保留 5GB 余量。由于 `all` 会在不同模型族之间连续切换，每笔 workflow 提交前必须调用 ComfyUI `/free` 并同时设置 `unload_models=true`、`free_memory=true`，清理上一任务的 resident model 与 CUDA allocator reservation；预取下载和上一任务交付仍可并发，但单 Comfy 执行上限不变。
+
+Ryzen AI Max+ 395 使用独立 `img2img_lora_rocm_gfx1151` LAN profile 和
+`img2img_rocm_gfx1151` release module，不复用 CUDA img2img artifact。镜像基线必须
+锁定 AMD 为 `gfx1151` 验证的 ROCm/PyTorch digest；Compose 必须映射
+`/dev/kfd`、`/dev/dri`，加入 `video`/`render` group，使用 host IPC 与
+`seccomp=unconfined`，且不得生成 NVIDIA `gpus` reservation。该节点通过明确的
+`local://` transport 由同机 operator 执行，禁止为了自连接临时配置 SSH 密钥。
+主机 driver/kernel 与容器 userland 分层：宿主只需满足 AMD 支持矩阵，ComfyUI、
+PyTorch 与 ROCm userland 随不可变镜像发布；任何 host kernel/driver 更新若需重启，
+必须作为独立维护动作，不得夹带在单槽 takeover 中。
 
 正式 Compose 必须始终把已校验的宿主机 `ComfyUI/models` 显式 bind 到渲染出的 `RUNPOD_MODEL_TARGET_DIR`；即使模型 workspace 与代码 workspace 相同也不得省略。否则 baked runtime 的 `/opt/ComfyUI/models` 会退化为容器临时层，启动时重复同步全部 manifest，停止容器后同步结果也不会持久化。
 

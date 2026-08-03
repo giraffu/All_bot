@@ -110,3 +110,16 @@ assignments:
       - video_edit
       - image_to_video
     max_parallel_tasks: 2
+
+  - id: lan-115-8195-worker-max395
+    enabled: true
+    provider: lan_local
+    node_id: gpu-115
+    comfy_id: comfy0
+    worker_id: lan_aio_prod_gpu115_gpu0_img2img_lora_rocm_01
+    profile_id: img2img_lora_rocm_gfx1151
+    task_types:
+      - img2img
+      - img2img_lora
+    max_parallel_tasks: 1
+    notes: Local Ryzen AI Max+ 395 production img2img worker.

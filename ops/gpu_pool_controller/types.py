@@ -55,6 +55,7 @@ class GpuNode:
     runtime: str
     gpus: tuple[GpuSpec, ...]
     comfy: tuple[ComfyInstance, ...]
+    accelerator: str = "nvidia"
     notes: str = ""
 
 

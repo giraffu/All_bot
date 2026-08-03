@@ -30,6 +30,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   上传结果并在 `/complete` 前确认交付成功。
 - RunPod 是云端弹性 adapter；LAN AIO 是单物理卡受控容器 adapter。二者都
   必须使用 exact digest 和 baked `workers/runpod_runtime`，不能主机源码覆盖。
+- LAN AIO transport 与 accelerator 是正交 seam：远端 NVIDIA 节点使用
+  `lan_ssh + nvidia`，本地主 Ryzen APU 可使用 `lan_local + rocm`。`lan_local`
+  只把同一套受管 operator 命令落到本机 shell/filesystem，不授权自由 compose；
+  `rocm` 渲染 KFD/Dri 设备契约，不能携带 NVIDIA reservation。
 
 ## 3. 不可变产物
 
@@ -53,6 +57,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   `RUNPOD_IMAGE_NAME_FACE_SWAP`。
 - release index 必须包含 Dashboard/autoscaler 需要的完整 profile pin 集。
   mutable tag、缺 profile、冲突 digest 或 incomplete manifest 一律 fail closed。
+- `img2img_rocm_gfx1151` 是 `img2img_lora_rocm_gfx1151` LAN runtime 的独立
+  release module。它与 CUDA `img2img` 共享 task/workflow/model manifest 语义，
+  但 artifact、accelerator contract 和验证证据完全分离。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
   `workers/runpod_runtime` bundle；Central 不携带 workflow。
 

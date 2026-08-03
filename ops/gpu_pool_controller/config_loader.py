@@ -159,6 +159,7 @@ def _parse_nodes(raw_nodes: dict[str, Any]) -> dict[str, GpuNode]:
             runtime=str(data["runtime"]),
             gpus=gpus,
             comfy=comfy_instances,
+            accelerator=str(data.get("accelerator") or "nvidia").lower(),
             notes=str(data.get("notes", "")),
         )
     return nodes
