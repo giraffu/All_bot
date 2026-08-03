@@ -95,6 +95,9 @@ TTL 24 小时；不写 History、R2 或 Gallery。
 Central 原子检查 running、worker owner、Profile 字段和累计长度。重复序号幂等忽略，
 跳号返回期望序号，Web SSE 通过 `text_snapshot` 恢复后继续接收 `text_delta`。
 增量快照 TTL 24 小时，不包含原始 prompt、图片或完整 LLM JSON。
+Central 的 `PromptOptimizeRequest` 必须显式保留 `trusted_context`、
+`prompt_config_snapshot` 和 `text_stream_contract`；禁止依赖 Pydantic 的 extra 字段，
+否则这些协议字段会在入队前被静默丢弃。
 本地 Worker Relay 必须同步转发 `/api/agent/task/text-delta` 的请求体、上游状态码与
 响应体；不能只覆盖传统媒体 Worker 的 pop/status/complete/heartbeat 路由。
 

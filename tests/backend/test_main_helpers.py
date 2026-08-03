@@ -18,6 +18,7 @@ from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
 from app.models import (
     FaceSwapRequest,
+    PromptOptimizeRequest,
     Scail2ActionTransferLongRequest,
     Scail2FaceSwapRequest,
     Scail2VideoRequest,
@@ -633,6 +634,38 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
         "request_model": {"task_id": "x"},
         "task_type": TaskType.FACE_SWAP,
         "queue_manager": "qm",
+    }
+
+
+def test_prompt_optimizer_request_preserves_stream_and_snapshot_contracts():
+    request = PromptOptimizeRequest(
+        task_id="prompt-task",
+        profile_ref="ltx_eros_t2v_ic_msr@1",
+        template_ref="ltx_scene_script_cinematic@4",
+        template_hash="a" * 64,
+        target_task_type="ltx_t2v_ic",
+        prompt="A cinematic scene",
+        context={"duration_seconds": 5},
+        media=[{"role": "reference_character_1", "object_key": "panel.png"}],
+        trusted_context={"character_descriptions": ["adult character"]},
+        prompt_config_snapshot={"scene_key": "ltx_t2v_ic", "revision": 1},
+        text_stream_contract={
+            "schema_version": "allbot.text_stream.v1",
+            "fields": ["positive_prompt"],
+            "max_chars": 2000,
+        },
+    )
+
+    _task_id, _priority, params = main_simple_task_routes.split_task_request(request)
+
+    assert params["trusted_context"] == {
+        "character_descriptions": ["adult character"]
+    }
+    assert params["prompt_config_snapshot"]["scene_key"] == "ltx_t2v_ic"
+    assert params["text_stream_contract"] == {
+        "schema_version": "allbot.text_stream.v1",
+        "fields": ["positive_prompt"],
+        "max_chars": 2000,
     }
 
 

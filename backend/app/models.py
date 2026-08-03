@@ -77,6 +77,9 @@ class PromptOptimizeRequest(BaseModel):
     prompt: str
     context: Dict[str, Any]
     media: List[Dict[str, str]]
+    trusted_context: Dict[str, Any] = Field(default_factory=dict)
+    prompt_config_snapshot: Optional[Dict[str, Any]] = None
+    text_stream_contract: Optional[Dict[str, Any]] = None
     priority: int = 0
 
 
