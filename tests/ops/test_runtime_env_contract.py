@@ -29,6 +29,8 @@ RUNPOD_RELEASE_PROFILE_IMAGE_ENVS = (
     "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
 )
 
+BCRYPT_TEST_HASH = "$2b$12$YIySnXRqN4W6uLKgKUzSKe/V4g4JJEghmIdOcaW0UO21Fda5H05aa"
+
 
 def _runpod_release_profile_pins() -> str:
     return json.dumps(
@@ -78,10 +80,10 @@ def _environment(environment: str) -> dict[str, str]:
         "JWT_SECRET_KEY": f"{suffix}-jwt-secret",
         "DASHBOARD_SECRET_KEY": f"{suffix}-dashboard-secret",
         "DASHBOARD_ADMIN_USERNAME": "admin",
-        "DASHBOARD_ADMIN_PASSWORD_HASH": f"{suffix}-dashboard-hash",
+        "DASHBOARD_ADMIN_PASSWORD_HASH": BCRYPT_TEST_HASH,
         "QQCC_CONFIG_SECRET_KEY": f"{suffix}-qqcc-secret",
         "QQCC_CONFIG_ADMIN_USERNAME": "qqcc_admin",
-        "QQCC_CONFIG_ADMIN_PASSWORD_HASH": f"{suffix}-qqcc-hash",
+        "QQCC_CONFIG_ADMIN_PASSWORD_HASH": BCRYPT_TEST_HASH,
         "QQCC_CONFIG_ADMIN_HOST": f"qqcc-{suffix}.example.com",
         "PRIVATE_QQCC_BOT_OWNER_HOST": f"private-{suffix}.example.com",
         "PRIVATE_QQCC_BOT_ENABLED": "false",
@@ -150,6 +152,24 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         "ALLBOT_CONFIG_REVISION",
         "ALLBOT_ENV",
     }
+
+
+def test_rejects_compose_escaped_bcrypt_hash_before_activation():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values["DASHBOARD_ADMIN_PASSWORD_HASH"] = BCRYPT_TEST_HASH.replace("$", "$$")
+
+    with pytest.raises(
+        module.ContractError,
+        match="dashboard-backend has invalid DASHBOARD_ADMIN_PASSWORD_HASH",
+    ):
+        module.build_snapshot(
+            contract,
+            "test",
+            values,
+            services=["dashboard-backend"],
+        )
 
 
 def test_test_dashboard_does_not_require_production_runpod_release_pins():

@@ -456,7 +456,10 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
     )
 
     assert captured["host"] == "prod-control"
-    assert "up -d --no-deps --wait --wait-timeout 120 dashboard-backend" in captured["script"]
+    assert (
+        "up -d --no-deps --force-recreate --wait --wait-timeout 120 "
+        "dashboard-backend"
+    ) in captured["script"]
 
 
 def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):

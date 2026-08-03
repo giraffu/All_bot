@@ -22,6 +22,9 @@ from urllib.parse import urlparse
 
 SERVICE_CONTRACT_REVISION_KEY = "ALLBOT_SERVICE_CONTRACT_REVISION"
 OCI_DIGEST_REF_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+BCRYPT_HASH_RE = re.compile(
+    r"^\$2[aby]\$(?:0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$"
+)
 
 
 class ContractError(RuntimeError):
@@ -60,6 +63,7 @@ def load_contract(path: Path) -> dict[str, Any]:
             raise ContractError(f"{service} service environment contract is invalid")
         _service_environments(config)
         _conditional_contract_keys(config)
+        _bcrypt_hash_keys(config)
         _json_digest_pin_sets(config)
         raw_environment_sets = config.get(
             "json_digest_pin_sets_by_environment", {}
@@ -177,6 +181,27 @@ def _active_conditional_required_keys(
     return required
 
 
+def _bcrypt_hash_keys(config: Mapping[str, Any]) -> frozenset[str]:
+    raw_keys = config.get("bcrypt_hash_keys", [])
+    if (
+        not isinstance(raw_keys, list)
+        or any(not isinstance(key, str) or not key.strip() for key in raw_keys)
+        or len(set(raw_keys)) != len(raw_keys)
+    ):
+        raise ContractError("service bcrypt_hash_keys contract is invalid")
+    return frozenset(key.strip() for key in raw_keys)
+
+
+def _validate_bcrypt_hashes(
+    name: str,
+    config: Mapping[str, Any],
+    values: Mapping[str, str],
+) -> None:
+    for key in _bcrypt_hash_keys(config):
+        if not BCRYPT_HASH_RE.fullmatch(values.get(key, "")):
+            raise ContractError(f"{name} has invalid {key}")
+
+
 def _conditional_condition_keys(config: Mapping[str, Any]) -> set[str]:
     return {
         str(rule["when"]["key"]).strip()
@@ -272,6 +297,7 @@ def _projection(
         raise ContractError(
             f"{name} is missing required environment keys: " + ", ".join(missing)
         )
+    _validate_bcrypt_hashes(name, config, values)
     _validate_json_digest_pin_sets(name, config, values, environment)
     patterns = [str(pattern) for pattern in config.get("patterns", [])]
     included = {str(key) for key in included_keys}

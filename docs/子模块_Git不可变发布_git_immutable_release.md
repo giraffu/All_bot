@@ -114,9 +114,11 @@ python scripts/release.py deploy \
 
 一次只部署一个模块。prod 唯一资格确认是 `--confirm-prod`。test 不支持某模块
 时只返回目标不可用，不产生 prod blocker。
-Compose image adapter 使用 `up --no-deps --wait --wait-timeout 120`，只替换
-目标服务并等待其健康检查完成；不得在 `up -d` 返回后立即读取健康状态，以免
-把正常启动窗口误判为失败并触发无效回滚。
+Compose image adapter 使用
+`up --no-deps --force-recreate --wait --wait-timeout 120`，只替换目标服务并等待
+其健康检查完成。即使镜像 digest 未变化，配置 revision 切换也必须创建新容器；
+不得在 `up -d` 返回后立即读取健康状态，以免把正常启动窗口误判为失败并触发
+无效回滚。
 
 Compose image adapter 默认从目标环境当前激活的
 `/var/lib/allbot/module-contracts/<env>/compose-contract/current` 读取 base 与
@@ -125,6 +127,12 @@ overlay。部署前会校验两个 Compose 文件存在；未先激活契约时�
 故障处置覆盖入口。更新端口、profile、volume 或服务接线时，先部署精确 digest 的
 `compose-contract`，再逐个重新部署受影响业务模块，使新容器消费同一个 active
 contract。
+
+`config-contract` 对 Dashboard 与 QQCC 管理员密码哈希执行 bcrypt 结构校验，
+无效值在 projection 激活前 fail closed。bcrypt 在宿主 Compose `--env-file` 中应
+写成单引号包裹的标准 `$2b$...`；单引号由配置解析层移除，但会阻止 Compose 把
+`$` 当变量插值。旧式 `$$2b$$...` 只适用于 YAML 字符串插值，不能进入独立
+service env 文件。
 
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。

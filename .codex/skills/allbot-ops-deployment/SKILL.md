@@ -60,13 +60,16 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
   只重做被 `COPY` 或依赖变化影响的层。开发机临时热重载不具备发布身份，不能拿来
   替代共享环境构建。
 
-Compose 只重建目标 service；Pages 只更新目标项目；GPU 必须明确
+Compose 使用 `--force-recreate` 只重建目标 service，使同 digest 的配置 revision
+切换也真正进入新容器；Pages 只更新目标项目；GPU 必须明确
 `--operator runpod|lan --slot <exact-slot>`；config/compose contract 只切换
 自身 active identity；migration 独立执行。
 Compose image 默认只消费目标环境已激活的
 `/var/lib/allbot/module-contracts/<env>/compose-contract/current`；契约缺失或文件
 不完整时 fail closed，禁止静默使用目标机旧仓库副本。仅故障处置时可显式传
 `--remote-root` 覆盖，并在恢复后回到 active contract。
+Dashboard/QQCC 管理密码哈希必须由 config contract 校验为标准单 `$` bcrypt；
+宿主 Compose env source 用单引号保护 `$`，禁止把旧式 `$$` 转义值投影到容器。
 带 Worker 新协议的发布先部署向后兼容的 Central/Web API，再部署 Worker，最后
 激活前端；回滚反向执行，不能让新 Worker 调用已经回滚的控制面接口。
 

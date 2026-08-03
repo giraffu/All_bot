@@ -1216,7 +1216,7 @@ grep -q '^ALLBOT_RELEASE_SHA=' "$candidate" || printf 'ALLBOT_RELEASE_SHA=module
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
 compose=(docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}
-"${{compose[@]}}" up -d --no-deps --wait --wait-timeout 120 {service}
+"${{compose[@]}}" up -d --no-deps --force-recreate --wait --wait-timeout 120 {service}
 mv "$candidate" "$runtime"
 """
         result = _remote_shell(host, script)
