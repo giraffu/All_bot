@@ -60,6 +60,13 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 
 - 先读取 provider 状态、operation store、Central worker 和目标 profile
   release pin，再决定 status/add/down/restart/rollout。
+- 新建 RunPod 通过 `RUNPOD_MODEL_DOWNLOAD_CONCURRENCY` 控制模型文件级并行，
+  默认 4、有效范围 1–8；同步器自身在变量缺失时保持串行，避免改变 LAN 调用。
+  下载阶段只写各自 `.partial`，全部成功后才按 manifest 顺序串行执行
+  size/SHA-256 校验和原子替换。任一文件耗尽重试时取消未开始项、停止活动流并
+  保留 partial，整个 bootstrap fail closed。
+- 并发配置与 runtime 只在新建 Pod 的精确 digest/env 中生效；不得用 restart
+  假定旧 Pod 已获得新代码，也不得为启用并行而批量替换现有 slot。
 - Pod 内诊断优先使用 Dashboard 提供的 `ssh.runpod.io` 代理入口；连接、有限重试、
   PTY 与标准输入命令模板见 `allbot-ops-deployment` 的
   `references/runpod-lan-runtime.md`。当次 Pod 页面是用户名和直连端口的事实源，
@@ -156,7 +163,7 @@ Dashboard RunPod profile 或 Pod 创建链路。它的能力集合必须严格�
 - 仅 baked worker runtime 变化且依赖清单未变时，可使用
   `lan_all_runtime_refresh`：它以已经验证的 LAN `all` exact digest 为基础，
   对旧/新 `requirements.txt` 做固定 SHA-256 双向门禁后完整替换 runtime，
-  重新应用多 manifest 补丁并写入新的 main revision。依赖、ComfyUI、custom
+  使用公共多 manifest 同步器并写入新的 main revision。依赖、ComfyUI、custom
   node 或 workflow 资产发生变化时必须回到完整 `lan_all` 构建，不能借 refresh
   绕过节点与依赖验证。
 - LAN model cache 可只读合并多个 manifest，以相对路径、size 和 SHA-256

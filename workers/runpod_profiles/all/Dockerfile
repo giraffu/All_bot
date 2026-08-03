@@ -72,7 +72,6 @@ COPY workers/runpod_profiles/ltx_unified/allbot_ltx_min_nodes /opt/allbot/allbot
 COPY workers/runpod_profiles/pornmaster_flux2_edit/patch_flux2_small_decoder.py /opt/allbot/patch_flux2_small_decoder.py
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY shared /opt/allbot/runtime/runpod_worker/shared
-COPY workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch /opt/allbot/runpod_sync_models_multi_manifest.patch
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY --from=scail_source /usr/local/lib/python3.12/dist-packages/xformers /opt/allbot/scail_xformers/xformers
@@ -120,7 +119,6 @@ RUN set -euo pipefail; \
       "${LICON_MSR_REVISION}"; \
     rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR/.git"; \
     COMFYUI_DIR="${comfyui_dir}" python3 /opt/allbot/patch_flux2_small_decoder.py; \
-    (cd /opt/allbot/runtime/runpod_worker && git apply /opt/allbot/runpod_sync_models_multi_manifest.patch); \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     rm -rf \

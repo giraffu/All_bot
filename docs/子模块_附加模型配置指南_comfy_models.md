@@ -351,11 +351,9 @@ LTXVideo 与 custom-node revision，烘焙八类 profile 的 workflow/runtime，
 镜像通过 `allbot.lan.profile=all` 和 source/agent/workflow revision 标签
 证明来源，且不得包含业务 `.safetensors`、`.ckpt` 或 `.pth` 权重。
 
-`all` Dockerfile 在构建期把
-`workers/runpod_profiles/all/runpod_sync_models_multi_manifest.patch`
-应用到镜像内的同步器，再通过 `RUNPOD_MODEL_MANIFEST_KEYS` 读取现有七份
-manifest；公共单 profile 同步器源码和既有镜像行为保持不变。`all` 同步器按
+公共模型同步器通过 `RUNPOD_MODEL_MANIFEST_KEYS` 读取多份 manifest；变量为空时
+继续使用 `RUNPOD_MODEL_MANIFEST_KEY` 的单 manifest 契约。同步器按
 `relative_path + size_bytes + sha256` 合并，重复内容只 materialize 一次；
 同路径 checksum 冲突、对象校验失败、LAN override 缺失或剩余磁盘不足时不写
-ready marker 并拒绝启动。既有 profile 继续使用
-`RUNPOD_MODEL_MANIFEST_KEY` 的单 manifest 契约。
+ready marker 并拒绝启动。`all`、`all_runtime_refresh` 与 `scail2_flex` 直接复制
+同一份公共实现，不再在镜像构建期应用 profile 私有补丁。

@@ -391,6 +391,9 @@ class RunPodPodRequestBuilder:
             "RUNPOD_MODEL_SYNC_ENABLED": (
                 "true" if env_config["model_sync_enabled"] else "false"
             ),
+            "RUNPOD_MODEL_DOWNLOAD_CONCURRENCY": str(
+                self.settings.model_download_concurrency
+            ),
             "RUNPOD_MODEL_BUCKET": env_config["model_bucket"],
             "RUNPOD_MODEL_PREFIX": env_config["model_prefix"],
             "RUNPOD_MODEL_MANIFEST_KEY": env_config["model_manifest_key"],
