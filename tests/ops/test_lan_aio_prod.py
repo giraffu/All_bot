@@ -719,6 +719,8 @@ def test_lan_aio_fleet_render_uses_rocm_devices_for_local_max395():
     assert service["environment"]["ROCR_VISIBLE_DEVICES"] == "0"
     assert service["environment"]["POOL_ACCELERATOR"] == "rocm"
     assert service["environment"]["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
+    assert "--lowvram" in service["environment"]["COMFY_EXTRA_ARGS"]
+    assert "--disable-pinned-memory" in service["environment"]["COMFY_EXTRA_ARGS"]
     assert any(
         mount.endswith(":/opt/ComfyUI/models") for mount in service["volumes"]
     )
