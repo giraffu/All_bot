@@ -49,6 +49,10 @@ class TaskResultResponse(BaseModel):
     result_url: Optional[str] = None
     result_kind: Optional[str] = None
     result_text: Optional[str] = None
+    partial_result_text: Optional[str] = None
+    partial_unvalidated: Optional[bool] = None
+    refund_status: Optional[str] = None
+    message: Optional[str] = None
     extra_outputs: Dict[str, Any] = Field(default_factory=dict)
     result_meta: Dict[str, Any] = Field(default_factory=dict)
 

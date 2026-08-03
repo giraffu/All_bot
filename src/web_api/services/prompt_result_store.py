@@ -75,6 +75,32 @@ async def store_prompt_result(
     )
 
 
+async def store_prompt_failure_result(
+    *,
+    task_id: str,
+    user_id: int,
+    partial_result_text: str,
+    refund_status: str,
+    message: str | None = None,
+) -> None:
+    partial = str(partial_result_text or "")[:2000]
+    await redis_client.set_prompt_result(
+        task_id,
+        {
+            "user_id": user_id,
+            "task_id": task_id,
+            "task_type": "prompt_optimize",
+            "status": "failed",
+            "result_kind": "text",
+            "partial_result_text": partial,
+            "partial_unvalidated": True,
+            "refund_status": refund_status,
+            "message": message or "prompt optimizer failed",
+        },
+        ttl_seconds=PROMPT_RESULT_TTL_SECONDS,
+    )
+
+
 async def get_owned_prompt_result(task_id: str, user_id: int) -> dict[str, Any] | None:
     try:
         payload = await redis_client.get_prompt_result(task_id)

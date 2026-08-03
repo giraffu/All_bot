@@ -94,6 +94,9 @@ const {
   canOptimizePrompt,
   canRestoreOriginalPrompt,
   isOptimizingPrompt,
+  promptOptimizerStreamPreview,
+  promptOptimizerFailedPartial,
+  promptOptimizerRefundStatus,
   optimizePrompt,
   restoreOriginalPrompt,
 } = useLabWorkbench()
@@ -147,6 +150,9 @@ const promptLockedHint = computed(() => (
         :optimize-prompt-disabled="!canOptimizePrompt"
         :optimize-prompt-loading="isOptimizingPrompt"
         :can-restore-original-prompt="canRestoreOriginalPrompt"
+        :prompt-stream-preview="promptOptimizerStreamPreview"
+        :prompt-failed-partial="promptOptimizerFailedPartial"
+        :prompt-refund-status="promptOptimizerRefundStatus"
         @update:prompt="prompt = $event"
         @asset-video-metadata="handleAssetVideoMetadata"
         @remove-reference="handleRemoveReference"

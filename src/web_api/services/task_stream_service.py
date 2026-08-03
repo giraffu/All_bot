@@ -9,6 +9,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from sse_starlette.sse import EventSourceResponse
 from src.core.task_status_mapper import is_backend_terminal_status
 from src.services.task_queue_position_display import select_display_queue_position
+from src.services.task_text_stream_store import read_text_stream_snapshot
 
 TASK_STREAM_STATUS_CACHE_TTL_SECONDS = float(
     os.getenv("TASK_STREAM_STATUS_CACHE_TTL_SECONDS", "2.0")
@@ -230,6 +231,36 @@ def _build_progress_event(payload: dict[str, Any] | str) -> dict[str, str]:
     return {"event": "progress", "data": data}
 
 
+def _build_text_snapshot_event(payload: dict[str, Any]) -> dict[str, str]:
+    sequence = int(payload.get("sequence") or 0)
+    attempt_id = str(payload.get("attempt_id") or "")
+    return {
+        "event": "text_snapshot",
+        "id": f"{attempt_id}:{sequence}",
+        "data": json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def _build_text_delta_event(payload: dict[str, Any]) -> dict[str, str]:
+    sequence = int(payload.get("sequence") or 0)
+    attempt_id = str(payload.get("attempt_id") or "")
+    public_payload = {
+        key: payload.get(key)
+        for key in (
+            "schema_version",
+            "attempt_id",
+            "sequence",
+            "field",
+            "delta",
+        )
+    }
+    return {
+        "event": "text_delta",
+        "id": f"{attempt_id}:{sequence}",
+        "data": json.dumps(public_payload, ensure_ascii=False),
+    }
+
+
 async def _build_not_found_event(
     *,
     task_id: str,
@@ -415,6 +446,9 @@ async def _build_pubsub_stream_transition(
     except json.JSONDecodeError:
         return _build_progress_event(data), False, False
 
+    if parsed.get("event_type") == "text_delta":
+        return _build_text_delta_event(parsed), True, False
+
     terminal_event, became_running, should_stop = _resolve_status_transition(
         status_data=parsed,
         task_id=task_id,
@@ -504,6 +538,15 @@ def build_task_status_stream_response(
         try:
             yield _build_connected_event(task_id)
             is_running = False
+            last_text_sequence = 0
+            current_text_attempt = ""
+            initial_snapshot = await read_text_stream_snapshot(
+                redis, runtime_task_id_val
+            )
+            if initial_snapshot:
+                yield _build_text_snapshot_event(initial_snapshot)
+                last_text_sequence = int(initial_snapshot.get("sequence") or 0)
+                current_text_attempt = str(initial_snapshot.get("attempt_id") or "")
             initial_events, became_running, should_stop, last_status_signature = (
                 await _build_initial_stream_transition(
                     runtime_task_id_val=runtime_task_id_val,
@@ -553,6 +596,32 @@ def build_task_status_stream_response(
                         build_terminal_progress_payload=build_terminal_progress_payload,
                     )
                 )
+                if pubsub_event and pubsub_event.get("event") == "text_delta":
+                    delta_payload = json.loads(pubsub_event["data"])
+                    delta_attempt = str(delta_payload.get("attempt_id") or "")
+                    delta_sequence = int(delta_payload.get("sequence") or 0)
+                    if current_text_attempt and delta_attempt != current_text_attempt:
+                        snapshot = await read_text_stream_snapshot(
+                            redis, runtime_task_id_val
+                        )
+                        if snapshot:
+                            yield _build_text_snapshot_event(snapshot)
+                            current_text_attempt = str(snapshot.get("attempt_id") or "")
+                            last_text_sequence = int(snapshot.get("sequence") or 0)
+                    elif delta_sequence <= last_text_sequence:
+                        pubsub_event = None
+                    elif delta_sequence != last_text_sequence + 1:
+                        snapshot = await read_text_stream_snapshot(
+                            redis, runtime_task_id_val
+                        )
+                        if snapshot:
+                            yield _build_text_snapshot_event(snapshot)
+                            current_text_attempt = str(snapshot.get("attempt_id") or "")
+                            last_text_sequence = int(snapshot.get("sequence") or 0)
+                        pubsub_event = None
+                    else:
+                        current_text_attempt = delta_attempt
+                        last_text_sequence = delta_sequence
                 if pubsub_event:
                     yield pubsub_event
                 if became_running:

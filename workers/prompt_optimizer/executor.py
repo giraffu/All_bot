@@ -21,6 +21,7 @@ async def execute_prompt_optimization(
     provider,
     load_media: Callable[[str], Awaitable[bytes]],
     preprocess_media: Callable[[bytes], str],
+    on_text_delta: Callable[[str, str], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     profile = get_profile_by_ref(str(payload.get("profile_ref") or ""))
     template = get_template_by_ref(str(payload.get("template_ref") or ""))
@@ -48,6 +49,8 @@ async def execute_prompt_optimization(
         user_prompt=user_prompt,
         image_data_urls=image_data_urls,
         json_schema=build_output_json_schema(profile),
+        output_fields=profile.output_fields,
+        on_text_delta=on_text_delta,
     )
     if set(raw) != {"optimized_fields", "warnings"}:
         raise PromptOptimizationExecutionError("unknown_output_fields")
@@ -79,4 +82,3 @@ async def execute_prompt_optimization(
             }
         },
     }
-

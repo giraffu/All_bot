@@ -87,6 +87,64 @@ class _FakeRedis:
                 return list(fallback)
             return []
 
+        if "text_stream_contract" in script:
+            (
+                task_key,
+                stream_key,
+                agent_id,
+                attempt_id,
+                sequence,
+                field,
+                delta,
+                delta_chars,
+                updated_at,
+                _ttl,
+            ) = args
+            task = self.hashes.get(task_key)
+            if not task:
+                return [-10, 0]
+            if task.get("status") != "running":
+                return [-11, 0]
+            if task.get("worker_id") != agent_id:
+                return [-13, 0]
+            params = json.loads(task["params"])
+            contract = params.get("text_stream_contract")
+            if not contract:
+                return [-14, 0]
+            stream = self.hashes.setdefault(stream_key, {})
+            if stream.get("attempt_id") not in {None, attempt_id}:
+                return [-16, 0]
+            last = int(stream.get("last_sequence", 0))
+            sequence = int(sequence)
+            if sequence <= last:
+                return [0, last]
+            if sequence != last + 1:
+                return [-17, last + 1]
+            next_chars = int(stream.get("character_count", 0)) + int(delta_chars)
+            if next_chars > int(contract["max_chars"]):
+                return [-18, last]
+            stream.update({
+                "schema_version": "allbot.text_stream.v1",
+                "attempt_id": attempt_id,
+                "last_sequence": sequence,
+                "character_count": next_chars,
+                "updated_at": updated_at,
+                f"field:{field}": stream.get(f"field:{field}", "") + delta,
+            })
+            return [1, sequence]
+
+        if "TRANSITION" not in script and "local current = redis.call('HGET'" in script:
+            task_key, running_key, task_data_json, remove_running, task_id = args
+            task = self.hashes.get(task_key)
+            if task is None:
+                return -1
+            if task.get("status") in {"done", "error", "cancelled"}:
+                return 0
+            task.update(json.loads(task_data_json))
+            if remove_running == "1":
+                self.sets.setdefault(running_key, set()).discard(task_id)
+            return 1
+
         (
             task_key,
             pending_key,
@@ -989,6 +1047,61 @@ async def test_cancel_running_task_marks_cancelled_removes_running_and_publishes
         "comfy:task_events:task-running-cancelled",
         json.dumps({"status": "cancelled"}),
     ) in redis.published
+
+
+@pytest.mark.asyncio
+async def test_terminal_transition_does_not_allow_failure_to_overwrite_done():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-terminal-race"
+    await redis.hset(
+        task_key,
+        mapping={"status": TaskStatus.RUNNING, "type": TaskType.IMG2IMG},
+    )
+    await redis.sadd(manager.running_key, "task-terminal-race")
+
+    await manager.complete_task("task-terminal-race", "outputs/result.png")
+    await manager.fail_task("task-terminal-race", "late failure")
+
+    assert redis.hashes[task_key]["status"] == "done"
+    assert "error_msg" not in redis.hashes[task_key]
+
+
+@pytest.mark.asyncio
+async def test_text_delta_is_idempotent_and_rejects_sequence_gaps():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-stream"
+    await redis.hset(task_key, mapping={
+        "status": "running",
+        "type": "prompt_optimize",
+        "worker_id": "prompt_optimizer_test_01",
+        "params": json.dumps({
+            "text_stream_contract": {
+                "schema_version": "allbot.text_stream.v1",
+                "fields": ["positive_prompt"],
+                "max_chars": 2000,
+            }
+        }),
+    })
+    request = dict(
+        task_id="task-stream",
+        agent_id="prompt_optimizer_test_01",
+        attempt_id="f62d88b8-bfac-40b6-a1e1-e9fb49abf619",
+        sequence=1,
+        field="positive_prompt",
+        delta="Use the image",
+    )
+    first = await manager.append_task_text_delta(**request)
+    duplicate = await manager.append_task_text_delta(**request)
+    assert first["accepted"] is True
+    assert duplicate == {"status": "ok", "accepted": False, "last_sequence": 1}
+    stream = redis.hashes["comfy:task_text_stream:task-stream"]
+    assert stream["field:positive_prompt"] == "Use the image"
+
+    request["sequence"] = 3
+    with pytest.raises(Exception, match="sequence_gap"):
+        await manager.append_task_text_delta(**request)
 
 
 @pytest.mark.asyncio

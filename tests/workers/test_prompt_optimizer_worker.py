@@ -14,6 +14,7 @@ from workers.prompt_optimizer.executor import (
 )
 from workers.prompt_optimizer.media import image_bytes_to_data_url
 from workers.prompt_optimizer.provider import LMStudioChatProvider
+from workers.prompt_optimizer.json_stream import OptimizedFieldsJsonExtractor
 
 os.environ.setdefault("AGENT_SECRET_TOKEN", "test-token")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
@@ -33,6 +34,21 @@ class FakeProvider:
             "optimized_fields": {"positive_prompt": "optimized scene"},
             "warnings": [],
         }
+
+
+def test_incremental_json_extractor_handles_chunked_escapes_and_unicode():
+    extractor = OptimizedFieldsJsonExtractor(("positive_prompt",))
+    chunks = [
+        '{"optimized_fields":{"positive_prompt":"Line ',
+        '\\"one\\" and \\u4f60',
+        '\\u597d"},"warnings":[]}',
+    ]
+    emitted = ""
+    for chunk in chunks:
+        emitted += extractor.feed(chunk).get("positive_prompt", "")
+    parsed = json.loads("".join(chunks))
+    extractor.verify(parsed)
+    assert emitted == 'Line "one" and 你好'
 
 
 def _payload(template_ref="ltx_scene_script_cinematic@3"):

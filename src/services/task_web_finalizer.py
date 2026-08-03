@@ -378,7 +378,7 @@ async def _finalize_pending_web_failure(
     terminal_snapshot,
     remove_record_func,
 ) -> None:
-    await finalize_monitored_web_task_failure_default(
+    finalization = await finalize_monitored_web_task_failure_default(
         internal_user_id=record["internal_user_id"],
         username=record["username"],
         cost=int(record.get("cost", 0)),
@@ -386,6 +386,28 @@ async def _finalize_pending_web_failure(
         final_status=terminal_snapshot.status,
         logger_override=logger,
     )
+    submission = record.get("submission_context") or {}
+    metadata = submission.get("metadata") or {}
+    if isinstance(metadata.get("_prompt_optimizer"), dict):
+        from src.services.task_text_stream_store import read_text_stream_snapshot
+        from src.web_api.services.prompt_result_store import store_prompt_failure_result
+
+        snapshot = await read_text_stream_snapshot(
+            redis_client.redis, record["backend_task_id"]
+        )
+        fields = (snapshot or {}).get("fields") or {}
+        primary_field = metadata["_prompt_optimizer"].get("primary_field")
+        await store_prompt_failure_result(
+            task_id=registry_task_id,
+            user_id=record["internal_user_id"],
+            partial_result_text=str(fields.get(primary_field) or ""),
+            refund_status=(
+                "refunded"
+                if finalization is not None and getattr(finalization, "refunded", False)
+                else "pending"
+            ),
+            message=terminal_snapshot.error or terminal_snapshot.message,
+        )
     await remove_record_func()
 
 

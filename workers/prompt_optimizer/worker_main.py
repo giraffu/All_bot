@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import threading
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -129,8 +131,10 @@ class CentralClient:
         response.raise_for_status()
         return response.json().get("task")
 
-    async def fail(self, task_id: str, agent_id: str, error: str) -> None:
-        await self.client.post(
+    async def fail(
+        self, task_id: str, agent_id: str, error: str, *, attempt_id: str | None = None
+    ) -> None:
+        response = await self.client.post(
             "/api/agent/task/status",
             json={
                 "task_id": task_id,
@@ -138,21 +142,107 @@ class CentralClient:
                 "status": "failed",
                 "error": error[:500],
                 "set_current": False,
+                "attempt_id": attempt_id,
             },
         )
+        response.raise_for_status()
 
     async def complete(
-        self, task_id: str, agent_id: str, result: dict[str, Any]
+        self,
+        task_id: str,
+        agent_id: str,
+        result: dict[str, Any],
+        *,
+        attempt_id: str | None = None,
     ) -> None:
-        await self.client.post(
+        response = await self.client.post(
             "/api/agent/task/complete",
             json={
                 "task_id": task_id,
                 "agent_id": agent_id,
                 "result": "",
+                "attempt_id": attempt_id,
                 **result,
             },
         )
+        response.raise_for_status()
+
+    async def text_delta(
+        self,
+        *,
+        task_id: str,
+        agent_id: str,
+        attempt_id: str,
+        sequence: int,
+        field: str,
+        delta: str,
+    ) -> None:
+        payload = {
+            "task_id": task_id,
+            "agent_id": agent_id,
+            "attempt_id": attempt_id,
+            "sequence": sequence,
+            "field": field,
+            "delta": delta,
+        }
+        for retry in range(3):
+            try:
+                response = await self.client.post(
+                    "/api/agent/task/text-delta", json=payload
+                )
+                response.raise_for_status()
+                return
+            except (httpx.TimeoutException, httpx.TransportError):
+                if retry == 2:
+                    raise
+                await asyncio.sleep((0.25, 1.0, 2.0)[retry])
+
+
+class TextDeltaEmitter:
+    def __init__(
+        self,
+        *,
+        central: CentralClient,
+        task_id: str,
+        agent_id: str,
+        attempt_id: str,
+    ) -> None:
+        self.central = central
+        self.task_id = task_id
+        self.agent_id = agent_id
+        self.attempt_id = attempt_id
+        self.sequence = 0
+        self.buffers: dict[str, str] = {}
+        self.last_flush = time.monotonic()
+
+    async def add(self, field: str, delta: str) -> None:
+        self.buffers[field] = self.buffers.get(field, "") + delta
+        while len(self.buffers[field]) >= 64:
+            await self._send(field, self.buffers[field][:64])
+            self.buffers[field] = self.buffers[field][64:]
+        if time.monotonic() - self.last_flush >= 0.05:
+            await self.flush()
+
+    async def _send(self, field: str, delta: str) -> None:
+        if not delta:
+            return
+        next_sequence = self.sequence + 1
+        await self.central.text_delta(
+            task_id=self.task_id,
+            agent_id=self.agent_id,
+            attempt_id=self.attempt_id,
+            sequence=next_sequence,
+            field=field,
+            delta=delta,
+        )
+        self.sequence = next_sequence
+        self.last_flush = time.monotonic()
+
+    async def flush(self) -> None:
+        for field in tuple(self.buffers):
+            delta = self.buffers[field]
+            self.buffers[field] = ""
+            await self._send(field, delta)
 
 
 def _parse_params(task: dict[str, Any]) -> dict[str, Any]:
@@ -192,16 +282,37 @@ async def _lane(
             with _state_lock:
                 _state["active_lanes"] += 1
             try:
+                attempt_id = str(uuid.uuid4())
+                emitter = TextDeltaEmitter(
+                    central=central,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    attempt_id=attempt_id,
+                )
                 result = await execute_prompt_optimization(
                     _parse_params(task),
                     provider=provider,
                     load_media=lambda key: _load_object(minio_client, key),
                     preprocess_media=image_bytes_to_data_url,
+                    on_text_delta=emitter.add,
                 )
-                await central.complete(task_id, agent_id, result)
+                await emitter.flush()
+                await central.complete(
+                    task_id, agent_id, result, attempt_id=attempt_id
+                )
             except Exception as exc:
                 logger.warning("prompt task failed task_id=%s reason=%s", task_id, type(exc).__name__)
-                await central.fail(task_id, agent_id, type(exc).__name__)
+                if "emitter" in locals():
+                    try:
+                        await emitter.flush()
+                    except Exception:
+                        pass
+                await central.fail(
+                    task_id,
+                    agent_id,
+                    type(exc).__name__,
+                    attempt_id=locals().get("attempt_id"),
+                )
             finally:
                 with _state_lock:
                     _state["active_lanes"] -= 1

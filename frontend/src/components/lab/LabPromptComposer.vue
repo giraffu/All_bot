@@ -67,6 +67,9 @@ const props = defineProps<{
   optimizePromptDisabled?: boolean
   optimizePromptLoading?: boolean
   canRestoreOriginalPrompt?: boolean
+  promptStreamPreview?: string
+  promptFailedPartial?: string
+  promptRefundStatus?: string
 }>()
 
 const emit = defineEmits<{
@@ -85,6 +88,12 @@ const advancedVisible = ref(false)
 
 const canShowAdvancedAsPopover = computed(() => !isMobile.value)
 const hasAssetUploadSlots = computed(() => props.assetUploadSlots.length > 0)
+const displayedPrompt = computed(() => props.promptStreamPreview || props.prompt)
+const promptStreaming = computed(() => Boolean(props.promptStreamPreview && props.optimizePromptLoading))
+
+const copyFailedPartial = async () => {
+  if (props.promptFailedPartial) await navigator.clipboard.writeText(props.promptFailedPartial)
+}
 
 const closeAdvanced = () => {
   advancedVisible.value = false
@@ -227,11 +236,12 @@ const compactUploadLabel = (label: string) => label
 
         <a-textarea
           v-if="showStructuredPromptInput && !promptLocked"
-          :value="prompt"
+          :value="displayedPrompt"
           :auto-size="{ minRows: 2, maxRows: 5 }"
           :maxlength="2000"
           show-count
           class="lab-composer__textarea lab-composer__structured-prompt mt-3 rounded-2xl border px-3 py-2"
+          :readonly="promptStreaming"
           :placeholder="promptPlaceholder"
           @update:value="emit('update:prompt', String($event))"
         />
@@ -247,14 +257,27 @@ const compactUploadLabel = (label: string) => label
 
       <a-textarea
         v-else-if="showPromptInput !== false"
-        :value="prompt"
+        :value="displayedPrompt"
         :auto-size="{ minRows: 2, maxRows: 6 }"
         :maxlength="2000"
         show-count
         class="lab-composer__textarea"
+        :readonly="promptStreaming"
         :placeholder="promptPlaceholder"
         @update:value="emit('update:prompt', String($event))"
       />
+
+      <div
+        v-if="promptFailedPartial"
+        class="lab-composer__warning mt-3 rounded-2xl border px-3 py-2 text-sm"
+      >
+        <div class="font-semibold">{{ t('lab.workbench.optimizer_partial_unvalidated') }}</div>
+        <div class="mt-1 whitespace-pre-wrap break-words opacity-80">{{ promptFailedPartial }}</div>
+        <div class="mt-2 flex items-center justify-between gap-2">
+          <span>{{ promptRefundStatus === 'refunded' ? t('lab.workbench.optimizer_refunded') : t('lab.workbench.optimizer_refund_pending') }}</span>
+          <a-button size="small" @click="copyFailedPartial">{{ t('lab.workbench.copy_partial') }}</a-button>
+        </div>
+      </div>
 
       <div class="lab-composer__actions mt-3 flex items-center justify-between gap-2 border-t pt-3">
         <div class="lab-composer__actions-left flex min-w-0 items-center gap-2 overflow-hidden">

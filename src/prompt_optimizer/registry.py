@@ -497,12 +497,19 @@ def get_prompt_optimizer_capability(target_task_type: str) -> dict[str, Any]:
         if ref in template_refs and template.active
     ]
     templates.sort(key=lambda item: (item.ref != default_ref, item.id, item.version))
+    stream_fields = set.intersection(*(set(profile.output_fields) for profile in profiles))
     return {
         "target_task_type": target_task_type,
         "cost": PROMPT_OPTIMIZATION_COST,
         "media_contract": {
             "required": ["start_image"],
             "optional": ["end_image"],
+        },
+        "text_stream": {
+            "enabled": True,
+            "schema_version": "allbot.text_stream.v1",
+            "events": ["text_snapshot", "text_delta"],
+            "fields": sorted(stream_fields),
         },
         "templates": [
             {

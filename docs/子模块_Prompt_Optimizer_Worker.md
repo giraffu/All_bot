@@ -15,6 +15,7 @@ Web capability/submit
   -> MediaPreprocessor
   -> ModelProvider (LM Studio)
   -> OutputValidator
+  -> Central text_delta + recoverable snapshot
   -> Central text completion
   -> owner-fenced Redis result (24h)
 ```
@@ -66,6 +67,16 @@ TTL 24 小时；不写 History、R2 或 Gallery。
 普通日志只记录 task ID、lane 和错误类型。禁止记录原始提示词、data URL、图片内容
 或 LLM 原始响应。
 
+任务载荷包含服务端生成的 `text_stream_contract`。Worker 使用
+`POST /api/agent/task/text-delta` 上报 `attempt_id + sequence + field + delta`；
+Central 原子检查 running、worker owner、Profile 字段和累计长度。重复序号幂等忽略，
+跳号返回期望序号，Web SSE 通过 `text_snapshot` 恢复后继续接收 `text_delta`。
+增量快照 TTL 24 小时，不包含原始 prompt、图片或完整 LLM JSON。
+
+前端只把增量作为只读预览；最终 `/result` 成功才替换真实输入。部分输出后失败时，
+原文恢复，片段以 `partial_unvalidated=true` 只读返回，退款状态只有账本确认后才显示
+`refunded`。
+
 ## 4. Worker 与 LM Studio
 
 一个容器启动 `prompt_optimizer_test_01..04` 四条 lane，每条只 pop
@@ -86,18 +97,23 @@ API format 和 system 指令，仍由 OutputValidator fail closed。两个请求
 只对 429、5xx、网络错误或 timeout 重试一次。非法 JSON、未知字段、空文本或超过
 2000 字符直接失败。不得通过剥离 Markdown fence 等宽松解析绕过 fail-closed。
 
+结构化阶段支持 Responses SSE。Worker 只提取 `optimized_fields` 白名单字符串，处理
+任意 chunk、JSON escape 和 Unicode；最终 `json.loads`/schema 结果必须与已发送文本
+完全一致。首个 Central delta 确认前可按既有规则重试一次，确认后禁止重新生成并拼接
+第二份输出。
+
 健康入口：`127.0.0.1:8097/health` 和 `/ready`，只暴露 ready reason 与 active
 lane 数，不暴露提示词或媒体。
 
 ## 5. 发布与回滚
 
-顺序固定为 Worker-first、Web-activation-last：
+Registry 内容仍遵循 Worker-first、Web-activation-last；涉及增量协议时固定为：
 
-1. 关闭 flag 部署兼容的 Central/Web。
-2. 构建 `prompt-optimizer-worker` exact digest。
-3. 使用 `scripts/prompt_optimizer_worker_ops.py deploy --image ...@sha256:...` 部署。
-4. 验证 `/ready`、四 lane、模板版本、退款与隐私。
-5. 最后打开 test `enable_ltx_video_v2` / `ENABLE_LTX_VIDEO_V2`。
+1. 部署兼容旧 Worker 的 Central 增量接口和 Redis snapshot。
+2. 部署识别 `text_snapshot`/`text_delta` 的 Web API；旧前端仍只处理 progress。
+3. 构建并部署 `prompt-optimizer-worker` exact digest，验证真实 structured stream。
+4. 最后部署 Public Web，启用只读流式预览。
+5. 验证 `/ready`、四 lane、断线、重复/跳号、部分失败退款与日志隐私。
 
 Compose 禁止源码 bind mount，镜像必须 digest pinned。rollback 只回退到状态账本中的
 上一 exact digest。prod mutation 仍需用户明确确认。

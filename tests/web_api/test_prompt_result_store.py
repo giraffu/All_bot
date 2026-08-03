@@ -1,5 +1,8 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
+from src.web_api.services import prompt_result_store
 from src.web_api.services.prompt_result_store import validate_prompt_result
 
 
@@ -66,3 +69,21 @@ def test_validate_prompt_result_fails_closed(kwargs, message):
     params.update(kwargs)
     with pytest.raises(ValueError, match=message):
         validate_prompt_result(**params)
+
+
+@pytest.mark.asyncio
+async def test_failure_result_retains_only_unvalidated_partial_and_refund_state(monkeypatch):
+    setter = AsyncMock()
+    monkeypatch.setattr(prompt_result_store.redis_client, "set_prompt_result", setter)
+    await prompt_result_store.store_prompt_failure_result(
+        task_id="registry-1",
+        user_id=7,
+        partial_result_text="partial prompt",
+        refund_status="refunded",
+    )
+    payload = setter.await_args.args[1]
+    assert payload["status"] == "failed"
+    assert payload["partial_result_text"] == "partial prompt"
+    assert payload["partial_unvalidated"] is True
+    assert payload["refund_status"] == "refunded"
+    assert "result_text" not in payload

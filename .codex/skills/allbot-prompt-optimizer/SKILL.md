@@ -26,6 +26,7 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
 - 提交服务：`src/web_api/services/prompt_optimization_service.py`
 - owner-fenced 结果：`src/web_api/services/prompt_result_store.py`
 - Worker：`workers/prompt_optimizer/`
+- 文本增量存储：`src/services/task_text_stream_store.py`
 - Worker 镜像/Compose：`deploy/docker/Dockerfile.test-execution`、
   `deploy/docker-compose-prompt-optimizer-test.yml`
 - 精确运维入口：`scripts/prompt_optimizer_worker_ops.py`
@@ -43,6 +44,9 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
   原始提示词、图片内容或 LLM 原始响应。
+- `text_delta` 只表示未校验的运行态预览。Worker 必须按 attempt/sequence 幂等
+  上报，最终完整 JSON 通过 Profile schema 且与增量字段一致后才能 `/complete`；
+  部分输出后失败仍走统一幂等退款，不能把片段提升为成功结果。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且
@@ -92,4 +96,5 @@ cd frontend && npm test -- --run \
 ```
 
 部署前再验证 `/ready`、四 lane heartbeat、两种模板、4+1 排队、失败退款和日志隐私。
-
+流式变更按 Central → Web API → Worker → Public Web 发布；回滚反向执行，且不得在
+流式 Worker 仍运行时先回滚 Central。

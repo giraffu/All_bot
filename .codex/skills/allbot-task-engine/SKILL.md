@@ -74,6 +74,9 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
   预接不能黏住当前类型，也不能覆盖当前 heartbeat 或形成无界本地队列。
 - `gpu_done` 只表示释放 Comfy 槽；结果上传成功且 Central `/complete` 确认后
   才能终态。claimed、execution、delivery 和 reserved 都计入对应有界容量。
+- 文本 Worker 的 `text_delta`/snapshot 仅属于可恢复运行态；attempt、sequence、
+  owner 和字段契约必须在 Central 原子校验。重复 chunk 不重复追加，跳号用快照
+  修复；计费、退款和成功持久化仍只跟随权威终态。
 - 不要只改一个 route/map 就宣称任务类型完成。同步核对 request model、
   dispatcher、registry、Central route、worker mapping、supported types、
   workflow、billing、History/Gallery 和结果持久化。

@@ -211,11 +211,15 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
         raise HTTPException(status_code=403, detail="任务不存在或无权限") from exc
     if prompt_result is not None:
         return {
-            "status": "success",
+            "status": prompt_result.get("status") or "success",
             "task_id": task_id,
             "task_type": prompt_result.get("task_type"),
             "result_kind": "text",
             "result_text": prompt_result.get("result_text"),
+            "partial_result_text": prompt_result.get("partial_result_text"),
+            "partial_unvalidated": prompt_result.get("partial_unvalidated"),
+            "refund_status": prompt_result.get("refund_status"),
+            "message": prompt_result.get("message"),
             "result_meta": prompt_result.get("result_meta") or {},
             "extra_outputs": {},
         }
