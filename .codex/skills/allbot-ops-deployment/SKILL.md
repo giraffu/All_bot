@@ -63,6 +63,10 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
 Compose 只重建目标 service；Pages 只更新目标项目；GPU 必须明确
 `--operator runpod|lan --slot <exact-slot>`；config/compose contract 只切换
 自身 active identity；migration 独立执行。
+Compose image 默认只消费目标环境已激活的
+`/var/lib/allbot/module-contracts/<env>/compose-contract/current`；契约缺失或文件
+不完整时 fail closed，禁止静默使用目标机旧仓库副本。仅故障处置时可显式传
+`--remote-root` 覆盖，并在恢复后回到 active contract。
 带 Worker 新协议的发布先部署向后兼容的 Central/Web API，再部署 Worker，最后
 激活前端；回滚反向执行，不能让新 Worker 调用已经回滚的控制面接口。
 

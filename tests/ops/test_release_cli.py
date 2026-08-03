@@ -459,6 +459,55 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
     assert "up -d --no-deps --wait --wait-timeout 120 dashboard-backend" in captured["script"]
 
 
+def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_remote_shell(_host, script):
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+
+    module.SystemAdapters(catalog)._deploy_compose(
+        "test",
+        catalog["dashboard-frontend"],
+        "ghcr.io/example/dashboard@sha256:" + "1" * 64,
+        {"remote_host": "test-control"},
+    )
+
+    script = captured["script"]
+    assert "root=/var/lib/allbot/module-contracts/test/compose-contract/current" in script
+    assert 'test -f "$root/deploy/docker-compose-cloud-base.yml"' in script
+    assert 'test -f "$root/deploy/docker-compose-cloud-test.overlay.yml"' in script
+    assert "/home/deploy/APP/All_bot-release/repo" not in script
+
+
+def test_compose_deploy_allows_explicit_remote_root_override(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_remote_shell(_host, script):
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+
+    module.SystemAdapters(catalog)._deploy_compose(
+        "test",
+        catalog["dashboard-frontend"],
+        "ghcr.io/example/dashboard@sha256:" + "1" * 64,
+        {
+            "remote_host": "test-control",
+            "remote_root": "/srv/allbot/emergency-contract",
+        },
+    )
+
+    assert "root=/srv/allbot/emergency-contract" in captured["script"]
+
+
 @pytest.mark.parametrize(
     ("environment", "expected_network"),
     (("test", "--network allbot-test_default"), ("prod", None)),

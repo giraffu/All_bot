@@ -118,6 +118,14 @@ Compose image adapter 使用 `up --no-deps --wait --wait-timeout 120`，只替�
 目标服务并等待其健康检查完成；不得在 `up -d` 返回后立即读取健康状态，以免
 把正常启动窗口误判为失败并触发无效回滚。
 
+Compose image adapter 默认从目标环境当前激活的
+`/var/lib/allbot/module-contracts/<env>/compose-contract/current` 读取 base 与
+overlay。部署前会校验两个 Compose 文件存在；未先激活契约时直接失败，不会回退
+到 `/home/deploy/APP/All_bot-release/repo` 的旧副本。`--remote-root` 只作为显式
+故障处置覆盖入口。更新端口、profile、volume 或服务接线时，先部署精确 digest 的
+`compose-contract`，再逐个重新部署受影响业务模块，使新容器消费同一个 active
+contract。
+
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
 Migration 镜像闭包必须包含 `src/`、Alembic 配置和 migrations；

@@ -1188,12 +1188,18 @@ class SystemAdapters:
     ) -> None:
         target = ENVIRONMENTS[environment]
         host = str(context.get("remote_host") or target["host"])
-        root = str(context.get("remote_root") or "/home/deploy/APP/All_bot-release/repo")
+        root = str(
+            context.get("remote_root")
+            or f"/var/lib/allbot/module-contracts/{environment}/compose-contract/current"
+        )
         service = str(module["service"])
         image_env = str(module["image_env"])
         profile = str(module.get("profile", ""))
         runtime_root = f"/var/lib/allbot/module-releases/{environment}"
         script = f"""set -euo pipefail
+root={shlex.quote(root)}
+test -f "$root/deploy/docker-compose-cloud-base.yml"
+test -f "$root/{target["overlay"]}"
 docker pull {artifact}
 install -d -m 700 {runtime_root}
 runtime={runtime_root}/runtime.env
@@ -1208,7 +1214,7 @@ grep -v '^{image_env}=' "$runtime" > "$candidate" || true
 printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
 grep -q '^ALLBOT_RELEASE_SHA=' "$candidate" || printf 'ALLBOT_RELEASE_SHA=module-release\\n' >> "$candidate"
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
-compose=(docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f {root}/deploy/docker-compose-cloud-base.yml -f {root}/{target["overlay"]})
+compose=(docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}
 "${{compose[@]}}" up -d --no-deps --wait --wait-timeout 120 {service}
 mv "$candidate" "$runtime"
