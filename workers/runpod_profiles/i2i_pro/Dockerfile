@@ -54,6 +54,9 @@ RUN set -euo pipefail; \
       python3 -m pip install --no-cache-dir \
         -i https://mirrors.aliyun.com/pypi/simple/ \
         -r "${comfyui_dir}/requirements.txt"; \
+      python3 -m pip install --no-cache-dir \
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+        "comfy-aimdo==0.3.0"; \
     fi; \
     rm -rf "${comfyui_dir}/.git"; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \

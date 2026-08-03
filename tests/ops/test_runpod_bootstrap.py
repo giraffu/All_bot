@@ -43,6 +43,12 @@ def test_i2i_pro_profile_uses_the_regional_pypi_mirror_for_comfyui_dependencies(
     assert install_at < mirror_at < requirements_at
 
 
+def test_i2i_pro_profile_pins_the_persisted_workspace_aimdo_contract():
+    dockerfile = I2I_PRO_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert '"comfy-aimdo==0.3.0"' in dockerfile
+
+
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
