@@ -40,9 +40,21 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
   `bridge` 网络动态读取 gateway，将同一 scheme/port 临时映射到 gateway；只为本次
   build 同时覆盖大小写 `HTTP_PROXY`/`HTTPS_PROXY`，保留原 `NO_PROXY`。禁止把代理
   地址写入 Git、镜像、发布状态或普通日志。若代理只监听回环，停止并报告，不盲等。
+- 上述 build 环境变量只覆盖 Dockerfile 的 `RUN` 网络，不能保证 BuildKit daemon
+  拉取 `FROM`、导入/导出 registry cache 和推送 manifest 时经过代理。容器型 builder
+  必须同时通过 `docker buildx inspect <builder>` 核对 daemon 的大小写 proxy env；
+  本机 loopback 代理可使用 `network=host` 的专用 builder，并在创建时写入
+  `env.http_proxy`/`env.https_proxy`（以及大写变体）。不得临时改坏或删除其它任务共用
+  builder；新建独立 builder，先 `--bootstrap`，再从容器配置回读 env。发布进程本身
+  仍使用前述 Docker gateway URL，以通过 loopback 拒绝门禁并覆盖 build step。
 - `release.py build` 会先检查目标 tag：同一内容身份的 build-only base 直接复用；
   业务模块仍按完整 Git SHA 产出新 digest。只构建本次部署需要的明确模块，不为
   deploy、rollback 或重复部署重新 build。
+- registry `mode=max` cache 是后续热构建的性能优化，不是 artifact 身份。若业务
+  manifest 已推送、可按精确 digest 独立解析，而 cache export 在有界观察期内持续无
+  进展，可停止 cache export、记录本次缺少远端 cache，并部署已验证 digest；本机
+  builder cache 仍可复用。若 manifest 尚未完成推送或 digest 不能独立验证，则不得把
+  被中断的 build 当成成功产物。
 - 共享 test/prod 禁止源码 bind mount、容器内改代码和热重载。代码变化必须生成新
   immutable digest，但这应是 BuildKit 增量构建：复用精确 base 和可用 layer/cache，
   只重做被 `COPY` 或依赖变化影响的层。开发机临时热重载不具备发布身份，不能拿来
