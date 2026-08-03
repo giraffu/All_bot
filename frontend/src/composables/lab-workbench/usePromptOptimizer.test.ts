@@ -106,8 +106,12 @@ describe('usePromptOptimizer', () => {
     expect(post.mock.calls[0][1]).toMatchObject({
       target_task_type: 'ltx_t2v_ic',
       template: { id: 'ltx_scene_script_cinematic', version: 4 },
-      media: [{ role: 'scene_background', object_key: 'web_uploads/7/room.png' }],
-      character_ids: ['character-1', 'character-2'],
+      media: [],
+      character_refs: [
+        { source: 'private', id: 'character-1' },
+        { source: 'private', id: 'character-2' },
+      ],
+      environment_ref: { source: 'upload', object_key: 'web_uploads/7/room.png' },
     })
     scope.stop()
   })

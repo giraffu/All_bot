@@ -3,7 +3,6 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from asgi_correlation_id import correlation_id
-from fastapi import HTTPException
 
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError
@@ -82,7 +81,10 @@ async def submit_generation_task(
         if req.task_type == "character_reference_build":
             raise CoreDomainError("人物参考表只能通过人物图库构建接口创建。")
         if req.task_type == "ltx_t2v_ic":
-            if not _env_enabled("LTX_T2V_MSR_ENABLED") and not operator_canary_authorized:
+            if (
+                not _env_enabled("LTX_T2V_MSR_ENABLED")
+                and not operator_canary_authorized
+            ):
                 raise CoreDomainError("MSR 双角色模式当前未开放。")
             forbidden = {
                 "character_id",
@@ -94,60 +96,42 @@ async def submit_generation_task(
                 "sulphur_strength",
             }
             if any(inputs.get(key) is not None for key in forbidden):
-                raise CoreDomainError("不得直接指定角色参考表、背景存储路径或 LoRA 强度。")
-            character_ids = inputs.get("character_ids")
-            if not isinstance(character_ids, (list, tuple)):
-                raise CoreDomainError("双角色选择必须为有序数组。")
-            character_ids = [str(value or "").strip() for value in character_ids]
-            if len(character_ids) != 2 or not all(character_ids):
-                raise CoreDomainError("请选择恰好 2 个已就绪人物。")
-            if len(set(character_ids)) != 2:
-                raise CoreDomainError("双角色选择不得包含重复角色。")
-
-            from config import MINIO_BUCKET
+                raise CoreDomainError(
+                    "不得直接指定角色参考表、背景存储路径或 LoRA 强度。"
+                )
             from src.database.core import AsyncSessionLocal
-            from src.services.storage import storage
-            from src.web_api.services.character_reference_service import (
-                resolve_ready_character_sheet,
-            )
-            from src.web_api.services.prompt_optimization_service import (
-                PROMPT_MEDIA_MAX_BYTES,
-                normalize_owned_prompt_media_key,
+            from src.web_api.services.reference_asset_service import (
+                normalize_reference_inputs,
+                resolve_reference_set,
             )
 
-            background_object_key = normalize_owned_prompt_media_key(
-                str(inputs.get("background_object_key") or ""), current_user.id
-            )
-            background_size = await storage.async_object_size(
-                MINIO_BUCKET, background_object_key
-            )
-            if background_size is None:
-                raise CoreDomainError("场景背景图不存在或暂不可读取。")
-            if background_size > PROMPT_MEDIA_MAX_BYTES:
-                raise CoreDomainError("场景背景图不能超过 20 MB。")
-
-            ingredients = []
+            character_refs, environment_ref = normalize_reference_inputs(inputs)
             async with AsyncSessionLocal() as character_db:
-                try:
-                    for character_id in character_ids:
-                        ingredients.append(
-                            await resolve_ready_character_sheet(
-                                db=character_db,
-                                user_id=current_user.id,
-                                character_id=character_id,
-                            )
-                        )
-                except HTTPException as exc:
-                    raise CoreDomainError(str(exc.detail)) from exc
+                resolved_references = await resolve_reference_set(
+                    db=character_db,
+                    user_id=current_user.id,
+                    character_refs=character_refs,
+                    environment_ref=environment_ref,
+                )
             inputs.pop("character_ids", None)
             inputs.pop("background_object_key", None)
-            inputs["character_sheets"] = [
-                ingredient.sheet_object_key for ingredient in ingredients
-            ]
-            inputs["character_descriptions"] = [
-                ingredient.description for ingredient in ingredients
-            ]
-            inputs["background_image"] = background_object_key
+            inputs.pop("character_refs", None)
+            inputs.pop("environment_ref", None)
+            inputs["character_sheets"] = list(resolved_references.character_sheets)
+            inputs["character_descriptions"] = list(
+                resolved_references.character_descriptions
+            )
+            inputs["background_image"] = resolved_references.environment_object_key
+        elif req.task_type == "ltx_t2v" and any(
+            inputs.get(key) is not None
+            for key in (
+                "character_ids",
+                "background_object_key",
+                "character_refs",
+                "environment_ref",
+            )
+        ):
+            raise CoreDomainError("纯文生视频不能携带角色或环境引用。")
         images = list(inputs.get("images") or [])
         if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
             raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")

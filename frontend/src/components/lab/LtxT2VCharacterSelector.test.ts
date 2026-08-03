@@ -24,6 +24,15 @@ vi.mock('@/stores/characters', () => ({
   }),
 }))
 
+vi.mock('@/api/referenceAssets', () => ({
+  fetchOfficialCharacters: vi.fn().mockResolvedValue([
+    { id: 'official-a', source: 'official', name: '官方角色', description: '官方角色描述' },
+  ]),
+  fetchOfficialEnvironments: vi.fn().mockResolvedValue([
+    { id: 'room-a', source: 'official', name: '官方卧室', description: '暖色卧室' },
+  ]),
+}))
+
 describe('LtxT2VCharacterSelector', () => {
   beforeEach(() => {
     window.__ALLBOT_CONFIG__ = { enable_ltx_t2v_msr: true }
@@ -38,6 +47,10 @@ describe('LtxT2VCharacterSelector', () => {
         stubs: {
           'a-select': { template: '<div><slot /></div>' },
           'a-select-option': { template: '<div><slot /></div>' },
+          'a-select-opt-group': { template: '<div><slot /></div>' },
+          'a-switch': true,
+          'a-radio-group': { template: '<div><slot /></div>' },
+          'a-radio-button': { template: '<div><slot /></div>' },
         },
       },
     })

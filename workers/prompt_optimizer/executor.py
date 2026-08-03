@@ -9,6 +9,7 @@ from src.prompt_optimizer.registry import (
     get_template_by_ref,
     render_prompt_messages,
 )
+from src.prompt_optimizer.config_snapshot import snapshot_content_hash
 
 
 class PromptOptimizationExecutionError(RuntimeError):
@@ -35,12 +36,23 @@ async def execute_prompt_optimization(
     roles = tuple(item.get("role") for item in media if isinstance(item, dict))
     if roles != profile.required_media_roles:
         raise PromptOptimizationExecutionError("invalid_media_roles")
-    system_prompt, user_prompt = render_prompt_messages(
-        profile=profile,
-        template=template,
-        prompt=str(payload.get("prompt") or ""),
-        context=payload.get("context") or {},
-    )
+    snapshot = payload.get("prompt_config_snapshot")
+    if snapshot is not None:
+        if not isinstance(snapshot, dict) or snapshot.get("profile_ref") != profile.ref:
+            raise PromptOptimizationExecutionError("prompt_config_profile_mismatch")
+        if snapshot.get("snapshot_hash") != snapshot_content_hash(snapshot):
+            raise PromptOptimizationExecutionError("prompt_config_hash_mismatch")
+        system_prompt = str(snapshot.get("system_message") or "").strip()
+        user_prompt = str(snapshot.get("user_message") or "").strip()
+        if not system_prompt or not user_prompt:
+            raise PromptOptimizationExecutionError("invalid_prompt_config_snapshot")
+    else:
+        system_prompt, user_prompt = render_prompt_messages(
+            profile=profile,
+            template=template,
+            prompt=str(payload.get("prompt") or ""),
+            context=payload.get("context") or {},
+        )
     image_data_urls = [
         preprocess_media(await load_media(str(item["object_key"]))) for item in media
     ]
@@ -60,7 +72,9 @@ async def execute_prompt_optimization(
         profile.output_fields
     ):
         raise PromptOptimizationExecutionError("invalid_optimized_fields")
-    if not isinstance(warnings, list) or not all(isinstance(item, str) for item in warnings):
+    if not isinstance(warnings, list) or not all(
+        isinstance(item, str) for item in warnings
+    ):
         raise PromptOptimizationExecutionError("invalid_warnings")
     for value in optimized_fields.values():
         if not isinstance(value, str) or not value.strip() or len(value) > 2000:

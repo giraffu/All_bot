@@ -38,6 +38,9 @@ type UseLabSubmitPayloadOptions = {
   resolution: Ref<string>
   duration: Ref<string>
   selectedCharacterIds?: Ref<string[]>
+  useT2VReferences?: Ref<boolean>
+  environmentSource?: Ref<'official' | 'upload'>
+  selectedEnvironmentId?: Ref<string>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -67,6 +70,9 @@ export function useLabSubmitPayload({
   resolution,
   duration,
   selectedCharacterIds,
+  useT2VReferences,
+  environmentSource,
+  selectedEnvironmentId,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -172,8 +178,11 @@ export function useLabSubmitPayload({
 
     if (currentMode.value.id === 'ltx_t2v') {
       const characterIds = selectedCharacterIds?.value ?? []
-      const usesCharacter = characterIds.length > 0
-      if (usesCharacter && (characterIds.length !== 2 || uploadedReferences.value.length !== 1)) {
+      const usesCharacter = useT2VReferences?.value ?? characterIds.length > 0
+      const usesOfficialEnvironment = environmentSource?.value === 'official'
+      if (usesCharacter && (characterIds.length !== 2 || (usesOfficialEnvironment
+        ? !selectedEnvironmentId?.value || uploadedReferences.value.length !== 0
+        : uploadedReferences.value.length !== 1))) {
         message.warning(t('characters.msr_requires_two_and_background'))
         return
       }
@@ -192,8 +201,13 @@ export function useLabSubmitPayload({
         extraInputs: {
           ...(usesCharacter
             ? {
-                character_ids: characterIds,
-                background_object_key: uploadedReferences.value[0]?.key,
+                character_refs: characterIds.map((value) => {
+                  const [source, id] = value.includes(':') ? value.split(':', 2) : ['private', value]
+                  return { source, id }
+                }),
+                environment_ref: usesOfficialEnvironment
+                  ? { source: 'official', id: selectedEnvironmentId?.value }
+                  : { source: 'upload', object_key: uploadedReferences.value[0]?.key },
               }
             : {}),
           ...(audioPrompt?.value.trim() ? { audio_prompt: audioPrompt.value.trim() } : {}),

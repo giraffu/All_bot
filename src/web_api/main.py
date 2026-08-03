@@ -26,6 +26,7 @@ from src.web_api.routers import (
     gallery,
     payment,
     prompt_optimizations,
+    reference_assets,
     private_bots,
     site_notice,
     storage,
@@ -68,7 +69,7 @@ class PrivateBotFeatureGateMiddleware(BaseHTTPMiddleware):
 
 class LtxT2VFeatureGateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        if request.url.path.startswith("/api/characters") and os.getenv(
+        if request.url.path.startswith(("/api/characters", "/api/reference-assets")) and os.getenv(
             "LTX_T2V_BACKEND_ENABLED", "false"
         ).strip().lower() not in {"1", "true", "yes", "on"}:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
@@ -228,6 +229,9 @@ app.include_router(
     tags=["Prompt Optimizations"],
 )
 app.include_router(characters.router, prefix="/api/characters", tags=["Characters"])
+app.include_router(
+    reference_assets.router, prefix="/api/reference-assets", tags=["Reference Assets"]
+)
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])

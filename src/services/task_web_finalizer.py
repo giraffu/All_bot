@@ -127,9 +127,7 @@ async def enqueue_pending_web_finalizer(
                 continuation_marker.get("final_allow_contribute", True)
             ),
         }
-    scail2_marker = serialized_context["metadata"].get(
-        "_web_scail2_face_swap_v2"
-    )
+    scail2_marker = serialized_context["metadata"].get("_web_scail2_face_swap_v2")
     if isinstance(scail2_marker, dict):
         video_request = serialized_context.get("video_request") or {}
         continuation = {
@@ -437,15 +435,25 @@ async def _finalize_terminal_record(
     submission = record.get("submission_context") or {}
     metadata = submission.get("metadata") or {}
     character_view_marker = metadata.get("_character_reference_view")
-    if (
-        submission.get("task_type") == "character_reference_build"
-        or isinstance(character_view_marker, dict)
+    official_asset_marker = metadata.get("_official_asset")
+    if submission.get("task_type") == "character_reference_build" or isinstance(
+        character_view_marker, dict
     ):
         from src.web_api.services.character_reference_service import (
             finalize_character_reference,
         )
 
         await finalize_character_reference(
+            task_id=registry_task_id,
+            status=final_status,
+            result_path=status_data.get("result_path"),
+        )
+    if isinstance(official_asset_marker, dict):
+        from src.web_api.services.official_asset_finalizer import (
+            finalize_official_asset,
+        )
+
+        await finalize_official_asset(
             task_id=registry_task_id,
             status=final_status,
             result_path=status_data.get("result_path"),

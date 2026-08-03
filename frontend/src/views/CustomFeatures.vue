@@ -68,6 +68,9 @@ const {
   videoDurationOptions,
   duration,
   selectedCharacterIds,
+  useT2VReferences,
+  environmentSource,
+  selectedEnvironmentId,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -131,7 +134,7 @@ const promptLockedHint = computed(() => (
         :references="displayedReferences"
         :asset-upload-slots="assetUploadSlots"
         :reference-title="referenceTitle"
-        :supports-upload="currentMode.supportsUpload"
+        :supports-upload="currentMode.supportsUpload && (currentModeId !== 'ltx_t2v' || (useT2VReferences && environmentSource === 'upload'))"
         :can-upload-reference="canUploadReference"
         :upload-button-label="uploadButtonLabel"
         :before-upload="beforeUpload"
@@ -163,6 +166,9 @@ const promptLockedHint = computed(() => (
           <div class="mb-3 space-y-3">
             <LtxT2VCharacterSelector
               v-model="selectedCharacterIds"
+              v-model:enabled="useT2VReferences"
+              v-model:environment-source="environmentSource"
+              v-model:environment-id="selectedEnvironmentId"
             />
             <a-textarea
               v-model:value="audioPrompt"

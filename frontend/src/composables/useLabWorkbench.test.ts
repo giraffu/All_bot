@@ -99,6 +99,13 @@ vi.mock('@/api/gallery', () => ({
   stitchWan22HistoryChain: vi.fn(),
 }))
 
+vi.mock('@/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}))
+
 const createObjectURL = vi.fn(() => 'blob:preview')
 const revokeObjectURL = vi.fn()
 

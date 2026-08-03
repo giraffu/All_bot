@@ -203,8 +203,11 @@ describe('useLabSubmitPayload', () => {
     expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
       task_type: 'ltx_t2v_ic',
       inputs: expect.objectContaining({
-        character_ids: ['character-1', 'character-2'],
-        background_object_key: 'web_uploads/7/bedroom.webp',
+        character_refs: [
+          { source: 'private', id: 'character-1' },
+          { source: 'private', id: 'character-2' },
+        ],
+        environment_ref: { source: 'upload', object_key: 'web_uploads/7/bedroom.webp' },
         duration: 20,
         resolution: '768x448',
       }),
@@ -222,8 +225,11 @@ describe('useLabSubmitPayload', () => {
     expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
       task_type: 'ltx_t2v_ic',
       inputs: expect.objectContaining({
-        character_ids: ['wang', 'man'],
-        background_object_key: 'web_uploads/7/room.png',
+        character_refs: [
+          { source: 'private', id: 'wang' },
+          { source: 'private', id: 'man' },
+        ],
+        environment_ref: { source: 'upload', object_key: 'web_uploads/7/room.png' },
         resolution: '768x448',
       }),
     }), 'lab.cards.ltx_t2v_title')

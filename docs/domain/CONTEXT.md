@@ -18,8 +18,16 @@
 - **支付履约**：把 RMB、TON、Telegram Stars 等外部支付结果转换为灵石、会员或 affiliate 副作用的幂等结算过程。
 - **Affiliate 余额**：推广返佣余额，可兑换灵石或会员权益，必须保留流水。
 - **标准邀请奖励**：邀请关系带来的阶段性灵石奖励，按注册、入群、首次生成阶段补差额。
+- **Official reference asset**：管理员维护并 published、供所有登录用户选择的角色
+  面板或单张环境图；它与用户私有角色保持独立所有权和生命周期。
+- **Environment reference**：只定义目标场景、空间、光线和氛围的一张图，不是首尾帧，
+  也不需要多视角。
 
 ## 生成任务
+
+- **Prompt scene config**：管理后台可覆盖的当前 system/user prompt；保存后只影响
+  新任务，入队时渲染为带 revision/hash 的不可变 snapshot。它不同于不可变 Registry
+  Template。
 
 - **Clarity task_id**：独立媒体增强平台中的持久业务请求标识，不复用 AllBot `registry_task_id` 或 `backend_task_id`。
 - **Clarity attempt_id**：独立媒体增强平台中一次带租约的 Worker 执行标识；同一业务任务重试时创建新 attempt。
