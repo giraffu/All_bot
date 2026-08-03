@@ -35,7 +35,7 @@ class FakeProvider:
         }
 
 
-def _payload(template_ref="ltx_scene_script_cinematic@2"):
+def _payload(template_ref="ltx_scene_script_cinematic@3"):
     template = get_template_by_ref(template_ref)
     return {
         "profile_ref": "ltx_eros_v14_i2v@1",

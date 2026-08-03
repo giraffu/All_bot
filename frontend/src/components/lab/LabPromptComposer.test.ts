@@ -14,6 +14,7 @@ vi.mock('vue-i18n', () => ({
       'lab.workbench.replace_asset': '重新上传',
       'lab.workbench.more_settings': '更多设置',
       'lab.workbench.advanced_title': '高级设置',
+      'lab.workbench.optimize_prompt': '优化提示词',
     }[key] ?? key),
   }),
 }))
@@ -38,6 +39,8 @@ vi.mock('@ant-design/icons-vue', async () => {
     LockOutlined: stub('lock-icon'),
     PictureOutlined: stub('picture-icon'),
     PlusOutlined: stub('plus-icon'),
+    ThunderboltOutlined: stub('thunderbolt-icon'),
+    UndoOutlined: stub('undo-icon'),
     VideoCameraOutlined: stub('video-icon'),
   }
 })
@@ -124,6 +127,16 @@ const mountComposer = (overrides: Partial<InstanceType<typeof LabPromptComposer>
 })
 
 describe('LabPromptComposer structured uploads', () => {
+  it('shows one optimizer action without a redundant template selector', () => {
+    const wrapper = mountComposer({
+      showPromptOptimizer: true,
+      optimizePromptDisabled: false,
+    })
+
+    expect(wrapper.text()).toContain('优化提示词')
+    expect(wrapper.findComponent({ name: 'ASelect' }).exists()).toBe(false)
+  })
+
   it('shows an optional prompt input below structured upload slots when enabled', async () => {
     const wrapper = mountComposer()
 

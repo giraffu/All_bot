@@ -168,8 +168,6 @@ export function usePromptOptimizer(options: {
   onBeforeUnmount(() => { stopped = true })
 
   return {
-    promptOptimizerTemplates: templates,
-    selectedPromptTemplateRef: selectedTemplateRef,
     isPromptOptimizerAvailable: isAvailable,
     canOptimizePrompt: canOptimize,
     canRestoreOriginalPrompt: canRestore,
@@ -178,4 +176,3 @@ export function usePromptOptimizer(options: {
     restoreOriginalPrompt,
   }
 }
-

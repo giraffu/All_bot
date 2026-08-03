@@ -28,9 +28,9 @@ def test_capability_exposes_versioned_template_metadata_without_prompt_bodies():
     assert payload["templates"] == [
         {
             "id": "ltx_scene_script_cinematic",
-            "version": 2,
-            "label": "图生视频场景提示词",
-            "description": "自然、电影化且从首帧连续演进的表演与动作",
+            "version": 3,
+            "label": "成人电影化提示词",
+            "description": "默认增强成人 NSFW 动作、镜头与多人连续性",
             "is_default": True,
         }
     ]
@@ -43,14 +43,14 @@ def test_resolver_selects_i2v_or_flf2v_profile_from_media_roles():
     i2v = resolve_prompt_optimization(
         target_task_type="ltx_video_v2",
         template_id="ltx_scene_script_cinematic",
-        template_version=2,
+        template_version=3,
         media=_media("start_image"),
         context={"duration_seconds": 5},
     )
     flf2v = resolve_prompt_optimization(
         target_task_type="ltx_video_v2",
         template_id="ltx_scene_script_cinematic",
-        template_version=2,
+        template_version=3,
         media=_media("start_image", "end_image"),
         context={"duration_seconds": 20},
     )
@@ -61,8 +61,8 @@ def test_resolver_selects_i2v_or_flf2v_profile_from_media_roles():
     assert flf2v.template.content_hash
 
 
-def test_v2_template_preserves_supplied_prompt_and_profile_frame_constraints():
-    template = get_template_by_ref("ltx_scene_script_cinematic@2")
+def test_v3_template_preserves_approved_chinese_prompt_and_profile_frame_constraints():
+    template = get_template_by_ref("ltx_scene_script_cinematic@3")
     i2v_profile = get_profile_by_ref("ltx_eros_v14_i2v@1")
     flf2v_profile = get_profile_by_ref("ltx_eros_v14_flf2v@1")
 
@@ -79,12 +79,11 @@ def test_v2_template_preserves_supplied_prompt_and_profile_frame_constraints():
         context={"duration_seconds": 5},
     )
 
-    assert i2v_system.startswith(
-        "You are an expert at creating short cinematic video prompts from a single attached reference image."
-    )
-    assert "Use the provided start image exactly as the first frame." in i2v_system
-    assert "Keep the entire response to 4-8 sentences maximum." in i2v_system
-    assert "Image 1 is start_image and must be used exactly as the first frame." in i2v_user
+    assert i2v_system.startswith("你是一名专业的短篇电影化图生视频提示词编写专家。")
+    assert "此任务默认用于成年人的 NSFW、色情和性爱图生视频。" in i2v_system
+    assert "不要等待用户明确写出“露骨”“色情”或具体性行为。" in i2v_system
+    assert "最终英文提示词通常保持为 4～8 个信息充分的句子。" in i2v_system
+    assert "媒体角色：\nImage 1 is start_image and must be used exactly as the first frame." in i2v_user
     assert "end_image" not in i2v_user
     assert "Image 2 is end_image and must be used exactly as the final frame." in flf2v_user
     assert "She slowly turns toward the camera." in flf2v_user
@@ -95,6 +94,7 @@ def test_v2_template_preserves_supplied_prompt_and_profile_frame_constraints():
     [
         ("ltx_scene_script_cinematic", 1),
         ("ltx_timestamp_motion", 1),
+        ("ltx_scene_script_cinematic", 2),
     ],
 )
 def test_inactive_legacy_templates_are_rejected_for_new_submissions(template_id, version):
@@ -113,12 +113,12 @@ def test_inactive_legacy_templates_are_rejected_for_new_submissions(template_id,
     [
         ("missing", 1, _media("start_image"), {"duration_seconds": 5}),
         ("ltx_scene_script_cinematic", 99, _media("start_image"), {"duration_seconds": 5}),
-        ("ltx_scene_script_cinematic", 2, _media("end_image"), {"duration_seconds": 5}),
-        ("ltx_scene_script_cinematic", 2, _media("start_image", "portrait"), {"duration_seconds": 5}),
-        ("ltx_scene_script_cinematic", 2, _media("start_image"), {"duration_seconds": 7}),
+        ("ltx_scene_script_cinematic", 3, _media("end_image"), {"duration_seconds": 5}),
+        ("ltx_scene_script_cinematic", 3, _media("start_image", "portrait"), {"duration_seconds": 5}),
+        ("ltx_scene_script_cinematic", 3, _media("start_image"), {"duration_seconds": 7}),
         (
             "ltx_scene_script_cinematic",
-            2,
+            3,
             _media("start_image"),
             {"duration_seconds": 5, "model": "override"},
         ),
