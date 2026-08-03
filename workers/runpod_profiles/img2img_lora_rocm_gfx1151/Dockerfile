@@ -61,7 +61,7 @@ COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allb
 RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
-    python3 - <<'PY'
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 - <<'PY'
 import torch
 assert torch.__version__.startswith("2.9.1+rocm7.2.1"), torch.__version__
 assert str(torch.version.hip).startswith("7.2."), torch.version.hip
