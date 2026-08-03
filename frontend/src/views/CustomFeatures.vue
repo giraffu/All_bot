@@ -90,8 +90,6 @@ const {
   openLtxCurrentTaskEditor,
   stitchCurrentWan22Chain,
   stitchCurrentLtxChain,
-  promptOptimizerTemplates,
-  selectedPromptTemplateRef,
   isPromptOptimizerAvailable,
   canOptimizePrompt,
   canRestoreOriginalPrompt,
@@ -145,8 +143,6 @@ const promptLockedHint = computed(() => (
         :has-advanced-options="hasAdvancedOptions"
         :notice="composerNotice || templateNotice"
         :warning="composerWarning || templateWarning"
-        :prompt-optimizer-templates="promptOptimizerTemplates"
-        :selected-prompt-template-ref="selectedPromptTemplateRef"
         :show-prompt-optimizer="isPromptOptimizerAvailable"
         :optimize-prompt-disabled="!canOptimizePrompt"
         :optimize-prompt-loading="isOptimizingPrompt"
@@ -156,7 +152,6 @@ const promptLockedHint = computed(() => (
         @remove-reference="handleRemoveReference"
         @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"
-        @update:selected-prompt-template-ref="selectedPromptTemplateRef = $event"
         @optimize-prompt="optimizePrompt"
         @restore-original-prompt="restoreOriginalPrompt"
       >
