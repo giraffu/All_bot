@@ -25,7 +25,7 @@ Worker/API/版本规则以
 {
   "schema_version": "allbot.prompt_optimizer.v1",
   "profile_ref": "ltx_eros_v14_i2v@1",
-  "template_ref": "ltx_scene_script_cinematic@1",
+  "template_ref": "ltx_scene_script_cinematic@2",
   "primary_field": "positive_prompt",
   "optimized_fields": {"positive_prompt": "最终正向提示词"},
   "warnings": []
@@ -95,7 +95,8 @@ tokens 起步。并发数、实际显存占用和模型是否已加载属于运�
 scene-script，而不是沿用旧版提示词技巧。为此预留 `ltx_eros_v14_i2v`：
 
 1. 明确输入图是精确首帧，不重新描摹整张静态图。
-2. 用 4–8 个短句组织：一条整体电影感/镜头句、环境与光线、以
+2. 新任务固定使用 `ltx_scene_script_cinematic@2`，不再提供电影场景/分段动作
+   两种模板选择。用 4–8 个短句组织：一条整体电影感/镜头句、环境与光线、以
    `Performance:` 开头的表演动作句；需要时再加 `Dialogue:`。
 3. 表演使用自然停顿、目光、呼吸、微表情和清晰动词，动作从首帧姿态按简单
    逻辑演进；不无故增加角色或夸张肢体运动。

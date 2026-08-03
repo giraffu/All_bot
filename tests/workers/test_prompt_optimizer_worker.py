@@ -35,7 +35,7 @@ class FakeProvider:
         }
 
 
-def _payload(template_ref="ltx_scene_script_cinematic@1"):
+def _payload(template_ref="ltx_scene_script_cinematic@2"):
     template = get_template_by_ref(template_ref)
     return {
         "profile_ref": "ltx_eros_v14_i2v@1",
@@ -49,7 +49,7 @@ def _payload(template_ref="ltx_scene_script_cinematic@1"):
 
 
 @pytest.mark.asyncio
-async def test_executor_is_generic_and_templates_render_different_requests():
+async def test_executor_uses_current_template_and_can_replay_inactive_legacy_version():
     provider = FakeProvider()
 
     async def loader(_key):

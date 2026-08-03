@@ -104,6 +104,26 @@ with a shorter final block when needed. The first block anchors the visible star
 blocks focus on continuous movement and evolution. Keep the user's central action prominent.
 Original idea: {original_prompt}"""
 
+_SINGLE_IMAGE_CINEMATIC_SYSTEM = """You are an expert at creating short cinematic video prompts from a single attached reference image.
+
+When the user attaches an image and asks for "one for this image" or similar, generate a response using this exact format and style:
+
+Use the provided start image exactly as the first frame. [One-sentence description of the overall cinematic style and camera movement]. [Short description of the environment, lighting, and atmosphere].
+
+Performance: [Detailed but concise performance notes for the main character(s), including body language, facial expressions, emotions, and specific actions].
+
+[If dialogue is appropriate, add a Dialogue section with character names and delivery style.]
+
+Keep the acting natural and cinematic. Small pauses, micro-expressions, realistic movement, and subtle environmental details. No exaggerated motion, no slapstick, no extra characters unless clearly visible in the image.
+
+Keep the entire response to 4-8 sentences maximum. Focus on a simple, logical, and interesting motion evolution that flows naturally from the starting pose in the image. Use strong verbs and cinematic language."""
+
+_SINGLE_IMAGE_CINEMATIC_USER = """One for this image.
+Target profile: {profile_ref}
+Video duration: {duration_seconds} seconds.
+{media_frame_instructions}
+Original request: {original_prompt}"""
+
 _PROFILE_REFS = frozenset({"ltx_eros_v14_i2v@1", "ltx_eros_v14_flf2v@1"})
 
 _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
@@ -122,6 +142,7 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "original_prompt",
             ),
             compatible_profile_refs=_PROFILE_REFS,
+            active=False,
         ),
         "ltx_timestamp_motion@1": PromptOptimizationTemplate(
             id="ltx_timestamp_motion",
@@ -134,6 +155,22 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "profile_ref",
                 "duration_seconds",
                 "end_frame_clause",
+                "original_prompt",
+            ),
+            compatible_profile_refs=_PROFILE_REFS,
+            active=False,
+        ),
+        "ltx_scene_script_cinematic@2": PromptOptimizationTemplate(
+            id="ltx_scene_script_cinematic",
+            version=2,
+            label="图生视频场景提示词",
+            description="自然、电影化且从首帧连续演进的表演与动作",
+            system_template=_SINGLE_IMAGE_CINEMATIC_SYSTEM,
+            user_template=_SINGLE_IMAGE_CINEMATIC_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
                 "original_prompt",
             ),
             compatible_profile_refs=_PROFILE_REFS,
@@ -155,7 +192,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
             allowed_template_refs=_ALLOWED_TEMPLATE_REFS,
-            default_template_ref="ltx_scene_script_cinematic@1",
+            default_template_ref="ltx_scene_script_cinematic@2",
         ),
         "ltx_eros_v14_flf2v@1": PromptOptimizationProfile(
             id="ltx_eros_v14_flf2v",
@@ -168,7 +205,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             primary_field="positive_prompt",
             model_route="ltx-prompt-optimizer",
             allowed_template_refs=_ALLOWED_TEMPLATE_REFS,
-            default_template_ref="ltx_scene_script_cinematic@1",
+            default_template_ref="ltx_scene_script_cinematic@2",
         ),
     }
 )
@@ -327,6 +364,12 @@ def render_prompt_messages(
             ", and use end_image exactly as the final frame"
             if "end_image" in profile.required_media_roles
             else ""
+        ),
+        "media_frame_instructions": (
+            "Image 1 is start_image and must be used exactly as the first frame.\n"
+            "Image 2 is end_image and must be used exactly as the final frame."
+            if "end_image" in profile.required_media_roles
+            else "Image 1 is start_image and must be used exactly as the first frame."
         ),
         "original_prompt": str(prompt).strip(),
     }

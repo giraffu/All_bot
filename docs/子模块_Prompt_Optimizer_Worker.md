@@ -42,9 +42,11 @@ primary field、model route、兼容模板和长度限制。Template 声明展�
 - `start_image` -> `ltx_eros_v14_i2v@1`
 - `start_image,end_image` -> `ltx_eros_v14_flf2v@1`
 
-当前模板是 `ltx_scene_script_cinematic@1`（默认）和
-`ltx_timestamp_motion@1`。FLF2V 的终帧硬约束在渲染时由 Profile 叠加，不复制一套
-FLF 模板。
+当前新任务只开放 `ltx_scene_script_cinematic@2`。它使用统一的短篇电影化格式，
+要求精确首帧、4–8 句、自然表演与微表情，并按需增加 `Dialogue:`；不再向用户提供
+电影场景/分段动作两种选择。`ltx_scene_script_cinematic@1` 和
+`ltx_timestamp_motion@1` 保留为 inactive，只用于已排队任务和审计重放。FLF2V 的
+终帧硬约束仍在渲染时由 Profile 叠加，不复制一套 FLF 模板。
 
 ## 3. API 与隐私
 
