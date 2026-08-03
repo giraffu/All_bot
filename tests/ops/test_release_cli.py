@@ -212,6 +212,39 @@ def test_build_command_uses_builder_registry_cache_progress_and_reachable_proxy(
     assert any(":input-" in value for value in build)
 
 
+def test_runpod_gpu_build_emits_single_linux_amd64_manifest_without_provenance():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    digest = "sha256:" + "2" * 64
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            if "--format" in command:
+                return module.CommandResult(0, digest, "")
+            return module.CommandResult(1, "", "not found")
+        return module.CommandResult(0, "", "")
+
+    module.build_modules(
+        catalog,
+        ["i2i_pro"],
+        sha="b" * 40,
+        image_prefix="ghcr.io/example",
+        dependencies=module.ReleaseDependencies(
+            run=fake_run,
+            temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+        ),
+    )
+
+    build = next(call for call in calls if call[:3] == ["docker", "buildx", "build"])
+    adjacent_arguments = [
+        build[index : index + 2] for index in range(len(build) - 1)
+    ]
+    assert ["--platform", "linux/amd64"] in adjacent_arguments
+    assert "--provenance=false" in build
+
+
 def test_remote_state_backend_reads_and_atomically_writes_target_isolated_state():
     module = _load_module()
     calls = []

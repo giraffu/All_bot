@@ -449,6 +449,14 @@ def _build_image(
         ]
         if builder:
             command.extend(["--builder", builder])
+        if module.get("runpod_single_manifest") is True:
+            command.extend(
+                [
+                    "--platform",
+                    "linux/amd64",
+                    "--provenance=false",
+                ]
+            )
         command.extend(
             [
                 "--progress",

@@ -54,6 +54,10 @@ digest。构建器在真正 build 前验证 Buildx、registry namespace 和代�
 变量，发布器只把变量名作为 BuildKit 预定义 build arg 转发，不把代理值拼进
 命令或镜像历史；未设置时不新增 build arg。
 GPU profile 若需在中国区域拉取 PyPI 大依赖，应在 Dockerfile 内显式固定项目已验证的公共镜像站；不依赖操作者现场 `PIP_INDEX_URL`，也不得把带认证的 index URL 写入 build arg 或镜像历史。
+RunPod 消费的 GPU module 必须在 catalog 声明 `runpod_single_manifest=true`；
+发布器据此显式构建 `linux/amd64` 并关闭 BuildKit provenance，使运行 digest
+直接指向单一 Docker image manifest，而不是带 attestation 的 OCI index。
+LAN-only GPU module 不受此标记影响。
 
 ### 本地代理预检
 
