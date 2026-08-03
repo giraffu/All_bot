@@ -3472,13 +3472,17 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 done
 docker info 2>/dev/null | grep -q "192.168.1.115:5000"
 """
+        shell_command = (
+            "IFS= read -r LAN_AIO_GPU_SUDO_PASSWORD; "
+            "export LAN_AIO_GPU_SUDO_PASSWORD; bash -s"
+        )
+        transport = (
+            ["bash", "-lc", shell_command]
+            if host == "local://"
+            else ["ssh", host, shell_command]
+        )
         self._local(
-            [
-                "ssh",
-                host,
-                "IFS= read -r LAN_AIO_GPU_SUDO_PASSWORD; "
-                "export LAN_AIO_GPU_SUDO_PASSWORD; bash -s",
-            ],
+            transport,
             input_text=f"{sudo_password}\n{script}\n",
         )
 

@@ -3449,8 +3449,10 @@ def test_configure_registry_updates_daemon_proxy_bypass(monkeypatch):
                 model_env_file=Path(".env.lan.model-cache.missing"),
             )
             self.input_text = ""
+            self.command = []
 
         def _local(self, args, *, input_text=None, capture=False):
+            self.command = args
             self.input_text = input_text or ""
             return ""
 
@@ -3463,6 +3465,15 @@ def test_configure_registry_updates_daemon_proxy_bypass(monkeypatch):
     assert 'proxies.get("no-proxy")' in ops.input_text
     assert 'proxies["no-proxy"] = ",".join(no_proxy)' in ops.input_text
     assert '("192.168.1.115", "192.168.1.115:5000")' in ops.input_text
+
+    ops._configure_registry_on_host("local://")
+
+    assert ops.command == [
+        "bash",
+        "-lc",
+        "IFS= read -r LAN_AIO_GPU_SUDO_PASSWORD; "
+        "export LAN_AIO_GPU_SUDO_PASSWORD; bash -s",
+    ]
 
 
 def test_configure_registry_waits_for_previously_running_candidate():
