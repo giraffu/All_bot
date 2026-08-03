@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from config import MINIO_BUCKET
 from src.core.task_core_types import CoreDomainError
 from src.web_api.schemas.prompt_optimization_schema import PromptOptimizationTaskRequest
 from src.web_api.services.prompt_optimization_service import (
@@ -151,11 +152,11 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
     resolve = AsyncMock(
         side_effect=[
             SimpleNamespace(
-                sheet_object_key="character_references/7/a/v1.png",
+                sheet_object_key=f"{MINIO_BUCKET}/character_references/7/a/v1.png",
                 description="adult A",
             ),
             SimpleNamespace(
-                sheet_object_key="character_references/7/b/v1.png",
+                sheet_object_key=f"{MINIO_BUCKET}/character_references/7/b/v1.png",
                 description="adult B",
             ),
         ]
@@ -191,5 +192,10 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
         "reference_character_1",
         "reference_character_2",
         "scene_background",
+    ]
+    assert [item["object_key"] for item in inputs["media"]] == [
+        "character_references/7/a/v1.png",
+        "character_references/7/b/v1.png",
+        "web_uploads/7/bedroom.webp",
     ]
     assert "character_ids" not in inputs
