@@ -32,9 +32,9 @@ describe('usePromptOptimizer', () => {
           templates: [
             {
               id: 'ltx_scene_script_cinematic',
-              version: 1,
-              label: '电影场景脚本',
-              description: '自然表演',
+              version: 2,
+              label: '图生视频场景提示词',
+              description: '自然、电影化且从首帧连续演进的表演与动作',
               is_default: true,
             },
           ],
@@ -60,13 +60,13 @@ describe('usePromptOptimizer', () => {
     await nextTick()
     await Promise.resolve()
     expect(optimizer.selectedPromptTemplateRef.value).toBe(
-      'ltx_scene_script_cinematic@1',
+      'ltx_scene_script_cinematic@2',
     )
     await optimizer.optimizePrompt()
 
     expect(post.mock.calls[0][1]).toMatchObject({
       client_request_id: 'request-uuid',
-      template: { id: 'ltx_scene_script_cinematic', version: 1 },
+      template: { id: 'ltx_scene_script_cinematic', version: 2 },
       context: { duration_seconds: 5 },
       media: [{ role: 'start_image', object_key: 'web_uploads/7/start.png' }],
     })
