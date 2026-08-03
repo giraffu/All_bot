@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       modules:
-        description: Comma-separated non-GPU module names
+        description: Comma-separated module names
         required: true
         type: string
 
@@ -56,8 +56,6 @@ jobs:
                   raise SystemExit(f"invalid module name: {name}")
               if name not in catalog:
                   raise SystemExit(f"unknown module: {name}")
-              if catalog[name]["kind"] == "gpu":
-                  raise SystemExit(f"GPU module must be built locally: {name}")
           print("\n".join(modules))
           PY
 
