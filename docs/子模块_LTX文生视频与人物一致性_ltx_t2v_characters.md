@@ -55,6 +55,8 @@ checkpoint；`LTX2.3-Licon-MSR-test_version.safetensors` 只提供人物身份�
 - 输入规范：`src/domain_config/ltx_t2v.py`
 - Web owner fence：`src/web_api/services/task_submission_service.py`
 - patcher：`workers/comfy_agent/workflow_task_patchers.py` 与 RunPod 镜像副本
+- 测试 agent：`cloud_worker_test_ltx_v2_01`，只消费
+  `ltx_video_v2,ltx_video_v2_flf2v,ltx_t2v,ltx_t2v_ic`
 - workflow：`workers/comfy_agent/workflows/LTX 2.3 Sulphur T2V.json`
 - 模型 manifest 构建：`scripts/prepare_ltx_unified_model_bundle.py`
 

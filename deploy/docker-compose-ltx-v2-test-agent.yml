@@ -21,7 +21,7 @@ services:
       PIPELINE_ENABLED: "false"
       PIPELINE_MAX_RUNNING_TASKS: "1"
       CANCEL_LOCK_ON_POP: "true"
-      SUPPORTED_TASK_TYPES: ltx_video_v2,ltx_video_v2_flf2v
+      SUPPORTED_TASK_TYPES: ltx_video_v2,ltx_video_v2_flf2v,ltx_t2v,ltx_t2v_ic
       COMFY_API_URL: http://192.168.1.177:8191
       COMFY_WS_URL: ws://192.168.1.177:8191/ws
       COMFY_INPUT_DIR: /tmp/input
