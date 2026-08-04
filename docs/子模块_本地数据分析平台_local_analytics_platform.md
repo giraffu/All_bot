@@ -9,7 +9,7 @@
 - 前端页面: `local_analytics_platform/static/index.html`
 - 后端 API: `local_analytics_platform/app/main.py`
 - 容器编排: `local_analytics_platform/docker-compose.yml`
-- 默认本地端口: `8095`
+- 默认本地端口: `8098`（`8095` 保留给独立 Clarity AI 媒体增强平台）
 
 ## 2. 数据边界
 
@@ -54,7 +54,7 @@
 - 提示词向量化刷新前应确认 LM Studio Server 已启动并加载模型：`lms server start`，然后 `lms load text-embedding-qwen3-embedding-8b --identifier qwen3-embedding-8b --gpu max -y`。若自动链路发现 LM Studio 不可用，会保留 Mart/瘦身刷新结果并跳过 embedding，不让本地分析平台整体失败。
 - 本地主服务器旧版 `docker-compose 1.29.2` recreate 可能触发 `ContainerConfig` 兼容问题；恢复时只删除 `local-analytics-platform` service 对应容器后再 `up -d --no-deps`。
 - 该平台当前面向本地/LAN 分析使用。应用层登录由 `LOCAL_ANALYTICS_AUTH_ENABLED=true` 显式开启，使用 `LOCAL_ANALYTICS_AUTH_USERNAME`、`LOCAL_ANALYTICS_AUTH_PASSWORD_HASH`、`LOCAL_ANALYTICS_AUTH_SESSION_SECRET` 和签名 HttpOnly cookie；密码 hash 可用 `python -m local_analytics_platform.app.auth hash-password '<password>'` 生成，公网入口不得只使用明文 `LOCAL_ANALYTICS_AUTH_PASSWORD`。应用登录运行配置在 `local_analytics_platform/.env`，管理员密码保存在 `/home/hfy/.local-analytics-platform/admin-password.txt`，两者均为 `600` 权限且不得提交 Git。
-- 当前公网入口为 `https://analytics.aivison.it.com`，通过独立 Cloudflare Tunnel `allbot-local-analytics` 回源 `http://127.0.0.1:8095`，并由 Cloudflare Access app `local-analytics` 只允许 `cv1347968277@gmail.com` 一次性验证码登录；不要裸露 `8095` 或 shadow 数据库端口。Cloudflare 账号、token、DNS、Access 与 Tunnel SOP 统一维护在 `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` 和 `allbot-cloudflare-ops`，本文只记录本地分析平台的应用层边界。
+- 当前公网入口为 `https://analytics.aivison.it.com`，通过独立 Cloudflare Tunnel `allbot-local-analytics` 回源 `http://127.0.0.1:8098`，并由 Cloudflare Access app `local-analytics` 只允许 `cv1347968277@gmail.com` 一次性验证码登录；不要裸露 `8098` 或 shadow 数据库端口。Cloudflare 账号、token、DNS、Access 与 Tunnel SOP 统一维护在 `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` 和 `allbot-cloudflare-ops`，本文只记录本地分析平台的应用层边界。
 - Cloudflare Tunnel 由用户级 systemd 服务 `/home/hfy/.config/systemd/user/cloudflared-local-analytics.service` 管理，配置文件为 `/home/hfy/.cloudflared/allbot-local-analytics.yml`，凭据文件为 `/home/hfy/.cloudflared/allbot-local-analytics.json`；当前服务已启用 `systemctl --user enable --now cloudflared-local-analytics.service`。由于本轮没有无密码 sudo，该 tunnel 暂未安装为系统级 service；若 `loginctl show-user hfy -p Linger` 为 `Linger=no`，不能把它等同于系统级开机自启服务。
 
 ## 5. 验证要求

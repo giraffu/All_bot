@@ -23,7 +23,7 @@ LOCAL_ANALYTICS_DATABASE_URL="postgresql://user:password@127.0.0.1:5434/bot_db_p
 docker-compose -f local_analytics_platform/docker-compose.yml up -d --build
 ```
 
-默认监听 `8095`。如果需要改端口，设置 `LOCAL_ANALYTICS_PORT`。
+默认监听 `8098`。如果需要改端口，设置 `LOCAL_ANALYTICS_PORT`。
 
 ## Login Protection
 
@@ -45,7 +45,7 @@ export LOCAL_ANALYTICS_AUTH_COOKIE_SECURE=true
 
 `LOCAL_ANALYTICS_AUTH_PASSWORD` 仅用于临时本地调试；公网入口应使用 `LOCAL_ANALYTICS_AUTH_PASSWORD_HASH`。登录成功后平台写入签名 HttpOnly cookie，默认有效期 12 小时，可用 `LOCAL_ANALYTICS_AUTH_SESSION_TTL_SECONDS` 调整。
 
-Cloudflare 公网入口建议使用独立 hostname，例如 `analytics.aivison.it.com`，Tunnel 回源本地主服务器 `http://127.0.0.1:8095`。Public hostname 发布前必须先创建 Cloudflare Access self-hosted app，限制管理员邮箱/身份组并启用 MFA；不要把 `8095` 或 shadow 数据库端口直接暴露到公网。
+Cloudflare 公网入口建议使用独立 hostname，例如 `analytics.aivison.it.com`，Tunnel 回源本地主服务器 `http://127.0.0.1:8098`。Public hostname 发布前必须先创建 Cloudflare Access self-hosted app，限制管理员邮箱/身份组并启用 MFA；不要把 `8098` 或 shadow 数据库端口直接暴露到公网。
 
 ## Prompt Mart
 

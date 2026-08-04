@@ -41,7 +41,7 @@
 | `admin-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` + Access | 云测试 Dashboard Frontend `http://100.82.124.91:8086` | 仅允许管理员邮箱，并保留 Dashboard 应用登录 |
 | `qqcc-admin.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28` + Access app `qqcc-admin` / `7fbb3a9a-7156-46b5-857c-1b7e5d97c7fe` | QQCC 懒人 Bot 管理后台公网入口 | Access policy `qqcc` allow `cv1347968277@gmail.com` |
 | `private-bot.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28`，DNS record `69c4e68bf442dea05fefa71db28791b5` | QQCC 私有 Bot owner WebApp，回源 `http://100.107.220.127:8088` | 面向 owner 公开，不创建 Access app；应用层 ticket/JWT + 双层 Host 隔离 |
-| `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
+| `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8098` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
 
 2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
 
@@ -115,7 +115,7 @@ unset CF_API_TOKEN
 1. 明确入口用途、数据敏感级别、origin 地址、健康检查和是否已有应用层认证。
 2. 若是管理后台、本地分析、配置后台，先启用应用层登录或确认已有独立后台账号。
 3. 创建或复用 Cloudflare Tunnel；credentials 文件放在宿主机受限目录，权限 `600`。
-4. 配置 public hostname 回源到最小 origin 地址，例如 `http://127.0.0.1:8095` 或 Tailscale IP，不回源到 `0.0.0.0` 裸端口。
+4. 配置 public hostname 回源到最小 origin 地址，例如本地分析的 `http://127.0.0.1:8098` 或 Tailscale IP，不回源到 `0.0.0.0` 裸端口。
 5. 创建 proxied DNS CNAME 指向 `<tunnel-id>.cfargotunnel.com`。
 6. 创建 Access app 与 allow policy，默认只允许 `cv1347968277@gmail.com`。
 7. 验证公网未登录访问先 302 到 Access；Access 通过后再进入应用层登录或应用页面。
@@ -128,8 +128,8 @@ unset CF_API_TOKEN
 ```bash
 systemctl --user is-active cloudflared-local-analytics.service
 loginctl show-user hfy -p Linger
-curl -fsS http://127.0.0.1:8095/api/health
-curl -sS http://127.0.0.1:8095/api/auth/session
+curl -fsS http://127.0.0.1:8098/api/health
+curl -sS http://127.0.0.1:8098/api/auth/session
 ```
 
 公网检查：
