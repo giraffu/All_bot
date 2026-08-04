@@ -43,6 +43,10 @@ type SubmitHarness = {
   resolution: Ref<string>
   duration: Ref<string>
   selectedCharacterIds: Ref<string[]>
+  minimaxH3Mode: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
+  minimaxH3ResolutionPreset: Ref<'preview' | 'standard' | 'hd'>
+  minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
+  minimaxH3ReferenceDescriptions: Ref<string[]>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -91,6 +95,10 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const resolution = ref('512')
   const duration = ref('5')
   const selectedCharacterIds = ref<string[]>([])
+  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
+  const minimaxH3ResolutionPreset = ref<'preview' | 'standard' | 'hd'>('preview')
+  const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
+  const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -120,6 +128,10 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     resolution,
     duration,
     selectedCharacterIds,
+    minimaxH3Mode,
+    minimaxH3ResolutionPreset,
+    minimaxH3AspectRatio,
+    minimaxH3ReferenceDescriptions,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -148,6 +160,10 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     resolution,
     duration,
     selectedCharacterIds,
+    minimaxH3Mode,
+    minimaxH3ResolutionPreset,
+    minimaxH3AspectRatio,
+    minimaxH3ReferenceDescriptions,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -212,6 +228,45 @@ describe('useLabSubmitPayload', () => {
         resolution: '768x448',
       }),
     }), 'lab.cards.ltx_t2v_title')
+  })
+
+  it('submits the four MiniMax H3 modes through one workbench', async () => {
+    const harness = createHarness('minimax_h3')
+    harness.prompt.value = 'cinematic character motion with dialogue'
+    harness.duration.value = '15'
+    harness.minimaxH3ResolutionPreset.value = 'hd'
+    harness.minimaxH3AspectRatio.value = '9:16'
+
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_t2v',
+      inputs: expect.objectContaining({
+        images: [], duration: 15, resolution_preset: 'hd', aspect_ratio: '9:16',
+      }),
+    }), 'lab.cards.minimax_h3_title')
+
+    harness.minimaxH3Mode.value = 'ref2v'
+    harness.uploadedReferences.value = [refImage('a.png'), refImage('b.png')]
+    harness.minimaxH3ReferenceDescriptions.value = ['adult woman in red', 'adult man in black']
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_ref2v',
+      inputs: expect.objectContaining({
+        images: ['a.png', 'b.png'],
+        reference_descriptions: ['adult woman in red', 'adult man in black'],
+      }),
+    }), 'lab.cards.minimax_h3_title')
+
+    harness.minimaxH3Mode.value = 'i2v'
+    harness.uploadedReferences.value = [{ ...refImage('portrait.png'), width: 900, height: 1600 }]
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'minimax_h3_i2v',
+      inputs: expect.objectContaining({
+        images: ['portrait.png'],
+        aspect_ratio: '9:16',
+      }),
+    }), 'lab.cards.minimax_h3_title')
   })
 
   it('submits ordered MSR character ids with a required scene background', async () => {

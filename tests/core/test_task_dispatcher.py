@@ -12,6 +12,8 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
+    MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_REF2V,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
@@ -31,6 +33,7 @@ from src.core.task_dispatcher import (
     FaceSwapStrategy,
     LtxVideoStrategy,
     LtxT2VStrategy,
+    MiniMaxH3Strategy,
     Scail2VideoStrategy,
     StrategyFactory,
     TaskDispatcherFeatureFlags,
@@ -73,6 +76,10 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
     assert isinstance(strategy, Wan22VideoV2Strategy)
 
+    strategy = StrategyFactory.get_strategy(MODE_MINIMAX_H3_FLF2V)
+    assert isinstance(strategy, MiniMaxH3Strategy)
+    assert strategy.task_type == MODE_MINIMAX_H3_FLF2V
+
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
     assert isinstance(strategy, Scail2VideoStrategy)
     assert strategy.task_type == MODE_SCAIL2_ACTION_TRANSFER
@@ -112,6 +119,62 @@ def test_face_swap_versions_share_two_credit_price():
     assert StrategyFactory.get_strategy(MODE_FACE_SWAP).get_cost({}) == 2
     assert StrategyFactory.get_strategy(MODE_FACE_SWAP_V2).get_cost({}) == 2
     assert StrategyFactory.get_strategy(MODE_I2I_PRO).get_cost({}) == 6
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_ref2v_submits_normalized_contract(monkeypatch):
+    submit = AsyncMock(return_value="backend-h3")
+    _patch_dispatch_image_service(monkeypatch, submit_minimax_h3_task=submit)
+    strategy = StrategyFactory.get_strategy(MODE_MINIMAX_H3_REF2V)
+
+    result = await strategy.submit_task(
+        "task-h3",
+        {
+            "prompt": "the two characters walk through neon rain",
+            "saved_input_images": ["ref/a.png", "ref/b.png"],
+            "reference_descriptions": ["red-haired pilot", "silver robot"],
+            "duration": 10,
+            "resolution_preset": "standard",
+            "aspect_ratio": "9:16",
+            "seed": 42,
+        },
+        priority=6,
+    )
+
+    assert result == "backend-h3"
+    submit.assert_awaited_once_with(
+        "task-h3",
+        task_type=MODE_MINIMAX_H3_REF2V,
+        prompt="the two characters walk through neon rain",
+        images=("ref/a.png", "ref/b.png"),
+        reference_descriptions=("red-haired pilot", "silver robot"),
+        duration=10,
+        resolution_preset="standard",
+        aspect_ratio="9:16",
+        width=544,
+        height=960,
+        frame_count=243,
+        fps=24,
+        seed=42,
+        priority=6,
+    )
+    assert strategy.get_cost(
+        {
+            "prompt": "scene",
+            "saved_input_images": ["ref/a.png"],
+            "duration": 10,
+        }
+    ) == 24
+
+
+def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
+    strategy = MiniMaxH3Strategy("minimax_h3_t2v", seed_provider=lambda: 123456)
+    inputs = {"prompt": "scene"}
+
+    metadata = strategy.get_metadata(inputs)
+
+    assert inputs["seed"] == 123456
+    assert metadata["minimax_h3_seed"] == 123456
 
 
 @pytest.mark.asyncio

@@ -100,6 +100,34 @@ bundles:
       notes: Deduplicated LTX video/T2V union with the pinned 10Eros v1.4 DMD INT8 checkpoint and MSR V2 validation assets.
     files: []
 
+  minimax_h3_runtime:
+    version: 2026-08-04-dasiwa-cmmh3-v1
+    profiles:
+      - minimax_h3
+    source:
+      node_id: local-model-downloads
+      comfy_id: local-registry
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-04-dasiwa-cmmh3-v1/files
+      discovered_size_gb: 59.08
+      import_status: prepared_by_script
+      notes: Official Comfy-Org MiniMax H3 quantized conversions pinned by revision and SHA256; no LoRA or finetuned checkpoint.
+    files:
+      - relative_path: diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors
+        sha256: e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a
+        size_bytes: 20970379616
+      - relative_path: diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors
+        sha256: 9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779
+        size_bytes: 20970379616
+      - relative_path: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+        sha256: 35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6
+        size_bytes: 15687142551
+      - relative_path: vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors
+        sha256: 8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48
+        size_bytes: 605254808
+      - relative_path: vae/MiniMaxH3/minimax_h3_video_vae_fp16.safetensors
+        sha256: 7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522
+        size_bytes: 5207808496
+
   img2img_lora_baseline:
     version: 2026-06-10
     profiles:

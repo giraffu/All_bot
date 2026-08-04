@@ -87,6 +87,10 @@ export function useLabWorkbench() {
   const useT2VReferences = ref(false)
   const environmentSource = ref<'official' | 'upload'>('official')
   const selectedEnvironmentId = ref('')
+  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
+  const minimaxH3ResolutionPreset = ref<'preview' | 'standard' | 'hd'>('preview')
+  const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
+  const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -252,6 +256,9 @@ export function useLabWorkbench() {
     wan22ResolutionPreset: wan22ResolutionPreset.value,
     hasCharacter: useT2VReferences.value,
   }))
+  const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
+    ? (minimaxH3Mode.value === 'ref2v' ? 12 : 10) * Number(duration.value) / 5
+    : cost.value)
 
   const costHint = computed(() => {
     const key = getLabCostHintKey(currentMode.value.id)
@@ -263,7 +270,15 @@ export function useLabWorkbench() {
   ))
   const canSubmit = computed(() => {
     const hasPrompt = !currentMode.value.promptRequired || template.isTemplatePromptLocked.value || prompt.value.trim().length > 0
-    const hasRequiredUpload = currentMode.value.id === 'ltx_t2v'
+    const hasRequiredUpload = currentMode.value.id === 'minimax_h3'
+      ? minimaxH3Mode.value === 't2v'
+        ? references.uploadedReferences.value.length === 0
+        : minimaxH3Mode.value === 'i2v'
+          ? references.uploadedReferences.value.length === 1
+          : minimaxH3Mode.value === 'flf2v'
+            ? references.uploadedReferences.value.length === 2
+            : references.uploadedReferences.value.length >= 1 && references.uploadedReferences.value.length <= 4
+      : currentMode.value.id === 'ltx_t2v'
       ? !useT2VReferences.value
         ? references.uploadedReferences.value.length === 0
         : selectedCharacterIds.value.length === 2 && (
@@ -431,6 +446,10 @@ export function useLabWorkbench() {
     useT2VReferences,
     environmentSource,
     selectedEnvironmentId,
+    minimaxH3Mode,
+    minimaxH3ResolutionPreset,
+    minimaxH3AspectRatio,
+    minimaxH3ReferenceDescriptions,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -476,7 +495,7 @@ export function useLabWorkbench() {
     handleRemoveUploadSlot: slots.handleRemoveUploadSlot,
     handleSubmit,
     resetAfterResult,
-    cost,
+    cost: displayedCost,
     costHint,
     canSubmit,
     hasReferences,
@@ -505,6 +524,10 @@ export function useLabWorkbench() {
     useT2VReferences,
     environmentSource,
     selectedEnvironmentId,
+    minimaxH3Mode,
+    minimaxH3ResolutionPreset,
+    minimaxH3AspectRatio,
+    minimaxH3ReferenceDescriptions,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

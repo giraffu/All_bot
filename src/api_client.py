@@ -26,6 +26,7 @@ from config import (
     LTX_VIDEO_V2V_AUDIO_ENDPOINT,
     LTX_T2V_ENDPOINT,
     LTX_T2V_IC_ENDPOINT,
+    MINIMAX_H3_ENDPOINTS,
     CHARACTER_REFERENCE_BUILD_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
@@ -722,6 +723,49 @@ class APIClient:
             "POST", endpoint, json=data, circuit_breaker_key="submit"
         )
         return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_minimax_h3(
+        self,
+        task_id: str,
+        *,
+        task_type: str,
+        prompt: str,
+        images: tuple[str, ...],
+        reference_descriptions: tuple[str, ...],
+        duration: int,
+        resolution_preset: str,
+        aspect_ratio: str,
+        width: int,
+        height: int,
+        frame_count: int,
+        fps: int,
+        seed: int | None,
+        priority: int = 0,
+    ) -> str:
+        endpoint = MINIMAX_H3_ENDPOINTS.get(task_type)
+        if endpoint is None:
+            raise ValueError(f"unsupported MiniMax H3 task type: {task_type}")
+        payload = {
+            "task_id": task_id,
+            "prompt": prompt,
+            "images": list(images),
+            "reference_descriptions": list(reference_descriptions),
+            "duration": duration,
+            "resolution_preset": resolution_preset,
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+            "frame_count": frame_count,
+            "fps": fps,
+            "seed": seed,
+            "extract_last_frame": True,
+            "priority": priority,
+        }
+        response = await self._request(
+            "POST", endpoint, json=payload, circuit_breaker_key="submit"
+        )
+        return response.json()["task_id"]
 
     @async_retry(max_retries=3)
     async def submit_character_reference_build(

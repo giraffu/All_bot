@@ -1,5 +1,9 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
+MiniMax H3 使用四个独立业务/执行类型，统一走既有 Web submission Saga、Central
+队列、Worker workflow patch、结果上传和终态退款，不以 LTX alias 入队。输入数量、
+计费和 workflow 契约见 `docs/子模块_MiniMaxH3视频服务_minimax_h3.md`。
+
 > 当前 `i2i_pro` 与专属 `face_swap` Worker profile 都可承接 Central 的 `face_swap` 与 `face_swap_v2`，并通过显式 workflow override 将两者运行到 `face_swap_v2.json`。上游 API、计费、退款和业务类型不变；旧远程 V1 执行池已退役。
 
 ## 1. 目标与适用场景

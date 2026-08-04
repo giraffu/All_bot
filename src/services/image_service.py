@@ -8,6 +8,41 @@ from src.domain_config.wan22_aio_video import (
 
 
 class ImageService:
+    async def submit_minimax_h3_task(
+        self,
+        task_id: str,
+        *,
+        task_type: str,
+        prompt: str,
+        images: tuple[str, ...],
+        reference_descriptions: tuple[str, ...],
+        duration: int,
+        resolution_preset: str,
+        aspect_ratio: str,
+        width: int,
+        height: int,
+        frame_count: int,
+        fps: int,
+        seed: int | None,
+        priority: int = 0,
+    ) -> str:
+        return await api_client.submit_minimax_h3(
+            task_id,
+            task_type=task_type,
+            prompt=prompt,
+            images=images,
+            reference_descriptions=reference_descriptions,
+            duration=duration,
+            resolution_preset=resolution_preset,
+            aspect_ratio=aspect_ratio,
+            width=width,
+            height=height,
+            frame_count=frame_count,
+            fps=fps,
+            seed=seed,
+            priority=priority,
+        )
+
     async def submit_ltx_video_v2_task(
         self,
         task_id: str,

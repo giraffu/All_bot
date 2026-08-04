@@ -71,6 +71,10 @@ const {
   useT2VReferences,
   environmentSource,
   selectedEnvironmentId,
+  minimaxH3Mode,
+  minimaxH3ResolutionPreset,
+  minimaxH3AspectRatio,
+  minimaxH3ReferenceDescriptions,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -134,7 +138,7 @@ const promptLockedHint = computed(() => (
         :references="displayedReferences"
         :asset-upload-slots="assetUploadSlots"
         :reference-title="referenceTitle"
-        :supports-upload="currentMode.supportsUpload && currentModeId !== 'ltx_t2v'"
+        :supports-upload="currentMode.supportsUpload && currentModeId !== 'ltx_t2v' && !(currentModeId === 'minimax_h3' && minimaxH3Mode === 't2v')"
         :can-upload-reference="canUploadReference"
         :upload-button-label="uploadButtonLabel"
         :before-upload="beforeUpload"
@@ -178,6 +182,36 @@ const promptLockedHint = computed(() => (
               :auto-size="{ minRows: 1, maxRows: 3 }"
               :placeholder="t('characters.audio_prompt')"
             />
+          </div>
+        </template>
+        <template v-if="currentModeId === 'minimax_h3'" #before-prompt>
+          <div class="mb-4 space-y-3 rounded-2xl border p-3">
+            <a-segmented
+              v-model:value="minimaxH3Mode"
+              block
+              :options="[
+                { label: t('lab.workbench.minimax_h3_modes.t2v'), value: 't2v' },
+                { label: t('lab.workbench.minimax_h3_modes.i2v'), value: 'i2v' },
+                { label: t('lab.workbench.minimax_h3_modes.flf2v'), value: 'flf2v' },
+                { label: t('lab.workbench.minimax_h3_modes.ref2v'), value: 'ref2v' },
+              ]"
+            />
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <a-select v-model:value="duration" :options="[{value:'5',label:'5s'},{value:'10',label:'10s'},{value:'15',label:'15s'}]" />
+              <a-select v-model:value="minimaxH3ResolutionPreset" :options="[{value:'preview',label:'0.30 MP'},{value:'standard',label:'0.52 MP'},{value:'hd',label:'0.83 MP'}]" />
+              <a-select v-if="minimaxH3Mode === 't2v' || minimaxH3Mode === 'ref2v'" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
+              <div v-else class="flex min-h-8 items-center rounded-md border border-white/10 px-3 text-xs text-slate-400">
+                {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}
+              </div>
+            </div>
+            <div v-if="minimaxH3Mode === 'ref2v'" class="space-y-2">
+              <a-input
+                v-for="(_, index) in displayedReferences"
+                :key="`minimax-description-${index}`"
+                v-model:value="minimaxH3ReferenceDescriptions[index]"
+                :placeholder="t('lab.workbench.minimax_h3_description', { index: index + 1 })"
+              />
+            </div>
           </div>
         </template>
         <template #advanced-panel="{ close }">

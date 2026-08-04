@@ -16,6 +16,13 @@ from .runpod_profile_catalog import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_VOLUME_GB,
+    RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
+    RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
+    RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
+    RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+    RUNPOD_MINIMAX_H3_VOLUME_GB,
+    RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
@@ -172,6 +179,8 @@ class RunPodPodRequestBuilder:
         profile = self.profile_for_task_type(task_type)
         if profile.task_type == "ltx_t2v":
             self.validate_ltx_t2v_contract()
+        if profile.task_type == "minimax_h3":
+            self.validate_minimax_h3_contract()
         if environment == "cloud-prod":
             prod_profile = prod_worker_profile_for_task_type(profile.task_type)
             prod_slot_from_agent_id(
@@ -187,12 +196,13 @@ class RunPodPodRequestBuilder:
             "scail2",
             "ltx_video",
             "ltx_t2v",
+            "minimax_h3",
             "pornmaster_flux2_edit_bf16",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
                 "img2img/img2img_lora, image_to_video, wan22_video_v2, "
-                "i2i_pro, scail2, ltx_video, ltx_t2v, and "
+                "i2i_pro, scail2, ltx_video, ltx_t2v, minimax_h3, and "
                 "pornmaster_flux2_edit_bf16 profiles"
             )
         gpu_type_ids = self.gpu_type_ids_for(profile)
@@ -218,6 +228,7 @@ class RunPodPodRequestBuilder:
                 "scail2",
                 "ltx_video",
                 "ltx_t2v",
+                "minimax_h3",
                 "pornmaster_flux2_edit_bf16",
             }
             and not image_name
@@ -293,6 +304,20 @@ class RunPodPodRequestBuilder:
         ):
             raise ValueError("ltx_t2v model manifest key must use the fixed release")
 
+    def validate_minimax_h3_contract(self) -> None:
+        if tuple(self.settings.gpu_type_ids_minimax_h3) != RUNPOD_MINIMAX_H3_GPU_TYPE_IDS:
+            raise ValueError("minimax_h3 only supports NVIDIA GeForce RTX 5090 in v1")
+        if self.settings.use_template_minimax_h3 or self.settings.template_id_minimax_h3:
+            raise ValueError("minimax_h3 RunPod templates are disabled")
+        if self.settings.model_prefix_minimax_h3 != RUNPOD_MINIMAX_H3_MODEL_PREFIX:
+            raise ValueError("minimax_h3 model prefix must use the fixed release")
+        if self.settings.model_manifest_key_minimax_h3 != RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY:
+            raise ValueError("minimax_h3 model manifest key must use the fixed release")
+        image_name = self.settings.image_name_minimax_h3
+        canonical_digest_prefix = RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX.removesuffix(":") + "@sha256:"
+        if not re.fullmatch(re.escape(canonical_digest_prefix) + r"[0-9a-f]{64}", image_name):
+            raise ValueError("minimax_h3 requires the canonical image pinned by sha256 digest")
+
     def container_disk_gb_for(
         self,
         *,
@@ -326,6 +351,12 @@ class RunPodPodRequestBuilder:
                 self.settings.container_disk_gb_ltx_t2v,
                 RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
             )
+        if profile.task_type == "minimax_h3":
+            return max(
+                self.settings.container_disk_gb,
+                self.settings.container_disk_gb_minimax_h3,
+                RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
+            )
         if profile.task_type == "pornmaster_flux2_edit":
             return max(
                 self.settings.container_disk_gb,
@@ -342,6 +373,8 @@ class RunPodPodRequestBuilder:
     def volume_gb_for(self, profile: RunPodTaskProfile) -> int:
         if profile.task_type == "ltx_t2v":
             return max(self.settings.volume_gb, RUNPOD_LTX_T2V_VOLUME_GB)
+        if profile.task_type == "minimax_h3":
+            return max(self.settings.volume_gb, RUNPOD_MINIMAX_H3_VOLUME_GB)
         return self.settings.volume_gb
 
     def pod_env(
@@ -607,6 +640,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_LTX_T2V":
             return self.settings.gpu_type_ids_ltx_t2v
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_MINIMAX_H3":
+            return self.settings.gpu_type_ids_minimax_h3
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT":
             return self.settings.gpu_type_ids_pornmaster_flux2_edit
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT_BF16":
@@ -618,6 +653,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.gpu_type_ids_ltx_t2v
+        if profile.task_type == "minimax_h3":
+            return self.settings.gpu_type_ids_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.gpu_type_ids_pornmaster_flux2_edit
         if profile.task_type == "pornmaster_flux2_edit_bf16":
@@ -657,6 +694,10 @@ class RunPodPodRequestBuilder:
             if not self.settings.use_template_ltx_t2v:
                 return ""
             return self.settings.template_id_ltx_t2v
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_MINIMAX_H3":
+            if not self.settings.use_template_minimax_h3:
+                return ""
+            return self.settings.template_id_minimax_h3
         if profile.template_env_key == "RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT":
             if not self.settings.use_template_pornmaster_flux2_edit:
                 return ""
@@ -680,6 +721,8 @@ class RunPodPodRequestBuilder:
             return self.settings.image_name_ltx_video
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_LTX_T2V":
             return self.settings.image_name_ltx_t2v
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_MINIMAX_H3":
+            return self.settings.image_name_minimax_h3
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT":
             return self.settings.image_name_pornmaster_flux2_edit
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
@@ -702,6 +745,8 @@ class RunPodPodRequestBuilder:
             return "allbot/comfy-runpod-ltx-video:pending"
         if profile.task_type == "ltx_t2v":
             return "allbot/comfy-runpod-ltx-t2v:pending"
+        if profile.task_type == "minimax_h3":
+            return "allbot/comfy-runpod-minimax-h3:pending"
         if profile.task_type == "pornmaster_flux2_edit":
             return "allbot/comfy-runpod-pornmaster-flux2-edit:pending"
         if profile.task_type == "pornmaster_flux2_edit_bf16":
@@ -730,6 +775,11 @@ class RunPodPodRequestBuilder:
             return (
                 self.settings.docker_start_cmd_ltx_t2v
                 or RUNPOD_LTX_T2V_DOCKER_START_CMD
+            )
+        if profile.task_type == "minimax_h3":
+            return (
+                self.settings.docker_start_cmd_minimax_h3
+                or RUNPOD_MINIMAX_H3_DOCKER_START_CMD
             )
         if profile.task_type == "pornmaster_flux2_edit":
             return (
@@ -783,6 +833,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_prefix_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.model_prefix_ltx_t2v
+        if profile.task_type == "minimax_h3":
+            return self.settings.model_prefix_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.model_prefix_pornmaster_flux2_edit
         if profile.task_type == "pornmaster_flux2_edit_bf16":
@@ -804,6 +856,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_manifest_key_ltx_video
         if profile.task_type == "ltx_t2v":
             return self.settings.model_manifest_key_ltx_t2v
+        if profile.task_type == "minimax_h3":
+            return self.settings.model_manifest_key_minimax_h3
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.model_manifest_key_pornmaster_flux2_edit
         if profile.task_type == "pornmaster_flux2_edit_bf16":
@@ -827,6 +881,8 @@ class RunPodPodRequestBuilder:
         if profile.task_type == "ltx_video":
             return profile.supported_task_types
         if profile.task_type == "ltx_t2v":
+            return profile.supported_task_types
+        if profile.task_type == "minimax_h3":
             return profile.supported_task_types
         if profile.task_type == "pornmaster_flux2_edit":
             return RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES

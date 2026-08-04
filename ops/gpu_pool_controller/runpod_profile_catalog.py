@@ -19,6 +19,8 @@ RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX = "runpod_prod_ltx_video_manual_"
 RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-video-manual-"
 RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX = "runpod_prod_ltx_t2v_manual_"
 RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-t2v-manual-"
+RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX = "runpod_prod_minimax_h3_manual_"
+RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX = "allbot-runpod-prod-minimax-h3-manual-"
 RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX = (
     "runpod_prod_pornmaster_flux2_edit_manual_"
 )
@@ -59,6 +61,7 @@ RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video-v2:"
 )
 RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-ltx-t2v:"
+RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX = "ghcr.io/giraffu/allbot-gpu-minimax-h3:"
 RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:"
 )
@@ -177,6 +180,20 @@ RUNPOD_LTX_T2V_CONTAINER_DISK_GB = 180
 RUNPOD_LTX_T2V_VOLUME_GB = 100
 RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES = ("ltx_t2v", "ltx_t2v_ic")
 RUNPOD_LTX_T2V_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
+RUNPOD_MINIMAX_H3_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
+RUNPOD_MINIMAX_H3_MODEL_PREFIX = "minimax_h3/2026-08-04-dasiwa-cmmh3-v1"
+RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY = (
+    "minimax_h3/2026-08-04-dasiwa-cmmh3-v1/manifest.json"
+)
+RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB = 100
+RUNPOD_MINIMAX_H3_VOLUME_GB = 100
+RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES = (
+    "minimax_h3_t2v",
+    "minimax_h3_i2v",
+    "minimax_h3_flf2v",
+    "minimax_h3_ref2v",
+)
+RUNPOD_MINIMAX_H3_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 4090",
     "NVIDIA L40S",
@@ -309,6 +326,15 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_LTX_T2V",
         image_env_key="RUNPOD_IMAGE_NAME_LTX_T2V",
     ),
+    "minimax_h3": RunPodTaskProfile(
+        task_type="minimax_h3",
+        supported_task_types=RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+        runtime_profile="minimax_h3",
+        agent_id_prefix="runpod_test_minimax_h3",
+        template_env_key="RUNPOD_TEMPLATE_ID_MINIMAX_H3",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_MINIMAX_H3",
+        image_env_key="RUNPOD_IMAGE_NAME_MINIMAX_H3",
+    ),
     "pornmaster_flux2_edit_bf16": RunPodTaskProfile(
         task_type="pornmaster_flux2_edit_bf16",
         supported_task_types=RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
@@ -319,6 +345,9 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         image_env_key="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
     ),
 }
+
+for _minimax_h3_task_type in RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES:
+    RUNPOD_TASK_PROFILES[_minimax_h3_task_type] = RUNPOD_TASK_PROFILES["minimax_h3"]
 
 RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
     {
@@ -367,6 +396,12 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
         "profile": "ltx_t2v",
         "label": "ltx_t2v / Sulphur + Ingredients",
         "supported_task_types": list(RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES),
+        "autoscaler_enabled": False,
+    },
+    {
+        "profile": "minimax_h3",
+        "label": "MiniMax H3 / DaSiWa",
+        "supported_task_types": list(RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES),
         "autoscaler_enabled": False,
     },
     {
@@ -463,11 +498,13 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "ltx_video"
     if value == "ltx_t2v":
         return "ltx_t2v"
+    if value == "minimax_h3":
+        return "minimax_h3"
     if value == "pornmaster_flux2_edit_bf16":
         return "pornmaster_flux2_edit_bf16"
     raise ValueError(
         "prod RunPod profile must be img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, scail2, ltx_video, ltx_t2v, "
+        "wan22_video_v2, i2i_pro, scail2, ltx_video, ltx_t2v, minimax_h3, "
         "or pornmaster_flux2_edit_bf16"
     )
 
@@ -488,11 +525,13 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "ltx_video"
     if value in RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES:
         return "ltx_t2v"
+    if value in RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES:
+        return "minimax_h3"
     if value in RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES:
         return "pornmaster_flux2_edit_bf16"
     raise ValueError(
         "prod RunPod worker only supports img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, scail2, ltx_video, ltx_t2v, "
+        "wan22_video_v2, i2i_pro, scail2, ltx_video, ltx_t2v, minimax_h3, "
         "or pornmaster_flux2_edit_bf16"
     )
 
@@ -517,6 +556,8 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         return "ltx_video"
     if raw.startswith(RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX):
         return "ltx_t2v"
+    if raw.startswith(RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX):
+        return "minimax_h3"
     if raw.startswith(RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX):
         return "pornmaster_flux2_edit"
     if raw.startswith(RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_AGENT_ID_PREFIX):
@@ -530,6 +571,7 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         f"{RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_AGENT_ID_PREFIX}"
     )
@@ -549,6 +591,8 @@ def prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX
     if profile_key == "ltx_t2v":
         return RUNPOD_PROD_LTX_T2V_AGENT_ID_PREFIX
+    if profile_key == "minimax_h3":
+        return RUNPOD_PROD_MINIMAX_H3_AGENT_ID_PREFIX
     if profile_key == "pornmaster_flux2_edit_bf16":
         return RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
@@ -568,6 +612,8 @@ def prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX
     if profile_key == "ltx_t2v":
         return RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX
+    if profile_key == "minimax_h3":
+        return RUNPOD_PROD_MINIMAX_H3_POD_NAME_PREFIX
     if profile_key == "pornmaster_flux2_edit_bf16":
         return RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX

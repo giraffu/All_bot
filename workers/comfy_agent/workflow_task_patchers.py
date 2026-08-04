@@ -1395,6 +1395,61 @@ def patch_scail2_face_swap_v2_workflow(
     )
 
 
+_MINIMAX_H3_COUNTS = {
+    "minimax_h3_t2v": (0, 0),
+    "minimax_h3_i2v": (1, 1),
+    "minimax_h3_flf2v": (2, 2),
+    "minimax_h3_ref2v": (1, 4),
+}
+
+
+def patch_minimax_h3_workflow(
+    workflow: dict[str, Any],
+    *,
+    task_type: str,
+    params: dict[str, Any],
+    **_: Any,
+) -> None:
+    task_type = str(task_type or "")
+    if task_type not in _MINIMAX_H3_COUNTS:
+        raise ValueError("invalid MiniMax H3 task type")
+    if any(
+        params.get(key) not in (None, "", [], ())
+        for key in ("lora_name", "lora_items", "model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
+    ):
+        raise ValueError("MiniMax H3 rejects model, LoRA, sampler, and timeline overrides")
+    names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
+    count = sum(bool(name) for name in names)
+    minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
+    if not minimum <= count <= maximum or any(not names[index] for index in range(count)):
+        raise ValueError(f"invalid ordered image count for {task_type}")
+    descriptions = params.get("reference_descriptions") or []
+    if task_type == "minimax_h3_ref2v":
+        if not isinstance(descriptions, list):
+            raise ValueError("reference_descriptions must be an ordered list")
+        if descriptions and (len(descriptions) != count or any(not str(item).strip() for item in descriptions)):
+            raise ValueError("reference descriptions must match reference images")
+        if descriptions:
+            prefix = "\n".join(
+                f"<Picture {index}>: {str(description).strip()}"
+                for index, description in enumerate(descriptions, start=1)
+            )
+            workflow["30"]["inputs"]["prompt"] = f"{prefix}\n\n{str(params.get('prompt') or '').strip()}"
+    elif descriptions:
+        raise ValueError("reference descriptions are only supported by ref2v")
+
+    guide_inputs = workflow["30"]["inputs"]
+    for index in range(1, 5):
+        node_id = str(19 + index)
+        if index <= count:
+            workflow[node_id]["inputs"]["image"] = names[index - 1]
+        else:
+            workflow.pop(node_id, None)
+            guide_inputs.pop(f"ref_image_{index}", None)
+    workflow["38"]["inputs"]["filename_prefix"] = task_type
+    workflow["40"]["inputs"]["filename_prefix"] = f"{task_type}_last_frame"
+
+
 TASK_SPECIFIC_PATCHERS = {
     "img2img": patch_img2img_workflow,
     "img2img_lora": patch_img2img_workflow,
@@ -1406,6 +1461,10 @@ TASK_SPECIFIC_PATCHERS = {
     "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,
     "ltx_t2v": patch_ltx_t2v_workflow,
     "ltx_t2v_ic": patch_ltx_t2v_ic_workflow,
+    "minimax_h3_t2v": patch_minimax_h3_workflow,
+    "minimax_h3_i2v": patch_minimax_h3_workflow,
+    "minimax_h3_flf2v": patch_minimax_h3_workflow,
+    "minimax_h3_ref2v": patch_minimax_h3_workflow,
     "character_reference_build": patch_character_reference_build_workflow,
     "video_insert": patch_image_to_video_workflow,
     "video_edit": patch_image_to_video_workflow,

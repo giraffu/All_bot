@@ -35,6 +35,12 @@ from ..runpod_profile_catalog import (
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_T2V_VOLUME_GB,
+    RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
+    RUNPOD_MINIMAX_H3_DOCKER_START_CMD,
+    RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
+    RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+    RUNPOD_MINIMAX_H3_VOLUME_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS,
@@ -413,6 +419,7 @@ class RunPodSettings:
     projected_cost_per_hr_scail2: float = 0.0
     projected_cost_per_hr_ltx_video: float = 0.0
     projected_cost_per_hr_ltx_t2v: float = 0.0
+    projected_cost_per_hr_minimax_h3: float = 0.0
     projected_cost_per_hr_pornmaster_flux2_edit: float = 0.0
     cloud_type: str = "SECURE"
     interruptible: bool = False
@@ -428,6 +435,7 @@ class RunPodSettings:
     gpu_type_ids_scail2: tuple[str, ...] = RUNPOD_SCAIL2_GPU_TYPE_IDS
     gpu_type_ids_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
     gpu_type_ids_ltx_t2v: tuple[str, ...] = RUNPOD_LTX_T2V_GPU_TYPE_IDS
+    gpu_type_ids_minimax_h3: tuple[str, ...] = RUNPOD_MINIMAX_H3_GPU_TYPE_IDS
     gpu_type_ids_pornmaster_flux2_edit: tuple[
         str, ...
     ] = RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS
@@ -436,6 +444,7 @@ class RunPodSettings:
     container_disk_gb_image_to_video: int = RUNPOD_IMAGE_TO_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_video: int = RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     container_disk_gb_ltx_t2v: int = RUNPOD_LTX_T2V_CONTAINER_DISK_GB
+    container_disk_gb_minimax_h3: int = RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB
     container_disk_gb_pornmaster_flux2_edit: int = (
         RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
     )
@@ -452,6 +461,7 @@ class RunPodSettings:
     use_template_scail2: bool = False
     use_template_ltx_video: bool = False
     use_template_ltx_t2v: bool = False
+    use_template_minimax_h3: bool = False
     use_template_pornmaster_flux2_edit: bool = False
     docker_start_cmd_img2img_lora: tuple[
         str, ...
@@ -463,6 +473,7 @@ class RunPodSettings:
     docker_start_cmd_scail2: tuple[str, ...] = RUNPOD_SCAIL2_DOCKER_START_CMD
     docker_start_cmd_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_DOCKER_START_CMD
     docker_start_cmd_ltx_t2v: tuple[str, ...] = RUNPOD_LTX_T2V_DOCKER_START_CMD
+    docker_start_cmd_minimax_h3: tuple[str, ...] = RUNPOD_MINIMAX_H3_DOCKER_START_CMD
     docker_start_cmd_pornmaster_flux2_edit: tuple[
         str, ...
     ] = RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
@@ -474,6 +485,7 @@ class RunPodSettings:
     template_id_scail2: str = ""
     template_id_ltx_video: str = ""
     template_id_ltx_t2v: str = ""
+    template_id_minimax_h3: str = ""
     template_id_pornmaster_flux2_edit: str = ""
     image_name_img2img_lora: str = ""
     image_name_wan22_aio_video: str = ""
@@ -483,6 +495,7 @@ class RunPodSettings:
     image_name_scail2: str = ""
     image_name_ltx_video: str = ""
     image_name_ltx_t2v: str = ""
+    image_name_minimax_h3: str = ""
     image_name_pornmaster_flux2_edit: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
     worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
@@ -529,6 +542,8 @@ class RunPodSettings:
     task_type_workflow_overrides_ltx_video: str = RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
     model_prefix_ltx_t2v: str = RUNPOD_LTX_T2V_MODEL_PREFIX
     model_manifest_key_ltx_t2v: str = RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
+    model_prefix_minimax_h3: str = RUNPOD_MINIMAX_H3_MODEL_PREFIX
+    model_manifest_key_minimax_h3: str = RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
     model_prefix_pornmaster_flux2_edit: str = (
         RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
     )
@@ -686,6 +701,11 @@ class RunPodSettings:
                 default=cls.gpu_type_ids_ltx_t2v,
             )
             or RUNPOD_LTX_T2V_GPU_TYPE_IDS,
+            gpu_type_ids_minimax_h3=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_MINIMAX_H3"),
+                default=cls.gpu_type_ids_minimax_h3,
+            )
+            or RUNPOD_MINIMAX_H3_GPU_TYPE_IDS,
             gpu_type_ids_pornmaster_flux2_edit=_csv(
                 os.getenv("RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT"),
                 default=cls.gpu_type_ids_pornmaster_flux2_edit,
@@ -707,6 +727,10 @@ class RunPodSettings:
             container_disk_gb_ltx_t2v=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_LTX_T2V"),
                 default=RUNPOD_LTX_T2V_CONTAINER_DISK_GB,
+            ),
+            container_disk_gb_minimax_h3=_int_env(
+                os.getenv("RUNPOD_CONTAINER_DISK_GB_MINIMAX_H3"),
+                default=RUNPOD_MINIMAX_H3_CONTAINER_DISK_GB,
             ),
             container_disk_gb_pornmaster_flux2_edit=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT"),
@@ -831,6 +855,7 @@ class RunPodSettings:
             template_id_scail2=os.getenv("RUNPOD_TEMPLATE_ID_SCAIL2", ""),
             template_id_ltx_video=os.getenv("RUNPOD_TEMPLATE_ID_LTX_VIDEO", ""),
             template_id_ltx_t2v=os.getenv("RUNPOD_TEMPLATE_ID_LTX_T2V", ""),
+            template_id_minimax_h3=os.getenv("RUNPOD_TEMPLATE_ID_MINIMAX_H3", ""),
             template_id_pornmaster_flux2_edit=os.getenv(
                 "RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
                 "",
@@ -843,6 +868,7 @@ class RunPodSettings:
             image_name_scail2=os.getenv("RUNPOD_IMAGE_NAME_SCAIL2", ""),
             image_name_ltx_video=os.getenv("RUNPOD_IMAGE_NAME_LTX_VIDEO", ""),
             image_name_ltx_t2v=os.getenv("RUNPOD_IMAGE_NAME_LTX_T2V", ""),
+            image_name_minimax_h3=os.getenv("RUNPOD_IMAGE_NAME_MINIMAX_H3", ""),
             image_name_pornmaster_flux2_edit=os.getenv(
                 "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
                 "",
@@ -1000,6 +1026,18 @@ class RunPodSettings:
                 global_model_manifest_key
                 if global_model_manifest_key.startswith("ltx_t2v/")
                 else RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
+            ),
+            model_prefix_minimax_h3=os.getenv(
+                "RUNPOD_MODEL_PREFIX_MINIMAX_H3",
+                global_model_prefix
+                if global_model_prefix.startswith("minimax_h3/")
+                else RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+            ),
+            model_manifest_key_minimax_h3=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_MINIMAX_H3",
+                global_model_manifest_key
+                if global_model_manifest_key.startswith("minimax_h3/")
+                else RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
             ),
             model_prefix_pornmaster_flux2_edit=os.getenv(
                 "RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT",

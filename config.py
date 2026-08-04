@@ -177,6 +177,15 @@ LTX_VIDEO_V2_FLF2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2_flf2v"
 LTX_VIDEO_V2V_AUDIO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2v_audio"
 LTX_T2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v"
 LTX_T2V_IC_ENDPOINT = f"{API_BASE}/api/v1/ltx_t2v_ic"
+MINIMAX_H3_ENDPOINTS = {
+    task_type: f"{API_BASE}/api/v1/{task_type}"
+    for task_type in (
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+    )
+}
 CHARACTER_REFERENCE_BUILD_ENDPOINT = f"{API_BASE}/api/v1/character_reference_build"
 WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
 SCAIL2_ACTION_TRANSFER_ENDPOINT = f"{API_BASE}/api/v1/scail2_action_transfer"

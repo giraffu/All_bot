@@ -48,6 +48,10 @@ MODE_LTX_VIDEO_V2_FLF2V = "ltx_video_v2_flf2v"
 MODE_PROMPT_OPTIMIZE = "prompt_optimize"
 MODE_LTX_T2V = "ltx_t2v"
 MODE_LTX_T2V_IC = "ltx_t2v_ic"
+MODE_MINIMAX_H3_T2V = "minimax_h3_t2v"
+MODE_MINIMAX_H3_I2V = "minimax_h3_i2v"
+MODE_MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
+MODE_MINIMAX_H3_REF2V = "minimax_h3_ref2v"
 MODE_CHARACTER_REFERENCE_BUILD = "character_reference_build"
 MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
 MODE_SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
@@ -98,6 +102,10 @@ MODE_NAME_MAP = {
     MODE_LTX_VIDEO_FLF2V: "task.mode_ltx_video",
     MODE_LTX_VIDEO_V2: "task.mode_ltx_video_v2",
     MODE_LTX_VIDEO_V2_FLF2V: "task.mode_ltx_video_v2",
+    MODE_MINIMAX_H3_T2V: "task.mode_minimax_h3_t2v",
+    MODE_MINIMAX_H3_I2V: "task.mode_minimax_h3_i2v",
+    MODE_MINIMAX_H3_FLF2V: "task.mode_minimax_h3_flf2v",
+    MODE_MINIMAX_H3_REF2V: "task.mode_minimax_h3_ref2v",
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_SCAIL2_ACTION_TRANSFER: "task.mode_scail2_action_transfer",
     MODE_SCAIL2_ACTION_TRANSFER_LONG: "task.mode_scail2_action_transfer",
@@ -131,6 +139,10 @@ TASK_COSTS = {
     MODE_LTX_VIDEO_V2_FLF2V: 10,
     MODE_LTX_T2V: 10,
     MODE_LTX_T2V_IC: 12,
+    MODE_MINIMAX_H3_T2V: 10,
+    MODE_MINIMAX_H3_I2V: 10,
+    MODE_MINIMAX_H3_FLF2V: 10,
+    MODE_MINIMAX_H3_REF2V: 12,
     MODE_CHARACTER_REFERENCE_BUILD: 18,
     MODE_WAN22_VIDEO_V2: 6,
     MODE_SCAIL2_ACTION_TRANSFER: 40,
@@ -386,6 +398,10 @@ GENERATION_TASK_TYPES = [
     MODE_EDIT,
     MODE_CUSTOM_VIDEO,
     MODE_LTX_VIDEO,
+    MODE_MINIMAX_H3_T2V,
+    MODE_MINIMAX_H3_I2V,
+    MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_REF2V,
     MODE_WAN22_VIDEO_V2,
     *SCAIL2_TASK_TYPES,
     MODE_IMAGE_TO_VIDEO,
@@ -428,6 +444,10 @@ VIDEO_TASK_TYPES = [
     MODE_LTX_VIDEO_V2_FLF2V,
     MODE_LTX_T2V,
     MODE_LTX_T2V_IC,
+    MODE_MINIMAX_H3_T2V,
+    MODE_MINIMAX_H3_I2V,
+    MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_REF2V,
     MODE_WAN22_VIDEO_V2,
     *SCAIL2_TASK_TYPES,
     "video_edit",

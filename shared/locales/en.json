@@ -792,6 +792,8 @@
       "high_res_video_v2_desc": "Uses LTX 10Eros v1.4 DMD with start or start/end frames and optional vision prompt optimization.",
       "ltx_t2v_title": "Text to Video",
       "ltx_t2v_desc": "Describe visuals, camera motion, dialogue, and ambience; optionally select a character sheet for consistency.",
+      "minimax_h3_title": "MiniMax H3 Video",
+      "minimax_h3_desc": "DaSiWa workflow with text, first-frame, first/last-frame, and character-reference modes.",
       "character_reference_title": "Character Reference",
       "character_reference_desc": "Upload one character image, generate or directly upload a face plus three full-body directions, then save the four-view official-style panel.",
       "wan22_video_v2_title": "Img2Video V2",
@@ -836,6 +838,10 @@
       "negative_prompt": "Negative Prompt",
       "negative_prompt_placeholder": "Enter visual traits to avoid, such as blur, deformation, or low quality.",
       "prompt_placeholder": "Describe the image/video you want",
+      "minimax_h3_references": "Video references",
+      "minimax_h3_description": "Identity and appearance for reference {index}",
+      "minimax_h3_first_frame_ratio": "Aspect ratio follows the first frame",
+      "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last", "ref2v": "Character Ref"},
       "upload_slots": {
         "face_image": "Face Image",
         "target_image": "Body Image",
@@ -931,6 +937,7 @@
         "txt2img": "Describe the image you want directly, for example: cinematic portrait, moonlight, detailed face, soft rim light, realistic skin.",
         "video": "Describe the motion and camera movement, for example: the subject smiles and turns, hair moves in the wind, camera slowly pushes in.",
         "ltx_t2v": "Describe visuals, motion, camera, dialogue, and ambience, for example: a rainy street, slow push-in, quiet dialogue, distant traffic.",
+        "minimax_h3": "Describe visuals, characters, camera motion, dialogue, and ambience. Character reference mode can use Picture n tags.",
         "scail2_action_transfer": "Leave blank to use the default prompt, or add guidance such as natural motion and stable framing.",
         "scail2_action_transfer_long": "Leave blank to use the default prompt, or add reference and motion guidance such as natural motion and stable framing.",
         "scail2_video_replacement": "Leave blank to use the default prompt, or add guidance such as natural motion and preserved background.",
@@ -941,6 +948,8 @@
         "prompt_required": "Please enter a prompt",
         "upload_slots_required": "Please add all required assets",
         "ltx_lora_limit": "You can choose up to 3 addon models"
+        ,"minimax_h3_images": "The reference image count does not match the selected MiniMax H3 mode"
+        ,"minimax_h3_descriptions": "Add an identity and appearance description for every character reference"
       },
       "mode_kinds": {
         "image": "Image",
@@ -1079,6 +1088,10 @@
     "mode_closeup_blowjob": "Closeup Blowjob",
     "mode_custom_video": "Img2Video",
     "mode_ltx_video": "High-Res Video",
+    "mode_minimax_h3_t2v": "MiniMax H3 Text to Video",
+    "mode_minimax_h3_i2v": "MiniMax H3 Image to Video",
+    "mode_minimax_h3_flf2v": "MiniMax H3 First/Last Frame Video",
+    "mode_minimax_h3_ref2v": "MiniMax H3 Character Reference Video",
     "mode_wan22_video_v2": "Img2Video V2",
     "mode_scail2_action_transfer": "Action Transfer",
     "mode_scail2_action_transfer_long": "Action Transfer",
