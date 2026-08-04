@@ -3,7 +3,8 @@
 > 当前入口为 `release.py deploy --env test --module ... --artifact
 > <exact-digest>`。不运行 plan、CI、bundle、test evidence 或 acceptance 门禁；
 > 人工验证结果由操作者判断。A–H 协调器只合并 main，不触发构建或测试
-> 部署。GitHub `module-build` 可从精确 main SHA 构建非 GPU 模块；
+> 部署。GitHub `module-build` 可由受控自托管 runner 从精确 main SHA 构建模块，
+> 包括 catalog 声明的 GPU/RunPod 镜像；
 > `module-deploy` 或本地 CLI 一次只部署一个 catalog 支持 test 的精确 digest。
 > remote state 位于
 > `/var/lib/allbot/module-release-state/test/<module>/`，失败只回滚该模块。
