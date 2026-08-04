@@ -119,6 +119,10 @@ python scripts/lan_aio_fleet_prod_ops.py <command>
   空任务门禁；不能强杀运行任务。
 - 单卡异常不得 reboot 主机、restart Docker daemon 或影响 sibling GPU，除非
   用户明确授权独立维护窗口。
+- 旧 profile 在容器启动时仍需在线安装 Python 依赖且链路较慢时，可通过临时
+  AIO env 向单次 fleet 操作传 `LAN_AIO_PIP_DEFAULT_TIMEOUT` 和
+  `LAN_AIO_PIP_RETRIES`；render 只把它们映射成容器内标准 pip 环境变量，不能
+  借此覆盖依赖版本、index 或镜像身份。恢复后不把临时值写入 catalog/current。
 
 ## 6. 任务/profile 变更
 
