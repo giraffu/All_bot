@@ -1740,7 +1740,6 @@ class LanAioProdOps:
                 slot.agent_id,
                 "disabled",
                 "lan_aio_fleet_disable_aio",
-                ttl_seconds=CONTROL_TTL_SECONDS,
             )
         return {
             "ok": True,

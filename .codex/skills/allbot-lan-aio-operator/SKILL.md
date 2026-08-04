@@ -92,6 +92,8 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时报告；容器、Central 与 ComfyUI 健康验证仍必须执行。
 - LAN 节点冷启动确需通过本地主 VPN 下载公开依赖时，只允许在本机受限 env 中显式设置 `LAN_AIO_HTTP_PROXY`、`LAN_AIO_HTTPS_PROXY` 与 `LAN_AIO_NO_PROXY`；operator 将其映射为目标容器的大小写 proxy 变量。代理值不得写入 Git catalog、Compose 或日志，默认未配置时运行行为不变。
 - `takeover/recover/restart-aio/retire-legacy/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续显式单 slot mutation。
+- `disable-aio` 写入无 TTL 的持久 `disabled` control，故障节点只能通过后续显式
+  `enable-aio` 恢复接单；不得用会自动过期的临时 control 表示人工停接。
 - `drain-legacy/stop-old/start-disabled/rollback` 不再允许作为独立 `--execute` 链路；使用事务化 `takeover` 或精确 `recover`，避免账本停在中间态。`recover` 遇到已停止候选时必须通过 managed compose 重建并重新验收，不能因 image digest 相同直接 `docker start`，否则最新 env、挂载或端口配置不会生效。
 - 接管稳定后若旧 worker 的临时 disabled control 已过期，只能对 live/ledger
   一致且健康、intake 已 enabled 的当前 slot 执行 `retire-legacy`。该动作允许

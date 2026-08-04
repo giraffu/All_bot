@@ -1569,6 +1569,43 @@ def test_lan_aio_enable_persistently_disables_replaced_worker():
     ]
 
 
+def test_lan_aio_disable_persists_until_explicit_enable():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.controls: list[tuple[str, str, str, int | None]] = []
+
+        def _set_control(
+            self,
+            agent_id: str,
+            state: str,
+            reason: str,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> None:
+            self.controls.append((agent_id, state, reason, ttl_seconds))
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-115-gpu0-img2img_lora_rocm_gfx1151"]
+
+    result = ops.disable_aio([slot])
+
+    assert result["ok"] is True
+    assert ops.controls == [
+        (
+            "lan_aio_prod_gpu115_gpu0_img2img_lora_rocm_01",
+            "disabled",
+            "lan_aio_fleet_disable_aio",
+            None,
+        )
+    ]
+
+
 def test_lan_aio_retire_legacy_keeps_active_aio_running_and_disables_old_persistently():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
