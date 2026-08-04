@@ -137,6 +137,9 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 ## 4. 服务重建注意事项
 
 - 所有自有服务只运行 digest-pinned 镜像；目标机不得现场 build。
+- Compose module adapter 通过 `sudo -n docker compose` 消费保持
+  `root:root 600` 的 `/etc/allbot/<env>.env`；不得把正式 env 改为 deploy 可读来
+  修复权限错误。目标机必须只给 operator 配置这条既有免密 sudo 能力。
 - QQCC 链式视频的尾帧探测、拼接与智能画幅适配由控制面执行；
   `qqcc-bot`、`private-bot-worker`、`qqcc-config-backend`、
   `dashboard-backend` 必须继承不可部署的 `python-media-runtime-base`。该层除

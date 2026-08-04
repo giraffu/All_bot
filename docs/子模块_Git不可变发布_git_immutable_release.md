@@ -123,6 +123,9 @@ Compose image adapter 使用
 其健康检查完成。即使镜像 digest 未变化，配置 revision 切换也必须创建新容器；
 不得在 `up -d` 返回后立即读取健康状态，以免把正常启动窗口误判为失败并触发
 无效回滚。
+目标机的 `/etc/allbot/<env>.env` 必须保持 `root:root 600`。远端 operator 使用
+`sudo -n docker compose` 读取该文件；deploy 用户仍只负责 runtime candidate，
+禁止用 chmod/chgrp 放宽 env 权限来绕过发布失败。
 
 Compose image adapter 默认从目标环境当前激活的
 `/var/lib/allbot/module-contracts/<env>/compose-contract/current` 读取 base 与

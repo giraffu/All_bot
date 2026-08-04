@@ -491,6 +491,7 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
     )
 
     assert captured["host"] == "prod-control"
+    assert "compose=(sudo -n docker compose" in captured["script"]
     assert (
         "up -d --no-deps --force-recreate --wait --wait-timeout 120 "
         "dashboard-backend"

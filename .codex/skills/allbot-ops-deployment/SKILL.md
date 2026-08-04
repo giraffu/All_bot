@@ -66,6 +66,8 @@ Compose 使用 `--force-recreate` 只重建目标 service，使同 digest 的配
 切换也真正进入新容器；Pages 只更新目标项目；GPU 必须明确
 `--operator runpod|lan --slot <exact-slot>`；config/compose contract 只切换
 自身 active identity；migration 独立执行。
+远端 `/etc/allbot/<env>.env` 保持 `root:root 600`；发布器通过 `sudo -n docker
+compose` 读取它，不得为 deploy 用户放宽正式 env 权限。
 Compose image 默认只消费目标环境已激活的
 `/var/lib/allbot/module-contracts/<env>/compose-contract/current`；契约缺失或文件
 不完整时 fail closed，禁止静默使用目标机旧仓库副本。仅故障处置时可显式传

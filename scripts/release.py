@@ -1222,7 +1222,7 @@ grep -v '^{image_env}=' "$runtime" > "$candidate" || true
 printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
 grep -q '^ALLBOT_RELEASE_SHA=' "$candidate" || printf 'ALLBOT_RELEASE_SHA=module-release\\n' >> "$candidate"
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
-compose=(docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
+compose=(sudo -n docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}
 "${{compose[@]}}" up -d --no-deps --force-recreate --wait --wait-timeout 120 {service}
 mv "$candidate" "$runtime"
