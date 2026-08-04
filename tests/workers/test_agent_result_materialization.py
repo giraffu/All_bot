@@ -105,6 +105,64 @@ async def test_materialize_ltx_video_extracts_fallback_last_frame(
     )
 
 
+@pytest.mark.asyncio
+async def test_materialize_minimax_h3_keeps_video_primary_and_last_frame_extra():
+    class MiniMaxComfyClient:
+        async def get_history(self, prompt_id):
+            return {
+                prompt_id: {
+                    "outputs": {
+                        "last_frame": {
+                            "images": [
+                                {
+                                    "filename": "minimax_h3_t2v_7_last_frame_00001.png",
+                                    "subfolder": "",
+                                    "type": "output",
+                                }
+                            ]
+                        },
+                        "video": {
+                            "gifs": [
+                                {
+                                    "filename": "minimax_h3_t2v_7_video_00001.mp4",
+                                    "subfolder": "",
+                                    "type": "output",
+                                }
+                            ]
+                        },
+                    }
+                }
+            }
+
+        async def get_view(self, filename, subfolder="", type="output"):
+            if filename.endswith("_video_00001.mp4"):
+                return b"mp4-with-audio"
+            if filename.endswith("_last_frame_00001.png"):
+                return b"last-frame-png"
+            raise AssertionError(filename)
+
+    execution = SimpleNamespace(
+        prompt_id="prompt-1",
+        task_id="task-1",
+        task_result=None,
+        task_result_priority=0,
+        params={},
+    )
+
+    outputs = await materialization.materialize_task_outputs(
+        comfy_client=MiniMaxComfyClient(),
+        execution=execution,
+        task_type="minimax_h3_t2v",
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+    )
+
+    assert outputs.primary.file_name == "minimax_h3_t2v_7_video_00001.mp4"
+    assert outputs.primary.content_type == "video/mp4"
+    assert outputs.primary.file_data == b"mp4-with-audio"
+    assert outputs.extra_outputs["last_frame"].content_type == "image/png"
+    assert outputs.extra_outputs["last_frame"].file_data == b"last-frame-png"
+
+
 def _png(color):
     output = io.BytesIO()
     Image.new("RGB", (32, 32), color).save(output, format="PNG")

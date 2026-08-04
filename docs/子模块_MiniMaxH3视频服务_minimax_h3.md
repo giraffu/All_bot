@@ -17,6 +17,9 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 - 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
   Worker 再次拒绝模型、LoRA、采样器、timeline、本地路径和参考音视频覆盖。
 - 输出为带音轨 MP4，并通过 `SaveImage` 产生 `extra_outputs.last_frame` 所需尾帧。
+- ComfyUI history 同时出现 VHS `gifs/videos` 与 `SaveImage.images` 时，四个 H3
+  task type 必须优先把 MP4 物化为主结果；文件名含 `last_frame` 的 PNG 只进入
+  `extra_outputs.last_frame`，不得覆盖主视频。
 
 ## Workflow 与模型
 
