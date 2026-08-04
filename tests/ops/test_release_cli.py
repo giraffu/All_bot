@@ -42,8 +42,8 @@ def test_ltx_unified_uses_current_digest_pinned_ltx_t2v_runtime():
     ).read_text(encoding="utf-8")
 
     assert (
-        "ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v"
-        "@sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043"
+        "ARG BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx-t2v"
+        "@sha256:0059724ddde5cda5b9e62611381e0facb24455a43b8cd9a961a620487bf5f53b"
     ) in dockerfile
     assert (
         "COPY shared /opt/allbot/runtime/runpod_worker/shared"

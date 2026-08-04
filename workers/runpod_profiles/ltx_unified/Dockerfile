@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:9ed3de73923fc8f021716f7fc19d8d3e5f6ed552a8ee11cb849b3dfb293db043
+ARG BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:0059724ddde5cda5b9e62611381e0facb24455a43b8cd9a961a620487bf5f53b
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="AllBot unified LTX 2.3 profile"

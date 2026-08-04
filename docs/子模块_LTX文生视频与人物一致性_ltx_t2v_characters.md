@@ -81,6 +81,10 @@ latent x2 放大后第二阶段再复用原尺寸合成图。若 MSR 合成图�
 - workflow：`workers/comfy_agent/workflows/LTX 2.3 Sulphur T2V.json`
 - 模型 manifest 构建：`scripts/prepare_ltx_unified_model_bundle.py`
 
+`ltx_unified` 的构建 base 必须引用 GHCR canonical `ltx_t2v` 精确 digest，使
+`allbot-sgp1` 云构建器可独立解析；LAN registry 只接收构建完成后的保摘要镜像，不能
+反向作为 canonical Dockerfile base。
+
 虽然 workflow 文件名为历史名称，当前 `ltx_t2v_ic` patcher 会替换模型节点并移除
 旧 distilled/LoRA 链；运行时语义以 patcher focused tests 和最终 API workflow 为准。
 

@@ -99,7 +99,7 @@ def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
     dockerfile = (ROOT / "workers/runpod_profiles/ltx_unified/Dockerfile").read_text()
 
     assert (
-        "ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-ltx-t2v@sha256:"
+        "ARG BASE_IMAGE=ghcr.io/giraffu/allbot-gpu-ltx-t2v@sha256:"
         in dockerfile
     )
     assert (
