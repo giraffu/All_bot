@@ -464,6 +464,34 @@ slots:
       It reuses the ltx_video model workspace, preserves the stopped legacy
       worker for rollback, and keeps public LTX T2V intake disabled.
 
+  - id: gpu-177-gpu1-minimax_h3
+    enabled: false
+    phase: candidate
+    retargetable: true
+    assignment_id: lan-177-8189-worker-03
+    target_profile_id: minimax_h3
+    target_task_types:
+      - minimax_h3_t2v
+      - minimax_h3_i2v
+      - minimax_h3_flf2v
+      - minimax_h3_ref2v
+    gpu_index: 1
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu177_gpu1_minimax_h3_01
+    container_name: allbot-lan-aio-gpu-177-gpu1-minimax_h3-prod
+    legacy_worker_id: lan_aio_prod_gpu177_gpu1_ltx_unified_01
+    old_runtime_container: allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod
+    old_local_agent_container: ""
+    remote_dir: /home/ubantui/allbot-runpod-aio-prod/gpu177-gpu1-minimax-h3
+    rollout_order: 14
+    notes: >-
+      Disabled MiniMax H3 validation candidate for an explicitly controlled
+      gpu-177 GPU1 takeover. It accepts only the four H3 task types, uses an
+      isolated workspace and model cache, and must be recovered to the exact
+      current ltx_unified runtime after the canary queue drains.
+
   - id: gpu-177-gpu1-image_to_video
     enabled: false
     phase: blocked_oom_32gb

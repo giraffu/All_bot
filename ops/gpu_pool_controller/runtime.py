@@ -59,6 +59,15 @@ LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES = json.dumps(
     },
     separators=(",", ":"),
 )
+LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
+        "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
+        "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
+        "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
+    },
+    separators=(",", ":"),
+)
 LAN_AIO_ALL_WORKFLOW_OVERRIDES = json.dumps(
     {
         **json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
@@ -73,6 +82,7 @@ LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
     "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     "ltx_unified": LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
+    "minimax_h3": LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
     "scail2_flex": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
 }

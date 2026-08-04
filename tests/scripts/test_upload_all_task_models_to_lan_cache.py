@@ -51,3 +51,12 @@ def test_ltx_unified_target_is_opt_in_and_uses_one_manifest():
     assert target.prefix == "ltx_unified/2026-08-03-10eros-v14-runexx-msr"
     assert target.manifest_key == ("ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json")
     assert target.bundle_versions == (("ltx_unified_runtime", "2026-08-03-10eros-v14-runexx-msr"),)
+
+
+def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
+    target = TARGETS_BY_NAME["minimax_h3"]
+
+    assert target in OPTIONAL_TARGETS
+    assert target.prefix == "minimax_h3/2026-08-04-dasiwa-cmmh3-v1"
+    assert target.manifest_key == "minimax_h3/2026-08-04-dasiwa-cmmh3-v1/manifest.json"
+    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-04-dasiwa-cmmh3-v1"),)

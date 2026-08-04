@@ -42,6 +42,15 @@ GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 
 补一个 10 秒 standard，最后显式 recover 原 LTX slot。任一 OOM、Xid、队列、音轨、
 尾帧或 Central 心跳失败立即回滚；运行态结果只写 XDG history/evidence，不回写本文。
 
+静态候选为 `gpu-177-gpu1-minimax_h3`，独占 H3 workspace、模型 workspace、容器名和
+agent ID，但与当前 `gpu-177-gpu1-ltx_unified` 共享 `gpu-177:gpu1`/8191 物理槽。
+catalog v2 会把非 blocked 条目规范化为 operator-eligible `catalog_ready`；这只允许显式
+fleet 操作，不等同于开启公共 H3 feature flag 或自动接流。四任务 workflow override
+必须随 compose 一起渲染，禁止让 I2V、FLF2V 或 REF2V 回落到 T2V 图。
+接管后的串行矩阵由 `scripts/minimax_h3_prod_smoke.py` 提交；脚本绑定预期 agent，
+逐单校验 Central task type、结果 MP4、24fps、原生音轨和 `extra_outputs.last_frame`，
+并把一次性 evidence 写入 XDG state，而不是 Git。
+
 ## 最小验证
 
 ```bash
