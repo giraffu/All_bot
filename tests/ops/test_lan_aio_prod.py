@@ -224,6 +224,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     )
     assert environment["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert "--reserve-vram 5" in environment["COMFY_EXTRA_ARGS"]
+    assert "--use-pytorch-cross-attention" in environment["COMFY_EXTRA_ARGS"]
     model_mount = next(
         mount
         for mount in service["volumes"]
