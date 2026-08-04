@@ -284,6 +284,8 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
+    assert "--fast-disk" in environment["COMFY_EXTRA_ARGS"]
+    assert "--disable-pinned-memory" in environment["COMFY_EXTRA_ARGS"]
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
     )
