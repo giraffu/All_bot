@@ -41,12 +41,17 @@ const toggleCollapsed = () => {
 </script>
 
 <template>
-  <a-layout-header class="bg-white border-b px-6 flex justify-between items-center h-16 shrink-0 z-40">
+  <a-layout-header class="dashboard-header bg-white border-b px-6 flex justify-between items-center h-16 shrink-0 z-40">
     <div class="flex items-center gap-4">
       <component
         :is="collapsed ? MenuUnfoldOutlined : MenuFoldOutlined"
-        class="trigger text-lg cursor-pointer hover:text-blue-600 transition-colors"
+        class="trigger dashboard-menu-trigger text-lg cursor-pointer hover:text-blue-600 transition-colors"
+        role="button"
+        tabindex="0"
+        aria-label="切换导航菜单"
         @click="toggleCollapsed"
+        @keydown.enter.prevent="toggleCollapsed"
+        @keydown.space.prevent="toggleCollapsed"
       />
       <a-breadcrumb class="hidden sm:block">
         <a-breadcrumb-item>首页</a-breadcrumb-item>
@@ -105,3 +110,34 @@ const toggleCollapsed = () => {
     </div>
   </a-layout-header>
 </template>
+
+<style scoped>
+@media (max-width: 767px) {
+  .dashboard-header {
+    height: 56px !important;
+    padding-inline: 12px !important;
+  }
+
+  .dashboard-menu-trigger {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 20px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .dashboard-header > div:last-child {
+    gap: 10px !important;
+  }
+
+  .dashboard-header :deep(.ant-badge),
+  .dashboard-header :deep(.ant-divider),
+  .dashboard-header .h-8.w-px,
+  .dashboard-header :deep(.ant-dropdown-trigger span) {
+    display: none;
+  }
+}
+</style>

@@ -58,7 +58,7 @@ const handleSearch = () => {
 </script>
 
 <template>
-  <div class="flex items-center gap-4 flex-wrap">
+  <div class="user-table-toolbar flex items-center gap-4 flex-wrap">
     <a-select
       :value="filterIdentity"
       placeholder="身份组"
@@ -157,3 +157,34 @@ const handleSearch = () => {
     <a-tag color="blue">总计: {{ totalUsers }}</a-tag>
   </div>
 </template>
+
+<style scoped>
+@media (max-width: 767px) {
+  .user-table-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .user-table-toolbar > * {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .user-table-toolbar > :deep(.ant-checkbox-wrapper),
+  .user-table-toolbar > :deep(.ant-tag) {
+    grid-column: 1 / -1;
+  }
+
+  .user-table-toolbar > div {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .user-table-toolbar > div :deep(.ant-input-affix-wrapper) {
+    width: 100% !important;
+  }
+}
+</style>

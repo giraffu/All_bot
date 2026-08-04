@@ -49,7 +49,7 @@ export interface DashboardTabConfig {
 
 export const BASE_CONTAINER_CLASS = 'flex-1 flex flex-col min-h-0'
 export const PANEL_CONTAINER_CLASS =
-  'flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0'
+  'dashboard-panel flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0 min-w-0'
 
 export const defaultDashboardTabKey: DashboardTabKey = 'templates'
 

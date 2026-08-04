@@ -33,7 +33,7 @@ const DashboardSidebarStub = defineComponent({
   props: ['collapsed', 'activeTab', 'menuItems'],
   emits: ['update:collapsed', 'update:activeTab', 'logout'],
   template: `
-    <div class="dashboard-sidebar-stub">
+    <div class="dashboard-sidebar-stub" :data-collapsed="String(collapsed)">
       <button class="to-finance" @click="$emit('update:activeTab', ['finance'])">finance</button>
       <button class="to-users" @click="$emit('update:activeTab', ['users'])">users</button>
       <button class="sidebar-logout" @click="$emit('logout')">logout</button>
@@ -52,6 +52,7 @@ const DashboardHeaderBarStub = defineComponent({
       <button class="header-logout" @click="$emit('logout')">logout</button>
       <button class="header-search" @click="$emit('search')">search</button>
       <button class="header-query" @click="$emit('update:searchQuery', 'task-42')">query</button>
+      <button class="header-toggle" @click="$emit('update:collapsed', !collapsed)">toggle</button>
     </div>
   `,
 })
@@ -253,6 +254,12 @@ const mountApp = () =>
 
 describe('Dashboard App', () => {
   beforeEach(() => {
+    window.matchMedia = vi.fn().mockImplementation(query => ({
+      matches: false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
     dashboardMocks.isAuthenticatedRef.value = false
     dashboardMocks.clearAuthTokenMock.mockReset()
     dashboardMocks.refreshDataMock.mockReset()
@@ -322,5 +329,41 @@ describe('Dashboard App', () => {
     expect(dashboardMocks.refreshDataMock.mock.calls.length).toBe(initialRefreshCount + 1)
     expect(dashboardMocks.handleSearchMock).toHaveBeenCalledTimes(1)
     expect(dashboardMocks.clearAuthTokenMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses an overlay sidebar that stays reachable and closes after mobile navigation', async () => {
+    window.matchMedia = vi.fn().mockImplementation(query => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    dashboardMocks.isAuthenticatedRef.value = true
+
+    const wrapper = mountApp()
+    await flushPromises()
+
+    expect(wrapper.get('.dashboard-sidebar-stub').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('.dashboard-sidebar-backdrop').exists()).toBe(false)
+
+    await wrapper.get('.header-toggle').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('.dashboard-sidebar-stub').attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('.dashboard-sidebar-backdrop').exists()).toBe(true)
+
+    await wrapper.get('.dashboard-sidebar-backdrop').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('.dashboard-sidebar-stub').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('.header-toggle').trigger('click')
+    await nextTick()
+
+    await wrapper.get('.to-users').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('.dashboard-sidebar-stub').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('.dashboard-sidebar-backdrop').exists()).toBe(false)
   })
 })

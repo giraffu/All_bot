@@ -6,8 +6,10 @@ import UserTableToolbar from './UserTableToolbar.vue'
 import UserTableRowActions from './UserTableRowActions.vue'
 import UserTableDialogs from './UserTableDialogs.vue'
 import UserTransferDialog from './UserTransferDialog.vue'
+import { useDashboardViewport } from '../composables/useDashboardViewport'
 
 const emit = defineEmits(['viewHistory', 'viewFavorites'])
+const { isMobile } = useDashboardViewport()
 const {
   users,
   loading,
@@ -204,15 +206,18 @@ const sortableColumnKeys = new Set([
 
 const columns = computed(() =>
   baseColumns.map(column => {
+    const responsiveColumn = column.key === 'action'
+      ? { ...column, width: isMobile.value ? 168 : column.width }
+      : column
     if (!sortableColumnKeys.has(column.key)) {
-      return column
+      return responsiveColumn
     }
     const activeSortOrder =
       sortBy.value === column.key
         ? (sortOrder.value === 'asc' ? 'ascend' : 'descend')
         : null
     return {
-      ...column,
+      ...responsiveColumn,
       sortOrder: activeSortOrder,
     }
   })
@@ -260,7 +265,7 @@ const columns = computed(() =>
         }"
         @change="handleTableChange"
         size="middle"
-        :scroll="{ y: 'calc(100vh - 350px)', x: 1540 }"
+        :scroll="{ y: isMobile ? 'calc(100dvh - 410px)' : 'calc(100vh - 350px)', x: isMobile ? 1388 : 1540 }"
         class="ant-table-striped"
       >
       <template #bodyCell="{ column, record, index }">
@@ -466,5 +471,19 @@ const columns = computed(() =>
 }
 :deep(.ant-table-pagination.ant-pagination) {
   margin: 16px 0 0 0;
+}
+
+@media (max-width: 767px) {
+  :deep(.ant-card-head) {
+    padding: 0 12px;
+  }
+
+  :deep(.ant-card-body) {
+    padding: 12px;
+  }
+
+  :deep(.ant-table-cell-fix-right) {
+    box-shadow: -4px 0 10px rgba(15, 23, 42, 0.08);
+  }
 }
 </style>
