@@ -310,7 +310,7 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "packages: write" in build
     assert "packages: write" not in deploy
     assert "git rev-parse origin/main" in build
-    assert "GPU module must be built locally" in build
+    assert "GPU module must be built locally" not in build
     assert "environment: ${{ inputs.environment }}" in deploy
     assert "confirm_production" in deploy
     assert "@sha256:[0-9a-f]{64}" in deploy
