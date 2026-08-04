@@ -1,5 +1,9 @@
 # 子模块：GPU 算力资源池控制器
 
+MiniMax H3 使用独立 `minimax_h3` manual-only profile；不加入 autoscaler。模型包至少
+需要 100GB 模型卷，首版 GPU allowlist 为 RTX 5090。LAN 候选只能在 canonical 镜像
+digest 构建完成后加入 catalog，并通过单槽 takeover/recover 验收。
+
 本文是 GPU Pool、RunPod 与 LAN AIO 的当前导航和稳定操作边界。完整历史
 profile、canary、现场故障与某次节点状态已归档；实时数量和 current mapping
 必须从 provider、Central 与 XDG ledger 读取。

@@ -52,6 +52,11 @@ from src.domain_config.ltx_t2v import (
     LtxT2VValidationError,
     build_ltx_t2v_spec,
 )
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_TASK_TYPES,
+    MiniMaxH3ValidationError,
+    build_minimax_h3_spec,
+)
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
@@ -1007,6 +1012,79 @@ class LtxT2VStrategy(BaseTaskStrategy):
         )
 
 
+class MiniMaxH3Strategy(BaseTaskStrategy):
+    def __init__(
+        self,
+        task_type: str,
+        *,
+        seed_provider: Callable[[], int] = _generate_dispatch_seed,
+    ):
+        self.task_type = task_type
+        self.seed_provider = seed_provider
+
+    def _seed(self, inputs: Dict[str, Any]) -> int:
+        seed = inputs.get("seed")
+        if seed is None:
+            seed = self.seed_provider()
+            inputs["seed"] = seed
+        return int(seed)
+
+    def _spec(self, inputs: Dict[str, Any]):
+        try:
+            return build_minimax_h3_spec(self.task_type, inputs)
+        except MiniMaxH3ValidationError as exc:
+            raise CoreDomainError(str(exc)) from exc
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return self._spec(inputs).cost
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return list(self._spec(inputs).images)
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        spec = self._spec(inputs)
+        seed = self._seed(inputs)
+        return {
+            "saved_inputs": list(spec.images),
+            "requested_duration": spec.duration_seconds,
+            "minimax_h3_mode": spec.mode,
+            "minimax_h3_resolution_preset": spec.resolution_preset,
+            "minimax_h3_aspect_ratio": spec.aspect_ratio,
+            "minimax_h3_width": spec.width,
+            "minimax_h3_height": spec.height,
+            "minimax_h3_frame_count": spec.frame_count,
+            "minimax_h3_fps": spec.fps,
+            "minimax_h3_seed": seed,
+            "reference_descriptions": list(spec.reference_descriptions),
+            "extract_last_frame": True,
+            "gallery_supported": False,
+        }
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        spec = self._spec(inputs)
+        prompt = str(inputs.get("prompt") or "").strip()
+        if not prompt:
+            raise CoreDomainError("MiniMax H3 提示词不得为空。")
+        return await _get_dispatch_image_service().submit_minimax_h3_task(
+            task_id,
+            task_type=self.task_type,
+            prompt=prompt,
+            images=spec.images,
+            reference_descriptions=spec.reference_descriptions,
+            duration=spec.duration_seconds,
+            resolution_preset=spec.resolution_preset,
+            aspect_ratio=spec.aspect_ratio,
+            width=spec.width,
+            height=spec.height,
+            frame_count=spec.frame_count,
+            fps=spec.fps,
+            seed=self._seed(inputs),
+            priority=priority,
+        )
+
+
 class CharacterReferenceBuildStrategy(BaseTaskStrategy):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         return CHARACTER_REFERENCE_BUILD_COST
@@ -1163,6 +1241,10 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     MODE_LTX_VIDEO_V2_FLF2V: lambda task_type, _feature_flags: LtxVideoV2Strategy(task_type),
     LTX_T2V_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
     LTX_T2V_IC_TASK_TYPE: lambda task_type, _feature_flags: LtxT2VStrategy(task_type),
+    **dict.fromkeys(
+        MINIMAX_H3_TASK_TYPES,
+        lambda task_type, _feature_flags: MiniMaxH3Strategy(task_type),
+    ),
     CHARACTER_REFERENCE_BUILD_TASK_TYPE: (
         lambda _task_type, _feature_flags: CharacterReferenceBuildStrategy()
     ),

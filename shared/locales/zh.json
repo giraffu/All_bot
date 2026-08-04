@@ -793,6 +793,8 @@
       "high_res_video_v2_desc": "使用 LTX 10Eros v1.4 DMD，支持首帧或首尾帧，并可用视觉模型优化视频提示词。",
       "ltx_t2v_title": "文生视频",
       "ltx_t2v_desc": "直接描述画面、镜头、对白和环境音；可选人物参考表保持角色一致。",
+      "minimax_h3_title": "MiniMax H3 视频",
+      "minimax_h3_desc": "DaSiWa 工作流，支持文生、首帧、首尾帧和角色参考四种视频模式。",
       "character_reference_title": "人物参考图",
       "character_reference_desc": "上传一张人物图片，生成或直接上传正脸与三个全身方向，四张完成后保存为官方风格单人物面板。",
       "wan22_video_v2_title": "图生视频 v2",
@@ -837,6 +839,10 @@
       "negative_prompt": "负面提示词",
       "negative_prompt_placeholder": "输入需要规避的画面特征，例如模糊、畸形、低质量等。",
       "prompt_placeholder": "描述你想要的图片/视频",
+      "minimax_h3_references": "视频参考素材",
+      "minimax_h3_description": "参考图 {index} 的角色身份与外观说明",
+      "minimax_h3_first_frame_ratio": "画面比例按首帧自动推导",
+      "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧", "ref2v": "角色参考"},
       "upload_slots": {
         "face_image": "脸部图片",
         "target_image": "身体图片",
@@ -932,6 +938,7 @@
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
         "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
         "ltx_t2v": "描述画面、人物动作、镜头运动、对白与环境音，例如：雨夜街头，镜头缓慢推近，人物低声说话，远处传来车辆声。",
+        "minimax_h3": "描述画面、角色、镜头运动、对白和环境音；角色参考模式可用 Picture n 指代参考图。",
         "scail2_action_transfer": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
         "scail2_action_transfer_long": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
         "scail2_video_replacement": "可留空使用默认提示词；也可补充替换后的画面，例如：动作自然，背景保持。",
@@ -942,6 +949,8 @@
         "prompt_required": "请输入提示词",
         "upload_slots_required": "请先添加所有必需素材",
         "ltx_lora_limit": "最多只能选择 3 个附加模型"
+        ,"minimax_h3_images": "当前 MiniMax H3 子模式的参考图数量不正确"
+        ,"minimax_h3_descriptions": "请为每张角色参考图填写身份与外观说明"
       },
       "mode_kinds": {
         "image": "图像",
@@ -1081,6 +1090,10 @@
     "mode_closeup_blowjob": "特写口交",
     "mode_custom_video": "图生视频",
     "mode_ltx_video": "高级图生视频",
+    "mode_minimax_h3_t2v": "MiniMax H3 文生视频",
+    "mode_minimax_h3_i2v": "MiniMax H3 图生视频",
+    "mode_minimax_h3_flf2v": "MiniMax H3 首尾帧视频",
+    "mode_minimax_h3_ref2v": "MiniMax H3 角色参考视频",
     "mode_wan22_video_v2": "图生视频 v2",
     "mode_scail2_action_transfer": "动作迁移",
     "mode_scail2_action_transfer_long": "动作迁移",

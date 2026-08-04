@@ -76,6 +76,17 @@ export function useLabReferenceUploads({
     const pendingKey = `pending-${Date.now()}-${file.name}`
     const preview = URL.createObjectURL(file)
     let objectKey: string | null | undefined = null
+    let imageDimensions: { width: number, height: number } | undefined
+    if (file.type.startsWith('image/') && typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(file)
+        imageDimensions = { width: bitmap.width, height: bitmap.height }
+        bitmap.close()
+      }
+      catch {
+        // Dimension inference is best-effort; backend validation stays authoritative.
+      }
+    }
     pendingReferenceUploads.value.push({
       key: pendingKey,
       preview,
@@ -93,6 +104,7 @@ export function useLabReferenceUploads({
         key: objectKey,
         preview,
         name: file.name,
+        ...imageDimensions,
       })
       return false
     } finally {

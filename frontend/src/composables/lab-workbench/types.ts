@@ -5,6 +5,8 @@ export type UploadedReference = {
   key: string
   preview: string
   name: string
+  width?: number
+  height?: number
   locked?: boolean
   lockedLabel?: string
 }

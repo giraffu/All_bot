@@ -34,6 +34,15 @@ _WORKER_POOL_PROFILES = (
     ),
     WorkerPoolProfile("ltx_t2v", ("ltx_t2v", "ltx_t2v_ic")),
     WorkerPoolProfile(
+        "minimax_h3",
+        (
+            "minimax_h3_t2v",
+            "minimax_h3_i2v",
+            "minimax_h3_flf2v",
+            "minimax_h3_ref2v",
+        ),
+    ),
+    WorkerPoolProfile(
         "pornmaster_flux2_edit_bf16",
         (
             "character_reference_build",

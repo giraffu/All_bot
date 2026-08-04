@@ -1,0 +1,53 @@
+# 子模块：MiniMax H3 视频服务
+
+## 能力与边界
+
+`minimax_h3` 是独立 GPU profile，不是 LTX alias。用户态和 Central 保留四个任务身份：
+`minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、`minimax_h3_ref2v`。
+测试 Web 使用一个工作台切换四种子模式；Bot、QQCC、Gallery、生产 RunPod 和
+autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
+`MINIMAX_H3_BACKEND_ENABLED` 控制，两个开关默认关闭。
+
+## 请求契约
+
+- 公共字段：非空 `prompt`、`duration=5|10|15`、
+  `resolution_preset=preview|standard|hd`、常用 `aspect_ratio` 和可选 `seed`。
+- T2V 不接受图片；I2V 恰好 1 张；FLF2V 恰好 2 张有序首尾帧；REF2V 接受
+  1–4 张有序角色参考图和可选的等长角色说明。
+- 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
+  Worker 再次拒绝模型、LoRA、采样器、timeline、本地路径和参考音视频覆盖。
+- 输出为带音轨 MP4，并通过 `SaveImage` 产生 `extra_outputs.last_frame` 所需尾帧。
+
+## Workflow 与模型
+
+四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
+`scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
+生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产；API 图固定 25 steps、
+`res_multistep`、`simple`、video/audio shift `11/4`，并启用 KJNodes 的 H3
+memory-efficient SageAttention patch。
+
+模型包为 `minimax_h3_runtime/2026-08-04-dasiwa-cmmh3-v1`，来自固定 revision 的
+`Comfy-Org/MiniMax-H3` 官方量化转换，包含 FL2VA、REF2VA、Qwen3-VL text encoder
+及 video/audio VAE；没有 DaSiWa 微调 checkpoint 或 LoRA。模型只进入内容寻址仓库、
+R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
+
+## 发布与 LAN 验收
+
+镜像模块为 `minimax_h3`，Dockerfile 固定 ComfyUI、DaSiWa Nodes、KJNodes 和 VHS
+revision。先从完整 Git SHA 构建 canonical digest，再保 digest 复制到 LAN registry；
+未获得精确 digest 前不得把候选写入 LAN catalog。
+
+GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 和 live queue，
+等待 LTX 自然空闲，warm-cache 后事务性 takeover，串行执行四个 5 秒 preview，稳定后
+补一个 10 秒 standard，最后显式 recover 原 LTX slot。任一 OOM、Xid、队列、音轨、
+尾帧或 Central 心跳失败立即回滚；运行态结果只写 XDG history/evidence，不回写本文。
+
+## 最小验证
+
+```bash
+python -m pytest -q tests/config/test_minimax_h3.py \
+  tests/workers/test_minimax_h3_workflows.py \
+  tests/ops/test_runpod_minimax_h3_profile.py \
+  tests/scripts/test_prepare_minimax_h3_model_bundle.py
+cd frontend && npm test -- --run src/composables/lab-workbench/useLabSubmitPayload.test.ts
+```

@@ -41,6 +41,10 @@ type UseLabSubmitPayloadOptions = {
   useT2VReferences?: Ref<boolean>
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
+  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
+  minimaxH3ResolutionPreset?: Ref<'preview' | 'standard' | 'hd'>
+  minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
+  minimaxH3ReferenceDescriptions?: Ref<string[]>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -73,6 +77,10 @@ export function useLabSubmitPayload({
   useT2VReferences,
   environmentSource,
   selectedEnvironmentId,
+  minimaxH3Mode,
+  minimaxH3ResolutionPreset,
+  minimaxH3AspectRatio,
+  minimaxH3ReferenceDescriptions,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -97,7 +105,7 @@ export function useLabSubmitPayload({
       return
     }
 
-    if (currentMode.value.supportsUpload && currentMode.value.id !== 'ltx_t2v' && uploadedReferences.value.length === 0) {
+    if (currentMode.value.supportsUpload && !['ltx_t2v', 'minimax_h3'].includes(currentMode.value.id) && uploadedReferences.value.length === 0) {
       message.warning(t('lab.workbench.validation.upload_first'))
       return
     }
@@ -123,6 +131,53 @@ export function useLabSubmitPayload({
         prompt: prompt.value,
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',
+        isTemplate: false,
+      }))
+      return
+    }
+
+    if (currentMode.value.id === 'minimax_h3') {
+      const mode = minimaxH3Mode?.value ?? 't2v'
+      const images = uploadedReferences.value.map(item => item.key)
+      const expected = mode === 't2v' ? [0, 0] : mode === 'i2v' ? [1, 1] : mode === 'flf2v' ? [2, 2] : [1, 4]
+      if (images.length < expected[0] || images.length > expected[1]) {
+        message.warning(t('lab.workbench.validation.minimax_h3_images'))
+        return
+      }
+      const descriptions = (minimaxH3ReferenceDescriptions?.value ?? []).slice(0, images.length)
+      if (mode === 'ref2v' && descriptions.some(value => value.trim().length === 0)) {
+        message.warning(t('lab.workbench.validation.minimax_h3_descriptions'))
+        return
+      }
+      const source = uploadedReferences.value[0]
+      const sourceRatio = source?.width && source?.height ? source.width / source.height : undefined
+      const inferredAspectRatio = sourceRatio
+        ? ([
+            ['16:9', 16 / 9],
+            ['9:16', 9 / 16],
+            ['1:1', 1],
+            ['4:3', 4 / 3],
+            ['3:4', 3 / 4],
+          ] as const).reduce((best, candidate) => (
+            Math.abs(candidate[1] - sourceRatio) < Math.abs(best[1] - sourceRatio)
+              ? candidate
+              : best
+          ))[0]
+        : undefined
+      const aspectRatio = mode === 'i2v' || mode === 'flf2v'
+        ? inferredAspectRatio ?? minimaxH3AspectRatio?.value ?? '16:9'
+        : minimaxH3AspectRatio?.value ?? '16:9'
+      await submitAndTrack(buildGenerationTaskPayload({
+        taskType: `minimax_h3_${mode}`,
+        images,
+        duration: Number(duration.value),
+        prompt: prompt.value,
+        promptTarget: 'inputs',
+        extraInputs: {
+          resolution_preset: minimaxH3ResolutionPreset?.value ?? 'preview',
+          aspect_ratio: aspectRatio,
+          reference_descriptions: mode === 'ref2v' ? descriptions : [],
+        },
         isTemplate: false,
       }))
       return

@@ -41,6 +41,10 @@ class TaskType(str, Enum):
     PROMPT_OPTIMIZE = "prompt_optimize"
     LTX_T2V = "ltx_t2v"
     LTX_T2V_IC = "ltx_t2v_ic"
+    MINIMAX_H3_T2V = "minimax_h3_t2v"
+    MINIMAX_H3_I2V = "minimax_h3_i2v"
+    MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
+    MINIMAX_H3_REF2V = "minimax_h3_ref2v"
     CHARACTER_REFERENCE_BUILD = "character_reference_build"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
@@ -307,6 +311,23 @@ class LtxT2VRequest(BaseModel):
     background_image: Optional[str] = None
     sulphur_strength: Optional[float] = Field(default=None, ge=0, le=1)
     seed: Optional[int] = Field(default=None, ge=0, le=18446744073709551615)
+    priority: int = 0
+
+
+class MiniMaxH3Request(BaseModel):
+    task_id: str
+    prompt: str
+    images: list[str] = Field(default_factory=list, max_length=4)
+    reference_descriptions: list[str] = Field(default_factory=list, max_length=4)
+    duration: int = Field(default=5)
+    resolution_preset: str = "preview"
+    aspect_ratio: str = "16:9"
+    width: int = Field(ge=32)
+    height: int = Field(ge=32)
+    frame_count: int = Field(ge=5)
+    fps: int = Field(default=24)
+    seed: Optional[int] = Field(default=None, ge=0, le=1125899906842624)
+    extract_last_frame: bool = True
     priority: int = 0
 
 

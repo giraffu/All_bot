@@ -21,6 +21,7 @@ export type UnifiedLabModeId =
   | 'ltx_video'
   | 'ltx_video_v2'
   | 'ltx_t2v'
+  | 'minimax_h3'
   | 'wan22_video_v2'
   | 'scail2_action_transfer'
   | 'scail2_video_replacement'
@@ -192,6 +193,7 @@ export const FREE_EDIT_V2_5_ENABLED = FREE_EDIT_V3_ENABLED
 export const WEB_I2I_DRAW_ENABLED = false
 export const WEB_LTX_T2V_ENABLED = getRuntimeFlag('enable_ltx_t2v', false)
 export const WEB_LTX_VIDEO_V2_ENABLED = getRuntimeFlag('enable_ltx_video_v2', false)
+export const WEB_MINIMAX_H3_ENABLED = getRuntimeFlag('enable_minimax_h3', false)
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 export const PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = 'pornmaster_flux2_edit_bf16'
@@ -643,6 +645,26 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     unified: true,
   },
   {
+    id: 'minimax_h3',
+    taskType: 'minimax_h3_t2v',
+    titleKey: 'lab.cards.minimax_h3_title',
+    descriptionKey: 'lab.cards.minimax_h3_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 10,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.minimax_h3',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    referenceTitleKey: 'lab.workbench.minimax_h3_references',
+    maxImages: 4,
+    supportsUpload: true,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsDurationOptions: true,
+    supportsAdvancedOptions: false,
+    promptRequired: true,
+    unified: true,
+  },
+  {
     id: 'wan22_video_v2',
     taskType: 'wan22_video_v2',
     titleKey: 'lab.cards.wan22_video_v2_title',
@@ -682,6 +704,7 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== 'character_reference' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_t2v' || WEB_LTX_T2V_ENABLED)
   && (mode.id !== 'ltx_video_v2' || WEB_LTX_VIDEO_V2_ENABLED)
+  && (mode.id !== 'minimax_h3' || WEB_MINIMAX_H3_ENABLED)
 )) as LabModeConfig[]
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
@@ -722,6 +745,11 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'ltx_t2v':
     case 'ltx_t2v_ic':
       return 'ltx_t2v'
+    case 'minimax_h3_t2v':
+    case 'minimax_h3_i2v':
+    case 'minimax_h3_flf2v':
+    case 'minimax_h3_ref2v':
+      return WEB_MINIMAX_H3_ENABLED ? 'minimax_h3' : DEFAULT_LAB_MODE_ID
     case 'scail2_action_transfer_long':
       return 'scail2_action_transfer'
     case 'wan22_video_v2':

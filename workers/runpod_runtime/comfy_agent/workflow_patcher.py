@@ -99,6 +99,7 @@ class WorkflowPatcher:
                     "image",
                     "image2",
                     "image3",
+                    "image4",
                     "images",
                     "face_image",
                     "body_image",
@@ -112,6 +113,7 @@ class WorkflowPatcher:
         if task_specific_patcher is not None:
             task_specific_patcher(
                 wf,
+                task_type=task_type,
                 params=params,
                 mapping=mapping,
                 set_node_input=self._set_node_input,

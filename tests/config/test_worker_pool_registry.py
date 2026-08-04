@@ -28,6 +28,12 @@ def test_worker_pool_registry_groups_execution_types_by_shared_capacity():
         },
         "ltx_video": {"ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"},
         "ltx_t2v": {"ltx_t2v", "ltx_t2v_ic"},
+        "minimax_h3": {
+            "minimax_h3_t2v",
+            "minimax_h3_i2v",
+            "minimax_h3_flf2v",
+            "minimax_h3_ref2v",
+        },
         "pornmaster_flux2_edit_bf16": {
             "character_reference_build",
             "pornmaster_flux2_edit_bf16",
