@@ -232,6 +232,7 @@ profiles:
     runtime_profile: minimax_h3
     lan_workspace_key: minimax-h3-23841ed32ad7
     lan_model_workspace_key: minimax_h3
+    reset_comfy_memory_before_task: true
     task_types:
       - minimax_h3_t2v
       - minimax_h3_i2v

@@ -62,6 +62,8 @@ GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 
 等待 LTX 自然空闲，warm-cache 后事务性 takeover，串行执行四个 5 秒 preview，稳定后
 补一个 10 秒 standard，最后显式 recover 原 LTX slot。任一 OOM、Xid、队列、音轨、
 尾帧或 Central 心跳失败立即回滚；运行态结果只写 XDG history/evidence，不回写本文。
+H3 profile 必须启用 `reset_comfy_memory_before_task`，让每个串行请求提交前通过 Comfy
+`/free` 卸载上一个驻留模型和 allocator 缓存，避免共享宿主 RAM 上跨任务累积。
 
 静态候选为 `gpu-177-gpu1-minimax_h3`，独占 H3 workspace、模型 workspace、容器名和
 agent ID，但与当前 `gpu-177-gpu1-ltx_unified` 共享 `gpu-177:gpu1`/8191 物理槽。

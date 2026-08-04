@@ -283,6 +283,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert environment["SUPPORTED_TASK_TYPES"] == ",".join(MINIMAX_H3_TASK_TYPES)
     assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
+    assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
     )
