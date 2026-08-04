@@ -281,13 +281,15 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     service = compose["services"][slot.container_name]
     environment = service["environment"]
     assert environment["SUPPORTED_TASK_TYPES"] == ",".join(MINIMAX_H3_TASK_TYPES)
+    assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
+    assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
         LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
     )
     model_mount = next(
         mount
         for mount in service["volumes"]
-        if mount.endswith(":/workspace/ComfyUI/models")
+        if mount.endswith(":/opt/ComfyUI/models")
     )
     assert "/profiles/minimax_h3/workspace/ComfyUI/models:" in model_mount
 

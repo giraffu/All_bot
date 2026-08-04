@@ -447,6 +447,52 @@ if find "${comfyui_dir}/models" -type f \( -name "*.safetensors" -o -name "*.ckp
 fi
 echo "LAN_ALL_PROFILE_PRESENT=true"
 '
+    elif [ "$PROFILE" = "minimax_h3" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+test -f "${comfyui_dir}/main.py"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/runpod_worker/comfy_agent/agent_main.py
+python3 -c '"'"'from sageattention import sageattn; assert callable(sageattn)'"'"'
+log_file=/tmp/minimax-h3-comfy-smoke.log
+object_info=/tmp/minimax-h3-object-info.json
+(
+  cd "$comfyui_dir"
+  python3 main.py --cpu --listen 127.0.0.1 --port 8188 >"$log_file" 2>&1
+) &
+comfy_pid=$!
+cleanup() {
+  kill "$comfy_pid" >/dev/null 2>&1 || true
+  wait "$comfy_pid" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+ready=false
+for _attempt in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:8188/object_info >"$object_info"; then
+    ready=true
+    break
+  fi
+  if ! kill -0 "$comfy_pid" >/dev/null 2>&1; then
+    cat "$log_file" >&2
+    exit 1
+  fi
+  sleep 2
+done
+if [ "$ready" != true ]; then
+  cat "$log_file" >&2
+  exit 1
+fi
+OBJECT_INFO="$object_info" python3 -c '"'"'import json, os; payload=json.load(open(os.environ["OBJECT_INFO"])); expected={"MiniMaxH3ImageToVideo","MiniMaxH3ReferenceToVideo","MiniMaxH3MemoryEfficientSageAttentionPatch","MiniMaxH3SigmaShift","VAEDecodeAudio","VHS_VideoCombine"}; missing=expected-set(payload); assert not missing, sorted(missing)'"'"'
+if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then
+  echo "MiniMax H3 model files must stay out of the profile image" >&2
+  exit 1
+fi
+echo "MINIMAX_H3_REGISTERED_NODES_PRESENT=true"
+'
     elif [ "$PROFILE" = "ltx_video" ] || [ "$PROFILE" = "ltx_t2v" ] || [ "$PROFILE" = "ltx_unified" ]; then
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
 set -euo pipefail

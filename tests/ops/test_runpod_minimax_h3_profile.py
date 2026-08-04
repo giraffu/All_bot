@@ -20,6 +20,8 @@ def test_minimax_h3_runpod_request_is_manual_exact_profile():
     assert body["containerDiskInGb"] >= 100
     assert body["volumeInGb"] >= 100
     assert body["env"]["POOL_RUNTIME_PROFILE"] == "minimax_h3"
+    assert body["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
+    assert body["env"]["RUNPOD_MODEL_TARGET_DIR"] == "/workspace/ComfyUI/models"
     assert body["env"]["SUPPORTED_TASK_TYPES"] == ",".join(
         RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES
     )

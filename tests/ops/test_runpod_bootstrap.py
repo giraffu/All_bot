@@ -219,6 +219,20 @@ def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
     assert 'cd "$baked_comfyui_dir"' in entrypoint
 
 
+def test_baked_entrypoint_links_external_model_target_into_baked_comfyui():
+    entrypoint = BAKED_ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    assert "prepare_baked_model_target" in entrypoint
+    assert "RUNPOD_MODEL_TARGET_DIR" in entrypoint
+    assert "/opt/allbot-comfyui-dir" in entrypoint
+    assert '-name "*.safetensors"' in entrypoint
+    assert "contains weights; refusing to replace it" in entrypoint
+    assert 'ln -s "$model_target" "$baked_models"' in entrypoint
+    assert entrypoint.index("prepare_baked_model_target") < entrypoint.index(
+        "exec bash /opt/allbot/runpod_bootstrap_from_git.sh"
+    )
+
+
 def test_runpod_profile_build_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(PROFILE_BUILD_SCRIPT)],

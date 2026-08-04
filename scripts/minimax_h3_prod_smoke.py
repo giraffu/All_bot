@@ -30,7 +30,7 @@ from ops.gpu_pool_controller.runpod_control import (  # noqa: E402
 from ops.gpu_pool_controller.runpod_http import RunPodHttpClient  # noqa: E402
 
 
-DEFAULT_WEB_URL = "https://web-api.aivison.it.com"
+DEFAULT_WEB_URL = "https://api.aivison.it.com/api"
 DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
 EXPECTED_TYPES = (
     "minimax_h3_t2v",

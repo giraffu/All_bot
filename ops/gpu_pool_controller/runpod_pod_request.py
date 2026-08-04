@@ -478,6 +478,11 @@ class RunPodPodRequestBuilder:
             env["COMFY_EXTRA_ARGS"] = (
                 RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
             )
+        if profile.task_type == "minimax_h3":
+            env["COMFYUI_DIR"] = "/opt/ComfyUI"
+            env["RUNPOD_MODEL_TARGET_DIR"] = (
+                f"{self.settings.volume_mount_path.rstrip('/')}/ComfyUI/models"
+            )
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides

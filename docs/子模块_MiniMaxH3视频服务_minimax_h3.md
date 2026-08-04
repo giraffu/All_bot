@@ -37,6 +37,13 @@ R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
 revision。先从完整 Git SHA 构建 canonical digest，再保 digest 复制到 LAN registry；
 未获得精确 digest 前不得把候选写入 LAN catalog。
 
+H3 的 ComfyUI 代码和 custom nodes 必须从镜像内 `/opt/ComfyUI` 启动，不能回落到
+网络卷或 LAN workspace 中可能存在的 `/workspace/ComfyUI`。模型仍保存在外部模型卷：
+LAN 将精确模型 workspace 挂载到 `/opt/ComfyUI/models`；RunPod 由 baked entrypoint
+把 `/opt/ComfyUI/models` 安全链接到 `/workspace/ComfyUI/models`。构建后 smoke 必须
+真实启动 CPU ComfyUI 并从 `/object_info` 校验六个 H3 必需节点，仅检查源码文件存在
+不构成节点注册证据。
+
 GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 和 live queue，
 等待 LTX 自然空闲，warm-cache 后事务性 takeover，串行执行四个 5 秒 preview，稳定后
 补一个 10 秒 standard，最后显式 recover 原 LTX slot。任一 OOM、Xid、队列、音轨、
@@ -49,7 +56,9 @@ fleet 操作，不等同于开启公共 H3 feature flag 或自动接流。四任
 必须随 compose 一起渲染，禁止让 I2V、FLF2V 或 REF2V 回落到 T2V 图。
 接管后的串行矩阵由 `scripts/minimax_h3_prod_smoke.py` 提交；脚本绑定预期 agent，
 逐单校验 Central task type、结果 MP4、24fps、原生音轨和 `extra_outputs.last_frame`，
-并把一次性 evidence 写入 XDG state，而不是 Git。
+并把一次性 evidence 写入 XDG state，而不是 Git。生产 Web API 默认入口是
+`https://api.aivison.it.com/api`；canary JWT 必须来自当前 Web API secret 且绑定实际
+存在的内部测试用户/password_version，禁止用本地陈旧 secret 猜测 token。
 
 ## 最小验证
 

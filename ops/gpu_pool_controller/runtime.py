@@ -51,6 +51,9 @@ LAN_AIO_SCAIL2_ENV = {
 LAN_AIO_LTX_T2V_ENV = {
     "COMFYUI_DIR": "/opt/ComfyUI",
 }
+LAN_AIO_MINIMAX_H3_ENV = {
+    "COMFYUI_DIR": "/opt/ComfyUI",
+}
 LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES = json.dumps(
     {
         "ltx_video": "LTX 2.3 I2V 10Eros LoRA.json",
@@ -92,6 +95,7 @@ LAN_AIO_EXTRA_ENV_BY_PROFILE = {
     "scail2_flex": LAN_AIO_SCAIL2_ENV,
     "ltx_t2v": LAN_AIO_LTX_T2V_ENV,
     "ltx_unified": LAN_AIO_LTX_T2V_ENV,
+    "minimax_h3": LAN_AIO_MINIMAX_H3_ENV,
 }
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
