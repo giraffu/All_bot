@@ -319,6 +319,7 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "--state-backend remote" in deploy
     assert "\n          python -" not in build
     assert "python3 scripts/release.py build" in build
+    assert "--build-progress plain | tee module-digests.json" in build
 
 
 def test_active_knowledge_uses_only_current_release_commands():

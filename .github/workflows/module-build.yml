@@ -83,7 +83,7 @@ jobs:
             --image-prefix ghcr.io/${{ github.repository_owner }} \
             --builder allbot-sgp1 \
             --registry-cache-prefix ghcr.io/${{ github.repository_owner }}/allbot-build-cache \
-            --build-progress plain > module-digests.json
+            --build-progress plain | tee module-digests.json
           {
             echo "## Immutable module build"
             echo
