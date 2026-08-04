@@ -64,6 +64,9 @@ GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 
 尾帧或 Central 心跳失败立即回滚；运行态结果只写 XDG history/evidence，不回写本文。
 H3 profile 必须启用 `reset_comfy_memory_before_task`，让每个串行请求提交前通过 Comfy
 `/free` 卸载上一个驻留模型和 allocator 缓存，避免共享宿主 RAM 上跨任务累积。
+LAN RTX 5090 profile 同时固定 `--fast-disk --disable-pinned-memory`：模型 workspace
+位于 NVMe，优先使用磁盘后备动态加载并禁止大块 pinned host-memory 池，避免与同机
+其它 GPU Worker 争用约 60 GiB 宿主 RAM；保持 DynamicVRAM 开启，不使用 lowvram。
 
 静态候选为 `gpu-177-gpu1-minimax_h3`，独占 H3 workspace、模型 workspace、容器名和
 agent ID，但与当前 `gpu-177-gpu1-ltx_unified` 共享 `gpu-177:gpu1`/8191 物理槽。
