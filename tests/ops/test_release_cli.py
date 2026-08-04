@@ -309,6 +309,7 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "allbot-build-sgp1" in build and "allbot-build-sgp1" in deploy
     assert "packages: write" in build
     assert "packages: write" not in deploy
+    assert "secrets.GHCR_TOKEN || github.token" in build
     assert "git rev-parse origin/main" in build
     assert "GPU module must be built locally" not in build
     assert "environment: ${{ inputs.environment }}" in deploy
