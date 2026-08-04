@@ -14,11 +14,13 @@ import { useDashboardUserFavorites } from './composables/useDashboardUserFavorit
 import { useDashboardNavigation } from './composables/useDashboardNavigation'
 import { useDashboardTabView } from './composables/useDashboardTabView'
 import type { DashboardTabKey } from './config/dashboardTabs'
+import { useDashboardViewport } from './composables/useDashboardViewport'
 
 const { isAuthenticated, clearAuthToken } = useDashboardAuth()
 const activeTab = ref<string[]>(['home'])
 const galleryCommentsPostId = ref<number | undefined>(undefined)
-const collapsed = ref(false)
+const { isMobile } = useDashboardViewport()
+const collapsed = ref(isMobile.value)
 const {
   stats,
   statsHistory,
@@ -103,7 +105,14 @@ watch(activeTab, (newTab) => {
   if (tab === 'home' || tab === 'finance') {
     void refreshData()
   }
+  if (isMobile.value) {
+    collapsed.value = true
+  }
   // UserTable, history, templates handle their own data fetching
+})
+
+watch(isMobile, (mobile) => {
+  collapsed.value = mobile
 })
 
 watch(
@@ -124,16 +133,25 @@ const handleLogout = () => {
 <template>
   <Login v-if="!isAuthenticated" />
   
-  <a-layout v-else class="min-h-screen">
+  <a-layout v-else class="dashboard-shell min-h-screen">
     <dashboard-sidebar
       v-model:collapsed="collapsed"
       v-model:active-tab="activeTab"
       :menu-items="menuItems"
       :logout-icon="logoutIcon"
+      :mobile="isMobile"
       @logout="handleLogout"
     />
 
-    <a-layout>
+    <button
+      v-if="isMobile && !collapsed"
+      type="button"
+      class="dashboard-sidebar-backdrop"
+      aria-label="关闭导航菜单"
+      @click="collapsed = true"
+    />
+
+    <a-layout class="dashboard-main min-w-0">
       <dashboard-header-bar
         v-model:collapsed="collapsed"
         v-model:search-query="searchQuery"
@@ -146,7 +164,7 @@ const handleLogout = () => {
 
       <!-- Content -->
       <a-layout-content 
-        class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
+        class="dashboard-content p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
         :class="isActiveTabScrollable ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="dashboard-tab-viewport w-full flex-1 flex flex-col min-h-0">
@@ -281,5 +299,89 @@ const handleLogout = () => {
 .ant-table-wrapper {
   background: white;
   border-radius: 8px;
+}
+
+.dashboard-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .dashboard-shell,
+  .dashboard-main {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dashboard-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.48);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .dashboard-content.ant-layout-content {
+    height: calc(100dvh - 56px);
+    min-width: 0;
+    padding: 12px !important;
+  }
+
+  .dashboard-tab-viewport,
+  .dashboard-tab-viewport > div {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dashboard-panel {
+    padding: 12px !important;
+  }
+
+  .ant-card-head {
+    min-height: 48px !important;
+    padding-inline: 12px !important;
+  }
+
+  .ant-card-head-wrapper {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-block: 10px;
+  }
+
+  .ant-card-extra {
+    width: 100%;
+    margin-inline-start: 0 !important;
+  }
+
+  .ant-card-body {
+    padding: 12px !important;
+  }
+
+  .ant-table-content,
+  .ant-table-body {
+    overflow: auto !important;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+  }
+
+  .ant-pagination {
+    flex-wrap: wrap;
+    gap: 4px 0;
+  }
+
+  .ant-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px);
+    margin: 12px auto;
+    top: 12px;
+  }
+
+  .ant-tabs-nav-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 </style>

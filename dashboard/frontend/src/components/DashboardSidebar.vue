@@ -16,6 +16,10 @@ defineProps({
     type: [Object, Function],
     required: true,
   },
+  mobile: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits([
@@ -32,7 +36,12 @@ const emit = defineEmits([
     collapsible
     theme="dark"
     class="sidebar-shadow z-50"
+    :class="{
+      'dashboard-sidebar-mobile': mobile,
+      'dashboard-sidebar-mobile-open': mobile && !collapsed,
+    }"
     width="240"
+    :inert="mobile && collapsed"
     @update:collapsed="emit('update:collapsed', $event)"
   >
     <div class="logo-container">
@@ -73,3 +82,49 @@ const emit = defineEmits([
     </div>
   </a-layout-sider>
 </template>
+
+<style scoped>
+:deep(.ant-layout-sider-children) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+:deep(.ant-menu) {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 96px;
+}
+
+@media (max-width: 767px) {
+  .dashboard-sidebar-mobile {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(82vw, 300px) !important;
+    max-width: 300px;
+    height: 100dvh;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    visibility: hidden;
+  }
+
+  .dashboard-sidebar-mobile-open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  :deep(.ant-layout-sider-children) {
+    width: min(82vw, 300px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-sidebar-mobile {
+    transition: none;
+  }
+}
+</style>
