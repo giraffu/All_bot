@@ -247,7 +247,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     slot = slots["gpu-177-gpu1-minimax_h3"]
 
     assert profile.task_types == MINIMAX_H3_TASK_TYPES
-    assert profile.lan_workspace_key == "minimax-h3-bacc24a0faf1"
+    assert profile.lan_workspace_key == "minimax-h3-23841ed32ad7"
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
@@ -256,7 +256,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
-        "bacc24a0faf1d4462eaee1af2403a1eb858a0168835ba80a73ca50f3febd62f9"
+        "23841ed32ad7970e89c4c69795e13738142f2453e8e799a3e29d71847bd10fa3"
     )
     # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
     # eligible catalog entries; this does not enable public task intake.
