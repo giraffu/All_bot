@@ -127,6 +127,10 @@ LAN AIO 容器冷启动若需通过本地主 VPN 获取公开依赖，只能在�
 
 每个 slot 必须先 `preflight`、准备目标镜像、预拉或加载镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。`preflight` 的 legacy `/system_stats` 与 `/queue` 对刚重启的 ComfyUI 会短重试，只有连续失败才阻断切换；镜像门禁接受目标节点已配置 Docker insecure registry、目标镜像已存在，或本地主 runner 已有同 tag 镜像可通过 `docker save | ssh docker load` 流式加载。`preflight` 还会检查 host port 的 Docker published owner，只允许当前目标容器或声明的 `old_runtime_container` 占用；若同卡残留旧 prod/canary 容器占用端口，必须先人工确认队列、agent 与容器归属，再清理残留容器后重试。禁止一次性接管整台节点或跨节点批量启用。新增候选不由 Dashboard 直接写生产配置，先用 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id <node> --profile <profile> --replace-slot <current-slot>` 生成 YAML patch、渲染摘要和预检命令，审阅并提交 `lan_aio_prod_slots.yml` 后再由本地主 AI operator/CLI 执行后续管理。
 
+人工执行 `disable-aio` 表示持久停接：control 不带 TTL，只有后续显式
+`enable-aio` 才恢复。临时 drain、切换和重启事务可以继续使用有界 TTL，但不得
+让故障节点因停接 control 过期而自动回到默认 enabled。
+
 LAN-only `all` 镜像不得由 GPU 节点现场构建，也不得让 GPU 节点从 GHCR 拉取。可信 main 构建节点使用 `scripts/build_runpod_profile_image.sh --profile all --reuse-base-custom-nodes`，以本地 registry 中 digest-pinned 的 LTX 基线、Wan 节点源镜像和已通过 RTX 5090/SM120 attention 验证的 SCAIL xFormers 源镜像为输入，直接向 `localhost:5000` 推送；该模式拒绝公网 registry、mutable tag、缺少 `@sha256` 的任一 source ref，并把三个 source digest 写入 OCI labels。SCAIL 源只提供与 Torch 2.11/CUDA 12.8 匹配的本地 xFormers 包，不把模型权重或旧 workspace 复制进 `all`。完成 smoke、revision 与目标 manifest digest 核验并把 LAN digest 固定到 catalog 后，GPU 节点才可从 `192.168.1.115:5000` 预拉。模型权重不进入镜像，只通过 LAN cache manifest 与内容寻址对象在内网同步。`all` 不设置 `--disable-dynamic-vram` 或 `--reserve-vram`：混合 GGUF/FP8 模型在 RTX 5090 32GB 上必须允许 ComfyUI 动态卸载，避免 active memory 很低时 allocator 仍保留接近整卡显存；独立 Wan/image-to-video profile 仍保留其原有参数，独立 `ltx_t2v` profile 继续保留 5GB 余量。由于 `all` 会在不同模型族之间连续切换，每笔 workflow 提交前必须调用 ComfyUI `/free` 并同时设置 `unload_models=true`、`free_memory=true`，清理上一任务的 resident model 与 CUDA allocator reservation；预取下载和上一任务交付仍可并发，但单 Comfy 执行上限不变。
 
 Ryzen AI Max+ 395 使用独立 `img2img_lora_rocm_gfx1151` LAN profile 和
