@@ -1340,7 +1340,7 @@ def patch_minimax_h3_workflow(
             workflow[node_id]["inputs"]["image"] = names[index - 1]
         else:
             workflow.pop(node_id, None)
-            guide_inputs.pop(f"ref_image_{index}", None)
+            guide_inputs.pop(f"ref_images.ref_image_{index - 1}", None)
     workflow["38"]["inputs"]["filename_prefix"] = task_type
     workflow["40"]["inputs"]["filename_prefix"] = f"{task_type}_last_frame"
 

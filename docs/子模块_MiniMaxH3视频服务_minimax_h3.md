@@ -29,6 +29,11 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 `res_multistep`、`simple`、video/audio shift `11/4`，并启用 KJNodes 的 H3
 memory-efficient SageAttention patch。
 
+REF2V 的原生 `MiniMaxH3ReferenceToVideo` 节点使用 ComfyUI V3 Autogrow 输入。
+API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 1–4 张
+有序参考图；不得使用扁平 `ref_image_1` 等字段，否则节点执行阶段会收到非预期
+关键字。业务提示词中的 `<Picture 1>` 仍保持 1-based，两种编号只属于不同层次。
+
 模型包为 `minimax_h3_runtime/2026-08-04-dasiwa-cmmh3-v1`，来自固定 revision 的
 `Comfy-Org/MiniMax-H3` 官方量化转换，包含 FL2VA、REF2VA、Qwen3-VL text encoder
 及 video/audio VAE；没有 DaSiWa 微调 checkpoint 或 LoRA。模型只进入内容寻址仓库、

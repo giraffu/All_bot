@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.build_minimax_h3_api_workflows import build
 from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 
@@ -23,6 +24,7 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         runpod = Path("workers/runpod_runtime/comfy_agent/workflows") / filename
         assert main.read_bytes() == runpod.read_bytes()
         workflow = json.loads(main.read_text())
+        assert workflow == build(task_type)
         assert "nodes" not in workflow
         assert workflow["3"]["inputs"] == {"model": ["2", 0], "shift_video": 11.0, "shift_audio": 4.0}
         assert workflow["34"]["inputs"]["steps"] == 25
@@ -52,6 +54,13 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
     assert result["20"]["inputs"]["image"] == "first.png"
     assert result["21"]["inputs"]["image"] == "second.png"
     assert "22" not in result and "23" not in result
+    assert result["30"]["inputs"]["ref_images.ref_image_0"] == ["20", 0]
+    assert result["30"]["inputs"]["ref_images.ref_image_1"] == ["21", 0]
+    assert "ref_images.ref_image_2" not in result["30"]["inputs"]
+    assert "ref_images.ref_image_3" not in result["30"]["inputs"]
+    assert not {
+        f"ref_image_{index}" for index in range(1, 5)
+    } & result["30"]["inputs"].keys()
     assert result["30"]["inputs"]["prompt"].startswith("<Picture 1>: adult woman\n<Picture 2>: adult man")
 
 
