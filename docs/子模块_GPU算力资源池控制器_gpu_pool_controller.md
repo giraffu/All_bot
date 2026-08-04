@@ -62,6 +62,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   但 artifact、accelerator contract 和验证证据完全分离。
 - workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
   `workers/runpod_runtime` bundle；Central 不携带 workflow。
+- 凡 baked `workers/runpod_runtime` 的 RunPod profile 必须同时包含
+  `shared/`，并在构建阶段 smoke import
+  `shared.character_reference_sheet`；否则 `comfy_agent` 会在 ComfyUI 和 relay
+  就绪后才因结果物化依赖缺失而退出，且无 heartbeat。
 
 ## 4. RunPod 边界
 

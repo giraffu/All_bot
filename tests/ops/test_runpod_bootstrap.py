@@ -59,6 +59,13 @@ def test_i2i_pro_profile_bakes_the_shared_result_materialization_runtime():
     assert "from shared.character_reference_sheet import" in dockerfile
 
 
+def test_wan22_profile_bakes_the_shared_result_materialization_runtime():
+    dockerfile = WAN22_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in dockerfile
+    assert "from shared.character_reference_sheet import" in dockerfile
+
+
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
