@@ -112,6 +112,12 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
         manifest_key="ltx_unified/2026-08-03-10eros-v14-runexx-msr/manifest.json",
         bundle_versions=(("ltx_unified_runtime", "2026-08-03-10eros-v14-runexx-msr"),),
     ),
+    TargetSpec(
+        name="minimax_h3",
+        prefix="minimax_h3/2026-08-04-dasiwa-cmmh3-v1",
+        manifest_key="minimax_h3/2026-08-04-dasiwa-cmmh3-v1/manifest.json",
+        bundle_versions=(("minimax_h3_runtime", "2026-08-04-dasiwa-cmmh3-v1"),),
+    ),
 )
 TARGETS_BY_NAME = {
     target.name: target for target in (*DEFAULT_BASE_TARGETS, *OPTIONAL_TARGETS)

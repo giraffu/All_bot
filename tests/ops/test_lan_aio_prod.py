@@ -22,6 +22,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
 )
 from ops.gpu_pool_controller.runtime import (
     LAN_AIO_LTX_UNIFIED_WORKFLOW_OVERRIDES,
+    LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES,
     LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
     RuntimePlanner,
     RuntimeRenderOverrides,
@@ -59,6 +60,12 @@ LTX_UNIFIED_TASK_TYPES = (
     "ltx_video_v2v_audio",
     "ltx_t2v",
     "ltx_t2v_ic",
+)
+MINIMAX_H3_TASK_TYPES = (
+    "minimax_h3_t2v",
+    "minimax_h3_i2v",
+    "minimax_h3_flf2v",
+    "minimax_h3_ref2v",
 )
 SCAIL2_FLEX_PREFERRED_TASK_TYPES = (
     "scail2_action_transfer",
@@ -231,6 +238,58 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
         if mount.endswith(":/opt/ComfyUI/models")
     )
     assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
+
+
+def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir():
+    config = load_controller_config()
+    profile = config.profiles["minimax_h3"]
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+    slot = slots["gpu-177-gpu1-minimax_h3"]
+
+    assert profile.task_types == MINIMAX_H3_TASK_TYPES
+    assert profile.lan_workspace_key == "minimax-h3-eebfd6d9daf8"
+    assert profile.lan_model_workspace_key == "minimax_h3"
+    assert profile.model_bundles == ("minimax_h3_runtime",)
+    assert profile.model_manifest_key == (
+        "minimax_h3/2026-08-04-dasiwa-cmmh3-v1/manifest.json"
+    )
+    assert profile.min_vram_gb == 32
+    assert profile.all_in_one_image_ref == (
+        "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
+        "eebfd6d9daf8497637ad904376a00726c50e8e91ecc56367050e94fdb8f2b664"
+    )
+    # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
+    # eligible catalog entries; this does not enable public task intake.
+    assert slot.enabled is True
+    assert slot.phase == "catalog_ready"
+    assert slot.retargetable is True
+    assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
+    assert slot.agent_id == "lan_aio_prod_gpu177_gpu1_minimax_h3_01"
+    assert slot.host_port == 8191
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
+    assert slot.old_runtime_container == (
+        "allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod"
+    )
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    compose = yaml.safe_load(ops.render_compose(slot))
+    service = compose["services"][slot.container_name]
+    environment = service["environment"]
+    assert environment["SUPPORTED_TASK_TYPES"] == ",".join(MINIMAX_H3_TASK_TYPES)
+    assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
+        LAN_AIO_MINIMAX_H3_WORKFLOW_OVERRIDES
+    )
+    model_mount = next(
+        mount
+        for mount in service["volumes"]
+        if mount.endswith(":/workspace/ComfyUI/models")
+    )
+    assert "/profiles/minimax_h3/workspace/ComfyUI/models:" in model_mount
 
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():

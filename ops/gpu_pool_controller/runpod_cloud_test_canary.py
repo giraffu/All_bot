@@ -850,7 +850,11 @@ class RunPodCloudTestCanaryExecutor:
         task_id: str,
         result_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        if self.config.task_type not in {"wan22_aio_video", "ltx_video"}:
+        if self.config.task_type not in {
+            "wan22_aio_video",
+            "ltx_video",
+            "minimax_h3",
+        }:
             return {}
         extra_outputs = result_payload.get("extra_outputs")
         last_frame = (
