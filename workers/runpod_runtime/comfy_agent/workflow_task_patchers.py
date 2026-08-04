@@ -747,7 +747,7 @@ def _patch_ltx_t2v_msr_workflow(
     workflow["804"] = {"class_type": "LoadImage", "inputs": {"image": background}}
     workflow["801"] = {
         "class_type": "LiconMSR",
-        "inputs": {"width": width, "height": height, "frame_count": str(guide_frames), "1": ["802", 0], "2": ["803", 0], "background": ["804", 0]},
+        "inputs": {"width": width * 2, "height": height * 2, "frame_count": str(guide_frames), "1": ["802", 0], "2": ["803", 0], "background": ["804", 0]},
     }
     guide_common = {"vae": ["283", 0], "image": ["801", 0], "frame_idx": 0, "strength": 1.0, "latent_downscale_factor": ["800", 1], "crop": "center", "use_tiled_encode": False, "tile_size": 256, "tile_overlap": 64}
     workflow["807"] = {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {**guide_common, "positive": ["26:46", 0], "negative": ["26:46", 1], "latent": ["26:39", 0]}, "_meta": {"title": "Runexx IC-LoRA Guide First Pass"}}

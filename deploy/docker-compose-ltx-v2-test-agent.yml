@@ -2,7 +2,7 @@ services:
   ltx-v2-test-agent:
     image: ${ALLBOT_LTX_V2_TEST_AGENT_IMAGE:?exact digest-pinned image is required}
     container_name: cloud-comfy-agent-test-ltx-v2-01
-    restart: "no"
+    restart: always
     network_mode: host
     env_file:
       - ${ALLBOT_LTX_V2_TEST_AGENT_ENV_FILE:?environment file is required}

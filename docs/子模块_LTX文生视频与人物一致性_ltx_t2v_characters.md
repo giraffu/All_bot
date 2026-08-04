@@ -24,6 +24,16 @@ checkpoint；`LTX2.3-Licon-MSR-test_version.safetensors` 只提供人物身份�
   -> 最终 guide 裁剪、音视频输出
 ```
 
+第一阶段视频 latent 为 384×224，Licon MSR 合成图必须直接按最终阶段的
+768×448 生成：IC-LoRA 节点的 downscale factor 会在第一阶段将它适配到低分辨率，
+latent x2 放大后第二阶段再复用原尺寸合成图。若 MSR 合成图错误地按第一阶段尺寸
+生成，第二阶段 sampler 会因 guide 与 keyframe grid 长度不同而失败。
+`LTXVAddGuideMulti` 还要求 KJNodes 至少包含上游
+`5fc6db6b39638a692f114c4bb5b6949f801b4efa` 的 guide-attention 修复；更早版本会把
+每个 guide 的 latent offset 重复计入 attention entry，并在第一阶段产生同样的
+`pre_filter_counts != keyframe grid mask length` 错误。`ltx_unified` 镜像必须显式
+固定该修复版本，不能继承旧 base 镜像中的 KJNodes。
+
 三张媒体的稳定顺序是：角色参考图 1、角色参考图 2、场景背景图。人物参考图是人物
 图库生成的完整四视图面板；背景只定义环境、布局和光线。三者都不是视频首帧或
 终帧。Worker 输入准备必须对 `character_sheets` 和 `background_image` 分别执行

@@ -16,7 +16,7 @@ def test_ltx_v2_test_agent_is_exact_image_and_source_mount_free():
     )
     assert "build" not in service
     assert "depends_on" not in service
-    assert service["restart"] == "no"
+    assert service["restart"] == "always"
     assert service["network_mode"] == "host"
     assert all("/src" not in volume for volume in service["volumes"])
     assert all("/workflows" not in volume for volume in service["volumes"])

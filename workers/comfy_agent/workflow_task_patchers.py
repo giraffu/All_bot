@@ -756,8 +756,11 @@ def _patch_ltx_t2v_msr_workflow(
     workflow["801"] = {
         "class_type": "LiconMSR",
         "inputs": {
-            "width": width,
-            "height": height,
+            # RuneXX builds the MSR sheet at the final-pass resolution. The
+            # IC-LoRA downscale factor adapts it to the first pass; after the
+            # x2 latent upsampler it matches the final keyframe grid again.
+            "width": width * 2,
+            "height": height * 2,
             "frame_count": str(guide_frames),
             "1": ["802", 0],
             "2": ["803", 0],

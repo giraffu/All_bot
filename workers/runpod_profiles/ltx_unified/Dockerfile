@@ -8,6 +8,7 @@ LABEL allbot.runpod.models="external-lan-manifest"
 LABEL allbot.runpod.scope="ltx-video-and-t2v"
 ARG ALLBOT_GIT_SHA
 ARG LICON_MSR_REVISION=94a52bfec735ff6f802c480f7fe8fdac1d279a7f
+ARG KJNODES_REVISION=5fc6db6b39638a692f114c4bb5b6949f801b4efa
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
@@ -29,6 +30,16 @@ RUN set -euo pipefail; \
     test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
     test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
     test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"; \
+    rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
+    git clone https://github.com/kijai/ComfyUI-KJNodes.git \
+      "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
+    git -C "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes" checkout --detach \
+      "${KJNODES_REVISION}"; \
+    test "$(git -C "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes" rev-parse HEAD)" = \
+      "${KJNODES_REVISION}"; \
+    python3 -m pip install --no-cache-dir -r \
+      "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes/requirements.txt"; \
+    rm -rf "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes/.git"; \
     git clone https://github.com/liconstudio/ComfyUI-Licon-MSR.git \
       "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR"; \
     git -C "${comfyui_dir}/custom_nodes/ComfyUI-Licon-MSR" checkout --detach \
