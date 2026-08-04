@@ -679,11 +679,16 @@ def test_lan_aio_fleet_render_uses_baked_runpod_worker_for_gpu_252():
     assert "mode: baked_immutable_artifact" in rendered
 
 
-def test_lan_aio_fleet_render_passes_explicit_runtime_proxy():
+def test_lan_aio_fleet_render_passes_explicit_runtime_proxy(tmp_path: Path):
+    aio_env_file = tmp_path / "lan-aio.env"
+    aio_env_file.write_text(
+        "LAN_AIO_PIP_DEFAULT_TIMEOUT=300\nLAN_AIO_PIP_RETRIES=10\n",
+        encoding="utf-8",
+    )
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
-        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        aio_env_file=aio_env_file,
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
     ops.env_values.update(
@@ -703,6 +708,8 @@ def test_lan_aio_fleet_render_passes_explicit_runtime_proxy():
     assert environment["HTTP_PROXY"] == "${LAN_AIO_HTTP_PROXY}"
     assert environment["HTTPS_PROXY"] == "${LAN_AIO_HTTPS_PROXY}"
     assert environment["NO_PROXY"] == "${LAN_AIO_NO_PROXY}"
+    assert environment["PIP_DEFAULT_TIMEOUT"] == "${LAN_AIO_PIP_DEFAULT_TIMEOUT}"
+    assert environment["PIP_RETRIES"] == "${LAN_AIO_PIP_RETRIES}"
 
 
 def test_lan_aio_runtime_env_includes_only_explicit_proxy_values():
@@ -715,6 +722,8 @@ def test_lan_aio_runtime_env_includes_only_explicit_proxy_values():
         "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
         "LAN_AIO_HTTPS_PROXY": "http://192.168.1.115:7890",
         "LAN_AIO_NO_PROXY": "127.0.0.1,localhost,192.168.1.115",
+        "LAN_AIO_PIP_DEFAULT_TIMEOUT": "300",
+        "LAN_AIO_PIP_RETRIES": "10",
     }
 
     content = runtime_env_content(values)
@@ -722,6 +731,8 @@ def test_lan_aio_runtime_env_includes_only_explicit_proxy_values():
     assert "LAN_AIO_HTTP_PROXY=" not in content
     assert "LAN_AIO_HTTPS_PROXY=http://192.168.1.115:7890\n" in content
     assert "LAN_AIO_NO_PROXY=127.0.0.1,localhost,192.168.1.115\n" in content
+    assert "LAN_AIO_PIP_DEFAULT_TIMEOUT=300\n" in content
+    assert "LAN_AIO_PIP_RETRIES=10\n" in content
 
 
 def test_lan_aio_fleet_render_uses_stable_gpu_device_id_for_gpu_252():
