@@ -33,8 +33,12 @@ R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
 
 ## 发布与 LAN 验收
 
-镜像模块为 `minimax_h3`，Dockerfile 固定 ComfyUI、DaSiWa Nodes、KJNodes 和 VHS
-revision。先从完整 Git SHA 构建 canonical digest，再保 digest 复制到 LAN registry；
+镜像模块为 `minimax_h3`，Dockerfile 固定 ComfyUI、DaSiWa Nodes、KJNodes、VHS
+以及官方 SageAttention 源码 revision。H3 不得使用 PyPI
+`sageattention==1.0.6`：KJNodes H3 patch 依赖 2.x `sageattention.core` 和 RTX 5090
+SM120 kernel。构建阶段使用 digest-pinned CUDA 12.8 devel toolkit，只编译
+`TORCH_CUDA_ARCH_LIST=12.0`，最终镜像只复制 wheel，不携带 devel toolkit。先从完整
+Git SHA 构建 canonical digest，再保 digest 复制到 LAN registry；
 未获得精确 digest 前不得把候选写入 LAN catalog。
 
 H3 的 ComfyUI 代码和 custom nodes 必须从镜像内 `/opt/ComfyUI` 启动，不能回落到
@@ -42,7 +46,9 @@ H3 的 ComfyUI 代码和 custom nodes 必须从镜像内 `/opt/ComfyUI` 启动�
 LAN 将精确模型 workspace 挂载到 `/opt/ComfyUI/models`；RunPod 由 baked entrypoint
 把 `/opt/ComfyUI/models` 安全链接到 `/workspace/ComfyUI/models`。构建后 smoke 必须
 真实启动 CPU ComfyUI 并从 `/object_info` 校验六个 H3 必需节点，仅检查源码文件存在
-不构成节点注册证据。
+不构成节点注册证据。CPU `/object_info` 也不证明 SageAttention kernel 可用；H3
+容器在 GPU 上启动时还必须校验 `get_cuda_arch_versions()` 包含 `sm120`，否则不得
+注册 Worker。
 
 GPU1 验收只走 `scripts/lan_aio_fleet_prod_ops.py`：重新读取 XDG ledger 和 live queue，
 等待 LTX 自然空闲，warm-cache 后事务性 takeover，串行执行四个 5 秒 preview，稳定后

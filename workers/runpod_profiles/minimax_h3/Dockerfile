@@ -1,4 +1,56 @@
 ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
+ARG CUDA_DEVEL_IMAGE=nvidia/cuda@sha256:4b9ed5fa8361736996499f64ecebf25d4ec37ff56e4d11323ccde10aa36e0c43
+ARG PYTHON_BUILDER_IMAGE=python@sha256:72d3d75f2639ab82b34b29390ad3d6e0827c775befee94edda8e9976818f488d
+
+FROM ${CUDA_DEVEL_IMAGE} AS cuda_devel
+
+FROM ${BASE_IMAGE} AS python_runtime
+
+FROM ${PYTHON_BUILDER_IMAGE} AS python_builder
+
+FROM cuda_devel AS sage_builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG SAGEATTENTION_REPO=https://github.com/thu-ml/SageAttention.git
+ARG SAGEATTENTION_REF=d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5
+ARG SAGEATTENTION_ARCHIVE_SHA256=74b6667164f9e368e3799bc2ab59b9b08c4591630f1c6029560208b6fcf354c4
+ARG CUDA_INSTALL_DIR=/usr/local/cuda-12.8
+
+COPY --from=python_builder /usr/local /usr/local
+
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/torch /opt/python-lib64/torch
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/torchgen /opt/python-lib64/torchgen
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/torch-2.11.0+cu128.dist-info /opt/python-lib64/torch-2.11.0+cu128.dist-info
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/triton /opt/python-lib64/triton
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/triton-3.6.0.dist-info /opt/python-lib64/triton-3.6.0.dist-info
+COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/cuda /opt/python-lib64/cuda
+COPY --from=python_runtime /usr/local/lib/python3.12/site-packages/nvidia /opt/python-lib/nvidia
+
+ENV CUDA_HOME=${CUDA_INSTALL_DIR} \
+    PATH=${CUDA_INSTALL_DIR}/bin:${PATH} \
+    PYTHONPATH=/opt/python-lib64:/opt/python-lib \
+    TORCH_CUDA_ARCH_LIST=12.0 \
+    EXT_PARALLEL=4 \
+    MAX_JOBS=4 \
+    NVCC_APPEND_FLAGS="--threads 4"
+
+RUN set -euo pipefail; \
+    command -v nvcc >/dev/null; \
+    test "$(gcc -dumpfullversion)" = "13.3.0"; \
+    python3 -m pip install --no-cache-dir \
+      filelock fsspec jinja2 networkx ninja packaging 'setuptools<82' sympy typing-extensions wheel; \
+    python3 -c 'import torch; assert torch.__version__ == "2.11.0+cu128"'; \
+    archive_url="${SAGEATTENTION_REPO%.git}/archive/${SAGEATTENTION_REF}.tar.gz"; \
+    python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+      "${archive_url}" /tmp/SageAttention.tar.gz; \
+    echo "${SAGEATTENTION_ARCHIVE_SHA256}  /tmp/SageAttention.tar.gz" | sha256sum -c -; \
+    mkdir -p /tmp/SageAttention; \
+    tar -xzf /tmp/SageAttention.tar.gz --strip-components=1 -C /tmp/SageAttention; \
+    python3 -m pip wheel --no-deps --no-build-isolation \
+      --wheel-dir /opt/allbot-wheels /tmp/SageAttention; \
+    test "$(find /opt/allbot-wheels -maxdepth 1 -type f -name 'sageattention-*.whl' | wc -l)" = 1
+
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
@@ -10,16 +62,7 @@ ARG VHS_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
-ARG SAGEATTENTION_VERSION=1.0.6
 ARG ALLBOT_GIT_SHA
-
-LABEL org.opencontainers.image.title="AllBot MiniMax H3 DaSiWa profile" \
-      org.opencontainers.image.description="MiniMax H3 T2V/I2V/FLF2V/REF2V runtime with external model manifest" \
-      org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
-      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
-      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \
-      allbot.runpod.profile="minimax_h3" \
-      allbot.runpod.models="external-model-manifest"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
@@ -45,8 +88,14 @@ RUN set -euo pipefail; \
       rm -rf "$target/.git"; }; \
     clone_node "${KJNODES_REPO}" "${KJNODES_REF}" ComfyUI-KJNodes; \
     clone_node "${VHS_REPO}" "${VHS_REF}" ComfyUI-VideoHelperSuite; \
-    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" ComfyUI-DaSiWa-Nodes; \
-    python3 -m pip install --no-cache-dir "sageattention==${SAGEATTENTION_VERSION}"
+    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" ComfyUI-DaSiWa-Nodes
+
+COPY --from=sage_builder /opt/allbot-wheels /opt/allbot-wheels
+
+RUN set -euo pipefail; \
+    python3 -m pip install --no-cache-dir /opt/allbot-wheels/sageattention-*.whl; \
+    python3 -c 'from sageattention.core import get_cuda_arch_versions; assert callable(get_cuda_arch_versions)'; \
+    rm -rf /opt/allbot-wheels
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY shared /opt/allbot/runtime/runpod_worker/shared
@@ -67,6 +116,14 @@ RUN set -euo pipefail; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
+LABEL org.opencontainers.image.title="AllBot MiniMax H3 DaSiWa profile" \
+      org.opencontainers.image.description="MiniMax H3 T2V/I2V/FLF2V/REF2V runtime with external model manifest" \
+      org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \
+      allbot.runpod.profile="minimax_h3" \
+      allbot.runpod.models="external-model-manifest"
+
 ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
     ALLBOT_RUNPOD_WORKER_DIR=/opt/allbot/runtime/runpod_worker
-CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]
+CMD ["bash", "-lc", "python3 -c 'from sageattention.core import get_cuda_arch_versions; archs=get_cuda_arch_versions(); assert \"sm120\" in archs, f\"MiniMax H3 requires compiled RTX 5090 SageAttention, detected {archs}\"'; exec bash /opt/allbot/runpod_baked_runtime_entrypoint.sh"]
