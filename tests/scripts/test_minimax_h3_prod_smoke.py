@@ -1,8 +1,13 @@
 from scripts.minimax_h3_prod_smoke import (
+    DEFAULT_WEB_URL,
     EXPECTED_TYPES,
     build_cases,
     build_control_config,
 )
+
+
+def test_minimax_h3_smoke_defaults_to_live_web_api_prefix():
+    assert DEFAULT_WEB_URL == "https://api.aivison.it.com/api"
 
 
 def test_minimax_h3_smoke_uses_existing_operator_canary_jwt_channel(monkeypatch):
