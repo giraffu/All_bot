@@ -108,6 +108,8 @@ def test_ltx_unified_dockerfile_supports_all_ltx_tasks_without_weights():
     )
     assert "LTX 2.3 I2V 10Eros LoRA.json" in dockerfile
     assert "94a52bfec735ff6f802c480f7fe8fdac1d279a7f" in dockerfile
+    assert "5fc6db6b39638a692f114c4bb5b6949f801b4efa" in dockerfile
+    assert "ComfyUI-KJNodes" in dockerfile
     assert "ComfyUI-Licon-MSR" in dockerfile
     assert 'assert "LiconMSR" in m.NODE_CLASS_MAPPINGS' in dockerfile
     assert 'find "${comfyui_dir}/models" -type f -name "*.safetensors"' in dockerfile

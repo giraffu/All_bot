@@ -415,6 +415,8 @@ def test_ltx_t2v_ic_patcher_builds_10eros_runexx_two_pass_graph(duration, expect
         "woman-panel.png", "man-panel.png", "bedroom.png"
     ]
     assert patched["801"]["inputs"]["background"] == ["804", 0]
+    assert patched["801"]["inputs"]["width"] == 768
+    assert patched["801"]["inputs"]["height"] == 448
     assert patched["26:39"]["inputs"]["length"] == expected_length
     assert patched["26:40"]["inputs"]["frames_number"] == expected_length
     assert patched["26:39"]["inputs"]["width"] == 384
