@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
@@ -64,6 +65,29 @@ def test_wan22_profile_bakes_the_shared_result_materialization_runtime():
 
     assert "COPY shared /opt/allbot/runtime/runpod_worker/shared" in dockerfile
     assert "from shared.character_reference_sheet import" in dockerfile
+
+
+def test_every_gpu_profile_bakes_the_shared_result_materialization_runtime():
+    catalog = json.loads(MODULE_CATALOG.read_text(encoding="utf-8"))["modules"]
+    dockerfiles = {
+        Path(module["dockerfile"])
+        for module in catalog.values()
+        if module.get("kind") == "gpu" and module.get("dockerfile")
+    }
+
+    missing_shared = []
+    missing_smoke_import = []
+    for path in sorted(dockerfiles):
+        dockerfile = path.read_text(encoding="utf-8")
+        if "COPY workers/runpod_runtime " not in dockerfile:
+            continue
+        if "COPY shared /opt/allbot/runtime/runpod_worker/shared" not in dockerfile:
+            missing_shared.append(str(path))
+        if "from shared.character_reference_sheet import" not in dockerfile:
+            missing_smoke_import.append(str(path))
+
+    assert missing_shared == []
+    assert missing_smoke_import == []
 
 
 def test_runpod_bootstrap_script_has_valid_bash_syntax():

@@ -74,6 +74,7 @@ COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/rgthree-com
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-LTXVideo /opt/allbot/node_source/ComfyUI-LTXVideo
 COPY workers/runpod_profiles/ltx_video/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY workers/runpod_runtime/requirements.txt /opt/allbot/runpod_worker/requirements.txt
@@ -113,7 +114,7 @@ RUN set -euo pipefail; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runpod_worker/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     python3 -c 'import fastapi, minio, uvicorn, websockets; from sageattention import sageattn; assert callable(sageattn)'; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS; from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel)'; \
     if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then \
       echo "LTX model files must stay out of the profile image" >&2; \
       exit 1; \

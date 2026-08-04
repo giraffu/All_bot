@@ -122,6 +122,7 @@ RUN set -euo pipefail; \
 
 COPY workers/runpod_runtime/scripts/runpod_sync_models_from_r2.py /opt/allbot/runpod_worker/scripts/runpod_sync_models_from_r2.py
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY workers/runpod_runtime/scripts/lan_scail2_comfyui_entrypoint.sh /opt/allbot/lan_scail2_comfyui_entrypoint.sh
@@ -133,7 +134,7 @@ RUN set -euo pipefail; \
     chmod +x /opt/allbot/lan_scail2_comfyui_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runpod_worker/requirements.txt; \
     python3 -c 'import fastapi, minio, uvicorn, websockets'; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS; from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel)'; \
     command -v ssh-keygen >/dev/null; \
     if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then \
       echo "sshd must be available for RunPod direct TCP diagnostics" >&2; \
