@@ -61,7 +61,7 @@ jobs:
 
       - name: Login to GHCR with ephemeral token
         env:
-          GHCR_TOKEN: ${{ github.token }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build and publish exact artifacts
