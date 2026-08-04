@@ -694,6 +694,35 @@ def test_ltx_v2_result_pick_prefers_video_over_last_frame(monkeypatch, task_type
 @pytest.mark.parametrize(
     "task_type",
     [
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+    ],
+)
+def test_minimax_h3_result_pick_prefers_video_over_last_frame(
+    monkeypatch, task_type
+):
+    module = build_agent_module(monkeypatch)
+    outputs = {
+        "last_frame_node": {
+            "images": [{"filename": f"{task_type}_42_last_frame_00001.png"}]
+        },
+        "video_node": {
+            "gifs": [{"filename": f"{task_type}_42_video_00001.mp4"}]
+        },
+    }
+
+    asset = module.pick_first_output_asset(outputs, task_type=task_type)
+
+    assert asset is not None
+    assert asset["filename"] == f"{task_type}_42_video_00001.mp4"
+    assert module.result_asset_priority(asset, task_type=task_type) == 2
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    [
         "scail2_action_transfer",
         "scail2_action_transfer_long",
         "scail2_video_replacement",
