@@ -34,6 +34,13 @@ latent x2 放大后第二阶段再复用原尺寸合成图。若 MSR 合成图�
 `pre_filter_counts != keyframe grid mask length` 错误。`ltx_unified` 镜像必须显式
 固定该修复版本，不能继承旧 base 镜像中的 KJNodes。
 
+gpu177 GPU1 是 compute capability 12.0 的 Blackwell 卡。当 IC workflow
+传入 guide attention tensor mask 时，旧 xFormers FA/CUTLASS 内核不支持
+SM120，会在首个 sampler 报 `memory_efficient_attention_forward` 无可用
+operator。`ltx_unified` LAN AIO 必须通过受管 compose 参数固定
+`--use-pytorch-cross-attention`；不得在 GPU 宿主机上手改 compose 或现场安装
+xFormers。
+
 三张媒体的稳定顺序是：角色参考图 1、角色参考图 2、场景背景图。人物参考图是人物
 图库生成的完整四视图面板；背景只定义环境、布局和光线。三者都不是视频首帧或
 终帧。Worker 输入准备必须对 `character_sheets` 和 `background_image` 分别执行

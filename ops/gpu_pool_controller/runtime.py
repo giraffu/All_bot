@@ -31,6 +31,7 @@ LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
     "ltx_t2v": 5,
     "ltx_unified": 5,
 }
+LAN_AIO_PYTORCH_CROSS_ATTENTION_PROFILES = frozenset({"ltx_unified"})
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
     {
         "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
@@ -791,6 +792,8 @@ class RuntimePlanner:
         reserve_vram = LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE.get(profile.runtime_profile)
         if reserve_vram is not None:
             args.extend(["--reserve-vram", str(reserve_vram)])
+        if profile.runtime_profile in LAN_AIO_PYTORCH_CROSS_ATTENTION_PROFILES:
+            args.append("--use-pytorch-cross-attention")
         if accelerator == "rocm":
             args.extend(["--lowvram", "--disable-pinned-memory"])
         return " ".join(args)
