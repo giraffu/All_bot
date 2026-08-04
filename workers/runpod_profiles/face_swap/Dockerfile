@@ -65,12 +65,13 @@ RUN set -euo pipefail; \
     fi
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
 RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS'
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS; from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel)'
 
 ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
     ALLBOT_RUNPOD_WORKER_DIR=/opt/allbot/runtime/runpod_worker

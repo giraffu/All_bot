@@ -66,7 +66,9 @@ import torch
 assert torch.__version__.startswith("2.9.1+rocm7.2.1"), torch.__version__
 assert str(torch.version.hip).startswith("7.2."), torch.version.hip
 from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS
+from shared.character_reference_sheet import compose_ingredients_character_panel
 assert TASK_SPECIFIC_PATCHERS
+assert callable(compose_ingredients_character_panel)
 PY
 
 ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
