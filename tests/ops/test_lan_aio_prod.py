@@ -247,7 +247,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     slot = slots["gpu-177-gpu1-minimax_h3"]
 
     assert profile.task_types == MINIMAX_H3_TASK_TYPES
-    assert profile.lan_workspace_key == "minimax-h3-db845cecd56d"
+    assert profile.lan_workspace_key == "minimax-h3-23841ed32ad7"
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (

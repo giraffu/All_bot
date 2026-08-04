@@ -230,7 +230,7 @@ profiles:
 
   minimax_h3:
     runtime_profile: minimax_h3
-    lan_workspace_key: minimax-h3-db845cecd56d
+    lan_workspace_key: minimax-h3-23841ed32ad7
     lan_model_workspace_key: minimax_h3
     task_types:
       - minimax_h3_t2v
