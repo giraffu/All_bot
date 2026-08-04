@@ -65,19 +65,19 @@
         0
       ],
       "ref_image_size": "match",
-      "ref_image_1": [
+      "ref_images.ref_image_0": [
         "20",
         0
       ],
-      "ref_image_2": [
+      "ref_images.ref_image_1": [
         "21",
         0
       ],
-      "ref_image_3": [
+      "ref_images.ref_image_2": [
         "22",
         0
       ],
-      "ref_image_4": [
+      "ref_images.ref_image_3": [
         "23",
         0
       ]

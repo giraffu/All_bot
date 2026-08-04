@@ -58,7 +58,10 @@ def build(task_type: str) -> dict:
         node_id = str(19 + index)
         workflow[node_id] = _node("LoadImage", image=f"minimax_h3_reference_{index}.png")
         if is_ref:
-            workflow["30"]["inputs"][f"ref_image_{index}"] = [node_id, 0]
+            # V3 Autogrow API inputs use the dynamic container path and a
+            # zero-based template suffix. ComfyUI then packs these links into
+            # execute(ref_images={...}) instead of forwarding flat kwargs.
+            workflow["30"]["inputs"][f"ref_images.ref_image_{index - 1}"] = [node_id, 0]
         elif index == 1:
             workflow["30"]["inputs"]["first_frame"] = [node_id, 0]
         elif index == 2:
