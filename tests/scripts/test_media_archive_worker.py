@@ -1,6 +1,8 @@
 import json
 import io
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -14,6 +16,24 @@ from scripts.media_archive_worker import (
     RateLimiter,
     restore_one_asset,
 )
+
+
+def test_worker_cli_bootstraps_repository_imports_from_any_working_directory(tmp_path):
+    worker = Path(__file__).resolve().parents[2] / "scripts/media_archive_worker.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            f"import runpy; runpy.run_path({str(worker)!r}, run_name='archive_worker_test'); import src",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.asyncio
