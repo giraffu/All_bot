@@ -41,7 +41,8 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
   两个逻辑资产，最终由 SHA-256 blob 去重。
 - `output_file` 形成 `output/0`。
 - `extra_outputs` 递归提取所有 `path`，按顶层字段形成
-  `extra:<name>/<ordinal>`。
+  `extra:<name>/<ordinal>`；遗留数据中非 JSON object 的 `extra_outputs`
+  不具备顶层字段语义，目录 seed 将其视为无附加输出并继续扫描。
 - prompt、类型、用户、task ID、时间和可见性留在 History/目录映射中，不写入
   blob key；因此可按原引用恢复到 R2。
 
