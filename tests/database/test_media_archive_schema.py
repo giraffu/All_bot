@@ -25,6 +25,9 @@ def test_archive_models_have_idempotency_and_delete_gate_constraints():
     assert MediaArchiveReceipt.__table__.c.sha256.nullable is False
     assert MediaArchiveReceipt.__table__.c.verified_at.nullable is False
     assert MediaArchiveOutbox.__table__.c.manifest_hash.nullable is False
+    assert str(MediaArchiveOutbox.__table__.c.priority.server_default.arg) == "20"
+    assert MediaArchiveReceipt.__table__.c.found_source.nullable is False
+    assert MediaArchiveReceipt.__table__.c.source_key.nullable is False
 
 
 def test_archive_migration_creates_outbox_before_receipts():

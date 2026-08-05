@@ -24,7 +24,7 @@ from src.database.models import (
 
 
 async def enqueue_history_media_archive(
-    session: AsyncSession, history: History
+    session: AsyncSession, history: History, *, priority: int = 0
 ) -> bool:
     """Create or refresh one idempotent outbox row in the History transaction."""
     await session.flush()
@@ -40,7 +40,11 @@ async def enqueue_history_media_archive(
     outbox = result.scalar_one_or_none()
     if outbox is None:
         session.add(
-            MediaArchiveOutbox(history_id=history.id, manifest_hash=manifest_hash)
+            MediaArchiveOutbox(
+                history_id=history.id,
+                manifest_hash=manifest_hash,
+                priority=max(0, min(priority, 100)),
+            )
         )
         return True
     if outbox.manifest_hash == manifest_hash:
@@ -67,6 +71,7 @@ async def claim_archive_jobs(
     worker_id: str,
     limit: int = 20,
     lease_seconds: int = 900,
+    max_priority: int = 100,
 ) -> list[dict[str, Any]]:
     now = datetime.now()
     result = await session.execute(
@@ -74,13 +79,18 @@ async def claim_archive_jobs(
         .join(History, History.id == MediaArchiveOutbox.history_id)
         .where(
             MediaArchiveOutbox.available_at <= now,
+            MediaArchiveOutbox.priority <= max(0, min(max_priority, 100)),
             or_(
                 MediaArchiveOutbox.status.in_(("pending", "retry")),
                 (MediaArchiveOutbox.status == "leased")
                 & (MediaArchiveOutbox.lease_expires_at < now),
             ),
         )
-        .order_by(History.created_at.desc(), MediaArchiveOutbox.id)
+        .order_by(
+            MediaArchiveOutbox.priority,
+            History.created_at.desc(),
+            MediaArchiveOutbox.id,
+        )
         .limit(max(1, min(limit, 100)))
         .with_for_update(skip_locked=True)
     )
@@ -108,11 +118,39 @@ async def claim_archive_jobs(
     return jobs
 
 
+async def renew_archive_lease(
+    session: AsyncSession,
+    *,
+    history_id: int,
+    worker_id: str,
+    revision: int,
+    lease_seconds: int = 900,
+) -> datetime:
+    """Extend only the currently owned revision of an active lease."""
+    result = await session.execute(
+        select(MediaArchiveOutbox)
+        .where(MediaArchiveOutbox.history_id == history_id)
+        .with_for_update()
+    )
+    outbox = result.scalar_one_or_none()
+    if outbox is None or outbox.status != "leased":
+        raise ValueError("archive job is not leased")
+    if outbox.lease_owner != worker_id:
+        raise ValueError("archive lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("archive lease revision changed")
+    expires_at = datetime.now() + timedelta(seconds=max(60, lease_seconds))
+    outbox.lease_expires_at = expires_at
+    await session.commit()
+    return expires_at
+
+
 async def record_archive_receipts(
     session: AsyncSession,
     *,
     history_id: int,
     worker_id: str,
+    revision: int,
     receipts: list[dict[str, Any]],
 ) -> bool:
     outbox_result = await session.execute(
@@ -125,6 +163,8 @@ async def record_archive_receipts(
         raise ValueError("archive job is not receivable")
     if outbox.lease_owner and outbox.lease_owner != worker_id:
         raise ValueError("archive lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("archive receipt revision changed")
     history = await session.get(History, history_id)
     if history is None:
         raise ValueError("history not found")
@@ -166,6 +206,7 @@ async def record_archive_failure(
     *,
     history_id: int,
     worker_id: str,
+    revision: int,
     error_code: str,
     message: str,
     retryable: bool,
@@ -180,6 +221,8 @@ async def record_archive_failure(
         raise ValueError("archive job not found")
     if outbox.lease_owner and outbox.lease_owner != worker_id:
         raise ValueError("archive lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("archive failure revision changed")
     outbox.status = "retry" if retryable else "manual_review"
     delay_minutes = min(360, 2 ** min(int(outbox.attempts or 1), 8))
     outbox.available_at = datetime.now() + timedelta(minutes=delay_minutes)

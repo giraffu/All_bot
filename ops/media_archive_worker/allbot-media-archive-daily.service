@@ -1,0 +1,11 @@
+[Unit]
+Description=AllBot media archive daily reconciliation and source status
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hfy
+Group=hfy
+WorkingDirectory=/home/hfy/APP/All_bot
+EnvironmentFile=/home/hfy/.config/allbot/media-archive/worker.env
+ExecStart=/home/hfy/miniconda3/bin/python scripts/reconcile_media_archive_outbox.py --end-id 2147483647 --execute

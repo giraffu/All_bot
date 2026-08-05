@@ -36,7 +36,12 @@ def _b64decode(value: str) -> bytes:
     return base64.urlsafe_b64decode((value + padding).encode("ascii"))
 
 
-def hash_password(password: str, *, salt: str | None = None, iterations: int = PASSWORD_HASH_ITERATIONS) -> str:
+def hash_password(
+    password: str,
+    *,
+    salt: str | None = None,
+    iterations: int = PASSWORD_HASH_ITERATIONS,
+) -> str:
     resolved_salt = salt or secrets.token_urlsafe(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -55,7 +60,9 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
     if algorithm != PASSWORD_HASH_ALGORITHM:
         return False
-    candidate = hash_password(password, salt=salt, iterations=parsed_iterations).rsplit("$", 1)[-1]
+    candidate = hash_password(password, salt=salt, iterations=parsed_iterations).rsplit(
+        "$", 1
+    )[-1]
     return hmac.compare_digest(candidate, expected_digest)
 
 
@@ -73,7 +80,10 @@ class AuthConfig:
     @classmethod
     def from_env(cls) -> "AuthConfig":
         try:
-            session_ttl_seconds = int(os.getenv("LOCAL_ANALYTICS_AUTH_SESSION_TTL_SECONDS", "43200") or "43200")
+            session_ttl_seconds = int(
+                os.getenv("LOCAL_ANALYTICS_AUTH_SESSION_TTL_SECONDS", "43200")
+                or "43200"
+            )
         except ValueError:
             session_ttl_seconds = 43200
         return cls(
@@ -82,7 +92,9 @@ class AuthConfig:
             password=os.getenv("LOCAL_ANALYTICS_AUTH_PASSWORD", ""),
             password_hash=os.getenv("LOCAL_ANALYTICS_AUTH_PASSWORD_HASH", "").strip(),
             session_secret=os.getenv("LOCAL_ANALYTICS_AUTH_SESSION_SECRET", ""),
-            cookie_name=os.getenv("LOCAL_ANALYTICS_AUTH_COOKIE_NAME", DEFAULT_AUTH_COOKIE_NAME).strip()
+            cookie_name=os.getenv(
+                "LOCAL_ANALYTICS_AUTH_COOKIE_NAME", DEFAULT_AUTH_COOKIE_NAME
+            ).strip()
             or DEFAULT_AUTH_COOKIE_NAME,
             cookie_secure=_truthy(os.getenv("LOCAL_ANALYTICS_AUTH_COOKIE_SECURE")),
             session_ttl_seconds=max(60, session_ttl_seconds),
@@ -98,7 +110,11 @@ class AuthConfig:
 
 
 def _sign(payload: str, secret: str) -> str:
-    return _b64encode(hmac.new(secret.encode("utf-8"), payload.encode("ascii"), hashlib.sha256).digest())
+    return _b64encode(
+        hmac.new(
+            secret.encode("utf-8"), payload.encode("ascii"), hashlib.sha256
+        ).digest()
+    )
 
 
 def create_session_token(config: AuthConfig, *, username: str) -> str:
@@ -155,16 +171,39 @@ def _auth_required_response(request: Request) -> Response:
 
 
 class LocalAnalyticsAuthMiddleware(BaseHTTPMiddleware):
-    PUBLIC_PATHS = {"/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session"}
+    PUBLIC_PATHS = {
+        "/login",
+        "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/session",
+    }
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        if (
+            request.url.path.startswith("/api/archive/")
+            and request.url.path.endswith("/content")
+            and any(
+                request.headers.get(name)
+                for name in ("cf-ray", "cf-connecting-ip", "cf-ipcountry", "cf-visitor")
+            )
+        ):
+            return JSONResponse(
+                {
+                    "detail": "full archive content is available from the authenticated LAN only"
+                },
+                status_code=403,
+            )
         config = AuthConfig.from_env()
         if not config.enabled:
             return await call_next(request)
         if request.url.path in self.PUBLIC_PATHS:
             return await call_next(request)
         if not config.configured:
-            return JSONResponse({"detail": "local analytics auth is not configured"}, status_code=503)
+            return JSONResponse(
+                {"detail": "local analytics auth is not configured"}, status_code=503
+            )
         session = read_session_token(config, request.cookies.get(config.cookie_name))
         if session:
             return await call_next(request)
@@ -181,13 +220,19 @@ def install_auth(app: FastAPI, *, static_dir: Path) -> None:
             return RedirectResponse("/", status_code=303)
         session = read_session_token(config, request.cookies.get(config.cookie_name))
         if session:
-            return RedirectResponse(request.query_params.get("next") or "/", status_code=303)
+            return RedirectResponse(
+                request.query_params.get("next") or "/", status_code=303
+            )
         return FileResponse(static_dir / "login.html")
 
     @app.get("/api/auth/session")
     async def auth_session(request: Request) -> dict[str, Any]:
         config = AuthConfig.from_env()
-        session = read_session_token(config, request.cookies.get(config.cookie_name)) if config.enabled else None
+        session = (
+            read_session_token(config, request.cookies.get(config.cookie_name))
+            if config.enabled
+            else None
+        )
         return {
             "auth_enabled": config.enabled,
             "authenticated": bool(session),
@@ -200,7 +245,9 @@ def install_auth(app: FastAPI, *, static_dir: Path) -> None:
         if not config.enabled:
             return JSONResponse({"authenticated": True, "username": None})
         if not config.configured:
-            return JSONResponse({"detail": "local analytics auth is not configured"}, status_code=503)
+            return JSONResponse(
+                {"detail": "local analytics auth is not configured"}, status_code=503
+            )
         try:
             payload = await request.json()
         except json.JSONDecodeError:
@@ -209,7 +256,9 @@ def install_auth(app: FastAPI, *, static_dir: Path) -> None:
         username = str(payload.get("username", ""))
         password = str(payload.get("password", ""))
         if not verify_login(config, username=username, password=password):
-            return JSONResponse({"detail": "invalid username or password"}, status_code=401)
+            return JSONResponse(
+                {"detail": "invalid username or password"}, status_code=401
+            )
 
         response = JSONResponse({"authenticated": True, "username": config.username})
         response.set_cookie(
@@ -236,7 +285,9 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Local analytics auth helpers.")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    hash_parser = subparsers.add_parser("hash-password", help="print a PBKDF2 password hash")
+    hash_parser = subparsers.add_parser(
+        "hash-password", help="print a PBKDF2 password hash"
+    )
     hash_parser.add_argument("password")
     args = parser.parse_args()
     if args.command == "hash-password":

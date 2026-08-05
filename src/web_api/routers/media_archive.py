@@ -13,6 +13,7 @@ from src.services.media_archive_service import (
     claim_archive_jobs,
     record_archive_failure,
     record_archive_receipts,
+    renew_archive_lease,
 )
 
 
@@ -37,6 +38,8 @@ class ReceiptItem(BaseModel):
     role: str = Field(max_length=64)
     ordinal: int = Field(ge=0)
     source_ref: str
+    found_source: str = Field(min_length=1, max_length=128)
+    source_key: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     byte_size: int = Field(ge=0)
     mime_type: str | None = Field(default=None, max_length=128)
@@ -48,24 +51,40 @@ class ReceiptItem(BaseModel):
 class ReceiptsRequest(BaseModel):
     history_id: int
     worker_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
     receipts: list[ReceiptItem]
 
 
 class FailureRequest(BaseModel):
     history_id: int
     worker_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
     error_code: str = Field(min_length=1, max_length=64)
     message: str = Field(max_length=1000)
     retryable: bool = True
+
+
+class LeaseRenewRequest(BaseModel):
+    history_id: int
+    worker_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
 
 
 @router.get("/jobs", dependencies=[Depends(require_archive_agent)])
 async def get_jobs(
     worker_id: str = Query(min_length=1, max_length=128),
     limit: int = Query(20, ge=1, le=100),
+    max_priority: int = Query(100, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    return {"jobs": await claim_archive_jobs(db, worker_id=worker_id, limit=limit)}
+    return {
+        "jobs": await claim_archive_jobs(
+            db,
+            worker_id=worker_id,
+            limit=limit,
+            max_priority=max_priority,
+        )
+    }
 
 
 @router.post("/receipts", dependencies=[Depends(require_archive_agent)])
@@ -80,6 +99,15 @@ async def post_receipts(payload: ReceiptsRequest, db: AsyncSession = Depends(get
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"accepted": True, "archive_complete": complete}
+
+
+@router.post("/leases/renew", dependencies=[Depends(require_archive_agent)])
+async def renew_lease(payload: LeaseRenewRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        expires_at = await renew_archive_lease(db, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"accepted": True, "lease_expires_at": expires_at}
 
 
 @router.post("/failures", dependencies=[Depends(require_archive_agent)])

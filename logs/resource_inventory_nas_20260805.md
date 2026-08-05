@@ -25,9 +25,12 @@
   监听 TLS 9000/9001；三个桶、archive versioning、不可删除 Worker 与分析只读
   policy 已完成。真实写读回校验通过，Worker DeleteObject 返回 AccessDenied，
   验证对象随后由管理员清理；容器重启后重新健康。
-- UGOS 防火墙配置 `AllBot Archive MinIO` 已启用：仅 `192.168.1.115` 可访问
-  9000，`192.168.1.0/24` 可访问 9001，其它来源拒绝；SSH、S3 和控制台从允许
-  来源复测成功。
+- MinIO Docker 转发防火墙已由独立 `ALLBOT_MEDIA_ARCHIVE` 链和 systemd timer
+  持久化：`192.168.1.115` 可访问 9000/9001，管理员备用地址
+  `192.168.1.105` 只可访问 9001，其它来源拒绝。实测 `.105 -> 9000` 连接失败，
+  `.115 -> 9000/minio/health/live` 返回 200；timer 每 5 分钟在 Docker 容器地址
+  变化后重建规则。Compose 端口显式绑定 `192.168.1.150`，不再创建 IPv6 或其它
+  NAS 地址的公开监听；MinIO 重建后仅见该 IPv4 地址的 9000/9001 listener。
 - Btrfs 快照：UGOS Snapshot 只能看到已登记 shared folder，不能直接纳入普通
   `AllBotArchive` 目录。因此已将该目录无损转换为独立 Btrfs subvolume（ID 257），
   安装并启用 `allbot-media-archive-snapshot.timer`，每天约 03:20 执行、随机延迟
@@ -43,5 +46,14 @@
   `allbot-nas-archive`，不保存密码。
 - 本地主服务器 Worker 凭据保存于权限 0600 的运行态配置，不进入仓库；本证据
   不记录密码、access key、secret key 或私钥内容。
+- NAS 登录密码已在本次维护中轮换；新值只保存在本地主机权限 0600 的独立运行态
+  secret，知识库仍不记录明文。专用 SSH 密钥登录复测正常。
+- 主服务器当前仍把 `192.168.1.150` 默认路由到 `.105` USB 网卡；写入
+  NetworkManager `/32` 路由需要本机管理员权限，当前 Polkit 拒绝。仓库已提供
+  `ops/media_archive_worker/install_nas_route.sh`；该脚本完成并验证
+  `eno1/src 192.168.1.115` 前，归档 Worker 按配置 fail closed。
+- 本地 shadow 已初始化 5 张 `analytics_media_*` 目录表并登记 7 个默认来源；
+  最近 100 条 History 的只读盘点 canary 解析出 248 个逻辑资产，其中 217 个热、
+  31 个冷。尚未领取归档任务或迁移媒体，R2 删除开关保持关闭。
 
 本证据不包含密码、token、私钥或对象 URL。一次性远端 staging 已在校验后删除。

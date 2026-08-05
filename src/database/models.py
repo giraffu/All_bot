@@ -501,7 +501,13 @@ class MediaArchiveOutbox(Base):
             "status in ('pending', 'leased', 'retry', 'archived', 'manual_review')",
             name="ck_media_archive_outbox_status",
         ),
-        Index("ix_media_archive_outbox_claim", "status", "available_at", "id"),
+        Index(
+            "ix_media_archive_outbox_claim",
+            "status",
+            "priority",
+            "available_at",
+            "id",
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -512,6 +518,7 @@ class MediaArchiveOutbox(Base):
     )
     revision = Column(Integer, nullable=False, default=1, server_default=text("1"))
     manifest_hash = Column(String(64), nullable=False)
+    priority = Column(Integer, nullable=False, default=20, server_default=text("20"))
     status = Column(
         String(24), nullable=False, default="pending", server_default=text("'pending'")
     )
@@ -558,6 +565,8 @@ class MediaArchiveReceipt(Base):
     role = Column(String(64), nullable=False)
     ordinal = Column(Integer, nullable=False)
     source_ref = Column(Text, nullable=False)
+    found_source = Column(String(128), nullable=False)
+    source_key = Column(Text, nullable=False)
     sha256 = Column(String(64), nullable=False)
     byte_size = Column(BigInteger, nullable=False)
     mime_type = Column(String(128), nullable=True)

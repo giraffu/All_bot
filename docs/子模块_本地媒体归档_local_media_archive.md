@@ -28,6 +28,7 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 - reconciliation：`scripts/reconcile_media_archive_outbox.py`
 - R2 清理 dry-run/执行器：`scripts/media_archive_r2_cleanup.py`
 - NAS Compose：`ops/media_archive_nas/`
+- 主机路由与常驻服务：`ops/media_archive_worker/`
 - 本地浏览 API：`local_analytics_platform/app/routes_archive.py`
 
 ## 3. History 单条媒体内容
@@ -82,21 +83,35 @@ manifest digest、离线导入对应平台镜像，并在 `.env` 使用导入后
 
 ## 6. 传输与清理门禁
 
-Worker 以 8 并发和 20 MiB/s 总限速启动，`.part` 暂存最多 100 GiB。启动会清空
-代理变量并使用 `ip route get` 拒绝 loopback、Tailscale、tun/wg 路由。每个对象
-流式计算 SHA-256、上传 NAS、完整回读复算；只有大小和摘要一致才提交回执。
+Worker 以 8 并发和全天 50 MiB/s 总上限启动，每 15 分钟按吞吐和错误率在
+8/16/32 间调整；达不到上限不判失败。`.part` 总容量 100 GiB，已用和预留达到
+90 GiB 即暂停新对象；下载前 HEAD 预检单对象大小，启动清理陈旧 part。配置必须
+是当前用户所有的普通 0600 文件。启动清空代理变量，发现 `127.0.0.1:7890` 则
+直接拒绝，并使用 `ip route get` 校验 NAS 固定走 `eno1`/`192.168.1.115`；R2
+拒绝 loopback、tun/wg 和 Tailscale exit-node 路径。旧来源可显式允许 Tailscale
+点对点。每个对象流式计算 SHA-256、上传 NAS、完整回读复算；内容键已存在且大小/
+摘要元数据一致时复用，只有完整验收才提交回执。
 
-R2 删除默认关闭。运行时需要同时设置 `R2_ARCHIVE_DELETE_ENABLED=true` 和一次性
-确认值，且代码仍会检查 outbox 已归档、主输出回执已验收、相同引用无最新 8 条
-原始 History（再过滤可见）、收藏、公开或活跃投稿引用。第一次生产删除必须先
-生成对象/字节 dry-run 报告并再次取得用户明确确认；本方案的实现和验证阶段不
-执行生产删除。
+Worker 每 5 分钟调用 `/api/internal/media-archive/leases/renew`。成功回执记录实际
+命中的来源和 candidate key，成功、失败和续租都必须携带当前 outbox revision，
+因此过期 Worker 不能覆盖新清单。Worker 同步写本地 source attempts、blob 和
+asset 状态；常驻服务与每日 reconciliation 模板位于 `ops/media_archive_worker/`。
+
+R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输出派生缩略图；共享引用
+按全部角色检查最新 8 条原始 History（再过滤可见）、收藏、公开和活跃投稿。
+执行批次硬限制为 1–1000 个逻辑资产，同时要求
+`R2_ARCHIVE_DELETE_ENABLED=true`、`R2_ARCHIVE_RESTORE_GATE_VERIFIED=true` 和
+一次性确认值。第一次生产删除必须先生成对象/字节 dry-run 报告并再次取得用户
+明确确认；实现和归档阶段不执行生产删除。
 
 ## 7. 本地浏览与安全
 
 历史生成页提供目录筛选和“查看媒体”。原件接口支持 HTTP Range，浏览器只拿
-分析平台 session cookie，NAS 只读凭据仅在服务端。三个归档 API 即使平台全局
-登录被关闭也会返回 503，必须显式启用并配置本地登录后才能访问。
+分析平台 session cookie，NAS 只读凭据仅在服务端。原件路由在鉴权前识别并拒绝
+Cloudflare 请求头，因此 Tunnel 只能访问统计与目录，不能读取完整文件。归档状态
+卡片展示逻辑资产、验收数、字节、outbox 积压、吞吐、来源离线、校验错误、容量
+和暂停原因；告警仅留在本地平台。三个归档 API 即使平台全局登录被关闭也会返回
+503，必须显式启用并配置本地登录后才能访问。
 
 ## 8. 验证
 

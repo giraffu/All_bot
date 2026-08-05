@@ -35,10 +35,7 @@ BCRYPT_TEST_HASH = "$2b$12$YIySnXRqN4W6uLKgKUzSKe/V4g4JJEghmIdOcaW0UO21Fda5H05aa
 def _runpod_release_profile_pins() -> str:
     return json.dumps(
         {
-            key: (
-                f"ghcr.io/giraffu/test-{index}@sha256:"
-                + f"{index:x}" * 64
-            )
+            key: (f"ghcr.io/giraffu/test-{index}@sha256:" + f"{index:x}" * 64)
             for index, key in enumerate(
                 RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
                 start=1,
@@ -59,6 +56,7 @@ def _environment(environment: str) -> dict[str, str]:
         "API_TOKEN": f"{suffix}-api-token",
         "AUTH_TOKEN": f"{suffix}-auth-token",
         "AGENT_SECRET_TOKEN": f"{suffix}-agent-token",
+        "MEDIA_ARCHIVE_AGENT_TOKEN": f"{suffix}-archive-token",
         "MINIO_ENDPOINT": f"{suffix}-storage",
         "MINIO_ACCESS_KEY": f"{suffix}-access",
         "MINIO_SECRET_KEY": f"{suffix}-secret",
@@ -113,6 +111,12 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     snapshot = module.build_snapshot(contract, "prod", _environment("prod"))
 
     web = snapshot.projections["web-api"]
+    assert web["MEDIA_ARCHIVE_AGENT_TOKEN"] == "prod-archive-token"
+    assert all(
+        "MEDIA_ARCHIVE_AGENT_TOKEN" not in projection
+        for service, projection in snapshot.projections.items()
+        if service != "web-api"
+    )
     bot = snapshot.projections["main-bot"]
     dashboard_frontend = snapshot.projections["dashboard-frontend"]
     dashboard_backend = snapshot.projections["dashboard-backend"]
@@ -130,9 +134,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     ):
         assert web[key] == _environment("prod")[key]
         assert bot[key] == _environment("prod")[key]
-    assert web["TELEGRAM_API_BASE_URL"] == (
-        "https://telegram-api-prod.example.com"
-    )
+    assert web["TELEGRAM_API_BASE_URL"] == ("https://telegram-api-prod.example.com")
     assert web["WORKER_REDIS_URL"] == "redis://prod-worker/0"
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
@@ -204,9 +206,9 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
 
-    assert module.affected_services(
-        contract, {"LTX_T2V_BACKEND_ENABLED"}
-    ) == {"web-api"}
+    assert module.affected_services(contract, {"LTX_T2V_BACKEND_ENABLED"}) == {
+        "web-api"
+    }
 
 
 @pytest.mark.parametrize(
@@ -216,9 +218,7 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
         ("prod", "https://web-cf-test.aivison.it.com/"),
     ],
 )
-def test_environment_rejects_other_environment_mini_app_url(
-    environment, wrong_url
-):
+def test_environment_rejects_other_environment_mini_app_url(environment, wrong_url):
     module = _load_module()
     values = _environment(environment)
     values["MINI_APP_URL"] = wrong_url
@@ -234,9 +234,7 @@ def test_environment_rejects_other_environment_mini_app_url(
         ("prod", "https://web.aivison.it.com/"),
     ],
 )
-def test_environment_accepts_its_canonical_mini_app_url(
-    environment, expected_url
-):
+def test_environment_accepts_its_canonical_mini_app_url(environment, expected_url):
     module = _load_module()
     values = _environment(environment)
     values["MINI_APP_URL"] = expected_url
@@ -329,10 +327,7 @@ def test_rmb_query_url_is_required_only_when_reconciliation_is_enabled():
     assert snapshot.projections["payment-api"]["HUANYUY_QUERY_URL"].endswith(
         "/order-query"
     )
-    assert (
-        snapshot.projections["payment-api"]["RMB_RECONCILIATION_ENABLED"]
-        == "true"
-    )
+    assert snapshot.projections["payment-api"]["RMB_RECONCILIATION_ENABLED"] == "true"
 
 
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])
@@ -433,9 +428,7 @@ def test_dashboard_backend_projection_rejects_mutable_runpod_profile_pin():
     contract = module.load_contract(CONTRACT_PATH)
     values = _environment("prod")
     pins = json.loads(values["RUNPOD_RELEASE_PROFILE_PINS_JSON"])
-    pins["RUNPOD_IMAGE_NAME_I2I_PRO"] = (
-        "ghcr.io/giraffu/allbot-gpu-i2i-pro:latest"
-    )
+    pins["RUNPOD_IMAGE_NAME_I2I_PRO"] = "ghcr.io/giraffu/allbot-gpu-i2i-pro:latest"
     values["RUNPOD_RELEASE_PROFILE_PINS_JSON"] = json.dumps(pins)
 
     with pytest.raises(
@@ -490,8 +483,9 @@ def test_main_bot_projection_includes_required_channel_id_only_for_main_bot():
 
     snapshot = module.build_snapshot(contract, "prod", values)
 
-    assert snapshot.projections["main-bot"]["REQUIRED_CHANNEL_ID"] == (
-        values["REQUIRED_CHANNEL_ID"]
+    assert (
+        snapshot.projections["main-bot"]["REQUIRED_CHANNEL_ID"]
+        == (values["REQUIRED_CHANNEL_ID"])
     )
     assert all(
         "REQUIRED_CHANNEL_ID" not in projection
@@ -500,8 +494,7 @@ def test_main_bot_projection_includes_required_channel_id_only_for_main_bot():
     )
     assert snapshot.projections["main-bot"]["MAIN_BOT_LAZY_BOT_ENABLED"] == "true"
     assert (
-        snapshot.projections["main-bot"]["MAIN_BOT_LAZY_BOT_USERNAME"]
-        == "@QQCC666_bot"
+        snapshot.projections["main-bot"]["MAIN_BOT_LAZY_BOT_USERNAME"] == "@QQCC666_bot"
     )
     assert all(
         "MAIN_BOT_LAZY_BOT_USERNAME" not in projection
@@ -1036,22 +1029,12 @@ def test_scoped_activation_updates_target_and_preserves_non_target_with_rollback
         str(root),
     ]
 
-    assert (
-        module.main(
-            ["inspect", *new_common, "--service", "dashboard-backend"]
-        )
-        == 0
-    )
+    assert module.main(["inspect", *new_common, "--service", "dashboard-backend"]) == 0
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["affected_services"] == ["dashboard-backend"]
     assert inspected["unknown_keys"] == []
 
-    assert (
-        module.main(
-            ["activate", *new_common, "--service", "dashboard-backend"]
-        )
-        == 0
-    )
+    assert module.main(["activate", *new_common, "--service", "dashboard-backend"]) == 0
     second = json.loads(capsys.readouterr().out)
     active = module.load_active_state(root)
     assert active is not None
@@ -1080,21 +1063,15 @@ def test_scoped_activation_updates_target_and_preserves_non_target_with_rollback
     assert qqcc_path.read_bytes() == old_qqcc
 
 
-def test_scoped_activation_preserves_retired_non_target_projections(
-    tmp_path, capsys
-):
+def test_scoped_activation_preserves_retired_non_target_projections(tmp_path, capsys):
     module = _load_module()
     values = _environment("prod")
     legacy_contract = module.load_contract(CONTRACT_PATH)
     legacy_contract["services"]["postgres"].pop("environments", None)
     legacy_contract["services"]["redis"].pop("environments", None)
-    legacy_contract["services"]["qqcc-config-backend"]["required"].remove(
-        "API_TOKEN"
-    )
+    legacy_contract["services"]["qqcc-config-backend"]["required"].remove("API_TOKEN")
     legacy_contract_path = tmp_path / "legacy-contract.json"
-    legacy_contract_path.write_text(
-        json.dumps(legacy_contract), encoding="utf-8"
-    )
+    legacy_contract_path.write_text(json.dumps(legacy_contract), encoding="utf-8")
     env_file = tmp_path / "prod.env"
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
@@ -1184,12 +1161,7 @@ def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
         str(root),
     ]
 
-    assert (
-        module.main(
-            ["activate", *common, "--service", "dashboard-backend"]
-        )
-        == 0
-    )
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 0
     first = module.load_active_state(root)
     assert first is not None
     dashboard_path = root / "current" / "dashboard-backend.env"
@@ -1199,23 +1171,13 @@ def test_scoped_inspect_reports_change_to_an_active_service(tmp_path, capsys):
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
 
-    assert (
-        module.main(
-            ["inspect", *common, "--service", "qqcc-config-backend"]
-        )
-        == 0
-    )
+    assert module.main(["inspect", *common, "--service", "qqcc-config-backend"]) == 0
     inspected = json.loads(capsys.readouterr().out)
 
     assert "dashboard-backend" in inspected["affected_services"]
     assert "qqcc-config-backend" in inspected["affected_services"]
 
-    assert (
-        module.main(
-            ["activate", *common, "--service", "qqcc-config-backend"]
-        )
-        == 2
-    )
+    assert module.main(["activate", *common, "--service", "qqcc-config-backend"]) == 2
     assert "would change active service projections" in capsys.readouterr().err
     assert module.load_active_state(root) == first
     assert dashboard_path.read_bytes() == old_dashboard
@@ -1250,10 +1212,7 @@ def test_target_inspect_ignores_unknown_non_target_active_service(tmp_path, caps
     (root / "current.json").chmod(0o600)
 
     assert (
-        module.main(
-            ["inspect-target", *common, "--service", "dashboard-backend"]
-        )
-        == 0
+        module.main(["inspect-target", *common, "--service", "dashboard-backend"]) == 0
     )
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["status"] == "target-inspected"
@@ -1284,12 +1243,11 @@ def test_target_inspect_rejects_tampered_target_projection(tmp_path, capsys):
     projection.chmod(0o600)
 
     assert (
-        module.main(
-            ["inspect-target", *common, "--service", "dashboard-backend"]
-        )
-        == 2
+        module.main(["inspect-target", *common, "--service", "dashboard-backend"]) == 2
     )
-    assert "target service environment integrity check failed" in capsys.readouterr().err
+    assert (
+        "target service environment integrity check failed" in capsys.readouterr().err
+    )
 
 
 def test_target_inspect_reports_only_target_revision_drift(tmp_path, capsys):
@@ -1316,10 +1274,7 @@ def test_target_inspect_reports_only_target_revision_drift(tmp_path, capsys):
     env_file.chmod(0o600)
 
     assert (
-        module.main(
-            ["inspect-target", *common, "--service", "dashboard-backend"]
-        )
-        == 0
+        module.main(["inspect-target", *common, "--service", "dashboard-backend"]) == 0
     )
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["drift"] is True
@@ -1342,9 +1297,7 @@ def test_test_snapshot_includes_dashboard_services():
     assert "support-bot" not in snapshot.projections
 
 
-def test_full_test_inspect_preserves_dashboard_service(
-    tmp_path, capsys
-):
+def test_full_test_inspect_preserves_dashboard_service(tmp_path, capsys):
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)
     legacy_contract = json.loads(json.dumps(contract))
@@ -1421,16 +1374,13 @@ def test_target_inspect_uses_active_revision_and_ignores_non_target_host_change(
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
 
-    assert (
-        module.main(["inspect-target", *common, "--service", "central-api"])
-        == 0
-    )
+    assert module.main(["inspect-target", *common, "--service", "central-api"]) == 0
     inspected = json.loads(capsys.readouterr().out)
 
     assert inspected["drift"] is False
-    assert inspected["effective_environment_revision"] == activated[
-        "environment_revision"
-    ]
+    assert (
+        inspected["effective_environment_revision"] == activated["environment_revision"]
+    )
     assert inspected["environment_revision"] != activated["environment_revision"]
     assert inspected["changed_keys"] == []
 
@@ -1460,10 +1410,7 @@ def test_target_inspect_unknown_host_key_affecting_all_services_fails_closed(
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
 
-    assert (
-        module.main(["inspect-target", *common, "--service", "central-api"])
-        == 0
-    )
+    assert module.main(["inspect-target", *common, "--service", "central-api"]) == 0
     inspected = json.loads(capsys.readouterr().out)
 
     assert inspected["drift"] is True
@@ -1534,9 +1481,7 @@ def test_target_inspect_skips_disabled_optional_target_without_active_projection
     assert inspected["service_revisions"] == {}
 
 
-def test_scoped_activation_rejects_non_target_active_service_removal(
-    tmp_path, capsys
-):
+def test_scoped_activation_rejects_non_target_active_service_removal(tmp_path, capsys):
     module = _load_module()
     values = _environment("prod")
     env_file = tmp_path / "prod.env"
@@ -1576,12 +1521,7 @@ def test_scoped_activation_rejects_non_target_active_service_removal(
     env_file.write_text(module._env_text(values), encoding="utf-8")
     env_file.chmod(0o600)
 
-    assert (
-        module.main(
-            ["activate", *common, "--service", "dashboard-backend"]
-        )
-        == 2
-    )
+    assert module.main(["activate", *common, "--service", "dashboard-backend"]) == 2
     assert "would remove active service projections" in capsys.readouterr().err
     assert module.load_active_state(root) == first
     assert qqcc_path.read_bytes() == old_qqcc
