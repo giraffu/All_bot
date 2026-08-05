@@ -58,7 +58,8 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
 
 ## 5. NAS 部署 SOP
 
-1. 通过 UGOS 管理面确认实际存储池、文件系统和 Docker bind-mount 路径。
+1. 通过 UGOS 管理面确认实际存储池、文件系统、固件满足官方 Docker 应用的最低
+   版本要求，并核对 Docker bind-mount 路径；固件升级和重启须单独确认。
 2. 创建独占目录 `AllBotArchive/minio-data`、`minio-certs`、`ca`；永久数据达到
    80% 容量即停止迁移。若 Btrfs 可用，开启每日快照、保留 7 天。
 3. 在可信机器运行 `generate_tls.sh`，安全复制 CA 与服务端证书。主服务器安装
