@@ -72,8 +72,11 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   就绪后才因结果物化依赖缺失而退出，且无 heartbeat。
 - 带独立 `/opt/ComfyUI` 的 profile 必须显式渲染 `COMFYUI_DIR`，不能因持久卷已有
   `main.py` 而启动陈旧 `/workspace/ComfyUI`。外部 `RUNPOD_MODEL_TARGET_DIR` 与 baked
-  `models` 路径不同时，只允许 entrypoint 在确认 baked models 为空后建立链接；构建
-  smoke 应通过 `/object_info` 验证 required nodes 的实际注册结果。
+  `models` 路径不同时，只允许 entrypoint 在确认没有业务模型权重后建立链接；基础
+  ComfyUI 自带的 `vae_approx/tae*_encoder.pth` / `tae*_decoder.pth` 预览权重会以
+  不覆盖方式保留到外部模型目录，其它 `.safetensors` / `.ckpt` / `.pt` / `.pth` /
+  `.bin` / `.onnx` 仍 fail-closed。构建 smoke 应通过 `/object_info` 验证 required
+  nodes 的实际注册结果。
 
 ## 4. RunPod 边界
 

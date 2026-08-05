@@ -10,12 +10,13 @@ test -f "${worker_root}/requirements.txt"
 
 prepare_baked_model_target() {
     local model_target="${RUNPOD_MODEL_TARGET_DIR:-}"
-    if [ -z "$model_target" ] || [ ! -f /opt/allbot-comfyui-dir ]; then
+    local comfyui_dir_file="${RUNPOD_BAKED_COMFYUI_DIR_FILE:-/opt/allbot-comfyui-dir}"
+    if [ -z "$model_target" ] || [ ! -f "$comfyui_dir_file" ]; then
         return 0
     fi
 
-    local baked_dir baked_models
-    baked_dir="$(cat /opt/allbot-comfyui-dir)"
+    local baked_dir baked_models unexpected_weight preview_dir preview_file
+    baked_dir="$(cat "$comfyui_dir_file")"
     if [ -z "$baked_dir" ] || [ ! -f "${baked_dir}/main.py" ]; then
         return 0
     fi
@@ -28,12 +29,27 @@ prepare_baked_model_target() {
     if [ -L "$baked_models" ]; then
         rm -f "$baked_models"
     elif [ -d "$baked_models" ]; then
-        if find "$baked_models" -type f \( \
-            -name "*.safetensors" -o -name "*.ckpt" -o -name "*.pt" -o \
-            -name "*.pth" -o -name "*.bin" -o -name "*.onnx" \
-        \) -print -quit | grep -q .; then
+        unexpected_weight="$({
+            find "$baked_models" -type f \( \
+                -name "*.safetensors" -o -name "*.ckpt" -o -name "*.pt" -o \
+                -name "*.pth" -o -name "*.bin" -o -name "*.onnx" \
+            \) -print
+        } | while IFS= read -r preview_file; do
+            case "${preview_file#"$baked_models"/}" in
+                vae_approx/tae*_encoder.pth|vae_approx/tae*_decoder.pth) ;;
+                *) printf '%s\n' "$preview_file"; break ;;
+            esac
+        done)"
+        if [ -n "$unexpected_weight" ]; then
             echo "baked ComfyUI models directory contains weights; refusing to replace it" >&2
             exit 78
+        fi
+        preview_dir="$baked_models/vae_approx"
+        if [ -d "$preview_dir" ]; then
+            mkdir -p "$model_target/vae_approx"
+            find "$preview_dir" -maxdepth 1 -type f \( \
+                -name "tae*_encoder.pth" -o -name "tae*_decoder.pth" \
+            \) -exec cp -pn {} "$model_target/vae_approx/" \;
         fi
         rm -rf "$baked_models"
     elif [ -e "$baked_models" ]; then
@@ -47,4 +63,4 @@ prepare_baked_model_target
 
 export ALLBOT_RUNPOD_REPO_DIR="$runtime_root"
 export ALLBOT_RUNPOD_WORKER_DIR="$worker_root"
-exec bash /opt/allbot/runpod_bootstrap_from_git.sh
+exec bash "${RUNPOD_BOOTSTRAP_SCRIPT:-/opt/allbot/runpod_bootstrap_from_git.sh}"
