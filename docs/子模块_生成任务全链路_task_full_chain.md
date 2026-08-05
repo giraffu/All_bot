@@ -433,6 +433,8 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 按可用类型给 Worker 分配任务
 - 维护 worker heartbeat 与 task heartbeat
 - 支持取消、dequeue、zombie 扫描和状态迁移；locked running 任务不可取消，legacy 未锁 running 任务仍保留 `cancel_requested` 兼容语义
+- zombie 按 `worker_id` 归因；实例一小时 6 单 heartbeat-lost 后自动
+  `disabled` 30 分钟，只阻止新 pop。
 - 通用/手工 `clean_zombies()` 必须无条件跳过 `bot:qqcc-private:<id>`；私有任务只能由 submission ledger、monitor lease 与租户 Application 感知的 `clean_private_qqcc_zombies()` 收口，避免重复退款或串租户投递
 - 支持 `peek_pending_tasks(...)` 只读扫描 pending 队列，供预取流水线观察“下一单候选”，但不做 reservation
 

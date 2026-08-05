@@ -138,6 +138,10 @@ class QueueManager:
         self.task_prefix = "comfy:task:"
         self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
         self.agent_control_prefix = "comfy:agent:control:"
+        self.agent_heartbeat_loss_prefix = "comfy:agent:heartbeat_losses:"
+        self.agent_heartbeat_loss_quarantine_threshold = 6
+        self.agent_heartbeat_loss_window_seconds = 3600
+        self.agent_heartbeat_loss_quarantine_seconds = 1800
         self.ttl = 86400  # 24 hours
 
     @staticmethod
@@ -191,6 +195,9 @@ class QueueManager:
     def _agent_control_key(self, agent_id: str) -> str:
         return f"{self.agent_control_prefix}{agent_id}"
 
+    def _agent_heartbeat_loss_key(self, agent_id: str) -> str:
+        return f"{self.agent_heartbeat_loss_prefix}{agent_id}"
+
     async def _retry_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
         for attempt in range(1, REDIS_TRANSIENT_RETRY_ATTEMPTS + 1):
             try:
@@ -207,7 +214,9 @@ class QueueManager:
                 )
                 await asyncio.sleep(REDIS_TRANSIENT_RETRY_BASE_DELAY_SECONDS * attempt)
 
-    async def _single_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
+    async def _single_redis_call(
+        self, operation_name: str, redis_call, *args, **kwargs
+    ):
         try:
             return await redis_call(*args, **kwargs)
         except _REDIS_TRANSIENT_ERRORS as exc:
@@ -297,7 +306,10 @@ class QueueManager:
                 enriched_event_payload["worker_id"] = worker_id
 
             created_at = merged_task_data.get("created_at")
-            if created_at not in (None, "") and "created_at" not in enriched_event_payload:
+            if (
+                created_at not in (None, "")
+                and "created_at" not in enriched_event_payload
+            ):
                 try:
                     enriched_event_payload["created_at"] = float(created_at)
                 except (TypeError, ValueError):
@@ -306,7 +318,8 @@ class QueueManager:
         is_terminal = enriched_event_payload.get("status") in {"done", "error"}
         if is_terminal:
             normalized_mapping = {
-                key: "" if value is None else value for key, value in task_mapping.items()
+                key: "" if value is None else value
+                for key, value in task_mapping.items()
             }
             transitioned = await self._retry_redis_call(
                 "persist_task_terminal_transition",
@@ -460,11 +473,55 @@ class QueueManager:
         )
 
     async def _fail_zombie_task_if_needed(self, task_id: str) -> bool:
-        return await fail_zombie_task_if_needed_flow(
+        worker_id = self._decode_redis_value(
+            await self._retry_redis_call(
+                "get_zombie_task_worker",
+                self.redis.hget,
+                self._task_key(task_id),
+                "worker_id",
+            )
+        )
+        failed = await fail_zombie_task_if_needed_flow(
             task_id=task_id,
             has_task_heartbeat_func=self._has_task_heartbeat,
             fail_task_func=self.fail_task,
         )
+        if failed and worker_id:
+            await self._record_agent_heartbeat_loss(str(worker_id))
+        return failed
+
+    async def _record_agent_heartbeat_loss(self, agent_id: str) -> int:
+        loss_key = self._agent_heartbeat_loss_key(agent_id)
+        count = int(
+            await self._retry_redis_call(
+                "record_agent_heartbeat_loss",
+                self.redis.incr,
+                loss_key,
+            )
+        )
+        await self._retry_redis_call(
+            "expire_agent_heartbeat_losses",
+            self.redis.expire,
+            loss_key,
+            self.agent_heartbeat_loss_window_seconds,
+        )
+        if count < self.agent_heartbeat_loss_quarantine_threshold:
+            return count
+
+        control = await self.get_agent_control_state(agent_id)
+        if control.get("state") == "enabled":
+            await self.set_agent_control_state(
+                agent_id,
+                "disabled",
+                reason="automatic quarantine after repeated task heartbeat loss",
+                ttl_seconds=self.agent_heartbeat_loss_quarantine_seconds,
+            )
+            logger.error(
+                "Automatically quarantined agent %s after %s task heartbeat losses",
+                agent_id,
+                count,
+            )
+        return count
 
     def _initialize_type_counts(self) -> Dict[str, int]:
         return {t.value: 0 for t in TaskType}
@@ -577,9 +634,7 @@ class QueueManager:
         priority: int,
     ) -> str:
         canonical_params = {
-            key: value
-            for key, value in params.items()
-            if key != "trace_id"
+            key: value for key, value in params.items() if key != "trace_id"
         }
         encoded = json.dumps(
             {
@@ -921,7 +976,9 @@ class QueueManager:
         pending_task_types = await self._fetch_pending_task_types(pending_task_ids)
 
         type_position = 0
-        for pending_task_id, pending_task_type in zip(pending_task_ids, pending_task_types):
+        for pending_task_id, pending_task_type in zip(
+            pending_task_ids, pending_task_types
+        ):
             pending_task_id = self._decode_redis_value(pending_task_id)
             if pending_task_id == task_id:
                 return type_position
@@ -1036,7 +1093,9 @@ class QueueManager:
     ) -> dict[str, Any]:
         normalized_state = state.strip().lower()
         if normalized_state not in {"enabled", "draining", "disabled"}:
-            raise ValueError("agent control state must be enabled, draining, or disabled")
+            raise ValueError(
+                "agent control state must be enabled, draining, or disabled"
+            )
         key = self._agent_control_key(agent_id)
         if normalized_state == "enabled":
             await self._retry_redis_call(

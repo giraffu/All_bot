@@ -55,6 +55,9 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
   cleanup；清理失败需保留可恢复证据。
+- Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
+  失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
+  也不能借此自动重启或删除 provider/GPU runtime。
 - Web 用户锁在提交、拒绝、取消、monitor 超时、finalizer 异常和断连时都有
   释放路径。
 - presentation 的 `record_history=false` 只隐藏内部 stage 的 History/计数，
