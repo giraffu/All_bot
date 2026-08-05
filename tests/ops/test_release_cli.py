@@ -36,6 +36,13 @@ def test_release_catalog_has_dedicated_ltx_unified_gpu_artifact():
     assert catalog["dockerfile"] == "workers/runpod_profiles/ltx_unified/Dockerfile"
 
 
+def test_test_postgres_uses_current_supported_major_15_minor():
+    catalog = json.loads(CATALOG_PATH.read_text())["modules"]["postgres"]
+
+    assert catalog["ref"] == "docker.io/library/postgres:15.18-bookworm"
+    assert catalog["environments"] == ["test"]
+
+
 def test_ltx_unified_uses_current_digest_pinned_ltx_t2v_runtime():
     dockerfile = (
         ROOT / "workers/runpod_profiles/ltx_unified/Dockerfile"
