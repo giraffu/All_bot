@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -70,6 +71,8 @@ class UploadAsset(BaseModel):
     object_name: str
     content_type: str = "application/octet-stream"
     media_type: str | None = None
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    byte_size: int = Field(ge=0)
 
 
 class UploadResultRequest(BaseModel):
@@ -372,11 +375,20 @@ def _upload_one_asset(*, client: Minio, bucket: str, asset: UploadAsset) -> None
     file_path = Path(asset.file_path)
     if not file_path.exists():
         raise FileNotFoundError(f"spool file not found: {file_path}")
+    if file_path.stat().st_size != asset.byte_size:
+        raise ValueError(f"spool size mismatch: {file_path}")
+    digest = hashlib.sha256()
+    with file_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != asset.sha256:
+        raise ValueError(f"spool sha256 mismatch: {file_path}")
     client.fput_object(
         bucket,
         asset.object_name,
         str(file_path),
         content_type=asset.content_type,
+        metadata={"sha256": asset.sha256},
     )
 
 
@@ -431,11 +443,20 @@ async def upload_result(request: UploadResultRequest) -> dict[str, Any]:
             asset=request.primary,
         )
         extra_outputs_payload: dict[str, dict[str, Any]] = {}
-        for name, asset in request.extra_outputs.items():
+        extra_output_assets: dict[str, dict[str, Any]] = {}
+        for ordinal, (name, asset) in enumerate(request.extra_outputs.items()):
             await _upload_asset_with_retry(bucket=request.result_bucket, asset=asset)
             extra_outputs_payload[name] = {
                 "path": asset.object_name,
                 "media_type": asset.media_type or "image",
+            }
+            extra_output_assets[name] = {
+                "staging_key": asset.object_name,
+                "sha256": asset.sha256,
+                "byte_size": asset.byte_size,
+                "content_type": asset.content_type,
+                "media_type": asset.media_type or "image",
+                "ordinal": ordinal,
             }
     except Exception as exc:
         elapsed_ms = (time.monotonic() - started) * 1000
@@ -455,7 +476,18 @@ async def upload_result(request: UploadResultRequest) -> dict[str, Any]:
         len(all_assets),
         elapsed_ms,
     )
-    return {"status": "ok", "extra_outputs": extra_outputs_payload}
+    return {
+        "status": "ok",
+        "result_path": request.primary.object_name,
+        "result_asset": {
+            "staging_key": request.primary.object_name,
+            "sha256": request.primary.sha256,
+            "byte_size": request.primary.byte_size,
+            "content_type": request.primary.content_type,
+        },
+        "extra_outputs": extra_outputs_payload,
+        "extra_output_assets": extra_output_assets,
+    }
 
 
 if __name__ == "__main__":

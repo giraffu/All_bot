@@ -550,6 +550,67 @@ async def test_complete_task_payload_forwards_text_result_contract():
     )
 
 
+@pytest.mark.asyncio
+async def test_complete_task_promotes_new_worker_assets_before_marking_done():
+    queue_manager = SimpleNamespace(
+        record_task_worker=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
+        complete_task=AsyncMock(),
+    )
+    promote = AsyncMock(
+        return_value=SimpleNamespace(
+            result_path="task-results/task-1/primary.png",
+            extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+        )
+    )
+
+    await complete_task_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        result="staging/worker-results/task-1/primary.png",
+        extra_outputs={"last_frame": {"path": "staging/extra.png"}},
+        result_asset={"staging_key": "staging/worker-results/task-1/primary.png"},
+        extra_output_assets={"last_frame": {"staging_key": "staging/extra.png"}},
+        minio_client=object(),
+        result_bucket="user-data-prod",
+        promote_completion_assets_func=promote,
+        queue_manager=queue_manager,
+    )
+
+    promote.assert_awaited_once()
+    queue_manager.complete_task.assert_awaited_once_with(
+        "task-1",
+        "task-results/task-1/primary.png",
+        extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_promotion_failure_does_not_clear_worker_or_mark_task_done():
+    queue_manager = SimpleNamespace(
+        record_task_worker=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
+        complete_task=AsyncMock(),
+    )
+    promote = AsyncMock(side_effect=RuntimeError("copy failed"))
+
+    with pytest.raises(RuntimeError, match="copy failed"):
+        await complete_task_payload(
+            task_id="task-1",
+            agent_id="agent-1",
+            result="staging/worker-results/task-1/primary.png",
+            result_asset={"staging_key": "staging/worker-results/task-1/primary.png"},
+            minio_client=object(),
+            result_bucket="user-data-prod",
+            promote_completion_assets_func=promote,
+            queue_manager=queue_manager,
+        )
+
+    queue_manager.record_task_worker.assert_not_awaited()
+    queue_manager.clear_agent_current_task.assert_not_awaited()
+    queue_manager.complete_task.assert_not_awaited()
+
+
 def test_verify_agent_token_checks_configuration_and_bearer_value():
     logger = MagicMock()
 

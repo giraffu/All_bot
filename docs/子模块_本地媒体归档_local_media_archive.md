@@ -123,6 +123,20 @@ R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输�
 一次性确认值。第一次生产删除必须先生成对象/字节 dry-run 报告并再次取得用户
 明确确认；实现和归档阶段不执行生产删除。
 
+临时对象治理与冷归档删除是两条独立门禁。`scripts/r2_temp_cleanup.py`
+默认 dry-run，只允许清理超过 24 小时、不被 History 全角色引用、且已有
+完整 SHA-256 相同持久副本的已知临时类型。未知 key、`temps/`、单份内容、
+HEAD/SHA/数据库失败均 fail closed。执行只认
+`R2_TEMP_CLEANUP_ENABLED` 和精确生产桶确认，不复用
+`R2_ARCHIVE_DELETE_ENABLED` 或恢复门禁。
+
+`scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
+`user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量
+SHA 证据。已存在 key 不覆盖，只有旧桶全对象在新桶逐项摘要一致、
+未验证/冲突/失败均为 0 时才能生成退役清单。真实删除旧桶前必须再次
+展示精确对象数和字节并取得明确确认；`user-data-test` 和
+`allbot-model-cache` 永远不在该脚本目标集。
+
 ## 7. 本地浏览与安全
 
 历史生成页提供目录筛选和“查看媒体”。原件接口支持 HTTP Range，浏览器只拿

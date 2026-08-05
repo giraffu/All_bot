@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import HTTPException
 
 from config import MINIO_BUCKET
+from shared.r2_retention_contract import build_staged_user_upload_key
 from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
@@ -12,13 +13,12 @@ logger = logging.getLogger(__name__)
 
 def build_presigned_upload_object_key(*, user_id: int, filename: str, now=None) -> str:
     now = now or datetime.now()
-    ext = filename.split(".")[-1] if "." in filename else ""
-    date_str = now.strftime("%Y%m%d")
     unique_id = str(uuid.uuid4())[:8]
-
-    if ext:
-        return f"web_uploads/{user_id}/{date_str}_{unique_id}.{ext}"
-    return f"web_uploads/{user_id}/{date_str}_{unique_id}"
+    return build_staged_user_upload_key(
+        user_id=user_id,
+        upload_id=unique_id,
+        filename=filename,
+    )
 
 
 async def get_presigned_upload_url_payload(

@@ -41,8 +41,17 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
 
     assert Path(spooled.primary.file_path).read_bytes() == b"primary"
     assert Path(spooled.extra_outputs["last_frame"].file_path).read_bytes() == b"extra"
-    assert spooled.primary.object_name == "history/task-1/original.png"
+    assert spooled.primary.object_name == (
+        "staging/worker-results/task-1/primary.png"
+    )
+    assert spooled.primary.sha256 == (
+        "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"
+    )
+    assert spooled.primary.byte_size == 7
     assert spooled.extra_outputs["last_frame"].media_type == "image"
+    assert spooled.extra_outputs["last_frame"].object_name == (
+        "staging/worker-results/task-1/extras/last_frame-0.png"
+    )
 
 
 @pytest.mark.asyncio
@@ -56,9 +65,17 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
         def json(self):
             return {
                 "status": "ok",
+                "result_path": "staging/worker-results/task-1/primary.png",
+                "result_asset": {
+                    "staging_key": "staging/worker-results/task-1/primary.png",
+                    "sha256": "a" * 64,
+                    "byte_size": 7,
+                    "content_type": "image/png",
+                },
                 "extra_outputs": {
                     "last_frame": {"path": "last_frame.png", "media_type": "image"}
                 },
+                "extra_output_assets": {},
             }
 
     class FakeClient:
@@ -83,6 +100,8 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
             file_path="/app/spool/primary.png",
             object_name="primary.png",
             content_type="image/png",
+            sha256="a" * 64,
+            byte_size=7,
         ),
         extra_outputs={
             "last_frame": reporting.SpooledOutputAsset(
@@ -90,6 +109,8 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
                 object_name="last_frame.png",
                 content_type="image/png",
                 media_type="image",
+                sha256="b" * 64,
+                byte_size=5,
             )
         },
     )
@@ -102,10 +123,92 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
         logger=logger,
     )
 
-    assert payload == {"last_frame": {"path": "last_frame.png", "media_type": "image"}}
+    assert payload["result_path"] == "staging/worker-results/task-1/primary.png"
+    assert payload["result_asset"]["sha256"] == "a" * 64
     assert requests[0][0] == "/api/local/upload-result"
     assert requests[0][1]["primary"]["object_name"] == "primary.png"
+    assert requests[0][1]["primary"]["sha256"] == "a" * 64
     assert client_timeouts[0].connect == 10.0
     assert client_timeouts[0].read is None
     assert client_timeouts[0].write == 30.0
     assert client_timeouts[0].pool == 10.0
+
+
+@pytest.mark.asyncio
+async def test_direct_upload_uses_staging_keys_and_reports_integrity_metadata():
+    uploads = []
+
+    class FakeMinio:
+        def put_object(
+            self,
+            bucket,
+            object_name,
+            stream,
+            length,
+            *,
+            content_type,
+            metadata,
+        ):
+            uploads.append(
+                (bucket, object_name, stream.read(), length, content_type, metadata)
+            )
+
+    outputs = SimpleNamespace(
+        primary=SimpleNamespace(
+            object_name="raw.png",
+            content_type="image/png",
+            file_data=b"primary",
+        ),
+        extra_outputs={
+            "last_frame": SimpleNamespace(
+                object_name="raw_last.png",
+                content_type="image/png",
+                media_type="image",
+                file_data=b"extra",
+            )
+        },
+    )
+    logger = SimpleNamespace(info=lambda *args, **kwargs: None)
+
+    payload = await reporting.upload_materialized_outputs(
+        minio_client=FakeMinio(),
+        result_bucket="user-data-prod",
+        task_id="task-1",
+        outputs=outputs,
+        logger=logger,
+    )
+
+    assert payload["result_path"] == "staging/worker-results/task-1/primary.png"
+    assert payload["extra_outputs"]["last_frame"]["path"] == (
+        "staging/worker-results/task-1/extras/last_frame-0.png"
+    )
+    assert payload["result_asset"] == {
+        "staging_key": "staging/worker-results/task-1/primary.png",
+        "sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
+        "byte_size": 7,
+        "content_type": "image/png",
+    }
+    assert uploads[0][5]["sha256"] == payload["result_asset"]["sha256"]
+
+
+@pytest.mark.asyncio
+async def test_report_complete_forwards_staging_asset_contract():
+    calls = []
+
+    async def report_complete(task_id, result_path, **kwargs):
+        calls.append((task_id, result_path, kwargs))
+
+    payload = {
+        "result_path": "staging/worker-results/task-1/primary.png",
+        "extra_outputs": {},
+        "result_asset": {"staging_key": "x", "sha256": "a" * 64},
+        "extra_output_assets": {},
+    }
+    await reporting.report_materialized_outputs(
+        report_complete_func=report_complete,
+        task_id="task-1",
+        uploaded_outputs_payload=payload,
+    )
+
+    assert calls[0][1] == payload["result_path"]
+    assert calls[0][2]["result_asset"] == payload["result_asset"]

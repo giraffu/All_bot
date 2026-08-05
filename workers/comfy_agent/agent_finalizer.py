@@ -225,7 +225,7 @@ class AgentFinalizer:
                         task_id=task_id,
                         logger=self.logger,
                     )
-                    extra_outputs_payload = (
+                    uploaded_outputs_payload = (
                         await upload_spooled_outputs_via_sidecar_func(
                             sidecar_url=upload_sidecar_url,
                             result_bucket=result_bucket,
@@ -235,9 +235,10 @@ class AgentFinalizer:
                         )
                     )
                 else:
-                    extra_outputs_payload = await upload_materialized_outputs_func(
+                    uploaded_outputs_payload = await upload_materialized_outputs_func(
                         minio_client=self.agent.minio_client,
                         result_bucket=result_bucket,
+                        task_id=task_id,
                         outputs=materialized_outputs,
                         logger=self.logger,
                     )
@@ -248,11 +249,16 @@ class AgentFinalizer:
                 )
                 raise Exception(f"Result processing failed: {exc}") from exc
 
+            if "result_path" not in uploaded_outputs_payload:
+                uploaded_outputs_payload = {
+                    "result_path": execution.task_result,
+                    "extra_outputs": uploaded_outputs_payload,
+                }
             await report_materialized_outputs_func(
                 report_complete_func=self.agent.report_complete,
                 task_id=task_id,
+                uploaded_outputs_payload=uploaded_outputs_payload,
                 result_path=execution.task_result,
-                extra_outputs_payload=extra_outputs_payload,
             )
             self.agent._record_task_success_for_health()
             self.logger.info("Task %s completed successfully", task_id)

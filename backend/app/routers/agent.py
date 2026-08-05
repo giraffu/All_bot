@@ -18,7 +18,7 @@ from app.agent_router_helpers import (
     verify_agent_token,
 )
 from app.config import settings
-from app.dependencies import get_queue_manager
+from app.dependencies import get_minio_client, get_queue_manager
 from app.queue_manager import QueueManager
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent/task", tags=["agent"])
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
+MinioClientDep = Annotated[Any, Depends(get_minio_client)]
 
 
 class StatusUpdateRequest(BaseModel):
@@ -48,6 +49,8 @@ class CompleteRequest(BaseModel):
     agent_id: str
     result: str
     extra_outputs: Optional[Dict[str, Any]] = None
+    result_asset: Optional[Dict[str, Any]] = None
+    extra_output_assets: Optional[Dict[str, Any]] = None
     result_kind: Optional[str] = None
     result_text: Optional[str] = None
     result_meta: Optional[Dict[str, Any]] = None
@@ -162,15 +165,20 @@ async def complete_task(
     req: CompleteRequest,
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
+    minio_client: MinioClientDep = None,
 ):
     return await complete_task_payload(
         task_id=req.task_id,
         agent_id=req.agent_id,
         result=req.result,
         extra_outputs=req.extra_outputs,
+        result_asset=req.result_asset,
+        extra_output_assets=req.extra_output_assets,
         result_kind=req.result_kind,
         result_text=req.result_text,
         result_meta=req.result_meta,
+        minio_client=minio_client,
+        result_bucket=settings.minio_result_bucket,
         queue_manager=queue_manager,
     )
 

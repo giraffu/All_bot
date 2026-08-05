@@ -185,11 +185,31 @@ async def complete_task_payload(
     agent_id: str,
     result: str,
     extra_outputs: dict | None = None,
+    result_asset: dict | None = None,
+    extra_output_assets: dict | None = None,
     result_kind: str | None = None,
     result_text: str | None = None,
     result_meta: dict | None = None,
+    minio_client=None,
+    result_bucket: str = "",
+    promote_completion_assets_func=None,
     queue_manager,
 ) -> dict:
+    if promote_completion_assets_func is None:
+        from app.result_storage import promote_completion_assets
+
+        promote_completion_assets_func = promote_completion_assets
+    promoted = await promote_completion_assets_func(
+        task_id=task_id,
+        result_path=result,
+        extra_outputs=extra_outputs,
+        result_asset=result_asset,
+        extra_output_assets=extra_output_assets,
+        minio_client=minio_client,
+        bucket=result_bucket,
+    )
+    result = promoted.result_path
+    extra_outputs = promoted.extra_outputs
     await queue_manager.record_task_worker(task_id, agent_id)
     await clear_agent_current_task(
         queue_manager=queue_manager,

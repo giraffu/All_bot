@@ -104,6 +104,36 @@ async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_input
 
 
 @pytest.mark.asyncio
+async def test_submit_generation_task_promotes_staged_web_inputs_before_queueing():
+    request = TaskGenerateRequest(
+        task_type="image",
+        inputs={"images": ["user-data-prod/staging/user-uploads/123/u1.png"]},
+    )
+    current_user = type("User", (), {"id": 123, "username": "tester"})()
+    promote = AsyncMock(return_value=["task-inputs/task-1/0.png"])
+
+    with patch(
+        "src.web_api.services.task_submission_service.process_and_submit_task",
+        new=AsyncMock(return_value={"task_id": "task-1", "cost": 2}),
+    ) as process_mock, patch(
+        "src.web_api.services.task_submission_service.uuid.uuid4",
+        return_value="task-1",
+    ):
+        await submit_generation_task(
+            req=request,
+            current_user=current_user,
+            get_balance=AsyncMock(return_value=98),
+            promote_staged_inputs_func=promote,
+        )
+
+    assert promote.await_args.kwargs["task_id"] == "task-1"
+    assert promote.await_args.kwargs["user_id"] == 123
+    assert process_mock.await_args.kwargs["inputs"]["images"] == [
+        "task-inputs/task-1/0.png"
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "side_effect",
     [

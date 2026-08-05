@@ -40,12 +40,15 @@ async def materialize_successful_task_output(
             file_ext,
             (width, height, duration),
         )
-        output_file = await to_thread_func(
-            user_logger.save_output_image,
-            media_bytes,
-            registry_task_id,
-            file_ext,
-        )
+        if str(result_path or "").startswith("task-results/"):
+            output_file = str(result_path)
+        else:
+            output_file = await to_thread_func(
+                user_logger.save_output_image,
+                media_bytes,
+                registry_task_id,
+                file_ext,
+            )
     else:
         if not result_path:
             raise CoreDomainError("任务成功但缺少结果文件路径，无法写入历史")

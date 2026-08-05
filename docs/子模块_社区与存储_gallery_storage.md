@@ -78,6 +78,17 @@ sequenceDiagram
 
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
+
+### 4.2 用户输入 staging 与持久化
+
+- Web 预签名上传只写 `staging/user-uploads/{upload_id}/...`，不再把
+  `web_uploads/` 或数字用户目录当作待提交临时区。
+- `task_submission_service` 在正式排队前将 staging 输入服务端复制到
+  `task-inputs/{registry_task_id}/{ordinal}.<ext>`；只有持久 key 可进入队列、
+  History 和媒体归档 outbox。复制失败时不提交任务。
+- `user-data-prod` 的对象过期规则只能匹配 `staging/` 前缀并保留 1 天；
+  `history/`、`task-results/`、`task-inputs/`、`web_uploads/`、数字用户目录和
+  `temps/` 不在该规则内。`temps/` 当前是待审核模板投稿，不得当临时文件清理。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
 - Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `user_id` 精确筛选，以及 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
 - Dashboard 广场内容管理与举报管理统一通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts`、`affected_histories` 与 `resolved_reports`，并在同一事务中处理该作者全部 pending 举报。
