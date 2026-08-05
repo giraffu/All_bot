@@ -1093,6 +1093,8 @@ class ComfyAgent:
         result_path: str,
         *,
         extra_outputs: dict[str, Any] | None = None,
+        result_asset: dict[str, Any] | None = None,
+        extra_output_assets: dict[str, Any] | None = None,
     ):
         payload = {
             "task_id": task_id,
@@ -1100,6 +1102,10 @@ class ComfyAgent:
             "result": result_path,
             "extra_outputs": extra_outputs or {},
         }
+        if result_asset is not None:
+            payload["result_asset"] = result_asset
+        if extra_output_assets is not None:
+            payload["extra_output_assets"] = extra_output_assets
         attempts = max(1, COMPLETE_REPORT_MAX_ATTEMPTS)
         last_error: Exception | None = None
 
@@ -1596,7 +1602,7 @@ class ComfyAgent:
                             task_id=task_id,
                             logger=logger,
                         )
-                        extra_outputs_payload = (
+                        uploaded_outputs_payload = (
                             await upload_spooled_outputs_via_sidecar(
                                 sidecar_url=UPLOAD_SIDECAR_URL,
                                 result_bucket=MINIO_RESULT_BUCKET,
@@ -1606,9 +1612,10 @@ class ComfyAgent:
                             )
                         )
                     else:
-                        extra_outputs_payload = await upload_materialized_outputs(
+                        uploaded_outputs_payload = await upload_materialized_outputs(
                             minio_client=self.minio_client,
                             result_bucket=MINIO_RESULT_BUCKET,
+                            task_id=task_id,
                             outputs=materialized_outputs,
                             logger=logger,
                         )
@@ -1619,12 +1626,17 @@ class ComfyAgent:
                     )
                     raise Exception(f"Result processing failed: {e}") from e
 
+                if "result_path" not in uploaded_outputs_payload:
+                    uploaded_outputs_payload = {
+                        "result_path": execution.task_result,
+                        "extra_outputs": uploaded_outputs_payload,
+                    }
                 execution.phase = "reporting_complete"
                 await report_materialized_outputs(
                     report_complete_func=self.report_complete,
                     task_id=task_id,
+                    uploaded_outputs_payload=uploaded_outputs_payload,
                     result_path=execution.task_result,
-                    extra_outputs_payload=extra_outputs_payload,
                 )
             self._record_task_success_for_health()
             logger.info(f"Task {task_id} completed successfully")

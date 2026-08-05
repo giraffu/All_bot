@@ -38,7 +38,9 @@ MiniMax H3 使用四个独立业务/执行类型，统一走既有 Web submissio
 - 新版 worker 的 `pop` 会带 `agent_id`；Central 在返回已出队任务前记录一个待确认的 delivery claim。若响应途中断线，同一 agent 的下一次 `pop` 会重放该 running claim，并刷新任务 heartbeat；Worker 首次 status/heartbeat 会确认 delivery 并清除重放标记。该语义只覆盖“已出队但响应未送达”的窄窗口，不把已确认的 pipeline claim 串行化。
 - GPU Pool Controller 可把单个 worker 标记为 `draining/disabled`，用于模型同步、任务能力切换和 canary 前停止接新单
 - `agent_id`、`draining/disabled`、GPU pool heartbeat 元数据只作用于 Worker Agent 层；它不会自动重启或替换目标 ComfyUI。`cloud_prod_worker_01` 的 agent 容器已支持新协议，但它调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
-- 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
+- relay 只优化 worker 到 Central/R2 的开销，不拥有队列事实；Worker
+  先写 `staging/worker-results/...`，Central 将已校验对象复制为
+  `task-results/...` 后才接受 `/complete`
 - 本地 relay `/health` 是轻量存活检查，`/ready` 会检查云 Central 与上传 client；worker 到 relay/Central 的控制面半断持续超过默认阈值时，agent 会退出并交给 Docker restart。这个自愈只恢复 worker 进程，不改变任务成功必须 `/complete` 的语义
 - RunPod 镜像内的 `workers/runpod_runtime/` 通过 `runpod_relay` 访问专用 Central 域名，并复用同一 `pop/status/complete/heartbeat` 语义
 - LAN-only `all` worker 在一次 `pop` 中携带 19 个支持类型，Central 仍按这些
@@ -561,9 +563,15 @@ Worker 执行流程：
 6. 开启有界 pipeline 时，当前任务收到 `gpu_done` 后释放 Comfy inflight 并等待独立交付槽；worker 可同时让下一单继续占用 ComfyUI/GPU 队列。WebSocket 事件按 `prompt_id -> TaskExecutionContext` 路由，heartbeat 覆盖本地 preparing/queued/running/gpu_done/delivering context。
 7. 拿到交付槽后，finalizer 从 ComfyUI history 或 view API 取回结果文件
 8. `i2i_pro` 在上传前会对主结果做轻量质量闸门：若 ComfyUI success 但输出为纯黑/极暗图，或与参考输入过度相似，worker 会换 seed 重新提交一次；重试后仍退化则按失败上报，避免把黑图或近原图结果 `/complete` 给用户。
-9. 上传结果到当前 output bucket。云正式/云测试 worker 可先把结果写入本地 `RESULT_SPOOL_DIR`，再交给本地 relay sidecar 上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时继续由 worker 进程直接上传。
+9. 将结果上传到 `staging/worker-results/{backend_task_id}/...`。云正式/云测试
+   worker 可先写入 `RESULT_SPOOL_DIR`，再交给 relay sidecar
+   上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时由 worker 直接上传。两条路径都必须
+   上报本地实测的 SHA-256 和字节数，不得信任外部声明值。
    - Worker 到本机 sidecar 的 loopback 请求只限制 connect/write/pool 等本地传输阶段，不设置独立 read deadline；R2 put 的超时与有界重试由 sidecar/MinIO adapter 统一拥有。禁止让 agent 的较短 read timeout 抢先于仍在执行的 sidecar 上传，否则会形成“Central 已报失败、R2 稍后成功”的冲突终态。
-10. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。无论是否使用 sidecar，都必须先拿到 R2/S3 put 成功确认，再 `/complete`。
+10. 向 Central API 调 `/api/agent/task/complete`。Central 先把 staging 服务端复制到
+    `task-results/{backend_task_id}/primary.<ext>` 及 `extras/...`，完整校验后才写 done。
+    Worker 会对断连或 4xx/5xx 进行短退避重试，
+    全部失败后必须抛错进入失败路径。
 11. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
 
 执行失败则走：

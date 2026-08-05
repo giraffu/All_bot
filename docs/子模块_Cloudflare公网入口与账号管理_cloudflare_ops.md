@@ -82,6 +82,9 @@ QQCC 私有 Bot owner WebApp Host 由 `PRIVATE_QQCC_BOT_OWNER_HOST` / `PRIVATE_Q
 - worker 专用 hostname 不启用 Access 登录页，否则会拦截机器请求；应依赖 agent secret、WAF/rate limit 和最小可见 API。
 - QQCC owner public Host 与 admin Host 必须按 Host 分离：公开 Host 不得反代 `/api/private-bots/admin/**`、`/api/qqcc/**` 或通用管理员 API；管理员 Host 不得因为 owner WebApp 上线而移除 Access。
 - Cloudflare mutation 前必须先读当前 DNS、Access app/policy、Tunnel 和 origin 健康状态；不要直接覆盖。
+- R2 lifecycle mutation 必须先读回完整当前规则并保留非目标项。生产临时区
+  只允许 `staging/` 前缀 1 天过期，不得用全桶过期或扩展到任何持久前缀。
+  不使用 `user-data-test` 验证生产 lifecycle，不修改 `allbot-model-cache`。
 - Token 轮换先验证新 token，再禁用旧 token；聊天中出现过的 token 一律视为泄露。
 
 ## 5. Token 使用与验证

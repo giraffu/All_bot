@@ -21,3 +21,7 @@ async def get_redis(request: Request):
 
 async def get_queue_manager(redis: Redis = Depends(get_redis)):
     return QueueManager(redis)
+
+
+def get_minio_client(request: Request):
+    return getattr(request.app.state, "minio_client", None)

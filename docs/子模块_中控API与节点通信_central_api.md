@@ -83,7 +83,15 @@ sequenceDiagram
 - `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web API 粗状态、Web SSE 兼容路径、Dashboard active task 与 Bot polling 的重复轮询。Redis Pub/Sub 只作为进度快路径；Web SSE 订阅或读取 Pub/Sub 失败时，同一连接会继续用 `/status` 补偿轮询到终态。Central 默认 pending 响应里的 `queue_pos` 仍是全局 0-based 队列位置；调用方显式传 `include_type_position=true` 时，pending 响应会额外返回同任务类型内的 0-based `queue_type_pos`。用户侧展示已降级为低频粗状态：Web 通过 `/api/tasks/{registry_task_id}/status` 每约 15 秒查询并优先展示同任务类型位置，Bot 也默认每约 15 秒 HTTP polling 并优先展示同任务类型位置；二者都在缺少 `queue_type_pos` 时回退全局 `queue_pos`，running 不展示 progress 百分比、不按 progress 反复编辑。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。Redis client 必须通过 `src.services.redis_connection.build_redis_client(...)` 创建，默认带 `socket_connect_timeout=5`、`socket_timeout=5`、`health_check_interval=15`、`socket_keepalive=true` 与 `retry_on_timeout=true`，不要把 `get_redis()` 再改回每请求新建连接或裸 `Redis.from_url(...)` 模式。
 - Central Redis 连接瞬断重试耗尽时，执行面 API 统一返回 `503 Service Unavailable` 与 `Retry-After: 2`，语义是控制面 Redis 暂时不可用、上游可按忙碌/补偿路径处理；排障时应区别于业务参数错误和 Worker 执行失败。
-- `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
+- `/api/agent/task/complete` 是结果成功回流的唯一确认点。媒体 Worker 先写
+  `staging/worker-results/{backend_task_id}/...`，并上报 `staging_key`、
+  `sha256`、`byte_size` 和 `content_type`。Central 在任何 done 终态写入前将
+  staging 对象服务端复制到 `task-results/{backend_task_id}/...`，复验大小、
+  SHA-256 和元数据后才确认完成。复制与重复 `/complete` 必须幂等；
+  不完整、跨任务或校验不符的 staging 报文直接拒绝，不得先写 done。
+  旧 Worker 不携资产元数据时仅在一个兼容发布周期内沿用原
+  `result_path`，全部 Worker 切换后关闭该兼容写入。Worker 端必须对完成回报进行
+  有限重试，全部失败后显式失败。
 - `/api/agent/task/text-delta` 是 `prompt_optimize` 的可选增量协议，只写运行态快照，
   不构成成功。Central 以 task owner、attempt、连续 sequence、服务端字段契约和长度
   做原子校验；重复 sequence 幂等确认，跳号拒绝并返回期望值。终态写入采用 CAS，

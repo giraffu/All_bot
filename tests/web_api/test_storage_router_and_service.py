@@ -27,7 +27,7 @@ def test_build_presigned_upload_object_key_keeps_extension(monkeypatch):
         now=datetime(2026, 5, 23, 12, 0, 0),
     )
 
-    assert object_key == "web_uploads/123/20260523_abcdef12.png"
+    assert object_key == "staging/user-uploads/123/abcdef12.png"
 
 
 def test_build_presigned_upload_object_key_without_extension(monkeypatch):
@@ -45,7 +45,7 @@ def test_build_presigned_upload_object_key_without_extension(monkeypatch):
         now=datetime(2026, 5, 23, 12, 0, 0),
     )
 
-    assert object_key == "web_uploads/123/20260523_12345678"
+    assert object_key == "staging/user-uploads/123/12345678.bin"
 
 
 @pytest.mark.asyncio

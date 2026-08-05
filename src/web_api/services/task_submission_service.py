@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from asgi_correlation_id import correlation_id
 
+from config import MINIO_BUCKET
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
@@ -12,6 +13,8 @@ from src.services.scail2_face_swap_pipeline_service import (
     cleanup_scail2_face_swap_first_frame,
     prepare_scail2_face_swap_first_frame,
 )
+from src.services.storage import storage
+from src.services.storage_r2_promotion import promote_staged_user_inputs
 from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -48,6 +51,7 @@ async def submit_generation_task(
     task_id_override: str | None = None,
     registry_metadata_extra: dict | None = None,
     allow_contribute_override: bool | None = None,
+    promote_staged_inputs_func=None,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -149,6 +153,18 @@ async def submit_generation_task(
 
         task_id = task_id_override or str(uuid.uuid4())
         correlation_id.set(task_id)
+        promote_staged_inputs_func = (
+            promote_staged_inputs_func or promote_staged_user_inputs
+        )
+        if images:
+            images = await promote_staged_inputs_func(
+                input_refs=images,
+                task_id=task_id,
+                user_id=current_user.id,
+                bucket=MINIO_BUCKET,
+                client=storage.client,
+            )
+            inputs["images"] = images
 
         registry_metadata = dict(registry_metadata_extra or {})
         if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE:

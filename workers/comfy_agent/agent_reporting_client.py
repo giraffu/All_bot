@@ -150,6 +150,8 @@ class AgentReportingClient:
         agent_id: str,
         result_path: str,
         extra_outputs: dict[str, Any] | None,
+        result_asset: dict[str, Any] | None = None,
+        extra_output_assets: dict[str, Any] | None = None,
         attempts: int,
         retry_base_seconds: float,
         retry_max_seconds: float,
@@ -161,6 +163,10 @@ class AgentReportingClient:
             "result": result_path,
             "extra_outputs": extra_outputs or {},
         }
+        if result_asset is not None:
+            payload["result_asset"] = result_asset
+        if extra_output_assets is not None:
+            payload["extra_output_assets"] = extra_output_assets
         last_error: Exception | None = None
 
         for attempt in range(1, attempts + 1):

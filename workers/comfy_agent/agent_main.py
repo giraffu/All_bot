@@ -882,12 +882,16 @@ class ComfyAgent:
         result_path: str,
         *,
         extra_outputs: dict[str, Any] | None = None,
+        result_asset: dict[str, Any] | None = None,
+        extra_output_assets: dict[str, Any] | None = None,
     ):
         await self._reporting_client.report_complete(
             task_id=task_id,
             agent_id=AGENT_ID,
             result_path=result_path,
             extra_outputs=extra_outputs,
+            result_asset=result_asset,
+            extra_output_assets=extra_output_assets,
             attempts=max(1, COMPLETE_REPORT_MAX_ATTEMPTS),
             retry_base_seconds=COMPLETE_REPORT_RETRY_BASE_SECONDS,
             retry_max_seconds=COMPLETE_REPORT_RETRY_MAX_SECONDS,

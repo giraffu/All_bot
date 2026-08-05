@@ -221,8 +221,16 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
     uploads = []
 
     class FakeMinio:
-        def fput_object(self, bucket, object_name, file_path, content_type):
-            uploads.append((bucket, object_name, Path(file_path).read_bytes(), content_type))
+        def fput_object(self, bucket, object_name, file_path, content_type, metadata):
+            uploads.append(
+                (
+                    bucket,
+                    object_name,
+                    Path(file_path).read_bytes(),
+                    content_type,
+                    metadata,
+                )
+            )
 
     relay.state.minio_client = FakeMinio()
     request = relay.UploadResultRequest(
@@ -232,6 +240,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
             file_path=str(primary_path),
             object_name="primary.png",
             content_type="image/png",
+            sha256="986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
+            byte_size=7,
         ),
         extra_outputs={
             "last_frame": relay.UploadAsset(
@@ -239,6 +249,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
                 object_name="last_frame.png",
                 content_type="image/png",
                 media_type="image",
+                sha256="c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96",
+                byte_size=5,
             )
         },
     )
@@ -247,13 +259,42 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
 
     assert result == {
         "status": "ok",
+        "result_path": "primary.png",
+        "result_asset": {
+            "staging_key": "primary.png",
+            "sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
+            "byte_size": 7,
+            "content_type": "image/png",
+        },
         "extra_outputs": {
             "last_frame": {"path": "last_frame.png", "media_type": "image"}
         },
+        "extra_output_assets": {
+            "last_frame": {
+                "staging_key": "last_frame.png",
+                "sha256": "c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96",
+                "byte_size": 5,
+                "content_type": "image/png",
+                "media_type": "image",
+                "ordinal": 0,
+            }
+        },
     }
     assert uploads == [
-        ("user-data-prod", "primary.png", b"primary", "image/png"),
-        ("user-data-prod", "last_frame.png", b"extra", "image/png"),
+        (
+            "user-data-prod",
+            "primary.png",
+            b"primary",
+            "image/png",
+            {"sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"},
+        ),
+        (
+            "user-data-prod",
+            "last_frame.png",
+            b"extra",
+            "image/png",
+            {"sha256": "c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96"},
+        ),
     ]
     assert not primary_path.exists()
     assert not extra_path.exists()
@@ -268,6 +309,8 @@ async def test_upload_retry_logs_the_underlying_spool_error(monkeypatch, tmp_pat
         file_path=str(missing_path),
         object_name="result.png",
         content_type="image/png",
+        sha256="a" * 64,
+        byte_size=1,
     )
 
     with caplog.at_level("WARNING", logger="local_relay"):
