@@ -1870,7 +1870,8 @@ def test_lan_release_rollout_failure_restores_only_selected_slot():
             return None
 
         def _exact_remote_image_ref(self, slot, image_ref):
-            return "192.168.1.115:5000/allbot/i2i-pro@sha256:" + "9" * 64
+            assert "@sha256:" in image_ref
+            return image_ref
 
         def _write_remote_runtime_files(self, slot):
             return None
@@ -1885,7 +1886,7 @@ def test_lan_release_rollout_failure_restores_only_selected_slot():
             raise RuntimeError("target revision mismatch")
 
         def _verify_exact_runtime_ref(self, slot, image_ref):
-            assert image_ref.endswith("9" * 64)
+            assert image_ref == old_ref
 
         def _verify_disabled_heartbeat(self, slot):
             return None
@@ -1905,10 +1906,8 @@ def test_lan_release_rollout_failure_restores_only_selected_slot():
     with pytest.raises(RuntimeError, match="old image was restored"):
         ops.release_rollout(slot, resolved)
 
-    assert old_ref is not None and "@sha256:" not in old_ref
-    assert ops.config.profiles["i2i_pro"].all_in_one_image_ref == (
-        "192.168.1.115:5000/allbot/i2i-pro@sha256:" + "9" * 64
-    )
+    assert old_ref is not None and "@sha256:" in old_ref
+    assert ops.config.profiles["i2i_pro"].all_in_one_image_ref == old_ref
     assert ops.compose_ops == ["up -d --force-recreate"] * 2
     assert ops.controls[-1] == (
         "enabled",
