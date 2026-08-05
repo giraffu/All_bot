@@ -4,12 +4,15 @@
 
 本模块致力于突破 Telegram 官方 Bot API 在云端下载 20MB、上传 50MB 的多媒体文件体积限制。通过在海外独立 VPS 部署官方提供的 `telegram-bot-api` 容器并开启 `TELEGRAM_LOCAL=1`，配合 Python HTTP 文件服务器和统一 Telegram runtime bootstrap，实现了针对高分辨率 AI 生成长视频的极速直传与下载能力。
 
-当前 Telegram Local API VPS 公网 IP 为 `69.63.220.115`：
+仓库中的 prod Compose/env example 当前把下列地址作为 Local API 默认值：
 
 - API base：`http://69.63.220.115:8081`
 - File base：`http://69.63.220.115:8082`
-- 2026-06-08 公网探测：22/8081/8082 端口可达；8081 根路径返回 404 属正常现象，真实健康需用 `/bot<TOKEN>/getMe`；8082 根路径返回 200。
-- 当前主服务器尚未配置该 VPS 的可用 SSH key，`root@69.63.220.115` publickey 登录失败；资源、Docker 容器、挂载目录需补齐 SSH 后再采集。
+
+这是仓库配置默认值，不是本轮 live 验证。目标环境仍以受控
+`TELEGRAM_API_BASE_URL` / `TELEGRAM_FILE_BASE_URL` 为准；节点、端口、容器、
+磁盘和 SSH 状态必须当次只读探测，所以本资料在审计矩阵中标记为
+`runtime-verification-required`。
 
 ## 2. 架构图与调用链
 
@@ -87,24 +90,26 @@ application = (
   2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言共享 `download_to_drive` patch 能在 `read_timeout` 内无阻碍地落盘，且 HTTP 状态码为 200。
   3. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
 
-## 6. 部署与回滚步骤
+## 6. 运维与恢复边界
 
-- **VPS 端部署**：
-  必须确保宿主机目录权限开放 (`chmod -R 777`) 给容器内的 UID 101。
+- 读取仓库默认地址不授权修改节点、DNS、防火墙、容器或 Bot 环境。
+- mutation 前先加载 `allbot-cloud-ssh`，从 SSH host config、目标服务状态和
+  挂载权限建立当次事实；不得按本文猜测用户名、镜像、目录或 token 来源。
+- Local API 和只读文件服务必须共享受控媒体目录，但写权限只授予实际容器
+  UID/GID，禁止用全目录 `0777` 作为恢复手段。
+- token 会出现在 Bot API URL path。探测只能在受控终端执行，不把完整命令、
+  URL、日志或 shell history 写入文档和聊天。
+- 切回 Telegram 官方 API 会恢复官方文件大小限制，且属于目标 Bot 配置与
+  重部署；必须按明确模块、环境和 exact digest 执行，不能在容器内临时改 env。
 
-  ```bash
-  docker run -d -p 8081:8081 --name tg-local-api -e TELEGRAM_LOCAL=1 -v /var/lib/telegram-bot-api:/var/lib/telegram-bot-api aiogram/telegram-bot-api
-  docker run -d -p 8082:8000 -v /var/lib/telegram-bot-api:/var/lib/telegram-bot-api:ro python:3.9 python -m http.server 8000 --directory /
-  ```
+## 7. 观测与故障定位
 
-  上述命令只作为形态参考；生产恢复前必须先 SSH 到 `69.63.220.115` 核对现有容器、镜像、挂载与 token 来源，不要盲目覆盖运行中的容器。
-- **故障回滚**：
-  如果 VPS 宕机，临时注释掉 `base_url` 与 `base_file_url`，并重启 Bot。这会使 Bot 回退到官方服务器限制，大于 20MB 的视频暂时报错，但其他业务恢复可用。
-
-## 7. 监控告警规则 (SLI/SLO)
-
-- **SLI**：8081 和 8082 端口的网络可用性及 404 错误率。
-- **SLO**：文件下载请求的成功率 > 99%，大文件（100MB）下载速度 > 5MB/s。
-- **告警策略**：
-  - **Critical**：如果 Monkey Patch 中持续抛出 `httpx.HTTPStatusError: 404 Not Found`，意味着路径拼接逻辑失效或目录权限错误，需立刻通知运维人工核对 VPS 目录挂载。
-  - **SSH 管理缺口**：当前主服务器没有该 VPS 的可用免密 SSH；若 8081/8082 故障，只能先做公网端口判断。需要把运维公钥加入该节点 root 或专用 deploy 用户后，才能按完整 SOP 查看 `docker logs`、挂载目录和磁盘空间。
+- 端口可达只证明 TCP listener，不证明指定 token 的 `getMe`、polling、共享
+  文件目录或大文件下载正常。
+- 404 先区分探测了 API 根路径、token path 错误、file path 拼接、文件已清理
+  或只读服务挂载不一致，不能直接归因于权限。
+- 依次核对 Bot 解析后的 base URL、Local API 日志、文件真实路径、只读服务
+  mount、HTTP status 与下载超时；输出必须脱敏。
+- 修改 runtime bootstrap 时至少运行
+  `tests/services/test_telegram_runtime_bootstrap.py` 和相关 Bot entrypoint
+  隔离测试。

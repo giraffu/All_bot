@@ -608,7 +608,8 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     config = load_controller_config()
     assert (
         config.profiles["ltx_video"].all_in_one_image_ref
-        == "192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1"
+        == "192.168.1.115:5000/allbot/comfy-runpod-ltx-video"
+        "@sha256:e291d068ca5d0264209ba452427a55bb4fb62c95ddc1b7b657c1e7246834b4cc"
     )
     assert slots["gpu-226-gpu0-face_i2i_t2i"].phase == "blocked_host_service_runtime"
 
@@ -1195,7 +1196,13 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
     ]
 
 
-def test_lan_aio_cli_allows_replace_slot_for_retarget_render(capsys, tmp_path):
+def test_lan_aio_cli_allows_replace_slot_for_retarget_render(
+    capsys,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
     result = lan_aio_main(
         [
             "render",

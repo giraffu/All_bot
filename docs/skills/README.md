@@ -10,7 +10,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-task-engine` | 任务 facade、队列、Worker、双 ID、终态和清理 |
 | `allbot-billing-auth` | JWT、账本、支付履约、affiliate、会员 |
 | `allbot-gallery-storage` | Gallery、互动、举报、R2、apply-context |
-| `allbot-tg-fsm` | Telegram FSM、callback、菜单、文件和更新并发 |
+| `allbot-tg-fsm` | Telegram FSM、callback、菜单、文件、更新并发与独立 Bot 隔离 |
 | `allbot-qqcc-lazy-bot` | QQCC 官方/私有 Bot、配置、webhook 和租户归属 |
 | `allbot-ops-deployment` | 不可变发布、Compose、迁移、测试/正式和灾备 |
 | `allbot-concurrent-workspaces` | A–H worktree、handoff、批次集成 |

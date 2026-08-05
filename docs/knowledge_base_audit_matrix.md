@@ -39,7 +39,7 @@
 | `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 协议 | `backend/app`、API client、Worker | current | 队列或 worker 协议 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
 | `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、返佣兑 USDT | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
-| `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env | current | Telegram 文件/代理 |
+| `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env、当次节点探测 | runtime-verification-required | Telegram 文件/代理 |
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | 官方 QQCC 与 Config | QQCC code、config service、focused tests | current | QQCC 功能 |
 | `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md` | 私有 Bot webhook/租户 | schema、credentials、worker、owner/admin API | current | 私有 QQCC |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | 独立审核 Bot | paid group code/config | current | 入群审核 |
@@ -82,7 +82,6 @@
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |
 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` | DNS/Tunnel/Access/Pages/R2 | Cloudflare 配置与只读探测 | runtime-verification-required | 公网入口 |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | 网络与代理边界 | compose/network/Cloudflare config | current | 网络改动 |
-| `docs/子模块_边缘节点运维指南_edge_node_ops.md` | 边缘节点运维 | edge config/scripts | runtime-verification-required | 边缘节点 |
 | `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md` | 旧 main CI 门禁 | 历史 ruleset | superseded | 历史取证 |
 | `docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md` | 旧热点路径门禁 | 历史 classifier/workflow | superseded | 历史取证 |
 | `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md` | A–H/handoff/轻量 main 协调 | workspace scripts、integration queue | current | 并发开发 |
