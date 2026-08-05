@@ -1,7 +1,11 @@
 import importlib.util
 from pathlib import Path
 
-from src.database.models import MediaArchiveOutbox, MediaArchiveReceipt
+from src.database.models import (
+    MediaArchiveOutbox,
+    MediaArchiveReceipt,
+    MediaArchiveRestoreOutbox,
+)
 
 
 MIGRATION_PATH = (
@@ -9,6 +13,12 @@ MIGRATION_PATH = (
     / "migrations"
     / "versions"
     / "a4c8e2f6b901_add_media_archive_outbox.py"
+)
+RESTORE_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "migrations"
+    / "versions"
+    / "c8e1f4a6b2d9_add_media_archive_restore_outbox.py"
 )
 
 
@@ -28,6 +38,11 @@ def test_archive_models_have_idempotency_and_delete_gate_constraints():
     assert str(MediaArchiveOutbox.__table__.c.priority.server_default.arg) == "20"
     assert MediaArchiveReceipt.__table__.c.found_source.nullable is False
     assert MediaArchiveReceipt.__table__.c.source_key.nullable is False
+    restore_constraints = {
+        item.name for item in MediaArchiveRestoreOutbox.__table__.constraints
+    }
+    assert "uq_media_archive_restore_outbox_history" in restore_constraints
+    assert str(MediaArchiveRestoreOutbox.__table__.c.priority.server_default.arg) == "0"
 
 
 def test_archive_migration_creates_outbox_before_receipts():
@@ -48,3 +63,23 @@ def test_archive_migration_creates_outbox_before_receipts():
         module.op.create_table = original
 
     assert calls == ["media_archive_outbox", "media_archive_receipts"]
+
+
+def test_restore_migration_is_additive_and_follows_archive_contract():
+    spec = importlib.util.spec_from_file_location(
+        "media_archive_restore_migration", RESTORE_MIGRATION_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    assert module.down_revision == "b7d9e1f3a5c2"
+
+    calls = []
+    original = module.op.create_table
+    module.op.create_table = lambda name, *args, **kwargs: calls.append(name)
+    module.op.create_index = lambda *args, **kwargs: None
+    try:
+        module.upgrade()
+    finally:
+        module.op.create_table = original
+    assert calls == ["media_archive_restore_outbox"]

@@ -11,9 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.core import get_db
 from src.services.media_archive_service import (
     claim_archive_jobs,
+    claim_restore_jobs,
     record_archive_failure,
     record_archive_receipts,
+    record_restore_failure,
+    record_restore_receipt,
     renew_archive_lease,
+    renew_restore_lease,
 )
 
 
@@ -70,6 +74,20 @@ class LeaseRenewRequest(BaseModel):
     revision: int = Field(ge=1)
 
 
+class RestoredAssetItem(BaseModel):
+    role: str = Field(max_length=64)
+    ordinal: int = Field(ge=0)
+    r2_keys: list[str] = Field(min_length=1)
+    thumbnail_keys: list[str] = Field(default_factory=list)
+
+
+class RestoreReceiptRequest(BaseModel):
+    history_id: int
+    worker_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
+    restored_assets: list[RestoredAssetItem] = Field(min_length=1)
+
+
 @router.get("/jobs", dependencies=[Depends(require_archive_agent)])
 async def get_jobs(
     worker_id: str = Query(min_length=1, max_length=128),
@@ -94,6 +112,7 @@ async def post_receipts(payload: ReceiptsRequest, db: AsyncSession = Depends(get
             db,
             history_id=payload.history_id,
             worker_id=payload.worker_id,
+            revision=payload.revision,
             receipts=[item.model_dump() for item in payload.receipts],
         )
     except ValueError as exc:
@@ -114,6 +133,54 @@ async def renew_lease(payload: LeaseRenewRequest, db: AsyncSession = Depends(get
 async def post_failure(payload: FailureRequest, db: AsyncSession = Depends(get_db)):
     try:
         await record_archive_failure(db, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"accepted": True}
+
+
+@router.get("/restore/jobs", dependencies=[Depends(require_archive_agent)])
+async def get_restore_jobs(
+    worker_id: str = Query(min_length=1, max_length=128),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    return {"jobs": await claim_restore_jobs(db, worker_id=worker_id, limit=limit)}
+
+
+@router.post("/restore/receipts", dependencies=[Depends(require_archive_agent)])
+async def post_restore_receipt(
+    payload: RestoreReceiptRequest, db: AsyncSession = Depends(get_db)
+):
+    try:
+        await record_restore_receipt(
+            db,
+            history_id=payload.history_id,
+            worker_id=payload.worker_id,
+            revision=payload.revision,
+            restored_assets=[item.model_dump() for item in payload.restored_assets],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"accepted": True, "restore_complete": True}
+
+
+@router.post("/restore/leases/renew", dependencies=[Depends(require_archive_agent)])
+async def renew_restore_job_lease(
+    payload: LeaseRenewRequest, db: AsyncSession = Depends(get_db)
+):
+    try:
+        expires_at = await renew_restore_lease(db, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"accepted": True, "lease_expires_at": expires_at}
+
+
+@router.post("/restore/failures", dependencies=[Depends(require_archive_agent)])
+async def post_restore_failure(
+    payload: FailureRequest, db: AsyncSession = Depends(get_db)
+):
+    try:
+        await record_restore_failure(db, **payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"accepted": True}

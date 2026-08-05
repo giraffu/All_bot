@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
+from src.services.media_archive_service import enqueue_history_media_restore
 
 
 async def get_gallery_post_by_id(session, post_id: int):
@@ -47,6 +48,7 @@ async def reactivate_gallery_post_for_owner(
     existing_post.is_active = True
     if history:
         history.is_public = True
+        await enqueue_history_media_restore(session, history, priority=0)
     if user:
         user.total_contributions = (user.total_contributions or 0) + 1
     await session.commit()
@@ -79,6 +81,7 @@ async def create_gallery_post_from_history(
     if user:
         user.total_contributions = (user.total_contributions or 0) + 1
     history.is_public = True
+    await enqueue_history_media_restore(session, history, priority=0)
     await session.commit()
 
 

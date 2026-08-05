@@ -11,6 +11,10 @@ def test_media_archive_internal_routes_are_registered():
     assert ("/api/internal/media-archive/leases/renew", ("POST",)) in routes
     assert ("/api/internal/media-archive/receipts", ("POST",)) in routes
     assert ("/api/internal/media-archive/failures", ("POST",)) in routes
+    assert ("/api/internal/media-archive/restore/jobs", ("GET",)) in routes
+    assert ("/api/internal/media-archive/restore/leases/renew", ("POST",)) in routes
+    assert ("/api/internal/media-archive/restore/receipts", ("POST",)) in routes
+    assert ("/api/internal/media-archive/restore/failures", ("POST",)) in routes
 
 
 def test_media_archive_agent_auth_fails_closed_when_unconfigured(monkeypatch):
@@ -59,4 +63,26 @@ def test_job_completion_contracts_require_revision():
             worker_id="w",
             error_code="offline",
             message="offline",
+        )
+
+
+def test_restore_receipt_requires_verified_asset_identity_and_keys():
+    from pydantic import ValidationError
+    from src.web_api.routers.media_archive import RestoreReceiptRequest
+
+    payload = RestoreReceiptRequest(
+        history_id=1,
+        worker_id="restore-1",
+        revision=2,
+        restored_assets=[
+            {"role": "output", "ordinal": 0, "r2_keys": ["history/t/a.png"]}
+        ],
+    )
+    assert payload.restored_assets[0].role == "output"
+    with pytest.raises(ValidationError):
+        RestoreReceiptRequest(
+            history_id=1,
+            worker_id="restore-1",
+            revision=2,
+            restored_assets=[{"role": "output", "ordinal": 0, "r2_keys": []}],
         )

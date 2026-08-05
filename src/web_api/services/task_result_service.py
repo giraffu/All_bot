@@ -23,6 +23,7 @@ from src.web_api.presenters.media_presenter import (
     resolve_history_extra_outputs,
 )
 from src.services.storage import storage
+from src.services.media_archive_service import enqueue_history_media_restore
 
 WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS = 1
 WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class _HistorySnapshot:
+    history_id: int
     user_id: int
     task_id: str
     type: str | None
@@ -50,6 +52,7 @@ def _snapshot_history(hist: History) -> _HistorySnapshot:
         else None
     )
     return _HistorySnapshot(
+        history_id=hist.id,
         user_id=hist.user_id,
         task_id=hist.task_id,
         type=hist.type,
@@ -150,7 +153,9 @@ async def _web_r2_object_exists_with_timeout(object_key: str) -> bool:
         return False
 
 
-async def _resolve_task_result_url(hist: _HistorySnapshot, *, media_type: str) -> str:
+async def _resolve_task_result_url(
+    hist: _HistorySnapshot, *, media_type: str, r2_miss_func=None
+) -> str:
     if not hist.output_file:
         return ""
 
@@ -161,6 +166,8 @@ async def _resolve_task_result_url(hist: _HistorySnapshot, *, media_type: str) -
         )
         if r2_url:
             return r2_url
+        if r2_miss_func is not None:
+            await r2_miss_func(hist.history_id)
 
         if media_type == "video":
             return ""
@@ -254,9 +261,19 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
     media_type = "video" if is_video else "image"
 
     if hist_snapshot.output_file:
+        async def enqueue_restore_on_miss(history_id: int) -> None:
+            if not callable(getattr(db, "get", None)):
+                return
+            history = await db.get(History, history_id)
+            if history is None:
+                return
+            await enqueue_history_media_restore(db, history, priority=0)
+            await db.commit()
+
         result_url = await _resolve_task_result_url(
             hist_snapshot,
             media_type=media_type,
+            r2_miss_func=enqueue_restore_on_miss,
         )
         if not result_url:
             return build_result_pending_payload(

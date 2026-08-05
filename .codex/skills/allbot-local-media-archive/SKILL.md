@@ -15,6 +15,8 @@ description: "建设和维护 AllBot History 全量媒体目录、NAS MinIO 归�
 ## 固定边界
 
 - NAS 归档异步消费 outbox，禁止进入 GPU Worker/Central 完成同步链路。
+- 冷媒体重新变热时只写独立 restore outbox；Web 不直连 NAS。恢复 Worker 必须
+  复验 NAS 摘要、回填 R2 原件并重建输出缩略图后才提交当前 revision 回执。
 - 永久原件使用 SHA-256 内容寻址；History 和原 key 映射保存在目录/回执。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条必须先按用户对原始 History 排名，再过滤不可见记录；收藏、公开、
@@ -25,6 +27,8 @@ description: "建设和维护 AllBot History 全量媒体目录、NAS MinIO 归�
   物理接口和源地址，检测到本地 7890 代理时 fail closed。
 - 租约每 5 分钟续期，成功/失败回执必须匹配当前 revision；陈旧 Worker 不得覆盖
   已变化的媒体清单。
+- restore outbox 与 archive outbox 状态不得复用；收藏、公开、活跃 Gallery、
+  owner R2 miss 和每日热集 reconciliation 都只负责幂等 enqueue。
 - TLS 必须验证包含 NAS IP SAN 的内部 CA；禁止 `verify=false`。
 - 个人 PiGallery2 与 AllBot Archive 不复用目录、账号、容器或数据生命周期。
 - live 容量、IP、凭据、镜像 digest 和部署结果属于运行态，不写入本 Skill。

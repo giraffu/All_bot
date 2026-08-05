@@ -20,6 +20,7 @@ from src.database.models import (
     History,
     MediaArchiveOutbox,
     MediaArchiveReceipt,
+    MediaArchiveRestoreOutbox,
 )
 
 
@@ -226,6 +227,228 @@ async def record_archive_failure(
     outbox.status = "retry" if retryable else "manual_review"
     delay_minutes = min(360, 2 ** min(int(outbox.attempts or 1), 8))
     outbox.available_at = datetime.now() + timedelta(minutes=delay_minutes)
+    outbox.lease_owner = None
+    outbox.lease_expires_at = None
+    outbox.last_error_code = error_code[:64]
+    outbox.last_error_message = message[:1000]
+    await session.commit()
+
+
+async def enqueue_history_media_restore(
+    session: AsyncSession, history: History, *, priority: int = 0
+) -> bool:
+    """Transactionally request R2 rehydration only for a verified archive."""
+    await session.flush()
+    archived = (
+        await session.execute(
+            select(MediaArchiveOutbox).where(
+                MediaArchiveOutbox.history_id == history.id,
+                MediaArchiveOutbox.status == "archived",
+            )
+        )
+    ).scalar_one_or_none()
+    if archived is None:
+        return False
+    result = await session.execute(
+        select(MediaArchiveRestoreOutbox)
+        .where(MediaArchiveRestoreOutbox.history_id == history.id)
+        .with_for_update()
+    )
+    outbox = result.scalar_one_or_none()
+    if outbox is None:
+        session.add(
+            MediaArchiveRestoreOutbox(
+                history_id=history.id,
+                priority=max(0, min(priority, 100)),
+            )
+        )
+        return True
+    if outbox.status in {"pending", "leased", "retry"}:
+        return False
+    outbox.revision = int(outbox.revision or 0) + 1
+    outbox.status = "pending"
+    outbox.priority = max(0, min(priority, 100))
+    outbox.available_at = datetime.now()
+    outbox.lease_owner = None
+    outbox.lease_expires_at = None
+    outbox.restored_at = None
+    outbox.last_error_code = None
+    outbox.last_error_message = None
+    return True
+
+
+async def claim_restore_jobs(
+    session: AsyncSession,
+    *,
+    worker_id: str,
+    limit: int = 20,
+    lease_seconds: int = 900,
+) -> list[dict[str, Any]]:
+    now = datetime.now()
+    result = await session.execute(
+        select(MediaArchiveRestoreOutbox, History)
+        .join(History, History.id == MediaArchiveRestoreOutbox.history_id)
+        .where(
+            MediaArchiveRestoreOutbox.available_at <= now,
+            or_(
+                MediaArchiveRestoreOutbox.status.in_(("pending", "retry")),
+                (MediaArchiveRestoreOutbox.status == "leased")
+                & (MediaArchiveRestoreOutbox.lease_expires_at < now),
+            ),
+        )
+        .order_by(
+            MediaArchiveRestoreOutbox.priority,
+            MediaArchiveRestoreOutbox.id,
+        )
+        .limit(max(1, min(limit, 100)))
+        .with_for_update(skip_locked=True)
+    )
+    jobs = []
+    for outbox, history in result.all():
+        receipts = (
+            (
+                await session.execute(
+                    select(MediaArchiveReceipt)
+                    .where(
+                        MediaArchiveReceipt.history_id == history.id,
+                        MediaArchiveReceipt.status == "archived_verified",
+                    )
+                    .order_by(MediaArchiveReceipt.role, MediaArchiveReceipt.ordinal)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not receipts:
+            outbox.status = "manual_review"
+            outbox.last_error_code = "ARCHIVE_RECEIPTS_MISSING"
+            continue
+        outbox.status = "leased"
+        outbox.lease_owner = worker_id
+        outbox.lease_expires_at = now + timedelta(seconds=max(60, lease_seconds))
+        outbox.attempts = int(outbox.attempts or 0) + 1
+        jobs.append(
+            {
+                "history_id": history.id,
+                "task_id": history.task_id,
+                "history_type": history.type,
+                "revision": outbox.revision,
+                "assets": [
+                    {
+                        "role": receipt.role,
+                        "ordinal": receipt.ordinal,
+                        "source_ref": receipt.source_ref,
+                        "sha256": receipt.sha256,
+                        "byte_size": receipt.byte_size,
+                        "mime_type": receipt.mime_type,
+                        "nas_bucket": receipt.nas_bucket,
+                        "nas_key": receipt.nas_key,
+                    }
+                    for receipt in receipts
+                ],
+            }
+        )
+    await session.commit()
+    return jobs
+
+
+async def renew_restore_lease(
+    session: AsyncSession,
+    *,
+    history_id: int,
+    worker_id: str,
+    revision: int,
+    lease_seconds: int = 900,
+) -> datetime:
+    result = await session.execute(
+        select(MediaArchiveRestoreOutbox)
+        .where(MediaArchiveRestoreOutbox.history_id == history_id)
+        .with_for_update()
+    )
+    outbox = result.scalar_one_or_none()
+    if outbox is None or outbox.status != "leased":
+        raise ValueError("restore job is not leased")
+    if outbox.lease_owner != worker_id:
+        raise ValueError("restore lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("restore lease revision changed")
+    expires_at = datetime.now() + timedelta(seconds=max(60, lease_seconds))
+    outbox.lease_expires_at = expires_at
+    await session.commit()
+    return expires_at
+
+
+async def record_restore_receipt(
+    session: AsyncSession,
+    *,
+    history_id: int,
+    worker_id: str,
+    revision: int,
+    restored_assets: list[dict[str, Any]],
+) -> None:
+    result = await session.execute(
+        select(MediaArchiveRestoreOutbox)
+        .where(MediaArchiveRestoreOutbox.history_id == history_id)
+        .with_for_update()
+    )
+    outbox = result.scalar_one_or_none()
+    if outbox is None or outbox.status != "leased":
+        raise ValueError("restore job is not receivable")
+    if outbox.lease_owner != worker_id:
+        raise ValueError("restore lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("restore receipt revision changed")
+    expected = {
+        (receipt.role, receipt.ordinal)
+        for receipt in (
+            (
+                await session.execute(
+                    select(MediaArchiveReceipt).where(
+                        MediaArchiveReceipt.history_id == history_id,
+                        MediaArchiveReceipt.status == "archived_verified",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+    restored = {(str(item["role"]), int(item["ordinal"])) for item in restored_assets}
+    if not expected or not expected.issubset(restored):
+        raise ValueError("restore receipt does not cover verified archive assets")
+    outbox.status = "restored"
+    outbox.restored_at = datetime.now()
+    outbox.lease_owner = None
+    outbox.lease_expires_at = None
+    await session.commit()
+
+
+async def record_restore_failure(
+    session: AsyncSession,
+    *,
+    history_id: int,
+    worker_id: str,
+    revision: int,
+    error_code: str,
+    message: str,
+    retryable: bool,
+) -> None:
+    result = await session.execute(
+        select(MediaArchiveRestoreOutbox)
+        .where(MediaArchiveRestoreOutbox.history_id == history_id)
+        .with_for_update()
+    )
+    outbox = result.scalar_one_or_none()
+    if outbox is None:
+        raise ValueError("restore job not found")
+    if outbox.lease_owner and outbox.lease_owner != worker_id:
+        raise ValueError("restore lease is owned by another worker")
+    if outbox.revision != revision:
+        raise ValueError("restore failure revision changed")
+    outbox.status = "retry" if retryable else "manual_review"
+    outbox.available_at = datetime.now() + timedelta(
+        minutes=min(360, 2 ** min(int(outbox.attempts or 1), 8))
+    )
     outbox.lease_owner = None
     outbox.lease_expires_at = None
     outbox.last_error_code = error_code[:64]

@@ -21,6 +21,14 @@
     "allowed_interfaces": ["eno1"],
     "allowed_source_ips": ["10.250.150.1"]
   },
+  "restore_target": {
+    "name": "r2-user-data-prod-restore",
+    "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com",
+    "bucket": "user-data-prod",
+    "access_key": "runtime-write-secret",
+    "secret_key": "runtime-write-secret",
+    "region": "auto"
+  },
   "sources": [
     {"name": "r2-user-data-prod", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data-prod", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},
     {"name": "r2-user-data", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},

@@ -14,8 +14,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260805-generation-history-v2" in html
-    assert 'type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v2"' in html
+    assert "/static/styles.css?v=20260805-media-archive-status-v1" in html
+    assert 'type="module" src="/static/js/bootstrap.js?v=20260805-media-archive-status-v1"' in html
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
     assert "await response.text()" in app_js
     assert "JSON.parse(rawBody)" in app_js

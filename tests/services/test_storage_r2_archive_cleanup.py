@@ -18,6 +18,24 @@ def test_archive_cleanup_output_includes_derived_thumbnail():
     assert any(key.endswith("thumb.webp") for key in keys)
 
 
+def test_archive_restore_separates_original_keys_from_rebuilt_thumbnails():
+    from src.services.storage_r2_cleanup import (
+        build_archive_asset_restore_keys,
+        build_archive_thumbnail_restore_keys,
+    )
+
+    originals = build_archive_asset_restore_keys(
+        "task-1", "outputs/result.png", "image"
+    )
+    thumbnails = build_archive_thumbnail_restore_keys(
+        "task-1", "outputs/result.png", "image"
+    )
+    assert originals
+    assert thumbnails
+    assert originals.isdisjoint(thumbnails)
+    assert all("thumb" not in key for key in originals)
+
+
 def test_cleanup_query_requires_verified_all_role_receipts_and_hot_key_audit():
     assert "r.status='archived_verified'" in CANDIDATE_SQL
     assert "r.role='output'" not in CANDIDATE_SQL

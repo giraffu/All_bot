@@ -19,6 +19,7 @@ from src.services.submission_ban_service import (
     ensure_submission_allowed_for_user,
 )
 from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
+from src.services.media_archive_service import enqueue_history_media_restore
 from src.services.storage import storage
 from src.web_api.common.utils import call_with_optional_db
 
@@ -87,6 +88,7 @@ async def update_gallery_post_status(
     current_user,
     db,
     is_active: bool,
+    enqueue_restore_func=enqueue_history_media_restore,
 ) -> dict:
     post = (
         await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
@@ -104,12 +106,14 @@ async def update_gallery_post_status(
     state_changed = post.is_active != is_active
     post.is_active = is_active
 
-    await _sync_gallery_history_public_flag(
+    primary_history = await _sync_gallery_history_public_flag(
         db=db,
         task_id=post.task_id,
         user_id=current_user.id,
         is_public=is_active,
     )
+    if is_active and primary_history is not None:
+        await enqueue_restore_func(db, primary_history, priority=0)
 
     if state_changed:
         await _adjust_user_total_contributions(

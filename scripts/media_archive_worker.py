@@ -473,6 +473,151 @@ def archive_one_asset(
         temp_path.unlink(missing_ok=True)
 
 
+def _build_restore_thumbnail(source: Path, media_type: str, output: Path) -> None:
+    if media_type == "video":
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                "1",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=512:-2",
+                "-c:v",
+                "libwebp",
+                str(output),
+            ],
+            check=True,
+        )
+        return
+    from PIL import Image
+
+    with Image.open(source) as image:
+        image.thumbnail((512, 512))
+        image.convert("RGB").save(output, "WEBP", quality=82)
+
+
+def restore_one_asset(
+    asset: dict,
+    task_id: str,
+    history_type: str | None,
+    nas: dict,
+    restore_target: dict,
+    spool: Path,
+    limiter: RateLimiter,
+    spool_budget: SpoolBudget,
+    *,
+    client_factory=_client,
+    thumbnail_builder=_build_restore_thumbnail,
+) -> dict:
+    """Rehydrate one verified NAS blob to R2 and rebuild output thumbnails."""
+    from src.core.media_paths import get_media_type_from_history
+    from src.services.storage_r2_cleanup import (
+        build_archive_asset_restore_keys,
+        build_archive_thumbnail_restore_keys,
+    )
+
+    nas_client = client_factory(nas)
+    target_client = client_factory(restore_target)
+    expected_size = int(asset["byte_size"])
+    expected_sha = str(asset["sha256"])
+    head = nas_client.head_object(Bucket=asset["nas_bucket"], Key=asset["nas_key"])
+    if (
+        int(head.get("ContentLength") or -1) != expected_size
+        or (head.get("Metadata") or {}).get("sha256") != expected_sha
+    ):
+        raise RuntimeError("NAS restore metadata mismatch")
+    spool_budget.reserve(expected_size)
+    with tempfile.NamedTemporaryFile(
+        dir=spool, suffix=".restore.part", delete=False
+    ) as temp:
+        temp_path = Path(temp.name)
+    try:
+        response = nas_client.get_object(
+            Bucket=asset["nas_bucket"], Key=asset["nas_key"]
+        )
+        digest = hashlib.sha256()
+        size = 0
+        with temp_path.open("wb") as handle:
+            while chunk := response["Body"].read(8 * 1024 * 1024):
+                handle.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+                limiter.account(len(chunk))
+        if size != expected_size or digest.hexdigest() != expected_sha:
+            raise RuntimeError("NAS restore read-back checksum mismatch")
+        target_bucket = restore_target["bucket"]
+        r2_keys = sorted(
+            build_archive_asset_restore_keys(task_id, asset["source_ref"], history_type)
+        )
+        if not r2_keys:
+            raise RuntimeError("restore produced no R2 media keys")
+        for key in r2_keys:
+            target_client.upload_file(
+                str(temp_path),
+                target_bucket,
+                key,
+                ExtraArgs={
+                    "ContentType": asset.get("mime_type") or "application/octet-stream",
+                    "Metadata": {"sha256": expected_sha},
+                },
+            )
+            verified = target_client.head_object(Bucket=target_bucket, Key=key)
+            if (
+                int(verified.get("ContentLength") or -1) != expected_size
+                or (verified.get("Metadata") or {}).get("sha256") != expected_sha
+            ):
+                raise RuntimeError("R2 restore verification failed")
+
+        thumbnail_keys: list[str] = []
+        if asset["role"] == "output":
+            thumbnail_keys = sorted(
+                build_archive_thumbnail_restore_keys(
+                    task_id, asset["source_ref"], history_type
+                )
+            )
+            thumbnail_path = temp_path.with_suffix(".thumb.webp")
+            try:
+                thumbnail_builder(
+                    temp_path,
+                    get_media_type_from_history(history_type),
+                    thumbnail_path,
+                )
+                thumb_sha = hashlib.sha256(thumbnail_path.read_bytes()).hexdigest()
+                thumb_size = thumbnail_path.stat().st_size
+                for key in thumbnail_keys:
+                    target_client.upload_file(
+                        str(thumbnail_path),
+                        target_bucket,
+                        key,
+                        ExtraArgs={
+                            "ContentType": "image/webp",
+                            "Metadata": {"sha256": thumb_sha},
+                        },
+                    )
+                    verified = target_client.head_object(Bucket=target_bucket, Key=key)
+                    if int(verified.get("ContentLength") or -1) != thumb_size:
+                        raise RuntimeError("R2 thumbnail verification failed")
+            finally:
+                thumbnail_path.unlink(missing_ok=True)
+        return {
+            "role": asset["role"],
+            "ordinal": asset["ordinal"],
+            "r2_keys": r2_keys,
+            "thumbnail_keys": thumbnail_keys,
+        }
+    finally:
+        spool_budget.release(expected_size)
+        temp_path.unlink(missing_ok=True)
+
+
 class CatalogRecorder:
     def __init__(self, database_url: str, worker_id: str):
         self.database_url = database_url.replace(
@@ -588,6 +733,8 @@ async def run_once(args) -> int:
     for source in config["sources"]:
         validate_endpoint_route(source)
     validate_endpoint_route(config["nas"])
+    if config.get("restore_target"):
+        validate_endpoint_route(config["restore_target"])
     spool = Path(config.get("spool_path", "/var/lib/allbot-media-archive/spool"))
     spool.mkdir(parents=True, exist_ok=True)
     max_spool = int(config.get("max_spool_bytes", 100 * 1024**3))
@@ -613,6 +760,19 @@ async def run_once(args) -> int:
     async with httpx.AsyncClient(
         base_url=config["central_api"], headers=headers, timeout=60, trust_env=False
     ) as client:
+        restore_response = await client.get(
+            "/api/internal/media-archive/restore/jobs",
+            params={"worker_id": args.worker_id, "limit": args.limit},
+        )
+        restore_response.raise_for_status()
+        restore_jobs = restore_response.json()["jobs"]
+        restored = 0
+        if restore_jobs:
+            if not config.get("restore_target"):
+                raise RuntimeError("restore_target is required when restore jobs exist")
+            restored = await _process_restore_jobs(
+                args, config, client, restore_jobs, spool, spool_budget
+            )
         response = await client.get(
             "/api/internal/media-archive/jobs",
             params={
@@ -625,11 +785,87 @@ async def run_once(args) -> int:
         jobs = response.json()["jobs"]
         if not jobs:
             args._last_bytes = 0
-            return 0
+            return restored
         async with CatalogRecorder(catalog_url, args.worker_id) as catalog:
-            return await _process_jobs(
+            archived = await _process_jobs(
                 args, config, client, catalog, jobs, spool, spool_budget
             )
+            return restored + archived
+
+
+async def _process_restore_jobs(args, config, client, jobs, spool, spool_budget) -> int:
+    limiter = RateLimiter(int(config.get("bandwidth_bytes_per_second", 50 * 1024**2)))
+    semaphore = asyncio.Semaphore(args.concurrency)
+
+    async def process(job):
+        stop_renewal = asyncio.Event()
+
+        async def renew_lease_periodically():
+            interval = int(config.get("lease_renew_interval_seconds", 300))
+            while True:
+                try:
+                    await asyncio.wait_for(stop_renewal.wait(), timeout=interval)
+                    return
+                except asyncio.TimeoutError:
+                    renewal = await client.post(
+                        "/api/internal/media-archive/restore/leases/renew",
+                        json={
+                            "history_id": job["history_id"],
+                            "worker_id": args.worker_id,
+                            "revision": job["revision"],
+                        },
+                    )
+                    renewal.raise_for_status()
+
+        renewal_task = asyncio.create_task(renew_lease_periodically())
+        try:
+            restored_assets = []
+            for asset in job["assets"]:
+                async with semaphore:
+                    restored_assets.append(
+                        await asyncio.to_thread(
+                            restore_one_asset,
+                            asset,
+                            job["task_id"],
+                            job.get("history_type"),
+                            config["nas"],
+                            config["restore_target"],
+                            spool,
+                            limiter,
+                            spool_budget,
+                        )
+                    )
+            receipt = await client.post(
+                "/api/internal/media-archive/restore/receipts",
+                json={
+                    "history_id": job["history_id"],
+                    "worker_id": args.worker_id,
+                    "revision": job["revision"],
+                    "restored_assets": restored_assets,
+                },
+            )
+            receipt.raise_for_status()
+        except Exception as exc:
+            args._last_errors = int(getattr(args, "_last_errors", 0)) + 1
+            failure = await client.post(
+                "/api/internal/media-archive/restore/failures",
+                json={
+                    "history_id": job["history_id"],
+                    "worker_id": args.worker_id,
+                    "revision": job["revision"],
+                    "error_code": type(exc).__name__,
+                    "message": str(exc)[:1000],
+                    "retryable": True,
+                },
+            )
+            failure.raise_for_status()
+        finally:
+            stop_renewal.set()
+            await renewal_task
+
+    await asyncio.gather(*(process(job) for job in jobs))
+    args._last_bytes = limiter.bytes
+    return len(jobs)
 
 
 async def _process_jobs(
