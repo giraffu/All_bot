@@ -514,7 +514,8 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到离线核验桶 `user-data-complete-shadow`，不从 R2 下载第二遍。数据库-only timer 应同时设置 `R2_BUCKET_SYNC_ENABLED=false` 与 `COMPLETE_MEDIA_SYNC_ENABLED=false`。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
-- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析白名单表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。链路不再生成语义场景、相似边、近重复族或图谱。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
+- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --user-profile-only`。该模式等待 shadow sync 锁释放后只 upsert 当天 `analytics_user_profile_daily_snapshots`，随后立即结束；不会检查 LM Studio，也不会运行 Prompt Mart、提示词瘦身、tokens-only 或 embedding。完整提示词链必须由操作者显式运行不带 `--user-profile-only` 的 pipeline；此时才会在画像快照后检查向量锁，依次刷新增量 Mart、瘦身、词元，并在 LM Studio 可用时续跑缺失 embedding。仅人工全量重建 Mart 时追加 `--full-mart`。
+- 05:00 shadow 同步只负责替换业务 shadow 数据并保留既有本地分析表，不会按新业务数据重新计算画像快照。数据新鲜度必须分别检查原始业务表最大时间和 `analytics_user_profile_daily_snapshots.snapshot_date`；画像快照缺日时，用户画像趋势会沿用最近一条快照填充图表，不能据此判定业务 shadow 也已停更。
 
 安全边界：
 

@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-07-30`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-08-05`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
@@ -48,7 +48,7 @@
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery、R2、apply-context | Gallery core/services、storage、R2 scripts | current | 社区/媒体 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
-| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台 | local analytics code、shadow pipeline | runtime-verification-required | 本地分析 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/画像双层新鲜度 | local analytics code、shadow sync、snapshot-only timer | runtime-verification-required | 本地分析 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
 
 ## 模型、GPU 与运行环境
