@@ -93,7 +93,8 @@ curl -fsS https://rmb.aivison.it.com/healthz
 
 ## 6. 回切
 
-1. 云端执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only` 并验证 Web/Central/Payment/Dashboard。
+1. 使用 `scripts/release.py status` 逐模块核对云端 live identity，并验证
+   Web/Central/Payment/Dashboard；旧 full-stack preflight 已退役。
 2. 冻结本地新增写入，导出灾备期间订单、用户资产和任务历史。
 3. 停止本地 Bot，恢复 Web/Payment Tunnel 云端回源。
 4. 启动云正式 Bot 与本地 cloud worker。

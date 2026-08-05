@@ -13,6 +13,8 @@ WHOLE_REPO_RSYNC_SCRIPTS = (
 )
 RETIRED_CLOUD_TEST_BUILD_SCRIPTS = (
     "scripts/migrate_local_test_to_cloud_containers.sh",
+    "scripts/cleanup_cloud_test_for_prod.sh",
+    "scripts/safe_deploy_cloud_prod.sh",
 )
 
 
@@ -44,10 +46,8 @@ def test_cloud_prod_qqcc_update_shell_syntax():
     assert result.returncode == 0, result.stderr
 
 
-def test_private_bot_env_validation_uses_the_target_environment_bot_type():
-    prod_script = (ROOT / "scripts/safe_deploy_cloud_prod.sh").read_text()
-
-    assert "--bot-type PROD" in prod_script
+def test_retired_full_stack_cloud_compose_is_not_an_active_entrypoint():
+    assert not (ROOT / "deploy/docker-compose-cloud-prod.yml").exists()
     assert not (ROOT / "scripts/safe_deploy_cloud_test.sh").exists()
 
 

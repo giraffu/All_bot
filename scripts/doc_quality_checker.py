@@ -54,6 +54,14 @@ MIGRATED_KNOWLEDGE_PATHS = {
 }
 
 RETIRED_KNOWLEDGE_PATHS = {
+    "scripts/safe_deploy_cloud_prod.sh": (
+        "scripts/release.py deploy --env prod --module <module> "
+        "--artifact <exact-digest> --confirm-prod"
+    ),
+    "scripts/cleanup_cloud_test_for_prod.sh": (
+        "scripts/release.py deploy --env test --module <module> "
+        "--artifact <exact-digest>"
+    ),
     "scripts/safe_deploy_cloud_test.sh": (
         "scripts/release.py deploy --env test --module <module> "
         "--artifact <exact-digest>"
