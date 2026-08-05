@@ -30,6 +30,7 @@ from .auth import install_auth
 from .routes_credit_flow import router as credit_flow_router
 from .routes_finance import router as finance_router
 from .routes_generation import router as generation_router
+from .routes_generation_history import router as generation_history_router
 from .routes_health import router as health_router
 from .routes_media import router as media_router
 from .routes_overview import router as overview_router
@@ -63,6 +64,7 @@ for router in (
     overview_router,
     finance_router,
     generation_router,
+    generation_history_router,
     prompts_router,
     media_router,
 ):

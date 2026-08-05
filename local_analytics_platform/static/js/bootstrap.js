@@ -1,8 +1,9 @@
-import { state, tabs } from "./state.js?v=20260710-template-review-low-quality-v1";
+import { state, tabs } from "./state.js?v=20260805-generation-history-v1";
 import { fetchJson, logoutLocalAnalytics } from "./api.js?v=20260709-prompt-decomposition-v1";
 import { createCreditFlowLoader } from "./creditFlow.js?v=20260709-prompt-decomposition-v1";
 import { createFinanceModule } from "./finance.js?v=20260709-prompt-decomposition-v1";
 import { createGenerationModule } from "./generation.js?v=20260709-prompt-decomposition-v1";
+import { createGenerationHistoryModule } from "./generationHistory.js?v=20260805-generation-history-v1";
 import { createMediaLoader } from "./media.js?v=20260709-prompt-decomposition-v1";
 import { createPromptSlimLoader } from "./promptSlim.js?v=20260709-prompt-decomposition-v1";
 import { createPromptVectorsModule } from "./promptVectors.js?v=20260709-prompt-decomposition-v1";
@@ -177,7 +178,7 @@ function syncDaysControl() {
   }
   if (daysControl) daysControl.classList.remove("hidden");
   if (userDateRangeControls) userDateRangeControls.classList.add("hidden");
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-tokens", "prompt-decomposition", "templates"]);
+  const lockedAllTimeTabs = new Set(["generation-history", "prompt-slim", "prompt-vectors", "prompt-tokens", "prompt-decomposition", "templates"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -4392,6 +4393,14 @@ const {
   selectNumber,
   setError,
 });
+const { loadGenerationHistory } = createGenerationHistoryModule({
+  fetchJson,
+  state,
+  escapeHtml,
+  fmt,
+  fmtDate,
+  setError,
+});
 const loadPrompts = createPromptsLoader({
   fetchJson,
   state,
@@ -4431,6 +4440,7 @@ const tabLoaders = {
   "credit-flow": loadCreditFlow,
   finance: loadFinance,
   generation: loadGeneration,
+  "generation-history": loadGenerationHistory,
   prompts: loadPrompts,
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,

@@ -25,6 +25,7 @@
 - 灵石收支: 基于 `user_logs`、`users`、`orders` 只读聚合灵石收入、支出、净变化、来源组成、消耗去向、健康指标和可疑用户复核线索；签到收入在分析层拆为“免费签到”和“身份加成签到”，新流水优先读取 `checkin_base_reward` / `checkin_identity_bonus` 元数据，旧流水按奖励总额、当前身份和修为兼容推断；`/api/credit-flow-analytics` 额外返回 `daily_categories[]` 用于每日来源/去向堆叠；风险判断只用于人工复核，不修改用户资产。
 - 充值情况: 参考管理后台充值口径，只读聚合成功/处理中/失败订单、RMB / TON / Stars、USDT 估算、套餐发放灵石、分时充值、渠道/套餐/付费分层、受邀充值、Top 付费用户、最近订单和充值健康指标；真实收入仅统计 `RMB`、`TON`、`XTR` 成功订单，`manual_` / `GIFT:` 等内部赠送单单独展示；`/api/finance` 的 `daily[]` 返回 `rmb_usdt_amount`、`ton_usdt_amount`、`stars_usdt_amount`，并提供 `/api/finance/hourly-comparison` 与 `/api/finance/hourly-cumulative` 支持分时日期对比和累计周期。
 - 生成分析: 合并原经营概览里的生成总览，按趋势、质量漏斗、来源组成、任务类型、灵石消耗效率、Worker 成功/失败和耗时、用户排行、近期高信号作品综合分析生成健康度；提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison` 支持分时生成和任务类型分布的不同日期对比及累计分析。
+- 历史生成: “生成分析”下方的独立 Tab 通过 `GET /api/generation-history` 分页读取 `history` 明细，固定每页 10 条。默认显示全部任务类别并按创建时间倒序；任务类别筛选项按全量记录数倒序并显示数量，另可切换为按任务类别数量倒序。单行展示用户 ID、用户昵称、任务类型、来源、提示词、计费分辨率、时长、宽高、收藏数量、反馈和创建时间；“收藏数量”当前是单条 `history.is_favorited` 转换出的 `0/1`，不是 Gallery 点赞数。输入和输出地址字段当前由 API 明确返回空字符串，不把 shadow 中的对象引用直接暴露到页面；后续本地 R2 媒体同步与分析应通过独立媒体生命周期方案接入。
 - 经营概览: 不再作为可见 Tab；`/api/overview` 仅保留给侧栏 shadow 状态、数据源展示和旧 `#overview` 链接兼容。
 - 时间周期: 顶栏周期按当前 Tab 独立保存。用户画像 Tab 使用“开始日期/结束日期”精确日期控件，日期范围直接决定用户宽表和人群透视的分析范围；其它 Tab 继续使用“统计周期”下拉。切换周期或点击刷新只加载当前 Tab 对应 API，不再全量请求用户画像、收支、充值、生成、提示词和媒体核验；提示词洞察不再有独立的 `Prompt 周期` 控件。
 - Tab 刷新性能: 前端只刷新当前 Tab；提示词洞察页的任务类型下拉直接复用 `/api/prompts.distributions.task_type`，不再为筛选项额外预取完整 `/api/generation`。后端对灵石收支、生成分析、提示词洞察和提示词瘦身的独立子查询做限流并发，以降低单次刷新等待时间。
@@ -70,6 +71,7 @@
 
 ## 6. Changelog
 
+- 2026-08-05: 新增“历史生成”Tab 与 `GET /api/generation-history`；支持按数量排序的任务类别筛选、任务类别数量/最新创建排序和固定 10 条分页，展示用户、任务、提示词、分辨率、时长、宽高、收藏反馈与创建时间，输入/输出地址暂时保持空值以等待本地 R2 媒体同步方案。
 - 2026-08-05: 每日 05:45 本地分析任务改为 `--user-profile-only`，只刷新 `analytics_user_profile_daily_snapshots`；Prompt Mart、词元和 embedding 改为显式人工运行，避免“不做向量化”时连带停更用户画像趋势。
 - 2026-06-26: 新增提示词候选向量化与“向量相似”审核 Tab；新增 `analytics_prompt_embeddings`、`analytics_prompt_similarity_edges`、`analytics_prompt_similarity_clusters`、`analytics_prompt_similarity_members` 和 `analytics_prompt_vector_state`，使用 LM Studio `text-embedding-qwen3-embedding-8b` + USEARCH 同任务类型内聚类，仅生成审核候选。
 - 2026-06-27: cloud-prod shadow sync 默认保留 `analytics_prompt_*` 本地分析表；新增 `scripts/run_local_analytics_shadow_pipeline.py` 与 `allbot-local-analytics-refresh.timer`，形成每日 05:45 的 Mart 增量刷新、瘦身与向量断点续跑链路。

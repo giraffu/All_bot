@@ -708,6 +708,95 @@ main {
   word-break: break-word;
 }
 
+.generation-history-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 320px));
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.generation-history-filter-bar label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.generation-history-filter-bar select {
+  width: 100%;
+}
+
+.generation-history-table {
+  min-width: 1900px;
+  table-layout: fixed;
+}
+
+.generation-history-table th:nth-child(1) { width: 110px; }
+.generation-history-table th:nth-child(2) { width: 140px; }
+.generation-history-table th:nth-child(3) { width: 180px; }
+.generation-history-table th:nth-child(4) { width: 90px; }
+.generation-history-table th:nth-child(5) { width: 410px; }
+.generation-history-table th:nth-child(6) { width: 100px; }
+.generation-history-table th:nth-child(7),
+.generation-history-table th:nth-child(8),
+.generation-history-table th:nth-child(9),
+.generation-history-table th:nth-child(10),
+.generation-history-table th:nth-child(11) { width: 90px; }
+.generation-history-table th:nth-child(12) { width: 180px; }
+.generation-history-table th:nth-child(13),
+.generation-history-table th:nth-child(14) { width: 160px; }
+
+.generation-history-prompt {
+  max-height: 7.8em;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.generation-history-time {
+  white-space: nowrap;
+}
+
+.generation-history-address {
+  color: var(--muted);
+}
+
+.generation-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.generation-history-page-summary {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.generation-history-page-actions,
+.generation-history-page-actions form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generation-history-page-actions input {
+  width: 82px;
+}
+
 .split-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
@@ -2378,6 +2467,7 @@ tr:last-child td {
   .split-grid,
   .prompt-layout,
   .prompt-filter-bar,
+  .generation-history-filter-bar,
   .template-filter-bar,
   .prompt-decomposition-facet-grid,
   .analytics-chart-grid,
@@ -2400,6 +2490,17 @@ tr:last-child td {
 
   .detail-panel {
     min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .generation-history-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .generation-history-page-actions {
+    flex-wrap: wrap;
   }
 }
 
