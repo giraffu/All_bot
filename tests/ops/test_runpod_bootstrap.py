@@ -229,8 +229,62 @@ def test_baked_entrypoint_links_external_model_target_into_baked_comfyui():
     assert "contains weights; refusing to replace it" in entrypoint
     assert 'ln -s "$model_target" "$baked_models"' in entrypoint
     assert entrypoint.index("prepare_baked_model_target") < entrypoint.index(
-        "exec bash /opt/allbot/runpod_bootstrap_from_git.sh"
+        'exec bash "${RUNPOD_BOOTSTRAP_SCRIPT:-/opt/allbot/runpod_bootstrap_from_git.sh}"'
     )
+
+
+def _run_baked_entrypoint(tmp_path: Path, weight: str) -> subprocess.CompletedProcess[str]:
+    comfyui_dir = tmp_path / "ComfyUI"
+    models_dir = comfyui_dir / "models"
+    weight_path = models_dir / weight
+    weight_path.parent.mkdir(parents=True)
+    weight_path.write_bytes(b"fixture-weight")
+    (comfyui_dir / "main.py").write_text("", encoding="utf-8")
+
+    worker_root = tmp_path / "runtime" / "runpod_worker"
+    (worker_root / "comfy_agent" / "workflows").mkdir(parents=True)
+    (worker_root / "comfy_agent" / "agent_main.py").write_text("", encoding="utf-8")
+    (worker_root / "requirements.txt").write_text("", encoding="utf-8")
+
+    marker = tmp_path / "allbot-comfyui-dir"
+    marker.write_text(str(comfyui_dir), encoding="utf-8")
+    bootstrap = tmp_path / "bootstrap.sh"
+    bootstrap.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    model_target = tmp_path / "external-models"
+
+    return subprocess.run(
+        ["bash", str(BAKED_ENTRYPOINT_SCRIPT)],
+        cwd=Path.cwd(),
+        env={
+            **os.environ,
+            "ALLBOT_RUNPOD_REPO_DIR": str(tmp_path / "runtime"),
+            "RUNPOD_MODEL_TARGET_DIR": str(model_target),
+            "RUNPOD_BAKED_COMFYUI_DIR_FILE": str(marker),
+            "RUNPOD_BOOTSTRAP_SCRIPT": str(bootstrap),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_baked_entrypoint_preserves_standard_vae_preview_weights(tmp_path: Path):
+    result = _run_baked_entrypoint(tmp_path, "vae_approx/taesd_decoder.pth")
+
+    assert result.returncode == 0, result.stderr
+    models = tmp_path / "ComfyUI" / "models"
+    assert models.is_symlink()
+    assert (tmp_path / "external-models/vae_approx/taesd_decoder.pth").read_bytes() == (
+        b"fixture-weight"
+    )
+
+
+def test_baked_entrypoint_rejects_any_non_preview_weight(tmp_path: Path):
+    result = _run_baked_entrypoint(tmp_path, "checkpoints/business.safetensors")
+
+    assert result.returncode == 78
+    assert "contains weights; refusing to replace it" in result.stderr
+    assert not (tmp_path / "ComfyUI" / "models").is_symlink()
 
 
 def test_runpod_profile_build_script_has_valid_bash_syntax():
