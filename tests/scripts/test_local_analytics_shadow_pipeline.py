@@ -101,6 +101,38 @@ def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
     assert "refresh_prompt_graph" not in commands
 
 
+def test_pipeline_can_refresh_only_user_profile_without_prompt_work(tmp_path):
+    fake = FakeRunner()
+    config = build_config(
+        tmp_path,
+        restore_from_db=None,
+        user_profile_only=True,
+    )
+
+    result = pipeline.run_pipeline(
+        config,
+        runner=fake,
+        lm_studio_checker=lambda _: (_ for _ in ()).throw(
+            AssertionError("LM Studio must not be checked in user-profile-only mode")
+        ),
+    )
+
+    commands = rendered(fake)
+    assert result == {"status": "ok", "embedding": "not_requested"}
+    assert "refresh_user_profile_snapshots --statement-timeout-ms" in commands
+    assert "refresh_prompt_mart" not in commands
+    assert "refresh_prompt_slim_table" not in commands
+    assert "refresh_prompt_vectors" not in commands
+
+
+def test_systemd_refresh_service_uses_user_profile_only_mode():
+    service = (
+        pipeline.ROOT / "deploy/systemd/allbot-local-analytics-refresh.service"
+    ).read_text(encoding="utf-8")
+
+    assert "--user-profile-only" in service
+
+
 def test_pipeline_can_force_full_mart_refresh(tmp_path):
     fake = FakeRunner()
     config = build_config(tmp_path, mart_full=True)

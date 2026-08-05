@@ -55,6 +55,7 @@ class PipelineConfig:
     restore_from_db: str | None = None
     batch_size: int = 128
     mart_full: bool = False
+    user_profile_only: bool = False
     shadow_db: str = "bot_db_prod_shadow"
     postgres_container: str = "allbot-postgres-prod-shadow-pg18"
     postgres_user: str = "postgres"
@@ -282,6 +283,9 @@ def run_pipeline(
             label="refresh-user-profile-snapshot",
         )
 
+        if config.user_profile_only:
+            return result
+
         if vector_refresh_lock_is_held(config):
             message = {"status": "skipped_vector_lock_held"}
             with config.log_path.open("a", encoding="utf-8") as handle:
@@ -355,6 +359,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="force a full Prompt Mart rebuild instead of the default incremental refresh",
     )
+    parser.add_argument(
+        "--user-profile-only",
+        action="store_true",
+        help="refresh only today's user profile snapshot; skip all prompt and embedding work",
+    )
     parser.add_argument("--shadow-db", default="bot_db_prod_shadow")
     parser.add_argument("--postgres-container", default="allbot-postgres-prod-shadow-pg18")
     parser.add_argument("--postgres-user", default="postgres")
@@ -376,6 +385,7 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         restore_from_db=args.restore_from_db,
         batch_size=int(args.batch_size),
         mart_full=bool(args.full_mart),
+        user_profile_only=bool(args.user_profile_only),
         shadow_db=args.shadow_db,
         postgres_container=args.postgres_container,
         postgres_user=args.postgres_user,

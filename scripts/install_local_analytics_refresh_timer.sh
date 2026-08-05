@@ -16,7 +16,7 @@ usage() {
   cat <<USAGE
 Usage: $0 [--execute] [--user-systemd] [--root PATH] [--user USER] [--group GROUP] [--systemd-dir PATH]
 
-Installs and enables the daily local analytics refresh timer.
+Installs and enables the daily user profile snapshot refresh timer.
 Default mode is dry-run; pass --execute to write systemd units and enable the timer.
 Use --user-systemd to install under the current user's systemd manager without sudo.
 USAGE
