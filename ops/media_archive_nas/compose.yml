@@ -6,6 +6,7 @@ services:
     ports:
       - "192.168.1.150:9000:9000"
       - "192.168.1.150:9001:9001"
+      - "${MINIO_DIRECT_BIND_IP:?Set the NAS direct-link IP}:9000:9000"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}

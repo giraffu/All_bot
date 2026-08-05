@@ -68,7 +68,10 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
    CA；禁止 `verify=false`。
 4. 把 MinIO 和 mc 的已验证 OCI digest、随机凭据写入 NAS 私有 `.env`，执行
    `preflight.sh` 后再 `docker compose up -d`。
-5. UGOS 防火墙只允许 `192.168.1.115` 到 9000；9001 只允许管理员网段。
+5. 优先使用 `eno1` 与 NAS `eth0` 的独立 `/30` 直连网段；S3 9000 同时绑定管理
+   IP 和直连 IP，9001 只绑定管理 IP。可信单租户 LAN 可按用户决定不启用仓库内
+   的可选 `ALLBOT_MEDIA_ARCHIVE` 防火墙；即使停用，TLS、最小权限账号和非公网
+   暴露仍是强制边界。
 6. 验证健康检查、三个桶、archive 桶 versioning、Worker 无 DeleteObject 权限、
    analytics 只读、容器重启恢复、日志轮转和磁盘满 fail-closed。
 
@@ -87,7 +90,9 @@ Worker 以 8 并发和全天 50 MiB/s 总上限启动，每 15 分钟按吞吐�
 8/16/32 间调整；达不到上限不判失败。`.part` 总容量 100 GiB，已用和预留达到
 90 GiB 即暂停新对象；下载前 HEAD 预检单对象大小，启动清理陈旧 part。配置必须
 是当前用户所有的普通 0600 文件。启动清空代理变量，发现 `127.0.0.1:7890` 则
-直接拒绝，并使用 `ip route get` 校验 NAS 固定走 `eno1`/`192.168.1.115`；R2
+直接拒绝，并使用 `ip route get` 校验 NAS 直连 endpoint 固定走声明的物理接口和
+源地址；默认部署使用 `eno1`、`10.250.150.1/30` 到 NAS
+`10.250.150.2/30`，且不配置网关；R2
 拒绝 loopback、tun/wg 和 Tailscale exit-node 路径。旧来源可显式允许 Tailscale
 点对点。每个对象流式计算 SHA-256、上传 NAS、完整回读复算；内容键已存在且大小/
 摘要元数据一致时复用，只有完整验收才提交回执。

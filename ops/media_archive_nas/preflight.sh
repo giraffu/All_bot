@@ -16,4 +16,9 @@ test -d "${MINIO_DATA_PATH}" || { echo "missing data directory: ${MINIO_DATA_PAT
 test -f "${MINIO_CERT_PATH}/public.crt" || { echo "missing public.crt" >&2; exit 2; }
 test -f "${MINIO_CERT_PATH}/private.key" || { echo "missing private.key" >&2; exit 2; }
 test -f "${MINIO_CERT_PATH}/CAs/allbot-archive-ca.crt" || { echo "missing MinIO CA bundle" >&2; exit 2; }
+test -n "${MINIO_DIRECT_BIND_IP:-}" || { echo "MINIO_DIRECT_BIND_IP is required" >&2; exit 2; }
+ip -4 address show | grep -Fq " ${MINIO_DIRECT_BIND_IP}/" || {
+  echo "direct-link IP is not configured: ${MINIO_DIRECT_BIND_IP}" >&2
+  exit 2
+}
 echo "MinIO NAS preflight passed"

@@ -1,0 +1,14 @@
+[Unit]
+Description=AllBot media archive dedicated NAS link
+After=network.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+Environment=ALLBOT_NAS_DIRECT_INTERFACE=eth0
+Environment=ALLBOT_NAS_DIRECT_ADDRESS=10.250.150.2/30
+ExecStart=/volume1/AllBotArchive/deploy/configure_direct_link.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
