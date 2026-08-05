@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.media_archive_service import renew_archive_lease
+from src.services.media_archive_service import renew_archive_lease, renew_restore_lease
 
 
 class _Result:
@@ -63,3 +63,24 @@ async def test_renew_archive_lease_rejects_stale_revision():
             worker_id="worker-1",
             revision=3,
         )
+
+
+@pytest.mark.asyncio
+async def test_renew_restore_lease_extends_only_owned_revision():
+    outbox = SimpleNamespace(
+        status="leased",
+        lease_owner="restore-1",
+        revision=2,
+        lease_expires_at=None,
+    )
+    session = _Session(outbox)
+
+    expires_at = await renew_restore_lease(
+        session,
+        history_id=1,
+        worker_id="restore-1",
+        revision=2,
+    )
+
+    assert outbox.lease_expires_at == expires_at
+    assert session.commits == 1

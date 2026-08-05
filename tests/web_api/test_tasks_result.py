@@ -40,6 +40,33 @@ class _FakeDB:
 
 
 @pytest.mark.asyncio
+async def test_web_result_r2_miss_requests_async_archive_restore(monkeypatch):
+    monkeypatch.setattr(
+        task_result_service, "_resolve_web_r2_url", AsyncMock(return_value="")
+    )
+    misses = []
+
+    async def record_miss(history_id):
+        misses.append(history_id)
+
+    snapshot = task_result_service._HistorySnapshot(
+        history_id=17,
+        user_id=123,
+        task_id="task-restore",
+        type="custom_video",
+        output_file="outputs/task-restore.mp4",
+        source="web",
+        extra_outputs=None,
+    )
+    assert (
+        await task_result_service._resolve_task_result_url(
+            snapshot, media_type="video", r2_miss_func=record_miss
+        )
+        == ""
+    )
+    assert misses == [17]
+
+@pytest.mark.asyncio
 async def test_get_task_result_returns_pending_while_history_is_not_written():
     response = await tasks_router.get_task_result(
         "task-1",

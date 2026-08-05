@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from pathlib import Path
 import uuid
 
 import asyncpg
@@ -127,6 +128,31 @@ on conflict (history_id, role, ordinal) do update set
 returning id;
 """
 
+SEED_IDS_SQL = SEED_SQL.replace(
+    "from history where id between $1 and $2",
+    "from history where id = any($3::int[])",
+).replace(
+    "where h.id between $1 and $2 and (",
+    "where h.id = any($3::int[]) and (",
+)
+
+
+def load_history_ids(path: str | None) -> tuple[int, ...]:
+    if not path:
+        return ()
+    values = []
+    for line_number, raw in enumerate(Path(path).read_text().splitlines(), 1):
+        value = raw.strip()
+        if not value or value.startswith("#"):
+            continue
+        if not value.isdigit() or int(value) < 1:
+            raise ValueError(f"invalid History ID on line {line_number}")
+        values.append(int(value))
+    result = tuple(sorted(set(values)))
+    if not result or len(result) > 10000:
+        raise ValueError("History ID file must contain between 1 and 10000 IDs")
+    return result
+
 
 CONFIRM_MISSING_SQL = """
 with absent as (
@@ -162,14 +188,22 @@ async def main_async(args) -> None:
         if args.command == "init":
             print("archive catalog tables initialized")
         elif args.command == "seed":
+            history_ids = load_history_ids(args.history_id_file)
+            start_id = history_ids[0] if history_ids else args.start_id
+            end_id = history_ids[-1] if history_ids else args.end_id
             run_id = uuid.uuid4()
             await conn.execute(
                 "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'seed','running',jsonb_build_object('start',$2::bigint,'end',$3::bigint))",
                 run_id,
-                args.start_id,
-                args.end_id,
+                start_id,
+                end_id,
             )
-            rows = await conn.fetch(SEED_SQL, args.start_id, args.end_id)
+            rows = await conn.fetch(
+                SEED_IDS_SQL if history_ids else SEED_SQL,
+                start_id,
+                end_id,
+                *([list(history_ids)] if history_ids else []),
+            )
             await conn.execute(
                 "update analytics_media_runs set status='completed',stats=jsonb_build_object('upserted',$2::bigint),completed_at=now() where id=$1",
                 run_id,
@@ -190,11 +224,19 @@ def main() -> None:
     subs = parser.add_subparsers(dest="command", required=True)
     subs.add_parser("init")
     seed = subs.add_parser("seed")
-    seed.add_argument("--start-id", type=int, required=True)
-    seed.add_argument("--end-id", type=int, required=True)
+    seed.add_argument("--start-id", type=int)
+    seed.add_argument("--end-id", type=int)
+    seed.add_argument("--history-id-file")
     finalize = subs.add_parser("finalize-missing")
     finalize.add_argument("--run-id", required=True)
-    asyncio.run(main_async(parser.parse_args()))
+    args = parser.parse_args()
+    if (
+        args.command == "seed"
+        and not args.history_id_file
+        and (args.start_id is None or args.end_id is None)
+    ):
+        parser.error("seed requires --start-id/--end-id or --history-id-file")
+    asyncio.run(main_async(args))
 
 
 if __name__ == "__main__":

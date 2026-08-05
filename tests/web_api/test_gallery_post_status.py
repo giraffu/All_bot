@@ -97,12 +97,19 @@ async def test_update_post_status_puts_submission_back_on_shelf_and_increments_t
         ]
     )
 
+    restore_calls = []
+
+    async def enqueue_restore(_db, selected, *, priority):
+        restore_calls.append((selected.id, priority))
+
     response = await update_gallery_post_status(
         post_id=8,
         current_user=type("User", (), {"id": 123})(),
         db=session,
         is_active=True,
+        enqueue_restore_func=enqueue_restore,
     )
+    assert restore_calls == [(12, 0)]
 
     assert response == {"status": "success", "message": "已上架"}
     assert post.is_active is True
@@ -221,12 +228,19 @@ async def test_update_post_status_reactivates_only_primary_duplicate_history():
         ]
     )
 
+    restore_calls = []
+
+    async def enqueue_restore(_db, selected, *, priority):
+        restore_calls.append((selected.id, priority))
+
     response = await update_gallery_post_status(
         post_id=10,
         current_user=type("User", (), {"id": 123})(),
         db=session,
         is_active=True,
+        enqueue_restore_func=enqueue_restore,
     )
+    assert restore_calls == [(21, 0)]
 
     assert response == {"status": "success", "message": "已上架"}
     assert visible_history.is_public is True

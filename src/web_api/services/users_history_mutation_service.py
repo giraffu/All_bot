@@ -11,6 +11,7 @@ from src.core.media_paths import (
 )
 from src.core.media_processor import generate_and_upload_thumbnail
 from src.database.models import GalleryPost, History
+from src.services.media_archive_service import enqueue_history_media_restore
 from src.web_api.services.history_query_service import (
     fetch_owned_histories_by_task_id,
     pick_preferred_history,
@@ -74,6 +75,7 @@ async def favorite_user_history(
     current_user,
     db,
     schedule_background_task=None,
+    enqueue_restore_func=enqueue_history_media_restore,
 ) -> dict[str, str]:
     history = await _load_owned_history_by_task_id(
         db=db,
@@ -87,6 +89,7 @@ async def favorite_user_history(
     if not history.is_favorited:
         await _assert_can_add_favorite(db=db, current_user=current_user)
         history.is_favorited = True
+        await enqueue_restore_func(db, history, priority=0)
         await db.commit()
 
         bucket_name, object_name = resolve_storage_object(history.output_file)

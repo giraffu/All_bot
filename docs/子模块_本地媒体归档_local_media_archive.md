@@ -19,13 +19,15 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 - 资产解析与内容寻址：`src/core/media_archive.py`
 - outbox、租约和回执：`src/services/media_archive_service.py`
 - 内部 API：`src/web_api/routers/media_archive.py`
-- schema：`media_archive_outbox`、`media_archive_receipts`
+- schema：`media_archive_outbox`、`media_archive_receipts`、
+  `media_archive_restore_outbox`
 - 历史目录：`analytics_media_asset_catalog`、`analytics_media_blobs`、
   `analytics_media_source_attempts`、`analytics_media_runs`
 - Worker：`scripts/media_archive_worker.py`
 - 历史来源探测：`scripts/media_archive_probe.py`
 - 目录初始化/切片：`scripts/media_archive_catalog.py`
 - reconciliation：`scripts/reconcile_media_archive_outbox.py`
+- 热集恢复 reconciliation：`scripts/reconcile_media_archive_restore.py`
 - R2 清理 dry-run/执行器：`scripts/media_archive_r2_cleanup.py`
 - NAS Compose：`ops/media_archive_nas/`
 - 主机路由与常驻服务：`ops/media_archive_worker/`
@@ -101,6 +103,17 @@ Worker 每 5 分钟调用 `/api/internal/media-archive/leases/renew`。成功回
 命中的来源和 candidate key，成功、失败和续租都必须携带当前 outbox revision，
 因此过期 Worker 不能覆盖新清单。Worker 同步写本地 source attempts、blob 和
 asset 状态；常驻服务与每日 reconciliation 模板位于 `ops/media_archive_worker/`。
+
+冷 History 重新变热使用独立 restore outbox。收藏、重新公开、活跃 Gallery 和
+owner `/result` 的 R2 miss 在业务事务中只做幂等 enqueue；每日 reconciliation
+补齐先按原始 History 排名的最新 8 条。LAN Worker 从已验证 receipt 读取 NAS blob，
+复验大小、SHA-256 与元数据后回填原件兼容 key；输出角色另外重建缩略图。每个 R2
+对象 HEAD 验证通过后才能提交 restore receipt。Web/API 不读取 NAS，也不因恢复
+失败改变既有任务终态或同步响应。
+
+`media_archive_catalog.py seed` 与 `reconcile_media_archive_outbox.py` 支持最多
+10,000 行的 `--history-id-file`，用于确定性 canary；未提供时继续使用原有 ID
+范围。reconciliation 默认 dry-run，正式 outbox 写入仍需显式 `--execute`。
 
 R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输出派生缩略图；共享引用
 按全部角色检查最新 8 条原始 History（再过滤可见）、收藏、公开和活跃投稿。

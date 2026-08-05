@@ -87,12 +87,19 @@ async def test_favorite_user_history_updates_flag_when_below_identity_limit():
     background_tasks = MagicMock(spec=BackgroundTasks)
     current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
 
+    restore_calls = []
+
+    async def enqueue_restore(_db, selected, *, priority):
+        restore_calls.append((selected.id, priority))
+
     response = await mutation_service.favorite_user_history(
         task_id="task-1",
         current_user=current_user,
         db=db,
         schedule_background_task=background_tasks.add_task,
+        enqueue_restore_func=enqueue_restore,
     )
+    assert restore_calls == [(11, 0)]
 
     assert response == {"status": "success", "message": "收藏成功"}
     assert history.is_favorited is True
@@ -127,12 +134,19 @@ async def test_favorite_user_history_prefers_latest_visible_duplicate_task_row()
     background_tasks = MagicMock(spec=BackgroundTasks)
     current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
 
+    restore_calls = []
+
+    async def enqueue_restore(_db, selected, *, priority):
+        restore_calls.append((selected.id, priority))
+
     response = await mutation_service.favorite_user_history(
         task_id="task-1",
         current_user=current_user,
         db=db,
         schedule_background_task=background_tasks.add_task,
+        enqueue_restore_func=enqueue_restore,
     )
+    assert restore_calls == [(12, 0)]
 
     assert response == {"status": "success", "message": "收藏成功"}
     assert older_history.is_favorited is False

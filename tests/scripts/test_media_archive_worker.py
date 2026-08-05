@@ -1,4 +1,5 @@
 import json
+import io
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from scripts.media_archive_worker import (
     capacity_claim_priority,
     clear_proxy_environment,
     load_secure_config,
+    RateLimiter,
+    restore_one_asset,
 )
 
 
@@ -57,3 +60,64 @@ def test_nas_capacity_gates_stop_cold_then_all_claims():
     assert capacity_claim_priority(archived_bytes=74, capacity_bytes=100) == 100
     assert capacity_claim_priority(archived_bytes=80, capacity_bytes=100) == 0
     assert capacity_claim_priority(archived_bytes=90, capacity_bytes=100) is None
+
+
+def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tmp_path):
+    payload = b"verified-archive-bytes"
+    digest = __import__("hashlib").sha256(payload).hexdigest()
+
+    class FakeNas:
+        def head_object(self, **_kwargs):
+            return {"ContentLength": len(payload), "Metadata": {"sha256": digest}}
+
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(payload)}
+
+    class FakeR2:
+        def __init__(self):
+            self.objects = {}
+
+        def upload_file(self, path, bucket, key, ExtraArgs):
+            body = Path(path).read_bytes()
+            self.objects[(bucket, key)] = (body, ExtraArgs["Metadata"])
+
+        def head_object(self, Bucket, Key):
+            body, metadata = self.objects[(Bucket, Key)]
+            return {"ContentLength": len(body), "Metadata": metadata}
+
+    r2 = FakeR2()
+
+    def client_factory(config):
+        return FakeNas() if config["name"] == "nas" else r2
+
+    def thumbnail_builder(_source, _media_type, output):
+        output.write_bytes(b"thumbnail")
+
+    budget = SpoolBudget(tmp_path, capacity_bytes=1024, pause_bytes=900)
+    result = restore_one_asset(
+        {
+            "role": "output",
+            "ordinal": 0,
+            "source_ref": "outputs/result.png",
+            "sha256": digest,
+            "byte_size": len(payload),
+            "mime_type": "image/png",
+            "nas_bucket": "archive",
+            "nas_key": "blobs/result.png",
+        },
+        "task-1",
+        "image",
+        {"name": "nas"},
+        {"name": "r2", "bucket": "prod"},
+        tmp_path,
+        RateLimiter(10**9),
+        budget,
+        client_factory=client_factory,
+        thumbnail_builder=thumbnail_builder,
+    )
+
+    assert result["r2_keys"]
+    assert result["thumbnail_keys"]
+    assert all(("prod", key) in r2.objects for key in result["r2_keys"])
+    assert all(("prod", key) in r2.objects for key in result["thumbnail_keys"])
+    assert budget.used_bytes == 0
