@@ -36,7 +36,9 @@
   NAS 使用启用的 `allbot-media-archive-direct-link.service` 在启动时恢复地址。
   MinIO 额外只在直连 IP 暴露 TLS 9000，控制台 9001 仍仅在管理 IP。
   双端连接重启后复测健康，`iperf3` 5 秒实测约 2.35 Gbit/s、0 重传；两个 S3
-  地址的证书校验和 health API 均通过。
+  地址的证书校验和 health API 均通过。Worker 凭据经直连 endpoint 完成 32 MiB
+  quarantine 对象写入和完整回读 SHA-256 校验，单次实测约 65.5 MiB/s 写入、
+  170.4 MiB/s 读取；验收对象随后由管理员删除并以 HEAD 确认不存在。
 - Btrfs 快照：UGOS Snapshot 只能看到已登记 shared folder，不能直接纳入普通
   `AllBotArchive` 目录。因此已将该目录无损转换为独立 Btrfs subvolume（ID 257），
   安装并启用 `allbot-media-archive-snapshot.timer`，每天约 03:20 执行、随机延迟
