@@ -255,15 +255,14 @@ async def collect_visible_hotset_source_memberships(
                 .over(partition_by=History.user_id, order_by=desc(History.id))
                 .label("row_number"),
             )
-            .where(*common_history_filters)
             .subquery()
         )
         source_statements.append(
             (
                 "per_user_recent_visible_history",
-                select(recent_ranked.c.history_id).where(
-                    recent_ranked.c.row_number <= recent_limit
-                ),
+                select(recent_ranked.c.history_id)
+                .join(History, History.id == recent_ranked.c.history_id)
+                .where(recent_ranked.c.row_number <= recent_limit, *common_history_filters),
             )
         )
     else:
@@ -277,7 +276,7 @@ async def collect_visible_hotset_source_memberships(
                 "all_gallery_posts",
                 select(History.id)
                 .join(GalleryPost, GalleryPost.task_id == History.task_id)
-                .where(*common_history_filters),
+                .where(*common_history_filters, GalleryPost.is_active.is_(True)),
             ),
             (
                 "history_favorites",

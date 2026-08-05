@@ -50,6 +50,7 @@
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/画像双层新鲜度 | local analytics code、shadow sync、snapshot-only timer | runtime-verification-required | 本地分析 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
+| `docs/子模块_本地媒体归档_local_media_archive.md` | History 媒体目录、NAS MinIO、恢复与冷清理 | archive core/outbox/API/Worker/Compose | runtime-verification-required | 全量媒体归档 |
 
 ## 模型、GPU 与运行环境
 
@@ -126,6 +127,7 @@
 | `.codex/skills/allbot-lan-resource-manager/SKILL.md` | 本地资源平台 | platform/helper/docs | current | LAN UI |
 | `.codex/skills/allbot-lan-media-gallery/SKILL.md` | LAN 只读备份图库 | Compose、媒体白名单、专项文档 | current | 备份媒体浏览 |
 | `.codex/skills/allbot-local-analytics-prompt-semantics/SKILL.md` | 词元治理 | analytics code/docs | current | 提示词治理 |
+| `.codex/skills/allbot-local-media-archive/SKILL.md` | 本地媒体归档路由 | archive code、NAS Compose、专项文档 | current | 媒体归档与冷清理 |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 知识同步 | docs/Skills/matrix | current | 知识变更 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | Bug 反馈环 | reproduction/tests/logs | current | 故障 |
 | `.codex/skills/allbot-tdd/SKILL.md` | TDD 纪律 | public seams/tests | current | 行为改动 |

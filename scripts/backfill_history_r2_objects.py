@@ -320,13 +320,18 @@ def build_user_visible_history_ids_stmt(*, recent_limit: int):
         )
         .subquery()
     )
-    recent_ids = select(recent_ranked.c.history_id).where(
-        recent_ranked.c.row_number <= recent_limit
+    recent_ids = (
+        select(recent_ranked.c.history_id)
+        .join(History, History.id == recent_ranked.c.history_id)
+        .where(
+            recent_ranked.c.row_number <= recent_limit,
+            History.is_visible.is_not(False),
+        )
     )
     gallery_ids = (
         select(History.id.label("history_id"))
         .join(GalleryPost, GalleryPost.task_id == History.task_id)
-        .where(History.is_visible.is_not(False))
+        .where(History.is_visible.is_not(False), GalleryPost.is_active.is_(True))
     )
     favorited_history_ids = select(History.id.label("history_id")).where(
         History.is_favorited.is_(True),
@@ -649,13 +654,13 @@ async def collect_web_visible_history_ids(
                 .over(partition_by=History.user_id, order_by=desc(History.id))
                 .label("row_number"),
             )
-            .where(*common_history_filters)
             .subquery()
         )
         await collect_source(
             "per_user_recent_visible_history",
             select(recent_ranked.c.history_id)
-            .where(recent_ranked.c.row_number <= recent_limit)
+            .join(History, History.id == recent_ranked.c.history_id)
+            .where(recent_ranked.c.row_number <= recent_limit, *common_history_filters)
             .order_by(recent_ranked.c.history_id.desc()),
         )
     else:
@@ -665,7 +670,7 @@ async def collect_web_visible_history_ids(
         "all_gallery_posts",
         select(History.id)
         .join(GalleryPost, GalleryPost.task_id == History.task_id)
-        .where(*common_history_filters)
+        .where(*common_history_filters, GalleryPost.is_active.is_(True))
         .order_by(GalleryPost.id.desc(), History.id.desc()),
     )
 

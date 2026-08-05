@@ -77,6 +77,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | LAN 资源管理平台、可信构建与 runner | `allbot-lan-resource-manager` |
 | 局域网只读备份图库、PiGallery2、媒体白名单 | `allbot-lan-media-gallery` |
 | 本地分析提示词词元治理 | `allbot-local-analytics-prompt-semantics` |
+| History 全量媒体、NAS MinIO、丢失确认与 R2 冷清理 | `allbot-local-media-archive` |
 | 知识库、Skill、文档同步 | `allbot-kb-auto-updater` |
 | Bug 复现、诊断反馈环 | `allbot-diagnosing-bugs` |
 | 行为测试、red-green-refactor | `allbot-tdd` |

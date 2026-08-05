@@ -493,6 +493,92 @@ class History(Base):
     user = relationship("User", back_populates="history")
 
 
+class MediaArchiveOutbox(Base):
+    __tablename__ = "media_archive_outbox"
+    __table_args__ = (
+        UniqueConstraint("history_id", name="uq_media_archive_outbox_history"),
+        CheckConstraint(
+            "status in ('pending', 'leased', 'retry', 'archived', 'manual_review')",
+            name="ck_media_archive_outbox_status",
+        ),
+        Index("ix_media_archive_outbox_claim", "status", "available_at", "id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    history_id = Column(
+        Integer,
+        ForeignKey("history.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    manifest_hash = Column(String(64), nullable=False)
+    status = Column(
+        String(24), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    lease_owner = Column(String(128), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    available_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_error_code = Column(String(64), nullable=True)
+    last_error_message = Column(String(1000), nullable=True)
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+    archived_at = Column(DateTime, nullable=True)
+
+
+class MediaArchiveReceipt(Base):
+    __tablename__ = "media_archive_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "history_id", "role", "ordinal", name="uq_media_archive_receipt_asset"
+        ),
+        CheckConstraint(
+            "status in ('archived_verified', 'checksum_error')",
+            name="ck_media_archive_receipt_status",
+        ),
+        Index("ix_media_archive_receipts_sha256", "sha256"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    history_id = Column(
+        Integer,
+        ForeignKey("history.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role = Column(String(64), nullable=False)
+    ordinal = Column(Integer, nullable=False)
+    source_ref = Column(Text, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    byte_size = Column(BigInteger, nullable=False)
+    mime_type = Column(String(128), nullable=True)
+    nas_bucket = Column(String(128), nullable=False)
+    nas_key = Column(Text, nullable=False)
+    status = Column(
+        String(32), nullable=False, server_default=text("'archived_verified'")
+    )
+    verified_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.now, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+
+
 class CharacterReference(Base):
     __tablename__ = "character_references"
     __table_args__ = (

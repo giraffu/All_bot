@@ -24,6 +24,7 @@ from src.web_api.routers import (
     auth,
     characters,
     gallery,
+    media_archive,
     payment,
     prompt_optimizations,
     reference_assets,
@@ -234,6 +235,11 @@ app.include_router(
 )
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
+app.include_router(
+    media_archive.router,
+    prefix="/api/internal/media-archive",
+    tags=["Internal Media Archive"],
+)
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 app.include_router(
     private_bots.router,

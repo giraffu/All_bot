@@ -32,7 +32,11 @@ SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 PREVIOUS_DB_HASH_CHARS = 10
 KEY_TABLES = ("users", "history", "orders", "user_logs", "worker_logs")
-LOCAL_ANALYTICS_TABLE_LIKE_PATTERNS = ("analytics_prompt_%", "analytics_user_profile_%")
+LOCAL_ANALYTICS_TABLE_LIKE_PATTERNS = (
+    "analytics_prompt_%",
+    "analytics_user_profile_%",
+    "analytics_media_%",
+)
 LOCAL_ANALYTICS_TABLE_LIST_FILE = "local_analytics_tables.txt"
 LOCAL_ANALYTICS_DUMP_FILE = "local_analytics.dump"
 

@@ -28,6 +28,7 @@ from .analytics_common import (
 )
 from .auth import install_auth
 from .routes_credit_flow import router as credit_flow_router
+from .routes_archive import router as archive_router
 from .routes_finance import router as finance_router
 from .routes_generation import router as generation_router
 from .routes_generation_history import router as generation_history_router
@@ -67,6 +68,7 @@ for router in (
     generation_history_router,
     prompts_router,
     media_router,
+    archive_router,
 ):
     app.include_router(router)
 
