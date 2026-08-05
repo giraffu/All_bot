@@ -715,8 +715,8 @@ class CatalogRecorder:
         if self.conn is not None and self.run_id is not None:
             await self.conn.execute(
                 """update analytics_media_runs set status=$2,error=$3,completed_at=now(),
-                   stats=stats || jsonb_build_object('assets',$4,'bytes',$5,'bytes_per_second',
-                     case when extract(epoch from now()-started_at)>0 then $5/extract(epoch from now()-started_at) else 0 end)
+                   stats=stats || jsonb_build_object('assets',$4::bigint,'bytes',$5::bigint,'bytes_per_second',
+                     case when extract(epoch from now()-started_at)>0 then $5::bigint/extract(epoch from now()-started_at) else 0 end)
                    where id=$1""",
                 self.run_id,
                 "failed" if exc else "completed",

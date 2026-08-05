@@ -25,6 +25,10 @@ async def test_catalog_run_accepts_a_string_worker_id(monkeypatch):
                 and "$2::text" not in statement
             ):
                 raise RuntimeError("could not determine data type of parameter $2")
+            if "jsonb_build_object('assets'" in statement and not all(
+                cast in statement for cast in ("$4::bigint", "$5::bigint")
+            ):
+                raise RuntimeError("could not determine data type of run statistics")
 
         async def close(self):
             return None
