@@ -547,6 +547,38 @@ def test_compose_deploy_allows_explicit_remote_root_override(monkeypatch):
     assert "root=/srv/allbot/emergency-contract" in captured["script"]
 
 
+def test_config_contract_deploy_activates_service_projections(monkeypatch):
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    captured = {}
+
+    def fake_run(command, **_kwargs):
+        output = Path(command[command.index("-o") + 1])
+        archive = output / "config-contract.tgz"
+        with tarfile.open(archive, "w:gz"):
+            pass
+        return module.CommandResult(0, "", "")
+
+    def fake_remote_shell(_host, script):
+        captured["script"] = script
+        return module.CommandResult(0, "", "")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(module, "_remote_shell", fake_remote_shell)
+
+    module.SystemAdapters(catalog)._deploy_contract(
+        "test",
+        "config-contract",
+        "ghcr.io/example/config-contract@sha256:" + "1" * 64,
+        {"remote_host": "test-control"},
+    )
+
+    script = captured["script"]
+    assert "runtime_env_contract.py activate" in script
+    assert "--env-file /etc/allbot/test.env" in script
+    assert "--root /var/lib/allbot/config/test" in script
+
+
 @pytest.mark.parametrize(
     ("environment", "expected_network"),
     (("test", "--network allbot-test_default"), ("prod", None)),

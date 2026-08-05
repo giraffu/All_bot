@@ -1248,11 +1248,22 @@ mv "$candidate" "$runtime"
             encoded = base64.b64encode(archive.read_bytes()).decode("ascii")
             digest = artifact.rsplit("@", 1)[1].replace(":", "-")
             root = f"/var/lib/allbot/module-contracts/{environment}/{name}"
+            projection_activation = ""
+            if name == "config-contract":
+                projection_activation = f"""
+sudo -n python3 {root}/current/scripts/runtime_env_contract.py activate \\
+  --environment {environment} \\
+  --env-file {ENVIRONMENTS[environment]['env_file']} \\
+  --defaults {root}/current/deploy/env.defaults \\
+  --contract {root}/current/deploy/service-env-contract.yml \\
+  --root /var/lib/allbot/config/{environment}
+"""
             script = f"""set -euo pipefail
 install -d -m 700 {root}/{digest}
 printf %s {encoded} | base64 -d | tar -xzf - -C {root}/{digest}
 ln -sfn {root}/{digest} {root}/current.new
 mv -Tf {root}/current.new {root}/current
+{projection_activation}
 """
             result = _remote_shell(host, script)
             if result.returncode:
