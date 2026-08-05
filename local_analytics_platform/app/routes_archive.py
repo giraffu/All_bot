@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import PurePosixPath
 import re
@@ -99,6 +100,14 @@ async def archive_status():
                from analytics_media_runs order by started_at desc limit 1"""
         )
     )
+    raw_stats = latest_run.get("stats")
+    if isinstance(raw_stats, str):
+        try:
+            raw_stats = json.loads(raw_stats)
+        except json.JSONDecodeError:
+            raw_stats = {}
+    run_stats = raw_stats if isinstance(raw_stats, dict) else {}
+    latest_run["stats"] = run_stats
     has_outbox = bool(
         _row(
             await _fetchrow(
@@ -132,9 +141,7 @@ async def archive_status():
         "source_hits": source_hits,
         "latest_run": latest_run,
         "outbox": backlog,
-        "throughput_bytes_per_second": (latest_run.get("stats") or {}).get(
-            "bytes_per_second", 0
-        ),
+        "throughput_bytes_per_second": run_stats.get("bytes_per_second", 0),
         "capacity_bytes": capacity or None,
         "usage_ratio": usage_ratio,
         "pause_reason": pause_reason,
