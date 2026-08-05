@@ -3,10 +3,31 @@ from types import SimpleNamespace
 from src.core.media_archive import (
     ARCHIVE_BUCKET,
     archive_blob_key,
+    plan_archive_asset_restore_keys,
+    plan_archive_thumbnail_restore_keys,
     extract_history_media_assets,
     media_manifest_hash,
     receipts_cover_assets,
 )
+
+
+def test_restore_key_planning_uses_source_ref_without_runtime_config():
+    originals = plan_archive_asset_restore_keys(
+        task_id="task-1",
+        source_ref="bot-data/outputs/result.png",
+    )
+    thumbnails = plan_archive_thumbnail_restore_keys(
+        task_id="task-1",
+        source_ref="bot-data/outputs/result.png",
+        history_type="image",
+    )
+
+    assert "history/task-1/original.png" in originals
+    assert "result.png" in originals
+    assert thumbnails == {
+        "history/task-1/thumb.webp",
+        "result_thumb.webp",
+    }
 
 
 def test_extract_history_media_assets_handles_multi_input_and_nested_extra_paths():

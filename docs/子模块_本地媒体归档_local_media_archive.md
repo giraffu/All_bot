@@ -16,7 +16,7 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 
 ## 2. 稳定入口
 
-- 资产解析与内容寻址：`src/core/media_archive.py`
+- 资产解析、内容寻址与无运行态依赖的恢复 key 规划：`src/core/media_archive.py`
 - outbox、租约和回执：`src/services/media_archive_service.py`
 - 内部 API：`src/web_api/routers/media_archive.py`
 - schema：`media_archive_outbox`、`media_archive_receipts`、

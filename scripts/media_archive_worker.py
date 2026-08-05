@@ -17,6 +17,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -27,6 +28,17 @@ import asyncpg
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError
 import httpx
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.media_archive import (  # noqa: E402
+    get_archive_media_type,
+    plan_archive_asset_restore_keys,
+    plan_archive_thumbnail_restore_keys,
+)
 
 
 ARCHIVE_BUCKET = "allbot-media-archive-v1"
@@ -518,12 +530,6 @@ def restore_one_asset(
     thumbnail_builder=_build_restore_thumbnail,
 ) -> dict:
     """Rehydrate one verified NAS blob to R2 and rebuild output thumbnails."""
-    from src.core.media_paths import get_media_type_from_history
-    from src.services.storage_r2_cleanup import (
-        build_archive_asset_restore_keys,
-        build_archive_thumbnail_restore_keys,
-    )
-
     nas_client = client_factory(nas)
     target_client = client_factory(restore_target)
     expected_size = int(asset["byte_size"])
@@ -555,7 +561,10 @@ def restore_one_asset(
             raise RuntimeError("NAS restore read-back checksum mismatch")
         target_bucket = restore_target["bucket"]
         r2_keys = sorted(
-            build_archive_asset_restore_keys(task_id, asset["source_ref"], history_type)
+            plan_archive_asset_restore_keys(
+                task_id=task_id,
+                source_ref=asset["source_ref"],
+            )
         )
         if not r2_keys:
             raise RuntimeError("restore produced no R2 media keys")
@@ -579,15 +588,17 @@ def restore_one_asset(
         thumbnail_keys: list[str] = []
         if asset["role"] == "output":
             thumbnail_keys = sorted(
-                build_archive_thumbnail_restore_keys(
-                    task_id, asset["source_ref"], history_type
+                plan_archive_thumbnail_restore_keys(
+                    task_id=task_id,
+                    source_ref=asset["source_ref"],
+                    history_type=history_type,
                 )
             )
             thumbnail_path = temp_path.with_suffix(".thumb.webp")
             try:
                 thumbnail_builder(
                     temp_path,
-                    get_media_type_from_history(history_type),
+                    get_archive_media_type(history_type),
                     thumbnail_path,
                 )
                 thumb_sha = hashlib.sha256(thumbnail_path.read_bytes()).hexdigest()
@@ -633,7 +644,7 @@ class CatalogRecorder:
         self.conn = await asyncpg.connect(self.database_url)
         self.run_id = __import__("uuid").uuid4()
         await self.conn.execute(
-            "insert into analytics_media_runs(id,run_type,status,cursor,stats) values($1,'archive','running','{}'::jsonb,jsonb_build_object('worker_id',$2))",
+            "insert into analytics_media_runs(id,run_type,status,cursor,stats) values($1,'archive','running','{}'::jsonb,jsonb_build_object('worker_id',$2::text))",
             self.run_id,
             self.worker_id,
         )
@@ -715,8 +726,8 @@ class CatalogRecorder:
         if self.conn is not None and self.run_id is not None:
             await self.conn.execute(
                 """update analytics_media_runs set status=$2,error=$3,completed_at=now(),
-                   stats=stats || jsonb_build_object('assets',$4,'bytes',$5,'bytes_per_second',
-                     case when extract(epoch from now()-started_at)>0 then $5/extract(epoch from now()-started_at) else 0 end)
+                   stats=stats || jsonb_build_object('assets',$4::bigint,'bytes',$5::bigint,'bytes_per_second',
+                     case when extract(epoch from now()-started_at)>0 then $5::bigint/extract(epoch from now()-started_at) else 0 end)
                    where id=$1""",
                 self.run_id,
                 "failed" if exc else "completed",
