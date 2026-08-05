@@ -54,7 +54,7 @@ async def test_archive_status_exposes_progress_backlog_capacity_and_alerts(monke
             {
                 "run_type": "archive",
                 "status": "running",
-                "stats": {"bytes_per_second": 5},
+                "stats": '{"bytes_per_second": 5}',
                 "error": None,
             },
             {"present": True},
@@ -75,5 +75,7 @@ async def test_archive_status_exposes_progress_backlog_capacity_and_alerts(monke
     assert result["usage_ratio"] == 0.8
     assert result["pause_reason"] == "nas_usage_80_stop_cold"
     assert result["outbox"]["backlog"] == 3
+    assert result["latest_run"]["stats"] == {"bytes_per_second": 5}
+    assert result["throughput_bytes_per_second"] == 5
     assert result["alerts"]["checksum_error"] is True
     assert result["alerts"]["archive_critical"] is True
