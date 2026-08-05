@@ -1273,7 +1273,7 @@ mv -Tf {root}/current.new {root}/current
         )
         command = (
             f"docker pull {artifact} && "
-            f"docker run --rm {network}--env-file {target['env_file']} "
+            f"sudo -n docker run --rm {network}--env-file {target['env_file']} "
             f"{artifact} upgrade head"
         )
         result = _run(_ssh_command(host, command))

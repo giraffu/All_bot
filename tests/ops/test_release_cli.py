@@ -570,6 +570,7 @@ def test_database_migration_uses_only_the_test_compose_network(
     )
 
     remote_command = captured["command"][-1]
+    assert "sudo -n docker run --rm" in remote_command
     if expected_network is None:
         assert "--network" not in remote_command
     else:
