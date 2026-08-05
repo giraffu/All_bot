@@ -43,14 +43,14 @@ export function createGenerationHistoryModule({
     );
     body.innerHTML = rows.map((row) => `
       <tr>
-        <td class="mono">${fmt(row.user_id)}</td>
+        <td class="mono generation-history-user-id">${escapeHtml(row.user_id ?? "-")}</td>
         <td>${escapeHtml(row.nickname || "-")}</td>
         <td>
           <strong>${escapeHtml(row.task_type || "unknown")}</strong>
           <div class="muted small">该类 ${fmt(taskTypeCounts.get(row.task_type) || 0)} 条</div>
         </td>
         <td>${escapeHtml(row.source || "-")}</td>
-        <td class="generation-history-prompt">${escapeHtml(row.prompt || "-")}</td>
+        <td class="generation-history-prompt"><div class="generation-history-prompt-text">${escapeHtml(row.prompt || "-")}</div></td>
         <td>${escapeHtml(row.billing_resolution || "-")}</td>
         <td>${fmt(row.duration)}</td>
         <td>${fmt(row.width)}</td>
