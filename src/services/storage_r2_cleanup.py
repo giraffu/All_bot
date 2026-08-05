@@ -7,6 +7,10 @@ from urllib.parse import unquote, urlparse
 from botocore.exceptions import ClientError
 from sqlalchemy import select, text
 
+from src.core.media_archive import (
+    plan_archive_asset_restore_keys,
+    plan_archive_thumbnail_restore_keys,
+)
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
@@ -128,24 +132,11 @@ def build_archive_asset_restore_keys(
     if not task_id or not source_ref:
         return set()
     _, object_name = resolve_storage_object(source_ref)
-    parsed = urlparse(source_ref)
-    raw_key = (
-        unquote(parsed.path.lstrip("/"))
-        if parsed.scheme in {"http", "https"}
-        else source_ref.lstrip("/")
+    return plan_archive_asset_restore_keys(
+        task_id=task_id,
+        source_ref=source_ref,
+        source_key=object_name,
     )
-    basename = PurePosixPath(raw_key).name
-    return {
-        key
-        for key in {
-            build_history_r2_media_key(task_id, source_ref),
-            build_flat_r2_compatibility_key(object_name),
-            raw_key,
-            basename,
-            f"history/{task_id}/{basename}" if basename else "",
-        }
-        if key
-    }
 
 
 def build_archive_thumbnail_restore_keys(
@@ -153,18 +144,12 @@ def build_archive_thumbnail_restore_keys(
 ) -> set[str]:
     if not task_id or not source_ref:
         return set()
-    media_type = get_media_type_from_history(history_type)
     _, object_name = resolve_storage_object(source_ref)
-    return {
-        key
-        for key in {
-            build_history_r2_thumbnail_key(task_id, media_type),
-            build_flat_r2_compatibility_key(
-                build_thumbnail_object_name(object_name, media_type)
-            ),
-        }
-        if key
-    }
+    return plan_archive_thumbnail_restore_keys(
+        task_id=task_id,
+        source_key=object_name,
+        history_type=history_type,
+    )
 
 
 async def async_prune_user_web_history_r2_cache(

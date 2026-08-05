@@ -7,6 +7,9 @@ import hashlib
 import json
 from pathlib import PurePosixPath
 from typing import Any, Iterable
+from urllib.parse import unquote, urlparse
+
+from src.constants import VIDEO_TASK_TYPES
 
 
 ARCHIVE_BUCKET = "allbot-media-archive-v1"
@@ -25,6 +28,7 @@ ASSET_STATUSES = frozenset(
         "external_unmanaged",
     }
 )
+_VIDEO_TASK_TYPE_SET = {task_type.lower() for task_type in VIDEO_TASK_TYPES}
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,59 @@ def archive_blob_key(sha256: str, extension: str) -> str:
     return str(
         PurePosixPath("blobs", "sha256", digest[:2], digest[2:4], f"{digest}.{ext}")
     )
+
+
+def get_archive_media_type(history_type: str | None) -> str:
+    normalized = str(history_type or "").lower()
+    if normalized in _VIDEO_TASK_TYPE_SET or "video" in normalized:
+        return "video"
+    return "image"
+
+
+def plan_archive_asset_restore_keys(
+    *, task_id: str, source_ref: str, source_key: str
+) -> set[str]:
+    """Plan original R2 compatibility keys without loading runtime configuration."""
+    if not task_id or not source_ref:
+        return set()
+    parsed = urlparse(source_ref)
+    raw_key = (
+        unquote(parsed.path.lstrip("/"))
+        if parsed.scheme in {"http", "https"}
+        else source_ref.lstrip("/")
+    )
+    basename = PurePosixPath(raw_key).name
+    object_name = str(source_key or raw_key).lstrip("/")
+    suffix = PurePosixPath(parsed.path if parsed.scheme else source_ref).suffix
+    return {
+        key
+        for key in {
+            f"history/{task_id}/original{suffix}",
+            PurePosixPath(object_name).name,
+            raw_key,
+            basename,
+            f"history/{task_id}/{basename}" if basename else "",
+        }
+        if key
+    }
+
+
+def plan_archive_thumbnail_restore_keys(
+    *, task_id: str, source_key: str, history_type: str | None
+) -> set[str]:
+    """Plan rebuilt thumbnail keys without loading storage or database adapters."""
+    if not task_id or not source_key:
+        return set()
+    media_type = get_archive_media_type(history_type)
+    object_name = str(source_key).lstrip("/")
+    stem = object_name.rsplit(".", 1)[0]
+    thumb_name = PurePosixPath(
+        f"{stem}{'_thumb.jpg' if media_type == 'video' else '_thumb.webp'}"
+    ).name
+    return {
+        f"history/{task_id}/{'thumb.jpg' if media_type == 'video' else 'thumb.webp'}",
+        thumb_name,
+    }
 
 
 def receipts_cover_assets(

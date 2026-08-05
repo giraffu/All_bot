@@ -34,6 +34,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.core.media_archive import (  # noqa: E402
+    get_archive_media_type,
+    plan_archive_asset_restore_keys,
+    plan_archive_thumbnail_restore_keys,
+)
+
 
 ARCHIVE_BUCKET = "allbot-media-archive-v1"
 PROXY_KEYS = (
@@ -524,12 +530,6 @@ def restore_one_asset(
     thumbnail_builder=_build_restore_thumbnail,
 ) -> dict:
     """Rehydrate one verified NAS blob to R2 and rebuild output thumbnails."""
-    from src.core.media_paths import get_media_type_from_history
-    from src.services.storage_r2_cleanup import (
-        build_archive_asset_restore_keys,
-        build_archive_thumbnail_restore_keys,
-    )
-
     nas_client = client_factory(nas)
     target_client = client_factory(restore_target)
     expected_size = int(asset["byte_size"])
@@ -561,7 +561,11 @@ def restore_one_asset(
             raise RuntimeError("NAS restore read-back checksum mismatch")
         target_bucket = restore_target["bucket"]
         r2_keys = sorted(
-            build_archive_asset_restore_keys(task_id, asset["source_ref"], history_type)
+            plan_archive_asset_restore_keys(
+                task_id=task_id,
+                source_ref=asset["source_ref"],
+                source_key=asset["source_key"],
+            )
         )
         if not r2_keys:
             raise RuntimeError("restore produced no R2 media keys")
@@ -585,15 +589,17 @@ def restore_one_asset(
         thumbnail_keys: list[str] = []
         if asset["role"] == "output":
             thumbnail_keys = sorted(
-                build_archive_thumbnail_restore_keys(
-                    task_id, asset["source_ref"], history_type
+                plan_archive_thumbnail_restore_keys(
+                    task_id=task_id,
+                    source_key=asset["source_key"],
+                    history_type=history_type,
                 )
             )
             thumbnail_path = temp_path.with_suffix(".thumb.webp")
             try:
                 thumbnail_builder(
                     temp_path,
-                    get_media_type_from_history(history_type),
+                    get_archive_media_type(history_type),
                     thumbnail_path,
                 )
                 thumb_sha = hashlib.sha256(thumbnail_path.read_bytes()).hexdigest()
