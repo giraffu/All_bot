@@ -760,6 +760,25 @@ def test_activation_writes_immutable_scoped_env_files_and_can_roll_back(tmp_path
     )
 
 
+def test_activation_history_allows_returning_to_an_earlier_revision(tmp_path):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    first_values = _environment("prod")
+    first = module.build_snapshot(contract, "prod", first_values)
+    module.activate_snapshot(tmp_path, first)
+
+    second_values = dict(first_values)
+    second_values["API_TOKEN"] = "rotated-prod-api-token"
+    second = module.build_snapshot(contract, "prod", second_values)
+    module.activate_snapshot(tmp_path, second)
+
+    returned = module.activate_snapshot(tmp_path, first)
+
+    assert returned["environment_revision"] == first.environment_revision
+    assert returned["previous_revision"] == second.environment_revision
+    assert len(list((tmp_path / "states" / "activations").glob("*.json"))) == 3
+
+
 def test_active_projection_integrity_rejects_tampering(tmp_path):
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)

@@ -144,6 +144,8 @@ service env 文件。
 `config-contract` artifact 切换与逐服务环境投影是同一个发布动作：发布器在切换
 `current` 后立即以受保护的宿主 env 执行 `runtime_env_contract.py activate`。
 投影校验或写入失败会令该模块发布失败，禁止只切换契约而让消费者继续读取旧投影。
+激活历史按完整状态与前序 revision 唯一标识；环境从 A 切到 B 后再次回到 A 时必须
+生成新的不可变转换记录，不能与首次激活 A 的历史文件冲突。
 
 GPU 还需 `--operator runpod|lan --slot <exact-slot>`。config/compose contract
 只切换目标契约，消费者由操作者随后显式部署。migration 只运行指定 artifact。
