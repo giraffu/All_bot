@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260710-template-review-low-quality-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260805-generation-history-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -32,6 +32,10 @@
           <button class="tab-button" type="button" data-tab="generation">
             <span class="tab-label">生成分析</span>
             <span class="tab-meta">趋势、质量、效率</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="generation-history">
+            <span class="tab-label">历史生成</span>
+            <span class="tab-meta">明细、筛选、分页</span>
           </button>
           <button class="tab-button" type="button" data-tab="prompts">
             <span class="tab-label">提示词洞察</span>
@@ -643,6 +647,52 @@
               </table>
             </div>
           </div>
+        </section>
+
+        <section class="band tab-panel generation-history-band" data-panel="generation-history">
+          <div class="generation-history-filter-bar">
+            <label>
+              <span>任务类别</span>
+              <select id="generationHistoryTaskTypeSelect">
+                <option value="">所有任务类别</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="generationHistorySortSelect">
+                <option value="created_desc" selected>最新创建</option>
+                <option value="type_count_desc">任务类别数量降序</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-shell full generation-history-table-shell">
+            <div class="table-title-row">
+              <div class="table-title">历史生成明细</div>
+              <div class="pagination-status">输入和输出地址将在后续接入本地 R2 媒体后展示</div>
+            </div>
+            <table class="generation-history-table">
+              <thead>
+                <tr>
+                  <th>用户 ID</th>
+                  <th>用户昵称</th>
+                  <th>任务类型</th>
+                  <th>来源</th>
+                  <th>提示词</th>
+                  <th>分辨率</th>
+                  <th>时长</th>
+                  <th>宽</th>
+                  <th>高</th>
+                  <th>收藏数量</th>
+                  <th>反馈</th>
+                  <th>创建时间</th>
+                  <th>输入地址</th>
+                  <th>输出地址</th>
+                </tr>
+              </thead>
+              <tbody id="generationHistoryRows"></tbody>
+            </table>
+          </div>
+          <div id="generationHistoryPagination" class="generation-history-pagination"></div>
         </section>
 
         <section class="band tab-panel" data-panel="prompts">
@@ -1363,6 +1413,6 @@
       </div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-  <script type="module" src="/static/js/bootstrap.js?v=20260710-template-review-low-quality-v1"></script>
+    <script type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v1"></script>
   </body>
 </html>

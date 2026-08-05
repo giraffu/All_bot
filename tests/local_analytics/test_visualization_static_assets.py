@@ -14,9 +14,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260710-template-review-low-quality-v1" in html
-    assert 'type="module" src="/static/js/bootstrap.js?v=20260710-template-review-low-quality-v1"' in html
-    assert 'from "./state.js?v=20260710-template-review-low-quality-v1"' in app_js
+    assert "/static/styles.css?v=20260805-generation-history-v1" in html
+    assert 'type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v1"' in html
+    assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
     assert "await response.text()" in app_js
     assert "JSON.parse(rawBody)" in app_js
     assert "await response.json()" not in app_js
@@ -27,6 +27,21 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "buildDonutOption" in app_js
     assert "buildStackedBarOption" in app_js
     assert 'data-tab="prompt-vectors"' in html
+    assert 'data-tab="generation-history"' in html
+    assert 'data-panel="generation-history"' in html
+    assert html.index('data-tab="generation-history"') > html.index('data-tab="generation"')
+    assert html.index('data-tab="generation-history"') < html.index('data-tab="prompts"')
+    assert 'id="generationHistoryTaskTypeSelect"' in html
+    assert 'id="generationHistorySortSelect"' in html
+    assert 'id="generationHistoryRows"' in html
+    assert 'id="generationHistoryPagination"' in html
+    assert "用户 ID" in html
+    assert "用户昵称" in html
+    assert "输入地址" in html
+    assert "输出地址" in html
+    assert "/api/generation-history" in app_js
+    assert "generationHistoryPage" in app_js
+    assert 'value="type_count_desc"' in html
     assert "提示词向量化" in html
     assert 'data-tab="prompt-tokens"' in html
     assert 'data-panel="prompt-tokens"' in html
