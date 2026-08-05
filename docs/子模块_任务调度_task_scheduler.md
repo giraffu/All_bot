@@ -233,8 +233,14 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 
 默认遵循“测试优先部署”：
 
-- 测试环境：默认云测试控制面，日常更新以快速重建对应模块容器为主，不默认进入维护或排空队列；`scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口，`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。旧本地测试栈不再作为受支持测试或回滚路径，仅作为历史取证材料保留。
-- 正式环境：仅在明确确认后执行云正式 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- 测试环境：从完整 main SHA 构建明确模块，再以
+  `scripts/release.py deploy --env test --module <module> --artifact
+  <repository@sha256:digest>` 一次部署一个模块。迁移、config contract 和
+  compose contract 都是独立模块；旧源码同步、维护式整栈和本地测试栈只作历史取证。
+- 正式环境：仅在用户明确确认后，从完整 main SHA 构建明确模块，并以
+  `scripts/release.py deploy --env prod --module <module> --artifact
+  <repository@sha256:digest> --confirm-prod` 单模块部署。`safe_deploy.sh` 只用于
+  云正式整体故障时的本地正式灾备；云端健康预检不构成代码部署。
 - 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频与 Telegram 懒人动图新提交实际依赖 `image_to_video`；LTX 高级图生视频当前用户入口只开放单首帧与首尾帧，若未来重新开放视频配音，目标 LTX worker 必须同时声明 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应再作为新增 workflow 能力方向。
 - `video_insert` / `video_edit` 不再承担独立调度语义；排障时看到这两个类型，应先按 legacy alias 归入 `image_to_video` 链路检查 dispatcher、Central queue、worker patcher 与 `Wan22AioV82.json`，不要按新任务类型补一套 strategy/workflow。
 - workflow canary 优先只在目标云测试 worker 设置 `TASK_TYPE_WORKFLOW_OVERRIDES`，确认无误后再考虑调整默认 `TASK_TYPE_WORKFLOW_FILENAMES` 或正式 compose。

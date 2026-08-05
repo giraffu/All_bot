@@ -1,13 +1,79 @@
-# 独立客服 Bot
+# 子模块：独立客服 Bot
 
-入口为 `support_bot.main`，正式运行服务为 `support-bot`，只使用 `SUPPORT_BOT_TOKEN`。它是独立 Telegram polling 服务：不得与任何其他进程共用 Token，也不读取生成维护标记、不提交生成任务。
+## 1. 定位与入口
 
-用户可选择“充值问题、Bug反馈、意见反馈、商业合作”四类工单；点击分类会在 Bot 内存中开始一条草稿，随后可连续发送文字、图片或文件。每条成功记录的内容都会附带“结束提交”按钮；只有用户点击该按钮、切换到其它分类，或最后一次内容后 5 分钟超时，Bot 才在一个数据库事务中创建一张全新工单并写入全部消息，Dashboard 在此之前看不到草稿。同类按钮重复点击只保留当前草稿；空草稿切换或超时不创建工单。未先选择分类的内容自动进入“未分类”草稿。
+`support_bot.main` 是独立 Telegram polling 入口，catalog 模块与 Compose service
+均为 `support-bot`。它只使用 `SUPPORT_BOT_TOKEN`，不得与主 Bot、QQCC、
+付费群审核 Bot 或其它进程共用 token。
 
-草稿只保存在当前 `support-bot` 进程内，不使用 Redis 或数据库；容器异常重启会丢失尚未结束的草稿。数据库提交失败时进程内草稿继续保留，用户可重试“结束提交”。图片和文件在收集阶段通过 Telegram Local API 的独立文件服务下载，再写入私有 R2 `support/<telegram-user-id>/<message-id>/...` 路径；附件上传失败不能回复“已记录”，必须提示重新发送。对象地址不公开，仅由已认证的 Dashboard 生成短时访问链接；图片在工单时间线显示为可点击预览，其他文件显示下载链接。管理员可在该页处理、备注和回复。
+客服 Bot 不读取生成维护标记、不提交生成任务，也不承载支付履约。它负责收集
+工单；Dashboard 负责已认证管理员的查看、备注、状态处理、附件访问和回复。
 
-Dashboard 工单页的分类筛选使用显式的五项清单：充值问题、Bug反馈、意见反馈、商业合作、未分类；工单标题与详情统一使用同一格式化入口，遇到未来新增或历史异常分类时显示“其他分类（原始值）”，不能留下空白标题。分类筛选必须保留足够宽度以完整显示中文标签。管理后台入口页使用 `no-store` 获取，并由已加载的 SPA 定期及在窗口重新获得焦点时比对哈希化 `main-*.js` 入口；发现新版本后自动刷新，使发布前已打开的后台页面也能切换到当前版本。
+## 2. 工单提交契约
 
-首次正式更新使用显式组合模块 `support-platform`，只包含 `dashboard-backend`、`dashboard-frontend` 与 `support-bot`。`e7f8a9b0c1d2` 仅创建两张新表及其索引/约束；`f8a9b0c1d2e3` 只扩展工单分类约束以允许 `business`，升级不改写现有工单，降级时才把 `business` 归为 `uncategorized`。若正式数据库仍停在 `e7f8a9b0c1d2`，`alembic upgrade head` 会先执行 `f8a9b0c1d2e3`，再执行后继 `62d4a8f9c7e1` 创建人物参考库表；必须在备份、单 Alembic head、候选 migration 内容与发布策略快照全部通过后一次升级到最新 head，不能只手工挑选客服 migration。任何未审核 migration 或内容漂移继续 fail closed。
+用户可选择充值问题、Bug 反馈、意见反馈、商业合作四类工单；未先选择分类的
+内容进入“未分类”草稿。草稿支持连续文字、图片和文件：
 
-该组合不部署测试环境、不进入前向维护窗口，滚动替换 Dashboard 前后端并首次启动客服 Bot；事务会核对全部非目标正式容器的 image 与启动时间不变。`SUPPORT_BOT_TOKEN` 同时投影给客服 Bot 与 Dashboard Backend，仅配置在受控正式环境中，绝不写入仓库或发布状态。
+- 草稿只保存在当前进程内，容器异常重启会丢失未提交内容。
+- 点击“结束提交”、切换分类或最后一次内容后 300 秒超时，才在一个数据库事务
+  中创建工单及全部消息。
+- 空草稿切换或超时不创建工单；同类按钮重复点击不重复创建草稿。
+- 数据库提交失败时保留进程内草稿，用户可以重试。
+- Dashboard 在事务提交前看不到草稿。
+
+分类枚举与展示格式以 `support_bot/main.py`、support ticket service 和
+Dashboard tests 为事实源。未知历史分类必须显示原始值，不能产生空标题。
+
+## 3. 附件与权限
+
+图片和文件通过当前 Bot 的 Telegram file base 下载，再上传到私有对象存储的
+`support/<telegram-user-id>/<message-id>/...` key。约束如下：
+
+- 超过入口上限的附件在下载前拒绝；下载与上传失败不能回复“已记录”。
+- 数据库只保存私有 object key 和必要 metadata，不保存公开 URL。
+- 只有已认证 Dashboard 可生成短时访问链接。
+- 图片可预览，其他文件提供下载；日志、工单和发布状态不得包含 token、R2
+  secret 或预签名 URL。
+
+配置事实源为 `deploy/service-env-contract.yml`。正式环境只向
+`support-bot` 与需要回复/签名附件的 Dashboard Backend 投影
+`SUPPORT_BOT_TOKEN`；其它服务不得获得该 token。
+
+## 4. 发布与迁移
+
+`deploy/module-catalog.json` 当前把 `support-bot` 声明为 prod-only 独立
+模块。Dashboard Backend、Dashboard Frontend 和客服 Bot 不再作为一个
+`support-platform` 组合发布；需要同时更新时也必须分别构建、部署和保存状态。
+
+```bash
+python scripts/release.py build \
+  --module support-bot --sha <40位main-sha>
+
+python scripts/release.py deploy \
+  --env prod --module support-bot \
+  --artifact <repository@sha256:digest> --confirm-prod
+```
+
+以上 prod 命令只有在用户明确授权正式 mutation 后才能执行。schema 变化使用
+独立 `database-migration` 模块；先备份并核对单 Alembic head、目标 migration
+和 downgrade 风险，不能把历史 migration 编号当作当前部署入口。
+
+## 5. 最小验证
+
+```bash
+python -m pytest -q tests/support_bot \
+  tests/services/test_support_ticket_submission_service.py \
+  tests/database/test_support_ticket_schema.py \
+  tests/ops/test_runtime_env_contract.py
+python scripts/doc_quality_checker.py
+```
+
+行为验收至少覆盖：
+
+- 分类、未分类、切换分类、空草稿和 300 秒超时。
+- 重复结束、数据库失败重试和单事务可见性。
+- 附件大小门禁、Local API 下载、私有 R2 上传失败与短时访问链接。
+- token 只投影到允许的服务，多个 polling Bot 不共用 token。
+- 独立 `support-bot` exact-digest 发布不会替换 Dashboard 或其它正式容器。
+
+本地测试通过不表示正式 Bot、数据库、R2 或 Dashboard 已验证。

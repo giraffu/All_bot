@@ -170,31 +170,47 @@ private worker 运行在 Python 3.10。所有 `asyncio.wait_for(...)` 的周期�
 
 发布顺序：
 
-1. 确认 `python -m alembic heads` 为单 head，在云测试显式执行 `alembic upgrade head`。
-2. 配置云测试独立 keyring/fingerprint/JWT、测试 webhook base 和测试 owner Host/URL；不得复用正式密钥或域名。
-3. 重建云测试 Web API、QQCC Config Backend/Frontend 与官方 QQCC Bot，再显式启动 `--profile qqcc-private-bots` 的 test worker。
+1. 确认 `python -m alembic heads` 为单 head，备份后通过独立
+   `database-migration` exact-digest 模块升级测试库。
+2. 配置测试环境独立 keyring/fingerprint/JWT、webhook base 和 owner
+   Host/URL；先用 validator 严格校验，再独立部署 `config-contract`。
+3. 从同一完整 main SHA 分别构建并单模块部署 Web API、QQCC Config
+   Backend/Frontend、官方 QQCC Bot 和 `private-bot-worker`；需要 Compose
+   接线变化时先独立部署 `compose-contract`。不得用源码同步或 profile
+   整栈重建替代。
 4. 验证 token 消息删除、重复/官方/已有 webhook 拒绝、同 owner 并发唯一、owner ticket 单次兑换、Host 隔离、暂停/恢复/禁用优先级、Redis 去重、跨租户配置/任务/结果隔离及单任务重启恢复；同时验证私有多阶段绘图/原图换脸/尾帧视频在结果到下一步注册、TaskRegistry 为空、租约丢失、暂停/禁用和 delivery 故障后仍可幂等续跑，中间结果不发送、最终结果先落 checkpoint 再投递。
 5. 完成至少 500 个租户元数据和 webhook burst 验证，观察 stream lag、pending、active Application、Webhook 4xx/5xx、Telegram 注册失败与恢复失败。
 6. 只有用户再次明确确认正式发布后，才可执行正式 migration、填正式 secret、创建/修改 Cloudflare owner public hostname、重建相关正式服务并启动 `qqcc-private-bot-worker-prod`。
 
-截至 2026-07-12，尚未完成真实 Redis/PostgreSQL/PTB/Telegram HTTP 组合下的 500 租户与 webhook burst 压测；单元测试或内存 fake 的 500 租户用例不能替代负载验收。正式环境已按用户确认进入首个 owner 手动试用阶段，但该缺口仍是容量残余风险，不能写成已完成负载验证或 500 租户容量承诺。
+真实 Redis/PostgreSQL/PTB/Telegram HTTP 组合下的 500 租户与 webhook burst
+属于运行态容量验收；本轮未执行时必须标记
+`runtime-verification-required`。单元测试或内存 fake 的 500 租户用例不能
+替代负载验收，也不能写成容量承诺。
 
-`safe_deploy_cloud_test.sh` / `safe_deploy_cloud_prod.sh` 以 `scripts/validate_private_qqcc_bot_env.py --allow-disabled` 做条件校验：gate 缺失或为 `false` 且 profile 未启用时，不要求 activation secrets，避免普通控制面重建被未启用 profile 阻断；gate 为 `true` 时仍严格校验全部 activation secrets、环境对应的官方 QQCC token、32-byte Base64URL 密钥独立性、forbidden IDs、owner URL/Host 一致性与 trusted Telegram HTTPS host。直接运行 validator 且不传 `--allow-disabled` 是启用前严格模式，gate 缺失/`false` 也会失败。
+`deploy/service-env-contract.yml` 用 `PRIVATE_QQCC_BOT_ENABLED` 控制
+`private-bot-worker` 投影。gate 缺失或为 `false` 时不启用该服务；gate 为
+`true` 时配置投影必须具备全部 required keys。启用前还必须显式运行
+`scripts/validate_private_qqcc_bot_env.py` 严格校验 keyring、官方 QQCC token、
+32-byte Base64URL 密钥独立性、forbidden IDs、owner URL/Host 与 trusted
+Telegram HTTPS host。`--allow-disabled` 只用于 gate 关闭时的只读配置核对，
+不能作为启用或发布资格。
 
-QQCC Config Frontend 健康检查必须携带 admin Host，维护式 test/prod wrapper 的远端验证也遵循同一 Host 规则。任何启用态 preflight 失败都先修 env，不允许临时把 unknown Host 回落到管理员站点。compose 对 private profile 的 activation secret 插值保持可选，只为保证 gate/profile 未启用时能完成普通 `config -q`；这不削弱 gate=`true` 的 validator 门禁。
+QQCC Config Frontend 健康检查必须携带 admin Host，release adapter 的目标验证
+也遵循同一 Host 规则。任何启用态 preflight 失败都先修 env，不允许临时把
+unknown Host 回落到管理员站点。gate=`true` 时 validator 与 config contract
+都必须通过。
 
 回滚优先停止 private worker 并阻止新 webhook update；不要删除 History 或直接回滚已承载数据的 migration。若需关闭入口，先管理员禁用/删除 Telegram webhook，再评估数据库回滚。
 
 ## 7. 最小验证
 
-- `docker-compose -f deploy/docker-compose-cloud-test.yml config -q`
-- `docker-compose -f deploy/docker-compose-cloud-prod.yml config -q`
+- `docker compose -f deploy/docker-compose-cloud-base.yml -f deploy/docker-compose-cloud-test.overlay.yml config -q`
+- `docker compose -f deploy/docker-compose-cloud-base.yml -f deploy/docker-compose-cloud-prod.overlay.yml config -q`
 - `python -m alembic heads`
 - `python scripts/doc_quality_checker.py`
 - 未启用门禁校验：`python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env> --allow-disabled`
 - 启用前严格校验：`python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env>`
-- `bash -n scripts/safe_deploy_cloud_test.sh scripts/safe_deploy_cloud_prod.sh scripts/update_cloud_test_with_maintenance.sh scripts/update_cloud_prod_with_maintenance.sh`
-- `pytest -q tests/ops/test_ops_wrappers.py`
+- `pytest -q tests/ops/test_runtime_env_contract.py tests/ops/test_release_cli.py`
 - focused tests 覆盖 schema/加密、申请 FSM/lifecycle、同 Bot active-task 救援轮换、owner auth/API 与 limiter/Host、webhook queue/入口与 metrics、private worker 有界背压/startup PEL catch-up、官方 membership checker、运行时配置、确定性 submission/debit/refund/concurrency 幂等、迟到扣费 fence、账本 retention 和恢复过滤。
 
 Nginx build 后还要对同一 origin 做 Host 矩阵验收（以下变量只放 hostname）：

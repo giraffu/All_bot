@@ -218,7 +218,8 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 ## 6. 文档维护口径
 
 - 涉及本地正式灾备 compose 的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。
-- 若云测试流程、旧本地测试栈退役口径、`safe_deploy_cloud_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
+- 若云测试单模块发布、旧本地测试栈退役口径或 exact-digest 契约发生变化，
+  必须同步更新运维技能、`AGENTS.md` 与云测试专题文档。
 - 若云正式、本地灾备、Cloudflare Tunnel、Pages 或边缘 upstream 发生变化，必须同步更新云正式、网络、边缘、资源画像和本地灾备文档。
 - 任何涉及 Alembic 的说明，都应明确“先检查多 head，再在宿主机执行 upgrade head”。
 - 任何涉及容器代码更新的说明，都应先核对卷挂载，再决定是 `restart` 还是 `--build`。

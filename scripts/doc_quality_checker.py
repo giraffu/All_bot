@@ -53,6 +53,28 @@ MIGRATED_KNOWLEDGE_PATHS = {
     ),
 }
 
+RETIRED_KNOWLEDGE_PATHS = {
+    "scripts/safe_deploy_cloud_test.sh": (
+        "scripts/release.py deploy --env test --module <module> "
+        "--artifact <exact-digest>"
+    ),
+    "scripts/update_cloud_test_with_maintenance.sh": (
+        "scripts/release.py deploy --env test --module <module> "
+        "--artifact <exact-digest>"
+    ),
+    "scripts/migrate_local_test_to_cloud_containers.sh": (
+        "scripts/release.py deploy --env test --module <module> "
+        "--artifact <exact-digest>"
+    ),
+    "scripts/update_cloud_prod_with_maintenance.sh": (
+        "scripts/release.py deploy --env prod --module <module> "
+        "--artifact <exact-digest> --confirm-prod"
+    ),
+    "scripts/lan_pornmaster_flux2_edit_aio_test.sh": (
+        "scripts/lan_aio_fleet_prod_ops.py with an exact fleet slot"
+    ),
+}
+
 MAX_SKILL_BYTES = 16_000
 MAX_SKILL_LINE_LENGTH = 1_000
 MAX_TOTAL_SKILL_BYTES = 140_000
@@ -266,6 +288,15 @@ def verify_matrix(root: Path, errors: list[str]) -> None:
     registered_paths = set(matrix_paths)
     for path in sorted(active_paths - registered_paths):
         errors.append(f"审计矩阵未登记活跃文档: {path}")
+    for path in sorted(registered_paths):
+        registered = (root / path).resolve()
+        try:
+            registered.relative_to(root.resolve())
+        except ValueError:
+            errors.append(f"审计矩阵登记路径越出仓库: {path}")
+            continue
+        if not registered.is_file():
+            errors.append(f"审计矩阵登记路径不存在: {path}")
 
     for line in text.splitlines():
         if line.startswith("| `docs/archive/") or "| archived |" in line:
@@ -293,6 +324,14 @@ def verify_current_history_boundaries(root: Path, errors: list[str]) -> None:
             errors.append(
                 "知识文档引用已迁移路径: "
                 f"{relative(source, root)}: {old_path} -> {canonical_path}"
+            )
+        for retired_path, canonical_entrypoint in RETIRED_KNOWLEDGE_PATHS.items():
+            if retired_path not in text:
+                continue
+            errors.append(
+                "知识文档引用已退役入口: "
+                f"{relative(source, root)}: {retired_path} -> "
+                f"{canonical_entrypoint}"
             )
 
     compat = root / COMPAT_RELATIVE_PATH

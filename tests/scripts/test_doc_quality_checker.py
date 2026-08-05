@@ -110,6 +110,21 @@ def test_unregistered_active_doc_and_duplicate_matrix_row_fail(tmp_path: Path) -
     assert "重复登记" in result.stdout
 
 
+def test_matrix_row_for_missing_active_doc_fails(tmp_path: Path) -> None:
+    _valid_fixture(tmp_path)
+    matrix = tmp_path / "docs/knowledge_base_audit_matrix.md"
+    matrix.write_text(
+        matrix.read_text(encoding="utf-8")
+        + "| `docs/missing-current-sop.md` | missing | code | current | operations |\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "审计矩阵登记路径不存在" in result.stdout
+
+
 def test_missing_skill_routes_fail(tmp_path: Path) -> None:
     _valid_fixture(tmp_path)
     _write(tmp_path, "AGENTS.md", "# Routes\n")
@@ -257,6 +272,23 @@ def test_hotspot_doc_rejects_phase_history_and_migrated_paths(
     assert result.returncode == 1
     assert "热点文档包含阶段或日期历史" in result.stdout
     assert "知识文档引用已迁移路径" in result.stdout
+
+
+def test_current_knowledge_rejects_retired_operational_entrypoints(
+    tmp_path: Path,
+) -> None:
+    _valid_fixture(tmp_path)
+    architecture = tmp_path / "docs/system_architecture_report.md"
+    architecture.write_text(
+        "# Architecture\n\nRun `scripts/safe_deploy_cloud_test.sh`.\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "知识文档引用已退役入口" in result.stdout
+    assert "scripts/release.py deploy --env test" in result.stdout
 
 
 def test_compat_table_requires_current_ownership_fields(tmp_path: Path) -> None:
