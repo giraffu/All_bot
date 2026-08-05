@@ -112,7 +112,13 @@ with selected as (
          row_number() over (partition by s.id, extras.key order by paths.path::text)::integer - 1,
          trim(both '"' from paths.path::text)
   from selected s
-  cross join lateral jsonb_each(coalesce(s.extra_outputs::jsonb, '{}'::jsonb)) extras
+  cross join lateral jsonb_each(
+    case
+      when jsonb_typeof(coalesce(s.extra_outputs::jsonb, '{}'::jsonb)) = 'object'
+        then coalesce(s.extra_outputs::jsonb, '{}'::jsonb)
+      else '{}'::jsonb
+    end
+  ) extras
   cross join lateral jsonb_path_query(extras.value, 'strict $.**.path') paths(path)
 )
 insert into analytics_media_asset_catalog

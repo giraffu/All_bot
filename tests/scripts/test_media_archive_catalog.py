@@ -21,6 +21,10 @@ def test_seed_ranks_raw_history_before_visibility_filter():
     assert "r.rn <= 8 and h.is_visible is true" in SEED_SQL
 
 
+def test_seed_ignores_non_object_extra_outputs():
+    assert "jsonb_typeof(coalesce(s.extra_outputs::jsonb, '{}'::jsonb)) = 'object'" in SEED_SQL
+
+
 def test_seed_exact_id_manifest_preserves_hot_ranking_contract(tmp_path):
     from scripts.media_archive_catalog import SEED_IDS_SQL, load_history_ids
 
