@@ -62,6 +62,7 @@ Use `docs/子模块_本地数据分析平台_local_analytics_platform.md` only w
 6. Rebuild only when requested or necessary.
    - Rule edits do not affect visible token stats until tokens-only rebuild materializes them.
    - Do not run template candidate refresh unless requested or the task explicitly includes template-candidate verification.
+   - The daily local analytics timer is user-profile-only and never rebuilds Prompt Mart, tokens, templates, or embeddings. Run the required materialization command explicitly after an approved rule change.
 
 ## Core Categories
 
