@@ -11,15 +11,14 @@ from src.core.media_archive import (
 )
 
 
-def test_restore_key_planning_uses_receipt_source_key_without_runtime_config():
+def test_restore_key_planning_uses_source_ref_without_runtime_config():
     originals = plan_archive_asset_restore_keys(
         task_id="task-1",
         source_ref="bot-data/outputs/result.png",
-        source_key="outputs/result.png",
     )
     thumbnails = plan_archive_thumbnail_restore_keys(
         task_id="task-1",
-        source_key="outputs/result.png",
+        source_ref="bot-data/outputs/result.png",
         history_type="image",
     )
 

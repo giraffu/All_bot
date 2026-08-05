@@ -131,11 +131,9 @@ def build_archive_asset_restore_keys(
     """Return original-media keys only; derived thumbnails are rebuilt separately."""
     if not task_id or not source_ref:
         return set()
-    _, object_name = resolve_storage_object(source_ref)
     return plan_archive_asset_restore_keys(
         task_id=task_id,
         source_ref=source_ref,
-        source_key=object_name,
     )
 
 
@@ -144,10 +142,9 @@ def build_archive_thumbnail_restore_keys(
 ) -> set[str]:
     if not task_id or not source_ref:
         return set()
-    _, object_name = resolve_storage_object(source_ref)
     return plan_archive_thumbnail_restore_keys(
         task_id=task_id,
-        source_key=object_name,
+        source_ref=source_ref,
         history_type=history_type,
     )
 

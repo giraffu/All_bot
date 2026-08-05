@@ -146,7 +146,6 @@ def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tm
             "role": "output",
             "ordinal": 0,
             "source_ref": "outputs/result.png",
-            "source_key": "outputs/result.png",
             "sha256": digest,
             "byte_size": len(payload),
             "mime_type": "image/png",

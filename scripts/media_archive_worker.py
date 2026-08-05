@@ -564,7 +564,6 @@ def restore_one_asset(
             plan_archive_asset_restore_keys(
                 task_id=task_id,
                 source_ref=asset["source_ref"],
-                source_key=asset["source_key"],
             )
         )
         if not r2_keys:
@@ -591,7 +590,7 @@ def restore_one_asset(
             thumbnail_keys = sorted(
                 plan_archive_thumbnail_restore_keys(
                     task_id=task_id,
-                    source_key=asset["source_key"],
+                    source_ref=asset["source_ref"],
                     history_type=history_type,
                 )
             )

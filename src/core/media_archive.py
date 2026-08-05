@@ -104,7 +104,7 @@ def get_archive_media_type(history_type: str | None) -> str:
 
 
 def plan_archive_asset_restore_keys(
-    *, task_id: str, source_ref: str, source_key: str
+    *, task_id: str, source_ref: str
 ) -> set[str]:
     """Plan original R2 compatibility keys without loading runtime configuration."""
     if not task_id or not source_ref:
@@ -116,13 +116,11 @@ def plan_archive_asset_restore_keys(
         else source_ref.lstrip("/")
     )
     basename = PurePosixPath(raw_key).name
-    object_name = str(source_key or raw_key).lstrip("/")
     suffix = PurePosixPath(parsed.path if parsed.scheme else source_ref).suffix
     return {
         key
         for key in {
             f"history/{task_id}/original{suffix}",
-            PurePosixPath(object_name).name,
             raw_key,
             basename,
             f"history/{task_id}/{basename}" if basename else "",
@@ -132,14 +130,19 @@ def plan_archive_asset_restore_keys(
 
 
 def plan_archive_thumbnail_restore_keys(
-    *, task_id: str, source_key: str, history_type: str | None
+    *, task_id: str, source_ref: str, history_type: str | None
 ) -> set[str]:
     """Plan rebuilt thumbnail keys without loading storage or database adapters."""
-    if not task_id or not source_key:
+    if not task_id or not source_ref:
         return set()
     media_type = get_archive_media_type(history_type)
-    object_name = str(source_key).lstrip("/")
-    stem = object_name.rsplit(".", 1)[0]
+    parsed = urlparse(source_ref)
+    raw_key = (
+        unquote(parsed.path.lstrip("/"))
+        if parsed.scheme in {"http", "https"}
+        else source_ref.lstrip("/")
+    )
+    stem = raw_key.rsplit(".", 1)[0]
     thumb_name = PurePosixPath(
         f"{stem}{'_thumb.jpg' if media_type == 'video' else '_thumb.webp'}"
     ).name
