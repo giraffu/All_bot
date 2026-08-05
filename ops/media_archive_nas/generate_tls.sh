@@ -2,7 +2,7 @@
 set -eu
 
 output=${1:-./generated-tls}
-mkdir -p "$output/ca" "$output/certs"
+mkdir -p "$output/ca" "$output/certs/CAs"
 openssl genrsa -out "$output/ca/allbot-archive-ca.key" 4096
 openssl req -x509 -new -nodes -key "$output/ca/allbot-archive-ca.key" -sha256 -days 3650 \
   -subj "/CN=AllBot Archive Internal CA" -out "$output/ca/allbot-archive-ca.crt"
@@ -16,5 +16,8 @@ EOF
 openssl x509 -req -in "$output/minio.csr" -CA "$output/ca/allbot-archive-ca.crt" \
   -CAkey "$output/ca/allbot-archive-ca.key" -CAcreateserial -out "$output/certs/public.crt" \
   -days 825 -sha256 -extfile "$output/minio.ext"
+cp "$output/ca/allbot-archive-ca.crt" "$output/certs/CAs/allbot-archive-ca.crt"
 chmod 600 "$output/ca/allbot-archive-ca.key" "$output/certs/private.key"
+chmod 644 "$output/ca/allbot-archive-ca.crt" "$output/certs/public.crt" \
+  "$output/certs/CAs/allbot-archive-ca.crt"
 openssl x509 -in "$output/certs/public.crt" -noout -subject -issuer -ext subjectAltName

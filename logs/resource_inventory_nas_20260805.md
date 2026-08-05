@@ -8,26 +8,40 @@
   `450 GiB`，不纳入 AllBot Archive 规划。
 - 规划上限：永久数据先按 80% 计算，约 `13.1 TB`；其余留给 MinIO 元数据、
   索引、快照和增长。到达门限时停止迁移，不静默跳过。
-- MinIO：本次探测 9000/9001 未部署；Docker/containerd 也未安装。UGOS 应用中心
-  登录成功，但在线列表只有内置系统应用，搜索 Docker 返回 `No Content`。
-- 固件门槛：live `/etc/os-release` 为 `OS_VERSION=1.0.0.0556`；UGREEN 官方下载
-  中心当前 Docker `1.17.0.0028` 要求固件至少 `1.17.0.0001`。升级固件会重启
-  NAS，未获得本轮单独确认，因此未执行。
+- 固件与 Docker：用户明确确认重启后，依次从 `1.0.0.0556` 升级到
+  `1.0.0.1977`、`1.7.0.3125`、`1.12.1.0002`，最终 live
+  `OS_VERSION=1.17.0.0095`。Docker 官方应用已安装到 Volume 1，Engine
+  `29.4.3`、Compose `v5.1.3`，Docker root 为 `/volume1/@docker`。
 - 镜像证据：2026-08-05 通过 registry manifest 只读查询固定
   `minio/minio@sha256:14cea493…8936e` 与
   `minio/mc@sha256:a7fe349e…11727`；部署时消费完整 digest，不使用 latest tag。
-- 已完成准备：`/volume1/AllBotArchive` 已创建独占的 `minio-data`、
-  `minio-certs`、`ca`、`config` 和 `deploy`；私有 MinIO 配置为 root-only，
-  `preflight.sh` 通过。服务端证书已从 NAS 回读，SAN 包含
+- 已完成部署：`/volume1/AllBotArchive` 使用独占的 `minio-data`、
+  `minio-certs`、`ca`、`config` 和 `deploy`；固件权限迁移一度把预置目录放宽
+  为 0777，启动前已恢复 root 管理，`.env` 和私钥为 0600。服务端证书 SAN 包含
   `IP:192.168.1.150` 与 `DNS:minio`。CA 私钥只保存在本地主机权限 600 的
   `~/.local/share/allbot/media-archive-pki`，未复制到 NAS。
-- 未完成：由于官方 Docker 应用和固件门槛未满足，MinIO 容器、三个桶、用户
-  policy、versioning、防火墙和 Btrfs 快照尚未启用；9000/9001 仍未监听。
-- SSH：本机专用密钥 `~/.ssh/allbot_nas_dxp8800_rsa` 已验证可用，指纹为
+- NAS 直连 Docker Hub 超时；使用本地主服务器已按 manifest digest 验证的
+  amd64 镜像，通过一次性 LAN 流导入 NAS，运行时固定 image ID。MinIO 已健康
+  监听 TLS 9000/9001；三个桶、archive versioning、不可删除 Worker 与分析只读
+  policy 已完成。真实写读回校验通过，Worker DeleteObject 返回 AccessDenied，
+  验证对象随后由管理员清理；容器重启后重新健康。
+- UGOS 防火墙配置 `AllBot Archive MinIO` 已启用：仅 `192.168.1.115` 可访问
+  9000，`192.168.1.0/24` 可访问 9001，其它来源拒绝；SSH、S3 和控制台从允许
+  来源复测成功。
+- Btrfs 快照：UGOS Snapshot 只能看到已登记 shared folder，不能直接纳入普通
+  `AllBotArchive` 目录。因此已将该目录无损转换为独立 Btrfs subvolume（ID 257），
+  安装并启用 `allbot-media-archive-snapshot.timer`，每天约 03:20 执行、随机延迟
+  最多 15 分钟并保留 7 份。首个只读快照
+  `/volume1/.allbot-archive-snapshots/AllBotArchive-20260805T113839Z` 已验证
+  `ro=true`；MinIO 在新 subvolume 上恢复 healthy，bootstrap 幂等退出 0。转换期
+  旧目录副本在新服务和首个快照验收后已删除，当前可从只读快照恢复。
+- SSH：固件升级移除了 `/home/nas`，公钥授权随之失效；账号 home 已迁到持久化
+  `/volume1/@home/nas` 并恢复原公钥。本机专用密钥
+  `~/.ssh/allbot_nas_dxp8800_rsa` 已重新验证可用，指纹为
   `SHA256:tTmOiTSqJtoxBfXt+8sv4LqgLppLboTFPqIEVj1qXJg`，账号 `nas` 属于 admin
   组；sudo 需要交互密码。已在本机 `~/.ssh/config` 登记 alias
   `allbot-nas-archive`，不保存密码。
-- 后续补证：固件和官方 Docker 应用安装后，记录目录真实 bind path、快照能力、
-  MinIO digest/健康/TLS/权限/versioning 和防火墙验证。
+- 本地主服务器 Worker 凭据保存于权限 0600 的运行态配置，不进入仓库；本证据
+  不记录密码、access key、secret key 或私钥内容。
 
 本证据不包含密码、token、私钥或对象 URL。一次性远端 staging 已在校验后删除。

@@ -61,7 +61,8 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
 1. 通过 UGOS 管理面确认实际存储池、文件系统、固件满足官方 Docker 应用的最低
    版本要求，并核对 Docker bind-mount 路径；固件升级和重启须单独确认。
 2. 创建独占目录 `AllBotArchive/minio-data`、`minio-certs`、`ca`；永久数据达到
-   80% 容量即停止迁移。若 Btrfs 可用，开启每日快照、保留 7 天。
+   80% 容量即停止迁移。`AllBotArchive` 必须是独立 Btrfs subvolume；安装
+   `snapshot.sh` 和对应 systemd timer，每日只读快照并保留 7 份。
 3. 在可信机器运行 `generate_tls.sh`，安全复制 CA 与服务端证书。主服务器安装
    CA；禁止 `verify=false`。
 4. 把 MinIO 和 mc 的已验证 OCI digest、随机凭据写入 NAS 私有 `.env`，执行
@@ -72,6 +73,12 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
 
 仓库不保存真实凭据或镜像占位 digest。没有 NAS 管理权限时只能准备部署包，
 不得声称已部署。
+
+UGOS 固件升级后必须重新核对归档目录、密钥和 `.env` 权限，不能假设原 mode 与
+SSH home 保持不变。NAS 无法直连 registry 时，可在可信主服务器验证原 OCI
+manifest digest、离线导入对应平台镜像，并在 `.env` 使用导入后的不可变
+`sha256:<image-id>`；禁止退化到 `latest` 或其它可变 tag。证书目录自身包含
+`CAs/allbot-archive-ca.crt`，禁止在只读证书目录下再叠加子路径 bind mount。
 
 ## 6. 传输与清理门禁
 

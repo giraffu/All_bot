@@ -1,0 +1,10 @@
+[Unit]
+Description=Create a read-only AllBot Archive Btrfs snapshot
+After=local-fs.target docker.service
+
+[Service]
+Type=oneshot
+Environment=ARCHIVE_SUBVOLUME=/volume1/AllBotArchive
+Environment=ARCHIVE_SNAPSHOT_ROOT=/volume1/.allbot-archive-snapshots
+Environment=ARCHIVE_SNAPSHOT_RETAIN=7
+ExecStart=/volume1/AllBotArchiveOps/snapshot.sh
