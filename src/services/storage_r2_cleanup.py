@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urlparse
 
 from botocore.exceptions import ClientError
 from sqlalchemy import select, text
@@ -83,6 +85,40 @@ def build_history_r2_cleanup_keys(
         }
         if key
     }
+
+
+def build_archive_asset_cleanup_keys(
+    task_id: str, source_ref: str, history_type: str | None, role: str
+) -> set[str]:
+    """Return compatibility keys for every archived role; thumbnails are output-only."""
+    if not task_id or not source_ref:
+        return set()
+    media_type = get_media_type_from_history(history_type)
+    _, object_name = resolve_storage_object(source_ref)
+    parsed = urlparse(source_ref)
+    raw_key = (
+        unquote(parsed.path.lstrip("/"))
+        if parsed.scheme in {"http", "https"}
+        else source_ref.lstrip("/")
+    )
+    basename = PurePosixPath(raw_key).name
+    keys = {
+        build_history_r2_media_key(task_id, source_ref),
+        build_flat_r2_compatibility_key(object_name),
+        raw_key,
+        basename,
+        f"history/{task_id}/{basename}" if basename else "",
+    }
+    if role == "output":
+        keys.update(
+            {
+                build_history_r2_thumbnail_key(task_id, media_type),
+                build_flat_r2_compatibility_key(
+                    build_thumbnail_object_name(object_name, media_type)
+                ),
+            }
+        )
+    return {key for key in keys if key}
 
 
 async def async_prune_user_web_history_r2_cache(

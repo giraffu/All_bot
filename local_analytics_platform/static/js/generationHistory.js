@@ -97,13 +97,29 @@ export function createGenerationHistoryModule({
   }
 
   function render() {
+    const status = state.archiveStatus || {};
+    const summary = $("#archiveStatusSummary");
+    if (summary) summary.innerHTML = [
+      ["逻辑资产", status.logical_assets], ["已验收", status.verified_assets],
+      ["归档字节", status.archived_bytes], ["待探测", status.pending_assets],
+      ["来源离线", status.offline_assets], ["校验错误", status.checksum_errors],
+      ["归档积压", status.outbox?.backlog ?? "未同步"],
+      ["当前吞吐", status.throughput_bytes_per_second ? `${(Number(status.throughput_bytes_per_second) / 1024 / 1024).toFixed(2)} MiB/s` : "-"],
+      ["容量使用", status.usage_ratio == null ? "未配置" : `${(Number(status.usage_ratio) * 100).toFixed(1)}%`],
+      ["暂停原因", status.pause_reason || "无"],
+    ].map(([label, value]) => `<article class="metric-card"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${typeof value === "number" ? fmt(value) : escapeHtml(value ?? "-")}</div></article>`).join("");
     renderTaskTypes();
     renderRows();
     renderPagination();
   }
 
   async function loadGenerationHistory() {
-    state.generationHistory = await fetchJson("/api/generation-history", params());
+    const [history, archiveStatus] = await Promise.all([
+      fetchJson("/api/generation-history", params()),
+      fetchJson("/api/archive/status"),
+    ]);
+    state.generationHistory = history;
+    state.archiveStatus = archiveStatus;
     state.generationHistoryPage = state.generationHistory?.pagination?.page || 1;
     render();
   }

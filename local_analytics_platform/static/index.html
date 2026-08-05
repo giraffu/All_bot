@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260805-generation-history-v2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260805-media-archive-status-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -650,6 +650,7 @@
         </section>
 
         <section class="band tab-panel generation-history-band" data-panel="generation-history">
+          <div id="archiveStatusSummary" class="metric-grid compact"></div>
           <div class="generation-history-filter-bar">
             <label><span>History ID</span><input id="generationHistoryIdInput" type="number" min="1" /></label>
             <label><span>Task ID</span><input id="generationHistoryTaskIdInput" type="search" /></label>
@@ -1434,6 +1435,6 @@
       </div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v2"></script>
+    <script type="module" src="/static/js/bootstrap.js?v=20260805-media-archive-status-v1"></script>
   </body>
 </html>

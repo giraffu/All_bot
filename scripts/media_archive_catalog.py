@@ -87,6 +87,17 @@ SEED_SQL = """
 with selected as (
   select id, task_id, user_id, created_at, input_file, output_file, extra_outputs
   from history where id between $1 and $2
+), selected_users as (
+  select distinct user_id from selected
+), ranked as (
+  select h.id, row_number() over(partition by h.user_id order by h.id desc) rn
+  from history h join selected_users u on u.user_id=h.user_id
+), hot as (
+  select h.id from history h left join ranked r on r.id=h.id
+  where h.id between $1 and $2 and (
+    (r.rn <= 8 and h.is_visible is true) or h.is_favorited is true or h.is_public is true
+    or exists(select 1 from gallery_posts gp where gp.task_id=h.task_id and gp.is_active is true)
+  )
 ), assets as (
   select id history_id, task_id, user_id, created_at, 'input' role,
          ordinality::integer - 1 ordinal, btrim(ref) original_ref
@@ -104,12 +115,15 @@ with selected as (
   cross join lateral jsonb_path_query(extras.value, 'strict $.**.path') paths(path)
 )
 insert into analytics_media_asset_catalog
-  (history_id, task_id, user_id, history_created_at, role, ordinal, original_ref)
-select history_id, task_id, user_id, created_at, role, ordinal, original_ref from assets
+  (history_id, task_id, user_id, history_created_at, role, ordinal, original_ref, temperature)
+select history_id, task_id, user_id, created_at, role, ordinal, original_ref,
+  case when exists(select 1 from hot where hot.id=assets.history_id) then 'hot' else 'cold' end
+from assets
 where original_ref <> ''
 on conflict (history_id, role, ordinal) do update set
   task_id=excluded.task_id, user_id=excluded.user_id,
-  history_created_at=excluded.history_created_at, original_ref=excluded.original_ref
+  history_created_at=excluded.history_created_at, original_ref=excluded.original_ref,
+  temperature=excluded.temperature
 returning id;
 """
 
@@ -150,14 +164,14 @@ async def main_async(args) -> None:
         elif args.command == "seed":
             run_id = uuid.uuid4()
             await conn.execute(
-                "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'seed','running',jsonb_build_object('start',$2,'end',$3))",
+                "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'seed','running',jsonb_build_object('start',$2::bigint,'end',$3::bigint))",
                 run_id,
                 args.start_id,
                 args.end_id,
             )
             rows = await conn.fetch(SEED_SQL, args.start_id, args.end_id)
             await conn.execute(
-                "update analytics_media_runs set status='completed',stats=jsonb_build_object('upserted',$2),completed_at=now() where id=$1",
+                "update analytics_media_runs set status='completed',stats=jsonb_build_object('upserted',$2::bigint),completed_at=now() where id=$1",
                 run_id,
                 len(rows),
             )

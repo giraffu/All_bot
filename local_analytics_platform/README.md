@@ -8,7 +8,7 @@
 - 用户画像人群规模趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；快照记录周期活跃、从未活跃和沉睡用户等人群状态。`visualizations.trend` 会按用户画像 Tab 选择的日期范围合并每日数据与最近快照，表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
 - 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
-- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；支持 History/task/用户、任务类型、归档角色/状态和异常筛选。媒体详情读取 `/api/generation-history/{id}/media`，原件由 `/api/archive/assets/{id}/content` 从 NAS 流式返回并支持 Range；收藏数量表示单条记录是否收藏的 `0/1`。
+- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；支持 History/task/用户、任务类型、归档角色/状态和异常筛选。媒体详情读取 `/api/generation-history/{id}/media`，原件由 `/api/archive/assets/{id}/content` 从 NAS 流式返回并支持 Range；Cloudflare Tunnel 请求会在鉴权前被拒绝。`GET /api/archive/status` 展示归档进度、字节、吞吐、outbox 积压、来源异常、容量门禁和暂停原因；收藏数量表示单条记录是否收藏的 `0/1`。
 - 页面顶部周期控件按当前 Tab 独立保存；用户画像 Tab 使用开始/结束日期，其他 Tab 使用统计周期下拉；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。

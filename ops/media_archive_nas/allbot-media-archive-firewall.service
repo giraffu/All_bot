@@ -1,0 +1,12 @@
+[Unit]
+Description=AllBot media archive MinIO firewall
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/volume1/AllBotArchive/deploy/firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -14,7 +15,7 @@ if str(ROOT) not in sys.path:
 
 
 async def run(args) -> None:
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     from src.database.core import AsyncSessionLocal
     from src.database.models import History, MediaArchiveOutbox
@@ -49,8 +50,41 @@ async def run(args) -> None:
             last_id = rows[-1].id
             total += len(rows)
             if args.execute:
+                ids = [history.id for history in rows]
+                hot_ids = set(
+                    (
+                        await session.execute(
+                            text(
+                                """
+                                with users_in_batch as (
+                                  select distinct user_id from history where id = any(:ids)
+                                ), ranked as (
+                                  select h.id,row_number() over(partition by h.user_id order by h.id desc) rn
+                                  from history h join users_in_batch u on u.user_id=h.user_id
+                                )
+                                select h.id from history h left join ranked r on r.id=h.id
+                                where h.id = any(:ids) and (
+                                  (r.rn<=8 and h.is_visible is true) or h.is_favorited is true or h.is_public is true
+                                  or exists(select 1 from gallery_posts gp where gp.task_id=h.task_id and gp.is_active is true)
+                                )
+                                """
+                            ),
+                            {"ids": ids},
+                        )
+                    ).scalars()
+                )
+                recent_cutoff = datetime.now() - timedelta(days=30)
                 for history in rows:
-                    await enqueue_history_media_archive(session, history)
+                    priority = (
+                        0
+                        if history.id in hot_ids
+                        else 10
+                        if history.created_at and history.created_at >= recent_cutoff
+                        else 20
+                    )
+                    await enqueue_history_media_archive(
+                        session, history, priority=priority
+                    )
                 await session.commit()
             print(
                 f"cursor={last_id} candidates={total} mode={'execute' if args.execute else 'dry-run'}"

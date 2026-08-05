@@ -1,0 +1,33 @@
+{
+  "central_api": "https://api.example.invalid",
+  "agent_token": "load-from-0600-runtime-secret",
+  "catalog_database_url": "postgresql://load-from-0600-runtime-secret",
+  "nas_capacity_bytes": 0,
+  "spool_path": "/var/lib/allbot-media-archive/spool",
+  "max_spool_bytes": 107374182400,
+  "pause_spool_bytes": 96636764160,
+  "stale_part_seconds": 86400,
+  "bandwidth_bytes_per_second": 52428800,
+  "adaptive_window_seconds": 900,
+  "lease_renew_interval_seconds": 300,
+  "idle_poll_seconds": 30,
+  "nas": {
+    "name": "nas-archive",
+    "endpoint": "https://192.168.1.150:9000",
+    "bucket": "allbot-media-archive-v1",
+    "access_key": "load-from-0600-runtime-secret",
+    "secret_key": "load-from-0600-runtime-secret",
+    "ca_file": "/home/hfy/.config/allbot/media-archive/ca.crt",
+    "allowed_interfaces": ["eno1"],
+    "allowed_source_ips": ["192.168.1.115"]
+  },
+  "sources": [
+    {"name": "r2-user-data-prod", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data-prod", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},
+    {"name": "r2-user-data", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},
+    {"name": "minio-bot-data", "type": "s3", "endpoint": "http://100.99.254.53:9000", "bucket": "bot-data", "access_key": "runtime-secret", "secret_key": "runtime-secret", "allow_tailscale": true},
+    {"name": "minio-comfyui-temp", "type": "s3", "endpoint": "http://100.99.254.53:9000", "bucket": "comfyui-temp", "access_key": "runtime-secret", "secret_key": "runtime-secret", "allow_tailscale": true},
+    {"name": "cold-minio-192.168.1.88-9001", "type": "s3", "endpoint": "http://192.168.1.88:9001", "bucket": "bot-data", "access_key": "runtime-secret", "secret_key": "runtime-secret"},
+    {"name": "cold-minio-192.168.1.88-9002", "type": "s3", "endpoint": "http://192.168.1.88:9002", "bucket": "comfyui-temp", "access_key": "runtime-secret", "secret_key": "runtime-secret"},
+    {"name": "known-backups-and-filesystems", "type": "filesystem", "roots": []}
+  ]
+}

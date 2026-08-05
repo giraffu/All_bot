@@ -1,0 +1,27 @@
+[Unit]
+Description=AllBot NAS media archive worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hfy
+Group=hfy
+WorkingDirectory=/home/hfy/APP/All_bot
+ExecStart=/home/hfy/miniconda3/bin/python scripts/media_archive_worker.py --config /home/hfy/.config/allbot/media-archive/worker.json --worker-id lan-archive-192.168.1.115 --limit 100 --concurrency 8 --drain
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/allbot-media-archive/spool
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+
+[Install]
+WantedBy=multi-user.target

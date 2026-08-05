@@ -9,21 +9,24 @@ import json
 import os
 from pathlib import Path
 import sys
-from urllib.parse import urlparse
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import asyncpg
-import boto3
-from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError
+import asyncpg  # noqa: E402
+import boto3  # noqa: E402
+from botocore.config import Config  # noqa: E402
+from botocore.exceptions import (  # noqa: E402
+    BotoCoreError,
+    ClientError,
+    EndpointConnectionError,
+)
 
-from scripts.media_archive_worker import (
+from scripts.media_archive_worker import (  # noqa: E402
     clear_proxy_environment,
-    validate_direct_route,
+    validate_endpoint_route,
     _candidate_keys,
 )
 
@@ -128,7 +131,7 @@ async def run(args) -> None:
     sources = config["sources"]
     for source in sources:
         if source.get("type", "s3") == "s3":
-            validate_direct_route(urlparse(source["endpoint"]).hostname)
+            validate_endpoint_route(source)
     db_url = os.getenv("LOCAL_ANALYTICS_DATABASE_URL", "").replace(
         "postgresql+asyncpg://", "postgresql://", 1
     )
@@ -150,7 +153,7 @@ async def run(args) -> None:
                 f"sources are not registered in analytics_media_sources: {sorted(unknown)}"
             )
         await conn.execute(
-            "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'probe','running',jsonb_build_object('start',$2,'end',$3))",
+            "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'probe','running',jsonb_build_object('start',$2::bigint,'end',$3::bigint))",
             run_id,
             args.start_id,
             args.end_id,
@@ -217,7 +220,7 @@ async def run(args) -> None:
             run_id,
         )
         await conn.execute(
-            "update analytics_media_runs set status='completed',stats=jsonb_build_object('assets',$2,'attempts',$3),completed_at=now() where id=$1",
+            "update analytics_media_runs set status='completed',stats=jsonb_build_object('assets',$2::bigint,'attempts',$3::bigint),completed_at=now() where id=$1",
             run_id,
             len(assets),
             len(all_attempts),

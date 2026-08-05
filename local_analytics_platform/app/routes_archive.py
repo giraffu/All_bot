@@ -16,6 +16,20 @@ from .auth import AuthConfig, read_session_token
 
 router = APIRouter()
 RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
+CLOUDFLARE_HEADERS = (
+    "cf-ray",
+    "cf-connecting-ip",
+    "cf-ipcountry",
+    "cf-visitor",
+)
+
+
+def require_lan_archive_request(request: Request) -> None:
+    if any(request.headers.get(name) for name in CLOUDFLARE_HEADERS):
+        raise HTTPException(
+            status_code=403,
+            detail="full archive content is available from the authenticated LAN only",
+        )
 
 
 def require_archive_auth(request: Request) -> None:
@@ -47,6 +61,91 @@ def _nas_client():
         verify=ca_file,
         config=Config(signature_version="s3v4"),
     )
+
+
+@router.get(
+    "/api/archive/status",
+    dependencies=[Depends(require_archive_auth)],
+)
+async def archive_status():
+    summary = _row(
+        await _fetchrow(
+            """
+            select count(*)::bigint logical_assets,
+              count(*) filter(where status='archived_verified')::bigint verified_assets,
+              count(*) filter(where status='source_offline')::bigint offline_assets,
+              count(*) filter(where status='provisional_missing')::bigint provisional_missing,
+              count(*) filter(where status='confirmed_lost')::bigint confirmed_lost,
+              count(*) filter(where status='checksum_error')::bigint checksum_errors,
+              count(*) filter(where status='pending_probe')::bigint pending_assets
+            from analytics_media_asset_catalog
+            """
+        )
+    )
+    blobs = _row(
+        await _fetchrow(
+            "select count(*)::bigint blob_count,coalesce(sum(byte_size),0)::bigint archived_bytes from analytics_media_blobs"
+        )
+    )
+    source_hits = _rows(
+        await _fetch(
+            """select coalesce(found_source,'unresolved') source,count(*)::bigint asset_count
+               from analytics_media_asset_catalog group by 1 order by asset_count desc"""
+        )
+    )
+    latest_run = _row(
+        await _fetchrow(
+            """select run_type,status,stats,error,started_at,completed_at
+               from analytics_media_runs order by started_at desc limit 1"""
+        )
+    )
+    has_outbox = bool(
+        _row(
+            await _fetchrow(
+                "select to_regclass('public.media_archive_outbox') is not null as present"
+            )
+        ).get("present")
+    )
+    backlog = {}
+    if has_outbox:
+        backlog = _row(
+            await _fetchrow(
+                """select count(*) filter(where status in ('pending','retry','leased'))::bigint backlog,
+                   count(*) filter(where status='leased')::bigint leased,
+                   count(*) filter(where status='manual_review')::bigint manual_review,
+                   coalesce(extract(epoch from now()-min(created_at)
+                     filter(where status in ('pending','retry','leased'))),0)::bigint oldest_backlog_seconds
+                   from media_archive_outbox"""
+            )
+        )
+    capacity = int(os.getenv("NAS_ARCHIVE_CAPACITY_BYTES", "0") or 0)
+    archived_bytes = int(blobs.get("archived_bytes") or 0)
+    usage_ratio = archived_bytes / capacity if capacity else None
+    pause_reason = None
+    if usage_ratio is not None and usage_ratio >= 0.9:
+        pause_reason = "nas_usage_90_stop_all"
+    elif usage_ratio is not None and usage_ratio >= 0.8:
+        pause_reason = "nas_usage_80_stop_cold"
+    return {
+        **summary,
+        **blobs,
+        "source_hits": source_hits,
+        "latest_run": latest_run,
+        "outbox": backlog,
+        "throughput_bytes_per_second": (latest_run.get("stats") or {}).get(
+            "bytes_per_second", 0
+        ),
+        "capacity_bytes": capacity or None,
+        "usage_ratio": usage_ratio,
+        "pause_reason": pause_reason,
+        "alerts": {
+            "capacity_warning": bool(usage_ratio is not None and usage_ratio >= 0.75),
+            "checksum_error": bool(summary.get("checksum_errors")),
+            "archive_warning": int(backlog.get("oldest_backlog_seconds") or 0) >= 3600,
+            "archive_critical": int(backlog.get("oldest_backlog_seconds") or 0)
+            >= 86400,
+        },
+    }
 
 
 @router.get(
@@ -96,7 +195,7 @@ async def archive_asset(asset_id: int):
 
 @router.get(
     "/api/archive/assets/{asset_id}/content",
-    dependencies=[Depends(require_archive_auth)],
+    dependencies=[Depends(require_lan_archive_request), Depends(require_archive_auth)],
 )
 async def archive_asset_content(
     asset_id: int, range_header: str | None = Header(default=None, alias="Range")
