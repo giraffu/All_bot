@@ -18,19 +18,25 @@
 - 已完成部署：`/volume1/AllBotArchive` 使用独占的 `minio-data`、
   `minio-certs`、`ca`、`config` 和 `deploy`；固件权限迁移一度把预置目录放宽
   为 0777，启动前已恢复 root 管理，`.env` 和私钥为 0600。服务端证书 SAN 包含
-  `IP:192.168.1.150` 与 `DNS:minio`。CA 私钥只保存在本地主机权限 600 的
+  `IP:192.168.1.150`、`IP:10.250.150.2` 与 `DNS:minio`。CA 私钥只保存在本地主机权限 600 的
   `~/.local/share/allbot/media-archive-pki`，未复制到 NAS。
 - NAS 直连 Docker Hub 超时；使用本地主服务器已按 manifest digest 验证的
   amd64 镜像，通过一次性 LAN 流导入 NAS，运行时固定 image ID。MinIO 已健康
   监听 TLS 9000/9001；三个桶、archive versioning、不可删除 Worker 与分析只读
   policy 已完成。真实写读回校验通过，Worker DeleteObject 返回 AccessDenied，
   验证对象随后由管理员清理；容器重启后重新健康。
-- MinIO Docker 转发防火墙已由独立 `ALLBOT_MEDIA_ARCHIVE` 链和 systemd timer
-  持久化：`192.168.1.115` 可访问 9000/9001，管理员备用地址
-  `192.168.1.105` 只可访问 9001，其它来源拒绝。实测 `.105 -> 9000` 连接失败，
-  `.115 -> 9000/minio/health/live` 返回 200；timer 每 5 分钟在 Docker 容器地址
-  变化后重建规则。Compose 端口显式绑定 `192.168.1.150`，不再创建 IPv6 或其它
-  NAS 地址的公开监听；MinIO 重建后仅见该 IPv4 地址的 9000/9001 listener。
+- 用户确认 NAS 位于可信内网后，独立 `ALLBOT_MEDIA_ARCHIVE` 防火墙链与对应
+  service/timer 已停用并清除；恢复脚本仍留在部署目录。管理 IP
+  `192.168.1.150` 继续监听 TLS 9000/9001，因此同一 LAN 中能到达该 IP 的设备
+  可发起连接，实际对象权限仍由 TLS 与 MinIO 最小权限账号控制，且没有公网映射。
+- 物理拓扑核对确认主服务器 `eno1` 与 NAS `eth0` 为 2.5Gb 直连，NAS `eth1`
+  则以 1Gb 接入管理 LAN。已建立无网关专用网段：主机
+  `eno1=10.250.150.1/30`、NAS `eth0=10.250.150.2/30`。主机使用独立
+  NetworkManager 连接 `allbot-archive-direct` 并禁用旧 `netplan-eno1` 自启；
+  NAS 使用启用的 `allbot-media-archive-direct-link.service` 在启动时恢复地址。
+  MinIO 额外只在直连 IP 暴露 TLS 9000，控制台 9001 仍仅在管理 IP。
+  双端连接重启后复测健康，`iperf3` 5 秒实测约 2.35 Gbit/s、0 重传；两个 S3
+  地址的证书校验和 health API 均通过。
 - Btrfs 快照：UGOS Snapshot 只能看到已登记 shared folder，不能直接纳入普通
   `AllBotArchive` 目录。因此已将该目录无损转换为独立 Btrfs subvolume（ID 257），
   安装并启用 `allbot-media-archive-snapshot.timer`，每天约 03:20 执行、随机延迟
@@ -48,10 +54,10 @@
   不记录密码、access key、secret key 或私钥内容。
 - NAS 登录密码已在本次维护中轮换；新值只保存在本地主机权限 0600 的独立运行态
   secret，知识库仍不记录明文。专用 SSH 密钥登录复测正常。
-- 主服务器当前仍把 `192.168.1.150` 默认路由到 `.105` USB 网卡；写入
-  NetworkManager `/32` 路由需要本机管理员权限，当前 Polkit 拒绝。仓库已提供
-  `ops/media_archive_worker/install_nas_route.sh`；该脚本完成并验证
-  `eno1/src 192.168.1.115` 前，归档 Worker 按配置 fail closed。
+- 主服务器管理流量继续经 USB `.105` 访问 NAS `.150`；归档数据面改走上述
+  2.5Gb 专用 `/30`。Worker 和本地分析平台 NAS endpoint 已切换到
+  `https://10.250.150.2:9000`，路由校验要求 `eno1/src 10.250.150.1`，不满足时
+  继续 fail closed。
 - 本地 shadow 已初始化 5 张 `analytics_media_*` 目录表并登记 7 个默认来源；
   最近 100 条 History 的只读盘点 canary 解析出 248 个逻辑资产，其中 217 个热、
   31 个冷。尚未领取归档任务或迁移媒体，R2 删除开关保持关闭。
