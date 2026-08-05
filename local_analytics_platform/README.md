@@ -8,7 +8,7 @@
 - 用户画像人群规模趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；快照记录周期活跃、从未活跃和沉睡用户等人群状态。`visualizations.trend` 会按用户画像 Tab 选择的日期范围合并每日数据与最近快照，表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
 - 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
-- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；任务类别筛选项按数量倒序，列表支持最新创建与任务类别数量排序。输入/输出地址当前保持空字符串，等待后续本地 R2 媒体同步方案；收藏数量当前表示单条历史记录是否被用户收藏的 `0/1`。
+- 历史生成 Tab 读取 `GET /api/generation-history`，固定每页 10 条；支持 History/task/用户、任务类型、归档角色/状态和异常筛选。媒体详情读取 `/api/generation-history/{id}/media`，原件由 `/api/archive/assets/{id}/content` 从 NAS 流式返回并支持 Range；收藏数量表示单条记录是否收藏的 `0/1`。
 - 页面顶部周期控件按当前 Tab 独立保存；用户画像 Tab 使用开始/结束日期，其他 Tab 使用统计周期下拉；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。
@@ -45,6 +45,11 @@ export LOCAL_ANALYTICS_AUTH_COOKIE_SECURE=true
 ```
 
 `LOCAL_ANALYTICS_AUTH_PASSWORD` 仅用于临时本地调试；公网入口应使用 `LOCAL_ANALYTICS_AUTH_PASSWORD_HASH`。登录成功后平台写入签名 HttpOnly cookie，默认有效期 12 小时，可用 `LOCAL_ANALYTICS_AUTH_SESSION_TTL_SECONDS` 调整。
+
+归档媒体 API 无条件要求上述登录已启用且配置完整；全局登录关闭时它们返回
+503。服务端还需只读配置 `NAS_MINIO_ENDPOINT`、
+`NAS_MINIO_ANALYTICS_ACCESS_KEY`、`NAS_MINIO_ANALYTICS_SECRET_KEY` 和
+`NAS_MINIO_CA_FILE`。浏览器不会获得 MinIO 凭据，禁止把私有归档发布到公网。
 
 Cloudflare 公网入口建议使用独立 hostname，例如 `analytics.aivison.it.com`，Tunnel 回源本地主服务器 `http://127.0.0.1:8098`。Public hostname 发布前必须先创建 Cloudflare Access self-hosted app，限制管理员邮箱/身份组并启用 MFA；不要把 `8098` 或 shadow 数据库端口直接暴露到公网。
 

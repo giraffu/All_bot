@@ -36,6 +36,8 @@
 | 公网 | DNS/Tunnel/Pages/Access 当次状态与 origin health |
 
 秘密值、完整 env、token、数据库 URL、presigned URL 和用户媒体不得进入报告。
+日期化 NAS 容量和部署证据写入 `logs/resource_inventory_nas_YYYYMMDD.md`；当前
+规划值与待复核项见 `logs/resource_inventory_nas_20260805.md`，不得复制到稳定 Skill。
 
 ## 3. 只读采集原则
 

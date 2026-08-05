@@ -1,0 +1,52 @@
+services:
+  minio:
+    image: ${MINIO_IMAGE:?Set an immutable minio/minio@sha256 digest}
+    command: server /data --address ":9000" --console-address ":9001"
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_SERVER_URL: https://192.168.1.150:9000
+      MINIO_BROWSER_REDIRECT_URL: https://192.168.1.150:9001
+    volumes:
+      - ${MINIO_DATA_PATH:-/volume1/AllBotArchive/minio-data}:/data
+      - ${MINIO_CERT_PATH:-/volume1/AllBotArchive/minio-certs}:/root/.minio/certs:ro
+      - ${MINIO_CA_PATH:-/volume1/AllBotArchive/ca/allbot-archive-ca.crt}:/root/.minio/certs/CAs/allbot-archive-ca.crt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "--resolve", "192.168.1.150:9000:127.0.0.1", "--cacert", "/root/.minio/certs/CAs/allbot-archive-ca.crt", "https://192.168.1.150:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  minio-bootstrap:
+    image: ${MINIO_MC_IMAGE:?Set an immutable minio/mc@sha256 digest}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      ARCHIVE_WORKER_ACCESS_KEY: ${ARCHIVE_WORKER_ACCESS_KEY:?required}
+      ARCHIVE_WORKER_SECRET_KEY: ${ARCHIVE_WORKER_SECRET_KEY:?required}
+      ANALYTICS_ACCESS_KEY: ${ANALYTICS_ACCESS_KEY:?required}
+      ANALYTICS_SECRET_KEY: ${ANALYTICS_SECRET_KEY:?required}
+    volumes:
+      - ./bootstrap.sh:/bootstrap.sh:ro
+      - ./policies:/policies:ro
+      - ${MINIO_CA_PATH:-/volume1/AllBotArchive/ca/allbot-archive-ca.crt}:/root/.mc/certs/CAs/allbot-archive-ca.crt:ro
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]

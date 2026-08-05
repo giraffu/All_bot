@@ -13,13 +13,16 @@ class _FakeRowResult:
     def first(self):
         return self._rows[0] if self._rows else None
 
+    def scalar(self):
+        return self._rows[0] if self._rows else None
+
 
 class _FakeSession:
     def __init__(self, results):
         self._results = iter(results)
         self.statements = []
 
-    async def execute(self, stmt):
+    async def execute(self, stmt, params=None):
         self.statements.append(stmt)
         return next(self._results)
 
@@ -34,13 +37,19 @@ class _FakeSession:
 async def test_prune_user_web_history_r2_cache_deletes_only_first_overflow_task(
     monkeypatch,
 ):
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_ENABLED", "true")
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_CONFIRMATION", "DELETE_VERIFIED_COLD_R2")
     service = StorageService()
     service.r2_client = object()
     service.r2_bucket = "unit-test-r2"
 
     session = _FakeSession(
         [
-            _FakeRowResult([("old-task", "123/output_images/old.mp4", "custom_video")]),
+            _FakeRowResult(
+                [(77, "old-task", "123/output_images/old.mp4", "custom_video")]
+            ),
+            _FakeRowResult([True]),
+            _FakeRowResult([False]),
         ]
     )
 
@@ -64,13 +73,15 @@ async def test_prune_user_web_history_r2_cache_deletes_only_first_overflow_task(
         "old.mp4",
         "old_thumb.jpg",
     }
-    assert len(session.statements) == 1
+    assert len(session.statements) == 3
 
 
 @pytest.mark.asyncio
 async def test_prune_user_web_history_r2_cache_counts_hidden_items_in_recent_window(
     monkeypatch,
 ):
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_ENABLED", "true")
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_CONFIRMATION", "DELETE_VERIFIED_COLD_R2")
     service = StorageService()
     service.r2_client = object()
     service.r2_bucket = "unit-test-r2"
@@ -78,8 +89,10 @@ async def test_prune_user_web_history_r2_cache_counts_hidden_items_in_recent_win
     session = _FakeSession(
         [
             _FakeRowResult(
-                [("older-visible-task", "123/output_images/older.png", "image")]
+                [(78, "older-visible-task", "123/output_images/older.png", "image")]
             ),
+            _FakeRowResult([True]),
+            _FakeRowResult([False]),
         ]
     )
 
@@ -113,6 +126,8 @@ async def test_prune_user_web_history_r2_cache_counts_hidden_items_in_recent_win
 async def test_prune_user_web_history_r2_cache_skips_when_no_overflow_task(
     monkeypatch,
 ):
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_ENABLED", "true")
+    monkeypatch.setenv("R2_ARCHIVE_DELETE_CONFIRMATION", "DELETE_VERIFIED_COLD_R2")
     service = StorageService()
     service.r2_client = object()
     service.r2_bucket = "unit-test-r2"
@@ -139,3 +154,21 @@ async def test_prune_user_web_history_r2_cache_skips_when_no_overflow_task(
 
     assert deleted_keys == []
     assert len(session.statements) == 1
+
+
+@pytest.mark.asyncio
+async def test_prune_user_web_history_r2_cache_is_fail_closed_by_default(monkeypatch):
+    service = StorageService()
+    service.r2_client = object()
+    service.r2_bucket = "unit-test-r2"
+    monkeypatch.delenv("R2_ARCHIVE_DELETE_ENABLED", raising=False)
+    monkeypatch.delenv("R2_ARCHIVE_DELETE_CONFIRMATION", raising=False)
+    deleted_keys = []
+
+    async def _fake_delete(keys):
+        deleted_keys.extend(keys)
+        return len(keys)
+
+    monkeypatch.setattr(service, "async_delete_r2_objects", _fake_delete)
+    await service.async_prune_user_web_history_r2_cache(user_id=123, keep_recent=1)
+    assert deleted_keys == []

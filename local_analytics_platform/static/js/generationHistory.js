@@ -11,6 +11,15 @@ export function createGenerationHistoryModule({
   function params() {
     return {
       task_type: $("#generationHistoryTaskTypeSelect")?.value || "",
+      history_id: $("#generationHistoryIdInput")?.value || "",
+      task_id: $("#generationHistoryTaskIdInput")?.value || "",
+      user_id: $("#generationHistoryUserIdInput")?.value || "",
+      date_from: $("#generationHistoryDateFromInput")?.value || "",
+      date_to: $("#generationHistoryDateToInput")?.value || "",
+      archive_status: $("#generationHistoryArchiveStatusSelect")?.value || "",
+      asset_role: $("#generationHistoryAssetRoleSelect")?.value || "",
+      archive_source: $("#generationHistoryArchiveSourceInput")?.value || "",
+      loss_only: $("#generationHistoryLossOnly")?.checked || false,
       sort: $("#generationHistorySortSelect")?.value || "created_desc",
       page: state.generationHistoryPage || 1,
     };
@@ -35,7 +44,7 @@ export function createGenerationHistoryModule({
     if (!body) return;
     const rows = state.generationHistory?.rows || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="14" class="empty">暂无历史生成记录</td></tr>';
+      body.innerHTML = '<tr><td colspan="15" class="empty">暂无历史生成记录</td></tr>';
       return;
     }
     const taskTypeCounts = new Map(
@@ -60,6 +69,7 @@ export function createGenerationHistoryModule({
         <td class="generation-history-time">${fmtDate(row.created_at)}</td>
         <td class="generation-history-address">${escapeHtml(row.input_address || "")}</td>
         <td class="generation-history-address">${escapeHtml(row.output_address || "")}</td>
+        <td><button type="button" data-history-media="${escapeHtml(row.id)}">查看媒体</button></td>
       </tr>
     `).join("");
   }
@@ -105,6 +115,37 @@ export function createGenerationHistoryModule({
 
   $("#generationHistoryTaskTypeSelect")?.addEventListener("change", resetAndLoad);
   $("#generationHistorySortSelect")?.addEventListener("change", resetAndLoad);
+  ["#generationHistoryIdInput", "#generationHistoryTaskIdInput", "#generationHistoryUserIdInput", "#generationHistoryDateFromInput", "#generationHistoryDateToInput", "#generationHistoryArchiveSourceInput"].forEach((selector) => {
+    $(selector)?.addEventListener("change", resetAndLoad);
+  });
+  ["#generationHistoryArchiveStatusSelect", "#generationHistoryAssetRoleSelect", "#generationHistoryLossOnly"].forEach((selector) => {
+    $(selector)?.addEventListener("change", resetAndLoad);
+  });
+  $("#generationHistoryRows")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-history-media]");
+    if (!button) return;
+    const historyId = button.dataset.historyMedia;
+    try {
+      const payload = await fetchJson(`/api/generation-history/${historyId}/media`);
+      const dialog = $("#generationHistoryMediaDialog");
+      $("#generationHistoryMediaTitle").textContent = `History #${historyId} · ${payload.assets.length} 个逻辑媒体`;
+      $("#generationHistoryMediaBody").innerHTML = payload.assets.length ? payload.assets.map((asset) => {
+        const contentUrl = asset.status === "archived_verified" ? `/api/archive/assets/${asset.id}/content` : "";
+        const preview = contentUrl && (asset.mime_type || "").startsWith("image/")
+          ? `<img loading="lazy" src="${contentUrl}" alt="${escapeHtml(asset.role)}" />`
+          : contentUrl && (asset.mime_type || "").startsWith("video/")
+            ? `<video controls preload="metadata" src="${contentUrl}"></video>` : "";
+        return `<article class="archive-media-card">${preview}<strong>${escapeHtml(asset.role)} #${fmt(asset.ordinal)}</strong>
+          <span class="archive-status archive-status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+          <div class="muted small">${escapeHtml(asset.original_ref)}</div>
+          <div class="mono small">${asset.byte_size ? `${fmt(asset.byte_size)} bytes` : "-"} · ${escapeHtml(asset.sha256 || "无 SHA-256")}</div>
+          <div class="small">来源：${escapeHtml(asset.found_source || "-")}</div>
+          ${contentUrl ? `<a href="${contentUrl}" target="_blank" rel="noopener">打开原件</a>` : ""}</article>`;
+      }).join("") : '<div class="empty">此 History 尚无目录资产，请先运行盘点。</div>';
+      dialog.showModal();
+    } catch (error) { setError(error); }
+  });
+  $("#generationHistoryMediaClose")?.addEventListener("click", () => $("#generationHistoryMediaDialog")?.close());
   $("#generationHistoryPagination")?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-history-page]");
     if (!button || button.disabled) return;

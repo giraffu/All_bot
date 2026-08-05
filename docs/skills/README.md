@@ -24,6 +24,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `allbot-lan-resource-manager` | LAN 资源平台、可信构建、部署与 runner |
 | `allbot-lan-media-gallery` | LAN 只读备份图库、媒体白名单与索引缓存 |
 | `allbot-local-analytics-prompt-semantics` | 本地分析提示词词元治理 |
+| `allbot-local-media-archive` | History 全量目录、NAS MinIO、恢复、丢失确认与 R2 清理门禁 |
 | `allbot-kb-auto-updater` | docs/Skills/术语/矩阵一致性 |
 | `allbot-diagnosing-bugs` | 可复现反馈环、假设、插桩和回归 |
 | `allbot-tdd` | public seam 行为测试和纵切开发 |

@@ -651,12 +651,28 @@
 
         <section class="band tab-panel generation-history-band" data-panel="generation-history">
           <div class="generation-history-filter-bar">
+            <label><span>History ID</span><input id="generationHistoryIdInput" type="number" min="1" /></label>
+            <label><span>Task ID</span><input id="generationHistoryTaskIdInput" type="search" /></label>
+            <label><span>用户 ID</span><input id="generationHistoryUserIdInput" type="number" min="1" /></label>
+            <label><span>开始日期</span><input id="generationHistoryDateFromInput" type="date" /></label>
+            <label><span>结束日期</span><input id="generationHistoryDateToInput" type="date" /></label>
             <label>
               <span>任务类别</span>
               <select id="generationHistoryTaskTypeSelect">
                 <option value="">所有任务类别</option>
               </select>
             </label>
+            <label><span>归档状态</span><select id="generationHistoryArchiveStatusSelect">
+              <option value="">全部</option><option value="archived_verified">已验收</option>
+              <option value="pending_probe">待探测</option><option value="source_offline">来源离线</option>
+              <option value="provisional_missing">暂定缺失</option><option value="confirmed_lost">确认丢失</option>
+              <option value="checksum_error">校验错误</option>
+            </select></label>
+            <label><span>资产角色</span><select id="generationHistoryAssetRoleSelect">
+              <option value="">全部</option><option value="input">输入</option><option value="output">主输出</option>
+            </select></label>
+            <label><span>归档来源</span><input id="generationHistoryArchiveSourceInput" type="search" placeholder="如 r2-user-data-prod" /></label>
+            <label class="checkbox-label"><input id="generationHistoryLossOnly" type="checkbox" /><span>仅异常/丢失</span></label>
             <label>
               <span>排序</span>
               <select id="generationHistorySortSelect">
@@ -668,7 +684,7 @@
           <div class="table-shell full generation-history-table-shell">
             <div class="table-title-row">
               <div class="table-title">历史生成明细</div>
-              <div class="pagination-status">输入和输出地址将在后续接入本地 R2 媒体后展示</div>
+              <div class="pagination-status">原件由登录后的分析平台从 NAS 流式返回</div>
             </div>
             <table class="generation-history-table">
               <thead>
@@ -687,12 +703,17 @@
                   <th>创建时间</th>
                   <th>输入地址</th>
                   <th>输出地址</th>
+                  <th>归档媒体</th>
                 </tr>
               </thead>
               <tbody id="generationHistoryRows"></tbody>
             </table>
           </div>
           <div id="generationHistoryPagination" class="generation-history-pagination"></div>
+          <dialog id="generationHistoryMediaDialog" class="archive-media-dialog">
+            <div class="archive-media-dialog-head"><strong id="generationHistoryMediaTitle">媒体归档</strong><button type="button" id="generationHistoryMediaClose">关闭</button></div>
+            <div id="generationHistoryMediaBody" class="archive-media-grid"></div>
+          </dialog>
         </section>
 
         <section class="band tab-panel" data-panel="prompts">

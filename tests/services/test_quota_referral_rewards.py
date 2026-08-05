@@ -5,7 +5,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.database.models import History, Referral, User, UserLog
+from src.database.models import (
+    History,
+    MediaArchiveOutbox,
+    MediaArchiveReceipt,
+    Referral,
+    User,
+    UserLog,
+)
 from src.logger import UserLogger
 from src.quota import QuotaManager
 
@@ -16,6 +23,8 @@ async def _create_session_factory(monkeypatch):
         await conn.run_sync(User.__table__.create)
         await conn.run_sync(Referral.__table__.create)
         await conn.run_sync(History.__table__.create)
+        await conn.run_sync(MediaArchiveOutbox.__table__.create)
+        await conn.run_sync(MediaArchiveReceipt.__table__.create)
         await conn.run_sync(UserLog.__table__.create)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -43,8 +52,10 @@ async def _load_state(session_factory):
             await session.execute(select(Referral).where(Referral.invitee_id == 2))
         ).scalar_one_or_none()
         logs = (
-            await session.execute(select(UserLog).order_by(UserLog.id))
-        ).scalars().all()
+            (await session.execute(select(UserLog).order_by(UserLog.id)))
+            .scalars()
+            .all()
+        )
         return inviter, invitee, referral, logs
 
 

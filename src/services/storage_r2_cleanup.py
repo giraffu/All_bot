@@ -1,8 +1,9 @@
 import asyncio
 import logging
+import os
 
 from botocore.exceptions import ClientError
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.core.media_paths import (
     build_history_r2_media_key,
@@ -93,10 +94,24 @@ async def async_prune_user_web_history_r2_cache(
 ) -> None:
     if not service.r2_client or not service.r2_bucket or not user_id:
         return
+    deletion_enabled = os.getenv("R2_ARCHIVE_DELETE_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    confirmation = os.getenv("R2_ARCHIVE_DELETE_CONFIRMATION", "")
+    if not deletion_enabled or confirmation != "DELETE_VERIFIED_COLD_R2":
+        logger.info(
+            "Incremental R2 prune disabled: archive deletion gate is closed for user %s",
+            user_id,
+        )
+        return
 
     async with async_session_factory() as session:
         overflow_stmt = (
             select(
+                History.id,
                 History.task_id,
                 History.output_file,
                 History.type,
@@ -123,7 +138,54 @@ async def async_prune_user_web_history_r2_cache(
         )
         return
 
-    task_id, output_file, history_type = overflow_row
+    history_id, task_id, output_file, history_type = overflow_row
+    async with async_session_factory() as gate_session:
+        verified = (
+            await gate_session.execute(
+                text(
+                    """select exists(
+                      select 1 from media_archive_outbox o
+                      join media_archive_receipts r on r.history_id=o.history_id
+                      where o.history_id=:history_id and o.status='archived'
+                        and r.role='output' and r.ordinal=0
+                        and r.status='archived_verified' and length(r.sha256)=64
+                    )"""
+                ),
+                {"history_id": history_id},
+            )
+        ).scalar()
+        shared_hot_reference = (
+            await gate_session.execute(
+                text(
+                    """with ranked as (
+                      select id, row_number() over(partition by user_id order by id desc) rn from history
+                    ) select exists(
+                      select 1 from history h join ranked r on r.id=h.id
+                      where h.id<>:history_id and h.output_file=:output_file and (
+                        h.is_favorited is true or h.is_public is true
+                        or (r.rn<=:keep_recent and h.is_visible is true)
+                        or exists(select 1 from gallery_posts gp where gp.task_id=h.task_id and gp.is_active is true)
+                      )
+                    )"""
+                ),
+                {
+                    "history_id": history_id,
+                    "output_file": output_file,
+                    "keep_recent": keep_recent,
+                },
+            )
+        ).scalar()
+    if not verified:
+        logger.warning(
+            "R2 prune blocked: History %s has no verified NAS output receipt",
+            history_id,
+        )
+        return
+    if shared_hot_reference:
+        logger.warning(
+            "R2 prune blocked: %s is still referenced by a hot History", output_file
+        )
+        return
     delete_keys = build_history_r2_cleanup_keys(task_id, output_file, history_type)
 
     delete_func = async_delete_r2_objects_func or async_delete_r2_objects

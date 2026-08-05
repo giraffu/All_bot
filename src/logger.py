@@ -199,6 +199,9 @@ class UserLogger:
                 existing_history.requested_duration = requested_duration
                 existing_history.allow_contribute = allow_contribute
                 user.last_activity = datetime.now()
+                from .services.media_archive_service import enqueue_history_media_archive
+
+                await enqueue_history_media_archive(session, existing_history)
                 await session.commit()
                 return False
 
@@ -220,6 +223,10 @@ class UserLogger:
                 source=source,
             )
             session.add(history_entry)
+
+            from .services.media_archive_service import enqueue_history_media_archive
+
+            await enqueue_history_media_archive(session, history_entry)
 
             # Update user stats
             user.generation_count = previous_generation_count + 1
