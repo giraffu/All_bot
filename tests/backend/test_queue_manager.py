@@ -53,6 +53,7 @@ class _FakeRedis:
         self.sets = {}
         self.values = {}
         self.published = []
+        self.expirations = {}
         self.task_create_count = 0
 
     async def eval(
@@ -66,9 +67,7 @@ class _FakeRedis:
             allowed_count = int(allowed_count)
             preferred_count = int(preferred_count)
             allowed = set(task_types[:allowed_count])
-            preferred = set(
-                task_types[allowed_count : allowed_count + preferred_count]
-            )
+            preferred = set(task_types[allowed_count : allowed_count + preferred_count])
             fallback = None
             for task_id, score in sorted(
                 self.sorted_sets.get(pending_key, {}).items(),
@@ -123,14 +122,16 @@ class _FakeRedis:
             next_chars = int(stream.get("character_count", 0)) + int(delta_chars)
             if next_chars > int(contract["max_chars"]):
                 return [-18, last]
-            stream.update({
-                "schema_version": "allbot.text_stream.v1",
-                "attempt_id": attempt_id,
-                "last_sequence": sequence,
-                "character_count": next_chars,
-                "updated_at": updated_at,
-                f"field:{field}": stream.get(f"field:{field}", "") + delta,
-            })
+            stream.update(
+                {
+                    "schema_version": "allbot.text_stream.v1",
+                    "attempt_id": attempt_id,
+                    "last_sequence": sequence,
+                    "character_count": next_chars,
+                    "updated_at": updated_at,
+                    f"field:{field}": stream.get(f"field:{field}", "") + delta,
+                }
+            )
             return [1, sequence]
 
         if "TRANSITION" not in script and "local current = redis.call('HGET'" in script:
@@ -157,9 +158,7 @@ class _FakeRedis:
         existing = self.hashes.get(task_key)
         if existing is not None:
             return (
-                0
-                if existing.get("request_fingerprint") == request_fingerprint
-                else -1
+                0 if existing.get("request_fingerprint") == request_fingerprint else -1
             )
         self.hashes[task_key] = json.loads(task_data_json)
         self.sorted_sets.setdefault(pending_key, {})[task_id] = float(score)
@@ -197,8 +196,14 @@ class _FakeRedis:
             or key in self.sorted_sets
         )
 
-    async def expire(self, _key, _ttl):
+    async def expire(self, key, ttl):
+        self.expirations[key] = ttl
         return True
+
+    async def incr(self, key):
+        value = int(self.values.get(key, 0)) + 1
+        self.values[key] = value
+        return value
 
     async def setex(self, key, _ttl, value):
         self.values[key] = value
@@ -234,7 +239,12 @@ class _FakeRedis:
         return 1 if existed else 0
 
     async def zrank(self, key, member):
-        items = [task_id for task_id, _score in sorted(self.sorted_sets.get(key, {}).items(), key=lambda item: item[1])]
+        items = [
+            task_id
+            for task_id, _score in sorted(
+                self.sorted_sets.get(key, {}).items(), key=lambda item: item[1]
+            )
+        ]
         try:
             return items.index(member)
         except ValueError:
@@ -266,7 +276,9 @@ class _FakeRedis:
 
     async def scan(self, cursor, match=None, count=100):
         _ = count
-        matched = [key for key in self.hashes if not match or key.startswith(match.rstrip("*"))]
+        matched = [
+            key for key in self.hashes if not match or key.startswith(match.rstrip("*"))
+        ]
         if cursor != 0:
             return 0, []
         return 0, matched
@@ -555,8 +567,12 @@ async def test_dequeue_task_respects_allowed_types_and_marks_task_running():
     task_a = f"{manager.task_prefix}task-a"
     task_b = f"{manager.task_prefix}task-b"
 
-    await redis.hset(task_a, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
-    await redis.hset(task_b, mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING})
+    await redis.hset(
+        task_a, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}
+    )
+    await redis.hset(
+        task_b, mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING}
+    )
     await redis.zadd(manager.pending_key, {"task-a": 1.0, "task-b": 2.0})
 
     result = await manager.dequeue_task(allowed_types=[TaskType.LTX_VIDEO])
@@ -703,7 +719,9 @@ async def test_dequeue_task_with_cancel_lock_marks_task_uncancellable_phase():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-lock"
 
-    await redis.hset(task_key, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
+    await redis.hset(
+        task_key, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}
+    )
     await redis.zadd(manager.pending_key, {"task-lock": 1.0})
 
     result = await manager.dequeue_task(cancel_lock=True)
@@ -725,8 +743,22 @@ async def test_peek_pending_tasks_respects_allowed_types_without_mutating_queue_
     task_a = f"{manager.task_prefix}task-a"
     task_b = f"{manager.task_prefix}task-b"
 
-    await redis.hset(task_a, mapping={"task_id": "task-a", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
-    await redis.hset(task_b, mapping={"task_id": "task-b", "type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING})
+    await redis.hset(
+        task_a,
+        mapping={
+            "task_id": "task-a",
+            "type": TaskType.IMG2IMG,
+            "status": TaskStatus.PENDING,
+        },
+    )
+    await redis.hset(
+        task_b,
+        mapping={
+            "task_id": "task-b",
+            "type": TaskType.LTX_VIDEO,
+            "status": TaskStatus.PENDING,
+        },
+    )
     await redis.zadd(manager.pending_key, {"task-a": 1.0, "task-b": 2.0})
 
     result = await manager.peek_pending_tasks(
@@ -734,7 +766,9 @@ async def test_peek_pending_tasks_respects_allowed_types_without_mutating_queue_
         limit=1,
     )
 
-    assert result == [{"task_id": "task-b", "type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING}]
+    assert result == [
+        {"task_id": "task-b", "type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING}
+    ]
     assert redis.sorted_sets[manager.pending_key] == {"task-a": 1.0, "task-b": 2.0}
     assert redis.sets.get(manager.running_key, set()) == set()
     assert manager._task_heartbeat_key("task-b") not in redis.values
@@ -785,11 +819,19 @@ async def test_peek_pending_tasks_skips_non_pending_tasks_left_in_pending_zset()
 
     await redis.hset(
         f"{manager.task_prefix}task-cancelled",
-        mapping={"task_id": "task-cancelled", "type": TaskType.IMG2IMG, "status": TaskStatus.CANCELLED},
+        mapping={
+            "task_id": "task-cancelled",
+            "type": TaskType.IMG2IMG,
+            "status": TaskStatus.CANCELLED,
+        },
     )
     await redis.hset(
         f"{manager.task_prefix}task-pending",
-        mapping={"task_id": "task-pending", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING},
+        mapping={
+            "task_id": "task-pending",
+            "type": TaskType.IMG2IMG,
+            "status": TaskStatus.PENDING,
+        },
     )
     await redis.zadd(
         manager.pending_key,
@@ -801,7 +843,13 @@ async def test_peek_pending_tasks_skips_non_pending_tasks_left_in_pending_zset()
         limit=1,
     )
 
-    assert result == [{"task_id": "task-pending", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}]
+    assert result == [
+        {
+            "task_id": "task-pending",
+            "type": TaskType.IMG2IMG,
+            "status": TaskStatus.PENDING,
+        }
+    ]
     assert "task-cancelled" in redis.sorted_sets[manager.pending_key]
     assert "task-pending" in redis.sorted_sets[manager.pending_key]
 
@@ -813,8 +861,12 @@ async def test_dequeue_task_without_type_filter_pops_first_pending_task():
     task_a = f"{manager.task_prefix}task-a"
     task_b = f"{manager.task_prefix}task-b"
 
-    await redis.hset(task_a, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
-    await redis.hset(task_b, mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING})
+    await redis.hset(
+        task_a, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}
+    )
+    await redis.hset(
+        task_b, mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING}
+    )
     await redis.zadd(manager.pending_key, {"task-a": 1.0, "task-b": 2.0})
 
     result = await manager.dequeue_task()
@@ -907,7 +959,9 @@ async def test_activate_dequeued_task_marks_task_running_and_returns_tuple():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-activate"
 
-    await redis.hset(task_key, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
+    await redis.hset(
+        task_key, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}
+    )
 
     result = await manager._activate_dequeued_task(("task-activate", 3.5))
 
@@ -923,7 +977,9 @@ async def test_cancel_task_cancels_pending_task_and_publishes_event():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-1"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.PENDING, "type": TaskType.IMG2IMG})
+    await redis.hset(
+        task_key, mapping={"status": TaskStatus.PENDING, "type": TaskType.IMG2IMG}
+    )
     await redis.zadd(manager.pending_key, {"task-1": 1.0})
 
     result = await manager.cancel_task("task-1")
@@ -936,7 +992,10 @@ async def test_cancel_task_cancels_pending_task_and_publishes_event():
     assert redis.hashes[task_key]["status"] == TaskStatus.CANCELLED
     assert redis.hashes[task_key]["cancel_requested"] == 0
     assert redis.hashes[task_key]["cancel_requested_at"] == ""
-    assert ("comfy:task_events:task-1", json.dumps({"status": "cancelled"})) in redis.published
+    assert (
+        "comfy:task_events:task-1",
+        json.dumps({"status": "cancelled"}),
+    ) in redis.published
 
 
 @pytest.mark.asyncio
@@ -964,7 +1023,9 @@ async def test_cancel_task_requests_running_task_cancellation():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-2"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.LTX_VIDEO})
+    await redis.hset(
+        task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.LTX_VIDEO}
+    )
     await redis.sadd(manager.running_key, "task-2")
 
     result = await manager.cancel_task("task-2")
@@ -1072,18 +1133,23 @@ async def test_text_delta_is_idempotent_and_rejects_sequence_gaps():
     redis = _FakeRedis()
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-stream"
-    await redis.hset(task_key, mapping={
-        "status": "running",
-        "type": "prompt_optimize",
-        "worker_id": "prompt_optimizer_test_01",
-        "params": json.dumps({
-            "text_stream_contract": {
-                "schema_version": "allbot.text_stream.v1",
-                "fields": ["positive_prompt"],
-                "max_chars": 2000,
-            }
-        }),
-    })
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": "running",
+            "type": "prompt_optimize",
+            "worker_id": "prompt_optimizer_test_01",
+            "params": json.dumps(
+                {
+                    "text_stream_contract": {
+                        "schema_version": "allbot.text_stream.v1",
+                        "fields": ["positive_prompt"],
+                        "max_chars": 2000,
+                    }
+                }
+            ),
+        },
+    )
     request = dict(
         task_id="task-stream",
         agent_id="prompt_optimizer_test_01",
@@ -1110,7 +1176,9 @@ async def test_cancel_task_returns_terminal_state_for_done_task():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-3"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.DONE, "type": TaskType.FACE_VIDEO})
+    await redis.hset(
+        task_key, mapping={"status": TaskStatus.DONE, "type": TaskType.FACE_VIDEO}
+    )
 
     result = await manager.cancel_task("task-3")
 
@@ -1127,13 +1195,18 @@ async def test_check_zombie_tasks_fails_running_task_without_heartbeat():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-zombie"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.VIDEO_EDIT})
+    await redis.hset(
+        task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.VIDEO_EDIT}
+    )
     await redis.sadd(manager.running_key, "task-zombie")
 
     await manager.check_zombie_tasks()
 
     assert redis.hashes[task_key]["status"] == TaskStatus.ERROR
-    assert redis.hashes[task_key]["error_msg"] == "Task execution timed out (Worker heartbeat lost)"
+    assert (
+        redis.hashes[task_key]["error_msg"]
+        == "Task execution timed out (Worker heartbeat lost)"
+    )
     payload = json.loads(redis.published[-1][1])
     assert payload["status"] == "error"
     assert payload["error_msg"] == "Task execution timed out (Worker heartbeat lost)"
@@ -1146,7 +1219,9 @@ async def test_check_zombie_tasks_keeps_running_task_with_heartbeat():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-alive"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.VIDEO_EDIT})
+    await redis.hset(
+        task_key, mapping={"status": TaskStatus.RUNNING, "type": TaskType.VIDEO_EDIT}
+    )
     await redis.sadd(manager.running_key, "task-alive")
     await redis.setex(manager._task_heartbeat_key("task-alive"), 300, "1")
 
@@ -1154,6 +1229,40 @@ async def test_check_zombie_tasks_keeps_running_task_with_heartbeat():
 
     assert redis.hashes[task_key]["status"] == TaskStatus.RUNNING
     assert redis.published == []
+
+
+@pytest.mark.asyncio
+async def test_repeated_worker_heartbeat_losses_temporarily_disable_new_pops():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    for index in range(1, 7):
+        task_id = f"task-zombie-{index}"
+        task_key = f"{manager.task_prefix}{task_id}"
+        await redis.hset(
+            task_key,
+            mapping={
+                "status": TaskStatus.RUNNING,
+                "type": TaskType.WAN22_VIDEO_V2,
+                "worker_id": "agent-flapping",
+            },
+        )
+        await redis.sadd(manager.running_key, task_id)
+
+        await manager.check_zombie_tasks()
+
+        enabled, _reason = await manager.is_agent_pop_enabled("agent-flapping")
+        assert enabled is (index < 6)
+
+    control = await manager.get_agent_control_state("agent-flapping")
+    assert control["state"] == "disabled"
+    assert (
+        control["reason"] == "automatic quarantine after repeated task heartbeat loss"
+    )
+    assert (
+        redis.expirations[manager._agent_control_key("agent-flapping")]
+        == manager.agent_heartbeat_loss_quarantine_seconds
+    )
 
 
 @pytest.mark.asyncio
@@ -1264,9 +1373,15 @@ async def test_get_active_workers_count_counts_agent_heartbeat_keys_only():
     redis = _FakeRedis()
     manager = QueueManager(redis)
 
-    await redis.hset(f"{manager.agent_heartbeat_prefix}agent-1", mapping={"status": "idle"})
-    await redis.hset(f"{manager.agent_heartbeat_prefix}agent-2", mapping={"status": "running"})
-    await redis.hset(f"{manager.task_prefix}task-1", mapping={"status": TaskStatus.RUNNING})
+    await redis.hset(
+        f"{manager.agent_heartbeat_prefix}agent-1", mapping={"status": "idle"}
+    )
+    await redis.hset(
+        f"{manager.agent_heartbeat_prefix}agent-2", mapping={"status": "running"}
+    )
+    await redis.hset(
+        f"{manager.task_prefix}task-1", mapping={"status": TaskStatus.RUNNING}
+    )
 
     count = await manager.get_active_workers_count()
 
@@ -1355,12 +1470,12 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
         json.dumps(
             {
                 "status": "done",
-                    "result_path": "outputs/result.mp4",
-                    "extra_outputs": None,
-                    "result_kind": "media",
-                    "result_text": None,
-                    "result_meta": None,
-                    "progress": 1.0,
+                "result_path": "outputs/result.mp4",
+                "extra_outputs": None,
+                "result_kind": "media",
+                "result_text": None,
+                "result_meta": None,
+                "progress": 1.0,
                 "task_type": TaskType.LTX_VIDEO,
                 "worker_id": "worker-1",
                 "created_at": 123.0,
@@ -1465,7 +1580,9 @@ async def test_get_queue_position_by_type_returns_sorted_rank_within_task_type()
         {"task-a": 1.0, "task-b": 2.0, "task-c": 3.0, "task-d": 4.0},
     )
     await redis.hset(f"{manager.task_prefix}task-a", mapping={"type": TaskType.IMG2IMG})
-    await redis.hset(f"{manager.task_prefix}task-b", mapping={"type": TaskType.FACE_SWAP})
+    await redis.hset(
+        f"{manager.task_prefix}task-b", mapping={"type": TaskType.FACE_SWAP}
+    )
     await redis.hset(f"{manager.task_prefix}task-c", mapping={"type": TaskType.IMG2IMG})
     await redis.hset(f"{manager.task_prefix}task-d", mapping={"type": TaskType.IMG2IMG})
 
