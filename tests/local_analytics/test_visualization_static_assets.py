@@ -14,8 +14,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     )
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260805-generation-history-v1" in html
-    assert 'type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v1"' in html
+    assert "/static/styles.css?v=20260805-generation-history-v2" in html
+    assert 'type="module" src="/static/js/bootstrap.js?v=20260805-generation-history-v2"' in html
     assert 'from "./state.js?v=20260805-generation-history-v1"' in app_js
     assert "await response.text()" in app_js
     assert "JSON.parse(rawBody)" in app_js
@@ -42,6 +42,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "/api/generation-history" in app_js
     assert "generationHistoryPage" in app_js
     assert 'value="type_count_desc"' in html
+    assert 'class="generation-history-prompt-text"' in app_js
+    assert 'escapeHtml(row.user_id ?? "-")' in app_js
+    assert "-webkit-line-clamp: 4" in styles
     assert "提示词向量化" in html
     assert 'data-tab="prompt-tokens"' in html
     assert 'data-panel="prompt-tokens"' in html

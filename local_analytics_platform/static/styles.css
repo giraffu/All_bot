@@ -737,8 +737,8 @@ main {
   table-layout: fixed;
 }
 
-.generation-history-table th:nth-child(1) { width: 110px; }
-.generation-history-table th:nth-child(2) { width: 140px; }
+.generation-history-table th:nth-child(1) { width: 145px; }
+.generation-history-table th:nth-child(2) { width: 165px; }
 .generation-history-table th:nth-child(3) { width: 180px; }
 .generation-history-table th:nth-child(4) { width: 90px; }
 .generation-history-table th:nth-child(5) { width: 410px; }
@@ -753,11 +753,21 @@ main {
 .generation-history-table th:nth-child(14) { width: 160px; }
 
 .generation-history-prompt {
-  max-height: 7.8em;
+  white-space: normal;
+}
+
+.generation-history-prompt-text {
+  display: -webkit-box;
   overflow: hidden;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.generation-history-user-id {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .generation-history-time {
