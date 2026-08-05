@@ -776,7 +776,7 @@ def activate_snapshot(
     states.mkdir(mode=0o700, exist_ok=True)
     activation_id = hashlib.sha256(
         json.dumps(
-            state["service_revisions"], sort_keys=True, separators=(",", ":")
+            state, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
     ).hexdigest()
     activation_history = states / "activations"
