@@ -147,7 +147,10 @@ def test_runpod_all_in_one_profiles_use_declared_exact_or_lan_images():
     config = load_controller_config()
 
     img2img = "192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
-    i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro"
+    i2i_pro = (
+        "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro@sha256:"
+        "707df40a8deea75fc463d8140ab9172969e0ca2ea71cac51ada7906e68e982cb"
+    )
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
     image_to_video = (
         "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video"
