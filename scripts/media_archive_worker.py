@@ -633,7 +633,7 @@ class CatalogRecorder:
         self.conn = await asyncpg.connect(self.database_url)
         self.run_id = __import__("uuid").uuid4()
         await self.conn.execute(
-            "insert into analytics_media_runs(id,run_type,status,cursor,stats) values($1,'archive','running','{}'::jsonb,jsonb_build_object('worker_id',$2))",
+            "insert into analytics_media_runs(id,run_type,status,cursor,stats) values($1,'archive','running','{}'::jsonb,jsonb_build_object('worker_id',$2::text))",
             self.run_id,
             self.worker_id,
         )

@@ -6,6 +6,7 @@ import pytest
 
 from scripts.media_archive_worker import (
     AdaptiveConcurrencyController,
+    CatalogRecorder,
     SpoolBudget,
     capacity_claim_priority,
     clear_proxy_environment,
@@ -13,6 +14,28 @@ from scripts.media_archive_worker import (
     RateLimiter,
     restore_one_asset,
 )
+
+
+@pytest.mark.asyncio
+async def test_catalog_run_accepts_a_string_worker_id(monkeypatch):
+    class FakeConnection:
+        async def execute(self, statement, *args):
+            if (
+                "jsonb_build_object('worker_id'" in statement
+                and "$2::text" not in statement
+            ):
+                raise RuntimeError("could not determine data type of parameter $2")
+
+        async def close(self):
+            return None
+
+    async def connect(_database_url):
+        return FakeConnection()
+
+    monkeypatch.setattr("scripts.media_archive_worker.asyncpg.connect", connect)
+
+    async with CatalogRecorder("postgresql://catalog", "archive-worker-1"):
+        pass
 
 
 def test_worker_config_requires_regular_0600_file_owned_by_current_user(tmp_path: Path):
