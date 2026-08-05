@@ -77,12 +77,14 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 
 ## 2.3 云正式控制面
 
-- 2026-06-07 晚间正式生产已切到云控制面；首次不可变发布切换前的旧
-  compose 和脚本仍保留作归档/legacy rollback。新长期入口是模块目录、公共
-  cloud/worker compose 和 `scripts/release.py`。
+- 正式生产使用不可变云控制面。旧 full-stack Compose、目标机 build 和整栈
+  启停脚本已从活跃仓库删除；历史只通过 Git 与 archive 追溯。长期入口是模块
+  catalog、公共 cloud overlay 和 `scripts/release.py`。
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
-- 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
-- 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
+- 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该契约由
+  `config-contract` 和逐服务 env projection 校验，不再由旧整栈脚本预检。
+- 云测试是独立长期环境，不再因正式环境上线而销毁；旧环境销毁入口不属于
+  活跃运维 SOP。
 - 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、
   Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和
   可选 QQCC 懒人 Bot。所有目标都按 catalog 模块和精确 digest 独立部署；
@@ -105,7 +107,9 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
 - Payment API 的机器健康入口为 `/healthz`，只返回服务状态与 RMB 主动查单是否
   启用；`/pay/result` 仅是用户支付跳转页。主动查单默认关闭，启用配置缺少
   `HUANYUY_QUERY_URL` 时 Payment API 必须拒绝启动。
-- 云正式 Dashboard Frontend 由 `cloud-dashboard-frontend-prod` 提供，默认绑定 `100.107.220.127:8086`，`/api/` 在 Docker 内网反代 `dashboard-backend-prod:8043`。QQCC 懒人 Bot 配置已剥离为 `cloud-qqcc-config-frontend-prod` / `cloud-qqcc-config-backend-prod`，默认 `100.107.220.127:8088` / `8045`，并使用独立 `QQCC_CONFIG_*` 管理账号。管理入口若需要公网域名，必须通过 Cloudflare Tunnel + Access 或等价身份层保护，禁止裸开 `8086`/`8043`/`8088`/`8045`。
+- 云正式 Dashboard 与 QQCC Config 由 active compose contract 中的模块服务提供；
+  不以历史 `cloud-*-prod` 容器名判断当前态。管理入口必须通过 Cloudflare Tunnel
+  + Access 或等价身份层保护，禁止裸开管理端口。
 - Telegram Local API 节点 `69.63.220.115` 当前只能做 8081/8082 公网端口探测；完整容器和磁盘排障需先补 SSH。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
