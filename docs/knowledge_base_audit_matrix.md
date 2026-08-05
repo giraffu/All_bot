@@ -65,6 +65,7 @@
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN GPU 主机与 ComfyUI | live 节点、受控 helper | runtime-verification-required | LAN 节点 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH 契约 | SSH config/key metadata | runtime-verification-required | LAN 登录 |
 | `docs/子模块_LAN_AIO本地资源管理平台_lan_resource_manager.md` | LAN 管理、A–H 多选集成/对齐与模块多选发布 UI/runner | `lan_resource_manager`、workspace coordinator、`release.py` | current | 本地资源平台 |
+| `docs/子模块_局域网备份图库_lan_media_gallery.md` | LAN 只读图片视频浏览与媒体白名单 | `lan_media_gallery/compose.yml`、运行态挂载检查 | runtime-verification-required | 备份图库部署与运维 |
 | `docs/子模块_系统资源与容量画像_resource_inventory.md` | 资源和容量快照 | 当次只读探测 | runtime-verification-required | 容量规划 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | 数据库/Redis 恢复 | schema、backup/restore scripts | current | 数据恢复 |
 
@@ -124,6 +125,7 @@
 | `.codex/skills/allbot-avatar-miniapp/SKILL.md` | 3D Mini App 路由 | Mini App API/Worker/Vue/Compose | current | 3D 角色工作室 |
 | `.codex/skills/allbot-lan-aio-operator/SKILL.md` | LAN AIO 操作红线 | catalog/ledger/helper | current | LAN mutation |
 | `.codex/skills/allbot-lan-resource-manager/SKILL.md` | 本地资源平台 | platform/helper/docs | current | LAN UI |
+| `.codex/skills/allbot-lan-media-gallery/SKILL.md` | LAN 只读备份图库 | Compose、媒体白名单、专项文档 | current | 备份媒体浏览 |
 | `.codex/skills/allbot-local-analytics-prompt-semantics/SKILL.md` | 词元治理 | analytics code/docs | current | 提示词治理 |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 知识同步 | docs/Skills/matrix | current | 知识变更 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | Bug 反馈环 | reproduction/tests/logs | current | 故障 |

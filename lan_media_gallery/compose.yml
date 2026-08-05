@@ -1,0 +1,73 @@
+name: allbot-lan-media-gallery
+
+services:
+  lan-media-gallery:
+    image: docker.io/bpatrik/pigallery2@sha256:d7a61b6daa410537064d4f661122545bc4d9b16cd91a3862d654c3555cb63992
+    container_name: allbot-lan-media-gallery
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NODE_ENV: production
+    command:
+      - --default-Server-applicationTitle=AllBot 备份图库
+      - --default-Server-publicUrl=http://192.168.1.115:8099
+      - --default-Upload-enabled=false
+    ports:
+      - "192.168.1.115:8099:80"
+    volumes:
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/personal_sdb6
+        target: /app/data/images/个人媒体
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/Pictures
+        target: /app/data/images/Windows图片
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/WeChat Files/ljd007_007/Video
+        target: /app/data/images/微信视频
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/WeChat Files/ljd007_007/Attachment
+        target: /app/data/images/微信附件
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/Tencent Files/2191456046/Image
+        target: /app/data/images/QQ-2191456046-图片
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/Tencent Files/2191456046/MyCollection/Image
+        target: /app/data/images/QQ-2191456046-收藏
+        read_only: true
+      - type: bind
+        source: /home/hfy/Backups/NAS_WD500G_2026-08-04/windows/Tencent Files/All Users/QQ/Misc/LNNCustomFace/PicFile
+        target: /app/data/images/QQ共享表情
+        read_only: true
+      - type: bind
+        source: /home/hfy/.local/share/allbot/lan-media-gallery/config
+        target: /app/data/config
+      - type: bind
+        source: /home/hfy/.local/share/allbot/lan-media-gallery/db
+        target: /app/data/db
+      - type: bind
+        source: /home/hfy/.local/share/allbot/lan-media-gallery/tmp
+        target: /app/data/tmp
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:80').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 30s
