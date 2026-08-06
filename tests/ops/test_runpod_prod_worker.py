@@ -1587,6 +1587,99 @@ def test_prod_worker_up_second_slot_execute_ignores_removed_per_type_gate():
     ]
 
 
+def test_prod_worker_up_waits_for_heartbeat_newer_than_post_readiness_snapshot():
+    agent_id = prod_agent_id_from_slot("02")
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=5,
+            prod_agent_id=agent_id,
+        )
+    )
+    stale_worker = _worker("02")
+    stale_worker.update(
+        {
+            "image_ref": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            "last_seen": 100.0,
+        }
+    )
+    fresh_worker = dict(stale_worker, last_seen=101.0)
+    workers = [stale_worker]
+
+    def advance_heartbeat(_seconds):
+        workers[:] = [fresh_worker]
+
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        RunPodProdWorkerOptions(
+            action="up",
+            execute=True,
+            agent_id=agent_id,
+            agent_token="agent_token",
+            worker_timeout_seconds=1.0,
+            poll_interval_seconds=0.01,
+            quiet=True,
+        ),
+        workers=workers,
+        sleep_func=advance_heartbeat,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["worker"]["image_ref"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+    assert payload["worker"]["last_seen"] == 101.0
+
+
+def test_prod_worker_heartbeat_wait_retries_transient_central_timeout():
+    class TransientWorkersRunner(FakeHttpProdWorkerRunner):
+        fetch_attempts = 0
+
+        def _fetch_workers(self):
+            self.fetch_attempts += 1
+            if self.fetch_attempts == 1:
+                raise TimeoutError("timed out")
+            return super()._fetch_workers()
+
+    agent_id = prod_agent_id_from_slot("02")
+    worker = _worker("02")
+    worker.update(
+        {
+            "image_ref": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            "last_seen": 101.0,
+        }
+    )
+    runner = TransientWorkersRunner(
+        FakeRunPodProvider(_settings(prod_agent_id=agent_id)),
+        RunPodProdWorkerOptions(
+            agent_id=agent_id,
+            agent_token="agent_token",
+            worker_timeout_seconds=1.0,
+            poll_interval_seconds=0.01,
+            quiet=True,
+        ),
+        workers=[worker],
+        sleep_func=lambda _seconds: None,
+    )
+    runner.agent_control[agent_id] = {
+        "agent_id": agent_id,
+        "state": "disabled",
+        "reason": "runpod_prod_worker_up",
+    }
+
+    observed = runner._wait_prod_worker_for_agent(
+        agent_id,
+        {"phases": []},
+        require_disabled=True,
+        expected_image_ref=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+        after_last_seen=100.0,
+    )
+
+    assert observed["last_seen"] == 101.0
+    assert runner.fetch_attempts == 2
+
+
 def test_prod_worker_restart_execute_uses_native_restart_and_enables():
     agent_id = prod_agent_id_from_slot("03", profile="wan22_video_v2")
     provider = FakeRunPodProvider(

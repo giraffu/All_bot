@@ -90,7 +90,7 @@ migration 失败保留现场，不自动 downgrade 或恢复数据库备份。
   可选 QQCC 懒人 Bot。所有目标都按 catalog 模块和精确 digest 独立部署；
   production mutation 每个模块都要求 `--confirm-prod`。migration 与部署契约
   也是独立模块，不存在 direct/standard/emergency 风险策略或自动晋级。
-- 云正式执行池由本地 worker compose、LAN AIO 与 RunPod 构成。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 worker 数量当成验收标准。
+- 云正式执行池由本地 worker compose、LAN AIO 与 RunPod 构成。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；创建或重启 RunPod 时还必须等待晚于 Pod readiness 快照的新 heartbeat，并核对 `image_ref` 与目标 digest，不能把同 agent ID 的缓存旧心跳当作新实例就绪。不要把固定 worker 数量当成验收标准。
 - 新建 RunPod 的模型同步默认使用最多 4 个文件级并行下载，可通过
   `RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=1..8` 调整；旧 Pod 不因配置或镜像引用更新
   自动生效。验收应区分下载阶段聚合速率、逐文件重试和后续串行 SHA-256 阶段，

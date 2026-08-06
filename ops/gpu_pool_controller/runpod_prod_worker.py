@@ -594,7 +594,13 @@ class RunPodProdWorkerRunner:
         )
         self._phase(summary, "runpod_create_pod", "ok", {"pod_id": pod_id})
         self._wait_pod_readiness(pod_id, summary)
-        worker = self._wait_prod_worker(summary, require_disabled=True)
+        heartbeat_baseline = self._worker_last_seen(self.options.agent_id)
+        worker = self._wait_prod_worker(
+            summary,
+            require_disabled=True,
+            expected_image_ref=str(summary.get("render", {}).get("imageName") or ""),
+            after_last_seen=heartbeat_baseline,
+        )
         summary["worker"] = _worker_summary(worker)
         summary["ok"] = True
 
@@ -717,7 +723,15 @@ class RunPodProdWorkerRunner:
             self._phase(summary, "runpod_restart_pod", "ok", {"pod_id": pod_id})
 
             self._wait_pod_readiness(pod_id, summary)
-            worker = self._wait_prod_worker(summary, require_disabled=True)
+            heartbeat_baseline = self._worker_last_seen(self.options.agent_id)
+            worker = self._wait_prod_worker(
+                summary,
+                require_disabled=True,
+                expected_image_ref=str(
+                    summary.get("render", {}).get("imageName") or ""
+                ),
+                after_last_seen=heartbeat_baseline,
+            )
             enable_control = self._set_agent_control(
                 "enabled",
                 reason="runpod_prod_worker_restart_enable",
@@ -1275,6 +1289,7 @@ class RunPodProdWorkerRunner:
             )
             self._phase(summary, f"runpod_create_pod_{slot}", "ok", {"pod_id": pod_id})
             self._wait_pod_readiness(pod_id, summary, provider=provider)
+            heartbeat_baseline = self._worker_last_seen(agent_id)
         else:
             recovery = self._recover_created_slot_after_create_error(
                 slot,
@@ -1300,10 +1315,13 @@ class RunPodProdWorkerRunner:
                 if isinstance(recovery.get("worker"), dict)
                 else None
             )
+            heartbeat_baseline = self._worker_last_seen(agent_id)
         worker = recovered_worker or self._wait_prod_worker_for_agent(
             agent_id,
             summary,
             require_disabled=True,
+            expected_image_ref=str(operation["render"].get("imageName") or ""),
+            after_last_seen=heartbeat_baseline,
         )
         operation["worker"] = _worker_summary(worker)
         operation["enable_control"] = self._set_agent_control_for_agent(
@@ -2020,11 +2038,15 @@ class RunPodProdWorkerRunner:
         summary: dict[str, Any],
         *,
         require_disabled: bool,
+        expected_image_ref: str = "",
+        after_last_seen: float | None = None,
     ) -> dict[str, Any]:
         return self._wait_prod_worker_for_agent(
             self.options.agent_id,
             summary,
             require_disabled=require_disabled,
+            expected_image_ref=expected_image_ref,
+            after_last_seen=after_last_seen,
         )
 
     def _wait_prod_worker_for_agent(
@@ -2033,14 +2055,23 @@ class RunPodProdWorkerRunner:
         summary: dict[str, Any],
         *,
         require_disabled: bool,
+        expected_image_ref: str = "",
+        after_last_seen: float | None = None,
     ) -> dict[str, Any]:
         self._phase(summary, "prod_worker_heartbeat", "running")
         deadline = time.monotonic() + self.options.worker_timeout_seconds
         last_worker: dict[str, Any] | None = None
         last_control: dict[str, Any] | None = None
+        last_observation_error = ""
         while time.monotonic() <= deadline:
-            worker = _find_worker(self._fetch_workers(), agent_id)
-            control = self._get_agent_control_for_agent(agent_id)
+            try:
+                worker = _find_worker(self._fetch_workers(), agent_id)
+                control = self._get_agent_control_for_agent(agent_id)
+                last_observation_error = ""
+            except Exception as exc:
+                last_observation_error = redact_text(str(exc))
+                self._sleep(self.options.poll_interval_seconds)
+                continue
             last_worker = worker
             last_control = control
             if worker and _worker_supports_types(
@@ -2048,9 +2079,25 @@ class RunPodProdWorkerRunner:
                 self._expected_supported_task_types(),
             ):
                 status = str(worker.get("status") or "")
+                image_ref = str(worker.get("image_ref") or "")
+                last_seen = _optional_float(worker.get("last_seen"))
                 control_state = str(control.get("state") or "enabled")
                 control_ok = (not require_disabled) or control_state == "disabled"
-                if status in HEALTHY_WORKER_STATUSES and control_ok:
+                image_ok = (
+                    not expected_image_ref
+                    or not image_ref
+                    or image_ref == expected_image_ref
+                )
+                freshness_ok = (
+                    after_last_seen is None
+                    or (last_seen is not None and last_seen > after_last_seen)
+                )
+                if (
+                    status in HEALTHY_WORKER_STATUSES
+                    and control_ok
+                    and image_ok
+                    and freshness_ok
+                ):
                     details = {
                         "worker": _worker_summary(worker),
                         "control": control,
@@ -2067,10 +2114,20 @@ class RunPodProdWorkerRunner:
                     if last_worker
                     else None,
                     "last_control": redact_payload(last_control),
+                    "last_observation_error": last_observation_error,
                 },
                 ensure_ascii=False,
             )
         )
+
+    def _worker_last_seen(self, agent_id: str) -> float | None:
+        try:
+            worker = _find_worker(self._fetch_workers(), agent_id)
+        except Exception:
+            return None
+        if not worker:
+            return None
+        return _optional_float(worker.get("last_seen"))
 
     def _expected_supported_task_types(self) -> tuple[str, ...]:
         spec = _prod_render_spec(self.options.profile, self.provider.settings)
@@ -2697,6 +2754,15 @@ def _extract_pod_id(payload: dict[str, Any]) -> str:
     raise RunPodProdWorkerError("RunPod create response did not include pod id")
 
 
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @contextmanager
 def _prod_profile_operation_lock(profile: str, *, slot: str | None = None):
     lock_dir = Path(
@@ -2910,6 +2976,7 @@ def _worker_summary(worker: dict[str, Any] | None) -> dict[str, Any]:
         "node_id": worker.get("node_id"),
         "runtime_profile": worker.get("runtime_profile"),
         "image_ref": worker.get("image_ref"),
+        "last_seen": worker.get("last_seen"),
         "current_task_id": worker.get("current_task_id"),
         "current_task_type": worker.get("current_task_type"),
     }
