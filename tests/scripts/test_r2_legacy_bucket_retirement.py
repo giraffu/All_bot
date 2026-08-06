@@ -1,8 +1,11 @@
 import sqlite3
+import threading
+import time
 
 import pytest
 
 from scripts.r2_legacy_bucket_retirement import (
+    _copy_batch,
     initialize_state,
     retirement_summary,
     validate_delete_gate,
@@ -62,3 +65,30 @@ def test_delete_gate_requires_exact_verified_count_and_confirmation():
             total=141569,
             confirmation="DELETE_LEGACY_BUCKET_user-data_141569",
         )
+
+
+def test_legacy_copy_batch_uses_bounded_workers(monkeypatch):
+    active = 0
+    maximum = 0
+    lock = threading.Lock()
+
+    def fake_copy(_client, key, _expected_size):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return {"key": key, "status": "copied"}
+
+    monkeypatch.setattr(
+        "scripts.r2_legacy_bucket_retirement._copy_one", fake_copy
+    )
+
+    results = _copy_batch(
+        object(), [(f"key-{index}", index) for index in range(12)], workers=4
+    )
+
+    assert len(results) == 12
+    assert 1 < maximum <= 4
