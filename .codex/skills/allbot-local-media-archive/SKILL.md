@@ -23,8 +23,8 @@ description: "建设和维护 AllBot History 全量媒体目录、NAS MinIO 归�
   活跃 Gallery 及其关系继续保护引用。
 - 来源离线不是丢失。确认丢失要求全部登记来源两轮 not-found 且间隔至少 24 小时。
 - R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
-- Worker 配置必须为当前运行用户所有的普通 0600 文件；NAS 路由必须命中声明的
-  物理接口和源地址，检测到本地 7890 代理时 fail closed。
+- Worker 配置须为当前用户的 0600 文件；网络来源校验物理路由，filesystem 校验
+  根目录越界，检测到本地 7890 代理时 fail closed。
 - canary 可配置最多 100 个 `history_ids` 精确领取，禁止改写全局优先级。
 - 私有 Worker 配置只输出来源名和指纹；来源离线记为 `source_offline`。历史页
   按角色懒加载，只有 `archived_verified` 提供 LAN 原件。

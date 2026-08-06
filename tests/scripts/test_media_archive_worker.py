@@ -16,6 +16,7 @@ from scripts.media_archive_worker import (
     RateLimiter,
     restore_one_asset,
     archive_job_claim_params,
+    validate_source_routes,
 )
 
 
@@ -122,6 +123,24 @@ def test_worker_claim_params_include_exact_canary_history_ids():
         ("max_priority", 20),
         ("history_ids", 11),
         ("history_ids", 33),
+    ]
+
+
+def test_worker_route_preflight_skips_filesystem_sources(monkeypatch):
+    checked = []
+    monkeypatch.setattr(
+        "scripts.media_archive_worker.validate_endpoint_route", checked.append
+    )
+
+    validate_source_routes(
+        [
+            {"name": "backups", "type": "filesystem", "roots": ["/backup"]},
+            {"name": "r2", "type": "s3", "endpoint": "https://r2.example"},
+        ]
+    )
+
+    assert checked == [
+        {"name": "r2", "type": "s3", "endpoint": "https://r2.example"}
     ]
 
 
