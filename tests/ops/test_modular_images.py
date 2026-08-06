@@ -100,6 +100,16 @@ def test_private_bot_worker_image_contains_its_qqcc_runtime_dependency():
     assert catalog["modules"]["private-bot-worker"]["target"] == "private-bot-worker"
 
 
+def test_web_api_image_contains_r2_maintenance_clis():
+    control = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
+        encoding="utf-8"
+    )
+    web = control.split("AS web-api", 1)[1].split("AS payment-api", 1)[0]
+    assert "scripts/r2_staging_lifecycle.py" in web
+    assert "scripts/r2_temp_cleanup.py" in web
+    assert "scripts/r2_legacy_bucket_retirement.py" in web
+
+
 def test_i2i_pro_gpu_release_contract_is_independent():
     catalog = json.loads(
         (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
