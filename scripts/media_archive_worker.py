@@ -99,7 +99,8 @@ def archive_job_claim_params(
         ("limit", limit),
         ("max_priority", max_priority),
     ]
-    params.extend(("history_ids", value) for value in exact_history_ids)
+    if exact_history_ids:
+        params.append(("history_ids", ",".join(map(str, exact_history_ids))))
     return params
 
 

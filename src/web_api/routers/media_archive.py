@@ -88,26 +88,37 @@ class RestoreReceiptRequest(BaseModel):
     restored_assets: list[RestoredAssetItem] = Field(min_length=1)
 
 
+def parse_history_ids_query(value: str | None) -> tuple[int, ...]:
+    if not value:
+        return ()
+    parts = [item.strip() for item in value.split(",")]
+    if any(not item.isdigit() or int(item) < 1 for item in parts):
+        raise HTTPException(status_code=422, detail="history_ids must be positive integers")
+    history_ids = tuple(sorted({int(item) for item in parts}))
+    if len(history_ids) > 100:
+        raise HTTPException(
+            status_code=422,
+            detail="history_ids must contain at most 100 positive History IDs",
+        )
+    return history_ids
+
+
 @router.get("/jobs", dependencies=[Depends(require_archive_agent)])
 async def get_jobs(
     worker_id: str = Query(min_length=1, max_length=128),
     limit: int = Query(20, ge=1, le=100),
     max_priority: int = Query(100, ge=0, le=100),
-    history_ids: list[int] | None = Query(default=None),
+    history_ids: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    if history_ids and (len(history_ids) > 100 or any(value < 1 for value in history_ids)):
-        raise HTTPException(
-            status_code=422,
-            detail="history_ids must contain at most 100 positive History IDs",
-        )
+    exact_history_ids = parse_history_ids_query(history_ids)
     return {
         "jobs": await claim_archive_jobs(
             db,
             worker_id=worker_id,
             limit=limit,
             max_priority=max_priority,
-            history_ids=history_ids,
+            history_ids=exact_history_ids,
         )
     }
 

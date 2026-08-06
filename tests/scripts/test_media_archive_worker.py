@@ -121,8 +121,7 @@ def test_worker_claim_params_include_exact_canary_history_ids():
         ("worker_id", "canary-worker"),
         ("limit", 100),
         ("max_priority", 20),
-        ("history_ids", 11),
-        ("history_ids", 33),
+        ("history_ids", "11,33"),
     ]
 
 
