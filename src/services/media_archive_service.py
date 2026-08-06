@@ -6,7 +6,7 @@ This service never contacts NAS or R2. It only coordinates durable work.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,14 +73,21 @@ async def claim_archive_jobs(
     limit: int = 20,
     lease_seconds: int = 900,
     max_priority: int = 100,
+    history_ids: Sequence[int] | None = None,
 ) -> list[dict[str, Any]]:
     now = datetime.now()
+    exact_history_ids = tuple(sorted(set(history_ids or ())))
     result = await session.execute(
         select(MediaArchiveOutbox, History)
         .join(History, History.id == MediaArchiveOutbox.history_id)
         .where(
             MediaArchiveOutbox.available_at <= now,
             MediaArchiveOutbox.priority <= max(0, min(max_priority, 100)),
+            *(
+                [MediaArchiveOutbox.history_id.in_(exact_history_ids)]
+                if exact_history_ids
+                else []
+            ),
             or_(
                 MediaArchiveOutbox.status.in_(("pending", "retry")),
                 (MediaArchiveOutbox.status == "leased")

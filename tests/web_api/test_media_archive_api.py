@@ -32,6 +32,21 @@ def test_media_archive_agent_auth_uses_bearer_secret(monkeypatch):
     assert require_archive_agent("Bearer archive-secret") == "archive-secret"
 
 
+@pytest.mark.asyncio
+async def test_job_claim_rejects_more_than_100_exact_history_ids():
+    from src.web_api.routers.media_archive import get_jobs
+
+    with pytest.raises(HTTPException) as error:
+        await get_jobs(
+            worker_id="canary-worker",
+            limit=100,
+            max_priority=100,
+            history_ids=list(range(1, 102)),
+            db=object(),
+        )
+    assert error.value.status_code == 422
+
+
 def test_receipt_contract_records_actual_source_and_candidate_key():
     from src.web_api.routers.media_archive import ReceiptItem
 

@@ -82,6 +82,27 @@ def load_secure_config(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def archive_job_claim_params(
+    *,
+    worker_id: str,
+    limit: int,
+    max_priority: int,
+    history_ids: list[int] | tuple[int, ...] | None = None,
+) -> list[tuple[str, str | int]]:
+    exact_history_ids = sorted({int(value) for value in history_ids or ()})
+    if len(exact_history_ids) > 100 or any(value < 1 for value in exact_history_ids):
+        raise ValueError(
+            "history_ids must contain at most 100 positive History IDs"
+        )
+    params: list[tuple[str, str | int]] = [
+        ("worker_id", worker_id),
+        ("limit", limit),
+        ("max_priority", max_priority),
+    ]
+    params.extend(("history_ids", value) for value in exact_history_ids)
+    return params
+
+
 def validate_direct_route(
     hostname: str,
     *,
@@ -786,11 +807,12 @@ async def run_once(args) -> int:
             )
         response = await client.get(
             "/api/internal/media-archive/jobs",
-            params={
-                "worker_id": args.worker_id,
-                "limit": args.limit,
-                "max_priority": max_priority,
-            },
+            params=archive_job_claim_params(
+                worker_id=args.worker_id,
+                limit=args.limit,
+                max_priority=max_priority,
+                history_ids=config.get("history_ids"),
+            ),
         )
         response.raise_for_status()
         jobs = response.json()["jobs"]
