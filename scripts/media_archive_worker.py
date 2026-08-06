@@ -151,6 +151,13 @@ def validate_endpoint_route(config: dict) -> None:
     )
 
 
+def validate_source_routes(sources: list[dict]) -> None:
+    for source in sources:
+        if source.get("type", "s3") == "filesystem":
+            continue
+        validate_endpoint_route(source)
+
+
 def _client(config: dict):
     return boto3.client(
         "s3",
@@ -762,8 +769,7 @@ class CatalogRecorder:
 async def run_once(args) -> int:
     clear_proxy_environment()
     config = load_secure_config(Path(args.config))
-    for source in config["sources"]:
-        validate_endpoint_route(source)
+    validate_source_routes(config["sources"])
     validate_endpoint_route(config["nas"])
     if config.get("restore_target"):
         validate_endpoint_route(config["restore_target"])
