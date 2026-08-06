@@ -120,6 +120,10 @@ owner `/result` 的 R2 miss 在业务事务中只做幂等 enqueue；每日 reco
 `media_archive_catalog.py seed` 与 `reconcile_media_archive_outbox.py` 支持最多
 10,000 行的 `--history-id-file`，用于确定性 canary；未提供时继续使用原有 ID
 范围。reconciliation 默认 dry-run，正式 outbox 写入仍需显式 `--execute`。
+当生产 backlog 已存在时，canary Worker 配置另用 `history_ids` 固定本轮最多 100
+条 History；`GET /api/internal/media-archive/jobs` 以重复 query 参数接收该集合并
+只租用集合内任务。该过滤仍受 agent token、优先级、租约和 revision 门禁约束，
+不得通过临时改写其它 outbox 的优先级或 `available_at` 达成确定性领取。
 
 R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输出派生缩略图；共享引用
 按全部角色检查最新 8 条原始 History（再过滤可见）、收藏、公开和活跃投稿。

@@ -15,6 +15,7 @@ from scripts.media_archive_worker import (
     load_secure_config,
     RateLimiter,
     restore_one_asset,
+    archive_job_claim_params,
 )
 
 
@@ -107,6 +108,21 @@ def test_nas_capacity_gates_stop_cold_then_all_claims():
     assert capacity_claim_priority(archived_bytes=74, capacity_bytes=100) == 100
     assert capacity_claim_priority(archived_bytes=80, capacity_bytes=100) == 0
     assert capacity_claim_priority(archived_bytes=90, capacity_bytes=100) is None
+
+
+def test_worker_claim_params_include_exact_canary_history_ids():
+    assert archive_job_claim_params(
+        worker_id="canary-worker",
+        limit=100,
+        max_priority=20,
+        history_ids=[33, 11, 33],
+    ) == [
+        ("worker_id", "canary-worker"),
+        ("limit", 100),
+        ("max_priority", 20),
+        ("history_ids", 11),
+        ("history_ids", 33),
+    ]
 
 
 def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tmp_path):
