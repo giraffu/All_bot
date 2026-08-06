@@ -41,7 +41,7 @@ create table if not exists analytics_media_sources (
     check (retired_at is null or nullif(btrim(retirement_evidence), '') is not null)
 );
 insert into analytics_media_sources(source, priority) values
-  ('r2-user-data-prod', 10), ('r2-user-data', 20), ('minio-bot-data', 30),
+  ('r2-user-data-prod', 10), ('minio-bot-data', 30),
   ('minio-comfyui-temp', 40), ('cold-minio-192.168.1.88-9001', 50),
   ('cold-minio-192.168.1.88-9002', 60), ('known-backups-and-filesystems', 70)
 on conflict (source) do nothing;
