@@ -234,9 +234,41 @@ def _sha256_object(client, bucket: str, key: str) -> str:
     return digest.hexdigest()
 
 
+async def _verify_candidates(
+    client,
+    bucket: str,
+    candidates: list[Candidate],
+    *,
+    concurrency: int,
+) -> tuple[list[dict], list[dict]]:
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def hash_object(key: str) -> str:
+        async with semaphore:
+            return await asyncio.to_thread(_sha256_object, client, bucket, key)
+
+    async def verify(item: Candidate) -> tuple[dict | None, dict | None]:
+        try:
+            source_sha, durable_sha = await asyncio.gather(
+                hash_object(item.key), hash_object(item.durable_key)
+            )
+            if source_sha != durable_sha:
+                raise RuntimeError("SHA256_MISMATCH")
+            return {**asdict(item), "sha256": source_sha}, None
+        except Exception as exc:
+            return None, {"key": item.key, "error": type(exc).__name__}
+
+    results = await asyncio.gather(*(verify(item) for item in candidates))
+    verified = [item for item, _failure in results if item is not None]
+    failures = [failure for _item, failure in results if failure is not None]
+    return verified, failures
+
+
 async def run(args) -> dict:
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")
+    if args.verification_concurrency < 1 or args.verification_concurrency > 16:
+        raise SystemExit("verification concurrency must be between 1 and 16")
     cutoff = datetime.now(timezone.utc) - timedelta(hours=args.min_age_hours)
     cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
     inventory = sqlite3.connect(args.inventory)
@@ -266,27 +298,19 @@ async def run(args) -> dict:
         business_referenced,
     )
     client = _r2_client()
-    verified = []
-    failures = []
-    for item in eligible:
-        try:
-            source_sha, durable_sha = await asyncio.gather(
-                asyncio.to_thread(_sha256_object, client, args.bucket, item.key),
-                asyncio.to_thread(
-                    _sha256_object, client, args.bucket, item.durable_key
-                ),
-            )
-            if source_sha != durable_sha:
-                raise RuntimeError("SHA256_MISMATCH")
-            verified.append({**asdict(item), "sha256": source_sha})
-        except Exception as exc:
-            failures.append({"key": item.key, "error": type(exc).__name__})
+    verified, failures = await _verify_candidates(
+        client,
+        args.bucket,
+        eligible,
+        concurrency=args.verification_concurrency,
+    )
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "execute" if args.execute else "dry-run",
         "bucket": args.bucket,
         "cutoff": cutoff_text,
+        "verification_concurrency": args.verification_concurrency,
         "candidate_count": len(candidates),
         "referenced_blocked_count": len(referenced),
         "history_referenced_blocked_count": len(history_referenced),
@@ -331,6 +355,7 @@ def main() -> None:
     parser.add_argument("--bucket", default=PRODUCTION_BUCKET)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--min-age-hours", type=int, default=24)
+    parser.add_argument("--verification-concurrency", type=int, default=8)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="")
     args = parser.parse_args()

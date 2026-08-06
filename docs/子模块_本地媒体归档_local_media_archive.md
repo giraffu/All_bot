@@ -128,7 +128,9 @@ R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输�
 完整 SHA-256 相同持久副本的已知临时类型。未知 key、`temps/`、单份内容、
 活跃任务、模板投稿、归档回执、角色/官方资产及其视图/渲染对象均独立阻断；
 Gallery、收藏和公开记录由其关联的 History 全角色阻断。HEAD/SHA/数据库失败均
-fail closed。执行只认
+fail closed。双份 SHA 读取默认最多 8 路并发，可用
+`--verification-concurrency` 在 1–16 之间收紧；并发只影响读取吞吐，不跳过
+对象级摘要或执行前的重新校验。执行只认
 `R2_TEMP_CLEANUP_ENABLED` 和精确生产桶确认，不复用
 `R2_ARCHIVE_DELETE_ENABLED` 或恢复门禁。
 
