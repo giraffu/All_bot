@@ -24,6 +24,7 @@ from sqlalchemy import text  # noqa: E402
 
 
 PRODUCTION_BUCKET = "user-data-prod"
+DEFAULT_MAX_DELETE_BYTES = 50 * 1024**3
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,20 @@ def _eligible_candidates(
     return [item for item in candidates if item.key not in blocked], blocked
 
 
+def _apply_delete_byte_cap(
+    verified: list[dict], *, max_bytes: int
+) -> tuple[list[dict], list[dict]]:
+    selected: list[dict] = []
+    used = 0
+    for index, item in enumerate(verified):
+        item_size = int(item["byte_size"])
+        if used + item_size > max_bytes:
+            return selected, verified[index:]
+        selected.append(item)
+        used += item_size
+    return selected, []
+
+
 def _matching_refs(value, keys: set[str]) -> set[str]:
     matches: set[str] = set()
     if isinstance(value, dict):
@@ -269,6 +284,8 @@ async def run(args) -> dict:
         raise SystemExit("limit must be between 1 and 10000")
     if args.verification_concurrency < 1 or args.verification_concurrency > 16:
         raise SystemExit("verification concurrency must be between 1 and 16")
+    if args.max_delete_bytes < 1 or args.max_delete_bytes > DEFAULT_MAX_DELETE_BYTES:
+        raise SystemExit("max delete bytes must be between 1 and 50 GiB")
     cutoff = datetime.now(timezone.utc) - timedelta(hours=args.min_age_hours)
     cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
     inventory = sqlite3.connect(args.inventory)
@@ -280,6 +297,10 @@ async def run(args) -> dict:
             """select count(*),coalesce(sum(size),0) from objects
                where key like 'web_uploads/%' and last_modified < ?""",
             (cutoff_text,),
+        ).fetchone()
+        staging = inventory.execute(
+            """select count(*),coalesce(sum(size),0),min(last_modified)
+               from objects where key like 'staging/%'"""
         ).fetchone()
     finally:
         inventory.close()
@@ -304,6 +325,9 @@ async def run(args) -> dict:
         eligible,
         concurrency=args.verification_concurrency,
     )
+    delete_objects, byte_cap_blocked = _apply_delete_byte_cap(
+        verified, max_bytes=args.max_delete_bytes
+    )
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -322,13 +346,22 @@ async def run(args) -> dict:
         },
         "verified_count": len(verified),
         "verified_bytes": sum(item["byte_size"] for item in verified),
+        "max_delete_bytes": args.max_delete_bytes,
+        "delete_count": len(delete_objects),
+        "delete_bytes": sum(item["byte_size"] for item in delete_objects),
+        "byte_cap_blocked_count": len(byte_cap_blocked),
         "probe_failures": failures,
+        "staging": {
+            "object_count": int(staging[0]),
+            "bytes": int(staging[1]),
+            "oldest_last_modified": staging[2],
+        },
         "legacy_web_uploads_report_only": {
             "object_count": int(orphan_uploads[0]),
             "bytes": int(orphan_uploads[1]),
             "reason": "not deleted without a durable content twin",
         },
-        "objects": verified,
+        "objects": delete_objects,
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -343,7 +376,7 @@ async def run(args) -> dict:
     )
     if failures:
         raise SystemExit("execute rejected because at least one SHA probe failed")
-    for item in verified:
+    for item in delete_objects:
         client.delete_object(Bucket=args.bucket, Key=item["key"])
     return report
 
@@ -356,6 +389,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--min-age-hours", type=int, default=24)
     parser.add_argument("--verification-concurrency", type=int, default=8)
+    parser.add_argument(
+        "--max-delete-bytes", type=int, default=DEFAULT_MAX_DELETE_BYTES
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="")
     args = parser.parse_args()

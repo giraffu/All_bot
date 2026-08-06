@@ -1,4 +1,5 @@
 from datetime import datetime
+import io
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -26,12 +27,29 @@ class _RowsResult:
 
 
 class _FakeStorage:
-    def __init__(self):
+    def __init__(self, objects=None, copy_error=None, target_read_error=None):
         self.calls = []
-        self.client = SimpleNamespace(
-            copy_object=lambda *args, **kwargs: self.calls.append(("copy", args, kwargs)),
-            remove_object=lambda *args, **kwargs: self.calls.append(("remove", args, kwargs)),
-        )
+        self.objects = dict(objects or {"template-submissions/demo.png": b"demo"})
+        self.copy_error = copy_error
+        self.target_read_error = target_read_error
+        self.client = self
+
+    def copy_object(self, bucket, target, source):
+        self.calls.append(("copy", (bucket, target, source), {}))
+        if self.copy_error:
+            raise self.copy_error
+        source_key = getattr(source, "object_name", None)
+        self.objects[target] = self.objects[source_key]
+
+    def remove_object(self, bucket, key):
+        self.calls.append(("remove", (bucket, key), {}))
+        self.objects.pop(key, None)
+
+    def get_object(self, bucket, key):
+        self.calls.append(("get", (bucket, key), {}))
+        if self.target_read_error and key.startswith(("quick_face/", "video_nice/")):
+            raise self.target_read_error
+        return io.BytesIO(self.objects[key])
 
     def get_presigned_url(self, object_name, bucket=None):
         self.calls.append(("presigned", object_name, bucket))
@@ -42,6 +60,7 @@ class _FakeTemplateDb:
     def __init__(self, execute_results):
         self.execute_results = list(execute_results)
         self.commit = AsyncMock()
+        self.rollback = AsyncMock()
 
     async def execute(self, _stmt):
         if not self.execute_results:
@@ -78,6 +97,15 @@ def test_build_template_contribution_response_generates_preview_url():
     assert result.file_type == "video"
 
 
+def test_pending_template_presenter_supports_new_and_legacy_submission_prefixes():
+    assert template_admin_presenter.build_template_preview_object_name(
+        contribution=_build_contribution(file_path="template-submissions/new.png")
+    ) == "template-submissions/new.png"
+    assert template_admin_presenter.build_template_preview_object_name(
+        contribution=_build_contribution(file_path="temps/legacy.png")
+    ) == "temps/legacy.png"
+
+
 @pytest.mark.asyncio
 async def test_get_template_contributions_payload_uses_presenter():
     storage_service = _FakeStorage()
@@ -95,7 +123,7 @@ async def test_get_template_contributions_payload_uses_presenter():
 
 @pytest.mark.asyncio
 async def test_approve_contribution_payload_marks_reviewed_and_rewards_user(monkeypatch):
-    contribution = _build_contribution(file_path="temps/demo.png", file_type="photo", is_reviewed=False)
+    contribution = _build_contribution(file_path="template-submissions/demo.png", file_type="photo", is_reviewed=False)
     user = SimpleNamespace(id=123, credits=5, approved_contributions=1)
     db = _FakeTemplateDb([_ScalarResult(contribution), _ScalarResult(user)])
     storage_service = _FakeStorage()
@@ -119,6 +147,57 @@ async def test_approve_contribution_payload_marks_reviewed_and_rewards_user(monk
     assert user.credits == 15
     assert user.approved_contributions == 2
     db.commit.assert_awaited_once()
+    assert storage_service.objects["quick_face/demo.png"] == b"demo"
+
+
+@pytest.mark.asyncio
+async def test_approve_contribution_does_not_reward_when_verified_copy_fails(monkeypatch):
+    contribution = _build_contribution(
+        file_path="template-submissions/demo.png", file_type="photo", is_reviewed=False
+    )
+    user = SimpleNamespace(id=123, credits=5, approved_contributions=1)
+    db = _FakeTemplateDb([_ScalarResult(contribution), _ScalarResult(user)])
+    storage_service = _FakeStorage(copy_error=RuntimeError("copy failed"))
+
+    class _FakeCopySource:
+        def __init__(self, bucket, object_name):
+            self.bucket_name = bucket
+            self.object_name = object_name
+
+    monkeypatch.setattr("minio.commonconfig.CopySource", _FakeCopySource)
+
+    with pytest.raises(Exception) as exc_info:
+        await template_admin_service.approve_contribution_payload(
+            contribution_id=1,
+            db=db,
+            storage_service=storage_service,
+        )
+
+    assert exc_info.value.status_code == 503
+    assert contribution.is_reviewed is False
+    assert user.credits == 5
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_approve_contribution_fails_closed_when_destination_probe_is_offline():
+    contribution = _build_contribution(
+        file_path="template-submissions/demo.png", file_type="photo", is_reviewed=False
+    )
+    user = SimpleNamespace(id=123, credits=5, approved_contributions=1)
+    db = _FakeTemplateDb([_ScalarResult(contribution), _ScalarResult(user)])
+    storage_service = _FakeStorage(target_read_error=ConnectionError("offline"))
+
+    with pytest.raises(Exception) as exc_info:
+        await template_admin_service.approve_contribution_payload(
+            contribution_id=1, db=db, storage_service=storage_service
+        )
+
+    assert exc_info.value.status_code == 503
+    assert user.credits == 5
+    assert not any(call[0] == "copy" for call in storage_service.calls)
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

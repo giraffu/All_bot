@@ -180,6 +180,11 @@ set status = case
 from absent where absent.asset_id = a.id;
 """
 
+SYNC_NEW_BOUNDS_SQL = """
+select coalesce((select max(history_id) from analytics_media_asset_catalog),0)+1 start_id,
+       coalesce((select max(id) from history),0) end_id
+"""
+
 
 async def main_async(args) -> None:
     database_url = os.getenv("LOCAL_ANALYTICS_DATABASE_URL") or os.getenv(
@@ -193,10 +198,18 @@ async def main_async(args) -> None:
         await conn.execute(CATALOG_DDL)
         if args.command == "init":
             print("archive catalog tables initialized")
-        elif args.command == "seed":
-            history_ids = load_history_ids(args.history_id_file)
-            start_id = history_ids[0] if history_ids else args.start_id
-            end_id = history_ids[-1] if history_ids else args.end_id
+        elif args.command in {"seed", "sync-new"}:
+            history_ids = load_history_ids(getattr(args, "history_id_file", None))
+            if args.command == "sync-new":
+                bounds = await conn.fetchrow(SYNC_NEW_BOUNDS_SQL)
+                start_id = int(bounds["start_id"])
+                end_id = int(bounds["end_id"])
+                if start_id > end_id:
+                    print("archive catalog already covers the latest History ID")
+                    return
+            else:
+                start_id = history_ids[0] if history_ids else args.start_id
+                end_id = history_ids[-1] if history_ids else args.end_id
             run_id = uuid.uuid4()
             await conn.execute(
                 "insert into analytics_media_runs(id,run_type,status,cursor) values($1,'seed','running',jsonb_build_object('start',$2::bigint,'end',$3::bigint))",
@@ -233,6 +246,7 @@ def main() -> None:
     seed.add_argument("--start-id", type=int)
     seed.add_argument("--end-id", type=int)
     seed.add_argument("--history-id-file")
+    subs.add_parser("sync-new")
     finalize = subs.add_parser("finalize-missing")
     finalize.add_argument("--run-id", required=True)
     args = parser.parse_args()

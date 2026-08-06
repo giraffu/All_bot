@@ -123,7 +123,7 @@ async def handle_template_contribution(update: Update, context, logger):
         local_path = os.path.join(TEMP_TEMPLATE_DIR, local_filename)
         await file.download_to_drive(local_path)
 
-        minio_object_name = f"temps/{local_filename}"
+        minio_object_name = f"template-submissions/{local_filename}"
         storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
 
         file_type_db = resolve_template_db_file_type(message)

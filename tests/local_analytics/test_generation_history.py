@@ -23,6 +23,8 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
         assert "left join users" in query.lower()
         assert "input_address" in query
         assert "output_address" in query
+        assert "input_verified_count" in query
+        assert "output_verified_count" in query
         return [
             {
                 "id": 99,
@@ -38,8 +40,12 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
                 "favorite_count": 1,
                 "rating": 1,
                 "created_at": "2026-08-05T10:00:00",
-                "input_address": "",
-                "output_address": "",
+                "input_address": "/api/generation-history/99/media?role_group=input",
+                "output_address": "/api/generation-history/99/media?role_group=output",
+                "input_asset_count": 2,
+                "input_verified_count": 1,
+                "output_asset_count": 3,
+                "output_verified_count": 2,
             }
         ]
 
@@ -59,8 +65,10 @@ async def test_generation_history_returns_filtered_rows_and_type_counts(monkeypa
     payload = response.json()
     assert payload["rows"][0]["nickname"] == "创作者"
     assert payload["rows"][0]["favorite_count"] == 1
-    assert payload["rows"][0]["input_address"] == ""
-    assert payload["rows"][0]["output_address"] == ""
+    assert payload["rows"][0]["input_address"].endswith("role_group=input")
+    assert payload["rows"][0]["output_address"].endswith("role_group=output")
+    assert payload["rows"][0]["input_verified_count"] == 1
+    assert payload["rows"][0]["output_verified_count"] == 2
     assert payload["task_types"][0] == {"task_type": "edit", "generation_count": 120}
     assert payload["pagination"] == {"page": 2, "limit": 10, "total": 21, "total_pages": 3}
     assert payload["filters"] == {"task_type": "edit", "sort": "type_count_desc"}
@@ -77,6 +85,8 @@ async def test_generation_history_defaults_to_all_types_latest_first_and_ten_row
             return []
         assert args == ("", 10, 0)
         assert "h.created_at desc" in query.lower()
+        assert "input_verified_count" in query
+        assert "role_group=input" in query
         return []
 
     monkeypatch.setattr(analytics_main, "_fetchrow", fake_fetchrow)

@@ -62,6 +62,7 @@ services:
       MINIO_SECURE: ${MINIO_SECURE:-false}
       MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-bot-data-test}
       MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-comfyui-temp-test}
+      LEGACY_RESULT_COMPLETION_ENABLED: ${LEGACY_RESULT_COMPLETION_ENABLED:-true}
     volumes:
       - ../backend/app:/app/app
       - ../src:/app/src

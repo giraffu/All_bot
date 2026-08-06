@@ -50,6 +50,14 @@ export function createGenerationHistoryModule({
     const taskTypeCounts = new Map(
       (state.generationHistory?.task_types || []).map((row) => [row.task_type, row.generation_count])
     );
+    const renderMediaAddress = (row, roleGroup) => {
+      const isInput = roleGroup === "input";
+      const total = Number(row[isInput ? "input_asset_count" : "output_asset_count"] || 0);
+      const verified = Number(row[isInput ? "input_verified_count" : "output_verified_count"] || 0);
+      if (!total) return '<span class="muted">无媒体</span>';
+      return `<div class="generation-history-media-summary">本地可用 ${fmt(verified)} / ${fmt(total)}</div>
+        <button type="button" data-history-media="${escapeHtml(row.id)}" data-role-group="${roleGroup}">查看${isInput ? "输入" : "输出"}</button>`;
+    };
     body.innerHTML = rows.map((row) => `
       <tr>
         <td class="mono generation-history-user-id">${escapeHtml(row.user_id ?? "-")}</td>
@@ -67,9 +75,9 @@ export function createGenerationHistoryModule({
         <td>${fmt(row.favorite_count)}</td>
         <td>${fmt(row.rating)}</td>
         <td class="generation-history-time">${fmtDate(row.created_at)}</td>
-        <td class="generation-history-address">${escapeHtml(row.input_address || "")}</td>
-        <td class="generation-history-address">${escapeHtml(row.output_address || "")}</td>
-        <td><button type="button" data-history-media="${escapeHtml(row.id)}">查看媒体</button></td>
+        <td class="generation-history-address">${renderMediaAddress(row, "input")}</td>
+        <td class="generation-history-address">${renderMediaAddress(row, "output")}</td>
+        <td><button type="button" data-history-media="${escapeHtml(row.id)}" data-role-group="all">查看全部</button></td>
       </tr>
     `).join("");
   }
@@ -141,22 +149,25 @@ export function createGenerationHistoryModule({
     const button = event.target.closest("button[data-history-media]");
     if (!button) return;
     const historyId = button.dataset.historyMedia;
+    const roleGroup = button.dataset.roleGroup || "all";
     try {
-      const payload = await fetchJson(`/api/generation-history/${historyId}/media`);
+      const payload = await fetchJson(`/api/generation-history/${historyId}/media`, { role_group: roleGroup });
       const dialog = $("#generationHistoryMediaDialog");
-      $("#generationHistoryMediaTitle").textContent = `History #${historyId} · ${payload.assets.length} 个逻辑媒体`;
+      const roleLabel = { input: "输入", output: "输出", all: "全部" }[payload.role_group] || "全部";
+      $("#generationHistoryMediaTitle").textContent = `History #${historyId} · ${roleLabel} · ${payload.assets.length} 个逻辑媒体`;
       $("#generationHistoryMediaBody").innerHTML = payload.assets.length ? payload.assets.map((asset) => {
-        const contentUrl = asset.status === "archived_verified" ? `/api/archive/assets/${asset.id}/content` : "";
+        const contentUrl = asset.content_url || "";
+        const safeContentUrl = escapeHtml(contentUrl);
         const preview = contentUrl && (asset.mime_type || "").startsWith("image/")
-          ? `<img loading="lazy" src="${contentUrl}" alt="${escapeHtml(asset.role)}" />`
+          ? `<img loading="lazy" src="${safeContentUrl}" alt="${escapeHtml(asset.role)}" />`
           : contentUrl && (asset.mime_type || "").startsWith("video/")
-            ? `<video controls preload="metadata" src="${contentUrl}"></video>` : "";
+            ? `<video controls preload="metadata" src="${safeContentUrl}"></video>` : "";
         return `<article class="archive-media-card">${preview}<strong>${escapeHtml(asset.role)} #${fmt(asset.ordinal)}</strong>
           <span class="archive-status archive-status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
-          <div class="muted small">${escapeHtml(asset.original_ref)}</div>
+          <div class="small"><span class="muted">原始引用：</span>${escapeHtml(asset.original_ref)}</div>
           <div class="mono small">${asset.byte_size ? `${fmt(asset.byte_size)} bytes` : "-"} · ${escapeHtml(asset.sha256 || "无 SHA-256")}</div>
           <div class="small">来源：${escapeHtml(asset.found_source || "-")}</div>
-          ${contentUrl ? `<a href="${contentUrl}" target="_blank" rel="noopener">打开原件</a>` : ""}</article>`;
+          ${contentUrl ? `<a href="${safeContentUrl}" target="_blank" rel="noopener">打开本地原件</a>` : '<span class="muted small">本地原件尚不可用</span>'}</article>`;
       }).join("") : '<div class="empty">此 History 尚无目录资产，请先运行盘点。</div>';
       dialog.showModal();
     } catch (error) { setError(error); }

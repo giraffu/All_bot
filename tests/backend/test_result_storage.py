@@ -194,3 +194,18 @@ async def test_legacy_worker_completion_remains_compatible_without_asset_contrac
 
     assert promoted.result_path == "legacy-flat.png"
     assert promoted.extra_outputs["last_frame"]["path"] == "legacy-last.png"
+
+
+@pytest.mark.asyncio
+async def test_legacy_media_completion_is_rejected_after_compatibility_gate_closes():
+    with pytest.raises(ResultPromotionError, match="asset contract is required"):
+        await promote_completion_assets(
+            task_id="backend-1",
+            result_path="legacy-flat.png",
+            extra_outputs=None,
+            result_asset=None,
+            extra_output_assets=None,
+            minio_client=None,
+            bucket="user-data-prod",
+            allow_legacy_completion=False,
+        )

@@ -90,8 +90,10 @@ sequenceDiagram
   SHA-256 和元数据后才确认完成。复制与重复 `/complete` 必须幂等；
   不完整、跨任务或校验不符的 staging 报文直接拒绝，不得先写 done。
   旧 Worker 不携资产元数据时仅在一个兼容发布周期内沿用原
-  `result_path`，全部 Worker 切换后关闭该兼容写入。Worker 端必须对完成回报进行
-  有限重试，全部失败后显式失败。
+  `result_path`；全部媒体 Worker 切换后将
+  `LEGACY_RESULT_COMPLETION_ENABLED=false`，缺少资产契约的媒体完成请求直接拒绝。
+  文本结果不依赖媒体资产契约。Worker 端必须对完成回报进行有限重试，全部失败后
+  显式失败。
 - `/api/agent/task/text-delta` 是 `prompt_optimize` 的可选增量协议，只写运行态快照，
   不构成成功。Central 以 task owner、attempt、连续 sequence、服务端字段契约和长度
   做原子校验；重复 sequence 幂等确认，跳号拒绝并返回期望值。终态写入采用 CAS，

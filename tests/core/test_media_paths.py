@@ -38,6 +38,31 @@ def test_resolve_storage_object_keeps_directory_history_paths_on_primary_bucket(
 
 
 @pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("task-results/backend-1/primary.png", "task-results/backend-1/primary.png"),
+        ("user-data-prod/task-results/backend-1/primary.png", "task-results/backend-1/primary.png"),
+        ("/user-data-prod/task-results/backend-1/primary.png", "task-results/backend-1/primary.png"),
+        (
+            "https://objects.example/user-data-prod/task-results/backend-1/primary.png?signature=redacted",
+            "task-results/backend-1/primary.png",
+        ),
+        (
+            "https://user-data-prod.objects.example/task-results/backend-1/primary.png",
+            "task-results/backend-1/primary.png",
+        ),
+    ],
+)
+def test_normalize_storage_object_key_accepts_plain_bucket_prefixed_and_url_references(
+    monkeypatch, reference, expected
+):
+    monkeypatch.setattr(media_paths, "MINIO_BUCKET", "user-data-prod")
+    monkeypatch.setattr(media_paths, "MINIO_RESULT_BUCKET", "worker-results-prod")
+
+    assert media_paths.normalize_storage_object_key(reference) == expected
+
+
+@pytest.mark.parametrize(
     ("history_type", "expected"),
     [
         ("custom_video", "video"),

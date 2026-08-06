@@ -235,10 +235,12 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(
     )
     upload_mock.assert_called_once_with(
         expected_local_path,
-        "temps/7_abc123.png",
+        "template-submissions/7_abc123.png",
         bucket=message_handler_media.MINIO_TEMPLATE_BUCKET,
     )
-    record_mock.assert_awaited_once_with(7, "temps/7_abc123.png", "photo")
+    record_mock.assert_awaited_once_with(
+        7, "template-submissions/7_abc123.png", "photo"
+    )
     remove_mock.assert_called_once_with(expected_local_path)
     assert context.user_data["contributed_count"] == 1
     reply_mock.assert_awaited_once()

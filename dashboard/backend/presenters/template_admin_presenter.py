@@ -6,12 +6,15 @@ from dashboard.backend.presenters.storage_presenter_utils import build_storage_u
 
 
 def build_template_preview_object_name(*, contribution) -> str:
-    filename = os.path.basename(contribution.file_path.replace("\\", "/"))
+    normalized_path = str(contribution.file_path or "").replace("\\", "/").lstrip("/")
+    filename = os.path.basename(normalized_path)
     if contribution.is_reviewed:
         if contribution.file_type == "video":
             return f"video_nice/{filename}"
         return f"quick_face/{filename}"
-    return f"temps/{filename}"
+    if normalized_path.startswith(("template-submissions/", "temps/")):
+        return normalized_path
+    return f"template-submissions/{filename}"
 
 
 def build_template_preview_url(*, contribution, storage_service) -> str:

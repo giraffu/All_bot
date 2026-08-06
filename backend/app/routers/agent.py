@@ -179,6 +179,7 @@ async def complete_task(
         result_meta=req.result_meta,
         minio_client=minio_client,
         result_bucket=settings.minio_result_bucket,
+        allow_legacy_completion=settings.legacy_result_completion_enabled,
         queue_manager=queue_manager,
     )
 

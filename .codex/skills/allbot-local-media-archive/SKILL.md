@@ -25,6 +25,8 @@ description: "建设和维护 AllBot History 全量媒体目录、NAS MinIO 归�
 - R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
 - Worker 配置必须为当前运行用户所有的普通 0600 文件；NAS 路由必须命中声明的
   物理接口和源地址，检测到本地 7890 代理时 fail closed。
+- 私有 Worker 配置只输出来源名和指纹；来源离线记为 `source_offline`。历史页
+  按角色懒加载，只有 `archived_verified` 提供 LAN 原件。
 - 租约每 5 分钟续期，成功/失败回执必须匹配当前 revision；陈旧 Worker 不得覆盖
   已变化的媒体清单。
 - restore outbox 与 archive outbox 状态不得复用；收藏、公开、活跃 Gallery、
