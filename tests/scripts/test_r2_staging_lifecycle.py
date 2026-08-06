@@ -3,6 +3,7 @@ import pytest
 from scripts.r2_staging_lifecycle import (
     STAGING_RULE_ID,
     build_lifecycle_rules,
+    lifecycle_rules_match,
     validate_apply_gate,
 )
 
@@ -34,6 +35,22 @@ def test_lifecycle_plan_replaces_its_own_rule_without_touching_neighbors():
         ]
     )
     assert [rule["ID"] for rule in rules] == ["keep-me", STAGING_RULE_ID]
+
+
+def test_lifecycle_readback_accepts_provider_rule_reordering():
+    planned = [
+        {"ID": "multipart", "Status": "Enabled"},
+        {"ID": STAGING_RULE_ID, "Status": "Enabled"},
+    ]
+
+    assert lifecycle_rules_match(planned, list(reversed(planned)))
+
+
+def test_lifecycle_readback_still_rejects_content_changes():
+    planned = [{"ID": STAGING_RULE_ID, "Status": "Enabled"}]
+    applied = [{"ID": STAGING_RULE_ID, "Status": "Disabled"}]
+
+    assert not lifecycle_rules_match(planned, applied)
 
 
 @pytest.mark.parametrize(
