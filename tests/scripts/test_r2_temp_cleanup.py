@@ -1,11 +1,15 @@
+import asyncio
 import inspect
 import sqlite3
+import threading
+import time
 
 import pytest
 
 from scripts.r2_temp_cleanup import (
     Candidate,
     _eligible_candidates,
+    _verify_candidates,
     _matching_refs,
     select_duplicate_candidates,
     validate_delete_gate,
@@ -85,3 +89,39 @@ def test_temp_delete_gate_is_bucket_and_confirmation_scoped():
             enabled=True,
             confirmation="DELETE_VERIFIED_TEMP_R2_user-data",
         )
+
+
+def test_sha_verification_uses_bounded_parallel_reads(monkeypatch):
+    active = 0
+    maximum = 0
+    lock = threading.Lock()
+
+    def fake_sha256(_client, _bucket, _key):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return "same"
+
+    monkeypatch.setattr("scripts.r2_temp_cleanup._sha256_object", fake_sha256)
+    candidates = [
+        Candidate(
+            key=f"source-{index}",
+            durable_key=f"durable-{index}",
+            byte_size=10,
+            etag="same",
+            last_modified="2026-08-01T00:00:00Z",
+        )
+        for index in range(8)
+    ]
+
+    verified, failures = asyncio.run(
+        _verify_candidates(object(), "user-data-prod", candidates, concurrency=3)
+    )
+
+    assert len(verified) == 8
+    assert failures == []
+    assert 1 < maximum <= 3
