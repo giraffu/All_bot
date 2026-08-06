@@ -264,6 +264,7 @@ RUN set -euo pipefail; \
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
 COPY shared /opt/allbot/runtime/runpod_worker/shared
+RUN python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
