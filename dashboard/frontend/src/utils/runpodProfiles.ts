@@ -22,8 +22,13 @@ export const RUNPOD_FALLBACK_PROFILES: RunPodProfile[] = [
   },
   {
     profile: 'i2i_pro',
-    label: 'i2i_pro / txt2img / face_swap_v2',
-    supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap_v2'],
+    label: 'i2i_pro / txt2img / face_swap_v2 / face_swap',
+    supported_task_types: [
+      'i2i_pro',
+      't2i-pornmaster-turbo',
+      'face_swap_v2',
+      'face_swap',
+    ],
   },
   {
     profile: 'scail2',

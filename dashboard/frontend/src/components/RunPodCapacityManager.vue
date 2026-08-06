@@ -271,7 +271,11 @@ const submit = async () => {
     emit('changed')
   } catch (err) {
     console.error(err)
-    message.error('RunPod 操作提交失败')
+    const detail = err?.response?.data?.detail
+    const errorMessage = typeof detail === 'string' && detail
+      ? `RunPod 操作提交失败: ${detail}`
+      : 'RunPod 操作提交失败'
+    message.error(errorMessage)
   } finally {
     submitting.value = false
   }

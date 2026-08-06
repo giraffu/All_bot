@@ -669,6 +669,31 @@ def test_prod_worker_render_accepts_release_pinned_i2i_pro_digest():
     assert payload["render"]["imageName"] == release_image
 
 
+def test_prod_worker_render_accepts_release_artifact_i2i_pro_digest():
+    """Regression: i2i_pro release artifact uses allbot-gpu-i2i-pro repository."""
+    release_image = "ghcr.io/giraffu/allbot-gpu-i2i-pro@sha256:" + "a" * 64
+    agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
+    provider = RunPodProvider(
+        replace(
+            _settings(),
+            prod_agent_id=agent_id,
+            image_name_i2i_pro=release_image,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="i2i_pro",
+        task_type="i2i_pro",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] == release_image
+
+
 def test_prod_worker_render_rejects_foreign_i2i_pro_digest():
     agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
     provider = RunPodProvider(
