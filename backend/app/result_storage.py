@@ -136,9 +136,12 @@ async def promote_completion_assets(
     extra_output_assets: dict[str, Any] | None,
     minio_client,
     bucket: str,
+    allow_legacy_completion: bool = True,
 ) -> PromotedCompletion:
     """Return legacy payload unchanged or promote a complete new asset contract."""
     if not result_asset:
+        if not allow_legacy_completion:
+            raise ResultPromotionError("completion asset contract is required")
         return PromotedCompletion(
             result_path=result_path,
             extra_outputs=(dict(extra_outputs) if extra_outputs is not None else None),

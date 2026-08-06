@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import PurePosixPath
 import re
+from typing import Literal
 from urllib.parse import quote
 
 import boto3
@@ -159,28 +160,56 @@ async def archive_status():
     "/api/generation-history/{history_id}/media",
     dependencies=[Depends(require_archive_auth)],
 )
-async def history_media(history_id: int):
+async def history_media(
+    history_id: int,
+    role_group: Literal["input", "output", "all"] = "all",
+):
     history = await _fetchrow(
         "select id, task_id, user_id, type, created_at from history where id=$1",
         history_id,
     )
     if not history:
         raise HTTPException(status_code=404, detail="history not found")
+    role_predicate = {
+        "input": "a.role='input'",
+        "output": "a.role<>'input'",
+        "all": "true",
+    }[role_group]
     assets = await _fetch(
-        """
+        f"""
         select a.id, a.role, a.ordinal, a.original_ref, a.temperature, a.status,
                a.found_source, a.source_key, a.sha256, a.last_checked_at,
                a.last_error, b.byte_size, b.mime_type, b.nas_bucket, b.nas_key,
                b.verified_at
         from analytics_media_asset_catalog a
         left join analytics_media_blobs b on b.sha256=a.sha256
-        where a.history_id=$1
+        where a.history_id=$1 and {role_predicate}
         order by case when a.role='input' then 0 when a.role='output' then 1 else 2 end,
                  a.role, a.ordinal
         """,
         history_id,
     )
-    return {"history": _row(history), "assets": _rows(assets)}
+    projected_assets = []
+    for raw_asset in _rows(assets):
+        asset = dict(raw_asset)
+        nas_bucket = asset.pop("nas_bucket", None)
+        nas_key = asset.pop("nas_key", None)
+        local_available = bool(
+            asset.get("status") == "archived_verified"
+            and asset.get("sha256")
+            and nas_bucket
+            and nas_key
+        )
+        asset["local_available"] = local_available
+        asset["content_url"] = (
+            f"/api/archive/assets/{asset['id']}/content" if local_available else None
+        )
+        projected_assets.append(asset)
+    return {
+        "history": _row(history),
+        "role_group": role_group,
+        "assets": projected_assets,
+    }
 
 
 @router.get(
@@ -222,11 +251,23 @@ async def archive_asset_content(
     request_args = {"Bucket": asset["nas_bucket"], "Key": asset["nas_key"]}
     status_code = 200
     if range_header:
-        if not RANGE_PATTERN.match(range_header):
+        match = RANGE_PATTERN.match(range_header)
+        if not match:
+            raise HTTPException(status_code=416, detail="invalid byte range")
+        start, end = match.groups()
+        if (not start and not end) or (start and end and int(end) < int(start)):
             raise HTTPException(status_code=416, detail="invalid byte range")
         request_args["Range"] = range_header
         status_code = 206
-    response = _nas_client().get_object(**request_args)
+    try:
+        response = _nas_client().get_object(**request_args)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="NAS archive content is temporarily unavailable",
+        ) from exc
     body = response["Body"]
 
     def stream():

@@ -1,0 +1,17 @@
+[Unit]
+Description=AllBot bounded verified R2 temporary object cleanup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hfy
+Group=hfy
+WorkingDirectory=/home/hfy/APP/All_bot
+EnvironmentFile=/home/hfy/.config/allbot/r2-temp-cleanup/cleanup.env
+ExecStart=/home/hfy/miniconda3/bin/python scripts/run_daily_r2_temp_cleanup.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+StateDirectory=allbot-r2-temp-cleanup

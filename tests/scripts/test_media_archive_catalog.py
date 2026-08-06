@@ -1,4 +1,9 @@
-from scripts.media_archive_catalog import CATALOG_DDL, CONFIRM_MISSING_SQL, SEED_SQL
+from scripts.media_archive_catalog import (
+    CATALOG_DDL,
+    CONFIRM_MISSING_SQL,
+    SEED_SQL,
+    SYNC_NEW_BOUNDS_SQL,
+)
 
 
 def test_missing_confirmation_requires_two_rounds_and_24_hours():
@@ -37,3 +42,8 @@ def test_seed_exact_id_manifest_preserves_hot_ranking_contract(tmp_path):
     assert load_history_ids(str(manifest)) == (2, 10)
     assert "id = any($3::int[])" in SEED_IDS_SQL
     assert "row_number() over(partition by h.user_id order by h.id desc)" in SEED_IDS_SQL
+
+
+def test_incremental_catalog_sync_starts_after_latest_seeded_history():
+    assert "max(history_id)" in SYNC_NEW_BOUNDS_SQL
+    assert "max(id) from history" in SYNC_NEW_BOUNDS_SQL

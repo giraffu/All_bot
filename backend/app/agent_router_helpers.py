@@ -192,6 +192,7 @@ async def complete_task_payload(
     result_meta: dict | None = None,
     minio_client=None,
     result_bucket: str = "",
+    allow_legacy_completion: bool = True,
     promote_completion_assets_func=None,
     queue_manager,
 ) -> dict:
@@ -207,6 +208,7 @@ async def complete_task_payload(
         extra_output_assets=extra_output_assets,
         minio_client=minio_client,
         bucket=result_bucket,
+        allow_legacy_completion=(allow_legacy_completion or result_kind == "text"),
     )
     result = promoted.result_path
     extra_outputs = promoted.extra_outputs

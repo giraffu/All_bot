@@ -793,6 +793,12 @@ main {
   color: var(--muted);
 }
 
+.generation-history-media-summary {
+  margin-bottom: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .archive-media-dialog { width: min(1080px, 92vw); max-height: 86vh; border: 0; border-radius: 14px; padding: 18px; }
 .archive-media-dialog::backdrop { background: rgba(15, 23, 42, .58); }
 .archive-media-dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }

@@ -11,6 +11,31 @@ from .analytics_common import _fetch, _fetchrow, _gather_limited, _row, _rows
 router = APIRouter()
 GENERATION_HISTORY_PAGE_SIZE = 10
 
+MEDIA_COLUMNS_SQL = """
+    '/api/generation-history/' || h.id || '/media?role_group=input' input_address,
+    '/api/generation-history/' || h.id || '/media?role_group=output' output_address,
+    coalesce(media.input_asset_count,0)::int input_asset_count,
+    coalesce(media.input_verified_count,0)::int input_verified_count,
+    coalesce(media.output_asset_count,0)::int output_asset_count,
+    coalesce(media.output_verified_count,0)::int output_verified_count,
+    coalesce(media.asset_count,0)::int asset_count,
+    coalesce(media.verified_count,0)::int verified_count,
+    coalesce(media.problem_count,0)::int problem_count
+"""
+
+MEDIA_JOIN_SQL = """
+    left join lateral (
+      select count(*) asset_count,
+        count(*) filter (where role='input') input_asset_count,
+        count(*) filter (where role='input' and status='archived_verified') input_verified_count,
+        count(*) filter (where role<>'input') output_asset_count,
+        count(*) filter (where role<>'input' and status='archived_verified') output_verified_count,
+        count(*) filter (where status='archived_verified') verified_count,
+        count(*) filter (where status in ('source_offline','provisional_missing','confirmed_lost','checksum_error')) problem_count
+      from analytics_media_asset_catalog a where a.history_id=h.id
+    ) media on true
+"""
+
 FILTER_SQL = """
   ($1::text = '' or coalesce(h.type, 'unknown') = $1::text)
   and ($2::bigint is null or h.id = $2::bigint)
@@ -63,7 +88,7 @@ async def generation_history(
     if not advanced:
         offset = (page - 1) * GENERATION_HISTORY_PAGE_SIZE
         if sort == "type_count_desc" and not normalized_task_type:
-            rows_query = """
+            rows_query = f"""
                 with type_counts as (
                     select coalesce(type, 'unknown') task_type, count(*)::bigint generation_count
                     from history group by 1
@@ -72,20 +97,22 @@ async def generation_history(
                     coalesce(nullif(u.full_name,''),nullif(u.username,''),'') nickname,
                     coalesce(h.type,'unknown') task_type, h.source, h.prompt, h.billing_resolution,
                     h.duration,h.width,h.height,case when h.is_favorited then 1 else 0 end::int favorite_count,
-                    h.rating,h.created_at,''::text input_address,''::text output_address
+                    h.rating,h.created_at,{MEDIA_COLUMNS_SQL}
                 from history h join type_counts on type_counts.task_type=coalesce(h.type,'unknown')
                 left join users u on u.id=h.user_id
+                {MEDIA_JOIN_SQL}
                 order by type_counts.generation_count desc,h.created_at desc,h.id desc limit $1::int offset $2::int
             """
             rows_args = (GENERATION_HISTORY_PAGE_SIZE, offset)
         else:
-            rows_query = """
+            rows_query = f"""
                 select 'generation_history_rows' row_type, h.id, h.task_id, h.user_id,
                     coalesce(nullif(u.full_name,''),nullif(u.username,''),'') nickname,
                     coalesce(h.type,'unknown') task_type,h.source,h.prompt,h.billing_resolution,
                     h.duration,h.width,h.height,case when h.is_favorited then 1 else 0 end::int favorite_count,
-                    h.rating,h.created_at,''::text input_address,''::text output_address
+                    h.rating,h.created_at,{MEDIA_COLUMNS_SQL}
                 from history h left join users u on u.id=h.user_id
+                {MEDIA_JOIN_SQL}
                 where ($1::text='' or coalesce(h.type,'unknown')=$1::text)
                 order by h.created_at desc,h.id desc limit $2::int offset $3::int
             """
@@ -151,19 +178,9 @@ async def generation_history(
         coalesce(nullif(u.full_name,''),nullif(u.username,''),'') nickname,
         coalesce(h.type,'unknown') task_type, h.source, h.prompt, h.billing_resolution,
         h.duration, h.width, h.height, case when h.is_favorited then 1 else 0 end::int favorite_count,
-        h.rating, h.created_at,
-        '/api/generation-history/' || h.id || '/media' input_address,
-        '/api/generation-history/' || h.id || '/media' output_address,
-        coalesce(media.asset_count,0)::int asset_count,
-        coalesce(media.verified_count,0)::int verified_count,
-        coalesce(media.problem_count,0)::int problem_count
+        h.rating, h.created_at, {MEDIA_COLUMNS_SQL}
       from history h left join users u on u.id=h.user_id {type_join}
-      left join lateral (
-        select count(*) asset_count,
-          count(*) filter (where status='archived_verified') verified_count,
-          count(*) filter (where status in ('source_offline','provisional_missing','confirmed_lost','checksum_error')) problem_count
-        from analytics_media_asset_catalog a where a.history_id=h.id
-      ) media on true
+      {MEDIA_JOIN_SQL}
       where {FILTER_SQL}
       order by {order_sql} limit $11::int offset $12::int
     """

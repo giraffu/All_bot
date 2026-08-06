@@ -135,6 +135,15 @@ fail closed。双份 SHA 读取默认最多 8 路并发，可用
 对象级摘要或执行前的重新校验。执行只认
 `R2_TEMP_CLEANUP_ENABLED` 和精确生产桶确认，不复用
 `R2_ARCHIVE_DELETE_ENABLED` 或恢复门禁。
+完成 100/1000/10000 对象 canary 后可安装 `ops/r2_temp_cleanup/` 的每日任务；
+单批同时受 10000 对象与 50 GiB 上限约束，使用当前 inventory，运行报告写入
+受限 state 目录。`staging/` 对象数、字节和最老时间随报告输出；任一引用、数据库
+或摘要探测失败仍整批 fail closed。
+
+模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
+通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
+复制并对源/目标完整 SHA-256 验证，使用 0600 SQLite 断点状态；真实迁移使用独立
+精确确认值，不能借用临时清理或冷归档删除门禁。
 
 `scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
 `user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量
@@ -147,12 +156,22 @@ SHA 证据。服务端复制默认最多 16 路并发，可用 `copy --workers` 
 
 ## 7. 本地浏览与安全
 
-历史生成页提供目录筛选和“查看媒体”。原件接口支持 HTTP Range，浏览器只拿
+历史生成页提供目录筛选和“查看媒体”。列表按 input 与 output（含 `extra:*`）分别
+展示本地可用数；`GET /api/generation-history/{id}/media` 使用
+`role_group=input|output|all` 懒加载，并只为 `archived_verified` 返回本地
+`content_url`。原件接口支持 HTTP Range，浏览器只拿
 分析平台 session cookie，NAS 只读凭据仅在服务端。原件路由在鉴权前识别并拒绝
 Cloudflare 请求头，因此 Tunnel 只能访问统计与目录，不能读取完整文件。归档状态
 卡片展示逻辑资产、验收数、字节、outbox 积压、吞吐、来源离线、校验错误、容量
 和暂停原因；告警仅留在本地平台。三个归档 API 即使平台全局登录被关闭也会返回
 503，必须显式启用并配置本地登录后才能访问。
+
+Worker 私有配置由 `render_media_archive_worker_config.py` 从 `env:NAME` 模板生成，
+只输出来源名和配置指纹，实际 JSON 原子写为 0600；配置校验拒绝把已退役
+`user-data` 重新登记为启用来源。`media_archive_source_health.py` 每日只读探测六个
+来源和 NAS，离线统一输出 `source_offline`，不等价于 not-found。首个 canary 对象
+完成 NAS 上传及完整回读并写入 `archived_verified` 后，本地容量和历史页才开始出现
+实际归档数据。
 
 ## 8. 验证
 

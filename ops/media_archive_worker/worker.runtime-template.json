@@ -1,0 +1,40 @@
+{
+  "central_api": "env:MEDIA_ARCHIVE_CENTRAL_API",
+  "agent_token": "env:MEDIA_ARCHIVE_AGENT_TOKEN",
+  "catalog_database_url": "env:LOCAL_ANALYTICS_DATABASE_URL",
+  "nas_capacity_bytes": 16400000000000,
+  "spool_path": "/var/lib/allbot-media-archive/spool",
+  "max_spool_bytes": 107374182400,
+  "pause_spool_bytes": 96636764160,
+  "stale_part_seconds": 86400,
+  "bandwidth_bytes_per_second": 52428800,
+  "adaptive_window_seconds": 900,
+  "lease_renew_interval_seconds": 300,
+  "idle_poll_seconds": 30,
+  "nas": {
+    "name": "nas-archive",
+    "endpoint": "https://10.250.150.2:9000",
+    "bucket": "allbot-media-archive-v1",
+    "access_key": "env:NAS_MINIO_ARCHIVE_ACCESS_KEY",
+    "secret_key": "env:NAS_MINIO_ARCHIVE_SECRET_KEY",
+    "ca_file": "/home/hfy/.config/allbot/media-archive/ca.crt",
+    "allowed_interfaces": ["eno1"],
+    "allowed_source_ips": ["10.250.150.1"]
+  },
+  "restore_target": {
+    "name": "r2-user-data-prod-restore",
+    "endpoint": "env:R2_ENDPOINT",
+    "bucket": "user-data-prod",
+    "access_key": "env:R2_ACCESS_KEY",
+    "secret_key": "env:R2_SECRET_KEY",
+    "region": "auto"
+  },
+  "sources": [
+    {"name": "r2-user-data-prod", "type": "s3", "endpoint": "env:R2_ENDPOINT", "bucket": "user-data-prod", "access_key": "env:R2_ACCESS_KEY", "secret_key": "env:R2_SECRET_KEY", "region": "auto"},
+    {"name": "minio-bot-data", "type": "s3", "endpoint": "env:LEGACY_MINIO_ENDPOINT", "bucket": "bot-data", "access_key": "env:LEGACY_MINIO_ACCESS_KEY", "secret_key": "env:LEGACY_MINIO_SECRET_KEY", "allow_tailscale": true},
+    {"name": "minio-comfyui-temp", "type": "s3", "endpoint": "env:LEGACY_MINIO_ENDPOINT", "bucket": "comfyui-temp", "access_key": "env:LEGACY_MINIO_ACCESS_KEY", "secret_key": "env:LEGACY_MINIO_SECRET_KEY", "allow_tailscale": true},
+    {"name": "cold-minio-192.168.1.88-9001", "type": "s3", "endpoint": "env:COLD_MINIO_9001_ENDPOINT", "bucket": "bot-data", "access_key": "env:COLD_MINIO_9001_ACCESS_KEY", "secret_key": "env:COLD_MINIO_9001_SECRET_KEY"},
+    {"name": "cold-minio-192.168.1.88-9002", "type": "s3", "endpoint": "env:COLD_MINIO_9002_ENDPOINT", "bucket": "comfyui-temp", "access_key": "env:COLD_MINIO_9002_ACCESS_KEY", "secret_key": "env:COLD_MINIO_9002_SECRET_KEY"},
+    {"name": "known-backups-and-filesystems", "type": "filesystem", "roots": ["env:MEDIA_ARCHIVE_LEGACY_FILESYSTEM_ROOT"]}
+  ]
+}

@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from src.core.media_paths import normalize_storage_object_key
 from src.core.task_core_types import CoreDomainError, TaskSuccessPersistenceResult
 
 
@@ -31,6 +32,8 @@ async def materialize_successful_task_output(
         if is_video
         else download_result_func(backend_task_id)
     )
+    canonical_result_path = normalize_storage_object_key(str(result_path or ""))
+    durable_result_prefix = f"task-results/{backend_task_id}/"
 
     if media_bytes:
         width, height, duration = await to_thread_func(
@@ -40,8 +43,8 @@ async def materialize_successful_task_output(
             file_ext,
             (width, height, duration),
         )
-        if str(result_path or "").startswith("task-results/"):
-            output_file = str(result_path)
+        if canonical_result_path.startswith(durable_result_prefix):
+            output_file = canonical_result_path
         else:
             output_file = await to_thread_func(
                 user_logger.save_output_image,

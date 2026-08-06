@@ -14,6 +14,7 @@ from scripts.r2_temp_cleanup import (
     select_duplicate_candidates,
     validate_delete_gate,
     _history_references,
+    _apply_delete_byte_cap,
 )
 
 
@@ -125,3 +126,17 @@ def test_sha_verification_uses_bounded_parallel_reads(monkeypatch):
     assert len(verified) == 8
     assert failures == []
     assert 1 < maximum <= 3
+
+
+def test_daily_delete_byte_cap_stops_before_crossing_limit():
+    verified = [
+        {"key": "one", "byte_size": 30},
+        {"key": "two", "byte_size": 25},
+        {"key": "three", "byte_size": 10},
+    ]
+
+    selected, blocked = _apply_delete_byte_cap(verified, max_bytes=50)
+
+    assert [item["key"] for item in selected] == ["one"]
+    assert [item["key"] for item in blocked] == ["two", "three"]
+    assert sum(item["byte_size"] for item in selected) == 30
