@@ -17,6 +17,7 @@ COPY src /app/src
 COPY shared /app/shared
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
+COPY scripts/r2_staging_lifecycle.py scripts/r2_temp_cleanup.py scripts/r2_legacy_bucket_retirement.py /app/scripts/
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=web-api
 CMD ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
 
