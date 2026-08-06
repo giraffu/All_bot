@@ -41,9 +41,18 @@ async def test_job_claim_rejects_more_than_100_exact_history_ids():
             worker_id="canary-worker",
             limit=100,
             max_priority=100,
-            history_ids=list(range(1, 102)),
+            history_ids=",".join(str(value) for value in range(1, 102)),
             db=object(),
         )
+    assert error.value.status_code == 422
+
+
+def test_exact_history_ids_query_uses_a_version_stable_csv_contract():
+    from src.web_api.routers.media_archive import parse_history_ids_query
+
+    assert parse_history_ids_query("33,11,33") == (11, 33)
+    with pytest.raises(HTTPException) as error:
+        parse_history_ids_query("11,not-an-id")
     assert error.value.status_code == 422
 
 
