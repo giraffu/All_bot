@@ -71,7 +71,7 @@ DEFAULT_SOURCE_LABELS = [
     "gallery_like_apply_interactions",
     "gallery_prompt_unlocks",
 ]
-DEFAULT_SOURCE_R2_BUCKETS = ["user-data", "user-data-prod"]
+DEFAULT_SOURCE_R2_BUCKETS = ["user-data-prod"]
 DEFAULT_SOURCE_TYPES = ["r2", "minio"]
 
 ObjectKind = Literal["media", "thumbnail", "input_file"]
