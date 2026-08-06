@@ -691,6 +691,17 @@ class CatalogRecorder:
             raise RuntimeError("archive asset is absent from local catalog")
         return row["id"]
 
+    async def ensure_job_assets(self, job: dict) -> None:
+        assert self.conn is not None
+        rows = await self.conn.fetch(
+            "select role,ordinal from analytics_media_asset_catalog where history_id=$1",
+            job["history_id"],
+        )
+        expected = [(asset["role"], asset["ordinal"]) for asset in job["assets"]]
+        stored = {(row["role"], row["ordinal"]) for row in rows}
+        if len(expected) != len(set(expected)) or set(expected) != stored:
+            raise RuntimeError("local archive catalog does not cover claimed job")
+
     async def record_attempts(self, job: dict, asset: dict, attempts: list[dict]):
         assert self.conn is not None and self.run_id is not None
         if not attempts:
@@ -942,6 +953,7 @@ async def _process_jobs(
 
         renewal_task = asyncio.create_task(renew_lease_periodically())
         try:
+            await catalog.ensure_job_assets(job)
             receipts = []
             for asset in job["assets"]:
                 attempts: list[dict] = []
