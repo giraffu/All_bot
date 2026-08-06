@@ -124,6 +124,8 @@ owner `/result` 的 R2 miss 在业务事务中只做幂等 enqueue；每日 reco
 条 History；`GET /api/internal/media-archive/jobs` 以逗号分隔 query 参数接收该集合并
 只租用集合内任务。该过滤仍受 agent token、优先级、租约和 revision 门禁约束，
 不得通过临时改写其它 outbox 的优先级或 `available_at` 达成确定性领取。
+领取后必须先确认本地目录完整覆盖该 job 的全部角色/序号，再开始任何 NAS 上传；
+目录未 seed 或清单不一致时先提交可重试失败，不得留下无目录映射的孤儿 blob。
 
 R2 删除默认关闭。候选覆盖输入、主输出、附加输出和主输出派生缩略图；共享引用
 按全部角色检查最新 8 条原始 History（再过滤可见）、收藏、公开和活跃投稿。

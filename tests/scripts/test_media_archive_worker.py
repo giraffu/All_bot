@@ -64,6 +64,27 @@ async def test_catalog_run_accepts_a_string_worker_id(monkeypatch):
         pass
 
 
+@pytest.mark.asyncio
+async def test_catalog_preflight_rejects_a_job_before_any_media_transfer():
+    class FakeConnection:
+        async def fetch(self, _statement, _history_id):
+            return [{"role": "input", "ordinal": 0}]
+
+    catalog = CatalogRecorder("postgresql://catalog", "archive-worker-1")
+    catalog.conn = FakeConnection()
+
+    with pytest.raises(RuntimeError, match="does not cover claimed job"):
+        await catalog.ensure_job_assets(
+            {
+                "history_id": 10,
+                "assets": [
+                    {"role": "input", "ordinal": 0},
+                    {"role": "output", "ordinal": 0},
+                ],
+            }
+        )
+
+
 def test_worker_config_requires_regular_0600_file_owned_by_current_user(tmp_path: Path):
     config = tmp_path / "worker.json"
     config.write_text(json.dumps({"sources": []}), encoding="utf-8")
