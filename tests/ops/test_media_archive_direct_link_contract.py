@@ -136,6 +136,16 @@ def test_minio_compose_exposes_only_s3_on_the_direct_link():
     )
 
 
+def test_nas_direct_link_waits_for_the_persistent_deploy_volume():
+    unit = (
+        ROOT / "ops/media_archive_nas/allbot-media-archive-direct-link.service"
+    ).read_text()
+
+    assert "RequiresMountsFor=/volume1/AllBotArchive/deploy" in unit
+    assert "After=network.target volume1.mount" in unit
+    assert "Before=docker.service" in unit
+
+
 def test_tls_certificate_covers_management_and_direct_link_ips(tmp_path):
     env = dict(os.environ, MINIO_DIRECT_BIND_IP="10.250.150.2")
     subprocess.run(

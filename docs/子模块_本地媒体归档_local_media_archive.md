@@ -77,6 +77,9 @@ not-found，才累计一次 missing round；两轮相隔至少 24 小时才可�
    IP 和直连 IP，9001 只绑定管理 IP。可信单租户 LAN 可按用户决定不启用仓库内
    的可选 `ALLBOT_MEDIA_ARCHIVE` 防火墙；即使停用，TLS、最小权限账号和非公网
    暴露仍是强制边界。
+   NAS 专线 systemd unit 必须通过 `RequiresMountsFor` 等待
+   `/volume1/AllBotArchive/deploy` 挂载完成，再于 Docker 启动前配置直连 IP，
+   避免因脚本路径尚不存在导致 MinIO 端口绑定失败。
 6. 验证健康检查、三个桶、archive 桶 versioning、Worker 无 DeleteObject 权限、
    analytics 只读、容器重启恢复、日志轮转和磁盘满 fail-closed。
 
