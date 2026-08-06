@@ -52,6 +52,8 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 `seed --start-id ... --end-id ...`。来源优先级登记在
 `analytics_media_sources`：生产 R2、旧 R2、旧 MinIO 两桶、冷 MinIO 两端点、
 已知备份和遗留文件系统。`user-data-test` 不在默认来源表。
+旧 `user-data` 退役后不得再作为热集回填的默认源；只允许在有退役证据的
+受控取证命令中通过 `--source-r2-buckets` 显式指定。
 
 状态仅使用：`pending_probe`、`source_offline`、`found`、
 `archived_verified`、`provisional_missing`、`confirmed_lost`、
