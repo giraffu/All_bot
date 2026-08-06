@@ -31,6 +31,15 @@ def build_lifecycle_rules(existing_rules: list[dict]) -> list[dict]:
     return retained
 
 
+def lifecycle_rules_match(planned: list[dict], applied: list[dict]) -> bool:
+    """Compare lifecycle rules without relying on provider response order."""
+
+    def canonical(rule: dict) -> str:
+        return json.dumps(rule, sort_keys=True, separators=(",", ":"))
+
+    return sorted(map(canonical, planned)) == sorted(map(canonical, applied))
+
+
 def validate_apply_gate(*, bucket: str, enabled: bool, confirmation: str) -> None:
     if bucket != PRODUCTION_BUCKET:
         raise ValueError("staging lifecycle is restricted to user-data-prod")
@@ -101,7 +110,7 @@ def main() -> None:
         LifecycleConfiguration={"Rules": planned},
     )
     applied = _read_rules(client, args.bucket)
-    if applied != planned:
+    if not lifecycle_rules_match(planned, applied):
         raise SystemExit("lifecycle read-back did not match the requested rules")
 
 
