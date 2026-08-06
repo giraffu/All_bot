@@ -3,6 +3,8 @@ import sqlite3
 import pytest
 
 from scripts.r2_temp_cleanup import (
+    Candidate,
+    _eligible_candidates,
     _matching_refs,
     select_duplicate_candidates,
     validate_delete_gate,
@@ -43,6 +45,24 @@ def test_active_task_reference_matching_walks_nested_registry_payloads():
         {"task": {"saved_input_images": [f"user-data-prod/{key}"]}},
         {key, "unrelated.png"},
     ) == {key}
+
+
+def test_business_references_block_an_otherwise_verified_duplicate():
+    candidate = Candidate(
+        key="12345678-1234-1234-1234-123456789abc__raw.png",
+        durable_key="task-results/task/primary.png",
+        byte_size=10,
+        etag="same",
+        last_modified="2026-08-01T00:00:00Z",
+    )
+    eligible, blocked = _eligible_candidates(
+        [candidate],
+        set(),
+        set(),
+        {candidate.key},
+    )
+    assert eligible == []
+    assert blocked == {candidate.key}
 
 
 def test_temp_delete_gate_is_bucket_and_confirmation_scoped():

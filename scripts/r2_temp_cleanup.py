@@ -101,6 +101,87 @@ async def _history_references(keys: list[str]) -> set[str]:
     return set(map(str, rows))
 
 
+async def _business_references(keys: list[str]) -> dict[str, set[str]]:
+    """Return non-History business references that make deletion unsafe.
+
+    History is intentionally queried separately because every History role blocks
+    cleanup, regardless of visibility.  This query covers business records that
+    can retain an R2 key independently of History.  Referencing a table that is
+    unavailable is an intentional fail-closed database error.
+    """
+    if not keys:
+        return {}
+    from src.database.core import AsyncSessionLocal
+
+    query = text(
+        """
+        with candidate(key) as (select unnest(cast(:keys as text[]))), refs as (
+          select 'template_contribution' category, candidate.key
+            from template_contributions value join candidate
+              on btrim(coalesce(value.file_path,''))=candidate.key
+              or btrim(coalesce(value.file_path,'')) like '%/'||candidate.key
+          union select 'archive_receipt', candidate.key
+            from media_archive_receipts value join candidate
+              on btrim(coalesce(value.source_key,''))=candidate.key
+              or btrim(coalesce(value.source_key,'')) like '%/'||candidate.key
+          union select 'character_reference', candidate.key
+            from character_references value join candidate on
+              btrim(coalesce(value.source_object_key,''))=candidate.key
+              or btrim(coalesce(value.source_object_key,'')) like '%/'||candidate.key
+              or btrim(coalesce(value.sheet_object_key,''))=candidate.key
+              or btrim(coalesce(value.sheet_object_key,'')) like '%/'||candidate.key
+          union select 'character_reference_view', candidate.key
+            from character_reference_views value join candidate
+              on btrim(coalesce(value.object_key,''))=candidate.key
+              or btrim(coalesce(value.object_key,'')) like '%/'||candidate.key
+          union select 'official_character_asset', candidate.key
+            from official_character_assets value join candidate on
+              btrim(coalesce(value.source_object_key,''))=candidate.key
+              or btrim(coalesce(value.source_object_key,'')) like '%/'||candidate.key
+              or btrim(coalesce(value.sheet_object_key,''))=candidate.key
+              or btrim(coalesce(value.sheet_object_key,'')) like '%/'||candidate.key
+          union select 'official_character_asset_view', candidate.key
+            from official_character_asset_views value join candidate
+              on btrim(coalesce(value.object_key,''))=candidate.key
+              or btrim(coalesce(value.object_key,'')) like '%/'||candidate.key
+          union select 'official_environment_asset', candidate.key
+            from official_environment_assets value join candidate
+              on btrim(coalesce(value.object_key,''))=candidate.key
+              or btrim(coalesce(value.object_key,'')) like '%/'||candidate.key
+          union select 'character_model_asset', candidate.key
+            from character_model_assets value join candidate on
+              btrim(coalesce(value.model_object_key,''))=candidate.key
+              or btrim(coalesce(value.model_object_key,'')) like '%/'||candidate.key
+              or btrim(coalesce(value.render_source_object_key,''))=candidate.key
+              or btrim(coalesce(value.render_source_object_key,'')) like '%/'||candidate.key
+              or btrim(coalesce(value.thumbnail_object_key,''))=candidate.key
+              or btrim(coalesce(value.thumbnail_object_key,'')) like '%/'||candidate.key
+          union select 'character_model_input_view', candidate.key
+            from character_model_input_views value join candidate
+              on btrim(coalesce(value.object_key,''))=candidate.key
+              or btrim(coalesce(value.object_key,'')) like '%/'||candidate.key
+          union select 'character_render_job', candidate.key
+            from character_render_jobs value join candidate
+              on btrim(coalesce(value.output_object_key,''))=candidate.key
+              or btrim(coalesce(value.output_object_key,'')) like '%/'||candidate.key
+        ) select category,key from refs
+        """
+    )
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(query, {"keys": keys})).all()
+    result: dict[str, set[str]] = {}
+    for category, key in rows:
+        result.setdefault(str(category), set()).add(str(key))
+    return result
+
+
+def _eligible_candidates(
+    candidates: list[Candidate], *blocked_groups: set[str]
+) -> tuple[list[Candidate], set[str]]:
+    blocked = set().union(*blocked_groups)
+    return [item for item in candidates if item.key not in blocked], blocked
+
+
 def _matching_refs(value, keys: set[str]) -> set[str]:
     matches: set[str] = set()
     if isinstance(value, dict):
@@ -174,12 +255,18 @@ async def run(args) -> dict:
         inventory.close()
 
     candidate_keys = [item.key for item in candidates]
-    history_referenced, active_referenced = await asyncio.gather(
+    history_referenced, active_referenced, business_references = await asyncio.gather(
         _history_references(candidate_keys),
         _active_task_references(candidate_keys),
+        _business_references(candidate_keys),
     )
-    referenced = history_referenced | active_referenced
-    eligible = [item for item in candidates if item.key not in referenced]
+    business_referenced = set().union(*business_references.values())
+    eligible, referenced = _eligible_candidates(
+        candidates,
+        history_referenced,
+        active_referenced,
+        business_referenced,
+    )
     client = _r2_client()
     verified = []
     failures = []
@@ -206,6 +293,11 @@ async def run(args) -> dict:
         "referenced_blocked_count": len(referenced),
         "history_referenced_blocked_count": len(history_referenced),
         "active_task_blocked_count": len(active_referenced),
+        "business_referenced_blocked_count": len(business_referenced),
+        "business_reference_categories": {
+            category: len(values)
+            for category, values in sorted(business_references.items())
+        },
         "verified_count": len(verified),
         "verified_bytes": sum(item["byte_size"] for item in verified),
         "probe_failures": failures,
