@@ -11,6 +11,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     LanAioProdOps,
     MANAGED_MUTATION_ACTIONS,
     _release_profile_for_slot,
+    _release_target_ref,
     assert_prod_compose,
     load_lan_aio_prod_slots,
     main as lan_aio_main,
@@ -32,6 +33,23 @@ SCAIL2_BAKED_LAN_IMAGE = (
     "192.168.1.115:5000/allbot/comfy-runpod-scail2"
     "@sha256:858ac45522f33189e16e6ad41c0080b785c6bb87808d890d8f9899e0ed9b7607"
 )
+
+
+def test_release_target_ref_allows_exact_trusted_lan_mirror():
+    target = "192.168.1.115:5000/allbot/wan@sha256:" + "1" * 64
+    assert _release_target_ref(
+        current_repository="ghcr.io/giraffu/wan",
+        target_ref=target,
+        digest="sha256:" + "1" * 64,
+    ) == target
+
+
+def test_release_target_ref_rewrites_untrusted_repository_to_current():
+    assert _release_target_ref(
+        current_repository="192.168.1.115:5000/allbot/wan",
+        target_ref="ghcr.io/giraffu/wan@sha256:" + "1" * 64,
+        digest="sha256:" + "1" * 64,
+    ) == "192.168.1.115:5000/allbot/wan@sha256:" + "1" * 64
 
 LAN_ALL_TASK_TYPES = (
     "img2img",
