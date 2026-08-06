@@ -1,6 +1,7 @@
 [Unit]
 Description=AllBot media archive dedicated NAS link
-After=network.target
+After=network.target volume1.mount
+RequiresMountsFor=/volume1/AllBotArchive/deploy
 Before=docker.service
 
 [Service]
