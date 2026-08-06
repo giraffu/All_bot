@@ -16,6 +16,10 @@ def test_source_retirement_requires_evidence_and_offline_is_distinct():
     )
 
 
+def test_retired_legacy_r2_bucket_is_not_registered_by_default():
+    assert "('r2-user-data', 20)" not in CATALOG_DDL
+
+
 def test_seed_ranks_raw_history_before_visibility_filter():
     assert "row_number() over(partition by h.user_id order by h.id desc)" in SEED_SQL
     assert "r.rn <= 8 and h.is_visible is true" in SEED_SQL

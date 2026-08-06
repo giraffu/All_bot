@@ -13,15 +13,6 @@
       "secret_key": "replace-secret",
       "region": "auto",
       "ca_file": true
-    },
-    {
-      "name": "r2-user-data-legacy",
-      "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com",
-      "bucket": "user-data",
-      "access_key": "replace-secret",
-      "secret_key": "replace-secret",
-      "region": "auto",
-      "ca_file": true
     }
   ],
   "nas": {

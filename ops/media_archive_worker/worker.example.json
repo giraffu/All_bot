@@ -31,7 +31,6 @@
   },
   "sources": [
     {"name": "r2-user-data-prod", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data-prod", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},
-    {"name": "r2-user-data", "type": "s3", "endpoint": "https://ACCOUNT.r2.cloudflarestorage.com", "bucket": "user-data", "access_key": "runtime-secret", "secret_key": "runtime-secret", "region": "auto"},
     {"name": "minio-bot-data", "type": "s3", "endpoint": "http://100.99.254.53:9000", "bucket": "bot-data", "access_key": "runtime-secret", "secret_key": "runtime-secret", "allow_tailscale": true},
     {"name": "minio-comfyui-temp", "type": "s3", "endpoint": "http://100.99.254.53:9000", "bucket": "comfyui-temp", "access_key": "runtime-secret", "secret_key": "runtime-secret", "allow_tailscale": true},
     {"name": "cold-minio-192.168.1.88-9001", "type": "s3", "endpoint": "http://192.168.1.88:9001", "bucket": "bot-data", "access_key": "runtime-secret", "secret_key": "runtime-secret"},
