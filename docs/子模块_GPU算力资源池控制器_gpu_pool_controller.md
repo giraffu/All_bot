@@ -70,6 +70,8 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   `shared/`，并在构建阶段 smoke import
   `shared.character_reference_sheet`；否则 `comfy_agent` 会在 ComfyUI 和 relay
   就绪后才因结果物化依赖缺失而退出，且无 heartbeat。
+- profile 必须在镜像构建时安装 baked worker 的 `requirements.txt`；bootstrap
+  可以复核已满足依赖，但生产重启不能把 PyPI 下载放在健康恢复关键路径。
 - 带独立 `/opt/ComfyUI` 的 profile 必须显式渲染 `COMFYUI_DIR`，不能因持久卷已有
   `main.py` 而启动陈旧 `/workspace/ComfyUI`。外部 `RUNPOD_MODEL_TARGET_DIR` 与 baked
   `models` 路径不同时，只允许 entrypoint 在确认没有业务模型权重后建立链接；基础

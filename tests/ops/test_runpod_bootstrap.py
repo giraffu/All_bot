@@ -492,6 +492,10 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     ) in dockerfile
     assert "COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker" in dockerfile
     assert (
+        "python3 -m pip install --no-cache-dir -r "
+        "/opt/allbot/runtime/runpod_worker/requirements.txt"
+    ) in dockerfile
+    assert (
         'CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]' in dockerfile
     )
     assert "# Keep the FL_RIFE provider in a final small layer" in dockerfile
