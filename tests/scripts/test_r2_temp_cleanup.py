@@ -1,3 +1,4 @@
+import inspect
 import sqlite3
 
 import pytest
@@ -8,6 +9,7 @@ from scripts.r2_temp_cleanup import (
     _matching_refs,
     select_duplicate_candidates,
     validate_delete_gate,
+    _history_references,
 )
 
 
@@ -63,6 +65,12 @@ def test_business_references_block_an_otherwise_verified_duplicate():
     )
     assert eligible == []
     assert blocked == {candidate.key}
+
+
+def test_history_reference_query_scans_each_history_role_once():
+    source = inspect.getsource(_history_references)
+    assert "regexp_replace" in source
+    assert "like '%/'||candidate.key" not in source
 
 
 def test_temp_delete_gate_is_bucket_and_confirmation_scoped():

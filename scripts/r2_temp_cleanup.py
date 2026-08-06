@@ -80,20 +80,18 @@ async def _history_references(keys: list[str]) -> set[str]:
     query = text(
         """
         with candidate(key) as (select unnest(cast(:keys as text[]))), refs as (
-          select candidate.key from history h join candidate
-            on btrim(coalesce(h.output_file,''))=candidate.key
-            or btrim(coalesce(h.output_file,'')) like '%/'||candidate.key
-          union select candidate.key from history h
-            cross join lateral unnest(string_to_array(coalesce(h.input_file,''),'|')) x(ref)
-            join candidate on btrim(x.ref)=candidate.key
-              or btrim(x.ref) like '%/'||candidate.key
-          union select candidate.key from history h
-            cross join lateral jsonb_path_query(
+          select regexp_replace(btrim(coalesce(h.output_file,'')), '^.*/', '') key
+            from history h
+          union select regexp_replace(btrim(x.ref), '^.*/', '') key
+            from history h cross join lateral
+              unnest(string_to_array(coalesce(h.input_file,''),'|')) x(ref)
+          union select regexp_replace(
+              trim(both '"' from p.path::text), '^.*/', ''
+            ) key
+            from history h cross join lateral jsonb_path_query(
               coalesce(h.extra_outputs::jsonb,'{}'::jsonb),'strict $.**.path'
             ) p(path)
-            join candidate on trim(both '"' from p.path::text)=candidate.key
-              or trim(both '"' from p.path::text) like '%/'||candidate.key
-        ) select key from refs
+        ) select candidate.key from refs join candidate using(key)
         """
     )
     async with AsyncSessionLocal() as session:
