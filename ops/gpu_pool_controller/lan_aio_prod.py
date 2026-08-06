@@ -35,6 +35,7 @@ LAN_AIO_SLOTS_FILE = "lan_aio_prod_slots.yml"
 DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
 DEFAULT_WEB_HEALTH_URL = "https://api.aivison.it.com/api/health"
 DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
+TRUSTED_LAN_IMAGE_PREFIX = "192.168.1.115:5000/allbot/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
 RUNPOD_WORKER_TARGET_DIR = "/opt/allbot/runtime/runpod_worker"
 CONTROL_TTL_SECONDS = 3600
@@ -109,6 +110,17 @@ def _release_profile_for_slot(slot_profile: str) -> str:
         "img2img_lora_rocm_gfx1151": "img2img_rocm_gfx1151",
         "all": "lan_all",
     }.get(slot_profile, slot_profile)
+
+
+def _release_target_ref(
+    *, current_repository: str, target_ref: str, digest: str
+) -> str:
+    target_repository = target_ref.split("@", 1)[0]
+    if target_repository == current_repository:
+        return target_ref
+    if target_repository.startswith(TRUSTED_LAN_IMAGE_PREFIX):
+        return target_ref
+    return f"{current_repository}@{digest}"
 
 ENV_ALLOWLIST = {
     "AGENT_SECRET_TOKEN",
@@ -1816,10 +1828,11 @@ class LanAioProdOps:
                     "the current image"
                 )
             old_ref = rollback_ref
-        target_ref = str(resolved["ref"])
-        target_repository = target_ref.split("@", 1)[0]
-        if target_repository != current_repository:
-            target_ref = f"{current_repository}@{resolved['digest']}"
+        target_ref = _release_target_ref(
+            current_repository=current_repository,
+            target_ref=str(resolved["ref"]),
+            digest=str(resolved["digest"]),
+        )
         runtime_resolved = {**resolved, "ref": target_ref}
         rollback_profile = replace(old_profile, all_in_one_image_ref=old_ref)
         target_profile = replace(
