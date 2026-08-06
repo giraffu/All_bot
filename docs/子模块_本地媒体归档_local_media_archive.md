@@ -136,7 +136,9 @@ fail closed。双份 SHA 读取默认最多 8 路并发，可用
 
 `scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
 `user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量
-SHA 证据。已存在 key 不覆盖，只有旧桶全对象在新桶逐项摘要一致、
+SHA 证据。服务端复制默认最多 16 路并发，可用 `copy --workers` 在 1–32
+之间收紧；SQLite 状态更新仍由单线程提交，失败 key 保留为可断点重试。
+已存在 key 不覆盖，只有旧桶全对象在新桶逐项摘要一致、
 未验证/冲突/失败均为 0 时才能生成退役清单。真实删除旧桶前必须再次
 展示精确对象数和字节并取得明确确认；`user-data-test` 和
 `allbot-model-cache` 永远不在该脚本目标集。

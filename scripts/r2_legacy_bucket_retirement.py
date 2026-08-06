@@ -160,10 +160,84 @@ def _client():
     )
 
 
-def _copy_pending(state_path: Path, *, limit: int, execute: bool, confirm: str) -> None:
+def _copy_one(client, key: str, expected_size: int) -> dict:
+    preserved_fields = (
+        "ContentType",
+        "CacheControl",
+        "ContentDisposition",
+        "ContentEncoding",
+        "ContentLanguage",
+        "Metadata",
+    )
+    try:
+        source_head = client.head_object(Bucket=SOURCE_BUCKET, Key=key)
+        try:
+            target_head = client.head_object(Bucket=TARGET_BUCKET, Key=key)
+        except ClientError as exc:
+            code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+            if code not in {"404", "NoSuchKey", "NotFound"}:
+                raise
+            target_head = None
+        if target_head is None:
+            client.copy_object(
+                Bucket=TARGET_BUCKET,
+                Key=key,
+                CopySource={"Bucket": SOURCE_BUCKET, "Key": key},
+                MetadataDirective="COPY",
+            )
+            target_head = client.head_object(Bucket=TARGET_BUCKET, Key=key)
+        if int(target_head.get("ContentLength", -1)) != int(expected_size):
+            raise RuntimeError("TARGET_SIZE_MISMATCH")
+        if any(
+            source_head.get(field) != target_head.get(field)
+            for field in preserved_fields
+        ):
+            raise RuntimeError("TARGET_METADATA_MISMATCH")
+        return {
+            "key": key,
+            "status": "copied",
+            "source_head_json": json.dumps(
+                {field: source_head.get(field) for field in preserved_fields},
+                sort_keys=True,
+                default=str,
+            ),
+            "target_head_json": json.dumps(
+                {field: target_head.get(field) for field in preserved_fields},
+                sort_keys=True,
+                default=str,
+            ),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "key": key,
+            "status": "failed",
+            "source_head_json": None,
+            "target_head_json": None,
+            "error": type(exc).__name__,
+        }
+
+
+def _copy_batch(client, rows: list[tuple[str, int]], *, workers: int) -> list[dict]:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(lambda row: _copy_one(client, *row), rows))
+
+
+def _copy_pending(
+    state_path: Path,
+    *,
+    limit: int,
+    workers: int,
+    execute: bool,
+    confirm: str,
+) -> None:
     if not execute:
         print(json.dumps({"mode": "dry-run", **retirement_summary(state_path)}))
         return
+    if limit < 1 or limit > 10_000:
+        raise SystemExit("copy limit must be between 1 and 10000")
+    if workers < 1 or workers > 32:
+        raise SystemExit("copy workers must be between 1 and 32")
     validate_copy_gate(
         enabled=os.getenv("R2_LEGACY_MIGRATION_ENABLED", "").lower() == "true",
         confirmation=confirm,
@@ -175,63 +249,24 @@ def _copy_pending(state_path: Path, *, limit: int, execute: bool, confirm: str) 
             "select key,byte_size from migration_objects where status in ('pending','failed') order by key limit ?",
             (limit,),
         ).fetchall()
-        for key, expected_size in rows:
+        for result in _copy_batch(client, rows, workers=workers):
             now = datetime.now(timezone.utc).isoformat()
-            try:
-                source_head = client.head_object(Bucket=SOURCE_BUCKET, Key=key)
-                try:
-                    target_head = client.head_object(Bucket=TARGET_BUCKET, Key=key)
-                except ClientError as exc:
-                    code = str((exc.response or {}).get("Error", {}).get("Code", ""))
-                    if code not in {"404", "NoSuchKey", "NotFound"}:
-                        raise
-                    target_head = None
-                if target_head is None:
-                    client.copy_object(
-                        Bucket=TARGET_BUCKET,
-                        Key=key,
-                        CopySource={"Bucket": SOURCE_BUCKET, "Key": key},
-                        MetadataDirective="COPY",
-                    )
-                    target_head = client.head_object(Bucket=TARGET_BUCKET, Key=key)
-                if int(target_head.get("ContentLength", -1)) != int(expected_size):
-                    raise RuntimeError("TARGET_SIZE_MISMATCH")
-                preserved_fields = (
-                    "ContentType",
-                    "CacheControl",
-                    "ContentDisposition",
-                    "ContentEncoding",
-                    "ContentLanguage",
-                    "Metadata",
-                )
-                if any(
-                    source_head.get(field) != target_head.get(field)
-                    for field in preserved_fields
-                ):
-                    raise RuntimeError("TARGET_METADATA_MISMATCH")
+            if result["status"] == "copied":
                 db.execute(
                     """update migration_objects set status='copied',
                        source_head_json=?,target_head_json=?,attempts=attempts+1,
                        error=null,updated_at=? where key=?""",
                     (
-                        json.dumps(
-                            {field: source_head.get(field) for field in preserved_fields},
-                            sort_keys=True,
-                            default=str,
-                        ),
-                        json.dumps(
-                            {field: target_head.get(field) for field in preserved_fields},
-                            sort_keys=True,
-                            default=str,
-                        ),
+                        result["source_head_json"],
+                        result["target_head_json"],
                         now,
-                        key,
+                        result["key"],
                     ),
                 )
-            except Exception as exc:
+            else:
                 db.execute(
                     "update migration_objects set status='failed',attempts=attempts+1,error=?,updated_at=? where key=?",
-                    (type(exc).__name__, now, key),
+                    (result["error"], now, result["key"]),
                 )
             db.commit()
     finally:
@@ -329,6 +364,7 @@ def main() -> None:
     init.add_argument("--target-inventory", required=True, type=Path)
     copy = sub.add_parser("copy")
     copy.add_argument("--limit", type=int, default=1000)
+    copy.add_argument("--workers", type=int, default=16)
     copy.add_argument("--execute", action="store_true")
     copy.add_argument("--confirm", default="")
     verify = sub.add_parser("verify")
@@ -344,7 +380,11 @@ def main() -> None:
         initialize_state(args.state, args.source_inventory, args.target_inventory)
     elif args.command == "copy":
         _copy_pending(
-            args.state, limit=args.limit, execute=args.execute, confirm=args.confirm
+            args.state,
+            limit=args.limit,
+            workers=args.workers,
+            execute=args.execute,
+            confirm=args.confirm,
         )
     elif args.command == "verify":
         _verify(args.state, limit=args.limit, workers=args.workers)
