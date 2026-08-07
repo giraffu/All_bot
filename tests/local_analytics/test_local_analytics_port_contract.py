@@ -25,3 +25,17 @@ def test_local_analytics_and_clarity_have_distinct_default_lan_ports() -> None:
     assert analytics_port == 8098
     assert clarity_port == 8095
     assert analytics_port != clarity_port
+
+
+def test_r2_governance_evidence_is_mounted_read_only() -> None:
+    compose = (
+        REPOSITORY_ROOT / "local_analytics_platform/docker-compose.yml"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "./data/r2-governance:/var/lib/allbot-r2-temp-cleanup:ro" in compose
+    )
+    assert (
+        "R2_TEMP_CLEANUP_EVIDENCE_ROOT: /var/lib/allbot-r2-temp-cleanup"
+        in compose
+    )
