@@ -33,6 +33,9 @@ def test_daily_cleanup_systemd_contract_keeps_exact_private_gate():
     assert "R2_TEMP_CLEANUP_DAILY_LIMIT=10000" in example
     assert "R2_TEMP_CLEANUP_DAILY_MAX_BYTES=53687091200" in example
     assert "R2_TEMP_CLEANUP_MAX_INVENTORY_AGE_HOURS=36" in example
+    runner = (ROOT / "scripts/run_daily_r2_temp_cleanup.py").read_text()
+    assert 'replace("cleanup-", "plan-", 1)' in runner
+    assert 'report["plan_sha256"]' in runner
 
 
 def test_daily_cleanup_rejects_stale_inventory(monkeypatch, tmp_path):

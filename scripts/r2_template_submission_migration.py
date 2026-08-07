@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -36,6 +37,13 @@ def validate_execute_gate(*, bucket: str, enabled: bool, confirmation: str) -> N
         raise ValueError("exact template migration confirmation is required")
 
 
+def validate_switch_gate(*, bucket: str, enabled: bool, confirmation: str) -> None:
+    if bucket != BUCKET or not enabled:
+        raise ValueError("template database switch is restricted and disabled")
+    if confirmation != f"SWITCH_VERIFIED_TEMPLATE_SUBMISSIONS_{bucket}":
+        raise ValueError("exact template database switch confirmation is required")
+
+
 def _connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
@@ -46,6 +54,14 @@ def _connect(path: Path) -> sqlite3.Connection:
           status text not null,sha256 text,error text,updated_at text not null
         ) without rowid"""
     )
+    columns = {row[1] for row in db.execute("pragma table_info(objects)")}
+    for name, declaration in (
+        ("source_sha256", "text"),
+        ("target_sha256", "text"),
+        ("contribution_id", "integer"),
+    ):
+        if name not in columns:
+            db.execute(f"alter table objects add column {name} {declaration}")
     db.commit()
     os.chmod(path, 0o600)
     return db
@@ -110,7 +126,7 @@ def _scan(client, db: sqlite3.Connection, bucket: str) -> int:
     return seen
 
 
-def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size: int) -> str:
+def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size: int) -> tuple[str, str]:
     source_head = client.head_object(Bucket=bucket, Key=source_key)
     if int(source_head.get("ContentLength", -1)) != size:
         raise RuntimeError("SOURCE_SIZE_CHANGED")
@@ -126,9 +142,51 @@ def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size
         target_head = client.head_object(Bucket=bucket, Key=target_key)
     if int(target_head.get("ContentLength", -1)) != size:
         raise RuntimeError("TARGET_SIZE_MISMATCH")
-    if _sha256(client, bucket, target_key) != source_sha:
+    target_sha = _sha256(client, bucket, target_key)
+    if target_sha != source_sha:
         raise RuntimeError("TARGET_SHA256_MISMATCH")
-    return source_sha
+    return source_sha, target_sha
+
+
+async def _switch_database_references(state_path: Path) -> int:
+    from sqlalchemy import select
+    from src.database.core import AsyncSessionLocal
+    from src.database.models import TemplateContribution
+
+    state = sqlite3.connect(state_path)
+    verified = {
+        row[0]: row[1]
+        for row in state.execute(
+            "select source_key,target_key from objects where status='verified'"
+        )
+    }
+    switched = 0
+    try:
+        async with AsyncSessionLocal() as session:
+            rows = (
+                await session.execute(
+                    select(TemplateContribution)
+                    .where(TemplateContribution.file_path.like(f"{SOURCE_PREFIX}%"))
+                    .with_for_update()
+                )
+            ).scalars().all()
+            for contribution in rows:
+                mapping = verified.get(str(contribution.file_path))
+                if mapping is None:
+                    raise RuntimeError("UNVERIFIED_TEMPLATE_DATABASE_REFERENCE")
+                source_key = str(contribution.file_path)
+                target_key = mapping
+                contribution.file_path = target_key
+                state.execute(
+                    "update objects set contribution_id=?,updated_at=? where source_key=?",
+                    (contribution.id, datetime.now(timezone.utc).isoformat(), source_key),
+                )
+                switched += 1
+            await session.commit()
+        state.commit()
+        return switched
+    finally:
+        state.close()
 
 
 def run(args) -> dict:
@@ -150,10 +208,14 @@ def run(args) -> dict:
             ).fetchall()
             for source_key, target_key, size in rows:
                 try:
-                    digest = _copy_and_verify(client, args.bucket, source_key, target_key, int(size))
+                    source_digest, target_digest = _copy_and_verify(
+                        client, args.bucket, source_key, target_key, int(size)
+                    )
                     db.execute(
-                        "update objects set status='verified',sha256=?,error=null,updated_at=? where source_key=?",
-                        (digest, datetime.now(timezone.utc).isoformat(), source_key),
+                        """update objects set status='verified',sha256=?,source_sha256=?,
+                           target_sha256=?,error=null,updated_at=? where source_key=?""",
+                        (source_digest, source_digest, target_digest,
+                         datetime.now(timezone.utc).isoformat(), source_key),
                     )
                 except Exception as exc:
                     db.execute(
@@ -167,7 +229,7 @@ def run(args) -> dict:
             """select count(*),count(*) filter(where status='verified'),
                count(*) filter(where status='failed'),coalesce(sum(byte_size),0) from objects"""
         ).fetchone()
-        return {
+        report = {
             "mode": "execute" if args.execute else "dry-run",
             "bucket": args.bucket,
             "scanned": scanned,
@@ -177,6 +239,18 @@ def run(args) -> dict:
             "bytes": int(total_bytes),
             "state": str(state_path),
         }
+        if args.switch_db_references:
+            if not args.execute or verified != total or failed:
+                raise SystemExit("database switch requires a fully verified migration")
+            validate_switch_gate(
+                bucket=args.bucket,
+                enabled=os.getenv("R2_TEMPLATE_SUBMISSION_DB_SWITCH_ENABLED", "").lower() == "true",
+                confirmation=args.switch_confirm,
+            )
+            report["database_references_switched"] = asyncio.run(
+                _switch_database_references(state_path)
+            )
+        return report
     finally:
         db.close()
 
@@ -188,6 +262,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="")
+    parser.add_argument("--switch-db-references", action="store_true")
+    parser.add_argument("--switch-confirm", default="")
     args = parser.parse_args()
     if args.limit < 1 or args.limit > 10_000:
         raise SystemExit("limit must be between 1 and 10000")

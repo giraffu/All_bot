@@ -151,6 +151,23 @@ async def test_approve_contribution_payload_marks_reviewed_and_rewards_user(monk
 
 
 @pytest.mark.asyncio
+async def test_approve_contribution_is_idempotent_after_review():
+    contribution = _build_contribution(
+        file_path="quick_face/demo.png", file_type="photo", is_reviewed=True
+    )
+    db = _FakeTemplateDb([_ScalarResult(contribution)])
+    storage_service = _FakeStorage()
+
+    result = await template_admin_service.approve_contribution_payload(
+        contribution_id=1, db=db, storage_service=storage_service
+    )
+
+    assert result == {"status": "ok", "message": "Contribution was already approved"}
+    db.commit.assert_not_awaited()
+    assert not any(call[0] == "copy" for call in storage_service.calls)
+
+
+@pytest.mark.asyncio
 async def test_approve_contribution_does_not_reward_when_verified_copy_fails(monkeypatch):
     contribution = _build_contribution(
         file_path="template-submissions/demo.png", file_type="photo", is_reviewed=False

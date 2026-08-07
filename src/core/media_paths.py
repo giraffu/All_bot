@@ -1,7 +1,6 @@
 from pathlib import Path
-from urllib.parse import unquote, urlparse
-
 from config import MINIO_BUCKET, MINIO_RESULT_BUCKET
+from shared.r2_retention_contract import normalize_r2_object_key
 from src.constants import VIDEO_TASK_TYPES
 
 
@@ -10,11 +9,6 @@ _VIDEO_TASK_TYPE_SET = {task_type.lower() for task_type in VIDEO_TASK_TYPES}
 
 def normalize_storage_object_key(reference: str) -> str:
     """Return a stable object key for plain, bucket-prefixed, or HTTP references."""
-    raw = str(reference or "").strip()
-    parsed = urlparse(raw)
-    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
-        raw = unquote(parsed.path)
-    raw = raw.lstrip("/")
     bucket_names = (
         MINIO_BUCKET,
         MINIO_RESULT_BUCKET,
@@ -23,11 +17,7 @@ def normalize_storage_object_key(reference: str) -> str:
         "user-data",
         "user-data-prod",
     )
-    for bucket_name in dict.fromkeys(bucket_names):
-        prefix = f"{bucket_name}/"
-        if raw.startswith(prefix):
-            return raw[len(prefix) :]
-    return raw
+    return normalize_r2_object_key(reference, buckets=bucket_names)
 
 
 def normalize_owned_user_upload_key(

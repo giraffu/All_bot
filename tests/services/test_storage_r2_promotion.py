@@ -34,7 +34,7 @@ async def test_promotes_only_current_users_staged_inputs_and_preserves_other_ref
     client = FakeClient()
     promoted = await promote_staged_user_inputs(
         input_refs=[
-            "user-data-prod/staging/user-uploads/42/upload-1.png",
+            "https://user-data-prod.objects.example/staging/user-uploads/42/upload-1.png?sig=hidden",
             "existing/durable.png",
         ],
         task_id="registry-1",

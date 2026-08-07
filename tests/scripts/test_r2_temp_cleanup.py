@@ -3,6 +3,7 @@ import inspect
 import sqlite3
 import threading
 import time
+import json
 
 import pytest
 
@@ -15,6 +16,8 @@ from scripts.r2_temp_cleanup import (
     validate_delete_gate,
     _history_references,
     _apply_delete_byte_cap,
+    load_approved_plan,
+    seal_plan,
 )
 
 
@@ -140,3 +143,33 @@ def test_daily_delete_byte_cap_stops_before_crossing_limit():
     assert [item["key"] for item in selected] == ["one"]
     assert [item["key"] for item in blocked] == ["two", "three"]
     assert sum(item["byte_size"] for item in selected) == 30
+
+
+def test_cleanup_plan_is_sealed_and_tampering_is_rejected(tmp_path):
+    plan = seal_plan({"mode": "dry-run", "objects": [{"key": "safe"}]})
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+
+    assert load_approved_plan(str(path), plan["plan_sha256"])["objects"] == [
+        {"key": "safe"}
+    ]
+    plan["objects"][0]["key"] = "changed"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    with pytest.raises(SystemExit, match="modified"):
+        load_approved_plan(str(path), plan["plan_sha256"])
+
+
+def test_execute_confirmation_is_bound_to_plan_sha():
+    validate_delete_gate(
+        bucket="user-data-prod",
+        enabled=True,
+        confirmation="DELETE_VERIFIED_TEMP_R2_user-data-prod:abc",
+        plan_sha256="abc",
+    )
+    with pytest.raises(ValueError):
+        validate_delete_gate(
+            bucket="user-data-prod",
+            enabled=True,
+            confirmation="DELETE_VERIFIED_TEMP_R2_user-data-prod:def",
+            plan_sha256="abc",
+        )

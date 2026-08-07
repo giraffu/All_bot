@@ -4,10 +4,28 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 import re
+from urllib.parse import unquote, urlparse
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SAFE_SUFFIX = re.compile(r"^\.[A-Za-z0-9]{1,10}$")
+
+
+def normalize_r2_object_key(reference: str, *, buckets: tuple[str, ...]) -> str:
+    """Normalize plain, bucket-prefixed and path/host-style object URLs."""
+    raw = str(reference or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
+        raw = unquote(parsed.path)
+    raw = raw.lstrip("/")
+    host = parsed.hostname or ""
+    for bucket in dict.fromkeys(str(value).strip() for value in buckets if value):
+        prefix = f"{bucket}/"
+        if raw.startswith(prefix):
+            return raw[len(prefix) :]
+        if parsed.netloc and (host == bucket or host.startswith(f"{bucket}.")):
+            return raw
+    return raw
 
 
 def _require_safe_id(value: object, *, label: str) -> str:

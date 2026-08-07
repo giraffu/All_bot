@@ -8,7 +8,7 @@ from typing import Iterable
 
 from minio.commonconfig import CopySource
 
-from shared.r2_retention_contract import build_task_input_key
+from shared.r2_retention_contract import build_task_input_key, normalize_r2_object_key
 
 
 class StagedInputPromotionError(RuntimeError):
@@ -16,9 +16,7 @@ class StagedInputPromotionError(RuntimeError):
 
 
 def _strip_bucket(ref: str, bucket: str) -> str:
-    normalized = str(ref or "").strip().lstrip("/")
-    prefix = f"{bucket}/"
-    return normalized[len(prefix) :] if normalized.startswith(prefix) else normalized
+    return normalize_r2_object_key(ref, buckets=(bucket,))
 
 
 def _stat(client, bucket: str, key: str):
