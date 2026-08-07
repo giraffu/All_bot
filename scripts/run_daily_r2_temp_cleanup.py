@@ -14,6 +14,24 @@ from types import SimpleNamespace
 from scripts.r2_temp_cleanup import DEFAULT_MAX_DELETE_BYTES, PRODUCTION_BUCKET, run
 
 
+def validate_canary_evidence(path_value: str) -> None:
+    path = Path(path_value)
+    if not path.is_file() or path.stat().st_mode & 0o077:
+        raise SystemExit("daily cleanup requires private canary evidence")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit("daily cleanup canary evidence is invalid") from exc
+    stages = document.get("stages") if isinstance(document, dict) else None
+    for stage in ("100", "1000", "10000"):
+        evidence = stages.get(stage) if isinstance(stages, dict) else None
+        if not isinstance(evidence, dict) or evidence.get("status") != "completed":
+            raise SystemExit(f"daily cleanup canary {stage} is not accepted")
+        digest = str(evidence.get("receipt_sha256") or "")
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise SystemExit(f"daily cleanup canary {stage} receipt SHA-256 is invalid")
+
+
 def build_args_from_env() -> SimpleNamespace:
     inventory = os.getenv("R2_TEMP_CLEANUP_INVENTORY", "").strip()
     if not inventory or not Path(inventory).is_file():
@@ -45,7 +63,7 @@ def build_args_from_env() -> SimpleNamespace:
             DEFAULT_MAX_DELETE_BYTES,
             max(1, int(os.getenv("R2_TEMP_CLEANUP_DAILY_MAX_BYTES", str(DEFAULT_MAX_DELETE_BYTES)))),
         ),
-        execute=True,
+        execute=False,
         confirm=os.getenv("R2_TEMP_CLEANUP_CONFIRMATION", ""),
         approved_plan="",
         plan_sha256="",
@@ -58,7 +76,14 @@ def main() -> None:
     args.output = execution_output.replace("cleanup-", "plan-", 1)
     args.execute = False
     report = asyncio.run(run(args))
-    if os.getenv("R2_TEMP_CLEANUP_ENABLED", "").lower() == "true":
+    automation_enabled = (
+        os.getenv("R2_TEMP_CLEANUP_AUTOMATION_ENABLED", "").lower() == "true"
+    )
+    delete_enabled = os.getenv("R2_TEMP_CLEANUP_ENABLED", "").lower() == "true"
+    if automation_enabled and delete_enabled:
+        validate_canary_evidence(
+            os.getenv("R2_TEMP_CLEANUP_CANARY_EVIDENCE", "").strip()
+        )
         base_confirmation = f"DELETE_VERIFIED_TEMP_R2_{PRODUCTION_BUCKET}"
         if args.confirm != base_confirmation:
             raise SystemExit("daily cleanup base confirmation is invalid")
@@ -68,6 +93,10 @@ def main() -> None:
         args.confirm = f"{base_confirmation}:{args.plan_sha256}"
         args.output = execution_output
         report = asyncio.run(run(args))
+    elif automation_enabled:
+        raise SystemExit(
+            "R2 temp cleanup automation requires R2_TEMP_CLEANUP_ENABLED=true"
+        )
     print(
         json.dumps(
             {

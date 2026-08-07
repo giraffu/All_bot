@@ -22,6 +22,7 @@ export const state = {
   templateCandidatePrompts: null,
   templateReviewMarks: null,
   media: null,
+  r2Governance: null,
   promptTaskTypes: [],
   promptVariantCache: {},
   selectedPrompt: null,
@@ -105,6 +106,7 @@ export const state = {
     "prompt-decomposition": 0,
     templates: 0,
     media: 30,
+    "r2-governance": 0,
   },
   loadedTabs: {},
   tabUpdatedAt: {},
@@ -170,5 +172,10 @@ export const tabs = {
     kicker: "媒体核验",
     title: "History 输入输出对象引用",
     subtitle: "基于数据库记录解析媒体 key",
+  },
+  "r2-governance": {
+    kicker: "R2 临时治理",
+    title: "冻结计划、执行回执和容量趋势",
+    subtitle: "仅展示私有 evidence 元数据，不返回生产对象 key 或 R2 地址",
   },
 };

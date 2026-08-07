@@ -5,6 +5,7 @@ import { createFinanceModule } from "./finance.js?v=20260709-prompt-decompositio
 import { createGenerationModule } from "./generation.js?v=20260709-prompt-decomposition-v1";
 import { createGenerationHistoryModule } from "./generationHistory.js?v=20260806-nas-history-media-v2";
 import { createMediaLoader } from "./media.js?v=20260709-prompt-decomposition-v1";
+import { createR2GovernanceLoader } from "./r2Governance.js?v=20260807-r2-governance-v1";
 import { createPromptSlimLoader } from "./promptSlim.js?v=20260709-prompt-decomposition-v1";
 import { createPromptVectorsModule } from "./promptVectors.js?v=20260709-prompt-decomposition-v1";
 import { createPromptsLoader } from "./prompts.js?v=20260709-prompt-decomposition-v1";
@@ -4434,6 +4435,7 @@ const loadTemplates = createTemplatesLoader({
   renderTemplateCandidates,
 });
 const loadMedia = createMediaLoader({ fetchJson, state, renderMedia });
+const loadR2Governance = createR2GovernanceLoader({ fetchJson, state, escapeHtml, fmt });
 
 const tabLoaders = {
   users: loadUsers,
@@ -4448,6 +4450,7 @@ const tabLoaders = {
   "prompt-decomposition": loadPromptDecomposition,
   templates: loadTemplates,
   media: loadMedia,
+  "r2-governance": loadR2Governance,
 };
 
 async function loadCurrentTab({ force = false } = {}) {

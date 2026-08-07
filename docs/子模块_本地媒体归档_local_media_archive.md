@@ -148,6 +148,14 @@ fail closed。双份 SHA 读取默认最多 8 路并发，可用
 单批同时受 10000 对象与 50 GiB 上限约束，使用当前 inventory，运行报告写入
 受限 state 目录。`staging/` 对象数、字节和最老时间随报告输出；任一引用、数据库
 或摘要探测失败仍整批 fail closed。
+每日服务先用 `refresh_r2_temp_cleanup_inventory.py` 在受限 state 目录生成新
+SQLite，完成 integrity、对象数、字节和 SHA 验收后原子切换 `current.sqlite3`。
+runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自动删除还必须同时
+开启独立 `R2_TEMP_CLEANUP_AUTOMATION_ENABLED` 与删除门禁，任一关闭时不执行删除。
+自动化还要求 0600 `R2_TEMP_CLEANUP_CANARY_EVIDENCE` 明确登记 100、1000、10000
+三阶段 completed 及各自执行回执 SHA-256；缺失或不完整时 fail closed。
+本地分析 `/api/r2-governance/status` 只读取同步到本地的私有 evidence 并返回批次
+汇总，不返回对象 key、R2 endpoint 或凭据。
 
 临时清理采用冻结计划协议。dry-run 报告带 `batch_id`、inventory 完整摘要、精确
 候选集合和 `plan_sha256`；execute 必须显式传入 `--approved-plan` 与
