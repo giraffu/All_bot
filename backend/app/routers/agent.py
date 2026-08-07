@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent/task", tags=["agent"])
 _result_promotion_failures: Counter[str] = Counter()
 _result_completion_counts: Counter[str] = Counter()
+_agent_result_completion_counts: Counter[tuple[str, str]] = Counter()
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 MinioClientDep = Annotated[Any, Depends(get_minio_client)]
 
@@ -194,6 +195,7 @@ async def complete_task(
         else:
             completion_contract = "legacy_media"
         _result_completion_counts[completion_contract] += 1
+        _agent_result_completion_counts[(req.agent_id, completion_contract)] += 1
         logger.info(
             "result_completion_accepted",
             extra={
@@ -227,12 +229,18 @@ async def result_storage_metrics(
     _authorized: bool = Depends(verify_token),
 ):
     completion_counts = dict(sorted(_result_completion_counts.items()))
+    agent_completion_counts: dict[str, dict[str, int]] = {}
+    for (agent_id, contract), count in sorted(
+        _agent_result_completion_counts.items()
+    ):
+        agent_completion_counts.setdefault(agent_id, {})[contract] = count
     media_total = completion_counts.get("asset_contract", 0) + completion_counts.get(
         "legacy_media", 0
     )
     return {
         "failure_counts": dict(sorted(_result_promotion_failures.items())),
         "completion_counts": completion_counts,
+        "agent_completion_counts": agent_completion_counts,
         "media_asset_contract_coverage": (
             completion_counts.get("asset_contract", 0) / media_total
             if media_total else None
