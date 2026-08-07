@@ -49,6 +49,17 @@ def test_selects_only_old_root_objects_with_a_durable_signature_twin():
     ]
 
 
+def test_candidate_selection_materializes_an_indexed_durable_signature_lookup():
+    db = _inventory()
+
+    select_duplicate_candidates(db, cutoff="2026-08-05T00:00:00Z", limit=100)
+
+    definition = db.execute(
+        "select sql from sqlite_temp_master where name='cleanup_durable_twins'"
+    ).fetchone()[0]
+    assert "primarykey(size,etag)" in definition.replace(" ", "").lower()
+
+
 def test_active_task_reference_matching_walks_nested_registry_payloads():
     key = "12345678-1234-1234-1234-123456789abc__raw.png"
     assert _matching_refs(

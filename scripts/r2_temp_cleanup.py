@@ -41,23 +41,45 @@ class Candidate:
 def select_duplicate_candidates(
     connection: sqlite3.Connection, *, cutoff: str, limit: int
 ) -> list[Candidate]:
+    # The production inventory has millions of rows and intentionally only a
+    # primary-key index on ``key``.  Joining the table to itself by size/etag
+    # therefore degenerates into a multi-terabyte nested scan.  Materialize the
+    # much smaller durable signature set with an exact lookup key first.  This
+    # is a TEMP table, so the immutable inventory and its sealed fingerprint are
+    # not changed.
+    connection.execute("drop table if exists temp.cleanup_durable_twins")
+    connection.execute(
+        """
+        create temp table cleanup_durable_twins(
+          size integer not null,
+          etag text not null,
+          key text not null,
+          primary key(size,etag)
+        ) without rowid
+        """
+    )
+    connection.execute(
+        """
+        insert into cleanup_durable_twins(size,etag,key)
+        select size,etag,min(key)
+          from objects
+         where key like 'task-results/%'
+            or key like 'history/%'
+            or key glob '[0-9]*/output_images/*'
+         group by size,etag
+        """
+    )
     rows = connection.execute(
         """
-        select source.key, min(durable.key), source.size, source.etag,
+        select source.key, durable.key, source.size, source.etag,
                source.last_modified
         from objects source
-        join objects durable
+        join cleanup_durable_twins durable
           on durable.size=source.size and durable.etag=source.etag
          and durable.key<>source.key
         where instr(source.key, '/')=0
           and source.key glob '????????-????-????-????-????????????__*'
           and source.last_modified < ?
-          and (
-            durable.key like 'task-results/%'
-            or durable.key like 'history/%'
-            or durable.key glob '[0-9]*/output_images/*'
-          )
-        group by source.key,source.size,source.etag,source.last_modified
         order by source.last_modified,source.key
         limit ?
         """,
