@@ -97,7 +97,9 @@ sequenceDiagram
   `durable_copy_failed`），并携带 `retryable`。Central 以
   `result_promotion_rejected` 结构化日志记录 code/task/agent；受 agent token
   保护的 `GET /api/agent/task/result-storage-metrics` 返回当前进程按 code 聚合的
- 失败计数，供运行态采集，进程重启后不作为持久账本。
+  失败计数，以及 `asset_contract`、`legacy_media`、`text` 完成计数和媒体新契约
+  覆盖率。成功请求同时写 `result_completion_accepted` 结构化日志，供按 agent
+  审计；这些进程内计数重启后不作为持久账本。
   文本结果不依赖媒体资产契约。Worker 端必须对完成回报进行有限重试，全部失败后
   显式失败。
 - `/api/agent/task/text-delta` 是 `prompt_optimize` 的可选增量协议，只写运行态快照，

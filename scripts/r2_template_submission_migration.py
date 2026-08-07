@@ -126,6 +126,47 @@ def _scan(client, db: sqlite3.Connection, bucket: str) -> int:
     return seen
 
 
+def _target_inventory(client, db: sqlite3.Connection, bucket: str) -> dict[str, int]:
+    summary = {
+        "source_missing": 0,
+        "target_existing": 0,
+        "target_missing": 0,
+        "target_size_conflicts": 0,
+        "target_existing_unverified": 0,
+    }
+    rows = db.execute(
+        "select source_key,target_key,byte_size,status from objects order by source_key"
+    )
+    for source_key, target_key, byte_size, status in rows:
+        source_head = _head_optional(client, bucket, source_key)
+        if source_head is None:
+            summary["source_missing"] += 1
+        target_head = _head_optional(client, bucket, target_key)
+        if target_head is None:
+            summary["target_missing"] += 1
+            continue
+        summary["target_existing"] += 1
+        if int(target_head.get("ContentLength", -1)) != int(byte_size):
+            summary["target_size_conflicts"] += 1
+        elif status != "verified":
+            summary["target_existing_unverified"] += 1
+    return summary
+
+
+async def _database_reference_count() -> int:
+    from sqlalchemy import func, select
+    from src.database.core import AsyncSessionLocal
+    from src.database.models import TemplateContribution
+
+    async with AsyncSessionLocal() as session:
+        value = await session.scalar(
+            select(func.count())
+            .select_from(TemplateContribution)
+            .where(TemplateContribution.file_path.like(f"{SOURCE_PREFIX}%"))
+        )
+        return int(value or 0)
+
+
 def _copy_and_verify(client, bucket: str, source_key: str, target_key: str, size: int) -> tuple[str, str]:
     source_head = client.head_object(Bucket=bucket, Key=source_key)
     if int(source_head.get("ContentLength", -1)) != size:
@@ -239,6 +280,11 @@ def run(args) -> dict:
             "bytes": int(total_bytes),
             "state": str(state_path),
         }
+        if not args.execute:
+            report.update(_target_inventory(client, db, args.bucket))
+            report["database_references"] = asyncio.run(
+                _database_reference_count()
+            )
         if args.switch_db_references:
             if not args.execute or verified != total or failed:
                 raise SystemExit("database switch requires a fully verified migration")
