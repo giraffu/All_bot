@@ -85,6 +85,7 @@ async def test_complete_route_returns_stable_retryable_promotion_error_and_count
 @pytest.mark.asyncio
 async def test_complete_route_reports_asset_contract_coverage(monkeypatch):
     agent_router._result_completion_counts.clear()
+    agent_router._agent_result_completion_counts.clear()
     monkeypatch.setattr(
         agent_router,
         "complete_task_payload",
@@ -134,6 +135,11 @@ async def test_complete_route_reports_asset_contract_coverage(monkeypatch):
         "text": 1,
     }
     assert metrics["media_asset_contract_coverage"] == 0.5
+    assert metrics["agent_completion_counts"] == {
+        "agent-1": {"asset_contract": 1},
+        "agent-2": {"legacy_media": 1},
+        "agent-3": {"text": 1},
+    }
 
 
 @pytest.mark.asyncio
