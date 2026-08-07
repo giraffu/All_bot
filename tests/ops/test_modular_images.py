@@ -108,6 +108,7 @@ def test_web_api_image_contains_r2_maintenance_clis():
     assert "scripts/r2_staging_lifecycle.py" in web
     assert "scripts/r2_temp_cleanup.py" in web
     assert "scripts/run_daily_r2_temp_cleanup.py" in web
+    assert "scripts/refresh_r2_temp_cleanup_inventory.py" in web
     assert "scripts/r2_template_submission_migration.py" in web
     assert "scripts/r2_legacy_bucket_retirement.py" in web
 
