@@ -71,7 +71,7 @@ def test_character_name_rejects_whitespace_only_values():
         CharacterBuildRequest(
             name="   ",
             description="adult woman with short black hair",
-            source_object_key="web_uploads/123/source.webp",
+            source_object_key="staging/user-uploads/123/source.webp",
         )
 
 
@@ -79,7 +79,7 @@ def test_character_name_rejects_whitespace_only_values():
 def test_character_description_is_required(description):
     payload = {
         "name": "Alice",
-        "source_object_key": "web_uploads/123/source.webp",
+        "source_object_key": "staging/user-uploads/123/source.webp",
     }
     if description is not None:
         payload["description"] = description
@@ -204,7 +204,7 @@ async def test_character_draft_upload_creates_editable_workspace_without_chargin
         payload=CharacterBuildRequest(
             name="Alice",
             description="adult woman with short black hair",
-            source_object_key="web_uploads/123/source.webp",
+            source_object_key="staging/user-uploads/123/source.webp",
             prompt_profile=CharacterPromptProfile(
                 gender="female",
                 breast_size="large",
@@ -244,7 +244,7 @@ async def test_generate_character_view_uses_the_selected_standard_free_edit_flow
         id="character-1",
         user_id=123,
         status="draft",
-        source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
+        source_object_key=f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp",
     )
     db = _Session([character, None])
     submit = AsyncMock(
@@ -323,7 +323,7 @@ async def test_upload_character_view_persists_owned_image_as_ready_without_task(
         character_id="character-1",
         view_type="face_front",
         payload=CharacterViewUploadRequest(
-            source_object_key="web_uploads/123/front.png"
+            source_object_key="staging/user-uploads/123/front.png"
         ),
     )
 
@@ -428,7 +428,7 @@ async def test_save_character_composes_ready_views_and_enters_library(monkeypatc
         description="adult woman with short black hair",
         status="draft",
         task_id="draft-1",
-        source_object_key=f"{MINIO_BUCKET}/web_uploads/123/source.webp",
+        source_object_key=f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp",
         sheet_object_key=None,
         updated_at=None,
     )
@@ -567,7 +567,7 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
         payload=CharacterBuildRequest(
             name="Alice",
             description="adult woman with short black hair",
-            source_object_key="web_uploads/123/source.webp",
+            source_object_key="staging/user-uploads/123/source.webp",
         ),
     )
 
@@ -576,7 +576,7 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
     assert db.added[0].status == "pending"
     assert submit.await_args.kwargs["allow_contribute_override"] is False
     assert submit.await_args.kwargs["inputs"]["images"] == [
-        f"{MINIO_BUCKET}/web_uploads/123/source.webp"
+        f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp"
     ]
 
 
@@ -585,7 +585,7 @@ async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
     payload = CharacterBuildRequest(
         name="Alice",
         description="adult woman with short black hair",
-        source_object_key="web_uploads/999/source.png",
+        source_object_key="staging/user-uploads/999/source.png",
     )
     with pytest.raises(HTTPException, match="当前用户"):
         await service.build_character(
@@ -607,7 +607,7 @@ async def test_character_build_rejects_foreign_or_oversized_upload(monkeypatch):
             payload=CharacterBuildRequest(
                 name="Alice",
                 description="adult woman with short black hair",
-                source_object_key="web_uploads/123/source.png",
+                source_object_key="staging/user-uploads/123/source.png",
             ),
         )
     assert exc_info.value.status_code == 413

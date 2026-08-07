@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     minio_secret_key: str
     minio_result_bucket: str
     minio_secure: bool = False
-    legacy_result_completion_enabled: bool = True
+    legacy_result_completion_enabled: bool = False
 
     # Agent Configuration
     agent_secret_token: str

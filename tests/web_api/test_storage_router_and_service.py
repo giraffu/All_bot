@@ -53,7 +53,7 @@ async def test_get_presigned_upload_url_payload_builds_expected_response(monkeyp
     monkeypatch.setattr(
         storage_api_service,
         "build_presigned_upload_object_key",
-        lambda **_: "web_uploads/123/20260523_abcd1234.mp4",
+        lambda **_: "staging/user-uploads/123/20260523_abcd1234.mp4",
     )
 
     response = await storage_api_service.get_presigned_upload_url_payload(
@@ -65,7 +65,7 @@ async def test_get_presigned_upload_url_payload_builds_expected_response(monkeyp
 
     assert response == {
         "upload_url": "https://upload.example.com",
-        "object_key": f"{storage_api_service.MINIO_BUCKET}/web_uploads/123/20260523_abcd1234.mp4",
+        "object_key": f"{storage_api_service.MINIO_BUCKET}/staging/user-uploads/123/20260523_abcd1234.mp4",
         "expires_in_minutes": 15,
     }
 
@@ -89,7 +89,7 @@ async def test_get_presigned_upload_url_payload_maps_empty_url_to_500(monkeypatc
     monkeypatch.setattr(
         storage_api_service,
         "build_presigned_upload_object_key",
-        lambda **_: "web_uploads/123/20260523_abcd1234.mp4",
+        lambda **_: "staging/user-uploads/123/20260523_abcd1234.mp4",
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -109,7 +109,7 @@ async def test_get_presigned_upload_url_payload_maps_storage_error_to_500(monkey
     monkeypatch.setattr(
         storage_api_service,
         "build_presigned_upload_object_key",
-        lambda **_: "web_uploads/123/20260523_abcd1234.mp4",
+        lambda **_: "staging/user-uploads/123/20260523_abcd1234.mp4",
     )
 
     def _raise_storage_error(*args, **kwargs):

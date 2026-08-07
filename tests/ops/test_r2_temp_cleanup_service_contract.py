@@ -25,7 +25,9 @@ def test_daily_cleanup_systemd_contract_keeps_exact_private_gate():
     service = (ROOT / "ops/r2_temp_cleanup/allbot-r2-temp-cleanup.service").read_text()
     example = (ROOT / "ops/r2_temp_cleanup/cleanup.example.env").read_text()
 
-    assert "EnvironmentFile=/home/hfy/.config/allbot/r2-temp-cleanup/cleanup.env" in service
+    assert "EnvironmentFile=%h/APP/All_bot/deploy/env.defaults" in service
+    assert "EnvironmentFile=%h/.config/allbot/prod.env" in service
+    assert "EnvironmentFile=%h/.config/allbot/r2-temp-cleanup/cleanup.env" in service
     assert "ProtectSystem=strict" in service
     assert "R2_TEMP_CLEANUP_ENABLED=false" in example
     assert "R2_TEMP_CLEANUP_DAILY_LIMIT=10000" in example

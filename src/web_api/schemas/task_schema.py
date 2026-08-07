@@ -9,8 +9,8 @@ class TaskGenerateRequest(BaseModel):
             "example": {
                 "task_type": "face_swap",
                 "inputs": {
-                    "face_image": "bot-data/web_uploads/...",
-                    "target_image": "bot-data/web_uploads/...",
+                    "face_image": "staging/user-uploads/123/source.png",
+                    "target_image": "staging/user-uploads/123/target.png",
                 },
             }
         }

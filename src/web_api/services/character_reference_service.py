@@ -14,6 +14,7 @@ from shared.character_reference_sheet import (
     INGREDIENTS_CHARACTER_PANEL_VERSION,
     compose_ingredients_character_panel,
 )
+from src.core.media_paths import normalize_owned_user_upload_key
 from src.core.billing_core import get_concurrent_task_limit_for_identity
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
@@ -199,19 +200,16 @@ def character_features_enabled() -> bool:
 
 
 def _normalize_owned_upload_key(value: str, user_id: int) -> str:
-    raw = str(value or "").strip().lstrip("/")
-    bucket_prefix = f"{MINIO_BUCKET}/"
-    object_key = raw[len(bucket_prefix) :] if raw.startswith(bucket_prefix) else raw
-    prefix = f"web_uploads/{user_id}/"
-    extension = object_key.rsplit(".", 1)[-1].lower() if "." in object_key else ""
-    if (
-        not object_key.startswith(prefix)
-        or extension not in ALLOWED_CHARACTER_EXTENSIONS
-    ):
+    try:
+        return normalize_owned_user_upload_key(
+            value,
+            user_id=user_id,
+            allowed_extensions=ALLOWED_CHARACTER_EXTENSIONS,
+        )
+    except ValueError as exc:
         raise HTTPException(
             status_code=400, detail="源图必须是当前用户上传的 PNG/JPEG/WebP。"
-        )
-    return object_key
+        ) from exc
 
 
 def _presigned_object_url(value: str | None) -> str | None:

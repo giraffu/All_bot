@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 from config import MINIO_BUCKET
+from src.core.media_paths import normalize_owned_user_upload_key
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError, TaskSubmissionSideEffectPlan
 from src.prompt_optimizer.registry import (
@@ -24,15 +25,16 @@ _ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
 
 def normalize_owned_prompt_media_key(value: str, user_id: int) -> str:
-    raw = str(value or "").strip().lstrip("/")
-    bucket_prefix = f"{MINIO_BUCKET}/"
-    object_key = raw[len(bucket_prefix) :] if raw.startswith(bucket_prefix) else raw
-    extension = object_key.rsplit(".", 1)[-1].lower() if "." in object_key else ""
-    if not object_key.startswith(f"web_uploads/{user_id}/"):
-        raise CoreDomainError("优化素材必须属于当前用户。")
-    if extension not in _ALLOWED_EXTENSIONS:
-        raise CoreDomainError("优化素材仅支持 PNG/JPEG/WebP。")
-    return object_key
+    try:
+        return normalize_owned_user_upload_key(
+            value,
+            user_id=user_id,
+            allowed_extensions=_ALLOWED_EXTENSIONS,
+        )
+    except ValueError as exc:
+        if str(exc) == "object key extension is not allowed":
+            raise CoreDomainError("优化素材仅支持 PNG/JPEG/WebP。") from exc
+        raise CoreDomainError("优化素材必须属于当前用户。") from exc
 
 
 def normalize_prompt_media_object_key(value: str) -> str:
