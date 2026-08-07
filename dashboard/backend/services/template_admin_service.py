@@ -120,11 +120,18 @@ async def approve_contribution_payload(
 
     try:
         result = await db.execute(
-            select(TemplateContribution).where(TemplateContribution.id == contribution_id)
+            select(TemplateContribution)
+            .where(TemplateContribution.id == contribution_id)
+            .with_for_update()
         )
         contribution = result.scalar_one_or_none()
         if not contribution:
             raise HTTPException(status_code=404, detail="Contribution not found")
+        if contribution.is_reviewed:
+            return {
+                "status": "ok",
+                "message": "Contribution was already approved",
+            }
 
         source_obj = build_template_preview_object_name(
             contribution=type(

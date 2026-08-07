@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 import boto3  # noqa: E402
 from botocore.config import Config  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 
@@ -64,13 +66,53 @@ def select_duplicate_candidates(
     return [Candidate(*row) for row in rows]
 
 
-def validate_delete_gate(*, bucket: str, enabled: bool, confirmation: str) -> None:
+def validate_delete_gate(
+    *, bucket: str, enabled: bool, confirmation: str, plan_sha256: str = ""
+) -> None:
     if bucket != PRODUCTION_BUCKET:
         raise ValueError("temporary cleanup is restricted to user-data-prod")
     if not enabled:
         raise ValueError("R2_TEMP_CLEANUP_ENABLED must be true")
-    if confirmation != f"DELETE_VERIFIED_TEMP_R2_{bucket}":
+    expected = f"DELETE_VERIFIED_TEMP_R2_{bucket}"
+    if plan_sha256:
+        expected = f"{expected}:{plan_sha256}"
+    if confirmation != expected:
         raise ValueError("exact temporary cleanup confirmation is required")
+
+
+def _json_sha256(value: dict) -> str:
+    payload = dict(value)
+    payload.pop("plan_sha256", None)
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def seal_plan(report: dict) -> dict:
+    sealed = dict(report)
+    sealed["plan_sha256"] = _json_sha256(sealed)
+    return sealed
+
+
+def load_approved_plan(path: str, expected_sha256: str) -> dict:
+    if not path:
+        raise SystemExit("execute requires --approved-plan")
+    plan = json.loads(Path(path).read_text(encoding="utf-8"))
+    actual = _json_sha256(plan)
+    if plan.get("mode") != "dry-run" or plan.get("plan_sha256") != actual:
+        raise SystemExit("approved cleanup plan is invalid or has been modified")
+    if not expected_sha256 or actual != expected_sha256:
+        raise SystemExit("approved cleanup plan SHA-256 does not match")
+    return plan
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 async def _history_references(keys: list[str]) -> set[str]:
@@ -249,6 +291,17 @@ def _sha256_object(client, bucket: str, key: str) -> str:
     return digest.hexdigest()
 
 
+def _deleted_object_is_absent(client, bucket: str, key: str) -> bool:
+    try:
+        client.head_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return True
+        raise
+    return False
+
+
 async def _verify_candidates(
     client,
     bucket: str,
@@ -286,13 +339,36 @@ async def run(args) -> dict:
         raise SystemExit("verification concurrency must be between 1 and 16")
     if args.max_delete_bytes < 1 or args.max_delete_bytes > DEFAULT_MAX_DELETE_BYTES:
         raise SystemExit("max delete bytes must be between 1 and 50 GiB")
+    approved_plan_path = str(getattr(args, "approved_plan", "") or "")
+    expected_plan_sha = str(getattr(args, "plan_sha256", "") or "")
+    approved_plan = (
+        load_approved_plan(approved_plan_path, expected_plan_sha)
+        if args.execute
+        else None
+    )
     cutoff = datetime.now(timezone.utc) - timedelta(hours=args.min_age_hours)
     cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
-    inventory = sqlite3.connect(args.inventory)
+    if approved_plan:
+        cutoff_text = str(approved_plan["cutoff"])
+    inventory_path = Path(args.inventory)
+    inventory = sqlite3.connect(inventory_path)
     try:
-        candidates = select_duplicate_candidates(
-            inventory, cutoff=cutoff_text, limit=args.limit
-        )
+        integrity = str(inventory.execute("pragma integrity_check").fetchone()[0])
+        if integrity != "ok":
+            raise SystemExit("inventory integrity check failed")
+        if approved_plan:
+            candidates = [
+                Candidate(
+                    key=item["key"], durable_key=item["durable_key"],
+                    byte_size=int(item["byte_size"]), etag=item["etag"],
+                    last_modified=item["last_modified"],
+                )
+                for item in approved_plan.get("objects", [])
+            ]
+        else:
+            candidates = select_duplicate_candidates(
+                inventory, cutoff=cutoff_text, limit=args.limit
+            )
         orphan_uploads = inventory.execute(
             """select count(*),coalesce(sum(size),0) from objects
                where key like 'web_uploads/%' and last_modified < ?""",
@@ -301,6 +377,9 @@ async def run(args) -> dict:
         staging = inventory.execute(
             """select count(*),coalesce(sum(size),0),min(last_modified)
                from objects where key like 'staging/%'"""
+        ).fetchone()
+        inventory_total = inventory.execute(
+            "select count(*),coalesce(sum(size),0) from objects"
         ).fetchone()
     finally:
         inventory.close()
@@ -330,6 +409,11 @@ async def run(args) -> dict:
     )
 
     report = {
+        "batch_id": (
+            str(approved_plan.get("batch_id"))
+            if approved_plan
+            else str(uuid.uuid4())
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "execute" if args.execute else "dry-run",
         "bucket": args.bucket,
@@ -337,6 +421,9 @@ async def run(args) -> dict:
         "verification_concurrency": args.verification_concurrency,
         "candidate_count": len(candidates),
         "referenced_blocked_count": len(referenced),
+        "referenced_blocked_bytes": sum(
+            item.byte_size for item in candidates if item.key in referenced
+        ),
         "history_referenced_blocked_count": len(history_referenced),
         "active_task_blocked_count": len(active_referenced),
         "business_referenced_blocked_count": len(business_referenced),
@@ -350,7 +437,18 @@ async def run(args) -> dict:
         "delete_count": len(delete_objects),
         "delete_bytes": sum(item["byte_size"] for item in delete_objects),
         "byte_cap_blocked_count": len(byte_cap_blocked),
+        "byte_cap_blocked_bytes": sum(
+            int(item["byte_size"]) for item in byte_cap_blocked
+        ),
         "probe_failures": failures,
+        "inventory": {
+            "path": str(inventory_path),
+            "sha256": _file_sha256(inventory_path),
+            "mtime": inventory_path.stat().st_mtime,
+            "object_count": int(inventory_total[0]),
+            "bytes": int(inventory_total[1]),
+            "integrity": integrity,
+        },
         "staging": {
             "object_count": int(staging[0]),
             "bytes": int(staging[1]),
@@ -363,21 +461,43 @@ async def run(args) -> dict:
         },
         "objects": delete_objects,
     }
+    if (
+        approved_plan
+        and approved_plan.get("inventory", {}).get("sha256")
+        != report["inventory"]["sha256"]
+    ):
+        raise SystemExit("inventory changed after the approved cleanup plan")
+    if not args.execute:
+        report = seal_plan(report)
+    else:
+        validate_delete_gate(
+            bucket=args.bucket,
+            enabled=os.getenv("R2_TEMP_CLEANUP_ENABLED", "").lower() == "true",
+            confirmation=args.confirm,
+            plan_sha256=expected_plan_sha,
+        )
+        if failures:
+            raise SystemExit("execute rejected because at least one SHA probe failed")
+        report["status"] = "delete_started"
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     os.chmod(output, 0o600)
     if not args.execute:
         return report
-    validate_delete_gate(
-        bucket=args.bucket,
-        enabled=os.getenv("R2_TEMP_CLEANUP_ENABLED", "").lower() == "true",
-        confirmation=args.confirm,
-    )
-    if failures:
-        raise SystemExit("execute rejected because at least one SHA probe failed")
     for item in delete_objects:
         client.delete_object(Bucket=args.bucket, Key=item["key"])
+        if not _deleted_object_is_absent(client, args.bucket, item["key"]):
+            raise SystemExit("deleted temporary object still exists")
+        durable_sha = _sha256_object(client, args.bucket, item["durable_key"])
+        if durable_sha != item["sha256"]:
+            raise SystemExit("durable twin changed after temporary deletion")
+    report["approved_plan"] = approved_plan_path
+    report["approved_plan_sha256"] = expected_plan_sha
+    report["post_delete_verified_count"] = len(delete_objects)
+    report["status"] = "completed"
+    output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.chmod(output, 0o600)
     return report
 
 
@@ -393,6 +513,8 @@ def main() -> None:
         "--max-delete-bytes", type=int, default=DEFAULT_MAX_DELETE_BYTES
     )
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--approved-plan", default="")
+    parser.add_argument("--plan-sha256", default="")
     parser.add_argument("--confirm", default="")
     args = parser.parse_args()
     report = asyncio.run(run(args))

@@ -149,10 +149,20 @@ fail closed。双份 SHA 读取默认最多 8 路并发，可用
 受限 state 目录。`staging/` 对象数、字节和最老时间随报告输出；任一引用、数据库
 或摘要探测失败仍整批 fail closed。
 
+临时清理采用冻结计划协议。dry-run 报告带 `batch_id`、inventory 完整摘要、精确
+候选集合和 `plan_sha256`；execute 必须显式传入 `--approved-plan` 与
+`--plan-sha256`，确认值同时绑定生产桶和计划摘要。执行前重新查询全部引用并重做
+双对象 SHA，inventory 或计划被修改时拒绝执行；删除后还需确认临时 key 已消失且
+持久副本摘要未变化。每日 runner 也先保存独立 plan，再在总开关和基础确认均有效
+时消费该 plan，未生成回执不得视为成功。
+
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
 复制并对源/目标完整 SHA-256 验证，使用 0600 SQLite 断点状态；真实迁移使用独立
 精确确认值，不能借用临时清理或冷归档删除门禁。
+状态库分别保存源/目标摘要和关联 contribution ID。只有全量对象 verified 后才能用
+独立 `--switch-db-references` 门禁锁定并切换旧数据库引用；审批同样持有行锁，已审核
+记录幂等返回，复制或事务失败不得重复发奖。
 
 `scripts/r2_legacy_bucket_retirement.py` 只允许固定的 `user-data` →
 `user-data-prod` 合并，用受限运行态 SQLite 保存 cursor、HEAD、复制和全量

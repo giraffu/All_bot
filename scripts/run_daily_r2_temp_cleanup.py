@@ -47,12 +47,27 @@ def build_args_from_env() -> SimpleNamespace:
         ),
         execute=True,
         confirm=os.getenv("R2_TEMP_CLEANUP_CONFIRMATION", ""),
+        approved_plan="",
+        plan_sha256="",
     )
 
 
 def main() -> None:
     args = build_args_from_env()
+    execution_output = args.output
+    args.output = execution_output.replace("cleanup-", "plan-", 1)
+    args.execute = False
     report = asyncio.run(run(args))
+    if os.getenv("R2_TEMP_CLEANUP_ENABLED", "").lower() == "true":
+        base_confirmation = f"DELETE_VERIFIED_TEMP_R2_{PRODUCTION_BUCKET}"
+        if args.confirm != base_confirmation:
+            raise SystemExit("daily cleanup base confirmation is invalid")
+        args.execute = True
+        args.approved_plan = args.output
+        args.plan_sha256 = report["plan_sha256"]
+        args.confirm = f"{base_confirmation}:{args.plan_sha256}"
+        args.output = execution_output
+        report = asyncio.run(run(args))
     print(
         json.dumps(
             {
