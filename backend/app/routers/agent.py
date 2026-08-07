@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent/task", tags=["agent"])
 _result_promotion_failures: Counter[str] = Counter()
+_result_completion_counts: Counter[str] = Counter()
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 MinioClientDep = Annotated[Any, Depends(get_minio_client)]
 
@@ -171,7 +172,7 @@ async def complete_task(
     minio_client: MinioClientDep = None,
 ):
     try:
-        return await complete_task_payload(
+        response = await complete_task_payload(
             task_id=req.task_id,
             agent_id=req.agent_id,
             result=req.result,
@@ -186,6 +187,23 @@ async def complete_task(
             allow_legacy_completion=settings.legacy_result_completion_enabled,
             queue_manager=queue_manager,
         )
+        if req.result_kind == "text":
+            completion_contract = "text"
+        elif req.result_asset:
+            completion_contract = "asset_contract"
+        else:
+            completion_contract = "legacy_media"
+        _result_completion_counts[completion_contract] += 1
+        logger.info(
+            "result_completion_accepted",
+            extra={
+                "event": "result_completion_accepted",
+                "completion_contract": completion_contract,
+                "task_id": req.task_id,
+                "agent_id": req.agent_id,
+            },
+        )
+        return response
     except ResultPromotionError as exc:
         _result_promotion_failures[exc.code] += 1
         logger.warning(
@@ -208,7 +226,18 @@ async def complete_task(
 async def result_storage_metrics(
     _authorized: bool = Depends(verify_token),
 ):
-    return {"failure_counts": dict(sorted(_result_promotion_failures.items()))}
+    completion_counts = dict(sorted(_result_completion_counts.items()))
+    media_total = completion_counts.get("asset_contract", 0) + completion_counts.get(
+        "legacy_media", 0
+    )
+    return {
+        "failure_counts": dict(sorted(_result_promotion_failures.items())),
+        "completion_counts": completion_counts,
+        "media_asset_contract_coverage": (
+            completion_counts.get("asset_contract", 0) / media_total
+            if media_total else None
+        ),
+    }
 
 
 @router.post("/text-delta")

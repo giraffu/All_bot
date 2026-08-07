@@ -83,6 +83,60 @@ async def test_complete_route_returns_stable_retryable_promotion_error_and_count
 
 
 @pytest.mark.asyncio
+async def test_complete_route_reports_asset_contract_coverage(monkeypatch):
+    agent_router._result_completion_counts.clear()
+    monkeypatch.setattr(
+        agent_router,
+        "complete_task_payload",
+        AsyncMock(return_value={"status": "completed"}),
+    )
+
+    await agent_router.complete_task(
+        agent_router.CompleteRequest(
+            task_id="asset-task",
+            agent_id="agent-1",
+            result="staging/worker-results/asset-task/result.png",
+            result_asset={
+                "staging_key": "staging/worker-results/asset-task/result.png",
+                "sha256": "a" * 64,
+                "byte_size": 10,
+            },
+        ),
+        _authorized=True,
+        queue_manager=object(),
+        minio_client=object(),
+    )
+    await agent_router.complete_task(
+        agent_router.CompleteRequest(
+            task_id="legacy-task", agent_id="agent-2", result="legacy/result.png"
+        ),
+        _authorized=True,
+        queue_manager=object(),
+        minio_client=object(),
+    )
+    await agent_router.complete_task(
+        agent_router.CompleteRequest(
+            task_id="text-task",
+            agent_id="agent-3",
+            result="",
+            result_kind="text",
+            result_text="done",
+        ),
+        _authorized=True,
+        queue_manager=object(),
+        minio_client=object(),
+    )
+
+    metrics = await agent_router.result_storage_metrics(True)
+    assert metrics["completion_counts"] == {
+        "asset_contract": 1,
+        "legacy_media": 1,
+        "text": 1,
+    }
+    assert metrics["media_asset_contract_coverage"] == 0.5
+
+
+@pytest.mark.asyncio
 async def test_text_delta_payload_uses_additive_queue_manager_protocol():
     queue_manager = SimpleNamespace(append_task_text_delta=AsyncMock(return_value={
         "status": "ok", "accepted": True, "last_sequence": 1
