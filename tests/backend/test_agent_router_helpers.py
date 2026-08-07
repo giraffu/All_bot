@@ -19,6 +19,8 @@ from app.agent_router_helpers import (
     verify_agent_token,
 )
 from app.routers.agent import HeartbeatRequest
+from app.routers import agent as agent_router
+from app.result_storage import ResultPromotionError
 
 
 def test_parse_allowed_types_trims_csv_values():
@@ -48,6 +50,36 @@ def test_heartbeat_request_accepts_pool_bundle_versions_json_string():
     )
 
     assert request.model_bundle_versions == '{"wan22_video_v2_baseline":"2026-06-10"}'
+
+
+@pytest.mark.asyncio
+async def test_complete_route_returns_stable_retryable_promotion_error_and_counts_it(
+    monkeypatch,
+):
+    agent_router._result_promotion_failures.clear()
+    monkeypatch.setattr(
+        agent_router,
+        "complete_task_payload",
+        AsyncMock(side_effect=ResultPromotionError(
+            "copy failed", code="durable_copy_failed", retryable=True
+        )),
+    )
+    request = agent_router.CompleteRequest(
+        task_id="task-1", agent_id="agent-1", result="staging/result.png"
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        await agent_router.complete_task(
+            request, _authorized=True, queue_manager=object(), minio_client=object()
+        )
+
+    assert captured.value.status_code == 503
+    assert captured.value.detail == {
+        "code": "durable_copy_failed", "retryable": True
+    }
+    assert (await agent_router.result_storage_metrics(True))["failure_counts"] == {
+        "durable_copy_failed": 1
+    }
 
 
 @pytest.mark.asyncio

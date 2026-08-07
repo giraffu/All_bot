@@ -18,7 +18,10 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ResultPromotionError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str, retryable: bool = False):
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -48,23 +51,25 @@ def _stat_optional(client, bucket: str, key: str):
     except Exception as exc:
         if _is_not_found(exc):
             return None
-        raise ResultPromotionError(f"failed to stat R2 object {key}") from exc
+        raise ResultPromotionError(
+            f"failed to stat R2 object {key}", code="result_head_failed", retryable=True
+        ) from exc
 
 
 def _validate_asset(asset: dict[str, Any], *, task_id: str) -> tuple[str, str, int]:
     staging_key = str(asset.get("staging_key") or "").strip()
     expected_prefix = f"staging/worker-results/{task_id}/"
     if not staging_key.startswith(expected_prefix):
-        raise ResultPromotionError("completion asset is outside the task staging prefix")
+        raise ResultPromotionError("completion asset is outside the task staging prefix", code="invalid_staging_prefix")
     sha256 = str(asset.get("sha256") or "").strip().lower()
     if not _SHA256.fullmatch(sha256):
-        raise ResultPromotionError("completion asset has an invalid SHA-256")
+        raise ResultPromotionError("completion asset has an invalid SHA-256", code="invalid_asset_sha256")
     try:
         byte_size = int(asset.get("byte_size"))
     except (TypeError, ValueError) as exc:
-        raise ResultPromotionError("completion asset has an invalid byte size") from exc
+        raise ResultPromotionError("completion asset has an invalid byte size", code="invalid_asset_size") from exc
     if byte_size < 0:
-        raise ResultPromotionError("completion asset has an invalid byte size")
+        raise ResultPromotionError("completion asset has an invalid byte size", code="invalid_asset_size")
     return staging_key, sha256, byte_size
 
 
@@ -101,15 +106,15 @@ def _promote_one(
             durable_stat, sha256=sha256, byte_size=byte_size
         ) and _object_sha256(client, bucket, durable_key) == sha256:
             return
-        raise ResultPromotionError("durable result exists with different content")
+        raise ResultPromotionError("durable result exists with different content", code="durable_content_conflict")
 
     staging_stat = _stat_optional(client, bucket, staging_key)
     if staging_stat is None or not _matches(
         staging_stat, sha256=sha256, byte_size=byte_size
     ):
-        raise ResultPromotionError("staging result integrity validation failed")
+        raise ResultPromotionError("staging result integrity validation failed", code="staging_integrity_failed")
     if _object_sha256(client, bucket, staging_key) != sha256:
-        raise ResultPromotionError("staging result SHA-256 validation failed")
+        raise ResultPromotionError("staging result SHA-256 validation failed", code="staging_sha256_failed")
     try:
         client.copy_object(
             bucket,
@@ -117,14 +122,14 @@ def _promote_one(
             CopySource(bucket, staging_key),
         )
     except Exception as exc:
-        raise ResultPromotionError("R2 staging promotion copy failed") from exc
+        raise ResultPromotionError("R2 staging promotion copy failed", code="durable_copy_failed", retryable=True) from exc
     durable_stat = _stat_optional(client, bucket, durable_key)
     if durable_stat is None or not _matches(
         durable_stat, sha256=sha256, byte_size=byte_size
     ):
-        raise ResultPromotionError("durable result verification failed after copy")
+        raise ResultPromotionError("durable result verification failed after copy", code="durable_verification_failed", retryable=True)
     if _object_sha256(client, bucket, durable_key) != sha256:
-        raise ResultPromotionError("durable result SHA-256 validation failed after copy")
+        raise ResultPromotionError("durable result SHA-256 validation failed after copy", code="durable_sha256_failed")
 
 
 async def promote_completion_assets(
@@ -141,17 +146,17 @@ async def promote_completion_assets(
     """Return legacy payload unchanged or promote a complete new asset contract."""
     if not result_asset:
         if not allow_legacy_completion:
-            raise ResultPromotionError("completion asset contract is required")
+            raise ResultPromotionError("completion asset contract is required", code="legacy_media_completion_rejected")
         return PromotedCompletion(
             result_path=result_path,
             extra_outputs=(dict(extra_outputs) if extra_outputs is not None else None),
         )
     if minio_client is None or not bucket:
-        raise ResultPromotionError("result storage is unavailable")
+        raise ResultPromotionError("result storage is unavailable", code="result_storage_unavailable", retryable=True)
 
     staging_key, sha256, byte_size = _validate_asset(result_asset, task_id=task_id)
     if result_path != staging_key:
-        raise ResultPromotionError("result path does not match its staging asset")
+        raise ResultPromotionError("result path does not match its staging asset", code="result_path_mismatch")
     durable_result = build_task_result_key(
         task_id=task_id,
         source_name=staging_key,
@@ -170,7 +175,7 @@ async def promote_completion_assets(
     original_extras = dict(extra_outputs or {})
     asset_extras = dict(extra_output_assets or {})
     if set(original_extras) != set(asset_extras):
-        raise ResultPromotionError("extra output asset contract is incomplete")
+        raise ResultPromotionError("extra output asset contract is incomplete", code="extra_asset_contract_incomplete")
     promoted_extras: dict[str, Any] = {}
     for name, original in original_extras.items():
         asset = asset_extras[name]
@@ -178,7 +183,7 @@ async def promote_completion_assets(
             asset, task_id=task_id
         )
         if str((original or {}).get("path") or "") != extra_staging:
-            raise ResultPromotionError("extra output path does not match staging asset")
+            raise ResultPromotionError("extra output path does not match staging asset", code="extra_result_path_mismatch")
         ordinal = int(asset.get("ordinal", 0))
         durable_extra = build_task_result_key(
             task_id=task_id,

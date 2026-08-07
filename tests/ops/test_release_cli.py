@@ -93,6 +93,13 @@ def test_explicit_multiple_modules_preserve_dependency_order():
     assert "dashboard-backend" not in result
 
 
+def test_worker_agent_is_build_only_because_cloud_compose_has_no_service():
+    catalog = json.loads(CATALOG_PATH.read_text())["modules"]["worker-agent"]
+
+    assert catalog["adapter"] == "build-only"
+    assert "service" not in catalog
+
+
 def test_build_never_reads_changed_paths_or_release_bundle(tmp_path):
     module = _load_module()
     catalog = module.load_catalog(CATALOG_PATH)

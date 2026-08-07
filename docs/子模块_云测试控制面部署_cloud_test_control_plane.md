@@ -31,7 +31,8 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
 主要模块分为：
 
 - 控制面：`central-api`、`web-api`、`main-bot`、`qqcc-bot`、
-  `private-bot-worker`、`worker-relay`、`worker-agent`。
+  `private-bot-worker`、`worker-relay`。通用 `worker-agent` 只构建不可变镜像，
+  由 RunPod/LAN/专用 agent operator 消费，不伪装成云 Compose service。
 - 管理面：`dashboard-backend`、`dashboard-frontend`、
   `qqcc-config-backend`、`qqcc-config-frontend`。
 - 公网与媒体：`public-web`、`imgproxy`。

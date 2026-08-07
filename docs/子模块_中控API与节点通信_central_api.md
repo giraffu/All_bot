@@ -92,6 +92,12 @@ sequenceDiagram
   旧 Worker 不携资产元数据时仅在一个兼容发布周期内沿用原
   `result_path`；全部媒体 Worker 切换后将
   `LEGACY_RESULT_COMPLETION_ENABLED=false`，缺少资产契约的媒体完成请求直接拒绝。
+  拒绝响应使用稳定 `detail.code`（例如
+  `legacy_media_completion_rejected`、`staging_integrity_failed`、
+  `durable_copy_failed`），并携带 `retryable`。Central 以
+  `result_promotion_rejected` 结构化日志记录 code/task/agent；受 agent token
+  保护的 `GET /api/agent/task/result-storage-metrics` 返回当前进程按 code 聚合的
+ 失败计数，供运行态采集，进程重启后不作为持久账本。
   文本结果不依赖媒体资产契约。Worker 端必须对完成回报进行有限重试，全部失败后
   显式失败。
 - `/api/agent/task/text-delta` 是 `prompt_optimize` 的可选增量协议，只写运行态快照，

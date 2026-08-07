@@ -36,6 +36,7 @@ from .routes_health import router as health_router
 from .routes_media import router as media_router
 from .routes_overview import router as overview_router
 from .routes_prompts import router as prompts_router
+from .routes_r2_governance import router as r2_governance_router
 from .routes_users import router as users_router
 
 
@@ -69,6 +70,7 @@ for router in (
     prompts_router,
     media_router,
     archive_router,
+    r2_governance_router,
 ):
     app.include_router(router)
 

@@ -65,6 +65,10 @@
             <span class="tab-label">媒体核验</span>
             <span class="tab-meta">输入输出引用</span>
           </button>
+          <button class="tab-button" type="button" data-tab="r2-governance">
+            <span class="tab-label">R2 治理</span>
+            <span class="tab-meta">批次、阻断、趋势</span>
+          </button>
         </nav>
 
         <div class="sidebar-status">
@@ -1258,6 +1262,16 @@
                 </tr>
               </thead>
               <tbody id="mediaRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="band tab-panel" data-panel="r2-governance">
+          <div id="r2GovernanceSummary" class="metric-grid compact"></div>
+          <div class="table-shell full">
+            <div class="table-title">最近治理批次（仅元数据，不暴露对象 key）</div>
+            <table>
+              <thead><tr><th>时间</th><th>批次</th><th>模式/状态</th><th>候选</th><th>验证</th><th>删除</th><th>阻断</th><th>探测失败</th></tr></thead>
+              <tbody id="r2GovernanceRows"></tbody>
             </table>
           </div>
         </section>

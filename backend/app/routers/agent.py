@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from typing import Annotated, Any, Dict, Optional
 
 # Worker/agent protocol routes only.
@@ -20,6 +21,7 @@ from app.agent_router_helpers import (
 from app.config import settings
 from app.dependencies import get_minio_client, get_queue_manager
 from app.queue_manager import QueueManager
+from app.result_storage import ResultPromotionError
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from pydantic import Field
@@ -28,6 +30,7 @@ from src.services.task_text_stream_store import TextStreamConflictError
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent/task", tags=["agent"])
+_result_promotion_failures: Counter[str] = Counter()
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 MinioClientDep = Annotated[Any, Depends(get_minio_client)]
 
@@ -167,21 +170,45 @@ async def complete_task(
     queue_manager: QueueManagerDep = None,
     minio_client: MinioClientDep = None,
 ):
-    return await complete_task_payload(
-        task_id=req.task_id,
-        agent_id=req.agent_id,
-        result=req.result,
-        extra_outputs=req.extra_outputs,
-        result_asset=req.result_asset,
-        extra_output_assets=req.extra_output_assets,
-        result_kind=req.result_kind,
-        result_text=req.result_text,
-        result_meta=req.result_meta,
-        minio_client=minio_client,
-        result_bucket=settings.minio_result_bucket,
-        allow_legacy_completion=settings.legacy_result_completion_enabled,
-        queue_manager=queue_manager,
-    )
+    try:
+        return await complete_task_payload(
+            task_id=req.task_id,
+            agent_id=req.agent_id,
+            result=req.result,
+            extra_outputs=req.extra_outputs,
+            result_asset=req.result_asset,
+            extra_output_assets=req.extra_output_assets,
+            result_kind=req.result_kind,
+            result_text=req.result_text,
+            result_meta=req.result_meta,
+            minio_client=minio_client,
+            result_bucket=settings.minio_result_bucket,
+            allow_legacy_completion=settings.legacy_result_completion_enabled,
+            queue_manager=queue_manager,
+        )
+    except ResultPromotionError as exc:
+        _result_promotion_failures[exc.code] += 1
+        logger.warning(
+            "result_promotion_rejected",
+            extra={
+                "event": "result_promotion_rejected",
+                "error_code": exc.code,
+                "retryable": exc.retryable,
+                "task_id": req.task_id,
+                "agent_id": req.agent_id,
+            },
+        )
+        raise HTTPException(
+            status_code=503 if exc.retryable else 409,
+            detail={"code": exc.code, "retryable": exc.retryable},
+        ) from exc
+
+
+@router.get("/result-storage-metrics")
+async def result_storage_metrics(
+    _authorized: bool = Depends(verify_token),
+):
+    return {"failure_counts": dict(sorted(_result_promotion_failures.items()))}
 
 
 @router.post("/text-delta")
