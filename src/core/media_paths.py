@@ -30,6 +30,28 @@ def normalize_storage_object_key(reference: str) -> str:
     return raw
 
 
+def normalize_owned_user_upload_key(
+    reference: str,
+    *,
+    user_id: int,
+    allowed_extensions: set[str] | None = None,
+) -> str:
+    """Accept staged user uploads while keeping legacy web_uploads readable."""
+    object_key = normalize_storage_object_key(reference)
+    user_segment = str(int(user_id))
+    allowed_prefixes = (
+        f"staging/user-uploads/{user_segment}/",
+        f"web_uploads/{user_segment}/",
+    )
+    if not any(object_key.startswith(prefix) for prefix in allowed_prefixes):
+        raise ValueError("object key is not owned by the current user")
+    if allowed_extensions is not None:
+        extension = object_key.rsplit(".", 1)[-1].lower() if "." in object_key else ""
+        if extension not in allowed_extensions:
+            raise ValueError("object key extension is not allowed")
+    return object_key
+
+
 def resolve_storage_object(
     output_file: str,
 ) -> tuple[str, str]:

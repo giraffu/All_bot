@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=hfy
-Group=hfy
-WorkingDirectory=/home/hfy/APP/All_bot
-EnvironmentFile=/home/hfy/.config/allbot/r2-temp-cleanup/cleanup.env
-ExecStart=/home/hfy/miniconda3/bin/python scripts/run_daily_r2_temp_cleanup.py
+WorkingDirectory=%h/APP/All_bot
+EnvironmentFile=%h/APP/All_bot/deploy/env.defaults
+EnvironmentFile=%h/.config/allbot/prod.env
+EnvironmentFile=%h/.config/allbot/r2-temp-cleanup/cleanup.env
+ExecStart=%h/miniconda3/bin/python -m scripts.run_daily_r2_temp_cleanup
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

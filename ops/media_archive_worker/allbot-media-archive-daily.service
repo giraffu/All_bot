@@ -4,14 +4,14 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=hfy
-Group=hfy
-WorkingDirectory=/home/hfy/APP/All_bot
-EnvironmentFile=/home/hfy/.config/allbot/media-archive/worker.env
-ExecStart=/home/hfy/miniconda3/bin/python scripts/media_archive_catalog.py sync-new
-ExecStart=/home/hfy/miniconda3/bin/python scripts/media_archive_source_health.py --config /home/hfy/.config/allbot/media-archive/worker.json --output /var/lib/allbot-media-archive/state/source-health.json
-ExecStart=/home/hfy/miniconda3/bin/python scripts/reconcile_media_archive_outbox.py --end-id 2147483647 --execute
-ExecStart=/home/hfy/miniconda3/bin/python scripts/reconcile_media_archive_restore.py --limit 10000 --execute
+WorkingDirectory=%h/APP/All_bot
+EnvironmentFile=%h/APP/All_bot/deploy/env.defaults
+EnvironmentFile=%h/.config/allbot/prod.env
+EnvironmentFile=%h/.config/allbot/media-archive/worker.env
+ExecStart=%h/miniconda3/bin/python -m scripts.media_archive_catalog sync-new
+ExecStart=%h/miniconda3/bin/python -m scripts.media_archive_source_health --config %h/.config/allbot/media-archive/worker.json --output /var/lib/allbot-media-archive/state/source-health.json
+ExecStart=%h/miniconda3/bin/python -m scripts.reconcile_media_archive_outbox --end-id 2147483647 --execute
+ExecStart=%h/miniconda3/bin/python -m scripts.reconcile_media_archive_restore --limit 10000 --execute
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

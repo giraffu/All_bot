@@ -26,7 +26,10 @@ def _request(**overrides):
         "prompt": "A performer turns toward the camera",
         "context": {"duration_seconds": 5},
         "media": [
-            {"role": "start_image", "object_key": "web_uploads/7/start.webp"}
+            {
+                "role": "start_image",
+                "object_key": "staging/user-uploads/7/start.webp",
+            }
         ],
     }
     payload.update(overrides)
@@ -92,7 +95,7 @@ async def test_submit_rejects_media_owned_by_another_user_before_storage_lookup(
                 media=[
                     {
                         "role": "start_image",
-                        "object_key": "web_uploads/8/start.png",
+                        "object_key": "staging/user-uploads/8/start.png",
                     }
                 ]
             ),
@@ -175,7 +178,7 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
             media=[
                 {
                     "role": "scene_background",
-                    "object_key": "web_uploads/7/bedroom.webp",
+                    "object_key": "staging/user-uploads/7/bedroom.webp",
                 }
             ],
         ),
@@ -196,6 +199,6 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
     assert [item["object_key"] for item in inputs["media"]] == [
         "character_references/7/a/v1.png",
         "character_references/7/b/v1.png",
-        "web_uploads/7/bedroom.webp",
+        "staging/user-uploads/7/bedroom.webp",
     ]
     assert "character_ids" not in inputs
