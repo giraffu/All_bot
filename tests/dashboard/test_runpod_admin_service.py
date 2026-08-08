@@ -166,6 +166,16 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
     ltx_t2v = next(item for item in payload["profiles"] if item["profile"] == "ltx_t2v")
     assert ltx_t2v["supported_task_types"] == ["ltx_t2v", "ltx_t2v_ic"]
     assert ltx_t2v["autoscaler_enabled"] is False
+    minimax_h3 = next(
+        item for item in payload["profiles"] if item["profile"] == "minimax_h3"
+    )
+    assert minimax_h3["supported_task_types"] == [
+        "minimax_h3_t2v",
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+        "minimax_h3_ref2v",
+    ]
+    assert minimax_h3["autoscaler_enabled"] is False
     pornmaster_bf16 = payload["profiles"][-1]
     assert pornmaster_bf16["label"] == (
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"

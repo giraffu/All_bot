@@ -29,6 +29,8 @@ from .providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
@@ -63,6 +65,10 @@ from .providers.runpod import (
     redact_payload,
     redact_text,
 )
+from .runpod_profile_catalog import (
+    RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+    RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
+)
 from .runpod_prod_worker_canary import (
     RunPodProdWorkerCanaryAssets,
     RunPodProdWorkerCanaryCaseBuilder,
@@ -95,6 +101,7 @@ PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_LTX_T2V_TASK_TYPE = "ltx_t2v"
+PROD_MINIMAX_H3_TASK_TYPE = "minimax_h3"
 PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
 PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
@@ -1806,6 +1813,8 @@ class RunPodProdWorkerRunner:
             return target_settings.gpu_type_ids_ltx_video
         if spec["runpod_task_type"] == PROD_LTX_T2V_TASK_TYPE:
             return target_settings.gpu_type_ids_ltx_t2v
+        if spec["runpod_task_type"] == PROD_MINIMAX_H3_TASK_TYPE:
+            return target_settings.gpu_type_ids_minimax_h3
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
             return target_settings.gpu_type_ids_pornmaster_flux2_edit
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
@@ -2506,6 +2515,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_LTX_VIDEO_TASK_TYPE
     if profile_key == "ltx_t2v":
         return PROD_LTX_T2V_TASK_TYPE
+    if profile_key == "minimax_h3":
+        return PROD_MINIMAX_H3_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit":
         return PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit_bf16":
@@ -2677,6 +2688,25 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
             ),
             "image_prefix": RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+            "workflow_overrides": "",
+        }
+    if profile_key == "minimax_h3":
+        return {
+            "runpod_task_type": PROD_MINIMAX_H3_TASK_TYPE,
+            "runtime_profile": "minimax_h3",
+            "supported_task_types": RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_minimax_h3 or RUNPOD_MINIMAX_H3_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_minimax_h3
+                or RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": _verified_configured_image_exact(
+                settings.image_name_minimax_h3,
+                RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
+            ),
+            "image_prefix": RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
     if profile_key == "pornmaster_flux2_edit":
@@ -2933,6 +2963,7 @@ def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
             "scail2",
             "ltx_video",
             "ltx_t2v",
+            "minimax_h3",
             "pornmaster_flux2_edit_bf16",
         )
     return (normalize_prod_worker_profile(profile),)
