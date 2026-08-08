@@ -164,6 +164,26 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 持久副本摘要未变化。每日 runner 也先保存独立 plan，再在总开关和基础确认均有效
 时消费该 plan，未生成回执不得视为成功。
 
+一次性全量临时治理使用独立入口
+`scripts/r2_temp_cleanup_campaign.py`，不改变每日 canary/cleanup 协议。`plan`
+只从固定 inventory 快照选择超过 24 小时的
+`staging/user-uploads/` 与 `staging/worker-results/`，并分别要求存在
+`task-inputs/` 或 `task-results/` durable twin；inventory 的 size/ETag 只作候选
+预筛，进入冻结 campaign 前必须逐对象完成双 HEAD、大小和完整 SHA-256 验证，且
+History 全角色、Gallery、收藏、公开、模板/归档/角色资产和活跃任务引用均为空。
+未知 staging、`web_uploads/`、`temps/`、`template-submissions/`、flat-root、单份
+内容和探测失败只进入排除摘要，不进入 `objects`。冻结文件记录完整对象清单、
+campaign/batch ID、inventory SHA、对象数、字节和 `plan_sha256`；快照之后新增对象
+天然不属于该 campaign。
+
+`execute` 只接受与精确 `plan_sha256` 绑定的一次性确认，并将断点写入 0600 SQLite。
+一次授权后可内部连续处理，每个内部批次最多 10,000 个且最多 50 GiB；每个对象
+删除前重新查询全部引用并重做双 HEAD/大小/SHA。新增引用、缺失或摘要变化转为
+`blocked` 并继续，删除后确认 staging key 消失且 durable SHA 不变。数据库、Redis、
+R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立即退出；恢复时只消费
+同一 campaign、plan SHA 与 inventory SHA 的 pending 记录，不重新全量枚举，也不
+扩大到快照后的对象。本入口默认不执行，生产执行仍需单独取得精确 SHA 授权。
+
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
 复制并对源/目标完整 SHA-256 验证，使用 0600 SQLite 断点状态；真实迁移使用独立
