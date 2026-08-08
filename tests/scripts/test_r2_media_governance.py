@@ -1,4 +1,5 @@
 import json
+import asyncio
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
@@ -6,12 +7,66 @@ from types import SimpleNamespace
 from scripts.r2_media_governance import (
     MediaReference,
     build_governance_index,
+    execute_flat_root_campaign,
     freeze_flat_root_campaign,
     freeze_numeric_migration_plan,
     select_flat_root_size_candidates,
     validate_inventory,
     validate_flat_root_delete_gate,
 )
+
+
+class _R2:
+    def __init__(self, objects):
+        self.objects = dict(objects)
+        self.deleted = []
+
+    def head_object(self, *, Bucket, Key):
+        from botocore.exceptions import ClientError
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return {"ContentLength": len(self.objects[Key]), "Metadata": {}}
+
+    def get_object(self, *, Bucket, Key):
+        import io
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+    def delete_object(self, *, Bucket, Key):
+        self.deleted.append(Key)
+        self.objects.pop(Key, None)
+
+
+def _flat_campaign(tmp_path, count=2):
+    inventory = tmp_path / "inventory.sqlite3"
+    index = tmp_path / "governance.sqlite3"
+    _inventory(inventory)
+    build_governance_index(inventory, index)
+    payload = b"twin!"
+    digest = __import__("hashlib").sha256(payload).hexdigest()
+    objects = []
+    for ordinal in range(count):
+        objects.append({
+            "object_key": f"flat-{ordinal}.png",
+            "durable_twin": f"task-results/backend-{ordinal}/primary.png",
+            "size": len(payload),
+            "source_sha256": digest,
+            "durable_sha256": digest,
+            "reference_audit": {
+                "history": "clear", "gallery": "clear", "favorite": "clear",
+                "public": "clear", "template": "clear", "archive": "clear",
+                "active_task": "clear", "redis": "clear", "head": "verified",
+            },
+        })
+    output = tmp_path / "flat-campaign.json"
+    plan = freeze_flat_root_campaign(
+        index, verified=objects, blocked=[], output=output, batch_id="flat-batch"
+    )
+    r2_objects = {
+        key: payload
+        for item in objects
+        for key in (item["object_key"], item["durable_twin"])
+    }
+    return output, plan, _R2(r2_objects)
 
 
 def _inventory(path: Path) -> None:
@@ -160,6 +215,92 @@ def test_flat_root_delete_gate_binds_bucket_and_exact_campaign_sha():
             confirmation=f"DELETE_FLAT_ROOT_user-data-prod:{digest}",
             campaign_sha256=digest,
         )
+
+
+def test_flat_root_executor_processes_one_bounded_batch_and_resumes(tmp_path):
+    campaign, plan, client = _flat_campaign(tmp_path)
+    args = SimpleNamespace(
+        approved_campaign=campaign,
+        campaign_sha256=plan["campaign_sha256"],
+        state=tmp_path / "state.sqlite3",
+        output=tmp_path / "receipt.json",
+        bucket="user-data-prod",
+        confirm="DELETE_FLAT_ROOT_user-data-prod:" + plan["campaign_sha256"],
+        max_batch_objects=1,
+        max_batch_bytes=50 * 1024**3,
+    )
+
+    first = asyncio.run(execute_flat_root_campaign(
+        args, client=client, enabled=True,
+        reference_audit=lambda keys: _no_references(keys),
+    ))
+    second = asyncio.run(execute_flat_root_campaign(
+        args, client=client, enabled=True,
+        reference_audit=lambda keys: _no_references(keys),
+    ))
+
+    assert first["status"] == "running"
+    assert first["deleted_count"] == 1
+    assert first["pending_count"] == 1
+    assert second["status"] == "completed"
+    assert second["deleted_count"] == 2
+    assert client.deleted == ["flat-0.png", "flat-1.png"]
+
+
+async def _no_references(keys):
+    return {}
+
+
+def test_flat_root_executor_blocks_new_reference_without_deleting(tmp_path):
+    campaign, plan, client = _flat_campaign(tmp_path, count=1)
+    args = SimpleNamespace(
+        approved_campaign=campaign,
+        campaign_sha256=plan["campaign_sha256"],
+        state=tmp_path / "state.sqlite3",
+        output=tmp_path / "receipt.json",
+        bucket="user-data-prod",
+        confirm="DELETE_FLAT_ROOT_user-data-prod:" + plan["campaign_sha256"],
+        max_batch_objects=10_000,
+        max_batch_bytes=50 * 1024**3,
+    )
+
+    async def referenced(keys):
+        return {"history": set(keys)}
+
+    receipt = asyncio.run(execute_flat_root_campaign(
+        args, client=client, enabled=True, reference_audit=referenced,
+    ))
+
+    assert receipt["status"] == "completed"
+    assert receipt["blocked_count"] == 1
+    assert client.deleted == []
+
+
+def test_flat_root_executor_pauses_campaign_on_systemic_probe_error(tmp_path):
+    import pytest
+    campaign, plan, client = _flat_campaign(tmp_path, count=1)
+    args = SimpleNamespace(
+        approved_campaign=campaign,
+        campaign_sha256=plan["campaign_sha256"],
+        state=tmp_path / "state.sqlite3",
+        output=tmp_path / "receipt.json",
+        bucket="user-data-prod",
+        confirm="DELETE_FLAT_ROOT_user-data-prod:" + plan["campaign_sha256"],
+        max_batch_objects=10_000,
+        max_batch_bytes=50 * 1024**3,
+    )
+    client.head_object = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("R2 unavailable"))
+
+    with pytest.raises(RuntimeError, match="R2 unavailable"):
+        asyncio.run(execute_flat_root_campaign(
+            args, client=client, enabled=True,
+            reference_audit=lambda keys: _no_references(keys),
+        ))
+
+    receipt = json.loads(args.output.read_text())
+    assert receipt["status"] == "paused"
+    assert receipt["pending_count"] == 1
+    assert client.deleted == []
 
 
 def test_user_logger_writes_only_new_asset_contract_keys(tmp_path, monkeypatch):

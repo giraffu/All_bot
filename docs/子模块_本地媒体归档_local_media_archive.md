@@ -209,7 +209,13 @@ metadata 只用于候选排序，最终资格仍要求源与 `task-inputs/`、`t
 `web_uploads/`、`temps/` 和 `template-submissions/` 不进入 campaign。冻结 campaign
 记录 batch ID、inventory SHA/mtime、精确双 key、大小、双 SHA、引用审计和完整
 campaign SHA。删除门禁独立使用 `R2_FLAT_ROOT_CLEANUP_ENABLED` 和绑定精确 campaign
-SHA 的确认值，默认关闭；本阶段只生成 dry-run/campaign，不执行删除。
+SHA 的确认值，默认关闭；本阶段只生成 dry-run/campaign，不执行删除。后续获独立
+授权后，`execute-flat-root` 只消费同一精确 campaign SHA，并用 0600 SQLite 保存
+断点；单次调用最多处理 10,000 个对象或 50 GiB（先到即停），重启只继续 pending。
+每个对象删除前重新执行全引用审计、双 HEAD/大小和双完整 SHA-256；状态变化记为
+blocked。删除后必须确认 flat-root 已不存在且 durable twin 的大小与 SHA 未变化。
+数据库、Redis、R2 HEAD/SHA、删除或删除后复核的系统性错误立即将 campaign 标为
+paused，不继续本批。
 
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
