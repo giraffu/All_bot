@@ -28,6 +28,28 @@ from scripts.history_media_r2_migration import (
 )
 
 
+def test_seed_uses_one_bulk_copy_stage_per_history_batch():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._seed)
+    assert "copy_records_to_table" in source
+    assert "BACKEND_BATCH_SQL" in source
+    assert "for asset in assets" in source
+    assert "await conn.fetchrow(BACKEND" not in source
+    assert "select id from analytics_media_asset_catalog where history_id=$1" not in source
+
+
+def test_initial_probe_does_not_starve_pending_rows_with_deferred_failures():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._probe)
+    assert "m.status='pending_probe'" in source
+    assert "args.recheck_deferred" in source
+    assert "remaining_pending" in source
+
+
 def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "analytics_history_media_migration_runs" in MIGRATION_DDL
     assert "analytics_history_media_r2_migrations" in MIGRATION_DDL
@@ -93,6 +115,8 @@ def test_history_json_text_keeps_nested_extra_assets():
         ("output", 0),
         ("extra:preview", 0),
     ]
+
+
 def test_full_sha_hashes_stream_and_counts_bytes():
     digest, byte_size = hash_body(BytesIO(b"abc"), chunk_size=2)
     assert digest == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

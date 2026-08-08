@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.media_archive_catalog import CATALOG_DDL, SEED_SQL  # noqa: E402
+from scripts.media_archive_catalog import CATALOG_DDL  # noqa: E402
 from shared.r2_retention_contract import (  # noqa: E402
     build_task_input_key,
     build_task_result_key,
@@ -113,11 +113,39 @@ create table if not exists analytics_history_media_migration_plans (
 );
 """
 
-BACKEND_MAP_SQL = """
-select min(backend_task_id) backend_task_id,
+BACKEND_BATCH_SQL = """
+select registry_task_id,min(backend_task_id) backend_task_id,
        count(distinct backend_task_id) backend_count
   from private_bot_task_submissions
- where registry_task_id=$1 and backend_task_id is not null
+ where registry_task_id = any($1::text[]) and backend_task_id is not null
+ group by registry_task_id
+"""
+
+SEED_STAGE_DDL = """
+create temp table if not exists history_media_migration_seed_stage (
+    run_id uuid not null,
+    catalog_asset_id bigint not null,
+    history_id integer not null,
+    history_manifest_sha256 char(64) not null,
+    role text not null,
+    ordinal integer not null,
+    original_ref text not null,
+    registry_task_id text,
+    backend_task_id text,
+    target_key text,
+    status text not null,
+    error_code text
+) on commit delete rows
+"""
+
+SEED_STAGE_INSERT_SQL = """
+insert into analytics_history_media_r2_migrations(
+    run_id,catalog_asset_id,history_id,history_manifest_sha256,role,ordinal,
+    original_ref,registry_task_id,backend_task_id,target_key,status,error_code)
+select run_id,catalog_asset_id,history_id,history_manifest_sha256,role,ordinal,
+       original_ref,registry_task_id,backend_task_id,target_key,status,error_code
+  from history_media_migration_seed_stage
+on conflict(run_id,history_id,role,ordinal) do nothing
 """
 
 
@@ -518,6 +546,7 @@ async def _seed(args: argparse.Namespace) -> None:
     conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
     try:
         await _ensure_schema(conn)
+        await conn.execute(SEED_STAGE_DDL)
         if args.resume_run_id:
             run_id = uuid.UUID(args.resume_run_id)
             row = await conn.fetchrow(
@@ -559,24 +588,52 @@ async def _seed(args: argparse.Namespace) -> None:
 
         for batch_start in range(start, watermark + 1, args.batch_size):
             batch_end = min(watermark, batch_start + args.batch_size - 1)
-            await conn.fetch(SEED_SQL, batch_start, batch_end)
             histories = await conn.fetch(
                 """select id,task_id,user_id,created_at,input_file,output_file,extra_outputs
                      from history where id between $1 and $2 order by id""",
                 batch_start,
                 batch_end,
             )
+            registry_ids = sorted(
+                {
+                    str(history["task_id"]).strip()
+                    for history in histories
+                    if str(history["task_id"] or "").strip()
+                }
+            )
+            backend_rows = (
+                await conn.fetch(BACKEND_BATCH_SQL, registry_ids)
+                if registry_ids
+                else []
+            )
+            backend_map = {
+                str(row["registry_task_id"]): (
+                    str(row["backend_task_id"]), int(row["backend_count"])
+                )
+                for row in backend_rows
+            }
+            catalog_rows = await conn.fetch(
+                """select id,history_id,role,ordinal
+                     from analytics_media_asset_catalog
+                    where history_id between $1 and $2""",
+                batch_start,
+                batch_end,
+            )
+            catalog_ids = {
+                (int(row["history_id"]), str(row["role"]), int(row["ordinal"])): int(
+                    row["id"]
+                )
+                for row in catalog_rows
+            }
+            prepared: list[tuple[Any, ...]] = []
+            missing_catalog: list[tuple[Any, ...]] = []
             for history in histories:
                 assets = history_assets_from_record(history)
                 manifest_sha = media_manifest_hash(assets)
                 registry_id = str(history["task_id"] or "").strip() or None
-                backend = await conn.fetchrow(BACKEND_MAP_SQL, registry_id)
-                backend_id = (
-                    str(backend["backend_task_id"])
-                    if backend and int(backend["backend_count"] or 0) == 1
-                    else None
-                )
-                backend_ambiguous = bool(backend and int(backend["backend_count"] or 0) > 1)
+                backend = backend_map.get(registry_id or "")
+                backend_id = backend[0] if backend and backend[1] == 1 else None
+                backend_ambiguous = bool(backend and backend[1] > 1)
                 for asset in assets:
                     identity = AssetIdentity(
                         asset.history_id, asset.role, asset.ordinal, asset.source_ref
@@ -598,57 +655,108 @@ async def _seed(args: argparse.Namespace) -> None:
                             if backend_ambiguous and asset.role != "input"
                             else "MISSING_EXPLICIT_TASK_ID"
                         )
-                    catalog_id = await conn.fetchval(
-                        "select id from analytics_media_asset_catalog where history_id=$1 and role=$2 and ordinal=$3",
-                        asset.history_id,
-                        asset.role,
-                        asset.ordinal,
-                    )
-                    if catalog_id is None:
-                        catalog_id = await conn.fetchval(
-                            """insert into analytics_media_asset_catalog
-                                 (history_id,task_id,user_id,history_created_at,role,
-                                  ordinal,original_ref,temperature)
-                               values($1,$2,$3,$4,$5,$6,$7,'unknown')
-                               on conflict(history_id,role,ordinal) do update set
-                                 task_id=excluded.task_id,user_id=excluded.user_id,
-                                 history_created_at=excluded.history_created_at,
-                                 original_ref=excluded.original_ref
-                               returning id""",
-                            asset.history_id,
-                            registry_id,
-                            history["user_id"],
-                            history["created_at"],
-                            asset.role,
-                            asset.ordinal,
-                            asset.source_ref,
+                    identity_key = (asset.history_id, asset.role, asset.ordinal)
+                    if identity_key not in catalog_ids:
+                        missing_catalog.append(
+                            (
+                                asset.history_id,
+                                registry_id,
+                                history["user_id"],
+                                history["created_at"],
+                                asset.role,
+                                asset.ordinal,
+                                asset.source_ref,
+                            )
                         )
-                    await conn.execute(
-                        """insert into analytics_history_media_r2_migrations(
-                             run_id,catalog_asset_id,history_id,history_manifest_sha256,
-                             role,ordinal,original_ref,registry_task_id,backend_task_id,
-                             target_key,status,error_code)
-                           values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-                           on conflict(run_id,history_id,role,ordinal) do nothing""",
+                    prepared.append(
+                        (
+                            identity_key,
+                            manifest_sha,
+                            asset.source_ref,
+                            registry_id,
+                            backend_id,
+                            target,
+                            status,
+                            error,
+                        )
+                    )
+            async with conn.transaction():
+                if missing_catalog:
+                    await conn.executemany(
+                        """insert into analytics_media_asset_catalog
+                             (history_id,task_id,user_id,history_created_at,role,
+                              ordinal,original_ref,temperature)
+                           values($1,$2,$3,$4,$5,$6,$7,'unknown')
+                           on conflict(history_id,role,ordinal) do nothing""",
+                        missing_catalog,
+                    )
+                    refreshed = await conn.fetch(
+                        """select id,history_id,role,ordinal
+                             from analytics_media_asset_catalog
+                            where history_id between $1 and $2""",
+                        batch_start,
+                        batch_end,
+                    )
+                    catalog_ids = {
+                        (
+                            int(row["history_id"]),
+                            str(row["role"]),
+                            int(row["ordinal"]),
+                        ): int(row["id"])
+                        for row in refreshed
+                    }
+                stage_records = [
+                    (
                         run_id,
-                        catalog_id,
-                        asset.history_id,
+                        catalog_ids[identity_key],
+                        identity_key[0],
                         manifest_sha,
-                        asset.role,
-                        asset.ordinal,
-                        asset.source_ref,
+                        identity_key[1],
+                        identity_key[2],
+                        source_ref,
                         registry_id,
                         backend_id,
                         target,
                         status,
                         error,
                     )
-            await conn.execute(
-                """update analytics_history_media_migration_runs
-                      set cursor_history_id=$2,updated_at=now() where id=$1""",
-                run_id,
-                batch_end,
-            )
+                    for (
+                        identity_key,
+                        manifest_sha,
+                        source_ref,
+                        registry_id,
+                        backend_id,
+                        target,
+                        status,
+                        error,
+                    ) in prepared
+                ]
+                if stage_records:
+                    await conn.copy_records_to_table(
+                        "history_media_migration_seed_stage",
+                        records=stage_records,
+                        columns=(
+                            "run_id",
+                            "catalog_asset_id",
+                            "history_id",
+                            "history_manifest_sha256",
+                            "role",
+                            "ordinal",
+                            "original_ref",
+                            "registry_task_id",
+                            "backend_task_id",
+                            "target_key",
+                            "status",
+                            "error_code",
+                        ),
+                    )
+                    await conn.execute(SEED_STAGE_INSERT_SQL)
+                await conn.execute(
+                    """update analytics_history_media_migration_runs
+                          set cursor_history_id=$2,updated_at=now() where id=$1""",
+                    run_id,
+                    batch_end,
+                )
         await conn.execute(
             "update analytics_history_media_migration_runs set status='completed',phase='seed',updated_at=now() where id=$1",
             run_id,
@@ -781,11 +889,17 @@ async def _probe(args: argparse.Namespace) -> None:
             run_id,
         )
         rows = await conn.fetch(
-            """select * from analytics_history_media_r2_migrations
-                 where run_id=$1 and status in ('pending_probe','source_missing','source_offline','failed')
-                 order by history_id,role,ordinal limit $2""",
+            """select m.* from analytics_history_media_r2_migrations m
+                 where m.run_id=$1 and (
+                   m.status='pending_probe'
+                   or ($3::boolean and m.status in ('source_missing','source_offline','failed')
+                       and m.updated_at <= now() - make_interval(hours => $4::integer))
+                 )
+                 order by m.history_id,m.role,m.ordinal limit $2""",
             run_id,
             args.limit,
+            args.recheck_deferred,
+            args.deferred_min_age_hours,
         )
         bytes_read = 0
         for row in rows:
@@ -1043,13 +1157,30 @@ async def _probe(args: argparse.Namespace) -> None:
                     migration_status,
                     catalog_status.upper(),
                 )
+        remaining = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and status='pending_probe'""",
+                run_id,
+            )
+        )
         await conn.execute(
-            """update analytics_history_media_migration_runs set status='completed',
+            """update analytics_history_media_migration_runs set status=$3,
                  phase='probe',sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
             run_id,
             bytes_read,
+            "completed" if remaining == 0 else "running",
         )
-        print(json.dumps({"run_id": str(run_id), "probed": len(rows), "sha_bytes_read": bytes_read}))
+        print(
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "probed": len(rows),
+                    "remaining_pending": remaining,
+                    "sha_bytes_read": bytes_read,
+                }
+            )
+        )
     except Exception as exc:
         await conn.execute(
             """update analytics_history_media_migration_runs set status='paused',
@@ -1518,6 +1649,8 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--config", required=True)
     probe.add_argument("--limit", type=int, default=1000)
     probe.add_argument("--systemic-error-threshold", type=int, default=5)
+    probe.add_argument("--recheck-deferred", action="store_true")
+    probe.add_argument("--deferred-min-age-hours", type=int, default=24)
     for name in ("plan-copy", "plan-switch"):
         command = commands.add_parser(name)
         command.add_argument("--run-id", required=True)

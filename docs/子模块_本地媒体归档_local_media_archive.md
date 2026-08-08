@@ -190,7 +190,8 @@ R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立
 `user-data-prod` 历史媒体迁移以 History 行为事实源，不再以 bucket numeric/flat-root
 分类构造全桶工作集。`scripts/history_media_r2_migration.py seed` 首先冻结
 `max(history.id)`，再以 `(history_id, role, ordinal)` 流式写入本地分析库的独立
-迁移账本；续跑必须绑定同一个 run 与 watermark。它只探测账本中的引用和明确候选
+迁移账本；每批只做一次双 ID/目录查询并通过 PostgreSQL COPY staging 落账，续跑
+必须绑定同一个 run 与 watermark。它只探测账本中的引用和明确候选
 key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 仅保留为历史治理
 实现，不得用于本轮迁移或启动新的 numeric/flat-root planner。
 
@@ -207,6 +208,8 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 鉴权或系统性查询失败不等于丢失；达到系统错误阈值时 run 立即 paused。只有全部启用
 来源明确 not-found 才累计 missing round，两轮至少间隔 24 小时才在本地目录标记
 `confirmed_lost`，生产 History 不写“丢失”且保留原引用。
+首次 probe 只消费 `pending_probe`，不会被较早的 missing/offline 行饿死；这些延迟
+状态仅在显式 `--recheck-deferred` 且达到最短 24 小时后重新探测。
 
 `plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
 分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
