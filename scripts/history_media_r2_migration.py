@@ -21,7 +21,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 from typing import Any, BinaryIO, Iterable
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
 import uuid
 
 import asyncpg
@@ -88,6 +88,7 @@ create table if not exists analytics_history_media_r2_migrations (
     switch_plan_sha256 char(64),
     copy_completed_at timestamptz,
     switch_completed_at timestamptz,
+    target_checked_at timestamptz,
     updated_at timestamptz not null default now(),
     unique (run_id, history_id, role, ordinal)
 );
@@ -111,6 +112,8 @@ create table if not exists analytics_history_media_migration_plans (
     created_at timestamptz not null default now(),
     unique (run_id, plan_type, rowset_sha256)
 );
+alter table analytics_history_media_r2_migrations
+  add column if not exists target_checked_at timestamptz;
 """
 
 BACKEND_BATCH_SQL = """
@@ -327,30 +330,105 @@ def validate_resume_identity(
     return stored_watermark
 
 
+PLAN_ROW_FIELDS = (
+    "history_id",
+    "role",
+    "ordinal",
+    "target_key",
+    "source_sha256",
+    "target_sha256",
+    "source_name",
+    "source_key",
+    "source_last_modified",
+    "byte_size",
+    "status",
+    "history_manifest_sha256",
+    "original_ref",
+)
+
+
+def _plan_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: row.get(key) for key in PLAN_ROW_FIELDS if key in row}
+
+
 def _plan_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    fields = (
-        "history_id",
-        "role",
-        "ordinal",
-        "target_key",
-        "source_sha256",
-        "target_sha256",
-        "source_name",
-        "source_key",
-        "source_last_modified",
-        "byte_size",
-        "status",
-        "history_manifest_sha256",
-        "original_ref",
-    )
     return sorted(
-        ({key: row.get(key) for key in fields if key in row} for row in rows),
+        (_plan_row(row) for row in rows),
         key=lambda row: (
             int(row["history_id"]),
             str(row["role"]),
             int(row["ordinal"]),
         ),
     )
+
+
+class StreamingJsonArraySha256:
+    """Hash a canonical JSON array without retaining its rows."""
+
+    def __init__(self) -> None:
+        self._digest = hashlib.sha256()
+        self._digest.update(b"[")
+        self._count = 0
+
+    def add(self, row: dict[str, Any]) -> None:
+        if self._count:
+            self._digest.update(b",")
+        self._digest.update(_canonical_json(row))
+        self._count += 1
+
+    def hexdigest(self) -> str:
+        digest = self._digest.copy()
+        digest.update(b"]")
+        return digest.hexdigest()
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+
+async def _stream_plan_rowset(
+    conn: asyncpg.Connection,
+    query: str,
+    *params: Any,
+    copy_plan_sha256: str | None = None,
+) -> tuple[str, int, Counter[str], Counter[str], list[dict[str, Any]]]:
+    digest = StreamingJsonArraySha256()
+    counts: Counter[str] = Counter()
+    byte_counts: Counter[str] = Counter()
+    diagnostics: list[dict[str, Any]] = []
+    async with conn.transaction():
+        async for record in conn.cursor(query, *params, prefetch=1000):
+            raw = dict(record)
+            if copy_plan_sha256 and raw.get("copy_plan_sha256") == copy_plan_sha256:
+                raw["status"] = "copy_required"
+                raw["target_sha256"] = None
+            row = _plan_row(raw)
+            digest.add(row)
+            status = str(row.get("status") or "unknown")
+            counts[status] += 1
+            byte_counts[status] += int(row.get("byte_size") or 0)
+            if (
+                len(diagnostics) < MAX_DIAGNOSTICS
+                and status
+                in {
+                    "blocked",
+                    "unresolved",
+                    "target_conflict",
+                    "source_offline",
+                    "source_missing",
+                    "failed",
+                }
+            ):
+                diagnostics.append(
+                    {
+                        "asset": hashlib.sha256(
+                            f"{row['history_id']}:{row['role']}:{row['ordinal']}".encode()
+                        ).hexdigest()[:16],
+                        "status": status,
+                        "error_code": raw.get("error_code"),
+                    }
+                )
+    return digest.hexdigest(), digest.count, counts, byte_counts, diagnostics
 
 
 def build_copy_plan(
@@ -440,6 +518,22 @@ def _dsn(name: str) -> str:
     if not value:
         raise SystemExit(f"{name} is required")
     return value.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
+def normalize_asyncpg_dsn(value: str) -> tuple[str, str | None]:
+    parsed = urlsplit(value.replace("postgresql+asyncpg://", "postgresql://", 1))
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    ssl_value = next((item for key, item in query if key == "ssl"), None)
+    clean_query = urlencode([(key, item) for key, item in query if key != "ssl"])
+    clean = urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, clean_query, parsed.fragment)
+    )
+    return clean, "require" if ssl_value else None
+
+
+async def _connect_env(name: str) -> asyncpg.Connection:
+    dsn, ssl_mode = normalize_asyncpg_dsn(_dsn(name))
+    return await asyncpg.connect(dsn, ssl=ssl_mode)
 
 
 def _load_secure_config(path: Path) -> dict[str, Any]:
@@ -543,7 +637,7 @@ async def _ensure_schema(conn: asyncpg.Connection) -> None:
 
 
 async def _seed(args: argparse.Namespace) -> None:
-    conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         await _ensure_schema(conn)
         await conn.execute(SEED_STAGE_DDL)
@@ -845,7 +939,7 @@ async def _probe(args: argparse.Namespace) -> None:
         raise RuntimeError("target is restricted to user-data-prod")
     target_config = config["target"]
     target_client = _s3_client(target_config)
-    conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
     cache = SourceFactCache()
     source_query_errors = 0
@@ -884,23 +978,35 @@ async def _probe(args: argparse.Namespace) -> None:
         )
         if not run:
             raise RuntimeError("unknown migration run")
+        phase = "probe-target" if args.target_only else "probe"
         await conn.execute(
-            "update analytics_history_media_migration_runs set status='running',phase='probe',error=null,updated_at=now() where id=$1",
+            "update analytics_history_media_migration_runs set status='running',phase=$2,error=null,updated_at=now() where id=$1",
             run_id,
+            phase,
         )
-        rows = await conn.fetch(
-            """select m.* from analytics_history_media_r2_migrations m
-                 where m.run_id=$1 and (
-                   m.status='pending_probe'
-                   or ($3::boolean and m.status in ('source_missing','source_offline','failed')
-                       and m.updated_at <= now() - make_interval(hours => $4::integer))
-                 )
-                 order by m.history_id,m.role,m.ordinal limit $2""",
-            run_id,
-            args.limit,
-            args.recheck_deferred,
-            args.deferred_min_age_hours,
-        )
+        if args.target_only:
+            rows = await conn.fetch(
+                """select m.* from analytics_history_media_r2_migrations m
+                     where m.run_id=$1 and m.target_checked_at is null
+                       and m.status in ('pending_probe','source_offline','failed')
+                     order by m.history_id,m.role,m.ordinal limit $2""",
+                run_id,
+                args.limit,
+            )
+        else:
+            rows = await conn.fetch(
+                """select m.* from analytics_history_media_r2_migrations m
+                     where m.run_id=$1 and (
+                       m.status='pending_probe'
+                       or ($3::boolean and m.status in ('source_missing','source_offline','failed')
+                           and m.updated_at <= now() - make_interval(hours => $4::integer))
+                     )
+                     order by m.history_id,m.role,m.ordinal limit $2""",
+                run_id,
+                args.limit,
+                args.recheck_deferred,
+                args.deferred_min_age_hours,
+            )
         bytes_read = 0
         for row in rows:
             target_key = str(row["target_key"])
@@ -919,6 +1025,25 @@ async def _probe(args: argparse.Namespace) -> None:
                     head=target_head,
                 )
                 bytes_read += consumed
+                await conn.execute(
+                    """update analytics_history_media_r2_migrations set
+                         source_name='target:user-data-prod',source_key=target_key,
+                         byte_size=$2,source_sha256=$3,target_sha256=$3,
+                         status='target_verified',target_checked_at=now(),
+                         error_code=null,error_detail=null,updated_at=now() where id=$1""",
+                    row["id"],
+                    int(target_head[0]),
+                    target_sha,
+                )
+                continue
+            if args.target_only:
+                await conn.execute(
+                    """update analytics_history_media_r2_migrations set
+                         target_checked_at=now(),error_code='TARGET_MISSING_PENDING_RECOVERY',
+                         error_detail=null,updated_at=now() where id=$1""",
+                    row["id"],
+                )
+                continue
 
             attempts: list[str] = []
             found: tuple[str, str, tuple[int, datetime], str] | None = None
@@ -1095,7 +1220,8 @@ async def _probe(args: argparse.Namespace) -> None:
                     """update analytics_history_media_r2_migrations set
                          source_name=$2,source_key=$3,byte_size=$4,source_last_modified=$5,
                          source_sha256=$6,target_sha256=$7,status=$8,error_code=$9,
-                         error_detail=null,updated_at=now() where id=$1""",
+                         target_checked_at=now(),error_detail=null,updated_at=now()
+                       where id=$1""",
                     row["id"],
                     source_name,
                     source_key,
@@ -1113,17 +1239,6 @@ async def _probe(args: argparse.Namespace) -> None:
                     row["catalog_asset_id"],
                     source_name,
                     source_key,
-                )
-            elif target_sha is not None:
-                await conn.execute(
-                    """update analytics_history_media_r2_migrations set
-                         source_name='target:user-data-prod',source_key=target_key,
-                         byte_size=$2,source_sha256=$3,target_sha256=$3,
-                         status='target_verified',error_code=null,error_detail=null,
-                         updated_at=now() where id=$1""",
-                    row["id"],
-                    int(target_head[0]),
-                    target_sha,
                 )
             else:
                 catalog = await conn.fetchrow(
@@ -1152,24 +1267,36 @@ async def _probe(args: argparse.Namespace) -> None:
                 )
                 await conn.execute(
                     """update analytics_history_media_r2_migrations set status=$2,
-                         error_code=$3,updated_at=now() where id=$1""",
+                         error_code=$3,target_checked_at=now(),updated_at=now()
+                       where id=$1""",
                     row["id"],
                     migration_status,
                     catalog_status.upper(),
                 )
-        remaining = int(
-            await conn.fetchval(
-                """select count(*) from analytics_history_media_r2_migrations
-                     where run_id=$1 and status='pending_probe'""",
-                run_id,
+        if args.target_only:
+            remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and target_checked_at is null
+                           and status in ('pending_probe','source_offline','failed')""",
+                    run_id,
+                )
             )
-        )
+        else:
+            remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and status='pending_probe'""",
+                    run_id,
+                )
+            )
         await conn.execute(
             """update analytics_history_media_migration_runs set status=$3,
-                 phase='probe',sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
+                 phase=$4,sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
             run_id,
             bytes_read,
             "completed" if remaining == 0 else "running",
+            phase,
         )
         print(
             json.dumps(
@@ -1177,6 +1304,7 @@ async def _probe(args: argparse.Namespace) -> None:
                     "run_id": str(run_id),
                     "probed": len(rows),
                     "remaining_pending": remaining,
+                    "target_only": args.target_only,
                     "sha_bytes_read": bytes_read,
                 }
             )
@@ -1201,52 +1329,70 @@ def _diagnostic(row: asyncpg.Record) -> dict[str, Any]:
 
 
 async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
-    conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
     try:
         run = await conn.fetchrow(
-            "select history_watermark,sha_bytes_read from analytics_history_media_migration_runs where id=$1",
+            "select history_watermark,sha_bytes_read,status from analytics_history_media_migration_runs where id=$1",
             run_id,
         )
         if not run:
             raise RuntimeError("unknown migration run")
         if plan_type == "copy":
-            selected = await conn.fetch(
+            remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and status='pending_probe'""",
+                    run_id,
+                )
+            )
+            if remaining or run["status"] == "paused":
+                raise RuntimeError(
+                    f"PROBE_NOT_COMPLETE: pending={remaining} run_status={run['status']}"
+                )
+            query = (
                 """select history_id,role,ordinal,original_ref,target_key,
                           source_name,source_key,source_last_modified,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256,error_code
                      from analytics_history_media_r2_migrations where run_id=$1
-                     order by history_id,role,ordinal""",
-                run_id,
+                     order by history_id,role,ordinal"""
             )
-            rows = [dict(row) for row in selected]
-            manifest = build_copy_plan(
-                run_id=str(run_id),
-                history_watermark=int(run["history_watermark"]),
-                rows=rows,
-                sha_bytes_read=int(run["sha_bytes_read"]),
-                diagnostics=(
-                    _diagnostic(row)
-                    for row in selected
-                    if row["status"] in {"blocked", "unresolved", "target_conflict", "source_offline", "source_missing", "failed"}
-                ),
+            rowset_sha, _count, counts, byte_counts, diagnostics = (
+                await _stream_plan_rowset(conn, query, run_id)
             )
+            manifest = {
+                "schema": "allbot-history-media-r2-copy-plan/v1",
+                "run_id": str(run_id),
+                "history_watermark": int(run["history_watermark"]),
+                "counts": dict(sorted(counts.items())),
+                "bytes": dict(sorted(byte_counts.items())),
+                "sha_bytes_read": int(run["sha_bytes_read"]),
+                "diagnostics": diagnostics,
+                "rowset_sha256": rowset_sha,
+            }
+            manifest["plan_sha256"] = _sha256_json(manifest)
         else:
-            selected = await conn.fetch(
+            query = (
                 """select history_id,role,ordinal,original_ref,target_key,
                           source_name,source_key,source_last_modified,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256
                      from analytics_history_media_r2_migrations
                     where run_id=$1 and status in ('target_verified','copied_verified')
                       and original_ref <> target_key
-                    order by history_id,role,ordinal""",
-                run_id,
+                    order by history_id,role,ordinal"""
             )
-            manifest = build_switch_plan(
-                run_id=str(run_id),
-                history_watermark=int(run["history_watermark"]),
-                rows=(dict(row) for row in selected),
+            rowset_sha, count, _counts, byte_counts, _diagnostics = (
+                await _stream_plan_rowset(conn, query, run_id)
             )
+            manifest = {
+                "schema": "allbot-history-media-r2-switch-plan/v1",
+                "run_id": str(run_id),
+                "history_watermark": int(run["history_watermark"]),
+                "count": count,
+                "bytes": sum(byte_counts.values()),
+                "rowset_sha256": rowset_sha,
+            }
+            manifest["plan_sha256"] = _sha256_json(manifest)
         plan_sha = manifest["plan_sha256"]
         await conn.execute(
             """insert into analytics_history_media_migration_plans
@@ -1305,7 +1451,7 @@ async def _execute_copy(args: argparse.Namespace) -> None:
             "nas_archive"
         ]
     target_client = _s3_client(target)
-    conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         run_id, manifest = await _load_plan(conn, args.plan_sha256, "copy")
         validate_copy_gate(
@@ -1313,26 +1459,29 @@ async def _execute_copy(args: argparse.Namespace) -> None:
             supplied_plan_sha256=args.plan_sha256,
             confirmation=args.confirm,
         )
-        identity_rows = await conn.fetch(
-            """select history_id,role,ordinal,original_ref,target_key,
+        rowset_sha, _count, _counts, _bytes, _diagnostics = (
+            await _stream_plan_rowset(
+                conn,
+                """select history_id,role,ordinal,original_ref,target_key,
                       source_name,source_key,source_last_modified,source_sha256,
                       target_sha256,byte_size,status,history_manifest_sha256,
                       copy_plan_sha256
                  from analytics_history_media_r2_migrations where run_id=$1
                  order by history_id,role,ordinal""",
-            run_id,
+                run_id,
+                copy_plan_sha256=args.plan_sha256,
+            )
         )
-        if _copy_rowset_sha(
-            (dict(row) for row in identity_rows), args.plan_sha256
-        ) != manifest["rowset_sha256"]:
+        if rowset_sha != manifest["rowset_sha256"]:
             raise RuntimeError("copy plan rowset changed")
         rows = await conn.fetch(
             """select * from analytics_history_media_r2_migrations
                  where run_id=$1 and copy_plan_sha256=$2
                    and status in ('copy_required','failed')
-                 order by history_id,role,ordinal""",
+                 order by history_id,role,ordinal limit $3""",
             run_id,
             args.plan_sha256,
+            args.limit,
         )
         for row in rows:
             try:
@@ -1427,7 +1576,20 @@ async def _execute_copy(args: argparse.Namespace) -> None:
                     str(exc)[:1000],
                 )
                 raise
-        print(json.dumps({"run_id": str(run_id), "copied": len(rows)}))
+        remaining = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and status in ('copy_required','failed')""",
+                run_id,
+                args.plan_sha256,
+            )
+        )
+        print(
+            json.dumps(
+                {"run_id": str(run_id), "copied": len(rows), "remaining": remaining}
+            )
+        )
     finally:
         await conn.close()
 
@@ -1479,8 +1641,8 @@ def replace_asset_reference(history: dict[str, Any], role: str, ordinal: int, ta
 
 
 async def _execute_switch(args: argparse.Namespace) -> None:
-    ledger = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
-    production = await asyncpg.connect(_dsn("PRODUCTION_DATABASE_URL"))
+    ledger = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    production = await _connect_env("PRODUCTION_DATABASE_URL")
     try:
         run_id, manifest = await _load_plan(ledger, args.plan_sha256, "switch")
         validate_switch_gate(
@@ -1490,23 +1652,47 @@ async def _execute_switch(args: argparse.Namespace) -> None:
             actual_manifest_sha256="gate",
             confirmation=args.confirm,
         )
-        rows = await ledger.fetch(
-            """select * from analytics_history_media_r2_migrations
+        rowset_sha, _count, _counts, _bytes, _diagnostics = (
+            await _stream_plan_rowset(
+                ledger,
+                """select history_id,role,ordinal,original_ref,target_key,
+                          source_name,source_key,source_last_modified,source_sha256,
+                          target_sha256,byte_size,status,history_manifest_sha256
+                     from analytics_history_media_r2_migrations
                  where run_id=$1 and switch_plan_sha256=$2
                    and status in ('target_verified','copied_verified')
                  order by history_id,role,ordinal""",
-            run_id,
-            args.plan_sha256,
+                run_id,
+                args.plan_sha256,
+            )
         )
-        if _sha256_json(_plan_rows(dict(row) for row in rows)) != manifest[
-            "rowset_sha256"
-        ]:
+        if rowset_sha != manifest["rowset_sha256"]:
             raise RuntimeError("switch plan rowset changed")
-        grouped: dict[int, list[asyncpg.Record]] = {}
-        for row in rows:
-            grouped.setdefault(int(row["history_id"]), []).append(row)
         switched = 0
-        for history_id, assets in grouped.items():
+        last_history_id = 0
+        while True:
+            history_id = await ledger.fetchval(
+                """select min(history_id) from analytics_history_media_r2_migrations
+                     where run_id=$1 and switch_plan_sha256=$2
+                       and status in ('target_verified','copied_verified')
+                       and history_id > $3""",
+                run_id,
+                args.plan_sha256,
+                last_history_id,
+            )
+            if history_id is None:
+                break
+            history_id = int(history_id)
+            last_history_id = history_id
+            assets = await ledger.fetch(
+                """select * from analytics_history_media_r2_migrations
+                     where run_id=$1 and switch_plan_sha256=$2 and history_id=$3
+                       and status in ('target_verified','copied_verified')
+                     order by role,ordinal""",
+                run_id,
+                args.plan_sha256,
+                history_id,
+            )
             async with production.transaction():
                 history = await production.fetchrow(
                     """select id,input_file,output_file,extra_outputs from history
@@ -1582,7 +1768,7 @@ async def _execute_switch(args: argparse.Namespace) -> None:
 
 
 async def _report(args: argparse.Namespace) -> None:
-    conn = await asyncpg.connect(_dsn("LOCAL_ANALYTICS_DATABASE_URL"))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
     try:
         run = await conn.fetchrow(
@@ -1605,11 +1791,16 @@ async def _report(args: argparse.Namespace) -> None:
             run_id,
             MAX_DIAGNOSTICS,
         )
-        rowset = await conn.fetch(
-            """select history_id,role,ordinal,status,target_key,source_sha256,target_sha256
-                 from analytics_history_media_r2_migrations where run_id=$1
-                 order by history_id,role,ordinal""",
-            run_id,
+        rowset_sha, row_count, _counts, _bytes, _diagnostics = (
+            await _stream_plan_rowset(
+                conn,
+                """select history_id,role,ordinal,original_ref,target_key,
+                          source_name,source_key,source_last_modified,source_sha256,
+                          target_sha256,byte_size,status,history_manifest_sha256,error_code
+                     from analytics_history_media_r2_migrations where run_id=$1
+                     order by history_id,role,ordinal""",
+                run_id,
+            )
         )
         plans = await conn.fetch(
             """select plan_type,plan_sha256,rowset_sha256
@@ -1624,7 +1815,8 @@ async def _report(args: argparse.Namespace) -> None:
             "scope": "History logical media rows only; no bucket enumeration",
             "statuses": [dict(row) for row in summary],
             "sha_bytes_read": int(run["sha_bytes_read"]),
-            "rowset_sha256": _sha256_json([dict(row) for row in rowset]),
+            "row_count": row_count,
+            "rowset_sha256": rowset_sha,
             "plans": [dict(row) for row in plans],
             "diagnostics": [_diagnostic(row) for row in diagnostic_rows],
         }
@@ -1649,6 +1841,7 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--config", required=True)
     probe.add_argument("--limit", type=int, default=1000)
     probe.add_argument("--systemic-error-threshold", type=int, default=5)
+    probe.add_argument("--target-only", action="store_true")
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
     for name in ("plan-copy", "plan-switch"):
@@ -1659,6 +1852,7 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--plan-sha256", required=True)
     copy.add_argument("--confirm", required=True)
     copy.add_argument("--config", required=True)
+    copy.add_argument("--limit", type=int, default=1000)
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)

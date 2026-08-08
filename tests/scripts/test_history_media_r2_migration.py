@@ -13,6 +13,7 @@ from scripts.history_media_r2_migration import (
     AssetIdentity,
     MIGRATION_DDL,
     SourceFactCache,
+    StreamingJsonArraySha256,
     build_candidate_keys,
     build_copy_plan,
     build_standard_target,
@@ -21,6 +22,7 @@ from scripts.history_media_r2_migration import (
     evaluate_missing_round,
     hash_body,
     history_assets_from_record,
+    normalize_asyncpg_dsn,
     replace_asset_reference,
     validate_copy_gate,
     validate_switch_gate,
@@ -48,6 +50,40 @@ def test_initial_probe_does_not_starve_pending_rows_with_deferred_failures():
     assert "m.status='pending_probe'" in source
     assert "args.recheck_deferred" in source
     assert "remaining_pending" in source
+    assert "args.target_only" in source
+    assert "target_checked_at is null" in source
+
+
+def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    assert "_stream_plan_rowset" in inspect.getsource(module._create_plan)
+    assert "_stream_plan_rowset" in inspect.getsource(module._report)
+    assert "_stream_plan_rowset" in inspect.getsource(module._execute_copy)
+    assert "limit $3" in inspect.getsource(module._execute_copy)
+
+
+def test_streaming_json_array_digest_matches_materialized_digest():
+    rows = [{"a": 1}, {"a": 2, "b": "x"}]
+    digest = StreamingJsonArraySha256()
+    for row in rows:
+        digest.add(row)
+    import hashlib
+
+    payload = json.dumps(
+        rows, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode()
+    assert digest.hexdigest() == hashlib.sha256(payload).hexdigest()
+    assert digest.count == 2
+
+
+def test_asyncpg_dsn_normalizes_web_ssl_query_parameter():
+    dsn, ssl_mode = normalize_asyncpg_dsn(
+        "postgresql+asyncpg://user:secret@db.example/prod?ssl=require&x=1"
+    )
+    assert dsn == "postgresql://user:secret@db.example/prod?x=1"
+    assert ssl_mode == "require"
 
 
 def test_migration_ledger_is_independent_and_bound_to_history_watermark():
