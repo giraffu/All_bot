@@ -102,14 +102,18 @@ with selected as (
 ), assets as (
   select id history_id, task_id, user_id, created_at, 'input' role,
          ordinality::integer - 1 ordinal, btrim(ref) original_ref
-  from selected cross join lateral unnest(string_to_array(coalesce(input_file,''), '|')) with ordinality as p(ref, ordinality)
-  where btrim(ref) <> ''
+  from selected cross join lateral (
+    select raw.ref, row_number() over(order by raw.source_ordinal) ordinality
+      from unnest(string_to_array(coalesce(input_file,''), '|'))
+        with ordinality as raw(ref, source_ordinal)
+     where btrim(raw.ref) <> ''
+  ) p
   union all
   select id, task_id, user_id, created_at, 'output', 0, btrim(output_file)
   from selected where btrim(coalesce(output_file,'')) <> ''
   union all
   select s.id, s.task_id, s.user_id, s.created_at, 'extra:' || extras.key,
-         row_number() over (partition by s.id, extras.key order by paths.path::text)::integer - 1,
+         paths.path_ordinal::integer - 1,
          trim(both '"' from paths.path::text)
   from selected s
   cross join lateral jsonb_each(
@@ -119,7 +123,8 @@ with selected as (
       else '{}'::jsonb
     end
   ) extras
-  cross join lateral jsonb_path_query(extras.value, 'strict $.**.path') paths(path)
+  cross join lateral jsonb_path_query(extras.value, 'strict $.**.path')
+    with ordinality paths(path, path_ordinal)
 )
 insert into analytics_media_asset_catalog
   (history_id, task_id, user_id, history_created_at, role, ordinal, original_ref, temperature)

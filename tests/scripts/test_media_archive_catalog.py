@@ -34,6 +34,12 @@ def test_seed_ignores_non_object_extra_outputs():
     assert "jsonb_typeof(coalesce(s.extra_outputs::jsonb, '{}'::jsonb)) = 'object'" in SEED_SQL
 
 
+def test_seed_ordinals_match_core_after_empty_inputs_and_preserve_extra_order():
+    assert "row_number() over(order by raw.source_ordinal) ordinality" in SEED_SQL
+    assert "with ordinality paths(path, path_ordinal)" in SEED_SQL
+    assert "order by paths.path::text" not in SEED_SQL
+
+
 def test_seed_exact_id_manifest_preserves_hot_ranking_contract(tmp_path):
     from scripts.media_archive_catalog import SEED_IDS_SQL, load_history_ids
 
