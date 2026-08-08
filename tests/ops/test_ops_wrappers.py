@@ -275,6 +275,23 @@ def test_runpod_bf16_canary_dry_run_uses_isolated_profile():
     assert "--execute" in output
 
 
+def test_runpod_minimax_h3_canary_dry_run_uses_manual_profile():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "canary",
+        "--profile",
+        "minimax_h3",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "runpod prod-worker canary" in output
+    assert "--profile minimax_h3" in output
+    assert "--execute" in output
+
+
 def test_runpod_rollback_delete_profile_dry_run_scales_to_zero():
     result = run_script(
         "bash",

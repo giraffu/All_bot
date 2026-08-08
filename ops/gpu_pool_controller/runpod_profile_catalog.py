@@ -528,6 +528,8 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "ltx_video"
     if value in RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES:
         return "ltx_t2v"
+    if value == "minimax_h3":
+        return "minimax_h3"
     if value in RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES:
         return "minimax_h3"
     if value in RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES:

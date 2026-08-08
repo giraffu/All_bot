@@ -21,7 +21,7 @@ WORKER_TIMEOUT_SECONDS=""
 RELEASE_ARTIFACT=""
 RELEASE_ROLLBACK_REF=""
 
-STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro face_swap scail2 ltx_video ltx_t2v pornmaster_flux2_edit_bf16)
+STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro face_swap scail2 ltx_video ltx_t2v minimax_h3 pornmaster_flux2_edit_bf16)
 
 usage() {
   cat <<'USAGE'
@@ -47,7 +47,8 @@ Actions:
 Options:
   --profile <name>            Required for mutations. One of img2img,
                               image_to_video, wan22_video_v2, i2i_pro, face_swap,
-                              scail2, ltx_video, ltx_t2v, pornmaster_flux2_edit_bf16.
+                              scail2, ltx_video, ltx_t2v, minimax_h3,
+                              pornmaster_flux2_edit_bf16.
   --slot <NN>                 Optional manual worker slot, for example 01.
   --count <N>                 Required for add.
   --desired <N>               Required for scale.
@@ -73,7 +74,7 @@ USAGE
 
 is_valid_profile() {
   case "$1" in
-    img2img|image_to_video|wan22_video_v2|i2i_pro|face_swap|scail2|ltx_video|ltx_t2v|pornmaster_flux2_edit_bf16) return 0 ;;
+    img2img|image_to_video|wan22_video_v2|i2i_pro|face_swap|scail2|ltx_video|ltx_t2v|minimax_h3|pornmaster_flux2_edit_bf16) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -222,6 +223,7 @@ rollout_artifact() {
     scail2) image_env="RUNPOD_IMAGE_NAME_SCAIL2" ;;
     ltx_video) image_env="RUNPOD_IMAGE_NAME_LTX_VIDEO" ;;
     ltx_t2v) image_env="RUNPOD_IMAGE_NAME_LTX_T2V" ;;
+    minimax_h3) image_env="RUNPOD_IMAGE_NAME_MINIMAX_H3" ;;
     pornmaster_flux2_edit_bf16) image_env="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT" ;;
   esac
   if [ "$MODE" != "execute" ]; then

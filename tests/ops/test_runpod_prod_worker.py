@@ -24,6 +24,8 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+    RUNPOD_MINIMAX_H3_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
@@ -60,6 +62,10 @@ from ops.gpu_pool_controller.runpod_prod_worker import (
     apply_prod_worker_selection_to_env,
     load_env_file_for_prod_worker,
 )
+from ops.gpu_pool_controller.runpod_profile_catalog import (
+    RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES,
+    RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX,
+)
 
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
@@ -67,6 +73,9 @@ PUBLIC_I2I_PRO_GHCR_IMAGE = (
 PUBLIC_SCAIL2_GHCR_IMAGE = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
 PUBLIC_LTX_VIDEO_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 PUBLIC_LTX_T2V_GHCR_IMAGE = RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX + "main-sha"
+PUBLIC_MINIMAX_H3_GHCR_IMAGE = (
+    RUNPOD_PUBLIC_MINIMAX_H3_IMAGE_PREFIX.removesuffix(":") + "@sha256:" + "e" * 64
+)
 PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE = (
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX + "20260701-pornmaster-flux2-edit"
 )
@@ -141,6 +150,9 @@ class FakeRunPodProvider:
             ),
             image_name_ltx_video=(
                 self.settings.image_name_ltx_video or PUBLIC_LTX_VIDEO_GHCR_IMAGE
+            ),
+            image_name_minimax_h3=(
+                self.settings.image_name_minimax_h3 or PUBLIC_MINIMAX_H3_GHCR_IMAGE
             ),
             image_name_pornmaster_flux2_edit=(
                 self.settings.image_name_pornmaster_flux2_edit
@@ -359,6 +371,7 @@ def _settings(**overrides) -> RunPodSettings:
         "image_name_scail2": PUBLIC_SCAIL2_GHCR_IMAGE,
         "image_name_ltx_video": PUBLIC_LTX_VIDEO_GHCR_IMAGE,
         "image_name_ltx_t2v": PUBLIC_LTX_T2V_GHCR_IMAGE,
+        "image_name_minimax_h3": PUBLIC_MINIMAX_H3_GHCR_IMAGE,
         "image_name_pornmaster_flux2_edit": PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
     }
@@ -833,6 +846,52 @@ def test_prod_worker_render_ltx_t2v_is_registered_but_disabled_by_default():
     assert payload["render"]["pool_runtime_profile"] == "ltx_t2v"
     assert payload["render"]["model_manifest_key"] == RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY
     assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_T2V_CONTAINER_DISK_GB
+    assert provider.create_calls == 0
+
+
+def test_prod_worker_render_minimax_h3_uses_fixed_release_profile_defaults():
+    agent_id = prod_agent_id_from_slot("01", profile="minimax_h3")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_minimax_h3=PUBLIC_MINIMAX_H3_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_minimax_h3=RUNPOD_MINIMAX_H3_MODEL_PREFIX,
+            model_manifest_key_minimax_h3=RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY,
+        )
+    )
+    payload = RunPodProdWorkerRunner(
+        provider,
+        RunPodProdWorkerOptions(
+            action="render",
+            profile="minimax_h3",
+            task_type="minimax_h3_t2v",
+            agent_id=agent_id,
+            quiet=True,
+        ),
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "minimax_h3"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-minimax-h3-manual-01"
+    assert payload["render"]["imageName"] == PUBLIC_MINIMAX_H3_GHCR_IMAGE
+    assert payload["render"]["agent_id"] == "runpod_prod_minimax_h3_manual_01"
+    assert payload["render"]["gpu_type_ids"] == ["NVIDIA GeForce RTX 5090"]
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_MINIMAX_H3_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "minimax_h3"
+    assert payload["render"]["model_prefix"] == RUNPOD_MINIMAX_H3_MODEL_PREFIX
+    assert (
+        payload["render"]["model_manifest_key"]
+        == RUNPOD_MINIMAX_H3_MODEL_MANIFEST_KEY
+    )
+    assert payload["request"]["json"]["env"]["COMFYUI_DIR"] == "/opt/ComfyUI"
+    assert (
+        payload["request"]["json"]["env"]["RUNPOD_MODEL_TARGET_DIR"]
+        == "/workspace/ComfyUI/models"
+    )
+    assert payload["render"]["sshd_enabled"] == "false"
     assert provider.create_calls == 0
 
 

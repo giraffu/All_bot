@@ -898,6 +898,7 @@ def build_parser() -> argparse.ArgumentParser:
             "scail2",
             "ltx_video",
             "ltx_t2v",
+            "minimax_h3",
             "pornmaster_flux2_edit_bf16",
         ),
         default=None,
