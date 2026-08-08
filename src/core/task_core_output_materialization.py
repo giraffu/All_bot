@@ -49,7 +49,7 @@ async def materialize_successful_task_output(
             output_file = await to_thread_func(
                 user_logger.save_output_image,
                 media_bytes,
-                registry_task_id,
+                backend_task_id,
                 file_ext,
             )
     else:

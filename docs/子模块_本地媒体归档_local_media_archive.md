@@ -186,6 +186,29 @@ R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立
 同一 campaign、plan SHA 与 inventory SHA 的 pending 记录，不重新全量枚举，也不
 扩大到快照后的对象。本入口默认不执行，生产执行仍需单独取得精确 SHA 授权。
 
+数字用户目录与 flat-root 的一次性治理统一使用
+`scripts/r2_media_governance.py`。它验收已有 `user-data-prod` inventory 的
+integrity、文件 SHA-256、mtime、对象数和字节数，再从同一快照原子派生私有 SQLite
+治理索引，不再次 LIST R2。索引保存 object key/size/SHA、对象分类、双任务 ID、
+角色/序号、引用、durable target、迁移/清理状态和错误。只有快照在生成后发生过
+生产删除或验收失败时，才先报告失效原因并调用 inventory 原子刷新入口。
+
+`plan-numeric` 只使用 History 与持久任务 ledger 的明确映射。输入规划到
+`task-inputs/{registry_task_id}/{ordinal}.{ext}`；主/附加输出只有取得明确
+`backend_task_id` 后才规划到 `task-results/.../primary` 与 `extra-{ordinal}`。
+缺 ID、角色、序号、重复冲突或无数据库引用一律 unresolved。dry-run 对源和已存在
+目标执行 HEAD、大小与完整 SHA-256，分别报告源缺失、目标一致和目标冲突；不复制、
+不切换数据库引用，复制和引用切换需要后续独立授权。
+
+`plan-flat-root` 只选择不含 `/` 的 key，先按 size 建 durable 候选集；可信 SHA
+metadata 只用于候选排序，最终资格仍要求源与 `task-inputs/`、`task-results/`、
+`history/` durable twin 完整回读 SHA-256 一致。History/Gallery/收藏/公开、模板、
+归档映射、正式角色资产和活跃 Redis 任务任一引用均 blocked；未知类型、数字目录、
+`web_uploads/`、`temps/` 和 `template-submissions/` 不进入 campaign。冻结 campaign
+记录 batch ID、inventory SHA/mtime、精确双 key、大小、双 SHA、引用审计和完整
+campaign SHA。删除门禁独立使用 `R2_FLAT_ROOT_CLEANUP_ENABLED` 和绑定精确 campaign
+SHA 的确认值，默认关闭；本阶段只生成 dry-run/campaign，不执行删除。
+
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
 复制并对源/目标完整 SHA-256 验证，使用 0600 SQLite 断点状态；真实迁移使用独立
