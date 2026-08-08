@@ -175,6 +175,46 @@ def test_executor_success_downloads_result_and_pop_evidence(tmp_path):
     ]
 
 
+def test_bf16_executor_accepts_stage1_asset_without_waiting_for_face_swap(tmp_path):
+    config = _config(tmp_path, task_type="pornmaster_flux2_edit_bf16")
+    requests: list[str] = []
+
+    def http_json(method, url, **kwargs):
+        requests.append(url)
+        if url == "https://web.example/tasks/generate":
+            return {"task_id": "task-bf16"}
+        if url == "https://central.example/status/task-bf16":
+            return {
+                "status": "done",
+                "task_type": "pornmaster_flux2_edit_bf16",
+                "result_path": "task-results/task-bf16/primary.png",
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    executor = RunPodCloudTestCanaryExecutor(
+        config,
+        http_json_func=http_json,
+        http_request_func=lambda *args, **kwargs: {"status": 200, "raw": b""},
+        web_auth_headers_func=lambda: {"Authorization": "Bearer web"},
+        fetch_workers_func=lambda: [],
+        sleep_func=lambda seconds: None,
+        phase_func=lambda *args: None,
+    )
+
+    result = executor.run_task_case(
+        RunPodCloudTestCanaryCaseBuilder(config).pornmaster_flux2_edit_bf16_task_cases(
+            "ref.png"
+        )[0],
+        {"agent_id": "runpod-cloud-test"},
+        {},
+    )
+
+    assert result["central_status"] == "done"
+    assert result["result_path"] == "task-results/task-bf16/primary.png"
+    assert result["terminal_scope"] == "central_stage"
+    assert "https://web.example/tasks/task-bf16/result" not in requests
+
+
 def test_executor_rejects_central_task_type_mismatch(tmp_path):
     config = _config(tmp_path, task_type="wan22_aio_video")
 

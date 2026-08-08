@@ -344,6 +344,10 @@ workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `di
 RTX 4090 与 `--lowvram`。两者都可通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 手动管理，也都进入
 Dashboard autoscaler；BF16 默认按单任务 30 秒、清空阈值 30 分钟复用 add/down/restart/enable、锁定跳过、
 最短生命周期和冷却规则。用户逻辑类型 `free_edit_v2_5` 按输入数映射到 BF16 单图/双图内部执行类型，自由P图 v3 只映射单图；双图复用既有 multiple-images workflow 并把节点 9 切到 BF16 UNet。v2.5 单阶段直出，v3 再续接 `face_swap_v2`，该阶段包含在 v3 的 5 灵石根任务价格内、不二次扣费，因此不复制 workflow、模型目录或 GPU profile。v2 canary 与 BF16 canary 都串行验证 single/multi 两单。
+BF16 RunPod disabled canary 的镜像资格以目标 BF16 stage 的 Central `done`、
+`task-results/` 持久结果和 asset-contract 计数为准；Web v3 随后派生的
+`face_swap_v2` 属于另一执行池，不得因该池 disabled/error 而误判 BF16 镜像失败，
+也不得为通过 BF16 canary 临时启用旧 legacy face-swap Worker。
 
 ### 5. LAN `all` 聚合镜像
 
