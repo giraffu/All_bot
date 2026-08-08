@@ -79,6 +79,29 @@ def test_numeric_migration_plan_only_maps_unambiguous_references(tmp_path):
     assert stored["plan_sha256"] == plan["plan_sha256"]
 
 
+def test_numeric_plan_bounds_unresolved_details_in_frozen_json(tmp_path):
+    inventory = tmp_path / "inventory.sqlite3"
+    db = sqlite3.connect(inventory)
+    db.execute(
+        "create table objects(key text primary key,size integer not null,"
+        "etag text not null,last_modified text not null) without rowid"
+    )
+    db.executemany(
+        "insert into objects values(?,?,?,?)",
+        [(f"7/input_images/{i}.png", 1, "etag", "2026-08-01") for i in range(150)],
+    )
+    db.commit()
+    db.close()
+    index = tmp_path / "governance.sqlite3"
+    build_governance_index(inventory, index)
+
+    plan = freeze_numeric_migration_plan(index, [], tmp_path / "plan.json")
+
+    assert plan["unresolved_count"] == 150
+    assert plan["unresolved_bytes"] == 150
+    assert len(plan["unresolved_samples"]) == 100
+
+
 def test_flat_root_prefilter_is_size_only_and_excludes_non_flat_keys(tmp_path):
     inventory = tmp_path / "inventory.sqlite3"
     index = tmp_path / "governance.sqlite3"

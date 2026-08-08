@@ -198,7 +198,9 @@ integrity、文件 SHA-256、mtime、对象数和字节数，再从同一快照�
 `backend_task_id` 后才规划到 `task-results/.../primary` 与 `extra-{ordinal}`。
 缺 ID、角色、序号、重复冲突或无数据库引用一律 unresolved。dry-run 对源和已存在
 目标执行 HEAD、大小与完整 SHA-256，分别报告源缺失、目标一致和目标冲突；不复制、
-不切换数据库引用，复制和引用切换需要后续独立授权。
+不切换数据库引用，复制和引用切换需要后续独立授权。全量 unresolved 状态与错误
+保存在 SQLite；冻结 JSON 只保存计数、字节和最多 100 条诊断样本，避免百万级遗留
+对象导致 planner 内存失控。
 
 `plan-flat-root` 只选择不含 `/` 的 key，先按 size 建 durable 候选集；可信 SHA
 metadata 只用于候选排序，最终资格仍要求源与 `task-inputs/`、`task-results/`、
