@@ -1049,7 +1049,13 @@ async def _probe(args: argparse.Namespace) -> None:
         )
         if not run:
             raise RuntimeError("unknown migration run")
-        phase = "probe-target" if args.target_only else "probe"
+        phase = (
+            "probe-target"
+            if args.target_only
+            else "probe-receipts"
+            if args.receipt_only
+            else "probe"
+        )
         await conn.execute(
             "update analytics_history_media_migration_runs set status='running',phase=$2,error=null,updated_at=now() where id=$1",
             run_id,
@@ -1061,6 +1067,18 @@ async def _probe(args: argparse.Namespace) -> None:
                      where m.run_id=$1 and m.target_checked_at is null
                        and m.status in ('pending_probe','source_offline','failed')
                      order by m.history_id,m.role,m.ordinal limit $2""",
+                run_id,
+                args.limit,
+            )
+        elif args.receipt_only:
+            rows = await conn.fetch(
+                """select m.* from analytics_history_media_r2_migrations m
+                     join analytics_media_asset_catalog a on a.id=m.catalog_asset_id
+                     join analytics_media_blobs b on b.sha256=a.sha256
+                    where m.run_id=$1 and m.target_checked_at is not null
+                      and m.status in ('pending_probe','source_offline','failed')
+                      and a.status='archived_verified'
+                    order by m.history_id,m.role,m.ordinal limit $2""",
                 run_id,
                 args.limit,
             )
@@ -1090,10 +1108,12 @@ async def _probe(args: argparse.Namespace) -> None:
             rows = []
         for row in rows:
             target_key = str(row["target_key"])
-            target_head = await asyncio.to_thread(
-                _head_s3, target_client, BUCKET, target_key
-            )
-            target_sha = None
+            target_head = None
+            target_sha = row["target_sha256"]
+            if not args.receipt_only:
+                target_head = await asyncio.to_thread(
+                    _head_s3, target_client, BUCKET, target_key
+                )
             if target_head:
                 target_sha, consumed = await _fact_digest(
                     conn,
@@ -1224,7 +1244,12 @@ async def _probe(args: argparse.Namespace) -> None:
                             str(receipt["nas_key"]),
                             str(exc)[:500],
                         )
-            for source in sources:
+                        if args.receipt_only:
+                            raise RuntimeError(
+                                "SYSTEMIC_NAS_RECEIPT_QUERY_FAILURE"
+                            ) from exc
+            sources_to_probe = [] if args.receipt_only else sources
+            for source in sources_to_probe:
                 if found:
                     break
                 source_name = str(source["name"])
@@ -1362,7 +1387,28 @@ async def _probe(args: argparse.Namespace) -> None:
                     run_id,
                 )
             )
+            remaining_receipts = None
+        elif args.receipt_only:
+            remaining_receipts = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations m
+                         join analytics_media_asset_catalog a on a.id=m.catalog_asset_id
+                         join analytics_media_blobs b on b.sha256=a.sha256
+                        where m.run_id=$1 and m.target_checked_at is not null
+                          and m.status in ('pending_probe','source_offline','failed')
+                          and a.status='archived_verified'""",
+                    run_id,
+                )
+            )
+            remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and status='pending_probe'""",
+                    run_id,
+                )
+            )
         else:
+            remaining_receipts = None
             remaining = int(
                 await conn.fetchval(
                     """select count(*) from analytics_history_media_r2_migrations
@@ -1375,7 +1421,9 @@ async def _probe(args: argparse.Namespace) -> None:
                  phase=$4,sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
             run_id,
             bytes_read,
-            "completed" if remaining == 0 else "running",
+            "completed"
+            if remaining == 0 and not args.receipt_only
+            else "running",
             phase,
         )
         print(
@@ -1385,6 +1433,8 @@ async def _probe(args: argparse.Namespace) -> None:
                     "probed": probed_count,
                     "remaining_pending": remaining,
                     "target_only": args.target_only,
+                    "receipt_only": args.receipt_only,
+                    "remaining_receipts": remaining_receipts,
                     "sha_bytes_read": bytes_read,
                 }
             )
@@ -1921,7 +1971,9 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--config", required=True)
     probe.add_argument("--limit", type=int, default=1000)
     probe.add_argument("--systemic-error-threshold", type=int, default=5)
-    probe.add_argument("--target-only", action="store_true")
+    probe_mode = probe.add_mutually_exclusive_group()
+    probe_mode.add_argument("--target-only", action="store_true")
+    probe_mode.add_argument("--receipt-only", action="store_true")
     probe.add_argument("--target-concurrency", type=int, default=32)
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)

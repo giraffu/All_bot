@@ -55,6 +55,28 @@ def test_initial_probe_does_not_starve_pending_rows_with_deferred_failures():
     assert "target_checked_at is null" in source
 
 
+def test_receipt_only_probe_is_fail_closed_and_skips_legacy_sources():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._probe)
+    assert "args.receipt_only" in source
+    assert "a.status='archived_verified'" in source
+    assert "SYSTEMIC_NAS_RECEIPT_QUERY_FAILURE" in source
+    assert "if args.receipt_only" in source
+
+
+def test_probe_cli_exposes_receipt_only_mode():
+    script = Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "probe", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--receipt-only" in result.stdout
+
+
 def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
     import inspect
     import scripts.history_media_r2_migration as module

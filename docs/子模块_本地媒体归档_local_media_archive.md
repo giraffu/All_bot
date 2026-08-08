@@ -214,6 +214,12 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 不存在的行只记录已检查时间并保留待恢复状态，不能借此形成 missing 结论。完整来源
 恢复仍在系统错误阈值处暂停。target-only 在单批内按 target key 去重，并以
 `--target-concurrency` 控制 1–128 路 HEAD/完整读取；数据库结果仍串行持久化。
+标准目标检查完成后，`probe --receipt-only` 可只消费本地目录中已有
+`archived_verified` SHA receipt 的资产：它不重复检查标准目标，也不访问离线的遗留
+来源，而是对 receipt 指向的 NAS 对象执行 HEAD、大小和完整 SHA-256 复核。验证成功
+的资产可进入 `copy_required`；receipt 缺失、变化或 NAS 查询失败必须 blocked/paused，
+且该模式不会把没有 receipt 的资产累计为 missing round。其余资产仍需等待全部启用
+来源恢复后运行完整 `probe`。
 
 `plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
 分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
