@@ -15,6 +15,7 @@ from dashboard.backend.schemas import RunPodScaleRequest, RunPodWorkerActionRequ
 from dashboard.backend.services.runpod_admin_commands import (
     RUNPOD_PROFILE_OPTIONS,
     RunPodAdminCommandBuilder,
+    asset_contract_verified_profiles,
 )
 from dashboard.backend.services.runpod_admin_operation import (
     RunPodAdminOperation,
@@ -187,6 +188,18 @@ def _normalize_profile_or_422(profile: str) -> str:
     return _command_builder.normalize_profile_or_422(profile)
 
 
+def _require_asset_contract_profile(profile: str) -> str:
+    if profile not in asset_contract_verified_profiles():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"RunPod profile {profile} is unavailable until an exact-digest "
+                "asset-contract canary is verified"
+            ),
+        )
+    return profile
+
+
 async def _default_manual_add_plan(
     *,
     profile: str,
@@ -249,7 +262,13 @@ def _agent_selection_or_422(
 
 
 async def get_runpod_profiles_payload() -> dict[str, Any]:
-    return {"profiles": list(RUNPOD_PROFILE_OPTIONS)}
+    verified = asset_contract_verified_profiles()
+    return {
+        "profiles": [
+            option for option in RUNPOD_PROFILE_OPTIONS
+            if str(option["profile"]) in verified
+        ]
+    }
 
 
 async def get_runpod_operations_payload(
@@ -394,7 +413,7 @@ async def start_runpod_scale_payload(
     normalized_items: list[tuple[str, int]] = []
     seen_profiles: set[str] = set()
     for item in request.items:
-        profile = _normalize_profile_or_422(item.profile)
+        profile = _require_asset_contract_profile(_normalize_profile_or_422(item.profile))
         if profile in seen_profiles:
             raise HTTPException(
                 status_code=422,
@@ -509,6 +528,7 @@ async def enable_runpod_worker_payload(
         agent_id,
         max_manual_slots=max_manual_slots,
     )
+    _require_asset_contract_profile(profile)
     command = _base_command("enable", profile=profile, slot=slot)
     command.append("--execute")
     operation = await _register_operation(
@@ -535,6 +555,7 @@ async def restart_runpod_worker_payload(
         agent_id,
         max_manual_slots=max_manual_slots,
     )
+    _require_asset_contract_profile(profile)
     command = _base_command("restart", profile=profile, slot=slot)
     command.append("--execute")
     operation = await _register_operation(
@@ -583,7 +604,9 @@ async def start_runpod_autoscaler_add_operation(
     spawn_task_func=None,
 ) -> RunPodAdminOperation:
     _sync_runtime_paths()
-    normalized_profile = _normalize_profile_or_422(profile)
+    normalized_profile = _require_asset_contract_profile(
+        _normalize_profile_or_422(profile)
+    )
     active_operation = await _active_add_operation_for_profile(normalized_profile)
     if active_operation is not None:
         raise HTTPException(
@@ -661,7 +684,9 @@ async def start_runpod_autoscaler_enable_operation(
     spawn_task_func=None,
 ) -> RunPodAdminOperation:
     _sync_runtime_paths()
-    normalized_profile = _normalize_profile_or_422(profile)
+    normalized_profile = _require_asset_contract_profile(
+        _normalize_profile_or_422(profile)
+    )
     max_manual_slots = _default_prod_max_manual_slots()
     command = _base_command("enable", profile=normalized_profile, slot=slot)
     command.append("--execute")
@@ -687,7 +712,9 @@ async def start_runpod_autoscaler_restart_operation(
     spawn_task_func=None,
 ) -> RunPodAdminOperation:
     _sync_runtime_paths()
-    normalized_profile = _normalize_profile_or_422(profile)
+    normalized_profile = _require_asset_contract_profile(
+        _normalize_profile_or_422(profile)
+    )
     max_manual_slots = _default_prod_max_manual_slots()
     command = _base_command("restart", profile=normalized_profile, slot=slot)
     command.append("--execute")

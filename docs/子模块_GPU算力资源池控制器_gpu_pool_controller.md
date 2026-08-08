@@ -56,6 +56,13 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   `scripts/runtime_env_contract.py` 在生产服务配置激活前执行该校验；缺少新
   profile、残留已退役 profile 或 mutable tag 均 fail closed，不能等到
   `/api/runpod/scale` 才暴露。
+- `RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES` 只登记已在 test 用对应 exact digest
+  完成 asset-contract canary 的 Dashboard canonical profile。Dashboard 仅展示
+  该 allowlist，并在手动或 autoscaler 的创建、扩容、启用和重启入口再次
+  fail closed；禁用、排空和 down 不受此门禁限制，以便安全收敛旧 runtime。
+  allowlist 缺失、为空或包含未知 profile 时管理入口返回 `503`，不得退回完整
+  catalog。精确镜像 pin 与 canary allowlist 是两项独立证据，只有 pin 不能视为
+  canary 已通过。
 - 旧 `face_swap` 只是 `i2i_pro` 的兼容任务 alias，复用
   `RUNPOD_IMAGE_NAME_I2I_PRO`，不得在 Dashboard release pins 中保留独立
   `RUNPOD_IMAGE_NAME_FACE_SWAP`。
