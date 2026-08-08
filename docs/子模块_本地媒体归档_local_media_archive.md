@@ -229,6 +229,13 @@ History 引用。`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`
 事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
+默认 `plan-copy` 在任何 `pending_probe` 或 paused run 上继续 fail-closed。若启用来源
+长期离线，但已有一部分资产通过标准目标或 NAS receipt 得到完整 SHA 事实，可显式用
+`plan-copy --allow-incomplete` 冻结部分复制计划；manifest 必须记录
+`partial_scope=true`、`pending_at_freeze` 和 `run_status_at_freeze`，同时 rowset SHA 仍绑定
+该 run 的全部账本行。冻结后到复制完成前不得继续 probe；执行器仍只消费带同一精确
+plan SHA 的 `copy_required` 行，未解析行不进入复制或 missing 结论。paused run 不能使用
+该模式。
 plan/report 与执行前 rowset 复核都使用数据库 cursor 增量计算 canonical JSON SHA，
 不把完整账本载入内存；copy 执行每次还受显式 limit 约束，重启只继续未完成行。
 

@@ -1476,7 +1476,9 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     run_id,
                 )
             )
-            if remaining or run["status"] == "paused":
+            if run["status"] == "paused" or (
+                remaining and not args.allow_incomplete
+            ):
                 raise RuntimeError(
                     f"PROBE_NOT_COMPLETE: pending={remaining} run_status={run['status']}"
                 )
@@ -1497,6 +1499,9 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 "counts": dict(sorted(counts.items())),
                 "bytes": dict(sorted(byte_counts.items())),
                 "sha_bytes_read": int(run["sha_bytes_read"]),
+                "pending_at_freeze": remaining,
+                "run_status_at_freeze": str(run["status"]),
+                "partial_scope": bool(remaining),
                 "diagnostics": diagnostics,
                 "rowset_sha256": rowset_sha,
             }
@@ -1977,10 +1982,13 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--target-concurrency", type=int, default=32)
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
-    for name in ("plan-copy", "plan-switch"):
-        command = commands.add_parser(name)
-        command.add_argument("--run-id", required=True)
-        command.add_argument("--output", required=True)
+    plan_copy = commands.add_parser("plan-copy")
+    plan_copy.add_argument("--run-id", required=True)
+    plan_copy.add_argument("--output", required=True)
+    plan_copy.add_argument("--allow-incomplete", action="store_true")
+    plan_switch = commands.add_parser("plan-switch")
+    plan_switch.add_argument("--run-id", required=True)
+    plan_switch.add_argument("--output", required=True)
     copy = commands.add_parser("execute-copy")
     copy.add_argument("--plan-sha256", required=True)
     copy.add_argument("--confirm", required=True)
