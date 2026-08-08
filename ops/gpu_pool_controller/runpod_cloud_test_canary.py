@@ -90,7 +90,32 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.ltx_video_task_cases(image_object_key)
         if profile.task_type == "ltx_t2v":
             return self.ltx_t2v_task_cases(image_object_key)
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return self.pornmaster_flux2_edit_bf16_task_cases(image_object_key)
         return self.img2img_task_cases(image_object_key)
+
+    def pornmaster_flux2_edit_bf16_task_cases(
+        self, image_object_key: str
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "pornmaster_flux2_edit_bf16_canary",
+                "expected_central_task_type": "pornmaster_flux2_edit_bf16",
+                "payload": {
+                    "task_type": "pornmaster_flux2_edit_bf16",
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "seed": 20260712,
+                    },
+                    "prompt": self.config.prompt
+                    or "precise natural image edit, high quality",
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+                "result_kind": "image",
+            }
+        ]
 
     def img2img_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         base_inputs = {
