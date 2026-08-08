@@ -171,8 +171,10 @@ runner 始终先生成冻结计划，再把同一计划 SHA 交给 execute；自
 `task-inputs/` 或 `task-results/` durable twin；inventory 的 size/ETag 只作候选
 预筛，进入冻结 campaign 前必须逐对象完成双 HEAD、大小和完整 SHA-256 验证，且
 History 全角色、Gallery、收藏、公开、模板/归档/角色资产和活跃任务引用均为空。
-未知 staging、`web_uploads/`、`temps/`、`template-submissions/`、flat-root、单份
-内容和探测失败只进入排除摘要，不进入 `objects`。冻结文件记录完整对象清单、
+未知 staging、`web_uploads/`、`temps/`、`template-submissions/`、flat-root 和单份
+内容只进入排除摘要，不进入 `objects`。逐对象 404、HEAD/大小/SHA 状态变化进入
+`blocked_objects` 并计入 blocked 对象数/字节；数据库、Redis、R2 鉴权/网络等系统性
+探测错误直接 fail closed，不得生成看似成功的不完整计划。冻结文件记录完整对象清单、
 campaign/batch ID、inventory SHA、对象数、字节和 `plan_sha256`；快照之后新增对象
 天然不属于该 campaign。
 

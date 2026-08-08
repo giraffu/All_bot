@@ -46,6 +46,10 @@ KNOWN_STAGING_PREFIXES = (
 )
 
 
+class CandidateStateChanged(RuntimeError):
+    """An individual object no longer matches the frozen inventory candidate."""
+
+
 def _known_staging_kind(key: str) -> str | None:
     for prefix, kind in (
         ("staging/user-uploads/", "input"),
@@ -237,16 +241,28 @@ async def verify_campaign_candidates(
                 io(_head_size, client, bucket, item.durable_key),
             )
             if source_size != item.byte_size or durable_size != item.byte_size:
-                raise RuntimeError("HEAD_SIZE_MISMATCH")
+                raise CandidateStateChanged("HEAD_SIZE_MISMATCH")
             source_sha, durable_sha = await asyncio.gather(
                 io(_sha256_object, client, bucket, item.key),
                 io(_sha256_object, client, bucket, item.durable_key),
             )
             if source_sha != durable_sha:
-                raise RuntimeError("SHA256_MISMATCH")
+                raise CandidateStateChanged("SHA256_MISMATCH")
             return {**asdict(item), "sha256": source_sha}, None
-        except Exception as exc:  # Object probes are reported and excluded.
-            return None, {"key": item.key, "error": type(exc).__name__}
+        except CandidateStateChanged as exc:
+            return None, {
+                "key": item.key,
+                "byte_size": item.byte_size,
+                "error": str(exc),
+            }
+        except ClientError as exc:
+            if _client_error_code(exc) not in {"404", "NoSuchKey", "NotFound"}:
+                raise
+            return None, {
+                "key": item.key,
+                "byte_size": item.byte_size,
+                "error": "OBJECT_MISSING",
+            }
 
     verified: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
@@ -276,6 +292,26 @@ def build_campaign_plan(
 ) -> dict[str, Any]:
     campaign_id = str(uuid.uuid4())
     blocked_keys = set().union(*blocked.values()) if blocked else set()
+    candidates_by_key = {item.key: item for item in candidates}
+    blocked_objects: dict[str, dict[str, Any]] = {}
+    for category, keys in sorted(blocked.items()):
+        for key in keys:
+            candidate = candidates_by_key[key]
+            row = blocked_objects.setdefault(
+                key,
+                {"key": key, "byte_size": candidate.byte_size, "reasons": []},
+            )
+            row["reasons"].append(f"reference:{category}")
+    for failure in probe_failures:
+        row = blocked_objects.setdefault(
+            str(failure["key"]),
+            {
+                "key": str(failure["key"]),
+                "byte_size": int(failure.get("byte_size") or 0),
+                "reasons": [],
+            },
+        )
+        row["reasons"].append(f"probe:{failure['error']}")
     plan: dict[str, Any] = {
         "campaign_id": campaign_id,
         "batch_id": campaign_id,
@@ -299,6 +335,11 @@ def build_campaign_plan(
         },
         "probe_failure_count": len(probe_failures),
         "probe_failures": probe_failures,
+        "blocked_count": len(blocked_objects),
+        "blocked_bytes": sum(
+            int(item["byte_size"]) for item in blocked_objects.values()
+        ),
+        "blocked_objects": [blocked_objects[key] for key in sorted(blocked_objects)],
         "campaign_object_count": len(verified),
         "campaign_bytes": sum(int(item["byte_size"]) for item in verified),
         "staging": staging_summary or {},
