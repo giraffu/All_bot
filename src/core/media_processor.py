@@ -8,7 +8,7 @@ import tempfile
 from io import BytesIO
 from PIL import Image, ImageOps
 
-from src.core.media_paths import build_flat_r2_compatibility_key, resolve_storage_object
+from src.core.media_paths import resolve_storage_object
 from src.core.task_core_service_providers import get_task_core_storage_service
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ async def generate_and_upload_thumbnail(
     else:
         thumb_object_name = f"{base_path}_thumb.webp"
 
-    target_r2_key = r2_object_name or build_flat_r2_compatibility_key(thumb_object_name)
+    target_r2_key = r2_object_name or thumb_object_name
 
     # If the thumbnail already exists in MinIO, skip regeneration but still补齐 R2 同步。
     try:

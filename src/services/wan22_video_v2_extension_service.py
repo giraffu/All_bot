@@ -597,7 +597,7 @@ async def stitch_histories_and_create_history(
 ) -> Wan22StitchedHistoryResult:
     stitched_video = await stitch_history_videos(histories)
     stitched_task_id = f"wan22_chain_{uuid.uuid4().hex[:24]}"
-    output_object_name = f"{user_id}/output_images/{stitched_task_id}.mp4"
+    output_object_name = f"task-results/{stitched_task_id}/primary.mp4"
     output_file = storage.upload_bytes(
         stitched_video,
         output_object_name,

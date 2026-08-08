@@ -49,7 +49,7 @@ async def persist_and_send_qqcc_video_chain_result(
     output_file = await asyncio.to_thread(
         storage.upload_bytes,
         video_bytes,
-        f"{internal_user_id}/output_images/{task_id}.mp4",
+        f"task-results/{task_id}/primary.mp4",
         content_type="video/mp4",
     )
     if not output_file:

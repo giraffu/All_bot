@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+import uuid
 
 from asgi_correlation_id import correlation_id
 from sqlalchemy import select, text
@@ -9,6 +10,10 @@ from sqlalchemy import select, text
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
 from .services.storage import storage
+from shared.r2_retention_contract import (
+    build_staged_user_upload_key,
+    build_task_result_key,
+)
 
 logger = logging.getLogger("bot")
 
@@ -70,8 +75,9 @@ class UserLogger:
             return ""
 
         filename = src.name
-        # Object key: user_id/input_images/filename
-        object_name = f"{self.user_id}/input_images/{filename}"
+        object_name = build_staged_user_upload_key(
+            user_id=self.user_id, upload_id=uuid.uuid4().hex, filename=filename
+        )
 
         # Upload to MinIO
         result = storage.upload_file(src_path, object_name)
@@ -96,10 +102,10 @@ class UserLogger:
         """
         # Clean extension (remove dot if present)
         ext = extension.lstrip(".")
-        filename = f"{task_id}.{ext}"
-
-        # Object key: user_id/output_images/filename
-        object_name = f"{self.user_id}/output_images/{filename}"
+        filename = f"primary.{ext}"
+        object_name = build_task_result_key(
+            task_id=task_id, source_name=filename, role="primary"
+        )
 
         # Upload to MinIO
         content_type = "video/mp4" if ext in ["mp4", "webm"] else "image/png"
