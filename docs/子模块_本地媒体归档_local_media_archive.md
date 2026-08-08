@@ -210,6 +210,9 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 `confirmed_lost`，生产 History 不写“丢失”且保留原引用。
 首次 probe 只消费 `pending_probe`，不会被较早的 missing/offline 行饿死；这些延迟
 状态仅在显式 `--recheck-deferred` 且达到最短 24 小时后重新探测。
+遗留来源系统性离线时可先用 `probe --target-only` 对标准目标做完整 SHA 验证；目标
+不存在的行只记录已检查时间并保留待恢复状态，不能借此形成 missing 结论。完整来源
+恢复仍在系统错误阈值处暂停。
 
 `plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
 分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
@@ -219,6 +222,8 @@ History 引用。`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`
 事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
+plan/report 与执行前 rowset 复核都使用数据库 cursor 增量计算 canonical JSON SHA，
+不把完整账本载入内存；copy 执行每次还受显式 limit 约束，重启只继续未完成行。
 
 各阶段固定为 `seed`、`probe`、`plan-copy`、`execute-copy`、`plan-switch`、
 `execute-switch`、`report`；除首次 `seed` 外均显式传 run ID 或 plan SHA。
