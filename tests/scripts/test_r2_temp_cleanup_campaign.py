@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from scripts.r2_temp_cleanup_campaign import (
     validate_campaign_execute_gate,
     verify_campaign_candidates,
 )
+from scripts import r2_temp_cleanup_campaign as campaign
 
 
 def _inventory():
@@ -422,3 +424,10 @@ def test_campaign_plan_treats_object_404_as_blocked_not_systemic():
     )
     assert verified == []
     assert failures[0]["error"] == "OBJECT_MISSING"
+
+
+def test_history_campaign_reference_query_normalizes_staging_before_equality_join():
+    source = inspect.getsource(campaign._history_campaign_references)
+    assert "substring(" in source
+    assert "staging/(user-uploads|worker-results)" in source
+    assert "like '%/'||candidate.key" not in source
