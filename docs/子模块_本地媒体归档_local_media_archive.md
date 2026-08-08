@@ -26,6 +26,7 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 - Worker：`scripts/media_archive_worker.py`
 - 历史来源探测：`scripts/media_archive_probe.py`
 - 目录初始化/切片：`scripts/media_archive_catalog.py`
+- History 行驱动 R2 迁移账本：`scripts/history_media_r2_migration.py`
 - reconciliation：`scripts/reconcile_media_archive_outbox.py`
 - 热集恢复 reconciliation：`scripts/reconcile_media_archive_restore.py`
 - R2 清理 dry-run/执行器：`scripts/media_archive_r2_cleanup.py`
@@ -186,36 +187,43 @@ R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立
 同一 campaign、plan SHA 与 inventory SHA 的 pending 记录，不重新全量枚举，也不
 扩大到快照后的对象。本入口默认不执行，生产执行仍需单独取得精确 SHA 授权。
 
-数字用户目录与 flat-root 的一次性治理统一使用
-`scripts/r2_media_governance.py`。它验收已有 `user-data-prod` inventory 的
-integrity、文件 SHA-256、mtime、对象数和字节数，再从同一快照原子派生私有 SQLite
-治理索引，不再次 LIST R2。索引保存 object key/size/SHA、对象分类、双任务 ID、
-角色/序号、引用、durable target、迁移/清理状态和错误。只有快照在生成后发生过
-生产删除或验收失败时，才先报告失效原因并调用 inventory 原子刷新入口。
+`user-data-prod` 历史媒体迁移以 History 行为事实源，不再以 bucket numeric/flat-root
+分类构造全桶工作集。`scripts/history_media_r2_migration.py seed` 首先冻结
+`max(history.id)`，再以 `(history_id, role, ordinal)` 流式写入本地分析库的独立
+迁移账本；续跑必须绑定同一个 run 与 watermark。它只探测账本中的引用和明确候选
+key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 仅保留为历史治理
+实现，不得用于本轮迁移或启动新的 numeric/flat-root planner。
 
-`plan-numeric` 只使用 History 与持久任务 ledger 的明确映射。输入规划到
-`task-inputs/{registry_task_id}/{ordinal}.{ext}`；主/附加输出只有取得明确
-`backend_task_id` 后才规划到 `task-results/.../primary` 与 `extra-{ordinal}`。
-缺 ID、角色、序号、重复冲突或无数据库引用一律 unresolved。dry-run 对源和已存在
-目标执行 HEAD、大小与完整 SHA-256，分别报告源缺失、目标一致和目标冲突；不复制、
-不切换数据库引用，复制和引用切换需要后续独立授权。全量 unresolved 状态与错误
-保存在 SQLite；冻结 JSON 只保存计数、字节和最多 100 条诊断样本，避免百万级遗留
-对象导致 planner 内存失控。
+输入目标使用 `task-inputs/{registry_task_id}/{ordinal}.{ext}`；主输出和附加输出
+使用 `task-results/{backend_task_id}/primary.{ext}` 与
+`task-results/{backend_task_id}/extras/<role>-<ordinal>.{ext}`。输出缺少持久账本中的
+明确 backend task ID、双 ID 映射冲突、角色/序号异常一律 `unresolved`；外部 URL
+或无法确定属于受管存储的引用一律 `blocked`，不得以文件名猜测。
 
-`plan-flat-root` 只选择不含 `/` 的 key，先按 size 建 durable 候选集；可信 SHA
-metadata 只用于候选排序，最终资格仍要求源与 `task-inputs/`、`task-results/`、
-`history/` durable twin 完整回读 SHA-256 一致。History/Gallery/收藏/公开、模板、
-归档映射、正式角色资产和活跃 Redis 任务任一引用均 blocked；未知类型、数字目录、
-`web_uploads/`、`temps/` 和 `template-submissions/` 不进入 campaign。冻结 campaign
-记录 batch ID、inventory SHA/mtime、精确双 key、大小、双 SHA、引用审计和完整
-campaign SHA。删除门禁独立使用 `R2_FLAT_ROOT_CLEANUP_ENABLED` 和绑定精确 campaign
-SHA 的确认值，默认关闭；本阶段只生成 dry-run/campaign，不执行删除。后续获独立
-授权后，`execute-flat-root` 只消费同一精确 campaign SHA，并用 0600 SQLite 保存
-断点；单次调用最多处理 10,000 个对象或 50 GiB（先到即停），重启只继续 pending。
-每个对象删除前重新执行全引用审计、双 HEAD/大小和双完整 SHA-256；状态变化记为
-blocked。删除后必须确认 flat-root 已不存在且 durable twin 的大小与 SHA 未变化。
-数据库、Redis、R2 HEAD/SHA、删除或删除后复核的系统性错误立即将 campaign 标为
-paused，不继续本批。
+`probe` 先检查标准目标，再按受限 0600 配置中启用的来源优先级尝试原引用、
+`history/{registry_task_id}/{basename}` 和 basename。相同来源对象在进程内只完整读取
+一次；跨 run 只有 HEAD 的大小与 LastModified 均未变化才复用完整 SHA-256 事实。
+ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完整 SHA-256。来源离线、
+鉴权或系统性查询失败不等于丢失；达到系统错误阈值时 run 立即 paused。只有全部启用
+来源明确 not-found 才累计 missing round，两轮至少间隔 24 小时才在本地目录标记
+`confirmed_lost`，生产 History 不写“丢失”且保留原引用。
+
+`plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
+分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
+SHA，不包含完整对象清单。`execute-copy` 只接受
+`COPY_HISTORY_MEDIA_<plan-sha>`，复制前复验源，上传后完整回读目标；失败资产保持旧
+History 引用。`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`，并在
+事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
+是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
+数字目录和孤儿清理均不属于这条迁移链路。
+
+各阶段固定为 `seed`、`probe`、`plan-copy`、`execute-copy`、`plan-switch`、
+`execute-switch`、`report`；除首次 `seed` 外均显式传 run ID 或 plan SHA。
+`LOCAL_ANALYTICS_DATABASE_URL` 只指向本地分析库，`execute-switch` 才额外要求
+`PRODUCTION_DATABASE_URL`。probe/copy 的 0600 JSON 配置包含固定
+`target.bucket=user-data-prod`、与 `analytics_media_sources` 同名的全部启用来源，
+以及可选的 `nas_archive`；S3 来源提供 endpoint/bucket 凭据，filesystem 来源只提供
+受限 root。缺任一启用来源配置时暂停，不能把未探测来源折算成 not-found。
 
 模板投稿新写 `template-submissions/`，旧 `temps/` 只在迁移兼容期双读且永不进入
 通用临时清理。`scripts/r2_template_submission_migration.py` 在同一生产桶按原相对 key
@@ -257,6 +265,7 @@ Worker 私有配置由 `render_media_archive_worker_config.py` 从 `env:NAME` �
 
 ```bash
 pytest -q tests/core/test_media_archive.py tests/database/test_media_archive_schema.py
+pytest -q tests/scripts/test_history_media_r2_migration.py
 pytest -q tests/local_analytics tests/services/test_storage_web_history_r2_cache.py
 docker compose --env-file ops/media_archive_nas/.env.example -f ops/media_archive_nas/compose.yml config
 python scripts/doc_quality_checker.py
