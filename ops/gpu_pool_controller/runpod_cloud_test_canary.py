@@ -114,6 +114,10 @@ class RunPodCloudTestCanaryCaseBuilder:
                     "priority": 0,
                 },
                 "result_kind": "image",
+                # Web free-edit v3 continues with an unrelated face_swap_v2 stage.
+                # This canary qualifies the BF16 worker image itself, so its
+                # terminal evidence is the promoted Central stage-1 asset.
+                "terminal_scope": "central_stage",
             }
         ]
 
@@ -671,6 +675,16 @@ class RunPodCloudTestCanaryExecutor:
             raise self._error(
                 f"{label}: Central terminal status is {final_status.get('status')}"
             )
+        if task_case.get("terminal_scope") == "central_stage":
+            result_path = str(final_status.get("result_path") or "")
+            if not result_path.startswith("task-results/"):
+                raise self._error(
+                    f"{label}: Central stage did not promote a task-results asset"
+                )
+            task_result["terminal_scope"] = "central_stage"
+            task_result["result_path"] = result_path
+            self._phase(summary, f"task_{label}", "ok", task_result)
+            return task_result
         result_payload = self.wait_web_result(task_id)
         result_url = str(result_payload.get("result_url") or "")
         task_result["web_result_status"] = result_payload.get("status")
