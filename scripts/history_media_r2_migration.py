@@ -933,6 +933,77 @@ async def _fact_digest(
     return digest, read_size
 
 
+async def _probe_target_rows(
+    conn: asyncpg.Connection,
+    rows: list[asyncpg.Record],
+    *,
+    target_client: Any,
+    concurrency: int,
+) -> int:
+    """Probe unique standard targets concurrently; persist results serially."""
+    if not 1 <= concurrency <= 128:
+        raise ValueError("target concurrency must be between 1 and 128")
+    grouped: dict[str, list[asyncpg.Record]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["target_key"]), []).append(row)
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def inspect(key: str) -> tuple[str, tuple[int, datetime] | None, str | None, int]:
+        async with semaphore:
+            head = await asyncio.to_thread(_head_s3, target_client, BUCKET, key)
+            if head is None:
+                return key, None, None, 0
+            digest, read_size = await asyncio.to_thread(
+                _read_s3_sha, target_client, BUCKET, key
+            )
+            if read_size != int(head[0]):
+                raise RuntimeError("TARGET_CHANGED_DURING_READ")
+            return key, head, digest, read_size
+
+    results = await asyncio.gather(*(inspect(key) for key in grouped))
+    bytes_read = 0
+    for key, head, digest, read_size in results:
+        linked_rows = grouped[key]
+        if head is None or digest is None:
+            await conn.executemany(
+                """update analytics_history_media_r2_migrations set
+                     target_checked_at=now(),error_code='TARGET_MISSING_PENDING_RECOVERY',
+                     error_detail=null,updated_at=now() where id=$1""",
+                [(row["id"],) for row in linked_rows],
+            )
+            continue
+        bytes_read += read_size
+        byte_size, modified = head
+        await conn.execute(
+            """insert into analytics_history_media_object_facts
+                 (source_name,object_key,byte_size,last_modified,sha256)
+               values('target:user-data-prod',$1,$2,$3,$4)
+               on conflict(source_name,object_key) do update set
+                 byte_size=excluded.byte_size,last_modified=excluded.last_modified,
+                 sha256=excluded.sha256,verified_at=now()""",
+            key,
+            byte_size,
+            modified,
+            digest,
+        )
+        await conn.executemany(
+            """update analytics_history_media_r2_migrations set
+                 source_name='target:user-data-prod',source_key=target_key,
+                 byte_size=$2,source_sha256=$3,target_sha256=$3,
+                 status='target_verified',target_checked_at=now(),
+                 error_code=null,error_detail=null,updated_at=now() where id=$1""",
+            [(row["id"], byte_size, digest) for row in linked_rows],
+        )
+        await conn.executemany(
+            """update analytics_media_asset_catalog set status='found',
+                 found_source='target:user-data-prod',source_key=$2,
+                 last_checked_at=now(),missing_rounds=0,first_missing_at=null,
+                 last_error=null where id=$1""",
+            [(row["catalog_asset_id"], key) for row in linked_rows],
+        )
+    return bytes_read
+
+
 async def _probe(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
@@ -1007,7 +1078,16 @@ async def _probe(args: argparse.Namespace) -> None:
                 args.recheck_deferred,
                 args.deferred_min_age_hours,
             )
+        probed_count = len(rows)
         bytes_read = 0
+        if args.target_only:
+            bytes_read = await _probe_target_rows(
+                conn,
+                rows,
+                target_client=target_client,
+                concurrency=args.target_concurrency,
+            )
+            rows = []
         for row in rows:
             target_key = str(row["target_key"])
             target_head = await asyncio.to_thread(
@@ -1302,7 +1382,7 @@ async def _probe(args: argparse.Namespace) -> None:
             json.dumps(
                 {
                     "run_id": str(run_id),
-                    "probed": len(rows),
+                    "probed": probed_count,
                     "remaining_pending": remaining,
                     "target_only": args.target_only,
                     "sha_bytes_read": bytes_read,
@@ -1842,6 +1922,7 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--limit", type=int, default=1000)
     probe.add_argument("--systemic-error-threshold", type=int, default=5)
     probe.add_argument("--target-only", action="store_true")
+    probe.add_argument("--target-concurrency", type=int, default=32)
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
     for name in ("plan-copy", "plan-switch"):
