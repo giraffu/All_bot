@@ -762,6 +762,20 @@ def test_wan22_canary_task_cases_are_preview_5s_single_frame():
     assert cases[1]["payload"]["inputs"]["wan22_model_profile"] == "wan22_video_v2"
 
 
+def test_pornmaster_bf16_canary_submits_the_profile_task():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="pornmaster_flux2_edit_bf16", quiet=True),
+    )
+
+    cases = runner._task_cases("user-data-test/web_uploads/3/example.png")
+
+    assert [case["payload"]["task_type"] for case in cases] == [
+        "pornmaster_flux2_edit_bf16"
+    ]
+    assert cases[0]["result_kind"] == "image"
+
+
 def test_ltx_video_canary_task_case_submits_i2v_5s_video_task():
     runner = RunPodCanaryRunner(
         FakeRunPodProvider(),

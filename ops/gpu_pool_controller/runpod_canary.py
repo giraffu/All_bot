@@ -32,15 +32,21 @@ from .providers.runpod import (
     RUNPOD_LTX_T2V_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_T2V_MODEL_PREFIX,
     RUNPOD_LTX_T2V_SUPPORTED_TASK_TYPES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
     RUNPOD_PROD_POD_NAME_PREFIX,
+    RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_LTX_T2V_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_GPU_TYPE_IDS,
@@ -94,6 +100,13 @@ EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
 )
+RELEASE_IMG2IMG_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-gpu-img2img-lora:"
+RELEASE_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
+    "ghcr.io/giraffu/allbot-gpu-wan22-aio-video:"
+)
+RELEASE_PORNMASTER_FLUX2_EDIT_BF16_IMAGE_REF_PREFIX = (
+    "ghcr.io/giraffu/allbot-gpu-pornmaster-flux2-edit-bf16:"
+)
 EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
 EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX
@@ -107,6 +120,9 @@ EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 EXPECTED_SCAIL2_GPU_TYPE_IDS = RUNPOD_SCAIL2_GPU_TYPE_IDS
 EXPECTED_LTX_VIDEO_GPU_TYPE_IDS = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
 EXPECTED_LTX_T2V_GPU_TYPE_IDS = RUNPOD_LTX_T2V_GPU_TYPE_IDS
+EXPECTED_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS = (
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
+)
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 PROD_MANUAL_POD_NAME_PREFIXES = (
@@ -117,6 +133,7 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_T2V_POD_NAME_PREFIX,
+    RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
 )
 SCAIL2_SAMPLE_REFERENCE_URL = (
     "https://i.gyazo.com/567acaf722ca9e839ec7cb834c1ed344/max_size/1200.jpg"
@@ -145,6 +162,7 @@ class RunPodCanaryProfileSpec:
     workflow_overrides: str = ""
     task_summary: str = ""
     worker_disable_summary: str = ""
+    release_image_ref_prefix: str = ""
 
 
 RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
@@ -156,6 +174,7 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         model_manifest_key=EXPECTED_MODEL_MANIFEST_KEY,
         task_summary="submit img2img and two img2img_lora Web tasks serially",
         worker_disable_summary="temporarily disable cloud_worker_test_01..07",
+        release_image_ref_prefix=RELEASE_IMG2IMG_IMAGE_REF_PREFIX,
     ),
     "wan22_aio_video": RunPodCanaryProfileSpec(
         task_type="wan22_aio_video",
@@ -167,6 +186,7 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
         task_summary="submit image_to_video and wan22_video_v2 preview/5s Web tasks serially",
         worker_disable_summary="temporarily disable cloud-test workers supporting image_to_video or wan22_video_v2",
+        release_image_ref_prefix=RELEASE_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
     ),
     "image_to_video": RunPodCanaryProfileSpec(
         task_type="image_to_video",
@@ -178,6 +198,7 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
         task_summary="submit image_to_video preview/5s Web task",
         worker_disable_summary="temporarily disable cloud-test workers supporting image_to_video",
+        release_image_ref_prefix=RELEASE_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
     ),
     "wan22_video_v2": RunPodCanaryProfileSpec(
         task_type="wan22_video_v2",
@@ -189,6 +210,21 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
         task_summary="submit wan22_video_v2 preview/5s Web task",
         worker_disable_summary="temporarily disable cloud-test workers supporting wan22_video_v2",
+        release_image_ref_prefix=RELEASE_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
+    ),
+    "pornmaster_flux2_edit_bf16": RunPodCanaryProfileSpec(
+        task_type="pornmaster_flux2_edit_bf16",
+        image_ref_prefix=RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
+        supported_task_types=RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
+        model_prefix=RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+        model_manifest_key=RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
+        task_summary="submit pornmaster_flux2_edit_bf16 Web task",
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting "
+            "pornmaster_flux2_edit_bf16"
+        ),
+        release_image_ref_prefix=RELEASE_PORNMASTER_FLUX2_EDIT_BF16_IMAGE_REF_PREFIX,
     ),
     "i2i_pro": RunPodCanaryProfileSpec(
         task_type="i2i_pro",
@@ -1142,8 +1178,19 @@ class RunPodCanaryRunner:
         image_name = str(body.get("imageName") or "")
         template_id = str(body.get("templateId") or "")
         digest_prefix = spec.image_ref_prefix.removesuffix(":") + "@sha256:"
+        release_digest_prefix = (
+            spec.release_image_ref_prefix.removesuffix(":") + "@sha256:"
+            if spec.release_image_ref_prefix
+            else ""
+        )
         uses_canonical_digest = bool(
             re.fullmatch(re.escape(digest_prefix) + r"[0-9a-f]{64}", image_name)
+            or (
+                release_digest_prefix
+                and re.fullmatch(
+                    re.escape(release_digest_prefix) + r"[0-9a-f]{64}", image_name
+                )
+            )
         )
         uses_public_image = (
             image_name.startswith(spec.image_ref_prefix) or uses_canonical_digest
