@@ -193,11 +193,14 @@ def freeze_numeric_migration_plan(
     db = sqlite3.connect(index)
     db.row_factory = sqlite3.Row
     objects: list[dict[str, Any]] = []
-    unresolved: list[dict[str, Any]] = []
+    unresolved_samples: list[dict[str, Any]] = []
+    db.execute(
+        "update media_objects set migration_status='unresolved',error='no_database_reference' "
+        "where object_class='numeric_user_directory'"
+    )
     grouped: dict[str, list[MediaReference]] = {}
     for reference in references:
         grouped.setdefault(reference.object_key, []).append(reference)
-    seen: set[str] = set(grouped)
     for key, candidates in grouped.items():
         signatures = {
             (item.registry_task_id, item.backend_task_id, item.role, item.ordinal)
@@ -205,16 +208,28 @@ def freeze_numeric_migration_plan(
         }
         reference = candidates[0]
         if len(signatures) != 1 or not NUMERIC_MEDIA_RE.match(key):
-            unresolved.append({**asdict(reference), "error": "ambiguous_or_invalid_reference"})
+            if len(unresolved_samples) < 100:
+                unresolved_samples.append({**asdict(reference), "error": "ambiguous_or_invalid_reference"})
+            db.execute(
+                "update media_objects set migration_status='unresolved',error=? where object_key=?",
+                ("ambiguous_or_invalid_reference", reference.object_key),
+            )
             continue
         row = db.execute(
             "select size from media_objects where object_key=?", (reference.object_key,)
         ).fetchone()
         target = _durable_target(reference)
         if row is None or target is None:
-            unresolved.append(
-                {**asdict(reference), "error": "source_missing" if row is None else "incomplete_task_role_mapping"}
-            )
+            reason = "source_missing" if row is None else "incomplete_task_role_mapping"
+            if len(unresolved_samples) < 100:
+                unresolved_samples.append({**asdict(reference), "error": reason})
+            if row is not None:
+                db.execute(
+                    "update media_objects set registry_task_id=?,backend_task_id=?,role=?,"
+                    "ordinal=?,referenced_by=?,migration_status='unresolved',error=? where object_key=?",
+                    (reference.registry_task_id, reference.backend_task_id, reference.role,
+                     reference.ordinal, reference.referenced_by, reason, reference.object_key),
+                )
             continue
         item = {**asdict(reference), "size": int(row["size"]), "durable_target": target}
         objects.append(item)
@@ -224,15 +239,24 @@ def freeze_numeric_migration_plan(
             (reference.registry_task_id, reference.backend_task_id, reference.role, reference.ordinal,
              reference.referenced_by, target, reference.object_key),
         )
-    for row in db.execute(
-        "select object_key,size from media_objects where object_class='numeric_user_directory'"
-    ):
-        if str(row["object_key"]) not in seen:
-            unresolved.append({
+    remaining = 100 - len(unresolved_samples)
+    if remaining > 0:
+        unresolved_samples.extend(
+            {
                 "object_key": str(row["object_key"]), "size": int(row["size"]),
                 "registry_task_id": None, "backend_task_id": None, "role": None,
-                "ordinal": None, "referenced_by": "", "error": "no_database_reference",
-            })
+                "ordinal": None, "referenced_by": "", "error": str(row["error"]),
+            }
+            for row in db.execute(
+                "select object_key,size,error from media_objects "
+                "where object_class='numeric_user_directory' and migration_status='unresolved' "
+                "order by object_key limit ?", (remaining,)
+            )
+        )
+    unresolved_count, unresolved_bytes = db.execute(
+        "select count(*),coalesce(sum(size),0) from media_objects "
+        "where object_class='numeric_user_directory' and migration_status='unresolved'"
+    ).fetchone()
     metadata = dict(db.execute("select key,value from governance_metadata"))
     db.commit()
     db.close()
@@ -243,9 +267,11 @@ def freeze_numeric_migration_plan(
         "migratable_count": len(objects),
         "migratable_bytes": sum(item["size"] for item in objects),
         "estimated_full_sha_read_bytes": 2 * sum(item["size"] for item in objects),
-        "unresolved_count": len(unresolved),
+        "unresolved_count": int(unresolved_count),
+        "unresolved_bytes": int(unresolved_bytes),
         "objects": sorted(objects, key=lambda item: item["object_key"]),
-        "unresolved": sorted(unresolved, key=lambda item: item["object_key"]),
+        "unresolved_sample_limit": 100,
+        "unresolved_samples": sorted(unresolved_samples, key=lambda item: item["object_key"]),
     }
     plan["plan_sha256"] = _canonical_sha(plan)
     output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
