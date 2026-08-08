@@ -630,6 +630,138 @@ def load_flat_root_campaign(path: Path, expected_sha256: str) -> dict[str, Any]:
     return plan
 
 
+def _flat_root_receipt(plan: dict[str, Any], state, *, status: str, error: str = "") -> dict[str, Any]:
+    summary = state.summary()
+    return {
+        "batch_id": plan["batch_id"],
+        "campaign_sha256": plan["campaign_sha256"],
+        "inventory_sha256": plan["inventory_sha256"],
+        "status": status,
+        "error": error,
+        "pending_count": int(summary.get("pending_count", 0)),
+        "pending_bytes": int(summary.get("pending_bytes", 0)),
+        "deleted_count": int(summary.get("deleted_count", 0)),
+        "deleted_bytes": int(summary.get("deleted_bytes", 0)),
+        "blocked_count": int(summary.get("blocked_count", 0)),
+        "blocked_bytes": int(summary.get("blocked_bytes", 0)),
+    }
+
+
+async def execute_flat_root_campaign(
+    args,
+    *,
+    client=None,
+    enabled: bool | None = None,
+    reference_audit=flat_root_reference_audit,
+) -> dict[str, Any]:
+    """Consume at most one bounded batch from one exact frozen flat-root campaign."""
+    from botocore.exceptions import ClientError
+    from scripts.r2_temp_cleanup import _r2_client, _sha256_object
+    from scripts.r2_temp_cleanup_campaign import CampaignState, _atomic_private_json
+
+    max_objects = int(args.max_batch_objects)
+    max_bytes = int(args.max_batch_bytes)
+    if not 1 <= max_objects <= 10_000:
+        raise ValueError("max batch objects must be between 1 and 10000")
+    if not 1 <= max_bytes <= 50 * 1024**3:
+        raise ValueError("max batch bytes must be between 1 and 50 GiB")
+    plan = load_flat_root_campaign(Path(args.approved_campaign), args.campaign_sha256)
+    validate_flat_root_delete_gate(
+        bucket=args.bucket,
+        enabled=(
+            os.getenv("R2_FLAT_ROOT_CLEANUP_ENABLED", "").lower() == "true"
+            if enabled is None else enabled
+        ),
+        confirmation=args.confirm,
+        campaign_sha256=args.campaign_sha256,
+    )
+    state_objects = [
+        {**item, "key": item["object_key"], "byte_size": int(item["size"])}
+        for item in plan["objects"]
+    ]
+    state = CampaignState.open(
+        Path(args.state),
+        campaign_id=plan["batch_id"],
+        plan_sha256=plan["campaign_sha256"],
+        inventory_sha256=plan["inventory_sha256"],
+        objects=state_objects,
+    )
+    receipt_path = Path(args.output)
+    r2 = client or _r2_client()
+    try:
+        state.set_campaign_status("running")
+        batch = state.next_batch(max_objects=max_objects, max_bytes=max_bytes)
+        if not batch:
+            oversized = state.first_pending()
+            if oversized is not None:
+                state.mark(oversized["key"], "blocked", reason="exceeds_batch_byte_limit")
+        else:
+            references = await reference_audit([item["key"] for item in batch])
+            referenced = set().union(*references.values()) if references else set()
+            for item in batch:
+                key = str(item["key"])
+                twin = str(item["durable_twin"])
+                size = int(item["byte_size"])
+                if key in referenced:
+                    categories = sorted(
+                        category for category, keys in references.items() if key in keys
+                    )
+                    state.mark(key, "blocked", reason="referenced:" + ",".join(categories))
+                    continue
+                try:
+                    source_size, _ = await asyncio.to_thread(_head, r2, args.bucket, key)
+                    twin_size, _ = await asyncio.to_thread(_head, r2, args.bucket, twin)
+                except ClientError as exc:
+                    code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+                    if code in {"404", "NoSuchKey", "NotFound"}:
+                        state.mark(key, "blocked", reason="source_or_twin_missing")
+                        continue
+                    raise
+                if source_size != size or twin_size != size:
+                    state.mark(key, "blocked", reason="source_or_twin_size_changed")
+                    continue
+                source_sha = await asyncio.to_thread(_sha256_object, r2, args.bucket, key)
+                twin_sha = await asyncio.to_thread(_sha256_object, r2, args.bucket, twin)
+                if (
+                    source_sha != item["source_sha256"]
+                    or twin_sha != item["durable_sha256"]
+                    or source_sha != twin_sha
+                ):
+                    state.mark(key, "blocked", reason="source_or_twin_sha256_changed")
+                    continue
+                await asyncio.to_thread(r2.delete_object, Bucket=args.bucket, Key=key)
+                try:
+                    await asyncio.to_thread(_head, r2, args.bucket, key)
+                except ClientError as exc:
+                    code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+                    if code not in {"404", "NoSuchKey", "NotFound"}:
+                        raise
+                else:
+                    raise RuntimeError(f"deleted flat-root object still exists: {key}")
+                post_size, _ = await asyncio.to_thread(_head, r2, args.bucket, twin)
+                post_sha = await asyncio.to_thread(_sha256_object, r2, args.bucket, twin)
+                if post_size != size or post_sha != item["durable_sha256"]:
+                    raise RuntimeError(f"durable twin changed after deletion: {key}")
+                state.mark(key, "deleted", reason="post_delete_verified")
+        pending = int(state.summary().get("pending_count", 0))
+        status = "running" if pending else "completed"
+        state.set_campaign_status(status)
+        receipt = _flat_root_receipt(plan, state, status=status)
+        _atomic_private_json(receipt_path, receipt)
+        return receipt
+    except Exception as exc:
+        state.set_campaign_status("paused", f"{type(exc).__name__}: {exc}")
+        _atomic_private_json(
+            receipt_path,
+            _flat_root_receipt(
+                plan, state, status="paused", error=f"{type(exc).__name__}: {exc}"
+            ),
+        )
+        raise
+    finally:
+        state.close()
+
+
 async def plan_flat_root(index: Path, output: Path, *, bucket: str, concurrency: int) -> dict[str, Any]:
     from scripts.r2_temp_cleanup import PRODUCTION_BUCKET, _r2_client
 
@@ -671,6 +803,15 @@ def main() -> None:
     flat.add_argument("--output", required=True, type=Path)
     flat.add_argument("--bucket", default="user-data-prod")
     flat.add_argument("--verification-concurrency", type=int, default=8)
+    execute_flat = subparsers.add_parser("execute-flat-root")
+    execute_flat.add_argument("--approved-campaign", required=True, type=Path)
+    execute_flat.add_argument("--campaign-sha256", required=True)
+    execute_flat.add_argument("--state", required=True, type=Path)
+    execute_flat.add_argument("--output", required=True, type=Path)
+    execute_flat.add_argument("--bucket", default="user-data-prod")
+    execute_flat.add_argument("--confirm", required=True)
+    execute_flat.add_argument("--max-batch-objects", type=int, default=10_000)
+    execute_flat.add_argument("--max-batch-bytes", type=int, default=50 * 1024**3)
     args = parser.parse_args()
     if args.command == "validate-inventory":
         result = validate_inventory(args.inventory)
@@ -701,11 +842,13 @@ def main() -> None:
         temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         os.chmod(temporary, 0o600)
         os.replace(temporary, args.output)
-    else:
+    elif args.command == "plan-flat-root":
         result = asyncio.run(plan_flat_root(
             args.index, args.output, bucket=args.bucket,
             concurrency=args.verification_concurrency,
         ))
+    else:
+        result = asyncio.run(execute_flat_root_campaign(args))
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
