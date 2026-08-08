@@ -23,6 +23,7 @@ from scripts.history_media_r2_migration import (
     hash_body,
     history_assets_from_record,
     normalize_asyncpg_dsn,
+    _probe_target_rows,
     replace_asset_reference,
     validate_copy_gate,
     validate_switch_gate,
@@ -84,6 +85,56 @@ def test_asyncpg_dsn_normalizes_web_ssl_query_parameter():
     )
     assert dsn == "postgresql://user:secret@db.example/prod?x=1"
     assert ssl_mode == "require"
+
+
+@pytest.mark.asyncio
+async def test_target_only_probe_deduplicates_keys_and_persists_serially():
+    class Body(BytesIO):
+        def close(self):
+            super().close()
+
+    class Client:
+        def __init__(self):
+            self.head_calls = 0
+            self.get_calls = 0
+
+        def head_object(self, *, Bucket, Key):
+            self.head_calls += 1
+            assert Bucket == "user-data-prod"
+            return {
+                "ContentLength": 3,
+                "LastModified": datetime(2026, 8, 9, tzinfo=timezone.utc),
+            }
+
+        def get_object(self, *, Bucket, Key):
+            self.get_calls += 1
+            return {"Body": Body(b"abc")}
+
+    class Conn:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, query, *params):
+            self.calls.append(("execute", query, params))
+
+        async def executemany(self, query, params):
+            self.calls.append(("executemany", query, list(params)))
+
+    client = Client()
+    conn = Conn()
+    rows = [
+        {"id": 1, "catalog_asset_id": 11, "target_key": "task-inputs/r/0.png"},
+        {"id": 2, "catalog_asset_id": 12, "target_key": "task-inputs/r/0.png"},
+    ]
+    assert (
+        await _probe_target_rows(
+            conn, rows, target_client=client, concurrency=8  # type: ignore[arg-type]
+        )
+        == 3
+    )
+    assert client.head_calls == 1
+    assert client.get_calls == 1
+    assert any("target_verified" in query for _kind, query, _params in conn.calls)
 
 
 def test_migration_ledger_is_independent_and_bound_to_history_watermark():

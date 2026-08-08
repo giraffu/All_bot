@@ -212,7 +212,8 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 状态仅在显式 `--recheck-deferred` 且达到最短 24 小时后重新探测。
 遗留来源系统性离线时可先用 `probe --target-only` 对标准目标做完整 SHA 验证；目标
 不存在的行只记录已检查时间并保留待恢复状态，不能借此形成 missing 结论。完整来源
-恢复仍在系统错误阈值处暂停。
+恢复仍在系统错误阈值处暂停。target-only 在单批内按 target key 去重，并以
+`--target-concurrency` 控制 1–128 路 HEAD/完整读取；数据库结果仍串行持久化。
 
 `plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
 分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
