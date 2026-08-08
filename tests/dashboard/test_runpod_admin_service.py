@@ -216,6 +216,28 @@ async def test_start_runpod_scale_payload_creates_retrying_operations():
 
 
 @pytest.mark.asyncio
+async def test_start_runpod_scale_payload_accepts_i2i_pro_profile():
+    payload = await runpod_admin_service.start_runpod_scale_payload(
+        RunPodScaleRequest(
+            items=[RunPodScaleItem(profile="i2i_pro", count=1)],
+        ),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    assert payload["status"] == "accepted"
+    assert len(payload["operations"]) == 1
+    operation = payload["operations"][0]
+    assert operation["profile"] == "i2i_pro"
+    assert operation["slot"] == "01"
+    assert operation["agent_id"] == "runpod_prod_i2i_pro_manual_01"
+    command = operation["command"]
+    assert "add" in command
+    assert command[command.index("--profile") + 1] == "i2i_pro"
+    assert command[command.index("--slot") + 1] == "01"
+    assert "--execute" in command
+
+
+@pytest.mark.asyncio
 async def test_start_runpod_scale_payload_treats_legacy_desired_as_add_count():
     payload = await runpod_admin_service.start_runpod_scale_payload(
         RunPodScaleRequest(
