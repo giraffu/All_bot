@@ -173,7 +173,9 @@ async def _history_campaign_references(keys: list[str]) -> dict[str, set[str]]:
           select distinct candidate.key,refs.history_id,refs.task_id,
                           refs.is_favorited,refs.is_public
             from refs join candidate
-              on refs.ref=candidate.key or refs.ref like '%/'||candidate.key
+              on substring(
+                   refs.ref from '(staging/(user-uploads|worker-results)/.*)$'
+                 )=candidate.key
         ), categorized as (
           select 'history' category,key from matched
           union select 'favorite',key from matched where is_favorited is true
