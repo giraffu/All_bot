@@ -4,6 +4,7 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from scripts.r2_temp_cleanup import Candidate
 from scripts.r2_temp_cleanup_campaign import (
@@ -13,6 +14,7 @@ from scripts.r2_temp_cleanup_campaign import (
     load_campaign_plan,
     select_full_staging_candidates,
     validate_campaign_execute_gate,
+    verify_campaign_candidates,
 )
 
 
@@ -89,6 +91,8 @@ def test_campaign_plan_contains_every_verified_object_and_is_sha_sealed(tmp_path
         "staging/user-uploads/u/file.png",
         "staging/worker-results/w/file.png",
     ]
+    assert loaded["blocked_count"] == 0
+    assert loaded["blocked_bytes"] == 0
     loaded["objects"][0]["key"] = "staging/user-uploads/tampered"
     path.write_text(json.dumps(loaded), encoding="utf-8")
     with pytest.raises(SystemExit, match="modified"):
@@ -306,3 +310,115 @@ def test_campaign_system_error_pauses_and_preserves_resume_state(tmp_path, monke
     receipt = json.loads((tmp_path / "receipt.json").read_text())
     assert receipt["status"] == "paused"
     assert receipt["pending_count"] == 1
+
+
+def test_campaign_plan_marks_object_state_changes_blocked(monkeypatch):
+    candidate = Candidate(
+        key="staging/user-uploads/u/file.png",
+        durable_key="task-inputs/t/file.png",
+        byte_size=10,
+        etag="etag",
+        last_modified="2026-08-01T00:00:00Z",
+    )
+
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            return {"ContentLength": 9 if Key == candidate.key else 10}
+
+    verified, failures = asyncio.run(
+        verify_campaign_candidates(
+            Client(), "user-data-prod", [candidate], concurrency=2
+        )
+    )
+
+    assert verified == []
+    assert failures == [
+        {"key": candidate.key, "byte_size": 10, "error": "HEAD_SIZE_MISMATCH"}
+    ]
+
+
+def test_campaign_report_unifies_reference_and_probe_blocks(tmp_path):
+    inventory = tmp_path / "inventory.sqlite3"
+    inventory.write_bytes(b"snapshot")
+    referenced = Candidate(
+        "staging/user-uploads/u/ref.png",
+        "task-inputs/t/ref.png",
+        10,
+        "one",
+        "2026-08-01T00:00:00Z",
+    )
+    changed = Candidate(
+        "staging/worker-results/w/changed.png",
+        "task-results/t/changed.png",
+        20,
+        "two",
+        "2026-08-01T00:00:00Z",
+    )
+    plan = build_campaign_plan(
+        inventory_path=inventory,
+        cutoff="2026-08-07T00:00:00Z",
+        candidates=[referenced, changed],
+        verified=[],
+        blocked={"history": {referenced.key}, "favorite": {referenced.key}},
+        probe_failures=[
+            {"key": changed.key, "byte_size": 20, "error": "SHA256_MISMATCH"}
+        ],
+        inventory_integrity="ok",
+        inventory_object_count=2,
+        inventory_bytes=30,
+    )
+
+    assert plan["blocked_count"] == 2
+    assert plan["blocked_bytes"] == 30
+    assert plan["campaign_object_count"] == 0
+    assert plan["probe_failure_count"] == 1
+    assert plan["blocked_objects"][0]["reasons"] == [
+        "reference:favorite",
+        "reference:history",
+    ]
+
+
+def test_campaign_plan_fails_closed_on_systemic_r2_error():
+    candidate = Candidate(
+        key="staging/worker-results/w/file.png",
+        durable_key="task-results/t/file.png",
+        byte_size=10,
+        etag="etag",
+        last_modified="2026-08-01T00:00:00Z",
+    )
+
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            raise EndpointConnectionError(endpoint_url="https://r2.invalid")
+
+    with pytest.raises(EndpointConnectionError):
+        asyncio.run(
+            verify_campaign_candidates(
+                Client(), "user-data-prod", [candidate], concurrency=2
+            )
+        )
+
+
+def test_campaign_plan_treats_object_404_as_blocked_not_systemic():
+    candidate = Candidate(
+        key="staging/user-uploads/u/missing.png",
+        durable_key="task-inputs/t/missing.png",
+        byte_size=10,
+        etag="etag",
+        last_modified="2026-08-01T00:00:00Z",
+    )
+
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+    verified, failures = asyncio.run(
+        verify_campaign_candidates(
+            Client(), "user-data-prod", [candidate], concurrency=2
+        )
+    )
+    assert verified == []
+    assert failures[0]["error"] == "OBJECT_MISSING"
