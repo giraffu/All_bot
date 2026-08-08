@@ -95,6 +95,18 @@ def _prod_i2i_pro_manual_pod(pod_id: str = "prod-i2i-1") -> dict:
     }
 
 
+def _prod_pornmaster_bf16_manual_pod(pod_id: str = "prod-bf16-1") -> dict:
+    return {
+        "id": pod_id,
+        "name": "allbot-runpod-prod-pornmaster-flux2-edit-bf16-manual-01",
+        "env": {
+            "RUNPOD_TASK_TYPE": "pornmaster_flux2_edit_bf16",
+            "AGENT_ID": "runpod_prod_pornmaster_flux2_edit_bf16_manual_01",
+        },
+        "desiredStatus": "RUNNING",
+    }
+
+
 def _cloud_test_pod(pod_id: str = "test-1", task_type: str = "i2i_pro") -> dict:
     return {
         "id": pod_id,
@@ -570,6 +582,29 @@ def test_runpod_canary_allows_existing_prod_i2i_pro_manual_pod_for_guard_only():
     provider = FakeRunPodProvider(pods=[_prod_i2i_pro_manual_pod()])
     options = RunPodCanaryOptions(
         task_type="i2i_pro",
+        execute=False,
+        quiet=True,
+        disable_workers=False,
+        allow_existing_prod_managed_pods=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert _phase_details(payload, "runpod_list_pods")["effective_count"] == 0
+    assert _phase_details(payload, "runpod_list_pods")[
+        "ignored_prod_manual_count"
+    ] == 1
+
+
+def test_runpod_canary_allows_existing_prod_pornmaster_bf16_manual_pod_for_guard_only():
+    provider = FakeRunPodProvider(pods=[_prod_pornmaster_bf16_manual_pod()])
+    options = RunPodCanaryOptions(
+        task_type="img2img",
         execute=False,
         quiet=True,
         disable_workers=False,

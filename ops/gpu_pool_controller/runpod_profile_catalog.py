@@ -27,6 +27,9 @@ RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX = (
 RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX = (
     "allbot-runpod-prod-pornmaster-flux2-edit-manual-"
 )
+RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_POD_NAME_PREFIX = (
+    "allbot-runpod-prod-pornmaster-flux2-edit-bf16-manual-"
+)
 RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_BF16_AGENT_ID_PREFIX = (
     "runpod_prod_pornmaster_flux2_edit_bf16_manual_"
 )
