@@ -153,8 +153,8 @@ def test_runpod_all_in_one_profiles_use_declared_exact_or_lan_images():
     )
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
     image_to_video = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video"
-        "@sha256:c004db27771a8709b660732e4be4334a7fa6cfce7e3b6782b12301135d9ba57f"
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video"
+        "@sha256:a25269f0b214d46b284540ca38827d4693f00f000d186a8fd91b345225d58c71"
     )
     scail2 = (
         "192.168.1.115:5000/allbot/comfy-runpod-scail2"
