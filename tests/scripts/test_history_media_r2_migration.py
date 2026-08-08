@@ -77,6 +77,26 @@ def test_probe_cli_exposes_receipt_only_mode():
     assert "--receipt-only" in result.stdout
 
 
+def test_partial_copy_plan_requires_an_explicit_flag_and_records_scope():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._create_plan)
+    assert "args.allow_incomplete" in source
+    assert '"pending_at_freeze"' in source
+    assert '"run_status_at_freeze"' in source
+    assert '"partial_scope"' in source
+
+    script = Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "plan-copy", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--allow-incomplete" in result.stdout
+
+
 def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
     import inspect
     import scripts.history_media_r2_migration as module
