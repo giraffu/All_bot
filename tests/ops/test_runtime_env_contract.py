@@ -24,6 +24,7 @@ RUNPOD_RELEASE_PROFILE_IMAGE_ENVS = (
     "RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
     "RUNPOD_IMAGE_NAME_LTX_T2V",
     "RUNPOD_IMAGE_NAME_LTX_VIDEO",
+    "RUNPOD_IMAGE_NAME_MINIMAX_H3",
     "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
     "RUNPOD_IMAGE_NAME_SCAIL2",
     "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
@@ -100,6 +101,10 @@ def _environment(environment: str) -> dict[str, str]:
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
+        "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES": (
+            "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,"
+            "ltx_t2v,minimax_h3,pornmaster_flux2_edit_bf16"
+        ),
         "UNRELATED_OPERATOR_SECRET": "must-not-enter-containers",
     }
 

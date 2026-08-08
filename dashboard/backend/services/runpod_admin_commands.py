@@ -30,6 +30,20 @@ RUNPOD_RELEASE_PROFILE_IMAGE_ENVS = frozenset(
     RUNPOD_TASK_PROFILES[str(option["profile"])].image_env_key
     for option in RUNPOD_ADMIN_PROFILE_OPTIONS
 )
+RUNPOD_ADMIN_PROFILE_NAMES = frozenset(
+    str(option["profile"]) for option in RUNPOD_ADMIN_PROFILE_OPTIONS
+)
+
+
+def asset_contract_verified_profiles() -> frozenset[str]:
+    raw = os.getenv("RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES", "").strip()
+    profiles = frozenset(item.strip() for item in raw.split(",") if item.strip())
+    if not profiles or not profiles <= RUNPOD_ADMIN_PROFILE_NAMES:
+        raise HTTPException(
+            status_code=503,
+            detail="RunPod asset-contract verified profile allowlist is missing or invalid",
+        )
+    return profiles
 
 
 @dataclass

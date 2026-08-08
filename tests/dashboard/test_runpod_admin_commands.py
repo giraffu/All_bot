@@ -9,6 +9,7 @@ from dashboard.backend.schemas import RunPodScaleItem
 from dashboard.backend.services.runpod_admin_commands import (
     RunPodAdminCommandBuilder,
     RUNPOD_RELEASE_PROFILE_IMAGE_ENVS,
+    asset_contract_verified_profiles,
 )
 
 
@@ -22,6 +23,22 @@ def _release_profile_pins(monkeypatch):
         )
     }
     monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
+    monkeypatch.setenv(
+        "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES",
+        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,minimax_h3,pornmaster_flux2_edit_bf16",
+    )
+
+
+def test_asset_contract_verified_profiles_fail_closed_and_reject_unknown(monkeypatch):
+    monkeypatch.delenv("RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES", raising=False)
+    with pytest.raises(HTTPException) as missing:
+        asset_contract_verified_profiles()
+    assert missing.value.status_code == 503
+
+    monkeypatch.setenv("RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES", "img2img,legacy")
+    with pytest.raises(HTTPException) as unknown:
+        asset_contract_verified_profiles()
+    assert unknown.value.status_code == 503
 
 
 def test_base_command_uses_container_env_files_and_slot(monkeypatch, tmp_path):

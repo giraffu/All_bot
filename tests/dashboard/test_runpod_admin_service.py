@@ -29,6 +29,10 @@ def _clear_runpod_admin_operations(monkeypatch):
         )
     }
     monkeypatch.setenv("RUNPOD_RELEASE_PROFILE_PINS_JSON", json.dumps(pins))
+    monkeypatch.setenv(
+        "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES",
+        "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,ltx_t2v,minimax_h3,pornmaster_flux2_edit_bf16",
+    )
     runpod_admin_service.set_runpod_operation_store_for_tests(
         InMemoryRunPodOperationStore()
     )
@@ -49,6 +53,32 @@ def _clear_runpod_admin_operations(monkeypatch):
     runpod_admin_service.set_runpod_operation_store_for_tests(
         InMemoryRunPodOperationStore()
     )
+
+
+@pytest.mark.asyncio
+async def test_profiles_and_scale_fail_closed_to_asset_contract_allowlist(monkeypatch):
+    monkeypatch.setenv(
+        "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES",
+        "img2img,pornmaster_flux2_edit_bf16",
+    )
+
+    payload = await runpod_admin_service.get_runpod_profiles_payload()
+    assert [item["profile"] for item in payload["profiles"]] == [
+        "img2img", "pornmaster_flux2_edit_bf16"
+    ]
+
+    request = RunPodScaleRequest(items=[RunPodScaleItem(profile="image_to_video", count=1)])
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_runpod_scale_payload(request)
+    assert exc_info.value.status_code == 409
+    assert "asset-contract canary" in exc_info.value.detail
+
+    with pytest.raises(HTTPException) as enable_error:
+        await runpod_admin_service.enable_runpod_worker_payload(
+            "runpod_prod_image_to_video_manual_01",
+            RunPodWorkerActionRequest(),
+        )
+    assert enable_error.value.status_code == 409
 
 
 def _discard_operation_coroutine(coro):
@@ -126,6 +156,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "scail2",
         "ltx_video",
         "ltx_t2v",
+        "minimax_h3",
         "pornmaster_flux2_edit_bf16",
     ]
     assert payload["profiles"][0]["supported_task_types"] == [
