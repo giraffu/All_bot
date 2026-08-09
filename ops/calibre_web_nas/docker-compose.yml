@@ -1,3 +1,5 @@
+name: allbot-calibre-web
+
 services:
   calibre-web-automated:
     image: ${CWA_IMAGE:?set CWA_IMAGE to a verified registry digest or offline image ID}
