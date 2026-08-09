@@ -17,12 +17,12 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_IMAGE_TO_VIDEO,
-    MODE_LTX_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
 )
 from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
+from src.domain_config.minimax_h3 import MINIMAX_H3_FLF2V, MINIMAX_H3_I2V
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
@@ -383,7 +383,7 @@ def _build_qqcc_ai_video_chain_segment(
         duration_seconds = int(scene.get("duration") or 5)
     except (TypeError, ValueError):
         duration_seconds = 5
-    if duration_seconds not in {5, 10, 15, 20}:
+    if duration_seconds not in {5, 10, 15}:
         duration_seconds = 5
     tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(config, scene)
     tail_draw_chain = (
@@ -402,28 +402,24 @@ def _build_qqcc_ai_video_chain_segment(
             if tail_draw_chain
             else QuickVideoSubmissionKind.LTX_VIDEO
         ),
-        mode=MODE_LTX_VIDEO,
-        resolution=str(scene.get("resolution") or "1280x704"),
+        mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+        resolution=str(scene.get("resolution") or "preview"),
         duration=f"{duration_seconds}s",
         cost=(10 * (duration_seconds // 5))
         + calculate_qqcc_draw_chain_cost(tail_draw_chain),
-        default_prompt_key=MODE_LTX_VIDEO,
+        default_prompt_key=MINIMAX_H3_I2V,
         default_prompt_text=prompt,
         prompt_override=prompt,
         negative_prompt=str(scene.get("negative_prompt") or "").strip(),
         display_mode_name=display_name,
         result_meta=build_qqcc_regenerate_result_meta(
             kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-            mode=MODE_LTX_VIDEO,
+            mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
             scene_id=scene_id,
             scene_kind="ai_video",
             display_mode_name=display_name,
         ),
-        lora_items=[
-            {"name": item.get("path"), "strength": item.get("strength")}
-            for item in (scene.get("lora_items") or [])
-            if isinstance(item, dict) and item.get("path")
-        ],
+        lora_items=[],
         tail_draw_chain=tail_draw_chain,
     )
 
@@ -537,7 +533,7 @@ def build_quick_video_submission_plan(
             duration_seconds = int(scene.get("duration") or 5)
         except (TypeError, ValueError):
             duration_seconds = 5
-        if duration_seconds not in {5, 10, 15, 20}:
+        if duration_seconds not in {5, 10, 15}:
             duration_seconds = 5
         duration = f"{duration_seconds}s"
         tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
@@ -556,15 +552,15 @@ def build_quick_video_submission_plan(
                 if tail_draw_chain
                 else QuickVideoSubmissionKind.LTX_VIDEO
             ),
-            mode=MODE_LTX_VIDEO,
-            resolution=str(scene.get("resolution") or "1280x704"),
+            mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
+            resolution=str(scene.get("resolution") or "preview"),
             duration=duration,
             total_cost=(
                 fixed_credit_cost
                 if fixed_credit_cost is not None
                 else sum(segment.cost for segment in chain_segments)
             ),
-            default_prompt_key=MODE_LTX_VIDEO,
+            default_prompt_key=MINIMAX_H3_I2V,
             default_prompt_text=prompt,
             allow_contribute=False,
             prompt_override=prompt,
@@ -572,16 +568,12 @@ def build_quick_video_submission_plan(
             display_mode_name=display_mode_name,
             result_meta=build_qqcc_regenerate_result_meta(
                 kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
-                mode=MODE_LTX_VIDEO,
+                mode=MINIMAX_H3_FLF2V if tail_draw_chain else MINIMAX_H3_I2V,
                 scene_id=scene_id,
                 scene_kind="ai_video",
                 display_mode_name=display_mode_name,
             ),
-            lora_items=[
-                {"name": item.get("path"), "strength": item.get("strength")}
-                for item in (scene.get("lora_items") or [])
-                if isinstance(item, dict) and item.get("path")
-            ],
+            lora_items=[],
             tail_draw_chain=tail_draw_chain,
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
@@ -778,15 +770,13 @@ def _build_private_qqcc_video_chain_stages(
         }:
             task_kwargs = {
                 "prompt": segment.prompt_override or segment.default_prompt_text,
-                "resolution": segment.resolution,
+                "is_video": True,
+                "task_type": MINIMAX_H3_FLF2V if segment.tail_draw_chain else MINIMAX_H3_I2V,
+                "resolution_preset": segment.resolution,
                 "duration": segment.duration,
-                "ltx_mode": "flf2v" if segment.tail_draw_chain else "i2v",
-                "lora_items": segment.lora_items,
                 **common_kwargs,
             }
-            if segment.negative_prompt:
-                task_kwargs["negative_prompt"] = segment.negative_prompt
-            executor = "ltx_video"
+            executor = "generation"
         elif segment.mode == MODE_WAN22_VIDEO_V2:
             task_kwargs = {
                 "prompt": segment.prompt_override or segment.default_prompt_text,
@@ -961,16 +951,15 @@ async def run_quick_video_submission_plan(
         if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
             stages.append(
                 {
-                    "executor": "ltx_video",
+                    "executor": "generation",
                     "input_mode": "original_current",
                     "delivery_required": True,
                     "task_kwargs": {
                         "prompt": plan.prompt_override or plan.default_prompt_text,
-                        "negative_prompt": plan.negative_prompt,
-                        "resolution": plan.resolution,
+                        "is_video": True,
+                        "task_type": MINIMAX_H3_FLF2V,
+                        "resolution_preset": plan.resolution,
                         "duration": plan.duration,
-                        "ltx_mode": "flf2v",
-                        "lora_items": plan.lora_items,
                         "cleanup": True,
                         "send_result": True,
                         "delete_status": True,
@@ -1111,28 +1100,24 @@ async def run_quick_video_submission_plan(
         )
 
     if plan.kind == QuickVideoSubmissionKind.LTX_VIDEO:
-        optional_negative = (
-            {"negative_prompt": plan.negative_prompt} if plan.negative_prompt else {}
-        )
         task_kwargs = billing_state.allocate_task_billing()
         result = await _maybe_await(
-            process_ltx_video_task_func(
+            process_generation_task_func(
                 context=context,
                 chat_id=chat_id,
                 user_id=user_id,
                 username=username,
                 prompt=plan.prompt_override or plan.default_prompt_text,
-                image_path=image_path,
-                resolution=plan.resolution,
+                images=[image_path],
+                is_video=True,
+                task_type=MINIMAX_H3_I2V,
+                resolution_preset=plan.resolution,
                 duration=plan.duration,
-                ltx_mode="i2v",
-                lora_items=plan.lora_items or None,
                 cleanup=True,
                 allow_contribute=False,
                 display_mode_name_override=plan.display_mode_name,
                 result_meta=plan.result_meta,
                 status_msg_id=status_msg_id,
-                **optional_negative,
                 **task_kwargs,
             )
         )
@@ -1269,24 +1254,18 @@ async def _run_tail_frame_video_plan(
 
         video_task_started = True
         if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
-            optional_negative = (
-                {"negative_prompt": plan.negative_prompt}
-                if plan.negative_prompt
-                else {}
-            )
             result = await _maybe_await(
-                process_ltx_video_task_func(
+                process_generation_task_func(
                     context=context,
                     chat_id=chat_id,
                     user_id=user_id,
                     username=username,
                     prompt=plan.prompt_override or plan.default_prompt_text,
-                    image_path=image_path,
-                    end_image_path=end_image_path,
-                    resolution=plan.resolution,
+                    images=[image_path, end_image_path],
+                    is_video=True,
+                    task_type=MINIMAX_H3_FLF2V,
+                    resolution_preset=plan.resolution,
                     duration=plan.duration,
-                    ltx_mode="flf2v",
-                    lora_items=plan.lora_items or None,
                     cleanup=True,
                     allow_contribute=False,
                     display_mode_name_override=plan.display_mode_name,
@@ -1296,7 +1275,6 @@ async def _run_tail_frame_video_plan(
                     allow_cancel=False,
                     user_cancel_allowed=False,
                     show_queue_status=False,
-                    **optional_negative,
                     **billing_state.allocate_task_billing(),
                 )
             )

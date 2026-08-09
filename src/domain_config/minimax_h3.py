@@ -41,6 +41,9 @@ class MiniMaxH3ValidationError(ValueError):
     pass
 
 
+PRODUCT_NAME = "高级图生视频pro"
+
+
 @dataclass(frozen=True, slots=True)
 class MiniMaxH3Spec:
     task_type: str
@@ -70,9 +73,9 @@ def _duration(value: Any) -> int:
     try:
         duration = int(str(value if value is not None else 5).removesuffix("s"))
     except (TypeError, ValueError) as exc:
-        raise MiniMaxH3ValidationError("MiniMax H3 时长必须为 5、10 或 15 秒。") from exc
+        raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}时长必须为 5、10 或 15 秒。") from exc
     if duration not in MINIMAX_H3_ALLOWED_DURATIONS:
-        raise MiniMaxH3ValidationError("MiniMax H3 时长必须为 5、10 或 15 秒。")
+        raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}时长必须为 5、10 或 15 秒。")
     return duration
 
 
@@ -104,13 +107,13 @@ def _images(inputs: dict[str, Any]) -> tuple[str, ...]:
 
 def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Spec:
     if task_type not in MINIMAX_H3_TASK_TYPES:
-        raise MiniMaxH3ValidationError(f"未知 MiniMax H3 任务类型: {task_type}")
+        raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     forbidden = (
         "lora_name", "lora_items", "model_name", "checkpoint", "timeline_data",
         "local_path", "ref_videos", "ref_audios", "sampler_name", "steps",
     )
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
-        raise MiniMaxH3ValidationError("MiniMax H3 不允许覆盖模型、LoRA、采样器或 timeline。")
+        raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
     duration = _duration(inputs.get("duration", inputs.get("length", 5)))
     preset = str(inputs.get("resolution_preset") or "preview").strip().lower()
@@ -136,7 +139,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
             raise MiniMaxH3ValidationError(f"{mode} 必须提供恰好 {minimum} 张图片。")
         raise MiniMaxH3ValidationError("ref2v 必须提供 1 至 4 张有序角色参考图。")
     if any(not item for item in images):
-        raise MiniMaxH3ValidationError("MiniMax H3 图片对象键不得为空。")
+        raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}图片不得为空。")
     if task_type != MINIMAX_H3_REF2V and descriptions:
         raise MiniMaxH3ValidationError("仅 ref2v 支持角色参考说明。")
     if descriptions and len(descriptions) != len(images):

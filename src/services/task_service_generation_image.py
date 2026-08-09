@@ -5,6 +5,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_WAN22_VIDEO_V2,
 )
+from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoint_support import (
     build_log_prompt,
@@ -66,6 +67,10 @@ async def process_standard_generation_task(
     display_mode_name_override: str | None = None,
     result_meta: dict[str, Any] | None = None,
     runtime_state: BotTaskRuntimeState | None = None,
+    reference_descriptions: list[str] | None = None,
+    resolution_preset: str | None = None,
+    aspect_ratio: str | None = None,
+    seed: int | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
@@ -144,16 +149,27 @@ async def process_standard_generation_task(
             wan22_kwargs["cost_override"] = cost_override
         return await process_wan22_video_v2_generation_task(**wan22_kwargs)
 
-    resolution = 512
-    duration = 5
+    is_minimax_h3 = task_type in MINIMAX_H3_TASK_TYPES
+    if is_minimax_h3:
+        resolution = resolution_preset or resolution or "preview"
+        duration = duration or 5
+    else:
+        resolution = 512
+        duration = 5
     notice = await get_acceleration_notice(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
     )
-    extra_inputs: dict[str, Any] = {
-        "lora_name": lora_name,
-        "lora_strength": lora_strength,
-    }
+    extra_inputs: dict[str, Any] = {}
+    if is_minimax_h3:
+        extra_inputs.update(
+            resolution_preset=resolution,
+            aspect_ratio=aspect_ratio or "16:9",
+            reference_descriptions=reference_descriptions or [],
+            seed=seed,
+        )
+    else:
+        extra_inputs.update(lora_name=lora_name, lora_strength=lora_strength)
     if negative_prompt is not None:
         extra_inputs["negative_prompt"] = negative_prompt
     inputs = build_task_inputs(
@@ -190,7 +206,7 @@ async def process_standard_generation_task(
         resolution=resolution,
         task_type=task_type,
         duration=duration,
-        allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO),
+        allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO, *MINIMAX_H3_TASK_TYPES),
     )
 
     return await run_bot_task_application(

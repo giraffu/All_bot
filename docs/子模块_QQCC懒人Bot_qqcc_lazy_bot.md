@@ -1,5 +1,9 @@
 # 子模块: QQCC 懒人 Bot (QQCC Lazy Bot)
 
+AI 视频场景面向用户统一称为“高级图生视频pro”。当前普通场景提交 H3 I2V，配置
+尾帧生成链的场景提交 H3 FLF2V。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
+清空；`ai_video_addon_models` 作为未来附加模型 catalog，当前为空且前端隐藏。
+
 ## 1. 范围与定位
 
 QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；正式使用 main-bot 专属 `MAIN_BOT_LAZY_BOT_ENABLED=true` 与 `MAIN_BOT_LAZY_BOT_USERNAME=@QQCC666_bot`，解析为 `https://t.me/QQCC666_bot`。旧 `QQCC_LAZY_BOT_*` 仅作整组兼容回退。

@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_REF2V,
+    MINIMAX_H3_T2V,
+    MiniMaxH3ValidationError,
+    build_minimax_h3_spec,
+)
+from src.services.task_service_generation_image import process_standard_generation_task
+
+
+PRODUCT_NAME = "高级图生视频pro"
+MODE_TASK_TYPES = {
+    "t2v": MINIMAX_H3_T2V,
+    "i2v": MINIMAX_H3_I2V,
+    "flf2v": MINIMAX_H3_FLF2V,
+    "ref2v": MINIMAX_H3_REF2V,
+}
+
+
+class AdvancedVideoProSubmissionError(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class AdvancedVideoProSubmissionPlan:
+    mode: str
+    task_type: str
+    prompt: str
+    images: tuple[str, ...]
+    reference_descriptions: tuple[str, ...]
+    duration: int
+    resolution_preset: str
+    aspect_ratio: str
+    cost: int
+
+
+def build_advanced_video_pro_submission_plan(
+    *,
+    mode: str,
+    prompt: str,
+    images: list[str] | tuple[str, ...] = (),
+    reference_descriptions: list[str] | tuple[str, ...] = (),
+    duration: int | str = 5,
+    resolution_preset: str = "preview",
+    aspect_ratio: str = "16:9",
+) -> AdvancedVideoProSubmissionPlan:
+    normalized_mode = str(mode or "").strip().lower()
+    task_type = MODE_TASK_TYPES.get(normalized_mode)
+    if task_type is None:
+        raise AdvancedVideoProSubmissionError("请选择有效的视频生成模式。")
+    normalized_prompt = str(prompt or "").strip()
+    if not normalized_prompt:
+        raise AdvancedVideoProSubmissionError("请输入视频提示词。")
+    inputs = {
+        "prompt": normalized_prompt,
+        "images": list(images),
+        "reference_descriptions": list(reference_descriptions),
+        "duration": duration,
+        "resolution_preset": resolution_preset,
+        "aspect_ratio": aspect_ratio,
+    }
+    try:
+        spec = build_minimax_h3_spec(task_type, inputs)
+    except MiniMaxH3ValidationError as exc:
+        raise AdvancedVideoProSubmissionError(str(exc)) from exc
+    return AdvancedVideoProSubmissionPlan(
+        mode=spec.mode,
+        task_type=spec.task_type,
+        prompt=normalized_prompt,
+        images=spec.images,
+        reference_descriptions=spec.reference_descriptions,
+        duration=spec.duration_seconds,
+        resolution_preset=spec.resolution_preset,
+        aspect_ratio=spec.aspect_ratio,
+        cost=spec.cost,
+    )
+
+
+async def submit_advanced_video_pro_plan(
+    plan: AdvancedVideoProSubmissionPlan,
+    *,
+    context: Any,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    status_msg_id: int | None = None,
+    cleanup: bool = True,
+    allow_contribute: bool = False,
+    display_mode_name: str = PRODUCT_NAME,
+    result_meta: dict[str, Any] | None = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
+    show_queue_status: bool = True,
+    cost_override: int | None = None,
+    deduct_quota: bool = True,
+    process_task_func: Callable[..., Awaitable[Any]] = process_standard_generation_task,
+) -> Any:
+    return await process_task_func(
+        context=context,
+        chat_id=chat_id,
+        user_id=user_id,
+        username=username,
+        prompt=plan.prompt,
+        images=list(plan.images),
+        reference_descriptions=list(plan.reference_descriptions),
+        is_video=True,
+        task_type=plan.task_type,
+        duration=plan.duration,
+        resolution_preset=plan.resolution_preset,
+        aspect_ratio=plan.aspect_ratio,
+        status_msg_id=status_msg_id,
+        cleanup=cleanup,
+        allow_contribute=allow_contribute,
+        display_mode_name_override=display_mode_name,
+        result_meta=result_meta,
+        base_priority=base_priority,
+        allow_cancel=allow_cancel,
+        user_cancel_allowed=user_cancel_allowed,
+        show_queue_status=show_queue_status,
+        cost_override=cost_override,
+        deduct_quota=deduct_quota,
+    )

@@ -326,10 +326,10 @@ async def test_submit_legacy_video_demo_forwards_ordered_lora_items_and_strength
     )
 
 @pytest.mark.asyncio
-async def test_submit_ai_video_demo_uses_ltx_without_running_tail_chain():
+async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
     storage = FakeStorage()
     image = Mock()
-    image.submit_ltx_video_task = AsyncMock(return_value="task-ltx")
+    image.submit_minimax_h3_task = AsyncMock(return_value="task-ltx")
 
     result = await submit_qqcc_demo_generation(
         scene_kind="ai_video",
@@ -356,21 +356,21 @@ async def test_submit_ai_video_demo_uses_ltx_without_running_tail_chain():
     )
 
     assert result["status"] == "pending"
-    image.submit_ltx_video_task.assert_awaited_once_with(
+    image.submit_minimax_h3_task.assert_awaited_once_with(
         "task-ltx",
-        "camera orbit",
-        "qqcc/demo-generation/task-ltx/input.png",
-        lora_items=[
-            {
-                "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                "strength": 0.75,
-            }
-        ],
-        width=1280,
-        height=704,
-        length=15,
+        task_type="minimax_h3_i2v",
+        prompt="camera orbit",
+        images=("qqcc/demo-generation/task-ltx/input.png",),
+        reference_descriptions=(),
+        duration=15,
+        resolution_preset="preview",
+        aspect_ratio="16:9",
+        width=736,
+        height=416,
+        frame_count=362,
+        fps=24,
+        seed=None,
         priority=0,
-        negative_prompt="blur",
     )
 
 

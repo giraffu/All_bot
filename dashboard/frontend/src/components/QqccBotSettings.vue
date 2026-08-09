@@ -40,12 +40,12 @@ type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
 type ResolutionKey = '512p' | '720p' | '1024p'
-type AiVideoResolutionKey = '1280x704'
+type AiVideoResolutionKey = 'preview' | 'standard' | 'hd'
 type DurationKey = '5s' | '8s' | '10s'
-type AiVideoDurationKey = 5 | 10 | 15 | 20
+type AiVideoDurationKey = 5 | 10 | 15
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type VideoAspectRatio = 'source' | '9:16' | '16:9' | '1:1'
-type AiVideoSceneEngine = 'ltx_video'
+type AiVideoSceneEngine = 'minimax_h3'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v2_5' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter'
 type DemoMediaSlot = 'input' | 'output'
@@ -206,7 +206,8 @@ interface QqccBotConfigOptions {
   ai_video_engines: SceneEngineOption[]
   draw_engines: SceneEngineOption[]
   video_lora_models: LoraModelOption[]
-  ltx_video_lora_models: LoraModelOption[]
+  ai_video_addon_models_version: number
+  ai_video_addon_models: LoraModelOption[]
   image_lora_models: LoraModelOption[]
   video_resolutions: ResolutionOption<ResolutionKey>[]
   ai_video_resolutions: ResolutionOption<AiVideoResolutionKey>[]
@@ -260,19 +261,20 @@ const props = defineProps<{
 const emptyOptions = (): QqccBotConfigOptions => ({
   scene_preset_version: 1,
   default_video_engine: 'image_to_video',
-  default_ai_video_engine: 'ltx_video',
+  default_ai_video_engine: 'minimax_h3',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
   video_aspect_ratios: ['source', '9:16', '16:9', '1:1'],
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ltx_video_lora_models: [],
+  ai_video_addon_models_version: 1,
+  ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],
   ai_video_resolutions: [],
   default_video_resolution: '720p',
-  default_ai_video_resolution: '1280x704',
+  default_ai_video_resolution: 'preview',
   default_scene_credit_costs: {},
 })
 
@@ -419,7 +421,7 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
-const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15, 20]
+const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15]
 const demoSlots: DemoMediaSlot[] = ['input', 'output']
 
 const videoEngineLabels: Record<VideoSceneEngine, string> = {
@@ -435,7 +437,7 @@ const videoAspectRatioLabels: Record<VideoAspectRatio, string> = {
 }
 
 const aiVideoEngineLabels: Record<AiVideoSceneEngine, string> = {
-  ltx_video: '高级图生视频（LTX）',
+  minimax_h3: '高级图生视频pro',
 }
 
 const drawEngineLabels: Record<DrawSceneEngine, string> = {
@@ -663,7 +665,7 @@ const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
 const normalizeVideoAspectRatio = (value: unknown): VideoAspectRatio =>
   value === '9:16' || value === '16:9' || value === '1:1' ? value : 'source'
 
-const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
+const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'minimax_h3'
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
   value === 'free_edit' || value === 'free_edit_v2_5' || value === 'free_edit_v3' ? value : 'free_edit_v2'
@@ -750,7 +752,7 @@ const normalizeLoraStrength = (raw: unknown, fallback = 1) => {
 
 const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
   if (!Array.isArray(raw)) return []
-  const allowed = new Map(modelOptions.ltx_video_lora_models.map(item => [item.value, item]))
+  const allowed = new Map(modelOptions.ai_video_addon_models.map(item => [item.value, item]))
   const seen = new Set<string>()
   const normalized: AiVideoLoraItem[] = []
   for (const item of raw) {
@@ -814,7 +816,7 @@ const updateVideoLoraSelection = (names: string[]) => {
 const updateAiVideoLoraSelection = (paths: string[]) => {
   const current = new Map(sceneConfig.lora_items.map(item => [item.path, item.strength]))
   sceneConfig.lora_items = paths.slice(0, 3).map(path => {
-    const option = modelOptions.ltx_video_lora_models.find(item => item.value === path)
+    const option = modelOptions.ai_video_addon_models.find(item => item.value === path)
     return {
       path,
       strength: normalizeLoraStrength(current.get(path), option?.default_strength ?? 1),
@@ -926,8 +928,8 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (resolutionOptions.includes(raw.default_video_resolution as ResolutionKey)) {
     merged.default_video_resolution = raw.default_video_resolution as ResolutionKey
   }
-  if (raw.default_ai_video_resolution === '1280x704') {
-    merged.default_ai_video_resolution = raw.default_ai_video_resolution
+  if (['preview', 'standard', 'hd'].includes(raw.default_ai_video_resolution as string)) {
+    merged.default_ai_video_resolution = raw.default_ai_video_resolution as AiVideoResolutionKey
   }
   if (Array.isArray(raw.video_resolutions)) {
     merged.video_resolutions = raw.video_resolutions.filter(
@@ -939,7 +941,7 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (Array.isArray(raw.ai_video_resolutions)) {
     merged.ai_video_resolutions = raw.ai_video_resolutions.filter(
       (item): item is ResolutionOption<AiVideoResolutionKey> =>
-        item?.value === '1280x704' && typeof item?.label === 'string',
+        ['preview', 'standard', 'hd'].includes(item?.value as string) && typeof item?.label === 'string',
     )
   }
   const rawCreditCosts = raw.default_scene_credit_costs
@@ -986,8 +988,8 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({ value: item.value, label: typeof item.label === 'string' ? item.label : item.value }))
   }
-  if (Array.isArray(raw.ltx_video_lora_models) && raw.ltx_video_lora_models.length > 0) {
-    merged.ltx_video_lora_models = raw.ltx_video_lora_models
+  if (Array.isArray(raw.ai_video_addon_models)) {
+    merged.ai_video_addon_models = raw.ai_video_addon_models
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({
         value: item.value,
@@ -1041,7 +1043,7 @@ const activeLoraOptions = computed(() =>
   isVideoSceneKind(sceneConfig.kind)
     ? modelOptions.video_lora_models
     : sceneConfig.kind === 'ai_video'
-      ? modelOptions.ltx_video_lora_models
+      ? modelOptions.ai_video_addon_models
       : modelOptions.image_lora_models
 )
 const activeEngineSupportsLora = computed(() =>
@@ -1315,8 +1317,8 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           prompt: typeof scene?.prompt === 'string' ? scene.prompt : '',
           negative_prompt: typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : '',
           duration,
-          resolution: scene?.resolution === '1280x704'
-            ? scene.resolution
+          resolution: ['preview', 'standard', 'hd'].includes(scene?.resolution as string)
+            ? scene.resolution as AiVideoResolutionKey
             : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
           lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
@@ -2334,7 +2336,7 @@ onMounted(() => {
           </template>
           <div class="scene-pane">
             <div class="scene-pane-toolbar">
-              <span class="text-sm text-slate-500">管理高级图生视频按钮、正负提示词、固定时长、LTX 模型和尾帧来源</span>
+              <span class="text-sm text-slate-500">管理高级图生视频pro按钮、提示词、固定时长和尾帧来源</span>
               <a-button data-testid="add-ai-video-scene" @click="addAiVideoScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
             </div>
             <div class="hidden grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_238px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
@@ -2664,7 +2666,7 @@ onMounted(() => {
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'ai_video'" label="附加模型（最多 3 个）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 3 个）" class="mb-4">
           <a-select
             :value="sceneConfig.lora_items.map(item => item.path)"
             mode="multiple"

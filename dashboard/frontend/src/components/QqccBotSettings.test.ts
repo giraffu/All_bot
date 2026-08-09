@@ -1329,7 +1329,7 @@ describe('QqccBotSettings', () => {
     expect((wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value).toBe('')
   })
 
-  it('saves AI video negative prompt and up to three LTX LoRAs with strengths', async () => {
+  it('migrates AI video to pro engine and hides empty future add-on catalog', async () => {
     apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
       key: 'qqcc_lazy_bot_config:v1',
       config: {
@@ -1348,14 +1348,10 @@ describe('QqccBotSettings', () => {
         }],
       },
       options: {
-        default_ai_video_engine: 'ltx_video',
-        ai_video_engines: [{ value: 'ltx_video', supports_lora: true }],
-        ltx_video_lora_models: [
-          { value: 'ltx/a.safetensors', label: 'A', default_strength: 0.8 },
-          { value: 'ltx/b.safetensors', label: 'B', default_strength: 1.25 },
-          { value: 'ltx/c.safetensors', label: 'C', default_strength: 1 },
-          { value: 'ltx/d.safetensors', label: 'D', default_strength: 1 },
-        ],
+        default_ai_video_engine: 'minimax_h3',
+        ai_video_engines: [{ value: 'minimax_h3', supports_lora: false }],
+        ai_video_addon_models_version: 1,
+        ai_video_addon_models: [],
       },
     })
     const wrapper = mountSettings()
@@ -1363,18 +1359,7 @@ describe('QqccBotSettings', () => {
 
     expect(wrapper.get('[data-testid="scene-tab-ai-video"]').text()).toContain('1')
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
-    const selector = wrapper.findAllComponents(SelectStub)
-      .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
-    if (!selector) throw new Error('Missing AI video LoRA selector')
-    selector.vm.$emit('change', [
-      'ltx/a.safetensors', 'ltx/b.safetensors', 'ltx/c.safetensors', 'ltx/d.safetensors',
-    ])
-    await flushPromises()
-    const loraStrengthInputs = wrapper.findAllComponents(InputNumberStub)
-      .filter(component => component.attributes('data-testid')?.startsWith('scene-ai-video-lora-strength-'))
-    expect(loraStrengthInputs).toHaveLength(3)
-    loraStrengthInputs[1]!.vm.$emit('update:value', 1.55)
-    await flushPromises()
+    expect(wrapper.find('[data-testid="scene-ai-video-lora-select"]').exists()).toBe(false)
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -1385,13 +1370,9 @@ describe('QqccBotSettings', () => {
       id: 'cinema',
       negative_prompt: 'blur',
       duration: 15,
-      engine: 'ltx_video',
+      engine: 'minimax_h3',
       end_frame_draw_scene_id: 'tail',
-      lora_items: [
-        { path: 'ltx/a.safetensors', strength: 0.75 },
-        { path: 'ltx/b.safetensors', strength: 1.55 },
-        { path: 'ltx/c.safetensors', strength: 1 },
-      ],
+      lora_items: [],
     }))
   })
 

@@ -269,9 +269,9 @@ const submit = async () => {
     operationPage.value = 1
     await loadOperations()
     emit('changed')
-  } catch (err) {
+  } catch (err: unknown) {
     console.error(err)
-    const detail = err?.response?.data?.detail
+    const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
     const errorMessage = typeof detail === 'string' && detail
       ? `RunPod 操作提交失败: ${detail}`
       : 'RunPod 操作提交失败'

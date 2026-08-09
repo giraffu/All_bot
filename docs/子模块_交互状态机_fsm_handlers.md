@@ -1,5 +1,12 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
+主菜单的历史 `menu.ltx_video` 键当前展示为“高级图生视频pro”，实际注册
+`advanced_video_pro_fsm.py`。入口选择 H3 四模式、时长、画质档位与比例，再按模式
+收集 0/1/2/1–4 张图片及角色说明；提交计划由
+`advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
+历史 LTX 设置 callback 只提示过期，不得静默改投新任务；旧 History/扩展 callback
+仍维持历史记录兼容。
+
 ## 1. 目标与范围
 
 本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑，以及基于装饰器注册的 callback 路由体系。
