@@ -15,7 +15,8 @@ Web 由 `enable_minimax_h3` 控制，后端由
 
 ## 请求契约
 
-- 公共字段：非空 `prompt`、`duration=5|10|15`、
+- 公共字段：非空 `prompt`、`duration=5|10|15`（Bot/QQCC 可接收兼容的
+  `"5s"` 标签，但进入任务请求、计费和 History 前必须归一为整数秒）、
   `resolution_preset=preview|standard|hd`、常用 `aspect_ratio` 和可选 `seed`。
   未指定 `seed` 时由 MiniMax H3 专用生成器在 Central 请求契约的
   `1..2^50` 范围内生成，不能复用上限更大的通用生成 seed。

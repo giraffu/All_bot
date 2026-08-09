@@ -7,6 +7,7 @@ from src.domain_config.minimax_h3 import (
     MINIMAX_H3_T2V,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
+    normalize_minimax_h3_duration_seconds,
 )
 
 
@@ -16,6 +17,11 @@ def test_minimax_h3_t2v_duration_cost_and_frame_grid(duration, cost, frames):
     assert (spec.cost, spec.frame_count, spec.fps) == (cost, frames, 24)
     assert spec.mode == "t2v"
     assert spec.width % 32 == spec.height % 32 == 0
+
+
+@pytest.mark.parametrize("raw,expected", [(5, 5), ("5", 5), ("5s", 5)])
+def test_minimax_h3_duration_normalizes_to_integer_seconds(raw, expected):
+    assert normalize_minimax_h3_duration_seconds(raw) == expected
 
 
 @pytest.mark.parametrize(

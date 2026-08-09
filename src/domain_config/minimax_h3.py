@@ -69,7 +69,7 @@ def _string_tuple(value: Any, *, field: str) -> tuple[str, ...]:
     return tuple(str(item or "").strip() for item in value)
 
 
-def _duration(value: Any) -> int:
+def normalize_minimax_h3_duration_seconds(value: Any) -> int:
     try:
         duration = int(str(value if value is not None else 5).removesuffix("s"))
     except (TypeError, ValueError) as exc:
@@ -115,7 +115,9 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
-    duration = _duration(inputs.get("duration", inputs.get("length", 5)))
+    duration = normalize_minimax_h3_duration_seconds(
+        inputs.get("duration", inputs.get("length", 5))
+    )
     preset = str(inputs.get("resolution_preset") or "preview").strip().lower()
     if preset not in MINIMAX_H3_PIXEL_PRESETS:
         raise MiniMaxH3ValidationError("分辨率档位必须为 preview、standard 或 hd。")
