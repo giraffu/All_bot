@@ -15,6 +15,8 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 
 - 公共字段：非空 `prompt`、`duration=5|10|15`、
   `resolution_preset=preview|standard|hd`、常用 `aspect_ratio` 和可选 `seed`。
+  未指定 `seed` 时由 MiniMax H3 专用生成器在 Central 请求契约的
+  `1..2^50` 范围内生成，不能复用上限更大的通用生成 seed。
 - T2V 不接受图片；I2V 恰好 1 张；FLF2V 恰好 2 张有序首尾帧；REF2V 接受
   1–4 张有序角色参考图和可选的等长角色说明。
 - 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
