@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.domain_config.minimax_h3 import MINIMAX_H3_MAX_SEED
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
@@ -326,7 +327,7 @@ class MiniMaxH3Request(BaseModel):
     height: int = Field(ge=32)
     frame_count: int = Field(ge=5)
     fps: int = Field(default=24)
-    seed: Optional[int] = Field(default=None, ge=0, le=1125899906842624)
+    seed: Optional[int] = Field(default=None, ge=0, le=MINIMAX_H3_MAX_SEED)
     extract_last_frame: bool = True
     priority: int = 0
 

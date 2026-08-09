@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import ANY, AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 
@@ -175,6 +175,17 @@ def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
 
     assert inputs["seed"] == 123456
     assert metadata["minimax_h3_seed"] == 123456
+
+
+def test_minimax_h3_default_seed_stays_within_central_request_contract(monkeypatch):
+    randint = Mock(return_value=1125899906842624)
+    monkeypatch.setattr("random.randint", randint)
+    strategy = MiniMaxH3Strategy("minimax_h3_t2v")
+
+    metadata = strategy.get_metadata({"prompt": "scene"})
+
+    assert metadata["minimax_h3_seed"] == 1125899906842624
+    randint.assert_called_once_with(1, 1125899906842624)
 
 
 @pytest.mark.asyncio

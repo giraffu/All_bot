@@ -53,6 +53,7 @@ from src.domain_config.ltx_t2v import (
     build_ltx_t2v_spec,
 )
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_MAX_SEED,
     MINIMAX_H3_TASK_TYPES,
     MiniMaxH3ValidationError,
     build_minimax_h3_spec,
@@ -327,6 +328,12 @@ def _generate_dispatch_seed() -> int:
     import random
 
     return random.randint(1, 9007199254740991)
+
+
+def _generate_minimax_h3_seed() -> int:
+    import random
+
+    return random.randint(1, MINIMAX_H3_MAX_SEED)
 
 
 def _build_default_image_submission_context(
@@ -1017,7 +1024,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
         self,
         task_type: str,
         *,
-        seed_provider: Callable[[], int] = _generate_dispatch_seed,
+        seed_provider: Callable[[], int] = _generate_minimax_h3_seed,
     ):
         self.task_type = task_type
         self.seed_provider = seed_provider
