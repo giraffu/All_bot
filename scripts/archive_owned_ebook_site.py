@@ -228,8 +228,8 @@ def put_verified(client, bucket: str, key: str, payload: bytes, *, content_type:
 
 
 def concurrent_map(worker, items, *, concurrency: int):
-    if not 1 <= concurrency <= 8:
-        raise ValueError("concurrency must be between 1 and 8")
+    if not 1 <= concurrency <= 16:
+        raise ValueError("concurrency must be between 1 and 16")
     with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="ebook-archive") as executor:
         yield from executor.map(worker, items)
 
@@ -377,7 +377,7 @@ def main() -> None:
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--limit-books", type=int)
-    parser.add_argument("--concurrency", type=int, choices=range(1, 9), default=1)
+    parser.add_argument("--concurrency", type=int, choices=range(1, 17), default=1)
     parser.add_argument("--skip-existing", action="store_true")
     args = parser.parse_args()
     if args.config.stat().st_mode & 0o077:

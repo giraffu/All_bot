@@ -112,7 +112,7 @@ def test_existing_books_are_not_rescheduled_when_skip_existing_is_enabled():
     assert select_pending_books(paths, {"1", "3"}, skip_existing=False) == paths
 
 
-def test_concurrent_map_runs_up_to_eight_workers_without_losing_results():
+def test_concurrent_map_runs_up_to_sixteen_workers_without_losing_results():
     lock = threading.Lock()
     active = 0
     peak = 0
@@ -127,7 +127,7 @@ def test_concurrent_map_runs_up_to_eight_workers_without_losing_results():
             active -= 1
         return value * 2
 
-    results = list(concurrent_map(worker, range(16), concurrency=8))
+    results = list(concurrent_map(worker, range(32), concurrency=16))
 
-    assert sorted(results) == [value * 2 for value in range(16)]
-    assert peak == 8
+    assert sorted(results) == [value * 2 for value in range(32)]
+    assert peak == 16
