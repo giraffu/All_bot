@@ -84,13 +84,15 @@ python scripts/archive_owned_ebook_site.py \
 python scripts/archive_owned_ebook_site.py \
   --config /受限路径/ebook-archive.json \
   --state /受限路径/ebook-archive.sqlite3 \
-  --concurrency 8 --skip-existing --execute
+  --concurrency 16 --skip-existing --execute
 ```
 
 全量执行仍属于 NAS 写入，必须由用户明确要求；脚本逐书失败后继续并输出脱敏错误，
 可使用同一 state 重跑。站点结构变化导致正文或章节无法识别时 fail closed，不上传
-空书。并发范围固定为 1–8；`--skip-existing` 在 worker 调度前按 state 的书籍 ID
-过滤已完成对象，8 路只处理待归档书籍，上传后仍由主线程串行提交 SQLite state。
+空书。并发范围固定为 1–16；`--skip-existing` 在 worker 调度前按 state 的书籍 ID
+过滤已完成对象，最多 16 路只处理待归档书籍，上传后仍由主线程串行提交 SQLite
+state。提升并发前先用 8 路观测 HTTP 限流、超时和 NAS 回读校验；没有基础设施错误
+时再切换到 16 路，源书无章节属于内容错误，不作为并发降级信号。
 
 ## 3. History 单条媒体内容
 
