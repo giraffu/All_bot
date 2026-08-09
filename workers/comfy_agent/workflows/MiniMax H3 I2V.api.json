@@ -9,7 +9,7 @@
   "2": {
     "inputs": {
       "model": [
-        "1",
+        "11",
         0
       ]
     },
@@ -88,7 +88,7 @@
   },
   "33": {
     "inputs": {
-      "sampler_name": "res_multistep"
+      "sampler_name": "er_sde"
     },
     "class_type": "KSamplerSelect"
   },
@@ -99,7 +99,7 @@
         0
       ],
       "scheduler": "simple",
-      "steps": 25,
+      "steps": 4,
       "denoise": 1.0
     },
     "class_type": "BasicScheduler"
@@ -198,6 +198,28 @@
       ]
     },
     "class_type": "SaveImage"
+  },
+  "10": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+      "strength_model": 0.5
+    },
+    "class_type": "LoraLoaderModelOnly"
+  },
+  "11": {
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
+      "strength_model": 0.75
+    },
+    "class_type": "LoraLoaderModelOnly"
   },
   "20": {
     "inputs": {

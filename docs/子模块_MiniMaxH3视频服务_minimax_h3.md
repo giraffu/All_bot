@@ -25,8 +25,11 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 
 四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
 `scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
-生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产；API 图固定 25 steps、
-`res_multistep`、`simple`、video/audio shift `11/4`，并启用 KJNodes 的 H3
+生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。T2V/I2V 固定串联
+HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，使用 4 steps、`er_sde`、
+`simple` 与 video/audio shift `11/4`；触发词 `hmmotion` 由调用方在提示词中
+明确提供。FLF2V/REF2V 保持 25 steps、`res_multistep` 基线，避免把只针对
+FL2V 且未覆盖 REF2V 的 LoRA 错用到参考模型。四模式都启用 KJNodes H3
 memory-efficient SageAttention patch。
 
 REF2V 的原生 `MiniMaxH3ReferenceToVideo` 节点使用 ComfyUI V3 Autogrow 输入。
@@ -34,9 +37,10 @@ API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 
 有序参考图；不得使用扁平 `ref_image_1` 等字段，否则节点执行阶段会收到非预期
 关键字。业务提示词中的 `<Picture 1>` 仍保持 1-based，两种编号只属于不同层次。
 
-模型包为 `minimax_h3_runtime/2026-08-04-dasiwa-cmmh3-v1`，来自固定 revision 的
+模型包为 `minimax_h3_runtime/2026-08-09-hmnsfw-v2-lightx2v4`，来自固定 revision 的
 `Comfy-Org/MiniMax-H3` 官方量化转换，包含 FL2VA、REF2VA、Qwen3-VL text encoder
-及 video/audio VAE；没有 DaSiWa 微调 checkpoint 或 LoRA。模型只进入内容寻址仓库、
+及 video/audio VAE；同一 manifest 还包含 Civitai modelVersion `3206518` 的
+HMNSFW V2 与 Kijai 固定 revision 的 rank-21 Lightx2v 四步 LoRA。模型只进入内容寻址仓库、
 R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
 
 ## 发布与 LAN 验收
