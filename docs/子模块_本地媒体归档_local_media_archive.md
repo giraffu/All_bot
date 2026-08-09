@@ -33,6 +33,27 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 - NAS Compose：`ops/media_archive_nas/`
 - 主机路由与常驻服务：`ops/media_archive_worker/`
 - 本地浏览 API：`local_analytics_platform/app/routes_archive.py`
+- 自有电子书转 EPUB 与 Calibre 增量同步：
+  `scripts/sync_minio_ebooks_to_calibre.py`；NAS CWA Compose 与本机常驻服务：
+  `ops/calibre_web_nas/`
+
+### Calibre-Web Automated 电子书派生库
+
+MinIO `ebooks/diyibanzhu/<book_id>.txt/.json` 是原始事实源，Calibre 书库只是可重建
+派生物。同步器每 30 秒列举前缀，只处理 TXT/JSON 配对且 JSON `book_id`、SHA-256
+与 TXT 完整摘要一致的对象；随后生成带中文元数据的 EPUB，把大文本切为多个 XHTML，
+先原子保存到 NAS `source-epub/`，再复制到 CWA `ingest/`。本地 SQLite 按书籍 ID
+和源摘要断点续跑，内容未变不重复发布，源摘要变化时重新生成。
+
+CWA 配置、ingest 和 Calibre library 分别使用
+`/volume1/AllBotEbooks/{config,ingest,calibre-library}`，原始 MinIO bucket 不挂入
+CWA，也不允许 ingest 删除原始 TXT。网页只绑定 NAS 管理 LAN 的 8083 端口，不接
+Cloudflare 公网。CWA 镜像必须使用仓库 Compose 中的 amd64 manifest digest；NAS
+无法访问 registry 时由可信主机验证 digest、拉取并离线导入，禁止改用 mutable tag。
+
+同步器通过本机 SSH alias 原子写入 NAS，运行代码由
+`~/.local/share/allbot/calibre-sync/current` 指向精确 Git SHA；用户级 systemd 服务
+开机自启。单本失败只记录脱敏书籍 ID/错误并继续，后续轮询会重试未提交 state 的对象。
 - 自有站点电子书归档：`scripts/archive_owned_ebook_site.py`；私有运行模板：
   `ops/ebook_site_archive/runtime-template.json`
 

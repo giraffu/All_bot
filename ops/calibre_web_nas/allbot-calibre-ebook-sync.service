@@ -1,0 +1,16 @@
+[Unit]
+Description=AllBot MinIO to Calibre incremental ebook sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/allbot/calibre-sync/current
+UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy
+ExecStart=/home/hfy/miniconda3/bin/python scripts/sync_minio_ebooks_to_calibre.py --config %h/.config/allbot/media-archive/worker.json --state %h/.local/state/allbot/calibre-ebook-sync.sqlite3 --watch --poll-seconds 30
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=default.target
+
