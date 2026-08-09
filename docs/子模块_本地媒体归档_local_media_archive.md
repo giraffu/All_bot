@@ -51,6 +51,10 @@ CWA，也不允许 ingest 删除原始 TXT。网页只绑定 NAS 管理 LAN 的 
 Cloudflare 公网。CWA 镜像必须通过私有 0600 `.env` 的 `CWA_IMAGE` 使用已验证
 amd64 manifest digest；NAS 无法访问 registry 时由可信主机验证 digest、拉取并
 离线导入，再把实际导入的不可变 `sha256:<image-id>` 写入该变量，禁止改用 mutable tag。
+NAS bind mount 必须设置 `NETWORK_SHARE_MODE=true`，避免 CWA 每导入一本都递归
+`chown` 整个 Calibre Library；Calibre `metadata.db` 仍只允许 CWA 单写者，禁止以
+多 ingest processor 并发换取吞吐。首次大批量建库可临时关闭自动转换、Kindle 修复、
+导入备份、元数据强制处理和逐次重复扫描，完成后按需恢复非逐本任务。
 
 同步器通过本机 SSH alias 原子写入 NAS，运行代码由
 `~/.local/share/allbot/calibre-sync/current` 指向精确 Git SHA；用户级 systemd 服务

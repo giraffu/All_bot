@@ -9,7 +9,7 @@ services:
       PUID: "1000"
       PGID: "10"
       TZ: Asia/Shanghai
-      NETWORK_SHARE_MODE: "false"
+      NETWORK_SHARE_MODE: "true"
       CWA_PORT_OVERRIDE: "8083"
     ports:
       - "192.168.1.150:8083:8083"
