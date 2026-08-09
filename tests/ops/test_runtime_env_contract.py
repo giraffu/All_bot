@@ -100,6 +100,7 @@ def _environment(environment: str) -> dict[str, str]:
         "RMB_RECONCILIATION_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
+        "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES": (
             "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,"
@@ -143,6 +144,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["WORKER_REDIS_URL"] == "redis://prod-worker/0"
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
+    assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
     assert all(
         "LTX_T2V_BACKEND_ENABLED" not in projection
         for service, projection in snapshot.projections.items()
