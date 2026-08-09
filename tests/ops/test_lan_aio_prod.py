@@ -336,6 +336,9 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
     assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
 
+    current = slots["gpu-177-gpu1-ltx_unified"]
+    assert ops.retarget_slot(slot, current.id) == slot
+
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
