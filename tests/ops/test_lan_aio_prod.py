@@ -340,6 +340,23 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert ops.retarget_slot(slot, current.id) == slot
 
 
+def test_cloud_test_slot_uses_separate_agent_token_without_leaking_prod_token():
+    values = {
+        "LAN_AIO_AGENT_SECRET_TOKEN": "prod-token",
+        "LAN_AIO_TEST_AGENT_SECRET_TOKEN": "test-token",
+        "LAN_AIO_MINIO_ENDPOINT": "storage",
+        "LAN_AIO_MINIO_ACCESS_KEY": "access",
+        "LAN_AIO_MINIO_SECRET_KEY": "secret",
+        "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+        "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+    }
+
+    content = runtime_env_content(values, agent_token="test-token")
+
+    assert "LAN_AIO_AGENT_SECRET_TOKEN=test-token" in content
+    assert "prod-token" not in content
+
+
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
 

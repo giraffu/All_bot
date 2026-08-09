@@ -129,6 +129,7 @@ ENV_ALLOWLIST = {
     "MINIO_ACCESS_KEY",
     "MINIO_SECRET_KEY",
     "LAN_AIO_AGENT_SECRET_TOKEN",
+    "LAN_AIO_TEST_AGENT_SECRET_TOKEN",
     "LAN_AIO_MINIO_ENDPOINT",
     "LAN_AIO_MINIO_ACCESS_KEY",
     "LAN_AIO_MINIO_SECRET_KEY",
@@ -446,7 +447,11 @@ def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
     return values
 
 
-def runtime_env_content(values: dict[str, str]) -> str:
+def runtime_env_content(
+    values: dict[str, str],
+    *,
+    agent_token: str | None = None,
+) -> str:
     required = [
         "LAN_AIO_AGENT_SECRET_TOKEN",
         "LAN_AIO_MINIO_ENDPOINT",
@@ -460,7 +465,7 @@ def runtime_env_content(values: dict[str, str]) -> str:
         raise RuntimeError("missing runtime env values: " + ", ".join(missing))
     lines = []
     for key in required:
-        value = values[key]
+        value = agent_token if key == "LAN_AIO_AGENT_SECRET_TOKEN" and agent_token else values[key]
         if "\n" in value or "\r" in value:
             raise RuntimeError(f"refusing newline in runtime env value {key}")
         lines.append(f"{key}={value}")
@@ -503,6 +508,23 @@ class LanAioProdOps:
         self.env_values = load_env_allowlist(
             [self.prod_env_file, self.model_env_file, self.aio_env_file]
         )
+
+    def _agent_token_for_slot(self, slot: LanAioProdSlot) -> str:
+        if slot.environment == "cloud-test":
+            token = self.env_values.get("LAN_AIO_TEST_AGENT_SECRET_TOKEN", "")
+            if not token:
+                raise RuntimeError("missing LAN_AIO_TEST_AGENT_SECRET_TOKEN")
+            return token
+        return self.env_values.get(
+            "LAN_AIO_AGENT_SECRET_TOKEN", ""
+        ) or self.env_values.get("AGENT_SECRET_TOKEN", "")
+
+    def _agent_token_for_agent(self, agent_id: str) -> str:
+        if agent_id.startswith("lan_aio_test_"):
+            return self.env_values.get("LAN_AIO_TEST_AGENT_SECRET_TOKEN", "")
+        return self.env_values.get(
+            "LAN_AIO_AGENT_SECRET_TOKEN", ""
+        ) or self.env_values.get("AGENT_SECRET_TOKEN", "")
 
     def select_slots(
         self,
@@ -2097,7 +2119,10 @@ class LanAioProdOps:
             metadata = {**metadata, "image_ref": image_ref}
         if not image_ref:
             raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
-        env_content = runtime_env_content(self.env_values)
+        env_content = runtime_env_content(
+            self.env_values,
+            agent_token=self._agent_token_for_slot(slot),
+        )
         local_model_env_content = ""
         if metadata.get("lan_local_model_overrides"):
             token = self.env_values.get("CIVITAI_API_TOKEN", "")
@@ -2941,9 +2966,7 @@ class LanAioProdOps:
         return payload
 
     def _control_state(self, agent_id: str) -> str:
-        token = self.env_values.get(
-            "LAN_AIO_AGENT_SECRET_TOKEN"
-        ) or self.env_values.get("AGENT_SECRET_TOKEN")
+        token = self._agent_token_for_agent(agent_id)
         if not token:
             return "unknown_missing_token"
         try:
@@ -2971,9 +2994,7 @@ class LanAioProdOps:
         *,
         ttl_seconds: int | None = None,
     ) -> None:
-        token = self.env_values.get(
-            "LAN_AIO_AGENT_SECRET_TOKEN"
-        ) or self.env_values.get("AGENT_SECRET_TOKEN")
+        token = self._agent_token_for_agent(agent_id)
         if not token:
             raise RuntimeError("missing LAN_AIO_AGENT_SECRET_TOKEN/AGENT_SECRET_TOKEN")
         body: dict[str, Any] = {"state": state, "reason": reason}
@@ -3426,7 +3447,10 @@ fi
 
     def _write_remote_runtime_files(self, slot: LanAioProdSlot) -> None:
         compose = self.render_compose(slot)
-        env_content = runtime_env_content(self.env_values)
+        env_content = runtime_env_content(
+            self.env_values,
+            agent_token=self._agent_token_for_slot(slot),
+        )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
             compose_file = tmp_dir / "docker-compose.yml"
