@@ -33,6 +33,36 @@ NAS 离线不会把已完成的用户任务改成失败，R2 原件继续保留�
 - NAS Compose：`ops/media_archive_nas/`
 - 主机路由与常驻服务：`ops/media_archive_worker/`
 - 本地浏览 API：`local_analytics_platform/app/routes_archive.py`
+- 自有站点电子书归档：`scripts/archive_owned_ebook_site.py`；私有运行模板：
+  `ops/ebook_site_archive/runtime-template.json`
+
+### 自有电子书站点归档
+
+`archive_owned_ebook_site.py` 只面向操作者确认拥有或已获完整归档授权的站点。
+当前适配 `diyibanzhu` 的 `/book/`、`/list/`、`/view/` 页面结构，将每本书清洗为
+UTF-8 TXT，并把同名 JSON 元数据写入 NAS MinIO 的私有前缀。它不会复用 History
+媒体目录、outbox 或 R2 清理门禁，也不会把电子书暴露到公网。
+
+运行配置必须为 0600，凭据通过 `env:NAME` 注入，TLS 必须使用包含 NAS IP SAN 的
+内部 CA。命令默认只扫描目录并报告数量；只有显式 `--execute` 才抓取章节并上传。
+本地 SQLite state 按书籍 ID 和正文 SHA-256 断点续跑，正文变化时覆盖同一对象 key；
+MinIO bucket versioning 保留旧版本。先执行一本文字 canary，再扩大范围：
+
+```bash
+python scripts/archive_owned_ebook_site.py \
+  --config /受限路径/ebook-archive.json \
+  --state /受限路径/ebook-archive.sqlite3 \
+  --limit-books 1
+
+python scripts/archive_owned_ebook_site.py \
+  --config /受限路径/ebook-archive.json \
+  --state /受限路径/ebook-archive.sqlite3 \
+  --limit-books 1 --execute
+```
+
+全量执行仍属于 NAS 写入，必须由用户明确要求；脚本逐书失败后继续并输出脱敏错误，
+可使用同一 state 重跑。站点结构变化导致正文或章节无法识别时 fail closed，不上传
+空书。
 
 ## 3. History 单条媒体内容
 

@@ -1,0 +1,13 @@
+{
+  "base_url": "https://www.diyibanzhu.quest",
+  "timeout_seconds": 30,
+  "request_delay_seconds": 0.25,
+  "nas": {
+    "endpoint": "https://10.250.150.2:9000",
+    "bucket": "allbot-media-archive-v1",
+    "prefix": "ebooks/diyibanzhu",
+    "access_key": "env:ALLBOT_EBOOK_NAS_ACCESS_KEY",
+    "secret_key": "env:ALLBOT_EBOOK_NAS_SECRET_KEY",
+    "ca_bundle": "env:ALLBOT_EBOOK_NAS_CA_BUNDLE"
+  }
+}
