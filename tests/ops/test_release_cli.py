@@ -678,7 +678,9 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
     archive = tmp_path / "public-web-dist.tgz"
     source = tmp_path / "source"
     (source / "dist").mkdir(parents=True)
-    (source / "dist" / "index.html").write_text("<html></html>")
+    (source / "dist" / "index.html").write_text(
+        '<html><script src="/allbot-runtime-config.js"></script></html>'
+    )
     (source / "dist" / "allbot-runtime-config.js").write_text(
         "window.__ALLBOT_CONFIG__ = window.__ALLBOT_CONFIG__ || Object.freeze({});"
     )
@@ -738,6 +740,8 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
         deployed["runtime_script"] = (
             dist / "allbot-runtime-config.js"
         ).read_text()
+        deployed["index"] = (dist / "index.html").read_text()
+        deployed["headers"] = (dist / "_headers").read_text()
         deployed["command"] = command
         return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
@@ -756,6 +760,9 @@ def test_pages_deploy_injects_target_runtime_config_and_release_sha(
     assert f'"api_base_url":"{expected_api}"' in deployed["runtime_script"]
     assert f'"telegram_bot_username":"{expected_bot}"' in deployed["runtime_script"]
     assert f'"release_sha":"{release_sha}"' in deployed["runtime_script"]
+    assert f'/allbot-runtime-config.js?release_sha={release_sha}' in deployed["index"]
+    assert "/allbot-runtime-config.js" in deployed["headers"]
+    assert "Cache-Control: no-store, no-cache, must-revalidate" in deployed["headers"]
     assert deployed["command"][-2:] == ["--commit-hash", release_sha]
     branch_index = deployed["command"].index("--branch")
     assert deployed["command"][branch_index + 1] == expected_branch
