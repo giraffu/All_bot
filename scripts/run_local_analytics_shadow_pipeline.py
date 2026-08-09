@@ -42,6 +42,10 @@ LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
     "analytics_prompt_vector_state",
     "analytics_prompt_embeddings",
     "analytics_user_profile_daily_snapshots",
+    "analytics_history_media_migration_runs",
+    "analytics_history_media_r2_migrations",
+    "analytics_history_media_migration_plans",
+    "analytics_history_media_object_facts",
 )
 
 
