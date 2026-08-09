@@ -61,6 +61,8 @@ ARG VHS_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
 ARG VHS_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
+ARG MINIMAX_H3_TURBO_REPO=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo.git
+ARG MINIMAX_H3_TURBO_REF=55fee864dd7b2976b1c4ce3c3d5f7968f181409f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG ALLBOT_GIT_SHA
 
@@ -88,7 +90,8 @@ RUN set -euo pipefail; \
       rm -rf "$target/.git"; }; \
     clone_node "${KJNODES_REPO}" "${KJNODES_REF}" ComfyUI-KJNodes; \
     clone_node "${VHS_REPO}" "${VHS_REF}" ComfyUI-VideoHelperSuite; \
-    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" ComfyUI-DaSiWa-Nodes
+    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" ComfyUI-DaSiWa-Nodes; \
+    clone_node "${MINIMAX_H3_TURBO_REPO}" "${MINIMAX_H3_TURBO_REF}" ComfyUI-MiniMax-H3-Turbo
 
 COPY --from=sage_builder /opt/allbot-wheels /opt/allbot-wheels
 
@@ -108,6 +111,7 @@ RUN set -euo pipefail; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3MemoryEfficientSageAttentionPatch' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-KJNodes/nodes/ltxv_nodes.py"; \
+    grep -q 'MiniMaxH3TurboSampler' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-MiniMax-H3-Turbo/__init__.py"; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v","minimax_h3_ref2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
     python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json","MiniMax H3 REF2V.api.json"]; assert all(isinstance(json.loads((root/n).read_text()),dict) for n in names)'; \
     if find "${COMFYUI_INSTALL_DIR}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then \

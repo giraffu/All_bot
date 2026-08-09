@@ -31,9 +31,11 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
 `scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
 生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。T2V/I2V 固定串联
-HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，使用 4 steps、`er_sde`、
-`simple` 与 video/audio shift `11/4`；触发词 `hmmotion` 由调用方在提示词中
-明确提供。FLF2V/REF2V 保持 25 steps、`res_multistep` 基线，避免把只针对
+HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，使用固定 revision 的
+`MiniMaxH3TurboSampler`、6 steps、`simple` 与 video/audio shift `12/3`，让
+加速采样按 H3 音视频双 schedule 适配当前 ComfyUI；触发词 `hmmotion` 由调用方
+在提示词中明确提供。FLF2V/REF2V 保持 25 steps、`res_multistep` 与 shift `11/4`
+基线，避免把只针对
 FL2V 且未覆盖 REF2V 的 LoRA 错用到参考模型。四模式都启用 KJNodes H3
 memory-efficient SageAttention patch。
 
