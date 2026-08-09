@@ -13,6 +13,7 @@ from src.qqcc_ltx_lora_catalog import QQCC_LTX23_LIBRARY_MODELS
 from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
+    AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
     AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
     build_qqcc_config_options,
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
@@ -211,17 +212,19 @@ def test_qqcc_scene_resolution_contract_defaults_and_options():
 
     assert config["video_scenes"][0]["resolution"] == "720p"
     assert config["video_scenes"][1]["resolution"] == "1024p"
-    assert config["ai_video_scenes"][0]["resolution"] == "1280x704"
+    assert config["ai_video_scenes"][0]["resolution"] == "preview"
     assert build_qqcc_config_options()["video_resolutions"] == [
         {"value": "512p", "label": "512p"},
         {"value": "720p", "label": "720p"},
         {"value": "1024p", "label": "1024p"},
     ]
     assert build_qqcc_config_options()["ai_video_resolutions"] == [
-        {"value": "1280x704", "label": "1280×704"}
+        {"value": "preview", "label": "预览"},
+        {"value": "standard", "label": "标准"},
+        {"value": "hd", "label": "高清"},
     ]
     assert build_qqcc_config_options()["default_video_resolution"] == "720p"
-    assert build_qqcc_config_options()["default_ai_video_resolution"] == "1280x704"
+    assert build_qqcc_config_options()["default_ai_video_resolution"] == "preview"
 
 
 @pytest.mark.parametrize("invalid_resolution", ["", "2048p", 720, True])
@@ -385,22 +388,9 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "prompt": "move slowly",
                 "negative_prompt": "blur, jitter",
                 "duration": 10,
-                "resolution": "1280x704",
-            "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
-            "lora_items": [
-                {
-                    "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                    "strength": 2.0,
-                },
-                {
-                    "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
-                    "strength": 0.1,
-                },
-                {
-                    "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
-                    "strength": 1.0,
-                },
-            ],
+                "resolution": "preview",
+            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+            "lora_items": [],
             "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
             "next_scene_id": None,
@@ -411,8 +401,8 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
             "prompt": "prompt",
                 "negative_prompt": "",
                 "duration": 5,
-                "resolution": "1280x704",
-            "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+                "resolution": "preview",
+            "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
             "lora_items": [],
             "credit_cost": None,
             "end_frame_draw_scene_id": "",
@@ -470,18 +460,15 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     assert config["video_scenes"][0]["next_scene_id"] is None
 
     options = config_service_module.build_qqcc_config_options()
-    assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_LTX_VIDEO
+    assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
     assert options["ai_video_engines"] == [
-        {"value": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO, "supports_lora": True}
+        {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": False}
     ]
-    assert any(
-        item["value"] == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
-        and item["default_strength"] == 0.8
-        for item in options["ltx_video_lora_models"]
-    )
+    assert options["ai_video_addon_models_version"] == 1
+    assert options["ai_video_addon_models"] == []
 
 
-def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
+def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():
     admin_only_path = "ltx2.3/SexGod_Nudity_LTX23_v2_0.safetensors"
 
     assert len(QQCC_LTX23_LIBRARY_MODELS) == 32
@@ -489,15 +476,7 @@ def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
     assert admin_only_path not in LTX_VIDEO_LORA_MODELS
 
     options = config_service_module.build_qqcc_config_options()
-    assert any(
-        item
-        == {
-            "value": admin_only_path,
-            "label": "自然裸体与写真姿势",
-            "default_strength": 0.8,
-        }
-        for item in options["ltx_video_lora_models"]
-    )
+    assert options["ai_video_addon_models"] == []
 
     config = normalize_qqcc_config(
         {
@@ -517,9 +496,7 @@ def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
         }
     )
 
-    assert config["ai_video_scenes"][0]["lora_items"] == [
-        {"path": admin_only_path, "strength": 0.8}
-    ]
+    assert config["ai_video_scenes"][0]["lora_items"] == []
 
 
 def test_normalize_config_keeps_generated_output_draft_only_after_save_payload():

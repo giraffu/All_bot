@@ -1073,7 +1073,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
         spec = self._spec(inputs)
         prompt = str(inputs.get("prompt") or "").strip()
         if not prompt:
-            raise CoreDomainError("MiniMax H3 提示词不得为空。")
+            raise CoreDomainError("高级图生视频pro提示词不得为空。")
         return await _get_dispatch_image_service().submit_minimax_h3_task(
             task_id,
             task_type=self.task_type,

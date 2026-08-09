@@ -8,14 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lora_catalog import (
-    IMAGE_LORA_MODELS,
-    normalize_ltx_video_lora_items,
-)
-from src.qqcc_ltx_lora_catalog import (
-    QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS,
-    QQCC_LTX_VIDEO_LORA_MODELS,
-)
+from src.lora_catalog import IMAGE_LORA_MODELS
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
     QQCC_VIDEO_LORA_MODELS,
@@ -84,10 +77,11 @@ VIDEO_SCENE_ENGINE_KEYS = (
 VIDEO_SCENE_ENGINES_WITH_LORA = frozenset(VIDEO_SCENE_ENGINE_KEYS)
 VIDEO_SCENE_MAX_COUNT = 20
 VIDEO_SCENE_MAX_LORA_ITEMS = 5
-AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"
-AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,)
-AI_VIDEO_DURATION_KEYS = (5, 10, 15, 20)
-AI_VIDEO_RESOLUTION_KEYS = ("1280x704",)
+AI_VIDEO_SCENE_ENGINE_MINIMAX_H3 = "minimax_h3"
+AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"  # read-only legacy alias
+AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,)
+AI_VIDEO_DURATION_KEYS = (5, 10, 15)
+AI_VIDEO_RESOLUTION_KEYS = ("preview", "standard", "hd")
 DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
 AI_VIDEO_MAX_LORA_ITEMS = 3
@@ -832,28 +826,9 @@ def _normalize_ai_video_scene(
     if duration not in AI_VIDEO_DURATION_KEYS:
         duration = AI_VIDEO_DURATION_KEYS[0]
 
-    raw_lora_items = raw_scene.get("lora_items")
-    allowed_lora_items = [
-        {
-            "name": item.get("path"),
-            "strength": item.get("strength")
-            if item.get("strength") is not None
-            else QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(item.get("path"), 1.0),
-        }
-        for item in (raw_lora_items if isinstance(raw_lora_items, list) else [])
-        if isinstance(item, dict)
-        and isinstance(item.get("path"), str)
-        and item.get("path") in QQCC_LTX_VIDEO_LORA_MODELS
-        and item.get("path")
-    ]
-    normalized_lora_items = normalize_ltx_video_lora_items(
-        allowed_lora_items,
-        max_items=AI_VIDEO_MAX_LORA_ITEMS,
-    )
-    lora_items = [
-        {"path": item["name"], "strength": item["strength"]}
-        for item in normalized_lora_items
-    ]
+    # The pro engine currently rejects execution overrides. Keep the versioned
+    # scene field as the future add-on seam, but discard legacy LTX selections.
+    lora_items: list[dict[str, Any]] = []
 
     scene = {
         "id": _build_unique_scene_id(
@@ -873,7 +848,7 @@ def _normalize_ai_video_scene(
             and raw_scene.get("resolution").strip() in AI_VIDEO_RESOLUTION_KEYS
             else DEFAULT_AI_VIDEO_SCENE_RESOLUTION
         ),
-        "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
         "lora_items": lora_items,
         "credit_cost": _normalize_scene_credit_cost(raw_scene.get("credit_cost")),
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
@@ -1690,14 +1665,16 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "scene_preset_version": SCENE_PRESET_VERSION,
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
-        "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
         "default_video_resolution": DEFAULT_VIDEO_SCENE_RESOLUTION,
         "default_ai_video_resolution": DEFAULT_AI_VIDEO_SCENE_RESOLUTION,
         "video_resolutions": [
             {"value": value, "label": value} for value in VIDEO_RESOLUTION_KEYS
         ],
         "ai_video_resolutions": [
-            {"value": DEFAULT_AI_VIDEO_SCENE_RESOLUTION, "label": "1280×704"}
+            {"value": "preview", "label": "预览"},
+            {"value": "standard", "label": "标准"},
+            {"value": "hd", "label": "高清"},
         ],
         "default_scene_credit_costs": dict(DEFAULT_SCENE_CREDIT_COSTS),
         "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),
@@ -1731,8 +1708,8 @@ def build_qqcc_config_options() -> dict[str, Any]:
         ],
         "ai_video_engines": [
             {
-                "value": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
-                "supports_lora": True,
+                "value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
+                "supports_lora": False,
             }
         ],
         "video_lora_models": [
@@ -1744,17 +1721,8 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ltx_video_lora_models": [
-            {
-                "value": value,
-                "label": label,
-                "default_strength": QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(
-                    value, 1.0
-                ),
-            }
-            for value, label in QQCC_LTX_VIDEO_LORA_MODELS.items()
-            if value
-        ],
+        "ai_video_addon_models_version": 1,
+        "ai_video_addon_models": [],
     }
 
 

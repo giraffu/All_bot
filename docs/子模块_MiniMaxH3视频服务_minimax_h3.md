@@ -4,8 +4,10 @@
 
 `minimax_h3` 是独立 GPU profile，不是 LTX alias。用户态和 Central 保留四个任务身份：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、`minimax_h3_ref2v`。
-测试 Web 使用一个工作台切换四种子模式；Bot、QQCC、Gallery、生产 RunPod 和
-autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
+测试 Web 使用一个工作台切换四种子模式；面向用户统一展示为“高级图生视频pro”，
+不暴露模型或 workflow 供应方名称。主 Bot 在同一入口开放四种模式；QQCC AI 视频
+按有无尾帧链自动提交 I2V/FLF2V。Gallery、生产 RunPod 和 autoscaler 默认不接入。
+Web 由 `enable_minimax_h3` 控制，后端由
 `MINIMAX_H3_BACKEND_ENABLED` 控制，两个开关默认关闭。
 测试 Web 的 runtime config 当前只展示 MiniMax H3 工作台，并隐藏
 `ltx_video`、`ltx_video_v2` 与 `ltx_t2v` 三个 LTX 工作台；生产映射保持独立，
@@ -22,6 +24,11 @@ autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 - 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
   Worker 再次拒绝模型、LoRA、采样器、timeline、本地路径和参考音视频覆盖。
 - 输出为带音轨 MP4，并通过 `SaveImage` 产生 `extra_outputs.last_frame` 所需尾帧。
+- 主 Bot 入口使用 `advanced_video_pro_fsm.py`，规范化提交由
+  `advanced_video_pro_submission_service.py` 承接；菜单继续使用历史
+  `menu.ltx_video` 配置键以兼容显隐与排序，但新提交只产生本节四个任务类型。
+- QQCC 读取旧配置时将 `ltx_video` engine 迁移为内部 H3 engine 并清空旧 LTX
+  LoRA；配置 API 保留空的版本化 `ai_video_addon_models` seam，当前不得提交覆盖。
 - ComfyUI history 同时出现 VHS `gifs/videos` 与 `SaveImage.images` 时，四个 H3
   task type 必须优先把 MP4 物化为主结果；文件名含 `last_frame` 的 PNG 只进入
   `extra_outputs.last_frame`，不得覆盖主视频。

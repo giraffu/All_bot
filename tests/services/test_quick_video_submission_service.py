@@ -322,7 +322,7 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     }
 
 
-def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_loras():
+def test_qqcc_ai_video_scene_migrates_to_pro_i2v_without_legacy_loras():
     config = normalize_qqcc_config(
         {
             "main_buttons": {"ai_video": True},
@@ -352,14 +352,12 @@ def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_lora
     )
 
     assert plan.kind == QuickVideoSubmissionKind.LTX_VIDEO
-    assert plan.mode == MODE_LTX_VIDEO
-    assert plan.resolution == "1280x704"
+    assert plan.mode == "minimax_h3_i2v"
+    assert plan.resolution == "preview"
     assert plan.duration == "15s"
     assert plan.total_cost == 30
     assert plan.negative_prompt == "blur, jitter"
-    assert plan.lora_items == [
-        {"name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75}
-    ]
+    assert plan.lora_items == []
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
 
 
@@ -418,7 +416,7 @@ def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
                     "id": "fixed-cinema",
                     "name": "固定价视频",
                     "prompt": "camera orbit",
-                    "duration": 20,
+                    "duration": 15,
                     "credit_cost": 11,
                 }
             ],
@@ -431,7 +429,7 @@ def test_qqcc_ai_video_configured_credit_cost_replaces_duration_price():
         allowed_resolutions=[],
     )
 
-    assert plan.duration == "20s"
+    assert plan.duration == "15s"
     assert plan.total_cost == 11
     assert plan.fixed_credit_cost == 11
 
@@ -480,7 +478,7 @@ async def test_fixed_price_direct_video_passes_cost_override_to_entrypoint():
     assert video_task.await_args.kwargs.get("deduct_quota", True) is True
 
 
-def test_qqcc_ai_video_plan_submits_config_only_ltx_lora_to_worker():
+def test_qqcc_ai_video_plan_discards_legacy_ltx_lora():
     admin_only_path = "ltx2.3/SexGod_Nudity_LTX23_v2_0.safetensors"
     config = normalize_qqcc_config(
         {
@@ -503,7 +501,7 @@ def test_qqcc_ai_video_plan_submits_config_only_ltx_lora_to_worker():
         allowed_resolutions=[],
     )
 
-    assert plan.lora_items == [{"name": admin_only_path, "strength": 0.8}]
+    assert plan.lora_items == []
 
 
 @pytest.mark.asyncio
@@ -526,7 +524,7 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
         ),
         allowed_resolutions=[],
     )
-    ltx_task = AsyncMock()
+    generation_task = AsyncMock()
 
     await run_quick_video_submission_plan(
         plan=plan,
@@ -536,12 +534,12 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
         username="tester",
         image_path="/tmp/input.png",
         status_msg_id=77,
-        process_ltx_video_task_func=ltx_task,
+        process_generation_task_func=generation_task,
     )
 
-    assert ltx_task.await_args.kwargs["ltx_mode"] == "i2v"
-    assert ltx_task.await_args.kwargs["resolution"] == "1280x704"
-    assert "negative_prompt" not in ltx_task.await_args.kwargs
+    assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_i2v"
+    assert generation_task.await_args.kwargs["resolution_preset"] == "preview"
+    assert generation_task.await_args.kwargs["images"] == ["/tmp/input.png"]
 
 
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
@@ -1247,7 +1245,7 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
         ),
         allowed_resolutions=[],
     )
-    ltx_task = AsyncMock()
+    generation_task = AsyncMock()
 
     async def fake_draw_chain(**_kwargs):
         return SimpleNamespace(local_output_path="/tmp/end.png")
@@ -1262,17 +1260,17 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
         username="tester",
         image_path="/tmp/input.png",
         status_msg_id=77,
-        process_ltx_video_task_func=ltx_task,
-        process_generation_task_func=AsyncMock(),
+        process_ltx_video_task_func=AsyncMock(),
+        process_generation_task_func=generation_task,
         execute_draw_chain_func=fake_draw_chain,
     )
 
-    assert ltx_task.await_args.kwargs["ltx_mode"] == "flf2v"
-    assert ltx_task.await_args.kwargs["end_image_path"] == "/tmp/end.png"
-    assert ltx_task.await_args.kwargs["allow_cancel"] is False
-    assert ltx_task.await_args.kwargs["user_cancel_allowed"] is False
-    assert ltx_task.await_args.kwargs["base_priority"] == 100
-    assert ltx_task.await_args.kwargs["show_queue_status"] is False
+    assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_flf2v"
+    assert generation_task.await_args.kwargs["images"] == ["/tmp/input.png", "/tmp/end.png"]
+    assert generation_task.await_args.kwargs["allow_cancel"] is False
+    assert generation_task.await_args.kwargs["user_cancel_allowed"] is False
+    assert generation_task.await_args.kwargs["base_priority"] == 100
+    assert generation_task.await_args.kwargs["show_queue_status"] is False
 
 
 def test_build_quick_video_submission_plan_snapshots_full_same_kind_chain_and_cost():

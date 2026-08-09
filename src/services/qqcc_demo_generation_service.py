@@ -11,7 +11,8 @@ from src.constants import (
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
-from src.lora_catalog import get_lora_default_strength, normalize_ltx_video_lora_items
+from src.lora_catalog import get_lora_default_strength
+from src.domain_config.minimax_h3 import MINIMAX_H3_I2V, build_minimax_h3_spec
 from src.services.image_service import image_service
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
@@ -155,31 +156,31 @@ async def _submit_scene(
         )
 
     if scene_kind == "ai_video":
-        optional_negative = (
-            {"negative_prompt": negative.strip()} if negative.strip() else {}
+        spec = build_minimax_h3_spec(
+            MINIMAX_H3_I2V,
+            {
+                "prompt": prompt,
+                "images": [input_key],
+                "duration": int(scene.get("duration") or 5),
+                "resolution_preset": str(scene.get("resolution") or "preview"),
+                "aspect_ratio": "16:9",
+            },
         )
-        return await image_service_instance.submit_ltx_video_task(
+        return await image_service_instance.submit_minimax_h3_task(
             task_id,
-            prompt,
-            input_key,
-            lora_items=normalize_ltx_video_lora_items(
-                [
-                    {"name": item.get("path"), "strength": item.get("strength")}
-                    for item in (
-                        scene.get("lora_items")
-                        if isinstance(scene.get("lora_items"), list)
-                        else []
-                    )
-                    if isinstance(item, dict)
-                ],
-                max_items=3,
-            )
-            or None,
-            width=1280,
-            height=704,
-            length=int(scene.get("duration") or 5),
+            task_type=spec.task_type,
+            prompt=prompt,
+            images=spec.images,
+            reference_descriptions=(),
+            duration=spec.duration_seconds,
+            resolution_preset=spec.resolution_preset,
+            aspect_ratio=spec.aspect_ratio,
+            width=spec.width,
+            height=spec.height,
+            frame_count=spec.frame_count,
+            fps=spec.fps,
+            seed=None,
             priority=0,
-            **optional_negative,
         )
 
     duration = int(str(scene.get("duration") or "5s").removesuffix("s"))
