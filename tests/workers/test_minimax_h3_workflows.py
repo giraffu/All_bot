@@ -81,6 +81,29 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
     assert result["30"]["inputs"]["prompt"].startswith("<Picture 1>: adult woman\n<Picture 2>: adult man")
 
 
+def test_minimax_h3_output_prefix_is_unique_per_execution():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+
+    first = patcher.patch_workflow(
+        "minimax_h3_t2v",
+        workflow,
+        {"prompt": "scene", "seed": 7},
+        execution_id="task/one",
+    )
+    second = patcher.patch_workflow(
+        "minimax_h3_t2v",
+        workflow,
+        {"prompt": "scene", "seed": 7},
+        execution_id="task/two",
+    )
+
+    assert first["38"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one"
+    assert first["40"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one_last_frame"
+    assert second["38"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_two"
+    assert first["38"]["inputs"]["filename_prefix"] != second["38"]["inputs"]["filename_prefix"]
+
+
 @pytest.mark.parametrize("field", ["model_name", "timeline_data", "lora_name", "steps"])
 def test_minimax_h3_worker_rejects_execution_overrides(field):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")

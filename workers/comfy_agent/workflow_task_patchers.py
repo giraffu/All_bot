@@ -1408,6 +1408,7 @@ def patch_minimax_h3_workflow(
     *,
     task_type: str,
     params: dict[str, Any],
+    execution_id: str | None = None,
     **_: Any,
 ) -> None:
     task_type = str(task_type or "")
@@ -1446,8 +1447,10 @@ def patch_minimax_h3_workflow(
         else:
             workflow.pop(node_id, None)
             guide_inputs.pop(f"ref_images.ref_image_{index - 1}", None)
-    workflow["38"]["inputs"]["filename_prefix"] = task_type
-    workflow["40"]["inputs"]["filename_prefix"] = f"{task_type}_last_frame"
+    safe_execution_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(execution_id or "")).strip("_")
+    output_prefix = f"{task_type}_{safe_execution_id}" if safe_execution_id else task_type
+    workflow["38"]["inputs"]["filename_prefix"] = output_prefix
+    workflow["40"]["inputs"]["filename_prefix"] = f"{output_prefix}_last_frame"
 
 
 TASK_SPECIFIC_PATCHERS = {

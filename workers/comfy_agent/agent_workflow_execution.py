@@ -42,7 +42,15 @@ async def submit_task_workflow(
     if not workflow:
         raise ValueError(f"Workflow for {task_type} not found")
 
-    patched_workflow = patcher.patch_workflow(task_type, workflow, params)
+    if task_type.startswith("minimax_h3_"):
+        patched_workflow = patcher.patch_workflow(
+            task_type,
+            workflow,
+            params,
+            execution_id=task_id,
+        )
+    else:
+        patched_workflow = patcher.patch_workflow(task_type, workflow, params)
     client_id = f"agent_{agent_id}"
     await wait_for_comfy_ready_func(operation=f"submitting task {task_id}")
     execution.prompt_id = await comfy_client.queue_prompt(patched_workflow, client_id)

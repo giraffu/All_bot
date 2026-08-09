@@ -59,7 +59,12 @@ class WorkflowPatcher:
             return data
 
     def patch_workflow(
-        self, task_type: str, workflow: Dict[str, Any], params: Dict[str, Any]
+        self,
+        task_type: str,
+        workflow: Dict[str, Any],
+        params: Dict[str, Any],
+        *,
+        execution_id: str | None = None,
     ) -> Dict[str, Any]:
         # Deep copy to avoid modifying template
         wf = json.loads(json.dumps(workflow))
@@ -118,6 +123,7 @@ class WorkflowPatcher:
                 mapping=mapping,
                 set_node_input=self._set_node_input,
                 unique_id=params.get("seed"),
+                execution_id=execution_id,
             )
 
         return wf

@@ -33,6 +33,7 @@ from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
 LAN_AIO_SLOTS_FILE = "lan_aio_prod_slots.yml"
 DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
+TEST_CENTRAL_URL = "https://worker-central-test.aivison.it.com"
 DEFAULT_WEB_HEALTH_URL = "https://api.aivison.it.com/api/health"
 DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 TRUSTED_LAN_IMAGE_PREFIX = "192.168.1.115:5000/allbot/"
@@ -181,6 +182,7 @@ class LanAioProdSlot:
     old_local_agent_container: str
     remote_dir: str
     rollout_order: int
+    environment: str = "cloud-prod"
     legacy_health_port: int | None = None
     legacy_preflight_required: bool = True
     target_task_types: tuple[str, ...] = ()
@@ -195,7 +197,8 @@ class LanAioProdSlot:
 
     @property
     def remote_env_file(self) -> str:
-        return f"{self.remote_dir}/.env.lan-aio-prod"
+        suffix = "test" if self.environment == "cloud-test" else "prod"
+        return f"{self.remote_dir}/.env.lan-aio-{suffix}"
 
     @property
     def remote_local_model_env_file(self) -> str:
@@ -326,6 +329,7 @@ def load_lan_aio_prod_slots(
                 or f"/srv/allbot/runpod-runtime/aio-prod/{node.id}-gpu{configured_gpu_index}-{profile_label}"
             ),
             rollout_order=int(item.get("rollout_order") or 1000),
+            environment=str(item.get("environment") or "cloud-prod"),
             legacy_health_port=(
                 int(item["legacy_health_port"])
                 if item.get("legacy_health_port") is not None
@@ -361,6 +365,7 @@ def slot_to_jsonable(
     profile = config.profiles.get(slot.target_profile_id)
     return {
         "id": slot.id,
+        "environment": slot.environment,
         "enabled": slot.enabled,
         "phase": slot.phase,
         "assignment_id": slot.assignment_id,
@@ -534,7 +539,7 @@ class LanAioProdOps:
                 container_name=slot.container_name,
                 runtime_shape="runpod_all_in_one",
                 agent_id=slot.agent_id,
-                environment="cloud-prod",
+                environment=slot.environment,
                 target_task_types=slot.target_task_types or None,
                 gpu_index=slot.gpu_index,
                 gpu_device_id=slot.gpu_device_id,
@@ -840,6 +845,7 @@ class LanAioProdOps:
         payload = {
             "ok": True,
             "central_url": self.central_url,
+            "central_urls": sorted({self._central_url_for_slot(slot) for slot in slots}),
             "slots": [],
         }
         for slot in slots:
@@ -1398,7 +1404,10 @@ class LanAioProdOps:
             }
         checks: list[dict[str, Any]] = []
         for name, url in (
-            ("prod_central_health", f"{self.central_url}/health"),
+            (
+                "target_central_health",
+                f"{self._central_url_for_slot(slots[0])}/health",
+            ),
             ("prod_web_health", self.web_health_url),
             ("lan_registry_health", DEFAULT_REGISTRY_HEALTH_URL),
             ("lan_model_cache_health", DEFAULT_MODEL_CACHE_HEALTH_URL),
@@ -2672,9 +2681,31 @@ class LanAioProdOps:
             "recovery_status": "succeeded",
         }
 
+    def _central_url_for_slot(self, slot: LanAioProdSlot) -> str:
+        return (
+            TEST_CENTRAL_URL
+            if slot.environment == "cloud-test"
+            else self.central_url
+        )
+
+    def _central_url_for_agent(self, agent_id: str) -> str:
+        return (
+            TEST_CENTRAL_URL
+            if agent_id.startswith("lan_aio_test_")
+            else self.central_url
+        )
+
     def _system_workers(self) -> list[dict[str, Any]]:
-        payload = self._json_get(f"{self.central_url}/system/workers")
-        return [item for item in payload.get("workers", []) if isinstance(item, dict)]
+        workers: list[dict[str, Any]] = []
+        for central_url in (self.central_url, TEST_CENTRAL_URL):
+            try:
+                payload = self._json_get(f"{central_url}/system/workers")
+            except Exception:
+                continue
+            workers.extend(
+                item for item in payload.get("workers", []) if isinstance(item, dict)
+            )
+        return workers
 
     def _runtime_metadata(self, slot: LanAioProdSlot) -> dict[str, Any]:
         try:
@@ -2907,7 +2938,8 @@ class LanAioProdOps:
             return "unknown_missing_token"
         try:
             payload = self._json_get(
-                f"{self.central_url}/api/agent/task/control/{agent_id}",
+                f"{self._central_url_for_agent(agent_id)}"
+                f"/api/agent/task/control/{agent_id}",
                 headers={"Authorization": f"Bearer {token}"},
             )
         except Exception:
@@ -2938,7 +2970,8 @@ class LanAioProdOps:
         if ttl_seconds and state != "enabled":
             body["ttl_seconds"] = ttl_seconds
         request = urllib.request.Request(
-            f"{self.central_url}/api/agent/task/control/{agent_id}",
+            f"{self._central_url_for_agent(agent_id)}"
+            f"/api/agent/task/control/{agent_id}",
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {token}",
@@ -3694,19 +3727,32 @@ def patch_baked_runpod_worker(
 
 
 def assert_prod_compose(rendered: str, slot: LanAioProdSlot) -> None:
-    forbidden = ["cloud-test", "user-data-test"]
+    if slot.environment == "cloud-test":
+        forbidden = ["cloud-prod", "user-data-prod"]
+        required = [
+            "RUNPOD_ENVIRONMENT: cloud-test",
+            "CENTRAL_API_URL: https://worker-central-test.aivison.it.com",
+            "MINIO_RESULT_BUCKET: user-data-test",
+            f"AGENT_ID: {slot.agent_id}",
+            f"container_name: {slot.container_name}",
+        ]
+    elif slot.environment == "cloud-prod":
+        forbidden = ["cloud-test", "user-data-test"]
+        required = [
+            "RUNPOD_ENVIRONMENT: cloud-prod",
+            "CENTRAL_API_URL: https://worker-central.aivison.it.com",
+            "MINIO_RESULT_BUCKET: user-data-prod",
+            f"AGENT_ID: {slot.agent_id}",
+            f"container_name: {slot.container_name}",
+        ]
+    else:
+        raise RuntimeError(f"unsupported LAN AIO environment: {slot.environment}")
     present = [item for item in forbidden if item in rendered]
     if present:
         raise RuntimeError(
-            "rendered compose contains forbidden prod value: " + ", ".join(present)
+            "rendered compose contains forbidden environment value: "
+            + ", ".join(present)
         )
-    required = [
-        "RUNPOD_ENVIRONMENT: cloud-prod",
-        "CENTRAL_API_URL: https://worker-central.aivison.it.com",
-        "MINIO_RESULT_BUCKET: user-data-prod",
-        f"AGENT_ID: {slot.agent_id}",
-        f"container_name: {slot.container_name}",
-    ]
     missing = [item for item in required if item not in rendered]
     if missing:
         raise RuntimeError("rendered compose missing: " + ", ".join(missing))
