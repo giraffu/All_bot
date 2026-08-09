@@ -5,7 +5,10 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_WAN22_VIDEO_V2,
 )
-from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_TASK_TYPES,
+    normalize_minimax_h3_duration_seconds,
+)
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoint_support import (
     build_log_prompt,
@@ -152,7 +155,7 @@ async def process_standard_generation_task(
     is_minimax_h3 = task_type in MINIMAX_H3_TASK_TYPES
     if is_minimax_h3:
         resolution = resolution_preset or resolution or "preview"
-        duration = duration or 5
+        duration = normalize_minimax_h3_duration_seconds(duration or 5)
     else:
         resolution = 512
         duration = 5
