@@ -194,6 +194,9 @@ R2 网络、删除后复核等系统性错误把 campaign 写为 `paused` 并立
 必须绑定同一个 run 与 watermark。它只探测账本中的引用和明确候选
 key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 仅保留为历史治理
 实现，不得用于本轮迁移或启动新的 numeric/flat-root planner。
+`analytics_history_media_%` 迁移 run、对象账本、plan 和 SHA 事实表属于必须保留的
+本地分析数据；cloud production shadow 换库和从 previous shadow 恢复分析表时都必须
+携带这些表，不能因刷新 History 快照而丢失迁移 cursor 或精确 plan identity。
 
 输入目标使用 `task-inputs/{registry_task_id}/{ordinal}.{ext}`；主输出和附加输出
 使用 `task-results/{backend_task_id}/primary.{ext}` 与

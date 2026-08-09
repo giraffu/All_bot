@@ -36,6 +36,7 @@ LOCAL_ANALYTICS_TABLE_LIKE_PATTERNS = (
     "analytics_prompt_%",
     "analytics_user_profile_%",
     "analytics_media_%",
+    "analytics_history_media_%",
 )
 LOCAL_ANALYTICS_TABLE_LIST_FILE = "local_analytics_tables.txt"
 LOCAL_ANALYTICS_DUMP_FILE = "local_analytics.dump"
