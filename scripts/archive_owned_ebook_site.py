@@ -8,6 +8,7 @@ in a 0600 JSON config and may be expressed as ``env:VARIABLE_NAME`` values.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
 from html import unescape
@@ -226,6 +227,23 @@ def put_verified(client, bucket: str, key: str, payload: bytes, *, content_type:
         raise RuntimeError(f"NAS read-back checksum mismatch: {key}")
 
 
+def concurrent_map(worker, items, *, concurrency: int):
+    if not 1 <= concurrency <= 8:
+        raise ValueError("concurrency must be between 1 and 8")
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="ebook-archive") as executor:
+        yield from executor.map(worker, items)
+
+
+def select_pending_books(book_paths: list[str], existing_ids: set[str], *, skip_existing: bool) -> list[str]:
+    if not skip_existing:
+        return book_paths
+    return [
+        path
+        for path in book_paths
+        if (match := re.search(r"/list/(\d+)", path)) and match.group(1) not in existing_ids
+    ]
+
+
 def _archive_book(site: SiteClient, source_path: str) -> tuple[Book, bytes]:
     first_html = site.get(source_path)
     first = parse_book_page(source_path, first_html)
@@ -241,7 +259,15 @@ def _archive_book(site: SiteClient, source_path: str) -> tuple[Book, bytes]:
     return first, payload
 
 
-def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | None) -> dict:
+def run(
+    config: dict,
+    *,
+    state_path: Path,
+    execute: bool,
+    limit_books: int | None,
+    concurrency: int = 1,
+    skip_existing: bool = False,
+) -> dict:
     site = SiteClient(
         config.get("base_url", "https://www.diyibanzhu.quest"),
         timeout=float(config.get("timeout_seconds", 30)),
@@ -273,17 +299,20 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
     validate_endpoint_route(nas)
     client = _s3_client(nas)
     state = _open_state(state_path)
-    uploaded = skipped = failed = 0
+    existing_digests = dict(state.execute("select book_id, sha256 from archived_books"))
+    all_book_count = len(book_paths)
+    book_paths = select_pending_books(book_paths, set(existing_digests), skip_existing=skip_existing)
+    uploaded = failed = 0
+    skipped = all_book_count - len(book_paths)
     prefix = str(nas.get("prefix", "ebooks/diyibanzhu")).strip("/")
-    for index, source_path in enumerate(book_paths, start=1):
+
+    def worker(source_path: str):
         book_id = re.search(r"/list/(\d+)", source_path).group(1)  # type: ignore[union-attr]
         try:
             book, payload = _archive_book(site, source_path)
             digest = hashlib.sha256(payload).hexdigest()
-            existing = state.execute("select sha256 from archived_books where book_id = ?", (book_id,)).fetchone()
-            if existing and existing[0] == digest:
-                skipped += 1
-                continue
+            if existing_digests.get(book_id) == digest:
+                return {"status": "skipped", "book_id": book_id}
             object_key = f"{prefix}/{book_id}.txt"
             put_verified(
                 client,
@@ -299,23 +328,38 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
                 sort_keys=True,
             ).encode("utf-8")
             put_verified(client, nas["bucket"], f"{prefix}/{book_id}.json", metadata, content_type="application/json")
+            return {
+                "status": "uploaded",
+                "book_id": book_id,
+                "sha256": digest,
+                "object_key": object_key,
+            }
+        except Exception as exc:
+            return {"status": "failed", "book_id": book_id, "error": str(exc)}
+
+    for index, result in enumerate(concurrent_map(worker, book_paths, concurrency=concurrency), start=1):
+        if result["status"] == "uploaded":
             state.execute(
                 "insert into archived_books values (?, ?, ?, datetime('now')) "
                 "on conflict(book_id) do update set sha256=excluded.sha256, object_key=excluded.object_key, archived_at=excluded.archived_at",
-                (book_id, digest, object_key),
+                (result["book_id"], result["sha256"], result["object_key"]),
             )
             state.commit()
             uploaded += 1
-        except Exception as exc:  # Continue the corpus while reporting individual failures.
+        elif result["status"] == "skipped":
+            skipped += 1
+        else:
             failed += 1
-            print(json.dumps({"book_id": book_id, "status": "failed", "error": str(exc)}, ensure_ascii=False), flush=True)
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+        processed = skipped + uploaded + failed
         if index == 1 or index % 25 == 0 or index == len(book_paths):
             print(
                 json.dumps(
                     {
                         "status": "progress",
-                        "processed": index,
-                        "total": len(book_paths),
+                        "processed": processed,
+                        "total": all_book_count,
+                        "concurrency": concurrency,
                         "uploaded": uploaded,
                         "skipped": skipped,
                         "failed": failed,
@@ -324,7 +368,7 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
                 ),
                 flush=True,
             )
-    return {"mode": "execute", "books_discovered": len(book_paths), "uploaded": uploaded, "skipped": skipped, "failed": failed}
+    return {"mode": "execute", "books_discovered": all_book_count, "uploaded": uploaded, "skipped": skipped, "failed": failed}
 
 
 def main() -> None:
@@ -333,11 +377,20 @@ def main() -> None:
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--limit-books", type=int)
+    parser.add_argument("--concurrency", type=int, choices=range(1, 9), default=1)
+    parser.add_argument("--skip-existing", action="store_true")
     args = parser.parse_args()
     if args.config.stat().st_mode & 0o077:
         raise SystemExit("config must be private (chmod 600)")
     config = _resolve_env(json.loads(args.config.read_text(encoding="utf-8")))
-    result = run(config, state_path=args.state, execute=args.execute, limit_books=args.limit_books)
+    result = run(
+        config,
+        state_path=args.state,
+        execute=args.execute,
+        limit_books=args.limit_books,
+        concurrency=args.concurrency,
+        skip_existing=args.skip_existing,
+    )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
