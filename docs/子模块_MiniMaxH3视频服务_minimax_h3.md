@@ -7,6 +7,9 @@
 测试 Web 使用一个工作台切换四种子模式；Bot、QQCC、Gallery、生产 RunPod 和
 autoscaler 默认不接入。Web 由 `enable_minimax_h3` 控制，后端由
 `MINIMAX_H3_BACKEND_ENABLED` 控制，两个开关默认关闭。
+测试 Web 的 runtime config 当前只展示 MiniMax H3 工作台，并隐藏
+`ltx_video`、`ltx_video_v2` 与 `ltx_t2v` 三个 LTX 工作台；生产映射保持独立，
+不随测试可见性切换。MiniMax H3 的一个工作台内可切换下面四种任务模式。
 
 ## 请求契约
 
