@@ -315,6 +315,28 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert "/profiles/minimax_h3/workspace/ComfyUI/models:" in model_mount
 
 
+def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
+    config = load_controller_config()
+    slots = load_lan_aio_prod_slots(include_disabled=True)
+    slot = slots["gpu-177-gpu1-minimax_h3_test"]
+
+    assert slot.environment == "cloud-test"
+    assert slot.agent_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
+    assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
+
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-test.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    compose = yaml.safe_load(ops.render_compose(slot))
+    environment = compose["services"][slot.container_name]["environment"]
+    assert environment["RUNPOD_ENVIRONMENT"] == "cloud-test"
+    assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
+    assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
+
+
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
 

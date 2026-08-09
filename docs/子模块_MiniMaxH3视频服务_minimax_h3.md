@@ -86,6 +86,14 @@ fleet 操作，不等同于开启公共 H3 feature flag 或自动接流。四任
 `https://api.aivison.it.com/api`；canary JWT 必须来自当前 Web API secret 且绑定实际
 存在的内部测试用户/password_version，禁止用本地陈旧 secret 猜测 token。
 
+测试 Web 的本地执行候选为 `gpu-177-gpu1-minimax_h3_test`。它仍由同一个 fleet
+helper 做单卡 takeover/recover，但运行身份固定为 `cloud-test`、测试 Central 和
+`user-data-test`；不得让测试 Web 跨环境提交到正式 Central。候选与正式 LTX 共享物理
+GPU，因此接入测试期间正式 LTX 会自然 drain 后停止，结束测试时显式 recover LTX。
+H3 Worker 在 patch workflow 时把 backend task ID 规范化进视频和尾帧输出前缀，确保
+持久化 Comfy workspace 中每次执行都有独立文件名；不能只依赖 VHS 递增 counter，避免
+容器重建后旧中间 MP4 与 ffmpeg `-n` 冲突。
+
 ## 最小验证
 
 ```bash
