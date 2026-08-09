@@ -15,6 +15,8 @@ REF_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
 AUDIO_VAE = "MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors"
+HMNSFW_LORA = "MiniMaxH3/HMNSFW_AIO_V2.safetensors"
+LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
@@ -29,9 +31,11 @@ def _node(class_type: str, **inputs):
 
 def build(task_type: str) -> dict:
     is_ref = task_type == "minimax_h3_ref2v"
+    use_optimized_loras = task_type in {"minimax_h3_t2v", "minimax_h3_i2v"}
+    patched_model = ["11", 0] if use_optimized_loras else ["1", 0]
     workflow = {
         "1": _node("UNETLoader", unet_name=REF_MODEL if is_ref else FL_MODEL, weight_dtype="default"),
-        "2": _node("MiniMaxH3MemoryEfficientSageAttentionPatch", model=["1", 0]),
+        "2": _node("MiniMaxH3MemoryEfficientSageAttentionPatch", model=patched_model),
         "3": _node("MiniMaxH3SigmaShift", model=["2", 0], shift_video=11.0, shift_audio=4.0),
         "4": _node("CLIPLoader", clip_name=CLIP, type="minimax", device="default"),
         "5": _node("VAELoader", vae_name=VIDEO_VAE),
@@ -43,8 +47,8 @@ def build(task_type: str) -> dict:
         ),
         "31": _node("RandomNoise", noise_seed=1),
         "32": _node("BasicGuider", model=["3", 0], conditioning=["30", 0]),
-        "33": _node("KSamplerSelect", sampler_name="res_multistep"),
-        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=25, denoise=1.0),
+        "33": _node("KSamplerSelect", sampler_name="er_sde" if use_optimized_loras else "res_multistep"),
+        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=4 if use_optimized_loras else 25, denoise=1.0),
         "35": _node("SamplerCustomAdvanced", noise=["31", 0], guider=["32", 0], sampler=["33", 0], sigmas=["34", 0], latent_image=["30", 1]),
         "36": _node("VAEDecode", samples=["35", 0], vae=["5", 0]),
         "37": _node("VAEDecodeAudio", samples=["35", 0], vae=["6", 0]),
@@ -53,6 +57,13 @@ def build(task_type: str) -> dict:
         "39": _node("ImageFromBatch", batch_index=4095, length=1, image=["36", 0]),
         "40": _node("SaveImage", filename_prefix=f"{task_type}_last_frame", images=["39", 0]),
     }
+    if use_optimized_loras:
+        workflow["10"] = _node(
+            "LoraLoaderModelOnly", model=["1", 0], lora_name=HMNSFW_LORA, strength_model=0.5
+        )
+        workflow["11"] = _node(
+            "LoraLoaderModelOnly", model=["10", 0], lora_name=LIGHTX2V_LORA, strength_model=0.75
+        )
     count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2, "minimax_h3_ref2v": 4}[task_type]
     for index in range(1, count + 1):
         node_id = str(19 + index)

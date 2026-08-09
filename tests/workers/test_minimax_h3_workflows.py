@@ -27,8 +27,25 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         assert workflow == build(task_type)
         assert "nodes" not in workflow
         assert workflow["3"]["inputs"] == {"model": ["2", 0], "shift_video": 11.0, "shift_audio": 4.0}
-        assert workflow["34"]["inputs"]["steps"] == 25
-        assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
+        if task_type in {"minimax_h3_t2v", "minimax_h3_i2v"}:
+            assert workflow["10"]["inputs"] == {
+                "model": ["1", 0],
+                "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+                "strength_model": 0.5,
+            }
+            assert workflow["11"]["inputs"] == {
+                "model": ["10", 0],
+                "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
+                "strength_model": 0.75,
+            }
+            assert workflow["2"]["inputs"]["model"] == ["11", 0]
+            assert workflow["34"]["inputs"]["steps"] == 4
+            assert workflow["33"]["inputs"]["sampler_name"] == "er_sde"
+        else:
+            assert "10" not in workflow and "11" not in workflow
+            assert workflow["2"]["inputs"]["model"] == ["1", 0]
+            assert workflow["34"]["inputs"]["steps"] == 25
+            assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
         assert workflow["38"]["inputs"]["audio"] == ["37", 0]
         assert workflow["40"]["class_type"] == "SaveImage"
         assert workflow["39"]["inputs"]["batch_index"] == 4095
