@@ -3,6 +3,7 @@ import hashlib
 from scripts.archive_owned_ebook_site import (
     build_ebook_text,
     discover_catalog_pages,
+    fetch_catalog_books,
     parse_book_page,
     parse_catalog_books,
     parse_chapter,
@@ -23,6 +24,28 @@ def test_discovers_full_catalog_without_following_unrelated_links():
         *[f"/book/17043_{page}.html" for page in range(2, 570)],
     ]
     assert parse_catalog_books(html) == ["/list/10.html"]
+
+
+def test_catalog_page_retries_when_success_response_contains_no_books():
+    class FakeSite:
+        def __init__(self):
+            self.responses = ["<html>temporary challenge</html>", '<a href="/list/10.html">Book</a>']
+
+        def get(self, path):
+            return self.responses.pop(0)
+
+    assert fetch_catalog_books(FakeSite(), "/book/17043_2.html", retry_delay=0) == ["/list/10.html"]
+
+
+def test_catalog_page_fails_closed_after_repeated_empty_responses():
+    class EmptySite:
+        def get(self, path):
+            return "<html>temporary challenge</html>"
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="catalog page contains no books"):
+        fetch_catalog_books(EmptySite(), "/book/17043_2.html", retry_delay=0)
 
 
 def test_parses_only_chapters_from_the_book_chapter_lists():

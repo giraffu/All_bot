@@ -81,6 +81,16 @@ def parse_catalog_books(html: str) -> list[str]:
     return list(dict.fromkeys(match.group(1) for match in _BOOK_RE.finditer(html)))
 
 
+def fetch_catalog_books(site, path: str, *, retry_delay: float = 1.0) -> list[str]:
+    for attempt in range(4):
+        books = parse_catalog_books(site.get(path))
+        if books:
+            return books
+        if attempt < 3 and retry_delay:
+            time.sleep(retry_delay * (2**attempt))
+    raise RuntimeError(f"catalog page contains no books after retries: {path}")
+
+
 def discover_book_pages(book_id: str, html: str) -> list[str]:
     last_page = max(
         (int(match.group(3)) for match in _BOOK_PAGE_RE.finditer(html) if match.group(2) == book_id),
@@ -242,11 +252,13 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
     if config.get("max_catalog_pages"):
         catalog_pages = catalog_pages[: int(config["max_catalog_pages"])]
     book_paths = parse_catalog_books(first_catalog)
+    if not book_paths:
+        book_paths = fetch_catalog_books(site, "/book/index.html")
     catalog_pages_scanned = 1
     for page in catalog_pages[1:]:
         if limit_books is not None and len(book_paths) >= limit_books:
             break
-        book_paths.extend(parse_catalog_books(site.get(page)))
+        book_paths.extend(fetch_catalog_books(site, page))
         catalog_pages_scanned += 1
     book_paths = list(dict.fromkeys(book_paths))
     if limit_books is not None:
@@ -263,7 +275,7 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
     state = _open_state(state_path)
     uploaded = skipped = failed = 0
     prefix = str(nas.get("prefix", "ebooks/diyibanzhu")).strip("/")
-    for source_path in book_paths:
+    for index, source_path in enumerate(book_paths, start=1):
         book_id = re.search(r"/list/(\d+)", source_path).group(1)  # type: ignore[union-attr]
         try:
             book, payload = _archive_book(site, source_path)
@@ -296,7 +308,22 @@ def run(config: dict, *, state_path: Path, execute: bool, limit_books: int | Non
             uploaded += 1
         except Exception as exc:  # Continue the corpus while reporting individual failures.
             failed += 1
-            print(json.dumps({"book_id": book_id, "status": "failed", "error": str(exc)}, ensure_ascii=False))
+            print(json.dumps({"book_id": book_id, "status": "failed", "error": str(exc)}, ensure_ascii=False), flush=True)
+        if index == 1 or index % 25 == 0 or index == len(book_paths):
+            print(
+                json.dumps(
+                    {
+                        "status": "progress",
+                        "processed": index,
+                        "total": len(book_paths),
+                        "uploaded": uploaded,
+                        "skipped": skipped,
+                        "failed": failed,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
     return {"mode": "execute", "books_discovered": len(book_paths), "uploaded": uploaded, "skipped": skipped, "failed": failed}
 
 
