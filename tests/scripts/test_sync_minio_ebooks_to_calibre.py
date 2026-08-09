@@ -1,12 +1,19 @@
 import hashlib
 import io
 import json
+from pathlib import Path
 import sqlite3
 import zipfile
 
 import pytest
 
 from scripts.sync_minio_ebooks_to_calibre import _publisher, build_epub, discover_ready_books, sync_once
+
+
+def test_cwa_skips_recursive_library_chown_for_nas_bind_mount():
+    compose = (Path(__file__).parents[2] / "ops/calibre_web_nas/docker-compose.yml").read_text()
+
+    assert 'NETWORK_SHARE_MODE: "true"' in compose
 
 
 def test_build_epub_contains_metadata_and_valid_container():
