@@ -16,7 +16,7 @@
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}}
       ],
-      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "MEDIA_ARCHIVE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "MINIMAX_H3_*", "MEDIA_ARCHIVE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "payment-api": {
       "environments": ["prod"],
