@@ -15,12 +15,18 @@ import re
 import shlex
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
 
 import boto3
 from botocore.config import Config as BotoConfig
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _chunks(text: str, limit: int) -> list[str]:
