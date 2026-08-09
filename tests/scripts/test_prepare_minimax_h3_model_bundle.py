@@ -6,6 +6,12 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
+def test_lightx2v_source_is_pinned_to_repository_commit():
+    lightx2v = next(entry for entry in module.FILES if "lightx2v" in entry[0])
+
+    assert "/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/" in lightx2v[3]
+
+
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):
     payload = b"official-minimax-h3-test-blob"
     sha256 = hashlib.sha256(payload).hexdigest()

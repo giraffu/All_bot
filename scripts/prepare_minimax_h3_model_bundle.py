@@ -29,7 +29,7 @@ FILES = (
     ("vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors", "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48", 605_254_808, "vae/minimax_h3_audio_vae_fp32.safetensors"),
     ("vae/MiniMaxH3/minimax_h3_video_vae_fp16.safetensors", "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522", 5_207_808_496, "vae/minimax_h3_video_vae_fp16.safetensors"),
     ("loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors", "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb", 310_168_344, "https://civitai.red/api/download/models/3206518"),
-    ("loras/MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors", "3a069f26fbc33f377a60dc72dd9e15f2aa42aa1d1b44915fded835716672dd36", 314_878_200, "https://huggingface.co/Kijai/MiniMax-H3_comfy/resolve/2d1a101333838d5618181b6c82bdd59c230e3013/loras/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"),
+    ("loras/MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors", "3a069f26fbc33f377a60dc72dd9e15f2aa42aa1d1b44915fded835716672dd36", 314_878_200, "https://huggingface.co/Kijai/MiniMax-H3_comfy/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/loras/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"),
 )
 
 
