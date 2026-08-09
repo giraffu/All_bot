@@ -48,8 +48,9 @@ MinIO `ebooks/diyibanzhu/<book_id>.txt/.json` 是原始事实源，Calibre 书�
 CWA 配置、ingest 和 Calibre library 分别使用
 `/volume1/AllBotEbooks/{config,ingest,calibre-library}`，原始 MinIO bucket 不挂入
 CWA，也不允许 ingest 删除原始 TXT。网页只绑定 NAS 管理 LAN 的 8083 端口，不接
-Cloudflare 公网。CWA 镜像必须使用仓库 Compose 中的 amd64 manifest digest；NAS
-无法访问 registry 时由可信主机验证 digest、拉取并离线导入，禁止改用 mutable tag。
+Cloudflare 公网。CWA 镜像必须通过私有 0600 `.env` 的 `CWA_IMAGE` 使用已验证
+amd64 manifest digest；NAS 无法访问 registry 时由可信主机验证 digest、拉取并
+离线导入，再把实际导入的不可变 `sha256:<image-id>` 写入该变量，禁止改用 mutable tag。
 
 同步器通过本机 SSH alias 原子写入 NAS，运行代码由
 `~/.local/share/allbot/calibre-sync/current` 指向精确 Git SHA；用户级 systemd 服务
