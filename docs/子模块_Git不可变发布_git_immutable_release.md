@@ -159,7 +159,9 @@ Alembic 只通过 `src.runtime_environment.require_env("DATABASE_URL")` 读取�
 `public-web` 的 test/prod 使用同一份环境中立 tar。Pages adapter 从 artifact
 annotation 读取完整 Git SHA，在上传前按目标环境读取
 `frontend/runtime-config.yml`，覆盖 tar 中的空占位
-`allbot-runtime-config.js`，并向 Wrangler 传递 `--commit-hash`。上传后必须从
+`allbot-runtime-config.js`，把 `index.html` 的引用改为带完整 release SHA 的
+查询串，并为 runtime script 写入 `no-store` Pages 响应头，再向 Wrangler 传递
+`--commit-hash`。上传后必须从
 目标 canonical 域名回读 runtime script，确认完整 SHA、runtime revision、
 API 域名和 Bot 用户名均与目标环境一致；未切换时部署失败并进入目标模块回滚。
 测试与正式配置由 focused tests 固定为独立 mapping，禁止把 test API/Bot

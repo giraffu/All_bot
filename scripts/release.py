@@ -1367,6 +1367,24 @@ mv -Tf {root}/current.new {root}/current
                 runtime_script,
                 encoding="utf-8",
             )
+            index_path = dist / "index.html"
+            index = index_path.read_text(encoding="utf-8")
+            runtime_script_src = "/allbot-runtime-config.js"
+            if runtime_script_src not in index:
+                raise ReleaseError("Public Web index has no runtime config script")
+            index_path.write_text(
+                index.replace(
+                    runtime_script_src,
+                    f"{runtime_script_src}?release_sha={release_sha}",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            (dist / "_headers").write_text(
+                "/allbot-runtime-config.js\n"
+                "  Cache-Control: no-store, no-cache, must-revalidate\n",
+                encoding="utf-8",
+            )
             env = os.environ.copy()
             env["CLOUDFLARE_API_TOKEN"] = token_file.read_text(
                 encoding="utf-8"
