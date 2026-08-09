@@ -36,7 +36,12 @@ def build(task_type: str) -> dict:
     workflow = {
         "1": _node("UNETLoader", unet_name=REF_MODEL if is_ref else FL_MODEL, weight_dtype="default"),
         "2": _node("MiniMaxH3MemoryEfficientSageAttentionPatch", model=patched_model),
-        "3": _node("MiniMaxH3SigmaShift", model=["2", 0], shift_video=11.0, shift_audio=4.0),
+        "3": _node(
+            "MiniMaxH3SigmaShift",
+            model=["2", 0],
+            shift_video=12.0 if use_optimized_loras else 11.0,
+            shift_audio=3.0 if use_optimized_loras else 4.0,
+        ),
         "4": _node("CLIPLoader", clip_name=CLIP, type="minimax", device="default"),
         "5": _node("VAELoader", vae_name=VIDEO_VAE),
         "6": _node("VAELoader", vae_name=AUDIO_VAE),
@@ -47,8 +52,12 @@ def build(task_type: str) -> dict:
         ),
         "31": _node("RandomNoise", noise_seed=1),
         "32": _node("BasicGuider", model=["3", 0], conditioning=["30", 0]),
-        "33": _node("KSamplerSelect", sampler_name="er_sde" if use_optimized_loras else "res_multistep"),
-        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=4 if use_optimized_loras else 25, denoise=1.0),
+        "33": (
+            _node("MiniMaxH3TurboSampler")
+            if use_optimized_loras
+            else _node("KSamplerSelect", sampler_name="res_multistep")
+        ),
+        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=6 if use_optimized_loras else 25, denoise=1.0),
         "35": _node("SamplerCustomAdvanced", noise=["31", 0], guider=["32", 0], sampler=["33", 0], sigmas=["34", 0], latent_image=["30", 1]),
         "36": _node("VAEDecode", samples=["35", 0], vae=["5", 0]),
         "37": _node("VAEDecodeAudio", samples=["35", 0], vae=["6", 0]),

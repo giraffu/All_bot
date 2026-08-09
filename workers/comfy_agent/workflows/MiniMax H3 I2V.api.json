@@ -21,8 +21,8 @@
         "2",
         0
       ],
-      "shift_video": 11.0,
-      "shift_audio": 4.0
+      "shift_video": 12.0,
+      "shift_audio": 3.0
     },
     "class_type": "MiniMaxH3SigmaShift"
   },
@@ -87,10 +87,8 @@
     "class_type": "BasicGuider"
   },
   "33": {
-    "inputs": {
-      "sampler_name": "er_sde"
-    },
-    "class_type": "KSamplerSelect"
+    "inputs": {},
+    "class_type": "MiniMaxH3TurboSampler"
   },
   "34": {
     "inputs": {
@@ -99,7 +97,7 @@
         0
       ],
       "scheduler": "simple",
-      "steps": 4,
+      "steps": 6,
       "denoise": 1.0
     },
     "class_type": "BasicScheduler"
