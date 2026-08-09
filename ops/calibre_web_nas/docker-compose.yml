@@ -1,0 +1,29 @@
+services:
+  calibre-web-automated:
+    image: ghcr.io/crocodilestick/calibre-web-automated@sha256:fbf0c866e77b366f07050a6a12fee4e840b60d364485576a810109851a488eec
+    container_name: calibre-web-automated
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "10"
+      TZ: Asia/Shanghai
+      NETWORK_SHARE_MODE: "false"
+      CWA_PORT_OVERRIDE: "8083"
+    ports:
+      - "192.168.1.150:8083:8083"
+    volumes:
+      - /volume1/AllBotEbooks/config:/config
+      - /volume1/AllBotEbooks/ingest:/cwa-book-ingest
+      - /volume1/AllBotEbooks/calibre-library:/calibre-library
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
