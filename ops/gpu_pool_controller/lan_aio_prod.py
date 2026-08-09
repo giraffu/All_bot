@@ -571,6 +571,16 @@ class LanAioProdOps:
             raise RuntimeError(
                 "replacement target must be different from the candidate slot"
             )
+        if physical_slot_key(target) == physical_slot_key(candidate):
+            if (
+                candidate.legacy_worker_id != target.agent_id
+                or candidate.old_runtime_container != target.container_name
+            ):
+                raise RuntimeError(
+                    "same-slot candidate must explicitly identify the current "
+                    "worker and container it replaces"
+                )
+            return candidate
         if target.node_id != candidate.node_id:
             raise RuntimeError(
                 "replacement target must be on the same GPU node: "
