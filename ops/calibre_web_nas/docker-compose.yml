@@ -1,6 +1,6 @@
 services:
   calibre-web-automated:
-    image: ghcr.io/crocodilestick/calibre-web-automated@sha256:fbf0c866e77b366f07050a6a12fee4e840b60d364485576a810109851a488eec
+    image: ${CWA_IMAGE:?set CWA_IMAGE to a verified registry digest or offline image ID}
     container_name: calibre-web-automated
     restart: unless-stopped
     environment:
@@ -26,4 +26,3 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-
