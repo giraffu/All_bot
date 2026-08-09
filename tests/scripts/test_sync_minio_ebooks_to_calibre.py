@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from scripts.sync_minio_ebooks_to_calibre import build_epub, discover_ready_books, sync_once
+from scripts.sync_minio_ebooks_to_calibre import _publisher, build_epub, discover_ready_books, sync_once
 
 
 def test_build_epub_contains_metadata_and_valid_container():
@@ -79,3 +79,21 @@ def test_sync_is_idempotent_and_rejects_mismatched_source_digest():
     assert first == {"published": 1, "skipped": 0, "failed": 1}
     assert second == {"published": 0, "skipped": 1, "failed": 1}
     assert [item[0] for item in published] == ["1"]
+
+
+def test_nas_publisher_uses_legacy_scp_for_shell_visible_volume_paths(monkeypatch):
+    commands = []
+    monkeypatch.setattr(
+        "scripts.sync_minio_ebooks_to_calibre.subprocess.run",
+        lambda command, **kwargs: commands.append(command),
+    )
+
+    publish = _publisher(
+        "allbot-nas-archive",
+        "/volume1/AllBotEbooks/source-epub",
+        "/volume1/AllBotEbooks/ingest",
+    )
+    publish("42", b"epub")
+
+    assert commands[0][:3] == ["scp", "-O", "-q"]
+    assert commands[1][:4] == ["ssh", "-o", "BatchMode=yes", "allbot-nas-archive"]
