@@ -1,13 +1,17 @@
 import hashlib
+import threading
+import time
 
 from scripts.archive_owned_ebook_site import (
     build_ebook_text,
+    concurrent_map,
     discover_catalog_pages,
     fetch_catalog_books,
     parse_book_page,
     parse_catalog_books,
     parse_chapter,
     put_verified,
+    select_pending_books,
 )
 
 
@@ -99,3 +103,31 @@ def test_nas_upload_is_read_back_before_acceptance():
 
     payload = b"owned ebook"
     put_verified(FakeS3(), "archive", "ebooks/1.txt", payload, content_type="text/plain")
+
+
+def test_existing_books_are_not_rescheduled_when_skip_existing_is_enabled():
+    paths = ["/list/1.html", "/list/2.html", "/list/3.html"]
+
+    assert select_pending_books(paths, {"1", "3"}, skip_existing=True) == ["/list/2.html"]
+    assert select_pending_books(paths, {"1", "3"}, skip_existing=False) == paths
+
+
+def test_concurrent_map_runs_up_to_eight_workers_without_losing_results():
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def worker(value):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return value * 2
+
+    results = list(concurrent_map(worker, range(16), concurrency=8))
+
+    assert sorted(results) == [value * 2 for value in range(16)]
+    assert peak == 8
