@@ -192,7 +192,7 @@ def _publisher(ssh_alias: str, source_dir: str, ingest_dir: str):
             local.write(payload)
             local.flush()
             remote_part = f"{source_dir}/.{book_id}.epub.part"
-            subprocess.run(["scp", "-q", local.name, f"{ssh_alias}:{remote_part}"], check=True)
+            subprocess.run(["scp", "-O", "-q", local.name, f"{ssh_alias}:{remote_part}"], check=True)
             command = (
                 f"mv -f {shlex.quote(remote_part)} {shlex.quote(source_dir + '/' + book_id + '.epub')} && "
                 f"cp {shlex.quote(source_dir + '/' + book_id + '.epub')} {shlex.quote(ingest_dir + '/.' + book_id + '.epub.part')} && "
