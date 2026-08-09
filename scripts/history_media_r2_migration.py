@@ -89,6 +89,7 @@ create table if not exists analytics_history_media_r2_migrations (
     copy_completed_at timestamptz,
     switch_completed_at timestamptz,
     target_checked_at timestamptz,
+    r2_checked_at timestamptz,
     updated_at timestamptz not null default now(),
     unique (run_id, history_id, role, ordinal)
 );
@@ -114,6 +115,8 @@ create table if not exists analytics_history_media_migration_plans (
 );
 alter table analytics_history_media_r2_migrations
   add column if not exists target_checked_at timestamptz;
+alter table analytics_history_media_r2_migrations
+  add column if not exists r2_checked_at timestamptz;
 """
 
 BACKEND_BATCH_SQL = """
@@ -1004,6 +1007,154 @@ async def _probe_target_rows(
     return bytes_read
 
 
+async def _probe_r2_rows(
+    conn: asyncpg.Connection,
+    rows: list[asyncpg.Record],
+    *,
+    r2_client: Any,
+    concurrency: int,
+) -> int:
+    """Probe standard and legacy R2 keys concurrently; persist results serially."""
+    if not 1 <= concurrency <= 128:
+        raise ValueError("source concurrency must be between 1 and 128")
+    row_keys: dict[int, tuple[str, tuple[str, ...]]] = {}
+    unique_keys: dict[str, None] = {}
+    for row in rows:
+        target_key = str(row["target_key"])
+        candidates = tuple(
+            key
+            for key in build_candidate_keys(
+                str(row["original_ref"]), row["registry_task_id"]
+            )
+            if key != target_key
+        )
+        row_keys[int(row["id"])] = (target_key, candidates)
+        unique_keys[target_key] = None
+        for key in candidates:
+            unique_keys[key] = None
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def inspect(
+        key: str,
+    ) -> tuple[str, tuple[int, datetime] | None, str | None, int]:
+        async with semaphore:
+            head = await asyncio.to_thread(_head_s3, r2_client, BUCKET, key)
+            if head is None:
+                return key, None, None, 0
+            digest, read_size = await asyncio.to_thread(
+                _read_s3_sha, r2_client, BUCKET, key
+            )
+            if read_size != int(head[0]):
+                raise RuntimeError("R2_OBJECT_CHANGED_DURING_READ")
+            return key, head, digest, read_size
+
+    inspected = await asyncio.gather(*(inspect(key) for key in unique_keys))
+    facts = {key: (head, digest) for key, head, digest, _size in inspected}
+    bytes_read = sum(size for _key, _head, _digest, size in inspected)
+    for row in rows:
+        target_key, candidates = row_keys[int(row["id"])]
+        target_head, target_digest = facts[target_key]
+        if target_head is not None and target_digest is not None:
+            byte_size, modified = target_head
+            await conn.execute(
+                """insert into analytics_history_media_object_facts
+                     (source_name,object_key,byte_size,last_modified,sha256)
+                   values('target:user-data-prod',$1,$2,$3,$4)
+                   on conflict(source_name,object_key) do update set
+                     byte_size=excluded.byte_size,last_modified=excluded.last_modified,
+                     sha256=excluded.sha256,verified_at=now()""",
+                target_key,
+                byte_size,
+                modified,
+                target_digest,
+            )
+            await conn.execute(
+                """update analytics_history_media_r2_migrations set
+                     source_name='target:user-data-prod',source_key=target_key,
+                     byte_size=$2,source_last_modified=$3,source_sha256=$4,
+                     target_sha256=$4,status='target_verified',
+                     target_checked_at=now(),r2_checked_at=now(),error_code=null,
+                     error_detail=null,updated_at=now() where id=$1""",
+                row["id"],
+                byte_size,
+                modified,
+                target_digest,
+            )
+            await conn.execute(
+                """update analytics_media_asset_catalog set status='found',
+                     found_source='target:user-data-prod',source_key=$2,
+                     last_checked_at=now(),missing_rounds=0,first_missing_at=null,
+                     last_error=null where id=$1""",
+                row["catalog_asset_id"],
+                target_key,
+            )
+            continue
+
+        found_key = None
+        found_head = None
+        found_digest = None
+        attempts: list[tuple[Any, ...]] = []
+        for key in candidates:
+            head, digest = facts[key]
+            status = "found" if head is not None and digest is not None else "not_found"
+            attempts.append(
+                (row["run_id"], row["catalog_asset_id"], key, status)
+            )
+            if status == "found":
+                found_key, found_head, found_digest = key, head, digest
+                break
+        if attempts:
+            await conn.executemany(
+                """insert into analytics_media_source_attempts
+                     (run_id,asset_id,source,candidate_key,status)
+                   values($1,$2,'r2-user-data-prod',$3,$4)""",
+                attempts,
+            )
+        if found_key and found_head is not None and found_digest is not None:
+            byte_size, modified = found_head
+            await conn.execute(
+                """insert into analytics_history_media_object_facts
+                     (source_name,object_key,byte_size,last_modified,sha256)
+                   values('r2-user-data-prod',$1,$2,$3,$4)
+                   on conflict(source_name,object_key) do update set
+                     byte_size=excluded.byte_size,last_modified=excluded.last_modified,
+                     sha256=excluded.sha256,verified_at=now()""",
+                found_key,
+                byte_size,
+                modified,
+                found_digest,
+            )
+            await conn.execute(
+                """update analytics_history_media_r2_migrations set
+                     source_name='r2-user-data-prod',source_key=$2,byte_size=$3,
+                     source_last_modified=$4,source_sha256=$5,target_sha256=null,
+                     status='copy_required',target_checked_at=now(),r2_checked_at=now(),
+                     error_code=null,error_detail=null,updated_at=now() where id=$1""",
+                row["id"],
+                found_key,
+                byte_size,
+                modified,
+                found_digest,
+            )
+            await conn.execute(
+                """update analytics_media_asset_catalog set status='found',
+                     found_source='r2-user-data-prod',source_key=$2,
+                     last_checked_at=now(),missing_rounds=0,first_missing_at=null,
+                     last_error=null where id=$1""",
+                row["catalog_asset_id"],
+                found_key,
+            )
+        else:
+            await conn.execute(
+                """update analytics_history_media_r2_migrations set
+                     target_checked_at=now(),r2_checked_at=now(),
+                     error_code='R2_CANDIDATES_NOT_FOUND',error_detail=null,
+                     updated_at=now() where id=$1""",
+                row["id"],
+            )
+    return bytes_read
+
+
 async def _probe(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
@@ -1052,6 +1203,8 @@ async def _probe(args: argparse.Namespace) -> None:
         phase = (
             "probe-target"
             if args.target_only
+            else "probe-r2"
+            if args.r2_only
             else "probe-receipts"
             if args.receipt_only
             else "probe"
@@ -1065,6 +1218,15 @@ async def _probe(args: argparse.Namespace) -> None:
             rows = await conn.fetch(
                 """select m.* from analytics_history_media_r2_migrations m
                      where m.run_id=$1 and m.target_checked_at is null
+                       and m.status in ('pending_probe','source_offline','failed')
+                     order by m.history_id,m.role,m.ordinal limit $2""",
+                run_id,
+                args.limit,
+            )
+        elif args.r2_only:
+            rows = await conn.fetch(
+                """select m.* from analytics_history_media_r2_migrations m
+                     where m.run_id=$1 and m.r2_checked_at is null
                        and m.status in ('pending_probe','source_offline','failed')
                      order by m.history_id,m.role,m.ordinal limit $2""",
                 run_id,
@@ -1104,6 +1266,17 @@ async def _probe(args: argparse.Namespace) -> None:
                 rows,
                 target_client=target_client,
                 concurrency=args.target_concurrency,
+            )
+            rows = []
+        elif args.r2_only:
+            r2_source = configured.get("r2-user-data-prod")
+            if not r2_source or r2_source.get("bucket") != BUCKET:
+                raise RuntimeError("r2-user-data-prod source is not enabled for user-data-prod")
+            bytes_read = await _probe_r2_rows(
+                conn,
+                rows,
+                r2_client=_s3_client(r2_source),
+                concurrency=args.source_concurrency,
             )
             rows = []
         for row in rows:
@@ -1388,6 +1561,16 @@ async def _probe(args: argparse.Namespace) -> None:
                 )
             )
             remaining_receipts = None
+        elif args.r2_only:
+            remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and r2_checked_at is null
+                           and status in ('pending_probe','source_offline','failed')""",
+                    run_id,
+                )
+            )
+            remaining_receipts = None
         elif args.receipt_only:
             remaining_receipts = int(
                 await conn.fetchval(
@@ -1433,6 +1616,7 @@ async def _probe(args: argparse.Namespace) -> None:
                     "probed": probed_count,
                     "remaining_pending": remaining,
                     "target_only": args.target_only,
+                    "r2_only": args.r2_only,
                     "receipt_only": args.receipt_only,
                     "remaining_receipts": remaining_receipts,
                     "sha_bytes_read": bytes_read,
@@ -1978,8 +2162,10 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--systemic-error-threshold", type=int, default=5)
     probe_mode = probe.add_mutually_exclusive_group()
     probe_mode.add_argument("--target-only", action="store_true")
+    probe_mode.add_argument("--r2-only", action="store_true")
     probe_mode.add_argument("--receipt-only", action="store_true")
     probe.add_argument("--target-concurrency", type=int, default=32)
+    probe.add_argument("--source-concurrency", type=int, default=32)
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
     plan_copy = commands.add_parser("plan-copy")

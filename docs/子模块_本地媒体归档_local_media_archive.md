@@ -217,6 +217,12 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 不存在的行只记录已检查时间并保留待恢复状态，不能借此形成 missing 结论。完整来源
 恢复仍在系统错误阈值处暂停。target-only 在单批内按 target key 去重，并以
 `--target-concurrency` 控制 1–128 路 HEAD/完整读取；数据库结果仍串行持久化。
+当迁移明确以 `user-data-prod` 中的旧目录、临时路径和原 History key 为主要恢复源时，
+可用 `probe --r2-only` 同批去重并发检查标准目标、原引用、
+`history/{registry_task_id}/{basename}` 与 basename；并发由 `--source-concurrency`
+控制在 1–128。命中对象必须完整读取 SHA-256 后才进入 `target_verified` 或
+`copy_required`。未命中只写 `r2_checked_at` checkpoint 并保持 `pending_probe`，不会
+在未检查其它启用来源时累计 missing round；该模式不得调用 ListObjects 或 MinIO。
 标准目标检查完成后，`probe --receipt-only` 可只消费本地目录中已有
 `archived_verified` SHA receipt 的资产：它不重复检查标准目标，也不访问离线的遗留
 来源，而是对 receipt 指向的 NAS 对象执行 HEAD、大小和完整 SHA-256 复核。验证成功

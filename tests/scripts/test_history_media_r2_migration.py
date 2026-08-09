@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from botocore.exceptions import ClientError
 import pytest
 
 from scripts.history_media_r2_migration import (
@@ -23,6 +24,7 @@ from scripts.history_media_r2_migration import (
     hash_body,
     history_assets_from_record,
     normalize_asyncpg_dsn,
+    _probe_r2_rows,
     _probe_target_rows,
     replace_asset_reference,
     validate_copy_gate,
@@ -179,6 +181,77 @@ async def test_target_only_probe_deduplicates_keys_and_persists_serially():
     assert any("target_verified" in query for _kind, query, _params in conn.calls)
 
 
+@pytest.mark.asyncio
+async def test_r2_only_probe_deduplicates_old_keys_and_full_hashes_found_source():
+    class Body(BytesIO):
+        def close(self):
+            super().close()
+
+    class Client:
+        def __init__(self):
+            self.head_calls = []
+            self.get_calls = []
+
+        def head_object(self, *, Bucket, Key):
+            self.head_calls.append((Bucket, Key))
+            if Key == "7/output_images/old.png":
+                return {
+                    "ContentLength": 3,
+                    "LastModified": datetime(2026, 8, 9, tzinfo=timezone.utc),
+                }
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def get_object(self, *, Bucket, Key):
+            self.get_calls.append((Bucket, Key))
+            return {"Body": Body(b"abc")}
+
+    class Conn:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, query, *params):
+            self.calls.append(("execute", query, params))
+
+        async def executemany(self, query, params):
+            self.calls.append(("executemany", query, list(params)))
+
+    client = Client()
+    conn = Conn()
+    rows = [
+        {
+            "id": 1,
+            "run_id": "run",
+            "catalog_asset_id": 11,
+            "target_key": "task-results/backend/primary.png",
+            "original_ref": "7/output_images/old.png",
+            "registry_task_id": "registry",
+        },
+        {
+            "id": 2,
+            "run_id": "run",
+            "catalog_asset_id": 12,
+            "target_key": "task-results/backend/primary.png",
+            "original_ref": "7/output_images/old.png",
+            "registry_task_id": "registry",
+        },
+    ]
+
+    assert (
+        await _probe_r2_rows(
+            conn, rows, r2_client=client, concurrency=8  # type: ignore[arg-type]
+        )
+        == 3
+    )
+    assert len(client.head_calls) == 4
+    assert client.get_calls == [("user-data-prod", "7/output_images/old.png")]
+    assert any("copy_required" in query for _kind, query, _params in conn.calls)
+    assert any("r2_checked_at" in query for _kind, query, _params in conn.calls)
+    assert not any("source_missing" in query for _kind, query, _params in conn.calls)
+
+
 def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "analytics_history_media_migration_runs" in MIGRATION_DDL
     assert "analytics_history_media_r2_migrations" in MIGRATION_DDL
@@ -186,6 +259,7 @@ def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "unique (run_id, history_id, role, ordinal)" in MIGRATION_DDL
     assert "copy_plan_sha256" in MIGRATION_DDL
     assert "switch_plan_sha256" in MIGRATION_DDL
+    assert "r2_checked_at" in MIGRATION_DDL
 
 
 def test_standard_targets_require_explicit_dual_ids():
