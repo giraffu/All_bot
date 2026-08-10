@@ -81,6 +81,8 @@ python scripts/lan_aio_fleet_prod_ops.py <command>
 
 - candidate：先 `candidate-plan` 生成 Git catalog patch，再评审并合入。
 - cache：`pull-image`、`warm-cache`，只准备目标 slot。
+- cache GC：`cache-gc --slot <non-current-slot>` 只删除该 slot 的模型
+  workspace；current、运行容器挂载或非受管路径一律拒绝，默认 dry-run。
 - 验收：空槽使用成对
   `canary-start-disabled` / `canary-stop-disabled`，绝不 enable intake。
 - 切换：`takeover --failure-policy auto_rollback`，事务化完成 drain、disabled
