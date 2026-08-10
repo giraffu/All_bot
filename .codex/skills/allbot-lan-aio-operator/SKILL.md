@@ -5,7 +5,7 @@ description: "本地主服务器 LAN AIO 运维操作员。管理局域网 GPU �
 
 # AllBot LAN AIO Operator
 
-GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `scripts/copy_canonical_image_to_lan_registry.sh` 做保 digest 复制与复核。禁止为同一 release/profile 在 LAN 现场重新 build。
+GPU profile 必须有 canonical digest；LAN registry 只通过 `scripts/copy_canonical_image_to_lan_registry.sh` 保摘要复制。禁止 LAN 现场重建同一产物。
 
 正式 profile 镜像已烘焙 `/opt/allbot/runtime/runpod_worker`；`workers/runpod_runtime/` 只能通过不可变 GPU artifact 构建进入目标主机，operator 不得同步源码或用 host bind mount 覆盖镜像内代码。
 
@@ -51,6 +51,7 @@ python scripts/lan_aio_fleet_prod_ops.py render --slot <slot> --include-disabled
 python scripts/lan_aio_fleet_prod_ops.py preflight --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py pull-image --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disabled --execute
+python scripts/lan_aio_fleet_prod_ops.py cache-gc --slot <non-current-slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py canary-stop-disabled --slot <slot> --include-disabled --execute
 python scripts/lan_aio_fleet_prod_ops.py isolate-quarantined --slot <slot> --execute
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
@@ -89,7 +90,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 切换前必须确认当前 slot 无 running task；等待自然空闲，不强杀任务。
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 与 OOM/Xid 记录仅作为 catalog 审计信息，不阻断显式 slot 操作。
 - profile 的最低显存与实际显存只作为 canary 遥测，不构成启动或接单门禁。
-- helper 返回 drift、host port owner 冲突、cache missing、disabled heartbeat 缺失时报告；容器、Central 与 ComfyUI 健康验证仍必须执行。
+- helper 报告 drift、端口冲突、cache/heartbeat 缺失；仍须验证容器、Central 与 ComfyUI。
 - LAN 节点冷启动确需通过本地主 VPN 下载公开依赖时，只允许在本机受限 env 中显式设置 `LAN_AIO_HTTP_PROXY`、`LAN_AIO_HTTPS_PROXY` 与 `LAN_AIO_NO_PROXY`；operator 将其映射为目标容器的大小写 proxy 变量。代理值不得写入 Git catalog、Compose 或日志，默认未配置时运行行为不变。
 - `takeover/recover/restart-aio/retire-legacy/warm-cache/pull-image/canary-start-disabled/canary-stop-disabled` 等 mutation 仍持有本地单实例锁；live/ledger/catalog 差异和未完成 operation 会写入审计，但不会阻止后续显式单 slot mutation。
 - `disable-aio` 写入无 TTL 的持久 `disabled` control，故障节点只能通过后续显式

@@ -68,6 +68,7 @@ RETARGETABLE_REPLACE_SLOT_ACTIONS = {
 SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing", "restarting"}
 FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
 MANAGED_MUTATION_ACTIONS = {
+    "cache-gc",
     "configure-registry",
     "pull-image",
     "warm-cache",
@@ -1181,6 +1182,16 @@ class LanAioProdOps:
                         self._upsert_cached_profile(
                             updated_physical[marker_physical_slot], marker
                         )
+                if action == "cache-gc":
+                    gc_physical_slot = str(result.get("physical_slot_key") or "")
+                    gc_workspace = str(result.get("workspace_host_dir") or "")
+                    gc_state = updated_physical.get(gc_physical_slot)
+                    if gc_state is not None:
+                        gc_state["cached_profiles"] = [
+                            item
+                            for item in (gc_state.get("cached_profiles") or [])
+                            if str(item.get("workspace_host_dir") or "") != gc_workspace
+                        ]
                 self.state_store.write_current(
                     updated,
                     operation_id=operation_id,
@@ -1570,6 +1581,10 @@ class LanAioProdOps:
                         f"sync {slot.target_profile_id} manifest models into the slot workspace",
                         f"write {WARM_CACHE_MARKER_FILE} under {slot.remote_dir}",
                     ]
+                )
+            elif action == "cache-gc":
+                operations.append(
+                    f"delete non-current, unmounted model workspace for {slot.id}"
                 )
             elif action == "start-disabled":
                 operations.extend(
@@ -2183,6 +2198,69 @@ class LanAioProdOps:
             "action": "warm-cache",
             "slot": slot.id,
             "model_cache": marker,
+        }
+
+    def cache_gc(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("cache-gc requires exactly one --slot")
+        slot = slots[0]
+        physical_slot = physical_slot_key(slot)
+        if self.current_slot_id(physical_slot) == slot.id:
+            raise RuntimeError(f"refusing to delete current slot cache: {slot.id}")
+        metadata = self._runtime_metadata(slot)
+        workspace = str(
+            metadata.get("model_workspace_host_dir")
+            or metadata["workspace_host_dir"]
+        )
+        state = self._remote_target_container_state(slot)
+        if state.get("running"):
+            raise RuntimeError(
+                f"refusing to delete cache for running container: {slot.container_name}"
+            )
+        script = f"""set -euo pipefail
+workspace={shlex.quote(workspace)}
+case "$workspace" in
+  /srv/allbot/runpod-runtime/slots/*/profiles/*/workspace|/home/*/allbot-runpod-runtime/slots/*/profiles/*/workspace) ;;
+  *) echo "unsafe workspace path: $workspace" >&2; exit 2 ;;
+esac
+owners="$(for id in $(docker ps -q); do docker inspect --format "{{{{.Name}}}}|{{{{range .Mounts}}}}{{{{println .Source}}}}{{{{end}}}}" "$id"; done | grep -F "$workspace" || true)"
+if [ -n "$owners" ]; then echo "workspace mounted by running container: $owners" >&2; exit 3; fi
+before="$(du -sb "$workspace" 2>/dev/null | cut -f1 || true)"
+before="${{before:-0}}"
+if [ -d "$workspace" ]; then
+  find "$workspace" -xdev -depth -mindepth 1 -delete
+  rmdir "$workspace" 2>/dev/null || true
+fi
+after="$(du -sb "$workspace" 2>/dev/null | cut -f1 || true)"
+after="${{after:-0}}"
+printf "%s|%s\\n" "$before" "$after"
+"""
+        command = "bash -lc " + shlex.quote(script)
+        sudo_password = os.environ.get("LAN_AIO_GPU_SUDO_PASSWORD", "")
+        if sudo_password:
+            transport = (
+                ["sudo", "-S", "-p", "", "bash", "-lc", script]
+                if slot.ssh_host == "local://"
+                else [
+                    "ssh", *SSH_BATCH_OPTIONS, slot.ssh_host,
+                    "sudo -S -p '' bash -lc " + shlex.quote(script),
+                ]
+            )
+            output = self._local(
+                transport, input_text=sudo_password + "\n", capture=True
+            ).strip()
+        else:
+            output = self._ssh(slot.ssh_host, command, capture=True).strip()
+        last_line = output.splitlines()[-1] if output else "0|0"
+        before_text, _, after_text = last_line.partition("|")
+        return {
+            "ok": True,
+            "action": "cache-gc",
+            "slot": slot.id,
+            "physical_slot_key": physical_slot,
+            "workspace_host_dir": workspace,
+            "bytes_before": int(before_text or 0),
+            "bytes_after": int(after_text or 0),
         }
 
     def _wait_worker_ids_idle(self, targets: set[str]) -> None:
@@ -3830,6 +3908,7 @@ def build_parser() -> argparse.ArgumentParser:
             "configure-registry",
             "pull-image",
             "warm-cache",
+            "cache-gc",
             "drain-legacy",
             "wait-idle",
             "takeover",
@@ -4092,6 +4171,8 @@ def _run_raw_execute_action(
         return ops.pull_image(slots)
     if args.action == "warm-cache":
         return ops.warm_cache(slots)
+    if args.action == "cache-gc":
+        return ops.cache_gc(slots)
     if args.action == "drain-legacy":
         return ops.drain_legacy(slots)
     if args.action == "wait-idle":
