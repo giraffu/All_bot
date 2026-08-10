@@ -126,6 +126,7 @@ async def process_single_input_asset(
             source_name=img_filename,
         )
         params[param_key] = upload_name
+        params[f"_prepared_{param_key}_path"] = upload_path
     except Exception as exc:
         logger.error("Failed to process %s %s: %s", param_key, img_filename, exc)
         raise RuntimeError(

@@ -44,7 +44,7 @@ type SubmitHarness = {
   duration: Ref<string>
   selectedCharacterIds: Ref<string[]>
   minimaxH3Mode: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
-  minimaxH3ResolutionPreset: Ref<'preview' | 'standard' | 'hd'>
+  minimaxH3ResolutionPreset: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions: Ref<string[]>
   isTemplateApplied: Ref<boolean>
@@ -96,7 +96,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const duration = ref('5')
   const selectedCharacterIds = ref<string[]>([])
   const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
-  const minimaxH3ResolutionPreset = ref<'preview' | 'standard' | 'hd'>('preview')
+  const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
   const isTemplateApplied = ref(false)
@@ -264,7 +264,7 @@ describe('useLabSubmitPayload', () => {
       task_type: 'minimax_h3_i2v',
       inputs: expect.objectContaining({
         images: ['portrait.png'],
-        aspect_ratio: '9:16',
+        aspect_ratio: 'source',
       }),
     }), 'lab.cards.minimax_h3_title')
   })

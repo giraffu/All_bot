@@ -17,11 +17,16 @@ Web 由 `enable_minimax_h3` 控制，后端由
 
 - 公共字段：非空 `prompt`、`duration=5|10|15`（Bot/QQCC 可接收兼容的
   `"5s"` 标签，但进入任务请求、计费和 History 前必须归一为整数秒）、
-  `resolution_preset=preview|standard|hd`、常用 `aspect_ratio` 和可选 `seed`。
+  `resolution_preset=preview|small|standard|hd` 和可选 `seed`。四档像素预算依次为
+  0.26/0.36/0.52/0.65 MP；普通模式每 5 秒为 10/15/20/30 点，角色参考模式为
+  12/18/24/36 点。
   未指定 `seed` 时由 MiniMax H3 专用生成器在 Central 请求契约的
   `1..2^50` 范围内生成，不能复用上限更大的通用生成 seed。
 - T2V 不接受图片；I2V 恰好 1 张；FLF2V 恰好 2 张有序首尾帧；REF2V 接受
   1–4 张有序角色参考图和可选的等长角色说明。
+- I2V/FLF2V 固定使用 `aspect_ratio=source`，首帧通过分辨率计算节点按像素预算
+  和 Div32 生成实际宽高，不映射到近似比例。FLF2V 首尾帧比例相对差异超过 1%
+  时在入口和 Worker 双重拒绝；T2V/REF2V 继续使用固定 `aspect_ratio`。
 - 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
   Worker 再次拒绝模型、LoRA、采样器、timeline、本地路径和参考音视频覆盖。
 - 输出为带音轨 MP4，并通过 `SaveImage` 产生 `extra_outputs.last_frame` 所需尾帧。

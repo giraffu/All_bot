@@ -1401,6 +1401,12 @@ _MINIMAX_H3_COUNTS = {
     "minimax_h3_flf2v": (2, 2),
     "minimax_h3_ref2v": (1, 4),
 }
+_MINIMAX_H3_PRECISION_PRESETS = {
+    "preview": "0.26 MP - Preview",
+    "small": "0.36 MP - Small",
+    "standard": "0.52 MP - SD",
+    "hd": "0.65 MP - Balanced",
+}
 
 
 def patch_minimax_h3_workflow(
@@ -1425,6 +1431,21 @@ def patch_minimax_h3_workflow(
     if not minimum <= count <= maximum or any(not names[index] for index in range(count)):
         raise ValueError(f"invalid ordered image count for {task_type}")
     descriptions = params.get("reference_descriptions") or []
+    if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
+        aspect_ratio = str(params.get("aspect_ratio") or "source").strip()
+        if aspect_ratio != "source":
+            raise ValueError("MiniMax H3 image modes require source aspect ratio")
+        preset = str(params.get("resolution_preset") or "preview").strip().lower()
+        precision = _MINIMAX_H3_PRECISION_PRESETS.get(preset)
+        if precision is None:
+            raise ValueError("invalid MiniMax H3 resolution preset")
+        calculator = workflow.get("41")
+        if not isinstance(calculator, dict):
+            raise ValueError("MiniMax H3 source resolution calculator is missing")
+        calculator["inputs"]["precision_presets"] = precision
+        calculator["inputs"]["scale_from_image"] = True
+        workflow["30"]["inputs"]["width"] = ["41", 0]
+        workflow["30"]["inputs"]["height"] = ["41", 1]
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")

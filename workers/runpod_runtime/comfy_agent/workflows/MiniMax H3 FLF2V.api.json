@@ -57,8 +57,14 @@
         0
       ],
       "prompt": "",
-      "width": 736,
-      "height": 416,
+      "width": [
+        "41",
+        0
+      ],
+      "height": [
+        "41",
+        1
+      ],
       "length": 124,
       "first_frame": [
         "20",
@@ -214,5 +220,25 @@
       "image": "minimax_h3_reference_2.png"
     },
     "class_type": "LoadImage"
+  },
+  "41": {
+    "inputs": {
+      "method": "Use Precision Presets",
+      "precision_presets": "0.26 MP - Preview",
+      "resolution_presets": "1080p",
+      "no_scale": false,
+      "scale_from_image": true,
+      "aspect_preset": "16:9 - Widescreen",
+      "swap_aspect": false,
+      "manual_aspect_width": 16,
+      "manual_aspect_height": 9,
+      "mode": "WAN/LTX (Div32)",
+      "custom_divisor": 8,
+      "image": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_ResolutionScaleCalculator"
   }
 }

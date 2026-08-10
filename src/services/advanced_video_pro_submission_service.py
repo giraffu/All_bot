@@ -12,6 +12,10 @@ from src.domain_config.minimax_h3 import (
     build_minimax_h3_spec,
 )
 from src.services.task_service_generation_image import process_standard_generation_task
+from src.services.video_frame_aspect_service import (
+    VideoFrameAspectError,
+    validate_video_frame_aspects,
+)
 
 
 PRODUCT_NAME = "高级图生视频pro"
@@ -25,6 +29,16 @@ MODE_TASK_TYPES = {
 
 class AdvancedVideoProSubmissionError(ValueError):
     pass
+
+
+def validate_advanced_video_pro_frame_aspects(
+    image_paths: list[str] | tuple[str, ...],
+) -> tuple[tuple[int, int], ...]:
+    """Validate local first/last frames before quota is checked or deducted."""
+    try:
+        return validate_video_frame_aspects(image_paths)
+    except VideoFrameAspectError as exc:
+        raise AdvancedVideoProSubmissionError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,13 +71,16 @@ def build_advanced_video_pro_submission_plan(
     normalized_prompt = str(prompt or "").strip()
     if not normalized_prompt:
         raise AdvancedVideoProSubmissionError("请输入视频提示词。")
+    normalized_aspect_ratio = (
+        "source" if normalized_mode in {"i2v", "flf2v"} else aspect_ratio
+    )
     inputs = {
         "prompt": normalized_prompt,
         "images": list(images),
         "reference_descriptions": list(reference_descriptions),
         "duration": duration,
         "resolution_preset": resolution_preset,
-        "aspect_ratio": aspect_ratio,
+        "aspect_ratio": normalized_aspect_ratio,
     }
     try:
         spec = build_minimax_h3_spec(task_type, inputs)

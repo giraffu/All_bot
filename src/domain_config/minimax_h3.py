@@ -21,9 +21,22 @@ MINIMAX_H3_MAX_SEED = 1 << 50
 MINIMAX_H3_ALLOWED_DURATIONS = (5, 10, 15)
 MINIMAX_H3_FRAME_COUNTS = {5: 124, 10: 243, 15: 362}
 MINIMAX_H3_PIXEL_PRESETS = {
-    "preview": 300_000,
+    "preview": 260_000,
+    "small": 360_000,
     "standard": 520_000,
-    "hd": 830_000,
+    "hd": 650_000,
+}
+MINIMAX_H3_NORMAL_PRICE_BY_PRESET = {
+    "preview": 10,
+    "small": 15,
+    "standard": 20,
+    "hd": 30,
+}
+MINIMAX_H3_REFERENCE_PRICE_BY_PRESET = {
+    "preview": 12,
+    "small": 18,
+    "standard": 24,
+    "hd": 36,
 }
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
@@ -120,10 +133,9 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     )
     preset = str(inputs.get("resolution_preset") or "preview").strip().lower()
     if preset not in MINIMAX_H3_PIXEL_PRESETS:
-        raise MiniMaxH3ValidationError("分辨率档位必须为 preview、standard 或 hd。")
-    aspect = str(inputs.get("aspect_ratio") or "16:9").strip()
-    if aspect not in MINIMAX_H3_ASPECT_RATIOS:
-        raise MiniMaxH3ValidationError("不支持该画面比例。")
+        raise MiniMaxH3ValidationError(
+            "分辨率档位必须为 preview、small、standard 或 hd。"
+        )
 
     images = _images(inputs)
     descriptions = _string_tuple(
@@ -149,9 +161,25 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if any(not item for item in descriptions):
         raise MiniMaxH3ValidationError("角色参考说明不得为空。")
 
-    width, height = _dimensions(preset, aspect)
+    raw_aspect = str(inputs.get("aspect_ratio") or "").strip()
+    if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}:
+        if raw_aspect and raw_aspect != "source":
+            raise MiniMaxH3ValidationError("首帧模式必须跟随首帧原始比例。")
+        aspect = "source"
+        width, height = 0, 0
+    else:
+        aspect = raw_aspect or "16:9"
+        if aspect == "source":
+            raise MiniMaxH3ValidationError("该模式必须选择固定画面比例。")
+        if aspect not in MINIMAX_H3_ASPECT_RATIOS:
+            raise MiniMaxH3ValidationError("不支持该画面比例。")
+        width, height = _dimensions(preset, aspect)
     multiplier = duration // 5
-    base_cost = 12 if task_type == MINIMAX_H3_REF2V else 10
+    base_cost = (
+        MINIMAX_H3_REFERENCE_PRICE_BY_PRESET[preset]
+        if task_type == MINIMAX_H3_REF2V
+        else MINIMAX_H3_NORMAL_PRICE_BY_PRESET[preset]
+    )
     return MiniMaxH3Spec(
         task_type=task_type,
         mode=mode,

@@ -24,6 +24,7 @@ from src.constants import (
 from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
 from src.domain_config.minimax_h3 import MINIMAX_H3_FLF2V, MINIMAX_H3_I2V
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
+from src.services.video_frame_aspect_service import validate_video_frame_aspects
 from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_ai_video_scenes,
@@ -773,6 +774,7 @@ def _build_private_qqcc_video_chain_stages(
                 "is_video": True,
                 "task_type": MINIMAX_H3_FLF2V if segment.tail_draw_chain else MINIMAX_H3_I2V,
                 "resolution_preset": segment.resolution,
+                "aspect_ratio": "source",
                 "duration": segment.duration,
                 **common_kwargs,
             }
@@ -1112,6 +1114,7 @@ async def run_quick_video_submission_plan(
                 is_video=True,
                 task_type=MINIMAX_H3_I2V,
                 resolution_preset=plan.resolution,
+                aspect_ratio="source",
                 duration=plan.duration,
                 cleanup=True,
                 allow_contribute=False,
@@ -1254,6 +1257,7 @@ async def _run_tail_frame_video_plan(
 
         video_task_started = True
         if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
+            validate_video_frame_aspects([image_path, end_image_path])
             result = await _maybe_await(
                 process_generation_task_func(
                     context=context,
@@ -1265,6 +1269,7 @@ async def _run_tail_frame_video_plan(
                     is_video=True,
                     task_type=MINIMAX_H3_FLF2V,
                     resolution_preset=plan.resolution,
+                    aspect_ratio="source",
                     duration=plan.duration,
                     cleanup=True,
                     allow_contribute=False,

@@ -219,12 +219,16 @@ def test_qqcc_scene_resolution_contract_defaults_and_options():
         {"value": "1024p", "label": "1024p"},
     ]
     assert build_qqcc_config_options()["ai_video_resolutions"] == [
-        {"value": "preview", "label": "预览"},
-        {"value": "standard", "label": "标准"},
-        {"value": "hd", "label": "高清"},
+        {"value": "preview", "label": "极速（约 512p）"},
+        {"value": "small", "label": "清晰（约 600p）"},
+        {"value": "standard", "label": "标准（约 720p）"},
+        {"value": "hd", "label": "高清（约 810p）"},
     ]
     assert build_qqcc_config_options()["default_video_resolution"] == "720p"
     assert build_qqcc_config_options()["default_ai_video_resolution"] == "preview"
+    assert [item["value"] for item in build_qqcc_config_options()["ai_video_resolutions"]] == [
+        "preview", "small", "standard", "hd"
+    ]
 
 
 @pytest.mark.parametrize("invalid_resolution", ["", "2048p", 720, True])

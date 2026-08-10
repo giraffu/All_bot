@@ -42,7 +42,7 @@ type UseLabSubmitPayloadOptions = {
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
   minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
-  minimaxH3ResolutionPreset?: Ref<'preview' | 'standard' | 'hd'>
+  minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions?: Ref<string[]>
   isTemplateApplied: Ref<boolean>
@@ -149,24 +149,20 @@ export function useLabSubmitPayload({
         message.warning(t('lab.workbench.validation.minimax_h3_descriptions'))
         return
       }
-      const source = uploadedReferences.value[0]
-      const sourceRatio = source?.width && source?.height ? source.width / source.height : undefined
-      const inferredAspectRatio = sourceRatio
-        ? ([
-            ['16:9', 16 / 9],
-            ['9:16', 9 / 16],
-            ['1:1', 1],
-            ['4:3', 4 / 3],
-            ['3:4', 3 / 4],
-          ] as const).reduce((best, candidate) => (
-            Math.abs(candidate[1] - sourceRatio) < Math.abs(best[1] - sourceRatio)
-              ? candidate
-              : best
-          ))[0]
-        : undefined
       const aspectRatio = mode === 'i2v' || mode === 'flf2v'
-        ? inferredAspectRatio ?? minimaxH3AspectRatio?.value ?? '16:9'
+        ? 'source'
         : minimaxH3AspectRatio?.value ?? '16:9'
+      if (mode === 'flf2v') {
+        const [first, last] = uploadedReferences.value
+        if (first?.width && first.height && last?.width && last.height) {
+          const firstRatio = first.width / first.height
+          const lastRatio = last.width / last.height
+          if (Math.abs(firstRatio - lastRatio) / firstRatio > 0.01) {
+            message.warning(t('lab.workbench.validation.minimax_h3_frame_ratio'))
+            return
+          }
+        }
+      }
       await submitAndTrack(buildGenerationTaskPayload({
         taskType: `minimax_h3_${mode}`,
         images,
@@ -176,6 +172,14 @@ export function useLabSubmitPayload({
         extraInputs: {
           resolution_preset: minimaxH3ResolutionPreset?.value ?? 'preview',
           aspect_ratio: aspectRatio,
+          ...(mode === 'i2v' || mode === 'flf2v'
+            ? {
+                source_width: uploadedReferences.value[0]?.width,
+                source_height: uploadedReferences.value[0]?.height,
+                end_source_width: uploadedReferences.value[1]?.width,
+                end_source_height: uploadedReferences.value[1]?.height,
+              }
+            : {}),
           reference_descriptions: mode === 'ref2v' ? descriptions : [],
         },
         isTemplate: false,

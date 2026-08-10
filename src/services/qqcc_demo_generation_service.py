@@ -163,7 +163,7 @@ async def _submit_scene(
                 "images": [input_key],
                 "duration": int(scene.get("duration") or 5),
                 "resolution_preset": str(scene.get("resolution") or "preview"),
-                "aspect_ratio": "16:9",
+                "aspect_ratio": "source",
             },
         )
         return await image_service_instance.submit_minimax_h3_task(

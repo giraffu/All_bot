@@ -25,6 +25,7 @@ from src.services.advanced_video_pro_submission_service import (
     AdvancedVideoProSubmissionError,
     build_advanced_video_pro_submission_plan,
     submit_advanced_video_pro_plan,
+    validate_advanced_video_pro_frame_aspects,
 )
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_user_data,
@@ -38,8 +39,14 @@ DATA_KEY = "advanced_video_pro_data"
 TAG = "ADVANCED_VIDEO_PRO"
 MODES = ("t2v", "i2v", "flf2v", "ref2v")
 DURATIONS = (5, 10, 15)
-PRESETS = ("preview", "standard", "hd")
+PRESETS = ("preview", "small", "standard", "hd")
 ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4")
+PRESET_LABELS = {
+    "preview": ("极速（约 512p）", "Fast (approx. 512p)"),
+    "small": ("清晰（约 600p）", "Small (approx. 600p)"),
+    "standard": ("标准（约 720p）", "Standard (approx. 720p)"),
+    "hd": ("高清（约 810p）", "HD (approx. 810p)"),
+}
 
 
 def _lang(context) -> str:
@@ -70,8 +77,14 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
             callback_data=f"avp_{prefix}_{value}",
         ) for value in values]
 
-    rows = [buttons("duration", DURATIONS), buttons("preset", PRESETS)]
-    rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
+    preset_buttons = [InlineKeyboardButton(
+        ("✅ " if data.get("preset") == value else "")
+        + _text(context, *PRESET_LABELS[value]),
+        callback_data=f"avp_preset_{value}",
+    ) for value in PRESETS]
+    rows = [buttons("duration", DURATIONS), preset_buttons[:2], preset_buttons[2:]]
+    if data.get("mode") not in {"i2v", "flf2v"}:
+        rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
     rows.append([InlineKeyboardButton(
         _text(context, "确认设置", "Confirm settings"), callback_data="avp_settings_done"
     )])
@@ -79,10 +92,15 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
 
 
 def _settings_text(context, data: dict) -> str:
+    aspect = (
+        _text(context, "跟随首帧", "Follow first frame")
+        if data.get("mode") in {"i2v", "flf2v"}
+        else data["aspect"]
+    )
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{data['preset']}\n比例：{data['aspect']}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {data['preset']}\nAspect: {data['aspect']}",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}",
     )
 
 
@@ -191,6 +209,14 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if mode == "flf2v" and len(data["images"]) < 2:
         await robust_reply_text(update.message, _text(context, "起始帧已收到，请上传终止帧。", "Start frame received. Upload the end frame."))
         return AdvancedVideoProState.WAIT_MEDIA
+    if mode == "flf2v":
+        try:
+            validate_advanced_video_pro_frame_aspects(data["images"])
+        except AdvancedVideoProSubmissionError as exc:
+            data["images"].pop()
+            Path(path).unlink(missing_ok=True)
+            await robust_reply_text(update.message, str(exc))
+            return AdvancedVideoProState.WAIT_MEDIA
     if mode == "ref2v":
         await robust_reply_text(update.message, _text(context, "请描述该角色的身份与外观。", "Describe this character's identity and appearance."))
         return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
@@ -244,7 +270,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         plan = build_advanced_video_pro_submission_plan(
             mode=data["mode"], prompt=update.message.text,
             images=data["images"], reference_descriptions=data["reference_descriptions"],
-            duration=data["duration"], resolution_preset=data["preset"], aspect_ratio=data["aspect"],
+            duration=data["duration"], resolution_preset=data["preset"],
+            aspect_ratio=("source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]),
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(update.message, str(exc))

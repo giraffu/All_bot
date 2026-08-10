@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 from src.constants import (
@@ -6,10 +7,13 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
     MINIMAX_H3_TASK_TYPES,
     normalize_minimax_h3_duration_seconds,
 )
 from src.services.permission_service import permission_service
+from src.services.video_frame_aspect_service import validate_video_frame_aspects
 from src.services.task_service_entrypoint_support import (
     build_log_prompt,
     build_task_inputs,
@@ -165,12 +169,31 @@ async def process_standard_generation_task(
     )
     extra_inputs: dict[str, Any] = {}
     if is_minimax_h3:
+        local_source_dimensions: tuple[tuple[int, int], ...] = ()
+        if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V} and images and all(
+            Path(path).is_file() for path in images
+        ):
+            local_source_dimensions = validate_video_frame_aspects(images)
         extra_inputs.update(
             resolution_preset=resolution,
-            aspect_ratio=aspect_ratio or "16:9",
+            aspect_ratio=(
+                "source"
+                if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}
+                else aspect_ratio or "16:9"
+            ),
             reference_descriptions=reference_descriptions or [],
             seed=seed,
         )
+        if local_source_dimensions:
+            extra_inputs.update(
+                source_width=local_source_dimensions[0][0],
+                source_height=local_source_dimensions[0][1],
+            )
+            if len(local_source_dimensions) > 1:
+                extra_inputs.update(
+                    end_source_width=local_source_dimensions[1][0],
+                    end_source_height=local_source_dimensions[1][1],
+                )
     else:
         extra_inputs.update(lora_name=lora_name, lora_strength=lora_strength)
     if negative_prompt is not None:

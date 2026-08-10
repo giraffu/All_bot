@@ -841,6 +841,7 @@
       "minimax_h3_references": "Video references",
       "minimax_h3_description": "Identity and appearance for reference {index}",
       "minimax_h3_first_frame_ratio": "Aspect ratio follows the first frame",
+      "minimax_h3_resolution_presets": {"preview": "Fast (about 512p)", "small": "Clear (about 600p)", "standard": "Standard (about 720p)", "hd": "HD (about 810p)"},
       "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last", "ref2v": "Character Ref"},
       "upload_slots": {
         "face_image": "Face Image",
@@ -950,6 +951,7 @@
         "ltx_lora_limit": "You can choose up to 3 addon models"
         ,"minimax_h3_images": "The reference image count does not match the selected Advanced Image-to-Video Pro mode"
         ,"minimax_h3_descriptions": "Add an identity and appearance description for every character reference"
+        ,"minimax_h3_frame_ratio": "The last frame must match the first frame aspect ratio. Please upload it again."
       },
       "mode_kinds": {
         "image": "Image",
