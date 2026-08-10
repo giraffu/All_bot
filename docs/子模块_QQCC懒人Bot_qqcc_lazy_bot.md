@@ -3,6 +3,9 @@
 AI 视频场景面向用户统一称为“高级图生视频pro”。当前普通场景提交 H3 I2V，配置
 尾帧生成链的场景提交 H3 FLF2V。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
 清空；`ai_video_addon_models` 作为未来附加模型 catalog，当前为空且前端隐藏。
+AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
+值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
+权威覆盖模型分辨率价格，官方与私有 Bot 保持相同规范化行为。
 
 ## 1. 范围与定位
 

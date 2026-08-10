@@ -198,7 +198,12 @@ const promptLockedHint = computed(() => (
             />
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <a-select v-model:value="duration" :options="[{value:'5',label:'5s'},{value:'10',label:'10s'},{value:'15',label:'15s'}]" />
-              <a-select v-model:value="minimaxH3ResolutionPreset" :options="[{value:'preview',label:'0.30 MP'},{value:'standard',label:'0.52 MP'},{value:'hd',label:'0.83 MP'}]" />
+              <a-select v-model:value="minimaxH3ResolutionPreset" :options="[
+                { value: 'preview', label: t('lab.workbench.minimax_h3_resolution_presets.preview') },
+                { value: 'small', label: t('lab.workbench.minimax_h3_resolution_presets.small') },
+                { value: 'standard', label: t('lab.workbench.minimax_h3_resolution_presets.standard') },
+                { value: 'hd', label: t('lab.workbench.minimax_h3_resolution_presets.hd') },
+              ]" />
               <a-select v-if="minimaxH3Mode === 't2v' || minimaxH3Mode === 'ref2v'" v-model:value="minimaxH3AspectRatio" :options="['16:9','9:16','1:1','4:3','3:4'].map(value => ({value,label:value}))" />
               <div v-else class="flex min-h-8 items-center rounded-md border border-white/10 px-3 text-xs text-slate-400">
                 {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}

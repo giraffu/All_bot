@@ -86,6 +86,24 @@ def build(task_type: str) -> dict:
             workflow["30"]["inputs"]["first_frame"] = [node_id, 0]
         elif index == 2:
             workflow["30"]["inputs"]["last_frame"] = [node_id, 0]
+    if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
+        workflow["41"] = _node(
+            "DaSiWa_ResolutionScaleCalculator",
+            method="Use Precision Presets",
+            precision_presets="0.26 MP - Preview",
+            resolution_presets="1080p",
+            no_scale=False,
+            scale_from_image=True,
+            aspect_preset="16:9 - Widescreen",
+            swap_aspect=False,
+            manual_aspect_width=16,
+            manual_aspect_height=9,
+            mode="WAN/LTX (Div32)",
+            custom_divisor=8,
+            image=["20", 0],
+        )
+        workflow["30"]["inputs"]["width"] = ["41", 0]
+        workflow["30"]["inputs"]["height"] = ["41", 1]
     return workflow
 
 

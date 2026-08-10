@@ -81,7 +81,7 @@ AI_VIDEO_SCENE_ENGINE_MINIMAX_H3 = "minimax_h3"
 AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"  # read-only legacy alias
 AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,)
 AI_VIDEO_DURATION_KEYS = (5, 10, 15)
-AI_VIDEO_RESOLUTION_KEYS = ("preview", "standard", "hd")
+AI_VIDEO_RESOLUTION_KEYS = ("preview", "small", "standard", "hd")
 DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
 AI_VIDEO_MAX_LORA_ITEMS = 3
@@ -1672,9 +1672,10 @@ def build_qqcc_config_options() -> dict[str, Any]:
             {"value": value, "label": value} for value in VIDEO_RESOLUTION_KEYS
         ],
         "ai_video_resolutions": [
-            {"value": "preview", "label": "预览"},
-            {"value": "standard", "label": "标准"},
-            {"value": "hd", "label": "高清"},
+            {"value": "preview", "label": "极速（约 512p）"},
+            {"value": "small", "label": "清晰（约 600p）"},
+            {"value": "standard", "label": "标准（约 720p）"},
+            {"value": "hd", "label": "高清（约 810p）"},
         ],
         "default_scene_credit_costs": dict(DEFAULT_SCENE_CREDIT_COSTS),
         "video_aspect_ratios": list(QQCC_VIDEO_ASPECT_RATIOS),

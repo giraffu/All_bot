@@ -323,8 +323,10 @@ class MiniMaxH3Request(BaseModel):
     duration: int = Field(default=5)
     resolution_preset: str = "preview"
     aspect_ratio: str = "16:9"
-    width: int = Field(ge=32)
-    height: int = Field(ge=32)
+    # Source-ratio I2V/FLF2V requests use the workflow calculator, represented
+    # by zero here; fixed-aspect T2V/REF2V continue to send concrete Div32 sizes.
+    width: int = Field(ge=0)
+    height: int = Field(ge=0)
     frame_count: int = Field(ge=5)
     fps: int = Field(default=24)
     seed: Optional[int] = Field(default=None, ge=0, le=MINIMAX_H3_MAX_SEED)

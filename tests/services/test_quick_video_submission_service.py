@@ -1218,7 +1218,13 @@ async def test_run_tail_frame_wan22_v2_final_video_is_locked_continuation():
 
 
 @pytest.mark.asyncio
-async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
+async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status(tmp_path):
+    from PIL import Image
+
+    input_path = tmp_path / "input.png"
+    end_path = tmp_path / "end.png"
+    Image.new("RGB", (600, 900)).save(input_path)
+    Image.new("RGB", (600, 900)).save(end_path)
     plan = build_quick_video_submission_plan(
         fsm_data={"scene_kind": "ai_video", "scene_id": "cinema_tail"},
         qqcc_config=normalize_qqcc_config(
@@ -1248,7 +1254,7 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
     generation_task = AsyncMock()
 
     async def fake_draw_chain(**_kwargs):
-        return SimpleNamespace(local_output_path="/tmp/end.png")
+        return SimpleNamespace(local_output_path=str(end_path))
 
     assert plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
 
@@ -1258,7 +1264,7 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
         chat_id=456,
         user_id=123,
         username="tester",
-        image_path="/tmp/input.png",
+        image_path=str(input_path),
         status_msg_id=77,
         process_ltx_video_task_func=AsyncMock(),
         process_generation_task_func=generation_task,
@@ -1266,7 +1272,8 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
     )
 
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_flf2v"
-    assert generation_task.await_args.kwargs["images"] == ["/tmp/input.png", "/tmp/end.png"]
+    assert generation_task.await_args.kwargs["images"] == [str(input_path), str(end_path)]
+    assert generation_task.await_args.kwargs["aspect_ratio"] == "source"
     assert generation_task.await_args.kwargs["allow_cancel"] is False
     assert generation_task.await_args.kwargs["user_cancel_allowed"] is False
     assert generation_task.await_args.kwargs["base_priority"] == 100

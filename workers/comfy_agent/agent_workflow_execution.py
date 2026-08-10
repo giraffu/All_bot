@@ -1,6 +1,9 @@
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+from PIL import Image
 
 from agent_result_assets import resolve_history_result_asset, result_asset_priority
 
@@ -22,6 +25,22 @@ def validate_task_execution_contract(
             "scail2_face_swap_v2 requires reference_preprocessed=true; "
             "complete the face_swap_v2 stage before dispatching SCAIL-2"
         )
+    if task_type == "minimax_h3_flf2v":
+        input_dir = os.getenv("COMFY_INPUT_DIR", "/tmp/input")
+        paths = [
+            str(
+                params.get(f"_prepared_{key}_path")
+                or os.path.join(input_dir, str(params.get(key) or ""))
+            )
+            for key in ("image", "image2")
+        ]
+        if not all(os.path.isfile(path) for path in paths):
+            raise ValueError("MiniMax H3 first/last frame inputs are missing")
+        with Image.open(paths[0]) as first, Image.open(paths[1]) as last:
+            first_ratio = first.width / first.height
+            last_ratio = last.width / last.height
+        if abs(first_ratio - last_ratio) / first_ratio > 0.01:
+            raise ValueError("MiniMax H3 first/last frame aspect ratios must match")
 
 
 async def submit_task_workflow(

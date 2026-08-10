@@ -62,6 +62,14 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         assert workflow["38"]["inputs"]["audio"] == ["37", 0]
         assert workflow["40"]["class_type"] == "SaveImage"
         assert workflow["39"]["inputs"]["batch_index"] == 4095
+        if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
+            assert workflow["41"]["class_type"] == "DaSiWa_ResolutionScaleCalculator"
+            assert workflow["41"]["inputs"]["scale_from_image"] is True
+            assert workflow["41"]["inputs"]["mode"] == "WAN/LTX (Div32)"
+            assert workflow["30"]["inputs"]["width"] == ["41", 0]
+            assert workflow["30"]["inputs"]["height"] == ["41", 1]
+        else:
+            assert "41" not in workflow
 
 
 def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
@@ -115,6 +123,37 @@ def test_minimax_h3_output_prefix_is_unique_per_execution():
     assert first["40"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_one_last_frame"
     assert second["38"]["inputs"]["filename_prefix"] == "minimax_h3_t2v_task_two"
     assert first["38"]["inputs"]["filename_prefix"] != second["38"]["inputs"]["filename_prefix"]
+
+
+@pytest.mark.parametrize(
+    "preset,precision",
+    [
+        ("preview", "0.26 MP - Preview"),
+        ("small", "0.36 MP - Small"),
+        ("standard", "0.52 MP - SD"),
+        ("hd", "0.65 MP - Balanced"),
+    ],
+)
+def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision):
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_i2v")
+    result = patcher.patch_workflow(
+        "minimax_h3_i2v",
+        workflow,
+        {
+            "prompt": "scene",
+            "image": "first.png",
+            "aspect_ratio": "source",
+            "resolution_preset": preset,
+            "width": 0,
+            "height": 0,
+            "frame_count": 124,
+            "seed": 9,
+        },
+    )
+    assert result["41"]["inputs"]["precision_presets"] == precision
+    assert result["30"]["inputs"]["width"] == ["41", 0]
+    assert result["30"]["inputs"]["height"] == ["41", 1]
 
 
 @pytest.mark.parametrize("field", ["model_name", "timeline_data", "lora_name", "steps"])

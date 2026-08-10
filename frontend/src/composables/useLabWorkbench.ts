@@ -88,7 +88,7 @@ export function useLabWorkbench() {
   const environmentSource = ref<'official' | 'upload'>('official')
   const selectedEnvironmentId = ref('')
   const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
-  const minimaxH3ResolutionPreset = ref<'preview' | 'standard' | 'hd'>('preview')
+  const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
 
@@ -257,7 +257,12 @@ export function useLabWorkbench() {
     hasCharacter: useT2VReferences.value,
   }))
   const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
-    ? (minimaxH3Mode.value === 'ref2v' ? 12 : 10) * Number(duration.value) / 5
+    ? ({
+        preview: minimaxH3Mode.value === 'ref2v' ? 12 : 10,
+        small: minimaxH3Mode.value === 'ref2v' ? 18 : 15,
+        standard: minimaxH3Mode.value === 'ref2v' ? 24 : 20,
+        hd: minimaxH3Mode.value === 'ref2v' ? 36 : 30,
+      }[minimaxH3ResolutionPreset.value]) * Number(duration.value) / 5
     : cost.value)
 
   const costHint = computed(() => {

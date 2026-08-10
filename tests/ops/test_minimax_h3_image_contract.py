@@ -42,6 +42,7 @@ def test_minimax_h3_post_build_smoke_checks_registered_runtime_nodes():
         "MiniMaxH3MemoryEfficientSageAttentionPatch",
         "MiniMaxH3SigmaShift",
         "MiniMaxH3TurboSampler",
+        "DaSiWa_ResolutionScaleCalculator",
         "VAEDecodeAudio",
         "VHS_VideoCombine",
     ):
