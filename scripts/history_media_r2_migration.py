@@ -18,7 +18,6 @@ import os
 from pathlib import Path, PurePosixPath
 import stat
 import sys
-import tempfile
 from types import SimpleNamespace
 from typing import Any, BinaryIO, Iterable
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
@@ -46,6 +45,8 @@ from src.core.media_archive import (  # noqa: E402
 
 BUCKET = "user-data-prod"
 CHUNK_SIZE = 4 * 1024 * 1024
+SINGLE_COPY_LIMIT = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
+MULTIPART_COPY_PART_SIZE = 512 * 1024 * 1024
 MAX_DIAGNOSTICS = 100
 
 MIGRATION_DDL = """
@@ -77,6 +78,9 @@ create table if not exists analytics_history_media_r2_migrations (
     byte_size bigint,
     source_sha256 char(64),
     target_sha256 char(64),
+    source_etag text,
+    target_etag text,
+    copy_method text,
     source_last_modified timestamptz,
     status text not null check (status in (
       'pending_probe','copy_required','target_verified','copied_verified',
@@ -117,6 +121,12 @@ alter table analytics_history_media_r2_migrations
   add column if not exists target_checked_at timestamptz;
 alter table analytics_history_media_r2_migrations
   add column if not exists r2_checked_at timestamptz;
+alter table analytics_history_media_r2_migrations
+  add column if not exists source_etag text;
+alter table analytics_history_media_r2_migrations
+  add column if not exists target_etag text;
+alter table analytics_history_media_r2_migrations
+  add column if not exists copy_method text;
 """
 
 BACKEND_BATCH_SQL = """
@@ -343,6 +353,7 @@ PLAN_ROW_FIELDS = (
     "source_name",
     "source_key",
     "source_last_modified",
+    "source_etag",
     "byte_size",
     "status",
     "history_manifest_sha256",
@@ -576,13 +587,121 @@ def _normalize_modified(value: Any) -> datetime:
 
 
 def _head_s3(client, bucket: str, key: str) -> tuple[int, datetime] | None:
+    response = _head_s3_identity(client, bucket, key)
+    if response is None:
+        return None
+    return int(response["ContentLength"]), _normalize_modified(response["LastModified"])
+
+
+def _head_s3_identity(client, bucket: str, key: str) -> dict[str, Any] | None:
     try:
         response = client.head_object(Bucket=bucket, Key=key)
     except ClientError as exc:
         if _not_found(exc):
             return None
         raise
-    return int(response["ContentLength"]), _normalize_modified(response["LastModified"])
+    return response
+
+
+def _normalize_etag(value: Any) -> str:
+    etag = str(value or "").strip().strip('"')
+    if not etag:
+        raise RuntimeError("object HEAD did not return ETag")
+    return etag
+
+
+def server_side_copy_r2_object(
+    client: Any,
+    *,
+    bucket: str,
+    source_key: str,
+    target_key: str,
+    expected_size: int,
+    expected_last_modified: datetime,
+    expected_etag: str | None = None,
+    single_copy_limit: int = SINGLE_COPY_LIMIT,
+    multipart_part_size: int = MULTIPART_COPY_PART_SIZE,
+) -> dict[str, Any]:
+    """Copy one immutable object inside R2 without transferring its body."""
+    source_head = _head_s3_identity(client, bucket, source_key)
+    if source_head is None:
+        raise RuntimeError("planned source disappeared before server-side copy")
+    source_size = int(source_head["ContentLength"])
+    source_modified = _normalize_modified(source_head["LastModified"])
+    source_etag = _normalize_etag(source_head.get("ETag"))
+    if source_size != int(expected_size) or source_modified != expected_last_modified:
+        raise RuntimeError("planned source changed before server-side copy")
+    if expected_etag and source_etag != _normalize_etag(expected_etag):
+        raise RuntimeError("planned source ETag changed before server-side copy")
+    if _head_s3_identity(client, bucket, target_key) is not None:
+        raise RuntimeError("target already exists; refusing to overwrite")
+
+    multipart = source_size > single_copy_limit
+    if not multipart:
+        client.copy_object(
+            Bucket=bucket,
+            Key=target_key,
+            CopySource={"Bucket": bucket, "Key": source_key},
+            CopySourceIfMatch=source_etag,
+            MetadataDirective="COPY",
+        )
+    else:
+        if multipart_part_size <= 0:
+            raise ValueError("multipart copy part size must be positive")
+        part_count = (source_size + multipart_part_size - 1) // multipart_part_size
+        if part_count > 10_000:
+            raise RuntimeError("multipart server-side copy would exceed 10000 parts")
+        created = client.create_multipart_upload(Bucket=bucket, Key=target_key)
+        upload_id = str(created["UploadId"])
+        parts: list[dict[str, Any]] = []
+        try:
+            for part_number in range(1, part_count + 1):
+                start = (part_number - 1) * multipart_part_size
+                end = min(source_size, start + multipart_part_size) - 1
+                copied = client.upload_part_copy(
+                    Bucket=bucket,
+                    Key=target_key,
+                    UploadId=upload_id,
+                    PartNumber=part_number,
+                    CopySource={"Bucket": bucket, "Key": source_key},
+                    CopySourceRange=f"bytes={start}-{end}",
+                )
+                parts.append(
+                    {
+                        "ETag": _normalize_etag(copied["CopyPartResult"]["ETag"]),
+                        "PartNumber": part_number,
+                    }
+                )
+            client.complete_multipart_upload(
+                Bucket=bucket,
+                Key=target_key,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
+        except Exception:
+            client.abort_multipart_upload(
+                Bucket=bucket, Key=target_key, UploadId=upload_id
+            )
+            raise
+
+    source_after = _head_s3_identity(client, bucket, source_key)
+    target_after = _head_s3_identity(client, bucket, target_key)
+    if source_after is None or target_after is None:
+        raise RuntimeError("server-side copy did not leave both source and target present")
+    if (
+        int(source_after["ContentLength"]) != source_size
+        or _normalize_modified(source_after["LastModified"]) != source_modified
+        or _normalize_etag(source_after.get("ETag")) != source_etag
+    ):
+        raise RuntimeError("source changed during server-side copy")
+    if int(target_after["ContentLength"]) != source_size:
+        raise RuntimeError("server-side copy target size mismatch")
+    return {
+        "byte_size": source_size,
+        "source_etag": source_etag,
+        "etag": _normalize_etag(target_after.get("ETag")),
+        "multipart": multipart,
+    }
 
 
 def _read_s3_sha(client, bucket: str, key: str) -> tuple[str, int]:
@@ -626,12 +745,6 @@ def _read_source_sha(
         with _filesystem_path(config, key).open("rb") as body:
             return hash_body(body)
     return _read_s3_sha(client, str(config["bucket"]), key)
-
-
-def _open_source_body(config: dict[str, Any], client: Any, key: str) -> BinaryIO:
-    if config.get("type", "s3") == "filesystem":
-        return _filesystem_path(config, key).open("rb")
-    return client.get_object(Bucket=str(config["bucket"]), Key=key)["Body"]
 
 
 async def _ensure_schema(conn: asyncpg.Connection) -> None:
@@ -1014,7 +1127,7 @@ async def _probe_r2_rows(
     r2_client: Any,
     concurrency: int,
 ) -> int:
-    """Probe standard and legacy R2 keys concurrently; persist results serially."""
+    """Resolve standard and legacy R2 keys with metadata-only HEAD requests."""
     if not 1 <= concurrency <= 128:
         raise ValueError("source concurrency must be between 1 and 128")
     row_keys: dict[int, tuple[str, tuple[str, ...]]] = {}
@@ -1036,49 +1149,37 @@ async def _probe_r2_rows(
 
     async def inspect(
         key: str,
-    ) -> tuple[str, tuple[int, datetime] | None, str | None, int]:
+    ) -> tuple[str, dict[str, Any] | None]:
         async with semaphore:
-            head = await asyncio.to_thread(_head_s3, r2_client, BUCKET, key)
-            if head is None:
-                return key, None, None, 0
-            digest, read_size = await asyncio.to_thread(
-                _read_s3_sha, r2_client, BUCKET, key
+            return key, await asyncio.to_thread(
+                _head_s3_identity, r2_client, BUCKET, key
             )
-            if read_size != int(head[0]):
-                raise RuntimeError("R2_OBJECT_CHANGED_DURING_READ")
-            return key, head, digest, read_size
 
     inspected = await asyncio.gather(*(inspect(key) for key in unique_keys))
-    facts = {key: (head, digest) for key, head, digest, _size in inspected}
-    bytes_read = sum(size for _key, _head, _digest, size in inspected)
+    facts = dict(inspected)
     for row in rows:
         target_key, candidates = row_keys[int(row["id"])]
-        target_head, target_digest = facts[target_key]
-        if target_head is not None and target_digest is not None:
-            byte_size, modified = target_head
-            await conn.execute(
-                """insert into analytics_history_media_object_facts
-                     (source_name,object_key,byte_size,last_modified,sha256)
-                   values('target:user-data-prod',$1,$2,$3,$4)
-                   on conflict(source_name,object_key) do update set
-                     byte_size=excluded.byte_size,last_modified=excluded.last_modified,
-                     sha256=excluded.sha256,verified_at=now()""",
-                target_key,
-                byte_size,
-                modified,
-                target_digest,
-            )
+        target_head = facts[target_key]
+        if target_head is not None:
+            byte_size = int(target_head["ContentLength"])
+            modified = _normalize_modified(target_head["LastModified"])
+            etag = _normalize_etag(target_head.get("ETag"))
+            target_is_current_reference = str(row["original_ref"]).lstrip("/") == target_key
+            status = "target_verified" if target_is_current_reference else "target_conflict"
+            error_code = None if target_is_current_reference else "TARGET_EXISTS_UNVERIFIED"
             await conn.execute(
                 """update analytics_history_media_r2_migrations set
                      source_name='target:user-data-prod',source_key=target_key,
-                     byte_size=$2,source_last_modified=$3,source_sha256=$4,
-                     target_sha256=$4,status='target_verified',
-                     target_checked_at=now(),r2_checked_at=now(),error_code=null,
+                     byte_size=$2,source_last_modified=$3,source_etag=$4,
+                     target_etag=$4,status=$5,error_code=$6,
+                     target_checked_at=now(),r2_checked_at=now(),
                      error_detail=null,updated_at=now() where id=$1""",
                 row["id"],
                 byte_size,
                 modified,
-                target_digest,
+                etag,
+                status,
+                error_code,
             )
             await conn.execute(
                 """update analytics_media_asset_catalog set status='found',
@@ -1092,16 +1193,15 @@ async def _probe_r2_rows(
 
         found_key = None
         found_head = None
-        found_digest = None
         attempts: list[tuple[Any, ...]] = []
         for key in candidates:
-            head, digest = facts[key]
-            status = "found" if head is not None and digest is not None else "not_found"
+            head = facts[key]
+            status = "found" if head is not None else "not_found"
             attempts.append(
                 (row["run_id"], row["catalog_asset_id"], key, status)
             )
             if status == "found":
-                found_key, found_head, found_digest = key, head, digest
+                found_key, found_head = key, head
                 break
         if attempts:
             await conn.executemany(
@@ -1110,31 +1210,21 @@ async def _probe_r2_rows(
                    values($1,$2,'r2-user-data-prod',$3,$4)""",
                 attempts,
             )
-        if found_key and found_head is not None and found_digest is not None:
-            byte_size, modified = found_head
-            await conn.execute(
-                """insert into analytics_history_media_object_facts
-                     (source_name,object_key,byte_size,last_modified,sha256)
-                   values('r2-user-data-prod',$1,$2,$3,$4)
-                   on conflict(source_name,object_key) do update set
-                     byte_size=excluded.byte_size,last_modified=excluded.last_modified,
-                     sha256=excluded.sha256,verified_at=now()""",
-                found_key,
-                byte_size,
-                modified,
-                found_digest,
-            )
+        if found_key and found_head is not None:
+            byte_size = int(found_head["ContentLength"])
+            modified = _normalize_modified(found_head["LastModified"])
+            etag = _normalize_etag(found_head.get("ETag"))
             await conn.execute(
                 """update analytics_history_media_r2_migrations set
                      source_name='r2-user-data-prod',source_key=$2,byte_size=$3,
-                     source_last_modified=$4,source_sha256=$5,target_sha256=null,
+                     source_last_modified=$4,source_etag=$5,target_sha256=null,
                      status='copy_required',target_checked_at=now(),r2_checked_at=now(),
                      error_code=null,error_detail=null,updated_at=now() where id=$1""",
                 row["id"],
                 found_key,
                 byte_size,
                 modified,
-                found_digest,
+                etag,
             )
             await conn.execute(
                 """update analytics_media_asset_catalog set status='found',
@@ -1152,7 +1242,7 @@ async def _probe_r2_rows(
                      updated_at=now() where id=$1""",
                 row["id"],
             )
-    return bytes_read
+    return 0
 
 
 async def _probe(args: argparse.Namespace) -> None:
@@ -1668,7 +1758,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 )
             query = (
                 """select history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_sha256,
+                          source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256,error_code
                      from analytics_history_media_r2_migrations where run_id=$1
                      order by history_id,role,ordinal"""
@@ -1693,7 +1783,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
         else:
             query = (
                 """select history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_sha256,
+                          source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256
                      from analytics_history_media_r2_migrations
                     where run_id=$1 and status in ('target_verified','copied_verified')
@@ -1782,7 +1872,7 @@ async def _execute_copy(args: argparse.Namespace) -> None:
             await _stream_plan_rowset(
                 conn,
                 """select history_id,role,ordinal,original_ref,target_key,
-                      source_name,source_key,source_last_modified,source_sha256,
+                      source_name,source_key,source_last_modified,source_etag,source_sha256,
                       target_sha256,byte_size,status,history_manifest_sha256,
                       copy_plan_sha256
                  from analytics_history_media_r2_migrations where run_id=$1
@@ -1807,85 +1897,36 @@ async def _execute_copy(args: argparse.Namespace) -> None:
                 source = sources.get(str(row["source_name"]))
                 if not source:
                     raise RuntimeError("planned source is not enabled in this config")
-                source_client = (
-                    None
-                    if source.get("type", "s3") == "filesystem"
-                    else _s3_client(source)
-                )
-                head = await asyncio.to_thread(
-                    _head_source, source, source_client, str(row["source_key"])
-                )
                 if (
-                    not head
-                    or int(head[0]) != int(row["byte_size"])
-                    or head[1] != row["source_last_modified"]
+                    str(row["source_name"]) != "r2-user-data-prod"
+                    or source.get("type", "s3") != "s3"
+                    or source.get("bucket") != BUCKET
+                    or str(source.get("endpoint", "")).rstrip("/")
+                    != str(target.get("endpoint", "")).rstrip("/")
                 ):
-                    raise RuntimeError("planned source changed before copy")
-                existing_target = await asyncio.to_thread(
-                    _head_s3, target_client, BUCKET, str(row["target_key"])
+                    raise RuntimeError(
+                        "copy plan source is not eligible for same-R2 server-side copy"
+                    )
+                copied = await asyncio.to_thread(
+                    server_side_copy_r2_object,
+                    target_client,
+                    bucket=BUCKET,
+                    source_key=str(row["source_key"]),
+                    target_key=str(row["target_key"]),
+                    expected_size=int(row["byte_size"]),
+                    expected_last_modified=row["source_last_modified"],
+                    expected_etag=row["source_etag"],
                 )
-                if existing_target:
-                    existing_sha, existing_size = await asyncio.to_thread(
-                        _read_s3_sha,
-                        target_client,
-                        BUCKET,
-                        str(row["target_key"]),
-                    )
-                    if (
-                        existing_size != int(row["byte_size"])
-                        or existing_sha != row["source_sha256"]
-                    ):
-                        raise RuntimeError("target appeared with conflicting SHA")
-                    await conn.execute(
-                        """update analytics_history_media_r2_migrations set
-                             status='target_verified',target_sha256=$2,
-                             copy_completed_at=now(),updated_at=now()
-                           where id=$1""",
-                        row["id"],
-                        existing_sha,
-                    )
-                    await conn.execute(
-                        """update analytics_history_media_migration_runs set
-                             sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
-                        run_id,
-                        existing_size,
-                    )
-                    continue
-                with tempfile.NamedTemporaryFile(prefix="history-media-", suffix=".part") as spool:
-                    body = _open_source_body(
-                        source, source_client, str(row["source_key"])
-                    )
-                    digest = hashlib.sha256()
-                    size = 0
-                    try:
-                        while chunk := body.read(CHUNK_SIZE):
-                            spool.write(chunk)
-                            digest.update(chunk)
-                            size += len(chunk)
-                    finally:
-                        body.close()
-                    if size != int(row["byte_size"]) or digest.hexdigest() != row["source_sha256"]:
-                        raise RuntimeError("planned source SHA changed before copy")
-                    spool.flush()
-                    spool.seek(0)
-                    target_client.upload_fileobj(spool, BUCKET, str(row["target_key"]))
-                target_sha, target_size = await asyncio.to_thread(
-                    _read_s3_sha, target_client, BUCKET, str(row["target_key"])
-                )
-                if target_size != int(row["byte_size"]) or target_sha != row["source_sha256"]:
-                    raise RuntimeError("target full SHA verification failed")
                 await conn.execute(
                     """update analytics_history_media_r2_migrations set
-                         status='copied_verified',target_sha256=$2,
+                         status='copied_verified',target_sha256=source_sha256,
+                         target_etag=$2,copy_method=$3,
                          copy_completed_at=now(),updated_at=now() where id=$1""",
                     row["id"],
-                    target_sha,
-                )
-                await conn.execute(
-                    """update analytics_history_media_migration_runs set
-                         sha_bytes_read=sha_bytes_read+$2,updated_at=now() where id=$1""",
-                    run_id,
-                    int(row["byte_size"]) * 2,
+                    copied["etag"],
+                    "r2_multipart_copy"
+                    if copied["multipart"]
+                    else "r2_copy_object",
                 )
             except Exception as exc:
                 await conn.execute(
@@ -1975,7 +2016,7 @@ async def _execute_switch(args: argparse.Namespace) -> None:
             await _stream_plan_rowset(
                 ledger,
                 """select history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_sha256,
+                          source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256
                      from analytics_history_media_r2_migrations
                  where run_id=$1 and switch_plan_sha256=$2
@@ -2114,7 +2155,7 @@ async def _report(args: argparse.Namespace) -> None:
             await _stream_plan_rowset(
                 conn,
                 """select history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_sha256,
+                          source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256,error_code
                      from analytics_history_media_r2_migrations where run_id=$1
                      order by history_id,role,ordinal""",

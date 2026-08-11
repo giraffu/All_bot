@@ -18,7 +18,7 @@ description: "建设和维护 AllBot History 全量媒体目录、NAS MinIO 归�
 - 冷媒体重新变热时只写独立 restore outbox；Web 不直连 NAS。恢复 Worker 必须
   复验 NAS 摘要、回填 R2 原件并重建输出缩略图后才提交当前 revision 回执。
 - 永久原件使用 SHA-256 内容寻址；History 和原 key 映射保存在目录/回执。
-- History R2 迁移只用冻结行账本和完整 SHA；双 ID、plan、CAS 均 fail closed，
+- R2 同桶迁移用冻结账本和服务端复制，正文不经执行器；NAS/旧源验 SHA
   禁止全桶扫描。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条必须先按用户对原始 History 排名，再过滤不可见记录；收藏、公开、

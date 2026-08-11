@@ -271,7 +271,7 @@ key，不枚举桶，也没有对象删除操作。旧 `r2_media_governance.py` 
 `probe` 先检查标准目标，再按受限 0600 配置中启用的来源优先级尝试原引用、
 `history/{registry_task_id}/{basename}` 和 basename。相同来源对象在进程内只完整读取
 一次；跨 run 只有 HEAD 的大小与 LastModified 均未变化才复用完整 SHA-256 事实。
-ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完整 SHA-256。来源离线、
+NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256。来源离线、
 鉴权或系统性查询失败不等于丢失；达到系统错误阈值时 run 立即 paused。只有全部启用
 来源明确 not-found 才累计 missing round，两轮至少间隔 24 小时才在本地目录标记
 `confirmed_lost`，生产 History 不写“丢失”且保留原引用。
@@ -284,9 +284,11 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 当迁移明确以 `user-data-prod` 中的旧目录、临时路径和原 History key 为主要恢复源时，
 可用 `probe --r2-only` 同批去重并发检查标准目标、原引用、
 `history/{registry_task_id}/{basename}` 与 basename；并发由 `--source-concurrency`
-控制在 1–128。命中对象必须完整读取 SHA-256 后才进入 `target_verified` 或
-`copy_required`。未命中只写 `r2_checked_at` checkpoint 并保持 `pending_probe`，不会
-在未检查其它启用来源时累计 missing round；该模式不得调用 ListObjects 或 MinIO。
+控制在 1–128。该模式只执行 HEAD，冻结 size、LastModified 和 ETag；不得 GET 媒体
+正文。旧 key 命中后进入 `copy_required`；标准目标仅在它已经是 History 当前引用时
+进入 `target_verified`，否则以 `TARGET_EXISTS_UNVERIFIED` 冲突收口，禁止覆盖。
+未命中只写 `r2_checked_at` checkpoint 并保持 `pending_probe`，不会在未检查其它启用
+来源时累计 missing round；该模式不得调用 ListObjects 或 MinIO。
 标准目标检查完成后，`probe --receipt-only` 可只消费本地目录中已有
 `archived_verified` SHA receipt 的资产：它不重复检查标准目标，也不访问离线的遗留
 来源，而是对 receipt 指向的 NAS 对象执行 HEAD、大小和完整 SHA-256 复核。验证成功
@@ -295,10 +297,14 @@ ETag 和 size 只作预筛，源与已存在目标的最终结论必须来自完
 来源恢复后运行完整 `probe`。
 
 `plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
-分类对象数/字节、实际 SHA 读取量、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
+分类对象数/字节、已有 SHA 读取量、源 ETag、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
 SHA，不包含完整对象清单。`execute-copy` 只接受
-`COPY_HISTORY_MEDIA_<plan-sha>`，复制前复验源，上传后完整回读目标；失败资产保持旧
-History 引用。`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`，并在
+`COPY_HISTORY_MEDIA_<plan-sha>`。同一 R2 bucket 的旧 key 只能通过服务端
+`CopyObject` 复制；超过单次复制上限时使用 `UploadPartCopy`，不得 GET、落地临时文件
+或从执行器重新上传。执行前复验 size、LastModified、ETag 和目标不存在；单次复制用
+源 ETag 条件，multipart 在完成后再次复验源 HEAD，并对目标 HEAD 验收大小。非 R2、
+跨 endpoint、目标已存在或来源变化均 fail closed，失败资产保持旧 History 引用。
+`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`，并在
 事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
