@@ -266,15 +266,13 @@
   },
   "41": {
     "inputs": {
-      "method": "Use Precision Presets",
-      "precision_presets": "0.26 MP - Preview",
-      "resolution_presets": "1080p",
+      "resolution_preset": "0.26 MP - Preview",
       "no_scale": false,
       "scale_from_image": true,
-      "aspect_preset": "16:9 - Widescreen",
-      "swap_aspect": false,
-      "manual_aspect_width": 16,
-      "manual_aspect_height": 9,
+      "aspect_preset_when_not_image": "9:16 - Social",
+      "swap_aspect_when_not_image": false,
+      "custom_aspect_width": 16,
+      "custom_aspect_height": 9,
       "mode": "WAN/LTX (Div32)",
       "custom_divisor": 8,
       "image": [
