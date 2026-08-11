@@ -27,10 +27,172 @@ from scripts.history_media_r2_migration import (
     _probe_r2_rows,
     _probe_target_rows,
     replace_asset_reference,
+    server_side_copy_r2_object,
     validate_copy_gate,
     validate_switch_gate,
     validate_resume_identity,
 )
+
+
+def _head(*, size: int, etag: str, modified: datetime | None = None):
+    return {
+        "ContentLength": size,
+        "ETag": f'"{etag}"',
+        "LastModified": modified or datetime(2026, 8, 9, tzinfo=timezone.utc),
+    }
+
+
+def test_server_side_copy_uses_r2_copy_object_without_reading_media():
+    class Client:
+        def __init__(self):
+            self.copy_calls = []
+            self.head_calls = 0
+
+        def head_object(self, *, Bucket, Key):
+            self.head_calls += 1
+            if Key == "old/file.mp4":
+                return _head(size=123, etag="source-etag")
+            if self.copy_calls:
+                return _head(size=123, etag="source-etag")
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def copy_object(self, **kwargs):
+            self.copy_calls.append(kwargs)
+            return {"CopyObjectResult": {"ETag": '"source-etag"'}}
+
+        def get_object(self, **_kwargs):  # pragma: no cover - forbidden behavior
+            raise AssertionError("server-side migration must not download media")
+
+        def upload_fileobj(self, *_args, **_kwargs):  # pragma: no cover
+            raise AssertionError("server-side migration must not upload media")
+
+    client = Client()
+    result = server_side_copy_r2_object(
+        client,
+        bucket="user-data-prod",
+        source_key="old/file.mp4",
+        target_key="task-results/backend/primary.mp4",
+        expected_size=123,
+        expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+    )
+
+    assert result == {
+        "byte_size": 123,
+        "source_etag": "source-etag",
+        "etag": "source-etag",
+        "multipart": False,
+    }
+    assert client.copy_calls == [
+        {
+            "Bucket": "user-data-prod",
+            "Key": "task-results/backend/primary.mp4",
+            "CopySource": {"Bucket": "user-data-prod", "Key": "old/file.mp4"},
+            "CopySourceIfMatch": "source-etag",
+            "MetadataDirective": "COPY",
+        }
+    ]
+
+
+def test_server_side_copy_fails_closed_when_target_already_exists():
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            return _head(size=3, etag="existing")
+
+    with pytest.raises(RuntimeError, match="target already exists"):
+        server_side_copy_r2_object(
+            Client(),
+            bucket="user-data-prod",
+            source_key="old.png",
+            target_key="new.png",
+            expected_size=3,
+            expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        )
+
+
+def test_server_side_copy_binds_the_frozen_source_etag():
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            return _head(size=3, etag="changed")
+
+    with pytest.raises(RuntimeError, match="ETag changed"):
+        server_side_copy_r2_object(
+            Client(),
+            bucket="user-data-prod",
+            source_key="old.png",
+            target_key="new.png",
+            expected_size=3,
+            expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            expected_etag="frozen",
+        )
+
+
+def test_large_server_side_copy_uses_multipart_copy_without_media_body():
+    part_size = 512 * 1024 * 1024
+    total_size = part_size + 7
+
+    class Client:
+        def __init__(self):
+            self.created = False
+            self.parts = []
+
+        def head_object(self, *, Bucket, Key):
+            if Key == "old/large.bin":
+                return _head(size=total_size, etag="large-source")
+            if self.created:
+                return _head(size=total_size, etag="multipart-target")
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def create_multipart_upload(self, **kwargs):
+            self.created = True
+            return {"UploadId": "upload-1"}
+
+        def upload_part_copy(self, **kwargs):
+            self.parts.append(kwargs)
+            return {"CopyPartResult": {"ETag": f'"part-{kwargs["PartNumber"]}"'}}
+
+        def complete_multipart_upload(self, **kwargs):
+            self.completed = kwargs
+
+        def abort_multipart_upload(self, **_kwargs):  # pragma: no cover
+            raise AssertionError("successful multipart copy must not abort")
+
+    client = Client()
+    result = server_side_copy_r2_object(
+        client,
+        bucket="user-data-prod",
+        source_key="old/large.bin",
+        target_key="new/large.bin",
+        expected_size=total_size,
+        expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        single_copy_limit=part_size,
+        multipart_part_size=part_size,
+    )
+
+    assert result["multipart"] is True
+    assert [part["CopySourceRange"] for part in client.parts] == [
+        f"bytes=0-{part_size - 1}",
+        f"bytes={part_size}-{total_size - 1}",
+    ]
+    assert client.completed["MultipartUpload"]["Parts"] == [
+        {"ETag": "part-1", "PartNumber": 1},
+        {"ETag": "part-2", "PartNumber": 2},
+    ]
+
+
+def test_execute_copy_has_no_client_side_media_transfer_path():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_copy)
+    forbidden = ("_read_s3_sha", "_open_source_body", "NamedTemporaryFile", "upload_fileobj")
+    assert not any(name in source for name in forbidden)
+    assert "server_side_copy_r2_object" in source
 
 
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
@@ -182,11 +344,7 @@ async def test_target_only_probe_deduplicates_keys_and_persists_serially():
 
 
 @pytest.mark.asyncio
-async def test_r2_only_probe_deduplicates_old_keys_and_full_hashes_found_source():
-    class Body(BytesIO):
-        def close(self):
-            super().close()
-
+async def test_r2_only_probe_resolves_old_keys_with_head_only():
     class Client:
         def __init__(self):
             self.head_calls = []
@@ -197,6 +355,7 @@ async def test_r2_only_probe_deduplicates_old_keys_and_full_hashes_found_source(
             if Key == "7/output_images/old.png":
                 return {
                     "ContentLength": 3,
+                    "ETag": '"source-etag"',
                     "LastModified": datetime(2026, 8, 9, tzinfo=timezone.utc),
                 }
             raise ClientError(
@@ -206,7 +365,7 @@ async def test_r2_only_probe_deduplicates_old_keys_and_full_hashes_found_source(
 
         def get_object(self, *, Bucket, Key):
             self.get_calls.append((Bucket, Key))
-            return {"Body": Body(b"abc")}
+            raise AssertionError("R2 key resolution must not download object bodies")
 
     class Conn:
         def __init__(self):
@@ -243,11 +402,12 @@ async def test_r2_only_probe_deduplicates_old_keys_and_full_hashes_found_source(
         await _probe_r2_rows(
             conn, rows, r2_client=client, concurrency=8  # type: ignore[arg-type]
         )
-        == 3
+        == 0
     )
     assert len(client.head_calls) == 4
-    assert client.get_calls == [("user-data-prod", "7/output_images/old.png")]
+    assert client.get_calls == []
     assert any("copy_required" in query for _kind, query, _params in conn.calls)
+    assert any("source_etag" in query for _kind, query, _params in conn.calls)
     assert any("r2_checked_at" in query for _kind, query, _params in conn.calls)
     assert not any("source_missing" in query for _kind, query, _params in conn.calls)
 
