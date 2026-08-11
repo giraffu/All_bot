@@ -1035,12 +1035,13 @@ def _worker_idle_delete_candidate(
     heartbeat_max_age_seconds: int,
 ) -> bool:
     return (
-        _worker_accepting(
+        _worker_seen_recently(
             worker,
             now=now,
             heartbeat_max_age_seconds=heartbeat_max_age_seconds,
         )
         and str(worker.get("status") or "").lower() == "idle"
+        and _worker_control_state(worker) in {"enabled", "draining", "disabled"}
         and not worker.get("current_task_id")
         and not worker.get("current_task_type")
     )
@@ -1653,14 +1654,6 @@ def _decide_runpod_profile_action(
     profile = context.profile
     metrics = context.metrics
 
-    if config.is_profile_paused(profile):
-        return _decision(
-            profile=profile,
-            action="hold",
-            reason="hold: profile autoscaler paused",
-            metrics=metrics,
-        )
-
     active_operation = _active_operation_for_profile(operations, profile=profile)
     if active_operation is not None:
         bootstrap_elapsed_seconds = _active_bootstrap_elapsed_seconds(
@@ -1687,6 +1680,34 @@ def _decide_runpod_profile_action(
             reason=active_reason,
             metrics=active_metrics,
             operation_id=str(active_operation.get("id") or ""),
+        )
+
+    if config.is_profile_paused(profile):
+        if context.pending_count > 0 or context.runpod_total_count <= 0:
+            return _decision(
+                profile=profile,
+                action="hold",
+                reason="hold: profile autoscaler paused",
+                metrics=metrics,
+            )
+        cooldown_remaining = _autoscaler_cooldown_remaining_seconds(
+            operations,
+            profile=profile,
+            now=now,
+            cooldown_seconds=config.cooldown_seconds,
+        )
+        if cooldown_remaining > 0:
+            return _decision(
+                profile=profile,
+                action="hold",
+                reason=f"cooldown {cooldown_remaining}s remaining",
+                metrics={**metrics, "cooldown_remaining_seconds": cooldown_remaining},
+            )
+        return _decide_runpod_no_backlog_action(
+            context=context,
+            operations=operations,
+            config=config,
+            now=now,
         )
 
     if context.restart_candidates:
@@ -1895,14 +1916,6 @@ def _decide_runpod_no_backlog_action(
             metrics=metrics,
         )
 
-    if context.total_accepting_count <= 1:
-        return _decision(
-            profile=profile,
-            action="hold",
-            reason="hold: minimum total accepting capacity reached",
-            metrics=metrics,
-        )
-
     candidate = _highest_slot_worker(context.idle_runpod_workers, profile=profile)
     if candidate is None:
         reason = (
@@ -1914,6 +1927,17 @@ def _decide_runpod_no_backlog_action(
             profile=profile,
             action="hold",
             reason=reason,
+            metrics=metrics,
+        )
+
+    if (
+        _worker_control_state(candidate) == "enabled"
+        and context.total_accepting_count <= 1
+    ):
+        return _decision(
+            profile=profile,
+            action="hold",
+            reason="hold: minimum total accepting capacity reached",
             metrics=metrics,
         )
 

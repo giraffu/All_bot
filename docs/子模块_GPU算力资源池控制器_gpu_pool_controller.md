@@ -114,6 +114,9 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   ComfyUI health 和 heartbeat，再允许接单；失败恢复旧 exact digest。
 - autoscaler 使用 leader lease、profile 阈值和 operation store，不能绕过
   provider 门禁或直接操作 LAN worker。
+- profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
+  已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
+  变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。
 - 删除操作需要 deletion tombstone，避免残留 heartbeat 自动重新 enable；
   手工锁定的 worker 不能被 autoscaler down/cleanup。
 - current Pod 数量、slot ID、临时公网地址和实时队列不进入 Git 或文档。
