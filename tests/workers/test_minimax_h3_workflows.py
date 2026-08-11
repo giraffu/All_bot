@@ -34,28 +34,54 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             }
             assert workflow["10"]["inputs"] == {
                 "model": ["1", 0],
-                "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
-                "strength_model": 0.5,
+                "lora_name": "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
+                "strength_model": 1.0,
             }
             assert workflow["11"]["inputs"] == {
                 "model": ["10", 0],
+                "lora_name": "MiniMaxH3/vagassist_e40.safetensors",
+                "strength_model": 1.0,
+            }
+            assert workflow["12"]["inputs"] == {
+                "model": ["11", 0],
+                "lora_name": "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
+                "strength_model": 0.35,
+            }
+            assert workflow["13"]["inputs"] == {
+                "model": ["12", 0],
+                "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+                "strength_model": 0.5,
+            }
+            assert workflow["14"]["inputs"] == {
+                "model": ["13", 0],
                 "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
                 "strength_model": 0.75,
             }
-            assert workflow["2"]["inputs"]["model"] == ["11", 0]
+            assert workflow["2"]["inputs"]["model"] == ["14", 0]
             assert workflow["34"]["inputs"]["steps"] == 6
             assert workflow["33"] == {
                 "inputs": {},
                 "class_type": "MiniMaxH3TurboSampler",
             }
             assert workflow["35"]["inputs"]["sampler"] == ["33", 0]
+        elif task_type == "minimax_h3_flf2v":
+            assert workflow["10"]["inputs"]["lora_name"] == "MiniMaxH3/HMBreasts_085e0750_e40.safetensors"
+            assert workflow["10"]["inputs"]["strength_model"] == 1.0
+            assert workflow["11"]["inputs"]["lora_name"] == "MiniMaxH3/vagassist_e40.safetensors"
+            assert workflow["11"]["inputs"]["strength_model"] == 1.0
+            assert workflow["12"]["inputs"]["lora_name"] == "MiniMaxH3/hmpussy_v6_epoch30.safetensors"
+            assert workflow["12"]["inputs"]["strength_model"] == 0.35
+            assert "13" not in workflow and "14" not in workflow
+            assert workflow["2"]["inputs"]["model"] == ["12", 0]
+            assert workflow["34"]["inputs"]["steps"] == 25
+            assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
         else:
             assert workflow["3"]["inputs"] == {
                 "model": ["2", 0],
                 "shift_video": 11.0,
                 "shift_audio": 4.0,
             }
-            assert "10" not in workflow and "11" not in workflow
+            assert not {"10", "11", "12", "13", "14"} & workflow.keys()
             assert workflow["2"]["inputs"]["model"] == ["1", 0]
             assert workflow["34"]["inputs"]["steps"] == 25
             assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"

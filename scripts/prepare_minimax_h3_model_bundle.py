@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-09-hmnsfw-v2-lightx2v4"
+VERSION = "2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4"
 REVISION = "0543966fbdce5ba05709a8f2031c94bdba629b4a"
 MIN_FREE_BYTES = 80 * 1024**3
 FILES = (
@@ -29,6 +29,9 @@ FILES = (
     ("vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors", "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48", 605_254_808, "vae/minimax_h3_audio_vae_fp32.safetensors"),
     ("vae/MiniMaxH3/minimax_h3_video_vae_fp16.safetensors", "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522", 5_207_808_496, "vae/minimax_h3_video_vae_fp16.safetensors"),
     ("loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors", "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb", 310_168_344, "https://civitai.red/api/download/models/3206518"),
+    ("loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors", "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967", 310_168_344, "https://civitai.red/api/download/models/3216751"),
+    ("loras/MiniMaxH3/vagassist_e40.safetensors", "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a", 310_168_344, "https://civitai.red/api/download/models/3215304"),
+    ("loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors", "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee", 626_294_968, "https://civitai.red/api/download/models/3215304?fileId=3097100"),
     ("loras/MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors", "3a069f26fbc33f377a60dc72dd9e15f2aa42aa1d1b44915fded835716672dd36", 314_878_200, "https://huggingface.co/Kijai/MiniMax-H3_comfy/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/loras/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"),
 )
 
@@ -81,9 +84,9 @@ def prepare(registry: ModelRegistry) -> Path:
         profiles=["minimax_h3"],
         source={
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "repositories": ["Comfy-Org/MiniMax-H3", "Kijai/MiniMax-H3_comfy", "civitai:modelVersion/3206518"],
+            "repositories": ["Comfy-Org/MiniMax-H3", "Kijai/MiniMax-H3_comfy", "civitai:modelVersion/3206518", "civitai:modelVersion/3216751", "civitai:modelVersion/3215304"],
             "revision": REVISION,
-            "variant": "official INT8 convrot base plus HMNSFW V2 and rank-21 Lightx2v 4-step LoRAs",
+            "variant": "official INT8 convrot base plus pinned HMNSFW V2, HMBreasts, HMPussy pair, and rank-21 Lightx2v 4-step LoRAs",
         },
         files=manifest_files,
     )
