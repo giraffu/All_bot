@@ -12,6 +12,26 @@ def test_lightx2v_source_is_pinned_to_repository_commit():
     assert "/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/" in lightx2v[3]
 
 
+def test_anatomy_loras_are_pinned_with_author_strength_pair_files():
+    files = {entry[0]: entry for entry in module.FILES}
+
+    assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
+        "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/vagassist_e40.safetensors"][1:3] == (
+        "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][1:3] == (
+        "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee",
+        626_294_968,
+    )
+    assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][3].endswith(
+        "?fileId=3097100"
+    )
+
+
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):
     payload = b"official-minimax-h3-test-blob"
     sha256 = hashlib.sha256(payload).hexdigest()

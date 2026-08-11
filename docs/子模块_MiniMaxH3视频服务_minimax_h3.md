@@ -43,13 +43,20 @@ Web 由 `enable_minimax_h3` 控制，后端由
 
 四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
 `scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
-生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。T2V/I2V 固定串联
-HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，使用固定 revision 的
+生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。所有使用 FL2VA
+底模的 T2V/I2V/FLF2V 固定串联 HMBreasts `1.0`、HMPussy 的静态结构文件
+`vagassist` `1.0` 与视频稳定文件 `hmpussy` `0.35`；HMPussy 两份文件不可拆开。
+T2V/I2V 在该结构链之后继续串联 HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，
+使用固定 revision 的
 `MiniMaxH3TurboSampler`、6 steps、`simple` 与 video/audio shift `12/3`，让
 加速采样按 H3 音视频双 schedule 适配当前 ComfyUI；触发词 `hmmotion` 由调用方
-在提示词中明确提供。FLF2V/REF2V 保持 25 steps、`res_multistep` 与 shift `11/4`
-基线，避免把只针对
-FL2V 且未覆盖 REF2V 的 LoRA 错用到参考模型。四模式都启用 KJNodes H3
+在提示词中明确提供。新结构 LoRA 的 `HMBreasts`、`Vagina`、`hmpussy` 触发词同样
+只由调用方按需要明确提供，服务端不得暗中注入并改变普通视频语义。HMBreasts
+作者未发布硬性强度，当前 `1.0` 是与同作者静态结构 LoRA 对齐的候选基线，GPU
+canary 必须覆盖叠加质量。FLF2V/REF2V 保持 25 steps、`res_multistep` 与 shift
+`11/4` 基线；FLF2V 只加载三个结构 LoRA，不加载 HMNSFW/Lightx2v。REF2V 使用
+不同的 REF2VA 底模，作者资产只声明 FL2VA，因此 fail closed，不加载这组 LoRA。
+四模式都启用 KJNodes H3
 memory-efficient SageAttention patch。
 
 REF2V 的原生 `MiniMaxH3ReferenceToVideo` 节点使用 ComfyUI V3 Autogrow 输入。
@@ -57,10 +64,12 @@ API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 
 有序参考图；不得使用扁平 `ref_image_1` 等字段，否则节点执行阶段会收到非预期
 关键字。业务提示词中的 `<Picture 1>` 仍保持 1-based，两种编号只属于不同层次。
 
-模型包为 `minimax_h3_runtime/2026-08-09-hmnsfw-v2-lightx2v4`，来自固定 revision 的
+模型包为 `minimax_h3_runtime/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4`，来自固定 revision 的
 `Comfy-Org/MiniMax-H3` 官方量化转换，包含 FL2VA、REF2VA、Qwen3-VL text encoder
 及 video/audio VAE；同一 manifest 还包含 Civitai modelVersion `3206518` 的
-HMNSFW V2 与 Kijai 固定 revision 的 rank-21 Lightx2v 四步 LoRA。模型只进入内容寻址仓库、
+HMNSFW V2、`3216751` 的 HMBreasts、`3215304` 的两文件 HMPussy，以及 Kijai
+固定 revision 的 rank-21 Lightx2v 四步 LoRA。所有文件固定 SHA256 和字节数。
+模型只进入内容寻址仓库、
 R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
 
 ## 发布与 LAN 验收
