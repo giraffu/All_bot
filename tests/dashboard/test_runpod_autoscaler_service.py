@@ -554,6 +554,53 @@ async def test_autoscaler_holds_paused_profile_without_scaling():
     assert calls == []
 
 
+async def test_paused_profile_still_releases_idle_disabled_runpods():
+    calls = []
+    store = InMemoryRunPodAutoscalerStateStore()
+    await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile=None,
+        task_duration_seconds_by_type=None,
+        profile_autoscaler_paused_by_profile={"wan22_video_v2": True},
+        reason="pause wan22 autoscaler",
+        store=store,
+        refresh_payload=False,
+    )
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-delete-paused",
+            action="delete",
+            profile=kwargs["profile"],
+            command=["runpod", "down"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="wan22_video_v2", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("wan22_video_v2", "01", control_state="disabled"),
+            _runpod_worker("wan22_video_v2", "02", control_state="disabled"),
+        ),
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "wan22_video_v2"
+    ]
+    assert decision["action"] == "scale_down"
+    assert decision["slot"] == "02"
+    assert decision["profile_autoscaler_paused"] is True
+    assert calls[0]["slot"] == "02"
+
+
 async def test_autoscaler_profile_pause_does_not_pause_other_profiles():
     calls = []
     store = InMemoryRunPodAutoscalerStateStore()
