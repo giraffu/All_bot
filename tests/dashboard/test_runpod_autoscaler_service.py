@@ -845,7 +845,7 @@ async def test_autoscaler_waits_before_restarting_recent_runpod_fault():
     assert calls == []
 
 
-async def test_autoscaler_enables_paused_runpod_worker():
+async def test_autoscaler_enables_paused_runpod_worker_for_backlog():
     calls = []
 
     async def start_enable(**kwargs):
@@ -865,7 +865,7 @@ async def test_autoscaler_enables_paused_runpod_worker():
         mutate=True,
         config=_config(),
         store=InMemoryRunPodAutoscalerStateStore(),
-        status_payload=_status(profile="image_to_video", pending=0, wait=None),
+        status_payload=_status(profile="image_to_video", pending=1, wait=10),
         workers_payload=_workers(
             _runpod_worker(
                 "image_to_video",
@@ -896,6 +896,51 @@ async def test_autoscaler_enables_paused_runpod_worker():
         }
     ]
     assert payload["executed_operations"][0]["action"] == "enable"
+
+
+async def test_autoscaler_releases_paused_runpod_instead_of_enabling_without_backlog():
+    enable_calls = []
+    delete_calls = []
+
+    async def start_enable(**kwargs):
+        enable_calls.append(kwargs)
+        raise AssertionError("idle paused runpod must not be re-enabled without backlog")
+
+    async def start_delete(**kwargs):
+        delete_calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-delete-paused-idle",
+            action="delete",
+            profile=kwargs["profile"],
+            command=["runpod", "down"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="wan22_video_v2", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("wan22_video_v2", "01", control_state="disabled"),
+            _runpod_worker("wan22_video_v2", "02", control_state="disabled"),
+            _local_worker("wan22_video_v2"),
+        ),
+        operations_payload={"operations": []},
+        start_enable_func=start_enable,
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "wan22_video_v2"
+    ]
+    assert decision["action"] == "scale_down"
+    assert decision["slot"] == "02"
+    assert enable_calls == []
+    assert delete_calls[0]["slot"] == "02"
 
 
 async def test_autoscaler_does_not_enable_residual_worker_after_successful_delete():
@@ -966,7 +1011,7 @@ async def test_deleted_worker_tombstone_does_not_block_other_paused_runpod():
         mutate=True,
         config=_config(),
         store=InMemoryRunPodAutoscalerStateStore(),
-        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        status_payload=_status(profile="i2i_pro", pending=1, wait=10),
         workers_payload=_workers(
             _runpod_worker("i2i_pro", "01", control_state="disabled"),
             _runpod_worker("i2i_pro", "02", control_state="disabled"),
