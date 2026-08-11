@@ -110,6 +110,7 @@ export type CloseTrigger =
   | 'gesture_close'
   | 'route_leave'
   | 'open_replace'
+  | 'task_submitted'
 
 export type CloseConfirmReason =
   | 'dirty'

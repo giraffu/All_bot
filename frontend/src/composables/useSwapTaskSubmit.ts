@@ -17,6 +17,7 @@ type UseSwapTaskSubmitOptions = {
   warningMessage: string
   submitTask: (payload: unknown, taskTitle: string) => Promise<string | null>
   setSubmittedTaskId: (taskId: string | null) => void
+  onSubmitted?: (taskId: string) => Promise<void> | void
 }
 
 export function useSwapTaskSubmit(options: UseSwapTaskSubmitOptions) {
@@ -42,6 +43,7 @@ export function useSwapTaskSubmit(options: UseSwapTaskSubmitOptions) {
     const taskId = await options.submitTask(payload, options.taskTitle)
     if (taskId) {
       options.setSubmittedTaskId(taskId)
+      await options.onSubmitted?.(taskId)
     }
   }
 

@@ -162,6 +162,13 @@ export const useTemplateApplyStore = defineStore('templateApply', () => {
     }
   }
 
+  const closeAfterSubmission = async (sessionId: string) => {
+    if (session.value?.sessionId !== sessionId) {
+      return
+    }
+    await confirmCloseAndCleanup('task_submitted')
+  }
+
   const openFromRawContext = async (
     params: OpenTemplateApplyParams
   ): Promise<OpenTemplateApplyResult> => {
@@ -276,6 +283,7 @@ export const useTemplateApplyStore = defineStore('templateApply', () => {
     isSessionActive,
     requestClose,
     confirmCloseAndCleanup,
+    closeAfterSubmission,
     forceCloseAfterCleanup,
     reset
   }

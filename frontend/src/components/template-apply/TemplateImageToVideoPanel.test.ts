@@ -31,7 +31,8 @@ const {
   templateApplyStoreMock: {
     setPendingUploads: vi.fn(),
     setDirtyState: vi.fn(),
-    registerPanelController: vi.fn()
+    registerPanelController: vi.fn(),
+    closeAfterSubmission: vi.fn()
   },
   messageWarningMock: vi.fn(),
   messageErrorMock: vi.fn()
