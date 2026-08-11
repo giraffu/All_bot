@@ -90,8 +90,18 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         assert workflow["39"]["inputs"]["batch_index"] == 4095
         if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}:
             assert workflow["41"]["class_type"] == "DaSiWa_ResolutionScaleCalculator"
-            assert workflow["41"]["inputs"]["scale_from_image"] is True
-            assert workflow["41"]["inputs"]["mode"] == "WAN/LTX (Div32)"
+            assert workflow["41"]["inputs"] == {
+                "resolution_preset": "0.26 MP - Preview",
+                "no_scale": False,
+                "scale_from_image": True,
+                "aspect_preset_when_not_image": "9:16 - Social",
+                "swap_aspect_when_not_image": False,
+                "custom_aspect_width": 16,
+                "custom_aspect_height": 9,
+                "mode": "WAN/LTX (Div32)",
+                "custom_divisor": 8,
+                "image": ["20", 0],
+            }
             assert workflow["30"]["inputs"]["width"] == ["41", 0]
             assert workflow["30"]["inputs"]["height"] == ["41", 1]
         else:
@@ -177,7 +187,7 @@ def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision)
             "seed": 9,
         },
     )
-    assert result["41"]["inputs"]["precision_presets"] == precision
+    assert result["41"]["inputs"]["resolution_preset"] == precision
     assert result["30"]["inputs"]["width"] == ["41", 0]
     assert result["30"]["inputs"]["height"] == ["41", 1]
 

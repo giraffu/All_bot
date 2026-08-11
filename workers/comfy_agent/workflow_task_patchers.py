@@ -1442,7 +1442,7 @@ def patch_minimax_h3_workflow(
         calculator = workflow.get("41")
         if not isinstance(calculator, dict):
             raise ValueError("MiniMax H3 source resolution calculator is missing")
-        calculator["inputs"]["precision_presets"] = precision
+        calculator["inputs"]["resolution_preset"] = precision
         calculator["inputs"]["scale_from_image"] = True
         workflow["30"]["inputs"]["width"] = ["41", 0]
         workflow["30"]["inputs"]["height"] = ["41", 1]
