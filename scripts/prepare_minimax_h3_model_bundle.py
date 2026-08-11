@@ -19,11 +19,11 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4"
-REVISION = "0543966fbdce5ba05709a8f2031c94bdba629b4a"
+VERSION = "2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4"
+REVISION = "014cd40f7e177756c6b2473c0d93b1c89a790dd2"
 MIN_FREE_BYTES = 80 * 1024**3
 FILES = (
-    ("diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors", "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a", 20_970_379_616, "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"),
+    ("diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors", "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4", 40_225_724_176, "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors"),
     ("diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors", "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779", 20_970_379_616, "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"),
     ("text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6", 15_687_142_551, "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"),
     ("vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors", "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48", 605_254_808, "vae/minimax_h3_audio_vae_fp32.safetensors"),
@@ -70,7 +70,8 @@ def prepare(registry: ModelRegistry) -> Path:
             url = upstream_path if upstream_path.startswith("https://") else (
                 f"https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/{REVISION}/{upstream_path}"
             )
-            _download(url, partial)
+            if not (partial.exists() and partial.stat().st_size == size_bytes):
+                _download(url, partial)
             if partial.stat().st_size != size_bytes:
                 raise RuntimeError(f"size mismatch for {relative_path}")
             if _hash(partial) != sha256:
@@ -86,7 +87,7 @@ def prepare(registry: ModelRegistry) -> Path:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "repositories": ["Comfy-Org/MiniMax-H3", "Kijai/MiniMax-H3_comfy", "civitai:modelVersion/3206518", "civitai:modelVersion/3216751", "civitai:modelVersion/3215304"],
             "revision": REVISION,
-            "variant": "official INT8 convrot base plus pinned HMNSFW V2, HMBreasts, HMPussy pair, and rank-21 Lightx2v 4-step LoRAs",
+            "variant": "official pruned BF16 FL2VA and INT8 convrot REF2VA bases plus pinned HMNSFW V2, HMBreasts, HMPussy pair, and rank-21 Lightx2v 4-step LoRAs",
         },
         files=manifest_files,
     )

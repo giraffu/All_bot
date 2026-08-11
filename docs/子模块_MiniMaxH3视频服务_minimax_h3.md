@@ -64,12 +64,14 @@ API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 
 有序参考图；不得使用扁平 `ref_image_1` 等字段，否则节点执行阶段会收到非预期
 关键字。业务提示词中的 `<Picture 1>` 仍保持 1-based，两种编号只属于不同层次。
 
-模型包为 `minimax_h3_runtime/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4`，来自固定 revision 的
-`Comfy-Org/MiniMax-H3` 官方量化转换，包含 FL2VA、REF2VA、Qwen3-VL text encoder
+模型包版本以 `scripts/prepare_minimax_h3_model_bundle.py` 为事实源，来自固定 revision 的
+`Comfy-Org/MiniMax-H3` 官方转换。T2V/I2V/FLF2V 使用 pruned BF16 FL2VA，
+REF2V 暂时保留 pruned INT8 ConvRot REF2VA；包内另含 NVFP4 AWQ Qwen3-VL text encoder
 及 video/audio VAE；同一 manifest 还包含 Civitai modelVersion `3206518` 的
 HMNSFW V2、`3216751` 的 HMBreasts、`3215304` 的两文件 HMPussy，以及 Kijai
 固定 revision 的 rank-21 Lightx2v 四步 LoRA。所有文件固定 SHA256 和字节数。
-模型只进入内容寻址仓库、
+FL2VA BF16 与现有 FL2VA LoRA 链配套；REF2VA 没有作者兼容声明，继续禁止加载该
+LoRA 链。模型只进入内容寻址仓库、
 R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。
 
 ## 发布与 LAN 验收

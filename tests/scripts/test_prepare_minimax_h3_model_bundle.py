@@ -6,6 +6,26 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
+def test_fl2va_base_uses_pinned_pruned_bf16_while_ref2va_stays_int8():
+    files = {entry[0]: entry for entry in module.FILES}
+
+    assert files[
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
+    ][1:4] == (
+        "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4",
+        40_225_724_176,
+        "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+    )
+    assert (
+        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+        not in files
+    )
+    assert (
+        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+        in files
+    )
+
+
 def test_lightx2v_source_is_pinned_to_repository_commit():
     lightx2v = next(entry for entry in module.FILES if "lightx2v" in entry[0])
 
@@ -54,3 +74,35 @@ def test_prepare_minimax_h3_bundle_rejects_hash_mismatch(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match="SHA256 mismatch"):
         module.prepare(ModelRegistry(tmp_path / "registry"))
+
+
+def test_prepare_minimax_h3_bundle_registers_complete_partial_without_eof_range(
+    monkeypatch, tmp_path
+):
+    payload = b"complete-official-minimax-h3-blob"
+    sha256 = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(
+        module,
+        "FILES",
+        (("diffusion_models/MiniMaxH3/test.safetensors", sha256, len(payload), "test.safetensors"),),
+    )
+    monkeypatch.setattr(module, "MIN_FREE_BYTES", 1)
+    monkeypatch.setattr(
+        module,
+        "_download",
+        lambda *_args: pytest.fail("complete partial must not issue an EOF range request"),
+    )
+    registry = ModelRegistry(tmp_path / "registry")
+    registry.ensure_layout()
+    partial = (
+        registry.root
+        / "tmp"
+        / f"{module.BUNDLE}-{module.VERSION}"
+        / f"{sha256}.part"
+    )
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(payload)
+
+    module.prepare(registry)
+
+    assert registry.blob_path(sha256).read_bytes() == payload

@@ -46,7 +46,7 @@ MINIMAX_H3_ASPECT_RATIOS = {
     "3:4": 3 / 4,
 }
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
-MINIMAX_H3_MODEL_FL = "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+MINIMAX_H3_MODEL_FL = "MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
 MINIMAX_H3_MODEL_REF = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 
 
