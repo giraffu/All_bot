@@ -1753,7 +1753,7 @@ def _decide_runpod_profile_action(
         else:
             enable_candidates.append((slot_number, slot, worker))
 
-    if enable_candidates:
+    if enable_candidates and context.pending_count > 0:
         _slot_number, slot, worker = max(enable_candidates, key=lambda item: item[0])
         agent_id = str(worker.get("agent_id") or "")
         recovery_cooldown_remaining = _autoscaler_agent_cooldown_remaining_seconds(

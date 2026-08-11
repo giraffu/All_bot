@@ -117,6 +117,8 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - profile 的 autoscaler 暂停只阻止自动扩容、恢复和重启；无积压时，心跳新鲜、
   已空闲且未锁定的 disabled/draining RunPod 仍必须允许 down，避免“暂停接单”
   变成持续占用计费资源。enabled Worker 的 down 继续受最低接单容量保护。
+- 未暂停的 profile 也只在存在积压时自动 enable 暂停 Worker；没有积压时直接
+  down 已空闲的暂停 RunPod，禁止形成 enable 成功、冷却、再次 enable 的循环。
 - 删除操作需要 deletion tombstone，避免残留 heartbeat 自动重新 enable；
   手工锁定的 worker 不能被 autoscaler down/cleanup。
 - current Pod 数量、slot ID、临时公网地址和实时队列不进入 Git 或文档。
