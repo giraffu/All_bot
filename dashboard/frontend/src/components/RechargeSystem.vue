@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import message from 'ant-design-vue/es/message'
 import { fetchPlans, createPlan, updatePlan, deletePlan, fetchOrders } from '../api/api'
 
@@ -29,6 +29,8 @@ const orderStatusFilter = ref('ALL')
 const searchOrderId = ref('')
 const searchInternalUserId = ref('')
 const searchUsername = ref('')
+let latestOrdersRequest = 0
+let internalUserSearchTimer = null
 
 const planColumns = [
   { title: '套餐名称', dataIndex: 'name', key: 'name' },
@@ -64,6 +66,7 @@ const loadPlans = async () => {
 }
 
 const loadOrders = async (page = 1) => {
+  const requestId = ++latestOrdersRequest
   ordersLoading.value = true
   currentOrderPage.value = page
   try {
@@ -71,18 +74,29 @@ const loadOrders = async (page = 1) => {
       page, 
       orderPageSize.value, 
       orderStatusFilter.value,
-      searchOrderId.value || null,
-      searchInternalUserId.value || null,
-      searchUsername.value || null
+      searchOrderId.value.trim() || null,
+      searchInternalUserId.value.trim() || null,
+      searchUsername.value.trim() || null
     )
-    orders.value = res.items
-    ordersTotal.value = res.total
+    if (requestId === latestOrdersRequest) {
+      orders.value = res.items
+      ordersTotal.value = res.total
+    }
   } catch (err) {
-    message.error('加载订单失败')
+    if (requestId === latestOrdersRequest) {
+      message.error('加载订单失败')
+    }
   } finally {
-    ordersLoading.value = false
+    if (requestId === latestOrdersRequest) {
+      ordersLoading.value = false
+    }
   }
 }
+
+watch(searchInternalUserId, () => {
+  window.clearTimeout(internalUserSearchTimer)
+  internalUserSearchTimer = window.setTimeout(() => loadOrders(1), 450)
+})
 
 const handleOrderTableChange = (pagination) => {
   loadOrders(pagination.current)
@@ -166,11 +180,13 @@ onMounted(() => {
   loadPlans()
   loadOrders()
 })
+
+onUnmounted(() => window.clearTimeout(internalUserSearchTimer))
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-4">
-    <a-tabs default-active-key="plans" class="bg-white rounded-xl shadow-sm border p-4 flex-1 overflow-hidden flex flex-col">
+  <div class="recharge-system h-full min-h-0 flex flex-col gap-4">
+    <a-tabs default-active-key="plans" class="recharge-tabs bg-white rounded-xl shadow-sm border p-4 flex-1 min-h-0 flex flex-col">
       <a-tab-pane key="plans" tab="商品套餐配置">
         <div class="flex justify-between mb-4">
           <h2 class="text-lg font-bold">套餐列表</h2>
@@ -204,44 +220,49 @@ onMounted(() => {
       </a-tab-pane>
       
       <a-tab-pane key="orders" tab="充值订单记录">
-        <div class="flex justify-between mb-4 items-center">
-          <h2 class="text-lg font-bold">订单列表</h2>
-          <div class="flex gap-2">
-            <a-input v-model:value="searchOrderId" placeholder="搜索订单号" style="width: 180px" @pressEnter="loadOrders(1)" allow-clear />
-            <a-input v-model:value="searchInternalUserId" placeholder="搜索内部用户ID" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
-            <a-input v-model:value="searchUsername" placeholder="搜索用户名" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
-            <a-select v-model:value="orderStatusFilter" style="width: 120px" @change="loadOrders(1)">
-              <a-select-option value="ALL">全部状态</a-select-option>
-              <a-select-option value="PENDING">处理中</a-select-option>
-              <a-select-option value="SUCCESS">成功</a-select-option>
-              <a-select-option value="FAILED">失败</a-select-option>
-            </a-select>
-            <a-button @click="loadOrders(1)">查询/刷新</a-button>
+        <div class="orders-pane">
+          <div class="orders-heading flex justify-between mb-4 items-center gap-3">
+            <h2 class="text-lg font-bold">订单列表</h2>
+            <form data-testid="order-filters" class="order-filters" @submit.prevent="loadOrders(1)">
+              <a-input v-model:value="searchOrderId" placeholder="搜索订单号" allow-clear />
+              <a-input v-model:value="searchInternalUserId" inputmode="numeric" placeholder="搜索内部用户ID" allow-clear />
+              <a-input v-model:value="searchUsername" placeholder="搜索用户名" allow-clear />
+              <a-select v-model:value="orderStatusFilter" class="order-status-filter" @change="loadOrders(1)">
+                <a-select-option value="ALL">全部状态</a-select-option>
+                <a-select-option value="PENDING">处理中</a-select-option>
+                <a-select-option value="SUCCESS">成功</a-select-option>
+                <a-select-option value="FAILED">失败</a-select-option>
+              </a-select>
+              <a-button data-testid="order-filter-submit" html-type="submit">查询/刷新</a-button>
+            </form>
           </div>
+          <a-table
+            data-testid="orders-table"
+            data-scroll-x="980"
+            :columns="orderColumns"
+            :data-source="orders"
+            :loading="ordersLoading"
+            :row-key="(record) => record.id"
+            :pagination="{ current: currentOrderPage, pageSize: orderPageSize, total: ordersTotal }"
+            :scroll="{ x: 980 }"
+            @change="handleOrderTableChange"
+            size="middle"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'status'">
+                <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'FAILED' ? 'red' : 'orange'">
+                  {{ record.status || '未知' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'final_price'">
+                <span>{{ formatOrderPrice(record) }}</span>
+              </template>
+              <template v-else-if="column.key === 'created_at'">
+                {{ formatDate(record.created_at) }}
+              </template>
+            </template>
+          </a-table>
         </div>
-        <a-table 
-          :columns="orderColumns" 
-          :data-source="orders" 
-          :loading="ordersLoading"
-          :row-key="(record) => record.id"
-          :pagination="{ current: currentOrderPage, pageSize: orderPageSize, total: ordersTotal }"
-          @change="handleOrderTableChange"
-          size="middle"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'status'">
-              <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'FAILED' ? 'red' : 'orange'">
-                {{ record.status || '未知' }}
-              </a-tag>
-            </template>
-            <template v-else-if="column.key === 'final_price'">
-              <span>{{ formatOrderPrice(record) }}</span>
-            </template>
-            <template v-else-if="column.key === 'created_at'">
-              {{ formatDate(record.created_at) }}
-            </template>
-          </template>
-        </a-table>
       </a-tab-pane>
     </a-tabs>
 
@@ -282,3 +303,64 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.recharge-tabs {
+  overflow: auto;
+}
+
+.orders-pane {
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.order-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.25fr) minmax(150px, 1fr) minmax(150px, 1fr) 120px auto;
+  gap: 8px;
+  width: min(100%, 760px);
+}
+
+.order-filters :deep(.ant-input-affix-wrapper),
+.order-filters :deep(.ant-select),
+.order-filters :deep(.ant-btn) {
+  width: 100%;
+}
+
+:deep(.ant-table-cell) {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+:deep(.ant-pagination) {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 1100px) {
+  .orders-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .order-filters {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .recharge-tabs {
+    padding: 12px !important;
+  }
+
+  .order-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :deep(.ant-pagination) {
+    justify-content: center;
+  }
+}
+</style>
