@@ -14,6 +14,8 @@ TASKS = {
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
+FL2VA_BF16_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
+REF2VA_INT8_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 
 
 def test_minimax_h3_api_workflows_are_deterministic_and_synced():
@@ -25,6 +27,10 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         assert main.read_bytes() == runpod.read_bytes()
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
+        expected_model = (
+            REF2VA_INT8_MODEL if task_type == "minimax_h3_ref2v" else FL2VA_BF16_MODEL
+        )
+        assert workflow["1"]["inputs"]["unet_name"] == expected_model
         assert "nodes" not in workflow
         if task_type in {"minimax_h3_t2v", "minimax_h3_i2v"}:
             assert workflow["3"]["inputs"] == {

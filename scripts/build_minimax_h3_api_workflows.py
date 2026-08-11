@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 SOURCE_SHA256 = "c54e107382b65e4a897615b6a7d2f0a89ddab99b214e890aa93deab100640cdc"
-FL_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+FL_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
 REF_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
