@@ -25,7 +25,8 @@ const {
   templateApplyStoreMock: {
     setPendingUploads: vi.fn(),
     setDirtyState: vi.fn(),
-    registerPanelController: vi.fn()
+    registerPanelController: vi.fn(),
+    closeAfterSubmission: vi.fn()
   },
   setSubmittedTaskIdMock: vi.fn(),
   downloadResultMock: vi.fn(),
@@ -221,6 +222,7 @@ describe('TemplateImagePromptPanel', () => {
     templateApplyStoreMock.setPendingUploads.mockReset()
     templateApplyStoreMock.setDirtyState.mockReset()
     templateApplyStoreMock.registerPanelController.mockReset()
+    templateApplyStoreMock.closeAfterSubmission.mockReset()
     setSubmittedTaskIdMock.mockReset()
     downloadResultMock.mockReset()
     submitTaskMock.mockReset()
@@ -235,6 +237,23 @@ describe('TemplateImagePromptPanel', () => {
     expect(wrapper.text()).toContain('已加载一键应用模板')
     expect(wrapper.findComponent(TextareaStub).exists()).toBe(false)
     expect(wrapper.findComponent(RadioGroupStub).exists()).toBe(false)
+  })
+
+  it('closes the template workbench after a task is submitted', async () => {
+    const wrapper = mountPanel(buildContext())
+    await nextTick()
+
+    const beforeUpload = wrapper.findComponent(UploadDraggerStub).props('beforeUpload') as (file: File) => Promise<boolean>
+    uploadFileMock.mockResolvedValueOnce({ objectKey: 'base.png' })
+    submitTaskMock.mockResolvedValueOnce('task-789')
+    await beforeUpload(new File(['base'], 'base.png', { type: 'image/png' }))
+    await nextTick()
+
+    await wrapper.findComponent(ButtonStub).trigger('click')
+    await flushPromises()
+
+    expect(setSubmittedTaskIdMock).toHaveBeenCalledWith('task-789')
+    expect(templateApplyStoreMock.closeAfterSubmission).toHaveBeenCalledWith('session-1')
   })
 
   it('applies historical free edit templates through v3 with one image and no addon model', async () => {

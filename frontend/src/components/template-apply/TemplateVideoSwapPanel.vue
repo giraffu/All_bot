@@ -162,6 +162,7 @@ const { handleGenerate } = useSwapTaskSubmit({
   warningMessage: t('template_apply.video_swap.upload_required'),
   submitTask,
   setSubmittedTaskId,
+  onSubmitted: () => templateApplyStore.closeAfterSubmission(props.sessionId),
 })
 
 onMounted(() => {

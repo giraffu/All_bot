@@ -288,6 +288,7 @@ const handleGenerate = async () => {
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {
     setSubmittedTaskId(taskId)
+    await templateApplyStore.closeAfterSubmission(props.sessionId)
   }
 }
 

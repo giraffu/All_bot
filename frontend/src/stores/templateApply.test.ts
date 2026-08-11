@@ -255,4 +255,28 @@ describe('templateApply store', () => {
     expect(store.visible).toBe(false)
     expect(store.status).toBe('idle')
   })
+
+  it('closes only the template session that submitted the task', async () => {
+    const store = useTemplateApplyStore()
+    const opened = await store.openFromRawContext({
+      source: 'gallery',
+      entryEntityId: 10,
+      rawContext: {
+        post_id: 10,
+        task_type: 'face_swap',
+        input_file: 'history/demo/original.png'
+      }
+    })
+
+    if (opened.status !== 'opened') {
+      throw new Error('Expected session to open')
+    }
+
+    await store.closeAfterSubmission('stale-session')
+    expect(store.visible).toBe(true)
+
+    await store.closeAfterSubmission(opened.sessionId)
+    expect(store.visible).toBe(false)
+    expect(store.status).toBe('idle')
+  })
 })
