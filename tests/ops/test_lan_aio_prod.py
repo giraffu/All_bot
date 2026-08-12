@@ -269,7 +269,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json"
+        "minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (

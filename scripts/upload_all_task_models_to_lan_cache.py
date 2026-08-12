@@ -114,9 +114,9 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="minimax_h3",
-        prefix="minimax_h3/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4",
-        manifest_key="minimax_h3/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json",
-        bundle_versions=(("minimax_h3_runtime", "2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4"),),
+        prefix="minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4",
+        manifest_key="minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json",
+        bundle_versions=(("minimax_h3_runtime", "2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4"),),
     ),
 )
 TARGETS_BY_NAME = {

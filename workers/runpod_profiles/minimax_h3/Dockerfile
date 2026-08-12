@@ -84,7 +84,12 @@ RUN set -euo pipefail; \
 
 RUN set -euo pipefail; \
     clone_node() { repo="$1"; ref="$2"; name="$3"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; \
-      git clone --filter=blob:none "$repo" "$target"; git -C "$target" checkout --detach "$ref"; \
+      for attempt in 1 2 3; do \
+        rm -rf "$target"; \
+        if git -c http.version=HTTP/1.1 clone --filter=blob:none "$repo" "$target" && \
+          git -c http.version=HTTP/1.1 -C "$target" checkout --detach "$ref"; then break; fi; \
+        test "$attempt" -lt 3; sleep "$((attempt * 2))"; \
+      done; \
       test "$(git -C "$target" rev-parse HEAD)" = "$ref"; \
       if [ -f "$target/requirements.txt" ]; then python3 -m pip install --no-cache-dir -r "$target/requirements.txt"; fi; \
       rm -rf "$target/.git"; }; \
