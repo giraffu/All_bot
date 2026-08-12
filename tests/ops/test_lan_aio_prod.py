@@ -274,7 +274,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
-        "e812526f5b0e18486bc6eccf4290af4047035674cf91fc9dab93068b802b1df4"
+        "5ab5104d493aa846a0edc6daf6155bcc75ef73915366ce8dd897d5b24e828adf"
     )
     # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
     # eligible catalog entries; this does not enable public task intake.
@@ -320,6 +320,10 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert slot.environment == "cloud-test"
     assert slot.agent_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
     assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_minimax_h3_01"
+    assert slot.old_runtime_container == (
+        "allbot-lan-aio-gpu-177-gpu1-minimax_h3-prod"
+    )
 
     ops = LanAioProdOps(
         config_root=None,
@@ -333,7 +337,7 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
     assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
 
-    current = slots["gpu-177-gpu1-ltx_unified"]
+    current = slots["gpu-177-gpu1-minimax_h3"]
     assert ops.retarget_slot(slot, current.id) == slot
 
 
