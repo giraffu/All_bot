@@ -269,12 +269,12 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-11-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json"
+        "minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
-        "b94c8306a475f1a9c4afd64eae19fd5bac0045010b70ba087f545952a6e273ca"
+        "e812526f5b0e18486bc6eccf4290af4047035674cf91fc9dab93068b802b1df4"
     )
     # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
     # eligible catalog entries; this does not enable public task intake.
@@ -284,8 +284,8 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
     assert slot.agent_id == "lan_aio_prod_gpu177_gpu1_minimax_h3_01"
     assert slot.host_port == 8191
-    assert slot.legacy_worker_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
-    assert slot.old_runtime_container == "allbot-lan-aio-gpu-177-gpu1-minimax_h3-test"
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
+    assert slot.old_runtime_container == "allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod"
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -2693,6 +2693,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     )
     assert "docker run --rm" in docker_run_line
     assert "--env-file" in docker_run_line
+    assert "RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=8" in docker_run_line
     assert "runpod_sync_models_from_r2.py" in docker_command
     assert " -p " not in docker_run_line
     assert "--publish" not in docker_run_line

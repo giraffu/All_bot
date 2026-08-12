@@ -14,6 +14,7 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "1289b52fbb6d64a339a4047b9ea74cf7758ccf1e" in dockerfile
     assert "55fee864dd7b2976b1c4ce3c3d5f7968f181409f" in dockerfile
     assert "ComfyUI-MiniMax-H3-Turbo" in dockerfile
+    assert "COMFYUI_ARCHIVE_SHA256=ba491752490e5b06ee3b918eb9ed20b637c6d60e0cc0fb68ac0e1d44fc033f81" in dockerfile
     assert "d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5" in dockerfile
     assert "74b6667164f9e368e3799bc2ab59b9b08c4591630f1c6029560208b6fcf354c4" in dockerfile
     assert "sha256:4b9ed5fa8361736996499f64ecebf25d4ec37ff56e4d11323ccde10aa36e0c43" in dockerfile
@@ -25,6 +26,9 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "MiniMaxH3ImageToVideo" in dockerfile
     assert "MiniMaxH3ReferenceToVideo" in dockerfile
     assert "MiniMaxH3MemoryEfficientSageAttentionPatch" in dockerfile
+    assert "https://codeload.github.com/" in dockerfile
+    assert "for attempt in 1 2 3" in dockerfile
+    assert "d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7" in dockerfile
     assert "external-model-manifest" in dockerfile
     assert "COPY models" not in dockerfile
     assert "COPY checkpoints" not in dockerfile

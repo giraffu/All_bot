@@ -55,6 +55,7 @@ FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
 ARG COMFYUI_REF=0764232429b8cfb10b79b6f186c8cb23e0b22897
+ARG COMFYUI_ARCHIVE_SHA256=ba491752490e5b06ee3b918eb9ed20b637c6d60e0cc0fb68ac0e1d44fc033f81
 ARG KJNODES_REPO=https://github.com/kijai/ComfyUI-KJNodes.git
 ARG KJNODES_REF=1289b52fbb6d64a339a4047b9ea74cf7758ccf1e
 ARG VHS_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
@@ -72,26 +73,36 @@ ENV PIP_NO_CACHE_DIR=1
 RUN set -euo pipefail; \
     command -v ffmpeg >/dev/null; command -v git >/dev/null; command -v python3 >/dev/null; \
     rm -rf "${COMFYUI_INSTALL_DIR}"; mkdir -p "${COMFYUI_INSTALL_DIR}"; \
-    git -C "${COMFYUI_INSTALL_DIR}" init; \
-    git -C "${COMFYUI_INSTALL_DIR}" remote add origin "${COMFYUI_REPO}"; \
-    git -C "${COMFYUI_INSTALL_DIR}" fetch --depth 1 --filter=blob:none origin "${COMFYUI_REF}"; \
-    git -C "${COMFYUI_INSTALL_DIR}" checkout --force FETCH_HEAD; \
-    test "$(git -C "${COMFYUI_INSTALL_DIR}" rev-parse HEAD)" = "${COMFYUI_REF}"; \
+    archive=/tmp/ComfyUI.tar.gz; repo_path="${COMFYUI_REPO#https://github.com/}"; repo_path="${repo_path%.git}"; \
+    for attempt in 1 2 3; do \
+      rm -f "$archive"; \
+      if python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+        "https://codeload.github.com/${repo_path}/tar.gz/${COMFYUI_REF}" "$archive"; then break; fi; \
+      test "$attempt" -lt 3; sleep "$((attempt * 2))"; \
+    done; \
+    echo "${COMFYUI_ARCHIVE_SHA256}  $archive" | sha256sum -c -; \
+    tar -xzf "$archive" --strip-components=1 -C "${COMFYUI_INSTALL_DIR}"; \
     python3 -m pip install --no-cache-dir -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; \
-    rm -rf "${COMFYUI_INSTALL_DIR}/.git"; \
+    rm -f "$archive"; \
     mkdir -p "${COMFYUI_INSTALL_DIR}/custom_nodes"; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 RUN set -euo pipefail; \
-    clone_node() { repo="$1"; ref="$2"; name="$3"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; \
-      git clone --filter=blob:none "$repo" "$target"; git -C "$target" checkout --detach "$ref"; \
-      test "$(git -C "$target" rev-parse HEAD)" = "$ref"; \
+    install_node() { repo="$1"; ref="$2"; sha="$3"; name="$4"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; archive="/tmp/${name}.tar.gz"; repo_path="${repo#https://github.com/}"; repo_path="${repo_path%.git}"; \
+      for attempt in 1 2 3; do \
+        rm -f "$archive"; \
+        if python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+          "https://codeload.github.com/${repo_path}/tar.gz/${ref}" "$archive"; then break; fi; \
+        test "$attempt" -lt 3; sleep "$((attempt * 2))"; \
+      done; \
+      echo "$sha  $archive" | sha256sum -c -; \
+      rm -rf "$target"; mkdir -p "$target"; tar -xzf "$archive" --strip-components=1 -C "$target"; \
       if [ -f "$target/requirements.txt" ]; then python3 -m pip install --no-cache-dir -r "$target/requirements.txt"; fi; \
-      rm -rf "$target/.git"; }; \
-    clone_node "${KJNODES_REPO}" "${KJNODES_REF}" ComfyUI-KJNodes; \
-    clone_node "${VHS_REPO}" "${VHS_REF}" ComfyUI-VideoHelperSuite; \
-    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" ComfyUI-DaSiWa-Nodes; \
-    clone_node "${MINIMAX_H3_TURBO_REPO}" "${MINIMAX_H3_TURBO_REF}" ComfyUI-MiniMax-H3-Turbo
+      rm -f "$archive"; }; \
+    install_node "${KJNODES_REPO}" "${KJNODES_REF}" d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7 ComfyUI-KJNodes; \
+    install_node "${VHS_REPO}" "${VHS_REF}" 69042eba3e2193a8f428d14bb9ebe97a03b64c0c4de4665c9c6c5f746e60c195 ComfyUI-VideoHelperSuite; \
+    install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes; \
+    install_node "${MINIMAX_H3_TURBO_REPO}" "${MINIMAX_H3_TURBO_REF}" d42e8b01649c949eeb94f5ed52553bd77f8652a033efd4fe1fdae11278581d72 ComfyUI-MiniMax-H3-Turbo
 
 COPY --from=sage_builder /opt/allbot-wheels /opt/allbot-wheels
 

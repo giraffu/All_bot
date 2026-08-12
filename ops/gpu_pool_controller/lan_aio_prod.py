@@ -2911,6 +2911,8 @@ printf "%s|%s\\n" "$before" "$after"
             "-e",
             "RUNPOD_MODEL_SECURE=false",
             "-e",
+            "RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=8",
+            "-e",
             f"RUNPOD_WORKER_ROOT={RUNPOD_WORKER_TARGET_DIR}",
             "-v",
             f"{workspace_host_dir}:/workspace",
