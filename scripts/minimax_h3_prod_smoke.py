@@ -72,7 +72,11 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
         inputs: dict[str, Any] = {
             "duration": duration,
             "resolution_preset": resolution_preset,
-            "aspect_ratio": "16:9",
+            "aspect_ratio": (
+                "source"
+                if task_type in {"minimax_h3_i2v", "minimax_h3_flf2v"}
+                else "16:9"
+            ),
             "seed": 20260804,
             "extract_last_frame": True,
         }

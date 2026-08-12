@@ -37,3 +37,7 @@ def test_minimax_h3_smoke_builds_four_preview_modes_then_standard_t2v():
     ]
     assert cases[3]["payload"]["inputs"]["reference_descriptions"]
     assert cases[4]["payload"]["inputs"]["resolution_preset"] == "standard"
+    assert cases[0]["payload"]["inputs"]["aspect_ratio"] == "16:9"
+    assert cases[1]["payload"]["inputs"]["aspect_ratio"] == "source"
+    assert cases[2]["payload"]["inputs"]["aspect_ratio"] == "source"
+    assert cases[3]["payload"]["inputs"]["aspect_ratio"] == "16:9"
