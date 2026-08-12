@@ -229,3 +229,54 @@ async def test_h3_generation_persists_requested_duration_as_integer_seconds(monk
     flow = captured_flow["flow"]
     assert flow.request.inputs["duration"] == 5
     assert flow.billing.requested_duration == 5
+    assert "lora_name" not in flow.request.inputs
+    assert "lora_strength" not in flow.request.inputs
+
+
+@pytest.mark.asyncio
+async def test_h3_generation_forwards_all_selected_loras_without_legacy_strength(monkeypatch):
+    captured_flow = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured_flow["flow"] = flow
+        return (b"video-bytes", "task-h3")
+
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.resolve_internal_user_id",
+        AsyncMock(return_value=456),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.run_bot_task_application",
+        fake_run_bot_task_application,
+    )
+
+    addon_items = [
+        {"name": "breasts", "strength": 1.0},
+        {"name": "anus", "strength": 1.0},
+        {"name": "vagina", "strength": 1.0},
+        {"name": "sex_pose", "strength": 0.5},
+        {"name": "penis", "strength": 1.0},
+    ]
+    await process_standard_generation_task(
+        context=SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key),
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="motion",
+        images=["start.png"],
+        is_video=True,
+        task_type=MINIMAX_H3_I2V,
+        resolution_preset="preview",
+        duration="5s",
+        lora_items=addon_items,
+        cleanup=False,
+    )
+
+    inputs = captured_flow["flow"].request.inputs
+    assert inputs["lora_items"] == addon_items
+    assert "lora_name" not in inputs
+    assert "lora_strength" not in inputs

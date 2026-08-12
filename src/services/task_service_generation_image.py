@@ -183,9 +183,11 @@ async def process_standard_generation_task(
             ),
             reference_descriptions=reference_descriptions or [],
             seed=seed,
-            lora_name=lora_name,
-            lora_strength=lora_strength,
         )
+        if lora_items is not None:
+            extra_inputs["lora_items"] = lora_items
+        elif lora_name:
+            extra_inputs.update(lora_name=lora_name, lora_strength=lora_strength)
         if local_source_dimensions:
             extra_inputs.update(
                 source_width=local_source_dimensions[0][0],
