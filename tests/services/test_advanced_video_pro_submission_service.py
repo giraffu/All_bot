@@ -44,6 +44,14 @@ def test_small_resolution_uses_new_price():
     assert plan.cost == 15
 
 
+def test_build_plan_carries_bot_addon_with_catalog_default_strength():
+    plan = build_advanced_video_pro_submission_plan(
+        mode="t2v", prompt="scene", addon_model="penis",
+    )
+    assert plan.addon_model == "penis"
+    assert plan.addon_strength == 1.0
+
+
 def test_flf2v_rejects_frame_ratio_difference_over_one_percent(tmp_path):
     from PIL import Image
 

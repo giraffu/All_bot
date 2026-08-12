@@ -24,6 +24,8 @@ class ImageService:
         frame_count: int,
         fps: int,
         seed: int | None,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
         priority: int = 0,
     ) -> str:
         return await api_client.submit_minimax_h3(
@@ -40,6 +42,8 @@ class ImageService:
             frame_count=frame_count,
             fps=fps,
             seed=seed,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
             priority=priority,
         )
 

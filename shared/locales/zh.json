@@ -843,7 +843,9 @@
       "minimax_h3_description": "参考图 {index} 的角色身份与外观说明",
       "minimax_h3_first_frame_ratio": "画面比例按首帧自动推导",
       "minimax_h3_resolution_presets": {"preview": "极速（约 512p）", "small": "清晰（约 600p）", "standard": "标准（约 720p）", "hd": "高清（约 810p）"},
-      "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧", "ref2v": "角色参考"},
+      "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧"},
+      "minimax_h3_addon_model": "附加模型",
+      "minimax_h3_addons": {"none": "无", "breasts": "乳房", "anus": "肛门", "vagina": "阴道", "sex_pose": "性爱姿势", "penis": "阴茎"},
       "upload_slots": {
         "face_image": "脸部图片",
         "target_image": "身体图片",

@@ -50,6 +50,10 @@ def test_anatomy_loras_are_pinned_with_author_strength_pair_files():
     assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][3].endswith(
         "?fileId=3097100"
     )
+    assert files["loras/MiniMaxH3/HMPenis_v2_e35.safetensors"][1:3] == (
+        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
+        310_168_344,
+    )
 
 
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):

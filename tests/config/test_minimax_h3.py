@@ -1,6 +1,7 @@
 import pytest
 
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_REF2V,
@@ -9,6 +10,35 @@ from src.domain_config.minimax_h3 import (
     build_minimax_h3_spec,
     normalize_minimax_h3_duration_seconds,
 )
+
+
+def test_minimax_h3_addon_catalog_exposes_five_user_models_but_not_acceleration():
+    assert set(MINIMAX_H3_ADDON_MODELS) == {"breasts", "anus", "vagina", "sex_pose", "penis"}
+    assert all(
+        "lightx" not in path.lower()
+        for item in MINIMAX_H3_ADDON_MODELS.values()
+        for path in item.model_paths
+    )
+
+
+def test_minimax_h3_addon_model_and_strength_are_normalized():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_T2V,
+        {"duration": 5, "lora_name": "penis", "lora_strength": 1.25},
+    )
+    assert spec.addon_model == "penis"
+    assert spec.addon_strength == 1.25
+
+
+@pytest.mark.parametrize("inputs", [
+    {"lora_name": "unknown"},
+    {"lora_name": "penis", "lora_strength": 0.05},
+    {"lora_name": "penis", "lora_strength": 2.05},
+    {"lora_strength": 1.0},
+])
+def test_minimax_h3_rejects_invalid_addon_configuration(inputs):
+    with pytest.raises(MiniMaxH3ValidationError):
+        build_minimax_h3_spec(MINIMAX_H3_T2V, {"duration": 5, **inputs})
 
 
 @pytest.mark.parametrize(
@@ -104,7 +134,7 @@ def test_minimax_h3_rejects_wrong_image_count(task_type, images):
         build_minimax_h3_spec(task_type, {"images": images})
 
 
-@pytest.mark.parametrize("field,value", [("lora_name", "x.safetensors"), ("timeline_data", "{}"), ("model_name", "other")])
+@pytest.mark.parametrize("field,value", [("timeline_data", "{}"), ("model_name", "other")])
 def test_minimax_h3_rejects_execution_overrides(field, value):
     with pytest.raises(MiniMaxH3ValidationError, match="不允许覆盖"):
         build_minimax_h3_spec(MINIMAX_H3_T2V, {field: value})

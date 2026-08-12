@@ -57,6 +57,6 @@ def test_minimax_h3_target_is_opt_in_and_uses_pinned_bundle():
     target = TARGETS_BY_NAME["minimax_h3"]
 
     assert target in OPTIONAL_TARGETS
-    assert target.prefix == "minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4"
-    assert target.manifest_key == "minimax_h3/2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4/manifest.json"
-    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4"),)
+    assert target.prefix == "minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v4"
+    assert target.manifest_key == "minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v4/manifest.json"
+    assert target.bundle_versions == (("minimax_h3_runtime", "2026-08-12-fl2va-bf16-addon5-lightx2v4"),)

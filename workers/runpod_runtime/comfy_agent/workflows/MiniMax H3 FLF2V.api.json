@@ -9,7 +9,7 @@
   "2": {
     "inputs": {
       "model": [
-        "12",
+        "1",
         0
       ]
     },
@@ -208,39 +208,6 @@
       ]
     },
     "class_type": "SaveImage"
-  },
-  "10": {
-    "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "lora_name": "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
-      "strength_model": 1.0
-    },
-    "class_type": "LoraLoaderModelOnly"
-  },
-  "11": {
-    "inputs": {
-      "model": [
-        "10",
-        0
-      ],
-      "lora_name": "MiniMaxH3/vagassist_e40.safetensors",
-      "strength_model": 1.0
-    },
-    "class_type": "LoraLoaderModelOnly"
-  },
-  "12": {
-    "inputs": {
-      "model": [
-        "11",
-        0
-      ],
-      "lora_name": "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
-      "strength_model": 0.35
-    },
-    "class_type": "LoraLoaderModelOnly"
   },
   "20": {
     "inputs": {

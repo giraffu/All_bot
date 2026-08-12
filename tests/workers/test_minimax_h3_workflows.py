@@ -38,28 +38,9 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
                 "shift_video": 12.0,
                 "shift_audio": 3.0,
             }
-            assert workflow["10"]["inputs"] == {
-                "model": ["1", 0],
-                "lora_name": "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
-                "strength_model": 1.0,
-            }
-            assert workflow["11"]["inputs"] == {
-                "model": ["10", 0],
-                "lora_name": "MiniMaxH3/vagassist_e40.safetensors",
-                "strength_model": 1.0,
-            }
-            assert workflow["12"]["inputs"] == {
-                "model": ["11", 0],
-                "lora_name": "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
-                "strength_model": 0.35,
-            }
-            assert workflow["13"]["inputs"] == {
-                "model": ["12", 0],
-                "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
-                "strength_model": 0.5,
-            }
+            assert not {"10", "11", "12", "13"} & workflow.keys()
             assert workflow["14"]["inputs"] == {
-                "model": ["13", 0],
+                "model": ["1", 0],
                 "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
                 "strength_model": 0.75,
             }
@@ -71,14 +52,8 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             }
             assert workflow["35"]["inputs"]["sampler"] == ["33", 0]
         elif task_type == "minimax_h3_flf2v":
-            assert workflow["10"]["inputs"]["lora_name"] == "MiniMaxH3/HMBreasts_085e0750_e40.safetensors"
-            assert workflow["10"]["inputs"]["strength_model"] == 1.0
-            assert workflow["11"]["inputs"]["lora_name"] == "MiniMaxH3/vagassist_e40.safetensors"
-            assert workflow["11"]["inputs"]["strength_model"] == 1.0
-            assert workflow["12"]["inputs"]["lora_name"] == "MiniMaxH3/hmpussy_v6_epoch30.safetensors"
-            assert workflow["12"]["inputs"]["strength_model"] == 0.35
-            assert "13" not in workflow and "14" not in workflow
-            assert workflow["2"]["inputs"]["model"] == ["12", 0]
+            assert not {"10", "11", "12", "13", "14"} & workflow.keys()
+            assert workflow["2"]["inputs"]["model"] == ["1", 0]
             assert workflow["34"]["inputs"]["steps"] == 25
             assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
         else:
@@ -144,6 +119,35 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
     assert result["30"]["inputs"]["prompt"].startswith("<Picture 1>: adult woman\n<Picture 2>: adult man")
 
 
+@pytest.mark.parametrize(("addon", "expected_paths", "strengths", "trigger"), [
+    ("breasts", ["MiniMaxH3/HMBreasts_085e0750_e40.safetensors"], [1.2], "HMBreasts"),
+    ("anus", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, anus"),
+    ("vagina", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina"),
+    ("sex_pose", ["MiniMaxH3/HMNSFW_AIO_V2.safetensors"], [1.2], "hmmotion"),
+    ("penis", ["MiniMaxH3/HMPenis_v2_e35.safetensors"], [1.2], "HMPenis"),
+])
+def test_minimax_h3_patcher_selects_one_addon_and_keeps_acceleration(addon, expected_paths, strengths, trigger):
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+    patched = patcher.patch_workflow(
+        "minimax_h3_t2v", workflow,
+        {"prompt": "scene", "lora_name": addon, "lora_strength": 1.2},
+    )
+    addon_nodes = [patched[str(10 + index)]["inputs"] for index in range(len(expected_paths))]
+    assert [item["lora_name"] for item in addon_nodes] == expected_paths
+    assert [item["strength_model"] for item in addon_nodes] == strengths
+    assert patched["14"]["inputs"]["lora_name"].endswith("lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors")
+    assert patched["30"]["inputs"]["prompt"].startswith(trigger)
+
+
+def test_minimax_h3_patcher_without_addon_only_keeps_internal_acceleration():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+    patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
+    assert not {"10", "11", "12", "13"} & patched.keys()
+    assert patched["14"]["inputs"]["model"] == ["1", 0]
+
+
 def test_minimax_h3_output_prefix_is_unique_per_execution():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
@@ -198,7 +202,7 @@ def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision)
     assert result["30"]["inputs"]["height"] == ["41", 1]
 
 
-@pytest.mark.parametrize("field", ["model_name", "timeline_data", "lora_name", "steps"])
+@pytest.mark.parametrize("field", ["model_name", "timeline_data", "steps"])
 def test_minimax_h3_worker_rejects_execution_overrides(field):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")

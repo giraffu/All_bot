@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-11-fl2va-bf16-hmnsfw-v2-anatomy-v05-lightx2v4"
+VERSION = "2026-08-12-fl2va-bf16-addon5-lightx2v4"
 REVISION = "014cd40f7e177756c6b2473c0d93b1c89a790dd2"
 MIN_FREE_BYTES = 80 * 1024**3
 FILES = (
@@ -32,6 +32,7 @@ FILES = (
     ("loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors", "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967", 310_168_344, "https://civitai.red/api/download/models/3216751"),
     ("loras/MiniMaxH3/vagassist_e40.safetensors", "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a", 310_168_344, "https://civitai.red/api/download/models/3215304"),
     ("loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors", "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee", 626_294_968, "https://civitai.red/api/download/models/3215304?fileId=3097100"),
+    ("loras/MiniMaxH3/HMPenis_v2_e35.safetensors", "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060", 310_168_344, "https://civitai.red/api/download/models/3218160"),
     ("loras/MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors", "3a069f26fbc33f377a60dc72dd9e15f2aa42aa1d1b44915fded835716672dd36", 314_878_200, "https://huggingface.co/Kijai/MiniMax-H3_comfy/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/loras/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"),
 )
 
@@ -85,9 +86,9 @@ def prepare(registry: ModelRegistry) -> Path:
         profiles=["minimax_h3"],
         source={
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "repositories": ["Comfy-Org/MiniMax-H3", "Kijai/MiniMax-H3_comfy", "civitai:modelVersion/3206518", "civitai:modelVersion/3216751", "civitai:modelVersion/3215304"],
+            "repositories": ["Comfy-Org/MiniMax-H3", "Kijai/MiniMax-H3_comfy", "civitai:modelVersion/3206518", "civitai:modelVersion/3216751", "civitai:modelVersion/3215304", "civitai:modelVersion/3218160"],
             "revision": REVISION,
-            "variant": "official pruned BF16 FL2VA and INT8 convrot REF2VA bases plus pinned HMNSFW V2, HMBreasts, HMPussy pair, and rank-21 Lightx2v 4-step LoRAs",
+            "variant": "official pruned BF16 FL2VA and INT8 convrot REF2VA bases plus five selectable addon semantics (HMNSFW V2, HMBreasts, HMPussy pair, HMPenis) and internal rank-21 Lightx2v 4-step LoRA",
         },
         files=manifest_files,
     )

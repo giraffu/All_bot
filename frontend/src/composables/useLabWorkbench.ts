@@ -87,10 +87,12 @@ export function useLabWorkbench() {
   const useT2VReferences = ref(false)
   const environmentSource = ref<'official' | 'upload'>('official')
   const selectedEnvironmentId = ref('')
-  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>('t2v')
+  const minimaxH3Mode = ref<'t2v' | 'i2v' | 'flf2v'>('t2v')
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
+  const minimaxH3AddonModel = ref('')
+  const minimaxH3AddonStrength = ref(1.0)
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -257,11 +259,11 @@ export function useLabWorkbench() {
     hasCharacter: useT2VReferences.value,
   }))
   const displayedCost = computed(() => currentModeId.value === 'minimax_h3'
-    ? ({
-        preview: minimaxH3Mode.value === 'ref2v' ? 12 : 10,
-        small: minimaxH3Mode.value === 'ref2v' ? 18 : 15,
-        standard: minimaxH3Mode.value === 'ref2v' ? 24 : 20,
-        hd: minimaxH3Mode.value === 'ref2v' ? 36 : 30,
+      ? ({
+        preview: 10,
+        small: 15,
+        standard: 20,
+        hd: 30,
       }[minimaxH3ResolutionPreset.value]) * Number(duration.value) / 5
     : cost.value)
 
@@ -280,9 +282,7 @@ export function useLabWorkbench() {
         ? references.uploadedReferences.value.length === 0
         : minimaxH3Mode.value === 'i2v'
           ? references.uploadedReferences.value.length === 1
-          : minimaxH3Mode.value === 'flf2v'
-            ? references.uploadedReferences.value.length === 2
-            : references.uploadedReferences.value.length >= 1 && references.uploadedReferences.value.length <= 4
+          : references.uploadedReferences.value.length === 2
       : currentMode.value.id === 'ltx_t2v'
       ? !useT2VReferences.value
         ? references.uploadedReferences.value.length === 0
@@ -455,6 +455,8 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonModel,
+    minimaxH3AddonStrength,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -533,6 +535,8 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonModel,
+    minimaxH3AddonStrength,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

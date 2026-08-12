@@ -48,6 +48,45 @@ MINIMAX_H3_ASPECT_RATIOS = {
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
 MINIMAX_H3_MODEL_FL = "MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
 MINIMAX_H3_MODEL_REF = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
+MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
+
+
+@dataclass(frozen=True, slots=True)
+class MiniMaxH3AddonModel:
+    id: str
+    label_zh: str
+    label_en: str
+    model_paths: tuple[str, ...]
+    relative_strengths: tuple[float, ...]
+    default_strength: float
+    prompt_prefix: str
+
+
+MINIMAX_H3_ADDON_MODELS = {
+    "breasts": MiniMaxH3AddonModel(
+        "breasts", "乳房", "Breasts",
+        ("MiniMaxH3/HMBreasts_085e0750_e40.safetensors",), (1.0,), 1.0, "HMBreasts",
+    ),
+    "anus": MiniMaxH3AddonModel(
+        "anus", "肛门", "Anus",
+        ("MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"),
+        (1.0, 0.35), 1.0, "Vagina, anus",
+    ),
+    "vagina": MiniMaxH3AddonModel(
+        "vagina", "阴道", "Vagina",
+        ("MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"),
+        (1.0, 0.35), 1.0, "Vagina",
+    ),
+    "sex_pose": MiniMaxH3AddonModel(
+        "sex_pose", "性爱姿势", "Sex pose",
+        ("MiniMaxH3/HMNSFW_AIO_V2.safetensors",), (1.0,), 0.5, "hmmotion",
+    ),
+    "penis": MiniMaxH3AddonModel(
+        "penis", "阴茎", "Penis",
+        ("MiniMaxH3/HMPenis_v2_e35.safetensors",), (1.0,), 1.0, "HMPenis",
+    ),
+}
 
 
 class MiniMaxH3ValidationError(ValueError):
@@ -72,6 +111,8 @@ class MiniMaxH3Spec:
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
     model_name: str
+    addon_model: str | None
+    addon_strength: float | None
 
 
 def _string_tuple(value: Any, *, field: str) -> tuple[str, ...]:
@@ -122,11 +163,27 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if task_type not in MINIMAX_H3_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     forbidden = (
-        "lora_name", "lora_items", "model_name", "checkpoint", "timeline_data",
+        "lora_items", "model_name", "checkpoint", "timeline_data",
         "local_path", "ref_videos", "ref_audios", "sampler_name", "steps",
     )
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
+
+    raw_addon = str(inputs.get("lora_name") or "").strip()
+    addon = MINIMAX_H3_ADDON_MODELS.get(raw_addon) if raw_addon else None
+    if raw_addon and addon is None:
+        raise MiniMaxH3ValidationError("不支持该附加模型。")
+    raw_strength = inputs.get("lora_strength")
+    if raw_strength not in (None, "") and addon is None:
+        raise MiniMaxH3ValidationError("选择附加模型后才能设置强度。")
+    addon_strength = None
+    if addon is not None:
+        try:
+            addon_strength = addon.default_strength if raw_strength in (None, "") else float(raw_strength)
+        except (TypeError, ValueError) as exc:
+            raise MiniMaxH3ValidationError("附加模型强度必须为数字。") from exc
+        if not math.isfinite(addon_strength) or not MINIMAX_H3_ADDON_MIN_STRENGTH <= addon_strength <= MINIMAX_H3_ADDON_MAX_STRENGTH:
+            raise MiniMaxH3ValidationError("附加模型强度必须在 0.1 至 2.0 之间。")
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -194,4 +251,6 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         images=images,
         reference_descriptions=descriptions,
         model_name=(MINIMAX_H3_MODEL_REF if task_type == MINIMAX_H3_REF2V else MINIMAX_H3_MODEL_FL),
+        addon_model=addon.id if addon else None,
+        addon_strength=addon_strength,
     )
