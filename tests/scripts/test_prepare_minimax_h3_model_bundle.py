@@ -27,9 +27,16 @@ def test_fl2va_base_uses_pinned_pruned_bf16_while_ref2va_stays_int8():
 
 
 def test_lightx2v_source_is_pinned_to_repository_commit():
-    lightx2v = next(entry for entry in module.FILES if "lightx2v" in entry[0])
+    lightx2v = next(entry for entry in module.FILES if "turbo_8step_v1.0" in entry[0])
 
-    assert "/resolve/37ae5cbe1d6f2243484812fc511f9fa427b12a30/" in lightx2v[3]
+    assert lightx2v[0].endswith(
+        "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+    )
+    assert lightx2v[1:3] == (
+        "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e",
+        1_956_193_000,
+    )
+    assert "/resolve/62487ee643501626a71502d679f735a23ee6af45/" in lightx2v[3]
 
 
 def test_anatomy_loras_are_pinned_with_author_strength_pair_files():

@@ -101,16 +101,16 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-12-fl2va-bf16-addon5-lightx2v4
+    version: 2026-08-12-fl2va-bf16-addon5-lightx2v8-v1
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-12-fl2va-bf16-addon5-lightx2v4/files
-      discovered_size_gb: 79.05
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-12-fl2va-bf16-addon5-lightx2v8-v1/files
+      discovered_size_gb: 80.58
       import_status: prepared_by_script
-      notes: Official pruned BF16 FL2VA and INT8 ConvRot REF2VA conversions plus selectable HMNSFW V2, HMBreasts, the required two-file HMPussy pair, HMPenis, and internal rank-21 Lightx2v four-step LoRA; all files are SHA256 verified.
+      notes: Official pruned BF16 FL2VA and INT8 ConvRot REF2VA conversions plus selectable HMNSFW V2, HMBreasts, the required two-file HMPussy pair, HMPenis, and official Lightx2v FL2VA eight-step v1.0 ComfyUI BF16 LoRA; all files are SHA256 verified.
     files:
       - relative_path: diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors
         sha256: a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4
@@ -142,9 +142,9 @@ bundles:
       - relative_path: loras/MiniMaxH3/HMPenis_v2_e35.safetensors
         sha256: c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060
         size_bytes: 310168344
-      - relative_path: loras/MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors
-        sha256: 3a069f26fbc33f377a60dc72dd9e15f2aa42aa1d1b44915fded835716672dd36
-        size_bytes: 314878200
+      - relative_path: loras/MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+        sha256: 2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e
+        size_bytes: 1956193000
 
   img2img_lora_baseline:
     version: 2026-06-10

@@ -20,7 +20,7 @@ HMBREASTS_LORA = "MiniMaxH3/HMBreasts_085e0750_e40.safetensors"
 VAGASSIST_LORA = "MiniMaxH3/vagassist_e40.safetensors"
 HMPUSSY_MOTION_LORA = "MiniMaxH3/hmpussy_v6_epoch30.safetensors"
 HMPENIS_LORA = "MiniMaxH3/HMPenis_v2_e35.safetensors"
-LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"
+LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
@@ -61,7 +61,7 @@ def build(task_type: str) -> dict:
             if use_optimized_loras
             else _node("KSamplerSelect", sampler_name="res_multistep")
         ),
-        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=6 if use_optimized_loras else 25, denoise=1.0),
+        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=8 if use_optimized_loras else 25, denoise=1.0),
         "35": _node("SamplerCustomAdvanced", noise=["31", 0], guider=["32", 0], sampler=["33", 0], sigmas=["34", 0], latent_image=["30", 1]),
         "36": _node("VAEDecode", samples=["35", 0], vae=["5", 0]),
         "37": _node("VAEDecodeAudio", samples=["35", 0], vae=["6", 0]),

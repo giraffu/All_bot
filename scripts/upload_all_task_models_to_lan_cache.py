@@ -114,9 +114,9 @@ OPTIONAL_TARGETS: tuple[TargetSpec, ...] = (
     ),
     TargetSpec(
         name="minimax_h3",
-        prefix="minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v4",
-        manifest_key="minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v4/manifest.json",
-        bundle_versions=(("minimax_h3_runtime", "2026-08-12-fl2va-bf16-addon5-lightx2v4"),),
+        prefix="minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v8-v1",
+        manifest_key="minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v8-v1/manifest.json",
+        bundle_versions=(("minimax_h3_runtime", "2026-08-12-fl2va-bf16-addon5-lightx2v8-v1"),),
     ),
 )
 TARGETS_BY_NAME = {

@@ -41,11 +41,11 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             assert not {"10", "11", "12", "13"} & workflow.keys()
             assert workflow["14"]["inputs"] == {
                 "model": ["1", 0],
-                "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
+                "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
                 "strength_model": 0.75,
             }
             assert workflow["2"]["inputs"]["model"] == ["14", 0]
-            assert workflow["34"]["inputs"]["steps"] == 6
+            assert workflow["34"]["inputs"]["steps"] == 8
             assert workflow["33"] == {
                 "inputs": {},
                 "class_type": "MiniMaxH3TurboSampler",
@@ -136,7 +136,7 @@ def test_minimax_h3_patcher_selects_one_addon_and_keeps_acceleration(addon, expe
     addon_nodes = [patched[str(100 + index)]["inputs"] for index in range(len(expected_paths))]
     assert [item["lora_name"] for item in addon_nodes] == expected_paths
     assert [item["strength_model"] for item in addon_nodes] == strengths
-    assert patched["14"]["inputs"]["lora_name"].endswith("lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors")
+    assert patched["14"]["inputs"]["lora_name"].endswith("fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors")
     assert patched["30"]["inputs"]["prompt"].startswith(trigger)
 
 
