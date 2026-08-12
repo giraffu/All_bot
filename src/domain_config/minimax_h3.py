@@ -63,6 +63,12 @@ class MiniMaxH3AddonModel:
     prompt_prefix: str
 
 
+@dataclass(frozen=True, slots=True)
+class MiniMaxH3AddonSelection:
+    name: str
+    strength: float
+
+
 MINIMAX_H3_ADDON_MODELS = {
     "breasts": MiniMaxH3AddonModel(
         "breasts", "乳房", "Breasts",
@@ -111,8 +117,52 @@ class MiniMaxH3Spec:
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
     model_name: str
-    addon_model: str | None
-    addon_strength: float | None
+    addon_items: tuple[MiniMaxH3AddonSelection, ...]
+
+    @property
+    def addon_model(self) -> str | None:
+        return self.addon_items[0].name if len(self.addon_items) == 1 else None
+
+    @property
+    def addon_strength(self) -> float | None:
+        return self.addon_items[0].strength if len(self.addon_items) == 1 else None
+
+
+def _addon_items(inputs: dict[str, Any]) -> tuple[MiniMaxH3AddonSelection, ...]:
+    raw_items = inputs.get("lora_items")
+    legacy_name = str(inputs.get("lora_name") or "").strip()
+    legacy_strength = inputs.get("lora_strength")
+    if raw_items is not None and (legacy_name or legacy_strength not in (None, "")):
+        raise MiniMaxH3ValidationError("lora_items 不能与旧版单模型参数同时使用。")
+    if raw_items is None:
+        if not legacy_name:
+            if legacy_strength not in (None, ""):
+                raise MiniMaxH3ValidationError("选择附加模型后才能设置强度。")
+            return ()
+        raw_items = [{"name": legacy_name, "strength": legacy_strength}]
+    if not isinstance(raw_items, (list, tuple)) or len(raw_items) > len(MINIMAX_H3_ADDON_MODELS):
+        raise MiniMaxH3ValidationError("附加模型必须为最多 5 项的数组。")
+    result: list[MiniMaxH3AddonSelection] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            raise MiniMaxH3ValidationError("附加模型配置格式错误。")
+        name = str(raw.get("name") or "").strip()
+        model = MINIMAX_H3_ADDON_MODELS.get(name)
+        if model is None:
+            raise MiniMaxH3ValidationError("不支持该附加模型。")
+        if name in seen:
+            raise MiniMaxH3ValidationError("附加模型不得重复选择。")
+        seen.add(name)
+        raw_strength = raw.get("strength")
+        try:
+            strength = model.default_strength if raw_strength in (None, "") else float(raw_strength)
+        except (TypeError, ValueError) as exc:
+            raise MiniMaxH3ValidationError("附加模型强度必须为数字。") from exc
+        if not math.isfinite(strength) or not MINIMAX_H3_ADDON_MIN_STRENGTH <= strength <= MINIMAX_H3_ADDON_MAX_STRENGTH:
+            raise MiniMaxH3ValidationError("附加模型强度必须在 0.1 至 2.0 之间。")
+        result.append(MiniMaxH3AddonSelection(name, strength))
+    return tuple(result)
 
 
 def _string_tuple(value: Any, *, field: str) -> tuple[str, ...]:
@@ -163,27 +213,15 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if task_type not in MINIMAX_H3_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     forbidden = (
-        "lora_items", "model_name", "checkpoint", "timeline_data",
+        "model_name", "checkpoint", "timeline_data",
         "local_path", "ref_videos", "ref_audios", "sampler_name", "steps",
     )
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
-    raw_addon = str(inputs.get("lora_name") or "").strip()
-    addon = MINIMAX_H3_ADDON_MODELS.get(raw_addon) if raw_addon else None
-    if raw_addon and addon is None:
-        raise MiniMaxH3ValidationError("不支持该附加模型。")
-    raw_strength = inputs.get("lora_strength")
-    if raw_strength not in (None, "") and addon is None:
-        raise MiniMaxH3ValidationError("选择附加模型后才能设置强度。")
-    addon_strength = None
-    if addon is not None:
-        try:
-            addon_strength = addon.default_strength if raw_strength in (None, "") else float(raw_strength)
-        except (TypeError, ValueError) as exc:
-            raise MiniMaxH3ValidationError("附加模型强度必须为数字。") from exc
-        if not math.isfinite(addon_strength) or not MINIMAX_H3_ADDON_MIN_STRENGTH <= addon_strength <= MINIMAX_H3_ADDON_MAX_STRENGTH:
-            raise MiniMaxH3ValidationError("附加模型强度必须在 0.1 至 2.0 之间。")
+    addon_items = _addon_items(inputs)
+    if task_type == MINIMAX_H3_REF2V and addon_items:
+        raise MiniMaxH3ValidationError("ref2v 不支持附加模型。")
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -251,6 +289,5 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         images=images,
         reference_descriptions=descriptions,
         model_name=(MINIMAX_H3_MODEL_REF if task_type == MINIMAX_H3_REF2V else MINIMAX_H3_MODEL_FL),
-        addon_model=addon.id if addon else None,
-        addon_strength=addon_strength,
+        addon_items=addon_items,
     )

@@ -47,15 +47,20 @@ async def test_pro_settings_accept_user_addon_but_do_not_expose_acceleration(mon
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_addon_penis", answer=AsyncMock(), message=object())
-    data = {"mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9", "addon_model": None}
+    data = {"mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9", "addon_models": []}
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
 
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
-    assert data["addon_model"] == "penis"
+    assert data["addon_models"] == ["penis"]
     callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert "avp_addon_penis" in callbacks
+    assert "avp_addon_all" in callbacks
     assert all("lightx" not in value.lower() for value in callbacks)
+
+    query.data = "avp_addon_all"
+    await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
+    assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)
 
 
 @pytest.mark.asyncio

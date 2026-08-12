@@ -26,6 +26,7 @@ class ImageService:
         seed: int | None,
         lora_name: str | None = None,
         lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
         priority: int = 0,
     ) -> str:
         return await api_client.submit_minimax_h3(
@@ -44,6 +45,7 @@ class ImageService:
             seed=seed,
             lora_name=lora_name,
             lora_strength=lora_strength,
+            lora_items=lora_items,
             priority=priority,
         )
 

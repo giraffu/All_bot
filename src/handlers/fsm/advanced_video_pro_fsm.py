@@ -86,13 +86,14 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
     addon_buttons = [InlineKeyboardButton(
-        ("✅ " if data.get("addon_model") == model_id else "")
+        ("✅ " if model_id in data.get("addon_models", []) else "")
         + _text(context, model.label_zh, model.label_en),
         callback_data=f"avp_addon_{model_id}",
     ) for model_id, model in MINIMAX_H3_ADDON_MODELS.items()]
-    none_label = _text(context, "无附加模型", "No addon")
+    none_label = _text(context, "清空 LoRA", "Clear LoRAs")
     rows.extend([
-        [InlineKeyboardButton(("✅ " if not data.get("addon_model") else "") + none_label, callback_data="avp_addon_none")],
+        [InlineKeyboardButton(_text(context, "全选 LoRA", "Select all LoRAs"), callback_data="avp_addon_all"),
+         InlineKeyboardButton(none_label, callback_data="avp_addon_none")],
         addon_buttons[:3], addon_buttons[3:],
     ])
     rows.append([InlineKeyboardButton(
@@ -107,10 +108,13 @@ def _settings_text(context, data: dict) -> str:
         if data.get("mode") in {"i2v", "flf2v"}
         else data["aspect"]
     )
+    selected = data.get("addon_models", [])
+    addon_zh = "、".join(MINIMAX_H3_ADDON_MODELS[item].label_zh for item in selected) or "无"
+    addon_en = ", ".join(MINIMAX_H3_ADDON_MODELS[item].label_en for item in selected) or "None"
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n附加模型：{MINIMAX_H3_ADDON_MODELS[data['addon_model']].label_zh if data.get('addon_model') else '无'}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nAddon: {MINIMAX_H3_ADDON_MODELS[data['addon_model']].label_en if data.get('addon_model') else 'None'}",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n附加模型：{addon_zh}",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nAddons: {addon_en}",
     )
 
 
@@ -149,7 +153,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
-        "addon_model": None,
+        "addon_models": [],
     }
     await robust_reply_text(
         update.effective_message,
@@ -186,8 +190,13 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             data["aspect"] = aspect
     elif value.startswith("avp_addon_"):
         addon = value.removeprefix("avp_addon_")
-        if addon == "none" or addon in MINIMAX_H3_ADDON_MODELS:
-            data["addon_model"] = None if addon == "none" else addon
+        selected = data.setdefault("addon_models", [])
+        if addon == "none":
+            selected.clear()
+        elif addon == "all":
+            data["addon_models"] = list(MINIMAX_H3_ADDON_MODELS)
+        elif addon in MINIMAX_H3_ADDON_MODELS:
+            selected.remove(addon) if addon in selected else selected.append(addon)
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
         if mode == "t2v":
@@ -287,7 +296,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             images=data["images"], reference_descriptions=data["reference_descriptions"],
             duration=data["duration"], resolution_preset=data["preset"],
             aspect_ratio=("source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]),
-            addon_model=data.get("addon_model"),
+            addon_items=[{"name": name} for name in data.get("addon_models", [])],
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(update.message, str(exc))

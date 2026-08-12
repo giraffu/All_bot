@@ -76,8 +76,7 @@ const {
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
-  minimaxH3AddonModel,
-  minimaxH3AddonStrength,
+  minimaxH3AddonItems,
   templateNotice,
   templateWarning,
   composerNotice,
@@ -117,11 +116,17 @@ const promptLockedHint = computed(() => (
     : t('template_apply.common.prompt_locked_image_hint')
 ))
 
-const handleMinimaxAddonChange = (value: string) => {
-  minimaxH3AddonStrength.value = MINIMAX_H3_ADDON_OPTIONS.find(
-    option => option.value === value,
-  )?.defaultStrength ?? 1.0
-}
+const minimaxH3AddonNames = computed<string[]>({
+  get: () => minimaxH3AddonItems.value.map(item => item.name),
+  set: (names) => {
+    minimaxH3AddonItems.value = names.map(name => minimaxH3AddonItems.value.find(item => item.name === name) ?? {
+      name,
+      strength: MINIMAX_H3_ADDON_OPTIONS.find(option => option.value === name)?.defaultStrength ?? 1.0,
+    })
+  },
+})
+const selectAllMinimaxH3Addons = () => { minimaxH3AddonNames.value = MINIMAX_H3_ADDON_OPTIONS.map(option => option.value) }
+const clearMinimaxH3Addons = () => { minimaxH3AddonItems.value = [] }
 </script>
 
 <template>
@@ -222,15 +227,19 @@ const handleMinimaxAddonChange = (value: string) => {
                 {{ t('lab.workbench.minimax_h3_addon_model') }}
               </div>
               <a-select
-                v-model:value="minimaxH3AddonModel"
+                v-model:value="minimaxH3AddonNames"
+                mode="multiple"
                 class="w-full"
                 :options="MINIMAX_H3_ADDON_OPTIONS.map(option => ({ value: option.value, label: t(option.labelKey) }))"
-                @change="handleMinimaxAddonChange"
               />
-              <div v-if="minimaxH3AddonModel" class="flex items-center gap-3">
-                <span class="text-xs opacity-75">{{ t('template_apply.common.model_strength') }}</span>
-                <a-slider v-model:value="minimaxH3AddonStrength" :min="0.1" :max="2" :step="0.05" class="flex-1" />
-                <a-input-number v-model:value="minimaxH3AddonStrength" :min="0.1" :max="2" :step="0.05" class="w-24" />
+              <div class="flex gap-2">
+                <a-button size="small" @click="selectAllMinimaxH3Addons">{{ t('lab.workbench.minimax_h3_addons.select_all') }}</a-button>
+                <a-button size="small" @click="clearMinimaxH3Addons">{{ t('lab.workbench.minimax_h3_addons.clear') }}</a-button>
+              </div>
+              <div v-for="item in minimaxH3AddonItems" :key="item.name" class="flex items-center gap-3">
+                <span class="w-20 text-xs opacity-75">{{ t(MINIMAX_H3_ADDON_OPTIONS.find(option => option.value === item.name)?.labelKey ?? '') }}</span>
+                <a-slider v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" class="flex-1" />
+                <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" class="w-24" />
               </div>
             </div>
           </div>

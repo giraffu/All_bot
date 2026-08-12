@@ -30,6 +30,35 @@ def test_minimax_h3_addon_model_and_strength_are_normalized():
     assert spec.addon_strength == 1.25
 
 
+def test_minimax_h3_multiple_addons_are_normalized_in_order():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_T2V,
+        {"duration": 5, "lora_items": [
+            {"name": "breasts", "strength": 1.2},
+            {"name": "sex_pose", "strength": 0.4},
+        ]},
+    )
+    assert [(item.name, item.strength) for item in spec.addon_items] == [
+        ("breasts", 1.2), ("sex_pose", 0.4)
+    ]
+
+
+def test_minimax_h3_rejects_duplicate_addons():
+    with pytest.raises(MiniMaxH3ValidationError, match="重复"):
+        build_minimax_h3_spec(MINIMAX_H3_T2V, {"lora_items": [
+            {"name": "penis", "strength": 1.0},
+            {"name": "penis", "strength": 0.8},
+        ]})
+
+
+def test_minimax_h3_ref2v_rejects_addons():
+    with pytest.raises(MiniMaxH3ValidationError, match="ref2v"):
+        build_minimax_h3_spec(MINIMAX_H3_REF2V, {
+            "images": ["reference.png"],
+            "lora_items": [{"name": "penis", "strength": 1.0}],
+        })
+
+
 @pytest.mark.parametrize("inputs", [
     {"lora_name": "unknown"},
     {"lora_name": "penis", "lora_strength": 0.05},
