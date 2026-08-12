@@ -36,6 +36,7 @@ x-worker-base-cloud-test: &worker-base-cloud-test
     - ${CLOUD_TEST_WORKER_SPOOL_HOST_DIR:-/var/lib/allbot/test-worker/spool}:/app/spool
     - ./comfy_agent/workflows:/app/worker/workflows
     - ../src:/app/src
+    - ../shared:/app/shared
 
 services:
   cloud-worker-relay-test:
