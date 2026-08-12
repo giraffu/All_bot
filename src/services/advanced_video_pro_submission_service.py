@@ -52,8 +52,15 @@ class AdvancedVideoProSubmissionPlan:
     resolution_preset: str
     aspect_ratio: str
     cost: int
-    addon_model: str | None
-    addon_strength: float | None
+    addon_items: tuple[dict[str, Any], ...]
+
+    @property
+    def addon_model(self) -> str | None:
+        return self.addon_items[0]["name"] if len(self.addon_items) == 1 else None
+
+    @property
+    def addon_strength(self) -> float | None:
+        return self.addon_items[0]["strength"] if len(self.addon_items) == 1 else None
 
 
 def build_advanced_video_pro_submission_plan(
@@ -67,6 +74,7 @@ def build_advanced_video_pro_submission_plan(
     aspect_ratio: str = "16:9",
     addon_model: str | None = None,
     addon_strength: float | None = None,
+    addon_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
 ) -> AdvancedVideoProSubmissionPlan:
     normalized_mode = str(mode or "").strip().lower()
     task_type = MODE_TASK_TYPES.get(normalized_mode)
@@ -85,8 +93,9 @@ def build_advanced_video_pro_submission_plan(
         "duration": duration,
         "resolution_preset": resolution_preset,
         "aspect_ratio": normalized_aspect_ratio,
-        "lora_name": addon_model,
-        "lora_strength": addon_strength,
+        **({"lora_items": list(addon_items)} if addon_items is not None else {
+            "lora_name": addon_model, "lora_strength": addon_strength
+        }),
     }
     try:
         spec = build_minimax_h3_spec(task_type, inputs)
@@ -102,8 +111,7 @@ def build_advanced_video_pro_submission_plan(
         resolution_preset=spec.resolution_preset,
         aspect_ratio=spec.aspect_ratio,
         cost=spec.cost,
-        addon_model=spec.addon_model,
-        addon_strength=spec.addon_strength,
+        addon_items=tuple({"name": item.name, "strength": item.strength} for item in spec.addon_items),
     )
 
 
@@ -140,8 +148,7 @@ async def submit_advanced_video_pro_plan(
         duration=plan.duration,
         resolution_preset=plan.resolution_preset,
         aspect_ratio=plan.aspect_ratio,
-        lora_name=plan.addon_model,
-        lora_strength=plan.addon_strength,
+        lora_items=list(plan.addon_items) or None,
         status_msg_id=status_msg_id,
         cleanup=cleanup,
         allow_contribute=allow_contribute,

@@ -844,7 +844,7 @@
       "minimax_h3_resolution_presets": {"preview": "Fast (about 512p)", "small": "Clear (about 600p)", "standard": "Standard (about 720p)", "hd": "HD (about 810p)"},
       "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last"},
       "minimax_h3_addon_model": "Addon model",
-      "minimax_h3_addons": {"none": "None", "breasts": "Breasts", "anus": "Anus", "vagina": "Vagina", "sex_pose": "Sex pose", "penis": "Penis"},
+      "minimax_h3_addons": {"none": "None", "breasts": "Breasts", "anus": "Anus", "vagina": "Vagina", "sex_pose": "Sex pose", "penis": "Penis", "select_all": "Select all LoRAs", "clear": "Clear"},
       "upload_slots": {
         "face_image": "Face Image",
         "target_image": "Body Image",

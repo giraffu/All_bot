@@ -47,8 +47,7 @@ type SubmitHarness = {
   minimaxH3ResolutionPreset: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions: Ref<string[]>
-  minimaxH3AddonModel: Ref<string>
-  minimaxH3AddonStrength: Ref<number>
+  minimaxH3AddonItems: Ref<Array<{ name: string; strength: number }>>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -101,8 +100,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
-  const minimaxH3AddonModel = ref('')
-  const minimaxH3AddonStrength = ref(1)
+  const minimaxH3AddonItems = ref<Array<{ name: string; strength: number }>>([])
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -136,8 +134,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
-    minimaxH3AddonModel,
-    minimaxH3AddonStrength,
+    minimaxH3AddonItems,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -170,8 +167,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
-    minimaxH3AddonModel,
-    minimaxH3AddonStrength,
+    minimaxH3AddonItems,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -254,8 +250,10 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.minimax_h3_title')
 
     harness.minimaxH3Mode.value = 'i2v'
-    harness.minimaxH3AddonModel.value = 'penis'
-    harness.minimaxH3AddonStrength.value = 1.25
+    harness.minimaxH3AddonItems.value = [
+      { name: 'penis', strength: 1.25 },
+      { name: 'sex_pose', strength: 0.5 },
+    ]
     harness.uploadedReferences.value = [{ ...refImage('portrait.png'), width: 900, height: 1600 }]
     await harness.handleSubmit()
     expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -263,8 +261,10 @@ describe('useLabSubmitPayload', () => {
       inputs: expect.objectContaining({
         images: ['portrait.png'],
         aspect_ratio: 'source',
-        lora_name: 'penis',
-        lora_strength: 1.25,
+        lora_items: [
+          { name: 'penis', strength: 1.25 },
+          { name: 'sex_pose', strength: 0.5 },
+        ],
       }),
     }), 'lab.cards.minimax_h3_title')
   })

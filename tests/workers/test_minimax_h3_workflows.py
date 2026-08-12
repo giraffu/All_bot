@@ -133,11 +133,30 @@ def test_minimax_h3_patcher_selects_one_addon_and_keeps_acceleration(addon, expe
         "minimax_h3_t2v", workflow,
         {"prompt": "scene", "lora_name": addon, "lora_strength": 1.2},
     )
-    addon_nodes = [patched[str(10 + index)]["inputs"] for index in range(len(expected_paths))]
+    addon_nodes = [patched[str(100 + index)]["inputs"] for index in range(len(expected_paths))]
     assert [item["lora_name"] for item in addon_nodes] == expected_paths
     assert [item["strength_model"] for item in addon_nodes] == strengths
     assert patched["14"]["inputs"]["lora_name"].endswith("lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors")
     assert patched["30"]["inputs"]["prompt"].startswith(trigger)
+
+
+def test_minimax_h3_patcher_chains_multiple_addons_before_acceleration():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+    patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {
+        "prompt": "scene",
+        "lora_items": [
+            {"name": "breasts", "strength": 1.1},
+            {"name": "sex_pose", "strength": 0.4},
+            {"name": "penis", "strength": 0.9},
+        ],
+    })
+    assert [patched[str(node)]["inputs"]["lora_name"] for node in range(100, 103)] == [
+        "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
+        "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        "MiniMaxH3/HMPenis_v2_e35.safetensors",
+    ]
+    assert patched["14"]["inputs"]["model"] == ["102", 0]
 
 
 def test_minimax_h3_patcher_without_addon_only_keeps_internal_acceleration():

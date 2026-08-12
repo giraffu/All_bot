@@ -1324,31 +1324,53 @@ def patch_minimax_h3_workflow(
         raise ValueError("invalid MiniMax H3 task type")
     if any(
         params.get(key) not in (None, "", [], ())
-        for key in ("lora_items", "model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
+        for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
-    addon_name = str(params.get("lora_name") or "").strip()
-    addon = _MINIMAX_H3_ADDONS.get(addon_name) if addon_name else None
-    if addon_name and addon is None:
-        raise ValueError("invalid MiniMax H3 addon model")
-    if params.get("lora_strength") not in (None, "") and addon is None:
-        raise ValueError("MiniMax H3 addon strength requires a model")
-    addon_strength = float(params.get("lora_strength") if params.get("lora_strength") not in (None, "") else 1.0)
-    if not 0.1 <= addon_strength <= 2.0:
-        raise ValueError("invalid MiniMax H3 addon strength")
-    for node_id in ("10", "11", "12", "13"):
+    raw_items = params.get("lora_items")
+    legacy_name = str(params.get("lora_name") or "").strip()
+    if raw_items is not None and (legacy_name or params.get("lora_strength") not in (None, "")):
+        raise ValueError("MiniMax H3 addon formats cannot be mixed")
+    if raw_items is None:
+        raw_items = ([{"name": legacy_name, "strength": params.get("lora_strength")}]
+                     if legacy_name else [])
+    if not isinstance(raw_items, list) or len(raw_items) > 5:
+        raise ValueError("invalid MiniMax H3 addon list")
+    addons = []
+    seen = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise ValueError("invalid MiniMax H3 addon item")
+        name = str(item.get("name") or "").strip()
+        addon = _MINIMAX_H3_ADDONS.get(name)
+        if addon is None or name in seen:
+            raise ValueError("invalid or duplicate MiniMax H3 addon model")
+        seen.add(name)
+        strength = float(item.get("strength") if item.get("strength") not in (None, "") else (0.5 if name == "sex_pose" else 1.0))
+        if not 0.1 <= strength <= 2.0:
+            raise ValueError("invalid MiniMax H3 addon strength")
+        addons.append((addon, strength))
+    if task_type == "minimax_h3_ref2v" and addons:
+        raise ValueError("MiniMax H3 ref2v rejects addon models")
+    for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
     model_input = ["1", 0]
-    prompt_prefix = ""
-    if addon is not None:
+    prompt_parts = []
+    next_node_id = 100
+    for addon, addon_strength in addons:
         *model_specs, prompt_prefix = addon
-        for index, (model_path, relative_strength) in enumerate(model_specs):
-            node_id = str(10 + index)
+        for part in (part.strip() for part in prompt_prefix.split(",")):
+            if part and part not in prompt_parts:
+                prompt_parts.append(part)
+        for model_path, relative_strength in model_specs:
+            node_id = str(next_node_id)
+            next_node_id += 1
             workflow[node_id] = {
                 "inputs": {"model": model_input, "lora_name": model_path, "strength_model": round(addon_strength * relative_strength, 6)},
                 "class_type": "LoraLoaderModelOnly",
             }
             model_input = [node_id, 0]
+    prompt_prefix = ", ".join(prompt_parts)
     if "14" in workflow:
         workflow["14"]["inputs"]["model"] = model_input
     else:

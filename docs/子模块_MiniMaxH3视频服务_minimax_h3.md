@@ -46,8 +46,11 @@ Web 由 `enable_minimax_h3` 控制，后端由
 四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
 `scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
 生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。FL2VA 的
-T2V/I2V/FLF2V 默认不加载用户附加模型。用户可单选 `breasts`、`anus`、`vagina`、
-`sex_pose`、`penis`；Bot 使用 catalog 默认强度，Web 允许 `0.1..2.0`。
+T2V/I2V/FLF2V 默认不加载用户附加模型。用户可同时选择最多 5 个互不重复的
+`breasts`、`anus`、`vagina`、`sex_pose`、`penis`；Bot 提供逐项切换、全选和清空并
+使用 catalog 默认强度，Web 提供多选、全选和清空，且每项强度可独立设为 `0.1..2.0`。
+主协议为有序 `lora_items: [{name, strength}]`，旧 `lora_name/lora_strength` 仅保留
+单模型兼容；Worker 按数组顺序串联全部用户 LoRA，再连接内置加速 LoRA。
 `anus` 与 `vagina` 都加载 HMPussy 的 `vagassist` 与 `hmpussy` 双文件并保持
 `1.0:0.35` 相对强度，通过提示词前缀区分语义；两份文件不可拆开。`penis` 使用
 modelVersion `3218160` 的 `HMPenis_v2_e35.safetensors`，默认 `1.0`，按作者说明把

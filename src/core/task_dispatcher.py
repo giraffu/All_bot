@@ -1062,8 +1062,9 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             "minimax_h3_frame_count": spec.frame_count,
             "minimax_h3_fps": spec.fps,
             "minimax_h3_seed": seed,
-            "minimax_h3_addon_model": spec.addon_model,
-            "minimax_h3_addon_strength": spec.addon_strength,
+            "minimax_h3_addon_items": [
+                {"name": item.name, "strength": item.strength} for item in spec.addon_items
+            ],
             "minimax_h3_source_width": inputs.get("source_width"),
             "minimax_h3_source_height": inputs.get("source_height"),
             "minimax_h3_end_source_width": inputs.get("end_source_width"),
@@ -1094,8 +1095,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
             frame_count=spec.frame_count,
             fps=spec.fps,
             seed=self._seed(inputs),
-            lora_name=spec.addon_model,
-            lora_strength=spec.addon_strength,
+            lora_items=[{"name": item.name, "strength": item.strength} for item in spec.addon_items] or None,
             priority=priority,
         )
 
