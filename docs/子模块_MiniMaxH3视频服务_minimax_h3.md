@@ -54,11 +54,12 @@ T2V/I2V/FLF2V 默认不加载用户附加模型。用户可同时选择最多 5 
 `anus` 与 `vagina` 都加载 HMPussy 的 `vagassist` 与 `hmpussy` 双文件并保持
 `1.0:0.35` 相对强度，通过提示词前缀区分语义；两份文件不可拆开。`penis` 使用
 modelVersion `3218160` 的 `HMPenis_v2_e35.safetensors`，默认 `1.0`，按作者说明把
-`HMPenis` 放在提示词开头。T2V/I2V 始终在可选附加模型之后串联内置 rank-21
-Lightx2v `0.75`，
-使用固定 revision 的
-`MiniMaxH3TurboSampler`、6 steps、`simple` 与 video/audio shift `12/3`，让
-加速采样按 H3 音视频双 schedule 适配当前 ComfyUI。只有用户明确选择附加模型时，
+`HMPenis` 放在提示词开头。T2V/I2V 始终在可选附加模型之后串联官方
+Lightx2v FL2VA 8-step v1.0 ComfyUI BF16 LoRA，强度 `0.75`，使用固定 revision 的
+`MiniMaxH3TurboSampler`、8 steps、`simple` 与 video/audio shift `12/3`，让
+加速采样按作者的混合比例 544p 训练 schedule 适配当前四档像素预算。固定
+`1344x768`、video shift `6` 的 4-step 768p v1.0 不用于当前支持横竖屏和首帧比例的
+公共 workflow。只有用户明确选择附加模型时，
 Worker 才把 catalog 触发词放在提示词开头；未选择时不注入附加语义。HMBreasts
 作者未发布硬性强度，当前 `1.0` 是与同作者静态结构 LoRA 对齐的候选基线，GPU
 canary 必须覆盖叠加质量。FLF2V/REF2V 保持 25 steps、`res_multistep` 与 shift
@@ -77,8 +78,8 @@ API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 
 REF2V 暂时保留 pruned INT8 ConvRot REF2VA；包内另含 NVFP4 AWQ Qwen3-VL text encoder
 及 video/audio VAE；同一 manifest 还包含 Civitai modelVersion `3206518` 的
 HMNSFW V2、`3216751` 的 HMBreasts、`3215304` 的两文件 HMPussy、`3218160` 的
-HMPenis，以及 Kijai
-固定 revision 的 rank-21 Lightx2v 四步 LoRA。所有文件固定 SHA256 和字节数。
+HMPenis，以及 lightx2v 官方固定 revision 的 FL2VA 8-step v1.0 ComfyUI BF16 LoRA。
+所有文件固定 SHA256 和字节数。
 FL2VA BF16 与现有 FL2VA LoRA 链配套；REF2VA 没有作者兼容声明，继续禁止加载该
 LoRA 链。模型只进入内容寻址仓库、
 R2 model cache 和目标模型卷，不进入 Git 或 OCI 镜像。

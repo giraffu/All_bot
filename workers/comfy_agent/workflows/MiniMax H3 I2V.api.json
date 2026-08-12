@@ -103,7 +103,7 @@
         0
       ],
       "scheduler": "simple",
-      "steps": 6,
+      "steps": 8,
       "denoise": 1.0
     },
     "class_type": "BasicScheduler"
@@ -209,7 +209,7 @@
         "1",
         0
       ],
-      "lora_name": "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
+      "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
       "strength_model": 0.75
     },
     "class_type": "LoraLoaderModelOnly"
