@@ -91,6 +91,15 @@ export const EDIT_LORA_DEFAULT_STRENGTHS: Record<string, number> = {
   'qwen/penis.safetensors': 0.7,
 }
 
+export const MINIMAX_H3_ADDON_OPTIONS = [
+  { value: '', labelKey: 'lab.workbench.minimax_h3_addons.none', defaultStrength: 1.0 },
+  { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addons.breasts', defaultStrength: 1.0 },
+  { value: 'anus', labelKey: 'lab.workbench.minimax_h3_addons.anus', defaultStrength: 1.0 },
+  { value: 'vagina', labelKey: 'lab.workbench.minimax_h3_addons.vagina', defaultStrength: 1.0 },
+  { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addons.sex_pose', defaultStrength: 0.5 },
+  { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addons.penis', defaultStrength: 1.0 },
+] as const
+
 export const VIDEO_RESOLUTION_OPTIONS = [
   { value: '512', label: '512p' },
   { value: '720', label: '720p' },

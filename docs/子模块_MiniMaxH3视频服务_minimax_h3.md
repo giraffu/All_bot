@@ -2,16 +2,17 @@
 
 ## 能力与边界
 
-`minimax_h3` 是独立 GPU profile，不是 LTX alias。用户态和 Central 保留四个任务身份：
+`minimax_h3` 是独立 GPU profile，不是 LTX alias。Central/Worker 为历史恢复保留四个执行身份：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`、`minimax_h3_ref2v`。
-测试 Web 使用一个工作台切换四种子模式；面向用户统一展示为“高级图生视频pro”，
-不暴露模型或 workflow 供应方名称。主 Bot 在同一入口开放四种模式；QQCC AI 视频
+测试 Web 使用一个工作台切换 T2V/I2V/FLF2V 三种子模式；REF2V 角色参考视频已从
+Bot/Web 新建入口关闭，只保留内部兼容执行身份。面向用户统一展示为“高级图生视频pro”，
+不暴露模型或 workflow 供应方名称；QQCC AI 视频
 按有无尾帧链自动提交 I2V/FLF2V。Gallery、生产 RunPod 和 autoscaler 默认不接入。
 Web 由 `enable_minimax_h3` 控制，后端由
 `MINIMAX_H3_BACKEND_ENABLED` 控制，两个开关默认关闭。
 测试 Web 的 runtime config 当前只展示 MiniMax H3 工作台，并隐藏
 `ltx_video`、`ltx_video_v2` 与 `ltx_t2v` 三个 LTX 工作台；生产映射保持独立，
-不随测试可见性切换。MiniMax H3 的一个工作台内可切换下面四种任务模式。
+不随测试可见性切换。
 
 ## 请求契约
 
@@ -27,12 +28,13 @@ Web 由 `enable_minimax_h3` 控制，后端由
 - I2V/FLF2V 固定使用 `aspect_ratio=source`，首帧通过分辨率计算节点按像素预算
   和 Div32 生成实际宽高，不映射到近似比例。FLF2V 首尾帧比例相对差异超过 1%
   时在入口和 Worker 双重拒绝；T2V/REF2V 继续使用固定 `aspect_ratio`。
-- 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用和输入数量事实源。
-  Worker 再次拒绝模型、LoRA、采样器、timeline、本地路径和参考音视频覆盖。
+- 服务端 `src/domain_config/minimax_h3.py` 是尺寸、帧数、费用、输入数量、用户附加
+  模型 ID、默认强度和强度范围的事实源。Worker 再次拒绝未知模型、非法强度、采样器、
+  timeline、本地路径和参考音视频覆盖。
 - 输出为带音轨 MP4，并通过 `SaveImage` 产生 `extra_outputs.last_frame` 所需尾帧。
 - 主 Bot 入口使用 `advanced_video_pro_fsm.py`，规范化提交由
   `advanced_video_pro_submission_service.py` 承接；菜单继续使用历史
-  `menu.ltx_video` 配置键以兼容显隐与排序，但新提交只产生本节四个任务类型。
+  `menu.ltx_video` 配置键以兼容显隐与排序，但新提交只产生 T2V/I2V/FLF2V。
 - QQCC 读取旧配置时将 `ltx_video` engine 迁移为内部 H3 engine 并清空旧 LTX
   LoRA；配置 API 保留空的版本化 `ai_video_addon_models` seam，当前不得提交覆盖。
 - ComfyUI history 同时出现 VHS `gifs/videos` 与 `SaveImage.images` 时，四个 H3
@@ -43,18 +45,21 @@ Web 由 `enable_minimax_h3` 控制，后端由
 
 四份 API workflow 的事实源位于 `workers/comfy_agent/workflows/`，由
 `scripts/build_minimax_h3_api_workflows.py` 确定性生成并同步进 baked RunPod runtime。
-生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。所有使用 FL2VA
-底模的 T2V/I2V/FLF2V 固定串联 HMBreasts `1.0`、HMPussy 的静态结构文件
-`vagassist` `1.0` 与视频稳定文件 `hmpussy` `0.35`；HMPussy 两份文件不可拆开。
-T2V/I2V 在该结构链之后继续串联 HMNSFW V2 `0.5` 和 rank-21 Lightx2v `0.75`，
+生成器校验 DaSiWa Civitai UI 源文件 SHA256 后才接受源资产。FL2VA 的
+T2V/I2V/FLF2V 默认不加载用户附加模型。用户可单选 `breasts`、`anus`、`vagina`、
+`sex_pose`、`penis`；Bot 使用 catalog 默认强度，Web 允许 `0.1..2.0`。
+`anus` 与 `vagina` 都加载 HMPussy 的 `vagassist` 与 `hmpussy` 双文件并保持
+`1.0:0.35` 相对强度，通过提示词前缀区分语义；两份文件不可拆开。`penis` 使用
+modelVersion `3218160` 的 `HMPenis_v2_e35.safetensors`，默认 `1.0`，按作者说明把
+`HMPenis` 放在提示词开头。T2V/I2V 始终在可选附加模型之后串联内置 rank-21
+Lightx2v `0.75`，
 使用固定 revision 的
 `MiniMaxH3TurboSampler`、6 steps、`simple` 与 video/audio shift `12/3`，让
-加速采样按 H3 音视频双 schedule 适配当前 ComfyUI；触发词 `hmmotion` 由调用方
-在提示词中明确提供。新结构 LoRA 的 `HMBreasts`、`Vagina`、`hmpussy` 触发词同样
-只由调用方按需要明确提供，服务端不得暗中注入并改变普通视频语义。HMBreasts
+加速采样按 H3 音视频双 schedule 适配当前 ComfyUI。只有用户明确选择附加模型时，
+Worker 才把 catalog 触发词放在提示词开头；未选择时不注入附加语义。HMBreasts
 作者未发布硬性强度，当前 `1.0` 是与同作者静态结构 LoRA 对齐的候选基线，GPU
 canary 必须覆盖叠加质量。FLF2V/REF2V 保持 25 steps、`res_multistep` 与 shift
-`11/4` 基线；FLF2V 只加载三个结构 LoRA，不加载 HMNSFW/Lightx2v。REF2V 使用
+`11/4` 基线；FLF2V 不加载 Lightx2v。REF2V 使用
 不同的 REF2VA 底模，作者资产只声明 FL2VA，因此 fail closed，不加载这组 LoRA。
 四模式都启用 KJNodes H3
 memory-efficient SageAttention patch。
@@ -68,7 +73,8 @@ API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 
 `Comfy-Org/MiniMax-H3` 官方转换。T2V/I2V/FLF2V 使用 pruned BF16 FL2VA，
 REF2V 暂时保留 pruned INT8 ConvRot REF2VA；包内另含 NVFP4 AWQ Qwen3-VL text encoder
 及 video/audio VAE；同一 manifest 还包含 Civitai modelVersion `3206518` 的
-HMNSFW V2、`3216751` 的 HMBreasts、`3215304` 的两文件 HMPussy，以及 Kijai
+HMNSFW V2、`3216751` 的 HMBreasts、`3215304` 的两文件 HMPussy、`3218160` 的
+HMPenis，以及 Kijai
 固定 revision 的 rank-21 Lightx2v 四步 LoRA。所有文件固定 SHA256 和字节数。
 FL2VA BF16 与现有 FL2VA LoRA 链配套；REF2VA 没有作者兼容声明，继续禁止加载该
 LoRA 链。模型只进入内容寻址仓库、

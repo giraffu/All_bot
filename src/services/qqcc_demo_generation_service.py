@@ -180,6 +180,8 @@ async def _submit_scene(
             frame_count=spec.frame_count,
             fps=spec.fps,
             seed=None,
+            lora_name=spec.addon_model,
+            lora_strength=spec.addon_strength,
             priority=0,
         )
 

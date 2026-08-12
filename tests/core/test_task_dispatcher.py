@@ -156,6 +156,8 @@ async def test_minimax_h3_ref2v_submits_normalized_contract(monkeypatch):
         frame_count=243,
         fps=24,
         seed=42,
+        lora_name=None,
+        lora_strength=None,
         priority=6,
     )
     assert strategy.get_cost(

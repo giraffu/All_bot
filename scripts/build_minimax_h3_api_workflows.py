@@ -19,6 +19,7 @@ HMNSFW_LORA = "MiniMaxH3/HMNSFW_AIO_V2.safetensors"
 HMBREASTS_LORA = "MiniMaxH3/HMBreasts_085e0750_e40.safetensors"
 VAGASSIST_LORA = "MiniMaxH3/vagassist_e40.safetensors"
 HMPUSSY_MOTION_LORA = "MiniMaxH3/hmpussy_v6_epoch30.safetensors"
+HMPENIS_LORA = "MiniMaxH3/HMPenis_v2_e35.safetensors"
 LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
@@ -35,8 +36,7 @@ def _node(class_type: str, **inputs):
 def build(task_type: str) -> dict:
     is_ref = task_type == "minimax_h3_ref2v"
     use_optimized_loras = task_type in {"minimax_h3_t2v", "minimax_h3_i2v"}
-    use_anatomy_loras = not is_ref
-    patched_model = ["14", 0] if use_optimized_loras else (["12", 0] if use_anatomy_loras else ["1", 0])
+    patched_model = ["14", 0] if use_optimized_loras else ["1", 0]
     workflow = {
         "1": _node("UNETLoader", unet_name=REF_MODEL if is_ref else FL_MODEL, weight_dtype="default"),
         "2": _node("MiniMaxH3MemoryEfficientSageAttentionPatch", model=patched_model),
@@ -70,22 +70,9 @@ def build(task_type: str) -> dict:
         "39": _node("ImageFromBatch", batch_index=4095, length=1, image=["36", 0]),
         "40": _node("SaveImage", filename_prefix=f"{task_type}_last_frame", images=["39", 0]),
     }
-    if use_anatomy_loras:
-        workflow["10"] = _node(
-            "LoraLoaderModelOnly", model=["1", 0], lora_name=HMBREASTS_LORA, strength_model=1.0
-        )
-        workflow["11"] = _node(
-            "LoraLoaderModelOnly", model=["10", 0], lora_name=VAGASSIST_LORA, strength_model=1.0
-        )
-        workflow["12"] = _node(
-            "LoraLoaderModelOnly", model=["11", 0], lora_name=HMPUSSY_MOTION_LORA, strength_model=0.35
-        )
     if use_optimized_loras:
-        workflow["13"] = _node(
-            "LoraLoaderModelOnly", model=["12", 0], lora_name=HMNSFW_LORA, strength_model=0.5
-        )
         workflow["14"] = _node(
-            "LoraLoaderModelOnly", model=["13", 0], lora_name=LIGHTX2V_LORA, strength_model=0.75
+            "LoraLoaderModelOnly", model=["1", 0], lora_name=LIGHTX2V_LORA, strength_model=0.75
         )
     count = {"minimax_h3_t2v": 0, "minimax_h3_i2v": 1, "minimax_h3_flf2v": 2, "minimax_h3_ref2v": 4}[task_type]
     for index in range(1, count + 1):

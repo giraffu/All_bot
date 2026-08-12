@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 
 from src.filters.i18n_filter import I18nFilter
+from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.handlers.conversation_states import AdvancedVideoProState
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
@@ -37,7 +38,7 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 
 DATA_KEY = "advanced_video_pro_data"
 TAG = "ADVANCED_VIDEO_PRO"
-MODES = ("t2v", "i2v", "flf2v", "ref2v")
+MODES = ("t2v", "i2v", "flf2v")
 DURATIONS = (5, 10, 15)
 PRESETS = ("preview", "small", "standard", "hd")
 ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4")
@@ -62,7 +63,6 @@ def _mode_keyboard(context) -> InlineKeyboardMarkup:
         ("t2v", "文生视频", "Text to Video"),
         ("i2v", "首帧图生视频", "First-frame Video"),
         ("flf2v", "首尾帧视频", "First/Last-frame Video"),
-        ("ref2v", "角色参考视频", "Character-reference Video"),
     )
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(_text(context, zh, en), callback_data=f"avp_mode_{mode}")]
@@ -85,6 +85,16 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     rows = [buttons("duration", DURATIONS), preset_buttons[:2], preset_buttons[2:]]
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
+    addon_buttons = [InlineKeyboardButton(
+        ("✅ " if data.get("addon_model") == model_id else "")
+        + _text(context, model.label_zh, model.label_en),
+        callback_data=f"avp_addon_{model_id}",
+    ) for model_id, model in MINIMAX_H3_ADDON_MODELS.items()]
+    none_label = _text(context, "无附加模型", "No addon")
+    rows.extend([
+        [InlineKeyboardButton(("✅ " if not data.get("addon_model") else "") + none_label, callback_data="avp_addon_none")],
+        addon_buttons[:3], addon_buttons[3:],
+    ])
     rows.append([InlineKeyboardButton(
         _text(context, "确认设置", "Confirm settings"), callback_data="avp_settings_done"
     )])
@@ -99,8 +109,8 @@ def _settings_text(context, data: dict) -> str:
     )
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n附加模型：{MINIMAX_H3_ADDON_MODELS[data['addon_model']].label_zh if data.get('addon_model') else '无'}",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nAddon: {MINIMAX_H3_ADDON_MODELS[data['addon_model']].label_en if data.get('addon_model') else 'None'}",
     )
 
 
@@ -139,6 +149,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
+        "addon_model": None,
     }
     await robust_reply_text(
         update.effective_message,
@@ -173,6 +184,10 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         aspect = value.removeprefix("avp_aspect_")
         if aspect in ASPECTS:
             data["aspect"] = aspect
+    elif value.startswith("avp_addon_"):
+        addon = value.removeprefix("avp_addon_")
+        if addon == "none" or addon in MINIMAX_H3_ADDON_MODELS:
+            data["addon_model"] = None if addon == "none" else addon
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
         if mode == "t2v":
@@ -272,6 +287,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             images=data["images"], reference_descriptions=data["reference_descriptions"],
             duration=data["duration"], resolution_preset=data["preset"],
             aspect_ratio=("source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]),
+            addon_model=data.get("addon_model"),
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(update.message, str(exc))

@@ -41,10 +41,12 @@ type UseLabSubmitPayloadOptions = {
   useT2VReferences?: Ref<boolean>
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
-  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v' | 'ref2v'>
+  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v'>
   minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions?: Ref<string[]>
+  minimaxH3AddonModel?: Ref<string>
+  minimaxH3AddonStrength?: Ref<number>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -81,6 +83,8 @@ export function useLabSubmitPayload({
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
+  minimaxH3AddonModel,
+  minimaxH3AddonStrength,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -139,16 +143,12 @@ export function useLabSubmitPayload({
     if (currentMode.value.id === 'minimax_h3') {
       const mode = minimaxH3Mode?.value ?? 't2v'
       const images = uploadedReferences.value.map(item => item.key)
-      const expected = mode === 't2v' ? [0, 0] : mode === 'i2v' ? [1, 1] : mode === 'flf2v' ? [2, 2] : [1, 4]
+      const expected = mode === 't2v' ? [0, 0] : mode === 'i2v' ? [1, 1] : [2, 2]
       if (images.length < expected[0] || images.length > expected[1]) {
         message.warning(t('lab.workbench.validation.minimax_h3_images'))
         return
       }
       const descriptions = (minimaxH3ReferenceDescriptions?.value ?? []).slice(0, images.length)
-      if (mode === 'ref2v' && descriptions.some(value => value.trim().length === 0)) {
-        message.warning(t('lab.workbench.validation.minimax_h3_descriptions'))
-        return
-      }
       const aspectRatio = mode === 'i2v' || mode === 'flf2v'
         ? 'source'
         : minimaxH3AspectRatio?.value ?? '16:9'
@@ -180,7 +180,10 @@ export function useLabSubmitPayload({
                 end_source_height: uploadedReferences.value[1]?.height,
               }
             : {}),
-          reference_descriptions: mode === 'ref2v' ? descriptions : [],
+          reference_descriptions: [],
+          ...(minimaxH3AddonModel?.value
+            ? { lora_name: minimaxH3AddonModel.value, lora_strength: minimaxH3AddonStrength?.value ?? 1.0 }
+            : {}),
         },
         isTemplate: false,
       }))

@@ -330,6 +330,8 @@ class MiniMaxH3Request(BaseModel):
     frame_count: int = Field(ge=5)
     fps: int = Field(default=24)
     seed: Optional[int] = Field(default=None, ge=0, le=MINIMAX_H3_MAX_SEED)
+    lora_name: Optional[str] = None
+    lora_strength: Optional[float] = Field(default=None, ge=0.1, le=2.0)
     extract_last_frame: bool = True
     priority: int = 0
 

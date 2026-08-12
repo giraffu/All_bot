@@ -1407,6 +1407,13 @@ _MINIMAX_H3_PRECISION_PRESETS = {
     "standard": "0.52 MP - SD",
     "hd": "0.65 MP - Balanced",
 }
+_MINIMAX_H3_ADDONS = {
+    "breasts": (("MiniMaxH3/HMBreasts_085e0750_e40.safetensors", 1.0), "HMBreasts"),
+    "anus": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, anus"),
+    "vagina": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina"),
+    "sex_pose": (("MiniMaxH3/HMNSFW_AIO_V2.safetensors", 1.0), "hmmotion"),
+    "penis": (("MiniMaxH3/HMPenis_v2_e35.safetensors", 1.0), "HMPenis"),
+}
 
 
 def patch_minimax_h3_workflow(
@@ -1422,9 +1429,35 @@ def patch_minimax_h3_workflow(
         raise ValueError("invalid MiniMax H3 task type")
     if any(
         params.get(key) not in (None, "", [], ())
-        for key in ("lora_name", "lora_items", "model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
+        for key in ("lora_items", "model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
     ):
-        raise ValueError("MiniMax H3 rejects model, LoRA, sampler, and timeline overrides")
+        raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
+    addon_name = str(params.get("lora_name") or "").strip()
+    addon = _MINIMAX_H3_ADDONS.get(addon_name) if addon_name else None
+    if addon_name and addon is None:
+        raise ValueError("invalid MiniMax H3 addon model")
+    if params.get("lora_strength") not in (None, "") and addon is None:
+        raise ValueError("MiniMax H3 addon strength requires a model")
+    addon_strength = float(params.get("lora_strength") if params.get("lora_strength") not in (None, "") else 1.0)
+    if not 0.1 <= addon_strength <= 2.0:
+        raise ValueError("invalid MiniMax H3 addon strength")
+    for node_id in ("10", "11", "12", "13"):
+        workflow.pop(node_id, None)
+    model_input = ["1", 0]
+    prompt_prefix = ""
+    if addon is not None:
+        *model_specs, prompt_prefix = addon
+        for index, (model_path, relative_strength) in enumerate(model_specs):
+            node_id = str(10 + index)
+            workflow[node_id] = {
+                "inputs": {"model": model_input, "lora_name": model_path, "strength_model": round(addon_strength * relative_strength, 6)},
+                "class_type": "LoraLoaderModelOnly",
+            }
+            model_input = [node_id, 0]
+    if "14" in workflow:
+        workflow["14"]["inputs"]["model"] = model_input
+    else:
+        workflow["2"]["inputs"]["model"] = model_input
     names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
     count = sum(bool(name) for name in names)
     minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
@@ -1446,6 +1479,9 @@ def patch_minimax_h3_workflow(
         calculator["inputs"]["scale_from_image"] = True
         workflow["30"]["inputs"]["width"] = ["41", 0]
         workflow["30"]["inputs"]["height"] = ["41", 1]
+    guide_inputs = workflow["30"]["inputs"]
+    base_prompt = str(params.get("prompt") or "").strip()
+    guide_inputs["prompt"] = f"{prompt_prefix}, {base_prompt}" if prompt_prefix else base_prompt
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")
@@ -1460,7 +1496,6 @@ def patch_minimax_h3_workflow(
     elif descriptions:
         raise ValueError("reference descriptions are only supported by ref2v")
 
-    guide_inputs = workflow["30"]["inputs"]
     for index in range(1, 5):
         node_id = str(19 + index)
         if index <= count:

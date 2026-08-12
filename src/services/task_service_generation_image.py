@@ -183,6 +183,8 @@ async def process_standard_generation_task(
             ),
             reference_descriptions=reference_descriptions or [],
             seed=seed,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
         )
         if local_source_dimensions:
             extra_inputs.update(
