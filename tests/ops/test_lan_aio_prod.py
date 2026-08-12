@@ -2693,6 +2693,7 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     )
     assert "docker run --rm" in docker_run_line
     assert "--env-file" in docker_run_line
+    assert "RUNPOD_MODEL_DOWNLOAD_CONCURRENCY=8" in docker_run_line
     assert "runpod_sync_models_from_r2.py" in docker_command
     assert " -p " not in docker_run_line
     assert "--publish" not in docker_run_line
