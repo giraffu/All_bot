@@ -120,7 +120,7 @@ async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit():
     assert task["task_id"] == "reserved-task"
     assert agent._reserved_prefetch_task is None
     assert list(agent._executions) == ["reserved-task"]
-    assert agent._executions["reserved-task"].phase == "preparing"
+    assert agent._executions["reserved-task"].phase == "claimed"
 
 
 @pytest.mark.asyncio
@@ -154,6 +154,188 @@ async def test_runpod_worker_does_not_pop_fourth_claim():
     )
 
     assert await agent._pop_next_task(pipeline=True) is None
+
+
+@pytest.mark.asyncio
+async def test_runpod_worker_acknowledges_redelivered_active_claim_without_relaunch():
+    module = load_agent_main_module(
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
+    )
+    module.SUPPORTED_TASK_TYPES = "t2i-pornmaster-turbo"
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent._claim_lock = __import__("asyncio").Lock()
+    existing = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="t2i-pornmaster-turbo",
+        phase="running",
+    )
+    existing.prompt_id = "prompt-original"
+    agent._executions = {"task-1": existing}
+    agent._reserved_prefetch_task = None
+    agent._prefetch_cache = {}
+    agent._pipeline_task_types = {"t2i-pornmaster-turbo"}
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=3,
+        max_comfy_inflight=2,
+    )
+    agent.master_client = SimpleNamespace(
+        get=mock.AsyncMock(
+            return_value=SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "task": {
+                        "task_id": "task-1",
+                        "type": "t2i-pornmaster-turbo",
+                        "params": "{}",
+                    }
+                },
+            )
+        )
+    )
+    agent.report_status = mock.AsyncMock()
+
+    task = await agent._pop_next_task(pipeline=True)
+
+    assert task is None
+    assert agent._executions == {"task-1": existing}
+    assert existing.prompt_id == "prompt-original"
+    agent.report_status.assert_awaited_once_with(
+        "task-1",
+        "running",
+        execution_phase="running",
+        cancel_locked=module.CANCEL_LOCK_ON_POP,
+    )
+
+
+@pytest.mark.asyncio
+async def test_runpod_reserved_prefetch_discards_redelivered_active_claim(monkeypatch):
+    module = load_agent_main_module(
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
+    )
+    monkeypatch.setattr(module, "PREFETCH_ENABLED", True)
+    monkeypatch.setattr(module, "PREFETCH_DEPTH", 1)
+    monkeypatch.setattr(module, "PREFETCH_RESERVE_TASK", True)
+    monkeypatch.setattr(module, "SUPPORTED_TASK_TYPES", "t2i-pornmaster-turbo")
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    agent._claim_lock = __import__("asyncio").Lock()
+    existing = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="t2i-pornmaster-turbo",
+        phase="queued",
+    )
+    existing.prompt_id = "prompt-original"
+    agent._executions = {"task-1": existing}
+    agent._reserved_prefetch_task = None
+    agent._prefetch_cache = {}
+    agent._prefetch_task_types = {"t2i-pornmaster-turbo"}
+    agent._pipeline_task_types = {"t2i-pornmaster-turbo"}
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=3,
+        max_comfy_inflight=2,
+    )
+    agent.master_client = SimpleNamespace(
+        get=mock.AsyncMock(
+            return_value=SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "task": {
+                        "task_id": "task-1",
+                        "type": "t2i-pornmaster-turbo",
+                        "params": "{}",
+                    }
+                },
+            )
+        )
+    )
+    agent.report_status = mock.AsyncMock()
+    agent._prepare_task_inputs = mock.AsyncMock()
+
+    await agent._prefetch_next_task_inputs()
+
+    assert agent._reserved_prefetch_task is None
+    assert agent._prefetch_cache == {}
+    agent._prepare_task_inputs.assert_not_awaited()
+    agent.report_status.assert_awaited_once_with(
+        "task-1",
+        "running",
+        execution_phase="queued",
+        cancel_locked=module.CANCEL_LOCK_ON_POP,
+    )
+
+
+@pytest.mark.asyncio
+async def test_standard_worker_reserved_prefetch_discards_active_task(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="img2img",
+        phase="running",
+    )
+    execution.prompt_id = "prompt-original"
+    agent._executions = {"task-1": execution}
+    agent._prefetch_task_types = {"img2img"}
+    agent._pipeline_task_types = {"all"}
+    agent._master_get = mock.AsyncMock(
+        return_value=SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "task": {
+                    "task_id": "task-1",
+                    "type": "img2img",
+                    "params": "{}",
+                }
+            },
+        )
+    )
+    agent._acknowledge_redelivered_task = mock.AsyncMock()
+    agent._prepare_task_inputs = mock.AsyncMock()
+
+    await agent._prefetch_manager.prefetch_next_task_inputs(
+        prefetch_enabled=True,
+        prefetch_depth=1,
+        cache_dir="/tmp/prefetch",
+        reserve_task=True,
+    )
+
+    assert agent._reserved_prefetch_task is None
+    assert agent._prefetch_cache == {}
+    agent._prepare_task_inputs.assert_not_awaited()
+    agent._acknowledge_redelivered_task.assert_awaited_once_with("task-1")
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    (
+        ROOT / "workers" / "comfy_agent" / "agent_main.py",
+        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
+    ),
+)
+def test_worker_rejects_duplicate_execution_start_without_overwriting_prompt(
+    module_path, monkeypatch
+):
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch("os.makedirs", return_value=None))
+        stack.enter_context(mock.patch("logging.FileHandler", DummyFileHandler))
+        module = load_agent_main_module(module_path)
+    agent = module.ComfyAgent.__new__(module.ComfyAgent)
+    existing = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="t2i-pornmaster-turbo",
+        phase="running",
+    )
+    existing.prompt_id = "prompt-original"
+    agent._executions = {"task-1": existing}
+    agent._active_execution = existing
+
+    with pytest.raises(RuntimeError, match="already has an active execution"):
+        agent._start_task_execution(
+            task_id="task-1",
+            task_type="t2i-pornmaster-turbo",
+        )
+
+    assert agent._executions == {"task-1": existing}
+    assert existing.prompt_id == "prompt-original"
 
 
 class DummyAsyncClient:
@@ -1149,11 +1331,13 @@ async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
     finalizer_started = module.asyncio.Event()
     release_finalizer = module.asyncio.Event()
     completed = []
+    submitted = []
 
     async def fake_prepare_task_inputs(*args, **kwargs):
         return None
 
     async def fake_submit_task_workflow(**kwargs):
+        submitted.append(kwargs["task_id"])
         kwargs["execution"].prompt_id = "prompt-1"
         kwargs["execution"].task_result = "result.png"
 
@@ -1205,8 +1389,17 @@ async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
     )
 
     await module.asyncio.wait_for(finalizer_started.wait(), timeout=1)
+    await agent._launch_pipeline_task(
+        {
+            "task_id": "task-1",
+            "type": "img2img",
+            "params": "{}",
+        }
+    )
     assert completed == []
+    assert submitted == ["task-1"]
     assert "task-1" in agent._executions
+    assert len(agent._execution_tasks) == 1
 
     background_tasks = list(agent._execution_tasks)
     release_finalizer.set()

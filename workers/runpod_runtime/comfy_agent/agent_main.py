@@ -443,13 +443,10 @@ class ComfyAgent:
     def _start_task_execution(
         self, *, task_id: str, task_type: str
     ) -> TaskExecutionContext:
-        execution = self._executions.get(task_id)
-        if execution is None:
-            execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
-            self._executions[task_id] = execution
-        else:
-            execution.task_type = task_type
-            execution.phase = "preparing"
+        if task_id in self._executions:
+            raise RuntimeError(f"Task {task_id} already has an active execution")
+        execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
+        self._executions[task_id] = execution
         self._active_execution = execution
         return execution
 
@@ -460,13 +457,36 @@ class ComfyAgent:
         if not task:
             return task
         task_id = str(task.get("task_id", ""))
-        if task_id and task_id not in self._executions:
-            self._executions[task_id] = TaskExecutionContext(
-                task_id=task_id,
-                task_type=str(task.get("type", "")),
-                phase="preparing",
+        if not task_id:
+            return task
+        if task_id in self._executions:
+            logger.info(
+                "Ignoring redelivered claim for active task %s",
+                task_id,
             )
+            return None
+        self._executions[task_id] = TaskExecutionContext(
+            task_id=task_id,
+            task_type=str(task.get("type", "")),
+            phase="claimed",
+        )
         return task
+
+    async def _acknowledge_redelivered_task(self, task_id: str) -> None:
+        execution = self._executions.get(task_id)
+        if execution is None:
+            return
+        await self.report_status(
+            task_id,
+            "running",
+            execution_phase=execution.phase,
+            cancel_locked=CANCEL_LOCK_ON_POP,
+        )
+
+    def _discard_prefetched_task(self, task_id: str) -> None:
+        cached = getattr(self, "_prefetch_cache", {}).pop(task_id, None)
+        if cached:
+            self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
 
     def _register_prompt_execution(self, execution: TaskExecutionContext) -> None:
         if execution.prompt_id:
@@ -928,6 +948,10 @@ class ComfyAgent:
                     if not task:
                         return
                     task_id = str(task.get("task_id", ""))
+                    if task_id in self._executions:
+                        await self._acknowledge_redelivered_task(task_id)
+                        self._discard_prefetched_task(task_id)
+                        return
                     if task_id:
                         self._reserved_prefetch_task = task
             else:
@@ -1443,19 +1467,30 @@ class ComfyAgent:
                 return None
             if self._reserved_prefetch_task is not None:
                 task = self._reserved_prefetch_task
-                self._register_claimed_task(task)
                 self._reserved_prefetch_task = None
+                task_id = str(task.get("task_id", ""))
+                registered_task = self._register_claimed_task(task)
+                if registered_task is None and task_id:
+                    await self._acknowledge_redelivered_task(task_id)
+                    self._discard_prefetched_task(task_id)
+                    return None
                 logger.info(
                     "Using locally reserved prefetched task %s",
                     task.get("task_id"),
                 )
-                return task
+                return registered_task
             response = await self.master_client.get(
                 "/api/agent/task/pop",
                 params=self._build_pop_params(pipeline=True),
             )
             if response.status_code == 200:
-                return self._register_claimed_task(response.json().get("task"))
+                task = response.json().get("task")
+                registered_task = self._register_claimed_task(task)
+                task_id = str((task or {}).get("task_id", ""))
+                if registered_task is None and task_id:
+                    await self._acknowledge_redelivered_task(task_id)
+                    self._discard_prefetched_task(task_id)
+                return registered_task
             if response.status_code != 404:
                 logger.warning(
                     "Unexpected response from master: %s",
@@ -1481,8 +1516,26 @@ class ComfyAgent:
         task_type = str(task.get("type", ""))
         params = self._parse_task_params(task)
 
+        execution = self._executions.get(task_id)
+        if execution is None:
+            execution = self._start_task_execution(
+                task_id=task_id,
+                task_type=task_type,
+            )
+        elif execution.phase == "claimed" and not execution.prompt_id:
+            execution.task_type = task_type
+            execution.phase = "preparing"
+            self._active_execution = execution
+        else:
+            logger.info(
+                "Ignoring duplicate launch for active task %s in phase %s",
+                task_id,
+                execution.phase,
+            )
+            await self._acknowledge_redelivered_task(task_id)
+            return None
+
         logger.info(f"Processing task {task_id} of type {task_type}")
-        execution = self._start_task_execution(task_id=task_id, task_type=task_type)
         downloaded_input_paths = execution.downloaded_input_paths
 
         if allow_cancel_check and await self.check_task_cancelled(task_id):

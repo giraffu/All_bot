@@ -108,6 +108,7 @@ sequenceDiagram
   late fail 不得覆盖 done。旧 Worker 不调用此接口时继续只用 `/complete`。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
 - `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
+- `/api/agent/task/pop` 的 claim delivery 是 at-least-once。Central 可在领取响应丢失或 `claim_delivery_pending` 尚未被运行态回报确认时向同一 agent 重投同一 task；Worker 以 `backend_task_id` 作为执行幂等键，活跃 task 的重投只确认状态，不再次产生 Comfy prompt 或交付副作用。该约束不改变 pending 出队原子性，也不把进程内 execution 当成跨重启持久账本。
 - Central 会把缺失 task heartbeat 的 zombie 终态归因到任务已绑定的 `worker_id`。同一 Worker 在一小时失联窗口内累计 6 个此类任务时，自动写入 30 分钟 `disabled` control；现有 `pop(agent_id=...)` 门禁随即停止该实例继续领取，但不覆盖人工 `draining/disabled`。该临时隔离只阻止坏实例反复伤害新任务，不替代 provider/LAN 对 Pod、容器、GPU 或 ComfyUI 的根因恢复。
 - `/api/agent/task/pop` 与 `/peek` 可选携带 `preferred_types`，但必须同时携带 `types` 且前者是后者的子集，否则返回 422。参数缺失或清洗后为空时完全沿用旧 score 顺序。参数有效时，Central 在单次 Redis Lua 中按 score 扫描候选：记录最早 fallback，但只要领取瞬间存在 preferred 就优先原子 `ZREM` 最早 preferred；没有 preferred 才领取最早 fallback。已经 running 的 fallback 不抢占，下一次领取重新判断。真实原子出队失败不盲 retry；`peek` 使用相同分组顺序但不修改队列。
 - 新版 worker 会在 `/api/agent/task/pop` query 中携带 `agent_id`。Central 会读取 `comfy:agent:control:{agent_id}` 控制键；若 worker 处于 `draining` 或 `disabled`，则返回空任务并保留 pending 队列不变。旧 worker 不传 `agent_id` 时保持兼容旧行为。
@@ -137,6 +138,7 @@ sequenceDiagram
 - 覆盖未传 `preferred_types` 时旧顺序不变、preferred 优先于更早 fallback、无 preferred 时回退、非子集 422、并发领取不重复，以及 preferred `peek` 不修改队列
 - 覆盖 worker heartbeat GPU pool 元数据能在 `/system/workers` 解析展示
 - 覆盖双槽 worker 下旧任务终态 compare-clear 不会清掉新任务 `current_task_id`
+- 覆盖同一 task claim 重投时 Worker 只创建一个 execution、prompt、finalizer 和 complete，reserved prefetch 不缓存或重复执行活跃 task
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete
 
 ## 7. 部署与回滚

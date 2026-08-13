@@ -442,10 +442,28 @@ class ComfyAgent:
     def _start_task_execution(
         self, *, task_id: str, task_type: str
     ) -> TaskExecutionContext:
+        if task_id in self._executions:
+            raise RuntimeError(f"Task {task_id} already has an active execution")
         execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
         self._active_execution = execution
         self._executions[task_id] = execution
         return execution
+
+    async def _acknowledge_redelivered_task(self, task_id: str) -> None:
+        execution = self._executions.get(task_id)
+        if execution is None:
+            return
+        await self.report_status(
+            task_id,
+            "running",
+            execution_phase=execution.phase,
+            cancel_locked=CANCEL_LOCK_ON_POP,
+        )
+
+    def _discard_prefetched_task(self, task_id: str) -> None:
+        cached = self._prefetch_cache.pop(task_id, None)
+        if cached:
+            self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
 
     def _register_prompt_execution(self, execution: TaskExecutionContext) -> None:
         if execution.prompt_id:
@@ -1148,15 +1166,22 @@ class ComfyAgent:
             task = self._reserved_prefetch_task
             self._reserved_prefetch_task = None
             logger.info("Using locally reserved prefetched task %s", task.get("task_id"))
-            return task
-        return await self._pipeline_coordinator.pop_next_task(
-            agent_id=AGENT_ID,
-            supported_task_types=SUPPORTED_TASK_TYPES,
-            preferred_task_types=PREFERRED_TASK_TYPES,
-            pipeline_task_types=self._pipeline_task_types,
-            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
-            pipeline=pipeline,
-        )
+        else:
+            task = await self._pipeline_coordinator.pop_next_task(
+                agent_id=AGENT_ID,
+                supported_task_types=SUPPORTED_TASK_TYPES,
+                preferred_task_types=PREFERRED_TASK_TYPES,
+                pipeline_task_types=self._pipeline_task_types,
+                cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+                pipeline=pipeline,
+            )
+        task_id = str((task or {}).get("task_id", ""))
+        if task_id and task_id in self._executions:
+            logger.info("Ignoring redelivered claim for active task %s", task_id)
+            await self._acknowledge_redelivered_task(task_id)
+            self._discard_prefetched_task(task_id)
+            return None
+        return task
 
     async def _prepare_and_submit_task(
         self,
