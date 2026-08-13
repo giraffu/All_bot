@@ -16,7 +16,7 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
     uploads = iter(["staging/user-uploads/7/start.png", "staging/user-uploads/7/end.png"])
 
     result = await optimize_advanced_video_prompt(
-        user_id=7,
+        internal_user_id=7,
         username="alice",
         mode="flf2v",
         prompt="original",
@@ -50,7 +50,7 @@ async def test_bot_optimizer_preserves_staged_media_until_terminal_result():
     remove = AsyncMock()
     with pytest.raises(RuntimeError, match="refunded"):
         await optimize_advanced_video_prompt(
-            user_id=7,
+            internal_user_id=7,
             username=None,
             mode="i2v",
             prompt="original",

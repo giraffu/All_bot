@@ -32,7 +32,7 @@ async def _default_remove_object(object_key: str) -> None:
 
 async def optimize_advanced_video_prompt(
     *,
-    user_id: int,
+    internal_user_id: int,
     username: str | None,
     mode: str,
     prompt: str,
@@ -56,7 +56,10 @@ async def optimize_advanced_video_prompt(
     if len(images) != expected_images:
         raise ValueError("MiniMax H3 optimizer media contract mismatch")
 
-    uploader = upload_image or UserLogger(user_id, username or "unknown").save_input_image
+    uploader = upload_image or UserLogger(
+        internal_user_id,
+        username or "unknown",
+    ).save_input_image
     object_keys: list[str] = []
     should_cleanup = True
     try:
@@ -86,13 +89,13 @@ async def optimize_advanced_video_prompt(
         quota = QuotaManager()
         submission = await submit_func(
             request=request,
-            current_user=SimpleNamespace(id=int(user_id), username=username),
+            current_user=SimpleNamespace(id=int(internal_user_id), username=username),
             get_balance=get_balance or quota.get_credits,
         )
         task_id = str(submission["task_id"])
         should_cleanup = False
         for _ in range(max_polls):
-            result = await get_result_func(task_id, int(user_id))
+            result = await get_result_func(task_id, int(internal_user_id))
             if result and str(result.get("result_text") or "").strip():
                 should_cleanup = True
                 return str(result["result_text"]).strip()
