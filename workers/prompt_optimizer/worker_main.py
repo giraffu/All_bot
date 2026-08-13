@@ -29,7 +29,13 @@ HEALTH_PORT = int(os.getenv("PROMPT_OPTIMIZER_HEALTH_PORT", "8097"))
 POLL_SECONDS = float(os.getenv("PROMPT_OPTIMIZER_POLL_SECONDS", "1.0"))
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "user-data-test")
 
-_state: dict[str, Any] = {"ready": False, "reason": "starting", "active_lanes": 0}
+_state: dict[str, Any] = {
+    "ready": False,
+    "reason": "starting",
+    "active_lanes": 0,
+    "ready_lanes": 0,
+    "draining": False,
+}
 _lane_readiness: dict[int, tuple[bool, str]] = {}
 _state_lock = threading.Lock()
 
@@ -40,12 +46,27 @@ def _set_lane_readiness(lane_number: int, ready: bool, reason: str) -> None:
         all_ready = len(_lane_readiness) == LANE_COUNT and all(
             value[0] for value in _lane_readiness.values()
         )
-        _state["ready"] = all_ready
-        _state["reason"] = "ready" if all_ready else reason
+        _state["ready_lanes"] = sum(
+            1 for ready_state, _ in _lane_readiness.values() if ready_state
+        )
+        _state["ready"] = all_ready and not _state["draining"]
+        _state["reason"] = (
+            "draining"
+            if _state["draining"]
+            else ("ready" if all_ready else reason)
+        )
 
 
 class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):  # noqa: N802
+    def _send_json(self, payload: dict[str, Any], status: int) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
         if self.path not in {"/health", "/ready"}:
             self.send_response(404)
             self.end_headers()
@@ -53,12 +74,21 @@ class HealthHandler(BaseHTTPRequestHandler):
         with _state_lock:
             payload = dict(_state)
         status = 200 if self.path == "/health" or payload["ready"] else 503
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_json(payload, status)
+
+    def do_POST(self):
+        if self.path not in {"/drain", "/resume"}:
+            self._send_json({"detail": "not found"}, 404)
+            return
+        with _state_lock:
+            _state["draining"] = self.path == "/drain"
+            all_ready = len(_lane_readiness) == LANE_COUNT and all(
+                value[0] for value in _lane_readiness.values()
+            )
+            _state["ready"] = all_ready and not _state["draining"]
+            _state["reason"] = "draining" if _state["draining"] else "resuming"
+            payload = dict(_state)
+        self._send_json(payload, 200)
 
     def log_message(self, _format, *_args):
         return
@@ -264,6 +294,10 @@ async def _lane(
     agent_id = f"prompt_optimizer_test_{lane_number:02d}"
     while True:
         readiness = await provider.readiness()
+        with _state_lock:
+            draining = bool(_state["draining"])
+        if draining:
+            readiness = type(readiness)(False, "draining")
         if not readiness.ready:
             _set_lane_readiness(lane_number, False, readiness.reason)
         try:

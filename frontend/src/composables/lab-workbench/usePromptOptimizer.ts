@@ -42,6 +42,8 @@ export function usePromptOptimizer(options: {
   useT2VReferences?: Ref<boolean>
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
+  minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v'>
+  minimaxH3AddonItems?: Ref<Array<{ name: string; strength: number }>>
 }) {
   const templates = ref<PromptOptimizerTemplate[]>([])
   const selectedTemplateRef = ref('')
@@ -54,9 +56,12 @@ export function usePromptOptimizer(options: {
   let streamController: AbortController | null = null
   let stopped = false
 
-  const isAvailable = computed(() => ['ltx_video_v2', 'ltx_t2v'].includes(options.currentModeId.value))
+  const isSupportedMode = computed(() => ['ltx_video_v2', 'ltx_t2v', 'minimax_h3'].includes(options.currentModeId.value))
+  const isAvailable = computed(() => isSupportedMode.value && templates.value.length > 0)
   const targetTaskType = computed(() => (
-    options.currentModeId.value === 'ltx_t2v'
+    options.currentModeId.value === 'minimax_h3'
+      ? `minimax_h3_${options.minimaxH3Mode?.value ?? 't2v'}`
+      : options.currentModeId.value === 'ltx_t2v'
       ? (options.useT2VReferences?.value ?? options.selectedCharacterIds.value.length > 0) ? 'ltx_t2v_ic' : 'ltx_t2v'
       : 'ltx_video_v2'
   ))
@@ -66,8 +71,16 @@ export function usePromptOptimizer(options: {
     characters: options.selectedCharacterIds.value,
     environmentSource: options.environmentSource?.value ?? 'upload',
     environmentId: options.selectedEnvironmentId?.value ?? '',
+    minimaxH3Mode: options.minimaxH3Mode?.value ?? '',
+    minimaxH3AddonItems: options.minimaxH3AddonItems?.value ?? [],
   })
   const mediaContractReady = computed(() => {
+    if (options.currentModeId.value === 'minimax_h3') {
+      const expected = options.minimaxH3Mode?.value === 'flf2v'
+        ? 2
+        : options.minimaxH3Mode?.value === 'i2v' ? 1 : 0
+      return options.uploadedReferences.value.length === expected
+    }
     if (options.currentModeId.value === 'ltx_video_v2') {
       return options.uploadedReferences.value.length >= 1
     }
@@ -90,7 +103,7 @@ export function usePromptOptimizer(options: {
   const canRestore = computed(() => originalPrompt.value !== null)
 
   const loadCapabilities = async () => {
-    if (!isAvailable.value) return
+    if (!isSupportedMode.value) return
     const response = await api.get('/prompt-optimizations/capabilities', {
       params: { target_task_type: targetTaskType.value },
     })
@@ -250,6 +263,7 @@ export function usePromptOptimizer(options: {
     isOptimizing.value = true
     try {
       const isT2vIc = targetTaskType.value === 'ltx_t2v_ic'
+      const isMinimaxH3 = options.currentModeId.value === 'minimax_h3'
       const response = await api.post('/prompt-optimizations/tasks', {
         client_request_id: clientRequestId,
         target_task_type: targetTaskType.value,
@@ -263,6 +277,7 @@ export function usePromptOptimizer(options: {
                 role: index === 0 ? 'start_image' : 'end_image',
                 object_key: item.key,
               })),
+        lora_items: isMinimaxH3 ? options.minimaxH3AddonItems?.value ?? [] : [],
         character_refs: isT2vIc ? options.selectedCharacterIds.value.map((value) => {
           const [source, id] = value.includes(':') ? value.split(':', 2) : ['private', value]
           return { source, id }
@@ -310,9 +325,10 @@ export function usePromptOptimizer(options: {
   }
 
   watch(
-    [isAvailable, targetTaskType],
-    async ([available]) => {
-      if (!available) return
+    [isSupportedMode, targetTaskType],
+    async ([supported]) => {
+      templates.value = []
+      if (!supported) return
       try {
         await loadCapabilities()
         await resumePending()

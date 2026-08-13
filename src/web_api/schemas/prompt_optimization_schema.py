@@ -22,6 +22,12 @@ class PromptMediaInput(BaseModel):
     object_key: str
 
 
+class PromptLoraItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=64)
+    strength: float | None = None
+
+
 class CharacterAssetRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["private", "official"]
@@ -46,6 +52,7 @@ class PromptOptimizationTaskRequest(BaseModel):
     character_ids: list[str] = Field(default_factory=list, max_length=2)
     character_refs: list[CharacterAssetRef] | None = Field(default=None, max_length=2)
     environment_ref: EnvironmentAssetRef | None = None
+    lora_items: list[PromptLoraItem] = Field(default_factory=list, max_length=5)
 
     @field_validator("prompt")
     @classmethod

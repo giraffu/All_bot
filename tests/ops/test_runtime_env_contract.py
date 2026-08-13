@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "runtime_env_contract.py"
 CONTRACT_PATH = ROOT / "deploy" / "service-env-contract.yml"
@@ -101,6 +100,7 @@ def _environment(environment: str) -> dict[str, str]:
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
+        "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED": "true" if environment == "test" else "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES": (
             "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,"
@@ -145,6 +145,8 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert "PAID_GROUP_BOT_TOKEN" not in web
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
+    assert web["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
+    assert bot["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
     assert all(
         "LTX_T2V_BACKEND_ENABLED" not in projection
         for service, projection in snapshot.projections.items()
@@ -216,6 +218,15 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     assert module.affected_services(contract, {"LTX_T2V_BACKEND_ENABLED"}) == {
         "web-api"
     }
+
+
+def test_minimax_h3_optimizer_flag_reconfigures_web_and_main_bot():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(
+        contract, {"MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"}
+    ) == {"web-api", "main-bot"}
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
+
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
+    MINIMAX_H3_T2V,
+)
+from src.prompt_optimizer.minimax_h3_prompt import (
+    MINIMAX_H3_HMNSFW_SYSTEM,
+    MINIMAX_H3_HMNSFW_USER,
+)
 
 PROMPT_OPTIMIZATION_COST = 1
 PROMPT_OPTIMIZE_TASK_TYPE = "prompt_optimize"
@@ -332,6 +343,13 @@ _T2V_ADULT_CINEMATIC_USER = """目标 Profile：{profile_ref}
 
 _I2V_PROFILE_REFS = frozenset({"ltx_eros_v14_i2v@1", "ltx_eros_v14_flf2v@1"})
 _T2V_PROFILE_REFS = frozenset({"ltx_eros_t2v@1", "ltx_eros_t2v_ic_msr@1"})
+_MINIMAX_H3_PROFILE_REFS = frozenset(
+    {
+        "minimax_h3_t2v_prompt@1",
+        "minimax_h3_i2v_prompt@1",
+        "minimax_h3_flf2v_prompt@1",
+    }
+)
 
 _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
     {
@@ -413,11 +431,34 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
             ),
             compatible_profile_refs=_T2V_PROFILE_REFS,
         ),
+        "minimax_h3_hmnsfw@1": PromptOptimizationTemplate(
+            id="minimax_h3_hmnsfw",
+            version=1,
+            label="高级图生视频pro",
+            description="MiniMax H3 的 200–270 词 HMNSFW 提示词",
+            system_template=MINIMAX_H3_HMNSFW_SYSTEM,
+            user_template=MINIMAX_H3_HMNSFW_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "addon_summary",
+                "addon_rules",
+                "breasts_vocabulary_rule",
+                "original_prompt",
+            ),
+            compatible_profile_refs=_MINIMAX_H3_PROFILE_REFS,
+        ),
     }
 )
 
 _I2V_ALLOWED_TEMPLATE_REFS = frozenset(
-    ref for ref in _TEMPLATES if ref != "ltx_scene_script_cinematic@4"
+    {
+        "ltx_scene_script_cinematic@1",
+        "ltx_timestamp_motion@1",
+        "ltx_scene_script_cinematic@2",
+        "ltx_scene_script_cinematic@3",
+    }
 )
 _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
     {
@@ -477,6 +518,48 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             allowed_template_refs=frozenset({"ltx_scene_script_cinematic@4"}),
             default_template_ref="ltx_scene_script_cinematic@4",
         ),
+        "minimax_h3_t2v_prompt@1": PromptOptimizationProfile(
+            id="minimax_h3_t2v_prompt",
+            version=1,
+            supported_target_task_types=frozenset({MINIMAX_H3_T2V}),
+            required_media_roles=(),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_hmnsfw@1"}),
+            default_template_ref="minimax_h3_hmnsfw@1",
+            max_output_characters=3000,
+        ),
+        "minimax_h3_i2v_prompt@1": PromptOptimizationProfile(
+            id="minimax_h3_i2v_prompt",
+            version=1,
+            supported_target_task_types=frozenset({MINIMAX_H3_I2V}),
+            required_media_roles=("start_image",),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_hmnsfw@1"}),
+            default_template_ref="minimax_h3_hmnsfw@1",
+            max_output_characters=3000,
+        ),
+        "minimax_h3_flf2v_prompt@1": PromptOptimizationProfile(
+            id="minimax_h3_flf2v_prompt",
+            version=1,
+            supported_target_task_types=frozenset({MINIMAX_H3_FLF2V}),
+            required_media_roles=("start_image", "end_image"),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_hmnsfw@1"}),
+            default_template_ref="minimax_h3_hmnsfw@1",
+            max_output_characters=3000,
+        ),
     }
 )
 
@@ -528,6 +611,15 @@ def _resolve_profile(
         "scene_background",
     ):
         profile_ref = "ltx_eros_t2v_ic_msr@1"
+    elif target_task_type == MINIMAX_H3_T2V and not roles:
+        profile_ref = "minimax_h3_t2v_prompt@1"
+    elif target_task_type == MINIMAX_H3_I2V and roles == ("start_image",):
+        profile_ref = "minimax_h3_i2v_prompt@1"
+    elif target_task_type == MINIMAX_H3_FLF2V and roles == (
+        "start_image",
+        "end_image",
+    ):
+        profile_ref = "minimax_h3_flf2v_prompt@1"
     profile = _PROFILES.get(profile_ref)
     if (
         profile is None
@@ -681,7 +773,21 @@ def render_prompt_messages(
 def build_prompt_variables(
     *, profile: PromptOptimizationProfile, prompt: str, context: Mapping[str, Any]
 ) -> dict[str, Any]:
-    if profile.ref == "ltx_eros_t2v@1":
+    if profile.ref == "minimax_h3_t2v_prompt@1":
+        media_frame_instructions = (
+            "No images are attached. This is text-to-video. Use only the original "
+            "request and do not claim that a frame was observed."
+        )
+    elif profile.ref == "minimax_h3_i2v_prompt@1":
+        media_frame_instructions = (
+            "Image 1 is start_image and is the exact first frame and visual fact."
+        )
+    elif profile.ref == "minimax_h3_flf2v_prompt@1":
+        media_frame_instructions = (
+            "Image 1 is start_image and is the exact first frame.\n"
+            "Image 2 is end_image and is the exact final frame. Describe a continuous transition."
+        )
+    elif profile.ref == "ltx_eros_t2v@1":
         media_frame_instructions = (
             "No reference images are provided. Create the characters and scene only from "
             "the user's request."
@@ -709,6 +815,11 @@ def build_prompt_variables(
             else ""
         ),
         "media_frame_instructions": media_frame_instructions,
+        "addon_summary": "None selected.",
+        "addon_rules": "No add-on-specific prompt guidance.",
+        "breasts_vocabulary_rule": (
+            "The breast add-on is not selected. nipples and areoles remain forbidden."
+        ),
         "original_prompt": str(prompt).strip(),
     }
 

@@ -10,6 +10,7 @@
     {"patterns": ["MEDIA_ARCHIVE_*"], "services": ["web-api"]},
     {"patterns": ["DASHBOARD_*"], "services": ["dashboard-backend", "dashboard-frontend"]},
     {"patterns": ["LTX_T2V_BACKEND_ENABLED", "LTX_T2V_MSR_ENABLED"], "services": ["web-api"]},
+    {"patterns": ["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"], "services": ["web-api", "bot"]},
     {"patterns": ["ALLBOT_WORKER_*", "AGENT_SECRET_TOKEN", "PREFETCH_*", "PIPELINE_*"], "services": ["worker"]},
     {"patterns": ["PAID_GROUP_*"], "services": ["paid-group-guard-bot"]},
     {"patterns": ["GROUP_MANAGE_*"], "services": ["dashboard-backend", "group-manage-bot"]},

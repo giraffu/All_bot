@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
 import logging
+from typing import Any
 
 from src.services.redis_client import redis_client
 
@@ -20,7 +20,10 @@ def validate_prompt_result(
     if result_kind != "text":
         raise ValueError("prompt optimizer completion must use result_kind=text")
     normalized_text = str(result_text or "").strip()
-    if not normalized_text or len(normalized_text) > 2000:
+    max_output_characters = int(
+        expected_optimizer_metadata.get("max_output_characters") or 2000
+    )
+    if not normalized_text or len(normalized_text) > max_output_characters:
         raise ValueError("prompt optimizer result_text is empty or too long")
     optimizer = (result_meta or {}).get("prompt_optimizer")
     if not isinstance(optimizer, dict):

@@ -208,3 +208,85 @@ def test_resolver_fails_closed_for_unknown_or_incompatible_contracts(
             media=media,
             context=context,
         )
+
+
+@pytest.mark.parametrize(
+    ("target_task_type", "roles", "profile_ref"),
+    [
+        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@1"),
+        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@1"),
+        (
+            "minimax_h3_flf2v",
+            ("start_image", "end_image"),
+            "minimax_h3_flf2v_prompt@1",
+        ),
+    ],
+)
+def test_minimax_h3_profiles_share_one_hmnsfw_template(
+    target_task_type, roles, profile_ref
+):
+    capability = get_prompt_optimizer_capability(target_task_type)
+    resolved = resolve_prompt_optimization(
+        target_task_type=target_task_type,
+        template_id="minimax_h3_hmnsfw",
+        template_version=1,
+        media=_media(*roles),
+        context={"duration_seconds": 15},
+    )
+
+    assert resolved.profile.ref == profile_ref
+    assert capability["templates"] == [
+        {
+            "id": "minimax_h3_hmnsfw",
+            "version": 1,
+            "label": "高级图生视频pro",
+            "description": "MiniMax H3 的 200–270 词 HMNSFW 提示词",
+            "is_default": True,
+        }
+    ]
+
+
+def test_minimax_h3_prompt_uses_dynamic_duration_and_never_requests_manual_triggers():
+    resolved = resolve_prompt_optimization(
+        target_task_type="minimax_h3_i2v",
+        template_id="minimax_h3_hmnsfw",
+        template_version=1,
+        media=_media("start_image"),
+        context={"duration_seconds": 10},
+    )
+    system, user = render_prompt_messages(
+        profile=resolved.profile,
+        template=resolved.template,
+        prompt="Keep the same adults and continue the action.",
+        context=resolved.normalized_context,
+    )
+
+    assert "200-270 words" in system
+    assert "strictly earlier than 10 seconds" in system
+    assert "4.458" not in system
+    assert "00:04.400" not in system
+    assert "Begin the output with \"hmmotion" not in system
+    assert "Do not output LoRA names or trigger tokens" in system
+    assert "start_image" in user
+
+
+@pytest.mark.parametrize(
+    ("target", "roles", "duration"),
+    [
+        ("minimax_h3_t2v", ("start_image",), 5),
+        ("minimax_h3_i2v", (), 10),
+        ("minimax_h3_flf2v", ("end_image", "start_image"), 15),
+        ("minimax_h3_i2v", ("start_image",), 7),
+    ],
+)
+def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
+    target, roles, duration
+):
+    with pytest.raises(PromptOptimizerRegistryError):
+        resolve_prompt_optimization(
+            target_task_type=target,
+            template_id="minimax_h3_hmnsfw",
+            template_version=1,
+            media=_media(*roles),
+            context={"duration_seconds": duration},
+        )

@@ -22,6 +22,7 @@ FROM python-worker-base AS prompt-optimizer-worker
 ARG ALLBOT_GIT_SHA
 COPY workers/prompt_optimizer /app/workers/prompt_optimizer
 COPY src/prompt_optimizer /app/src/prompt_optimizer
+COPY src/domain_config /app/src/domain_config
 RUN mkdir -p /app/workers && touch /app/workers/__init__.py
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.release.module=prompt-optimizer-worker

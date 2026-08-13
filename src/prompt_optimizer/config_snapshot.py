@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from string import Formatter
-from typing import Mapping
 
 ALLOWED_CONFIG_VARIABLES = frozenset(
     {
@@ -14,6 +14,9 @@ ALLOWED_CONFIG_VARIABLES = frozenset(
         "original_prompt",
         "character_descriptions",
         "environment_description",
+        "addon_summary",
+        "addon_rules",
+        "breasts_vocabulary_rule",
     }
 )
 

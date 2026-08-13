@@ -2,9 +2,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from config import MINIO_BUCKET
 from src.core.task_core_types import CoreDomainError
+from src.web_api.routers.prompt_optimizations import _require_enabled
 from src.web_api.schemas.prompt_optimization_schema import PromptOptimizationTaskRequest
 from src.web_api.services.prompt_optimization_service import (
     PROMPT_MEDIA_MAX_BYTES,
@@ -50,6 +52,17 @@ def test_capability_does_not_expose_template_bodies():
     }
 
 
+def test_h3_optimizer_uses_its_own_environment_gate(monkeypatch):
+    monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "true")
+    monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "false")
+    with pytest.raises(HTTPException) as exc_info:
+        _require_enabled("minimax_h3_t2v")
+    assert exc_info.value.status_code == 404
+
+    monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
+    _require_enabled("minimax_h3_t2v")
+
+
 @pytest.mark.asyncio
 async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
     submit = AsyncMock(return_value={"task_id": "central-1", "cost": 1})
@@ -81,9 +94,9 @@ async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
     }
     assert kwargs["registry_metadata"]["record_history"] is False
     assert kwargs["allow_contribute_override"] is False
-    assert "761206f6-50ed-437c-855a-af14544352f9" in kwargs[
-        "submission_idempotency_key"
-    ]
+    assert (
+        "761206f6-50ed-437c-855a-af14544352f9" in kwargs["submission_idempotency_key"]
+    )
 
 
 @pytest.mark.asyncio
@@ -141,6 +154,60 @@ async def test_submit_pure_t2v_uses_v4_and_accepts_no_media():
     assert inputs["profile_ref"] == "ltx_eros_t2v@1"
     assert inputs["template_ref"] == "ltx_scene_script_cinematic@4"
     assert inputs["media"] == []
+
+
+@pytest.mark.asyncio
+async def test_submit_minimax_h3_uses_trusted_addon_catalog_and_shared_scene_config():
+    submit = AsyncMock(return_value={"task_id": "central-h3", "cost": 1})
+    loaded_scene_keys = []
+
+    async def load_config(scene_key):
+        loaded_scene_keys.append(scene_key)
+        return get_default_config(scene_key)
+
+    await submit_prompt_optimization(
+        request=_request(
+            target_task_type="minimax_h3_i2v",
+            template={"id": "minimax_h3_hmnsfw", "version": 1},
+            context={"duration_seconds": 10},
+            lora_items=[
+                {"name": "breasts", "strength": 1.0},
+                {"name": "sex_pose", "strength": 0.5},
+            ],
+        ),
+        current_user=SimpleNamespace(id=7, username="alice"),
+        get_balance=AsyncMock(return_value=18),
+        object_size=AsyncMock(return_value=1024),
+        submit_task_func=submit,
+        load_config_func=load_config,
+    )
+
+    assert loaded_scene_keys == ["minimax_h3"]
+    inputs = submit.await_args.kwargs["inputs"]
+    assert inputs["trusted_context"]["addon_ids"] == ["breasts", "sex_pose"]
+    assert "HMBreasts" not in inputs["prompt_config_snapshot"]["user_message"]
+    assert "hmmotion" not in inputs["prompt_config_snapshot"]["user_message"]
+    assert "nipples" in inputs["prompt_config_snapshot"]["user_message"]
+    assert "areoles" in inputs["prompt_config_snapshot"]["user_message"]
+
+
+@pytest.mark.asyncio
+async def test_submit_minimax_h3_rejects_unknown_addon_before_media_lookup():
+    object_size = AsyncMock(return_value=1024)
+    with pytest.raises(CoreDomainError, match="不支持该附加模型"):
+        await submit_prompt_optimization(
+            request=_request(
+                target_task_type="minimax_h3_i2v",
+                template={"id": "minimax_h3_hmnsfw", "version": 1},
+                lora_items=[{"name": "client_rule_injection", "strength": 1.0}],
+            ),
+            current_user=SimpleNamespace(id=7, username="alice"),
+            get_balance=AsyncMock(),
+            object_size=object_size,
+            submit_task_func=AsyncMock(),
+            load_config_func=_load_config,
+        )
+    object_size.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,7 @@ class AdvancedVideoProState(IntEnum):
     WAIT_MEDIA = auto()
     WAIT_REFERENCE_DESCRIPTION = auto()
     WAIT_PROMPT = auto()
+    WAIT_CONFIRMATION = auto()
 
 
 class ImageToVideoState(IntEnum):
