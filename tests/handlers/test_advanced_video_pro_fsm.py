@@ -159,9 +159,18 @@ async def test_pro_direct_generate_uses_reviewed_prompt(monkeypatch):
 @pytest.mark.asyncio
 async def test_pro_optimizer_runs_in_background_and_replaces_prompt(monkeypatch):
     optimize = AsyncMock(return_value="optimized 200 word prompt")
+    resolve_user = AsyncMock(
+        return_value=(SimpleNamespace(id=7007, username="alice"), False)
+    )
     edit = AsyncMock()
     captured = []
     monkeypatch.setattr(fsm, "optimize_advanced_video_prompt", optimize)
+    monkeypatch.setattr(
+        fsm,
+        "get_or_create_user_by_telegram",
+        resolve_user,
+        raising=False,
+    )
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     monkeypatch.setattr(fsm, "create_background_task", lambda _context, coro: captured.append(coro))
     monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
@@ -187,6 +196,8 @@ async def test_pro_optimizer_runs_in_background_and_replaces_prompt(monkeypatch)
 
     assert data["prompt"] == "optimized 200 word prompt"
     assert data["optimizer_pending"] is False
+    resolve_user.assert_awaited_once_with(7, username="alice")
+    assert optimize.await_args.kwargs["internal_user_id"] == 7007
     assert optimize.await_args.kwargs["mode"] == "i2v"
     assert optimize.await_args.kwargs["addon_items"] == [{"name": "breasts"}]
     assert "优化完成" in edit.await_args.args[1]

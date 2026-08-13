@@ -14,6 +14,7 @@ from telegram.ext import (
     filters,
 )
 
+from src.core.user_core import get_or_create_user_by_telegram
 from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -564,13 +565,17 @@ async def _run_prompt_optimization(
     message,
     data: dict,
     request_token: str,
-    user_id: int,
+    telegram_user_id: int,
     username: str | None,
     client_request_id: str,
 ) -> None:
     try:
+        internal_user, _ = await get_or_create_user_by_telegram(
+            telegram_user_id,
+            username=username,
+        )
         optimized = await optimize_advanced_video_prompt(
-            user_id=user_id,
+            internal_user_id=internal_user.id,
             username=username,
             mode=data["mode"],
             prompt=data["original_prompt"],
@@ -686,7 +691,7 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 message=query.message,
                 data=data,
                 request_token=request_token,
-                user_id=user.id,
+                telegram_user_id=user.id,
                 username=user.username,
                 client_request_id=client_request_id,
             ),
