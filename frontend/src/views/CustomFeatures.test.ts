@@ -29,7 +29,7 @@ const labels: Record<string, string> = {
   'lab.workbench.minimax_h3_addons.clear': '清空',
   'lab.workbench.minimax_h3_addon_guides.recommended_strength': '推荐强度',
   'lab.workbench.minimax_h3_addon_guides.trigger_auto': '触发词会自动添加，无需重复输入。',
-  'lab.workbench.minimax_h3_addon_guides.anus_strength': '推荐 1.0。滑块控制主 LoRA；辅助运动 LoRA 自动取滑块值的 35%（例如 1.0 → 0.35），无需另设。',
+  'lab.workbench.minimax_h3_addon_guides.anus_strength': '推荐 1.0。',
   'lab.workbench.minimax_h3_addon_guides.anus_prompt': '描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。',
   'lab.workbench.minimax_h3_addon_guides.sex_pose_strength': '建议 0.5 或更低；默认 0.5。',
   'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt': '使用约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动和环境音。',
@@ -328,14 +328,13 @@ describe('CustomFeatures MiniMax H3 addon guidance', () => {
     expect(wrapper.text()).toContain('触发词会自动添加')
   })
 
-  it('explains how the anus helper LoRA strength follows the slider', () => {
+  it('keeps the anus recommendation concise without internal LoRA ratios', () => {
     workbench = createMinimaxWorkbench([{ name: 'anus', strength: 1 }])
     const wrapper = mountView()
 
-    expect(wrapper.text()).toContain('滑块控制主 LoRA')
-    expect(wrapper.text()).toContain('辅助运动 LoRA 自动取滑块值的 35%')
-    expect(wrapper.text()).toContain('1.0 → 0.35')
-    expect(wrapper.text()).toContain('无需另设')
+    expect(wrapper.text()).toContain('推荐 1.0。')
+    expect(wrapper.text()).not.toContain('辅助运动 LoRA')
+    expect(wrapper.text()).not.toContain('35%')
   })
 })
 
