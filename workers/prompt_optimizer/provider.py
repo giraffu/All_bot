@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -144,35 +144,22 @@ class LMStudioChatProvider:
             "Return exactly one raw JSON object conforming to this server-provided "
             f"schema; do not use Markdown fences:\n{schema_instruction}"
         )
+        completion_prompt = (
+            f"SYSTEM INSTRUCTIONS:\n{structured_system_prompt}\n\n"
+            f"USER INPUT:\n{structured_user_prompt}\n\n"
+            "Return exactly one JSON object matching the schema above and nothing "
+            "else. Silently verify every format and length constraint before emitting; "
+            "when the instructions require 200-270 words, output 225-240 words. Treat "
+            "every word listed as forbidden as a literal that must not appear in the "
+            "result.\n"
+            "<think>\n</think>\n"
+        )
         payload = {
             "model": self.model,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [
-                        {"type": "input_text", "text": structured_system_prompt}
-                    ],
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": structured_user_prompt}
-                    ],
-                },
-            ],
-            "reasoning": {"effort": "none"},
-            "store": False,
+            "prompt": completion_prompt,
             "stream": on_text_delta is not None,
-            "temperature": 0.35,
-            "max_output_tokens": 3072,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "prompt_optimization",
-                    "strict": True,
-                    "schema": json_schema,
-                }
-            },
+            "temperature": 0.25,
+            "max_tokens": 3072,
         }
         extractor = OptimizedFieldsJsonExtractor(output_fields)
 
@@ -182,9 +169,9 @@ class LMStudioChatProvider:
                     await on_text_delta(field, delta)
 
         content_value = (
-            await self._responses_text_stream(payload, consume_content_delta)
+            await self._completions_text_stream(payload, consume_content_delta)
             if on_text_delta is not None
-            else await self._responses_text(payload)
+            else await self._completions_text(payload)
         )
         try:
             parsed = json.loads(content_value)
@@ -196,7 +183,7 @@ class LMStudioChatProvider:
             extractor.verify(parsed)
         return parsed
 
-    async def _responses_text_stream(
+    async def _completions_text_stream(
         self,
         payload: dict[str, Any],
         on_content_delta: Callable[[str], Awaitable[None]],
@@ -206,7 +193,7 @@ class LMStudioChatProvider:
             content_parts: list[str] = []
             try:
                 async with self.client.stream(
-                    "POST", f"{self.base_url}/v1/responses", json=payload
+                    "POST", f"{self.base_url}/v1/completions", json=payload
                 ) as response:
                     if response.status_code == 429 or response.status_code >= 500:
                         response.raise_for_status()
@@ -223,13 +210,8 @@ class LMStudioChatProvider:
                         except json.JSONDecodeError as exc:
                             raise ModelResponseError("lmstudio_invalid_stream_event") from exc
                         delta = ""
-                        if event.get("type") == "response.output_text.delta":
-                            delta = str(event.get("delta") or "")
-                        elif event.get("choices"):
-                            delta = str(
-                                ((event["choices"][0].get("delta") or {}).get("content"))
-                                or ""
-                            )
+                        if event.get("choices"):
+                            delta = str(event["choices"][0].get("text") or "")
                         if not delta:
                             continue
                         content_parts.append(delta)
@@ -244,6 +226,30 @@ class LMStudioChatProvider:
                     await asyncio.sleep(0)
                     continue
                 raise
+        raise ModelResponseError("lmstudio_request_failed")
+
+    async def _completions_text(self, payload: dict[str, Any]) -> str:
+        for attempt in range(2):
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/v1/completions", json=payload
+                )
+                if response.status_code == 429 or response.status_code >= 500:
+                    response.raise_for_status()
+                if response.status_code >= 400:
+                    raise ModelResponseError(f"lmstudio_http_{response.status_code}")
+                body = response.json()
+                content_value = str(body["choices"][0].get("text") or "")
+                if not content_value.strip():
+                    raise ModelResponseError("lmstudio_empty_output")
+                return content_value
+            except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError):
+                if attempt == 0:
+                    await asyncio.sleep(0)
+                    continue
+                raise
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+                raise ModelResponseError("lmstudio_invalid_response") from exc
         raise ModelResponseError("lmstudio_request_failed")
 
     async def _responses_text(

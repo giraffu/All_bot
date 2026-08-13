@@ -18,7 +18,7 @@ from workers.prompt_optimizer.executor import (
 )
 from workers.prompt_optimizer.json_stream import OptimizedFieldsJsonExtractor
 from workers.prompt_optimizer.media import image_bytes_to_data_url
-from workers.prompt_optimizer.provider import LMStudioChatProvider
+from workers.prompt_optimizer.provider import LMStudioChatProvider, ModelResponseError
 
 os.environ.setdefault("AGENT_SECRET_TOKEN", "test-token")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
@@ -37,6 +37,22 @@ class FakeProvider:
         self.calls.append(kwargs)
         return {
             "optimized_fields": {"positive_prompt": self.result_text},
+            "warnings": [],
+        }
+
+
+class SequencedProvider:
+    def __init__(self, result_texts):
+        self.calls = []
+        self.result_texts = iter(result_texts)
+
+    async def optimize(self, **kwargs):
+        self.calls.append(kwargs)
+        result_text = next(self.result_texts)
+        if kwargs.get("on_text_delta") is not None:
+            await kwargs["on_text_delta"]("positive_prompt", result_text)
+        return {
+            "optimized_fields": {"positive_prompt": result_text},
             "warnings": [],
         }
 
@@ -188,6 +204,113 @@ async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabu
 
 
 @pytest.mark.asyncio
+async def test_minimax_h3_executor_retries_before_publishing_stream_deltas():
+    template = get_template_by_ref("minimax_h3_hmnsfw@1")
+    invalid = "missionary, pov, slow, medium shot. " + "word " * 100
+    valid = "missionary, pov, slow, medium shot. " + "word " * 196
+    provider = SequencedProvider([invalid, valid])
+    published = []
+
+    async def on_text_delta(field, delta):
+        published.append((field, delta))
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_t2v_prompt@1",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_t2v",
+            "prompt": "two adults",
+            "context": {"duration_seconds": 5},
+            "media": [],
+            "trusted_context": {"addon_ids": []},
+        },
+        provider=provider,
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        on_text_delta=on_text_delta,
+    )
+
+    assert result["result_text"] == valid.strip()
+    assert len(provider.calls) == 2
+    assert "previous candidate failed server validation" in provider.calls[1][
+        "system_prompt"
+    ]
+    assert published == [("positive_prompt", valid)]
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_executor_retries_invalid_model_json_response():
+    template = get_template_by_ref("minimax_h3_hmnsfw@1")
+    valid = "missionary, pov, slow, medium shot. " + "word " * 196
+
+    class InvalidThenValidProvider(FakeProvider):
+        async def optimize(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                raise ModelResponseError("lmstudio_invalid_json")
+            return {
+                "optimized_fields": {"positive_prompt": valid},
+                "warnings": [],
+            }
+
+    provider = InvalidThenValidProvider()
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_t2v_prompt@1",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_t2v",
+            "prompt": "two adults",
+            "context": {"duration_seconds": 5},
+            "media": [],
+            "trusted_context": {"addon_ids": []},
+        },
+        provider=provider,
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"] == valid.strip()
+    assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_executor_normalizes_complete_reordered_header():
+    template = get_template_by_ref("minimax_h3_hmnsfw@1")
+    generated = (
+        "wide shot, slow pace, insertion, side view. A woman moves. "
+        + "word " * 194
+    )
+    published = []
+
+    async def on_text_delta(field, delta):
+        published.append((field, delta))
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_t2v_prompt@1",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_t2v",
+            "prompt": "two adults",
+            "context": {"duration_seconds": 5},
+            "media": [],
+            "trusted_context": {"addon_ids": []},
+        },
+        provider=FakeProvider(generated),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        on_text_delta=on_text_delta,
+    )
+
+    assert result["result_text"].startswith(
+        "insertion, side, slow, wide shot. A woman moves."
+    )
+    assert published == [("positive_prompt", result["result_text"])]
+
+
+@pytest.mark.asyncio
 async def test_executor_accepts_fenced_dynamic_snapshot_and_rejects_tampering():
     payload = _payload()
     payload["prompt_config_snapshot"] = render_config_snapshot(
@@ -291,16 +414,10 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
         return httpx.Response(
             200,
             json={
-                "status": "completed",
-                "output": [
+                "choices": [
                     {
-                        "type": "message",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
-                            }
-                        ],
+                        "text": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
+                        "finish_reason": "stop",
                     }
                 ],
             },
@@ -329,7 +446,10 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
     )
 
     assert result["optimized_fields"]["positive_prompt"] == "done"
-    assert [path for path, _payload in requests] == ["/v1/responses", "/v1/responses"]
+    assert [path for path, _payload in requests] == [
+        "/v1/responses",
+        "/v1/completions",
+    ]
     visual_payload = requests[0][1]
     assert visual_payload["reasoning"] == {"effort": "none"}
     assert visual_payload["store"] is False
@@ -339,20 +459,55 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
         for item in message["content"]
     )
     structured_payload = requests[1][1]
-    assert structured_payload["reasoning"] == {"effort": "none"}
-    assert structured_payload["store"] is False
-    assert structured_payload["text"]["format"]["schema"] == schema
-    structured_system = structured_payload["input"][0]["content"][0]["text"]
-    assert '"optimized_fields"' in structured_system
-    assert '"warnings"' in structured_system
-    assert (
-        "subject faces camera" in structured_payload["input"][1]["content"][0]["text"]
+    assert structured_payload["stream"] is False
+    assert structured_payload["max_tokens"] == 3072
+    completion_prompt = structured_payload["prompt"]
+    assert '"optimized_fields"' in completion_prompt
+    assert '"warnings"' in completion_prompt
+    assert "subject faces camera" in completion_prompt
+    assert completion_prompt.endswith("<think>\n</think>\n")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_provider_streams_completion_text_deltas():
+    requests = []
+
+    async def handler(request):
+        requests.append((request.url.path, json.loads(request.content)))
+        stream_body = (
+            'data: {"choices":[{"text":"{\\\"optimized_fields\\\":'
+            '{\\\"positive_prompt\\\":\\\"hello "}]}\n'
+            'data: {"choices":[{"text":"world\\\"},\\\"warnings\\\":[]}"}]}\n'
+            "data: [DONE]\n"
+        )
+        return httpx.Response(200, text=stream_body)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = LMStudioChatProvider(
+        base_url="http://lmstudio",
+        model="ltx-prompt-optimizer",
+        client=client,
     )
-    assert all(
-        item["type"] != "input_image"
-        for message in structured_payload["input"]
-        for item in message["content"]
+    streamed = []
+
+    async def on_text_delta(field, delta):
+        streamed.append((field, delta))
+
+    result = await provider.optimize(
+        system_prompt="system",
+        user_prompt="user",
+        image_data_urls=[],
+        json_schema={"type": "object"},
+        output_fields=("positive_prompt",),
+        on_text_delta=on_text_delta,
     )
+
+    assert requests[0][0] == "/v1/completions"
+    assert requests[0][1]["stream"] is True
+    assert result["optimized_fields"]["positive_prompt"] == "hello world"
+    assert "".join(delta for _field, delta in streamed) == "hello world"
+    assert {field for field, _delta in streamed} == {"positive_prompt"}
     await client.aclose()
 
 
