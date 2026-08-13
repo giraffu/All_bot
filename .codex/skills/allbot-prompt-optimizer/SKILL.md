@@ -49,9 +49,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
   原始提示词、图片内容或 LLM 原始响应。
-- `text_delta` 只表示未校验的运行态预览。Worker 必须按 attempt/sequence 幂等
-  上报，最终完整 JSON 通过 Profile schema 且与增量字段一致后才能 `/complete`；
-  部分输出后失败仍走统一幂等退款，不能把片段提升为成功结果。
+- `text_delta` 按 attempt/sequence 幂等上报；H3 候选通过词数、头部、禁词和时间戳
+  校验后才发布。最终 JSON 合法且匹配增量才能 `/complete`；失败仍幂等退款。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且
@@ -84,9 +83,9 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
 
 ### 新增 ModelProvider
 
-实现与 `LMStudioChatProvider` 等价的 readiness 和结构化输出 seam；网络重试只允许
-一次 429/5xx/timeout，4xx、非法 JSON 和 schema 违规不得重试。不要让 provider
-负责队列、退款或 Profile 解析。
+实现等价的 readiness 和结构化输出 seam；网络只重试一次 429/5xx/timeout，4xx
+不重试。H3 非法 JSON/Profile 候选由执行器丢弃并受控再生成；Provider 不负责队列、
+退款或 Profile 解析。
 
 ### 新增媒体预处理器
 
