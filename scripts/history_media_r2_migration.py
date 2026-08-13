@@ -48,6 +48,7 @@ CHUNK_SIZE = 4 * 1024 * 1024
 SINGLE_COPY_LIMIT = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
 MULTIPART_COPY_PART_SIZE = 512 * 1024 * 1024
 MAX_DIAGNOSTICS = 100
+COPY_PLAN_METADATA_KEY = "allbot-copy-plan-sha256"
 
 MIGRATION_DDL = """
 create table if not exists analytics_history_media_migration_runs (
@@ -180,6 +181,33 @@ class ObjectFact:
     byte_size: int
     last_modified: datetime
     sha256: str
+
+
+def group_copy_candidates(
+    rows: Iterable[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    """Group identical ledger rows by target and reject ambiguous destinations."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    identities: dict[str, tuple[Any, ...]] = {}
+    for raw in rows:
+        row = dict(raw)
+        target_key = str(row["target_key"])
+        identity = (
+            str(row.get("source_name") or ""),
+            str(row.get("source_key") or ""),
+            int(row.get("byte_size") or 0),
+            row.get("source_last_modified"),
+            str(row.get("source_etag") or "").strip().strip('"'),
+            str(row.get("source_sha256") or ""),
+        )
+        previous = identities.setdefault(target_key, identity)
+        if previous != identity:
+            raise RuntimeError("target has conflicting frozen sources")
+        grouped.setdefault(target_key, []).append(row)
+    return [
+        sorted(group, key=lambda row: int(row["id"]))
+        for _target, group in sorted(grouped.items())
+    ]
 
 
 class SourceFactCache:
@@ -561,8 +589,24 @@ def _load_secure_config(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _process_r2_custom_arguments(
+    params: dict[str, Any], context: dict[str, Any], **_kwargs: Any
+) -> None:
+    custom_headers = params.pop("custom_headers", None)
+    if custom_headers:
+        context["allbot_r2_custom_headers"] = dict(custom_headers)
+
+
+def _add_r2_custom_headers(
+    params: dict[str, Any], context: dict[str, Any], **_kwargs: Any
+) -> None:
+    custom_headers = context.get("allbot_r2_custom_headers")
+    if custom_headers:
+        params["headers"].update(custom_headers)
+
+
 def _s3_client(config: dict[str, Any]):
-    return boto3.client(
+    client = boto3.client(
         "s3",
         endpoint_url=config["endpoint"],
         aws_access_key_id=config["access_key"],
@@ -573,6 +617,16 @@ def _s3_client(config: dict[str, Any]):
             signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"}
         ),
     )
+    for operation in ("CopyObject", "CreateMultipartUpload"):
+        client.meta.events.register(
+            f"before-parameter-build.s3.{operation}",
+            _process_r2_custom_arguments,
+        )
+        client.meta.events.register(
+            f"before-call.s3.{operation}",
+            _add_r2_custom_headers,
+        )
+    return client
 
 
 def _not_found(exc: ClientError) -> bool:
@@ -618,6 +672,7 @@ def server_side_copy_r2_object(
     target_key: str,
     expected_size: int,
     expected_last_modified: datetime,
+    copy_plan_sha256: str,
     expected_etag: str | None = None,
     single_copy_limit: int = SINGLE_COPY_LIMIT,
     multipart_part_size: int = MULTIPART_COPY_PART_SIZE,
@@ -633,25 +688,61 @@ def server_side_copy_r2_object(
         raise RuntimeError("planned source changed before server-side copy")
     if expected_etag and source_etag != _normalize_etag(expected_etag):
         raise RuntimeError("planned source ETag changed before server-side copy")
-    if _head_s3_identity(client, bucket, target_key) is not None:
-        raise RuntimeError("target already exists; refusing to overwrite")
+    target_before = _head_s3_identity(client, bucket, target_key)
+    if target_before is not None:
+        metadata = {
+            str(key).lower(): str(value)
+            for key, value in dict(target_before.get("Metadata") or {}).items()
+        }
+        if metadata.get(COPY_PLAN_METADATA_KEY) != copy_plan_sha256:
+            raise RuntimeError(
+                "target already exists with different or missing copy plan marker"
+            )
+        if int(target_before["ContentLength"]) != source_size:
+            raise RuntimeError("recovered copy target size mismatch")
+        return {
+            "byte_size": source_size,
+            "source_etag": source_etag,
+            "etag": _normalize_etag(target_before.get("ETag")),
+            "multipart": source_size > single_copy_limit,
+            "recovered": True,
+        }
 
     multipart = source_size > single_copy_limit
+    destination_race = False
     if not multipart:
-        client.copy_object(
-            Bucket=bucket,
-            Key=target_key,
-            CopySource={"Bucket": bucket, "Key": source_key},
-            CopySourceIfMatch=source_etag,
-            MetadataDirective="COPY",
-        )
+        try:
+            client.copy_object(
+                Bucket=bucket,
+                Key=target_key,
+                CopySource={"Bucket": bucket, "Key": source_key},
+                CopySourceIfMatch=source_etag,
+                MetadataDirective="COPY",
+                Metadata={COPY_PLAN_METADATA_KEY: copy_plan_sha256},
+                custom_headers={
+                    "cf-copy-destination-if-none-match": "*",
+                    "x-amz-metadata-directive": "MERGE",
+                },
+            )
+        except ClientError as exc:
+            code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+            if code not in {"412", "PreconditionFailed"}:
+                raise
+            destination_race = True
     else:
         if multipart_part_size <= 0:
             raise ValueError("multipart copy part size must be positive")
         part_count = (source_size + multipart_part_size - 1) // multipart_part_size
         if part_count > 10_000:
             raise RuntimeError("multipart server-side copy would exceed 10000 parts")
-        created = client.create_multipart_upload(Bucket=bucket, Key=target_key)
+        metadata = dict(source_head.get("Metadata") or {})
+        metadata[COPY_PLAN_METADATA_KEY] = copy_plan_sha256
+        created = client.create_multipart_upload(
+            Bucket=bucket,
+            Key=target_key,
+            Metadata=metadata,
+            custom_headers={"If-None-Match": "*"},
+        )
         upload_id = str(created["UploadId"])
         parts: list[dict[str, Any]] = []
         try:
@@ -696,11 +787,18 @@ def server_side_copy_r2_object(
         raise RuntimeError("source changed during server-side copy")
     if int(target_after["ContentLength"]) != source_size:
         raise RuntimeError("server-side copy target size mismatch")
+    target_metadata = {
+        str(key).lower(): str(value)
+        for key, value in dict(target_after.get("Metadata") or {}).items()
+    }
+    if target_metadata.get(COPY_PLAN_METADATA_KEY) != copy_plan_sha256:
+        raise RuntimeError("server-side copy target plan marker mismatch")
     return {
         "byte_size": source_size,
         "source_etag": source_etag,
         "etag": _normalize_etag(target_after.get("ETag")),
         "multipart": multipart,
+        "recovered": destination_race,
     }
 
 
@@ -1849,6 +1947,45 @@ async def _load_plan(
     return row["run_id"], manifest
 
 
+async def _persist_copy_success(
+    conn: asyncpg.Connection,
+    rows: Iterable[dict[str, Any]],
+    copied: dict[str, Any],
+) -> None:
+    ids = [int(row["id"]) for row in rows]
+    method = (
+        "r2_multipart_copy"
+        if copied["multipart"]
+        else "r2_copy_object_recovered"
+        if copied.get("recovered")
+        else "r2_copy_object"
+    )
+    await conn.execute(
+        """update analytics_history_media_r2_migrations set
+             status='copied_verified',target_sha256=source_sha256,
+             target_etag=$2,copy_method=$3,error_code=null,error_detail=null,
+             copy_completed_at=coalesce(copy_completed_at,now()),updated_at=now()
+           where id=any($1::bigint[])""",
+        ids,
+        copied["etag"],
+        method,
+    )
+
+
+async def _persist_copy_failure(
+    conn: asyncpg.Connection,
+    rows: Iterable[dict[str, Any]],
+    exc: BaseException,
+) -> None:
+    await conn.execute(
+        """update analytics_history_media_r2_migrations set status='failed',
+             error_code='COPY_FAILED',error_detail=$2,updated_at=now()
+           where id=any($1::bigint[])""",
+        [int(row["id"]) for row in rows],
+        str(exc)[:1000],
+    )
+
+
 async def _execute_copy(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     target = config["target"]
@@ -1883,6 +2020,44 @@ async def _execute_copy(args: argparse.Namespace) -> None:
         )
         if rowset_sha != manifest["rowset_sha256"]:
             raise RuntimeError("copy plan rowset changed")
+        conflicting_target = await conn.fetchval(
+            """select target_key from (
+                 select target_key,
+                        count(distinct (source_name,source_key,byte_size,
+                                        source_last_modified,source_etag,source_sha256)) identities
+                   from analytics_history_media_r2_migrations
+                  where run_id=$1 and copy_plan_sha256=$2
+                  group by target_key
+               ) grouped where identities > 1 limit 1""",
+            run_id,
+            args.plan_sha256,
+        )
+        if conflicting_target is not None:
+            raise RuntimeError("copy plan contains a target with conflicting frozen sources")
+        ineligible_source_count = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and status in ('copy_required','failed')
+                       and source_name is distinct from 'r2-user-data-prod'""",
+                run_id,
+                args.plan_sha256,
+            )
+        )
+        if ineligible_source_count:
+            raise RuntimeError("copy plan contains a non-R2 source")
+        multipart_count = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and status in ('copy_required','failed') and byte_size > $3""",
+                run_id,
+                args.plan_sha256,
+                SINGLE_COPY_LIMIT,
+            )
+        )
+        if multipart_count:
+            raise RuntimeError("frozen production copy plan contains multipart objects")
         rows = await conn.fetch(
             """select * from analytics_history_media_r2_migrations
                  where run_id=$1 and copy_plan_sha256=$2
@@ -1892,50 +2067,69 @@ async def _execute_copy(args: argparse.Namespace) -> None:
             args.plan_sha256,
             args.limit,
         )
-        for row in rows:
-            try:
-                source = sources.get(str(row["source_name"]))
-                if not source:
-                    raise RuntimeError("planned source is not enabled in this config")
-                if (
-                    str(row["source_name"]) != "r2-user-data-prod"
-                    or source.get("type", "s3") != "s3"
-                    or source.get("bucket") != BUCKET
-                    or str(source.get("endpoint", "")).rstrip("/")
-                    != str(target.get("endpoint", "")).rstrip("/")
-                ):
-                    raise RuntimeError(
-                        "copy plan source is not eligible for same-R2 server-side copy"
+        selected_targets = list(dict.fromkeys(str(row["target_key"]) for row in rows))
+        if selected_targets:
+            rows = await conn.fetch(
+                """select * from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and status in ('copy_required','failed')
+                       and target_key=any($3::text[])
+                     order by target_key,id""",
+                run_id,
+                args.plan_sha256,
+                selected_targets,
+            )
+        groups = group_copy_candidates(rows)
+        for group in groups:
+            row = group[0]
+            source = sources.get(str(row["source_name"]))
+            if not source:
+                raise RuntimeError("planned source is not enabled in this config")
+            if (
+                str(row["source_name"]) != "r2-user-data-prod"
+                or source.get("type", "s3") != "s3"
+                or source.get("bucket") != BUCKET
+                or str(source.get("endpoint", "")).rstrip("/")
+                != str(target.get("endpoint", "")).rstrip("/")
+            ):
+                raise RuntimeError(
+                    "copy plan source is not eligible for same-R2 server-side copy"
+                )
+
+        copied_objects = 0
+        copied_rows = 0
+        recovered_objects = 0
+        for offset in range(0, len(groups), args.copy_concurrency):
+            batch = groups[offset : offset + args.copy_concurrency]
+            outcomes = await asyncio.gather(
+                *(
+                    asyncio.to_thread(
+                        server_side_copy_r2_object,
+                        target_client,
+                        bucket=BUCKET,
+                        source_key=str(group[0]["source_key"]),
+                        target_key=str(group[0]["target_key"]),
+                        expected_size=int(group[0]["byte_size"]),
+                        expected_last_modified=group[0]["source_last_modified"],
+                        expected_etag=group[0]["source_etag"],
+                        copy_plan_sha256=args.plan_sha256,
                     )
-                copied = await asyncio.to_thread(
-                    server_side_copy_r2_object,
-                    target_client,
-                    bucket=BUCKET,
-                    source_key=str(row["source_key"]),
-                    target_key=str(row["target_key"]),
-                    expected_size=int(row["byte_size"]),
-                    expected_last_modified=row["source_last_modified"],
-                    expected_etag=row["source_etag"],
-                )
-                await conn.execute(
-                    """update analytics_history_media_r2_migrations set
-                         status='copied_verified',target_sha256=source_sha256,
-                         target_etag=$2,copy_method=$3,
-                         copy_completed_at=now(),updated_at=now() where id=$1""",
-                    row["id"],
-                    copied["etag"],
-                    "r2_multipart_copy"
-                    if copied["multipart"]
-                    else "r2_copy_object",
-                )
-            except Exception as exc:
-                await conn.execute(
-                    """update analytics_history_media_r2_migrations set status='failed',
-                         error_code='COPY_FAILED',error_detail=$2,updated_at=now() where id=$1""",
-                    row["id"],
-                    str(exc)[:1000],
-                )
-                raise
+                    for group in batch
+                ),
+                return_exceptions=True,
+            )
+            first_error: BaseException | None = None
+            for group, outcome in zip(batch, outcomes, strict=True):
+                if isinstance(outcome, BaseException):
+                    await _persist_copy_failure(conn, group, outcome)
+                    first_error = first_error or outcome
+                    continue
+                await _persist_copy_success(conn, group, outcome)
+                copied_objects += 1
+                copied_rows += len(group)
+                recovered_objects += int(bool(outcome.get("recovered")))
+            if first_error is not None:
+                raise first_error
         remaining = int(
             await conn.fetchval(
                 """select count(*) from analytics_history_media_r2_migrations
@@ -1947,7 +2141,13 @@ async def _execute_copy(args: argparse.Namespace) -> None:
         )
         print(
             json.dumps(
-                {"run_id": str(run_id), "copied": len(rows), "remaining": remaining}
+                {
+                    "run_id": str(run_id),
+                    "copied": copied_rows,
+                    "copied_objects": copied_objects,
+                    "recovered_objects": recovered_objects,
+                    "remaining": remaining,
+                }
             )
         )
     finally:
@@ -2189,6 +2389,13 @@ async def _report(args: argparse.Namespace) -> None:
         await conn.close()
 
 
+def _bounded_copy_concurrency(value: str) -> int:
+    concurrency = int(value)
+    if not 1 <= concurrency <= 32:
+        raise argparse.ArgumentTypeError("copy concurrency must be between 1 and 32")
+    return concurrency
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -2221,6 +2428,7 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--confirm", required=True)
     copy.add_argument("--config", required=True)
     copy.add_argument("--limit", type=int, default=1000)
+    copy.add_argument("--copy-concurrency", type=_bounded_copy_concurrency, default=1)
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)

@@ -300,10 +300,16 @@ NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256�
 分类对象数/字节、已有 SHA 读取量、源 ETag、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
 SHA，不包含完整对象清单。`execute-copy` 只接受
 `COPY_HISTORY_MEDIA_<plan-sha>`。同一 R2 bucket 的旧 key 只能通过服务端
-`CopyObject` 复制；超过单次复制上限时使用 `UploadPartCopy`，不得 GET、落地临时文件
-或从执行器重新上传。执行前复验 size、LastModified、ETag 和目标不存在；单次复制用
-源 ETag 条件，multipart 在完成后再次复验源 HEAD，并对目标 HEAD 验收大小。非 R2、
-跨 endpoint、目标已存在或来源变化均 fail closed，失败资产保持旧 History 引用。
+`CopyObject` 复制，不得 GET、落地临时文件或从执行器重新上传。执行前复验
+size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆盖；目标通过
+`MERGE` 元数据保留源 metadata 并写入精确 copy plan SHA。相同 target key 只有在
+冻结来源身份完全一致时才合并为一次 CopyObject，成功后整组账本行一并收口；来源
+身份冲突必须在任何对象写入前 fail closed。进程若在对象复制后、账本提交前退出，
+重跑只接受 plan marker、大小和冻结来源身份全部匹配的目标，其余已存在目标仍拒绝。
+`--copy-concurrency` 限定为 1–32，默认 1；数据库结果保持串行提交。当前生产执行器在
+冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
+切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
+资产保持旧 History 引用。
 `execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`，并在
 事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
