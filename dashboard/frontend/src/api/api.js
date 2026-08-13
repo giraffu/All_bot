@@ -289,6 +289,11 @@ export const fetchPaidGroupGuardConfig = async () => get('/api/paid-group-guard/
 export const updatePaidGroupGuardConfig = async (payload) =>
   put('/api/paid-group-guard/config', payload)
 
+export const fetchGroupManageConfig = async () => get('/api/group-manage/config')
+
+export const updateGroupManageConfig = async (payload) =>
+  put('/api/group-manage/config', payload)
+
 export const fetchMainBotMenuConfig = async () => get('/api/main-bot/menu-config')
 
 export const updateMainBotMenuConfig = async (payload) =>
@@ -306,6 +311,18 @@ export const fetchPaidGroupGuardLogs = async ({
   endDate = null
 } = {}) => {
   return get(withQuery('/api/paid-group-guard/logs', params => {
+    appendQueryParam(params, 'page', page)
+    appendQueryParam(params, 'page_size', pageSize)
+    appendQueryParam(params, 'reason', reason)
+    appendQueryParam(params, 'user_id', userId)
+    appendQueryParam(params, 'start_date', startDate)
+    appendQueryParam(params, 'end_date', endDate)
+  }))
+}
+
+export const fetchGroupManageLogs = async (options = {}) => {
+  const { page = 1, pageSize = 20, reason = null, userId = null, startDate = null, endDate = null } = options
+  return get(withQuery('/api/group-manage/logs', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
     appendQueryParam(params, 'reason', reason)

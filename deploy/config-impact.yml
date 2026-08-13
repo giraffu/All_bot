@@ -12,6 +12,7 @@
     {"patterns": ["LTX_T2V_BACKEND_ENABLED", "LTX_T2V_MSR_ENABLED"], "services": ["web-api"]},
     {"patterns": ["ALLBOT_WORKER_*", "AGENT_SECRET_TOKEN", "PREFETCH_*", "PIPELINE_*"], "services": ["worker"]},
     {"patterns": ["PAID_GROUP_*"], "services": ["paid-group-guard-bot"]},
+    {"patterns": ["GROUP_MANAGE_*"], "services": ["dashboard-backend", "group-manage-bot"]},
     {"patterns": ["CLOUDFLARE_*"], "services": ["web-static"]}
   ]
 }

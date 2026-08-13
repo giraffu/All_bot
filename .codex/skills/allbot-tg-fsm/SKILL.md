@@ -17,6 +17,7 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 | Telegram Local API/file endpoint | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` |
 | QQCC 官方/私有 Bot | `allbot-qqcc-lazy-bot` |
 | 付费群审核 Bot | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` |
+| 独立普通群管理 Bot | `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md` |
 | 独立客服 Bot、工单草稿与附件 | `docs/子模块_客服Bot_support_bot.md` |
 | 任务提交与 continuation | `allbot-task-engine` |
 
@@ -76,25 +77,24 @@ description: "处理 Telegram FSM、全局菜单退出、callback 注册、更�
 
 - 主业务 Bot、QQCC Bot、付费群审核 Bot、客服 Bot 使用不同 token；相同 token
   不能由两个 polling 进程同时使用。
-- QQCC 只注册 quick image/video、QQCC market 和最小 callback，不导入主
-  Bot 高级、支付或完整 Gallery handler。私有 QQCC 使用 webhook，不 polling。
-- private worker 中的官方 QQCC token 只授权频道会员 checker，不注册官方
-  handler、不启动 `getUpdates`，租户只拿 callable。
+- QQCC 只注册 quick image/video、market 和最小 callback，不导入主 Bot 高级、
+  支付或 Gallery handler；私有 Bot 用 webhook。private worker 的官方 token
+  只做会员 checker，不启动 `getUpdates`。
 - 私有 Bot 申请 token 消息先尽力删除；不得回显、记录或放入审计 metadata。
 - 付费群审核 Bot 只处理目标群 join request 与轻量消息治理，不接入生成 FSM
   或复用主 Bot token。
+- 普通群管理 Bot 只订阅 `message`，不处理 `chat_join_request`，并隔离 token、
+  配置、日志和后台 API。
 - 客服 Bot 只收集工单草稿和私有附件，不读取生成维护标记、不提交生成任务，
   也不把未提交草稿写入数据库。
-- 主 Bot 旧 QQCC/懒人入口只跳转当前 QQCC 地址或提示未配置，不恢复旧生成
-  行为；QQCC 自身 callback 兼容由 `allbot-qqcc-lazy-bot` 管理。
+- 主 Bot 旧 QQCC 入口只跳转或提示未配置；callback 兼容由 QQCC Skill 管理。
 
 ## 6. 维护与运行时红线
 
 - Bot 生成入口在维护 marker 生效时停止新提交并提示用户；不自行清除 marker。
 - 主 Bot 频道成员同步必须使用 `REQUIRED_CHANNEL_ID`，展示链接不能替代
   `getChatMember` 所需 ID；缺配置由发布契约 fail closed。
-- callback route、ConversationHandler 顺序和 fallback 是公开交互契约。
-  新增前缀先检查冲突和注册顺序，不依赖偶然 import side effect。
+- callback/ConversationHandler 顺序是公开契约；新增前缀先检查冲突。
 - 不在 FSM 中复制计费、任务类型、workflow、R2 或数据库事务逻辑；需要新
   seam 时先用 `allbot-codebase-design` 判断职责位置。
 - 不把历史按钮兼容理解为继续开放产品能力。旧入口应兼容路由或明确拒绝，

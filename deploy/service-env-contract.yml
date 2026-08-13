@@ -43,7 +43,7 @@
           ]
         }
       },
-      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "BOT_*", "TELEGRAM_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "MINIO_*", "R2_*", "DASHBOARD_*", "SUPPORT_BOT_*", "BOT_*", "TELEGRAM_*", "GROUP_MANAGE_*", "RUNPOD_*", "LAN_AIO_*", "CLOUD_PROD_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-frontend": {
       "environments": ["test", "prod"],
@@ -84,6 +84,12 @@
       "enabled_if": {"key": "PAID_GROUP_BOT_TOKEN", "nonempty": true},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "PAID_GROUP_BOT_TOKEN", "PAID_GROUP_CHAT_ID", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
       "patterns": ["PAID_GROUP_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*"]
+    },
+    "group-manage-bot": {
+      "environments": ["prod"],
+      "enabled_if": {"key": "GROUP_MANAGE_BOT_TOKEN", "nonempty": true},
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "GROUP_MANAGE_BOT_TOKEN", "GROUP_MANAGE_CHAT_ID", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
+      "patterns": ["GROUP_MANAGE_*", "TELEGRAM_*"]
     },
     "support-bot": {
       "environments": ["prod"],

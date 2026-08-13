@@ -150,6 +150,7 @@ async def get_paid_group_guard_logs_payload(
     end_date: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    log_path: str | None = None,
 ) -> PaidGroupGuardLogListResponse:
     try:
         normalized_page = max(int(page or 1), 1)
@@ -158,7 +159,7 @@ async def get_paid_group_guard_logs_payload(
         end_dt = parse_guard_log_filter_date(end_date, end_of_day=True)
         reason_filter = (reason or "").strip()
 
-        items = _iter_log_items(_log_path())
+        items = _iter_log_items(log_path or _log_path())
         filtered: list[PaidGroupGuardLogItem] = []
         for item in items:
             if reason_filter and item.reason != reason_filter:

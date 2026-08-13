@@ -43,6 +43,7 @@
 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | 官方 QQCC 与 Config | QQCC code、config service、focused tests | current | QQCC 功能 |
 | `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md` | 私有 Bot webhook/租户 | schema、credentials、worker、owner/admin API | current | 私有 QQCC |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | 独立审核 Bot | paid group code/config | current | 入群审核 |
+| `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md` | 独立群管理 Bot | group manage code/config | current | 消息治理 |
 | `docs/子模块_客服Bot_support_bot.md` | 客服工单 Bot | support bot、Dashboard、schema | current | 客服能力 |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | JWT/密码/权限 | auth core、Web security | current | 鉴权 |
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |

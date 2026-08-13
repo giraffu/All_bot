@@ -7,8 +7,17 @@ import dayjs from 'dayjs'
 import {
   fetchPaidGroupGuardConfig,
   fetchPaidGroupGuardLogs,
+  fetchGroupManageConfig,
+  fetchGroupManageLogs,
   updatePaidGroupGuardConfig,
+  updateGroupManageConfig,
 } from '../api/api'
+
+const props = withDefaults(defineProps<{ mode?: 'paid-guard' | 'group-manage' }>(), {
+  mode: 'paid-guard',
+})
+const isGroupManage = computed(() => props.mode === 'group-manage')
+const panelTitle = computed(() => isGroupManage.value ? '群管理 Bot' : '群审核 Bot')
 
 interface PaidGroupGuardConfig {
   enabled: boolean
@@ -116,10 +125,10 @@ const applyConfig = (payload: Partial<PaidGroupGuardConfig>) => {
 const loadConfig = async () => {
   loadingConfig.value = true
   try {
-    const payload = await fetchPaidGroupGuardConfig()
+    const payload = await (isGroupManage.value ? fetchGroupManageConfig() : fetchPaidGroupGuardConfig())
     applyConfig(payload)
   } catch {
-    message.error('加载群审核配置失败')
+    message.error(`加载${panelTitle.value}配置失败`)
   } finally {
     loadingConfig.value = false
   }
@@ -136,11 +145,11 @@ const saveConfig = async () => {
       forbidden_words: splitList(forbiddenWordsText.value),
       exempt_user_ids: splitUserIds(exemptUserIdsText.value),
     }
-    const saved = await updatePaidGroupGuardConfig(payload)
+    const saved = await (isGroupManage.value ? updateGroupManageConfig(payload) : updatePaidGroupGuardConfig(payload))
     applyConfig(saved)
-    message.success('群审核配置已保存')
+    message.success(`${panelTitle.value}配置已保存`)
   } catch {
-    message.error('保存群审核配置失败')
+    message.error(`保存${panelTitle.value}配置失败`)
   } finally {
     savingConfig.value = false
   }
@@ -149,7 +158,8 @@ const saveConfig = async () => {
 const loadLogs = async () => {
   loadingLogs.value = true
   try {
-    const payload = await fetchPaidGroupGuardLogs({
+    const fetchLogs = isGroupManage.value ? fetchGroupManageLogs : fetchPaidGroupGuardLogs
+    const payload = await fetchLogs({
       page: logPagination.current,
       pageSize: logPagination.pageSize,
       reason: logFilters.reason || null,
@@ -164,7 +174,7 @@ const loadLogs = async () => {
     logs.value = payload.items ?? []
     totalLogs.value = payload.total ?? 0
   } catch {
-    message.error('加载群审核日志失败')
+    message.error(`加载${panelTitle.value}日志失败`)
   } finally {
     loadingLogs.value = false
   }
@@ -209,7 +219,7 @@ onMounted(() => {
     <section class="rounded-lg border border-slate-200 bg-white p-5">
       <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-base font-semibold text-slate-900">群审核 Bot</h2>
+          <h2 class="text-base font-semibold text-slate-900">{{ panelTitle }}</h2>
           <div class="mt-1 text-sm text-slate-500">状态：{{ configStatus }}</div>
         </div>
         <div class="flex items-center gap-2">

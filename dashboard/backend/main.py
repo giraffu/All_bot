@@ -22,6 +22,7 @@ from dashboard.backend.routers import (
     logs,
     main_bot_menu,
     paid_group_guard,
+    group_manage,
     plans,
     prompt_optimizer,
     reference_assets,
@@ -164,6 +165,7 @@ app.include_router(system.router)
 app.include_router(logs.router)
 app.include_router(main_bot_menu.router)
 app.include_router(paid_group_guard.router)
+app.include_router(group_manage.router)
 app.include_router(workers.router)
 app.include_router(runpod.router)
 app.include_router(gallery.router)

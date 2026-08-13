@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
-from paid_group_guard_bot.config import PaidGroupBotSettings
+from typing import Protocol
 from paid_group_guard_bot.moderation import (
     PaidGroupModerationConfigProvider,
     PaidGroupModerationDecision,
@@ -20,6 +20,12 @@ from paid_group_guard_bot.moderation import (
 logger = logging.getLogger(__name__)
 ADMIN_STATUSES = {"administrator", "creator", "owner"}
 LINK_ENTITY_TYPES = {"url", "text_link"}
+
+
+class ModerationSettings(Protocol):
+    target_chat_id: int
+    moderation_config_file: str
+    moderation_log_file: str
 
 
 @dataclass(frozen=True)
@@ -113,7 +119,7 @@ async def _is_admin_or_owner(
 
 def _write_moderation_event(
     *,
-    settings: PaidGroupBotSettings,
+    settings: ModerationSettings,
     msg: _MessageContext,
     decision: PaidGroupModerationDecision,
     action: str,
@@ -141,7 +147,7 @@ async def handle_message_moderation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    settings: PaidGroupBotSettings,
+    settings: ModerationSettings,
     config_provider: PaidGroupModerationConfigProvider | None = None,
 ) -> None:
     msg = _build_message_context(update)
@@ -234,8 +240,14 @@ async def handle_message_moderation(
     )
 
 
-def build_message_moderation_handler(settings: PaidGroupBotSettings) -> MessageHandler:
-    provider = PaidGroupModerationConfigProvider(settings.moderation_config_file)
+def build_message_moderation_handler(
+    settings: ModerationSettings,
+    *,
+    config_provider=None,
+) -> MessageHandler:
+    provider = config_provider or PaidGroupModerationConfigProvider(
+        settings.moderation_config_file
+    )
 
     async def _callback(
         update: Update,

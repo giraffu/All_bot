@@ -26,6 +26,7 @@ export type DashboardTabKey =
   | 'worker_history'
   | 'logs'
   | 'paid_group_guard'
+  | 'group_manage'
   | 'main_bot_menu'
   | 'recharge'
   | 'templates'
@@ -115,6 +116,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     label: '群审核Bot',
     icon: RobotOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/PaidGroupGuardSettings.vue'))),
+    containerClass: BASE_CONTAINER_CLASS,
+    scrollable: true,
+  },
+  {
+    key: 'group_manage',
+    label: '群管理Bot',
+    icon: RobotOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/GroupManageSettings.vue'))),
     containerClass: BASE_CONTAINER_CLASS,
     scrollable: true,
   },
