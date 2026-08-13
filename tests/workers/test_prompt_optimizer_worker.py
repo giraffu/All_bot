@@ -16,26 +16,27 @@ from workers.prompt_optimizer.executor import (
     PromptOptimizationExecutionError,
     execute_prompt_optimization,
 )
+from workers.prompt_optimizer.json_stream import OptimizedFieldsJsonExtractor
 from workers.prompt_optimizer.media import image_bytes_to_data_url
 from workers.prompt_optimizer.provider import LMStudioChatProvider
-from workers.prompt_optimizer.json_stream import OptimizedFieldsJsonExtractor
 
 os.environ.setdefault("AGENT_SECRET_TOKEN", "test-token")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
 os.environ.setdefault("MINIO_SECRET_KEY", "test-secret")
 
-from workers.prompt_optimizer import worker_main  # noqa: E402
-from workers.prompt_optimizer.worker_main import CentralClient  # noqa: E402
+from workers.prompt_optimizer import worker_main
+from workers.prompt_optimizer.worker_main import CentralClient
 
 
 class FakeProvider:
-    def __init__(self):
+    def __init__(self, result_text="optimized scene"):
         self.calls = []
+        self.result_text = result_text
 
     async def optimize(self, **kwargs):
         self.calls.append(kwargs)
         return {
-            "optimized_fields": {"positive_prompt": "optimized scene"},
+            "optimized_fields": {"positive_prompt": self.result_text},
             "warnings": [],
         }
 
@@ -106,6 +107,84 @@ async def test_executor_fails_closed_on_template_hash_mismatch():
             load_media=lambda _key: asyncio.sleep(0, result=b"image"),
             preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result_text",
+    [
+        "hmmotion, " + "word " * 210,
+        "HMBreasts, " + "word " * 210,
+        "too short",
+        "word " * 271,
+    ],
+)
+async def test_minimax_h3_executor_rejects_manual_triggers_and_off_distribution_length(
+    result_text,
+):
+    template = get_template_by_ref("minimax_h3_hmnsfw@1")
+    payload = {
+        "profile_ref": "minimax_h3_t2v_prompt@1",
+        "template_ref": template.ref,
+        "template_hash": template.content_hash,
+        "target_task_type": "minimax_h3_t2v",
+        "prompt": "two adults",
+        "context": {"duration_seconds": 5},
+        "media": [],
+    }
+    with pytest.raises(PromptOptimizationExecutionError, match="minimax_h3"):
+        await execute_prompt_optimization(
+            payload,
+            provider=FakeProvider(result_text),
+            load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+            preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabulary():
+    template = get_template_by_ref("minimax_h3_hmnsfw@1")
+    base_payload = {
+        "profile_ref": "minimax_h3_t2v_prompt@1",
+        "template_ref": template.ref,
+        "template_hash": template.content_hash,
+        "target_task_type": "minimax_h3_t2v",
+        "prompt": "two adults",
+        "context": {"duration_seconds": 5},
+        "media": [],
+        "trusted_context": {"addon_ids": []},
+    }
+    valid = "missionary, pov, slow, medium shot. " + "word " * 196
+    accepted = await execute_prompt_optimization(
+        base_payload,
+        provider=FakeProvider(valid),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+    assert accepted["result_text"].startswith("missionary")
+
+    for invalid in (
+        "missionary, pov, slow, medium shot. nipples " + "word " * 195,
+        "missionary, pov, slow, medium shot. [Shot 2] At 00:05.000, " + "word " * 192,
+    ):
+        with pytest.raises(PromptOptimizationExecutionError, match="minimax_h3"):
+            await execute_prompt_optimization(
+                base_payload,
+                provider=FakeProvider(invalid),
+                load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+                preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+            )
+
+    breast_payload = {**base_payload, "trusted_context": {"addon_ids": ["breasts"]}}
+    breast_result = (
+        "missionary, pov, slow, medium shot. nipples and areoles " + "word " * 193
+    )
+    await execute_prompt_optimization(
+        breast_payload,
+        provider=FakeProvider(breast_result),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
 
 
 @pytest.mark.asyncio

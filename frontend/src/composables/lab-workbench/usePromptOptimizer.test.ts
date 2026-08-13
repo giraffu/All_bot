@@ -115,4 +115,56 @@ describe('usePromptOptimizer', () => {
     })
     scope.stop()
   })
+
+  it('maps MiniMax H3 mode, media and add-ons into the trusted optimizer request', async () => {
+    get
+      .mockResolvedValueOnce({
+        data: {
+          templates: [{
+            id: 'minimax_h3_hmnsfw', version: 1,
+            label: '高级图生视频pro', description: '', is_default: true,
+          }],
+        },
+      })
+      .mockResolvedValueOnce({ data: { status: 'success', result_text: 'optimized h3' } })
+    post.mockResolvedValueOnce({ data: { task_id: 'task-h3' } })
+
+    const scope = effectScope()
+    const optimizer = scope.run(() => usePromptOptimizer({
+      currentModeId: ref('minimax_h3'),
+      prompt: ref('original h3'),
+      duration: ref('10'),
+      uploadedReferences: ref([
+        { key: 'web_uploads/7/start.png', preview: '', name: 'start' },
+        { key: 'web_uploads/7/end.png', preview: '', name: 'end' },
+      ]),
+      selectedCharacterIds: ref([]),
+      minimaxH3Mode: ref('flf2v'),
+      minimaxH3AddonItems: ref([
+        { name: 'breasts', strength: 1 },
+        { name: 'sex_pose', strength: 0.5 },
+      ]),
+    }))!
+    await nextTick()
+    await Promise.resolve()
+    await optimizer.optimizePrompt()
+
+    expect(get.mock.calls[0][1]).toEqual({
+      params: { target_task_type: 'minimax_h3_flf2v' },
+    })
+    expect(post.mock.calls[0][1]).toMatchObject({
+      target_task_type: 'minimax_h3_flf2v',
+      template: { id: 'minimax_h3_hmnsfw', version: 1 },
+      context: { duration_seconds: 10 },
+      media: [
+        { role: 'start_image', object_key: 'web_uploads/7/start.png' },
+        { role: 'end_image', object_key: 'web_uploads/7/end.png' },
+      ],
+      lora_items: [
+        { name: 'breasts', strength: 1 },
+        { name: 'sex_pose', strength: 0.5 },
+      ],
+    })
+    scope.stop()
+  })
 })

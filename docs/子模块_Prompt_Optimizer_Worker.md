@@ -1,7 +1,7 @@
 # 子模块：Prompt Optimizer Worker
 
 本文是通用提示词优化平台的当前架构与扩展 SOP。当前消费者包括
-`ltx_video_v2`、纯 `ltx_t2v` 与双角色 `ltx_t2v_ic`，但 Registry、任务类型、
+`ltx_video_v2`、纯 `ltx_t2v`、双角色 `ltx_t2v_ic` 与 MiniMax H3 三种模式，但 Registry、任务类型、
 结果存储和 Worker 主循环不得出现以 LTX 为条件的队列分支。
 
 ## 1. 组件与事实源
@@ -38,8 +38,9 @@ primary field、model route、兼容模板和长度限制。Template 声明展�
 `template_hash`；Worker 缺少版本或 hash 不一致时失败。旧版本必须保留到所有排队
 任务和审计重放窗口结束，通常不主动删除。
 
-管理后台另外提供三个可变 scene config：`ltx_video_v2`、`ltx_t2v`、
-`ltx_t2v_ic`。它们允许管理员修改 system/user prompt、展示名称和说明，但不能修改
+管理后台另外提供四个可变 scene config：`ltx_video_v2`、`ltx_t2v`、
+`ltx_t2v_ic`、`minimax_h3`。H3 的 T2V/I2V/FLF2V 共用最后一个“高级图生视频pro”配置。
+它们允许管理员修改 system/user prompt、展示名称和说明，但不能修改
 Profile、媒体契约、模型、价格、workflow 或输出 schema。保存时校验占位符并递增
 revision/content hash；Web 在提交时读取当前配置、渲染正文并保存
 `prompt_config_snapshot`。Worker 校验 snapshot hash/Profile 后使用，旧静态
@@ -69,6 +70,13 @@ FLF 模板。
 禁止把任何 reference 写成视频首帧。IC 请求中的角色 ID 由 Web owner-fenced 解析
 为实际面板；浏览器不能提交私有面板路径。@3 与 @4 互不兼容，防止帧语义串用。
 
+H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
+`minimax_h3_flf2v_prompt@1`，分别接受 0 张图、一张 `start_image`、按顺序的
+`start_image,end_image`，时长只允许 5/10/15 秒。三者使用
+`minimax_h3_hmnsfw@1`：一个 200–270 英文词段落，动态时长限制时间戳，最多两个
+动作阶段，保留 H3 音频和对白语法。英文运行模板与完整逐段中文审阅翻译的事实源均为
+`src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量，中文常量不参与渲染。
+
 ## 3. API 与隐私
 
 `GET /api/prompt-optimizations/capabilities?target_task_type=...` 只返回价格、媒体
@@ -82,6 +90,13 @@ FLF 模板。
 数据库中的可信角色或环境媒体键可以保留兼容的 `bucket/object_key` 形式，但 Web 在
 写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
 对象键，不能再次包含桶名。
+
+H3 请求另接受最多五项 `lora_items: [{name,strength}]`。名称、范围、默认值和简短
+提示指南只从 `src/domain_config/minimax_h3.py` 派生；客户端不能上传自由规则文本。
+快照可记录展示名、选择状态、强度和可信指南，但不能包含生成 Worker 使用的魔法
+触发词。未选乳房附加模型时 `nipples/areoles` 保持禁用；选择后仅在图片或原始要求
+支持时允许这两个词，且 `areolas` 永远禁用。最终输出校验同时拒绝 `hmmotion`、
+`HMBreasts`、`HMPenis`、`hmpussy`。
 
 任务扣 1 灵石；Task Core 的扣费、派发补偿、pending 取消和失败退款负责 exactly
 once。文本结果只保存在 `allbot:prompt_result:{task_id}` 类 owner-fenced Redis key，
@@ -130,8 +145,9 @@ API format 和 system 指令，仍由 OutputValidator fail closed。两个请求
 完全一致。首个 Central delta 确认前可按既有规则重试一次，确认后禁止重新生成并拼接
 第二份输出。
 
-健康入口：`127.0.0.1:8097/health` 和 `/ready`，只暴露 ready reason 与 active
-lane 数，不暴露提示词或媒体。
+健康入口：`127.0.0.1:8097/health` 和 `/ready`，只暴露 ready reason、
+`ready_lanes` 与 `active_lanes`，不暴露提示词或媒体。本机受控恢复使用仅绑定
+loopback 的 `POST /drain` 停止新 pop，等待 `active_lanes=0` 后再释放模型显存。
 
 ## 5. 发布与回滚
 
@@ -145,6 +161,13 @@ Registry 内容仍遵循 Worker-first、Web-activation-last；涉及增量协议
 
 Compose 禁止源码 bind mount，镜像必须 digest pinned。rollback 只回退到状态账本中的
 上一 exact digest。prod mutation 仍需用户明确确认。
+
+115 GPU0 与正式图生图共享显存时，只允许运行
+`scripts/prompt_optimizer_worker_ops.py preflight|takeover|recover|status`。`takeover`
+通过 LAN fleet 事务排空、持久禁用并停止精确图生图 slot，再以 16K/parallel 4/full
+offload 加载 LM Studio，并验证 `/ready` 与四条 test Central idle heartbeat。任一步骤
+失败会停止优化器、卸载本次模型并调用 fleet `recover`；主动恢复也必须先 drain 四条
+lane。禁止临时 Docker/Compose 命令绕过 XDG ledger。
 
 LTX v2 canary Agent 也使用单独的不可变入口
 `deploy/docker-compose-ltx-v2-test-agent.yml`，由

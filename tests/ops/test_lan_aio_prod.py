@@ -3030,8 +3030,11 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
             self.events.append("comfy-idle")
 
         def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
-            assert "docker stop" in command
-            self.events.append("docker-stop")
+            if "docker update" in command:
+                self.events.append("restart-disabled")
+            else:
+                assert "docker stop" in command
+                self.events.append("docker-stop")
             return ""
 
     ops = RecordingOps()
@@ -3045,6 +3048,7 @@ def test_lan_aio_disabled_canary_stop_waits_for_worker_and_comfy_idle():
         "disable-aio",
         "worker-idle",
         "comfy-idle",
+        "restart-disabled",
         "docker-stop",
     ]
 

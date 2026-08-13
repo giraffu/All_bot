@@ -10,6 +10,9 @@ Bot/Web 新建入口关闭，只保留内部兼容执行身份。面向用户统
 按有无尾帧链自动提交 I2V/FLF2V。Gallery、生产 RunPod 和 autoscaler 默认不接入。
 Web 由 `enable_minimax_h3` 控制，后端由
 `MINIMAX_H3_BACKEND_ENABLED` 控制，两个开关默认关闭。
+提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 独立控制；测试开启、正式关闭，
+不影响 H3 视频生成。测试与正式 Dashboard 都可独立维护共享场景配置
+`minimax_h3`，但正式 Web/Bot 在开关关闭时不展示或调用优化入口。
 测试 Web 的 runtime config 当前只展示 MiniMax H3 工作台，并隐藏
 `ltx_video`、`ltx_video_v2` 与 `ltx_t2v` 三个 LTX 工作台；生产映射保持独立，
 不随测试可见性切换。
@@ -79,6 +82,13 @@ HMBreasts/HMPenis 默认 `1.0` 并允许按效果调整。
 动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音；其它附加模型
 分别提示其可控解剖属性与镜头方向。指南只帮助用户组织 prompt，不改变服务端强度
 校验、模型选择或 Worker 的确定性触发词注入。
+
+提示词优化注册 T2V/I2V/FLF2V 三个目标并统一映射到管理配置“高级图生视频pro”。
+请求把当前 5/10/15 秒时长、0/1/2 个 owner-fenced 对象键和至多五个附加模型选择交给
+服务端；优化器从同一 catalog 生成不含触发词的可信指南，客户端不能传规则正文。
+优化结果只是一份 200–270 词英文 `positive_prompt`，不会提交视频；H3 生成 Worker
+继续根据 `lora_items` 自动前置训练触发词。选择乳房模型时，提示模板才允许在证据
+支持下使用 `nipples/areoles`，拼写 `areolas` 始终禁止。
 
 REF2V 的原生 `MiniMaxH3ReferenceToVideo` 节点使用 ComfyUI V3 Autogrow 输入。
 API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 1–4 张

@@ -61,5 +61,8 @@ async def preview_config(scene_key: str, payload: ConfigUpdate):
             "original_prompt",
             "character_descriptions",
             "environment_description",
+            "addon_summary",
+            "addon_rules",
+            "breasts_vocabulary_rule",
         ],
     }

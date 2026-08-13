@@ -38,6 +38,11 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
   `lan_ssh + nvidia`，本地主 Ryzen APU 可使用 `lan_local + rocm`。`lan_local`
   只把同一套受管 operator 命令落到本机 shell/filesystem，不授权自由 compose；
   `rocm` 渲染 KFD/Dri 设备契约，不能携带 NVIDIA reservation。
+- 115 GPU0 可在用户明确授权的维护窗口由 Prompt Optimizer 临时接管。接管只能调用
+  `scripts/prompt_optimizer_worker_ops.py`，而图生图 slot 的排空、停机、XDG
+  `intentionally_empty` 记录与恢复仍全部委托 `lan_aio_fleet_prod_ops.py`。停机前必须
+  同时验证 Central 任务与 Comfy 队列为空，并把容器 restart policy 设为 `no`；恢复
+  必须按 ledger/catalog 中同一精确 slot 重建，不能自由 compose。
 
 ## 3. 不可变产物
 

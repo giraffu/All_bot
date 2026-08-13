@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from sqlalchemy import select
 
 from src.database.models import PromptOptimizerSceneConfig
@@ -16,11 +15,13 @@ SCENE_TEMPLATE_REFS = {
     "ltx_video_v2": "ltx_scene_script_cinematic@3",
     "ltx_t2v": "ltx_scene_script_cinematic@4",
     "ltx_t2v_ic": "ltx_scene_script_cinematic@4",
+    "minimax_h3": "minimax_h3_hmnsfw@1",
 }
 SCENE_LABELS = {
     "ltx_video_v2": ("高级图生视频 v2", "首帧与首尾帧共用配置"),
     "ltx_t2v": ("纯文生视频", "不包含视觉参考素材"),
     "ltx_t2v_ic": ("双角色与环境文生视频", "两张人物面板与一张环境参考"),
+    "minimax_h3": ("高级图生视频pro", "MiniMax H3 文生、首帧与首尾帧共用配置"),
 }
 
 
@@ -112,6 +113,12 @@ async def save_config(db, *, scene_key: str, payload, updated_by: str) -> dict:
             "media_frame_instructions",
             "character_descriptions",
             "environment_description",
+        },
+        "minimax_h3": {
+            "media_frame_instructions",
+            "addon_summary",
+            "addon_rules",
+            "breasts_vocabulary_rule",
         },
     }
     missing = required_by_scene[scene_key] - variables

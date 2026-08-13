@@ -4,7 +4,6 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-
 MINIMAX_H3_T2V = "minimax_h3_t2v"
 MINIMAX_H3_I2V = "minimax_h3_i2v"
 MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
@@ -184,6 +183,14 @@ def _addon_items(inputs: dict[str, Any]) -> tuple[MiniMaxH3AddonSelection, ...]:
             raise MiniMaxH3ValidationError("附加模型强度必须在 0.1 至 2.0 之间。")
         result.append(MiniMaxH3AddonSelection(name, strength))
     return tuple(result)
+
+
+def normalize_minimax_h3_addon_items(
+    raw_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
+) -> tuple[MiniMaxH3AddonSelection, ...]:
+    """Validate public H3 add-on selections without exposing model paths or triggers."""
+
+    return _addon_items({"lora_items": [] if raw_items is None else raw_items})
 
 
 def _string_tuple(value: Any, *, field: str) -> tuple[str, ...]:

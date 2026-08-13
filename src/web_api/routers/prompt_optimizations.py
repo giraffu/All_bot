@@ -26,11 +26,14 @@ _ENABLED_VALUES = {"1", "true", "yes", "on"}
 
 
 def _require_enabled(target_task_type: str) -> None:
-    flag = (
-        "LTX_T2V_BACKEND_ENABLED"
-        if target_task_type in {"ltx_t2v", "ltx_t2v_ic"}
-        else "ENABLE_LTX_VIDEO_V2"
-    )
+    if target_task_type.startswith("minimax_h3_"):
+        flag = "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"
+    else:
+        flag = (
+            "LTX_T2V_BACKEND_ENABLED"
+            if target_task_type in {"ltx_t2v", "ltx_t2v_ic"}
+            else "ENABLE_LTX_VIDEO_V2"
+        )
     if os.getenv(flag, "false").strip().lower() not in _ENABLED_VALUES:
         raise HTTPException(status_code=404, detail="Not found")
     if (

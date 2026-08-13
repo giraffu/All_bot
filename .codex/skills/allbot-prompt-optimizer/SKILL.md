@@ -40,12 +40,11 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
 - 客户端只能选择 active 的 `template id + version`；禁止提交自由 meta-prompt，
   capability 不返回模板正文。
 - Registry 中已发布 Profile/Template 不原地改内容；新内容增加版本。管理后台维护的
-  三个 scene config 是有意设计的可变“当前配置”，每次保存递增 revision/hash，
+  四个 scene config（H3 三模式共享 `minimax_h3`）是可变“当前配置”，保存递增 revision/hash，
   新任务必须保存渲染后的不可变 snapshot，运行中任务不得重新读取当前配置。
 - Worker 必须核对 Profile、Template 和 hash；未知版本、未知字段、空文本、超长
   文本或不兼容媒体角色一律失败。
-- `context` 按 Profile 严格白名单校验，不能选择模型、价格、workflow、LoRA、
-  sampler 或采样参数。
+- `context` 严格白名单。H3 `lora_items` 最多五项；服务端派生指南，客户端不提交规则/触发词。
 - 图片必须 owner-fenced，PNG/JPEG/WebP，单文件不超过 20 MB；发送 LM Studio 前
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
@@ -107,6 +106,6 @@ cd frontend && npm test -- --run \
   src/composables/lab-workbench/usePromptOptimizer.test.ts
 ```
 
-部署前再验证 `/ready`、四 lane heartbeat、两种模板、4+1 排队、失败退款和日志隐私。
+部署前验证 `/ready.ready_lanes=4`、四 lane heartbeat、4+1 排队、退款和日志隐私。
 流式变更按 Central → Web API → Worker → Public Web 发布；回滚反向执行，且不得在
 流式 Worker 仍运行时先回滚 Central。

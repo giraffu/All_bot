@@ -2454,7 +2454,11 @@ printf "%s|%s\\n" "$before" "$after"
         self._verify_comfy_queue_idle(slot)
         self._ssh(
             slot.ssh_host,
-            f"docker stop '{slot.container_name}' >/dev/null",
+            f"docker update --restart=no '{slot.container_name}' >/dev/null",
+        )
+        self._ssh(
+            slot.ssh_host,
+            f"timeout 45 docker stop --time 15 '{slot.container_name}' >/dev/null",
         )
         return {
             "ok": True,

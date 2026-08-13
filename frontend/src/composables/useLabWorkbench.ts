@@ -121,6 +121,8 @@ export function useLabWorkbench() {
     useT2VReferences,
     environmentSource,
     selectedEnvironmentId,
+    minimaxH3Mode,
+    minimaxH3AddonItems,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {
