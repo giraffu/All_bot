@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -2192,45 +2193,49 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
         r2_operation_latencies_ms: list[float] = []
         db_commit_latencies_ms: list[float] = []
         copy_started = time.perf_counter()
-        for offset in range(0, len(groups), args.copy_concurrency):
-            batch = groups[offset : offset + args.copy_concurrency]
-            outcomes = await asyncio.gather(
-                *(
-                    asyncio.to_thread(
-                        _timed_server_side_copy,
-                        target_client,
-                        bucket=BUCKET,
-                        source_key=str(group[0]["source_key"]),
-                        target_key=str(group[0]["target_key"]),
-                        expected_size=int(group[0]["byte_size"]),
-                        expected_last_modified=group[0]["source_last_modified"],
-                        expected_etag=group[0]["source_etag"],
-                        copy_plan_sha256=args.plan_sha256,
-                    )
-                    for group in batch
-                ),
-            )
-            first_error: BaseException | None = None
-            for group, attempt in zip(batch, outcomes, strict=True):
-                r2_operation_latencies_ms.append(float(attempt["elapsed_ms"]))
-                db_started = time.perf_counter()
-                if attempt["error"] is not None:
-                    await _persist_copy_failure(conn, group, attempt["error"])
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=args.copy_concurrency) as copy_executor:
+            for offset in range(0, len(groups), args.copy_concurrency):
+                batch = groups[offset : offset + args.copy_concurrency]
+                outcomes = await asyncio.gather(
+                    *(
+                        loop.run_in_executor(
+                            copy_executor,
+                            lambda group=group: _timed_server_side_copy(
+                                target_client,
+                                bucket=BUCKET,
+                                source_key=str(group[0]["source_key"]),
+                                target_key=str(group[0]["target_key"]),
+                                expected_size=int(group[0]["byte_size"]),
+                                expected_last_modified=group[0]["source_last_modified"],
+                                expected_etag=group[0]["source_etag"],
+                                copy_plan_sha256=args.plan_sha256,
+                            ),
+                        )
+                        for group in batch
+                    ),
+                )
+                first_error: BaseException | None = None
+                for group, attempt in zip(batch, outcomes, strict=True):
+                    r2_operation_latencies_ms.append(float(attempt["elapsed_ms"]))
+                    db_started = time.perf_counter()
+                    if attempt["error"] is not None:
+                        await _persist_copy_failure(conn, group, attempt["error"])
+                        db_commit_latencies_ms.append(
+                            (time.perf_counter() - db_started) * 1000
+                        )
+                        first_error = first_error or attempt["error"]
+                        continue
+                    outcome = attempt["outcome"]
+                    await _persist_copy_success(conn, group, outcome)
                     db_commit_latencies_ms.append(
                         (time.perf_counter() - db_started) * 1000
                     )
-                    first_error = first_error or attempt["error"]
-                    continue
-                outcome = attempt["outcome"]
-                await _persist_copy_success(conn, group, outcome)
-                db_commit_latencies_ms.append(
-                    (time.perf_counter() - db_started) * 1000
-                )
-                copied_objects += 1
-                copied_rows += len(group)
-                recovered_objects += int(bool(outcome.get("recovered")))
-            if first_error is not None:
-                raise first_error
+                    copied_objects += 1
+                    copied_rows += len(group)
+                    recovered_objects += int(bool(outcome.get("recovered")))
+                if first_error is not None:
+                    raise first_error
         copy_elapsed_seconds = time.perf_counter() - copy_started
         remaining = int(
             await conn.fetchval(

@@ -508,6 +508,18 @@ def test_execute_copy_has_no_client_side_media_transfer_path():
     assert "server_side_copy_r2_object" in timed_source
 
 
+def test_execute_copy_sizes_worker_pool_to_requested_concurrency():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_copy)
+
+    assert "ThreadPoolExecutor(max_workers=args.copy_concurrency)" in source
+    assert "loop.run_in_executor" in source
+    assert "copy_executor" in source
+
+
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
     import inspect
     import scripts.history_media_r2_migration as module
