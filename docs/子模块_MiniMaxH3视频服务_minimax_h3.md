@@ -52,7 +52,8 @@ T2V/I2V/FLF2V 默认不加载用户附加模型。用户可同时选择最多 5 
 主协议为有序 `lora_items: [{name, strength}]`，旧 `lora_name/lora_strength` 仅保留
 单模型兼容；Worker 按数组顺序串联全部用户 LoRA，再连接内置加速 LoRA。
 `anus` 与 `vagina` 都加载 HMPussy 的 `vagassist` 与 `hmpussy` 双文件并保持
-`1.0:0.35` 相对强度，通过提示词前缀区分语义；两份文件不可拆开。`penis` 使用
+`1.0:0.35` 相对强度，并同时前置训练词 `Vagina, hmpussy`；`anus` 额外追加
+`anus` 以区分语义。两份文件和两个训练触发词不可拆开。`penis` 使用
 modelVersion `3218160` 的 `HMPenis_v2_e35.safetensors`，默认 `1.0`，按作者说明把
 `HMPenis` 放在提示词开头。T2V/I2V 始终在可选附加模型之后串联官方
 Lightx2v FL2VA 8-step v1.0 ComfyUI BF16 LoRA，强度 `0.75`，使用固定 revision 的
@@ -67,6 +68,15 @@ canary 必须覆盖叠加质量。FLF2V/REF2V 保持 25 steps、`res_multistep` 
 不同的 REF2VA 底模，作者资产只声明 FL2VA，因此 fail closed，不加载这组 LoRA。
 四模式都启用 KJNodes H3
 memory-efficient SageAttention patch。
+
+Web 与主 Bot 都按当前选择动态展示附加模型指南，并明确触发词由 Worker 自动添加。
+Web 仍允许服务端合法范围 `0.1..2.0` 内的实验值，但逐项展示作者建议或候选基线：
+HMPussy 双文件推荐主强度 `1.0`、运动文件自动取相对 `0.35`，HMNSFW V2 推荐
+`0.5` 或更低，HMBreasts/HMPenis 的 `1.0` 只标为默认候选而不伪称作者硬性范围。
+选择 HMNSFW V2 时，Web/Bot 提示优先 I2V，并建议使用约 200–270 个英文单词覆盖
+动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音；其它附加模型
+分别提示其可控解剖属性与镜头方向。指南只帮助用户组织 prompt，不改变服务端强度
+校验、模型选择或 Worker 的确定性触发词注入。
 
 REF2V 的原生 `MiniMaxH3ReferenceToVideo` 节点使用 ComfyUI V3 Autogrow 输入。
 API JSON 必须以 `ref_images.ref_image_0` 至 `ref_images.ref_image_3` 连接 1–4 张

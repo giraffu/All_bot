@@ -8,6 +8,7 @@ import {
   SCAIL2_VIDEO_DURATION_OPTIONS,
   UNIFIED_LAB_MODES,
   WEB_LTX_T2V_ENABLED,
+  MINIMAX_H3_ADDON_OPTIONS,
   getLabModeConfig,
   getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
@@ -15,6 +16,26 @@ import {
 } from './labModeConfig'
 
 describe('labModeConfig', () => {
+  it('publishes per-addon strength recommendations and prompt guides', () => {
+    const sexPose = MINIMAX_H3_ADDON_OPTIONS.find(option => option.value === 'sex_pose')
+    const vagina = MINIMAX_H3_ADDON_OPTIONS.find(option => option.value === 'vagina')
+
+    expect(sexPose).toMatchObject({
+      defaultStrength: 0.5,
+      recommendedMinStrength: 0.1,
+      recommendedMaxStrength: 0.5,
+      strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.sex_pose_strength',
+      promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt',
+    })
+    expect(vagina).toMatchObject({
+      defaultStrength: 1,
+      recommendedMinStrength: 1,
+      recommendedMaxStrength: 1,
+      strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.vagina_strength',
+      promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.vagina_prompt',
+    })
+    expect(MINIMAX_H3_ADDON_OPTIONS.every(option => option.strengthHintKey && option.promptGuideKey)).toBe(true)
+  })
   it('hides character reference and text-to-video modes when production LTX is disabled', () => {
     expect(LAB_MODE_CONFIGS.map(item => item.id)).toContain('character_reference')
     expect(WEB_LTX_T2V_ENABLED).toBe(false)

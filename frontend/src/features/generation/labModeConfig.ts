@@ -92,11 +92,11 @@ export const EDIT_LORA_DEFAULT_STRENGTHS: Record<string, number> = {
 }
 
 export const MINIMAX_H3_ADDON_OPTIONS = [
-  { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addons.breasts', defaultStrength: 1.0 },
-  { value: 'anus', labelKey: 'lab.workbench.minimax_h3_addons.anus', defaultStrength: 1.0 },
-  { value: 'vagina', labelKey: 'lab.workbench.minimax_h3_addons.vagina', defaultStrength: 1.0 },
-  { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addons.sex_pose', defaultStrength: 0.5 },
-  { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addons.penis', defaultStrength: 1.0 },
+  { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addons.breasts', defaultStrength: 1.0, recommendedMinStrength: 1.0, recommendedMaxStrength: 1.0, strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.breasts_strength', promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.breasts_prompt' },
+  { value: 'anus', labelKey: 'lab.workbench.minimax_h3_addons.anus', defaultStrength: 1.0, recommendedMinStrength: 1.0, recommendedMaxStrength: 1.0, strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.anus_strength', promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.anus_prompt' },
+  { value: 'vagina', labelKey: 'lab.workbench.minimax_h3_addons.vagina', defaultStrength: 1.0, recommendedMinStrength: 1.0, recommendedMaxStrength: 1.0, strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.vagina_strength', promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.vagina_prompt' },
+  { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addons.sex_pose', defaultStrength: 0.5, recommendedMinStrength: 0.1, recommendedMaxStrength: 0.5, strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.sex_pose_strength', promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt' },
+  { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addons.penis', defaultStrength: 1.0, recommendedMinStrength: 1.0, recommendedMaxStrength: 1.0, strengthHintKey: 'lab.workbench.minimax_h3_addon_guides.penis_strength', promptGuideKey: 'lab.workbench.minimax_h3_addon_guides.penis_prompt' },
 ] as const
 
 export const VIDEO_RESOLUTION_OPTIONS = [

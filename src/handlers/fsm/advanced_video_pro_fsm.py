@@ -111,11 +111,41 @@ def _settings_text(context, data: dict) -> str:
     selected = data.get("addon_models", [])
     addon_zh = "、".join(MINIMAX_H3_ADDON_MODELS[item].label_zh for item in selected) or "无"
     addon_en = ", ".join(MINIMAX_H3_ADDON_MODELS[item].label_en for item in selected) or "None"
-    return _text(
+    summary = _text(
         context,
         f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n附加模型：{addon_zh}",
         f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nAddons: {addon_en}",
     )
+    guidance = _addon_guidance_text(context, selected)
+    return f"{summary}\n\n{guidance}" if guidance else summary
+
+
+def _addon_guidance_text(context, selected: list[str]) -> str:
+    models = [MINIMAX_H3_ADDON_MODELS[item] for item in selected if item in MINIMAX_H3_ADDON_MODELS]
+    if not models:
+        return ""
+    title = _text(context, "提示词与强度建议（触发词会自动添加，无需重复输入）：", "Prompt and strength guidance (trigger words are added automatically):")
+    lines = [title]
+    separator = "：" if _lang(context) == "zh" else ": "
+    for model in models:
+        strength_hint = model.strength_hint_en if _lang(context) == "en" else model.strength_hint_zh
+        prompt_guide = model.prompt_guide_en if _lang(context) == "en" else model.prompt_guide_zh
+        label = model.label_en if _lang(context) == "en" else model.label_zh
+        lines.append(
+            f"• {label} — {_text(context, '建议强度', 'Recommended strength')}"
+            f"{separator}{strength_hint}\n  {prompt_guide}"
+        )
+    return "\n".join(lines)
+
+
+def _prompt_request_text(context, data: dict, *, media_received: bool = False) -> str:
+    intro = _text(
+        context,
+        "图片已收到，请输入视频提示词。" if media_received else "请输入视频提示词。",
+        "Image received. Send the video prompt." if media_received else "Send the video prompt.",
+    )
+    guidance = _addon_guidance_text(context, data.get("addon_models", []))
+    return f"{intro}\n\n{guidance}" if guidance else intro
 
 
 def _extract_image(update: Update) -> tuple[str | None, str]:
@@ -200,7 +230,7 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
         if mode == "t2v":
-            await robust_edit_text(query.message, _text(context, "请输入视频提示词。", "Send the video prompt."))
+            await robust_edit_text(query.message, _prompt_request_text(context, data))
             return AdvancedVideoProState.WAIT_PROMPT
         await robust_edit_text(
             query.message,
@@ -244,7 +274,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if mode == "ref2v":
         await robust_reply_text(update.message, _text(context, "请描述该角色的身份与外观。", "Describe this character's identity and appearance."))
         return AdvancedVideoProState.WAIT_REFERENCE_DESCRIPTION
-    await robust_reply_text(update.message, _text(context, "图片已收到，请输入视频提示词。", "Image received. Send the video prompt."))
+    await robust_reply_text(update.message, _prompt_request_text(context, data, media_received=True))
     return AdvancedVideoProState.WAIT_PROMPT
 
 
@@ -280,7 +310,7 @@ async def reference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query.data == "avp_refs_more" and len(data["images"]) < 4:
         await robust_edit_text(query.message, _text(context, "请上传下一张角色参考图。", "Upload the next character reference."))
         return AdvancedVideoProState.WAIT_MEDIA
-    await robust_edit_text(query.message, _text(context, "请输入视频提示词。", "Send the video prompt."))
+    await robust_edit_text(query.message, _prompt_request_text(context, data))
     return AdvancedVideoProState.WAIT_PROMPT
 
 

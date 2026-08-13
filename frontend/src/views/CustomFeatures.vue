@@ -125,6 +125,9 @@ const minimaxH3AddonNames = computed<string[]>({
     })
   },
 })
+const minimaxH3SelectedAddonOptions = computed(() => MINIMAX_H3_ADDON_OPTIONS.filter(
+  option => minimaxH3AddonNames.value.includes(option.value),
+))
 const selectAllMinimaxH3Addons = () => { minimaxH3AddonNames.value = MINIMAX_H3_ADDON_OPTIONS.map(option => option.value) }
 const clearMinimaxH3Addons = () => { minimaxH3AddonItems.value = [] }
 </script>
@@ -240,6 +243,21 @@ const clearMinimaxH3Addons = () => { minimaxH3AddonItems.value = [] }
                 <span class="w-20 text-xs opacity-75">{{ t(MINIMAX_H3_ADDON_OPTIONS.find(option => option.value === item.name)?.labelKey ?? '') }}</span>
                 <a-slider v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" class="flex-1" />
                 <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" class="w-24" />
+              </div>
+              <div
+                v-if="minimaxH3SelectedAddonOptions.length"
+                class="space-y-2 rounded-lg border border-sky-300 bg-sky-50 p-3 text-xs leading-5 text-slate-700 dark:border-sky-400/25 dark:bg-sky-400/5 dark:text-slate-300"
+              >
+                <div class="font-medium text-sky-700 dark:text-sky-200">
+                  {{ t('lab.workbench.minimax_h3_addon_guides.trigger_auto') }}
+                </div>
+                <div v-for="option in minimaxH3SelectedAddonOptions" :key="`${option.value}-guide`">
+                  <div class="font-semibold text-slate-800 dark:text-slate-200">{{ t(option.labelKey) }}</div>
+                  <div>
+                    {{ t('lab.workbench.minimax_h3_addon_guides.recommended_strength') }}：{{ t(option.strengthHintKey) }}
+                  </div>
+                  <div>{{ t(option.promptGuideKey) }}</div>
+                </div>
               </div>
             </div>
           </div>

@@ -6,6 +6,9 @@ import pytest
 from scripts.build_minimax_h3_api_workflows import build
 from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
+from workers.runpod_runtime.comfy_agent.workflow_task_patchers import (
+    patch_minimax_h3_workflow as patch_runpod_minimax_h3_workflow,
+)
 
 
 TASKS = {
@@ -121,8 +124,8 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
 
 @pytest.mark.parametrize(("addon", "expected_paths", "strengths", "trigger"), [
     ("breasts", ["MiniMaxH3/HMBreasts_085e0750_e40.safetensors"], [1.2], "HMBreasts"),
-    ("anus", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, anus"),
-    ("vagina", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina"),
+    ("anus", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, hmpussy, anus"),
+    ("vagina", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, hmpussy"),
     ("sex_pose", ["MiniMaxH3/HMNSFW_AIO_V2.safetensors"], [1.2], "hmmotion"),
     ("penis", ["MiniMaxH3/HMPenis_v2_e35.safetensors"], [1.2], "HMPenis"),
 ])
@@ -165,6 +168,20 @@ def test_minimax_h3_patcher_without_addon_only_keeps_internal_acceleration():
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
     assert not {"10", "11", "12", "13"} & patched.keys()
     assert patched["14"]["inputs"]["model"] == ["1", 0]
+
+
+def test_runpod_minimax_h3_worker_keeps_both_hmpussy_triggers():
+    workflow = json.loads(
+        Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+
+    patch_runpod_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={"prompt": "scene", "lora_name": "vagina", "lora_strength": 1.0},
+    )
+
+    assert workflow["30"]["inputs"]["prompt"] == "Vagina, hmpussy, scene"
 
 
 def test_minimax_h3_output_prefix_is_unique_per_execution():

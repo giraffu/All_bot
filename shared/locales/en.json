@@ -845,6 +845,20 @@
       "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last"},
       "minimax_h3_addon_model": "Addon model",
       "minimax_h3_addons": {"none": "None", "breasts": "Breasts", "anus": "Anus", "vagina": "Vagina", "sex_pose": "Sex pose", "penis": "Penis", "select_all": "Select all LoRAs", "clear": "Clear"},
+      "minimax_h3_addon_guides": {
+        "recommended_strength": "Recommended strength",
+        "trigger_auto": "Trigger words are added automatically; do not repeat them.",
+        "breasts_strength": "Default 1.0; the author gives no strict range.",
+        "breasts_prompt": "Describe breast size and shape, areole size and color, and nipple state; use the spelling “areoles”.",
+        "anus_strength": "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "anus_prompt": "Describe the anus direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
+        "vagina_strength": "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "vagina_prompt": "Describe the vagina direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
+        "sex_pose_strength": "Author recommends 0.5 or lower; default 0.5.",
+        "sex_pose_prompt": "Prefer image-to-video; use about 200–270 English words covering action, viewpoint, pace, shot type, people, frame position, motion, surface state, and ambience.",
+        "penis_strength": "Default 1.0; the author gives no strict range.",
+        "penis_prompt": "Specify front, back, or side direction, plus size, circumcision, and glans color."
+      },
       "upload_slots": {
         "face_image": "Face Image",
         "target_image": "Body Image",

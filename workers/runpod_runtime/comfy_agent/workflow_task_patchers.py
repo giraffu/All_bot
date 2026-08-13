@@ -1304,8 +1304,8 @@ _MINIMAX_H3_PRECISION_PRESETS = {
 }
 _MINIMAX_H3_ADDONS = {
     "breasts": (("MiniMaxH3/HMBreasts_085e0750_e40.safetensors", 1.0), "HMBreasts"),
-    "anus": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, anus"),
-    "vagina": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina"),
+    "anus": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, hmpussy, anus"),
+    "vagina": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, hmpussy"),
     "sex_pose": (("MiniMaxH3/HMNSFW_AIO_V2.safetensors", 1.0), "hmmotion"),
     "penis": (("MiniMaxH3/HMPenis_v2_e35.safetensors", 1.0), "HMPenis"),
 }

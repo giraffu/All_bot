@@ -20,6 +20,16 @@ const labels: Record<string, string> = {
   'lab.workbench.ltx_extend_generation': '扩展生成',
   'lab.workbench.ltx_stitch_chain': '拼接',
   'lab.workbench.continue_generation': '继续生成',
+  'lab.cards.minimax_h3_title': '高级图生视频pro',
+  'lab.cards.minimax_h3_desc': '高级视频描述',
+  'lab.workbench.minimax_h3_addon_model': '附加模型',
+  'lab.workbench.minimax_h3_addons.sex_pose': '性爱姿势',
+  'lab.workbench.minimax_h3_addons.select_all': '全选 LoRA',
+  'lab.workbench.minimax_h3_addons.clear': '清空',
+  'lab.workbench.minimax_h3_addon_guides.recommended_strength': '推荐强度',
+  'lab.workbench.minimax_h3_addon_guides.trigger_auto': '触发词会自动添加，无需重复输入。',
+  'lab.workbench.minimax_h3_addon_guides.sex_pose_strength': '作者建议 0.5 或更低；默认 0.5。',
+  'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt': '使用约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动和环境音。',
 }
 
 let workbench: any
@@ -182,6 +192,26 @@ const createLtxWorkbench = (options?: { hasLastFrame?: boolean; canStitch?: bool
   stitchCurrentLtxChain: vi.fn(),
 })
 
+const createMinimaxWorkbench = () => ({
+  ...createWorkbench(),
+  currentMode: computed(() => ({
+    ...baseMode,
+    id: 'minimax_h3',
+    taskType: 'minimax_h3_t2v',
+    titleKey: 'lab.cards.minimax_h3_title',
+    descriptionKey: 'lab.cards.minimax_h3_desc',
+  })),
+  currentModeId: ref('minimax_h3'),
+  currentTask: ref(null),
+  displayedReferences: ref([]),
+  duration: ref('5'),
+  minimaxH3Mode: ref('t2v'),
+  minimaxH3ResolutionPreset: ref('preview'),
+  minimaxH3AspectRatio: ref('16:9'),
+  minimaxH3ReferenceDescriptions: ref(['', '', '', '']),
+  minimaxH3AddonItems: ref([{ name: 'sex_pose', strength: 0.5 }]),
+})
+
 const mountView = () => mount(CustomFeatures, {
   global: {
     mocks: {
@@ -190,7 +220,7 @@ const mountView = () => mount(CustomFeatures, {
     stubs: {
       LabPromptComposer: {
         methods: { close() {} },
-        template: '<div class="composer-stub"><slot name="advanced-panel" :close="close" /></div>',
+        template: '<div class="composer-stub"><slot name="before-prompt" /><slot name="advanced-panel" :close="close" /></div>',
       },
       LabAdvancedOptionsPanel: true,
       LabModeRail: true,
@@ -203,6 +233,11 @@ const mountView = () => mount(CustomFeatures, {
         emits: ['click'],
         template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot name="icon" /><slot /></button>',
       },
+      'a-select': {
+        template: '<div><slot /></div>',
+      },
+      'a-slider': true,
+      'a-input-number': true,
     },
   },
 })
@@ -275,6 +310,18 @@ describe('CustomFeatures LTX result actions', () => {
     const buttons = wrapper.findAll('button')
     const extendButton = buttons.find(button => button.text().includes('扩展生成'))
     expect(extendButton?.attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('CustomFeatures MiniMax H3 addon guidance', () => {
+  it('shows the selected addon recommendation and prompt guide', () => {
+    workbench = createMinimaxWorkbench()
+    const wrapper = mountView()
+
+    expect(wrapper.text()).toContain('推荐强度')
+    expect(wrapper.text()).toContain('作者建议 0.5 或更低')
+    expect(wrapper.text()).toContain('200–270 个英文单词')
+    expect(wrapper.text()).toContain('触发词会自动添加')
   })
 })
 
