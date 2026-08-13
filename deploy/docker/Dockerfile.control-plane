@@ -65,6 +65,16 @@ COPY paid_group_guard_bot /app/paid_group_guard_bot
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=paid-group-bot
 CMD ["python", "-m", "paid_group_guard_bot"]
 
+FROM ${RUNTIME_BASE_IMAGE} AS group-manage-bot
+ARG ALLBOT_GIT_SHA
+COPY config.py /app/config.py
+COPY src /app/src
+COPY shared /app/shared
+COPY paid_group_guard_bot /app/paid_group_guard_bot
+COPY standalone_group_manage_bot /app/standalone_group_manage_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=group-manage-bot
+CMD ["python", "-m", "standalone_group_manage_bot"]
+
 FROM ${RUNTIME_BASE_IMAGE} AS support-bot
 ARG ALLBOT_GIT_SHA
 COPY config.py /app/config.py
@@ -84,6 +94,7 @@ COPY dashboard/backend /app/dashboard/backend
 COPY src /app/src
 COPY shared /app/shared
 COPY paid_group_guard_bot /app/paid_group_guard_bot
+COPY standalone_group_manage_bot /app/standalone_group_manage_bot
 COPY ops /app/ops
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations

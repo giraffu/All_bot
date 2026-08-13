@@ -342,6 +342,15 @@ class PaidGroupGuardConfigResponse(PaidGroupGuardConfigRequest):
     log_path: str
 
 
+class GroupManageConfigRequest(PaidGroupGuardConfigRequest):
+    pass
+
+
+class GroupManageConfigResponse(GroupManageConfigRequest):
+    config_path: str
+    log_path: str
+
+
 class PaidGroupGuardLogItem(BaseModel):
     timestamp: str
     chat_id: int

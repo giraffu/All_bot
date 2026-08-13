@@ -112,6 +112,9 @@ Dashboard 新增“群审核Bot”tab：
 - `GET /api/paid-group-guard/logs`：分页查看 JSONL 删除日志，支持 `reason/user_id/start_date/end_date` 过滤。
 
 该入口只读写共享文件，不写正式数据库，也不需要 Alembic 迁移。
+普通群消息治理使用独立的 `standalone_group_manage_bot` 入口和“群管理Bot”
+Tab，见 `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md`；两者不共享
+配置或日志文件。
 
 ## 8. 本地容器化 dry-run
 

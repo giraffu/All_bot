@@ -398,6 +398,7 @@ def test_prod_runtime_uses_host_projections_for_python_consumers():
         "qqcc-bot": "qqcc-bot",
         "qqcc-private-bot-worker": "private-bot-worker",
         "paid-group-guard-bot": "paid-group-bot",
+        "group-manage-bot": "group-manage-bot",
     }
 
     for service, projection in projections.items():

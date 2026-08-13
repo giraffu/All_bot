@@ -79,6 +79,8 @@ services:
     command: ["gunicorn", "dashboard.backend.main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime/paid-group-guard:/app/runtime/paid-group-guard
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime/group-manage:/app/runtime/group-manage
     healthcheck:
       <<: *python-health
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8043/api/health', timeout=5)"]
@@ -228,3 +230,16 @@ services:
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime/paid-group-guard:/app/runtime/paid-group-guard
+
+  group-manage-bot:
+    <<: *app-base
+    image: ${ALLBOT_GROUP_MANAGE_BOT_IMAGE:?release.env must pin ALLBOT_GROUP_MANAGE_BOT_IMAGE by digest}
+    profiles: ["group-manage"]
+    env_file:
+      - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/group-manage-bot.env
+        required: false
+        format: raw
+    command: ["python", "-m", "standalone_group_manage_bot"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime/group-manage:/app/runtime/group-manage
