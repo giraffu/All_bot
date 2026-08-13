@@ -63,4 +63,5 @@ prepare_baked_model_target
 
 export ALLBOT_RUNPOD_REPO_DIR="$runtime_root"
 export ALLBOT_RUNPOD_WORKER_DIR="$worker_root"
+export RUNPOD_WORKER_DEPENDENCY_MODE="${RUNPOD_WORKER_DEPENDENCY_MODE:-baked}"
 exec bash "${RUNPOD_BOOTSTRAP_SCRIPT:-/opt/allbot/runpod_bootstrap_from_git.sh}"

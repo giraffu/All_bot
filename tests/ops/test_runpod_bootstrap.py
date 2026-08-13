@@ -90,6 +90,49 @@ def test_every_gpu_profile_bakes_the_shared_result_materialization_runtime():
     assert missing_smoke_import == []
 
 
+def test_every_gpu_profile_bakes_worker_dependencies_for_offline_startup():
+    catalog = json.loads(MODULE_CATALOG.read_text(encoding="utf-8"))["modules"]
+    dockerfiles = {
+        Path(module["dockerfile"])
+        for module in catalog.values()
+        if module.get("kind") == "gpu" and module.get("dockerfile")
+    }
+
+    missing_install = []
+    for path in sorted(dockerfiles):
+        dockerfile = path.read_text(encoding="utf-8")
+        if "COPY workers/runpod_runtime " not in dockerfile:
+            continue
+        normalized = " ".join(dockerfile.split())
+        installs_dependencies = (
+            "python3 -m pip install --no-cache-dir -r "
+            "/opt/allbot/runtime/runpod_worker/requirements.txt"
+        ) in normalized or (
+            "python3 -m pip install --no-cache-dir -r "
+            "/opt/allbot/runpod_worker/requirements.txt"
+        ) in normalized
+        dependency_closed_refresh = "RUNTIME_REQUIREMENTS_SHA256" in dockerfile
+        if not installs_dependencies and not dependency_closed_refresh:
+            missing_install.append(str(path))
+
+    assert missing_install == []
+
+
+def test_baked_bootstrap_skips_network_install_when_dependencies_are_present():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+
+    assert "verify_worker_dependencies" in bootstrap
+    assert 'if verify_worker_dependencies; then' in bootstrap
+    assert 'log "baked Worker dependencies are ready; skipping pip install"' in bootstrap
+    assert 'RUNPOD_WORKER_DEPENDENCY_MODE:-auto' in bootstrap
+    assert 'RUNPOD_WORKER_DEPENDENCY_MODE:-baked' in BAKED_ENTRYPOINT_SCRIPT.read_text(
+        encoding="utf-8"
+    )
+    assert bootstrap.index('if verify_worker_dependencies; then') < bootstrap.index(
+        "python3 -m pip install -r requirements.txt"
+    )
+
+
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
