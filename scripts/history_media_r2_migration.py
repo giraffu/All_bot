@@ -16,8 +16,10 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import stat
 import sys
+import time
 from types import SimpleNamespace
 from typing import Any, BinaryIO, Iterable
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
@@ -49,6 +51,48 @@ SINGLE_COPY_LIMIT = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
 MULTIPART_COPY_PART_SIZE = 512 * 1024 * 1024
 MAX_DIAGNOSTICS = 100
 COPY_PLAN_METADATA_KEY = "allbot-copy-plan-sha256"
+TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
+    r"EndpointConnectionError|ConnectionClosedError|ReadTimeoutError|"
+    r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
+    r"ServiceUnavailable|RequestTimeout|ProtocolError|RemoteDisconnected|"
+    r"Connection reset by peer|HTTPStatusCode[^0-9]*(?:429|500|502|503|504)|"
+    r"An error occurred \((?:429|500|502|503|504)\)",
+    re.IGNORECASE,
+)
+
+
+def is_transient_copy_failure(error_text: str) -> bool:
+    return bool(TRANSIENT_COPY_FAILURE_PATTERN.search(error_text))
+
+
+@dataclass
+class AdaptiveCopyController:
+    initial_concurrency: int = 64
+    clean_batches_to_raise: int = 3
+
+    def __post_init__(self) -> None:
+        if self.initial_concurrency not in {8, 16, 32, 64}:
+            raise ValueError("adaptive copy concurrency must be one of 8, 16, 32, 64")
+        if self.clean_batches_to_raise <= 0:
+            raise ValueError("clean batch threshold must be positive")
+        self.concurrency = self.initial_concurrency
+        self.maximum_concurrency = self.initial_concurrency
+        self.clean_batches = 0
+
+    def record_failure(self, error_text: str) -> int:
+        if not is_transient_copy_failure(error_text):
+            raise RuntimeError("non-transient copy failure")
+        self.clean_batches = 0
+        self.concurrency = {64: 32, 32: 16, 16: 8, 8: 8}[self.concurrency]
+        return self.concurrency
+
+    def record_success(self) -> int:
+        self.clean_batches += 1
+        if self.clean_batches >= self.clean_batches_to_raise:
+            raised = {8: 16, 16: 32, 32: 64, 64: 64}[self.concurrency]
+            self.concurrency = min(raised, self.maximum_concurrency)
+            self.clean_batches = 0
+        return self.concurrency
 
 MIGRATION_DDL = """
 create table if not exists analytics_history_media_migration_runs (
@@ -605,7 +649,15 @@ def _add_r2_custom_headers(
         params["headers"].update(custom_headers)
 
 
-def _s3_client(config: dict[str, Any]):
+def _s3_client(
+    config: dict[str, Any], *, max_pool_connections: int | None = None
+):
+    botocore_config: dict[str, Any] = {
+        "signature_version": "s3v4",
+        "retries": {"max_attempts": 3, "mode": "standard"},
+    }
+    if max_pool_connections is not None:
+        botocore_config["max_pool_connections"] = max_pool_connections
     client = boto3.client(
         "s3",
         endpoint_url=config["endpoint"],
@@ -613,9 +665,7 @@ def _s3_client(config: dict[str, Any]):
         aws_secret_access_key=config["secret_key"],
         region_name=config.get("region", "auto"),
         verify=config.get("ca_file", True),
-        config=Config(
-            signature_version="s3v4", retries={"max_attempts": 3, "mode": "standard"}
-        ),
+        config=Config(**botocore_config),
     )
     for operation in ("CopyObject", "CreateMultipartUpload"):
         client.meta.events.register(
@@ -799,6 +849,40 @@ def server_side_copy_r2_object(
         "etag": _normalize_etag(target_after.get("ETag")),
         "multipart": multipart,
         "recovered": destination_race,
+    }
+
+
+def _timed_server_side_copy(client: Any, **kwargs: Any) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        return {
+            "outcome": server_side_copy_r2_object(client, **kwargs),
+            "error": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+        }
+    except BaseException as exc:  # noqa: BLE001 - preserve per-object failure
+        return {
+            "outcome": None,
+            "error": exc,
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+        }
+
+
+def _latency_summary(samples: list[float]) -> dict[str, float | int]:
+    if not samples:
+        return {"count": 0, "mean": 0.0, "p50": 0.0, "p95": 0.0, "max": 0.0}
+    ordered = sorted(samples)
+
+    def percentile(fraction: float) -> float:
+        index = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * fraction)))
+        return round(ordered[index], 3)
+
+    return {
+        "count": len(ordered),
+        "mean": round(sum(ordered) / len(ordered), 3),
+        "p50": percentile(0.50),
+        "p95": percentile(0.95),
+        "max": round(ordered[-1], 3),
     }
 
 
@@ -1986,7 +2070,8 @@ async def _persist_copy_failure(
     )
 
 
-async def _execute_copy(args: argparse.Namespace) -> None:
+async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
+    execution_started = time.perf_counter()
     config = _load_secure_config(Path(args.config))
     target = config["target"]
     if target.get("bucket") != BUCKET:
@@ -1996,7 +2081,12 @@ async def _execute_copy(args: argparse.Namespace) -> None:
         sources[str(config["nas_archive"].get("name", "verified-nas-receipt"))] = config[
             "nas_archive"
         ]
-    target_client = _s3_client(target)
+    max_pool_connections = _resolve_copy_max_pool_connections(
+        args.copy_concurrency, args.max_pool_connections
+    )
+    target_client = _s3_client(
+        target, max_pool_connections=max_pool_connections
+    )
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         run_id, manifest = await _load_plan(conn, args.plan_sha256, "copy")
@@ -2099,12 +2189,15 @@ async def _execute_copy(args: argparse.Namespace) -> None:
         copied_objects = 0
         copied_rows = 0
         recovered_objects = 0
+        r2_operation_latencies_ms: list[float] = []
+        db_commit_latencies_ms: list[float] = []
+        copy_started = time.perf_counter()
         for offset in range(0, len(groups), args.copy_concurrency):
             batch = groups[offset : offset + args.copy_concurrency]
             outcomes = await asyncio.gather(
                 *(
                     asyncio.to_thread(
-                        server_side_copy_r2_object,
+                        _timed_server_side_copy,
                         target_client,
                         bucket=BUCKET,
                         source_key=str(group[0]["source_key"]),
@@ -2116,20 +2209,29 @@ async def _execute_copy(args: argparse.Namespace) -> None:
                     )
                     for group in batch
                 ),
-                return_exceptions=True,
             )
             first_error: BaseException | None = None
-            for group, outcome in zip(batch, outcomes, strict=True):
-                if isinstance(outcome, BaseException):
-                    await _persist_copy_failure(conn, group, outcome)
-                    first_error = first_error or outcome
+            for group, attempt in zip(batch, outcomes, strict=True):
+                r2_operation_latencies_ms.append(float(attempt["elapsed_ms"]))
+                db_started = time.perf_counter()
+                if attempt["error"] is not None:
+                    await _persist_copy_failure(conn, group, attempt["error"])
+                    db_commit_latencies_ms.append(
+                        (time.perf_counter() - db_started) * 1000
+                    )
+                    first_error = first_error or attempt["error"]
                     continue
+                outcome = attempt["outcome"]
                 await _persist_copy_success(conn, group, outcome)
+                db_commit_latencies_ms.append(
+                    (time.perf_counter() - db_started) * 1000
+                )
                 copied_objects += 1
                 copied_rows += len(group)
                 recovered_objects += int(bool(outcome.get("recovered")))
             if first_error is not None:
                 raise first_error
+        copy_elapsed_seconds = time.perf_counter() - copy_started
         remaining = int(
             await conn.fetchval(
                 """select count(*) from analytics_history_media_r2_migrations
@@ -2139,19 +2241,34 @@ async def _execute_copy(args: argparse.Namespace) -> None:
                 args.plan_sha256,
             )
         )
-        print(
-            json.dumps(
-                {
-                    "run_id": str(run_id),
-                    "copied": copied_rows,
-                    "copied_objects": copied_objects,
-                    "recovered_objects": recovered_objects,
-                    "remaining": remaining,
-                }
-            )
-        )
+        summary = {
+            "run_id": str(run_id),
+            "copied": copied_rows,
+            "copied_objects": copied_objects,
+            "recovered_objects": recovered_objects,
+            "remaining": remaining,
+            "copy_concurrency": args.copy_concurrency,
+            "max_pool_connections": max_pool_connections,
+            "copy_elapsed_seconds": round(copy_elapsed_seconds, 3),
+            "total_elapsed_seconds": round(
+                time.perf_counter() - execution_started, 3
+            ),
+            "copy_objects_per_second": round(
+                copied_objects / copy_elapsed_seconds
+                if copy_elapsed_seconds > 0
+                else 0.0,
+                3,
+            ),
+            "r2_object_operation_latency_ms": _latency_summary(
+                r2_operation_latencies_ms
+            ),
+            "db_commit_latency_ms": _latency_summary(db_commit_latencies_ms),
+        }
+        print(json.dumps(summary))
+        return summary
     finally:
         await conn.close()
+        target_client.close()
 
 
 def _replace_extra_path(value: Any, target_ordinal: int, replacement: str) -> tuple[Any, int]:
@@ -2391,9 +2508,29 @@ async def _report(args: argparse.Namespace) -> None:
 
 def _bounded_copy_concurrency(value: str) -> int:
     concurrency = int(value)
-    if not 1 <= concurrency <= 32:
-        raise argparse.ArgumentTypeError("copy concurrency must be between 1 and 32")
+    if not 1 <= concurrency <= 64:
+        raise argparse.ArgumentTypeError("copy concurrency must be between 1 and 64")
     return concurrency
+
+
+def _positive_pool_connections(value: str) -> int:
+    connections = int(value)
+    if connections <= 0:
+        raise argparse.ArgumentTypeError("max pool connections must be positive")
+    return connections
+
+
+def _resolve_copy_max_pool_connections(
+    copy_concurrency: int, configured: int | None
+) -> int:
+    if not 1 <= copy_concurrency <= 64:
+        raise ValueError("copy concurrency must be between 1 and 64")
+    connections = (
+        configured if configured is not None else (copy_concurrency * 3 + 1) // 2
+    )
+    if connections < copy_concurrency:
+        raise ValueError("max pool connections must not be smaller than copy concurrency")
+    return connections
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -2429,6 +2566,7 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--config", required=True)
     copy.add_argument("--limit", type=int, default=1000)
     copy.add_argument("--copy-concurrency", type=_bounded_copy_concurrency, default=1)
+    copy.add_argument("--max-pool-connections", type=_positive_pool_connections)
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)

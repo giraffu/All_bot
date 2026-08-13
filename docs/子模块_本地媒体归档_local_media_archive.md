@@ -306,7 +306,15 @@ size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆�
 冻结来源身份完全一致时才合并为一次 CopyObject，成功后整组账本行一并收口；来源
 身份冲突必须在任何对象写入前 fail closed。进程若在对象复制后、账本提交前退出，
 重跑只接受 plan marker、大小和冻结来源身份全部匹配的目标，其余已存在目标仍拒绝。
-`--copy-concurrency` 限定为 1–32，默认 1；数据库结果保持串行提交。当前生产执行器在
+`--copy-concurrency` 限定为 1–64，默认 1；`--max-pool-connections` 可显式配置，
+不得小于 copy concurrency，省略时取并发的 1.5 倍并向上取整。所有线程共享同一个
+仅执行 HEAD/CopyObject 的 boto3 client，数据库结果仍串行提交；每批报告 Copy-only
+对象/秒、R2 对象操作延迟和数据库提交延迟。`history_media_r2_copy_adaptive.py`
+提供 64→32→16→8 档位：429、5xx 和 timeout 只降一级并退避，连续三个干净批次才
+升一级；非瞬态错误直接暂停。SIGTERM/SIGINT 只登记 graceful pause，当前批次完成并
+提交账本后退出；进程还在连续三批 CPU 超过 70%、FD 超过软上限 50% 或数据库提交
+p95 相对 canary 基线显著恶化时，于当前批次提交后暂停。连接池在每批结束时关闭，
+避免长跑累计 FD。当前生产执行器在
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
 资产保持旧 History 引用。
