@@ -66,15 +66,14 @@ async def test_pro_settings_accept_user_addon_but_do_not_expose_acceleration(mon
     assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)
 
 
-def test_pro_addon_guidance_explains_relative_strength_without_author_wording():
+def test_pro_addon_guidance_keeps_recommendation_without_internal_lora_ratios():
     context = SimpleNamespace(lang="zh")
 
     guidance = fsm._addon_guidance_text(context, ["anus", "sex_pose", "breasts"])
 
-    assert "滑块控制主 LoRA" in guidance
-    assert "辅助运动 LoRA 自动取滑块值的 35%" in guidance
-    assert "1.0 → 0.35" in guidance
-    assert "无需另设" in guidance
+    assert "推荐 1.0。" in guidance
+    assert "辅助运动 LoRA" not in guidance
+    assert "35%" not in guidance
     assert "作者" not in guidance
 
 

@@ -71,9 +71,10 @@ memory-efficient SageAttention patch。
 
 Web 与主 Bot 都按当前选择动态展示附加模型指南，并明确触发词由 Worker 自动添加。
 Web 仍允许服务端合法范围 `0.1..2.0` 内的实验值，但用户指南只直接展示推荐值或
-默认值，不使用“作者”来源措辞。HMPussy 双文件共用一个用户强度：滑块值控制主
-LoRA，辅助运动 LoRA 自动取滑块值的 `35%`（例如 `1.0 → 0.35`），无需用户单独
-设置；HMNSFW V2 推荐 `0.5` 或更低，HMBreasts/HMPenis 默认 `1.0` 并允许按效果调整。
+默认值，不使用“作者”来源措辞，也不展示 HMPussy 双文件的内部相对强度。
+HMPussy 用户指南仅显示推荐 `1.0`；Worker 仍按 catalog 中的
+`relative_strengths` 确定性加载两份 LoRA。HMNSFW V2 推荐 `0.5` 或更低，
+HMBreasts/HMPenis 默认 `1.0` 并允许按效果调整。
 选择 HMNSFW V2 时，Web/Bot 提示优先 I2V，并建议使用约 200–270 个英文单词覆盖
 动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音；其它附加模型
 分别提示其可控解剖属性与镜头方向。指南只帮助用户组织 prompt，不改变服务端强度
