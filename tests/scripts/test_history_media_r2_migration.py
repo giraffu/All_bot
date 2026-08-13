@@ -20,10 +20,15 @@ from scripts.history_media_r2_migration import (
     build_standard_target,
     classify_target_status,
     classify_reference,
+    group_copy_candidates,
     evaluate_missing_round,
     hash_body,
     history_assets_from_record,
     normalize_asyncpg_dsn,
+    _add_r2_custom_headers,
+    _parser,
+    _persist_copy_success,
+    _process_r2_custom_arguments,
     _probe_r2_rows,
     _probe_target_rows,
     replace_asset_reference,
@@ -34,15 +39,24 @@ from scripts.history_media_r2_migration import (
 )
 
 
-def _head(*, size: int, etag: str, modified: datetime | None = None):
+def _head(
+    *,
+    size: int,
+    etag: str,
+    modified: datetime | None = None,
+    metadata: dict[str, str] | None = None,
+):
     return {
         "ContentLength": size,
         "ETag": f'"{etag}"',
         "LastModified": modified or datetime(2026, 8, 9, tzinfo=timezone.utc),
+        "Metadata": metadata or {},
     }
 
 
 def test_server_side_copy_uses_r2_copy_object_without_reading_media():
+    plan_sha = "a" * 64
+
     class Client:
         def __init__(self):
             self.copy_calls = []
@@ -53,7 +67,11 @@ def test_server_side_copy_uses_r2_copy_object_without_reading_media():
             if Key == "old/file.mp4":
                 return _head(size=123, etag="source-etag")
             if self.copy_calls:
-                return _head(size=123, etag="source-etag")
+                return _head(
+                    size=123,
+                    etag="source-etag",
+                    metadata={"allbot-copy-plan-sha256": plan_sha},
+                )
             raise ClientError(
                 {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
                 "HeadObject",
@@ -77,6 +95,7 @@ def test_server_side_copy_uses_r2_copy_object_without_reading_media():
         target_key="task-results/backend/primary.mp4",
         expected_size=123,
         expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        copy_plan_sha256=plan_sha,
     )
 
     assert result == {
@@ -84,6 +103,7 @@ def test_server_side_copy_uses_r2_copy_object_without_reading_media():
         "source_etag": "source-etag",
         "etag": "source-etag",
         "multipart": False,
+        "recovered": False,
     }
     assert client.copy_calls == [
         {
@@ -92,16 +112,105 @@ def test_server_side_copy_uses_r2_copy_object_without_reading_media():
             "CopySource": {"Bucket": "user-data-prod", "Key": "old/file.mp4"},
             "CopySourceIfMatch": "source-etag",
             "MetadataDirective": "COPY",
+            "Metadata": {"allbot-copy-plan-sha256": plan_sha},
+            "custom_headers": {
+                "cf-copy-destination-if-none-match": "*",
+                "x-amz-metadata-directive": "MERGE",
+            },
         }
     ]
 
 
-def test_server_side_copy_fails_closed_when_target_already_exists():
+def test_server_side_copy_recovers_same_plan_target_without_copying_again():
+    plan_sha = "b" * 64
+
+    class Client:
+        def __init__(self):
+            self.copy_calls = []
+
+        def head_object(self, *, Bucket, Key):
+            if Key == "old.png":
+                return _head(size=3, etag="source")
+            return _head(
+                size=3,
+                etag="existing",
+                metadata={"allbot-copy-plan-sha256": plan_sha},
+            )
+
+        def copy_object(self, **kwargs):
+            self.copy_calls.append(kwargs)
+
+    client = Client()
+    result = server_side_copy_r2_object(
+        client,
+        bucket="user-data-prod",
+        source_key="old.png",
+        target_key="new.png",
+        expected_size=3,
+        expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        expected_etag="source",
+        copy_plan_sha256=plan_sha,
+    )
+
+    assert result["recovered"] is True
+    assert result["etag"] == "existing"
+    assert client.copy_calls == []
+
+
+def test_server_side_copy_recovers_destination_precondition_race():
+    plan_sha = "f" * 64
+
+    class Client:
+        def __init__(self):
+            self.raced = False
+
+        def head_object(self, *, Bucket, Key):
+            if Key == "old.png":
+                return _head(size=3, etag="source")
+            if self.raced:
+                return _head(
+                    size=3,
+                    etag="target",
+                    metadata={"allbot-copy-plan-sha256": plan_sha},
+                )
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def copy_object(self, **_kwargs):
+            self.raced = True
+            raise ClientError(
+                {"Error": {"Code": "PreconditionFailed", "Message": "exists"}},
+                "CopyObject",
+            )
+
+    result = server_side_copy_r2_object(
+        Client(),
+        bucket="user-data-prod",
+        source_key="old.png",
+        target_key="new.png",
+        expected_size=3,
+        expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        expected_etag="source",
+        copy_plan_sha256=plan_sha,
+    )
+
+    assert result["recovered"] is True
+
+
+def test_server_side_copy_fails_closed_when_existing_target_has_other_plan():
     class Client:
         def head_object(self, *, Bucket, Key):
-            return _head(size=3, etag="existing")
+            if Key == "old.png":
+                return _head(size=3, etag="source")
+            return _head(
+                size=3,
+                etag="existing",
+                metadata={"allbot-copy-plan-sha256": "c" * 64},
+            )
 
-    with pytest.raises(RuntimeError, match="target already exists"):
+    with pytest.raises(RuntimeError, match="different or missing copy plan marker"):
         server_side_copy_r2_object(
             Client(),
             bucket="user-data-prod",
@@ -109,6 +218,8 @@ def test_server_side_copy_fails_closed_when_target_already_exists():
             target_key="new.png",
             expected_size=3,
             expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            expected_etag="source",
+            copy_plan_sha256="b" * 64,
         )
 
 
@@ -126,7 +237,78 @@ def test_server_side_copy_binds_the_frozen_source_etag():
             expected_size=3,
             expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
             expected_etag="frozen",
+            copy_plan_sha256="d" * 64,
         )
+
+
+def test_copy_candidates_deduplicate_identical_targets_and_reject_conflicts():
+    modified = datetime(2026, 8, 9, tzinfo=timezone.utc)
+    base = {
+        "source_name": "r2-user-data-prod",
+        "source_key": "old.png",
+        "target_key": "task-results/backend/primary.png",
+        "byte_size": 3,
+        "source_last_modified": modified,
+        "source_etag": "source",
+    }
+    groups = group_copy_candidates([{**base, "id": 1}, {**base, "id": 2}])
+
+    assert len(groups) == 1
+    assert [row["id"] for row in groups[0]] == [1, 2]
+
+    with pytest.raises(RuntimeError, match="conflicting frozen sources"):
+        group_copy_candidates(
+            [{**base, "id": 1}, {**base, "id": 2, "source_key": "other.png"}]
+        )
+
+
+def test_r2_custom_headers_survive_boto_parameter_validation():
+    context = {}
+    params = {"Bucket": "user-data-prod", "custom_headers": {"x-test": "value"}}
+
+    _process_r2_custom_arguments(params, context)
+    request = {"headers": {}}
+    _add_r2_custom_headers(request, context)
+
+    assert "custom_headers" not in params
+    assert request["headers"] == {"x-test": "value"}
+
+
+@pytest.mark.asyncio
+async def test_copy_success_marks_every_duplicate_ledger_row():
+    class Conn:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, query, *params):
+            self.calls.append((query, params))
+
+    conn = Conn()
+    await _persist_copy_success(
+        conn,
+        [{"id": 1}, {"id": 2}],
+        {"etag": "target", "multipart": False, "recovered": False},
+    )
+
+    assert conn.calls[0][1][0] == [1, 2]
+    assert conn.calls[0][1][1:] == ("target", "r2_copy_object")
+
+
+def test_execute_copy_concurrency_is_bounded():
+    base = [
+        "execute-copy",
+        "--plan-sha256",
+        "a" * 64,
+        "--confirm",
+        "COPY_HISTORY_MEDIA_" + "a" * 64,
+        "--config",
+        "/tmp/config.json",
+    ]
+    assert _parser().parse_args([*base, "--copy-concurrency", "16"]).copy_concurrency == 16
+    with pytest.raises(SystemExit):
+        _parser().parse_args([*base, "--copy-concurrency", "0"])
+    with pytest.raises(SystemExit):
+        _parser().parse_args([*base, "--copy-concurrency", "33"])
 
 
 def test_large_server_side_copy_uses_multipart_copy_without_media_body():
@@ -136,13 +318,18 @@ def test_large_server_side_copy_uses_multipart_copy_without_media_body():
     class Client:
         def __init__(self):
             self.created = False
+            self.create_kwargs = None
             self.parts = []
 
         def head_object(self, *, Bucket, Key):
             if Key == "old/large.bin":
                 return _head(size=total_size, etag="large-source")
             if self.created:
-                return _head(size=total_size, etag="multipart-target")
+                return _head(
+                    size=total_size,
+                    etag="multipart-target",
+                    metadata={"allbot-copy-plan-sha256": "e" * 64},
+                )
             raise ClientError(
                 {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
                 "HeadObject",
@@ -150,6 +337,7 @@ def test_large_server_side_copy_uses_multipart_copy_without_media_body():
 
         def create_multipart_upload(self, **kwargs):
             self.created = True
+            self.create_kwargs = kwargs
             return {"UploadId": "upload-1"}
 
         def upload_part_copy(self, **kwargs):
@@ -170,11 +358,13 @@ def test_large_server_side_copy_uses_multipart_copy_without_media_body():
         target_key="new/large.bin",
         expected_size=total_size,
         expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        copy_plan_sha256="e" * 64,
         single_copy_limit=part_size,
         multipart_part_size=part_size,
     )
 
     assert result["multipart"] is True
+    assert client.create_kwargs["custom_headers"] == {"If-None-Match": "*"}
     assert [part["CopySourceRange"] for part in client.parts] == [
         f"bytes=0-{part_size - 1}",
         f"bytes={part_size}-{total_size - 1}",
