@@ -848,15 +848,15 @@
       "minimax_h3_addon_guides": {
         "recommended_strength": "Recommended strength",
         "trigger_auto": "Trigger words are added automatically; do not repeat them.",
-        "breasts_strength": "Default 1.0; the author gives no strict range.",
+        "breasts_strength": "Default 1.0; adjust within the allowed range to suit the result.",
         "breasts_prompt": "Describe breast size and shape, areole size and color, and nipple state; use the spelling “areoles”.",
-        "anus_strength": "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "anus_strength": "Recommended 1.0. The slider controls the main LoRA; the motion-assist LoRA automatically uses 35% of that value (for example, 1.0 → 0.35), with no separate setting.",
         "anus_prompt": "Describe the anus direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
-        "vagina_strength": "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "vagina_strength": "Recommended 1.0. The slider controls the main LoRA; the motion-assist LoRA automatically uses 35% of that value (for example, 1.0 → 0.35), with no separate setting.",
         "vagina_prompt": "Describe the vagina direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
-        "sex_pose_strength": "Author recommends 0.5 or lower; default 0.5.",
+        "sex_pose_strength": "Recommended 0.5 or lower; default 0.5.",
         "sex_pose_prompt": "Prefer image-to-video; use about 200–270 English words covering action, viewpoint, pace, shot type, people, frame position, motion, surface state, and ambience.",
-        "penis_strength": "Default 1.0; the author gives no strict range.",
+        "penis_strength": "Default 1.0; adjust within the allowed range to suit the result.",
         "penis_prompt": "Specify front, back, or side direction, plus size, circumcision, and glans color."
       },
       "upload_slots": {

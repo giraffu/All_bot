@@ -849,15 +849,15 @@
       "minimax_h3_addon_guides": {
         "recommended_strength": "推荐强度",
         "trigger_auto": "触发词会自动添加，无需重复输入。",
-        "breasts_strength": "默认 1.0；作者未给硬性范围。",
+        "breasts_strength": "默认 1.0；可按画面效果在允许范围内调整。",
         "breasts_prompt": "写明乳房尺寸与形状、乳晕尺寸与颜色、乳头状态；使用 areoles 拼写。",
-        "anus_strength": "推荐 1.0；运动文件自动按 0.35 相对强度加载。",
+        "anus_strength": "推荐 1.0。滑块控制主 LoRA；辅助运动 LoRA 自动取滑块值的 35%（例如 1.0 → 0.35），无需另设。",
         "anus_prompt": "描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
-        "vagina_strength": "推荐 1.0；运动文件自动按 0.35 相对强度加载。",
+        "vagina_strength": "推荐 1.0。滑块控制主 LoRA；辅助运动 LoRA 自动取滑块值的 35%（例如 1.0 → 0.35），无需另设。",
         "vagina_prompt": "描述阴道在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
-        "sex_pose_strength": "作者建议 0.5 或更低；默认 0.5。",
+        "sex_pose_strength": "建议 0.5 或更低；默认 0.5。",
         "sex_pose_prompt": "优先使用图生视频；建议约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音。",
-        "penis_strength": "默认 1.0；作者未给硬性范围。",
+        "penis_strength": "默认 1.0；可按画面效果在允许范围内调整。",
         "penis_prompt": "写明正面、背面或侧面方向，并描述尺寸、是否包皮环切及龟头颜色。"
       },
       "upload_slots": {

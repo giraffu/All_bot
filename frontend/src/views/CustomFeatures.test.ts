@@ -23,12 +23,15 @@ const labels: Record<string, string> = {
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
   'lab.workbench.minimax_h3_addon_model': '附加模型',
+  'lab.workbench.minimax_h3_addons.anus': '肛门',
   'lab.workbench.minimax_h3_addons.sex_pose': '性爱姿势',
   'lab.workbench.minimax_h3_addons.select_all': '全选 LoRA',
   'lab.workbench.minimax_h3_addons.clear': '清空',
   'lab.workbench.minimax_h3_addon_guides.recommended_strength': '推荐强度',
   'lab.workbench.minimax_h3_addon_guides.trigger_auto': '触发词会自动添加，无需重复输入。',
-  'lab.workbench.minimax_h3_addon_guides.sex_pose_strength': '作者建议 0.5 或更低；默认 0.5。',
+  'lab.workbench.minimax_h3_addon_guides.anus_strength': '推荐 1.0。滑块控制主 LoRA；辅助运动 LoRA 自动取滑块值的 35%（例如 1.0 → 0.35），无需另设。',
+  'lab.workbench.minimax_h3_addon_guides.anus_prompt': '描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。',
+  'lab.workbench.minimax_h3_addon_guides.sex_pose_strength': '建议 0.5 或更低；默认 0.5。',
   'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt': '使用约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动和环境音。',
 }
 
@@ -192,7 +195,7 @@ const createLtxWorkbench = (options?: { hasLastFrame?: boolean; canStitch?: bool
   stitchCurrentLtxChain: vi.fn(),
 })
 
-const createMinimaxWorkbench = () => ({
+const createMinimaxWorkbench = (addonItems = [{ name: 'sex_pose', strength: 0.5 }]) => ({
   ...createWorkbench(),
   currentMode: computed(() => ({
     ...baseMode,
@@ -209,7 +212,7 @@ const createMinimaxWorkbench = () => ({
   minimaxH3ResolutionPreset: ref('preview'),
   minimaxH3AspectRatio: ref('16:9'),
   minimaxH3ReferenceDescriptions: ref(['', '', '', '']),
-  minimaxH3AddonItems: ref([{ name: 'sex_pose', strength: 0.5 }]),
+  minimaxH3AddonItems: ref(addonItems),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -319,9 +322,20 @@ describe('CustomFeatures MiniMax H3 addon guidance', () => {
     const wrapper = mountView()
 
     expect(wrapper.text()).toContain('推荐强度')
-    expect(wrapper.text()).toContain('作者建议 0.5 或更低')
+    expect(wrapper.text()).toContain('建议 0.5 或更低')
+    expect(wrapper.text()).not.toContain('作者')
     expect(wrapper.text()).toContain('200–270 个英文单词')
     expect(wrapper.text()).toContain('触发词会自动添加')
+  })
+
+  it('explains how the anus helper LoRA strength follows the slider', () => {
+    workbench = createMinimaxWorkbench([{ name: 'anus', strength: 1 }])
+    const wrapper = mountView()
+
+    expect(wrapper.text()).toContain('滑块控制主 LoRA')
+    expect(wrapper.text()).toContain('辅助运动 LoRA 自动取滑块值的 35%')
+    expect(wrapper.text()).toContain('1.0 → 0.35')
+    expect(wrapper.text()).toContain('无需另设')
   })
 })
 
