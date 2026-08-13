@@ -17,7 +17,7 @@ COPY src /app/src
 COPY shared /app/shared
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
-COPY scripts/r2_staging_lifecycle.py scripts/r2_temp_cleanup.py scripts/r2_temp_cleanup_campaign.py scripts/r2_media_governance.py scripts/history_media_r2_migration.py scripts/media_archive_catalog.py scripts/run_daily_r2_temp_cleanup.py scripts/refresh_r2_temp_cleanup_inventory.py scripts/r2_template_submission_migration.py scripts/r2_legacy_bucket_retirement.py /app/scripts/
+COPY scripts/r2_staging_lifecycle.py scripts/r2_temp_cleanup.py scripts/r2_temp_cleanup_campaign.py scripts/r2_media_governance.py scripts/history_media_r2_migration.py scripts/history_media_r2_copy_adaptive.py scripts/media_archive_catalog.py scripts/run_daily_r2_temp_cleanup.py scripts/refresh_r2_temp_cleanup_inventory.py scripts/r2_template_submission_migration.py scripts/r2_legacy_bucket_retirement.py /app/scripts/
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=web-api
 CMD ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
 

@@ -31,6 +31,10 @@ from scripts.history_media_r2_migration import (
     _process_r2_custom_arguments,
     _probe_r2_rows,
     _probe_target_rows,
+    _resolve_copy_max_pool_connections,
+    _s3_client,
+    AdaptiveCopyController,
+    is_transient_copy_failure,
     replace_asset_reference,
     server_side_copy_r2_object,
     validate_copy_gate,
@@ -304,11 +308,128 @@ def test_execute_copy_concurrency_is_bounded():
         "--config",
         "/tmp/config.json",
     ]
-    assert _parser().parse_args([*base, "--copy-concurrency", "16"]).copy_concurrency == 16
+    args = _parser().parse_args([*base, "--copy-concurrency", "64"])
+    assert args.copy_concurrency == 64
+    assert args.max_pool_connections is None
+    assert (
+        _parser().parse_args(
+            [*base, "--copy-concurrency", "64", "--max-pool-connections", "96"]
+        ).max_pool_connections
+        == 96
+    )
     with pytest.raises(SystemExit):
         _parser().parse_args([*base, "--copy-concurrency", "0"])
     with pytest.raises(SystemExit):
-        _parser().parse_args([*base, "--copy-concurrency", "33"])
+        _parser().parse_args([*base, "--copy-concurrency", "65"])
+
+
+def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypatch):
+    captured = {}
+
+    class Events:
+        def register(self, *_args):
+            return None
+
+    class Client:
+        meta = type("Meta", (), {"events": Events()})()
+
+    def fake_client(*_args, **kwargs):
+        captured.update(kwargs)
+        return Client()
+
+    monkeypatch.setattr("scripts.history_media_r2_migration.boto3.client", fake_client)
+    pool = _resolve_copy_max_pool_connections(64, None)
+    _s3_client(
+        {
+            "endpoint": "https://example.invalid",
+            "access_key": "key",
+            "secret_key": "secret",
+        },
+        max_pool_connections=pool,
+    )
+
+    assert pool == 96
+    assert captured["config"].max_pool_connections == 96
+    with pytest.raises(ValueError, match="not be smaller"):
+        _resolve_copy_max_pool_connections(64, 63)
+
+
+@pytest.mark.parametrize(
+    "error_text",
+    [
+        "An error occurred (429) when calling CopyObject",
+        "HTTPStatusCode: 503 ServiceUnavailable",
+        "ReadTimeoutError: read timed out",
+    ],
+)
+def test_adaptive_copy_lowers_one_level_for_transient_r2_failures(error_text):
+    controller = AdaptiveCopyController(initial_concurrency=64)
+
+    assert is_transient_copy_failure(error_text) is True
+    assert controller.record_failure(error_text) == 32
+
+
+def test_adaptive_copy_uses_64_32_16_8_and_requires_three_clean_batches_to_raise():
+    controller = AdaptiveCopyController(initial_concurrency=64)
+
+    assert controller.record_failure("HTTPStatusCode: 503") == 32
+    assert controller.record_failure("ConnectTimeoutError") == 16
+    assert controller.record_failure("SlowDown") == 8
+    assert controller.record_success() == 8
+    assert controller.record_success() == 8
+    assert controller.record_success() == 16
+
+
+def test_adaptive_copy_rejects_non_transient_failures():
+    controller = AdaptiveCopyController(initial_concurrency=64)
+
+    with pytest.raises(RuntimeError, match="non-transient"):
+        controller.record_failure("AccessDenied: source identity changed")
+
+
+def test_copy_resume_after_object_write_before_ledger_commit_uses_plan_marker():
+    plan_sha = "9" * 64
+
+    class Client:
+        def __init__(self):
+            self.copy_calls = 0
+            self.target_exists = False
+
+        def head_object(self, *, Bucket, Key):
+            if Key == "old.png":
+                return _head(size=3, etag="source")
+            if self.target_exists:
+                return _head(
+                    size=3,
+                    etag="target",
+                    metadata={"allbot-copy-plan-sha256": plan_sha},
+                )
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def copy_object(self, **_kwargs):
+            self.copy_calls += 1
+            self.target_exists = True
+
+    client = Client()
+    kwargs = {
+        "bucket": "user-data-prod",
+        "source_key": "old.png",
+        "target_key": "new.png",
+        "expected_size": 3,
+        "expected_last_modified": datetime(2026, 8, 9, tzinfo=timezone.utc),
+        "expected_etag": "source",
+        "copy_plan_sha256": plan_sha,
+    }
+
+    first = server_side_copy_r2_object(client, **kwargs)
+    resumed = server_side_copy_r2_object(client, **kwargs)
+
+    assert first["recovered"] is False
+    assert resumed["recovered"] is True
+    assert client.copy_calls == 1
 
 
 def test_large_server_side_copy_uses_multipart_copy_without_media_body():
@@ -380,9 +501,11 @@ def test_execute_copy_has_no_client_side_media_transfer_path():
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._execute_copy)
+    timed_source = inspect.getsource(module._timed_server_side_copy)
     forbidden = ("_read_s3_sha", "_open_source_body", "NamedTemporaryFile", "upload_fileobj")
-    assert not any(name in source for name in forbidden)
-    assert "server_side_copy_r2_object" in source
+    assert not any(name in source + timed_source for name in forbidden)
+    assert "_timed_server_side_copy" in source
+    assert "server_side_copy_r2_object" in timed_source
 
 
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
