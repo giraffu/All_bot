@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -36,6 +37,59 @@ def test_preflight_requires_exact_image_trusted_model_and_healthy_fleet(
     assert result["ok"] is True
     assert result["image"] == EXACT_IMAGE
     assert result["model_alias"] == "ltx-prompt-optimizer"
+
+
+def test_physical_slot_uses_fleet_key_format():
+    assert operator.DEFAULT_PHYSICAL_SLOT == "gpu-115:gpu0"
+
+
+def test_wait_lanes_authenticates_system_workers(monkeypatch):
+    observed = {}
+
+    def fake_json_url(url, *, method="GET", headers=None):
+        observed.update(url=url, method=method, headers=headers)
+        return {
+            "workers": [
+                {
+                    "agent_id": agent_id,
+                    "status": "idle",
+                    "current_task_id": None,
+                    "provider": "lmstudio",
+                }
+                for agent_id in operator.LANE_IDS
+            ]
+        }
+
+    monkeypatch.setattr(operator, "_json_url", fake_json_url)
+
+    lanes = operator._wait_lanes(agent_token="test-agent-token", deadline_seconds=1)
+
+    assert len(lanes) == 4
+    assert observed["headers"]["Authorization"] == "Bearer test-agent-token"
+
+
+def test_stop_optimizer_does_not_remove_other_compose_services(monkeypatch):
+    compose_calls = []
+    monkeypatch.setattr(
+        operator,
+        "_compose",
+        lambda image, env_file, *args: compose_calls.append(args),
+    )
+    monkeypatch.setattr(operator, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(operator, "_model_alias_loaded", lambda alias: False)
+
+    operator._stop_optimizer(EXACT_IMAGE, "/tmp/prompt.env", stop_server=False)
+
+    assert compose_calls == [("down",)]
+
+
+def test_prompt_optimizer_compose_has_an_isolated_project_name():
+    compose = (
+        Path(operator.__file__).resolve().parents[1]
+        / "deploy/docker-compose-prompt-optimizer-test.yml"
+    ).read_text(encoding="utf-8")
+
+    assert compose.startswith("name: allbot-prompt-optimizer-test\n")
 
 
 def test_takeover_failure_after_fleet_stop_restores_original_slot(tmp_path, monkeypatch):

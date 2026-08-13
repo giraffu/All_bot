@@ -1,3 +1,5 @@
+name: allbot-prompt-optimizer-test
+
 services:
   prompt-optimizer-worker:
     image: ${ALLBOT_PROMPT_OPTIMIZER_IMAGE:?exact digest-pinned image is required}
