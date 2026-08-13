@@ -1,5 +1,7 @@
 from standalone_group_manage_bot.config import GroupManageBotSettings
 from standalone_group_manage_bot.main import build_application
+import inspect
+import standalone_group_manage_bot.main as main_module
 
 
 def test_group_manage_bot_registers_only_message_handler(monkeypatch):
@@ -27,6 +29,12 @@ def test_group_manage_bot_registers_only_message_handler(monkeypatch):
     build_application(settings)
 
     assert handlers == ["message-handler"]
+
+
+def test_group_manage_entrypoint_does_not_import_database_backed_logger():
+    source = inspect.getsource(main_module)
+    assert "src.logger" not in source
+    assert "src.database" not in source
 
 
 def test_run_polling_allows_messages_only(monkeypatch):

@@ -2,16 +2,27 @@ from __future__ import annotations
 
 import logging
 import signal
+from pathlib import Path
 
 from telegram.ext import ApplicationBuilder
 from telegram.request import HTTPXRequest
 
 from paid_group_guard_bot.moderation_handlers import build_message_moderation_handler
-from src.logger import setup_logging
 from standalone_group_manage_bot.config import GroupManageBotSettings
 from standalone_group_manage_bot.moderation import GroupManageConfigProvider
 
 logger = logging.getLogger(__name__)
+
+
+def setup_logging(log_file: str) -> None:
+    path = Path(log_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(path, encoding="utf-8"), logging.StreamHandler()],
+        force=True,
+    )
 
 
 def build_application(settings: GroupManageBotSettings):
