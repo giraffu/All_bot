@@ -23,7 +23,7 @@ STATE = (
 )
 CONTAINER = "allbot-prompt-optimizer-test"
 DEFAULT_SLOT = "gpu-115-gpu0-img2img_lora_rocm_gfx1151"
-DEFAULT_PHYSICAL_SLOT = "gpu-115-gpu0"
+DEFAULT_PHYSICAL_SLOT = "gpu-115:gpu0"
 MODEL_ALIAS = "ltx-prompt-optimizer"
 LANE_IDS = tuple(f"prompt_optimizer_test_{index:02d}" for index in range(1, 5))
 TEST_CENTRAL_URL = "https://worker-central-test.aivison.it.com"
@@ -72,10 +72,28 @@ def _write_state(payload: dict[str, Any]) -> None:
     temporary.replace(STATE)
 
 
-def _json_url(url: str, *, method: str = "GET") -> dict[str, Any]:
+def _json_url(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     request = urllib.request.Request(url, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
     with urllib.request.urlopen(request, timeout=10) as response:
         return json.load(response)
+
+
+def _env_value(env_file: str, key: str) -> str:
+    for raw_line in Path(env_file).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        candidate, value = line.split("=", 1)
+        if candidate.strip() == key:
+            return value.strip().strip('"').strip("'")
+    return ""
 
 
 def _container_state() -> dict[str, Any]:
@@ -182,11 +200,21 @@ def _wait_ready(*, deadline_seconds: int = 600) -> dict[str, Any]:
     raise TimeoutError(f"prompt optimizer did not become ready: {last}")
 
 
-def _wait_lanes(*, deadline_seconds: int = 180) -> list[dict[str, Any]]:
+def _wait_lanes(
+    *, agent_token: str, deadline_seconds: int = 180
+) -> list[dict[str, Any]]:
+    if not agent_token:
+        raise RuntimeError("AGENT_SECRET_TOKEN is required for Central lane verification")
+    headers = {
+        "Authorization": f"Bearer {agent_token}",
+        "User-Agent": "allbot-prompt-optimizer-ops/1.0",
+    }
     deadline = time.time() + deadline_seconds
     last: list[dict[str, Any]] = []
     while time.time() < deadline:
-        payload = _json_url(f"{TEST_CENTRAL_URL}/system/workers")
+        payload = _json_url(
+            f"{TEST_CENTRAL_URL}/system/workers", headers=headers
+        )
         by_id = {
             str(item.get("agent_id")): item
             for item in payload.get("workers", [])
@@ -220,7 +248,7 @@ def _wait_drained(*, deadline_seconds: int = 7200) -> dict[str, Any]:
 def _stop_optimizer(image: str, env_file: str, *, stop_server: bool) -> None:
     errors: list[str] = []
     try:
-        _compose(image, env_file, "down", "--remove-orphans")
+        _compose(image, env_file, "down")
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         errors.append(f"worker:{type(exc).__name__}")
     _run(["lms", "unload", MODEL_ALIAS], check=False, capture=True)
@@ -314,11 +342,12 @@ def _takeover(args: argparse.Namespace) -> dict[str, Any]:
         )
         steps.append({"action": "load-lm-studio", "model_alias": MODEL_ALIAS})
         _compose(image, env_file, "pull", "prompt-optimizer-worker")
+        _run(["docker", "rm", "-f", CONTAINER], check=False, capture=True)
         _compose(
             image, env_file, "up", "-d", "--force-recreate", "prompt-optimizer-worker"
         )
         ready = _wait_ready()
-        lanes = _wait_lanes()
+        lanes = _wait_lanes(agent_token=_env_value(env_file, "AGENT_SECRET_TOKEN"))
         steps.append(
             {
                 "action": "verify-worker",
