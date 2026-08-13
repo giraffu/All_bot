@@ -61,6 +61,10 @@ class MiniMaxH3AddonModel:
     relative_strengths: tuple[float, ...]
     default_strength: float
     prompt_prefix: str
+    strength_hint_zh: str
+    strength_hint_en: str
+    prompt_guide_zh: str
+    prompt_guide_en: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,24 +77,39 @@ MINIMAX_H3_ADDON_MODELS = {
     "breasts": MiniMaxH3AddonModel(
         "breasts", "乳房", "Breasts",
         ("MiniMaxH3/HMBreasts_085e0750_e40.safetensors",), (1.0,), 1.0, "HMBreasts",
+        "默认 1.0；作者未给硬性范围。", "Default 1.0; the author gives no strict range.",
+        "写明乳房尺寸与形状、乳晕尺寸与颜色、乳头状态；使用 areoles 拼写。",
+        "Describe breast size and shape, areole size and color, and nipple state; use the spelling “areoles”.",
     ),
     "anus": MiniMaxH3AddonModel(
         "anus", "肛门", "Anus",
         ("MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"),
-        (1.0, 0.35), 1.0, "Vagina, anus",
+        (1.0, 0.35), 1.0, "Vagina, hmpussy, anus",
+        "推荐 1.0；运动文件自动按 0.35 相对强度加载。", "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
+        "Describe the anus direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
     ),
     "vagina": MiniMaxH3AddonModel(
         "vagina", "阴道", "Vagina",
         ("MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"),
-        (1.0, 0.35), 1.0, "Vagina",
+        (1.0, 0.35), 1.0, "Vagina, hmpussy",
+        "推荐 1.0；运动文件自动按 0.35 相对强度加载。", "Recommended 1.0; the motion file is loaded automatically at 0.35 relative strength.",
+        "描述阴道在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
+        "Describe the vagina direction in frame, structural detail, and motion; both LoRAs and their triggers are combined automatically.",
     ),
     "sex_pose": MiniMaxH3AddonModel(
         "sex_pose", "性爱姿势", "Sex pose",
         ("MiniMaxH3/HMNSFW_AIO_V2.safetensors",), (1.0,), 0.5, "hmmotion",
+        "作者建议 0.5 或更低；默认 0.5。", "Author recommends 0.5 or lower; default 0.5.",
+        "优先使用图生视频；建议约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音。",
+        "Prefer image-to-video; use about 200–270 English words covering action, viewpoint, pace, shot type, people, frame position, motion, surface state, and ambience.",
     ),
     "penis": MiniMaxH3AddonModel(
         "penis", "阴茎", "Penis",
         ("MiniMaxH3/HMPenis_v2_e35.safetensors",), (1.0,), 1.0, "HMPenis",
+        "默认 1.0；作者未给硬性范围。", "Default 1.0; the author gives no strict range.",
+        "写明正面、背面或侧面方向，并描述尺寸、是否包皮环切及龟头颜色。",
+        "Specify front, back, or side direction, plus size, circumcision, and glans color.",
     ),
 }
 

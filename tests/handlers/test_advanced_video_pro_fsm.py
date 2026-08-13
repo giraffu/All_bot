@@ -53,6 +53,9 @@ async def test_pro_settings_accept_user_addon_but_do_not_expose_acceleration(mon
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
     assert data["addon_models"] == ["penis"]
+    assert "建议强度" in edit.await_args.args[1]
+    assert "正面、背面或侧面" in edit.await_args.args[1]
+    assert "触发词会自动添加" in edit.await_args.args[1]
     callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert "avp_addon_penis" in callbacks
     assert "avp_addon_all" in callbacks
@@ -61,6 +64,27 @@ async def test_pro_settings_accept_user_addon_but_do_not_expose_acceleration(mon
     query.data = "avp_addon_all"
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
     assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)
+
+
+@pytest.mark.asyncio
+async def test_pro_prompt_step_repeats_selected_addon_guidance(monkeypatch):
+    edit = AsyncMock()
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    query = SimpleNamespace(data="avp_settings_done", answer=AsyncMock(), message=object())
+    context = SimpleNamespace(
+        user_data={fsm.DATA_KEY: {
+            "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
+            "addon_models": ["sex_pose"], "images": [], "reference_descriptions": [],
+        }},
+        lang="zh",
+    )
+
+    state = await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
+
+    assert state == AdvancedVideoProState.WAIT_PROMPT
+    assert "200–270 个英文单词" in edit.await_args.args[1]
+    assert "动作、视角、速度、景别" in edit.await_args.args[1]
+    assert "环境音" in edit.await_args.args[1]
 
 
 @pytest.mark.asyncio
