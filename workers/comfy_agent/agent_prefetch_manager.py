@@ -134,6 +134,14 @@ class AgentPrefetchManager:
 
             task_id = str(task.get("task_id", ""))
             task_type = str(task.get("type", ""))
+            if reserve_task and task_id in self.agent._executions:
+                self.logger.info(
+                    "Ignoring redelivered reserved claim for active task %s",
+                    task_id,
+                )
+                await self.agent._acknowledge_redelivered_task(task_id)
+                self.agent._discard_prefetched_task(task_id)
+                return
             if reserve_task and task_id:
                 self.agent._reserved_prefetch_task = task
             if not task_id or not self.should_prefetch_task_type(

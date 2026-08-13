@@ -512,8 +512,9 @@ Worker 拉到任务后会先处理输入：
   `img2img,img2img_lora`，但 `PREFETCH_TASK_TYPES` 只能放四类 SCAIL-2，
   不得 reserve fallback，否则 fallback 会在后续 preferred 到达前已经进入
   running，无法被新协议抢占。本规则不授权自动切换任何存量 GPU Worker。
-- `PREFETCH_CONSUME_WAIT_SECONDS` 只限制下一单开始时等待尚未完成的预取下载多久；缓存已完成时不等待。超时后会取消未完成的预取下载并对已经原子预接的任务走正常输入准备，不会再从 Central 接新任务。所有正式 LAN AIO Worker，以及统一 RunPod create request 后续新建的 cloud-test/cloud-prod Pod，默认使用深度 1、预接模式和 10 秒上限，`PREFETCH_TASK_TYPES` 自动跟随该 Worker 的 `SUPPORTED_TASK_TYPES`；预接任务等待前一单期间每 15 秒续一次 task heartbeat，但使用 `set_current=false`，不会覆盖当前执行任务。已经原子预接的普通任务仍可能先于随后才到达的付费任务执行，但不会再因当前类型黏性持续跳过其它类型。RunPod 该契约不反向更新已运行 Pod，且新 Pod 的 `deploy` Worker bundle 必须包含预接实现。
-- 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 Comfy inflight 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。`PIPELINE_MAX_RUNNING_TASKS` 控制 Comfy preparing/queued/running 数，`PIPELINE_MAX_CLAIMED_TASKS` 是包含 execution、delivery 和 reserved prefetch 的硬上限，promote reserved task 只能做等量阶段转换，不能多占一单。`PIPELINE_DELIVERY_CONCURRENCY` 单独限制结果解析、物化、spool、上传和 complete 的并发；GPU 发出 `gpu_done` 后可立即让下一单进入计算，但当前任务仍保持 running，直到拿到交付槽、上传成功并收到 Central `/complete` 确认。
+- `PREFETCH_CONSUME_WAIT_SECONDS` 只限制下一单等待未完成预取的时间；超时后取消下载，已预接任务改走正常准备，不再 pop。正式 LAN 和后续新建 RunPod 默认深度 1、reserve、等待 10 秒，类型跟随 supported；等待期间 heartbeat 使用 `set_current=false`。该契约不修改存量 RunPod。
+- `PIPELINE_ENABLED` 在 Comfy 槽未满时真实 pop 并提前准备/排队。running、claimed（含 reserved/delivery）和交付并发分别由三个 `PIPELINE_*` 上限约束；`gpu_done` 只释放计算槽，上传并收到 `/complete` 后才终态。
+- Central claim 是 at-least-once；Worker 以 `backend_task_id` 幂等执行。活跃 task 重投只确认 heartbeat/claim，不得重复准备、`queue_prompt`、finalizer、上传或 complete；重启后本地 execution 不存在时可恢复接纳。单进程保持 `task_id -> execution -> prompt_id -> finalizer` 一一对应。
 - 有界重叠按 profile 分成两档。快速图片类 `img2img/img2img_lora`、`i2i_pro`、`pornmaster_flux2_edit_bf16` 使用 `PIPELINE_PROFILE_POLICY=image_claim3_comfy2_delivery1_v1`，有效 claimed/Comfy/delivery 上限为 `3/2/1`；媒体类 `image_to_video`、`ltx_video`、`scail2`、`wan22_video_v2` 使用 `media_claim2_comfy1_delivery1_v1`，有效上限为 `2/1/1`。媒体档始终只有一个 Comfy/GPU 执行槽，前一单进入 `gpu_done`/交付后才允许下一单开始计算。LAN render 与后续新建 RunPod create request 注入相同策略；存量 RunPod 不原地修改。数字环境仍固定写入回滚默认 `1/2/1`，旧 worker 忽略未知版本策略时保持串行。历史 `bf16_lan_claim3_comfy2_delivery1` 只作为已发布 BF16 镜像的兼容别名。
 
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。

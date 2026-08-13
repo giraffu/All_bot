@@ -145,6 +145,16 @@ class AgentPipelineCoordinator:
         task_type = str(task.get("type", ""))
         params = self.parse_task_params(task)
 
+        if task_id in self.agent._executions:
+            execution = self.agent._executions[task_id]
+            self.logger.info(
+                "Ignoring duplicate launch for active task %s in phase %s",
+                task_id,
+                execution.phase,
+            )
+            await self.agent._acknowledge_redelivered_task(task_id)
+            return None
+
         self.logger.info("Processing task %s of type %s", task_id, task_type)
         execution = self.agent._start_task_execution(
             task_id=task_id,
