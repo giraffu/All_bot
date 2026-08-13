@@ -147,7 +147,41 @@ fi
 
 cd "$RUNPOD_WORKER_DIR"
 export PYTHONPATH="${RUNPOD_WORKER_DIR}:${REPO_DIR}:${PYTHONPATH:-}"
-python3 -m pip install -r requirements.txt
+
+verify_worker_dependencies() {
+    python3 - <<'PY'
+import importlib
+
+for module_name in (
+    "asgi_correlation_id",
+    "boto3",
+    "dotenv",
+    "fastapi",
+    "httpx",
+    "minio",
+    "PIL",
+    "pydantic",
+    "uvicorn",
+    "websockets",
+):
+    importlib.import_module(module_name)
+PY
+}
+
+dependency_mode="${RUNPOD_WORKER_DEPENDENCY_MODE:-auto}"
+if verify_worker_dependencies; then
+    log "baked Worker dependencies are ready; skipping pip install"
+elif [ "$dependency_mode" = "baked" ]; then
+    echo "baked Worker dependencies are incomplete; refusing runtime network install" >&2
+    exit 78
+elif [ "$dependency_mode" = "auto" ] || [ "$dependency_mode" = "install" ]; then
+    log "installing Worker dependencies at runtime (mode=${dependency_mode})"
+    python3 -m pip install -r requirements.txt
+    verify_worker_dependencies
+else
+    echo "invalid RUNPOD_WORKER_DEPENDENCY_MODE: ${dependency_mode}" >&2
+    exit 78
+fi
 mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_CACHE_DIR" logs
 
 resolve_baked_comfyui_dir() {

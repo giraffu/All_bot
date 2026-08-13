@@ -34,6 +34,7 @@ COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh && \
+    python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt && \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS' && \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; assert "character_reference_build" in p' && \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from shared.character_reference_sheet import compose_ingredients_character_panel; assert callable(compose_ingredients_character_panel)' && \
