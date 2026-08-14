@@ -18,6 +18,8 @@ ARG SAGEATTENTION_ARCHIVE_SHA256=74b6667164f9e368e3799bc2ab59b9b08c4591630f1c602
 ARG CUDA_INSTALL_DIR=/usr/local/cuda-12.8
 
 COPY --from=python_builder /usr/local /usr/local
+COPY --from=python_builder /usr/lib/x86_64-linux-gnu/libssl.so.3 /opt/python-runtime-libs/libssl.so.3
+COPY --from=python_builder /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /opt/python-runtime-libs/libcrypto.so.3
 
 COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/torch /opt/python-lib64/torch
 COPY --from=python_runtime /usr/local/lib64/python3.12/site-packages/torchgen /opt/python-lib64/torchgen
@@ -29,6 +31,7 @@ COPY --from=python_runtime /usr/local/lib/python3.12/site-packages/nvidia /opt/p
 
 ENV CUDA_HOME=${CUDA_INSTALL_DIR} \
     PATH=${CUDA_INSTALL_DIR}/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/python-runtime-libs:${LD_LIBRARY_PATH} \
     PYTHONPATH=/opt/python-lib64:/opt/python-lib \
     TORCH_CUDA_ARCH_LIST=12.0 \
     EXT_PARALLEL=4 \

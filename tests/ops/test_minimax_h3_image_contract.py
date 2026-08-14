@@ -19,6 +19,9 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "192.168.1.115:5000/allbot/comfyui-boot@sha256:09c810dd" in dockerfile
     assert "192.168.1.115:5000/nvidia/cuda@sha256:45d0ca2d" in dockerfile
     assert "192.168.1.115:5000/library/python@sha256:9bde3c3a" in dockerfile
+    assert "python-runtime-libs/libssl.so.3" in dockerfile
+    assert "python-runtime-libs/libcrypto.so.3" in dockerfile
+    assert "LD_LIBRARY_PATH=/opt/python-runtime-libs" in dockerfile
     assert "ghcr.io" not in dockerfile
     assert "TORCH_CUDA_ARCH_LIST=12.0" in dockerfile
     assert 'torch.__version__ == "2.11.0+cu128"' in dockerfile
