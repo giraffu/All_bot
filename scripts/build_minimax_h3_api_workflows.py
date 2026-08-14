@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic API-format MiniMax H3 workflows derived from DaSiWa defaults."""
+"""Build deterministic API-format MiniMax H3 workflows from the official RedMix stage."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 
-SOURCE_SHA256 = "c54e107382b65e4a897615b6a7d2f0a89ddab99b214e890aa93deab100640cdc"
+REDMIX_SOURCE_SHA256 = "71bda4f17f34d8c4489541979265a0e31df805dd02baebdb59ebf69b85634595"
 FL_MODEL = "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
 REF_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 CLIP = "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors"
@@ -30,31 +30,70 @@ def _node(class_type: str, **inputs):
 def build(task_type: str) -> dict:
     is_ref = task_type == "minimax_h3_ref2v"
     use_redmix = not is_ref
-    workflow = {
+    model_chain = {
         "1": _node("UNETLoader", unet_name=REF_MODEL if is_ref else FL_MODEL, weight_dtype="default"),
-        "2": _node("MiniMaxH3MemoryEfficientSageAttentionPatch", model=["1", 0]),
+        "2": _node(
+            "ModelAttentionBackend",
+            model=["1", 0],
+            attention="pytorch attention" if is_ref else "comfy kitchen attention",
+        ),
         "3": _node(
             "MiniMaxH3SigmaShift",
             model=["2", 0],
             shift_video=12.0 if use_redmix else 11.0,
             shift_audio=3.0 if use_redmix else 4.0,
         ),
+        "7": _node(
+            "ReservedVRAMSetter",
+            anything=["3", 0],
+            reserved=2.0,
+            mode="auto",
+            seed=0,
+            auto_max_reserved=3.0,
+            clean_gpu_before=True,
+        ),
+    }
+    conditioning = (
+        _node(
+            "MiniMaxH3ReferenceToVideo",
+            clip=["4", 0],
+            vae=["5", 0],
+            audio_vae=["6", 0],
+            prompt="",
+            width=736,
+            height=416,
+            length=124,
+            ref_image_size="match",
+        )
+        if is_ref
+        else _node(
+            "MiniMaxH3UnifiedToVideo",
+            clip=["4", 0],
+            video_vae=["5", 0],
+            audio_vae=["6", 0],
+            prompt="",
+            mode="auto",
+            width=736,
+            height=416,
+            duration=5.0,
+            fps=24,
+            ref_image_size="match",
+        )
+    )
+    workflow = {
+        **model_chain,
         "4": _node("CLIPLoader", clip_name=CLIP, type="minimax", device="default"),
         "5": _node("VAELoader", vae_name=VIDEO_VAE),
         "6": _node("VAELoader", vae_name=AUDIO_VAE),
-        "30": _node(
-            "MiniMaxH3ReferenceToVideo" if is_ref else "MiniMaxH3ImageToVideo",
-            clip=["4", 0], vae=["5", 0], prompt="", width=736, height=416, length=124,
-            **({"audio_vae": ["6", 0], "ref_image_size": "match"} if is_ref else {}),
-        ),
+        "30": conditioning,
         "31": _node("RandomNoise", noise_seed=1),
-        "32": _node("BasicGuider", model=["3", 0], conditioning=["30", 0]),
+        "32": _node("BasicGuider", model=["7", 0], conditioning=["30", 0]),
         "33": (
             _node("KSamplerSelect", sampler_name="euler")
             if use_redmix
             else _node("KSamplerSelect", sampler_name="res_multistep")
         ),
-        "34": _node("BasicScheduler", model=["3", 0], scheduler="simple", steps=8 if use_redmix else 25, denoise=1.0),
+        "34": _node("BasicScheduler", model=["7", 0], scheduler="simple", steps=8 if use_redmix else 25, denoise=1.0),
         "35": _node("SamplerCustomAdvanced", noise=["31", 0], guider=["32", 0], sampler=["33", 0], sigmas=["34", 0], latent_image=["30", 1]),
         "36": _node("VAEDecode", samples=["35", 0], vae=["5", 0]),
         "37": _node("VAEDecodeAudio", samples=["35", 0], vae=["6", 0]),
@@ -102,8 +141,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.source:
         digest = hashlib.sha256(args.source.read_bytes()).hexdigest()
-        if digest != SOURCE_SHA256:
-            raise SystemExit(f"DaSiWa source SHA256 mismatch: {digest}")
+        if digest != REDMIX_SOURCE_SHA256:
+            raise SystemExit(f"official RedMix source SHA256 mismatch: {digest}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for task_type, filename in FILENAMES.items():
         target = args.output_dir / filename

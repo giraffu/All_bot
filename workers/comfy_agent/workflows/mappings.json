@@ -233,17 +233,20 @@
     },
     "minimax_h3_t2v": {
         "prompt": "30", "prompt_input": "prompt", "width": "30", "width_input": "width",
-        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "length",
+        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "duration",
+        "duration": "30", "duration_input": "duration",
         "seed": "31", "seed_input": "noise_seed"
     },
     "minimax_h3_i2v": {
         "image": "20", "prompt": "30", "prompt_input": "prompt", "width": "30", "width_input": "width",
-        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "length",
+        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "duration",
+        "duration": "30", "duration_input": "duration",
         "seed": "31", "seed_input": "noise_seed"
     },
     "minimax_h3_flf2v": {
         "image": "20", "image2": "21", "prompt": "30", "prompt_input": "prompt", "width": "30", "width_input": "width",
-        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "length",
+        "height": "30", "height_input": "height", "frame_count": "30", "frame_count_input": "duration",
+        "duration": "30", "duration_input": "duration",
         "seed": "31", "seed_input": "noise_seed"
     },
     "minimax_h3_ref2v": {
