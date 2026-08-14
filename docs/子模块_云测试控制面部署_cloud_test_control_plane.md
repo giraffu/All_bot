@@ -59,6 +59,13 @@ python scripts/release.py build \
 本地目录或目标机源码替代。需要 config/compose 契约变更时，先分别构建并部署
 对应 contract，再逐个重建受影响模块。
 
+控制面 image 默认优先使用 SGP1 专用云 BuildKit，并显式传入操作者当次验证过的
+远端 builder；Pages/contract 仍由本地打包。Worker artifact 要保留在本地 registry
+时，按不可变发布文档的“云构建写入本地 registry”流程使用仅绑定 loopback 的 SSH
+transport，把同一 repository path 的精确 digest 从云 builder 写入本地 registry，
+并在部署窗口供测试主机拉取。该 transport 不授权公网暴露 registry、云测试运行主机
+源码构建或长期修改 Docker daemon。
+
 ### 3.2 部署
 
 ```bash

@@ -25,8 +25,11 @@ python scripts/release.py build \
   --sha <40位main-sha>
 ```
 
-`--module` 可重复。发布器创建临时干净 worktree，用本机 buildx/GHCR 构建并
-push，仅递归必要 base。已有同 SHA 产物时复用并返回精确 digest；外部镜像只
+`--module` 可重复。发布器创建临时干净 worktree，用明确选择的 Buildx 与 registry
+构建并 push，仅递归必要 base。控制面 image 默认优先 SGP1 专用云 BuildKit；
+`release.py` 保留空 `--builder` 只是为了 GPU/LAN、本地开发和故障处置，不代表
+推荐本机冷构建。Pages/contract 是本地打包后推送 OCI，不经过 Buildx。已有同 SHA
+产物时复用并返回精确 digest；外部镜像只
 解析 digest。完整 SHA 是构建输入标识，不是 ancestry 门禁。
 `build-only` base 不再跟随应用 SHA：其 tag 为
 `input-<canonical-sha256>`，身份只覆盖模块名、target、Dockerfile、catalog
@@ -34,7 +37,8 @@ push，仅递归必要 base。已有同 SHA 产物时复用并返回精确 diges
 或 base digest 变化才重建；最终业务镜像仍用完整 Git SHA tag，并返回
 `repository@sha256:digest`。
 
-SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模块构建：
+SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模块构建。
+Runner 内的 builder 名称为 `allbot-sgp1`：
 
 ```bash
 python scripts/release.py build \
@@ -58,6 +62,37 @@ RunPod 消费的 GPU module 必须在 catalog 声明 `runpod_single_manifest=tru
 发布器据此显式构建 `linux/amd64` 并关闭 BuildKit provenance，使运行 digest
 直接指向单一 Docker image manifest，而不是带 attestation 的 OCI index。
 LAN-only GPU module 不受此标记影响。
+
+本地操作者也可以通过 `allbot-do-sgp1-build` 对应的 SSH Docker context 创建或
+复用远端 builder。该名称属于操作者本机 Docker state，不在仓库硬编码；执行前用
+`docker context inspect` 和 `docker buildx inspect <builder> --bootstrap` 确认
+endpoint 确实是专用构建主机。控制面 image 构建应显式传这个 builder；只有它不健康、
+依赖没有受控远端可达路径或用户明确要求时，才退回本机 builder 并记录原因。
+
+### 云构建写入本地 registry（不经过 GHCR）
+
+`--image-prefix` 可以指向本地 registry，不要求 GHCR。专用构建主机不能直接访问
+LAN 地址时，使用现有 SSH/Tailscale 管理链路建立任务级反向端口转发：
+
+1. 在云构建主机选择未占用的 loopback 端口，并把它转发到本地 registry；禁止绑定
+   `0.0.0.0`、修改云防火墙或公开 registry。
+   registry 大层通道与 Docker context/BuildKit 控制面使用独立 SSH 连接，不能复用
+   同一个 multiplex master；否则大层回传可能阻塞 build context session。
+2. 让本地发布进程与远端 BuildKit 使用同一 registry namespace 和 tag。若两端
+   loopback 端口不同，先提供等价的本地 loopback 转发，不能靠改 repository path
+   拼接两个不同产物。
+3. 构建前分别从本机和云构建主机只读验证 `/v2/`；构建后通过 registry API/ORAS
+   核对 manifest digest，并检查 OCI revision 等于指定完整 Git SHA。
+4. 云测试运行主机若也不能直连 LAN registry，在单模块部署窗口建立同类 loopback
+   通道，从相同 repository path 拉取精确 digest。通道只是 artifact transport；
+   云端仍禁止源码同步、目标机 build、mutable tag 和容器内热改。
+5. 构建与部署结束后关闭临时通道。artifact 的 canonical 副本继续保存在本地
+   registry；发布状态记录精确 digest，回滚仍使用目标模块已记录的 previous identity。
+
+这个路径尤其适用于 Worker artifact 保留在本地 registry、但仍要求使用专用云构建
+算力的场景。控制面是否使用 GHCR 独立决定，不要把 Worker 的 registry 约束错误扩散
+到控制面。不得把 SSH 通道写成长期公网 registry，也不得因 registry transport 改变
+artifact 身份。
 
 ### 本地代理预检
 
