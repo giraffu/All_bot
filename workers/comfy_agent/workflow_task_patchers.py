@@ -1407,6 +1407,28 @@ _MINIMAX_H3_PRECISION_PRESETS = {
     "standard": "0.52 MP - SD",
     "hd": "0.65 MP - Balanced",
 }
+_MINIMAX_H3_DURATION_BY_FRAME_COUNT = {124: 5.0, 243: 10.0, 362: 15.0}
+
+
+def _minimax_h3_duration(params: dict[str, Any]) -> float:
+    raw_duration = params.get("duration")
+    if raw_duration not in (None, ""):
+        try:
+            duration = float(str(raw_duration).removesuffix("s"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid MiniMax H3 duration") from exc
+        if duration in _MINIMAX_H3_DURATION_BY_FRAME_COUNT.values():
+            return duration
+    raw_frames = params.get("frame_count")
+    if raw_frames in (None, ""):
+        return 5.0
+    try:
+        duration = _MINIMAX_H3_DURATION_BY_FRAME_COUNT[int(raw_frames)]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("invalid MiniMax H3 frame count") from exc
+    return duration
+
+
 def patch_minimax_h3_workflow(
     workflow: dict[str, Any],
     *,
@@ -1453,6 +1475,11 @@ def patch_minimax_h3_workflow(
         workflow["30"]["inputs"]["height"] = ["41", 1]
     guide_inputs = workflow["30"]["inputs"]
     guide_inputs["prompt"] = str(params.get("prompt") or "").strip()
+    if task_type != "minimax_h3_ref2v":
+        guide_inputs["duration"] = _minimax_h3_duration(params)
+        guide_inputs["fps"] = 24
+        guide_inputs["mode"] = "auto"
+        guide_inputs.pop("length", None)
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")

@@ -240,8 +240,10 @@ profiles:
     model_bundles:
       - minimax_h3_runtime
     required_nodes:
-      - MiniMaxH3ImageToVideo
-      - MiniMaxH3MemoryEfficientSageAttentionPatch
+      - MiniMaxH3UnifiedToVideo
+      - MiniMaxH3AudioLock
+      - ModelAttentionBackend
+      - ReservedVRAMSetter
       - MiniMaxH3SigmaShift
       - VAEDecodeAudio
       - VHS_VideoCombine

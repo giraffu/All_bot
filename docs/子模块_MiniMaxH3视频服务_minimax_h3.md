@@ -44,16 +44,24 @@ NaughtyTimes 成人动作能力已经在 checkpoint 中，不得再次加载同�
 重复放大融合效果。
 
 三个公开 workflow 固定使用 8 steps、`simple` scheduler、Euler sampler、video/audio
-shift `12/3`，并保留 KJNodes H3 memory-efficient SageAttention patch。它们没有
-`LoraLoaderModelOnly` 或 TurboSampler 节点，不注入触发词。与旧方案相比，运行模型包
+shift `12/3`。活动模型链完整采用 RedMix 官方第一阶段语义：
+`UNETLoader → ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift
+→ ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → BasicGuider/BasicScheduler`；conditioning
+统一使用 `MiniMaxH3UnifiedToVideo`。禁止重新接入
+`MiniMaxH3MemoryEfficientSageAttentionPatch`。它们没有 `LoraLoaderModelOnly` 或
+TurboSampler 节点，也不注入触发词。与旧方案相比，运行模型包
 从约 80.6 GiB 降至约 37.7 GiB，并移除 BF16 FL2VA、REF2VA、旧 Qwen encoder、FP16
 video VAE、五个用户 LoRA 和独立 Turbo LoRA；INT8 主模型预计降低显存/磁盘压力，但
 Beta1 融合会改变整体色彩、人物质感、成人动作偏置和提示词响应，不能期待与旧五 LoRA
 组合逐项等价。最终质量仍以三模式 GPU canary 为准。
 
-四份 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
+官方 Civitai workflow 文件 SHA256 固定为
+`71bda4f17f34d8c4489541979265a0e31df805dd02baebdb59ebf69b85634595`。四份 API JSON
+由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
 `workers/comfy_agent/workflows/` 与 baked RunPod runtime。公开三模式必须指向同一个
-RedMix checkpoint、Heretic encoder 和 INT8 video VAE。
+RedMix checkpoint、Heretic encoder 和 INT8 video VAE。官方 `MiniMaxH3AudioLock`
+节点随镜像安装并纳入节点预检；它只在任务提供要原样保留的源音频时接到 AV latent。
+当前三个公开任务不接受参考音频，因此保持 H3 原生生成音轨，不能用静音占位强行接锁。
 
 ## 模型包与镜像
 
@@ -63,11 +71,11 @@ RedMix checkpoint、Heretic encoder 和 INT8 video VAE。
 存储。模型进入 `/srv/allbot/model-registry` 的内容寻址 blob 与 bundle manifest，随后
 上传 LAN model cache；模型文件不得进入 Git 或 OCI 镜像。
 
-镜像模块仍为 `minimax_h3`。Dockerfile 的 ComfyUI、CUDA devel 与 Python builder
-基础镜像均从 LAN registry 的精确 digest 读取，不依赖 GHCR 或构建时访问 Docker Hub；
-同时固定 DaSiWa Nodes、KJNodes、VHS 和 SageAttention 源码 revision，不再安装
-`ComfyUI-MiniMax-H3-Turbo`。RTX 5090 启动时必须
-确认 SageAttention wheel 含 `sm120`。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
+镜像模块仍为 `minimax_h3`，基础镜像从 LAN registry 的精确 digest 读取，不依赖
+GHCR 或构建时访问 Docker Hub；同时固定支持 Comfy Kitchen Attention 的 ComfyUI、
+DaSiWa Nodes、KJNodes、VHS、`ComfyUI-MiniMax-ContextIR` 与
+`ComfyUI-ReservedVRAM` 源码 revision，不再安装 `ComfyUI-MiniMax-H3-Turbo`，也不再
+编译或在启动时依赖 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
 
 ## LAN 测试切换
@@ -79,7 +87,8 @@ RedMix checkpoint、Heretic encoder 和 INT8 video VAE。
 `user-data-test`。测试期间正式 LTX 会在自然 drain 后停止；结束时显式 recover。
 
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，逐条检查：Central task type、
-Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid。H3 profile 保持
+Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
+黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。H3 profile 保持
 `reset_comfy_memory_before_task`、`--fast-disk --disable-pinned-memory` 和
 DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
 

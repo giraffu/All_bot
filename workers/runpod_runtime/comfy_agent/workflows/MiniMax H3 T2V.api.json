@@ -11,9 +11,10 @@
       "model": [
         "1",
         0
-      ]
+      ],
+      "attention": "comfy kitchen attention"
     },
-    "class_type": "MiniMaxH3MemoryEfficientSageAttentionPatch"
+    "class_type": "ModelAttentionBackend"
   },
   "3": {
     "inputs": {
@@ -25,6 +26,20 @@
       "shift_audio": 3.0
     },
     "class_type": "MiniMaxH3SigmaShift"
+  },
+  "7": {
+    "inputs": {
+      "anything": [
+        "3",
+        0
+      ],
+      "reserved": 2.0,
+      "mode": "auto",
+      "seed": 0,
+      "auto_max_reserved": 3.0,
+      "clean_gpu_before": true
+    },
+    "class_type": "ReservedVRAMSetter"
   },
   "4": {
     "inputs": {
@@ -52,16 +67,23 @@
         "4",
         0
       ],
-      "vae": [
+      "video_vae": [
         "5",
         0
       ],
+      "audio_vae": [
+        "6",
+        0
+      ],
       "prompt": "",
+      "mode": "auto",
       "width": 736,
       "height": 416,
-      "length": 124
+      "duration": 5.0,
+      "fps": 24,
+      "ref_image_size": "match"
     },
-    "class_type": "MiniMaxH3ImageToVideo"
+    "class_type": "MiniMaxH3UnifiedToVideo"
   },
   "31": {
     "inputs": {
@@ -72,7 +94,7 @@
   "32": {
     "inputs": {
       "model": [
-        "3",
+        "7",
         0
       ],
       "conditioning": [
@@ -91,7 +113,7 @@
   "34": {
     "inputs": {
       "model": [
-        "3",
+        "7",
         0
       ],
       "scheduler": "simple",

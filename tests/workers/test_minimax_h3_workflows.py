@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.build_minimax_h3_api_workflows import build
+from scripts.build_minimax_h3_api_workflows import REDMIX_SOURCE_SHA256, build
 from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 from workers.runpod_runtime.comfy_agent.workflow_task_patchers import (
@@ -21,6 +21,12 @@ REDMIX_INT8_MODEL = "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP
 REF2VA_INT8_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 REDMIX_CLIP = "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors"
 REDMIX_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
+
+
+def test_redmix_workflows_pin_the_official_civitai_source():
+    assert REDMIX_SOURCE_SHA256 == (
+        "71bda4f17f34d8c4489541979265a0e31df805dd02baebdb59ebf69b85634595"
+    )
 
 
 def test_minimax_h3_api_workflows_are_deterministic_and_synced():
@@ -43,9 +49,39 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
                 "shift_video": 12.0,
                 "shift_audio": 3.0,
             }
+            assert workflow["2"] == {
+                "inputs": {
+                    "model": ["1", 0],
+                    "attention": "comfy kitchen attention",
+                },
+                "class_type": "ModelAttentionBackend",
+            }
+            assert workflow["7"] == {
+                "inputs": {
+                    "anything": ["3", 0],
+                    "reserved": 2.0,
+                    "mode": "auto",
+                    "seed": 0,
+                    "auto_max_reserved": 3.0,
+                    "clean_gpu_before": True,
+                },
+                "class_type": "ReservedVRAMSetter",
+            }
+            assert workflow["30"]["class_type"] == "MiniMaxH3UnifiedToVideo"
+            assert workflow["30"]["inputs"]["video_vae"] == ["5", 0]
+            assert workflow["30"]["inputs"]["audio_vae"] == ["6", 0]
+            assert workflow["30"]["inputs"]["mode"] == "auto"
+            assert workflow["30"]["inputs"]["fps"] == 24
+            assert workflow["30"]["inputs"]["duration"] == 5.0
+            assert workflow["32"]["inputs"]["model"] == ["7", 0]
+            assert workflow["34"]["inputs"]["model"] == ["7", 0]
+            assert workflow["35"]["inputs"]["latent_image"] == ["30", 1]
+            assert not any(
+                node.get("class_type") == "MiniMaxH3MemoryEfficientSageAttentionPatch"
+                for node in workflow.values()
+            )
             assert not {"10", "11", "12", "13"} & workflow.keys()
             assert "14" not in workflow
-            assert workflow["2"]["inputs"]["model"] == ["1", 0]
             assert workflow["34"]["inputs"]["steps"] == 8
             assert workflow["33"] == {
                 "inputs": {"sampler_name": "euler"},
@@ -59,7 +95,10 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
                 "shift_audio": 4.0,
             }
             assert not {"10", "11", "12", "13", "14"} & workflow.keys()
-            assert workflow["2"]["inputs"]["model"] == ["1", 0]
+            assert not any(
+                node.get("class_type") == "MiniMaxH3MemoryEfficientSageAttentionPatch"
+                for node in workflow.values()
+            )
             assert workflow["34"]["inputs"]["steps"] == 25
             assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
         if task_type != "minimax_h3_ref2v":
@@ -162,8 +201,14 @@ def test_minimax_h3_patcher_without_addon_keeps_baked_redmix_stack():
 
 def test_runpod_minimax_h3_worker_uses_prompt_without_trigger_injection():
     workflow = json.loads(Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text())
-    patch_runpod_minimax_h3_workflow(workflow, task_type="minimax_h3_t2v", params={"prompt": "scene"})
+    patch_runpod_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={"prompt": "scene", "frame_count": 243},
+    )
     assert workflow["30"]["inputs"]["prompt"] == "scene"
+    assert workflow["30"]["inputs"]["duration"] == 10.0
+    assert "length" not in workflow["30"]["inputs"]
 
 
 def test_minimax_h3_output_prefix_is_unique_per_execution():
@@ -218,6 +263,7 @@ def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision)
     assert result["41"]["inputs"]["resolution_preset"] == precision
     assert result["30"]["inputs"]["width"] == ["41", 0]
     assert result["30"]["inputs"]["height"] == ["41", 1]
+    assert result["30"]["inputs"]["duration"] == 5.0
 
 
 @pytest.mark.parametrize("field", ["model_name", "timeline_data", "steps"])
