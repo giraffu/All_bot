@@ -28,7 +28,7 @@
   },
   "4": {
     "inputs": {
-      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "clip_name": "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
       "type": "minimax",
       "device": "default"
     },
@@ -36,7 +36,7 @@
   },
   "5": {
     "inputs": {
-      "vae_name": "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
+      "vae_name": "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
     },
     "class_type": "VAELoader"
   },

@@ -91,7 +91,6 @@ export function useLabWorkbench() {
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
-  const minimaxH3AddonItems = ref<Array<{ name: string; strength: number }>>([])
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -122,7 +121,6 @@ export function useLabWorkbench() {
     environmentSource,
     selectedEnvironmentId,
     minimaxH3Mode,
-    minimaxH3AddonItems,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {
@@ -456,7 +454,6 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
-    minimaxH3AddonItems,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -535,7 +532,6 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
-    minimaxH3AddonItems,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

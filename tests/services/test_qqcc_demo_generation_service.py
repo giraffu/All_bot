@@ -369,10 +369,8 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
         height=0,
         frame_count=362,
         fps=24,
-        seed=None,
-        lora_name=None,
-        lora_strength=None,
-        priority=0,
+            seed=None,
+            priority=0,
     )
 
 

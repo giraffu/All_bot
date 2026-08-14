@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download and register the pinned official Comfy-Org MiniMax H3 model bundle."""
+"""Download and register the pinned fixed RedMix MiniMax H3 model bundle."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,22 +20,25 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-12-fl2va-bf16-addon5-lightx2v8-v1"
+VERSION = "2026-08-14-redmix-a2a-beta1-int8"
 REVISION = "014cd40f7e177756c6b2473c0d93b1c89a790dd2"
-MIN_FREE_BYTES = 80 * 1024**3
+MIN_FREE_BYTES = 48 * 1024**3
 FILES = (
-    ("diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors", "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4", 40_225_724_176, "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors"),
-    ("diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors", "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779", 20_970_379_616, "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"),
-    ("text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6", 15_687_142_551, "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"),
+    ("diffusion_models/MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors", "fc99ff051283ee05f29b1ebcb14e0d7b36c03e93512ac5479411cdfa2e284122", 20_970_384_488, "https://civitai.red/api/download/models/3226037?fileId=3108292"),
+    ("text_encoders/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors", "a166c7bbbe66a22065159e478335fee4a633c4a3e3bb34c8e8ac4cc91bf4996f", 15_683_129_587, "https://civitai.red/api/download/models/3226037?fileId=3108375"),
     ("vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors", "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48", 605_254_808, "vae/minimax_h3_audio_vae_fp32.safetensors"),
-    ("vae/MiniMaxH3/minimax_h3_video_vae_fp16.safetensors", "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522", 5_207_808_496, "vae/minimax_h3_video_vae_fp16.safetensors"),
-    ("loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors", "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb", 310_168_344, "https://civitai.red/api/download/models/3206518"),
-    ("loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors", "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967", 310_168_344, "https://civitai.red/api/download/models/3216751"),
-    ("loras/MiniMaxH3/vagassist_e40.safetensors", "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a", 310_168_344, "https://civitai.red/api/download/models/3215304"),
-    ("loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors", "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee", 626_294_968, "https://civitai.red/api/download/models/3215304?fileId=3097100"),
-    ("loras/MiniMaxH3/HMPenis_v2_e35.safetensors", "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060", 310_168_344, "https://civitai.red/api/download/models/3218160"),
-    ("loras/MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e", 1_956_193_000, "https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/62487ee643501626a71502d679f735a23ee6af45/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"),
+    ("vae/MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors", "9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410", 3_171_670_912, "https://civitai.red/api/download/models/3226037?fileId=3108212"),
 )
+
+
+class _RedMixRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep the Civitai token on its API host and off signed object-store URLs."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and urlsplit(req.full_url).netloc != urlsplit(newurl).netloc:
+            redirected.remove_header("Authorization")
+        return redirected
 
 
 def _hash(path: Path) -> str:
@@ -47,10 +51,17 @@ def _hash(path: Path) -> str:
 
 def _download(url: str, partial: Path) -> None:
     offset = partial.stat().st_size if partial.exists() else 0
-    request = urllib.request.Request(url, headers={"User-Agent": "allbot-minimax-h3-bundle/1"})
+    headers = {"User-Agent": "allbot-minimax-h3-bundle/2"}
+    if url.startswith("https://civitai.red/"):
+        token = os.getenv("CIVITAI_API_TOKEN", "").strip()
+        if not token:
+            raise RuntimeError("CIVITAI_API_TOKEN is required for the RedMix bundle")
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
     if offset:
         request.add_header("Range", f"bytes={offset}-")
-    with urllib.request.urlopen(request, timeout=180) as response:
+    opener = urllib.request.build_opener(_RedMixRedirectHandler())
+    with opener.open(request, timeout=180) as response:
         append = offset > 0 and response.status == 206
         with partial.open("ab" if append else "wb") as output:
             while chunk := response.read(8 * 1024 * 1024):
@@ -60,7 +71,7 @@ def _download(url: str, partial: Path) -> None:
 def prepare(registry: ModelRegistry) -> Path:
     registry.ensure_layout()
     if shutil.disk_usage(registry.root).free < MIN_FREE_BYTES:
-        raise RuntimeError("MiniMax H3 bundle requires at least 80 GiB free space")
+        raise RuntimeError("MiniMax H3 RedMix bundle requires at least 48 GiB free space")
     temp_root = registry.root / "tmp" / f"{BUNDLE}-{VERSION}"
     temp_root.mkdir(parents=True, exist_ok=True)
     manifest_files = []
@@ -86,9 +97,9 @@ def prepare(registry: ModelRegistry) -> Path:
         profiles=["minimax_h3"],
         source={
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "repositories": ["Comfy-Org/MiniMax-H3", "lightx2v/Minimax-h3-Turbo", "civitai:modelVersion/3206518", "civitai:modelVersion/3216751", "civitai:modelVersion/3215304", "civitai:modelVersion/3218160"],
+            "repositories": ["Comfy-Org/MiniMax-H3", "civitai:modelVersion/3226037"],
             "revision": REVISION,
-            "variant": "official pruned BF16 FL2VA and INT8 convrot REF2VA bases plus five selectable addon semantics (HMNSFW V2, HMBreasts, HMPussy pair, HMPenis) and the official Lightx2v FL2VA 8-step v1.0 ComfyUI BF16 LoRA",
+            "variant": "RedMix A2A Beta1 INT8 convrot fixed stack with baked 10Eros-Max, LightX2V MiniMax H3 Turbo 8-step and SexGod NaughtyTimes; Heretic Qwen3-VL NVFP4 encoder and INT8 video VAE",
         },
         files=manifest_files,
     )

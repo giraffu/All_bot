@@ -1302,15 +1302,6 @@ _MINIMAX_H3_PRECISION_PRESETS = {
     "standard": "0.52 MP - SD",
     "hd": "0.65 MP - Balanced",
 }
-_MINIMAX_H3_ADDONS = {
-    "breasts": (("MiniMaxH3/HMBreasts_085e0750_e40.safetensors", 1.0), "HMBreasts"),
-    "anus": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, hmpussy, anus"),
-    "vagina": (("MiniMaxH3/vagassist_e40.safetensors", 1.0), ("MiniMaxH3/hmpussy_v6_epoch30.safetensors", 0.35), "Vagina, hmpussy"),
-    "sex_pose": (("MiniMaxH3/HMNSFW_AIO_V2.safetensors", 1.0), "hmmotion"),
-    "penis": (("MiniMaxH3/HMPenis_v2_e35.safetensors", 1.0), "HMPenis"),
-}
-
-
 def patch_minimax_h3_workflow(
     workflow: dict[str, Any],
     *,
@@ -1327,54 +1318,13 @@ def patch_minimax_h3_workflow(
         for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
-    raw_items = params.get("lora_items")
-    legacy_name = str(params.get("lora_name") or "").strip()
-    if raw_items is not None and (legacy_name or params.get("lora_strength") not in (None, "")):
-        raise ValueError("MiniMax H3 addon formats cannot be mixed")
-    if raw_items is None:
-        raw_items = ([{"name": legacy_name, "strength": params.get("lora_strength")}]
-                     if legacy_name else [])
-    if not isinstance(raw_items, list) or len(raw_items) > 5:
-        raise ValueError("invalid MiniMax H3 addon list")
-    addons = []
-    seen = set()
-    for item in raw_items:
-        if not isinstance(item, dict):
-            raise ValueError("invalid MiniMax H3 addon item")
-        name = str(item.get("name") or "").strip()
-        addon = _MINIMAX_H3_ADDONS.get(name)
-        if addon is None or name in seen:
-            raise ValueError("invalid or duplicate MiniMax H3 addon model")
-        seen.add(name)
-        strength = float(item.get("strength") if item.get("strength") not in (None, "") else (0.5 if name == "sex_pose" else 1.0))
-        if not 0.1 <= strength <= 2.0:
-            raise ValueError("invalid MiniMax H3 addon strength")
-        addons.append((addon, strength))
-    if task_type == "minimax_h3_ref2v" and addons:
-        raise ValueError("MiniMax H3 ref2v rejects addon models")
+    if any(
+        params.get(key) not in (None, "", [], ())
+        for key in ("lora_items", "lora_name", "lora_strength")
+    ):
+        raise ValueError("MiniMax H3 uses a fixed RedMix stack and rejects addon overrides")
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
-    model_input = ["1", 0]
-    prompt_parts = []
-    next_node_id = 100
-    for addon, addon_strength in addons:
-        *model_specs, prompt_prefix = addon
-        for part in (part.strip() for part in prompt_prefix.split(",")):
-            if part and part not in prompt_parts:
-                prompt_parts.append(part)
-        for model_path, relative_strength in model_specs:
-            node_id = str(next_node_id)
-            next_node_id += 1
-            workflow[node_id] = {
-                "inputs": {"model": model_input, "lora_name": model_path, "strength_model": round(addon_strength * relative_strength, 6)},
-                "class_type": "LoraLoaderModelOnly",
-            }
-            model_input = [node_id, 0]
-    prompt_prefix = ", ".join(prompt_parts)
-    if "14" in workflow:
-        workflow["14"]["inputs"]["model"] = model_input
-    else:
-        workflow["2"]["inputs"]["model"] = model_input
     names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
     count = sum(bool(name) for name in names)
     minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
@@ -1397,8 +1347,7 @@ def patch_minimax_h3_workflow(
         workflow["30"]["inputs"]["width"] = ["41", 0]
         workflow["30"]["inputs"]["height"] = ["41", 1]
     guide_inputs = workflow["30"]["inputs"]
-    base_prompt = str(params.get("prompt") or "").strip()
-    guide_inputs["prompt"] = f"{prompt_prefix}, {base_prompt}" if prompt_prefix else base_prompt
+    guide_inputs["prompt"] = str(params.get("prompt") or "").strip()
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")

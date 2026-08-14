@@ -38,7 +38,6 @@ async def optimize_advanced_video_prompt(
     prompt: str,
     images: list[str],
     duration_seconds: int,
-    addon_items: list[dict[str, Any]],
     client_request_id: str,
     upload_image: Callable[[str], str] | None = None,
     submit_func=submit_prompt_optimization,
@@ -83,7 +82,6 @@ async def optimize_advanced_video_prompt(
                     }
                     for index, object_key in enumerate(object_keys)
                 ],
-                "lora_items": addon_items,
             }
         )
         quota = QuotaManager()

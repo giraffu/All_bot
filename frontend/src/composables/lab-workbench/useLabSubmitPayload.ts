@@ -45,7 +45,6 @@ type UseLabSubmitPayloadOptions = {
   minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions?: Ref<string[]>
-  minimaxH3AddonItems?: Ref<Array<{ name: string; strength: number }>>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -82,7 +81,6 @@ export function useLabSubmitPayload({
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
-  minimaxH3AddonItems,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -179,9 +177,6 @@ export function useLabSubmitPayload({
               }
             : {}),
           reference_descriptions: [],
-          ...(minimaxH3AddonItems?.value.length
-            ? { lora_items: minimaxH3AddonItems.value }
-            : {}),
         },
         isTemplate: false,
       }))

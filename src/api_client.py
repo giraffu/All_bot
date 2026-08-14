@@ -741,9 +741,6 @@ class APIClient:
         frame_count: int,
         fps: int,
         seed: int | None,
-        lora_name: str | None = None,
-        lora_strength: float | None = None,
-        lora_items: list[dict[str, Any]] | None = None,
         priority: int = 0,
     ) -> str:
         endpoint = MINIMAX_H3_ENDPOINTS.get(task_type)
@@ -762,9 +759,6 @@ class APIClient:
             "frame_count": frame_count,
             "fps": fps,
             "seed": seed,
-            "lora_name": lora_name,
-            "lora_strength": lora_strength,
-            "lora_items": lora_items,
             "extract_last_frame": True,
             "priority": priority,
         }

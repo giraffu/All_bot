@@ -487,7 +487,7 @@ if [ "$ready" != true ]; then
   cat "$log_file" >&2
   exit 1
 fi
-OBJECT_INFO="$object_info" python3 -c '"'"'import json, os; payload=json.load(open(os.environ["OBJECT_INFO"])); expected={"MiniMaxH3ImageToVideo","MiniMaxH3ReferenceToVideo","MiniMaxH3MemoryEfficientSageAttentionPatch","MiniMaxH3SigmaShift","MiniMaxH3TurboSampler","DaSiWa_ResolutionScaleCalculator","VAEDecodeAudio","VHS_VideoCombine"}; missing=expected-set(payload); assert not missing, sorted(missing)'"'"'
+OBJECT_INFO="$object_info" python3 -c '"'"'import json, os; payload=json.load(open(os.environ["OBJECT_INFO"])); expected={"MiniMaxH3ImageToVideo","MiniMaxH3ReferenceToVideo","MiniMaxH3MemoryEfficientSageAttentionPatch","MiniMaxH3SigmaShift","DaSiWa_ResolutionScaleCalculator","VAEDecodeAudio","VHS_VideoCombine"}; missing=expected-set(payload); assert not missing, sorted(missing)'"'"'
 if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then
   echo "MiniMax H3 model files must stay out of the profile image" >&2
   exit 1

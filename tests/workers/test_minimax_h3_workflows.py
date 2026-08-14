@@ -17,8 +17,10 @@ TASKS = {
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
     "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
-FL2VA_BF16_MODEL = "MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
+REDMIX_INT8_MODEL = "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
 REF2VA_INT8_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+REDMIX_CLIP = "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors"
+REDMIX_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
 
 
 def test_minimax_h3_api_workflows_are_deterministic_and_synced():
@@ -31,34 +33,25 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
         expected_model = (
-            REF2VA_INT8_MODEL if task_type == "minimax_h3_ref2v" else FL2VA_BF16_MODEL
+            REF2VA_INT8_MODEL if task_type == "minimax_h3_ref2v" else REDMIX_INT8_MODEL
         )
         assert workflow["1"]["inputs"]["unet_name"] == expected_model
         assert "nodes" not in workflow
-        if task_type in {"minimax_h3_t2v", "minimax_h3_i2v"}:
+        if task_type in {"minimax_h3_t2v", "minimax_h3_i2v", "minimax_h3_flf2v"}:
             assert workflow["3"]["inputs"] == {
                 "model": ["2", 0],
                 "shift_video": 12.0,
                 "shift_audio": 3.0,
             }
             assert not {"10", "11", "12", "13"} & workflow.keys()
-            assert workflow["14"]["inputs"] == {
-                "model": ["1", 0],
-                "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
-                "strength_model": 0.75,
-            }
-            assert workflow["2"]["inputs"]["model"] == ["14", 0]
+            assert "14" not in workflow
+            assert workflow["2"]["inputs"]["model"] == ["1", 0]
             assert workflow["34"]["inputs"]["steps"] == 8
             assert workflow["33"] == {
-                "inputs": {},
-                "class_type": "MiniMaxH3TurboSampler",
+                "inputs": {"sampler_name": "euler"},
+                "class_type": "KSamplerSelect",
             }
             assert workflow["35"]["inputs"]["sampler"] == ["33", 0]
-        elif task_type == "minimax_h3_flf2v":
-            assert not {"10", "11", "12", "13", "14"} & workflow.keys()
-            assert workflow["2"]["inputs"]["model"] == ["1", 0]
-            assert workflow["34"]["inputs"]["steps"] == 25
-            assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
         else:
             assert workflow["3"]["inputs"] == {
                 "model": ["2", 0],
@@ -69,6 +62,9 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             assert workflow["2"]["inputs"]["model"] == ["1", 0]
             assert workflow["34"]["inputs"]["steps"] == 25
             assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
+        if task_type != "minimax_h3_ref2v":
+            assert workflow["4"]["inputs"]["clip_name"] == REDMIX_CLIP
+            assert workflow["5"]["inputs"]["vae_name"] == REDMIX_VIDEO_VAE
         assert workflow["38"]["inputs"]["audio"] == ["37", 0]
         assert workflow["40"]["class_type"] == "SaveImage"
         assert workflow["39"]["inputs"]["batch_index"] == 4095
@@ -122,66 +118,52 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
     assert result["30"]["inputs"]["prompt"].startswith("<Picture 1>: adult woman\n<Picture 2>: adult man")
 
 
-@pytest.mark.parametrize(("addon", "expected_paths", "strengths", "trigger"), [
-    ("breasts", ["MiniMaxH3/HMBreasts_085e0750_e40.safetensors"], [1.2], "HMBreasts"),
-    ("anus", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, hmpussy, anus"),
-    ("vagina", ["MiniMaxH3/vagassist_e40.safetensors", "MiniMaxH3/hmpussy_v6_epoch30.safetensors"], [1.2, 0.42], "Vagina, hmpussy"),
-    ("sex_pose", ["MiniMaxH3/HMNSFW_AIO_V2.safetensors"], [1.2], "hmmotion"),
-    ("penis", ["MiniMaxH3/HMPenis_v2_e35.safetensors"], [1.2], "HMPenis"),
+@pytest.mark.parametrize("params", [
+    {"lora_name": "sex_pose", "lora_strength": 0.75},
+    {"lora_strength": 1.0},
+    {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
 ])
-def test_minimax_h3_patcher_selects_one_addon_and_keeps_acceleration(addon, expected_paths, strengths, trigger):
+def test_minimax_h3_patcher_rejects_client_addon_overrides(params):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
-    patched = patcher.patch_workflow(
-        "minimax_h3_t2v", workflow,
-        {"prompt": "scene", "lora_name": addon, "lora_strength": 1.2},
+    with pytest.raises(ValueError, match="fixed RedMix"):
+        patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", **params})
+
+
+def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+
+    result = patcher.patch_workflow(
+        "minimax_h3_t2v",
+        workflow,
+        {
+            "prompt": "scene",
+            "lora_items": [],
+            "lora_name": None,
+            "lora_strength": None,
+        },
     )
-    addon_nodes = [patched[str(100 + index)]["inputs"] for index in range(len(expected_paths))]
-    assert [item["lora_name"] for item in addon_nodes] == expected_paths
-    assert [item["strength_model"] for item in addon_nodes] == strengths
-    assert patched["14"]["inputs"]["lora_name"].endswith("fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors")
-    assert patched["30"]["inputs"]["prompt"].startswith(trigger)
+
+    assert result["1"]["inputs"]["unet_name"].endswith(
+        "REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
+    )
 
 
-def test_minimax_h3_patcher_chains_multiple_addons_before_acceleration():
-    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
-    workflow = patcher.load_workflow("minimax_h3_t2v")
-    patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {
-        "prompt": "scene",
-        "lora_items": [
-            {"name": "breasts", "strength": 1.1},
-            {"name": "sex_pose", "strength": 0.4},
-            {"name": "penis", "strength": 0.9},
-        ],
-    })
-    assert [patched[str(node)]["inputs"]["lora_name"] for node in range(100, 103)] == [
-        "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
-        "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
-        "MiniMaxH3/HMPenis_v2_e35.safetensors",
-    ]
-    assert patched["14"]["inputs"]["model"] == ["102", 0]
-
-
-def test_minimax_h3_patcher_without_addon_only_keeps_internal_acceleration():
+def test_minimax_h3_patcher_without_addon_keeps_baked_redmix_stack():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
     assert not {"10", "11", "12", "13"} & patched.keys()
-    assert patched["14"]["inputs"]["model"] == ["1", 0]
+    assert "14" not in patched
+    assert patched["1"]["inputs"]["unet_name"] == REDMIX_INT8_MODEL
+    assert patched["30"]["inputs"]["prompt"] == "scene"
 
 
-def test_runpod_minimax_h3_worker_keeps_both_hmpussy_triggers():
-    workflow = json.loads(
-        Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
-    )
-
-    patch_runpod_minimax_h3_workflow(
-        workflow,
-        task_type="minimax_h3_t2v",
-        params={"prompt": "scene", "lora_name": "vagina", "lora_strength": 1.0},
-    )
-
-    assert workflow["30"]["inputs"]["prompt"] == "Vagina, hmpussy, scene"
+def test_runpod_minimax_h3_worker_uses_prompt_without_trigger_injection():
+    workflow = json.loads(Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text())
+    patch_runpod_minimax_h3_workflow(workflow, task_type="minimax_h3_t2v", params={"prompt": "scene"})
+    assert workflow["30"]["inputs"]["prompt"] == "scene"
 
 
 def test_minimax_h3_output_prefix_is_unique_per_execution():

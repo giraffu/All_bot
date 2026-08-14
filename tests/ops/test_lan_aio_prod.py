@@ -83,7 +83,6 @@ MINIMAX_H3_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
-    "minimax_h3_ref2v",
 )
 SCAIL2_FLEX_PREFERRED_TASK_TYPES = (
     "scail2_action_transfer",
@@ -258,7 +257,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
 
 
-def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir():
+def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_model_dir():
     config = load_controller_config()
     profile = config.profiles["minimax_h3"]
     slots = load_lan_aio_prod_slots(include_disabled=True)
@@ -269,12 +268,12 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v8-v1/manifest.json"
+        "minimax_h3/2026-08-14-redmix-a2a-beta1-int8/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
         "192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:"
-        "3e2d2ab252037ea2530af902fe35879dc2b6fe70127525be53ec116155ae6ec8"
+        "ab7c20d7059fea4ac1af84ff55272c354647e4b202a5ed53a05ba1d388ec7204"
     )
     # Stable catalog v2 normalizes non-blocked candidates to explicit-operator
     # eligible catalog entries; this does not enable public task intake.
@@ -320,9 +319,9 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert slot.environment == "cloud-test"
     assert slot.agent_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
     assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
-    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_minimax_h3_01"
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
     assert slot.old_runtime_container == (
-        "allbot-lan-aio-gpu-177-gpu1-minimax_h3-prod"
+        "allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod"
     )
 
     ops = LanAioProdOps(
@@ -337,7 +336,7 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
     assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
 
-    current = slots["gpu-177-gpu1-minimax_h3"]
+    current = slots["gpu-177-gpu1-ltx_unified"]
     assert ops.retarget_slot(slot, current.id) == slot
 
 

@@ -9,10 +9,6 @@ from src.core.media_paths import normalize_owned_user_upload_key
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import CoreDomainError, TaskSubmissionSideEffectPlan
 from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
-from src.prompt_optimizer.minimax_h3_context import (
-    MiniMaxH3ValidationError,
-    build_minimax_h3_addon_prompt_context,
-)
 from src.prompt_optimizer.registry import (
     PROMPT_OPTIMIZATION_COST,
     PROMPT_OPTIMIZE_TASK_TYPE,
@@ -88,18 +84,8 @@ async def submit_prompt_optimization(
 ) -> dict[str, Any]:
     requested_media = [item.model_dump() for item in request.media]
     is_minimax_h3 = request.target_task_type in MINIMAX_H3_TASK_TYPES
-    if request.lora_items and not is_minimax_h3:
+    if request.lora_items:
         raise CoreDomainError("当前提示词优化任务不接受附加模型。")
-    try:
-        addon_context = (
-            build_minimax_h3_addon_prompt_context(
-                [item.model_dump(exclude_none=True) for item in request.lora_items]
-            )
-            if is_minimax_h3
-            else {}
-        )
-    except MiniMaxH3ValidationError as exc:
-        raise CoreDomainError(str(exc)) from exc
     character_ids = [str(value or "").strip() for value in request.character_ids]
     if request.target_task_type == "ltx_t2v_ic":
         if request.character_refs is not None and character_ids:
@@ -202,7 +188,7 @@ async def submit_prompt_optimization(
                 "environment_description": resolved_references.environment_description,
             }
             if request.target_task_type == "ltx_t2v_ic"
-            else addon_context
+            else {}
         ),
         "text_stream_contract": build_text_stream_contract(
             resolved.profile.output_fields,
@@ -234,13 +220,13 @@ async def submit_prompt_optimization(
             "environment_description": trusted_context.get(
                 "environment_description", ""
             ),
-            "addon_summary": trusted_context.get("addon_summary", "None selected."),
+            "addon_summary": "Fixed RedMix stack; no user-selectable add-ons.",
             "addon_rules": trusted_context.get(
-                "addon_rules", "No add-on-specific prompt guidance."
+                "addon_rules",
+                "Do not output model names, LoRA names, strengths, or trigger tokens.",
             ),
-            "breasts_vocabulary_rule": trusted_context.get(
-                "breasts_vocabulary_rule",
-                "The breast add-on is not selected. nipples and areoles remain forbidden.",
+            "breasts_vocabulary_rule": (
+                "nipples and areoles require textual or visual evidence; areolas is forbidden."
             ),
         }
     )

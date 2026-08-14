@@ -15,3 +15,16 @@ def test_minimax_h3_request_accepts_four_ordered_references():
 def test_minimax_h3_request_rejects_more_than_four_references():
     with pytest.raises(ValidationError):
         MiniMaxH3Request(task_id="h3-1", prompt="scene", images=["1", "2", "3", "4", "5"], width=736, height=416, frame_count=124)
+
+
+@pytest.mark.parametrize("field", ["lora_items", "lora_name", "lora_strength"])
+def test_minimax_h3_request_rejects_removed_addon_fields(field):
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        MiniMaxH3Request(
+            task_id="h3-1",
+            prompt="scene",
+            width=736,
+            height=416,
+            frame_count=124,
+            **{field: [] if field == "lora_items" else None},
+        )

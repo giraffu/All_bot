@@ -474,7 +474,6 @@ slots:
       - minimax_h3_t2v
       - minimax_h3_i2v
       - minimax_h3_flf2v
-      - minimax_h3_ref2v
     gpu_index: 1
     host_port: 8191
     legacy_health_port: 8191
@@ -489,7 +488,7 @@ slots:
     notes: >-
       Production MiniMax H3 candidate for an explicitly controlled gpu-177 GPU1
       takeover from the current production LTX unified identity. It accepts only
-      the four H3 task types and retains LTX unified as the exact same-card
+      the three public H3 task types and retains LTX unified as the exact same-card
       rollback identity.
 
   - id: gpu-177-gpu1-minimax_h3_test
@@ -503,23 +502,22 @@ slots:
       - minimax_h3_t2v
       - minimax_h3_i2v
       - minimax_h3_flf2v
-      - minimax_h3_ref2v
     gpu_index: 1
     host_port: 8191
     legacy_health_port: 8191
     legacy_preflight_required: true
     agent_id: lan_aio_test_gpu177_gpu1_minimax_h3_01
     container_name: allbot-lan-aio-gpu-177-gpu1-minimax_h3-test
-    legacy_worker_id: lan_aio_prod_gpu177_gpu1_minimax_h3_01
-    old_runtime_container: allbot-lan-aio-gpu-177-gpu1-minimax_h3-prod
+    legacy_worker_id: lan_aio_prod_gpu177_gpu1_ltx_unified_01
+    old_runtime_container: allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod
     old_local_agent_container: ""
     remote_dir: /home/ubantui/allbot-runpod-aio-test/gpu177-gpu1-minimax-h3
     rollout_order: 15
     notes: >-
       Explicit GPU177 GPU1 MiniMax H3 candidate for the cloud-test Web and
-      worker Central only. It replaces the production MiniMax H3 identity on
-      the same physical slot, uses the test result bucket, and must be recovered
-      to the production MiniMax H3 identity when test intake is disabled.
+      worker Central only. It replaces the current production LTX unified identity
+      on the same physical slot, uses the test result bucket, and must be recovered
+      to the production LTX unified identity when test intake is disabled.
 
   - id: gpu-177-gpu1-image_to_video
     enabled: false

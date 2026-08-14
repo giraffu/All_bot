@@ -91,14 +91,13 @@ H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
 写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
 对象键，不能再次包含桶名。
 
-H3 请求另接受最多五项 `lora_items: [{name,strength}]`。名称、范围、默认值和简短
-提示指南只从 `src/domain_config/minimax_h3.py` 派生；客户端不能上传自由规则文本。
+H3 使用固定 RedMix 栈，不接受 `lora_items`、单模型字段或自由规则文本。Web/Bot 只
+提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材
 staging。Telegram ID 只可参与 Bot 回调的确定性请求 ID，不能作为账本用户主键。
-快照可记录展示名、选择状态、强度和可信指南，但不能包含生成 Worker 使用的魔法
-触发词。未选乳房附加模型时 `nipples/areoles` 保持禁用；选择后仅在图片或原始要求
-支持时允许这两个词，且 `areolas` 永远禁用。最终输出校验同时拒绝 `hmmotion`、
+快照不包含生成 Worker 使用的魔法触发词。`nipples/areoles` 仅在图片或原始要求支持
+时使用，且 `areolas` 永远禁用。最终输出校验同时拒绝 `hmmotion`、
 `HMBreasts`、`HMPenis`、`hmpussy`。
 
 任务扣 1 灵石；Task Core 的扣费、派发补偿、pending 取消和失败退款负责 exactly
