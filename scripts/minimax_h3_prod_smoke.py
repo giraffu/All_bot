@@ -36,7 +36,6 @@ EXPECTED_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
-    "minimax_h3_ref2v",
 )
 
 
@@ -67,7 +66,6 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
         duration: int = 5,
         resolution_preset: str = "preview",
         images: list[str] | None = None,
-        reference_descriptions: list[str] | None = None,
     ) -> dict[str, Any]:
         inputs: dict[str, Any] = {
             "duration": duration,
@@ -82,8 +80,6 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
         }
         if images is not None:
             inputs["images"] = images
-        if reference_descriptions is not None:
-            inputs["reference_descriptions"] = reference_descriptions
         return {
             "label": label,
             "expected_central_task_type": task_type,
@@ -107,14 +103,6 @@ def build_cases(*, image_key: str, end_image_key: str) -> list[dict[str, Any]]:
             "minimax_h3_flf2v_5s_preview",
             "minimax_h3_flf2v",
             images=[image_key, end_image_key],
-        ),
-        task(
-            "minimax_h3_ref2v_5s_preview",
-            "minimax_h3_ref2v",
-            images=[image_key],
-            reference_descriptions=[
-                "the same adult character with stable facial features and clothing"
-            ],
         ),
         task(
             "minimax_h3_t2v_10s_standard",
@@ -251,7 +239,7 @@ def main() -> int:
         if value.strip()
     }
     if not set(EXPECTED_TYPES) <= supported:
-        raise MiniMaxH3SmokeError("agent does not advertise all four H3 types")
+        raise MiniMaxH3SmokeError("agent does not advertise all three public H3 types")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: dict[str, Any] = {
