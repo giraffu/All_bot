@@ -21,13 +21,16 @@ description: "处理独立模块不可变构建、精确 digest 部署、目标�
 必要 base；不读取 changed paths、CI、测试批准、release bundle、其它 track
 或 GPU baseline。
 
-控制面云构建可显式选择 Buildx builder、registry cache prefix 和 progress。
+控制面镜像默认优先 SGP1 云 BuildKit，并显式传入已验证的远端 builder；CLI 的
+空默认不代表推荐本机冷构建。Pages/contract 本地打包 OCI；GPU/LAN 按对应
+operator、registry 和硬件约束选择 builder。
 build-only base 使用 Dockerfile、显式 `build_inputs` 与上游精确 digest 的
 内容身份，不跟随应用 SHA；最终业务产物仍用 SHA 并返回精确 digest。loopback
 代理必须在 build 前拒绝。GitHub self-hosted workflow 只允许手动 protected
 main，拒绝 PR/fork 和 GPU kind。GPU/ComfyUI 由 operator 直接调用
-`release.py build`，可显式选择云端 `allbot-sgp1` Buildx builder；构建 artifact
-不授权或触发任何 RunPod/LAN runtime rollout。
+`release.py build`；受保护 Runner 内使用 `allbot-sgp1`，本地操作者通过 SSH
+Docker context 使用自己的远端 builder 名称并先 `inspect --bootstrap`。构建
+artifact 不授权或触发 RunPod/LAN rollout。
 
 部署一次只替换一个模块的精确 `repository@sha256:digest`。test 人工验收是
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
@@ -35,28 +38,25 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
 
 ## 构建前网络与缓存预检
 
-- 在调用 `release.py build` 前先检查标准大小写 proxy 变量；不要把第一次构建失败
-  当作代理探针。Buildx 使用容器网络，`127.0.0.1`、`localhost`、`::1` 对它指向
-  构建容器自身。
-- 若本机代理是 loopback URL，先用 `ss` 确认该端口监听非回环地址，再从 Docker
-  `bridge` 网络动态读取 gateway，将同一 scheme/port 临时映射到 gateway；只为本次
-  build 同时覆盖大小写 `HTTP_PROXY`/`HTTPS_PROXY`，保留原 `NO_PROXY`。禁止把代理
-  地址写入 Git、镜像、发布状态或普通日志。若代理只监听回环，停止并报告，不盲等。
-- 上述 build 环境变量只覆盖 Dockerfile 的 `RUN` 网络，不能保证 BuildKit daemon
-  拉取 `FROM`、导入/导出 registry cache 和推送 manifest 时经过代理。容器型 builder
-  必须同时通过 `docker buildx inspect <builder>` 核对 daemon 的大小写 proxy env；
-  本机 loopback 代理可使用 `network=host` 的专用 builder，并在创建时写入
-  `env.http_proxy`/`env.https_proxy`（以及大写变体）。不得临时改坏或删除其它任务共用
-  builder；新建独立 builder，先 `--bootstrap`，再从容器配置回读 env。发布进程本身
-  仍使用前述 Docker gateway URL，以通过 loopback 拒绝门禁并覆盖 build step。
+- 控制面 image 先检查 SGP1 builder；仅远端不健康、依赖无受控传输路径或用户明确
+  要求时才回退本机，并说明原因。
+- Worker artifact 不要求经过 GHCR；用户要求使用本地 registry 时仍可使用云
+  builder：通过现有 SSH/Tailscale 管理链路，把云构建
+  主机的非冲突 loopback registry 端口临时反向转发到本地 registry；本地发布进程与
+  远端 BuildKit 必须用同一个 registry namespace/tag，分别验证 Registry API、
+  push 后 manifest digest 和 OCI revision。通道只绑定远端 loopback，不新增公网监听、
+  不复制源码、不在目标机 build。registry 大层传输与 BuildKit/Docker 控制面使用
+  独立 SSH 会话，避免大层占满 multiplex 连接导致 build context 超时；结束后关闭
+  通道。运行端若也不能直连 LAN registry，
+  可在部署窗口建立同类 loopback 通道拉取同一 repository path 的精确 digest。
+- 构建前检查大小写 proxy 变量和 builder daemon env；loopback 代理必须先证明容器
+  可达，再按专题文档临时映射 Docker gateway。不得输出凭据、改坏共享 builder，
+  或把代理写入 Git、镜像与发布状态。
 - `release.py build` 会先检查目标 tag：同一内容身份的 build-only base 直接复用；
   业务模块仍按完整 Git SHA 产出新 digest。只构建本次部署需要的明确模块，不为
   deploy、rollback 或重复部署重新 build。
-- registry `mode=max` cache 是后续热构建的性能优化，不是 artifact 身份。若业务
-  manifest 已推送、可按精确 digest 独立解析，而 cache export 在有界观察期内持续无
-  进展，可停止 cache export、记录本次缺少远端 cache，并部署已验证 digest；本机
-  builder cache 仍可复用。若 manifest 尚未完成推送或 digest 不能独立验证，则不得把
-  被中断的 build 当成成功产物。
+- registry cache 只优化性能。只有 manifest 已推送且 digest 可独立解析时，才可停止
+  卡住的 cache export；否则构建不算成功。
 - 共享 test/prod 禁止源码 bind mount、容器内改代码和热重载。代码变化必须生成新
   immutable digest，但这应是 BuildKit 增量构建：复用精确 base 和可用 layer/cache，
   只重做被 `COPY` 或依赖变化影响的层。开发机临时热重载不具备发布身份，不能拿来
