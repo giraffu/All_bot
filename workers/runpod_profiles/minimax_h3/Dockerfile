@@ -62,8 +62,6 @@ ARG VHS_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
 ARG VHS_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
-ARG MINIMAX_H3_TURBO_REPO=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo.git
-ARG MINIMAX_H3_TURBO_REF=55fee864dd7b2976b1c4ce3c3d5f7968f181409f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG ALLBOT_GIT_SHA
 
@@ -101,8 +99,7 @@ RUN set -euo pipefail; \
       rm -f "$archive"; }; \
     install_node "${KJNODES_REPO}" "${KJNODES_REF}" d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7 ComfyUI-KJNodes; \
     install_node "${VHS_REPO}" "${VHS_REF}" 69042eba3e2193a8f428d14bb9ebe97a03b64c0c4de4665c9c6c5f746e60c195 ComfyUI-VideoHelperSuite; \
-    install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes; \
-    install_node "${MINIMAX_H3_TURBO_REPO}" "${MINIMAX_H3_TURBO_REF}" d42e8b01649c949eeb94f5ed52553bd77f8652a033efd4fe1fdae11278581d72 ComfyUI-MiniMax-H3-Turbo
+    install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes
 
 COPY --from=sage_builder /opt/allbot-wheels /opt/allbot-wheels
 
@@ -122,9 +119,8 @@ RUN set -euo pipefail; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3MemoryEfficientSageAttentionPatch' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-KJNodes/nodes/ltxv_nodes.py"; \
-    grep -q 'MiniMaxH3TurboSampler' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-MiniMax-H3-Turbo/__init__.py"; \
     grep -R -q 'DaSiWa_ResolutionScaleCalculator' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
-    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v","minimax_h3_ref2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
+    PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
     python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json","MiniMax H3 REF2V.api.json"]; assert all(isinstance(json.loads((root/n).read_text()),dict) for n in names)'; \
     if find "${COMFYUI_INSTALL_DIR}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then \
       echo "MiniMax H3 model files must stay out of the image" >&2; exit 1; \
@@ -132,8 +128,8 @@ RUN set -euo pipefail; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-LABEL org.opencontainers.image.title="AllBot MiniMax H3 DaSiWa profile" \
-      org.opencontainers.image.description="MiniMax H3 T2V/I2V/FLF2V/REF2V runtime with external model manifest" \
+LABEL org.opencontainers.image.title="AllBot MiniMax H3 RedMix profile" \
+      org.opencontainers.image.description="Fixed RedMix MiniMax H3 T2V/I2V/FLF2V 8-step runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \

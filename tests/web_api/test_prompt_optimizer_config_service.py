@@ -32,7 +32,8 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
     assert config["display_name"] == "高级图生视频pro"
     assert config["revision"] == 0
     assert "{duration_seconds}" in config["system_template"]
-    assert "{addon_rules}" in config["user_template"]
+    assert "{addon_rules}" not in config["user_template"]
+    assert "fixed MiniMax H3 RedMix stack" in config["system_template"]
     assert MINIMAX_H3_HMNSFW_TRANSLATION_ZH not in config["system_template"]
 
 

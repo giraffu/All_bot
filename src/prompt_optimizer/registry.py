@@ -442,9 +442,6 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "profile_ref",
                 "duration_seconds",
                 "media_frame_instructions",
-                "addon_summary",
-                "addon_rules",
-                "breasts_vocabulary_rule",
                 "original_prompt",
             ),
             compatible_profile_refs=_MINIMAX_H3_PROFILE_REFS,
@@ -815,10 +812,10 @@ def build_prompt_variables(
             else ""
         ),
         "media_frame_instructions": media_frame_instructions,
-        "addon_summary": "None selected.",
-        "addon_rules": "No add-on-specific prompt guidance.",
+        "addon_summary": "Fixed RedMix stack; no user-selectable add-ons.",
+        "addon_rules": "Do not output model names, LoRA names, strengths, or trigger tokens.",
         "breasts_vocabulary_rule": (
-            "The breast add-on is not selected. nipples and areoles remain forbidden."
+            "nipples and areoles require textual or visual evidence; areolas is forbidden."
         ),
         "original_prompt": str(prompt).strip(),
     }

@@ -474,7 +474,6 @@ slots:
       - minimax_h3_t2v
       - minimax_h3_i2v
       - minimax_h3_flf2v
-      - minimax_h3_ref2v
     gpu_index: 1
     host_port: 8191
     legacy_health_port: 8191
@@ -489,7 +488,7 @@ slots:
     notes: >-
       Production MiniMax H3 candidate for an explicitly controlled gpu-177 GPU1
       takeover from the current production LTX unified identity. It accepts only
-      the four H3 task types and retains LTX unified as the exact same-card
+      the three public H3 task types and retains LTX unified as the exact same-card
       rollback identity.
 
   - id: gpu-177-gpu1-minimax_h3_test
@@ -503,7 +502,6 @@ slots:
       - minimax_h3_t2v
       - minimax_h3_i2v
       - minimax_h3_flf2v
-      - minimax_h3_ref2v
     gpu_index: 1
     host_port: 8191
     legacy_health_port: 8191

@@ -43,7 +43,6 @@ export function usePromptOptimizer(options: {
   environmentSource?: Ref<'official' | 'upload'>
   selectedEnvironmentId?: Ref<string>
   minimaxH3Mode?: Ref<'t2v' | 'i2v' | 'flf2v'>
-  minimaxH3AddonItems?: Ref<Array<{ name: string; strength: number }>>
 }) {
   const templates = ref<PromptOptimizerTemplate[]>([])
   const selectedTemplateRef = ref('')
@@ -72,7 +71,6 @@ export function usePromptOptimizer(options: {
     environmentSource: options.environmentSource?.value ?? 'upload',
     environmentId: options.selectedEnvironmentId?.value ?? '',
     minimaxH3Mode: options.minimaxH3Mode?.value ?? '',
-    minimaxH3AddonItems: options.minimaxH3AddonItems?.value ?? [],
   })
   const mediaContractReady = computed(() => {
     if (options.currentModeId.value === 'minimax_h3') {
@@ -263,7 +261,6 @@ export function usePromptOptimizer(options: {
     isOptimizing.value = true
     try {
       const isT2vIc = targetTaskType.value === 'ltx_t2v_ic'
-      const isMinimaxH3 = options.currentModeId.value === 'minimax_h3'
       const response = await api.post('/prompt-optimizations/tasks', {
         client_request_id: clientRequestId,
         target_task_type: targetTaskType.value,
@@ -277,7 +274,6 @@ export function usePromptOptimizer(options: {
                 role: index === 0 ? 'start_image' : 'end_image',
                 object_key: item.key,
               })),
-        lora_items: isMinimaxH3 ? options.minimaxH3AddonItems?.value ?? [] : [],
         character_refs: isT2vIc ? options.selectedCharacterIds.value.map((value) => {
           const [source, id] = value.includes(':') ? value.split(':', 2) : ['private', value]
           return { source, id }

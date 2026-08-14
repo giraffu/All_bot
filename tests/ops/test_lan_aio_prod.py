@@ -83,7 +83,6 @@ MINIMAX_H3_TASK_TYPES = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
-    "minimax_h3_ref2v",
 )
 SCAIL2_FLEX_PREFERRED_TASK_TYPES = (
     "scail2_action_transfer",
@@ -258,7 +257,7 @@ def test_gpu177_ltx_unified_candidate_renders_five_types_and_shared_model_dir():
     assert "/profiles/ltx_video/workspace/ComfyUI/models:" in model_mount
 
 
-def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir():
+def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_model_dir():
     config = load_controller_config()
     profile = config.profiles["minimax_h3"]
     slots = load_lan_aio_prod_slots(include_disabled=True)
@@ -269,7 +268,7 @@ def test_gpu177_minimax_h3_candidate_renders_four_types_and_isolated_model_dir()
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-12-fl2va-bf16-addon5-lightx2v8-v1/manifest.json"
+        "minimax_h3/2026-08-14-redmix-a2a-beta1-int8/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (

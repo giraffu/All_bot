@@ -88,10 +88,6 @@ def _validate_profile_output(
         raise PromptOptimizationExecutionError("invalid_minimax_h3_paragraph_count")
     if re.search(r"\bareolas\b", lowered):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_areolas")
-    if "breasts" not in set(trusted_context.get("addon_ids") or []) and re.search(
-        r"\b(nipples|areoles)\b", lowered
-    ):
-        raise PromptOptimizationExecutionError("invalid_minimax_h3_breast_vocabulary")
     if re.search(r"\[Shot 1\]\s+At\b", result_text, flags=re.IGNORECASE):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_first_timestamp")
     if len(re.findall(r"\[Shot\s+\d+\]", result_text, flags=re.IGNORECASE)) > 2:
@@ -158,18 +154,14 @@ def _validated_result(
 def _minimax_h3_retry_instruction(
     reason: str, *, trusted_context: dict[str, Any]
 ) -> str:
-    breast_rule = (
-        "nipples and areoles may appear only when supported; areolas is forbidden."
-        if "breasts" in set(trusted_context.get("addon_ids") or [])
-        else "nipples, areoles, and areolas are all forbidden."
-    )
     return (
         "\n\nSERVER VALIDATION RETRY: The previous candidate failed server validation "
         f"({reason}). Regenerate from the original inputs instead of explaining the "
         "failure. Produce 220-240 English words in exactly one paragraph, begin with "
         "an allowed class word, use no manual trigger token, keep every timestamp "
         "strictly within the declared duration, and recheck the full forbidden-word "
-        f"list. For this request, {breast_rule} Return only the required JSON object."
+        "list. nipples and areoles require textual or visual support; areolas is always "
+        "forbidden. Return only the required JSON object."
     )
 
 

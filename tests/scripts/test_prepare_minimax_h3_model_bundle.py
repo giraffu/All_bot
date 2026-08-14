@@ -6,61 +6,36 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_fl2va_base_uses_pinned_pruned_bf16_while_ref2va_stays_int8():
+def test_redmix_fixed_stack_uses_pinned_model_encoder_and_int8_video_vae():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
-        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors"
+        "diffusion_models/MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
     ][1:4] == (
-        "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4",
-        40_225_724_176,
-        "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+        "fc99ff051283ee05f29b1ebcb14e0d7b36c03e93512ac5479411cdfa2e284122",
+        20_970_384_488,
+        "https://civitai.red/api/download/models/3226037?fileId=3108292",
     )
-    assert (
-        "diffusion_models/MiniMaxH3/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
-        not in files
+    assert files["text_encoders/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors"][1:3] == (
+        "a166c7bbbe66a22065159e478335fee4a633c4a3e3bb34c8e8ac4cc91bf4996f",
+        15_683_129_587,
     )
-    assert (
-        "diffusion_models/MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
-        in files
+    assert files["vae/MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"][1:3] == (
+        "9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410",
+        3_171_670_912,
     )
+    assert len(files) == 4
+    assert not any(path.startswith("loras/") for path in files)
 
 
-def test_lightx2v_source_is_pinned_to_repository_commit():
-    lightx2v = next(entry for entry in module.FILES if "turbo_8step_v1.0" in entry[0])
+def test_redmix_download_requires_civitai_token(monkeypatch, tmp_path):
+    monkeypatch.delenv("CIVITAI_API_TOKEN", raising=False)
 
-    assert lightx2v[0].endswith(
-        "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
-    )
-    assert lightx2v[1:3] == (
-        "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e",
-        1_956_193_000,
-    )
-    assert "/resolve/62487ee643501626a71502d679f735a23ee6af45/" in lightx2v[3]
-
-
-def test_anatomy_loras_are_pinned_with_author_strength_pair_files():
-    files = {entry[0]: entry for entry in module.FILES}
-
-    assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
-        "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
-        310_168_344,
-    )
-    assert files["loras/MiniMaxH3/vagassist_e40.safetensors"][1:3] == (
-        "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a",
-        310_168_344,
-    )
-    assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][1:3] == (
-        "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee",
-        626_294_968,
-    )
-    assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][3].endswith(
-        "?fileId=3097100"
-    )
-    assert files["loras/MiniMaxH3/HMPenis_v2_e35.safetensors"][1:3] == (
-        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
-        310_168_344,
-    )
+    with pytest.raises(RuntimeError, match="CIVITAI_API_TOKEN"):
+        module._download(
+            "https://civitai.red/api/download/models/3226037?fileId=3108292",
+            tmp_path / "redmix.part",
+        )
 
 
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):

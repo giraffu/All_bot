@@ -22,17 +22,7 @@ const labels: Record<string, string> = {
   'lab.workbench.continue_generation': '继续生成',
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
-  'lab.workbench.minimax_h3_addon_model': '附加模型',
-  'lab.workbench.minimax_h3_addons.anus': '肛门',
-  'lab.workbench.minimax_h3_addons.sex_pose': '性爱姿势',
-  'lab.workbench.minimax_h3_addons.select_all': '全选 LoRA',
-  'lab.workbench.minimax_h3_addons.clear': '清空',
-  'lab.workbench.minimax_h3_addon_guides.recommended_strength': '推荐强度',
-  'lab.workbench.minimax_h3_addon_guides.trigger_auto': '触发词会自动添加，无需重复输入。',
-  'lab.workbench.minimax_h3_addon_guides.anus_strength': '推荐 1.0。',
-  'lab.workbench.minimax_h3_addon_guides.anus_prompt': '描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。',
-  'lab.workbench.minimax_h3_addon_guides.sex_pose_strength': '建议 0.5 或更低；默认 0.5。',
-  'lab.workbench.minimax_h3_addon_guides.sex_pose_prompt': '使用约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动和环境音。',
+  'lab.workbench.minimax_h3_fixed_stack': '固定使用 RedMix 8-step 整合模型，无需选择附加模型。',
 }
 
 let workbench: any
@@ -195,7 +185,7 @@ const createLtxWorkbench = (options?: { hasLastFrame?: boolean; canStitch?: bool
   stitchCurrentLtxChain: vi.fn(),
 })
 
-const createMinimaxWorkbench = (addonItems = [{ name: 'sex_pose', strength: 0.5 }]) => ({
+const createMinimaxWorkbench = () => ({
   ...createWorkbench(),
   currentMode: computed(() => ({
     ...baseMode,
@@ -212,7 +202,6 @@ const createMinimaxWorkbench = (addonItems = [{ name: 'sex_pose', strength: 0.5 
   minimaxH3ResolutionPreset: ref('preview'),
   minimaxH3AspectRatio: ref('16:9'),
   minimaxH3ReferenceDescriptions: ref(['', '', '', '']),
-  minimaxH3AddonItems: ref(addonItems),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -316,25 +305,14 @@ describe('CustomFeatures LTX result actions', () => {
   })
 })
 
-describe('CustomFeatures MiniMax H3 addon guidance', () => {
-  it('shows the selected addon recommendation and prompt guide', () => {
+describe('CustomFeatures MiniMax H3 fixed stack', () => {
+  it('shows the fixed RedMix stack and no add-on controls', () => {
     workbench = createMinimaxWorkbench()
     const wrapper = mountView()
 
-    expect(wrapper.text()).toContain('推荐强度')
-    expect(wrapper.text()).toContain('建议 0.5 或更低')
-    expect(wrapper.text()).not.toContain('作者')
-    expect(wrapper.text()).toContain('200–270 个英文单词')
-    expect(wrapper.text()).toContain('触发词会自动添加')
-  })
-
-  it('keeps the anus recommendation concise without internal LoRA ratios', () => {
-    workbench = createMinimaxWorkbench([{ name: 'anus', strength: 1 }])
-    const wrapper = mountView()
-
-    expect(wrapper.text()).toContain('推荐 1.0。')
-    expect(wrapper.text()).not.toContain('辅助运动 LoRA')
-    expect(wrapper.text()).not.toContain('35%')
+    expect(wrapper.text()).toContain('固定使用 RedMix 8-step 整合模型')
+    expect(wrapper.text()).not.toContain('全选 LoRA')
+    expect(wrapper.findAllComponents({ name: 'ASlider' })).toHaveLength(0)
   })
 })
 

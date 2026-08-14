@@ -173,7 +173,6 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "minimax_h3_t2v",
         "minimax_h3_i2v",
         "minimax_h3_flf2v",
-        "minimax_h3_ref2v",
     ]
     assert minimax_h3["autoscaler_enabled"] is False
     pornmaster_bf16 = payload["profiles"][-1]

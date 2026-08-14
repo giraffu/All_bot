@@ -158,7 +158,7 @@ async def test_minimax_h3_executor_rejects_manual_triggers_and_off_distribution_
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabulary():
+async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_forbidden_vocabulary():
     template = get_template_by_ref("minimax_h3_hmnsfw@1")
     base_payload = {
         "profile_ref": "minimax_h3_t2v_prompt@1",
@@ -168,7 +168,7 @@ async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabu
         "prompt": "two adults",
         "context": {"duration_seconds": 5},
         "media": [],
-        "trusted_context": {"addon_ids": []},
+        "trusted_context": {},
     }
     valid = "missionary, pov, slow, medium shot. " + "word " * 196
     accepted = await execute_prompt_optimization(
@@ -180,7 +180,7 @@ async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabu
     assert accepted["result_text"].startswith("missionary")
 
     for invalid in (
-        "missionary, pov, slow, medium shot. nipples " + "word " * 195,
+        "missionary, pov, slow, medium shot. areolas " + "word " * 195,
         "missionary, pov, slow, medium shot. [Shot 2] At 00:05.000, " + "word " * 192,
     ):
         with pytest.raises(PromptOptimizationExecutionError, match="minimax_h3"):
@@ -190,18 +190,6 @@ async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_breast_vocabu
                 load_media=lambda _key: asyncio.sleep(0, result=b"image"),
                 preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
             )
-
-    breast_payload = {**base_payload, "trusted_context": {"addon_ids": ["breasts"]}}
-    breast_result = (
-        "missionary, pov, slow, medium shot. nipples and areoles " + "word " * 193
-    )
-    await execute_prompt_optimization(
-        breast_payload,
-        provider=FakeProvider(breast_result),
-        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
-        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
-    )
-
 
 @pytest.mark.asyncio
 async def test_minimax_h3_executor_retries_before_publishing_stream_deltas():
@@ -223,7 +211,7 @@ async def test_minimax_h3_executor_retries_before_publishing_stream_deltas():
             "prompt": "two adults",
             "context": {"duration_seconds": 5},
             "media": [],
-            "trusted_context": {"addon_ids": []},
+            "trusted_context": {},
         },
         provider=provider,
         load_media=lambda _key: asyncio.sleep(0, result=b"image"),

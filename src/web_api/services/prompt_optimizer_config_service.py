@@ -114,12 +114,9 @@ async def save_config(db, *, scene_key: str, payload, updated_by: str) -> dict:
             "character_descriptions",
             "environment_description",
         },
-        "minimax_h3": {
-            "media_frame_instructions",
-            "addon_summary",
-            "addon_rules",
-            "breasts_vocabulary_rule",
-        },
+            "minimax_h3": {
+                "media_frame_instructions",
+            },
     }
     missing = required_by_scene[scene_key] - variables
     if missing:

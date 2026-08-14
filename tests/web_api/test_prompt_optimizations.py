@@ -157,7 +157,7 @@ async def test_submit_pure_t2v_uses_v4_and_accepts_no_media():
 
 
 @pytest.mark.asyncio
-async def test_submit_minimax_h3_uses_trusted_addon_catalog_and_shared_scene_config():
+async def test_submit_minimax_h3_uses_fixed_stack_and_shared_scene_config():
     submit = AsyncMock(return_value={"task_id": "central-h3", "cost": 1})
     loaded_scene_keys = []
 
@@ -170,10 +170,6 @@ async def test_submit_minimax_h3_uses_trusted_addon_catalog_and_shared_scene_con
             target_task_type="minimax_h3_i2v",
             template={"id": "minimax_h3_hmnsfw", "version": 1},
             context={"duration_seconds": 10},
-            lora_items=[
-                {"name": "breasts", "strength": 1.0},
-                {"name": "sex_pose", "strength": 0.5},
-            ],
         ),
         current_user=SimpleNamespace(id=7, username="alice"),
         get_balance=AsyncMock(return_value=18),
@@ -184,17 +180,16 @@ async def test_submit_minimax_h3_uses_trusted_addon_catalog_and_shared_scene_con
 
     assert loaded_scene_keys == ["minimax_h3"]
     inputs = submit.await_args.kwargs["inputs"]
-    assert inputs["trusted_context"]["addon_ids"] == ["breasts", "sex_pose"]
+    assert inputs["trusted_context"] == {}
     assert "HMBreasts" not in inputs["prompt_config_snapshot"]["user_message"]
     assert "hmmotion" not in inputs["prompt_config_snapshot"]["user_message"]
-    assert "nipples" in inputs["prompt_config_snapshot"]["user_message"]
-    assert "areoles" in inputs["prompt_config_snapshot"]["user_message"]
+    assert "fixed MiniMax H3 RedMix stack" in inputs["prompt_config_snapshot"]["system_message"]
 
 
 @pytest.mark.asyncio
-async def test_submit_minimax_h3_rejects_unknown_addon_before_media_lookup():
+async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
     object_size = AsyncMock(return_value=1024)
-    with pytest.raises(CoreDomainError, match="不支持该附加模型"):
+    with pytest.raises(CoreDomainError, match="不接受附加模型"):
         await submit_prompt_optimization(
             request=_request(
                 target_task_type="minimax_h3_i2v",

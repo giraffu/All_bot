@@ -43,59 +43,19 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_accept_user_addon_but_do_not_expose_acceleration(monkeypatch):
+async def test_pro_settings_expose_fixed_redmix_stack_without_addon_callbacks(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
-    query = SimpleNamespace(data="avp_addon_penis", answer=AsyncMock(), message=object())
-    data = {"mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9", "addon_models": []}
+    query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
+    data = {"mode": None, "duration": 5, "preset": "preview", "aspect": "16:9"}
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
 
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
-    assert data["addon_models"] == ["penis"]
-    assert "建议强度" in edit.await_args.args[1]
-    assert "正面、背面或侧面" in edit.await_args.args[1]
-    assert "触发词会自动添加" in edit.await_args.args[1]
+    assert data["mode"] == "t2v"
+    assert "固定 RedMix 8-step 整合栈" in edit.await_args.args[1]
     callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
-    assert "avp_addon_penis" in callbacks
-    assert "avp_addon_all" in callbacks
-    assert all("lightx" not in value.lower() for value in callbacks)
-
-    query.data = "avp_addon_all"
-    await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
-    assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)
-
-
-def test_pro_addon_guidance_keeps_recommendation_without_internal_lora_ratios():
-    context = SimpleNamespace(lang="zh")
-
-    guidance = fsm._addon_guidance_text(context, ["anus", "sex_pose", "breasts"])
-
-    assert "推荐 1.0。" in guidance
-    assert "辅助运动 LoRA" not in guidance
-    assert "35%" not in guidance
-    assert "作者" not in guidance
-
-
-@pytest.mark.asyncio
-async def test_pro_prompt_step_repeats_selected_addon_guidance(monkeypatch):
-    edit = AsyncMock()
-    monkeypatch.setattr(fsm, "robust_edit_text", edit)
-    query = SimpleNamespace(data="avp_settings_done", answer=AsyncMock(), message=object())
-    context = SimpleNamespace(
-        user_data={fsm.DATA_KEY: {
-            "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
-            "addon_models": ["sex_pose"], "images": [], "reference_descriptions": [],
-        }},
-        lang="zh",
-    )
-
-    state = await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
-
-    assert state == AdvancedVideoProState.WAIT_PROMPT
-    assert "200–270 个英文单词" in edit.await_args.args[1]
-    assert "动作、视角、速度、景别" in edit.await_args.args[1]
-    assert "环境音" in edit.await_args.args[1]
+    assert not any(value.startswith("avp_addon_") for value in callbacks)
 
 
 @pytest.mark.asyncio
@@ -120,7 +80,7 @@ async def test_pro_prompt_is_reviewed_before_generation_and_offers_optimizer(mon
     monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
     data = {
         "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
-        "addon_models": ["sex_pose"], "images": [], "reference_descriptions": [],
+        "images": [], "reference_descriptions": [],
     }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
     update = SimpleNamespace(
@@ -176,7 +136,7 @@ async def test_pro_optimizer_runs_in_background_and_replaces_prompt(monkeypatch)
     monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
     query = SimpleNamespace(data="avp_prompt_optimize", answer=AsyncMock(), message=object())
     data = {
-        "mode": "i2v", "duration": 10, "addon_models": ["breasts"],
+        "mode": "i2v", "duration": 10,
         "images": ["/tmp/start.png"], "original_prompt": "original",
         "prompt": "original", "optimizer_pending": False,
     }
@@ -199,5 +159,5 @@ async def test_pro_optimizer_runs_in_background_and_replaces_prompt(monkeypatch)
     resolve_user.assert_awaited_once_with(7, username="alice")
     assert optimize.await_args.kwargs["internal_user_id"] == 7007
     assert optimize.await_args.kwargs["mode"] == "i2v"
-    assert optimize.await_args.kwargs["addon_items"] == [{"name": "breasts"}]
+    assert "addon_items" not in optimize.await_args.kwargs
     assert "优化完成" in edit.await_args.args[1]

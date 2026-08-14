@@ -844,22 +844,7 @@
       "minimax_h3_first_frame_ratio": "画面比例按首帧自动推导",
       "minimax_h3_resolution_presets": {"preview": "极速（约 512p）", "small": "清晰（约 600p）", "standard": "标准（约 720p）", "hd": "高清（约 810p）"},
       "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧"},
-      "minimax_h3_addon_model": "附加模型",
-      "minimax_h3_addons": {"none": "无", "breasts": "乳房", "anus": "肛门", "vagina": "阴道", "sex_pose": "性爱姿势", "penis": "阴茎", "select_all": "全选 LoRA", "clear": "清空"},
-      "minimax_h3_addon_guides": {
-        "recommended_strength": "推荐强度",
-        "trigger_auto": "触发词会自动添加，无需重复输入。",
-        "breasts_strength": "默认 1.0；可按画面效果在允许范围内调整。",
-        "breasts_prompt": "写明乳房尺寸与形状、乳晕尺寸与颜色、乳头状态；使用 areoles 拼写。",
-        "anus_strength": "推荐 1.0。",
-        "anus_prompt": "描述肛门在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
-        "vagina_strength": "推荐 1.0。",
-        "vagina_prompt": "描述阴道在画面中的方向、结构细节与运动；两份 LoRA 及触发词会自动组合。",
-        "sex_pose_strength": "建议 0.5 或更低；默认 0.5。",
-        "sex_pose_prompt": "优先使用图生视频；建议约 200–270 个英文单词，依次描述动作、视角、速度、景别、人物、画面位置、运动、表面状态和环境音。",
-        "penis_strength": "默认 1.0；可按画面效果在允许范围内调整。",
-        "penis_prompt": "写明正面、背面或侧面方向，并描述尺寸、是否包皮环切及龟头颜色。"
-      },
+      "minimax_h3_fixed_stack": "固定使用 RedMix 8-step 整合模型，无需选择附加模型。",
       "upload_slots": {
         "face_image": "脸部图片",
         "target_image": "身体图片",

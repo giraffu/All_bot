@@ -1,7 +1,6 @@
 import pytest
 
 from src.domain_config.minimax_h3 import (
-    MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_REF2V,
@@ -12,62 +11,28 @@ from src.domain_config.minimax_h3 import (
 )
 
 
-def test_minimax_h3_addon_catalog_exposes_five_user_models_but_not_acceleration():
-    assert set(MINIMAX_H3_ADDON_MODELS) == {"breasts", "anus", "vagina", "sex_pose", "penis"}
-    assert all(
-        "lightx" not in path.lower()
-        for item in MINIMAX_H3_ADDON_MODELS.values()
-        for path in item.model_paths
-    )
-
-
-def test_minimax_h3_addon_model_and_strength_are_normalized():
-    spec = build_minimax_h3_spec(
-        MINIMAX_H3_T2V,
-        {"duration": 5, "lora_name": "penis", "lora_strength": 1.25},
-    )
-    assert spec.addon_model == "penis"
-    assert spec.addon_strength == 1.25
-
-
-def test_minimax_h3_multiple_addons_are_normalized_in_order():
-    spec = build_minimax_h3_spec(
-        MINIMAX_H3_T2V,
-        {"duration": 5, "lora_items": [
-            {"name": "breasts", "strength": 1.2},
-            {"name": "sex_pose", "strength": 0.4},
-        ]},
-    )
-    assert [(item.name, item.strength) for item in spec.addon_items] == [
-        ("breasts", 1.2), ("sex_pose", 0.4)
-    ]
-
-
-def test_minimax_h3_rejects_duplicate_addons():
-    with pytest.raises(MiniMaxH3ValidationError, match="重复"):
-        build_minimax_h3_spec(MINIMAX_H3_T2V, {"lora_items": [
-            {"name": "penis", "strength": 1.0},
-            {"name": "penis", "strength": 0.8},
-        ]})
-
-
-def test_minimax_h3_ref2v_rejects_addons():
-    with pytest.raises(MiniMaxH3ValidationError, match="ref2v"):
-        build_minimax_h3_spec(MINIMAX_H3_REF2V, {
-            "images": ["reference.png"],
-            "lora_items": [{"name": "penis", "strength": 1.0}],
-        })
-
-
 @pytest.mark.parametrize("inputs", [
-    {"lora_name": "unknown"},
-    {"lora_name": "penis", "lora_strength": 0.05},
-    {"lora_name": "penis", "lora_strength": 2.05},
+    {"lora_name": "penis"},
     {"lora_strength": 1.0},
+    {"lora_items": []},
+    {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
 ])
-def test_minimax_h3_rejects_invalid_addon_configuration(inputs):
-    with pytest.raises(MiniMaxH3ValidationError):
+def test_minimax_h3_rejects_all_client_addon_configuration(inputs):
+    with pytest.raises(MiniMaxH3ValidationError, match="固定整合模型"):
         build_minimax_h3_spec(MINIMAX_H3_T2V, {"duration": 5, **inputs})
+
+
+def test_minimax_h3_uses_fixed_redmix_model_for_public_modes():
+    for task_type, images in (
+        (MINIMAX_H3_T2V, []),
+        (MINIMAX_H3_I2V, ["first.png"]),
+        (MINIMAX_H3_FLF2V, ["first.png", "last.png"]),
+    ):
+        spec = build_minimax_h3_spec(
+            task_type,
+            {"images": images, "aspect_ratio": "source" if images else "16:9"},
+        )
+        assert spec.model_name == "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
 
 
 @pytest.mark.parametrize(

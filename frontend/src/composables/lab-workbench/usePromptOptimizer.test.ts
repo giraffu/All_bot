@@ -116,7 +116,7 @@ describe('usePromptOptimizer', () => {
     scope.stop()
   })
 
-  it('maps MiniMax H3 mode, media and add-ons into the trusted optimizer request', async () => {
+  it('maps MiniMax H3 mode and media into the fixed-stack optimizer request', async () => {
     get
       .mockResolvedValueOnce({
         data: {
@@ -140,10 +140,6 @@ describe('usePromptOptimizer', () => {
       ]),
       selectedCharacterIds: ref([]),
       minimaxH3Mode: ref('flf2v'),
-      minimaxH3AddonItems: ref([
-        { name: 'breasts', strength: 1 },
-        { name: 'sex_pose', strength: 0.5 },
-      ]),
     }))!
     await nextTick()
     await Promise.resolve()
@@ -160,11 +156,8 @@ describe('usePromptOptimizer', () => {
         { role: 'start_image', object_key: 'web_uploads/7/start.png' },
         { role: 'end_image', object_key: 'web_uploads/7/end.png' },
       ],
-      lora_items: [
-        { name: 'breasts', strength: 1 },
-        { name: 'sex_pose', strength: 0.5 },
-      ],
     })
+    expect(post.mock.calls[0][1]).not.toHaveProperty('lora_items')
     scope.stop()
   })
 })

@@ -1,6 +1,6 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
-MiniMax H3 使用四个独立业务/执行类型，统一走既有 Web submission Saga、Central
+MiniMax H3 用户入口使用 T2V/I2V/FLF2V 三个独立业务/执行类型，统一走既有 Web submission Saga、Central
 队列、Worker workflow patch、结果上传和终态退款，不以 LTX alias 入队。输入数量、
 计费和 workflow 契约见 `docs/子模块_MiniMaxH3视频服务_minimax_h3.md`。
 

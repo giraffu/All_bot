@@ -13,7 +13,7 @@ def test_minimax_h3_runpod_request_is_manual_exact_profile():
     digest = "ghcr.io/giraffu/allbot-gpu-minimax-h3@sha256:" + "a" * 64
     body = RunPodPodRequestBuilder(
         RunPodSettings(image_name_minimax_h3=digest)
-    ).create_pod_body(task_type="minimax_h3_ref2v", environment="cloud-test")
+    ).create_pod_body(task_type="minimax_h3_flf2v", environment="cloud-test")
 
     assert body["imageName"] == digest
     assert body["gpuTypeIds"] == ["NVIDIA GeForce RTX 5090"]

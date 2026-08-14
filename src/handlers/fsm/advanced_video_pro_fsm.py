@@ -15,7 +15,6 @@ from telegram.ext import (
 )
 
 from src.core.user_core import get_or_create_user_by_telegram
-from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
 from src.handlers.fsm.fsm_shared import (
@@ -102,28 +101,6 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     rows = [buttons("duration", DURATIONS), preset_buttons[:2], preset_buttons[2:]]
     if data.get("mode") not in {"i2v", "flf2v"}:
         rows.extend([buttons("aspect", ASPECTS[:3]), buttons("aspect", ASPECTS[3:])])
-    addon_buttons = [
-        InlineKeyboardButton(
-            ("✅ " if model_id in data.get("addon_models", []) else "")
-            + _text(context, model.label_zh, model.label_en),
-            callback_data=f"avp_addon_{model_id}",
-        )
-        for model_id, model in MINIMAX_H3_ADDON_MODELS.items()
-    ]
-    none_label = _text(context, "清空 LoRA", "Clear LoRAs")
-    rows.extend(
-        [
-            [
-                InlineKeyboardButton(
-                    _text(context, "全选 LoRA", "Select all LoRAs"),
-                    callback_data="avp_addon_all",
-                ),
-                InlineKeyboardButton(none_label, callback_data="avp_addon_none"),
-            ],
-            addon_buttons[:3],
-            addon_buttons[3:],
-        ]
-    )
     rows.append(
         [
             InlineKeyboardButton(
@@ -141,50 +118,11 @@ def _settings_text(context, data: dict) -> str:
         if data.get("mode") in {"i2v", "flf2v"}
         else data["aspect"]
     )
-    selected = data.get("addon_models", [])
-    addon_zh = (
-        "、".join(MINIMAX_H3_ADDON_MODELS[item].label_zh for item in selected) or "无"
-    )
-    addon_en = (
-        ", ".join(MINIMAX_H3_ADDON_MODELS[item].label_en for item in selected) or "None"
-    )
-    summary = _text(
+    return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n附加模型：{addon_zh}",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nAddons: {addon_en}",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n模型：固定 RedMix 8-step 整合栈",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nModel: fixed RedMix 8-step stack",
     )
-    guidance = _addon_guidance_text(context, selected)
-    return f"{summary}\n\n{guidance}" if guidance else summary
-
-
-def _addon_guidance_text(context, selected: list[str]) -> str:
-    models = [
-        MINIMAX_H3_ADDON_MODELS[item]
-        for item in selected
-        if item in MINIMAX_H3_ADDON_MODELS
-    ]
-    if not models:
-        return ""
-    title = _text(
-        context,
-        "提示词与强度建议（触发词会自动添加，无需重复输入）：",
-        "Prompt and strength guidance (trigger words are added automatically):",
-    )
-    lines = [title]
-    separator = "：" if _lang(context) == "zh" else ": "
-    for model in models:
-        strength_hint = (
-            model.strength_hint_en if _lang(context) == "en" else model.strength_hint_zh
-        )
-        prompt_guide = (
-            model.prompt_guide_en if _lang(context) == "en" else model.prompt_guide_zh
-        )
-        label = model.label_en if _lang(context) == "en" else model.label_zh
-        lines.append(
-            f"• {label} — {_text(context, '建议强度', 'Recommended strength')}"
-            f"{separator}{strength_hint}\n  {prompt_guide}"
-        )
-    return "\n".join(lines)
 
 
 def _prompt_request_text(context, data: dict, *, media_received: bool = False) -> str:
@@ -195,8 +133,7 @@ def _prompt_request_text(context, data: dict, *, media_received: bool = False) -
         if media_received
         else "Send the video prompt.",
     )
-    guidance = _addon_guidance_text(context, data.get("addon_models", []))
-    return f"{intro}\n\n{guidance}" if guidance else intro
+    return intro
 
 
 def _extract_image(update: Update) -> tuple[str | None, str]:
@@ -290,7 +227,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "aspect": "16:9",
         "images": [],
         "reference_descriptions": [],
-        "addon_models": [],
     }
     await robust_reply_text(
         update.effective_message,
@@ -336,15 +272,6 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         aspect = value.removeprefix("avp_aspect_")
         if aspect in ASPECTS:
             data["aspect"] = aspect
-    elif value.startswith("avp_addon_"):
-        addon = value.removeprefix("avp_addon_")
-        selected = data.setdefault("addon_models", [])
-        if addon == "none":
-            selected.clear()
-        elif addon == "all":
-            data["addon_models"] = list(MINIMAX_H3_ADDON_MODELS)
-        elif addon in MINIMAX_H3_ADDON_MODELS:
-            selected.remove(addon) if addon in selected else selected.append(addon)
     elif value == "avp_settings_done" and data.get("mode"):
         mode = data["mode"]
         if mode == "t2v":
@@ -488,7 +415,6 @@ async def _submit_generation(
             aspect_ratio=(
                 "source" if data["mode"] in {"i2v", "flf2v"} else data["aspect"]
             ),
-            addon_items=[{"name": name} for name in data.get("addon_models", [])],
         )
     except AdvancedVideoProSubmissionError as exc:
         await robust_reply_text(message, str(exc))
@@ -581,7 +507,6 @@ async def _run_prompt_optimization(
             prompt=data["original_prompt"],
             images=list(data.get("images", [])),
             duration_seconds=int(data["duration"]),
-            addon_items=[{"name": name} for name in data.get("addon_models", [])],
             client_request_id=client_request_id,
         )
     except Exception as exc:
@@ -669,7 +594,6 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         str(data.get("duration")),
                         str(data.get("original_prompt")),
                         ",".join(str(path) for path in data.get("images", [])),
-                        ",".join(data.get("addon_models", [])),
                     ]
                 ),
             )

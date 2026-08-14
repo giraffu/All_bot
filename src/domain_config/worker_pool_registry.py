@@ -39,7 +39,6 @@ _WORKER_POOL_PROFILES = (
             "minimax_h3_t2v",
             "minimax_h3_i2v",
             "minimax_h3_flf2v",
-            "minimax_h3_ref2v",
         ),
     ),
     WorkerPoolProfile(

@@ -22,7 +22,6 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
         prompt="original",
         images=["/tmp/start.png", "/tmp/end.png"],
         duration_seconds=10,
-        addon_items=[{"name": "sex_pose"}],
         client_request_id="761206f6-50ed-437c-855a-af14544352f9",
         upload_image=lambda _path: next(uploads),
         submit_func=submit,
@@ -37,7 +36,7 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
     assert request.target_task_type == "minimax_h3_flf2v"
     assert [item.role for item in request.media] == ["start_image", "end_image"]
     assert request.context == {"duration_seconds": 10}
-    assert request.lora_items[0].name == "sex_pose"
+    assert request.lora_items == []
     assert submit.await_args.kwargs["current_user"] == SimpleNamespace(id=7, username="alice")
     assert remove.await_count == 2
 
@@ -56,7 +55,6 @@ async def test_bot_optimizer_preserves_staged_media_until_terminal_result():
             prompt="original",
             images=["/tmp/start.png"],
             duration_seconds=5,
-            addon_items=[],
             client_request_id="761206f6-50ed-437c-855a-af14544352f9",
             upload_image=lambda _path: "staging/user-uploads/7/start.png",
             submit_func=AsyncMock(return_value={"task_id": "optimizer-1"}),
