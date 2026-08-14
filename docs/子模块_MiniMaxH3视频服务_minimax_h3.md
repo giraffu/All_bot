@@ -88,7 +88,9 @@ DaSiWa Nodes、KJNodes、VHS、`ComfyUI-MiniMax-ContextIR` 与
 
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，逐条检查：Central task type、
 Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
-黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。H3 profile 保持
+黑帧检查，不能仅因容器成功、MP4 可探测或存在尾帧就宣布 canary 通过。
+`scripts/minimax_h3_prod_smoke.py` 使用 FFmpeg `signalstats` 扫描全部帧；所有帧的
+`YAVG <= 20` 且 `YMAX <= 32` 时按全黑失败，缺少亮度元数据同样 fail closed。H3 profile 保持
 `reset_comfy_memory_before_task`、`--fast-disk --disable-pinned-memory` 和
 DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
 

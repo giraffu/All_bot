@@ -28,9 +28,9 @@ build-only base 使用 Dockerfile、显式 `build_inputs` 与上游精确 digest
 内容身份，不跟随应用 SHA；最终业务产物仍用 SHA 并返回精确 digest。loopback
 代理必须在 build 前拒绝。GitHub self-hosted workflow 只允许手动 protected
 main，拒绝 PR/fork 和 GPU kind。GPU/ComfyUI 由 operator 直接调用
-`release.py build`；受保护 Runner 内使用 `allbot-sgp1`，本地操作者通过 SSH
-Docker context 使用自己的远端 builder 名称并先 `inspect --bootstrap`。构建
-artifact 不授权或触发 RunPod/LAN rollout。
+`release.py build`；受保护 Runner 内使用 `allbot-sgp1`。本地云构建默认通过
+`allbot-do-sgp1-build` 登录，以 `actions` 运行；`deploy` 看不到 builder
+不应回退本机。artifact 不授权 RunPod/LAN rollout。
 
 部署一次只替换一个模块的精确 `repository@sha256:digest`。test 人工验收是
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
@@ -49,6 +49,9 @@ test 目标时可拒绝 test，但不阻断直接部署 prod。
   独立 SSH 会话，避免大层占满 multiplex 连接导致 build context 超时；结束后关闭
   通道。运行端若也不能直连 LAN registry，
   可在部署窗口建立同类 loopback 通道拉取同一 repository path 的精确 digest。
+- 云主机 loopback 反向 registry 通道使用 `actions` 的 `network=host`
+  builder `allbot-sgp1-host`；bridge 模式的 `allbot-sgp1` 看不到宿主 loopback。
+  transport 别名不得改变精确 digest，也不得改坏共享 builder。
 - 构建前检查大小写 proxy 变量和 builder daemon env；loopback 代理必须先证明容器
   可达，再按专题文档临时映射 Docker gateway。不得输出凭据、改坏共享 builder，
   或把代理写入 Git、镜像与发布状态。

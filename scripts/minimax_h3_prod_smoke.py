@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -41,6 +42,61 @@ EXPECTED_TYPES = (
 
 class MiniMaxH3SmokeError(RuntimeError):
     pass
+
+
+_SIGNALSTAT_PATTERN = re.compile(
+    r"lavfi\.signalstats\.(YAVG|YMAX)=([0-9]+(?:\.[0-9]+)?)"
+)
+
+
+def _validate_visual_content(output: str) -> dict[str, Any]:
+    yavg: list[float] = []
+    ymax: list[float] = []
+    for name, raw_value in _SIGNALSTAT_PATTERN.findall(output):
+        value = float(raw_value)
+        if name == "YAVG":
+            yavg.append(value)
+        else:
+            ymax.append(value)
+    if len(yavg) < 2 or len(ymax) < 2:
+        raise MiniMaxH3SmokeError("missing frame luma signalstats")
+    max_yavg = max(yavg)
+    max_ymax = max(ymax)
+    if max_yavg <= 20.0 and max_ymax <= 32.0:
+        raise MiniMaxH3SmokeError(
+            "all-black video: every analyzed frame remains below the luma gate"
+        )
+    return {
+        "frames_analyzed": len(yavg),
+        "min_yavg": min(yavg),
+        "max_yavg": max_yavg,
+        "max_ymax": max_ymax,
+    }
+
+
+def _signalstats(path: Path) -> dict[str, Any]:
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-map",
+            "0:v:0",
+            "-vf",
+            "signalstats,metadata=print:file=-",
+            "-an",
+            "-f",
+            "null",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return _validate_visual_content(result.stdout + "\n" + result.stderr)
 
 
 def build_control_config(
@@ -154,6 +210,7 @@ def _ffprobe(path: Path, *, expected_duration: int) -> dict[str, Any]:
         "width": int(video.get("width") or 0),
         "height": int(video.get("height") or 0),
         "has_audio": True,
+        "visual_content": _signalstats(path),
     }
 
 
