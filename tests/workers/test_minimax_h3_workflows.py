@@ -120,7 +120,7 @@ def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
 
 @pytest.mark.parametrize("params", [
     {"lora_name": "sex_pose", "lora_strength": 0.75},
-    {"lora_items": []},
+    {"lora_strength": 1.0},
     {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
 ])
 def test_minimax_h3_patcher_rejects_client_addon_overrides(params):
@@ -128,6 +128,26 @@ def test_minimax_h3_patcher_rejects_client_addon_overrides(params):
     workflow = patcher.load_workflow("minimax_h3_t2v")
     with pytest.raises(ValueError, match="fixed RedMix"):
         patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", **params})
+
+
+def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+
+    result = patcher.patch_workflow(
+        "minimax_h3_t2v",
+        workflow,
+        {
+            "prompt": "scene",
+            "lora_items": [],
+            "lora_name": None,
+            "lora_strength": None,
+        },
+    )
+
+    assert result["1"]["inputs"]["unet_name"].endswith(
+        "REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
+    )
 
 
 def test_minimax_h3_patcher_without_addon_keeps_baked_redmix_stack():

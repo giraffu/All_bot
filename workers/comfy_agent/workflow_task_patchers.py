@@ -1423,7 +1423,10 @@ def patch_minimax_h3_workflow(
         for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
-    if any(key in params for key in ("lora_items", "lora_name", "lora_strength")):
+    if any(
+        params.get(key) not in (None, "", [], ())
+        for key in ("lora_items", "lora_name", "lora_strength")
+    ):
         raise ValueError("MiniMax H3 uses a fixed RedMix stack and rejects addon overrides")
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
