@@ -1,6 +1,10 @@
+import pytest
+
 from scripts.minimax_h3_prod_smoke import (
     DEFAULT_WEB_URL,
     EXPECTED_TYPES,
+    MiniMaxH3SmokeError,
+    _validate_visual_content,
     build_cases,
     build_control_config,
 )
@@ -39,3 +43,42 @@ def test_minimax_h3_smoke_builds_three_public_preview_modes_then_standard_t2v():
     assert cases[0]["payload"]["inputs"]["aspect_ratio"] == "16:9"
     assert cases[1]["payload"]["inputs"]["aspect_ratio"] == "source"
     assert cases[2]["payload"]["inputs"]["aspect_ratio"] == "source"
+
+
+def test_minimax_h3_smoke_rejects_all_black_video_signalstats():
+    output = "\n".join(
+        [
+            "lavfi.signalstats.YAVG=16",
+            "lavfi.signalstats.YMAX=16",
+            "lavfi.signalstats.YAVG=16.1",
+            "lavfi.signalstats.YMAX=17",
+        ]
+    )
+
+    with pytest.raises(MiniMaxH3SmokeError, match="all-black"):
+        _validate_visual_content(output)
+
+
+def test_minimax_h3_smoke_accepts_dark_video_with_visible_pixels():
+    output = "\n".join(
+        [
+            "lavfi.signalstats.YAVG=16",
+            "lavfi.signalstats.YMAX=18",
+            "lavfi.signalstats.YAVG=18",
+            "lavfi.signalstats.YMAX=64",
+        ]
+    )
+
+    stats = _validate_visual_content(output)
+
+    assert stats == {
+        "frames_analyzed": 2,
+        "min_yavg": 16.0,
+        "max_yavg": 18.0,
+        "max_ymax": 64.0,
+    }
+
+
+def test_minimax_h3_smoke_rejects_missing_signalstats():
+    with pytest.raises(MiniMaxH3SmokeError, match="missing frame luma"):
+        _validate_visual_content("ffmpeg produced no metadata")

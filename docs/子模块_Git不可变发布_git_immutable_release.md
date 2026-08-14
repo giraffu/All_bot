@@ -63,11 +63,12 @@ RunPod 消费的 GPU module 必须在 catalog 声明 `runpod_single_manifest=tru
 直接指向单一 Docker image manifest，而不是带 attestation 的 OCI index。
 LAN-only GPU module 不受此标记影响。
 
-本地操作者也可以通过 `allbot-do-sgp1-build` 对应的 SSH Docker context 创建或
-复用远端 builder。该名称属于操作者本机 Docker state，不在仓库硬编码；执行前用
-`docker context inspect` 和 `docker buildx inspect <builder> --bootstrap` 确认
-endpoint 确实是专用构建主机。控制面 image 构建应显式传这个 builder；只有它不健康、
-依赖没有受控远端可达路径或用户明确要求时，才退回本机 builder 并记录原因。
+本地操作者通过 SSH alias `allbot-do-sgp1-build` 登录专用构建主机。SSH 登录用户是
+`deploy`，但持久 Buildx builder 归 `actions` OS 用户所有；必须在云主机内执行
+`sudo -u actions docker buildx inspect <builder> --bootstrap`，并以同一用户运行
+`release.py build`。`deploy` 用户自己的 Docker context 看不到这些 builder，这不代表
+云构建主机不存在。控制面 image 构建应显式传远端 builder；只有它不健康、依赖没有
+受控远端可达路径或用户明确要求时，才退回本机 builder 并记录原因。
 
 ### 云构建写入本地 registry（不经过 GHCR）
 
@@ -78,6 +79,10 @@ LAN 地址时，使用现有 SSH/Tailscale 管理链路建立任务级反向端�
    `0.0.0.0`、修改云防火墙或公开 registry。
    registry 大层通道与 Docker context/BuildKit 控制面使用独立 SSH 连接，不能复用
    同一个 multiplex master；否则大层回传可能阻塞 build context session。
+   该监听属于云宿主 loopback，必须使用 `network=host` 的
+   `allbot-sgp1-host`；bridge 模式的 `allbot-sgp1` 内部 `127.0.0.1` 指向 BuildKit
+   容器自身，不能访问这个通道。执行前以 `actions` 用户回读 builder 的
+   `Driver Options: network="host"` 和运行状态。
 2. 让本地发布进程与远端 BuildKit 使用同一 registry namespace 和 tag。若两端
    loopback 端口不同，先提供等价的本地 loopback 转发，不能靠改 repository path
    拼接两个不同产物。
@@ -100,7 +105,7 @@ loopback 通道访问同一个 registry 后端，模块必须先在 catalog 声�
 
 ```bash
 python scripts/release.py build --module minimax_h3 --sha <40位main-sha> \
-  --builder allbot-sgp1 \
+  --builder allbot-sgp1-host \
   --image-prefix 127.0.0.1:<通道端口>/allbot \
   --external-base-ref \
     127.0.0.1:<通道端口>/allbot/comfyui-boot@sha256:<原精确digest>
@@ -109,7 +114,8 @@ python scripts/release.py build --module minimax_h3 --sha <40位main-sha> \
 发布器会读取 Dockerfile 对应 ARG 的默认精确引用，并要求 transport alias 的 digest
 完全相同；mutable tag、不同 digest、未声明 ARG 或把该参数传给无此 seam 的模块都会
 fail closed。该参数不能替换业务基础镜像，只解决同一内容在不同 registry 地址下的
-可达性。
+可达性。这个命令在专用构建主机的精确 SHA checkout 中由 `actions` 用户运行；本机
+只维护独立的 registry 反向通道和构建状态观察，不在本机冷构建 Worker。
 
 ### 本地代理预检
 
