@@ -319,9 +319,9 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert slot.environment == "cloud-test"
     assert slot.agent_id == "lan_aio_test_gpu177_gpu1_minimax_h3_01"
     assert slot.target_task_types == MINIMAX_H3_TASK_TYPES
-    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_minimax_h3_01"
+    assert slot.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_unified_01"
     assert slot.old_runtime_container == (
-        "allbot-lan-aio-gpu-177-gpu1-minimax_h3-prod"
+        "allbot-lan-aio-gpu-177-gpu1-ltx_unified-prod"
     )
 
     ops = LanAioProdOps(
@@ -336,7 +336,7 @@ def test_gpu177_minimax_h3_test_candidate_targets_only_cloud_test():
     assert environment["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
     assert environment["MINIO_RESULT_BUCKET"] == "user-data-test"
 
-    current = slots["gpu-177-gpu1-minimax_h3"]
+    current = slots["gpu-177-gpu1-ltx_unified"]
     assert ops.retarget_slot(slot, current.id) == slot
 
 

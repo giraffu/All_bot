@@ -63,8 +63,10 @@ RedMix checkpoint、Heretic encoder 和 INT8 video VAE。
 存储。模型进入 `/srv/allbot/model-registry` 的内容寻址 blob 与 bundle manifest，随后
 上传 LAN model cache；模型文件不得进入 Git 或 OCI 镜像。
 
-镜像模块仍为 `minimax_h3`。Dockerfile 固定 ComfyUI、DaSiWa Nodes、KJNodes、VHS 和
-SageAttention 源码 revision；不再安装 `ComfyUI-MiniMax-H3-Turbo`。RTX 5090 启动时必须
+镜像模块仍为 `minimax_h3`。Dockerfile 的 ComfyUI、CUDA devel 与 Python builder
+基础镜像均从 LAN registry 的精确 digest 读取，不依赖 GHCR 或构建时访问 Docker Hub；
+同时固定 DaSiWa Nodes、KJNodes、VHS 和 SageAttention 源码 revision，不再安装
+`ComfyUI-MiniMax-H3-Turbo`。RTX 5090 启动时必须
 确认 SageAttention wheel 含 `sm120`。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
 
