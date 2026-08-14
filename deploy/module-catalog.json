@@ -40,7 +40,7 @@
     "ltx_video": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-video-v2", "dockerfile": "workers/runpod_profiles/ltx_video/Dockerfile", "runpod_single_manifest": true, "environments": ["test", "prod"]},
     "ltx_t2v": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-t2v", "dockerfile": "workers/runpod_profiles/ltx_t2v/Dockerfile", "runpod_single_manifest": true, "environments": ["test", "prod"]},
     "ltx_unified": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-ltx-unified", "dockerfile": "workers/runpod_profiles/ltx_unified/Dockerfile", "environments": ["test", "prod"]},
-    "minimax_h3": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-minimax-h3", "dockerfile": "workers/runpod_profiles/minimax_h3/Dockerfile", "runpod_single_manifest": true, "environments": ["test", "prod"]},
+    "minimax_h3": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-minimax-h3", "dockerfile": "workers/runpod_profiles/minimax_h3/Dockerfile", "external_base_arg": "BASE_IMAGE", "runpod_single_manifest": true, "environments": ["test", "prod"]},
     "img2img": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-img2img-lora", "dockerfile": "workers/runpod_profiles/img2img_lora/Dockerfile", "runpod_single_manifest": true, "environments": ["test", "prod"]},
     "img2img_rocm_gfx1151": {"kind": "gpu", "adapter": "gpu", "image": "allbot-gpu-img2img-rocm-gfx1151", "dockerfile": "workers/runpod_profiles/img2img_lora_rocm_gfx1151/Dockerfile", "environments": ["test", "prod"]}
   }
