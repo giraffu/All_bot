@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, h } from 'vue'
+import { computed, ref, onMounted, onUnmounted, h } from 'vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import {
@@ -23,6 +23,7 @@ import {
   apiBaseUrl
 } from '../api/api'
 import { copyTextWithFallback } from '../utils/helpers'
+import { GALLERY_MOBILE_BREAKPOINT, getGalleryTableColumnWidths } from './galleryTableLayout'
 
 const props = defineProps({
   onOpenCommentsTab: {
@@ -130,11 +131,20 @@ const getAuthorMeta = (record) => {
   return parts.join(' / ')
 }
 
-const columns = [
+const compactTable = ref(false)
+let mobileMediaQuery
+
+const updateCompactTable = (event) => {
+  compactTable.value = event.matches
+}
+
+const columns = computed(() => {
+  const widths = getGalleryTableColumnWidths(compactTable.value)
+  return [
   {
     title: '预览',
     key: 'preview',
-    width: 120,
+    width: widths.preview,
     align: 'center'
   },
   {
@@ -170,10 +180,11 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 320,
+    width: widths.action,
     fixed: 'right'
   }
-]
+  ]
+})
 
 const normalizeTextFilter = (value) => String(value ?? '').trim()
 
@@ -376,7 +387,14 @@ const showPreview = (record) => {
 }
 
 onMounted(() => {
+  mobileMediaQuery = window.matchMedia(`(max-width: ${GALLERY_MOBILE_BREAKPOINT}px)`)
+  compactTable.value = mobileMediaQuery.matches
+  mobileMediaQuery.addEventListener('change', updateCompactTable)
   loadData()
+})
+
+onUnmounted(() => {
+  mobileMediaQuery?.removeEventListener('change', updateCompactTable)
 })
 </script>
 
@@ -607,12 +625,18 @@ onMounted(() => {
 
           <!-- Actions -->
           <template v-else-if="column.key === 'action'">
-            <div class="flex flex-wrap gap-2 w-[300px]">
-              <a-button size="small" @click="editPost(record)">修改数据</a-button>
-              <a-button size="small" @click="openCommentsManager(record)">评论管理</a-button>
+            <div class="gallery-row-actions">
+              <a-button size="small" @click="editPost(record)">
+                {{ compactTable ? '修改' : '修改数据' }}
+              </a-button>
+              <a-button size="small" @click="openCommentsManager(record)">
+                {{ compactTable ? '评论' : '评论管理' }}
+              </a-button>
               <a-button size="small" danger @click="confirmBanAndTakedown(record)">
                 <template #icon><stop-outlined /></template>
-                {{ record.is_submission_banned ? '下架全部' : '封禁并下架' }}
+                {{ record.is_submission_banned
+                  ? (compactTable ? '全下架' : '下架全部')
+                  : (compactTable ? '封禁下架' : '封禁并下架') }}
               </a-button>
               <a-button size="small" danger @click="confirmDelete(record)">删除</a-button>
             </div>
@@ -681,3 +705,26 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.gallery-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 300px;
+}
+
+@media (max-width: 640px) {
+  .gallery-row-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.375rem;
+    width: 92px;
+  }
+
+  .gallery-row-actions :deep(.ant-btn) {
+    margin: 0;
+    width: 100%;
+  }
+}
+</style>
