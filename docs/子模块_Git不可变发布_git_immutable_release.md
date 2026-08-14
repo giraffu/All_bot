@@ -94,6 +94,23 @@ LAN 地址时，使用现有 SSH/Tailscale 管理链路建立任务级反向端�
 到控制面。不得把 SSH 通道写成长期公网 registry，也不得因 registry transport 改变
 artifact 身份。
 
+若 GPU Dockerfile 的精确基础镜像默认使用 LAN registry，而云 BuildKit 只能通过上述
+loopback 通道访问同一个 registry 后端，模块必须先在 catalog 声明
+`external_base_arg`，再显式传入仅改变 registry transport 的别名：
+
+```bash
+python scripts/release.py build --module minimax_h3 --sha <40位main-sha> \
+  --builder allbot-sgp1 \
+  --image-prefix 127.0.0.1:<通道端口>/allbot \
+  --external-base-ref \
+    127.0.0.1:<通道端口>/allbot/comfyui-boot@sha256:<原精确digest>
+```
+
+发布器会读取 Dockerfile 对应 ARG 的默认精确引用，并要求 transport alias 的 digest
+完全相同；mutable tag、不同 digest、未声明 ARG 或把该参数传给无此 seam 的模块都会
+fail closed。该参数不能替换业务基础镜像，只解决同一内容在不同 registry 地址下的
+可达性。
+
 ### 本地代理预检
 
 Buildx 的构建步骤运行在容器网络中，因此宿主 shell 中可用的

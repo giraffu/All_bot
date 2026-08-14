@@ -259,6 +259,60 @@ def test_runpod_gpu_build_emits_single_linux_amd64_manifest_without_provenance()
     assert "--provenance=false" in build
 
 
+def test_gpu_build_accepts_declared_exact_external_base_ref():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    digest = "sha256:" + "2" * 64
+    base_ref = (
+        "127.0.0.1:15000/allbot/comfyui-boot@sha256:"
+        "09c810dd10ee5185cd7ee6e7d5d1b108118d85965838ad8c5ee1be425de1d5c1"
+    )
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            if "--format" in command:
+                return module.CommandResult(0, digest, "")
+            return module.CommandResult(1, "", "not found")
+        return module.CommandResult(0, "", "")
+
+    module.build_modules(
+        catalog,
+        ["minimax_h3"],
+        sha="b" * 40,
+        image_prefix="127.0.0.1:15000/allbot",
+        external_base_ref=base_ref,
+        dependencies=module.ReleaseDependencies(
+            run=fake_run,
+            temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+        ),
+    )
+
+    build = next(call for call in calls if call[:3] == ["docker", "buildx", "build"])
+    assert ["--build-arg", f"BASE_IMAGE={base_ref}"] in [
+        build[index : index + 2] for index in range(len(build) - 1)
+    ]
+
+
+def test_gpu_build_rejects_mutable_external_base_ref():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    with pytest.raises(module.ReleaseError, match="exact repository@sha256 digest"):
+        module.build_modules(
+            catalog,
+            ["minimax_h3"],
+            sha="b" * 40,
+            image_prefix="127.0.0.1:15000/allbot",
+            external_base_ref="127.0.0.1:15000/allbot/comfyui-boot:latest",
+            dependencies=module.ReleaseDependencies(
+                run=lambda *_args, **_kwargs: module.CommandResult(0, "", ""),
+                temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+            ),
+        )
+
+
 def test_remote_state_backend_reads_and_atomically_writes_target_isolated_state():
     module = _load_module()
     calls = []

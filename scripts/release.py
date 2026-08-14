@@ -427,6 +427,7 @@ def _build_image(
     builder: str | None,
     registry_cache_prefix: str | None,
     build_progress: str,
+    external_base_ref: str | None,
 ) -> str:
     base = module.get("base")
     base_artifact = built.get(str(base)) if base else None
@@ -490,6 +491,28 @@ def _build_image(
             command.extend(["--target", str(target)])
         if base:
             command.extend(["--build-arg", f"RUNTIME_BASE_IMAGE={built[str(base)]}"])
+        external_base_arg = module.get("external_base_arg")
+        if external_base_ref and external_base_arg:
+            declared_ref_match = re.search(
+                rf"^ARG {re.escape(str(external_base_arg))}=([^\s]+)$",
+                (checkout / str(module["dockerfile"])).read_text(encoding="utf-8"),
+                flags=re.MULTILINE,
+            )
+            if not declared_ref_match or not DIGEST_REF_RE.fullmatch(
+                declared_ref_match.group(1)
+            ):
+                raise ReleaseError(
+                    f"{name} external base ARG must have an exact default digest"
+                )
+            if declared_ref_match.group(1).rsplit("@", 1)[1] != external_base_ref.rsplit(
+                "@", 1
+            )[1]:
+                raise ReleaseError(
+                    "external base ref must preserve the Dockerfile default digest"
+                )
+            command.extend(
+                ["--build-arg", f"{external_base_arg}={external_base_ref}"]
+            )
         command.append(".")
         started = time.monotonic()
         print(f"[build:{name}] started", file=sys.stderr)
@@ -575,10 +598,18 @@ def build_modules(
     builder: str | None = None,
     registry_cache_prefix: str | None = None,
     build_progress: str = "plain",
+    external_base_ref: str | None = None,
     dependencies: ReleaseDependencies | None = None,
 ) -> dict[str, str]:
     if not FULL_SHA_RE.fullmatch(sha):
         raise ReleaseError("build SHA must be a full Git SHA")
+    if external_base_ref and not DIGEST_REF_RE.fullmatch(external_base_ref):
+        raise ReleaseError("external base ref must use an exact repository@sha256 digest")
+    closure = build_closure(catalog, requested)
+    if external_base_ref and not any(
+        catalog[name].get("external_base_arg") for name in closure
+    ):
+        raise ReleaseError("selected modules do not declare an external base ARG")
     dependencies = dependencies or ReleaseDependencies()
     built: dict[str, str] = {}
     with dependencies.temporary_checkout(sha) as checkout:
@@ -588,7 +619,7 @@ def build_modules(
             dependencies=dependencies,
             cwd=checkout,
         )
-        for name in build_closure(catalog, requested):
+        for name in closure:
             module = catalog[name]
             kind = str(module["kind"])
             if kind == "external-image":
@@ -621,6 +652,7 @@ def build_modules(
                     builder=builder,
                     registry_cache_prefix=registry_cache_prefix,
                     build_progress=build_progress,
+                    external_base_ref=external_base_ref,
                 )
     return built
 
@@ -1492,6 +1524,13 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--builder")
     build.add_argument("--registry-cache-prefix")
     build.add_argument(
+        "--external-base-ref",
+        help=(
+            "exact transport alias for a module-declared external base image; "
+            "the digest must match the Dockerfile default"
+        ),
+    )
+    build.add_argument(
         "--build-progress",
         choices=("auto", "plain", "tty", "rawjson"),
         default="plain",
@@ -1533,6 +1572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 builder=args.builder,
                 registry_cache_prefix=args.registry_cache_prefix,
                 build_progress=args.build_progress,
+                external_base_ref=args.external_base_ref,
             )
         else:
             context = {
