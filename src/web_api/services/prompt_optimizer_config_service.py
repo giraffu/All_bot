@@ -15,7 +15,7 @@ SCENE_TEMPLATE_REFS = {
     "ltx_video_v2": "ltx_scene_script_cinematic@3",
     "ltx_t2v": "ltx_scene_script_cinematic@4",
     "ltx_t2v_ic": "ltx_scene_script_cinematic@4",
-    "minimax_h3": "minimax_h3_hmnsfw@1",
+    "minimax_h3": "minimax_h3_10eros_naughtytimes@1",
 }
 SCENE_LABELS = {
     "ltx_video_v2": ("高级图生视频 v2", "首帧与首尾帧共用配置"),

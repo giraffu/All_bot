@@ -268,7 +268,7 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-14-redmix-a2a-beta1-int8/manifest.json"
+        "minimax_h3/2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (

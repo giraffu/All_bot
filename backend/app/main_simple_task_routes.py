@@ -50,7 +50,6 @@ SIMPLE_TASK_KEYS = (
     "minimax_h3_t2v",
     "minimax_h3_i2v",
     "minimax_h3_flf2v",
-    "minimax_h3_ref2v",
     "prompt_optimize",
     "character_reference_build",
     "wan22_video_v2",
@@ -217,7 +216,6 @@ SIMPLE_TASK_ROUTE_SPECS = (
     ("/api/v1/minimax_h3_t2v", MiniMaxH3Request, "minimax_h3_t2v", "create_minimax_h3_t2v_task"),
     ("/api/v1/minimax_h3_i2v", MiniMaxH3Request, "minimax_h3_i2v", "create_minimax_h3_i2v_task"),
     ("/api/v1/minimax_h3_flf2v", MiniMaxH3Request, "minimax_h3_flf2v", "create_minimax_h3_flf2v_task"),
-    ("/api/v1/minimax_h3_ref2v", MiniMaxH3Request, "minimax_h3_ref2v", "create_minimax_h3_ref2v_task"),
     (
         "/api/v1/prompt_optimize",
         PromptOptimizeRequest,

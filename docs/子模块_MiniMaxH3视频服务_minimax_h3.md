@@ -21,61 +21,63 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
 - `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用和输入数量的事实源。
-  `lora_items`、`lora_name` 或 `lora_strength` 只要出现在 H3 请求中就拒绝，包括空值；
-  客户端不能覆盖模型、采样器、steps、timeline、本地路径或参考音视频。
+  空的历史 `addon_models`、`lora_items`、`lora_name`、`lora_strength` 占位值继续兼容；
+  任一非空值明确拒绝。客户端不能覆盖模型、采样器、steps、timeline、本地路径或参考音视频。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
-## 固定 RedMix 栈
+## 固定作者资产栈
 
-T2V/I2V/FLF2V 使用 Civitai modelVersion `3226037` 的 RedMix A2A Beta1 固定栈：
+T2V/I2V/FLF2V 使用可分别升级、但对客户端完全固定的作者原始资产：
 
-- diffusion model：`REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors`；
-- text encoder：`qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors`；
-- video VAE：`minimax_h3_video_vae_int8_convrot.safetensors`；
-- audio VAE：Comfy-Org 官方 `minimax_h3_audio_vae_fp32.safetensors`。
+- 10Eros-Max Beta2 `10Eros_Max_h3_fl2va_beta2_pruned.safetensors`，revision
+  `47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5`，40,222,933,592 bytes，SHA256
+  `57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20`；
+- LightX2V FL2VA 8-step v1.0 `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`，
+  1,956,193,000 bytes，SHA256
+  `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
+- NaughtyTimes v2 pruned R256 `NaughtyTimes_pruned_r256_v2.safetensors`，Civitai
+  modelVersion `3212436` / file `3094173`，2,242,444,272 bytes，SHA256
+  `947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a`；
+- Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-RedMix 文件元数据记录的合并配方以 `10Eros_Max_h3_fl2va_beta1_pruned` 为起点，依次
-合入 LightX2V MiniMax H3 Turbo 8-step v1.0（`0.75`）、SexGod NaughtyTimes H3
-（`0.75`）及作者用于 A2A 的 reference LoRA（`0.5`），然后以官方 H3 INT8 ConvRot
-结构量化保存。因此 10Eros 的成人审美/细节/动作、LightX2V 8-step 加速和
-NaughtyTimes 成人动作能力已经在 checkpoint 中，不得再次加载同名外部 LoRA，否则会
-重复放大融合效果。
+三个 workflow 使用同一固定顺序：`UNETLoader(10Eros Beta2) →
+LoraLoaderModelOnly(LightX2V, 1.0) → LoraLoaderModelOnly(NaughtyTimes, 1.0) →
+ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift(12/3) →
+ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → MiniMaxH3ImageToVideo →
+Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再回退到
+25 steps。输出继续解码 H3 原生同步音轨。
 
-三个公开 workflow 固定使用 8 steps、`simple` scheduler、Euler sampler、video/audio
-shift `12/3`。活动模型链完整采用 RedMix 官方第一阶段语义：
-`UNETLoader → ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift
-→ ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → BasicGuider/BasicScheduler`；conditioning
-统一使用 `MiniMaxH3UnifiedToVideo`。禁止重新接入
-`MiniMaxH3MemoryEfficientSageAttentionPatch`。它们没有 `LoraLoaderModelOnly` 或
-TurboSampler 节点，也不注入触发词。与旧方案相比，运行模型包
-从约 80.6 GiB 降至约 37.7 GiB，并移除 BF16 FL2VA、REF2VA、旧 Qwen encoder、FP16
-video VAE、五个用户 LoRA 和独立 Turbo LoRA；INT8 主模型预计降低显存/磁盘压力，但
-Beta1 融合会改变整体色彩、人物质感、成人动作偏置和提示词响应，不能期待与旧五 LoRA
-组合逐项等价。最终质量仍以三模式 GPU canary 为准。
+镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包也不包含
+REF2VA、HMNSFW、HMBreasts、HMPussy、HMPenis、RedMix 或其它历史附件。旧 checkpoint、
+blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
+内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
+实际速度必须通过后续三模式 GPU canary 才能定论。
 
-官方 Civitai workflow 文件 SHA256 固定为
-`71bda4f17f34d8c4489541979265a0e31df805dd02baebdb59ebf69b85634595`。四份 API JSON
-由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
-`workers/comfy_agent/workflows/` 与 baked RunPod runtime。公开三模式必须指向同一个
-RedMix checkpoint、Heretic encoder 和 INT8 video VAE。官方 `MiniMaxH3AudioLock`
-节点随镜像安装并纳入节点预检；它只在任务提供要原样保留的源音频时接到 AV latent。
-当前三个公开任务不接受参考音频，因此保持 H3 原生生成音轨，不能用静音占位强行接锁。
+三份公开 API JSON 由 `scripts/build_minimax_h3_api_workflows.py` 确定性生成，并同步到
+`workers/comfy_agent/workflows/` 与 baked RunPod runtime。历史 REF2V workflow 仅保留
+解析能力，不进入新镜像 smoke、capability 或新提交入口。
 
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-14-redmix-a2a-beta1-int8`、文件字节数与 SHA256。Civitai 下载要求通过
-`CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象
-存储。模型进入 `/srv/allbot/model-registry` 的内容寻址 blob 与 bundle manifest，随后
-上传 LAN model cache；模型文件不得进入 Git 或 OCI 镜像。
+`2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1`、六个文件的字节数与
+SHA256，总计 65,921,776,719 bytes（61.39 GiB）。脚本复用已有内容寻址 blob，只把缺失
+资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai Token 是可选项，只发送
+给 Civitai API host，不转发到重定向后的对象存储。模型只进入
+`/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或
+任何远端 registry。
+
+作者发布新版本时保持 workflow 拓扑不变，只更新准备脚本与 bundle 中的 repository
+revision、filename/modelVersion/fileId、SHA256 和 size。新版本必须使用新 bundle version，
+不能覆盖旧 manifest；完整校验、focused tests 与 GPU canary 通过后才可单独更新部署指针。
 
 镜像模块仍为 `minimax_h3`，基础镜像从 LAN registry 的精确 digest 读取，不依赖
 GHCR 或构建时访问 Docker Hub；同时固定支持 Comfy Kitchen Attention 的 ComfyUI、
-DaSiWa Nodes、KJNodes、VHS、`ComfyUI-MiniMax-ContextIR` 与
-`ComfyUI-ReservedVRAM` 源码 revision，不再安装 `ComfyUI-MiniMax-H3-Turbo`，也不再
-编译或在启动时依赖 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
+DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安装
+`ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
+SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
 
 ## LAN 测试切换

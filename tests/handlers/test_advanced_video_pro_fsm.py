@@ -53,7 +53,7 @@ async def test_pro_settings_expose_fixed_redmix_stack_without_addon_callbacks(mo
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
     assert data["mode"] == "t2v"
-    assert "固定 RedMix 8-step 整合栈" in edit.await_args.args[1]
+    assert "固定 10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 栈" in edit.await_args.args[1]
     callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert not any(value.startswith("avp_addon_") for value in callbacks)
 

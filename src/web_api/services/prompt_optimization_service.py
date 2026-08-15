@@ -220,7 +220,10 @@ async def submit_prompt_optimization(
             "environment_description": trusted_context.get(
                 "environment_description", ""
             ),
-            "addon_summary": "Fixed RedMix stack; no user-selectable add-ons.",
+            "addon_summary": (
+                "Fixed 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 "
+                "stack; no user-selectable add-ons."
+            ),
             "addon_rules": trusted_context.get(
                 "addon_rules",
                 "Do not output model names, LoRA names, strengths, or trigger tokens.",

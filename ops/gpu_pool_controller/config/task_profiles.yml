@@ -240,8 +240,8 @@ profiles:
     model_bundles:
       - minimax_h3_runtime
     required_nodes:
-      - MiniMaxH3UnifiedToVideo
-      - MiniMaxH3AudioLock
+      - MiniMaxH3ImageToVideo
+      - LoraLoaderModelOnly
       - ModelAttentionBackend
       - ReservedVRAMSetter
       - MiniMaxH3SigmaShift
@@ -251,8 +251,8 @@ profiles:
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:ab7c20d7059fea4ac1af84ff55272c354647e4b202a5ed53a05ba1d388ec7204
     all_in_one_image_ref: 192.168.1.115:5000/allbot/allbot-gpu-minimax-h3@sha256:ab7c20d7059fea4ac1af84ff55272c354647e4b202a5ed53a05ba1d388ec7204
-    model_prefix: minimax_h3/2026-08-14-redmix-a2a-beta1-int8
-    model_manifest_key: minimax_h3/2026-08-14-redmix-a2a-beta1-int8/manifest.json
+    model_prefix: minimax_h3/2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1
+    model_manifest_key: minimax_h3/2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1/manifest.json
 
   img2img_lora:
     runtime_profile: img2img_lora

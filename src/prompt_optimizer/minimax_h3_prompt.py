@@ -74,3 +74,30 @@ MINIMAX_H3_HMNSFW_TRANSLATION_ZH = '''你需要根据用户原始要求、声明
 时间与切镜：默认单一连续镜头，不写镜头标题或时间戳。只有用户明确要求切镜或定时事件时，才可把开头写为不带时间戳的 `[Shot 1]`，并接 `[Shot 2] At MM:SS.mmm, the camera cuts to ...`。毫秒必须正好三位；时间戳必须严格递增并严格小于本次 `{duration_seconds}` 秒动态时长。切镜动词只允许 the camera cuts to、the shot cuts to、the shot transitions to、the shot changes to、the shot switches to；只有用户要求时才能使用 dissolve、fade 或 wipe。切镜必须引入新的主体、空间、状态、视角或时刻，否则用连续镜头内的运镜描述。最多两个动作阶段或镜头。
 
 最终限制：只描述成年人；不能推断未明确成年的年龄。不得引入缺乏依据的人物、身体部位、姿势、物体或身份细节。不得输出 LoRA 名称、触发词、画幅、内部章节名、字段名或模型参数；生成栈固定，不存在用户可选附加模型。不得使用 “Starting from the frame where” 或 “Starting from the pose where”。除非用户明确要求，不得输出镜头标题或时间戳，且第一镜头永远不带时间戳。不得输出第二段、标题、尾注或超过两个阶段的编舞。不得改写、弱化、翻译或遗漏用户对白，也不得把说话方式写进 `<d>`。输出必须从动作类别词开始，绝不能从任何 LoRA 触发词开始。'''
+
+
+# Version 2 keeps the proven motion/caption contract while naming the new pinned
+# author stack. Version 1 remains byte-for-byte available for historical snapshots.
+MINIMAX_H3_10EROS_NAUGHTYTIMES_SYSTEM = (
+    MINIMAX_H3_HMNSFW_SYSTEM
+    .replace(
+        "fixed MiniMax H3 RedMix stack",
+        "fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack",
+    )
+    .replace(
+        "The HMNSFW caption distribution is 165-269 words with a median near 225, so a short prompt is off-distribution.",
+        "The fixed stack is tuned for detailed adult motion descriptions, so a short prompt omits important visual and temporal constraints.",
+    )
+)
+MINIMAX_H3_10EROS_NAUGHTYTIMES_USER = MINIMAX_H3_HMNSFW_USER
+MINIMAX_H3_10EROS_NAUGHTYTIMES_TRANSLATION_ZH = (
+    MINIMAX_H3_HMNSFW_TRANSLATION_ZH
+    .replace(
+        "固定 RedMix MiniMax H3 栈",
+        "固定的 MiniMax H3 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2 模型栈",
+    )
+    .replace(
+        "HMNSFW 标注分布为 165–269 词，中位数约 225 词，因此过短提示词不符合其分布。",
+        "固定模型栈针对详细的成人动作描述进行了调优，因此过短提示词会遗漏重要的视觉与时间约束。",
+    )
+)

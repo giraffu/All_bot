@@ -1,15 +1,37 @@
 {
   "1": {
     "inputs": {
-      "unet_name": "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors",
+      "unet_name": "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader"
   },
-  "2": {
+  "8": {
     "inputs": {
       "model": [
         "1",
+        0
+      ],
+      "lora_name": "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "strength_model": 1.0
+    },
+    "class_type": "LoraLoaderModelOnly"
+  },
+  "9": {
+    "inputs": {
+      "model": [
+        "8",
+        0
+      ],
+      "lora_name": "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
+      "strength_model": 1.0
+    },
+    "class_type": "LoraLoaderModelOnly"
+  },
+  "2": {
+    "inputs": {
+      "model": [
+        "9",
         0
       ],
       "attention": "comfy kitchen attention"
@@ -43,7 +65,7 @@
   },
   "4": {
     "inputs": {
-      "clip_name": "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
       "type": "minimax",
       "device": "default"
     },
@@ -51,7 +73,7 @@
   },
   "5": {
     "inputs": {
-      "vae_name": "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
+      "vae_name": "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
     },
     "class_type": "VAELoader"
   },
@@ -67,16 +89,11 @@
         "4",
         0
       ],
-      "video_vae": [
+      "vae": [
         "5",
         0
       ],
-      "audio_vae": [
-        "6",
-        0
-      ],
       "prompt": "",
-      "mode": "auto",
       "width": [
         "41",
         0
@@ -85,9 +102,7 @@
         "41",
         1
       ],
-      "duration": 5.0,
-      "fps": 24,
-      "ref_image_size": "match",
+      "length": 124,
       "first_frame": [
         "20",
         0
@@ -97,7 +112,7 @@
         0
       ]
     },
-    "class_type": "MiniMaxH3UnifiedToVideo"
+    "class_type": "MiniMaxH3ImageToVideo"
   },
   "31": {
     "inputs": {

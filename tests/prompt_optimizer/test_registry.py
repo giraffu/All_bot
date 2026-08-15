@@ -213,22 +213,22 @@ def test_resolver_fails_closed_for_unknown_or_incompatible_contracts(
 @pytest.mark.parametrize(
     ("target_task_type", "roles", "profile_ref"),
     [
-        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@1"),
-        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@1"),
+        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@2"),
+        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@2"),
         (
             "minimax_h3_flf2v",
             ("start_image", "end_image"),
-            "minimax_h3_flf2v_prompt@1",
+            "minimax_h3_flf2v_prompt@2",
         ),
     ],
 )
-def test_minimax_h3_profiles_share_one_hmnsfw_template(
+def test_minimax_h3_profiles_share_one_versioned_author_stack_template(
     target_task_type, roles, profile_ref
 ):
     capability = get_prompt_optimizer_capability(target_task_type)
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
-        template_id="minimax_h3_hmnsfw",
+        template_id="minimax_h3_10eros_naughtytimes",
         template_version=1,
         media=_media(*roles),
         context={"duration_seconds": 15},
@@ -237,10 +237,10 @@ def test_minimax_h3_profiles_share_one_hmnsfw_template(
     assert resolved.profile.ref == profile_ref
     assert capability["templates"] == [
         {
-            "id": "minimax_h3_hmnsfw",
+            "id": "minimax_h3_10eros_naughtytimes",
             "version": 1,
             "label": "高级图生视频pro",
-            "description": "MiniMax H3 的 200–270 词 HMNSFW 提示词",
+            "description": "10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 固定栈提示词",
             "is_default": True,
         }
     ]
@@ -249,7 +249,7 @@ def test_minimax_h3_profiles_share_one_hmnsfw_template(
 def test_minimax_h3_prompt_uses_dynamic_duration_and_never_requests_manual_triggers():
     resolved = resolve_prompt_optimization(
         target_task_type="minimax_h3_i2v",
-        template_id="minimax_h3_hmnsfw",
+        template_id="minimax_h3_10eros_naughtytimes",
         template_version=1,
         media=_media("start_image"),
         context={"duration_seconds": 10},
@@ -285,8 +285,13 @@ def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
     with pytest.raises(PromptOptimizerRegistryError):
         resolve_prompt_optimization(
             target_task_type=target,
-            template_id="minimax_h3_hmnsfw",
+            template_id="minimax_h3_10eros_naughtytimes",
             template_version=1,
             media=_media(*roles),
             context={"duration_seconds": duration},
         )
+
+
+def test_minimax_h3_v1_prompt_assets_remain_readable_but_inactive():
+    assert get_template_by_ref("minimax_h3_hmnsfw@1").active is False
+    assert get_profile_by_ref("minimax_h3_i2v_prompt@1").active is False
