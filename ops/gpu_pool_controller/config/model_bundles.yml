@@ -101,29 +101,35 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-14-redmix-a2a-beta1-int8
+    version: 2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-14-redmix-a2a-beta1-int8/files
-      discovered_size_gb: 37.66
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1/files
+      discovered_size_gb: 61.39
       import_status: prepared_by_script
-      notes: Fixed RedMix A2A Beta1 INT8 ConvRot stack with baked 10Eros-Max, LightX2V 8-step and SexGod NaughtyTimes, plus Heretic Qwen3-VL NVFP4 and INT8 video VAE; all files are SHA256 verified.
+      notes: Pinned author assets with 10Eros-Max Beta2 as the FL2VA base, separately loaded LightX2V FL2VA 8-step v1.0 and NaughtyTimes v2 pruned R256 LoRAs, plus official Comfy-Org Qwen3-VL, FP16 video VAE and FP32 audio VAE. All six files are SHA256 verified; Ref2VA and historical optional attachments are excluded.
     files:
-      - relative_path: diffusion_models/MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors
-        sha256: fc99ff051283ee05f29b1ebcb14e0d7b36c03e93512ac5479411cdfa2e284122
-        size_bytes: 20970384488
-      - relative_path: text_encoders/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors
-        sha256: a166c7bbbe66a22065159e478335fee4a633c4a3e3bb34c8e8ac4cc91bf4996f
-        size_bytes: 15683129587
+      - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors
+        sha256: 57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20
+        size_bytes: 40222933592
+      - relative_path: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+        sha256: 35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6
+        size_bytes: 15687142551
       - relative_path: vae/MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors
         sha256: 8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48
         size_bytes: 605254808
-      - relative_path: vae/MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors
-        sha256: 9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410
-        size_bytes: 3171670912
+      - relative_path: vae/MiniMaxH3/minimax_h3_video_vae_fp16.safetensors
+        sha256: 7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522
+        size_bytes: 5207808496
+      - relative_path: loras/MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+        sha256: 2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e
+        size_bytes: 1956193000
+      - relative_path: loras/MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors
+        sha256: 947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a
+        size_bytes: 2242444272
 
   img2img_lora_baseline:
     version: 2026-06-10

@@ -120,8 +120,8 @@ def _settings_text(context, data: dict) -> str:
     )
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n模型：固定 RedMix 8-step 整合栈",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nModel: fixed RedMix 8-step stack",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n模型：固定 10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 栈",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nModel: fixed 10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 stack",
     )
 
 

@@ -1407,26 +1407,24 @@ _MINIMAX_H3_PRECISION_PRESETS = {
     "standard": "0.52 MP - SD",
     "hd": "0.65 MP - Balanced",
 }
-_MINIMAX_H3_DURATION_BY_FRAME_COUNT = {124: 5.0, 243: 10.0, 362: 15.0}
+_MINIMAX_H3_FRAME_COUNT_BY_DURATION = {5: 124, 10: 243, 15: 362}
 
 
-def _minimax_h3_duration(params: dict[str, Any]) -> float:
-    raw_duration = params.get("duration")
-    if raw_duration not in (None, ""):
-        try:
-            duration = float(str(raw_duration).removesuffix("s"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid MiniMax H3 duration") from exc
-        if duration in _MINIMAX_H3_DURATION_BY_FRAME_COUNT.values():
-            return duration
+def _minimax_h3_frame_count(params: dict[str, Any]) -> int:
     raw_frames = params.get("frame_count")
-    if raw_frames in (None, ""):
-        return 5.0
+    if raw_frames not in (None, ""):
+        try:
+            frames = int(raw_frames)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid MiniMax H3 frame count") from exc
+        if frames in _MINIMAX_H3_FRAME_COUNT_BY_DURATION.values():
+            return frames
+    raw_duration = params.get("duration")
     try:
-        duration = _MINIMAX_H3_DURATION_BY_FRAME_COUNT[int(raw_frames)]
+        duration = int(str(raw_duration if raw_duration not in (None, "") else 5).removesuffix("s"))
+        return _MINIMAX_H3_FRAME_COUNT_BY_DURATION[duration]
     except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("invalid MiniMax H3 frame count") from exc
-    return duration
+        raise ValueError("invalid MiniMax H3 duration") from exc
 
 
 def patch_minimax_h3_workflow(
@@ -1442,14 +1440,14 @@ def patch_minimax_h3_workflow(
         raise ValueError("invalid MiniMax H3 task type")
     if any(
         params.get(key) not in (None, "", [], ())
-        for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "steps")
+        for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "scheduler", "steps")
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
     if any(
         params.get(key) not in (None, "", [], ())
-        for key in ("lora_items", "lora_name", "lora_strength")
+        for key in ("addon_models", "lora_items", "lora_name", "lora_strength")
     ):
-        raise ValueError("MiniMax H3 uses a fixed RedMix stack and rejects addon overrides")
+        raise ValueError("MiniMax H3 uses a fixed MiniMax H3 stack and rejects addon overrides")
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
     names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
@@ -1476,10 +1474,7 @@ def patch_minimax_h3_workflow(
     guide_inputs = workflow["30"]["inputs"]
     guide_inputs["prompt"] = str(params.get("prompt") or "").strip()
     if task_type != "minimax_h3_ref2v":
-        guide_inputs["duration"] = _minimax_h3_duration(params)
-        guide_inputs["fps"] = 24
-        guide_inputs["mode"] = "auto"
-        guide_inputs.pop("length", None)
+        guide_inputs["length"] = _minimax_h3_frame_count(params)
     if task_type == "minimax_h3_ref2v":
         if not isinstance(descriptions, list):
             raise ValueError("reference_descriptions must be an ordered list")

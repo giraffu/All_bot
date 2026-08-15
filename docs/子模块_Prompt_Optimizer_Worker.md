@@ -73,7 +73,7 @@ FLF 模板。
 H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
 `minimax_h3_flf2v_prompt@1`，分别接受 0 张图、一张 `start_image`、按顺序的
 `start_image,end_image`，时长只允许 5/10/15 秒。三者使用
-`minimax_h3_hmnsfw@1`：一个 200–270 英文词段落，动态时长限制时间戳，最多两个
+`minimax_h3_10eros_naughtytimes@1`：一个 200–270 英文词段落，动态时长限制时间戳，最多两个
 动作阶段，保留 H3 音频和对白语法。英文运行模板与完整逐段中文审阅翻译的事实源均为
 `src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量，中文常量不参与渲染。
 
@@ -91,7 +91,9 @@ H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
 写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
 对象键，不能再次包含桶名。
 
-H3 使用固定 RedMix 栈，不接受 `lora_items`、单模型字段或自由规则文本。Web/Bot 只
+H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受非空
+`lora_items`、单模型字段或自由规则文本。`minimax_h3_hmnsfw@1` 与三个 `@1` profile
+仅用于历史 snapshot 解析；新请求使用三个 `@2` profile。Web/Bot 只
 提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材

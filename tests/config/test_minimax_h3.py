@@ -14,15 +14,25 @@ from src.domain_config.minimax_h3 import (
 @pytest.mark.parametrize("inputs", [
     {"lora_name": "penis"},
     {"lora_strength": 1.0},
-    {"lora_items": []},
     {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
+    {"addon_models": ["duplicate"]},
 ])
-def test_minimax_h3_rejects_all_client_addon_configuration(inputs):
-    with pytest.raises(MiniMaxH3ValidationError, match="固定整合模型"):
+def test_minimax_h3_rejects_non_empty_client_addon_configuration(inputs):
+    with pytest.raises(MiniMaxH3ValidationError, match="固定模型栈"):
         build_minimax_h3_spec(MINIMAX_H3_T2V, {"duration": 5, **inputs})
 
 
-def test_minimax_h3_uses_fixed_redmix_model_for_public_modes():
+@pytest.mark.parametrize("inputs", [
+    {"lora_name": ""},
+    {"lora_strength": None},
+    {"lora_items": []},
+    {"addon_models": []},
+])
+def test_minimax_h3_accepts_empty_legacy_addon_placeholders(inputs):
+    assert build_minimax_h3_spec(MINIMAX_H3_T2V, inputs).mode == "t2v"
+
+
+def test_minimax_h3_uses_fixed_10eros_beta2_model_for_public_modes():
     for task_type, images in (
         (MINIMAX_H3_T2V, []),
         (MINIMAX_H3_I2V, ["first.png"]),
@@ -32,7 +42,7 @@ def test_minimax_h3_uses_fixed_redmix_model_for_public_modes():
             task_type,
             {"images": images, "aspect_ratio": "source" if images else "16:9"},
         )
-        assert spec.model_name == "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
+        assert spec.model_name == "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
 
 
 @pytest.mark.parametrize(
@@ -63,42 +73,31 @@ def test_minimax_h3_duration_normalizes_to_integer_seconds(raw, expected):
     [
         (MINIMAX_H3_I2V, ["first.png"]),
         (MINIMAX_H3_FLF2V, ["first.png", "last.png"]),
-        (MINIMAX_H3_REF2V, ["a.png", "b.png", "c.png", "d.png"]),
     ],
 )
 def test_minimax_h3_accepts_ordered_mode_inputs(task_type, images):
     inputs = {"images": images, "aspect_ratio": "9:16", "resolution_preset": "hd"}
     if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}:
         inputs["aspect_ratio"] = "source"
-    if task_type == MINIMAX_H3_REF2V:
-        inputs["reference_descriptions"] = [f"character {i}" for i in range(len(images))]
     spec = build_minimax_h3_spec(task_type, inputs)
     assert spec.images == tuple(images)
-    if task_type == MINIMAX_H3_REF2V:
-        assert spec.height > spec.width
-    else:
-        assert spec.aspect_ratio == "source"
-        assert (spec.width, spec.height) == (0, 0)
+    assert spec.aspect_ratio == "source"
+    assert (spec.width, spec.height) == (0, 0)
 
 
-def test_minimax_h3_ref2v_uses_reference_price():
-    spec = build_minimax_h3_spec(MINIMAX_H3_REF2V, {"images": ["a.png"], "duration": 15})
-    assert spec.cost == 36
-    assert "ref2va" in spec.model_name
+def test_minimax_h3_ref2v_is_historical_only_and_rejects_new_specs():
+    with pytest.raises(MiniMaxH3ValidationError, match="未知"):
+        build_minimax_h3_spec(MINIMAX_H3_REF2V, {"images": ["a.png"]})
 
 
 @pytest.mark.parametrize(
-    "preset,normal,reference",
-    [("preview", 10, 12), ("small", 15, 18), ("standard", 20, 24), ("hd", 30, 36)],
+    "preset,normal",
+    [("preview", 10), ("small", 15), ("standard", 20), ("hd", 30)],
 )
-def test_minimax_h3_resolution_price_matrix(preset, normal, reference):
+def test_minimax_h3_resolution_price_matrix(preset, normal):
     assert build_minimax_h3_spec(
         MINIMAX_H3_T2V, {"resolution_preset": preset}
     ).cost == normal
-    assert build_minimax_h3_spec(
-        MINIMAX_H3_REF2V,
-        {"images": ["a.png"], "resolution_preset": preset},
-    ).cost == reference
 
 
 def test_minimax_h3_image_modes_require_source_aspect():
@@ -120,7 +119,6 @@ def test_minimax_h3_non_image_modes_reject_source_aspect():
         (MINIMAX_H3_T2V, ["unexpected.png"]),
         (MINIMAX_H3_I2V, []),
         (MINIMAX_H3_FLF2V, ["one.png"]),
-        (MINIMAX_H3_REF2V, ["1.png", "2.png", "3.png", "4.png", "5.png"]),
     ],
 )
 def test_minimax_h3_rejects_wrong_image_count(task_type, images):
@@ -128,15 +126,15 @@ def test_minimax_h3_rejects_wrong_image_count(task_type, images):
         build_minimax_h3_spec(task_type, {"images": images})
 
 
-@pytest.mark.parametrize("field,value", [("timeline_data", "{}"), ("model_name", "other")])
+@pytest.mark.parametrize("field,value", [("timeline_data", "{}"), ("model_name", "other"), ("sampler_name", "dpmpp_2m"), ("scheduler", "karras"), ("steps", 25)])
 def test_minimax_h3_rejects_execution_overrides(field, value):
     with pytest.raises(MiniMaxH3ValidationError, match="不允许覆盖"):
         build_minimax_h3_spec(MINIMAX_H3_T2V, {field: value})
 
 
-def test_minimax_h3_reference_descriptions_follow_image_count():
-    with pytest.raises(MiniMaxH3ValidationError, match="数量"):
+def test_minimax_h3_public_modes_reject_reference_descriptions():
+    with pytest.raises(MiniMaxH3ValidationError, match="不支持"):
         build_minimax_h3_spec(
-            MINIMAX_H3_REF2V,
-            {"images": ["a.png", "b.png"], "reference_descriptions": ["only one"]},
+            MINIMAX_H3_T2V,
+            {"reference_descriptions": ["historical ref2v field"]},
         )

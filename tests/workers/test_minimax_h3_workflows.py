@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.build_minimax_h3_api_workflows import REDMIX_SOURCE_SHA256, build
+from scripts.build_minimax_h3_api_workflows import build
 from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 from workers.runpod_runtime.comfy_agent.workflow_task_patchers import (
@@ -15,18 +15,12 @@ TASKS = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
     "minimax_h3_flf2v": "MiniMax H3 FLF2V.api.json",
-    "minimax_h3_ref2v": "MiniMax H3 REF2V.api.json",
 }
-REDMIX_INT8_MODEL = "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
-REF2VA_INT8_MODEL = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
-REDMIX_CLIP = "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors"
-REDMIX_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_int8_convrot.safetensors"
-
-
-def test_redmix_workflows_pin_the_official_civitai_source():
-    assert REDMIX_SOURCE_SHA256 == (
-        "71bda4f17f34d8c4489541979265a0e31df805dd02baebdb59ebf69b85634595"
-    )
+TEN_EROS_BETA2_MODEL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
+OFFICIAL_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+OFFICIAL_VIDEO_VAE = "MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"
+LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
 
 
 def test_minimax_h3_api_workflows_are_deterministic_and_synced():
@@ -38,72 +32,49 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
         assert main.read_bytes() == runpod.read_bytes()
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
-        expected_model = (
-            REF2VA_INT8_MODEL if task_type == "minimax_h3_ref2v" else REDMIX_INT8_MODEL
-        )
-        assert workflow["1"]["inputs"]["unet_name"] == expected_model
+        assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
         assert "nodes" not in workflow
-        if task_type in {"minimax_h3_t2v", "minimax_h3_i2v", "minimax_h3_flf2v"}:
-            assert workflow["3"]["inputs"] == {
-                "model": ["2", 0],
-                "shift_video": 12.0,
-                "shift_audio": 3.0,
+        assert workflow["8"]["inputs"] == {
+            "model": ["1", 0],
+            "lora_name": LIGHTX2V_LORA,
+            "strength_model": 1.0,
+        }
+        assert workflow["9"]["inputs"] == {
+            "model": ["8", 0],
+            "lora_name": NAUGHTYTIMES_LORA,
+            "strength_model": 1.0,
+        }
+        assert workflow["2"] == {
+            "inputs": {"model": ["9", 0], "attention": "comfy kitchen attention"},
+            "class_type": "ModelAttentionBackend",
+        }
+        assert workflow["3"]["inputs"] == {
+            "model": ["2", 0],
+            "shift_video": 12.0,
+            "shift_audio": 3.0,
+        }
+        assert workflow["7"]["class_type"] == "ReservedVRAMSetter"
+        assert workflow["30"]["class_type"] == "MiniMaxH3ImageToVideo"
+        assert workflow["30"]["inputs"]["vae"] == ["5", 0]
+        assert workflow["30"]["inputs"]["length"] == 124
+        assert "audio_vae" not in workflow["30"]["inputs"]
+        assert workflow["4"]["inputs"]["clip_name"] == OFFICIAL_CLIP
+        assert workflow["5"]["inputs"]["vae_name"] == OFFICIAL_VIDEO_VAE
+        assert workflow["32"]["inputs"]["model"] == ["7", 0]
+        assert workflow["34"]["inputs"]["model"] == ["7", 0]
+        assert workflow["34"]["inputs"]["steps"] == 8
+        assert workflow["33"] == {
+            "inputs": {"sampler_name": "euler"},
+            "class_type": "KSamplerSelect",
+        }
+        assert not any(
+            node.get("class_type") in {
+                "MiniMaxH3MemoryEfficientSageAttentionPatch",
+                "MiniMaxH3TurboSampler",
+                "MiniMaxH3UnifiedToVideo",
             }
-            assert workflow["2"] == {
-                "inputs": {
-                    "model": ["1", 0],
-                    "attention": "comfy kitchen attention",
-                },
-                "class_type": "ModelAttentionBackend",
-            }
-            assert workflow["7"] == {
-                "inputs": {
-                    "anything": ["3", 0],
-                    "reserved": 2.0,
-                    "mode": "auto",
-                    "seed": 0,
-                    "auto_max_reserved": 3.0,
-                    "clean_gpu_before": True,
-                },
-                "class_type": "ReservedVRAMSetter",
-            }
-            assert workflow["30"]["class_type"] == "MiniMaxH3UnifiedToVideo"
-            assert workflow["30"]["inputs"]["video_vae"] == ["5", 0]
-            assert workflow["30"]["inputs"]["audio_vae"] == ["6", 0]
-            assert workflow["30"]["inputs"]["mode"] == "auto"
-            assert workflow["30"]["inputs"]["fps"] == 24
-            assert workflow["30"]["inputs"]["duration"] == 5.0
-            assert workflow["32"]["inputs"]["model"] == ["7", 0]
-            assert workflow["34"]["inputs"]["model"] == ["7", 0]
-            assert workflow["35"]["inputs"]["latent_image"] == ["30", 1]
-            assert not any(
-                node.get("class_type") == "MiniMaxH3MemoryEfficientSageAttentionPatch"
-                for node in workflow.values()
-            )
-            assert not {"10", "11", "12", "13"} & workflow.keys()
-            assert "14" not in workflow
-            assert workflow["34"]["inputs"]["steps"] == 8
-            assert workflow["33"] == {
-                "inputs": {"sampler_name": "euler"},
-                "class_type": "KSamplerSelect",
-            }
-            assert workflow["35"]["inputs"]["sampler"] == ["33", 0]
-        else:
-            assert workflow["3"]["inputs"] == {
-                "model": ["2", 0],
-                "shift_video": 11.0,
-                "shift_audio": 4.0,
-            }
-            assert not {"10", "11", "12", "13", "14"} & workflow.keys()
-            assert not any(
-                node.get("class_type") == "MiniMaxH3MemoryEfficientSageAttentionPatch"
-                for node in workflow.values()
-            )
-            assert workflow["34"]["inputs"]["steps"] == 25
-            assert workflow["33"]["inputs"]["sampler_name"] == "res_multistep"
-        if task_type != "minimax_h3_ref2v":
-            assert workflow["4"]["inputs"]["clip_name"] == REDMIX_CLIP
-            assert workflow["5"]["inputs"]["vae_name"] == REDMIX_VIDEO_VAE
+            for node in workflow.values()
+        )
         assert workflow["38"]["inputs"]["audio"] == ["37", 0]
         assert workflow["40"]["class_type"] == "SaveImage"
         assert workflow["39"]["inputs"]["batch_index"] == 4095
@@ -127,45 +98,16 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             assert "41" not in workflow
 
 
-def test_minimax_h3_patcher_orders_refs_and_removes_unused_slots():
-    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
-    workflow = patcher.load_workflow("minimax_h3_ref2v")
-    result = patcher.patch_workflow(
-        "minimax_h3_ref2v",
-        workflow,
-        {
-            "prompt": "walk together",
-            "image": "first.png",
-            "image2": "second.png",
-            "reference_descriptions": ["adult woman", "adult man"],
-            "width": 416,
-            "height": 736,
-            "frame_count": 124,
-            "seed": 9,
-        },
-    )
-    assert result["20"]["inputs"]["image"] == "first.png"
-    assert result["21"]["inputs"]["image"] == "second.png"
-    assert "22" not in result and "23" not in result
-    assert result["30"]["inputs"]["ref_images.ref_image_0"] == ["20", 0]
-    assert result["30"]["inputs"]["ref_images.ref_image_1"] == ["21", 0]
-    assert "ref_images.ref_image_2" not in result["30"]["inputs"]
-    assert "ref_images.ref_image_3" not in result["30"]["inputs"]
-    assert not {
-        f"ref_image_{index}" for index in range(1, 5)
-    } & result["30"]["inputs"].keys()
-    assert result["30"]["inputs"]["prompt"].startswith("<Picture 1>: adult woman\n<Picture 2>: adult man")
-
-
 @pytest.mark.parametrize("params", [
     {"lora_name": "sex_pose", "lora_strength": 0.75},
     {"lora_strength": 1.0},
     {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
+    {"addon_models": ["duplicate"]},
 ])
 def test_minimax_h3_patcher_rejects_client_addon_overrides(params):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
-    with pytest.raises(ValueError, match="fixed RedMix"):
+    with pytest.raises(ValueError, match="fixed MiniMax H3"):
         patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", **params})
 
 
@@ -181,21 +123,21 @@ def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
             "lora_items": [],
             "lora_name": None,
             "lora_strength": None,
+            "addon_models": [],
         },
     )
 
-    assert result["1"]["inputs"]["unet_name"].endswith(
-        "REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
-    )
+    assert result["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
 
 
-def test_minimax_h3_patcher_without_addon_keeps_baked_redmix_stack():
+def test_minimax_h3_patcher_without_addon_keeps_fixed_author_stack():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
     assert not {"10", "11", "12", "13"} & patched.keys()
-    assert "14" not in patched
-    assert patched["1"]["inputs"]["unet_name"] == REDMIX_INT8_MODEL
+    assert patched["8"]["inputs"]["lora_name"] == LIGHTX2V_LORA
+    assert patched["9"]["inputs"]["lora_name"] == NAUGHTYTIMES_LORA
+    assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
     assert patched["30"]["inputs"]["prompt"] == "scene"
 
 
@@ -207,8 +149,7 @@ def test_runpod_minimax_h3_worker_uses_prompt_without_trigger_injection():
         params={"prompt": "scene", "frame_count": 243},
     )
     assert workflow["30"]["inputs"]["prompt"] == "scene"
-    assert workflow["30"]["inputs"]["duration"] == 10.0
-    assert "length" not in workflow["30"]["inputs"]
+    assert workflow["30"]["inputs"]["length"] == 243
 
 
 def test_minimax_h3_output_prefix_is_unique_per_execution():
@@ -263,10 +204,10 @@ def test_minimax_h3_image_modes_patch_source_ratio_resolution(preset, precision)
     assert result["41"]["inputs"]["resolution_preset"] == precision
     assert result["30"]["inputs"]["width"] == ["41", 0]
     assert result["30"]["inputs"]["height"] == ["41", 1]
-    assert result["30"]["inputs"]["duration"] == 5.0
+    assert result["30"]["inputs"]["length"] == 124
 
 
-@pytest.mark.parametrize("field", ["model_name", "timeline_data", "steps"])
+@pytest.mark.parametrize("field", ["model_name", "timeline_data", "sampler_name", "scheduler", "steps"])
 def test_minimax_h3_worker_rejects_execution_overrides(field):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")

@@ -8,10 +8,13 @@ MINIMAX_H3_T2V = "minimax_h3_t2v"
 MINIMAX_H3_I2V = "minimax_h3_i2v"
 MINIMAX_H3_FLF2V = "minimax_h3_flf2v"
 MINIMAX_H3_REF2V = "minimax_h3_ref2v"
-MINIMAX_H3_TASK_TYPES = (
+MINIMAX_H3_PUBLIC_TASK_TYPES = (
     MINIMAX_H3_T2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_FLF2V,
+)
+MINIMAX_H3_TASK_TYPES = (
+    *MINIMAX_H3_PUBLIC_TASK_TYPES,
     MINIMAX_H3_REF2V,
 )
 
@@ -31,12 +34,6 @@ MINIMAX_H3_NORMAL_PRICE_BY_PRESET = {
     "standard": 20,
     "hd": 30,
 }
-MINIMAX_H3_REFERENCE_PRICE_BY_PRESET = {
-    "preview": 12,
-    "small": 18,
-    "standard": 24,
-    "hd": 36,
-}
 MINIMAX_H3_ASPECT_RATIOS = {
     "16:9": 16 / 9,
     "9:16": 9 / 16,
@@ -45,7 +42,7 @@ MINIMAX_H3_ASPECT_RATIOS = {
     "3:4": 3 / 4,
 }
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
-MINIMAX_H3_MODEL_FL = "MiniMaxH3/REDMix-MiniMaxH3-A2A-pruned-int8-convrot-ComfyMCP.safetensors"
+MINIMAX_H3_MODEL_FL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
 MINIMAX_H3_MODEL_REF = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 
 
@@ -118,18 +115,21 @@ def _images(inputs: dict[str, Any]) -> tuple[str, ...]:
 
 
 def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Spec:
-    if task_type not in MINIMAX_H3_TASK_TYPES:
+    if task_type not in MINIMAX_H3_PUBLIC_TASK_TYPES:
         raise MiniMaxH3ValidationError(f"未知{PRODUCT_NAME}任务类型。")
     forbidden = (
         "model_name", "checkpoint", "timeline_data",
-        "local_path", "ref_videos", "ref_audios", "sampler_name", "steps",
+        "local_path", "ref_videos", "ref_audios", "sampler_name", "scheduler", "steps",
     )
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
-    if any(key in inputs for key in ("lora_items", "lora_name", "lora_strength")):
+    if any(
+        inputs.get(key) not in (None, "", [], ())
+        for key in ("addon_models", "lora_items", "lora_name", "lora_strength")
+    ):
         raise MiniMaxH3ValidationError(
-            "高级图生视频pro使用固定整合模型，不接受附加模型参数。"
+            "高级图生视频pro使用固定模型栈，不接受附加模型参数。"
         )
 
     duration = normalize_minimax_h3_duration_seconds(
@@ -149,21 +149,16 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         MINIMAX_H3_T2V: (0, 0, "t2v"),
         MINIMAX_H3_I2V: (1, 1, "i2v"),
         MINIMAX_H3_FLF2V: (2, 2, "flf2v"),
-        MINIMAX_H3_REF2V: (1, 4, "ref2v"),
     }[task_type]
     minimum, maximum, mode = expected
     if not minimum <= len(images) <= maximum:
         if minimum == maximum:
             raise MiniMaxH3ValidationError(f"{mode} 必须提供恰好 {minimum} 张图片。")
-        raise MiniMaxH3ValidationError("ref2v 必须提供 1 至 4 张有序角色参考图。")
+        raise MiniMaxH3ValidationError(f"{mode} 图片数量不正确。")
     if any(not item for item in images):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}图片不得为空。")
-    if task_type != MINIMAX_H3_REF2V and descriptions:
-        raise MiniMaxH3ValidationError("仅 ref2v 支持角色参考说明。")
-    if descriptions and len(descriptions) != len(images):
-        raise MiniMaxH3ValidationError("角色参考说明数量必须与参考图数量一致。")
-    if any(not item for item in descriptions):
-        raise MiniMaxH3ValidationError("角色参考说明不得为空。")
+    if descriptions:
+        raise MiniMaxH3ValidationError("当前公开模式不支持角色参考说明。")
 
     raw_aspect = str(inputs.get("aspect_ratio") or "").strip()
     if task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V}:
@@ -179,11 +174,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
             raise MiniMaxH3ValidationError("不支持该画面比例。")
         width, height = _dimensions(preset, aspect)
     multiplier = duration // 5
-    base_cost = (
-        MINIMAX_H3_REFERENCE_PRICE_BY_PRESET[preset]
-        if task_type == MINIMAX_H3_REF2V
-        else MINIMAX_H3_NORMAL_PRICE_BY_PRESET[preset]
-    )
+    base_cost = MINIMAX_H3_NORMAL_PRICE_BY_PRESET[preset]
     return MiniMaxH3Spec(
         task_type=task_type,
         mode=mode,
@@ -197,9 +188,5 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         cost=base_cost * multiplier,
         images=images,
         reference_descriptions=descriptions,
-        model_name=(
-            MINIMAX_H3_MODEL_REF
-            if task_type == MINIMAX_H3_REF2V
-            else MINIMAX_H3_MODEL_FL
-        ),
+        model_name=MINIMAX_H3_MODEL_FL,
     )

@@ -33,7 +33,7 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
     assert config["revision"] == 0
     assert "{duration_seconds}" in config["system_template"]
     assert "{addon_rules}" not in config["user_template"]
-    assert "fixed MiniMax H3 RedMix stack" in config["system_template"]
+    assert "fixed MiniMax H3 10Eros-Max Beta2" in config["system_template"]
     assert MINIMAX_H3_HMNSFW_TRANSLATION_ZH not in config["system_template"]
 
 

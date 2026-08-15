@@ -75,10 +75,9 @@ manifest 和专项文档读取，不在此维护快照。
 
 ## 5. 高压红线
 
-- 不把本地绝对模型路径、凭据、下载 URL、一次性 Pod/agent ID、当前 GPU 数量
+- 不把绝对模型路径、凭据、一次性 Pod/agent ID、GPU 数量
   或 canary 结果写入 Skill/Git。
-- 不把模型文件提交 Git；manifest 只记录可审计来源、相对路径、checksum 和
-  目标 profile 所需元数据。
+- 模型不入 Git；manifest 只记来源、相对路径、checksum 和 profile 元数据。
 - 不用 mutable tag、现场 build、rsync 源码或 bind mount 覆盖正式镜像代码。
 - 未经明确授权，不创建/启用 RunPod，不切换 LAN slot，不修改生产 profile 或
   feature flag。
@@ -90,7 +89,7 @@ manifest 和专项文档读取，不在此维护快照。
 - 节点缺失、模型路径不匹配、目标 profile 不支持或 manifest 不完整时 fail
   closed；不要静默忽略用户参数或回退到另一模型。
 - 参数数量、强度、分辨率、时长与输入张数必须由服务端/domain config 校验；
-  Worker 仍做防御性校验。
+  Worker 仍做防御性校验。H3 固定栈仅兼容空旧 LoRA 字段，非空拒绝。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
 - 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试

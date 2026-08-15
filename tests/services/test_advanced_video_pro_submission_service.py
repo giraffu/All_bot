@@ -16,7 +16,6 @@ from src.services.advanced_video_pro_submission_service import (
         ("t2v", [], [], "minimax_h3_t2v", 10),
         ("i2v", ["start.png"], [], "minimax_h3_i2v", 10),
         ("flf2v", ["start.png", "end.png"], [], "minimax_h3_flf2v", 10),
-        ("ref2v", ["alice.png"], ["Alice, red hair"], "minimax_h3_ref2v", 12),
     ],
 )
 def test_builds_all_pro_video_modes(mode, images, descriptions, task_type, cost):
@@ -28,6 +27,16 @@ def test_builds_all_pro_video_modes(mode, images, descriptions, task_type, cost)
     )
     assert plan.task_type == task_type
     assert plan.cost == cost
+
+
+def test_ref2v_is_not_available_for_new_submission_plans():
+    with pytest.raises(AdvancedVideoProSubmissionError, match="有效"):
+        build_advanced_video_pro_submission_plan(
+            mode="ref2v",
+            prompt="Alice waves",
+            images=["alice.png"],
+            reference_descriptions=["Alice, red hair"],
+        )
 
 
 def test_i2v_normalizes_legacy_fixed_aspect_to_source():
@@ -86,13 +95,12 @@ def test_rejects_wrong_media_count():
 async def test_submit_uses_public_bot_generation_seam():
     process = AsyncMock(return_value=(b"video", "output.mp4"))
     plan = build_advanced_video_pro_submission_plan(
-        mode="ref2v",
-        prompt="Alice waves",
-        images=["alice.png"],
-        reference_descriptions=["Alice, red hair"],
+        mode="flf2v",
+        prompt="the camera moves",
+        images=["first.png", "last.png"],
         duration=10,
         resolution_preset="standard",
-        aspect_ratio="9:16",
+        aspect_ratio="source",
     )
     result = await submit_advanced_video_pro_plan(
         plan,
@@ -104,8 +112,8 @@ async def test_submit_uses_public_bot_generation_seam():
     )
     assert result == (b"video", "output.mp4")
     kwargs = process.await_args.kwargs
-    assert kwargs["task_type"] == "minimax_h3_ref2v"
-    assert kwargs["reference_descriptions"] == ["Alice, red hair"]
+    assert kwargs["task_type"] == "minimax_h3_flf2v"
+    assert kwargs["reference_descriptions"] == []
     assert kwargs["duration"] == 10
     assert kwargs["resolution_preset"] == "standard"
-    assert kwargs["aspect_ratio"] == "9:16"
+    assert kwargs["aspect_ratio"] == "source"

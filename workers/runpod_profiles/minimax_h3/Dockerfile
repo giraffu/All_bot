@@ -11,12 +11,9 @@ ARG VHS_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
 ARG VHS_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
-ARG MINIMAX_CONTEXTIR_REPO=https://github.com/oufeixinxinren/ComfyUI-MiniMax-ContextIR.git
-ARG MINIMAX_CONTEXTIR_REF=1f3785e50d537153cf7a7c4f13226d873d37574c
 ARG RESERVED_VRAM_REPO=https://github.com/Windecay/ComfyUI-ReservedVRAM.git
 ARG RESERVED_VRAM_REF=be93b9375ebe8b24fa431609f56fa8f441b4b37f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
-ARG ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
@@ -53,7 +50,6 @@ RUN set -euo pipefail; \
     install_node "${KJNODES_REPO}" "${KJNODES_REF}" d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7 ComfyUI-KJNodes; \
     install_node "${VHS_REPO}" "${VHS_REF}" 69042eba3e2193a8f428d14bb9ebe97a03b64c0c4de4665c9c6c5f746e60c195 ComfyUI-VideoHelperSuite; \
     install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes; \
-    install_node "${MINIMAX_CONTEXTIR_REPO}" "${MINIMAX_CONTEXTIR_REF}" 5b95d7c283fcc1bf5702c17783756a18dc29e873552d5430016b209865a59116 ComfyUI-MiniMax-ContextIR; \
     install_node "${RESERVED_VRAM_REPO}" "${RESERVED_VRAM_REF}" 22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c ComfyUI-ReservedVRAM
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
@@ -64,22 +60,23 @@ COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allb
 RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
-    grep -q 'MiniMaxH3ReferenceToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
+    grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
+    grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
+    grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
     grep -q 'ModelAttentionBackend' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_model_advanced.py"; \
-    grep -q 'MiniMaxH3UnifiedToVideo' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-MiniMax-ContextIR/h3_unified.py"; \
-    grep -q 'MiniMaxH3AudioLock' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-MiniMax-ContextIR/h3_audio_lock.py"; \
     grep -q 'ReservedVRAMSetter' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-ReservedVRAM/nodes.py"; \
     grep -R -q 'DaSiWa_ResolutionScaleCalculator' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
     PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c 'from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS as p; from shared.character_reference_sheet import compose_ingredients_character_panel; expected={"minimax_h3_t2v","minimax_h3_i2v","minimax_h3_flf2v"}; assert expected <= set(p); assert callable(compose_ingredients_character_panel)'; \
-    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json","MiniMax H3 REF2V.api.json"]; assert all(isinstance(json.loads((root/n).read_text()),dict) for n in names)'; \
+    python3 -c 'import json; from pathlib import Path; root=Path("/opt/allbot/runtime/runpod_worker/comfy_agent/workflows"); names=["MiniMax H3 T2V.api.json","MiniMax H3 I2V.api.json","MiniMax H3 FLF2V.api.json"]; assert all(isinstance(json.loads((root/n).read_text()),dict) for n in names)'; \
     if find "${COMFYUI_INSTALL_DIR}/models" -type f -name '*.safetensors' -print -quit | grep -q .; then \
       echo "MiniMax H3 model files must stay out of the image" >&2; exit 1; \
     fi; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-LABEL org.opencontainers.image.title="AllBot MiniMax H3 RedMix profile" \
-      org.opencontainers.image.description="Fixed RedMix MiniMax H3 T2V/I2V/FLF2V 8-step runtime with external model manifest" \
+ARG ALLBOT_GIT_SHA
+LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
+      org.opencontainers.image.description="Pinned 10Eros Beta2, LightX2V 8-step and NaughtyTimes v2 T2V/I2V/FLF2V runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA \

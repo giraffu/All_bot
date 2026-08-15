@@ -14,19 +14,19 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "1289b52fbb6d64a339a4047b9ea74cf7758ccf1e" in dockerfile
     assert "ComfyUI-MiniMax-H3-Turbo" not in dockerfile
     assert "COMFYUI_ARCHIVE_SHA256=9b2ecedfe742e5b182ab2aa6e6b210a66b3f920e8a97ead8624daed5a2ccffc3" in dockerfile
-    assert "1f3785e50d537153cf7a7c4f13226d873d37574c" in dockerfile
-    assert "5b95d7c283fcc1bf5702c17783756a18dc29e873552d5430016b209865a59116" in dockerfile
+    assert "ComfyUI-MiniMax-ContextIR" not in dockerfile
     assert "be93b9375ebe8b24fa431609f56fa8f441b4b37f" in dockerfile
     assert "22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c" in dockerfile
     assert "192.168.1.115:5000/allbot/comfyui-boot@sha256:09c810dd" in dockerfile
     assert "ghcr.io" not in dockerfile
     assert "get_cuda_arch_versions" not in dockerfile
     assert "SAGEATTENTION_REPO" not in dockerfile
-    assert "MiniMaxH3UnifiedToVideo" in dockerfile
-    assert "MiniMaxH3AudioLock" in dockerfile
+    assert "MiniMaxH3ImageToVideo" in dockerfile
+    assert "LoraLoaderModelOnly" in dockerfile
+    assert "grep -q 'MiniMaxH3SigmaShift' \"${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py\"" in dockerfile
     assert "ReservedVRAMSetter" in dockerfile
     assert "ModelAttentionBackend" in dockerfile
-    assert "MiniMaxH3ReferenceToVideo" in dockerfile
+    assert "MiniMaxH3ReferenceToVideo" not in dockerfile
     assert "MiniMaxH3MemoryEfficientSageAttentionPatch" not in dockerfile
     assert "https://codeload.github.com/" in dockerfile
     assert "for attempt in 1 2 3" in dockerfile
@@ -44,9 +44,8 @@ def test_minimax_h3_post_build_smoke_checks_registered_runtime_nodes():
     assert "/object_info" in build_script
     assert '"comfy kitchen attention" in attention' in build_script
     for node_type in (
-        "MiniMaxH3UnifiedToVideo",
-        "MiniMaxH3AudioLock",
-        "MiniMaxH3ReferenceToVideo",
+        "MiniMaxH3ImageToVideo",
+        "LoraLoaderModelOnly",
         "ReservedVRAMSetter",
         "ModelAttentionBackend",
         "MiniMaxH3SigmaShift",

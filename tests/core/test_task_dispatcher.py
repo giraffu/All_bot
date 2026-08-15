@@ -122,49 +122,21 @@ def test_face_swap_versions_share_two_credit_price():
 
 
 @pytest.mark.asyncio
-async def test_minimax_h3_ref2v_submits_normalized_contract(monkeypatch):
+async def test_minimax_h3_ref2v_strategy_is_historical_but_rejects_new_submissions(monkeypatch):
     submit = AsyncMock(return_value="backend-h3")
     _patch_dispatch_image_service(monkeypatch, submit_minimax_h3_task=submit)
     strategy = StrategyFactory.get_strategy(MODE_MINIMAX_H3_REF2V)
 
-    result = await strategy.submit_task(
-        "task-h3",
-        {
-            "prompt": "the two characters walk through neon rain",
-            "saved_input_images": ["ref/a.png", "ref/b.png"],
-            "reference_descriptions": ["red-haired pilot", "silver robot"],
-            "duration": 10,
-            "resolution_preset": "standard",
-            "aspect_ratio": "9:16",
-            "seed": 42,
-        },
-        priority=6,
-    )
-
-    assert result == "backend-h3"
-    submit.assert_awaited_once_with(
-        "task-h3",
-        task_type=MODE_MINIMAX_H3_REF2V,
-        prompt="the two characters walk through neon rain",
-        images=("ref/a.png", "ref/b.png"),
-        reference_descriptions=("red-haired pilot", "silver robot"),
-        duration=10,
-        resolution_preset="standard",
-        aspect_ratio="9:16",
-        width=544,
-        height=960,
-        frame_count=243,
-        fps=24,
-            seed=42,
+    with pytest.raises(CoreDomainError, match="未知"):
+        await strategy.submit_task(
+            "task-h3",
+            {
+                "prompt": "historical ref2v request",
+                "saved_input_images": ["ref/a.png"],
+            },
             priority=6,
-    )
-    assert strategy.get_cost(
-        {
-            "prompt": "scene",
-            "saved_input_images": ["ref/a.png"],
-            "duration": 10,
-        }
-    ) == 24
+        )
+    submit.assert_not_awaited()
 
 
 def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
