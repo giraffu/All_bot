@@ -83,6 +83,8 @@ def _hash(path: Path) -> str:
 def _request(url: str, *, offset: int) -> urllib.request.Request:
     headers = {"User-Agent": "allbot-minimax-h3-bundle/3"}
     token = os.getenv("CIVITAI_API_TOKEN", "").strip()
+    if urlsplit(url).netloc in {"civitai.com", "civitai.red"} and not token:
+        raise RuntimeError("CIVITAI_API_TOKEN is required for the pinned NaughtyTimes asset")
     if token and urlsplit(url).netloc in {"civitai.com", "civitai.red"}:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)

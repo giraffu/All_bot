@@ -37,13 +37,13 @@ def test_split_author_stack_uses_exact_six_pinned_assets():
     assert len(files) == 6
 
 
-def test_naughtytimes_download_does_not_require_civitai_token(monkeypatch, tmp_path):
+def test_naughtytimes_download_requires_civitai_token(monkeypatch):
     monkeypatch.delenv("CIVITAI_API_TOKEN", raising=False)
-    request = module._request(
-        "https://civitai.red/api/download/models/3212436?fileId=3094173",
-        offset=0,
-    )
-    assert request.get_header("Authorization") is None
+    with pytest.raises(RuntimeError, match="CIVITAI_API_TOKEN"):
+        module._request(
+            "https://civitai.red/api/download/models/3212436?fileId=3094173",
+            offset=0,
+        )
 
 
 def test_prepare_minimax_h3_bundle_validates_and_registers_download(monkeypatch, tmp_path):

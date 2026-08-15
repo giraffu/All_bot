@@ -14,7 +14,6 @@ ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
 ARG RESERVED_VRAM_REPO=https://github.com/Windecay/ComfyUI-ReservedVRAM.git
 ARG RESERVED_VRAM_REF=be93b9375ebe8b24fa431609f56fa8f441b4b37f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
-ARG ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
@@ -75,6 +74,7 @@ RUN set -euo pipefail; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
+ARG ALLBOT_GIT_SHA
 LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
       org.opencontainers.image.description="Pinned 10Eros Beta2, LightX2V 8-step and NaughtyTimes v2 T2V/I2V/FLF2V runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \

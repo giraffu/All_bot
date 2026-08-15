@@ -64,8 +64,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
 `2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1`、六个文件的字节数与
 SHA256，总计 65,921,776,719 bytes（61.39 GiB）。脚本复用已有内容寻址 blob，只把缺失
-资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai Token 是可选项，只发送
-给 Civitai API host，不转发到重定向后的对象存储。模型只进入
+资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。NaughtyTimes 下载需要通过
+`CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或
 任何远端 registry。
 
