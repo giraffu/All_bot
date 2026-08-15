@@ -62,7 +62,7 @@ RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
-    grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_model_advanced.py"; \
+    grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
     grep -q 'ModelAttentionBackend' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_model_advanced.py"; \
     grep -q 'ReservedVRAMSetter' "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-ReservedVRAM/nodes.py"; \

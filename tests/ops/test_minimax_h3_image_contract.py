@@ -23,6 +23,7 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "SAGEATTENTION_REPO" not in dockerfile
     assert "MiniMaxH3ImageToVideo" in dockerfile
     assert "LoraLoaderModelOnly" in dockerfile
+    assert "grep -q 'MiniMaxH3SigmaShift' \"${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py\"" in dockerfile
     assert "ReservedVRAMSetter" in dockerfile
     assert "ModelAttentionBackend" in dockerfile
     assert "MiniMaxH3ReferenceToVideo" not in dockerfile
