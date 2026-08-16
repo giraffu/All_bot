@@ -266,6 +266,81 @@ async def test_minimax_h3_executor_retries_invalid_model_json_response():
 
 
 @pytest.mark.asyncio
+async def test_minimax_h3_executor_restores_omitted_empty_warnings_field():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+    expected = _official_h3_prompt("i2v")
+    generated = expected.split("\n\n", 1)[1]
+    generated = generated.removeprefix("integrated_multimodal_description: ")
+
+    class MissingWarningsProvider(FakeProvider):
+        async def optimize(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs.get("on_text_delta") is not None:
+                await kwargs["on_text_delta"]("positive_prompt", generated)
+            return {"optimized_fields": {"positive_prompt": generated}}
+
+    published = []
+
+    async def on_text_delta(field, delta):
+        published.append((field, delta))
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_i2v_prompt@5",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_i2v",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": [{"role": "start_image", "object_key": "start.webp"}],
+        },
+        provider=MissingWarningsProvider(),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        on_text_delta=on_text_delta,
+    )
+
+    assert result["result_text"] == expected
+    assert result["result_meta"]["prompt_optimizer"]["warnings"] == []
+    assert published == [("positive_prompt", expected)]
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_executor_still_rejects_unknown_output_fields():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@4")
+
+    class ExtraFieldProvider(FakeProvider):
+        async def optimize(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "optimized_fields": {
+                    "positive_prompt": _official_h3_prompt("t2v")
+                },
+                "warnings": [],
+                "explanation": "not allowed",
+            }
+
+    provider = ExtraFieldProvider()
+    with pytest.raises(PromptOptimizationExecutionError, match="unknown_output_fields"):
+        await execute_prompt_optimization(
+            {
+                "profile_ref": "minimax_h3_t2v_prompt@5",
+                "template_ref": template.ref,
+                "template_hash": template.content_hash,
+                "target_task_type": "minimax_h3_t2v",
+                "prompt": "two adults move through the room",
+                "context": {"duration_seconds": 10},
+                "media": [],
+            },
+            provider=provider,
+            load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+            preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        )
+
+    assert len(provider.calls) == 5
+
+
+@pytest.mark.asyncio
 async def test_minimax_h3_executor_normalizes_complete_reordered_header():
     template = get_template_by_ref("minimax_h3_hmnsfw@1")
     generated = (

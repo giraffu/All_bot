@@ -321,6 +321,8 @@ def _validated_result(
     trusted_context: dict[str, Any],
     source_prompt: str,
 ) -> tuple[str, dict[str, str], list[str]]:
+    if set(raw) == {"optimized_fields"}:
+        raw = {**raw, "warnings": []}
     if set(raw) != {"optimized_fields", "warnings"}:
         raise PromptOptimizationExecutionError("unknown_output_fields")
     optimized_fields = raw.get("optimized_fields")

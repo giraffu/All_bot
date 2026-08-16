@@ -95,6 +95,10 @@ H3 新任务注册 `minimax_h3_t2v_prompt@5`、`minimax_h3_i2v_prompt@5` 与
 图片所有权短句，先由 Worker 确定性规范化并重新组装为官方格式；正文本身缺失、后两个
 字段缺失或乱序、非法前缀、Shot 乱序、越界时间戳和错误 FLF2V 终帧对齐
 仍然 fail closed。这样不会把排版随机性误判成语义错误，也不会放宽媒体所有权。
+LM Studio structured output 偶尔只返回合法的 `optimized_fields` 而省略空
+`warnings`；Worker 仅对这个精确键集合补 `warnings=[]`，再继续执行完整字段、正文和
+H3 官方结构校验。任何额外未知键、错误类型或非空非法 warning 仍 fail closed，且该
+规范化不得消耗本可用于语义重试的 H3 generation attempt。
 服务端从带“说、喊、问、回答、耳语、唱”或对应英文标记的引号台词中提取原文，按
 台词自身字符而非外围叙述语言生成 `[Chinese]`、`[English]` 等语言契约并写入不可变
 snapshot。Worker 发布前逐条核对 `<d>[Language] 原文</d>`；翻译、改写、漏写或错误
