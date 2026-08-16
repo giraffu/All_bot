@@ -46,6 +46,16 @@ revision/content hash；Web 在提交时读取当前配置、渲染正文并保�
 `prompt_config_snapshot`。Worker 校验 snapshot hash/Profile 后使用，旧静态
 template ref 任务仍可重放。配置保存只影响之后的新任务。
 
+Dashboard Backend 与 Web API 复用
+`src/web_api/services/prompt_optimizer_config_service.py`，因此管理页展示的模板、保存
+校验和提交时实际渲染必须来自同一事实源。管理 API 返回 `template_ref`、
+`config_source`、`compatibility_status`、`fallback_reason` 与 `stored_revision`：数据库
+没有配置时显示当前 built-in 默认值，管理员首次保存后创建 revision 1；已有配置不兼容
+当前 Profile 契约时保留原行但明确显示 built-in fallback，保存当前有效内容才发布新
+revision。管理页不得把 fallback 冒充为数据库配置，preview 与 save 必须执行同一个
+场景占位符和 H3 官方结构校验。Dashboard 与 Web API 发布时必须使用包含相同共享配置
+代码的完整 Git SHA，避免两个容器各自从不同 Registry 版本生成 revision 0。
+
 当前 `ltx_video_v2` 根据媒体角色解析：
 
 - `start_image` -> `ltx_eros_v14_i2v@1`
@@ -110,7 +120,8 @@ H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受
 `minimax_h3_10eros_naughtytimes@1/@2` 与三个 `@1/@2/@3` profile 仅用于历史 snapshot
 解析；新请求使用三个 `@4` profile。旧的可变 H3 scene config 若不含官方三字段或
 服务端对白语言占位符，
-读取时自动前移到新的 built-in 默认值，已提交任务仍使用其不可变 snapshot。Web/Bot 只
+读取时自动前移到新的 built-in 默认值，并通过管理 API 标记不兼容历史 revision；已提交
+任务仍使用其不可变 snapshot。Web/Bot 只
 提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材
