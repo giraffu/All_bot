@@ -52,6 +52,10 @@ SINGLE_COPY_LIMIT = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
 MULTIPART_COPY_PART_SIZE = 512 * 1024 * 1024
 MAX_DIAGNOSTICS = 100
 COPY_PLAN_METADATA_KEY = "allbot-copy-plan-sha256"
+PROBE_BATCH_SIZE = 10_000
+COPY_BATCH_SIZE = 10_000
+SWITCH_HISTORY_BATCH_SIZE = 1_000
+CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ReadTimeoutError|"
     r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
@@ -70,28 +74,66 @@ def is_transient_copy_failure(error_text: str) -> bool:
 class AdaptiveCopyController:
     initial_concurrency: int = 64
     clean_batches_to_raise: int = 3
+    maximum_concurrency: int = 128
 
     def __post_init__(self) -> None:
-        if self.initial_concurrency not in {8, 16, 32, 64}:
-            raise ValueError("adaptive copy concurrency must be one of 8, 16, 32, 64")
+        if self.initial_concurrency not in {8, 16, 32, 64, 128}:
+            raise ValueError("adaptive copy concurrency must be 8, 16, 32, 64, or 128")
         if self.clean_batches_to_raise <= 0:
             raise ValueError("clean batch threshold must be positive")
+        if self.maximum_concurrency not in {8, 16, 32, 64, 128}:
+            raise ValueError("adaptive copy maximum concurrency is invalid")
+        if self.maximum_concurrency < self.initial_concurrency:
+            raise ValueError("adaptive copy maximum is below its initial concurrency")
         self.concurrency = self.initial_concurrency
-        self.maximum_concurrency = self.initial_concurrency
         self.clean_batches = 0
 
     def record_failure(self, error_text: str) -> int:
         if not is_transient_copy_failure(error_text):
             raise RuntimeError("non-transient copy failure")
         self.clean_batches = 0
-        self.concurrency = {64: 32, 32: 16, 16: 8, 8: 8}[self.concurrency]
+        self.concurrency = {128: 64, 64: 32, 32: 16, 16: 8, 8: 8}[
+            self.concurrency
+        ]
         return self.concurrency
 
     def record_success(self) -> int:
         self.clean_batches += 1
         if self.clean_batches >= self.clean_batches_to_raise:
-            raised = {8: 16, 16: 32, 32: 64, 64: 64}[self.concurrency]
+            raised = {8: 16, 16: 32, 32: 64, 64: 128, 128: 128}[
+                self.concurrency
+            ]
             self.concurrency = min(raised, self.maximum_concurrency)
+            self.clean_batches = 0
+        return self.concurrency
+
+
+@dataclass
+class AdaptiveProbeController:
+    initial_concurrency: int = 64
+    clean_batches_to_raise: int = 3
+
+    def __post_init__(self) -> None:
+        if self.initial_concurrency not in {8, 16, 32, 64, 128}:
+            raise ValueError("adaptive probe concurrency must be 8, 16, 32, 64, or 128")
+        self.concurrency = self.initial_concurrency
+        self.clean_batches = 0
+
+    def record_failure(self, error_text: str) -> int:
+        if not is_transient_copy_failure(error_text):
+            raise RuntimeError("non-transient probe failure")
+        self.clean_batches = 0
+        self.concurrency = {128: 64, 64: 32, 32: 16, 16: 8, 8: 8}[
+            self.concurrency
+        ]
+        return self.concurrency
+
+    def record_success(self) -> int:
+        self.clean_batches += 1
+        if self.clean_batches >= self.clean_batches_to_raise:
+            self.concurrency = {8: 16, 16: 32, 32: 64, 64: 128, 128: 128}[
+                self.concurrency
+            ]
             self.clean_batches = 0
         return self.concurrency
 
@@ -157,12 +199,32 @@ create table if not exists analytics_history_media_object_facts (
 create table if not exists analytics_history_media_migration_plans (
     plan_sha256 char(64) primary key,
     run_id uuid not null references analytics_history_media_migration_runs(id),
-    plan_type text not null check (plan_type in ('copy','switch')),
+    plan_type text not null check (plan_type in ('probe','copy','switch')),
     rowset_sha256 char(64) not null,
     manifest jsonb not null,
     created_at timestamptz not null default now(),
     unique (run_id, plan_type, rowset_sha256)
 );
+create table if not exists analytics_history_media_migration_plan_batches (
+    plan_sha256 char(64) not null references analytics_history_media_migration_plans(plan_sha256),
+    batch_no integer not null check (batch_no >= 0),
+    first_ledger_id bigint not null,
+    last_ledger_id bigint not null,
+    first_history_id integer not null,
+    last_history_id integer not null,
+    asset_count integer not null check (asset_count >= 0),
+    history_count integer not null check (history_count >= 0),
+    rowset_sha256 char(64) not null,
+    cas_state_sha256 char(64),
+    status text not null default 'pending' check (status in ('pending','running','completed','failed')),
+    outcome_counts jsonb not null default '{}'::jsonb,
+    started_at timestamptz,
+    completed_at timestamptz,
+    updated_at timestamptz not null default now(),
+    primary key (plan_sha256,batch_no)
+);
+create index if not exists ix_history_media_migration_plan_batches_status
+  on analytics_history_media_migration_plan_batches(plan_sha256,status,batch_no);
 alter table analytics_history_media_r2_migrations
   add column if not exists target_checked_at timestamptz;
 alter table analytics_history_media_r2_migrations
@@ -173,6 +235,31 @@ alter table analytics_history_media_r2_migrations
   add column if not exists target_etag text;
 alter table analytics_history_media_r2_migrations
   add column if not exists copy_method text;
+alter table analytics_history_media_r2_migrations
+  add column if not exists probe_plan_sha256 char(64);
+do $$
+declare plan_constraint record;
+begin
+  alter table analytics_history_media_migration_plans
+    drop constraint if exists analytics_history_media_migration_plans_plan_type_check;
+  for plan_constraint in
+    select conname from pg_constraint
+     where conrelid='analytics_history_media_migration_plans'::regclass
+       and contype='u'
+       and pg_get_constraintdef(oid) like 'UNIQUE (run_id, plan_type, rowset_sha256)%'
+  loop
+    execute format(
+      'alter table analytics_history_media_migration_plans drop constraint %I',
+      plan_constraint.conname
+    );
+  end loop;
+  alter table analytics_history_media_migration_plans
+    add constraint analytics_history_media_migration_plans_plan_type_check
+    check (plan_type in ('probe','copy','switch'));
+exception when duplicate_object then null;
+end $$;
+create index if not exists ix_history_media_migration_plans_rowset
+  on analytics_history_media_migration_plans(run_id,plan_type,rowset_sha256);
 """
 
 BACKEND_BATCH_SQL = """
@@ -371,6 +458,69 @@ def build_candidate_keys(source_ref: str, registry_task_id: str | None) -> tuple
     return tuple(dict.fromkeys(item for item in candidates if item))
 
 
+def classify_r2_head_outcomes(
+    rows: Iterable[dict[str, Any]], facts: dict[str, dict[str, Any] | None]
+) -> list[dict[str, Any]]:
+    """Classify a completed set of HEAD results without performing any I/O."""
+    outcomes: list[dict[str, Any]] = []
+    for raw in rows:
+        row = dict(raw)
+        target_key = str(row["target_key"])
+        target_head = facts.get(target_key)
+        if target_head is not None:
+            target_is_current = str(row["original_ref"]).lstrip("/") == target_key
+            outcomes.append(
+                {
+                    "id": int(row["id"]),
+                    "status": "target_verified" if target_is_current else "target_conflict",
+                    "source_key": target_key,
+                    "byte_size": int(target_head["ContentLength"]),
+                    "last_modified": _normalize_modified(target_head["LastModified"]),
+                    "etag": _normalize_etag(target_head.get("ETag")),
+                    "attempts": [],
+                }
+            )
+            continue
+        attempts: list[tuple[str, str]] = []
+        found_key: str | None = None
+        found_head: dict[str, Any] | None = None
+        for key in build_candidate_keys(
+            str(row["original_ref"]), row.get("registry_task_id")
+        ):
+            if key == target_key:
+                continue
+            head = facts.get(key)
+            attempts.append((key, "found" if head is not None else "not_found"))
+            if head is not None:
+                found_key, found_head = key, head
+                break
+        if found_key is None or found_head is None:
+            outcomes.append(
+                {
+                    "id": int(row["id"]),
+                    "status": "pending_probe",
+                    "source_key": None,
+                    "byte_size": None,
+                    "last_modified": None,
+                    "etag": None,
+                    "attempts": attempts,
+                }
+            )
+            continue
+        outcomes.append(
+            {
+                "id": int(row["id"]),
+                "status": "copy_required",
+                "source_key": found_key,
+                "byte_size": int(found_head["ContentLength"]),
+                "last_modified": _normalize_modified(found_head["LastModified"]),
+                "etag": _normalize_etag(found_head.get("ETag")),
+                "attempts": attempts,
+            }
+        )
+    return outcomes
+
+
 def hash_body(body: BinaryIO, *, chunk_size: int = CHUNK_SIZE) -> tuple[str, int]:
     digest = hashlib.sha256()
     byte_size = 0
@@ -561,6 +711,214 @@ def build_switch_plan(
     return manifest
 
 
+PROBE_ROW_FIELDS = (
+    "id",
+    "history_id",
+    "role",
+    "ordinal",
+    "original_ref",
+    "target_key",
+    "registry_task_id",
+    "history_manifest_sha256",
+)
+
+
+def _probe_plan_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: row.get(key) for key in PROBE_ROW_FIELDS}
+
+
+def _finalize_plan_batch(
+    *,
+    batch_no: int,
+    rows: list[dict[str, Any]],
+    cas_state_sha256: str | None = None,
+    row_transform: Any = _probe_plan_row,
+) -> dict[str, Any]:
+    identities = [row_transform(row) for row in rows]
+    return {
+        "batch_no": batch_no,
+        "first_ledger_id": int(rows[0]["id"]),
+        "last_ledger_id": int(rows[-1]["id"]),
+        "first_history_id": min(int(row["history_id"]) for row in rows),
+        "last_history_id": max(int(row["history_id"]) for row in rows),
+        "asset_count": len(rows),
+        "history_count": len({int(row["history_id"]) for row in rows}),
+        "rowset_sha256": _sha256_json(identities),
+        "cas_state_sha256": cas_state_sha256,
+    }
+
+
+def build_probe_plan(
+    *,
+    run_id: str,
+    history_watermark: int,
+    rows: Iterable[dict[str, Any]],
+    batch_size: int = PROBE_BATCH_SIZE,
+    runtime_identity: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if batch_size <= 0:
+        raise ValueError("probe batch size must be positive")
+    ordered = sorted(
+        (dict(row) for row in rows),
+        key=lambda row: (int(row["id"]), int(row["history_id"])),
+    )
+    batches = [
+        _finalize_plan_batch(
+            batch_no=batch_no,
+            rows=ordered[offset : offset + batch_size],
+        )
+        for batch_no, offset in enumerate(range(0, len(ordered), batch_size))
+    ]
+    global_digest = StreamingJsonArraySha256()
+    for row in ordered:
+        global_digest.add(_probe_plan_row(row))
+    batch_digest = StreamingJsonArraySha256()
+    for batch in batches:
+        batch_digest.add(batch)
+    manifest: dict[str, Any] = {
+        "schema": "allbot-history-media-r2-probe-plan/v1",
+        "run_id": run_id,
+        "history_watermark": int(history_watermark),
+        "asset_count": len(ordered),
+        "history_count": len({int(row["history_id"]) for row in ordered}),
+        "batch_count": len(batches),
+        "batch_size": batch_size,
+        "rowset_sha256": global_digest.hexdigest(),
+        "batches_sha256": batch_digest.hexdigest(),
+        "runtime_identity": dict(runtime_identity or {}),
+    }
+    manifest["plan_sha256"] = _sha256_json(manifest)
+    return manifest, batches
+
+
+def validate_probe_gate(
+    *, expected_plan_sha256: str, supplied_plan_sha256: str, confirmation: str
+) -> None:
+    if supplied_plan_sha256 != expected_plan_sha256 or confirmation != (
+        f"PROBE_HISTORY_MEDIA_{expected_plan_sha256}"
+    ):
+        raise ValueError("exact probe plan SHA and confirmation are required")
+
+
+def normalized_history_cas_state(
+    history_id: int,
+    current_refs: dict[tuple[str, int], str],
+    ledger_rows: Iterable[dict[str, Any]],
+    *,
+    allow_selected_target: bool = True,
+) -> dict[str, Any]:
+    """Return an idempotent CAS state or reject an unexplained production value."""
+    normalized: list[dict[str, Any]] = []
+    rows = [dict(row) for row in ledger_rows]
+    expected_coords = {(str(row["role"]), int(row["ordinal"])) for row in rows}
+    if set(current_refs) != expected_coords:
+        raise RuntimeError("unknown History media state: coordinate set changed")
+    for row in sorted(rows, key=lambda item: (str(item["role"]), int(item["ordinal"]))):
+        coord = (str(row["role"]), int(row["ordinal"]))
+        current = str(current_refs[coord])
+        original = str(row["original_ref"])
+        target = str(row["target_key"])
+        selected = bool(row.get("selected"))
+        prior_completed = bool(
+            row.get("switch_completed_at") and row.get("switch_plan_sha256")
+        )
+        if selected and current == original:
+            value = original
+        elif selected and allow_selected_target and current == target:
+            value = original
+        elif not selected and current == original:
+            value = original
+        elif not selected and prior_completed and current == target:
+            value = target
+        else:
+            raise RuntimeError("unknown History media state")
+        normalized.append({"role": coord[0], "ordinal": coord[1], "value": value})
+    return {"history_id": int(history_id), "assets": normalized}
+
+
+def _history_record_refs(record: Any) -> dict[tuple[str, int], str]:
+    return {
+        (asset.role, asset.ordinal): asset.source_ref
+        for asset in history_assets_from_record(record)
+    }
+
+
+async def _cas_state_for_histories(
+    production: asyncpg.Connection,
+    ledger: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    history_ids: list[int],
+    selected_ledger_ids: set[int] | None = None,
+    switch_plan_sha256: str | None = None,
+    lock_rows: bool = False,
+    allow_selected_target: bool = True,
+) -> tuple[str, dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
+    if not history_ids:
+        return _sha256_json([]), {}, {}
+    lock_clause = " for update" if lock_rows else ""
+    histories = await production.fetch(
+        """select id,input_file,output_file,extra_outputs from history
+             where id=any($1::integer[]) order by id"""
+        + lock_clause,
+        history_ids,
+    )
+    if len(histories) != len(set(history_ids)):
+        raise RuntimeError("History row disappeared")
+    ledger_records = await ledger.fetch(
+        """select id,history_id,role,ordinal,original_ref,target_key,
+                  switch_plan_sha256,switch_completed_at
+             from analytics_history_media_r2_migrations
+            where run_id=$1 and history_id=any($2::integer[])
+            order by history_id,role,ordinal""",
+        run_id,
+        history_ids,
+    )
+    by_history: dict[int, list[dict[str, Any]]] = {}
+    for record in ledger_records:
+        row = dict(record)
+        row["selected"] = (
+            int(row["id"]) in selected_ledger_ids
+            if selected_ledger_ids is not None
+            else str(row.get("switch_plan_sha256") or "") == switch_plan_sha256
+        )
+        by_history.setdefault(int(row["history_id"]), []).append(row)
+    states: list[dict[str, Any]] = []
+    history_map: dict[int, dict[str, Any]] = {}
+    for record in histories:
+        current = dict(record)
+        history_id = int(current["id"])
+        history_map[history_id] = current
+        states.append(
+            normalized_history_cas_state(
+                history_id,
+                _history_record_refs(current),
+                by_history.get(history_id, []),
+                allow_selected_target=allow_selected_target,
+            )
+        )
+    return _sha256_json(states), history_map, by_history
+
+
+async def _predecessor_switch_identity(
+    conn: asyncpg.Connection, run_id: uuid.UUID, *, excluding: str | None = None
+) -> tuple[int, str]:
+    values = [
+        str(row["switch_plan_sha256"])
+        for row in await conn.fetch(
+            """select distinct switch_plan_sha256
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and switch_completed_at is not null
+                  and switch_plan_sha256 is not null
+                  and ($2::text is null or switch_plan_sha256::text<>$2)
+                order by switch_plan_sha256""",
+            run_id,
+            excluding,
+        )
+    ]
+    return len(values), _sha256_json(values)
+
+
 def _copy_rowset_sha(rows: Iterable[dict[str, Any]], plan_sha: str) -> str:
     normalized = []
     for original in rows:
@@ -632,6 +990,74 @@ def _load_secure_config(path: Path) -> dict[str, Any]:
     ):
         raise PermissionError("migration config must be a current-user-owned 0600 file")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _endpoint_fingerprint(value: Any) -> str:
+    parsed = urlsplit(str(value or "").rstrip("/"))
+    identity = f"{parsed.scheme.lower()}://{(parsed.hostname or '').lower()}:{parsed.port or ''}{parsed.path}"
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _runtime_identity(
+    *, artifact_digest: str, config: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact_digest):
+        raise ValueError("artifact digest must be an exact sha256 digest")
+    identity: dict[str, Any] = {
+        "artifact_digest": artifact_digest,
+        "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "bucket": BUCKET,
+        "candidate_algorithm": CANDIDATE_ALGORITHM_VERSION,
+    }
+    if config is not None:
+        target = config.get("target", {})
+        r2_source = next(
+            (
+                item
+                for item in config.get("sources", [])
+                if item.get("name") == "r2-user-data-prod" and item.get("enabled", True)
+            ),
+            None,
+        )
+        identity["target_endpoint_sha256"] = _endpoint_fingerprint(
+            target.get("endpoint")
+        )
+        identity["source_endpoint_sha256"] = _endpoint_fingerprint(
+            (r2_source or {}).get("endpoint")
+        )
+    return identity
+
+
+def _default_next_plan_output(plan_type: str, parent_sha256: str) -> Path:
+    state_root = Path(
+        os.getenv(
+            "XDG_STATE_HOME",
+            str(Path.home() / ".local" / "state"),
+        )
+    )
+    return (
+        state_root
+        / "allbot"
+        / "history-media-r2-migration"
+        / "plans"
+        / f"{plan_type}-{parent_sha256}.json"
+    )
+
+
+def _default_receipt_output(receipt_type: str, plan_sha256: str) -> Path:
+    return (
+        _default_next_plan_output("placeholder", plan_sha256).parent.parent
+        / "receipts"
+        / f"{receipt_type}-{plan_sha256}.json"
+    )
+
+
+def _validate_runtime_identity(
+    expected: dict[str, Any], *, artifact_digest: str, config: dict[str, Any] | None
+) -> None:
+    actual = _runtime_identity(artifact_digest=artifact_digest, config=config)
+    if actual != dict(expected):
+        raise RuntimeError("migration runtime identity changed")
 
 
 def _process_r2_custom_arguments(
@@ -851,6 +1277,35 @@ def server_side_copy_r2_object(
         "multipart": multipart,
         "recovered": destination_race,
     }
+
+
+def validate_copy_verification_heads(
+    row: dict[str, Any],
+    *,
+    source_head: dict[str, Any] | None,
+    target_head: dict[str, Any] | None,
+    copy_plan_sha256: str,
+) -> None:
+    if source_head is None:
+        raise RuntimeError("verified copy source disappeared")
+    if target_head is None:
+        raise RuntimeError("verified copy target disappeared")
+    if (
+        int(source_head["ContentLength"]) != int(row["byte_size"])
+        or _normalize_modified(source_head["LastModified"])
+        != row["source_last_modified"]
+        or _normalize_etag(source_head.get("ETag"))
+        != _normalize_etag(row["source_etag"])
+    ):
+        raise RuntimeError("verified copy source identity changed")
+    if int(target_head["ContentLength"]) != int(row["byte_size"]):
+        raise RuntimeError("verified copy target size changed")
+    metadata = {
+        str(key).lower(): str(value)
+        for key, value in dict(target_head.get("Metadata") or {}).items()
+    }
+    if metadata.get(COPY_PLAN_METADATA_KEY) != copy_plan_sha256:
+        raise RuntimeError("verified copy target marker changed")
 
 
 def _timed_server_side_copy(client: Any, **kwargs: Any) -> dict[str, Any]:
@@ -1915,6 +2370,399 @@ def _diagnostic(row: asyncpg.Record) -> dict[str, Any]:
     return {"asset": token, "status": row["status"], "error_code": row["error_code"]}
 
 
+async def _insert_plan_with_batches(
+    conn: asyncpg.Connection,
+    *,
+    manifest: dict[str, Any],
+    plan_type: str,
+    batches: Iterable[dict[str, Any]],
+) -> None:
+    async with conn.transaction():
+        await conn.execute(
+            """insert into analytics_history_media_migration_plans
+                 (plan_sha256,run_id,plan_type,rowset_sha256,manifest)
+               values($1,$2,$3,$4,$5::jsonb) on conflict(plan_sha256) do nothing""",
+            manifest["plan_sha256"],
+            uuid.UUID(manifest["run_id"]),
+            plan_type,
+            manifest["rowset_sha256"],
+            json.dumps(manifest),
+        )
+        batch_records = [
+            (
+                manifest["plan_sha256"],
+                int(batch["batch_no"]),
+                int(batch["first_ledger_id"]),
+                int(batch["last_ledger_id"]),
+                int(batch["first_history_id"]),
+                int(batch["last_history_id"]),
+                int(batch["asset_count"]),
+                int(batch["history_count"]),
+                batch["rowset_sha256"],
+                batch.get("cas_state_sha256"),
+            )
+            for batch in batches
+        ]
+        if batch_records:
+            await conn.executemany(
+                """insert into analytics_history_media_migration_plan_batches(
+                   plan_sha256,batch_no,first_ledger_id,last_ledger_id,
+                   first_history_id,last_history_id,asset_count,history_count,
+                   rowset_sha256,cas_state_sha256)
+                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                 on conflict(plan_sha256,batch_no) do nothing""",
+                batch_records,
+            )
+
+
+async def _create_probe_plan(args: argparse.Namespace) -> None:
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    run_id = uuid.UUID(args.run_id)
+    batch_size = PROBE_BATCH_SIZE
+    try:
+        await _ensure_schema(conn)
+        run = await conn.fetchrow(
+            "select history_watermark from analytics_history_media_migration_runs where id=$1",
+            run_id,
+        )
+        if not run:
+            raise RuntimeError("unknown migration run")
+        expected = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and status='pending_probe'""",
+                run_id,
+            )
+        )
+        history_count = int(
+            await conn.fetchval(
+                """select count(distinct history_id)
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and status='pending_probe'""",
+                run_id,
+            )
+        )
+        row_digest = StreamingJsonArraySha256()
+        batches: list[dict[str, Any]] = []
+        batch_rows: list[dict[str, Any]] = []
+        async with conn.transaction():
+            async for record in conn.cursor(
+                """select id,history_id,role,ordinal,original_ref,target_key,
+                          registry_task_id,history_manifest_sha256
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and status='pending_probe'
+                    order by id""",
+                run_id,
+                prefetch=batch_size,
+            ):
+                row = dict(record)
+                identity = _probe_plan_row(row)
+                row_digest.add(identity)
+                batch_rows.append(row)
+                if len(batch_rows) == batch_size:
+                    batches.append(
+                        _finalize_plan_batch(
+                            batch_no=len(batches), rows=batch_rows
+                        )
+                    )
+                    batch_rows = []
+        if batch_rows:
+            batches.append(
+                _finalize_plan_batch(batch_no=len(batches), rows=batch_rows)
+            )
+        if row_digest.count != expected:
+            raise RuntimeError("pending probe rowset changed while freezing")
+        batch_digest = StreamingJsonArraySha256()
+        for batch in batches:
+            batch_digest.add(batch)
+        manifest: dict[str, Any] = {
+            "schema": "allbot-history-media-r2-probe-plan/v1",
+            "run_id": str(run_id),
+            "history_watermark": int(run["history_watermark"]),
+            "asset_count": row_digest.count,
+            "history_count": history_count,
+            "batch_count": len(batches),
+            "batch_size": batch_size,
+            "rowset_sha256": row_digest.hexdigest(),
+            "batches_sha256": batch_digest.hexdigest(),
+            "runtime_identity": _runtime_identity(
+                artifact_digest=args.artifact_digest, config=config
+            ),
+        }
+        manifest["plan_sha256"] = _sha256_json(manifest)
+        await _insert_plan_with_batches(
+            conn, manifest=manifest, plan_type="probe", batches=batches
+        )
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(_canonical_json(manifest) + b"\n")
+        os.chmod(output, 0o600)
+        print(
+            json.dumps(
+                {
+                    "plan_sha256": manifest["plan_sha256"],
+                    "assets": manifest["asset_count"],
+                    "histories": manifest["history_count"],
+                    "batches": manifest["batch_count"],
+                    "manifest": str(output),
+                }
+            )
+        )
+    finally:
+        await conn.close()
+
+
+async def _collect_probe_head_outcomes(
+    rows: list[dict[str, Any]], *, client: Any, concurrency: int
+) -> list[dict[str, Any]]:
+    keys: dict[str, None] = {}
+    for row in rows:
+        keys[str(row["target_key"])] = None
+        for key in build_candidate_keys(
+            str(row["original_ref"]), row.get("registry_task_id")
+        ):
+            keys[key] = None
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def head(key: str) -> tuple[str, dict[str, Any] | None]:
+        async with semaphore:
+            return key, await asyncio.to_thread(
+                _head_s3_identity, client, BUCKET, key
+            )
+
+    facts = dict(await asyncio.gather(*(head(key) for key in keys)))
+    return classify_r2_head_outcomes(rows, facts)
+
+
+async def _persist_probe_batch(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    plan_sha: str,
+    batch_no: int,
+    rows: list[dict[str, Any]],
+    outcomes: list[dict[str, Any]],
+) -> Counter[str]:
+    by_id = {int(row["id"]): row for row in rows}
+    counts: Counter[str] = Counter()
+    async with conn.transaction():
+        for outcome in outcomes:
+            row = by_id[int(outcome["id"])]
+            status = str(outcome["status"])
+            counts[status] += 1
+            error_code = (
+                "TARGET_EXISTS_UNVERIFIED"
+                if status == "target_conflict"
+                else "R2_CANDIDATES_NOT_FOUND"
+                if status == "pending_probe"
+                else None
+            )
+            source_name = (
+                "target:user-data-prod"
+                if status in {"target_verified", "target_conflict"}
+                else "r2-user-data-prod"
+                if status == "copy_required"
+                else None
+            )
+            await conn.execute(
+                """update analytics_history_media_r2_migrations set
+                     probe_plan_sha256=$2,source_name=$3,source_key=$4,byte_size=$5,
+                     source_last_modified=$6,source_etag=$7,target_etag=
+                       case when $8 in ('target_verified','target_conflict') then $7 else null end,
+                     status=$8,error_code=$9,error_detail=null,target_checked_at=now(),
+                     r2_checked_at=now(),updated_at=now() where id=$1""",
+                int(outcome["id"]),
+                plan_sha,
+                source_name,
+                outcome["source_key"],
+                outcome["byte_size"],
+                outcome["last_modified"],
+                outcome["etag"],
+                status,
+                error_code,
+            )
+            if status != "pending_probe":
+                await conn.execute(
+                    """update analytics_media_asset_catalog set status='found',
+                         found_source=$2,source_key=$3,last_checked_at=now(),
+                         missing_rounds=0,first_missing_at=null,last_error=null where id=$1""",
+                    row["catalog_asset_id"],
+                    source_name,
+                    outcome["source_key"],
+                )
+            if outcome["attempts"]:
+                await conn.executemany(
+                    """insert into analytics_media_source_attempts
+                         (run_id,asset_id,source,candidate_key,status)
+                       values($1,$2,'r2-user-data-prod',$3,$4)""",
+                    [
+                        (
+                            run_id,
+                            row["catalog_asset_id"],
+                            key,
+                            attempt_status,
+                        )
+                        for key, attempt_status in outcome["attempts"]
+                    ],
+                )
+        await conn.execute(
+            """update analytics_history_media_migration_plan_batches set
+                 status='completed',outcome_counts=$3::jsonb,
+                 started_at=coalesce(started_at,now()),completed_at=now(),updated_at=now()
+               where plan_sha256=$1 and batch_no=$2""",
+            plan_sha,
+            batch_no,
+            json.dumps(dict(sorted(counts.items()))),
+        )
+    return counts
+
+
+async def _execute_probe(args: argparse.Namespace) -> None:
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    r2_source = next(
+        (
+            item
+            for item in config.get("sources", [])
+            if item.get("name") == "r2-user-data-prod" and item.get("enabled", True)
+        ),
+        None,
+    )
+    if not r2_source or r2_source.get("bucket") != BUCKET:
+        raise RuntimeError("r2-user-data-prod source is not enabled for user-data-prod")
+    if str(r2_source.get("endpoint", "")).rstrip("/") != str(
+        config["target"].get("endpoint", "")
+    ).rstrip("/"):
+        raise RuntimeError("frozen HEAD probe requires the target and source R2 endpoint")
+    client = _s3_client(r2_source, max_pool_connections=max(96, args.concurrency))
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    try:
+        run_id, manifest = await _load_plan(conn, args.plan_sha256, "probe")
+        validate_probe_gate(
+            expected_plan_sha256=manifest["plan_sha256"],
+            supplied_plan_sha256=args.plan_sha256,
+            confirmation=args.confirm,
+        )
+        _validate_runtime_identity(
+            manifest["runtime_identity"],
+            artifact_digest=args.artifact_digest,
+            config=config,
+        )
+        controller = AdaptiveProbeController(initial_concurrency=args.concurrency)
+        processed = 0
+        totals: Counter[str] = Counter()
+        while args.max_batches <= 0 or processed < args.max_batches:
+            batch = await conn.fetchrow(
+                """select * from analytics_history_media_migration_plan_batches
+                     where plan_sha256=$1 and status='pending'
+                     order by batch_no limit 1""",
+                args.plan_sha256,
+            )
+            if not batch:
+                break
+            rows = [
+                dict(row)
+                for row in await conn.fetch(
+                    """select id,catalog_asset_id,run_id,history_id,role,ordinal,
+                              original_ref,target_key,registry_task_id,history_manifest_sha256
+                         from analytics_history_media_r2_migrations
+                        where run_id=$1 and id between $2 and $3
+                          and status='pending_probe' and probe_plan_sha256 is null
+                        order by id""",
+                    run_id,
+                    batch["first_ledger_id"],
+                    batch["last_ledger_id"],
+                )
+            ]
+            if len(rows) != int(batch["asset_count"]) or _sha256_json(
+                [_probe_plan_row(row) for row in rows]
+            ) != str(batch["rowset_sha256"]):
+                raise RuntimeError("probe batch rowset changed")
+            attempt = 0
+            while True:
+                try:
+                    outcomes = await _collect_probe_head_outcomes(
+                        rows, client=client, concurrency=controller.concurrency
+                    )
+                    controller.record_success()
+                    break
+                except Exception as exc:
+                    attempt += 1
+                    if attempt > args.max_retries or not is_transient_copy_failure(
+                        str(exc)
+                    ):
+                        raise
+                    controller.record_failure(str(exc))
+                    await asyncio.sleep(min(2**attempt, 30))
+            counts = await _persist_probe_batch(
+                conn,
+                run_id=run_id,
+                plan_sha=args.plan_sha256,
+                batch_no=int(batch["batch_no"]),
+                rows=rows,
+                outcomes=outcomes,
+            )
+            totals.update(counts)
+            processed += 1
+        remaining = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_migration_plan_batches
+                     where plan_sha256=$1 and status<>'completed'""",
+                args.plan_sha256,
+            )
+        )
+        await conn.execute(
+            """update analytics_history_media_migration_runs set status='running',
+                 phase=$2,error=null,updated_at=now() where id=$1""",
+            run_id,
+            "probe-frozen-completed" if remaining == 0 else "probe-frozen",
+        )
+        print(
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "plan_sha256": args.plan_sha256,
+                    "processed_batches": processed,
+                    "remaining_batches": remaining,
+                    "outcomes": dict(sorted(totals.items())),
+                    "next_concurrency": controller.concurrency,
+                }
+            )
+        )
+        if remaining == 0:
+            await _create_plan(
+                SimpleNamespace(
+                    run_id=str(run_id),
+                    parent_plan_sha256=args.plan_sha256,
+                    config=args.config,
+                    artifact_digest=args.artifact_digest,
+                    allow_incomplete=False,
+                    output=str(
+                        Path(args.next_plan_output)
+                        if args.next_plan_output
+                        else _default_next_plan_output("copy", args.plan_sha256)
+                    ),
+                ),
+                plan_type="copy",
+            )
+    except Exception as exc:
+        if "manifest" in locals():
+            await conn.execute(
+                """update analytics_history_media_migration_runs set status='paused',
+                     error=$2,updated_at=now() where id=$1""",
+                uuid.UUID(manifest["run_id"]),
+                str(exc)[:1000],
+            )
+        raise
+    finally:
+        await conn.close()
+        client.close()
+
+
 async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
@@ -1925,84 +2773,222 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
         )
         if not run:
             raise RuntimeError("unknown migration run")
+        batches: list[dict[str, Any]] = []
         if plan_type == "copy":
-            remaining = int(
+            config = _load_secure_config(Path(args.config))
+            parent_run_id, parent = await _load_plan(
+                conn, args.parent_plan_sha256, "probe"
+            )
+            if parent_run_id != run_id:
+                raise RuntimeError("copy parent probe belongs to another run")
+            incomplete_batches = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_migration_plan_batches
+                         where plan_sha256=$1 and status<>'completed'""",
+                    args.parent_plan_sha256,
+                )
+            )
+            if incomplete_batches:
+                raise RuntimeError(
+                    f"PROBE_NOT_COMPLETE: batches={incomplete_batches}"
+                )
+            oversized = int(
                 await conn.fetchval(
                     """select count(*) from analytics_history_media_r2_migrations
-                         where run_id=$1 and status='pending_probe'""",
+                         where run_id=$1 and probe_plan_sha256=$2
+                           and status='copy_required' and byte_size > $3""",
                     run_id,
+                    args.parent_plan_sha256,
+                    SINGLE_COPY_LIMIT,
                 )
             )
-            if run["status"] == "paused" or (
-                remaining and not args.allow_incomplete
-            ):
+            if oversized:
                 raise RuntimeError(
-                    f"PROBE_NOT_COMPLETE: pending={remaining} run_status={run['status']}"
+                    f"COPY_PLAN_HAS_UNSUPPORTED_MULTIPART_OBJECTS: count={oversized}"
                 )
-            query = (
-                """select history_id,role,ordinal,original_ref,target_key,
+            query = """select id,history_id,role,ordinal,original_ref,target_key,
                           source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256,error_code
-                     from analytics_history_media_r2_migrations where run_id=$1
-                     order by history_id,role,ordinal"""
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and probe_plan_sha256=$2
+                      and status='copy_required'
+                    order by id"""
+            rowset_sha, count, counts, byte_counts, diagnostics = (
+                await _stream_plan_rowset(
+                    conn, query, run_id, args.parent_plan_sha256
+                )
             )
-            rowset_sha, _count, counts, byte_counts, diagnostics = (
-                await _stream_plan_rowset(conn, query, run_id)
-            )
+            batch_rows: list[dict[str, Any]] = []
+            async with conn.transaction():
+                async for record in conn.cursor(
+                    query,
+                    run_id,
+                    args.parent_plan_sha256,
+                    prefetch=COPY_BATCH_SIZE,
+                ):
+                    batch_rows.append(dict(record))
+                    if len(batch_rows) == COPY_BATCH_SIZE:
+                        batches.append(
+                            _finalize_plan_batch(
+                                batch_no=len(batches),
+                                rows=batch_rows,
+                                row_transform=_plan_row,
+                            )
+                        )
+                        batch_rows = []
+            if batch_rows:
+                batches.append(
+                    _finalize_plan_batch(
+                        batch_no=len(batches),
+                        rows=batch_rows,
+                        row_transform=_plan_row,
+                    )
+                )
             manifest = {
-                "schema": "allbot-history-media-r2-copy-plan/v1",
+                "schema": "allbot-history-media-r2-copy-plan/v2",
                 "run_id": str(run_id),
                 "history_watermark": int(run["history_watermark"]),
+                "parent_probe_plan_sha256": parent["plan_sha256"],
+                "count": count,
                 "counts": dict(sorted(counts.items())),
                 "bytes": dict(sorted(byte_counts.items())),
                 "sha_bytes_read": int(run["sha_bytes_read"]),
-                "pending_at_freeze": remaining,
+                "pending_at_freeze": incomplete_batches,
                 "run_status_at_freeze": str(run["status"]),
-                "partial_scope": bool(remaining),
+                "partial_scope": False,
+                "batch_count": len(batches),
+                "batch_size": COPY_BATCH_SIZE,
                 "diagnostics": diagnostics,
                 "rowset_sha256": rowset_sha,
+                "runtime_identity": _runtime_identity(
+                    artifact_digest=args.artifact_digest, config=config
+                ),
             }
             manifest["plan_sha256"] = _sha256_json(manifest)
         else:
-            query = (
-                """select history_id,role,ordinal,original_ref,target_key,
+            parent_run_id, parent = await _load_plan(
+                conn, args.parent_plan_sha256, "copy"
+            )
+            if parent_run_id != run_id:
+                raise RuntimeError("switch parent copy belongs to another run")
+            incomplete_copy_batches = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_migration_plan_batches
+                         where plan_sha256=$1 and status<>'completed'""",
+                    args.parent_plan_sha256,
+                )
+            )
+            if incomplete_copy_batches:
+                raise RuntimeError(
+                    f"COPY_NOT_COMPLETE: batches={incomplete_copy_batches}"
+                )
+            query = """select id,history_id,role,ordinal,original_ref,target_key,
                           source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256
                      from analytics_history_media_r2_migrations
-                    where run_id=$1 and status in ('target_verified','copied_verified')
+                    where run_id=$1 and copy_plan_sha256=$2
+                      and status='copied_verified' and switch_completed_at is null
                       and original_ref <> target_key
                     order by history_id,role,ordinal"""
-            )
             rowset_sha, count, _counts, byte_counts, _diagnostics = (
-                await _stream_plan_rowset(conn, query, run_id)
+                await _stream_plan_rowset(
+                    conn, query, run_id, args.parent_plan_sha256
+                )
+            )
+            production = await _connect_env("PRODUCTION_DATABASE_URL")
+            try:
+                batch_rows: list[dict[str, Any]] = []
+                batch_history_ids: list[int] = []
+
+                async def flush_switch_batch() -> None:
+                    nonlocal batch_rows, batch_history_ids
+                    if not batch_rows:
+                        return
+                    cas_sha, _histories, _ledger_rows = await _cas_state_for_histories(
+                        production,
+                        conn,
+                        run_id=run_id,
+                        history_ids=batch_history_ids,
+                        selected_ledger_ids={int(row["id"]) for row in batch_rows},
+                        allow_selected_target=False,
+                    )
+                    batches.append(
+                        _finalize_plan_batch(
+                            batch_no=len(batches),
+                            rows=batch_rows,
+                            cas_state_sha256=cas_sha,
+                            row_transform=_plan_row,
+                        )
+                    )
+                    batch_rows = []
+                    batch_history_ids = []
+
+                async with conn.transaction():
+                    async for record in conn.cursor(
+                        query,
+                        run_id,
+                        args.parent_plan_sha256,
+                        prefetch=SWITCH_HISTORY_BATCH_SIZE,
+                    ):
+                        row = dict(record)
+                        history_id = int(row["history_id"])
+                        if (
+                            batch_history_ids
+                            and history_id != batch_history_ids[-1]
+                            and len(batch_history_ids) >= SWITCH_HISTORY_BATCH_SIZE
+                        ):
+                            await flush_switch_batch()
+                        if not batch_history_ids or history_id != batch_history_ids[-1]:
+                            batch_history_ids.append(history_id)
+                        batch_rows.append(row)
+                    await flush_switch_batch()
+            finally:
+                await production.close()
+            predecessor_count, predecessor_sha = await _predecessor_switch_identity(
+                conn, run_id
             )
             manifest = {
-                "schema": "allbot-history-media-r2-switch-plan/v1",
+                "schema": "allbot-history-media-r2-switch-plan/v2",
                 "run_id": str(run_id),
                 "history_watermark": int(run["history_watermark"]),
+                "parent_copy_plan_sha256": parent["plan_sha256"],
                 "count": count,
                 "bytes": sum(byte_counts.values()),
+                "batch_count": len(batches),
+                "history_batch_size": SWITCH_HISTORY_BATCH_SIZE,
                 "rowset_sha256": rowset_sha,
+                "predecessor_switch_plan_count": predecessor_count,
+                "predecessor_switch_plans_sha256": predecessor_sha,
+                "runtime_identity": _runtime_identity(
+                    artifact_digest=args.artifact_digest
+                ),
             }
             manifest["plan_sha256"] = _sha256_json(manifest)
         plan_sha = manifest["plan_sha256"]
-        await conn.execute(
-            """insert into analytics_history_media_migration_plans
-                 (plan_sha256,run_id,plan_type,rowset_sha256,manifest)
-               values($1,$2,$3,$4,$5::jsonb) on conflict(plan_sha256) do nothing""",
-            plan_sha,
-            run_id,
-            plan_type,
-            manifest["rowset_sha256"],
-            json.dumps(manifest),
+        await _insert_plan_with_batches(
+            conn, manifest=manifest, plan_type=plan_type, batches=batches
         )
-        column = "copy_plan_sha256" if plan_type == "copy" else "switch_plan_sha256"
-        eligible = "status='copy_required'" if plan_type == "copy" else "status in ('target_verified','copied_verified') and original_ref <> target_key"
-        await conn.execute(
-            f"update analytics_history_media_r2_migrations set {column}=$2 where run_id=$1 and {eligible}",
-            run_id,
-            plan_sha,
-        )
+        if plan_type == "copy":
+            await conn.execute(
+                """update analytics_history_media_r2_migrations
+                      set copy_plan_sha256=$3,updated_at=now()
+                    where run_id=$1 and probe_plan_sha256=$2
+                      and status='copy_required'""",
+                run_id,
+                args.parent_plan_sha256,
+                plan_sha,
+            )
+        else:
+            await conn.execute(
+                """update analytics_history_media_r2_migrations
+                      set switch_plan_sha256=$3,updated_at=now()
+                    where run_id=$1 and copy_plan_sha256=$2
+                      and status='copied_verified' and switch_completed_at is null
+                      and original_ref <> target_key""",
+                run_id,
+                args.parent_plan_sha256,
+                plan_sha,
+            )
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(_canonical_json(manifest) + b"\n")
@@ -2071,6 +3057,80 @@ async def _persist_copy_failure(
     )
 
 
+async def _verify_copy_plan_objects(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    plan_sha256: str,
+    client: Any,
+    concurrency: int,
+) -> dict[str, int]:
+    ledger_rows = int(
+        await conn.fetchval(
+            """select count(*) from analytics_history_media_r2_migrations
+                 where run_id=$1 and copy_plan_sha256=$2
+                   and status='copied_verified'""",
+            run_id,
+            plan_sha256,
+        )
+    )
+    verified_objects = 0
+    buffer: list[dict[str, Any]] = []
+
+    async def verify_buffer() -> None:
+        nonlocal verified_objects, buffer
+        if not buffer:
+            return
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def verify(row: dict[str, Any]) -> None:
+            async with semaphore:
+                source_head, target_head = await asyncio.gather(
+                    asyncio.to_thread(
+                        _head_s3_identity,
+                        client,
+                        BUCKET,
+                        str(row["source_key"]),
+                    ),
+                    asyncio.to_thread(
+                        _head_s3_identity,
+                        client,
+                        BUCKET,
+                        str(row["target_key"]),
+                    ),
+                )
+                validate_copy_verification_heads(
+                    row,
+                    source_head=source_head,
+                    target_head=target_head,
+                    copy_plan_sha256=plan_sha256,
+                )
+
+        await asyncio.gather(*(verify(row) for row in buffer))
+        verified_objects += len(buffer)
+        buffer = []
+
+    last_target = ""
+    while True:
+        page = await conn.fetch(
+            """select distinct on (target_key) target_key,source_key,byte_size,
+                      source_last_modified,source_etag
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and copy_plan_sha256=$2
+                  and status='copied_verified' and target_key>$3
+                order by target_key,id limit 1000""",
+            run_id,
+            plan_sha256,
+            last_target,
+        )
+        if not page:
+            break
+        buffer.extend(dict(record) for record in page)
+        await verify_buffer()
+        last_target = str(page[-1]["target_key"])
+    return {"ledger_rows": ledger_rows, "verified_objects": verified_objects}
+
+
 async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
     execution_started = time.perf_counter()
     config = _load_secure_config(Path(args.config))
@@ -2096,6 +3156,12 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             supplied_plan_sha256=args.plan_sha256,
             confirmation=args.confirm,
         )
+        if manifest.get("runtime_identity"):
+            _validate_runtime_identity(
+                manifest["runtime_identity"],
+                artifact_digest=args.artifact_digest or "",
+                config=config,
+            )
         rowset_sha, _count, _counts, _bytes, _diagnostics = (
             await _stream_plan_rowset(
                 conn,
@@ -2103,9 +3169,11 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                       source_name,source_key,source_last_modified,source_etag,source_sha256,
                       target_sha256,byte_size,status,history_manifest_sha256,
                       copy_plan_sha256
-                 from analytics_history_media_r2_migrations where run_id=$1
-                 order by history_id,role,ordinal""",
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and copy_plan_sha256=$2
+                order by history_id,role,ordinal""",
                 run_id,
+                args.plan_sha256,
                 copy_plan_sha256=args.plan_sha256,
             )
         )
@@ -2149,14 +3217,29 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
         )
         if multipart_count:
             raise RuntimeError("frozen production copy plan contains multipart objects")
+        active_batch = await conn.fetchrow(
+            """select * from analytics_history_media_migration_plan_batches
+                 where plan_sha256=$1 and status<>'completed'
+                 order by batch_no limit 1""",
+            args.plan_sha256,
+        )
+        first_ledger_id = int(active_batch["first_ledger_id"]) if active_batch else 0
+        last_ledger_id = (
+            int(active_batch["last_ledger_id"])
+            if active_batch
+            else 9_223_372_036_854_775_807
+        )
         rows = await conn.fetch(
             """select * from analytics_history_media_r2_migrations
                  where run_id=$1 and copy_plan_sha256=$2
                    and status in ('copy_required','failed')
+                   and id between $4 and $5
                  order by history_id,role,ordinal limit $3""",
             run_id,
             args.plan_sha256,
             args.limit,
+            first_ledger_id,
+            last_ledger_id,
         )
         selected_targets = list(dict.fromkeys(str(row["target_key"]) for row in rows))
         if selected_targets:
@@ -2246,6 +3329,29 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 args.plan_sha256,
             )
         )
+        if active_batch:
+            batch_remaining = int(
+                await conn.fetchval(
+                    """select count(*) from analytics_history_media_r2_migrations
+                         where run_id=$1 and copy_plan_sha256=$2
+                           and id between $3 and $4
+                           and status in ('copy_required','failed')""",
+                    run_id,
+                    args.plan_sha256,
+                    first_ledger_id,
+                    last_ledger_id,
+                )
+            )
+            if batch_remaining == 0:
+                await conn.execute(
+                    """update analytics_history_media_migration_plan_batches set
+                         status='completed',started_at=coalesce(started_at,now()),
+                         completed_at=now(),outcome_counts=$3::jsonb,updated_at=now()
+                       where plan_sha256=$1 and batch_no=$2""",
+                    args.plan_sha256,
+                    int(active_batch["batch_no"]),
+                    json.dumps({"copied_verified": int(active_batch["asset_count"])}),
+                )
         summary = {
             "run_id": str(run_id),
             "copied": copied_rows,
@@ -2270,6 +3376,57 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             "db_commit_latency_ms": _latency_summary(db_commit_latencies_ms),
         }
         print(json.dumps(summary))
+        if remaining == 0 and manifest.get("schema") == "allbot-history-media-r2-copy-plan/v2":
+            verification = await _verify_copy_plan_objects(
+                conn,
+                run_id=run_id,
+                plan_sha256=args.plan_sha256,
+                client=target_client,
+                concurrency=args.copy_concurrency,
+            )
+            verification_receipt = {
+                "schema": "allbot-history-media-r2-copy-verification/v1",
+                "run_id": str(run_id),
+                "copy_plan_sha256": args.plan_sha256,
+                **verification,
+                "old_sources_retained": verification["verified_objects"],
+                "target_markers_verified": verification["verified_objects"],
+            }
+            receipt_path = (
+                Path(args.verification_output)
+                if getattr(args, "verification_output", None)
+                else _default_receipt_output(
+                    "copy-verification", args.plan_sha256
+                )
+            )
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_payload = _canonical_json(verification_receipt) + b"\n"
+            receipt_path.write_bytes(receipt_payload)
+            os.chmod(receipt_path, 0o600)
+            print(
+                json.dumps(
+                    {
+                        "copy_verification_receipt": str(receipt_path),
+                        "receipt_sha256": hashlib.sha256(receipt_payload).hexdigest(),
+                        **verification,
+                    }
+                )
+            )
+            await _create_plan(
+                SimpleNamespace(
+                    run_id=str(run_id),
+                    parent_plan_sha256=args.plan_sha256,
+                    artifact_digest=args.artifact_digest,
+                    output=str(
+                        Path(args.next_plan_output)
+                        if getattr(args, "next_plan_output", None)
+                        else _default_next_plan_output(
+                            "switch", args.plan_sha256
+                        )
+                    ),
+                ),
+                plan_type="switch",
+            )
         return summary
     finally:
         await conn.close()
@@ -2322,6 +3479,103 @@ def replace_asset_reference(history: dict[str, Any], role: str, ordinal: int, ta
         raise RuntimeError("unknown History media role")
 
 
+async def _verify_switch_plan(
+    ledger: asyncpg.Connection,
+    production: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    plan_sha256: str,
+) -> dict[str, Any]:
+    batches = await ledger.fetch(
+        """select first_history_id,last_history_id
+             from analytics_history_media_migration_plan_batches
+            where plan_sha256=$1 order by batch_no""",
+        plan_sha256,
+    )
+    verified_assets = 0
+    verified_histories = 0
+    owner_samples: list[dict[str, Any]] = []
+    gallery_samples: list[dict[str, Any]] = []
+    for batch in batches:
+        assets = [
+            dict(row)
+            for row in await ledger.fetch(
+                """select history_id,role,ordinal,target_key
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and switch_plan_sha256=$2
+                      and history_id between $3 and $4
+                    order by history_id,role,ordinal""",
+                run_id,
+                plan_sha256,
+                int(batch["first_history_id"]),
+                int(batch["last_history_id"]),
+            )
+        ]
+        history_ids = list(dict.fromkeys(int(row["history_id"]) for row in assets))
+        histories = await production.fetch(
+            """select id,user_id,task_id,input_file,output_file,extra_outputs
+                 from history where id=any($1::integer[]) order by id""",
+            history_ids,
+        )
+        if len(histories) != len(history_ids):
+            raise RuntimeError("switch verification History row disappeared")
+        expected: dict[int, dict[tuple[str, int], str]] = {}
+        for asset in assets:
+            expected.setdefault(int(asset["history_id"]), {})[
+                (str(asset["role"]), int(asset["ordinal"]))
+            ] = str(asset["target_key"])
+        for record in histories:
+            history_id = int(record["id"])
+            actual = _history_record_refs(record)
+            for coord, target in expected[history_id].items():
+                if actual.get(coord) != target:
+                    raise RuntimeError("switch verification found an old History reference")
+            if len(owner_samples) < 64:
+                owner_samples.append(
+                    {
+                        "history_id": history_id,
+                        "user_id": int(record["user_id"]),
+                        "task_id": str(record["task_id"]),
+                    }
+                )
+        if history_ids:
+            for media_type in ("image", "video"):
+                existing = sum(
+                    1
+                    for sample in gallery_samples
+                    if sample.get("media_type") == media_type
+                )
+                if existing >= 16:
+                    continue
+                gallery_rows = await production.fetch(
+                    """select gp.id post_id,gp.media_type,h.id history_id,
+                              h.user_id,h.task_id
+                         from gallery_posts gp join history h on h.task_id=gp.task_id
+                        where gp.is_active is true and gp.media_type=$2
+                          and h.id=any($1::integer[])
+                        order by gp.id,h.id limit $3""",
+                    history_ids,
+                    media_type,
+                    16 - existing,
+                )
+                gallery_samples.extend(dict(row) for row in gallery_rows)
+        verified_assets += len(assets)
+        verified_histories += len(history_ids)
+    if verified_assets and len(owner_samples) < min(64, verified_histories):
+        raise RuntimeError("owner verification sample is incomplete")
+    if verified_assets and len(gallery_samples) < 32:
+        raise RuntimeError("Gallery verification sample is incomplete")
+    return {
+        "verified_assets": verified_assets,
+        "verified_histories": verified_histories,
+        "owner_samples": owner_samples,
+        "gallery_samples": gallery_samples,
+        "gallery_sample_target": 32,
+        "owner_sample_target": 64,
+        "apply_context_contract": "existing supported payloads; expected unsupported cases remain HTTP 400",
+    }
+
+
 async def _execute_switch(args: argparse.Namespace) -> None:
     ledger = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     production = await _connect_env("PRODUCTION_DATABASE_URL")
@@ -2334,15 +3588,23 @@ async def _execute_switch(args: argparse.Namespace) -> None:
             actual_manifest_sha256="gate",
             confirmation=args.confirm,
         )
+        if manifest.get("runtime_identity"):
+            _validate_runtime_identity(
+                manifest["runtime_identity"],
+                artifact_digest=args.artifact_digest or "",
+                config=None,
+            )
+        if manifest.get("schema") != "allbot-history-media-r2-switch-plan/v2":
+            raise RuntimeError("legacy switch plans require their original executor artifact")
         rowset_sha, _count, _counts, _bytes, _diagnostics = (
             await _stream_plan_rowset(
                 ledger,
-                """select history_id,role,ordinal,original_ref,target_key,
+                """select id,history_id,role,ordinal,original_ref,target_key,
                           source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256
                      from analytics_history_media_r2_migrations
                  where run_id=$1 and switch_plan_sha256=$2
-                   and status in ('target_verified','copied_verified')
+                   and status='copied_verified'
                  order by history_id,role,ordinal""",
                 run_id,
                 args.plan_sha256,
@@ -2350,100 +3612,167 @@ async def _execute_switch(args: argparse.Namespace) -> None:
         )
         if rowset_sha != manifest["rowset_sha256"]:
             raise RuntimeError("switch plan rowset changed")
+        predecessor_count, predecessor_sha = await _predecessor_switch_identity(
+            ledger, run_id, excluding=args.plan_sha256
+        )
+        if (
+            predecessor_count != int(manifest["predecessor_switch_plan_count"])
+            or predecessor_sha != manifest["predecessor_switch_plans_sha256"]
+        ):
+            raise RuntimeError("predecessor switch plan identity changed")
         switched = 0
-        last_history_id = 0
-        while True:
-            history_id = await ledger.fetchval(
-                """select min(history_id) from analytics_history_media_r2_migrations
-                     where run_id=$1 and switch_plan_sha256=$2
-                       and status in ('target_verified','copied_verified')
-                       and history_id > $3""",
-                run_id,
+        processed_batches = 0
+        while args.max_batches <= 0 or processed_batches < args.max_batches:
+            batch = await ledger.fetchrow(
+                """select * from analytics_history_media_migration_plan_batches
+                     where plan_sha256=$1 and status<>'completed'
+                     order by batch_no limit 1""",
                 args.plan_sha256,
-                last_history_id,
             )
-            if history_id is None:
+            if not batch:
                 break
-            history_id = int(history_id)
-            last_history_id = history_id
-            assets = await ledger.fetch(
-                """select * from analytics_history_media_r2_migrations
-                     where run_id=$1 and switch_plan_sha256=$2 and history_id=$3
-                       and status in ('target_verified','copied_verified')
-                     order by role,ordinal""",
-                run_id,
-                args.plan_sha256,
-                history_id,
+            assets = [
+                dict(row)
+                for row in await ledger.fetch(
+                    """select * from analytics_history_media_r2_migrations
+                         where run_id=$1 and switch_plan_sha256=$2
+                           and status='copied_verified'
+                           and history_id between $3 and $4
+                         order by history_id,role,ordinal""",
+                    run_id,
+                    args.plan_sha256,
+                    int(batch["first_history_id"]),
+                    int(batch["last_history_id"]),
+                )
+            ]
+            if len(assets) != int(batch["asset_count"]) or _sha256_json(
+                [_plan_row(row) for row in assets]
+            ) != str(batch["rowset_sha256"]):
+                raise RuntimeError("switch batch rowset changed")
+            history_ids = list(
+                dict.fromkeys(int(row["history_id"]) for row in assets)
             )
+            changed_history_ids: list[int] = []
             async with production.transaction():
-                history = await production.fetchrow(
-                    """select id,input_file,output_file,extra_outputs from history
-                         where id=$1 for update""",
-                    history_id,
+                await production.execute("set local lock_timeout = '10s'")
+                cas_sha, histories, all_assets = await _cas_state_for_histories(
+                    production,
+                    ledger,
+                    run_id=run_id,
+                    history_ids=history_ids,
+                    switch_plan_sha256=args.plan_sha256,
+                    lock_rows=True,
                 )
-                if not history:
-                    raise RuntimeError("History row disappeared")
-                current = dict(history)
-                extras = current.get("extra_outputs")
-                if isinstance(extras, str):
-                    try:
-                        current["extra_outputs"] = json.loads(extras)
-                    except json.JSONDecodeError:
-                        current["extra_outputs"] = {}
-                specs = history_assets_from_record(current)
-                actual_manifest = media_manifest_hash(specs)
-                expected_manifest = str(assets[0]["history_manifest_sha256"])
-                current_refs = {
-                    (asset.role, asset.ordinal): asset.source_ref for asset in specs
-                }
-                already_switched = all(
-                    current_refs.get((str(asset["role"]), int(asset["ordinal"])))
-                    == str(asset["target_key"])
-                    for asset in assets
-                )
-                if already_switched:
-                    await ledger.execute(
-                        """update analytics_history_media_r2_migrations
-                              set switch_completed_at=coalesce(switch_completed_at,now()),
-                                  updated_at=now()
-                            where run_id=$1 and history_id=$2 and switch_plan_sha256=$3""",
-                        run_id,
-                        history_id,
-                        args.plan_sha256,
-                    )
-                    continue
-                validate_switch_gate(
-                    expected_plan_sha256=manifest["plan_sha256"],
-                    supplied_plan_sha256=args.plan_sha256,
-                    expected_manifest_sha256=expected_manifest,
-                    actual_manifest_sha256=actual_manifest,
-                    confirmation=args.confirm,
-                )
-                for asset in assets:
-                    replace_asset_reference(
-                        current,
-                        str(asset["role"]),
-                        int(asset["ordinal"]),
-                        str(asset["target_key"]),
-                    )
-                await production.execute(
-                    """update history set input_file=$2,output_file=$3,extra_outputs=$4::jsonb
-                         where id=$1""",
-                    history_id,
-                    current["input_file"],
-                    current["output_file"],
-                    json.dumps(current["extra_outputs"]),
-                )
-                switched += len(assets)
-            await ledger.execute(
-                """update analytics_history_media_r2_migrations set
-                     switch_completed_at=now(),updated_at=now()
-                   where run_id=$1 and history_id=$2 and switch_plan_sha256=$3""",
+                if cas_sha != str(batch["cas_state_sha256"]):
+                    raise RuntimeError("switch batch production CAS state changed")
+                for history_id in history_ids:
+                    current = histories[history_id]
+                    extras = current.get("extra_outputs")
+                    if isinstance(extras, str):
+                        try:
+                            current["extra_outputs"] = json.loads(extras)
+                        except json.JSONDecodeError:
+                            current["extra_outputs"] = {}
+                    selected = [
+                        row for row in all_assets[history_id] if row["selected"]
+                    ]
+                    current_refs = _history_record_refs(current)
+                    changed = False
+                    for asset in selected:
+                        coord = (str(asset["role"]), int(asset["ordinal"]))
+                        if current_refs[coord] == str(asset["target_key"]):
+                            continue
+                        replace_asset_reference(
+                            current,
+                            coord[0],
+                            coord[1],
+                            str(asset["target_key"]),
+                        )
+                        changed = True
+                        switched += 1
+                    if changed:
+                        await production.execute(
+                            """update history set input_file=$2,output_file=$3,
+                                 extra_outputs=$4::jsonb where id=$1""",
+                            history_id,
+                            current["input_file"],
+                            current["output_file"],
+                            json.dumps(current["extra_outputs"]),
+                        )
+                        changed_history_ids.append(history_id)
+            async with ledger.transaction():
+                await ledger.execute(
+                    """update analytics_history_media_r2_migrations set
+                         switch_completed_at=coalesce(switch_completed_at,now()),
+                         updated_at=now()
+                       where run_id=$1 and switch_plan_sha256=$2
+                         and history_id=any($3::integer[])""",
                 run_id,
-                history_id,
+                    args.plan_sha256,
+                    history_ids,
+                )
+                await ledger.execute(
+                    """update analytics_history_media_migration_plan_batches set
+                         status='completed',started_at=coalesce(started_at,now()),
+                         completed_at=now(),outcome_counts=$3::jsonb,updated_at=now()
+                       where plan_sha256=$1 and batch_no=$2""",
+                    args.plan_sha256,
+                    int(batch["batch_no"]),
+                    json.dumps(
+                        {
+                            "assets": len(assets),
+                            "histories": len(history_ids),
+                            "histories_updated": len(changed_history_ids),
+                        }
+                    ),
+                )
+            processed_batches += 1
+        remaining_batches = int(
+            await ledger.fetchval(
+                """select count(*) from analytics_history_media_migration_plan_batches
+                     where plan_sha256=$1 and status<>'completed'""",
                 args.plan_sha256,
             )
-        print(json.dumps({"run_id": str(run_id), "switched": switched}))
+        )
+        verification_receipt_path: str | None = None
+        if remaining_batches == 0:
+            verification = await _verify_switch_plan(
+                ledger,
+                production,
+                run_id=run_id,
+                plan_sha256=args.plan_sha256,
+            )
+            receipt = {
+                "schema": "allbot-history-media-r2-switch-verification/v1",
+                "run_id": str(run_id),
+                "switch_plan_sha256": args.plan_sha256,
+                **verification,
+                "old_objects_deleted": 0,
+                "shadow_restore_ready": True,
+            }
+            receipt_path = (
+                Path(args.verification_output)
+                if args.verification_output
+                else _default_receipt_output(
+                    "switch-verification", args.plan_sha256
+                )
+            )
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_payload = _canonical_json(receipt) + b"\n"
+            receipt_path.write_bytes(receipt_payload)
+            os.chmod(receipt_path, 0o600)
+            verification_receipt_path = str(receipt_path)
+        print(
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "switched": switched,
+                    "processed_batches": processed_batches,
+                    "remaining_batches": remaining_batches,
+                    "verification_receipt": verification_receipt_path,
+                }
+            )
+        )
     finally:
         await production.close()
         await ledger.close()
@@ -2513,8 +3842,8 @@ async def _report(args: argparse.Namespace) -> None:
 
 def _bounded_copy_concurrency(value: str) -> int:
     concurrency = int(value)
-    if not 1 <= concurrency <= 64:
-        raise argparse.ArgumentTypeError("copy concurrency must be between 1 and 64")
+    if not 1 <= concurrency <= 128:
+        raise argparse.ArgumentTypeError("copy concurrency must be between 1 and 128")
     return concurrency
 
 
@@ -2528,8 +3857,8 @@ def _positive_pool_connections(value: str) -> int:
 def _resolve_copy_max_pool_connections(
     copy_concurrency: int, configured: int | None
 ) -> int:
-    if not 1 <= copy_concurrency <= 64:
-        raise ValueError("copy concurrency must be between 1 and 64")
+    if not 1 <= copy_concurrency <= 128:
+        raise ValueError("copy concurrency must be between 1 and 128")
     connections = (
         configured if configured is not None else (copy_concurrency * 3 + 1) // 2
     )
@@ -2558,23 +3887,47 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--source-concurrency", type=int, default=32)
     probe.add_argument("--recheck-deferred", action="store_true")
     probe.add_argument("--deferred-min-age-hours", type=int, default=24)
+    plan_probe = commands.add_parser("plan-probe")
+    plan_probe.add_argument("--run-id", required=True)
+    plan_probe.add_argument("--config", required=True)
+    plan_probe.add_argument("--artifact-digest", required=True)
+    plan_probe.add_argument("--output", required=True)
+    execute_probe = commands.add_parser("execute-probe")
+    execute_probe.add_argument("--plan-sha256", required=True)
+    execute_probe.add_argument("--confirm", required=True)
+    execute_probe.add_argument("--config", required=True)
+    execute_probe.add_argument("--artifact-digest", required=True)
+    execute_probe.add_argument("--concurrency", type=int, default=64)
+    execute_probe.add_argument("--max-retries", type=int, default=5)
+    execute_probe.add_argument("--max-batches", type=int, default=0)
+    execute_probe.add_argument("--next-plan-output")
     plan_copy = commands.add_parser("plan-copy")
     plan_copy.add_argument("--run-id", required=True)
+    plan_copy.add_argument("--parent-plan-sha256", required=True)
+    plan_copy.add_argument("--config", required=True)
+    plan_copy.add_argument("--artifact-digest", required=True)
     plan_copy.add_argument("--output", required=True)
-    plan_copy.add_argument("--allow-incomplete", action="store_true")
     plan_switch = commands.add_parser("plan-switch")
     plan_switch.add_argument("--run-id", required=True)
+    plan_switch.add_argument("--parent-plan-sha256", required=True)
+    plan_switch.add_argument("--artifact-digest", required=True)
     plan_switch.add_argument("--output", required=True)
     copy = commands.add_parser("execute-copy")
     copy.add_argument("--plan-sha256", required=True)
     copy.add_argument("--confirm", required=True)
     copy.add_argument("--config", required=True)
+    copy.add_argument("--artifact-digest")
     copy.add_argument("--limit", type=int, default=1000)
     copy.add_argument("--copy-concurrency", type=_bounded_copy_concurrency, default=1)
     copy.add_argument("--max-pool-connections", type=_positive_pool_connections)
+    copy.add_argument("--next-plan-output")
+    copy.add_argument("--verification-output")
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)
+    switch.add_argument("--artifact-digest")
+    switch.add_argument("--max-batches", type=int, default=0)
+    switch.add_argument("--verification-output")
     report = commands.add_parser("report")
     report.add_argument("--run-id", required=True)
     report.add_argument("--output", required=True)
@@ -2586,6 +3939,10 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _seed(args)
     elif args.command == "probe":
         await _probe(args)
+    elif args.command == "plan-probe":
+        await _create_probe_plan(args)
+    elif args.command == "execute-probe":
+        await _execute_probe(args)
     elif args.command == "plan-copy":
         await _create_plan(args, plan_type="copy")
     elif args.command == "execute-copy":
