@@ -212,9 +212,6 @@ const promptLockedHint = computed(() => (
                 {{ t('lab.workbench.minimax_h3_first_frame_ratio') }}
               </div>
             </div>
-            <div class="rounded-lg border border-sky-300 bg-sky-50 p-3 text-xs leading-5 text-slate-700 dark:border-sky-400/25 dark:bg-sky-400/5 dark:text-slate-300">
-              {{ t('lab.workbench.minimax_h3_base_stack') }}
-            </div>
             <div class="space-y-2">
               <div class="text-xs font-medium text-slate-600 dark:text-slate-300">
                 {{ t('lab.workbench.minimax_h3_addons') }}

@@ -11,12 +11,13 @@ from src.web_api.services import task_submission_service as service
 @pytest.mark.asyncio
 async def test_minimax_h3_backend_flag_defaults_closed(monkeypatch):
     monkeypatch.delenv("MINIMAX_H3_BACKEND_ENABLED", raising=False)
-    with pytest.raises(CoreDomainError, match="当前未开放"):
+    with pytest.raises(CoreDomainError, match="当前未开放") as exc_info:
         await service.submit_generation_task(
             req=TaskGenerateRequest(task_type="minimax_h3_t2v", prompt="scene", inputs={"duration": 5}),
             current_user=SimpleNamespace(id=7, username="tester"),
             get_balance=AsyncMock(return_value=100),
         )
+    assert "MiniMax" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio

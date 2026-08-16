@@ -844,16 +844,15 @@
       "minimax_h3_first_frame_ratio": "画面比例按首帧自动推导",
       "minimax_h3_resolution_presets": {"preview": "极速（约 512p）", "small": "清晰（约 600p）", "standard": "标准（约 720p）", "hd": "高清（约 810p）"},
       "minimax_h3_modes": {"t2v": "文生视频", "i2v": "图生视频", "flf2v": "首尾帧"},
-      "minimax_h3_base_stack": "基础链路固定使用 10Eros-Max Beta2 + LightX2V 8-step；附加 LoRA 默认关闭，只在明确选择后加载。",
-      "minimax_h3_addons": "附加 LoRA（可多选）",
-      "minimax_h3_addon_strength": "强度",
+      "minimax_h3_addons": "效果增强（可多选）",
+      "minimax_h3_addon_strength": "效果强度",
       "minimax_h3_addon_options": {
-        "naughty_times": "NaughtyTimes v2（成人动作强化）",
-        "sex_pose": "HMNSFW AIO v2（成人姿势）",
-        "breasts": "HMBreasts（乳房）",
-        "vagassist": "VagAssist（阴道/肛门辅助）",
-        "pussy": "HMPussy v6（阴道）",
-        "penis": "HMPenis v2（阴茎）"
+        "naughty_times": "成人动作强化",
+        "sex_pose": "成人姿势",
+        "breasts": "乳房细节",
+        "vagassist": "阴道/肛门辅助",
+        "pussy": "阴道细节",
+        "penis": "阴茎细节"
       },
       "upload_slots": {
         "face_image": "脸部图片",

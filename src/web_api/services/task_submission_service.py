@@ -82,7 +82,7 @@ async def submit_generation_task(
             and not operator_canary_authorized
             and not _env_enabled("MINIMAX_H3_BACKEND_ENABLED")
         ):
-            raise CoreDomainError("MiniMax H3 视频功能当前未开放。")
+            raise CoreDomainError("高级视频生成功能当前未开放。")
 
         is_template = getattr(req, "is_template", False)
 

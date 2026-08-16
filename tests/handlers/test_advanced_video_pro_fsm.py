@@ -45,7 +45,7 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_expose_six_optional_addons_defaulting_to_none(monkeypatch):
+async def test_pro_settings_hide_model_internals_but_keep_six_effect_choices(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
@@ -61,9 +61,28 @@ async def test_pro_settings_expose_six_optional_addons_defaulting_to_none(monkey
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
     assert data["mode"] == "t2v"
-    assert "10Eros Beta2 + LightX2V 8-step" in edit.await_args.args[1]
-    assert "附加模型：无" in edit.await_args.args[1]
-    callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
+    settings_text = edit.await_args.args[1]
+    keyboard = edit.await_args.kwargs["reply_markup"].inline_keyboard
+    button_text = " ".join(button.text for row in keyboard for button in row)
+    public_copy = f"{settings_text} {button_text}"
+    for private_term in (
+        "基础链路",
+        "10Eros",
+        "LightX2V",
+        "LoRA",
+        "NaughtyTimes",
+        "HMNSFW",
+        "HMBreasts",
+        "VagAssist",
+        "HMPussy",
+        "HMPenis",
+    ):
+        assert private_term not in public_copy
+    assert "效果增强：未启用" in settings_text
+    assert "成人动作强化" in button_text
+    assert "全选效果" in button_text
+    assert "清空效果" in button_text
+    callbacks = [button.callback_data for row in keyboard for button in row]
     assert "avp_addon_naughty_times" in callbacks
     assert "avp_addon_sex_pose" in callbacks
     assert "avp_addon_breasts" in callbacks

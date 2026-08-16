@@ -32,6 +32,9 @@
 - Bot/Web 只提交最多 6 个有序 `{name,strength}`，强度 `0.1..2.0`。Web 逐项可编辑；
   Bot 只多选并使用目录默认值。空列表是正常默认态，未知、重复、超限、非有限数或
   混用新旧参数均 fail closed。
+- Bot/Web 的用户展示统一使用“效果增强”和用途标签，不显示基础链、checkpoint、
+  LoRA 术语、作者资产名或物理文件名。Web 不渲染基础链说明；Bot 摘要只显示启用
+  数量。稳定 ID、默认强度、文件路径与 prompt prefix 只属于内部目录和提交/执行面。
 - 三个基础 workflow 只保留节点 `8` 的 LightX2V，节点 `2` 默认直接连接 `[8,0]`。
   `workflow_task_patchers.py` 每次先清理动态节点 `100..119`，再按请求顺序以
   `LoraLoaderModelOnly` 链式追加选中文件，并把节点 `2` 重连到链尾。未选时必须保持
