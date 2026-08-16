@@ -20,7 +20,8 @@ ID，成功只回显并保存优化文案，不自动提交视频，同时提供
 可选附件仅以“效果增强”和用途标签呈现，并提供全选效果和清空效果。效果增强默认
 全部关闭，摘要只显示启用数量；Bot 不让用户输入自由强度，而是把选中项转换为目录
 建议强度后交给 `advanced_video_pro_submission_service.py`。内部 callback ID、目录 ID
-和提交协议不因展示脱敏而改变。
+和提交协议不因展示脱敏而改变。`naughty_times` 与 `sex_pose` 的用户展示名分别为
+“成人动作测试一”和“成人动作测试二”；Web 端使用相同语义标签。
 
 ## 1. 目标与范围
 
@@ -171,6 +172,10 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 当前主 FSM 普遍采用：
 
 - `conversation_timeout=300`
+
+高级视频这类以 inline callback 为最后操作的 FSM，其 `TIMEOUT` handler 必须匹配
+完整 `Update`，确保超时发生在 callback 后也会清理 `in_conversation` 和临时状态；
+不能只注册 `MessageHandler(filters.ALL, ...)`。
 
 若后续调整超时值，必须同步更新：
 

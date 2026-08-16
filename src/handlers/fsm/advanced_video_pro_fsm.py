@@ -12,6 +12,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -56,8 +57,8 @@ PRESET_LABELS = {
     "hd": ("高清（约 810p）", "HD (approx. 810p)"),
 }
 ADDON_EFFECT_LABELS = {
-    "naughty_times": ("成人动作强化", "Adult motion"),
-    "sex_pose": ("成人姿势", "Adult poses"),
+    "naughty_times": ("成人动作测试一", "Adult action test 1"),
+    "sex_pose": ("成人动作测试二", "Adult action test 2"),
     "breasts": ("乳房细节", "Breast detail"),
     "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
     "pussy": ("阴道细节", "Vaginal detail"),
@@ -765,7 +766,7 @@ def get_advanced_video_pro_fsm_handler() -> ConversationHandler:
             AdvancedVideoProState.WAIT_CONFIRMATION: [
                 CallbackQueryHandler(prompt_callback, pattern=r"^avp_prompt_")
             ],
-            ConversationHandler.TIMEOUT: [MessageHandler(filters.ALL, timeout)],
+            ConversationHandler.TIMEOUT: [TypeHandler(Update, timeout)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),

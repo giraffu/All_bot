@@ -21,6 +21,17 @@ def test_web_locales_hide_model_names():
     for language in ("zh", "en"):
         locale = json.loads((root / "shared/locales" / f"{language}.json").read_text())
         workbench = locale["lab"]["workbench"]
+        expected_addon_labels = (
+            ("成人动作测试一", "成人动作测试二")
+            if language == "zh"
+            else ("Adult action test 1", "Adult action test 2")
+        )
+        assert workbench["minimax_h3_addon_options"]["naughty_times"] == (
+            expected_addon_labels[0]
+        )
+        assert workbench["minimax_h3_addon_options"]["sex_pose"] == (
+            expected_addon_labels[1]
+        )
         public_copy += " " + json.dumps(
             {
                 "title": locale["lab"]["cards"]["minimax_h3_title"],
@@ -56,6 +67,15 @@ def test_minimax_h3_exposes_all_six_local_addons_and_defaults_to_none():
         "penis",
     )
     assert build_minimax_h3_spec(MINIMAX_H3_T2V, {}).addon_items == ()
+
+
+def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
+    assert MINIMAX_H3_ADDON_MODELS["naughty_times"].label_zh.endswith(
+        "（成人动作测试一）"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["sex_pose"].label_zh.endswith(
+        "（成人动作测试二）"
+    )
 
 
 def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
