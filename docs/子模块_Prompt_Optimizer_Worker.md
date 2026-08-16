@@ -109,6 +109,10 @@ H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材
 staging。Telegram ID 只可参与 Bot 回调的确定性请求 ID，不能作为账本用户主键。
+同一次 Bot 点击使用 `optimizer_request_token` 固定该次 `client_request_id`；终态失败后
+用户再次点击必须生成新的 token 和请求 ID，避免重新 staging 后的媒体对象键与旧任务
+指纹冲突。Central 对“同 ID、不同载荷”的 409 防护保持不变。Bot 只展示可操作的领域
+错误，不得把 Central 内网 URL、HTTP 客户端异常或堆栈返回给用户。
 快照不包含生成 Worker 使用的魔法触发词。最终输出校验同时拒绝 `hmmotion`、
 `HMBreasts`、`HMPenis`、`hmpussy`；旧 profile 继续使用原有词数/词汇校验，新
 profile 改用官方结构与模式对齐校验。

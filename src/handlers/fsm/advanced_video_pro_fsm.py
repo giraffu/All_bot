@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -42,6 +43,7 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 
 DATA_KEY = "advanced_video_pro_data"
 TAG = "ADVANCED_VIDEO_PRO"
+logger = logging.getLogger("fsm.advanced_video_pro")
 MODES = ("t2v", "i2v", "flf2v")
 DURATIONS = (5, 10, 15)
 PRESETS = ("preview", "small", "standard", "hd")
@@ -509,7 +511,8 @@ async def _run_prompt_optimization(
             duration_seconds=int(data["duration"]),
             client_request_id=client_request_id,
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("MiniMax H3 prompt optimization callback failed")
         current = context.user_data.get(DATA_KEY)
         if current is data and data.get("optimizer_request_token") == request_token:
             data["optimizer_pending"] = False
@@ -517,8 +520,10 @@ async def _run_prompt_optimization(
                 message,
                 _text(
                     context,
-                    f"提示词优化失败：{exc}\n\n原提示词已保留。",
-                    f"Prompt optimization failed: {exc}\n\nThe original prompt was preserved.",
+                    "提示词优化失败，原提示词已保留。请重新点击“优化提示词”重试，"
+                    "或直接使用当前提示词生成。",
+                    "Prompt optimization failed and the original prompt was preserved. "
+                    "Select Optimize prompt to retry, or generate with the current prompt.",
                 ),
                 reply_markup=_prompt_action_keyboard(context),
             )
@@ -594,6 +599,7 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         str(data.get("duration")),
                         str(data.get("original_prompt")),
                         ",".join(str(path) for path in data.get("images", [])),
+                        request_token,
                     ]
                 ),
             )
