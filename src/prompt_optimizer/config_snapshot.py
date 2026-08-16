@@ -17,6 +17,7 @@ ALLOWED_CONFIG_VARIABLES = frozenset(
         "addon_summary",
         "addon_rules",
         "breasts_vocabulary_rule",
+        "dialogue_language_instructions",
     }
 )
 

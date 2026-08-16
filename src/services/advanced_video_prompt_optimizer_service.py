@@ -72,7 +72,7 @@ async def optimize_advanced_video_prompt(
             {
                 "client_request_id": client_request_id,
                 "target_task_type": target_task_type,
-                "template": {"id": "minimax_h3_10eros_naughtytimes", "version": 2},
+                "template": {"id": "minimax_h3_10eros_naughtytimes", "version": 3},
                 "prompt": prompt,
                 "context": {"duration_seconds": duration_seconds},
                 "media": [

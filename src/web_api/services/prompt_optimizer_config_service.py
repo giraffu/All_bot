@@ -15,7 +15,7 @@ SCENE_TEMPLATE_REFS = {
     "ltx_video_v2": "ltx_scene_script_cinematic@3",
     "ltx_t2v": "ltx_scene_script_cinematic@4",
     "ltx_t2v_ic": "ltx_scene_script_cinematic@4",
-    "minimax_h3": "minimax_h3_10eros_naughtytimes@2",
+    "minimax_h3": "minimax_h3_10eros_naughtytimes@3",
 }
 SCENE_LABELS = {
     "ltx_video_v2": ("高级图生视频 v2", "首帧与首尾帧共用配置"),
@@ -59,7 +59,7 @@ def get_default_config(scene_key: str) -> dict:
     return _default(scene_key)
 
 
-def _is_official_h3_system_template(system_template: str) -> bool:
+def _is_current_h3_template(system_template: str, user_template: str) -> bool:
     positions = [
         str(system_template).find(field)
         for field in (
@@ -68,17 +68,22 @@ def _is_official_h3_system_template(system_template: str) -> bool:
             "non_diegetic_music",
         )
     ]
-    return all(position >= 0 for position in positions) and positions == sorted(positions)
+    return (
+        all(position >= 0 for position in positions)
+        and positions == sorted(positions)
+        and "SERVER-DETECTED DIALOGUE LANGUAGE" in system_template
+        and "{dialogue_language_instructions}" in user_template
+    )
 
 
 def serialize_config(row: PromptOptimizerSceneConfig | None, scene_key: str) -> dict:
     if row is None:
         return _default(scene_key)
-    if scene_key == "minimax_h3" and not _is_official_h3_system_template(
-        row.system_template
+    if scene_key == "minimax_h3" and not _is_current_h3_template(
+        row.system_template, row.user_template
     ):
         # Historical tasks already carry rendered immutable snapshots. An old
-        # mutable scene row cannot be reused with the official profile@3 validator.
+        # mutable scene row cannot be reused with the current profile@4 validator.
         return _default(scene_key)
     return {
         "scene_key": row.scene_key,
@@ -121,8 +126,8 @@ async def save_config(db, *, scene_key: str, payload, updated_by: str) -> dict:
     system_template = payload.system_template.strip()
     user_template = payload.user_template.strip()
     validate_config_templates(system_template, user_template)
-    if scene_key == "minimax_h3" and not _is_official_h3_system_template(
-        system_template
+    if scene_key == "minimax_h3" and not _is_current_h3_template(
+        system_template, user_template
     ):
         raise ValueError("MiniMax H3 config must preserve the official three fields")
     variables = referenced_variables(system_template) | referenced_variables(
@@ -136,7 +141,10 @@ async def save_config(db, *, scene_key: str, payload, updated_by: str) -> dict:
             "character_descriptions",
             "environment_description",
         },
-        "minimax_h3": {"media_frame_instructions"},
+        "minimax_h3": {
+            "media_frame_instructions",
+            "dialogue_language_instructions",
+        },
     }
     missing = required_by_scene[scene_key] - variables
     if missing:

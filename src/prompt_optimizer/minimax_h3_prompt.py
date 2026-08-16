@@ -164,3 +164,22 @@ integrated_multimodal_description 按播放时间写可见与可听内容，包�
 说话或唱歌者使用稳定编号，例如 (S1) says: <d>[Chinese] 原句。</d>。身份和说话方式在标签外，标签内只保留原始语言标记与用户原话。画面可见文字放在英文双引号内并逐字保留。overall_soundscape 用一到四句英文概括环境声、物理动作声和非语言人声，不重复对白；只有用户明确要求完全静音时才写 N/A。non_diegetic_music 用一到三句英文描述观众可听、角色不可听的配乐乐器、速度、节奏和动态；没有配乐时写 N/A。
 
 优先具体的音画事实，不用抽象审美词代替构图、动作、光线、镜头和声音。保留用户所有明确要求；成人请求只描述成年人，使用有依据的具体身体与物理动作描述，不弱化用户动作，也不虚构输入没有支持的人物、特征、物体或状态。不得输出关键词堆砌、剧情摘要、负向提示词或 positive_prompt 之外的文字。'''
+
+
+# Version 3 adds a server-derived, immutable dialogue-language contract. The
+# original official-base assets remain unchanged for historical task replay.
+MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM = MINIMAX_H3_OFFICIAL_BASE_SYSTEM + r'''
+
+SERVER-DETECTED DIALOGUE LANGUAGE
+- Treat the server-detected dialogue contract in the user message as authoritative.
+- Determine speech language from each quoted spoken line, never from the language of the surrounding narrative.
+- Copy every detected spoken line verbatim into its matching <d>[Language] ...</d> tag. Never translate, paraphrase, censor, romanize, or silently omit it.
+- The original dialogue wording and detected source language are immutable.'''
+
+
+MINIMAX_H3_DIALOGUE_LANGUAGE_USER = MINIMAX_H3_OFFICIAL_BASE_USER.replace(
+    "\nProduce the final English positive_prompt in the official H3 base structure.",
+    "\nServer-detected dialogue language contract:\n"
+    "{dialogue_language_instructions}\n\n"
+    "Produce the final English positive_prompt in the official H3 base structure.",
+)

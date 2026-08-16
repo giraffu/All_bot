@@ -70,10 +70,10 @@ FLF 模板。
 禁止把任何 reference 写成视频首帧。IC 请求中的角色 ID 由 Web owner-fenced 解析
 为实际面板；浏览器不能提交私有面板路径。@3 与 @4 互不兼容，防止帧语义串用。
 
-H3 新任务注册 `minimax_h3_t2v_prompt@3`、`minimax_h3_i2v_prompt@3` 与
-`minimax_h3_flf2v_prompt@3`，分别接受 0 张图、一张 `start_image`、按顺序的
+H3 新任务注册 `minimax_h3_t2v_prompt@4`、`minimax_h3_i2v_prompt@4` 与
+`minimax_h3_flf2v_prompt@4`，分别接受 0 张图、一张 `start_image`、按顺序的
 `start_image,end_image`，时长只允许 5/10/15 秒。三者使用
-`minimax_h3_10eros_naughtytimes@2`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
+`minimax_h3_10eros_naughtytimes@3`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
 输出三个固定字段：`integrated_multimodal_description`、`overall_soundscape`、
 `non_diegetic_music`。T2V 直接从第一个字段开始；I2V 先输出精确的 0.00 秒
 `<Picture 1>` 对齐句；FLF2V 先输出 Picture 1/2、动态结束时间和实际最终 Shot 编号的
@@ -85,6 +85,11 @@ H3 新任务注册 `minimax_h3_t2v_prompt@3`、`minimax_h3_i2v_prompt@3` 与
 图片所有权短句，先由 Worker 确定性规范化并重新组装为官方格式；正文本身缺失、后两个
 字段缺失或乱序、非法前缀、Shot 乱序、越界时间戳和错误 FLF2V 终帧对齐
 仍然 fail closed。这样不会把排版随机性误判成语义错误，也不会放宽媒体所有权。
+服务端从带“说、喊、问、回答、耳语、唱”或对应英文标记的引号台词中提取原文，按
+台词自身字符而非外围叙述语言生成 `[Chinese]`、`[English]` 等语言契约并写入不可变
+snapshot。Worker 发布前逐条核对 `<d>[Language] 原文</d>`；翻译、改写、漏写或错误
+语言标签都会在同一次扣费内受控重试，不能把错误台词交给 H3。没有明确台词时不凭空
+增加对白；画面招牌等无说话标记的引号文字不按对白处理。
 
 ## 3. API 与隐私
 
@@ -102,8 +107,9 @@ H3 新任务注册 `minimax_h3_t2v_prompt@3`、`minimax_h3_i2v_prompt@3` 与
 
 H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受非空
 `lora_items`、单模型字段或自由规则文本。`minimax_h3_hmnsfw@1`、
-`minimax_h3_10eros_naughtytimes@1` 与三个 `@1/@2` profile 仅用于历史 snapshot
-解析；新请求使用三个 `@3` profile。旧的可变 H3 scene config 若不含官方三字段，
+`minimax_h3_10eros_naughtytimes@1/@2` 与三个 `@1/@2/@3` profile 仅用于历史 snapshot
+解析；新请求使用三个 `@4` profile。旧的可变 H3 scene config 若不含官方三字段或
+服务端对白语言占位符，
 读取时自动前移到新的 built-in 默认值，已提交任务仍使用其不可变 snapshot。Web/Bot 只
 提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为

@@ -6,6 +6,9 @@ from itertools import pairwise
 from typing import Any
 
 from src.prompt_optimizer.config_snapshot import snapshot_content_hash
+from src.prompt_optimizer.dialogue_language import (
+    dialogue_language_contract_is_satisfied,
+)
 from src.prompt_optimizer.registry import (
     build_output_json_schema,
     get_profile_by_ref,
@@ -82,6 +85,7 @@ def _validate_profile_output(
     *,
     context: dict[str, Any],
     trusted_context: dict[str, Any],
+    source_prompt: str,
 ) -> None:
     if not profile.id.startswith(_MINIMAX_H3_PROFILE_PREFIX):
         return
@@ -94,6 +98,12 @@ def _validate_profile_output(
             result_text,
             context=context,
         )
+        if profile.version >= 4 and not dialogue_language_contract_is_satisfied(
+            source_prompt, result_text
+        ):
+            raise PromptOptimizationExecutionError(
+                "invalid_minimax_h3_dialogue_language"
+            )
         return
     if not re.match(
         r"^(handjob|insertion|missionary|cowgirl|blowjob|doggy)\b",
@@ -309,6 +319,7 @@ def _validated_result(
     profile,
     context: dict[str, Any],
     trusted_context: dict[str, Any],
+    source_prompt: str,
 ) -> tuple[str, dict[str, str], list[str]]:
     if set(raw) != {"optimized_fields", "warnings"}:
         raise PromptOptimizationExecutionError("unknown_output_fields")
@@ -348,6 +359,7 @@ def _validated_result(
         result_text,
         context=context,
         trusted_context=trusted_context,
+        source_prompt=source_prompt,
     )
     return result_text, normalized_fields, warnings
 
@@ -468,6 +480,7 @@ async def execute_prompt_optimization(
                 profile=profile,
                 context=context,
                 trusted_context=trusted_context,
+                source_prompt=str(payload.get("prompt") or ""),
             )
             if (
                 on_text_delta is not None

@@ -17,9 +17,12 @@ from src.prompt_optimizer.minimax_h3_prompt import (
     MINIMAX_H3_10EROS_NAUGHTYTIMES_USER,
     MINIMAX_H3_HMNSFW_SYSTEM,
     MINIMAX_H3_HMNSFW_USER,
+    MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM,
+    MINIMAX_H3_DIALOGUE_LANGUAGE_USER,
     MINIMAX_H3_OFFICIAL_BASE_SYSTEM,
     MINIMAX_H3_OFFICIAL_BASE_USER,
 )
+from src.prompt_optimizer.dialogue_language import build_dialogue_language_contract
 
 PROMPT_OPTIMIZATION_COST = 1
 PROMPT_OPTIMIZE_TASK_TYPE = "prompt_optimize"
@@ -368,6 +371,13 @@ _MINIMAX_H3_V3_PROFILE_REFS = frozenset(
         "minimax_h3_flf2v_prompt@3",
     }
 )
+_MINIMAX_H3_V4_PROFILE_REFS = frozenset(
+    {
+        "minimax_h3_t2v_prompt@4",
+        "minimax_h3_i2v_prompt@4",
+        "minimax_h3_flf2v_prompt@4",
+    }
+)
 
 _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
     {
@@ -495,6 +505,23 @@ _TEMPLATES: Mapping[str, PromptOptimizationTemplate] = MappingProxyType(
                 "original_prompt",
             ),
             compatible_profile_refs=_MINIMAX_H3_V3_PROFILE_REFS,
+            active=False,
+        ),
+        "minimax_h3_10eros_naughtytimes@3": PromptOptimizationTemplate(
+            id="minimax_h3_10eros_naughtytimes",
+            version=3,
+            label="高级图生视频pro",
+            description="MiniMax H3 官方结构与自动对白语言保留",
+            system_template=MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM,
+            user_template=MINIMAX_H3_DIALOGUE_LANGUAGE_USER,
+            required_variables=(
+                "profile_ref",
+                "duration_seconds",
+                "media_frame_instructions",
+                "original_prompt",
+                "dialogue_language_instructions",
+            ),
+            compatible_profile_refs=_MINIMAX_H3_V4_PROFILE_REFS,
         ),
     }
 )
@@ -668,6 +695,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@2"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@2",
             max_output_characters=7000,
+            active=False,
         ),
         "minimax_h3_i2v_prompt@3": PromptOptimizationProfile(
             id="minimax_h3_i2v_prompt",
@@ -682,6 +710,7 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@2"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@2",
             max_output_characters=7000,
+            active=False,
         ),
         "minimax_h3_flf2v_prompt@3": PromptOptimizationProfile(
             id="minimax_h3_flf2v_prompt",
@@ -695,6 +724,49 @@ _PROFILES: Mapping[str, PromptOptimizationProfile] = MappingProxyType(
             model_route="ltx-prompt-optimizer",
             allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@2"}),
             default_template_ref="minimax_h3_10eros_naughtytimes@2",
+            max_output_characters=7000,
+            active=False,
+        ),
+        "minimax_h3_t2v_prompt@4": PromptOptimizationProfile(
+            id="minimax_h3_t2v_prompt",
+            version=4,
+            supported_target_task_types=frozenset({MINIMAX_H3_T2V}),
+            required_media_roles=(),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@3"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@3",
+            max_output_characters=7000,
+        ),
+        "minimax_h3_i2v_prompt@4": PromptOptimizationProfile(
+            id="minimax_h3_i2v_prompt",
+            version=4,
+            supported_target_task_types=frozenset({MINIMAX_H3_I2V}),
+            required_media_roles=("start_image",),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@3"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@3",
+            max_output_characters=7000,
+        ),
+        "minimax_h3_flf2v_prompt@4": PromptOptimizationProfile(
+            id="minimax_h3_flf2v_prompt",
+            version=4,
+            supported_target_task_types=frozenset({MINIMAX_H3_FLF2V}),
+            required_media_roles=("start_image", "end_image"),
+            optional_media_roles=(),
+            allowed_durations=frozenset({5, 10, 15}),
+            output_fields=("positive_prompt",),
+            primary_field="positive_prompt",
+            model_route="ltx-prompt-optimizer",
+            allowed_template_refs=frozenset({"minimax_h3_10eros_naughtytimes@3"}),
+            default_template_ref="minimax_h3_10eros_naughtytimes@3",
             max_output_characters=7000,
         ),
     }
@@ -749,14 +821,14 @@ def _resolve_profile(
     ):
         profile_ref = "ltx_eros_t2v_ic_msr@1"
     elif target_task_type == MINIMAX_H3_T2V and not roles:
-        profile_ref = "minimax_h3_t2v_prompt@3"
+        profile_ref = "minimax_h3_t2v_prompt@4"
     elif target_task_type == MINIMAX_H3_I2V and roles == ("start_image",):
-        profile_ref = "minimax_h3_i2v_prompt@3"
+        profile_ref = "minimax_h3_i2v_prompt@4"
     elif target_task_type == MINIMAX_H3_FLF2V and roles == (
         "start_image",
         "end_image",
     ):
-        profile_ref = "minimax_h3_flf2v_prompt@3"
+        profile_ref = "minimax_h3_flf2v_prompt@4"
     profile = _PROFILES.get(profile_ref)
     if (
         profile is None
@@ -910,20 +982,20 @@ def render_prompt_messages(
 def build_prompt_variables(
     *, profile: PromptOptimizationProfile, prompt: str, context: Mapping[str, Any]
 ) -> dict[str, Any]:
-    if profile.ref == "minimax_h3_t2v_prompt@3":
+    if profile.id == "minimax_h3_t2v_prompt" and profile.version >= 3:
         media_frame_instructions = (
             "No images are attached. This is text-to-video. The final prompt has no "
             "alignment instruction and must begin directly with "
             "integrated_multimodal_description."
         )
-    elif profile.ref == "minimax_h3_i2v_prompt@3":
+    elif profile.id == "minimax_h3_i2v_prompt" and profile.version >= 3:
         media_frame_instructions = (
             "Image 1 is start_image and is the exact first frame and visual fact. "
             "The final prompt must begin with this exact line:\n"
             "For the target video, at 0.00 seconds into the target video, "
             "<Picture 1> (from [Shot 1]) is fully referenced."
         )
-    elif profile.ref == "minimax_h3_flf2v_prompt@3":
+    elif profile.id == "minimax_h3_flf2v_prompt" and profile.version >= 3:
         duration = int(context["duration_seconds"])
         media_frame_instructions = (
             "Image 1 is start_image and is the exact first frame. Image 2 is end_image "
@@ -975,6 +1047,7 @@ def build_prompt_variables(
             else ""
         ),
         "media_frame_instructions": media_frame_instructions,
+        "dialogue_language_instructions": build_dialogue_language_contract(prompt),
         "addon_summary": "Fixed 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack; no user-selectable add-ons.",
         "addon_rules": "Do not output model names, LoRA names, strengths, or trigger tokens.",
         "breasts_vocabulary_rule": (
