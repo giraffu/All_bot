@@ -144,19 +144,28 @@ class LMStudioChatProvider:
             "Return exactly one raw JSON object conforming to this server-provided "
             f"schema; do not use Markdown fences:\n{schema_instruction}"
         )
-        completion_prompt = (
-            f"SYSTEM INSTRUCTIONS:\n{structured_system_prompt}\n\n"
-            f"USER INPUT:\n{structured_user_prompt}\n\n"
+        structured_user_prompt = (
+            f"{structured_user_prompt}\n\n"
             "Return exactly one JSON object matching the schema above and nothing "
             "else. Silently verify every format and length constraint before emitting; "
             "when the instructions require 200-270 words, output 225-240 words. Treat "
-            "every word listed as forbidden as a literal that must not appear in the "
-            "result.\n"
-            "<think>\n</think>\n"
+            "every word listed as forbidden as a literal that must not appear in the result."
         )
         payload = {
             "model": self.model,
-            "prompt": completion_prompt,
+            "messages": [
+                {"role": "system", "content": structured_system_prompt},
+                {"role": "user", "content": structured_user_prompt},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "prompt_optimization_result",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            },
+            "store": False,
             "stream": on_text_delta is not None,
             "temperature": 0.25,
             "max_tokens": 3072,
@@ -169,9 +178,9 @@ class LMStudioChatProvider:
                     await on_text_delta(field, delta)
 
         content_value = (
-            await self._completions_text_stream(payload, consume_content_delta)
+            await self._chat_completions_text_stream(payload, consume_content_delta)
             if on_text_delta is not None
-            else await self._completions_text(payload)
+            else await self._chat_completions_text(payload)
         )
         try:
             parsed = json.loads(content_value)
@@ -183,17 +192,18 @@ class LMStudioChatProvider:
             extractor.verify(parsed)
         return parsed
 
-    async def _completions_text_stream(
+    async def _chat_completions_text_stream(
         self,
         payload: dict[str, Any],
         on_content_delta: Callable[[str], Awaitable[None]],
     ) -> str:
         emitted = False
+        output_channel: str | None = None
         for attempt in range(2):
             content_parts: list[str] = []
             try:
                 async with self.client.stream(
-                    "POST", f"{self.base_url}/v1/completions", json=payload
+                    "POST", f"{self.base_url}/v1/chat/completions", json=payload
                 ) as response:
                     if response.status_code == 429 or response.status_code >= 500:
                         response.raise_for_status()
@@ -211,7 +221,24 @@ class LMStudioChatProvider:
                             raise ModelResponseError("lmstudio_invalid_stream_event") from exc
                         delta = ""
                         if event.get("choices"):
-                            delta = str(event["choices"][0].get("text") or "")
+                            choice_delta = event["choices"][0].get("delta") or {}
+                            populated_channels = [
+                                name
+                                for name in ("content", "reasoning_content")
+                                if choice_delta.get(name)
+                            ]
+                            if len(populated_channels) > 1:
+                                raise ModelResponseError(
+                                    "lmstudio_mixed_output_channels"
+                                )
+                            if populated_channels:
+                                channel = populated_channels[0]
+                                if output_channel is not None and channel != output_channel:
+                                    raise ModelResponseError(
+                                        "lmstudio_mixed_output_channels"
+                                    )
+                                output_channel = channel
+                                delta = str(choice_delta[channel])
                         if not delta:
                             continue
                         content_parts.append(delta)
@@ -228,18 +255,26 @@ class LMStudioChatProvider:
                 raise
         raise ModelResponseError("lmstudio_request_failed")
 
-    async def _completions_text(self, payload: dict[str, Any]) -> str:
+    async def _chat_completions_text(self, payload: dict[str, Any]) -> str:
         for attempt in range(2):
             try:
                 response = await self.client.post(
-                    f"{self.base_url}/v1/completions", json=payload
+                    f"{self.base_url}/v1/chat/completions", json=payload
                 )
                 if response.status_code == 429 or response.status_code >= 500:
                     response.raise_for_status()
                 if response.status_code >= 400:
                     raise ModelResponseError(f"lmstudio_http_{response.status_code}")
                 body = response.json()
-                content_value = str(body["choices"][0].get("text") or "")
+                message = body["choices"][0].get("message") or {}
+                populated_channels = [
+                    str(message.get(name) or "")
+                    for name in ("content", "reasoning_content")
+                    if str(message.get(name) or "").strip()
+                ]
+                if len(populated_channels) > 1:
+                    raise ModelResponseError("lmstudio_mixed_output_channels")
+                content_value = populated_channels[0] if populated_channels else ""
                 if not content_value.strip():
                     raise ModelResponseError("lmstudio_empty_output")
                 return content_value
