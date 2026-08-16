@@ -2,20 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import {
-  countBlockingFloatingTasks,
+  COMPACT_FLOATING_TASK_SLOTS,
   getOldestTerminalFloatingTaskIdsForNewTask,
-  MAX_FLOATING_TASKS,
 } from './taskFloatingSlots'
-
-test('countBlockingFloatingTasks ignores completed bubbles', () => {
-  assert.equal(countBlockingFloatingTasks([
-    { status: 'pending' },
-    { status: 'running' },
-    { status: 'success' },
-    { status: 'failed' },
-    { status: 'cancelled' },
-  ]), 2)
-})
 
 test('getOldestTerminalFloatingTaskIdsForNewTask evicts the oldest completed bubble first', () => {
   assert.deepEqual(
@@ -35,7 +24,19 @@ test('getOldestTerminalFloatingTaskIdsForNewTask requests multiple evictions whe
       { id: 'done-2', status: 'cancelled', updatedAt: 200 },
       { id: 'done-3', status: 'failed', updatedAt: 300 },
       { id: 'running', status: 'running', updatedAt: 400 },
-    ], MAX_FLOATING_TASKS),
+    ], COMPACT_FLOATING_TASK_SLOTS),
     ['done-1', 'done-2']
+  )
+})
+
+test('getOldestTerminalFloatingTaskIdsForNewTask never evicts active tasks above the compact slot count', () => {
+  assert.deepEqual(
+    getOldestTerminalFloatingTaskIdsForNewTask([
+      { id: 'pending-1', status: 'pending' },
+      { id: 'running-2', status: 'running' },
+      { id: 'pending-3', status: 'pending' },
+      { id: 'running-4', status: 'running' },
+    ]),
+    []
   )
 })

@@ -307,6 +307,59 @@ def test_build_user_task_status_text_falls_back_to_global_queue_position():
 
 
 @pytest.mark.asyncio
+async def test_build_user_queue_tasks_for_display_includes_every_active_task(
+    monkeypatch,
+):
+    internal_user = SimpleNamespace(id=321)
+    user = SimpleNamespace(id=123)
+    context = SimpleNamespace(
+        t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
+    )
+    active_tasks = {
+        f"registry-{index}": {
+            "user_id": internal_user.id,
+            "backend_task_id": f"backend-{index}",
+            "task_type": "img2video",
+            "created_at": index,
+        }
+        for index in range(1, 5)
+    }
+    get_task_status = AsyncMock(
+        side_effect=[
+            {"status": "pending", "queue_type_pos": index}
+            for index in range(4)
+        ]
+    )
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(internal_user, False)),
+    )
+    monkeypatch.setattr(
+        "src.core.task_core.get_system_task_stats",
+        AsyncMock(return_value=(active_tasks, {})),
+    )
+    monkeypatch.setattr(
+        message_handler_runtime.image_service,
+        "get_task_status",
+        get_task_status,
+    )
+
+    tasks = await message_handler_runtime._build_user_queue_tasks_for_display(
+        user,
+        context,
+    )
+
+    assert len(tasks) == 4
+    assert [call.args[0] for call in get_task_status.await_args_list] == [
+        "backend-1",
+        "backend-2",
+        "backend-3",
+        "backend-4",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_checkin_gate_reply_returns_refuge_payload_for_non_members():
     context = SimpleNamespace(
         bot=SimpleNamespace(

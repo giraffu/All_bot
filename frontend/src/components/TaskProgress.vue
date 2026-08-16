@@ -3,8 +3,10 @@ import { useTasksStore } from '@/stores/tasks'
 import { CloseOutlined, CheckOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const tasksStore = useTasksStore()
+const { t } = useI18n()
 const expandedTaskId = ref<string | null>(null)
 
 const getTaskLabel = (task: any) => {
@@ -76,7 +78,11 @@ const doCancelTask = async (taskId: string) => {
 </script>
 
 <template>
-  <div v-if="tasksStore.activeTasks.length > 0" class="fixed bottom-24 right-4 z-[9999] pointer-events-none flex flex-col items-end gap-3">
+  <div
+    v-if="tasksStore.activeTasks.length > 0"
+    class="task-fab-list fixed bottom-24 right-4 z-[9999] flex flex-col items-end gap-3"
+    :aria-label="t('profile.my_tasks_title')"
+  >
     <transition-group name="task-list">
       <div 
         v-for="task in tasksStore.activeTasks" 
@@ -176,6 +182,14 @@ const doCancelTask = async (taskId: string) => {
 </template>
 
 <style scoped>
+.task-fab-list {
+  max-height: calc(100dvh - 8rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem;
+  scrollbar-width: thin;
+}
+
 .task-fab-shell {
   position: relative;
   display: flex;
