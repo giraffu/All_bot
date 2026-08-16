@@ -298,6 +298,139 @@ async def test_minimax_h3_executor_normalizes_complete_reordered_header():
     assert published == [("positive_prompt", result["result_text"])]
 
 
+def _official_h3_prompt(mode: str, *, duration: int = 10, second_shot: bool = False) -> str:
+    alignment = ""
+    if mode == "i2v":
+        alignment = (
+            "For the target video, at 0.00 seconds into the target video, "
+            "<Picture 1> (from [Shot 1]) is fully referenced.\n\n"
+        )
+    elif mode == "flf2v":
+        last_shot = 2 if second_shot else 1
+        alignment = (
+            "How the reference pictures align with the target video — "
+            "Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; "
+            f"Picture 2 (from Shot {last_shot}) aligns with the {duration:.2f}-second mark of the target video.\n\n"
+        )
+    anchor = (
+        "The subjects and composition in <Picture 1> remain exact as motion begins. "
+        if mode == "i2v"
+        else "The scene begins in the state established by Picture 1 and moves continuously toward Picture 2. "
+        if mode == "flf2v"
+        else ""
+    )
+    shot_body = (
+        "[Shot 1] Live-action, a medium-wide shot frames two adults moving continuously "
+        f"through the room while the camera tracks them at slow speed. {anchor}"
+    )
+    if second_shot:
+        shot_body += (
+            " [Shot 2] At 00:05.000, the camera cuts to a close shot that reaches "
+            "the final pose and composition."
+        )
+    return (
+        alignment
+        + "integrated_multimodal_description: "
+        + shot_body
+        + "\n\noverall_soundscape: Quiet room ambience, footsteps, fabric movement, and steady breathing."
+        + "\n\nnon_diegetic_music: N/A"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "profile_ref", "media"),
+    [
+        ("t2v", "minimax_h3_t2v_prompt@3", []),
+        (
+            "i2v",
+            "minimax_h3_i2v_prompt@3",
+            [{"role": "start_image", "object_key": "start.webp"}],
+        ),
+        (
+            "flf2v",
+            "minimax_h3_flf2v_prompt@3",
+            [
+                {"role": "start_image", "object_key": "start.webp"},
+                {"role": "end_image", "object_key": "end.webp"},
+            ],
+        ),
+    ],
+)
+async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_output(
+    mode, profile_ref, media
+):
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    expected = _official_h3_prompt(mode, second_shot=mode == "flf2v")
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": profile_ref,
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": f"minimax_h3_{mode}",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": media,
+        },
+        provider=FakeProvider(expected),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        (
+            "integrated_multimodal_description: [Shot 1] A scene.\n\n"
+            "non_diegetic_music: N/A\n\noverall_soundscape: Quiet."
+        ),
+        _official_h3_prompt("i2v").replace("<Picture 1>", "Picture 1"),
+        _official_h3_prompt("flf2v").replace("10.00-second", "9.00-second"),
+        _official_h3_prompt("flf2v", second_shot=True).replace(
+            "Picture 2 (from Shot 2)", "Picture 2 (from Shot 1)"
+        ),
+    ],
+)
+async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(invalid):
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    media = (
+        [{"role": "start_image", "object_key": "start.webp"}]
+        if "For the target video" in invalid
+        else [
+            {"role": "start_image", "object_key": "start.webp"},
+            {"role": "end_image", "object_key": "end.webp"},
+        ]
+        if "How the reference pictures" in invalid
+        else []
+    )
+    profile_ref = (
+        "minimax_h3_i2v_prompt@3"
+        if len(media) == 1
+        else "minimax_h3_flf2v_prompt@3"
+        if len(media) == 2
+        else "minimax_h3_t2v_prompt@3"
+    )
+    with pytest.raises(PromptOptimizationExecutionError, match="minimax_h3"):
+        await execute_prompt_optimization(
+            {
+                "profile_ref": profile_ref,
+                "template_ref": template.ref,
+                "template_hash": template.content_hash,
+                "target_task_type": profile_ref.replace("_prompt@3", ""),
+                "prompt": "two adults",
+                "context": {"duration_seconds": 10},
+                "media": media,
+            },
+            provider=FakeProvider(invalid),
+            load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+            preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+        )
+
+
 @pytest.mark.asyncio
 async def test_executor_accepts_fenced_dynamic_snapshot_and_rejects_tampering():
     payload = _payload()

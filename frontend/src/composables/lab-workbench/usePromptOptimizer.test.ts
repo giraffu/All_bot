@@ -121,7 +121,7 @@ describe('usePromptOptimizer', () => {
       .mockResolvedValueOnce({
         data: {
           templates: [{
-            id: 'minimax_h3_hmnsfw', version: 1,
+            id: 'minimax_h3_10eros_naughtytimes', version: 2,
             label: '高级图生视频pro', description: '', is_default: true,
           }],
         },
@@ -150,7 +150,7 @@ describe('usePromptOptimizer', () => {
     })
     expect(post.mock.calls[0][1]).toMatchObject({
       target_task_type: 'minimax_h3_flf2v',
-      template: { id: 'minimax_h3_hmnsfw', version: 1 },
+      template: { id: 'minimax_h3_10eros_naughtytimes', version: 2 },
       context: { duration_seconds: 10 },
       media: [
         { role: 'start_image', object_key: 'web_uploads/7/start.png' },

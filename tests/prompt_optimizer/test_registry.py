@@ -213,23 +213,23 @@ def test_resolver_fails_closed_for_unknown_or_incompatible_contracts(
 @pytest.mark.parametrize(
     ("target_task_type", "roles", "profile_ref"),
     [
-        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@2"),
-        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@2"),
+        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@3"),
+        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@3"),
         (
             "minimax_h3_flf2v",
             ("start_image", "end_image"),
-            "minimax_h3_flf2v_prompt@2",
+            "minimax_h3_flf2v_prompt@3",
         ),
     ],
 )
-def test_minimax_h3_profiles_share_one_versioned_author_stack_template(
+def test_minimax_h3_profiles_share_official_base_prompt_template(
     target_task_type, roles, profile_ref
 ):
     capability = get_prompt_optimizer_capability(target_task_type)
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=1,
+        template_version=2,
         media=_media(*roles),
         context={"duration_seconds": 15},
     )
@@ -238,20 +238,44 @@ def test_minimax_h3_profiles_share_one_versioned_author_stack_template(
     assert capability["templates"] == [
         {
             "id": "minimax_h3_10eros_naughtytimes",
-            "version": 1,
+            "version": 2,
             "label": "高级图生视频pro",
-            "description": "10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 固定栈提示词",
+            "description": "MiniMax H3 官方三字段音画时间线提示词",
             "is_default": True,
         }
     ]
 
 
-def test_minimax_h3_prompt_uses_dynamic_duration_and_never_requests_manual_triggers():
+@pytest.mark.parametrize(
+    ("target_task_type", "roles", "expected_alignment"),
+    [
+        ("minimax_h3_t2v", (), None),
+        (
+            "minimax_h3_i2v",
+            ("start_image",),
+            (
+                "For the target video, at 0.00 seconds into the target video, "
+                "<Picture 1> (from [Shot 1]) is fully referenced."
+            ),
+        ),
+        (
+            "minimax_h3_flf2v",
+            ("start_image", "end_image"),
+            (
+                "Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; "
+                "Picture 2 (from Shot N) aligns with the 10.00-second mark of the target video."
+            ),
+        ),
+    ],
+)
+def test_minimax_h3_prompt_renders_official_three_fields_and_mode_alignment(
+    target_task_type, roles, expected_alignment
+):
     resolved = resolve_prompt_optimization(
-        target_task_type="minimax_h3_i2v",
+        target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=1,
-        media=_media("start_image"),
+        template_version=2,
+        media=_media(*roles),
         context={"duration_seconds": 10},
     )
     system, user = render_prompt_messages(
@@ -261,13 +285,19 @@ def test_minimax_h3_prompt_uses_dynamic_duration_and_never_requests_manual_trigg
         context=resolved.normalized_context,
     )
 
-    assert "200-270 words" in system
-    assert "strictly earlier than 10 seconds" in system
-    assert "4.458" not in system
-    assert "00:04.400" not in system
+    assert "integrated_multimodal_description" in system
+    assert "overall_soundscape" in system
+    assert "non_diegetic_music" in system
+    assert "strictly earlier than 10.00 seconds" in system
+    assert "200-270 words" not in system
     assert "Begin the output with \"hmmotion" not in system
     assert "Do not output LoRA names or trigger tokens" in system
-    assert "start_image" in user
+    if expected_alignment is None:
+        assert "No images are attached" in user
+        assert "For the target video, at 0.00 seconds" not in user
+        assert "How the reference pictures align" not in user
+    else:
+        assert expected_alignment in user
 
 
 @pytest.mark.parametrize(
@@ -286,7 +316,7 @@ def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
         resolve_prompt_optimization(
             target_task_type=target,
             template_id="minimax_h3_10eros_naughtytimes",
-            template_version=1,
+            template_version=2,
             media=_media(*roles),
             context={"duration_seconds": duration},
         )
@@ -295,3 +325,5 @@ def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
 def test_minimax_h3_v1_prompt_assets_remain_readable_but_inactive():
     assert get_template_by_ref("minimax_h3_hmnsfw@1").active is False
     assert get_profile_by_ref("minimax_h3_i2v_prompt@1").active is False
+    assert get_template_by_ref("minimax_h3_10eros_naughtytimes@1").active is False
+    assert get_profile_by_ref("minimax_h3_i2v_prompt@2").active is False

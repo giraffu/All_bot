@@ -27,6 +27,22 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
+## 提示词优化契约
+
+新 Prompt Optimizer 任务使用三个 `profile@3` 与
+`minimax_h3_10eros_naughtytimes@2`。输出不是旧的 200–270 词单段 caption，而是
+MiniMax 官方 Base 顺序：`integrated_multimodal_description` →
+`overall_soundscape` → `non_diegetic_music`。T2V 无对齐首行；I2V 必须先写官方
+`<Picture 1>` 0.00 秒对齐句；FLF2V 必须先写 Picture 1/2、动态结束时间和正文实际
+最终 Shot 编号的对齐句。第一镜头不得带时间，后续镜头必须按顺序编号且时间戳严格
+早于视频时长。
+
+Web 与 Bot 从 capability 选择 template v2；Web 提交时把管理端当前配置渲染成不可变
+snapshot。保存过的旧单段 H3 scene config 对新任务自动回落到官方 built-in 默认值，
+但历史任务继续读取自己原有的 snapshot 与旧 profile。Worker 在任何文本增量对用户
+可见前复验结构、对齐和时长。本地 Optimizer 生成的是兼容官方 Base 的提示词，不调用
+未开源的托管 H3-Context-IR，因此不宣称复现官方 Context-IR 的完整推理质量。
+
 ## 固定作者资产栈
 
 T2V/I2V/FLF2V 使用可分别升级、但对客户端完全固定的作者原始资产：

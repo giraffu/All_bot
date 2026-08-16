@@ -44,7 +44,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   新任务必须保存渲染后的不可变 snapshot，运行中任务不得重新读取当前配置。
 - Worker 必须核对 Profile、Template 和 hash；未知版本、未知字段、空文本、超长
   文本或不兼容媒体角色一律失败。
-- `context` 严格白名单。H3 使用固定 RedMix 栈并拒绝所有 `lora_items`/单模型覆盖；客户端不提交规则或触发词。
+- H3 固定 10Eros/LightX2V/NaughtyTimes，拒绝覆盖和触发词；输出官方三字段，
+  I2V/FLF2V 对齐由 Profile 注入、Worker 复验。
 - 图片必须 owner-fenced，PNG/JPEG/WebP，单文件不超过 20 MB；发送 LM Studio 前
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
