@@ -1,3 +1,4 @@
+import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -161,3 +162,104 @@ async def test_pro_optimizer_runs_in_background_and_replaces_prompt(monkeypatch)
     assert optimize.await_args.kwargs["mode"] == "i2v"
     assert "addon_items" not in optimize.await_args.kwargs
     assert "优化完成" in edit.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_pro_optimizer_retry_uses_a_new_client_request_id(monkeypatch):
+    optimize = AsyncMock(
+        side_effect=[RuntimeError("first attempt failed"), "optimized retry"]
+    )
+    resolve_user = AsyncMock(
+        return_value=(SimpleNamespace(id=7007, username="alice"), False)
+    )
+    captured = []
+    monkeypatch.setattr(fsm, "optimize_advanced_video_prompt", optimize)
+    monkeypatch.setattr(fsm, "get_or_create_user_by_telegram", resolve_user)
+    monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
+    monkeypatch.setattr(
+        fsm,
+        "create_background_task",
+        lambda _context, coro: captured.append(coro),
+    )
+    monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
+    query = SimpleNamespace(
+        data="avp_prompt_optimize", answer=AsyncMock(), message=object()
+    )
+    data = {
+        "mode": "i2v",
+        "duration": 10,
+        "images": ["/tmp/start.png"],
+        "original_prompt": "original",
+        "prompt": "original",
+        "optimizer_pending": False,
+    }
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=7, username="alice"),
+        effective_chat=SimpleNamespace(id=99),
+    )
+
+    await fsm.prompt_callback(update, context)
+    await captured.pop(0)
+    assert data["optimizer_pending"] is False
+
+    await fsm.prompt_callback(update, context)
+    await captured.pop(0)
+
+    first_request_id = optimize.await_args_list[0].kwargs["client_request_id"]
+    retry_request_id = optimize.await_args_list[1].kwargs["client_request_id"]
+    assert first_request_id != retry_request_id
+    assert str(uuid.UUID(first_request_id)) == first_request_id
+    assert str(uuid.UUID(retry_request_id)) == retry_request_id
+
+
+@pytest.mark.asyncio
+async def test_pro_optimizer_error_does_not_expose_internal_http_details(monkeypatch):
+    optimize = AsyncMock(
+        side_effect=RuntimeError(
+            "System error: Client error '409 Conflict' for url "
+            "'http://central-api:8003/api/v1/prompt_optimize'"
+        )
+    )
+    edit = AsyncMock()
+    captured = []
+    monkeypatch.setattr(fsm, "optimize_advanced_video_prompt", optimize)
+    monkeypatch.setattr(
+        fsm,
+        "get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=7007), False)),
+    )
+    monkeypatch.setattr(fsm, "robust_edit_text", edit)
+    monkeypatch.setattr(
+        fsm,
+        "create_background_task",
+        lambda _context, coro: captured.append(coro),
+    )
+    monkeypatch.setenv("MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "true")
+    data = {
+        "mode": "t2v",
+        "duration": 5,
+        "images": [],
+        "original_prompt": "original",
+        "prompt": "original",
+        "optimizer_pending": False,
+    }
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(
+            data="avp_prompt_optimize", answer=AsyncMock(), message=object()
+        ),
+        effective_user=SimpleNamespace(id=7, username="alice"),
+        effective_chat=SimpleNamespace(id=99),
+    )
+
+    await fsm.prompt_callback(update, context)
+    await captured[0]
+
+    public_error = edit.await_args.args[1]
+    assert "提示词优化失败" in public_error
+    assert "原提示词已保留" in public_error
+    assert "central-api" not in public_error
+    assert "409 Conflict" not in public_error
+    assert "http://" not in public_error
