@@ -305,6 +305,23 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _fleet_slot_already_stopped(
+    fleet: dict[str, Any], *, physical_slot: str, slot: str
+) -> bool:
+    observations = (
+        fleet.get("state", {}).get("live_observations", {}).get(physical_slot, [])
+    )
+    matching = [
+        item
+        for item in observations
+        if isinstance(item, dict) and item.get("slot_id") == slot
+    ]
+    return bool(matching) and all(
+        item.get("exists") is False or item.get("running") is False
+        for item in matching
+    )
+
+
 def _takeover(args: argparse.Namespace) -> dict[str, Any]:
     preflight = _preflight(args)
     image = preflight["image"]
@@ -314,13 +331,25 @@ def _takeover(args: argparse.Namespace) -> dict[str, Any]:
     steps: list[dict[str, Any]] = [{"action": "preflight", "payload": preflight}]
     fleet_stopped = False
     try:
-        stopped = _fleet(
-            "canary-stop-disabled",
+        if _fleet_slot_already_stopped(
+            preflight.get("fleet", {}),
+            physical_slot=args.physical_slot,
             slot=args.slot,
-            operation_id=operation_id,
-            execute=True,
-        )
-        fleet_stopped = True
+        ):
+            stopped = {
+                "ok": True,
+                "action": "canary-stop-disabled",
+                "slot": args.slot,
+                "already_stopped": True,
+            }
+        else:
+            stopped = _fleet(
+                "canary-stop-disabled",
+                slot=args.slot,
+                operation_id=operation_id,
+                execute=True,
+            )
+            fleet_stopped = True
         steps.append({"action": "stop-image-worker", "payload": stopped})
         if not server_was_running:
             _run(["lms", "server", "start", "--port", "1234", "--bind", "127.0.0.1"])
