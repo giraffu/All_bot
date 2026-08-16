@@ -27,7 +27,7 @@ async function logout() {
     <header class="topbar">
       <RouterLink class="brand" to="/">
         <span class="brand-mark"><Sparkles :size="17" /></span>
-        <span>Clarity <b>AI</b></span>
+        <span>{{ t('brand.name') }}</span>
       </RouterLink>
       <nav class="desktop-nav">
         <RouterLink to="/#product">{{ t('nav.product') }}</RouterLink>
@@ -63,14 +63,14 @@ async function logout() {
     <footer class="footer">
       <div class="brand footer-brand">
         <span class="brand-mark"><Sparkles :size="15" /></span>
-        <span>Clarity AI</span>
+        <span>{{ t('brand.name') }}</span>
       </div>
       <div class="footer-links">
         <RouterLink to="/legal/terms">{{ t('legal.terms') }}</RouterLink>
         <RouterLink to="/legal/privacy">{{ t('legal.privacy') }}</RouterLink>
         <RouterLink to="/legal/copyright">{{ t('legal.copyright') }}</RouterLink>
       </div>
-      <span class="muted">© 2026 Clarity AI · Local V1</span>
+      <span class="muted">© 2026 {{ t('brand.name') }} · {{ t('brand.secondary') }}</span>
     </footer>
   </div>
 </template>
