@@ -16,6 +16,15 @@ def test_web_api_image_contains_adaptive_copy_runner():
     assert "scripts/history_media_r2_copy_adaptive.py" in dockerfile
 
 
+def test_database_migration_artifact_contains_frozen_history_r2_runner():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "deploy/docker/Dockerfile.migration").read_text()
+
+    assert "scripts/history_media_r2_migration.py" in dockerfile
+    assert "scripts/history_media_r2_copy_adaptive.py" in dockerfile
+    assert "COPY shared /app/shared" in dockerfile
+
+
 def test_resource_gate_pauses_on_sustained_cpu_fd_or_db_regression():
     cpu_gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
     assert cpu_gate.evaluate(cpu_percent=71, fd_count=10, fd_soft_limit=100) is None
@@ -68,6 +77,7 @@ async def test_adaptive_runner_lowers_after_transient_failure_and_retries_same_p
             copy_concurrency=64,
             max_pool_connections=None,
             max_failures_at_eight=3,
+            max_cpu_percent=1000,
         ),
         execute_batch=execute_batch,
         sleep=sleep,
@@ -113,6 +123,37 @@ async def test_adaptive_runner_finishes_current_batch_then_honors_pause():
         "copy_concurrency": 64,
         "max_pool_connections": 96,
     }
+
+
+@pytest.mark.asyncio
+async def test_adaptive_runner_can_raise_clean_copy_batches_to_128():
+    calls = []
+
+    async def execute_batch(args):
+        calls.append(args.copy_concurrency)
+        return {
+            "remaining": 0 if len(calls) == 4 else 100,
+            "copied_objects": 100,
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    result = await run_adaptive_copy(
+        SimpleNamespace(
+            plan_sha256="d" * 64,
+            confirm="COPY_HISTORY_MEDIA_" + "d" * 64,
+            config="/tmp/config.json",
+            limit=100,
+            copy_concurrency=64,
+            max_pool_connections=None,
+            max_failures_at_eight=3,
+            max_cpu_percent=1000,
+        ),
+        execute_batch=execute_batch,
+        sleep=asyncio.sleep,
+    )
+
+    assert calls == [64, 64, 64, 128]
+    assert result["copy_concurrency"] == 128
 
 
 @pytest.mark.asyncio

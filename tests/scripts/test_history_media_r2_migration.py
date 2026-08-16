@@ -32,15 +32,191 @@ from scripts.history_media_r2_migration import (
     _probe_r2_rows,
     _probe_target_rows,
     _resolve_copy_max_pool_connections,
+    _runtime_identity,
     _s3_client,
     AdaptiveCopyController,
+    AdaptiveProbeController,
+    build_probe_plan,
+    classify_r2_head_outcomes,
+    normalized_history_cas_state,
     is_transient_copy_failure,
     replace_asset_reference,
     server_side_copy_r2_object,
     validate_copy_gate,
+    validate_copy_verification_heads,
+    validate_probe_gate,
     validate_switch_gate,
     validate_resume_identity,
 )
+
+
+def test_runtime_identity_binds_artifact_and_endpoints_without_credentials():
+    identity = _runtime_identity(
+        artifact_digest="sha256:" + "a" * 64,
+        config={
+            "target": {
+                "bucket": "user-data-prod",
+                "endpoint": "https://r2.example.invalid",
+                "access_key": "do-not-leak",
+            },
+            "sources": [
+                {
+                    "name": "r2-user-data-prod",
+                    "endpoint": "https://r2.example.invalid",
+                    "secret_key": "do-not-leak",
+                }
+            ],
+        },
+    )
+
+    assert identity["artifact_digest"] == "sha256:" + "a" * 64
+    assert identity["bucket"] == "user-data-prod"
+    assert "r2.example.invalid" not in json.dumps(identity)
+    assert "do-not-leak" not in json.dumps(identity)
+
+
+def test_copy_stage_verification_requires_exact_marker_and_retained_source():
+    modified = datetime(2026, 8, 9, tzinfo=timezone.utc)
+    row = {
+        "byte_size": 3,
+        "source_last_modified": modified,
+        "source_etag": "source",
+    }
+    validate_copy_verification_heads(
+        row,
+        source_head=_head(size=3, etag="source", modified=modified),
+        target_head=_head(
+            size=3,
+            etag="target",
+            metadata={"allbot-copy-plan-sha256": "a" * 64},
+        ),
+        copy_plan_sha256="a" * 64,
+    )
+    with pytest.raises(RuntimeError, match="source disappeared"):
+        validate_copy_verification_heads(
+            row,
+            source_head=None,
+            target_head=_head(size=3, etag="target"),
+            copy_plan_sha256="a" * 64,
+        )
+    with pytest.raises(RuntimeError, match="marker changed"):
+        validate_copy_verification_heads(
+            row,
+            source_head=_head(size=3, etag="source", modified=modified),
+            target_head=_head(size=3, etag="target"),
+            copy_plan_sha256="a" * 64,
+        )
+
+
+def test_probe_plan_is_compact_batched_and_exactly_gated():
+    rows = [
+        {
+            "id": 7,
+            "history_id": 9,
+            "role": "input",
+            "ordinal": 0,
+            "original_ref": "old.png",
+            "target_key": "task-inputs/r/0.png",
+            "registry_task_id": "r",
+        }
+    ]
+    manifest, batches = build_probe_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=99,
+        rows=rows,
+        batch_size=10_000,
+        runtime_identity={"script_sha256": "a" * 64},
+    )
+
+    assert manifest["schema"] == "allbot-history-media-r2-probe-plan/v1"
+    assert manifest["asset_count"] == 1
+    assert manifest["history_count"] == 1
+    assert manifest["batch_count"] == 1
+    assert batches[0]["first_ledger_id"] == 7
+    assert "assets" not in manifest
+    validate_probe_gate(
+        expected_plan_sha256=manifest["plan_sha256"],
+        supplied_plan_sha256=manifest["plan_sha256"],
+        confirmation=f"PROBE_HISTORY_MEDIA_{manifest['plan_sha256']}",
+    )
+    with pytest.raises(ValueError, match="exact probe plan"):
+        validate_probe_gate(
+            expected_plan_sha256=manifest["plan_sha256"],
+            supplied_plan_sha256=manifest["plan_sha256"],
+            confirmation="yes",
+        )
+
+
+def test_probe_head_outcomes_do_not_treat_system_errors_as_missing():
+    modified = datetime(2026, 8, 9, tzinfo=timezone.utc)
+    rows = [
+        {
+            "id": 1,
+            "original_ref": "old.png",
+            "target_key": "task-inputs/r/0.png",
+            "registry_task_id": "r",
+        }
+    ]
+    outcomes = classify_r2_head_outcomes(
+        rows,
+        {
+            "task-inputs/r/0.png": None,
+            "old.png": _head(size=3, etag="source", modified=modified),
+            "history/r/old.png": None,
+        },
+    )
+    assert outcomes == [
+        {
+            "id": 1,
+            "status": "copy_required",
+            "source_key": "old.png",
+            "byte_size": 3,
+            "last_modified": modified,
+            "etag": "source",
+            "attempts": [("old.png", "found")],
+        }
+    ]
+
+
+def test_probe_adaptive_concurrency_can_recover_up_to_128():
+    controller = AdaptiveProbeController(initial_concurrency=64)
+    assert controller.record_failure("HTTPStatusCode: 503") == 32
+    assert controller.record_success() == 32
+    assert controller.record_success() == 32
+    assert controller.record_success() == 64
+    assert controller.record_success() == 64
+    assert controller.record_success() == 64
+    assert controller.record_success() == 128
+
+
+def test_normalized_history_cas_accepts_only_original_current_or_completed_paths():
+    ledger = [
+        {
+            "role": "input",
+            "ordinal": 0,
+            "original_ref": "old-in.png",
+            "target_key": "task-inputs/r/0.png",
+            "selected": True,
+            "switch_completed_at": None,
+            "switch_plan_sha256": None,
+        },
+        {
+            "role": "output",
+            "ordinal": 0,
+            "original_ref": "old-out.png",
+            "target_key": "task-results/b/primary.png",
+            "selected": False,
+            "switch_completed_at": datetime(2026, 8, 16, tzinfo=timezone.utc),
+            "switch_plan_sha256": "b" * 64,
+        },
+    ]
+    current = {("input", 0): "task-inputs/r/0.png", ("output", 0): "task-results/b/primary.png"}
+    first = normalized_history_cas_state(7, current, ledger)
+    current[("input", 0)] = "old-in.png"
+    assert normalized_history_cas_state(7, current, ledger) == first
+    current[("output", 0)] = "unknown.png"
+    with pytest.raises(RuntimeError, match="unknown History media state"):
+        normalized_history_cas_state(7, current, ledger)
 
 
 def _head(
@@ -319,8 +495,9 @@ def test_execute_copy_concurrency_is_bounded():
     )
     with pytest.raises(SystemExit):
         _parser().parse_args([*base, "--copy-concurrency", "0"])
+    assert _parser().parse_args([*base, "--copy-concurrency", "128"]).copy_concurrency == 128
     with pytest.raises(SystemExit):
-        _parser().parse_args([*base, "--copy-concurrency", "65"])
+        _parser().parse_args([*base, "--copy-concurrency", "129"])
 
 
 def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypatch):
@@ -566,12 +743,12 @@ def test_probe_cli_exposes_receipt_only_mode():
     assert "--receipt-only" in result.stdout
 
 
-def test_partial_copy_plan_requires_an_explicit_flag_and_records_scope():
+def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
     import inspect
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._create_plan)
-    assert "args.allow_incomplete" in source
+    assert "PROBE_NOT_COMPLETE" in source
     assert '"pending_at_freeze"' in source
     assert '"run_status_at_freeze"' in source
     assert '"partial_scope"' in source
@@ -583,7 +760,7 @@ def test_partial_copy_plan_requires_an_explicit_flag_and_records_scope():
         capture_output=True,
         text=True,
     )
-    assert "--allow-incomplete" in result.stdout
+    assert "--allow-incomplete" not in result.stdout
 
 
 def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
@@ -737,6 +914,18 @@ async def test_r2_only_probe_resolves_old_keys_with_head_only():
     assert not any("source_missing" in query for _kind, query, _params in conn.calls)
 
 
+def test_frozen_probe_executor_has_only_head_object_storage_io():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_probe) + inspect.getsource(
+        module._collect_probe_head_outcomes
+    )
+    assert "_head_s3_identity" in source
+    for forbidden in ("get_object", "copy_object", "upload_fileobj", "delete_object"):
+        assert forbidden not in source
+
+
 def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "analytics_history_media_migration_runs" in MIGRATION_DDL
     assert "analytics_history_media_r2_migrations" in MIGRATION_DDL
@@ -745,6 +934,30 @@ def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "copy_plan_sha256" in MIGRATION_DDL
     assert "switch_plan_sha256" in MIGRATION_DDL
     assert "r2_checked_at" in MIGRATION_DDL
+    assert "analytics_history_media_migration_plan_batches" in MIGRATION_DDL
+    assert "probe_plan_sha256" in MIGRATION_DDL
+    assert "('probe','copy','switch')" in MIGRATION_DDL
+
+
+def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_assets():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._create_plan)
+    assert "probe_plan_sha256=$2" in source
+    assert "copy_plan_sha256=$2" in source
+    assert "switch_completed_at is null" in source
+    assert "COPY_PLAN_HAS_UNSUPPORTED_MULTIPART_OBJECTS" in source
+    switch_source = inspect.getsource(module._execute_switch)
+    assert "switch plan rowset changed" in switch_source
+    assert "predecessor switch plan identity changed" in switch_source
+    assert "switch batch production CAS state changed" in switch_source
+    assert "set local lock_timeout = '10s'" in switch_source
+    assert "_verify_switch_plan" in switch_source
+    verification_source = inspect.getsource(module._verify_switch_plan)
+    assert "len(gallery_samples) < 32" in verification_source
+    assert "len(owner_samples) < 64" in verification_source
+    assert "switch verification found an old History reference" in verification_source
 
 
 def test_standard_targets_require_explicit_dual_ids():
@@ -981,6 +1194,8 @@ def test_cli_is_directly_executable_and_exposes_all_phases():
     for command in (
         "seed",
         "probe",
+        "plan-probe",
+        "execute-probe",
         "plan-copy",
         "execute-copy",
         "plan-switch",

@@ -2,6 +2,8 @@ ARG RUNTIME_BASE_IMAGE
 FROM ${RUNTIME_BASE_IMAGE} AS database-migration
 ARG ALLBOT_GIT_SHA
 COPY src /app/src
+COPY shared /app/shared
+COPY scripts/history_media_r2_migration.py scripts/history_media_r2_copy_adaptive.py scripts/media_archive_catalog.py /app/scripts/
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=database-migration

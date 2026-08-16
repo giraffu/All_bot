@@ -91,8 +91,12 @@ async def run_adaptive_copy(
     sleep: Sleep = asyncio.sleep,
     pause_requested: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
-    controller = AdaptiveCopyController(initial_concurrency=int(args.copy_concurrency))
     configured_pool = args.max_pool_connections
+    maximum_concurrency = 128 if configured_pool is None or configured_pool >= 128 else 64
+    controller = AdaptiveCopyController(
+        initial_concurrency=int(args.copy_concurrency),
+        maximum_concurrency=maximum_concurrency,
+    )
     _resolve_copy_max_pool_connections(controller.maximum_concurrency, configured_pool)
     failures_at_eight = 0
     resource_gate = ResourceGate(
@@ -108,9 +112,12 @@ async def run_adaptive_copy(
             plan_sha256=args.plan_sha256,
             confirm=args.confirm,
             config=args.config,
+            artifact_digest=getattr(args, "artifact_digest", None),
             limit=args.limit,
             copy_concurrency=concurrency,
             max_pool_connections=configured_pool,
+            next_plan_output=getattr(args, "next_plan_output", None),
+            verification_output=getattr(args, "verification_output", None),
         )
         cpu_started = time.process_time()
         wall_started = time.perf_counter()
@@ -143,7 +150,7 @@ async def run_adaptive_copy(
                     }
             else:
                 failures_at_eight = 0
-            wait_seconds = {32: 60, 16: 120, 8: 240}[lowered]
+            wait_seconds = {64: 30, 32: 60, 16: 120, 8: 240}[lowered]
             _emit(
                 {
                     "adaptive_event": "lower" if lowered < previous else "retry",
@@ -217,6 +224,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan-sha256", required=True)
     parser.add_argument("--confirm", required=True)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--artifact-digest")
+    parser.add_argument("--next-plan-output")
+    parser.add_argument("--verification-output")
     parser.add_argument("--limit", type=int, default=10_000)
     parser.add_argument(
         "--copy-concurrency", type=_bounded_copy_concurrency, default=64

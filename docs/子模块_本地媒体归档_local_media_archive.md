@@ -296,44 +296,71 @@ NAS、旧 MinIO 和文件系统恢复的最终结论必须来自完整 SHA-256�
 且该模式不会把没有 receipt 的资产累计为 missing round。其余资产仍需等待全部启用
 来源恢复后运行完整 `probe`。
 
-`plan-copy` 和 `plan-switch` 分别生成 0600 小型 manifest，包含冻结 watermark、
-分类对象数/字节、已有 SHA 读取量、源 ETag、最多 100 条脱敏诊断、账本行集 SHA 与精确 plan
-SHA，不包含完整对象清单。`execute-copy` 只接受
-`COPY_HISTORY_MEDIA_<plan-sha>`。同一 R2 bucket 的旧 key 只能通过服务端
+全量 R2 目录迁移先使用 `plan-probe` 冻结当时全部 `pending_probe`。计划以每批
+10,000 个逻辑资产保存低基数 batch、批次行集 SHA 和全局行集 SHA，不在生成计划时
+给数百万账本行批量写 marker。`execute-probe` 只接受
+`PROBE_HISTORY_MEDIA_<plan-sha>`，标准目标、原引用、
+`history/{registry_task_id}/{basename}` 和 basename 全部只做 HEAD；不调用 GET、
+ListObjects、PUT、CopyObject 或 DELETE。此前已记录 `R2_CANDIDATES_NOT_FOUND` 的
+`pending_probe` 同样属于新冻结计划并重新 HEAD。每批先完成全部远端 HEAD，再把分类、
+`probe_plan_sha256` 和批次完成状态写入同一本地事务；中断前没有提交的批次完整重探。
+标准目标已是当前引用时进入 `target_verified`；目标存在但 History 不同进入
+`target_conflict`；旧候选命中进入 `copy_required`；全部候选未命中继续保持
+`pending_probe`。429、5xx、timeout 可在同一 SHA 内按 64→32→16→8 退避并在干净批次
+回升到 128；鉴权和其它系统错误必须 paused，不能伪装成未命中。
+
+Probe 全批完成后自动生成父计划限定的 `plan-copy`；计划只包含
+`probe_plan_sha256=<probe-sha>` 的 `copy_required`，不得纳入 unresolved、blocked、
+target conflict、旧批次或其它 Probe。冻结前若发现超过当前单次 CopyObject 上限的对象，
+不得生成可授权的 Copy 计划。Copy manifest 绑定精确父计划、代码 SHA、artifact digest、
+bucket、endpoint 指纹、候选算法版本和行集 SHA，不包含凭据或完整对象清单。
+`execute-copy` 只接受 `COPY_HISTORY_MEDIA_<plan-sha>`。同一 R2 bucket 的旧 key 只能通过服务端
 `CopyObject` 复制，不得 GET、落地临时文件或从执行器重新上传。执行前复验
 size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆盖；目标通过
 `MERGE` 元数据保留源 metadata 并写入精确 copy plan SHA。相同 target key 只有在
 冻结来源身份完全一致时才合并为一次 CopyObject，成功后整组账本行一并收口；来源
 身份冲突必须在任何对象写入前 fail closed。进程若在对象复制后、账本提交前退出，
 重跑只接受 plan marker、大小和冻结来源身份全部匹配的目标，其余已存在目标仍拒绝。
-`--copy-concurrency` 限定为 1–64，默认 1；`--max-pool-connections` 可显式配置，
+`--copy-concurrency` 限定为 1–128，默认 1；`--max-pool-connections` 可显式配置，
 不得小于 copy concurrency，省略时取并发的 1.5 倍并向上取整。所有线程共享同一个
 仅执行 HEAD/CopyObject 的 boto3 client，数据库结果仍串行提交；每批报告 Copy-only
 对象/秒、R2 对象操作延迟和数据库提交延迟。`history_media_r2_copy_adaptive.py`
-提供 64→32→16→8 档位：429、5xx 和 timeout 只降一级并退避，连续三个干净批次才
-升一级；非瞬态错误直接暂停。SIGTERM/SIGINT 只登记 graceful pause，当前批次完成并
+从 64 起步并在 128→64→32→16→8 档位调整：429、5xx 和 timeout 只降一级并退避，
+连续三个干净批次才升一级，最高 128；非瞬态错误直接暂停。SIGTERM/SIGINT 只登记
+graceful pause，当前批次完成并
 提交账本后退出；进程还在连续三批 CPU 超过 70%、FD 超过软上限 50% 或数据库提交
 p95 相对 canary 基线显著恶化时，于当前批次提交后暂停。连接池在每批结束时关闭，
 避免长跑累计 FD。当前生产执行器在
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
 资产保持旧 History 引用。
-`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`，并在
-事务行锁内用 History media manifest SHA 做 CAS，只替换已验证资产。复制与引用切换
+Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计划内、
+`copied_verified`、`switch_completed_at is null` 且原路径不同于目标路径的资产，
+因此不会再次纳入既有已完成 Switch、其它 Probe、unresolved 或 blocked。计划每
+1,000 条 History 保存生产 CAS 状态 SHA，并冻结所有可证明的前序 Switch plan identity。
+`execute-switch` 使用独立 `SWITCH_HISTORY_MEDIA_<plan-sha>`；任何生产更新前重算全局
+资产行集，每批以 10 秒 lock timeout 锁定 History 后重算批次 CAS。所选坐标只能仍为
+原路径，或在本计划提交后因账本回执失败而已是目标路径；非所选坐标只能是原路径，或
+由 `switch_completed_at` 和精确前序 plan 共同证明的目标路径。其它值、坐标变化、父计划
+变化或前序集合变化全部 fail closed。每批在单个生产事务内只更新 `input_file`、
+`output_file` 和 `extra_outputs.*.path`，生产提交后才在本地事务写完成回执；重跑幂等。
+复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
-默认 `plan-copy` 在任何 `pending_probe` 或 paused run 上继续 fail-closed。若启用来源
-长期离线，但已有一部分资产通过标准目标或 NAS receipt 得到完整 SHA 事实，可显式用
-`plan-copy --allow-incomplete` 冻结部分复制计划；manifest 必须记录
-`partial_scope=true`、`pending_at_freeze` 和 `run_status_at_freeze`，同时 rowset SHA 仍绑定
-该 run 的全部账本行。冻结后到复制完成前不得继续 probe；执行器仍只消费带同一精确
-plan SHA 的 `copy_required` 行，未解析行不进入复制或 missing 结论。paused run 不能使用
-该模式。
-plan/report 与执行前 rowset 复核都使用数据库 cursor 增量计算 canonical JSON SHA，
-不把完整账本载入内存；copy 执行每次还受显式 limit 约束，重启只继续未完成行。
+冻结全量链路不允许 `--allow-incomplete` 绕过未完成 Probe 批次。plan/report 与执行前
+rowset 复核使用数据库 cursor 增量计算 canonical JSON SHA，不把完整账本载入内存；
+Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute-probe`、
+`plan-copy`、`execute-copy`、`plan-switch`、`execute-switch`、`report`，其中计划生成、
+只读核对、监控、重试和后续计划生成连续进行，只在 PROBE/COPY/SWITCH 三个精确令牌
+暂停。三个计划都绑定创建它们的精确 artifact digest；旧 artifact 不得消费新计划。
 
-各阶段固定为 `seed`、`probe`、`plan-copy`、`execute-copy`、`plan-switch`、
-`execute-switch`、`report`；除首次 `seed` 外均显式传 run ID 或 plan SHA。
+最终验收必须完整核对计划引用、目标 HEAD/size/Copy marker 和旧来源 HEAD，并确定性
+抽查至少 32 个活跃 Gallery 与 64 个 History/owner，覆盖角色和媒体类型；
+apply-context 的既有不支持场景继续按契约返回 400。只有这些验收和收据全部通过，才能
+解除 shadow pause guard、清理旧 failed unit 状态并手动跑一次 shadow sync；仍不得删除
+任何旧 R2 对象。`analytics_history_media_migration_plan_batches` 与其它迁移事实表必须随
+shadow 换库保留。
+
 `LOCAL_ANALYTICS_DATABASE_URL` 只指向本地分析库，`execute-switch` 才额外要求
 `PRODUCTION_DATABASE_URL`。probe/copy 的 0600 JSON 配置包含固定
 `target.bucket=user-data-prod`、与 `analytics_media_sources` 同名的全部启用来源，
