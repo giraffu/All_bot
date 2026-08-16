@@ -1,8 +1,10 @@
-# 独立媒体增强平台（Clarity AI）
+# 真境智影（Clarity AI）独立媒体增强平台
 
 ## 1. 定位与边界
 
-`media_enhance_platform/` 是 AllBot 仓库内独立演进的媒体增强产品。V1
+`media_enhance_platform/` 是 AllBot 仓库内独立演进的“真境智影
+（Clarity AI）”媒体增强产品。前端首次访问默认使用中文，并保留
+用户手动切换后的语言偏好。V1
 提供图片高清、视频高清与视频插帧，拥有独立前端、FastAPI API、
 PostgreSQL 数据、MinIO 对象存储和 Worker HTTP 契约。它不复用 AllBot
 主用户、灵石、任务队列、Telegram 对象或数据库表。

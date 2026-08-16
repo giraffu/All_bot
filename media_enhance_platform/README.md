@@ -1,4 +1,4 @@
-# Clarity AI Media Enhancement Platform
+# 真境智影（Clarity AI）Media Enhancement Platform
 
 An independent bilingual image/video enhancement product inside the AllBot
 monorepo. It owns its frontend, API, PostgreSQL schema, object storage and

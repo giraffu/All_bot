@@ -1,6 +1,7 @@
 import { createI18n } from 'vue-i18n'
 
 const zh = {
+  brand: { name: '真境智影', secondary: 'Clarity AI' },
   nav: { product: '产品', workspace: '工作台', pricing: '定价', support: '客服', login: '登录', start: '立即体验', admin: '后台', logout: '退出' },
   home: {
     eyebrow: 'AI MEDIA ENHANCEMENT',
@@ -39,7 +40,7 @@ const zh = {
   },
   auth: {
     loginTitle: '欢迎回来',
-    registerTitle: '创建 Clarity 账号',
+    registerTitle: '创建真境智影账号',
     email: '邮箱',
     password: '密码',
     login: '登录',
@@ -120,6 +121,7 @@ const zh = {
 }
 
 const en = {
+  brand: { name: 'Clarity AI', secondary: '真境智影' },
   nav: { product: 'Product', workspace: 'Workspace', pricing: 'Pricing', support: 'Support', login: 'Sign in', start: 'Get started', admin: 'Admin', logout: 'Sign out' },
   home: {
     eyebrow: 'AI MEDIA ENHANCEMENT',
