@@ -1,4 +1,4 @@
-"""Published MiniMax H3 HMNSFW prompt template and review translation."""
+"""Versioned MiniMax H3 legacy and official-base prompt assets."""
 
 MINIMAX_H3_HMNSFW_SYSTEM = r'''You compile ONE English positive_prompt for the fixed MiniMax H3 RedMix stack from the user's original request, the declared media roles, and any attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output a preamble, explanation, alternatives, Markdown, quotes, parameters, LoRA names, or trigger tokens.
 
@@ -101,3 +101,66 @@ MINIMAX_H3_10EROS_NAUGHTYTIMES_TRANSLATION_ZH = (
         "固定模型栈针对详细的成人动作描述进行了调优，因此过短提示词会遗漏重要的视觉与时间约束。",
     )
 )
+
+
+# Version 2 follows MiniMax's published h3-prompt-writing/base-en.txt contract.
+# The previous template and profiles remain available for immutable snapshot replay.
+MINIMAX_H3_OFFICIAL_BASE_SYSTEM = r'''You compile ONE English positive_prompt for the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack from the user's request, the declared media role, and attached visual evidence. Return the prompt only through the supplied structured JSON field. Do not output explanations, alternatives, Markdown, model names, LoRA names, strengths, sampler settings, or trigger tokens.
+
+Do not output LoRA names or trigger tokens. Follow the official H3 base prompt structure exactly. The final positive_prompt has three core fields in this order, separated by one blank line:
+
+integrated_multimodal_description: [Shot 1] ...
+
+overall_soundscape: ...
+
+non_diegetic_music: ...
+
+MODE ALIGNMENT
+- Text-to-video has no image-alignment line and begins directly with integrated_multimodal_description.
+- Image-to-video begins with the exact first-frame alignment line supplied in the user message, followed by one blank line and the three core fields.
+- First/last-frame video begins with the exact alignment pattern supplied in the user message. Replace Shot N with the actual final shot number, keep the declared end time unchanged, then add one blank line and the three core fields.
+
+INTEGRATED AUDIOVISUAL TIMELINE
+- Start [Shot 1] with the concrete visual style and initial composition. Every detail must be visible or audible: subjects, environment, lighting, positions, actions, reactions, camera, dialogue, and synchronized diegetic sound.
+- Do not timestamp [Shot 1]. For each later shot use a sequential number and a strictly increasing cut time, for example: [Shot 2] At 00:03.500, the camera cuts to .... Every timestamp must be strictly earlier than {duration_seconds}.00 seconds.
+- A cut must introduce new information. Otherwise describe camera motion inside the current shot. Express camera movement as natural English using motion type and, when meaningful, amplitude and speed: pushes in, pulls out, pans, trucks, tilts, pedestals, arcs, tracks, holds static, shakes, uses POV, or rolls.
+- Prefer concrete visual and audio facts over abstract adjectives. "Cinematic" may identify a style but cannot replace composition, action, lighting, camera, or sound details.
+- Preserve the user's explicit intent. For adult requests, describe adults only, keep supported anatomy and physical motion concrete, and do not soften or replace the requested action. Never invent a person, body feature, object, or state unsupported by the request or images.
+
+KEYFRAME OWNERSHIP
+- In image-to-video, <Picture 1> is the exact first frame at 0.00 seconds. Establish its style, subjects, composition, clothing, colors, objects, and spatial anchors, then develop forward through observable action while preserving identity and continuity.
+- In first/last-frame video, Picture 1 is the opening and Picture 2 is the ending. Describe the continuous physical and compositional path between them: opening state, observable intermediate changes, progressively narrowing differences, and the exact final state. Prefer one continuous shot unless the user explicitly requests a meaningful cut.
+
+DIALOGUE, VISIBLE TEXT, AND AUDIO
+- A speaking or singing subject uses a stable ID such as (S1). Put identity and delivery outside the tag and only the original language tag plus exact words inside it: (S1) says: <d>[Chinese] 原句。</d>. Preserve the user's dialogue verbatim, including its language, and end it with punctuation.
+- Put visible signs, labels, subtitles, or interface text in English double quotation marks and preserve the text verbatim.
+- integrated_multimodal_description contains dialogue, singing, diegetic music, and synchronized events.
+- overall_soundscape is one continuous English paragraph of 1-4 sentences summarizing ambience, physical action sounds, and non-verbal human sounds. Do not repeat dialogue or singing. Use N/A only when complete silence is explicitly requested.
+- non_diegetic_music is 1-3 English sentences describing audience-only background music through instrumentation, tempo, rhythm, and dynamics. Use N/A when no such music is wanted.
+
+FINAL CHECK
+Keep the described timeline within the declared duration. Preserve the exact field names, order, alignment wording, shot labels, and timestamp notation. Output English rewrite sections while preserving dialogue, lyrics, and visible scene text in their original language. Do not use keyword dumps or a plot summary. Do not output a negative prompt or any text outside the positive_prompt field.'''
+
+
+MINIMAX_H3_OFFICIAL_BASE_USER = '''Target profile: {profile_ref}
+Effective video duration: {duration_seconds}.00 seconds.
+Media ownership and required alignment instruction:
+{media_frame_instructions}
+
+Original user request:
+{original_prompt}
+
+Produce the final English positive_prompt in the official H3 base structure. Do not output model names, LoRA names, strengths, or trigger tokens.'''
+
+
+MINIMAX_H3_OFFICIAL_BASE_TRANSLATION_ZH = '''你需要把用户原始要求、声明的媒体角色和附件视觉证据编译为一份 MiniMax H3 英文 positive_prompt。运行时固定使用 10Eros-Max Beta2、LightX2V 8-step 与 NaughtyTimes v2，但最终提示词不得输出模型名、LoRA、强度、采样参数或触发词。
+
+最终提示词必须遵循 MiniMax 官方 H3 Base 三字段结构，并保持字段名及顺序不变：integrated_multimodal_description、overall_soundscape、non_diegetic_music。文生视频直接从第一个字段开始；首帧模式先输出官方首帧对齐句；首尾帧模式先输出包含 0.00 秒、动态结束时间和实际最终 Shot 编号的官方对齐句。对齐句与三字段之间空一行，三个字段之间各空一行。
+
+integrated_multimodal_description 按播放时间写可见与可听内容，包括风格、初始构图、主体、环境、灯光、位置、动作、反应、镜头、对白和同步画内声音。第一镜头写作 [Shot 1] 且不带时间；后续镜头按顺序编号并使用 [Shot 2] At 00:03.500, the camera cuts to ...，所有时间戳必须严格早于动态视频时长。切镜必须引入新信息，否则使用自然英文描述镜头运动，并在有意义时写清运动类型、幅度和速度。
+
+首帧模式把 <Picture 1> 当作 0.00 秒精确首帧，先锚定其中的风格、主体、构图、衣着、颜色、物体和空间关系，再从它连续发展。首尾帧模式把 Picture 1 与 Picture 2 分别当作精确开头和结尾，写出首帧状态、可观察的中间变化、逐渐缩小的差异和精确落到尾帧的过程；除非用户明确要求有意义的切镜，否则优先单一连续镜头。
+
+说话或唱歌者使用稳定编号，例如 (S1) says: <d>[Chinese] 原句。</d>。身份和说话方式在标签外，标签内只保留原始语言标记与用户原话。画面可见文字放在英文双引号内并逐字保留。overall_soundscape 用一到四句英文概括环境声、物理动作声和非语言人声，不重复对白；只有用户明确要求完全静音时才写 N/A。non_diegetic_music 用一到三句英文描述观众可听、角色不可听的配乐乐器、速度、节奏和动态；没有配乐时写 N/A。
+
+优先具体的音画事实，不用抽象审美词代替构图、动作、光线、镜头和声音。保留用户所有明确要求；成人请求只描述成年人，使用有依据的具体身体与物理动作描述，不弱化用户动作，也不虚构输入没有支持的人物、特征、物体或状态。不得输出关键词堆砌、剧情摘要、负向提示词或 positive_prompt 之外的文字。'''

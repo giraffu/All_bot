@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable
+from itertools import pairwise
 from typing import Any
 
 from src.prompt_optimizer.config_snapshot import snapshot_content_hash
@@ -78,6 +79,13 @@ def _validate_profile_output(
     lowered = result_text.casefold()
     if any(trigger in lowered for trigger in _MINIMAX_H3_FORBIDDEN_TRIGGERS):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_trigger")
+    if profile.version >= 3:
+        _validate_official_minimax_h3_output(
+            profile,
+            result_text,
+            context=context,
+        )
+        return
     if not re.match(
         r"^(handjob|insertion|missionary|cowgirl|blowjob|doggy)\b",
         result_text,
@@ -101,12 +109,105 @@ def _validate_profile_output(
             raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
         timestamps.append(int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000)
     if any(value >= duration for value in timestamps) or any(
-        current <= previous for previous, current in zip(timestamps, timestamps[1:])
+        current <= previous for previous, current in pairwise(timestamps)
     ):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
     word_count = len(re.findall(r"\b[\w'-]+\b", result_text, flags=re.UNICODE))
     if not 200 <= word_count <= 270:
         raise PromptOptimizationExecutionError("invalid_minimax_h3_word_count")
+
+
+def _validate_official_minimax_h3_output(
+    profile,
+    result_text: str,
+    *,
+    context: dict[str, Any],
+) -> None:
+    duration = int(context.get("duration_seconds") or 0)
+    normalized = result_text.replace("\r\n", "\n")
+    blocks = normalized.split("\n\n")
+    alignment = None
+    if profile.id == "minimax_h3_t2v_prompt":
+        core_blocks = blocks
+    elif profile.id == "minimax_h3_i2v_prompt":
+        if len(blocks) != 4:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        alignment, *core_blocks = blocks
+        expected = (
+            "For the target video, at 0.00 seconds into the target video, "
+            "<Picture 1> (from [Shot 1]) is fully referenced."
+        )
+        if alignment != expected:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_i2v_alignment")
+    elif profile.id == "minimax_h3_flf2v_prompt":
+        if len(blocks) != 4:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        alignment, *core_blocks = blocks
+    else:
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_profile")
+
+    if len(core_blocks) != 3:
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+    field_names = (
+        "integrated_multimodal_description",
+        "overall_soundscape",
+        "non_diegetic_music",
+    )
+    values: list[str] = []
+    for block, field_name in zip(core_blocks, field_names):
+        prefix = f"{field_name}: "
+        if not block.startswith(prefix) or not block[len(prefix) :].strip():
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        values.append(block[len(prefix) :].strip())
+    if any(normalized.count(f"{field_name}:") != 1 for field_name in field_names):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+
+    integrated = values[0]
+    if not integrated.startswith("[Shot 1]"):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_first_shot")
+    if re.search(r"\[Shot 1\]\s+At\b", integrated, flags=re.IGNORECASE):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_first_timestamp")
+    shot_numbers = [
+        int(value) for value in re.findall(r"\[Shot\s+(\d+)\]", integrated)
+    ]
+    if not shot_numbers or shot_numbers != list(range(1, len(shot_numbers) + 1)):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_shot_sequence")
+    for shot_number in shot_numbers[1:]:
+        if not re.search(
+            rf"\[Shot {shot_number}\]\s+At\s+\d{{2}}:\d{{2}}\.\d{{3}},",
+            integrated,
+        ):
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_shot_timestamp")
+
+    timestamps: list[float] = []
+    for minutes, seconds, milliseconds in re.findall(
+        r"(?<!\d)(\d{2}):(\d{2})\.(\d{3})(?!\d)", integrated
+    ):
+        if int(seconds) >= 60:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
+        timestamps.append(int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000)
+    if len(timestamps) != len(shot_numbers) - 1 or any(
+        value >= duration for value in timestamps
+    ) or any(
+        current <= previous for previous, current in pairwise(timestamps)
+    ):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
+
+    if profile.id == "minimax_h3_i2v_prompt" and "<Picture 1>" not in integrated:
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_i2v_anchor")
+    if profile.id == "minimax_h3_flf2v_prompt":
+        pattern = re.compile(
+            r"How the reference pictures align with the target video — "
+            r"Picture 1 \(from Shot 1\) aligns with the 0\.00-second mark of the target video; "
+            rf"Picture 2 \(from Shot (?P<last_shot>\d+)\) aligns with the {duration:.2f}-second mark of the target video\."
+        )
+        match = pattern.fullmatch(alignment or "")
+        if match is None:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_alignment")
+        if int(match.group("last_shot")) != shot_numbers[-1]:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_final_shot")
+        if "Picture 1" not in integrated or "Picture 2" not in integrated:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_anchor")
 
 
 def _validated_result(
@@ -139,7 +240,7 @@ def _validated_result(
         key: value.strip() for key, value in optimized_fields.items()
     }
     result_text = normalized_fields[profile.primary_field]
-    if profile.id.startswith(_MINIMAX_H3_PROFILE_PREFIX):
+    if profile.id.startswith(_MINIMAX_H3_PROFILE_PREFIX) and profile.version < 3:
         result_text = _normalize_minimax_h3_header(result_text)
         normalized_fields[profile.primary_field] = result_text
     _validate_profile_output(
@@ -152,8 +253,35 @@ def _validated_result(
 
 
 def _minimax_h3_retry_instruction(
-    reason: str, *, trusted_context: dict[str, Any]
+    reason: str,
+    *,
+    profile,
+    context: dict[str, Any],
+    trusted_context: dict[str, Any],
 ) -> str:
+    if profile.version >= 3:
+        mode_requirement = {
+            "minimax_h3_t2v_prompt": (
+                "begin directly with integrated_multimodal_description"
+            ),
+            "minimax_h3_i2v_prompt": (
+                "begin with the exact <Picture 1> first-frame alignment line"
+            ),
+            "minimax_h3_flf2v_prompt": (
+                f"begin with the first/last-frame alignment line ending at "
+                f"{int(context.get('duration_seconds') or 0):.2f} seconds and name the actual final Shot"
+            ),
+        }[profile.id]
+        return (
+            "\n\nSERVER VALIDATION RETRY: The previous candidate failed server validation "
+            f"({reason}). Regenerate from the original inputs instead of explaining the "
+            f"failure. {mode_requirement}; then output exactly "
+            "integrated_multimodal_description, overall_soundscape, and "
+            "non_diegetic_music in that order with one blank line between sections. "
+            "Start the timeline with untimestamped [Shot 1], keep later Shot numbers "
+            "sequential and timestamps within the declared duration, and use no manual "
+            "trigger tokens. Return only the required JSON object."
+        )
     return (
         "\n\nSERVER VALIDATION RETRY: The previous candidate failed server validation "
         f"({reason}). Regenerate from the original inputs instead of explaining the "
@@ -251,7 +379,10 @@ async def execute_prompt_optimization(
             if attempt + 1 >= max_attempts:
                 raise
             attempt_system_prompt = system_prompt + _minimax_h3_retry_instruction(
-                str(exc), trusted_context=trusted_context
+                str(exc),
+                profile=profile,
+                context=context,
+                trusted_context=trusted_context,
             )
             continue
         if on_text_delta is not None:

@@ -70,12 +70,16 @@ FLF 模板。
 禁止把任何 reference 写成视频首帧。IC 请求中的角色 ID 由 Web owner-fenced 解析
 为实际面板；浏览器不能提交私有面板路径。@3 与 @4 互不兼容，防止帧语义串用。
 
-H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
-`minimax_h3_flf2v_prompt@1`，分别接受 0 张图、一张 `start_image`、按顺序的
+H3 新任务注册 `minimax_h3_t2v_prompt@3`、`minimax_h3_i2v_prompt@3` 与
+`minimax_h3_flf2v_prompt@3`，分别接受 0 张图、一张 `start_image`、按顺序的
 `start_image,end_image`，时长只允许 5/10/15 秒。三者使用
-`minimax_h3_10eros_naughtytimes@1`：一个 200–270 英文词段落，动态时长限制时间戳，最多两个
-动作阶段，保留 H3 音频和对白语法。英文运行模板与完整逐段中文审阅翻译的事实源均为
-`src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量，中文常量不参与渲染。
+`minimax_h3_10eros_naughtytimes@2`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
+输出三个固定字段：`integrated_multimodal_description`、`overall_soundscape`、
+`non_diegetic_music`。T2V 直接从第一个字段开始；I2V 先输出精确的 0.00 秒
+`<Picture 1>` 对齐句；FLF2V 先输出 Picture 1/2、动态结束时间和实际最终 Shot 编号的
+对齐句。Profile 最大输出为 7000 字符，Worker 复验字段顺序、空行、Shot 连续编号、
+动态时间戳、图片锚点和对齐句后才发布流式结果。英文运行模板与完整中文审阅翻译的
+事实源均为 `src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量。
 
 ## 3. API 与隐私
 
@@ -92,15 +96,17 @@ H3 注册 `minimax_h3_t2v_prompt@1`、`minimax_h3_i2v_prompt@1` 与
 对象键，不能再次包含桶名。
 
 H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受非空
-`lora_items`、单模型字段或自由规则文本。`minimax_h3_hmnsfw@1` 与三个 `@1` profile
-仅用于历史 snapshot 解析；新请求使用三个 `@2` profile。Web/Bot 只
+`lora_items`、单模型字段或自由规则文本。`minimax_h3_hmnsfw@1`、
+`minimax_h3_10eros_naughtytimes@1` 与三个 `@1/@2` profile 仅用于历史 snapshot
+解析；新请求使用三个 `@3` profile。旧的可变 H3 scene config 若不含官方三字段，
+读取时自动前移到新的 built-in 默认值，已提交任务仍使用其不可变 snapshot。Web/Bot 只
 提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。
 Bot 调用 H3 优化前必须在入口边界把 Telegram 平台 ID 映射为
 `internal_user_id`；共享服务仅接收内部 ID，并用它完成扣费、结果 owner fence 与素材
 staging。Telegram ID 只可参与 Bot 回调的确定性请求 ID，不能作为账本用户主键。
-快照不包含生成 Worker 使用的魔法触发词。`nipples/areoles` 仅在图片或原始要求支持
-时使用，且 `areolas` 永远禁用。最终输出校验同时拒绝 `hmmotion`、
-`HMBreasts`、`HMPenis`、`hmpussy`。
+快照不包含生成 Worker 使用的魔法触发词。最终输出校验同时拒绝 `hmmotion`、
+`HMBreasts`、`HMPenis`、`hmpussy`；旧 profile 继续使用原有词数/词汇校验，新
+profile 改用官方结构与模式对齐校验。
 
 任务扣 1 灵石；Task Core 的扣费、派发补偿、pending 取消和失败退款负责 exactly
 once。文本结果只保存在 `allbot:prompt_result:{task_id}` 类 owner-fenced Redis key，
