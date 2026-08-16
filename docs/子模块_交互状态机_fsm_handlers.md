@@ -16,8 +16,9 @@ ID，成功只回显并保存优化文案，不自动提交视频，同时提供
 该入口画质统一为极速/清晰/标准/高清四档。首帧与首尾帧模式隐藏固定比例按钮并
 展示“跟随首帧”；第二张图片与首帧比例差异超过 1% 时保留首帧和会话状态、删除
 无效尾帧并要求重传。文生视频仍展示固定画面比例。
-高级图生视频pro 的设置摘要明确显示固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不提供附加模型按钮、
-强度或触发词指南；`advanced_video_pro_submission_service.py` 也不携带任何 LoRA 字段。
+高级图生视频pro 的设置摘要明确显示固定 10Eros Beta2 + LightX2V 8-step 基础链，
+并提供六个可多选 LoRA、全选和清空。附件默认全部关闭，Bot 不让用户输入自由强度，
+而是把选中项转换为目录建议强度后交给 `advanced_video_pro_submission_service.py`。
 
 ## 1. 目标与范围
 

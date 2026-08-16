@@ -22,6 +22,7 @@ async def test_pro_entry_replaces_legacy_menu_with_mode_picker(monkeypatch):
     assert state == AdvancedVideoProState.WAIT_SETTINGS
     assert context.user_data["in_conversation"] == fsm.TAG
     assert context.user_data[fsm.DATA_KEY]["mode"] is None
+    assert context.user_data[fsm.DATA_KEY]["addon_models"] == []
     assert "高级图生视频pro" in reply.await_args.args[1]
     mode_callbacks = [button.callback_data for row in reply.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
     assert "avp_mode_ref2v" not in mode_callbacks
@@ -44,19 +45,56 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_expose_fixed_redmix_stack_without_addon_callbacks(monkeypatch):
+async def test_pro_settings_expose_six_optional_addons_defaulting_to_none(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
-    data = {"mode": None, "duration": 5, "preset": "preview", "aspect": "16:9"}
+    data = {
+        "mode": None,
+        "duration": 5,
+        "preset": "preview",
+        "aspect": "16:9",
+        "addon_models": [],
+    }
     context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
 
     await fsm.settings_callback(SimpleNamespace(callback_query=query), context)
 
     assert data["mode"] == "t2v"
-    assert "固定 10Eros Beta2 + LightX2V 8-step + NaughtyTimes v2 栈" in edit.await_args.args[1]
+    assert "10Eros Beta2 + LightX2V 8-step" in edit.await_args.args[1]
+    assert "附加模型：无" in edit.await_args.args[1]
     callbacks = [button.callback_data for row in edit.await_args.kwargs["reply_markup"].inline_keyboard for button in row]
-    assert not any(value.startswith("avp_addon_") for value in callbacks)
+    assert "avp_addon_naughty_times" in callbacks
+    assert "avp_addon_sex_pose" in callbacks
+    assert "avp_addon_breasts" in callbacks
+    assert "avp_addon_vagassist" in callbacks
+    assert "avp_addon_pussy" in callbacks
+    assert "avp_addon_penis" in callbacks
+    assert "avp_addon_all" in callbacks
+    assert "avp_addon_none" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_pro_settings_toggle_addon_and_select_all(monkeypatch):
+    monkeypatch.setattr(fsm, "robust_edit_text", AsyncMock())
+    data = {
+        "mode": "t2v", "duration": 5, "preset": "preview", "aspect": "16:9",
+        "images": [], "reference_descriptions": [], "addon_models": [],
+    }
+    query = SimpleNamespace(
+        data="avp_addon_naughty_times", answer=AsyncMock(), message=object()
+    )
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: data}, lang="zh")
+    update = SimpleNamespace(callback_query=query)
+
+    await fsm.settings_callback(update, context)
+    assert data["addon_models"] == ["naughty_times"]
+    query.data = "avp_addon_all"
+    await fsm.settings_callback(update, context)
+    assert data["addon_models"] == list(fsm.MINIMAX_H3_ADDON_MODELS)
+    query.data = "avp_addon_none"
+    await fsm.settings_callback(update, context)
+    assert data["addon_models"] == []
 
 
 @pytest.mark.asyncio

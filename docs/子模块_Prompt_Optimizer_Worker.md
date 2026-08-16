@@ -80,10 +80,10 @@ FLF 模板。
 禁止把任何 reference 写成视频首帧。IC 请求中的角色 ID 由 Web owner-fenced 解析
 为实际面板；浏览器不能提交私有面板路径。@3 与 @4 互不兼容，防止帧语义串用。
 
-H3 新任务注册 `minimax_h3_t2v_prompt@4`、`minimax_h3_i2v_prompt@4` 与
-`minimax_h3_flf2v_prompt@4`，分别接受 0 张图、一张 `start_image`、按顺序的
+H3 新任务注册 `minimax_h3_t2v_prompt@5`、`minimax_h3_i2v_prompt@5` 与
+`minimax_h3_flf2v_prompt@5`，分别接受 0 张图、一张 `start_image`、按顺序的
 `start_image,end_image`，时长只允许 5/10/15 秒。三者使用
-`minimax_h3_10eros_naughtytimes@3`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
+`minimax_h3_10eros_naughtytimes@4`，按 MiniMax 官方 `h3-prompt-writing/base-en.txt`
 输出三个固定字段：`integrated_multimodal_description`、`overall_soundscape`、
 `non_diegetic_music`。T2V 直接从第一个字段开始；I2V 先输出精确的 0.00 秒
 `<Picture 1>` 对齐句；FLF2V 先输出 Picture 1/2、动态结束时间和实际最终 Shot 编号的
@@ -115,11 +115,12 @@ snapshot。Worker 发布前逐条核对 `<d>[Language] 原文</d>`；翻译、�
 写入优化任务载荷前必须移除当前桶名前缀；Worker 的 `media.object_key` 始终是桶内纯
 对象键，不能再次包含桶名。
 
-H3 使用固定 10Eros Beta2、LightX2V 8-step、NaughtyTimes v2 栈，不接受非空
-`lora_items`、单模型字段或自由规则文本。`minimax_h3_hmnsfw@1`、
-`minimax_h3_10eros_naughtytimes@1/@2` 与三个 `@1/@2/@3` profile 仅用于历史 snapshot
-解析；新请求使用三个 `@4` profile。旧的可变 H3 scene config 若不含官方三字段或
-服务端对白语言占位符，
+H3 生成基础链固定 10Eros Beta2 与 LightX2V 8-step，六个 LoRA 由生成任务的
+服务端目录可选注入。Prompt Optimizer 自身仍不接受非空 `lora_items`、单模型字段
+或自由规则文本；它只编译内容，不决定或输出 LoRA。`minimax_h3_hmnsfw@1` 与
+`minimax_h3_10eros_naughtytimes@1/@2/@3` 及三个 `@1/@2/@3/@4` profile 仅用于历史
+snapshot 解析；新请求使用三个 `@5` profile。旧的可变 H3 scene config 若不含
+官方三字段、服务端对白语言占位符或新“可选服务端附件”契约，
 读取时自动前移到新的 built-in 默认值，并通过管理 API 标记不兼容历史 revision；已提交
 任务仍使用其不可变 snapshot。Web/Bot 只
 提交时长、媒体角色和原始提示词；优化器也不得输出模型名、LoRA 名或触发词。

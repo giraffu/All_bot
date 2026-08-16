@@ -17,14 +17,31 @@ def test_minimax_h3_request_rejects_more_than_four_references():
         MiniMaxH3Request(task_id="h3-1", prompt="scene", images=["1", "2", "3", "4", "5"], width=736, height=416, frame_count=124)
 
 
-@pytest.mark.parametrize("field", ["lora_items", "lora_name", "lora_strength"])
-def test_minimax_h3_request_rejects_removed_addon_fields(field):
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+def test_minimax_h3_request_accepts_six_addons_with_strengths():
+    request = MiniMaxH3Request(
+        task_id="h3-1",
+        prompt="scene",
+        width=736,
+        height=416,
+        frame_count=124,
+        lora_items=[
+            {"name": name, "strength": 0.5}
+            for name in (
+                "naughty_times", "sex_pose", "breasts",
+                "vagassist", "pussy", "penis",
+            )
+        ],
+    )
+    assert len(request.lora_items or []) == 6
+
+
+def test_minimax_h3_request_rejects_more_than_six_addons():
+    with pytest.raises(ValidationError):
         MiniMaxH3Request(
             task_id="h3-1",
             prompt="scene",
             width=736,
             height=416,
             frame_count=124,
-            **{field: [] if field == "lora_items" else None},
+            lora_items=[{"name": str(index), "strength": 1.0} for index in range(7)],
         )

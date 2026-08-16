@@ -14,6 +14,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_MINIMAX_H3_FLF2V,
     MODE_MINIMAX_H3_REF2V,
+    MODE_MINIMAX_H3_T2V,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
@@ -158,6 +159,33 @@ def test_minimax_h3_default_seed_stays_within_central_request_contract(monkeypat
 
     assert metadata["minimax_h3_seed"] == 1125899906842624
     randint.assert_called_once_with(1, 1125899906842624)
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_forwards_normalized_optional_loras_and_metadata(monkeypatch):
+    submit = AsyncMock(return_value="backend-h3")
+    _patch_dispatch_image_service(monkeypatch, submit_minimax_h3_task=submit)
+    strategy = MiniMaxH3Strategy(MODE_MINIMAX_H3_T2V, seed_provider=lambda: 123)
+    inputs = {
+        "prompt": "An adult couple in a bedroom.",
+        "lora_items": [
+            {"name": "sex_pose", "strength": 0.7},
+            {"name": "naughty_times"},
+        ],
+    }
+
+    metadata = strategy.get_metadata(inputs)
+    result = await strategy.submit_task("task-h3", inputs, priority=4)
+
+    assert result == "backend-h3"
+    assert metadata["lora_items"] == [
+        {"name": "sex_pose", "strength": 0.7},
+        {"name": "naughty_times", "strength": 1.0},
+    ]
+    assert submit.await_args.kwargs["lora_items"] == (
+        {"name": "sex_pose", "strength": 0.7},
+        {"name": "naughty_times", "strength": 1.0},
+    )
 
 
 @pytest.mark.asyncio

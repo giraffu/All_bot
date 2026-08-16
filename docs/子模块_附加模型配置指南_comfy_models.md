@@ -18,8 +18,26 @@
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
 - LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
-- MiniMax H3 三个公开模式的固定作者资产栈（10Eros Beta2、LightX2V 8-step、NaughtyTimes v2）、API workflow、模型 bundle、镜像与 LAN canary 契约见
+- MiniMax H3 三个公开模式的固定基础链（10Eros Beta2 + LightX2V 8-step）、
+  六个可选 LoRA、API workflow、模型 bundle、镜像与 LAN canary 契约见
   [`子模块_MiniMaxH3视频服务_minimax_h3.md`](子模块_MiniMaxH3视频服务_minimax_h3.md)。
+
+---
+
+## 0-A、MiniMax H3 可选 LoRA 注入
+
+- 唯一公开目录是 `src/domain_config/minimax_h3.py:MINIMAX_H3_ADDON_MODELS`。每个选项必须
+  使用稳定公共 ID、一个已校验的物理文件、建议强度和可选 prompt prefix；不得为
+  同一文件注册多个别名。
+- Bot/Web 只提交最多 6 个有序 `{name,strength}`，强度 `0.1..2.0`。Web 逐项可编辑；
+  Bot 只多选并使用目录默认值。空列表是正常默认态，未知、重复、超限、非有限数或
+  混用新旧参数均 fail closed。
+- 三个基础 workflow 只保留节点 `8` 的 LightX2V，节点 `2` 默认直接连接 `[8,0]`。
+  `workflow_task_patchers.py` 每次先清理动态节点 `100..119`，再按请求顺序以
+  `LoraLoaderModelOnly` 链式追加选中文件，并把节点 `2` 重连到链尾。未选时必须保持
+  `2 ← 8`，不可预留 NaughtyTimes 或其它隐式 LoRA。
+- 有 trigger/prefix 的目录项只由 Worker 在选中时去重后前置到正向提示；Prompt
+  Optimizer 不输出模型名、LoRA 名、强度或触发词。本地与 RunPod patcher 必须同轮修改。
 
 ---
 

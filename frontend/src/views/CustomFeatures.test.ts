@@ -22,7 +22,10 @@ const labels: Record<string, string> = {
   'lab.workbench.continue_generation': '继续生成',
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
-  'lab.workbench.minimax_h3_fixed_stack': '固定使用 RedMix 8-step 整合模型，无需选择附加模型。',
+  'lab.workbench.minimax_h3_base_stack': '基础链路固定使用 10Eros Beta2 + LightX2V 8-step；附加 LoRA 默认关闭。',
+  'lab.workbench.minimax_h3_addons': '附加 LoRA（可多选）',
+  'lab.workbench.minimax_h3_addon_strength': '强度',
+  'lab.workbench.minimax_h3_addon_options.naughty_times': 'NaughtyTimes v2',
 }
 
 let workbench: any
@@ -202,6 +205,11 @@ const createMinimaxWorkbench = () => ({
   minimaxH3ResolutionPreset: ref('preview'),
   minimaxH3AspectRatio: ref('16:9'),
   minimaxH3ReferenceDescriptions: ref(['', '', '', '']),
+  minimaxH3AddonOptions: [
+    { value: 'naughty_times', labelKey: 'lab.workbench.minimax_h3_addon_options.naughty_times', defaultStrength: 1 },
+  ],
+  minimaxH3AddonNames: ref(['naughty_times']),
+  minimaxH3AddonItems: ref([{ name: 'naughty_times', strength: 0.7 }]),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -305,14 +313,14 @@ describe('CustomFeatures LTX result actions', () => {
   })
 })
 
-describe('CustomFeatures MiniMax H3 fixed stack', () => {
-  it('shows the fixed RedMix stack and no add-on controls', () => {
+describe('CustomFeatures MiniMax H3 optional add-ons', () => {
+  it('shows the fixed base chain and one strength control per selected add-on', () => {
     workbench = createMinimaxWorkbench()
     const wrapper = mountView()
 
-    expect(wrapper.text()).toContain('固定使用 RedMix 8-step 整合模型')
-    expect(wrapper.text()).not.toContain('全选 LoRA')
-    expect(wrapper.findAllComponents({ name: 'ASlider' })).toHaveLength(0)
+    expect(wrapper.text()).toContain('10Eros Beta2 + LightX2V 8-step')
+    expect(wrapper.text()).toContain('NaughtyTimes v2')
+    expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(1)
   })
 })
 

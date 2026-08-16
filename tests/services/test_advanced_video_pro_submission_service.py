@@ -53,11 +53,22 @@ def test_small_resolution_uses_new_price():
     assert plan.cost == 15
 
 
-def test_build_plan_has_no_user_addon_contract():
-    plan = build_advanced_video_pro_submission_plan(mode="t2v", prompt="scene")
-
-    assert not hasattr(plan, "addon_model")
-    assert not hasattr(plan, "addon_strength")
+def test_build_plan_preserves_selected_addons_and_defaults_to_none():
+    assert build_advanced_video_pro_submission_plan(
+        mode="t2v", prompt="scene"
+    ).addon_items == ()
+    plan = build_advanced_video_pro_submission_plan(
+        mode="t2v",
+        prompt="scene",
+        addon_items=[
+            {"name": "naughty_times", "strength": 0.7},
+            {"name": "pussy"},
+        ],
+    )
+    assert plan.addon_items == (
+        {"name": "naughty_times", "strength": 0.7},
+        {"name": "pussy", "strength": 0.35},
+    )
 
 
 def test_flf2v_rejects_frame_ratio_difference_over_one_percent(tmp_path):
@@ -117,3 +128,25 @@ async def test_submit_uses_public_bot_generation_seam():
     assert kwargs["duration"] == 10
     assert kwargs["resolution_preset"] == "standard"
     assert kwargs["aspect_ratio"] == "source"
+    assert kwargs["lora_items"] is None
+
+
+@pytest.mark.asyncio
+async def test_submit_forwards_selected_addons():
+    process = AsyncMock(return_value=(b"video", "output.mp4"))
+    plan = build_advanced_video_pro_submission_plan(
+        mode="t2v",
+        prompt="motion",
+        addon_items=[{"name": "naughty_times", "strength": 0.65}],
+    )
+    await submit_advanced_video_pro_plan(
+        plan,
+        context=object(),
+        chat_id=1,
+        user_id=2,
+        username="alice",
+        process_task_func=process,
+    )
+    assert process.await_args.kwargs["lora_items"] == [
+        {"name": "naughty_times", "strength": 0.65}
+    ]

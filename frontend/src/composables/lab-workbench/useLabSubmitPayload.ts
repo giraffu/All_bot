@@ -11,7 +11,11 @@ import {
   type LtxVideoLoraItem,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
-import type { LabModeConfig, LabUploadSlotId } from '@/features/generation/labModeConfig'
+import type {
+  LabModeConfig,
+  LabUploadSlotId,
+  MiniMaxH3AddonItem,
+} from '@/features/generation/labModeConfig'
 import { isScail2ModeId } from './modeHelpers'
 import type {
   LabAssetUploadSlot,
@@ -45,6 +49,7 @@ type UseLabSubmitPayloadOptions = {
   minimaxH3ResolutionPreset?: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio?: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions?: Ref<string[]>
+  minimaxH3AddonItems?: Ref<MiniMaxH3AddonItem[]>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -81,6 +86,7 @@ export function useLabSubmitPayload({
   minimaxH3ResolutionPreset,
   minimaxH3AspectRatio,
   minimaxH3ReferenceDescriptions,
+  minimaxH3AddonItems,
   isTemplateApplied,
   isTemplatePromptLocked,
   templateSourcePostId,
@@ -177,6 +183,14 @@ export function useLabSubmitPayload({
               }
             : {}),
           reference_descriptions: [],
+          ...((minimaxH3AddonItems?.value.length ?? 0) > 0
+            ? {
+                lora_items: minimaxH3AddonItems!.value.map(item => ({
+                  name: item.name,
+                  strength: item.strength,
+                })),
+              }
+            : {}),
         },
         isTemplate: false,
       }))

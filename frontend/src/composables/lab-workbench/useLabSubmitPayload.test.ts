@@ -12,6 +12,7 @@ import {
   getLabModeConfig,
   type LabModeConfig,
   type LabUploadSlotId,
+  type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
 } from '@/features/generation/labModeConfig'
 import type { LabAssetUploadSlot, UploadedReference, UploadedSlotAsset } from './types'
@@ -47,6 +48,7 @@ type SubmitHarness = {
   minimaxH3ResolutionPreset: Ref<'preview' | 'small' | 'standard' | 'hd'>
   minimaxH3AspectRatio: Ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>
   minimaxH3ReferenceDescriptions: Ref<string[]>
+  minimaxH3AddonItems: Ref<MiniMaxH3AddonItem[]>
   isTemplateApplied: Ref<boolean>
   isTemplatePromptLocked: Ref<boolean>
   templateSourcePostId: Ref<number | null>
@@ -99,6 +101,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
+  const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
   const isTemplateApplied = ref(false)
   const isTemplatePromptLocked = ref(false)
   const templateSourcePostId = ref<number | null>(null)
@@ -132,6 +135,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonItems,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -164,6 +168,7 @@ const createHarness = (initialModeId: UnifiedLabModeId): SubmitHarness => {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonItems,
     isTemplateApplied,
     isTemplatePromptLocked,
     templateSourcePostId,
@@ -230,7 +235,7 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.ltx_t2v_title')
   })
 
-  it('submits the three enabled MiniMax H3 modes without add-on overrides', async () => {
+  it('submits MiniMax H3 with optional per-model strengths', async () => {
     const harness = createHarness('minimax_h3')
     harness.prompt.value = 'cinematic character motion with dialogue'
     harness.duration.value = '15'
@@ -256,6 +261,20 @@ describe('useLabSubmitPayload', () => {
       }),
     }), 'lab.cards.minimax_h3_title')
     expect(harness.submitTask.mock.calls.at(-1)?.[0].inputs).not.toHaveProperty('lora_items')
+
+    harness.minimaxH3AddonItems.value = [
+      { name: 'naughty_times', strength: 0.7 },
+      { name: 'pussy', strength: 0.3 },
+    ]
+    await harness.handleSubmit()
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      inputs: expect.objectContaining({
+        lora_items: [
+          { name: 'naughty_times', strength: 0.7 },
+          { name: 'pussy', strength: 0.3 },
+        ],
+      }),
+    }), 'lab.cards.minimax_h3_title')
   })
 
   it('submits ordered MSR character ids with a required scene background', async () => {

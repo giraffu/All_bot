@@ -15,7 +15,6 @@ AUDIO_VAE = "MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors"
 LIGHTX2V_LORA = (
     "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 )
-NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
 FILENAMES = {
     "minimax_h3_t2v": "MiniMax H3 T2V.api.json",
     "minimax_h3_i2v": "MiniMax H3 I2V.api.json",
@@ -38,15 +37,9 @@ def build(task_type: str) -> dict:
             lora_name=LIGHTX2V_LORA,
             strength_model=1.0,
         ),
-        "9": _node(
-            "LoraLoaderModelOnly",
-            model=["8", 0],
-            lora_name=NAUGHTYTIMES_LORA,
-            strength_model=1.0,
-        ),
         "2": _node(
             "ModelAttentionBackend",
-            model=["9", 0],
+            model=["8", 0],
             attention="comfy kitchen attention",
         ),
         "3": _node(

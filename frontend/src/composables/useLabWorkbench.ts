@@ -17,7 +17,9 @@ import {
   LTX_T2V_IC_RESOLUTION_OPTIONS,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
+  MINIMAX_H3_ADDON_OPTIONS,
   type LabModeConfig,
+  type MiniMaxH3AddonItem,
   type UnifiedLabModeId,
   UNIFIED_LAB_MODES,
   VIDEO_DURATION_OPTIONS,
@@ -91,6 +93,9 @@ export function useLabWorkbench() {
   const minimaxH3ResolutionPreset = ref<'preview' | 'small' | 'standard' | 'hd'>('preview')
   const minimaxH3AspectRatio = ref<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9')
   const minimaxH3ReferenceDescriptions = ref<string[]>(['', '', '', ''])
+  const minimaxH3AddonNames = ref<string[]>([])
+  const minimaxH3AddonItems = ref<MiniMaxH3AddonItem[]>([])
+  const minimaxH3AddonOptions = MINIMAX_H3_ADDON_OPTIONS
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
@@ -133,6 +138,8 @@ export function useLabWorkbench() {
     selectedVideoLora.value = getDefaultVideoLoraSelection()
     ltxLoraItems.value = []
     selectedLtxLoraNames.value = []
+    minimaxH3AddonNames.value = []
+    minimaxH3AddonItems.value = []
     negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
     wan22ResolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
@@ -303,6 +310,7 @@ export function useLabWorkbench() {
     || selectedEditLora.value !== ''
     || selectedVideoLora.value !== getDefaultVideoLoraSelection()
     || selectedLtxLoraNames.value.length > 0
+    || minimaxH3AddonNames.value.length > 0
     || negativePrompt.value !== DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
     || wan22ResolutionPreset.value !== DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
     || wan22.wan22ChainMode.value !== 'default'
@@ -322,6 +330,22 @@ export function useLabWorkbench() {
       ? (EDIT_LORA_DEFAULT_STRENGTHS[nextValue] ?? DEFAULT_EDIT_LORA_STRENGTH)
       : DEFAULT_EDIT_LORA_STRENGTH
   })
+
+  watch(minimaxH3AddonNames, (names) => {
+    const validNames = names.filter(name => (
+      MINIMAX_H3_ADDON_OPTIONS.some(option => option.value === name)
+    ))
+    const currentByName = new Map(
+      minimaxH3AddonItems.value.map(item => [item.name, item.strength]),
+    )
+    minimaxH3AddonItems.value = validNames.map((name) => {
+      const option = MINIMAX_H3_ADDON_OPTIONS.find(item => item.value === name)!
+      return {
+        name,
+        strength: currentByName.get(name) ?? option.defaultStrength,
+      }
+    })
+  }, { deep: true })
 
   watch(videoDurationOptions, (options) => {
     if (!isScail2ModeId(currentMode.value.id)) {
@@ -454,6 +478,7 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonItems,
     isTemplateApplied: template.isTemplateApplied,
     isTemplatePromptLocked: template.isTemplatePromptLocked,
     templateSourcePostId: template.templateSourcePostId,
@@ -532,6 +557,9 @@ export function useLabWorkbench() {
     minimaxH3ResolutionPreset,
     minimaxH3AspectRatio,
     minimaxH3ReferenceDescriptions,
+    minimaxH3AddonOptions,
+    minimaxH3AddonNames,
+    minimaxH3AddonItems,
     templateNotice: template.templateNotice,
     templateWarning: template.templateWarning,
     composerNotice,

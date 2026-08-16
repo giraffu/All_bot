@@ -4,7 +4,8 @@
 
 `minimax_h3` 是独立 GPU profile，不是 LTX alias。用户只开放三个任务：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`。Web 使用一个“高级图生
-视频pro”工作台切换三种模式，主 Bot 使用同一组模式；两端都不提供附加模型选择。
+视频pro”工作台切换三种模式，主 Bot 使用同一组模式。两端均可从
+六个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录建议强度。
 历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
 Worker pool、RunPod/LAN 支持任务列表或新建入口。
 
@@ -20,35 +21,37 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - T2V 不接受图片；I2V 恰好一张首帧；FLF2V 恰好两张有序首尾帧。
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
-- `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用和输入数量的事实源。
-  空的历史 `addon_models`、`lora_items`、`lora_name`、`lora_strength` 占位值继续兼容；
-  任一非空值明确拒绝。客户端不能覆盖模型、采样器、steps、timeline、本地路径或参考音视频。
+- `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
+  目录的事实源。新请求使用最多 6 个有序 `lora_items[{name,strength}]`，强度限定
+  `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
+  `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
+  主模型、采样器、steps、timeline、本地路径或参考音视频。
 - 输出为带音轨 MP4，并由 `SaveImage` 产生 `extra_outputs.last_frame`。
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
 ## 提示词优化契约
 
-新 Prompt Optimizer 任务使用三个 `profile@4` 与
-`minimax_h3_10eros_naughtytimes@3`。输出不是旧的 200–270 词单段 caption，而是
+新 Prompt Optimizer 任务使用三个 `profile@5` 与
+`minimax_h3_10eros_naughtytimes@4`。输出不是旧的 200–270 词单段 caption，而是
 MiniMax 官方 Base 顺序：`integrated_multimodal_description` →
 `overall_soundscape` → `non_diegetic_music`。T2V 无对齐首行；I2V 必须先写官方
 `<Picture 1>` 0.00 秒对齐句；FLF2V 必须先写 Picture 1/2、动态结束时间和正文实际
 最终 Shot 编号的对齐句。第一镜头不得带时间，后续镜头必须按顺序编号且时间戳严格
 早于视频时长。
 
-Web 与 Bot 从 capability 选择 template v3；Web 提交时把管理端当前配置、原台词及
+Web 与 Bot 从 capability 选择 template v4；Web 提交时把管理端当前配置、原台词及
 服务端检测的台词语言渲染成不可变 snapshot。检测以台词自身为准，不受中文或英文场景
 叙述影响；Worker 要求输出保留匹配的 `<d>[Language] 原文</d>`，翻译、改写或漏写时
-受控重试。保存过的旧单段 H3 scene config，以及没有对白语言占位符的旧官方配置，对
-新任务自动回落到 built-in 默认值，
+受控重试。保存过的旧单段 H3 scene config、没有对白语言占位符的旧官方配置，
+以及仍声称 NaughtyTimes 固定加载的配置，对新任务自动回落到 built-in 默认值，
 但历史任务继续读取自己原有的 snapshot 与旧 profile。Worker 在任何文本增量对用户
 可见前复验结构、对齐和时长。本地 Optimizer 生成的是兼容官方 Base 的提示词，不调用
 未开源的托管 H3-Context-IR，因此不宣称复现官方 Context-IR 的完整推理质量。
 
-## 固定作者资产栈
+## 固定基础链与可选作者资产
 
-T2V/I2V/FLF2V 使用可分别升级、但对客户端完全固定的作者原始资产：
+T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
 
 - 10Eros-Max Beta2 `10Eros_Max_h3_fl2va_beta2_pruned.safetensors`，revision
   `47aa7e38dc2aca9a1e71a5b01b7ffefd462b57b5`，40,222,933,592 bytes，SHA256
@@ -56,20 +59,22 @@ T2V/I2V/FLF2V 使用可分别升级、但对客户端完全固定的作者原始
 - LightX2V FL2VA 8-step v1.0 `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`，
   1,956,193,000 bytes，SHA256
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
-- NaughtyTimes v2 pruned R256 `NaughtyTimes_pruned_r256_v2.safetensors`，Civitai
-  modelVersion `3212436` / file `3094173`，2,242,444,272 bytes，SHA256
-  `947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-三个 workflow 使用同一固定顺序：`UNETLoader(10Eros Beta2) →
-LoraLoaderModelOnly(LightX2V, 1.0) → LoraLoaderModelOnly(NaughtyTimes, 1.0) →
+六个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+（0.5）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6（0.35）与 HMPenis v2
+（1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。目录一项只映射一个物理
+文件，避免同一 LoRA 以别名被重复加载。
+
+三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
+LoraLoaderModelOnly(LightX2V, 1.0) → [用户选中 LoRA 有序链] →
 ModelAttentionBackend(comfy kitchen attention) → MiniMaxH3SigmaShift(12/3) →
 ReservedVRAMSetter(2 GiB auto、3 GiB 上限) → MiniMaxH3ImageToVideo →
 Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再回退到
 25 steps。输出继续解码 H3 原生同步音轨。
 
-镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包也不包含
-REF2VA、HMNSFW、HMBreasts、HMPussy、HMPenis、RedMix 或其它历史附件。旧 checkpoint、
+镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包不包含
+REF2VA 或 RedMix，但包含上述六个可选 LoRA。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续三模式 GPU canary 才能定论。
@@ -81,9 +86,9 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1`、六个文件的字节数与
-SHA256，总计 65,921,776,719 bytes（61.39 GiB）。脚本复用已有内容寻址 blob，只把缺失
-资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。NaughtyTimes 下载需要通过
+`2026-08-16-10eros-beta2-addon6-lightx2v8-v1`、11 个文件的字节数与
+SHA256，总计 67,788,745,063 bytes（63.13 GiB）。脚本复用已有内容寻址 blob，只把缺失
+资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或
 任何远端 registry。

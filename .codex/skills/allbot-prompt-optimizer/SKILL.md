@@ -45,13 +45,14 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   数据库/内置来源与不兼容回退，禁止镜像版本差异静默改变默认模板。
 - Worker 必须核对 Profile、Template 和 hash；未知版本、未知字段、空文本、超长
   文本或不兼容媒体角色一律失败。
-- H3 固定 10Eros/LightX2V/NaughtyTimes，拒绝覆盖和触发词；输出官方三字段，
+- H3 固定 10Eros/LightX2V；LoRA 由生成端注入，优化器拒绝 LoRA/触发词，
+  输出官方三字段，
   I2V/FLF2V 对齐由 Profile 注入、Worker 复验。
 - 图片必须 owner-fenced，PNG/JPEG/WebP，单文件不超过 20 MB；发送 LM Studio 前
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
   原始提示词、图片内容或 LLM 原始响应。
-- `text_delta` 幂等上报；H3@4 发布前校验结构、时序与服务端台词
+- `text_delta` 幂等上报；H3@5 发布前校验结构、时序与服务端台词
   `<d>[Language] 原文</d>`。JSON 匹配增量才能 `/complete`，失败幂等退款。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款
   一次。运行任务 pop 时锁定取消。

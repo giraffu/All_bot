@@ -34,7 +34,7 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
 
     assert config["display_name"] == "高级图生视频pro"
     assert config["revision"] == 0
-    assert config["template_ref"] == "minimax_h3_10eros_naughtytimes@3"
+    assert config["template_ref"] == "minimax_h3_10eros_naughtytimes@4"
     assert config["config_source"] == "built-in"
     assert config["compatibility_status"] == "current"
     assert config["fallback_reason"] == "no_saved_config"
@@ -94,6 +94,33 @@ def test_h3_saved_official_config_without_dialogue_contract_falls_forward():
     assert config["compatibility_status"] == "fallback"
     assert config["stored_revision"] == 8
     assert "{dialogue_language_instructions}" in config["user_template"]
+
+
+def test_h3_fixed_naughtytimes_saved_config_falls_forward_to_optional_addons():
+    default = get_default_config("minimax_h3")
+    fixed_naughty = SimpleNamespace(
+        scene_key="minimax_h3",
+        display_name="fixed NaughtyTimes",
+        description="old fixed stack",
+        system_template=default["system_template"].replace(
+            "the MiniMax H3 10Eros-Max Beta2 base with fixed LightX2V 8-step "
+            "acceleration and optional server-selected add-ons",
+            "the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and "
+            "NaughtyTimes v2 stack",
+        ),
+        user_template=default["user_template"],
+        revision=9,
+        content_hash="fixed-naughty-hash",
+        updated_by="admin",
+    )
+
+    config = serialize_config(fixed_naughty, "minimax_h3")
+
+    assert config["revision"] == 0
+    assert config["config_source"] == "built-in"
+    assert config["compatibility_status"] == "fallback"
+    assert config["stored_revision"] == 9
+    assert "optional server-selected add-ons" in config["system_template"]
 
 
 def test_h3_current_saved_config_is_reported_as_database_source():

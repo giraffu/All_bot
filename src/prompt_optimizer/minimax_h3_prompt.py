@@ -183,3 +183,15 @@ MINIMAX_H3_DIALOGUE_LANGUAGE_USER = MINIMAX_H3_OFFICIAL_BASE_USER.replace(
     "{dialogue_language_instructions}\n\n"
     "Produce the final English positive_prompt in the official H3 base structure.",
 )
+
+
+# Version 4 keeps the official H3 structure and immutable dialogue-language
+# contract while describing the runtime truth: only the 10Eros base and
+# LightX2V acceleration are fixed; all content LoRAs are optional and selected
+# by the server outside prompt optimization.
+MINIMAX_H3_OPTIONAL_ADDONS_SYSTEM = MINIMAX_H3_DIALOGUE_LANGUAGE_SYSTEM.replace(
+    "the fixed MiniMax H3 10Eros-Max Beta2, LightX2V 8-step, and NaughtyTimes v2 stack",
+    "the MiniMax H3 10Eros-Max Beta2 base with fixed LightX2V 8-step acceleration and optional server-selected add-ons",
+    1,
+)
+MINIMAX_H3_OPTIONAL_ADDONS_USER = MINIMAX_H3_DIALOGUE_LANGUAGE_USER
