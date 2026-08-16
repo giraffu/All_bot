@@ -6,23 +6,17 @@ export interface FloatingTaskSlotLike {
   updatedAt?: number
 }
 
-export const MAX_FLOATING_TASKS = 3
+export const COMPACT_FLOATING_TASK_SLOTS = 3
 
 export function isTerminalFloatingTask(task: Pick<FloatingTaskSlotLike, 'status'>): boolean {
   return task.status === 'success' || task.status === 'failed' || task.status === 'cancelled'
 }
 
-export function countBlockingFloatingTasks(
-  tasks: Array<Pick<FloatingTaskSlotLike, 'status'>>
-): number {
-  return tasks.filter(task => !isTerminalFloatingTask(task)).length
-}
-
 export function getOldestTerminalFloatingTaskIdsForNewTask(
   tasks: FloatingTaskSlotLike[],
-  limit = MAX_FLOATING_TASKS
+  compactSlots = COMPACT_FLOATING_TASK_SLOTS
 ): string[] {
-  const slotsNeeded = Math.max(tasks.length - limit + 1, 0)
+  const slotsNeeded = Math.max(tasks.length - compactSlots + 1, 0)
   if (slotsNeeded === 0) {
     return []
   }

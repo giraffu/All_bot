@@ -1,3 +1,5 @@
+import asyncio
+
 from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_FACE_VIDEO_STEP2,
@@ -185,8 +187,7 @@ async def _build_user_queue_tasks_for_display(user, context) -> list[dict]:
         )
     )
 
-    display_tasks: list[dict] = []
-    for task in user_tasks[:3]:
+    async def build_display_task(task: dict) -> dict:
         backend_task_id = task.get("backend_task_id")
         status_data = (
             await image_service.get_task_status(
@@ -196,15 +197,16 @@ async def _build_user_queue_tasks_for_display(user, context) -> list[dict]:
             if backend_task_id
             else None
         )
-        display_tasks.append(
-            {
-                "task_type": _normalize_queue_task_type_for_display(
-                    task.get("task_type") or task.get("type")
-                ),
-                "status_text": _build_user_task_status_text(status_data, context),
-            }
-        )
-    return display_tasks
+        return {
+            "task_type": _normalize_queue_task_type_for_display(
+                task.get("task_type") or task.get("type")
+            ),
+            "status_text": _build_user_task_status_text(status_data, context),
+        }
+
+    return list(
+        await asyncio.gather(*(build_display_task(task) for task in user_tasks))
+    )
 
 
 async def toggle_user_language(context, user) -> tuple[str, object]:
