@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -13,9 +14,12 @@ from typing import Any
 import httpx
 from minio import Minio
 
-from workers.prompt_optimizer.executor import execute_prompt_optimization
+from workers.prompt_optimizer.executor import (
+    PromptOptimizationExecutionError,
+    execute_prompt_optimization,
+)
 from workers.prompt_optimizer.media import image_bytes_to_data_url
-from workers.prompt_optimizer.provider import LMStudioChatProvider
+from workers.prompt_optimizer.provider import LMStudioChatProvider, ModelResponseError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("prompt_optimizer_worker")
@@ -38,6 +42,16 @@ _state: dict[str, Any] = {
 }
 _lane_readiness: dict[int, tuple[bool, str]] = {}
 _state_lock = threading.Lock()
+_SAFE_FAILURE_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
+
+
+def _safe_failure_reason(exc: Exception) -> str:
+    error_type = type(exc).__name__
+    if isinstance(exc, (PromptOptimizationExecutionError, ModelResponseError)):
+        code = str(exc).strip()
+        if _SAFE_FAILURE_CODE_PATTERN.fullmatch(code):
+            return f"{error_type}:{code}"
+    return error_type
 
 
 def _set_lane_readiness(lane_number: int, ready: bool, reason: str) -> None:
@@ -51,9 +65,7 @@ def _set_lane_readiness(lane_number: int, ready: bool, reason: str) -> None:
         )
         _state["ready"] = all_ready and not _state["draining"]
         _state["reason"] = (
-            "draining"
-            if _state["draining"]
-            else ("ready" if all_ready else reason)
+            "draining" if _state["draining"] else ("ready" if all_ready else reason)
         )
 
 
@@ -100,9 +112,11 @@ def _start_health_server() -> None:
 
 
 def _minio_client() -> Minio:
-    endpoint = os.getenv("MINIO_ENDPOINT", "127.0.0.1:9000").removeprefix(
-        "http://"
-    ).removeprefix("https://")
+    endpoint = (
+        os.getenv("MINIO_ENDPOINT", "127.0.0.1:9000")
+        .removeprefix("http://")
+        .removeprefix("https://")
+    )
     return Minio(
         endpoint,
         access_key=os.environ["MINIO_ACCESS_KEY"],
@@ -331,11 +345,14 @@ async def _lane(
                     on_text_delta=emitter.add,
                 )
                 await emitter.flush()
-                await central.complete(
-                    task_id, agent_id, result, attempt_id=attempt_id
-                )
+                await central.complete(task_id, agent_id, result, attempt_id=attempt_id)
             except Exception as exc:
-                logger.warning("prompt task failed task_id=%s reason=%s", task_id, type(exc).__name__)
+                failure_reason = _safe_failure_reason(exc)
+                logger.warning(
+                    "prompt task failed task_id=%s reason=%s",
+                    task_id,
+                    failure_reason,
+                )
                 if "emitter" in locals():
                     try:
                         await emitter.flush()
@@ -344,7 +361,7 @@ async def _lane(
                 await central.fail(
                     task_id,
                     agent_id,
-                    type(exc).__name__,
+                    failure_reason,
                     attempt_id=locals().get("attempt_id"),
                 )
             finally:
@@ -354,7 +371,9 @@ async def _lane(
             _set_lane_readiness(
                 lane_number, False, f"central_unavailable:{type(exc).__name__}"
             )
-            logger.warning("lane unavailable lane=%s reason=%s", lane_number, type(exc).__name__)
+            logger.warning(
+                "lane unavailable lane=%s reason=%s", lane_number, type(exc).__name__
+            )
             await asyncio.sleep(2)
 
 

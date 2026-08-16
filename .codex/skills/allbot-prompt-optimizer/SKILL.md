@@ -50,8 +50,9 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
   原始提示词、图片内容或 LLM 原始响应。
-- `text_delta` 按 attempt/sequence 幂等上报；H3 候选通过词数、头部、禁词和时间戳
-  校验后才发布。最终 JSON 合法且匹配增量才能 `/complete`；失败仍幂等退款。
+- `text_delta` 按 attempt/sequence 幂等上报；H3@3 先规范化排版、对齐与锚点，
+  校验字段、Shot/时间戳后发布。JSON 匹配增量才能 `/complete`；
+  失败仍幂等退款。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且

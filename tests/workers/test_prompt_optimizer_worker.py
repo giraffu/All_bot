@@ -25,7 +25,7 @@ os.environ.setdefault("MINIO_ACCESS_KEY", "test-access")
 os.environ.setdefault("MINIO_SECRET_KEY", "test-secret")
 
 from workers.prompt_optimizer import worker_main
-from workers.prompt_optimizer.worker_main import CentralClient
+from workers.prompt_optimizer.worker_main import CentralClient, _safe_failure_reason
 
 
 class FakeProvider:
@@ -191,6 +191,7 @@ async def test_minimax_h3_executor_enforces_dynamic_timestamps_and_forbidden_voc
                 preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
             )
 
+
 @pytest.mark.asyncio
 async def test_minimax_h3_executor_retries_before_publishing_stream_deltas():
     template = get_template_by_ref("minimax_h3_hmnsfw@1")
@@ -221,9 +222,10 @@ async def test_minimax_h3_executor_retries_before_publishing_stream_deltas():
 
     assert result["result_text"] == valid.strip()
     assert len(provider.calls) == 2
-    assert "previous candidate failed server validation" in provider.calls[1][
-        "system_prompt"
-    ]
+    assert (
+        "previous candidate failed server validation"
+        in provider.calls[1]["system_prompt"]
+    )
     assert published == [("positive_prompt", valid)]
 
 
@@ -267,8 +269,7 @@ async def test_minimax_h3_executor_retries_invalid_model_json_response():
 async def test_minimax_h3_executor_normalizes_complete_reordered_header():
     template = get_template_by_ref("minimax_h3_hmnsfw@1")
     generated = (
-        "wide shot, slow pace, insertion, side view. A woman moves. "
-        + "word " * 194
+        "wide shot, slow pace, insertion, side view. A woman moves. " + "word " * 194
     )
     published = []
 
@@ -298,7 +299,9 @@ async def test_minimax_h3_executor_normalizes_complete_reordered_header():
     assert published == [("positive_prompt", result["result_text"])]
 
 
-def _official_h3_prompt(mode: str, *, duration: int = 10, second_shot: bool = False) -> str:
+def _official_h3_prompt(
+    mode: str, *, duration: int = 10, second_shot: bool = False
+) -> str:
     alignment = ""
     if mode == "i2v":
         alignment = (
@@ -321,8 +324,10 @@ def _official_h3_prompt(mode: str, *, duration: int = 10, second_shot: bool = Fa
     )
     shot_body = (
         "[Shot 1] Live-action, a medium-wide shot frames two adults moving continuously "
-        f"through the room while the camera tracks them at slow speed. {anchor}"
+        "through the room while the camera tracks them at slow speed."
     )
+    if anchor:
+        shot_body += f" {anchor.strip()}"
     if second_shot:
         shot_body += (
             " [Shot 2] At 00:05.000, the camera cuts to a close shot that reaches "
@@ -378,6 +383,106 @@ async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_out
     )
 
     assert result["result_text"] == expected
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variations():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    generated = _official_h3_prompt("i2v")
+    generated = generated.split("\n\n", 1)[1]
+    generated = generated.replace(
+        "remain exact as motion begins. ",
+        "remain exact as motion begins.\n\n",
+    )
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_i2v",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": [{"role": "start_image", "object_key": "start.webp"}],
+        },
+        provider=FakeProvider(generated),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"] == _official_h3_prompt("i2v")
+    assert result["result_meta"]["prompt_optimizer"]["optimized_fields"] == {
+        "positive_prompt": _official_h3_prompt("i2v")
+    }
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    alignment, core = _official_h3_prompt("i2v").split("\n\n", 1)
+    generated = (
+        alignment
+        + "\n\n"
+        + core.replace(
+            "<Picture 1> remain exact as motion begins.",
+            "the opening image remains exact as motion begins.",
+        )
+    )
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_i2v",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": [{"role": "start_image", "object_key": "start.webp"}],
+        },
+        provider=FakeProvider(generated),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"].startswith(alignment + "\n\n")
+    assert (
+        "integrated_multimodal_description: [Shot 1] <Picture 1> is the exact opening frame."
+        in result["result_text"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    alignment, core = _official_h3_prompt("flf2v", second_shot=True).split("\n\n", 1)
+    generated = (
+        alignment
+        + "\n\n"
+        + core.replace("Picture 1", "the opening image", 1).replace(
+            "Picture 2", "the final image", 1
+        )
+    )
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_flf2v_prompt@3",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_flf2v",
+            "prompt": "move continuously from the opening image to the final image",
+            "context": {"duration_seconds": 10},
+            "media": [
+                {"role": "start_image", "object_key": "start.webp"},
+                {"role": "end_image", "object_key": "end.webp"},
+            ],
+        },
+        provider=FakeProvider(generated),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert "[Shot 1] Picture 1 is the exact opening frame" in result["result_text"]
+    assert "Picture 2 is the exact final frame" in result["result_text"]
 
 
 @pytest.mark.asyncio
@@ -465,6 +570,16 @@ async def test_executor_accepts_fenced_dynamic_snapshot_and_rejects_tampering():
             load_media=lambda _key: asyncio.sleep(0, result=b"image"),
             preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
         )
+
+
+def test_prompt_worker_reports_safe_structured_failure_code():
+    assert (
+        _safe_failure_reason(
+            PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        )
+        == "PromptOptimizationExecutionError:invalid_minimax_h3_field_structure"
+    )
+    assert _safe_failure_reason(RuntimeError("secret user input")) == "RuntimeError"
 
 
 def test_media_preprocessor_resizes_and_normalizes_to_jpeg():
@@ -597,9 +712,9 @@ async def test_lmstudio_provider_streams_completion_text_deltas():
     async def handler(request):
         requests.append((request.url.path, json.loads(request.content)))
         stream_body = (
-            'data: {"choices":[{"text":"{\\\"optimized_fields\\\":'
-            '{\\\"positive_prompt\\\":\\\"hello "}]}\n'
-            'data: {"choices":[{"text":"world\\\"},\\\"warnings\\\":[]}"}]}\n'
+            'data: {"choices":[{"text":"{\\"optimized_fields\\":'
+            '{\\"positive_prompt\\":\\"hello "}]}\n'
+            'data: {"choices":[{"text":"world\\"},\\"warnings\\":[]}"}]}\n'
             "data: [DONE]\n"
         )
         return httpx.Response(200, text=stream_body)

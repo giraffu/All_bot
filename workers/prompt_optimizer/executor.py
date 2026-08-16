@@ -38,6 +38,15 @@ _MINIMAX_H3_HEADER_SHOTS = (
     "low angle",
     "wide shot",
 )
+_MINIMAX_H3_OFFICIAL_FIELD_NAMES = (
+    "integrated_multimodal_description",
+    "overall_soundscape",
+    "non_diegetic_music",
+)
+_MINIMAX_H3_OFFICIAL_FIELD_PATTERN = re.compile(
+    r"(?m)^[ \t]*(integrated_multimodal_description|overall_soundscape|non_diegetic_music)"
+    r"[ \t]*:[ \t]*"
+)
 
 
 def _normalize_minimax_h3_header(result_text: str) -> str:
@@ -148,11 +157,7 @@ def _validate_official_minimax_h3_output(
 
     if len(core_blocks) != 3:
         raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
-    field_names = (
-        "integrated_multimodal_description",
-        "overall_soundscape",
-        "non_diegetic_music",
-    )
+    field_names = _MINIMAX_H3_OFFICIAL_FIELD_NAMES
     values: list[str] = []
     for block, field_name in zip(core_blocks, field_names):
         prefix = f"{field_name}: "
@@ -167,9 +172,7 @@ def _validate_official_minimax_h3_output(
         raise PromptOptimizationExecutionError("invalid_minimax_h3_first_shot")
     if re.search(r"\[Shot 1\]\s+At\b", integrated, flags=re.IGNORECASE):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_first_timestamp")
-    shot_numbers = [
-        int(value) for value in re.findall(r"\[Shot\s+(\d+)\]", integrated)
-    ]
+    shot_numbers = [int(value) for value in re.findall(r"\[Shot\s+(\d+)\]", integrated)]
     if not shot_numbers or shot_numbers != list(range(1, len(shot_numbers) + 1)):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_shot_sequence")
     for shot_number in shot_numbers[1:]:
@@ -186,10 +189,10 @@ def _validate_official_minimax_h3_output(
         if int(seconds) >= 60:
             raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
         timestamps.append(int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000)
-    if len(timestamps) != len(shot_numbers) - 1 or any(
-        value >= duration for value in timestamps
-    ) or any(
-        current <= previous for previous, current in pairwise(timestamps)
+    if (
+        len(timestamps) != len(shot_numbers) - 1
+        or any(value >= duration for value in timestamps)
+        or any(current <= previous for previous, current in pairwise(timestamps))
     ):
         raise PromptOptimizationExecutionError("invalid_minimax_h3_timestamp")
 
@@ -205,9 +208,79 @@ def _validate_official_minimax_h3_output(
         if match is None:
             raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_alignment")
         if int(match.group("last_shot")) != shot_numbers[-1]:
-            raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_final_shot")
+            raise PromptOptimizationExecutionError(
+                "invalid_minimax_h3_flf2v_final_shot"
+            )
         if "Picture 1" not in integrated or "Picture 2" not in integrated:
             raise PromptOptimizationExecutionError("invalid_minimax_h3_flf2v_anchor")
+
+
+def _normalize_official_minimax_h3_section(value: str) -> str:
+    return " ".join(
+        line.strip()
+        for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if line.strip()
+    )
+
+
+def _canonicalize_official_minimax_h3_output(
+    profile,
+    result_text: str,
+    *,
+    context: dict[str, Any],
+) -> str:
+    normalized = result_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    matches = list(_MINIMAX_H3_OFFICIAL_FIELD_PATTERN.finditer(normalized))
+    if [match.group(1) for match in matches] != list(_MINIMAX_H3_OFFICIAL_FIELD_NAMES):
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+
+    prefix = _normalize_official_minimax_h3_section(normalized[: matches[0].start()])
+    values: list[str] = []
+    for index, match in enumerate(matches):
+        end = (
+            matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
+        )
+        value = _normalize_official_minimax_h3_section(normalized[match.end() : end])
+        if not value:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        values.append(value)
+
+    alignment = ""
+    if profile.id == "minimax_h3_t2v_prompt":
+        if prefix:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_t2v_alignment")
+    elif profile.id == "minimax_h3_i2v_prompt":
+        if prefix and not all(
+            marker in prefix for marker in ("0.00", "<Picture 1>", "Shot 1")
+        ):
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_i2v_alignment")
+        alignment = (
+            "For the target video, at 0.00 seconds into the target video, "
+            "<Picture 1> (from [Shot 1]) is fully referenced."
+        )
+        if "<Picture 1>" not in values[0] and values[0].startswith("[Shot 1]"):
+            values[0] = (
+                "[Shot 1] <Picture 1> is the exact opening frame. "
+                + values[0][len("[Shot 1]") :].lstrip()
+            )
+    elif profile.id == "minimax_h3_flf2v_prompt":
+        alignment = prefix
+        if ("Picture 1" not in values[0] or "Picture 2" not in values[0]) and values[
+            0
+        ].startswith("[Shot 1]"):
+            values[0] = (
+                "[Shot 1] Picture 1 is the exact opening frame. "
+                "Picture 2 is the exact final frame. "
+                + values[0][len("[Shot 1]") :].lstrip()
+            )
+    else:
+        raise PromptOptimizationExecutionError("invalid_minimax_h3_profile")
+
+    core = "\n\n".join(
+        f"{field_name}: {value}"
+        for field_name, value in zip(_MINIMAX_H3_OFFICIAL_FIELD_NAMES, values)
+    )
+    return f"{alignment}\n\n{core}" if alignment else core
 
 
 def _validated_result(
@@ -236,13 +309,20 @@ def _validated_result(
             or len(value) > profile.max_output_characters
         ):
             raise PromptOptimizationExecutionError("invalid_output_text")
-    normalized_fields = {
-        key: value.strip() for key, value in optimized_fields.items()
-    }
+    normalized_fields = {key: value.strip() for key, value in optimized_fields.items()}
     result_text = normalized_fields[profile.primary_field]
-    if profile.id.startswith(_MINIMAX_H3_PROFILE_PREFIX) and profile.version < 3:
-        result_text = _normalize_minimax_h3_header(result_text)
+    if profile.id.startswith(_MINIMAX_H3_PROFILE_PREFIX):
+        if profile.version >= 3:
+            result_text = _canonicalize_official_minimax_h3_output(
+                profile,
+                result_text,
+                context=context,
+            )
+        else:
+            result_text = _normalize_minimax_h3_header(result_text)
         normalized_fields[profile.primary_field] = result_text
+    if len(result_text) > profile.max_output_characters:
+        raise PromptOptimizationExecutionError("invalid_output_text")
     _validate_profile_output(
         profile,
         result_text,
