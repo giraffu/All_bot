@@ -231,11 +231,31 @@ def _canonicalize_official_minimax_h3_output(
 ) -> str:
     normalized = result_text.replace("\r\n", "\n").replace("\r", "\n").strip()
     matches = list(_MINIMAX_H3_OFFICIAL_FIELD_PATTERN.finditer(normalized))
-    if [match.group(1) for match in matches] != list(_MINIMAX_H3_OFFICIAL_FIELD_NAMES):
+    matched_names = [match.group(1) for match in matches]
+    field_names = list(_MINIMAX_H3_OFFICIAL_FIELD_NAMES)
+    missing_integrated_header = matched_names == field_names[1:]
+    if matched_names != field_names and not missing_integrated_header:
         raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
 
-    prefix = _normalize_official_minimax_h3_section(normalized[: matches[0].start()])
     values: list[str] = []
+    leading_section = normalized[: matches[0].start()]
+    if missing_integrated_header:
+        shot_markers = list(
+            re.finditer(r"\[Shot\s+1\]", leading_section, flags=re.IGNORECASE)
+        )
+        if not shot_markers:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        shot_start = shot_markers[-1].start()
+        prefix = _normalize_official_minimax_h3_section(leading_section[:shot_start])
+        integrated = _normalize_official_minimax_h3_section(
+            leading_section[shot_start:]
+        )
+        if not integrated:
+            raise PromptOptimizationExecutionError("invalid_minimax_h3_field_structure")
+        values.append(integrated)
+    else:
+        prefix = _normalize_official_minimax_h3_section(leading_section)
+
     for index, match in enumerate(matches):
         end = (
             matches[index + 1].start() if index + 1 < len(matches) else len(normalized)

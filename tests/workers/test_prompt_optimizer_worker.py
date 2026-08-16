@@ -417,6 +417,30 @@ async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variatio
 
 
 @pytest.mark.asyncio
+async def test_minimax_h3_i2v_server_restores_omitted_integrated_field_header():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    generated = _official_h3_prompt("i2v").split("\n\n", 1)[1]
+    generated = generated.removeprefix("integrated_multimodal_description: ")
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_i2v",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": [{"role": "start_image", "object_key": "start.webp"}],
+        },
+        provider=FakeProvider(generated),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"] == _official_h3_prompt("i2v")
+
+
+@pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor():
     template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
     alignment, core = _official_h3_prompt("i2v").split("\n\n", 1)
