@@ -24,7 +24,8 @@ const labels: Record<string, string> = {
   'lab.cards.minimax_h3_desc': '高级视频描述',
   'lab.workbench.minimax_h3_addons': '效果增强（可多选）',
   'lab.workbench.minimax_h3_addon_strength': '效果强度',
-  'lab.workbench.minimax_h3_addon_options.naughty_times': '成人动作强化',
+  'lab.workbench.minimax_h3_addon_options.naughty_times': '成人动作测试一',
+  'lab.workbench.minimax_h3_addon_options.sex_pose': '成人动作测试二',
 }
 
 let workbench: any
@@ -206,9 +207,13 @@ const createMinimaxWorkbench = () => ({
   minimaxH3ReferenceDescriptions: ref(['', '', '', '']),
   minimaxH3AddonOptions: [
     { value: 'naughty_times', labelKey: 'lab.workbench.minimax_h3_addon_options.naughty_times', defaultStrength: 1 },
+    { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addon_options.sex_pose', defaultStrength: 0.5 },
   ],
-  minimaxH3AddonNames: ref(['naughty_times']),
-  minimaxH3AddonItems: ref([{ name: 'naughty_times', strength: 0.7 }]),
+  minimaxH3AddonNames: ref(['naughty_times', 'sex_pose']),
+  minimaxH3AddonItems: ref([
+    { name: 'naughty_times', strength: 0.7 },
+    { name: 'sex_pose', strength: 0.5 },
+  ]),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -318,7 +323,8 @@ describe('CustomFeatures advanced video effects', () => {
     const wrapper = mountView()
 
     expect(wrapper.text()).toContain('效果增强（可多选）')
-    expect(wrapper.text()).toContain('成人动作强化')
+    expect(wrapper.text()).toContain('成人动作测试一')
+    expect(wrapper.text()).toContain('成人动作测试二')
     expect(wrapper.text()).not.toContain('minimax_h3_base_stack')
     for (const privateTerm of [
       '基础链路',
@@ -334,7 +340,7 @@ describe('CustomFeatures advanced video effects', () => {
     ]) {
       expect(wrapper.text()).not.toContain(privateTerm)
     }
-    expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(1)
+    expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(2)
   })
 })
 

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from telegram import Update
 from telegram.ext import ConversationHandler
 
 from src.handlers.conversation_states import AdvancedVideoProState
@@ -79,7 +80,8 @@ async def test_pro_settings_hide_model_internals_but_keep_six_effect_choices(mon
     ):
         assert private_term not in public_copy
     assert "效果增强：未启用" in settings_text
-    assert "成人动作强化" in button_text
+    assert "成人动作测试一" in button_text
+    assert "成人动作测试二" in button_text
     assert "全选效果" in button_text
     assert "清空效果" in button_text
     callbacks = [button.callback_data for row in keyboard for button in row]
@@ -129,6 +131,34 @@ def test_pro_handler_keeps_historical_menu_route():
     handler = fsm.get_advanced_video_pro_fsm_handler()
     assert handler.name == "advanced_video_pro_fsm"
     assert AdvancedVideoProState.WAIT_SETTINGS in handler.states
+
+
+def test_pro_timeout_cleanup_matches_callback_updates():
+    handler = fsm.get_advanced_video_pro_fsm_handler()
+    callback_update = Update(update_id=1, callback_query=object())
+
+    assert any(
+        timeout_handler.check_update(callback_update)
+        for timeout_handler in handler.states[ConversationHandler.TIMEOUT]
+    )
+
+
+@pytest.mark.asyncio
+async def test_pro_callback_timeout_clears_conversation_guard():
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": fsm.TAG,
+            fsm.DATA_KEY: {"mode": "t2v", "images": []},
+        },
+        lang="zh",
+    )
+    callback_update = Update(update_id=1, callback_query=object())
+
+    state = await fsm.timeout(callback_update, context)
+
+    assert state == ConversationHandler.END
+    assert "in_conversation" not in context.user_data
+    assert fsm.DATA_KEY not in context.user_data
 
 
 @pytest.mark.asyncio

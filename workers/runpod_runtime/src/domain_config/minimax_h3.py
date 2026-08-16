@@ -70,15 +70,15 @@ class MiniMaxH3AddonSelection:
 MINIMAX_H3_ADDON_MODELS = {
     "naughty_times": MiniMaxH3AddonModel(
         "naughty_times",
-        "NaughtyTimes v2（成人动作强化）",
-        "NaughtyTimes v2 (adult motion)",
+        "NaughtyTimes v2（成人动作测试一）",
+        "NaughtyTimes v2 (adult action test 1)",
         "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
         1.0,
     ),
     "sex_pose": MiniMaxH3AddonModel(
         "sex_pose",
-        "HMNSFW AIO v2（成人姿势）",
-        "HMNSFW AIO v2 (adult poses)",
+        "HMNSFW AIO v2（成人动作测试二）",
+        "HMNSFW AIO v2 (adult action test 2)",
         "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
         0.5,
         "hmmotion",
