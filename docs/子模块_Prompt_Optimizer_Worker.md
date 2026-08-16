@@ -80,6 +80,10 @@ H3 新任务注册 `minimax_h3_t2v_prompt@3`、`minimax_h3_i2v_prompt@3` 与
 对齐句。Profile 最大输出为 7000 字符，Worker 复验字段顺序、空行、Shot 连续编号、
 动态时间戳、图片锚点和对齐句后才发布流式结果。英文运行模板与完整中文审阅翻译的
 事实源均为 `src/prompt_optimizer/minimax_h3_prompt.py`；运行时只使用英文常量。
+模型输出中的 CRLF、多余空行、字段冒号两侧空白、缺失但可由模式确定的 I2V 对齐行，
+以及遗漏的 I2V/FLF2V 图片所有权短句，先由 Worker 确定性规范化并重新组装为官方
+格式；字段缺失、字段乱序、非法前缀、Shot 乱序、越界时间戳和错误 FLF2V 终帧对齐
+仍然 fail closed。这样不会把排版随机性误判成语义错误，也不会放宽媒体所有权。
 
 ## 3. API 与隐私
 
@@ -112,8 +116,10 @@ profile 改用官方结构与模式对齐校验。
 once。文本结果只保存在 `allbot:prompt_result:{task_id}` 类 owner-fenced Redis key，
 TTL 24 小时；不写 History、R2 或 Gallery。
 
-普通日志只记录 task ID、lane 和错误类型。禁止记录原始提示词、data URL、图片内容
-或 LLM 原始响应。
+普通日志只记录 task ID、lane，以及白名单格式的错误类型/校验码。Worker 向 Central
+上报 `PromptOptimizationExecutionError:<code>` 或 `ModelResponseError:<code>`；未知
+异常只上报类型，不包含异常文本。禁止记录原始提示词、data URL、图片内容或 LLM
+原始响应。
 
 任务载荷包含服务端生成的 `text_stream_contract`。Worker 使用
 `POST /api/agent/task/text-delta` 上报 `attempt_id + sequence + field + delta`；
