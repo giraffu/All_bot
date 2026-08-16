@@ -125,6 +125,62 @@ def test_takeover_failure_after_fleet_stop_restores_original_slot(tmp_path, monk
     ]
 
 
+def test_takeover_skips_canary_stop_when_fleet_reports_slot_already_stopped(
+    tmp_path, monkeypatch
+):
+    args = _args(tmp_path)
+    monkeypatch.setattr(
+        operator,
+        "_preflight",
+        lambda _args: {
+            "ok": True,
+            "image": EXACT_IMAGE,
+            "env_file": str(tmp_path / "prompt.env"),
+            "fleet": {
+                "state": {
+                    "live_observations": {
+                        operator.DEFAULT_PHYSICAL_SLOT: [
+                            {
+                                "slot_id": operator.DEFAULT_SLOT,
+                                "exists": True,
+                                "running": False,
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(operator, "_server_running", lambda: True)
+    fleet_actions = []
+    monkeypatch.setattr(
+        operator,
+        "_fleet",
+        lambda action, **kwargs: fleet_actions.append(action)
+        or {"ok": True, "action": action},
+    )
+    monkeypatch.setattr(operator, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(operator, "_compose", lambda *args: None)
+    monkeypatch.setattr(operator, "_wait_ready", lambda: {"ready": True})
+    monkeypatch.setattr(operator, "_wait_lanes", lambda **kwargs: [])
+    monkeypatch.setattr(operator, "_env_value", lambda *args: "test-token")
+    monkeypatch.setattr(operator, "_write_state", lambda payload: None)
+
+    result = operator._takeover(args)
+
+    assert result["ok"] is True
+    assert fleet_actions == []
+    assert result["steps"][1] == {
+        "action": "stop-image-worker",
+        "payload": {
+            "ok": True,
+            "action": "canary-stop-disabled",
+            "slot": operator.DEFAULT_SLOT,
+            "already_stopped": True,
+        },
+    }
+
+
 def test_recover_drains_optimizer_before_stopping_and_restoring_fleet(monkeypatch):
     events = []
     monkeypatch.setattr(
