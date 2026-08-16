@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
+import copy
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import uuid
 
 from botocore.exceptions import ClientError
 import pytest
@@ -28,17 +32,23 @@ from scripts.history_media_r2_migration import (
     _add_r2_custom_headers,
     _parser,
     _persist_copy_success,
+    _persist_probe_batch,
     _process_r2_custom_arguments,
     _probe_r2_rows,
     _probe_target_rows,
+    _collect_probe_head_outcomes,
     _resolve_copy_max_pool_connections,
+    _resolve_probe_max_pool_connections,
     _runtime_identity,
+    _validate_runtime_identity,
     _s3_client,
     AdaptiveCopyController,
     AdaptiveProbeController,
     build_probe_plan,
+    build_successor_probe_plan,
     classify_r2_head_outcomes,
     normalized_history_cas_state,
+    probe_plan_chain_sha256s,
     is_transient_copy_failure,
     replace_asset_reference,
     server_side_copy_r2_object,
@@ -48,6 +58,96 @@ from scripts.history_media_r2_migration import (
     validate_switch_gate,
     validate_resume_identity,
 )
+
+
+@pytest.mark.asyncio
+async def test_probe_head_pool_reaches_128_real_blocking_workers_and_shuts_down():
+    active = 0
+    peak = 0
+    worker_ids: set[int] = set()
+    lock = threading.Lock()
+    all_started = threading.Event()
+    release = threading.Event()
+
+    def blocking_head(_client, _bucket, _key):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            worker_ids.add(threading.get_ident())
+            if active == 128:
+                all_started.set()
+        assert all_started.wait(10), "dedicated Probe pool never reached 128 workers"
+        assert release.wait(10)
+        with lock:
+            active -= 1
+        return None
+
+    rows = [
+        {
+            "id": index,
+            "original_ref": f"old-{index}.png",
+            "target_key": f"task-inputs/r/{index}.png",
+            "registry_task_id": "r",
+        }
+        for index in range(128)
+    ]
+
+    async def release_when_full():
+        assert await asyncio.to_thread(all_started.wait, 10)
+        release.set()
+
+    release_task = asyncio.create_task(release_when_full())
+    result = await _collect_probe_head_outcomes(
+        rows,
+        client=object(),
+        concurrency=128,
+        head_func=blocking_head,
+    )
+    await release_task
+
+    assert peak == 128
+    assert result.peak_workers == 128
+    assert result.worker_threads == 128
+    assert len(worker_ids) == 128
+    assert not any(
+        thread.name.startswith("history-r2-probe-head")
+        for thread in threading.enumerate()
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_head_pool_shuts_down_after_head_failure():
+    def failing_head(_client, _bucket, _key):
+        raise RuntimeError("HTTPStatusCode: 503")
+
+    with pytest.raises(RuntimeError, match="503"):
+        await _collect_probe_head_outcomes(
+            [
+                {
+                    "id": 1,
+                    "original_ref": "old.png",
+                    "target_key": "task-inputs/r/0.png",
+                    "registry_task_id": "r",
+                }
+            ],
+            client=object(),
+            concurrency=128,
+            head_func=failing_head,
+        )
+    assert not any(
+        thread.name.startswith("history-r2-probe-head")
+        for thread in threading.enumerate()
+    )
+
+
+def test_probe_connection_pool_covers_every_adaptive_concurrency_level():
+    for concurrency in (8, 16, 32, 64, 128):
+        connections = _resolve_probe_max_pool_connections(concurrency)
+        assert connections >= concurrency
+        assert connections == 128
+    with pytest.raises(ValueError, match="8, 16, 32, 64, or 128"):
+        _resolve_probe_max_pool_connections(129)
 
 
 def test_runtime_identity_binds_artifact_and_endpoints_without_credentials():
@@ -73,6 +173,42 @@ def test_runtime_identity_binds_artifact_and_endpoints_without_credentials():
     assert identity["bucket"] == "user-data-prod"
     assert "r2.example.invalid" not in json.dumps(identity)
     assert "do-not-leak" not in json.dumps(identity)
+
+    _validate_runtime_identity(
+        identity,
+        artifact_digest="sha256:" + "a" * 64,
+        config={
+            "target": {
+                "bucket": "user-data-prod",
+                "endpoint": "https://r2.example.invalid",
+                "access_key": "do-not-leak",
+            },
+            "sources": [
+                {
+                    "name": "r2-user-data-prod",
+                    "endpoint": "https://r2.example.invalid",
+                    "secret_key": "do-not-leak",
+                }
+            ],
+        },
+    )
+    with pytest.raises(RuntimeError, match="runtime identity changed"):
+        _validate_runtime_identity(
+            identity,
+            artifact_digest="sha256:" + "b" * 64,
+            config={
+                "target": {
+                    "bucket": "user-data-prod",
+                    "endpoint": "https://r2.example.invalid",
+                },
+                "sources": [
+                    {
+                        "name": "r2-user-data-prod",
+                        "endpoint": "https://r2.example.invalid",
+                    }
+                ],
+            },
+        )
 
 
 def test_copy_stage_verification_requires_exact_marker_and_retained_source():
@@ -145,6 +281,169 @@ def test_probe_plan_is_compact_batched_and_exactly_gated():
             supplied_plan_sha256=manifest["plan_sha256"],
             confirmation="yes",
         )
+
+
+def test_successor_probe_excludes_completed_assets_and_conserves_root_plan():
+    rows = [
+        {
+            "id": index,
+            "history_id": index,
+            "role": "input",
+            "ordinal": 0,
+            "original_ref": f"old-{index}.png",
+            "target_key": f"task-inputs/r/{index}.png",
+            "registry_task_id": "r",
+            "history_manifest_sha256": str(index) * 64,
+        }
+        for index in range(1, 5)
+    ]
+    predecessor, predecessor_batches = build_probe_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=99,
+        rows=rows,
+        batch_size=2,
+        runtime_identity={"artifact_digest": "sha256:" + "a" * 64},
+    )
+    predecessor_before = copy.deepcopy(predecessor)
+    retained_batch = {
+        **predecessor_batches[0],
+        "plan_sha256": predecessor["plan_sha256"],
+        "outcome_counts": {"pending_probe": 2},
+    }
+
+    successor, successor_batches = build_successor_probe_plan(
+        predecessor_manifest=predecessor,
+        predecessor_plan_sha256=predecessor["plan_sha256"],
+        retained_rows=rows[:2],
+        successor_rows=rows[2:],
+        retained_batches=[retained_batch],
+        batch_size=2,
+        runtime_identity={"artifact_digest": "sha256:" + "b" * 64},
+    )
+
+    assert predecessor == predecessor_before
+    assert successor["schema"] == "allbot-history-media-r2-probe-successor-plan/v1"
+    assert successor["predecessor_probe_plan_sha256"] == predecessor["plan_sha256"]
+    assert successor["predecessor_probe_plan_sha256s"] == [
+        predecessor["plan_sha256"]
+    ]
+    assert successor["root_asset_count"] == 4
+    assert successor["retained_asset_count"] == 2
+    assert successor["asset_count"] == 2
+    assert successor["retained_asset_count"] + successor["asset_count"] == 4
+    assert successor["intersection_asset_count"] == 0
+    assert successor["retained_batch_count"] == 1
+    assert successor["batch_count"] == 1
+    assert successor["retained_outcome_counts"] == {"pending_probe": 2}
+    assert successor["rowset_sha256"] == successor_batches[0]["rowset_sha256"]
+    assert successor["batches_sha256"]
+    assert successor["retained_rowset_sha256"]
+    assert successor["retained_batches_sha256"]
+    assert probe_plan_chain_sha256s(successor) == (
+        predecessor["plan_sha256"],
+        successor["plan_sha256"],
+    )
+
+
+def test_successor_probe_rejects_overlap_count_drift_and_wrong_predecessor_sha():
+    rows = [
+        {
+            "id": index,
+            "history_id": index,
+            "role": "input",
+            "ordinal": 0,
+            "original_ref": f"old-{index}.png",
+            "target_key": f"task-inputs/r/{index}.png",
+            "registry_task_id": "r",
+            "history_manifest_sha256": str(index) * 64,
+        }
+        for index in range(1, 4)
+    ]
+    predecessor, predecessor_batches = build_probe_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=99,
+        rows=rows,
+        batch_size=1,
+    )
+    retained_batch = {
+        **predecessor_batches[0],
+        "plan_sha256": predecessor["plan_sha256"],
+        "outcome_counts": {"pending_probe": 1},
+    }
+    kwargs = {
+        "predecessor_manifest": predecessor,
+        "predecessor_plan_sha256": predecessor["plan_sha256"],
+        "retained_rows": rows[:1],
+        "successor_rows": rows[1:],
+        "retained_batches": [retained_batch],
+        "batch_size": 1,
+    }
+
+    with pytest.raises(RuntimeError, match="overlaps predecessor"):
+        build_successor_probe_plan(
+            **{**kwargs, "successor_rows": rows},
+        )
+    with pytest.raises(RuntimeError, match="does not conserve"):
+        build_successor_probe_plan(
+            **{**kwargs, "successor_rows": rows[2:]},
+        )
+    with pytest.raises(RuntimeError, match="predecessor plan identity"):
+        build_successor_probe_plan(
+            **{**kwargs, "predecessor_plan_sha256": "f" * 64},
+        )
+
+
+@pytest.mark.asyncio
+async def test_interrupted_probe_batch_cannot_commit_after_predecessor_superseded():
+    class Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class Conn:
+        def __init__(self):
+            self.queries: list[str] = []
+
+        def transaction(self):
+            return Transaction()
+
+        async def execute(self, query, *_args):
+            self.queries.append(query)
+            if "analytics_history_media_migration_plan_batches" in query:
+                return "UPDATE 0"
+            return "UPDATE 1"
+
+        async def executemany(self, *_args):
+            return None
+
+    conn = Conn()
+    with pytest.raises(RuntimeError, match="no longer pending"):
+        await _persist_probe_batch(
+            conn,  # type: ignore[arg-type]
+            run_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            plan_sha="a" * 64,
+            batch_no=3,
+            rows=[{"id": 7, "catalog_asset_id": 11}],
+            outcomes=[
+                {
+                    "id": 7,
+                    "status": "pending_probe",
+                    "source_key": None,
+                    "byte_size": None,
+                    "last_modified": None,
+                    "etag": None,
+                    "attempts": [],
+                }
+            ],
+        )
+    batch_query = next(
+        query
+        for query in conn.queries
+        if "analytics_history_media_migration_plan_batches" in query
+    )
+    assert "status='pending'" in batch_query
 
 
 def test_probe_head_outcomes_do_not_treat_system_errors_as_missing():
@@ -937,6 +1236,7 @@ def test_migration_ledger_is_independent_and_bound_to_history_watermark():
     assert "analytics_history_media_migration_plan_batches" in MIGRATION_DDL
     assert "probe_plan_sha256" in MIGRATION_DDL
     assert "('probe','copy','switch')" in MIGRATION_DDL
+    assert "'paused','superseded'" in MIGRATION_DDL
 
 
 def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_assets():
@@ -944,7 +1244,7 @@ def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._create_plan)
-    assert "probe_plan_sha256=$2" in source
+    assert "probe_plan_sha256=any($2::text[])" in source
     assert "copy_plan_sha256=$2" in source
     assert "switch_completed_at is null" in source
     assert "COPY_PLAN_HAS_UNSUPPORTED_MULTIPART_OBJECTS" in source
@@ -958,6 +1258,40 @@ def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_
     assert "len(gallery_samples) < 32" in verification_source
     assert "len(owner_samples) < 64" in verification_source
     assert "switch verification found an old History reference" in verification_source
+
+
+def test_successor_freeze_supersedes_only_unfinished_batches_and_copy_uses_chain():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    successor_source = inspect.getsource(module._create_successor_probe_plan)
+    assert "for update" in successor_source.lower()
+    assert "probe_plan_sha256 is null" in successor_source
+    assert "status='pending_probe'" in successor_source
+    assert "status='superseded'" in successor_source
+    assert "status<>'completed'" in successor_source
+    assert "successor Probe asset conservation failed" in successor_source
+
+    copy_source = inspect.getsource(module._create_plan)
+    assert "probe_plan_sha256=any($2::text[])" in copy_source
+    assert "probe_chain_plan_sha256s" in copy_source
+
+    parsed = _parser().parse_args(
+        [
+            "plan-probe-successor",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--predecessor-plan-sha256",
+            "a" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            "/secure/successor.json",
+        ]
+    )
+    assert parsed.command == "plan-probe-successor"
 
 
 def test_standard_targets_require_explicit_dual_ids():
@@ -1195,6 +1529,7 @@ def test_cli_is_directly_executable_and_exposes_all_phases():
         "seed",
         "probe",
         "plan-probe",
+        "plan-probe-successor",
         "execute-probe",
         "plan-copy",
         "execute-copy",

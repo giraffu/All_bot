@@ -307,11 +307,27 @@ ListObjects、PUT、CopyObject 或 DELETE。此前已记录 `R2_CANDIDATES_NOT_F
 标准目标已是当前引用时进入 `target_verified`；目标存在但 History 不同进入
 `target_conflict`；旧候选命中进入 `copy_required`；全部候选未命中继续保持
 `pending_probe`。429、5xx、timeout 可在同一 SHA 内按 64→32→16→8 退避并在干净批次
-回升到 128；鉴权和其它系统错误必须 paused，不能伪装成未命中。
+回升到 128；鉴权和其它系统错误必须 paused，不能伪装成未命中。每次批次尝试必须用
+当前自适应档位创建独立 `ThreadPoolExecutor`，不能依赖 asyncio 默认最多 32 worker 的
+全局线程池；R2 HTTP 连接池至少覆盖最高 128，并在成功、异常或取消后关闭专用 executor。
+批次日志只记录请求档位、实际峰值 worker、使用过的 worker 线程数、连接池大小和分类
+计数，不输出 endpoint、对象 key 或凭据。
 
-Probe 全批完成后自动生成父计划限定的 `plan-copy`；计划只包含
-`probe_plan_sha256=<probe-sha>` 的 `copy_required`，不得纳入 unresolved、blocked、
-target conflict、旧批次或其它 Probe。冻结前若发现超过当前单次 CopyObject 上限的对象，
+运行中的 Probe 需要切换到新 artifact 时，使用 `plan-probe-successor`，不得修改原计划
+manifest。冻结事务锁定 predecessor 计划、批次和 run，只保留祖先链中
+`status=completed` 的批次与现有 `probe_plan_sha256`/分类/source attempts；successor
+只选择 predecessor 未完成批次内仍为 `pending_probe` 且 marker 为空的资产。冻结必须
+证明 retained 与 successor 交集为 0，二者资产数等于 root Probe 总数，并分别记录
+retained/successor rowset SHA 与 batches SHA；随后只把 predecessor 的非 completed
+批次改为 `superseded`。在途批次若未提交，可由 successor 完整重探；批次提交会以
+`status=pending` 做 CAS，已 supersede 时整批事务回滚。successor 绑定新 artifact
+digest 与脚本 SHA，仍需新的 `PROBE_HISTORY_MEDIA_<successor-sha>` 才能执行。
+
+Probe 全批完成后自动生成父计划限定的 `plan-copy`；普通 Probe 只包含当前计划，
+successor 则聚合 manifest 证明的完整 predecessor/successor 链中全部 `copy_required`，
+不得纳入 unresolved、blocked、target conflict、无关 Probe 或旧 Copy/Switch 批次。
+Copy 冻结前必须证明祖先批次仅为 completed/superseded、链上 ledger 资产数等于 root
+Probe 总数；冻结前若发现超过当前单次 CopyObject 上限的对象，
 不得生成可授权的 Copy 计划。Copy manifest 绑定精确父计划、代码 SHA、artifact digest、
 bucket、endpoint 指纹、候选算法版本和行集 SHA，不包含凭据或完整对象清单。
 `execute-copy` 只接受 `COPY_HISTORY_MEDIA_<plan-sha>`。同一 R2 bucket 的旧 key 只能通过服务端
