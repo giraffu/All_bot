@@ -23,9 +23,27 @@ SCENE_LABELS = {
     "ltx_t2v_ic": ("双角色与环境文生视频", "两张人物面板与一张环境参考"),
     "minimax_h3": ("高级图生视频pro", "MiniMax H3 文生、首帧与首尾帧共用配置"),
 }
+SCENE_REQUIRED_VARIABLES = {
+    "ltx_video_v2": {"media_frame_instructions"},
+    "ltx_t2v": {"media_frame_instructions"},
+    "ltx_t2v_ic": {
+        "media_frame_instructions",
+        "character_descriptions",
+        "environment_description",
+    },
+    "minimax_h3": {
+        "media_frame_instructions",
+        "dialogue_language_instructions",
+    },
+}
 
 
-def _default(scene_key: str) -> dict:
+def _default(
+    scene_key: str,
+    *,
+    fallback_reason: str = "no_saved_config",
+    stored_revision: int | None = None,
+) -> dict:
     if scene_key not in SCENE_TEMPLATE_REFS:
         raise ValueError("unknown scene_key")
     template = get_template_by_ref(SCENE_TEMPLATE_REFS[scene_key])
@@ -52,6 +70,13 @@ def _default(scene_key: str) -> dict:
         "revision": 0,
         "content_hash": content_hash,
         "updated_by": "built-in",
+        "template_ref": SCENE_TEMPLATE_REFS[scene_key],
+        "config_source": "built-in",
+        "compatibility_status": (
+            "fallback" if fallback_reason == "incompatible_saved_config" else "current"
+        ),
+        "fallback_reason": fallback_reason,
+        "stored_revision": stored_revision,
     }
 
 
@@ -84,7 +109,11 @@ def serialize_config(row: PromptOptimizerSceneConfig | None, scene_key: str) -> 
     ):
         # Historical tasks already carry rendered immutable snapshots. An old
         # mutable scene row cannot be reused with the current profile@4 validator.
-        return _default(scene_key)
+        return _default(
+            scene_key,
+            fallback_reason="incompatible_saved_config",
+            stored_revision=row.revision,
+        )
     return {
         "scene_key": row.scene_key,
         "display_name": row.display_name,
@@ -94,7 +123,46 @@ def serialize_config(row: PromptOptimizerSceneConfig | None, scene_key: str) -> 
         "revision": row.revision,
         "content_hash": row.content_hash,
         "updated_by": row.updated_by,
+        "template_ref": SCENE_TEMPLATE_REFS[scene_key],
+        "config_source": "database",
+        "compatibility_status": "current",
+        "fallback_reason": None,
+        "stored_revision": row.revision,
     }
+
+
+def get_scene_config_variables(scene_key: str) -> list[str]:
+    config = _default(scene_key)
+    return sorted(
+        referenced_variables(config["system_template"])
+        | referenced_variables(config["user_template"])
+    )
+
+
+def validate_scene_config_templates(
+    scene_key: str,
+    system_template: str,
+    user_template: str,
+) -> list[str]:
+    if scene_key not in SCENE_TEMPLATE_REFS:
+        raise ValueError("unknown scene_key")
+    validate_config_templates(system_template, user_template)
+    if scene_key == "minimax_h3" and not _is_current_h3_template(
+        system_template, user_template
+    ):
+        raise ValueError(
+            "MiniMax H3 config must preserve the official three fields and "
+            "server-detected dialogue language contract"
+        )
+    variables = referenced_variables(system_template) | referenced_variables(
+        user_template
+    )
+    missing = SCENE_REQUIRED_VARIABLES[scene_key] - variables
+    if missing:
+        raise ValueError(
+            f"missing required prompt variables: {', '.join(sorted(missing))}"
+        )
+    return get_scene_config_variables(scene_key)
 
 
 async def list_configs(db) -> list[dict]:
@@ -125,32 +193,7 @@ async def save_config(db, *, scene_key: str, payload, updated_by: str) -> dict:
         raise ValueError("unknown scene_key")
     system_template = payload.system_template.strip()
     user_template = payload.user_template.strip()
-    validate_config_templates(system_template, user_template)
-    if scene_key == "minimax_h3" and not _is_current_h3_template(
-        system_template, user_template
-    ):
-        raise ValueError("MiniMax H3 config must preserve the official three fields")
-    variables = referenced_variables(system_template) | referenced_variables(
-        user_template
-    )
-    required_by_scene = {
-        "ltx_video_v2": {"media_frame_instructions"},
-        "ltx_t2v": {"media_frame_instructions"},
-        "ltx_t2v_ic": {
-            "media_frame_instructions",
-            "character_descriptions",
-            "environment_description",
-        },
-        "minimax_h3": {
-            "media_frame_instructions",
-            "dialogue_language_instructions",
-        },
-    }
-    missing = required_by_scene[scene_key] - variables
-    if missing:
-        raise ValueError(
-            f"missing required prompt variables: {', '.join(sorted(missing))}"
-        )
+    validate_scene_config_templates(scene_key, system_template, user_template)
     row = await db.get(PromptOptimizerSceneConfig, scene_key)
     revision = (row.revision if row else 0) + 1
     values = dict(

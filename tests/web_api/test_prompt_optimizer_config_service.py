@@ -7,8 +7,10 @@ from src.prompt_optimizer.minimax_h3_prompt import (
 )
 from src.web_api.services.prompt_optimizer_config_service import (
     get_default_config,
+    get_scene_config_variables,
     save_config,
     serialize_config,
+    validate_scene_config_templates,
 )
 
 
@@ -32,6 +34,11 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
 
     assert config["display_name"] == "高级图生视频pro"
     assert config["revision"] == 0
+    assert config["template_ref"] == "minimax_h3_10eros_naughtytimes@3"
+    assert config["config_source"] == "built-in"
+    assert config["compatibility_status"] == "current"
+    assert config["fallback_reason"] == "no_saved_config"
+    assert config["stored_revision"] is None
     assert "{duration_seconds}" in config["system_template"]
     assert "{addon_rules}" not in config["user_template"]
     assert "integrated_multimodal_description" in config["system_template"]
@@ -59,6 +66,10 @@ def test_h3_legacy_saved_config_falls_forward_to_official_built_in_template():
 
     assert config["revision"] == 0
     assert config["updated_by"] == "built-in"
+    assert config["config_source"] == "built-in"
+    assert config["compatibility_status"] == "fallback"
+    assert config["fallback_reason"] == "incompatible_saved_config"
+    assert config["stored_revision"] == 7
     assert "integrated_multimodal_description" in config["system_template"]
 
 
@@ -80,7 +91,52 @@ def test_h3_saved_official_config_without_dialogue_contract_falls_forward():
     config = serialize_config(old_official, "minimax_h3")
 
     assert config["revision"] == 0
+    assert config["compatibility_status"] == "fallback"
+    assert config["stored_revision"] == 8
     assert "{dialogue_language_instructions}" in config["user_template"]
+
+
+def test_h3_current_saved_config_is_reported_as_database_source():
+    default = get_default_config("minimax_h3")
+    saved = SimpleNamespace(
+        scene_key="minimax_h3",
+        display_name=default["display_name"],
+        description=default["description"],
+        system_template=default["system_template"],
+        user_template=default["user_template"],
+        revision=4,
+        content_hash="saved-hash",
+        updated_by="admin",
+    )
+
+    config = serialize_config(saved, "minimax_h3")
+
+    assert config["revision"] == 4
+    assert config["config_source"] == "database"
+    assert config["compatibility_status"] == "current"
+    assert config["fallback_reason"] is None
+    assert config["stored_revision"] == 4
+
+
+def test_h3_admin_preview_uses_current_scene_variables_and_validation():
+    default = get_default_config("minimax_h3")
+
+    variables = validate_scene_config_templates(
+        "minimax_h3",
+        default["system_template"],
+        default["user_template"],
+    )
+
+    assert variables == get_scene_config_variables("minimax_h3")
+    assert "dialogue_language_instructions" in variables
+    assert "addon_summary" not in variables
+
+    with pytest.raises(ValueError, match="official three fields"):
+        validate_scene_config_templates(
+            "minimax_h3",
+            "legacy {duration_seconds}",
+            "{media_frame_instructions} {original_prompt}",
+        )
 
 
 @pytest.mark.asyncio

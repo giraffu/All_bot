@@ -41,7 +41,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   capability 不返回模板正文。
 - Registry 中已发布 Profile/Template 不原地改内容；新内容增加版本。管理后台维护的
   四个 scene config（H3 三模式共享 `minimax_h3`）是可变“当前配置”，保存递增 revision/hash，
-  新任务必须保存渲染后的不可变 snapshot，运行中任务不得重新读取当前配置。
+  新任务保存渲染后的不可变 snapshot。Dashboard/提交端复用同一配置服务；后台显示
+  数据库/内置来源与不兼容回退，禁止镜像版本差异静默改变默认模板。
 - Worker 必须核对 Profile、Template 和 hash；未知版本、未知字段、空文本、超长
   文本或不兼容媒体角色一律失败。
 - H3 固定 10Eros/LightX2V/NaughtyTimes，拒绝覆盖和触发词；输出官方三字段，
@@ -56,10 +57,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且
   停止 pop；Worker 不自动装卸 LM Studio 模型。
-- 当前 LTX 的 @3/@4 是兼容与默认正文基线；新任务按 `ltx_video_v2`、`ltx_t2v`、
-  `ltx_t2v_ic` 读取管理端当前 scene config 并写入 snapshot。IC Web 请求使用两个
-  typed character refs（私有/官方可混选）和一个 environment ref（官方/临时上传
-  互斥），服务端解析三张实际媒体及可信描述；这些 reference 绝不能渲染为首帧。
+- LTX @3/@4 新任务读取管理端 scene config 并写入 snapshot；IC 的两个 typed
+  character refs 与一个 environment ref 由服务端解析，绝不能渲染为首帧。
 - snapshot 必须包含 scene_key/revision/config hash/profile/rendered messages，Worker
   核对 snapshot hash 与 Profile 后执行；无 snapshot 的旧任务继续走 template ref/hash。
 

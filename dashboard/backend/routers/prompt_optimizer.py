@@ -7,6 +7,7 @@ from src.database.core import get_db
 from src.web_api.services.prompt_optimizer_config_service import (
     list_configs,
     save_config,
+    validate_scene_config_templates,
 )
 
 router = APIRouter(prefix="/api/prompt-optimizer/configs", tags=["prompt-optimizer"])
@@ -45,24 +46,16 @@ async def update_config(
 
 @router.post("/{scene_key}/preview")
 async def preview_config(scene_key: str, payload: ConfigUpdate):
-    from src.prompt_optimizer.config_snapshot import validate_config_templates
-
     try:
-        validate_config_templates(payload.system_template, payload.user_template)
+        variables = validate_scene_config_templates(
+            scene_key,
+            payload.system_template,
+            payload.user_template,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {
         "scene_key": scene_key,
         "valid": True,
-        "variables": [
-            "profile_ref",
-            "duration_seconds",
-            "media_frame_instructions",
-            "original_prompt",
-            "character_descriptions",
-            "environment_description",
-            "addon_summary",
-            "addon_rules",
-            "breasts_vocabulary_rule",
-        ],
+        "variables": variables,
     }
