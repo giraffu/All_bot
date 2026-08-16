@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
+import threading
 import time
 from types import SimpleNamespace
 from typing import Any, BinaryIO, Iterable
@@ -55,6 +56,7 @@ COPY_PLAN_METADATA_KEY = "allbot-copy-plan-sha256"
 PROBE_BATCH_SIZE = 10_000
 COPY_BATCH_SIZE = 10_000
 SWITCH_HISTORY_BATCH_SIZE = 1_000
+PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ReadTimeoutError|"
@@ -137,6 +139,43 @@ class AdaptiveProbeController:
             self.clean_batches = 0
         return self.concurrency
 
+
+@dataclass(frozen=True)
+class ProbeHeadBatchResult:
+    outcomes: list[dict[str, Any]]
+    peak_workers: int
+    worker_threads: int
+    requested_concurrency: int
+
+
+class _ProbeHeadActivity:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active = 0
+        self._peak = 0
+        self._thread_ids: set[int] = set()
+
+    def call(self, func: Any, *args: Any) -> Any:
+        with self._lock:
+            self._active += 1
+            self._peak = max(self._peak, self._active)
+            self._thread_ids.add(threading.get_ident())
+        try:
+            return func(*args)
+        finally:
+            with self._lock:
+                self._active -= 1
+
+    @property
+    def peak(self) -> int:
+        with self._lock:
+            return self._peak
+
+    @property
+    def thread_count(self) -> int:
+        with self._lock:
+            return len(self._thread_ids)
+
 MIGRATION_DDL = """
 create table if not exists analytics_history_media_migration_runs (
     id uuid primary key,
@@ -216,7 +255,9 @@ create table if not exists analytics_history_media_migration_plan_batches (
     history_count integer not null check (history_count >= 0),
     rowset_sha256 char(64) not null,
     cas_state_sha256 char(64),
-    status text not null default 'pending' check (status in ('pending','running','completed','failed')),
+    status text not null default 'pending' check (status in (
+      'pending','running','completed','failed','paused','superseded'
+    )),
     outcome_counts jsonb not null default '{}'::jsonb,
     started_at timestamptz,
     completed_at timestamptz,
@@ -225,6 +266,11 @@ create table if not exists analytics_history_media_migration_plan_batches (
 );
 create index if not exists ix_history_media_migration_plan_batches_status
   on analytics_history_media_migration_plan_batches(plan_sha256,status,batch_no);
+alter table analytics_history_media_migration_plan_batches
+  drop constraint if exists analytics_history_media_migration_plan_batches_status_check;
+alter table analytics_history_media_migration_plan_batches
+  add constraint analytics_history_media_migration_plan_batches_status_check
+  check (status in ('pending','running','completed','failed','paused','superseded'));
 alter table analytics_history_media_r2_migrations
   add column if not exists target_checked_at timestamptz;
 alter table analytics_history_media_r2_migrations
@@ -785,6 +831,121 @@ def build_probe_plan(
         "batch_size": batch_size,
         "rowset_sha256": global_digest.hexdigest(),
         "batches_sha256": batch_digest.hexdigest(),
+        "runtime_identity": dict(runtime_identity or {}),
+    }
+    manifest["plan_sha256"] = _sha256_json(manifest)
+    return manifest, batches
+
+
+def probe_plan_chain_sha256s(manifest: dict[str, Any]) -> tuple[str, ...]:
+    plan_sha = str(manifest.get("plan_sha256") or "")
+    if _sha256_json(
+        {key: value for key, value in manifest.items() if key != "plan_sha256"}
+    ) != plan_sha:
+        raise RuntimeError("probe plan identity is invalid")
+    predecessors = tuple(
+        str(value)
+        for value in manifest.get("predecessor_probe_plan_sha256s", [])
+    )
+    chain = predecessors + (plan_sha,)
+    if not plan_sha or len(set(chain)) != len(chain):
+        raise RuntimeError("probe plan predecessor chain is invalid")
+    return chain
+
+
+def _retained_probe_batch_identity(batch: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "plan_sha256": str(batch["plan_sha256"]),
+        "batch_no": int(batch["batch_no"]),
+        "asset_count": int(batch["asset_count"]),
+        "history_count": int(batch["history_count"]),
+        "rowset_sha256": str(batch["rowset_sha256"]),
+        "outcome_counts": dict(sorted(dict(batch.get("outcome_counts") or {}).items())),
+    }
+
+
+def build_successor_probe_plan(
+    *,
+    predecessor_manifest: dict[str, Any],
+    predecessor_plan_sha256: str,
+    retained_rows: Iterable[dict[str, Any]],
+    successor_rows: Iterable[dict[str, Any]],
+    retained_batches: Iterable[dict[str, Any]],
+    batch_size: int = PROBE_BATCH_SIZE,
+    runtime_identity: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    predecessor_chain = probe_plan_chain_sha256s(predecessor_manifest)
+    if predecessor_plan_sha256 != predecessor_chain[-1]:
+        raise RuntimeError("predecessor plan identity does not match its manifest")
+
+    retained = sorted(
+        (dict(row) for row in retained_rows), key=lambda row: int(row["id"])
+    )
+    remaining = sorted(
+        (dict(row) for row in successor_rows), key=lambda row: int(row["id"])
+    )
+    retained_ids = {int(row["id"]) for row in retained}
+    remaining_ids = {int(row["id"]) for row in remaining}
+    if retained_ids & remaining_ids:
+        raise RuntimeError("successor rowset overlaps predecessor completed assets")
+
+    root_asset_count = int(
+        predecessor_manifest.get(
+            "root_asset_count", predecessor_manifest["asset_count"]
+        )
+    )
+    if len(retained) + len(remaining) != root_asset_count:
+        raise RuntimeError("successor rowset does not conserve the root Probe asset count")
+
+    canonical_retained_batches = sorted(
+        (_retained_probe_batch_identity(batch) for batch in retained_batches),
+        key=lambda batch: (
+            predecessor_chain.index(batch["plan_sha256"]),
+            batch["batch_no"],
+        ),
+    )
+    if sum(batch["asset_count"] for batch in canonical_retained_batches) != len(
+        retained
+    ):
+        raise RuntimeError("retained Probe batches do not match retained assets")
+
+    successor_base, batches = build_probe_plan(
+        run_id=str(predecessor_manifest["run_id"]),
+        history_watermark=int(predecessor_manifest["history_watermark"]),
+        rows=remaining,
+        batch_size=batch_size,
+        runtime_identity=runtime_identity,
+    )
+    retained_outcomes: Counter[str] = Counter()
+    for batch in canonical_retained_batches:
+        retained_outcomes.update(
+            {key: int(value) for key, value in batch["outcome_counts"].items()}
+        )
+    retained_identities = [_probe_plan_row(row) for row in retained]
+    manifest: dict[str, Any] = {
+        "schema": "allbot-history-media-r2-probe-successor-plan/v1",
+        "run_id": successor_base["run_id"],
+        "history_watermark": successor_base["history_watermark"],
+        "predecessor_probe_plan_sha256": predecessor_plan_sha256,
+        "predecessor_probe_plan_sha256s": list(predecessor_chain),
+        "root_probe_plan_sha256": predecessor_chain[0],
+        "root_asset_count": root_asset_count,
+        "retained_asset_count": len(retained),
+        "retained_history_count": len(
+            {int(row["history_id"]) for row in retained}
+        ),
+        "retained_batch_count": len(canonical_retained_batches),
+        "retained_outcome_counts": dict(sorted(retained_outcomes.items())),
+        "retained_rowset_sha256": _sha256_json(retained_identities),
+        "retained_batches_sha256": _sha256_json(canonical_retained_batches),
+        "asset_count": successor_base["asset_count"],
+        "history_count": successor_base["history_count"],
+        "batch_count": successor_base["batch_count"],
+        "batch_size": successor_base["batch_size"],
+        "rowset_sha256": successor_base["rowset_sha256"],
+        "batches_sha256": successor_base["batches_sha256"],
+        "intersection_asset_count": 0,
+        "conserved_asset_count": len(retained) + len(remaining),
         "runtime_identity": dict(runtime_identity or {}),
     }
     manifest["plan_sha256"] = _sha256_json(manifest)
@@ -2515,9 +2676,291 @@ async def _create_probe_plan(args: argparse.Namespace) -> None:
         await conn.close()
 
 
+async def _create_successor_probe_plan(args: argparse.Namespace) -> None:
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    run_id = uuid.UUID(args.run_id)
+    predecessor_sha = str(args.predecessor_plan_sha256)
+    try:
+        await _ensure_schema(conn)
+        async with conn.transaction():
+            predecessor_row = await conn.fetchrow(
+                """select run_id,manifest
+                     from analytics_history_media_migration_plans
+                    where plan_sha256=$1 and plan_type='probe'
+                    for update""",
+                predecessor_sha,
+            )
+            if not predecessor_row:
+                raise RuntimeError("unknown exact predecessor Probe plan SHA")
+            predecessor = (
+                json.loads(predecessor_row["manifest"])
+                if isinstance(predecessor_row["manifest"], str)
+                else dict(predecessor_row["manifest"])
+            )
+            predecessor_chain = probe_plan_chain_sha256s(predecessor)
+            if (
+                predecessor_chain[-1] != predecessor_sha
+                or predecessor_row["run_id"] != run_id
+            ):
+                raise RuntimeError("predecessor Probe plan identity mismatch")
+
+            for index, plan_sha in enumerate(predecessor_chain):
+                ancestor_run_id, ancestor = await _load_plan(conn, plan_sha, "probe")
+                if ancestor_run_id != run_id or probe_plan_chain_sha256s(
+                    ancestor
+                ) != predecessor_chain[: index + 1]:
+                    raise RuntimeError("predecessor Probe chain identity mismatch")
+
+            existing_successor = int(
+                await conn.fetchval(
+                    """select count(*)
+                         from analytics_history_media_migration_plans
+                        where plan_type='probe'
+                          and manifest->>'predecessor_probe_plan_sha256'=$1""",
+                    predecessor_sha,
+                )
+            )
+            if existing_successor:
+                raise RuntimeError("predecessor Probe plan already has a successor")
+
+            predecessor_batches = await conn.fetch(
+                """select * from analytics_history_media_migration_plan_batches
+                    where plan_sha256=$1 order by batch_no for update""",
+                predecessor_sha,
+            )
+            if not predecessor_batches:
+                raise RuntimeError("predecessor Probe plan has no batches")
+            unfinished_batches = [
+                row for row in predecessor_batches if row["status"] != "completed"
+            ]
+            if not unfinished_batches:
+                raise RuntimeError("predecessor Probe plan is already complete")
+            if any(row["status"] == "superseded" for row in unfinished_batches):
+                raise RuntimeError("predecessor Probe plan is already superseded")
+
+            run = await conn.fetchrow(
+                """select history_watermark
+                     from analytics_history_media_migration_runs
+                    where id=$1 for update""",
+                run_id,
+            )
+            if not run:
+                raise RuntimeError("unknown migration run")
+
+            retained_batches_raw = await conn.fetch(
+                """select plan_sha256,batch_no,asset_count,history_count,
+                          rowset_sha256,outcome_counts
+                     from analytics_history_media_migration_plan_batches
+                    where plan_sha256=any($1::text[]) and status='completed'""",
+                list(predecessor_chain),
+            )
+            chain_order = {
+                plan_sha: index for index, plan_sha in enumerate(predecessor_chain)
+            }
+            retained_batches = sorted(
+                (
+                    _retained_probe_batch_identity(
+                        {
+                            **dict(row),
+                            "outcome_counts": (
+                                json.loads(row["outcome_counts"])
+                                if isinstance(row["outcome_counts"], str)
+                                else dict(row["outcome_counts"] or {})
+                            ),
+                        }
+                    )
+                    for row in retained_batches_raw
+                ),
+                key=lambda batch: (
+                    chain_order[batch["plan_sha256"]], batch["batch_no"]
+                ),
+            )
+            retained_batch_assets = sum(
+                batch["asset_count"] for batch in retained_batches
+            )
+            retained_outcomes: Counter[str] = Counter()
+            for batch in retained_batches:
+                retained_outcomes.update(
+                    {
+                        key: int(value)
+                        for key, value in batch["outcome_counts"].items()
+                    }
+                )
+
+            retained_digest = StreamingJsonArraySha256()
+            async for record in conn.cursor(
+                """select id,history_id,role,ordinal,original_ref,target_key,
+                          registry_task_id,history_manifest_sha256
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and probe_plan_sha256=any($2::text[])
+                    order by id""",
+                run_id,
+                list(predecessor_chain),
+                prefetch=PROBE_BATCH_SIZE,
+            ):
+                retained_digest.add(_probe_plan_row(dict(record)))
+            retained_history_count = int(
+                await conn.fetchval(
+                    """select count(distinct history_id)
+                         from analytics_history_media_r2_migrations
+                        where run_id=$1 and probe_plan_sha256=any($2::text[])""",
+                    run_id,
+                    list(predecessor_chain),
+                )
+            )
+            if retained_digest.count != retained_batch_assets:
+                raise RuntimeError(
+                    "completed predecessor batches do not match retained ledger assets"
+                )
+
+            successor_query = """select m.id,m.history_id,m.role,m.ordinal,
+                          m.original_ref,m.target_key,m.registry_task_id,
+                          m.history_manifest_sha256
+                     from analytics_history_media_r2_migrations m
+                     join analytics_history_media_migration_plan_batches b
+                       on b.plan_sha256=$2 and b.status<>'completed'
+                      and m.id between b.first_ledger_id and b.last_ledger_id
+                    where m.run_id=$1 and m.status='pending_probe'
+                      and m.probe_plan_sha256 is null
+                    order by m.id"""
+            successor_history_count = int(
+                await conn.fetchval(
+                    """select count(distinct m.history_id)
+                         from analytics_history_media_r2_migrations m
+                         join analytics_history_media_migration_plan_batches b
+                           on b.plan_sha256=$2 and b.status<>'completed'
+                          and m.id between b.first_ledger_id and b.last_ledger_id
+                        where m.run_id=$1 and m.status='pending_probe'
+                          and m.probe_plan_sha256 is null""",
+                    run_id,
+                    predecessor_sha,
+                )
+            )
+            successor_digest = StreamingJsonArraySha256()
+            successor_batches: list[dict[str, Any]] = []
+            batch_rows: list[dict[str, Any]] = []
+            async for record in conn.cursor(
+                successor_query,
+                run_id,
+                predecessor_sha,
+                prefetch=PROBE_BATCH_SIZE,
+            ):
+                row = dict(record)
+                successor_digest.add(_probe_plan_row(row))
+                batch_rows.append(row)
+                if len(batch_rows) == PROBE_BATCH_SIZE:
+                    successor_batches.append(
+                        _finalize_plan_batch(
+                            batch_no=len(successor_batches), rows=batch_rows
+                        )
+                    )
+                    batch_rows = []
+            if batch_rows:
+                successor_batches.append(
+                    _finalize_plan_batch(
+                        batch_no=len(successor_batches), rows=batch_rows
+                    )
+                )
+
+            root_asset_count = int(
+                predecessor.get("root_asset_count", predecessor["asset_count"])
+            )
+            if retained_digest.count + successor_digest.count != root_asset_count:
+                raise RuntimeError("successor Probe asset conservation failed")
+            expected_unfinished_assets = sum(
+                int(batch["asset_count"]) for batch in unfinished_batches
+            )
+            if successor_digest.count != expected_unfinished_assets:
+                raise RuntimeError(
+                    "unfinished predecessor batches changed before successor freeze"
+                )
+
+            successor_batch_digest = StreamingJsonArraySha256()
+            for batch in successor_batches:
+                successor_batch_digest.add(batch)
+            manifest: dict[str, Any] = {
+                "schema": "allbot-history-media-r2-probe-successor-plan/v1",
+                "run_id": str(run_id),
+                "history_watermark": int(run["history_watermark"]),
+                "predecessor_probe_plan_sha256": predecessor_sha,
+                "predecessor_probe_plan_sha256s": list(predecessor_chain),
+                "root_probe_plan_sha256": predecessor_chain[0],
+                "root_asset_count": root_asset_count,
+                "retained_asset_count": retained_digest.count,
+                "retained_history_count": retained_history_count,
+                "retained_batch_count": len(retained_batches),
+                "retained_outcome_counts": dict(sorted(retained_outcomes.items())),
+                "retained_rowset_sha256": retained_digest.hexdigest(),
+                "retained_batches_sha256": _sha256_json(retained_batches),
+                "asset_count": successor_digest.count,
+                "history_count": successor_history_count,
+                "batch_count": len(successor_batches),
+                "batch_size": PROBE_BATCH_SIZE,
+                "rowset_sha256": successor_digest.hexdigest(),
+                "batches_sha256": successor_batch_digest.hexdigest(),
+                "intersection_asset_count": 0,
+                "conserved_asset_count": (
+                    retained_digest.count + successor_digest.count
+                ),
+                "runtime_identity": _runtime_identity(
+                    artifact_digest=args.artifact_digest, config=config
+                ),
+            }
+            manifest["plan_sha256"] = _sha256_json(manifest)
+            await _insert_plan_with_batches(
+                conn,
+                manifest=manifest,
+                plan_type="probe",
+                batches=successor_batches,
+            )
+            superseded = await conn.execute(
+                """update analytics_history_media_migration_plan_batches
+                      set status='superseded',updated_at=now()
+                    where plan_sha256=$1 and status<>'completed'""",
+                predecessor_sha,
+            )
+            if int(superseded.rsplit(" ", 1)[-1]) != len(unfinished_batches):
+                raise RuntimeError("predecessor Probe supersede count changed")
+            await conn.execute(
+                """update analytics_history_media_migration_runs
+                      set status='paused',phase='probe-successor-frozen',
+                          error=null,updated_at=now() where id=$1""",
+                run_id,
+            )
+
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(_canonical_json(manifest) + b"\n")
+        os.chmod(output, 0o600)
+        print(
+            json.dumps(
+                {
+                    "plan_sha256": manifest["plan_sha256"],
+                    "predecessor_plan_sha256": predecessor_sha,
+                    "retained_assets": manifest["retained_asset_count"],
+                    "retained_batches": manifest["retained_batch_count"],
+                    "assets": manifest["asset_count"],
+                    "batches": manifest["batch_count"],
+                    "manifest": str(output),
+                }
+            )
+        )
+    finally:
+        await conn.close()
+
+
 async def _collect_probe_head_outcomes(
-    rows: list[dict[str, Any]], *, client: Any, concurrency: int
-) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]],
+    *,
+    client: Any,
+    concurrency: int,
+    head_func: Any = _head_s3_identity,
+) -> ProbeHeadBatchResult:
+    if concurrency not in {8, 16, 32, 64, 128}:
+        raise ValueError("Probe HEAD concurrency must be an adaptive level up to 128")
     keys: dict[str, None] = {}
     for row in rows:
         keys[str(row["target_key"])] = None
@@ -2526,15 +2969,42 @@ async def _collect_probe_head_outcomes(
         ):
             keys[key] = None
     semaphore = asyncio.Semaphore(concurrency)
+    activity = _ProbeHeadActivity()
+    loop = asyncio.get_running_loop()
 
-    async def head(key: str) -> tuple[str, dict[str, Any] | None]:
-        async with semaphore:
-            return key, await asyncio.to_thread(
-                _head_s3_identity, client, BUCKET, key
-            )
+    head_executor = ThreadPoolExecutor(
+        max_workers=concurrency,
+        thread_name_prefix="history-r2-probe-head",
+    )
+    tasks: list[asyncio.Task[tuple[str, dict[str, Any] | None]]] = []
+    try:
 
-    facts = dict(await asyncio.gather(*(head(key) for key in keys)))
-    return classify_r2_head_outcomes(rows, facts)
+        async def head(key: str) -> tuple[str, dict[str, Any] | None]:
+            async with semaphore:
+                return key, await loop.run_in_executor(
+                    head_executor,
+                    activity.call,
+                    head_func,
+                    client,
+                    BUCKET,
+                    key,
+                )
+
+        tasks = [asyncio.create_task(head(key)) for key in keys]
+        facts = dict(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    finally:
+        head_executor.shutdown(wait=True, cancel_futures=True)
+    return ProbeHeadBatchResult(
+        outcomes=classify_r2_head_outcomes(rows, facts),
+        peak_workers=activity.peak,
+        worker_threads=activity.thread_count,
+        requested_concurrency=concurrency,
+    )
 
 
 async def _persist_probe_batch(
@@ -2608,15 +3078,19 @@ async def _persist_probe_batch(
                         for key, attempt_status in outcome["attempts"]
                     ],
                 )
-        await conn.execute(
+        completed = await conn.execute(
             """update analytics_history_media_migration_plan_batches set
                  status='completed',outcome_counts=$3::jsonb,
                  started_at=coalesce(started_at,now()),completed_at=now(),updated_at=now()
-               where plan_sha256=$1 and batch_no=$2""",
+               where plan_sha256=$1 and batch_no=$2 and status='pending'""",
             plan_sha,
             batch_no,
             json.dumps(dict(sorted(counts.items()))),
         )
+        if int(completed.rsplit(" ", 1)[-1]) != 1:
+            raise RuntimeError(
+                "Probe batch is no longer pending; rolling back uncommitted outcomes"
+            )
     return counts
 
 
@@ -2638,7 +3112,11 @@ async def _execute_probe(args: argparse.Namespace) -> None:
         config["target"].get("endpoint", "")
     ).rstrip("/"):
         raise RuntimeError("frozen HEAD probe requires the target and source R2 endpoint")
-    client = _s3_client(r2_source, max_pool_connections=max(96, args.concurrency))
+    max_pool_connections = _resolve_probe_max_pool_connections(args.concurrency)
+    client = _s3_client(
+        r2_source,
+        max_pool_connections=max_pool_connections,
+    )
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         run_id, manifest = await _load_plan(conn, args.plan_sha256, "probe")
@@ -2652,9 +3130,42 @@ async def _execute_probe(args: argparse.Namespace) -> None:
             artifact_digest=args.artifact_digest,
             config=config,
         )
+        predecessor_chain = tuple(
+            str(value)
+            for value in manifest.get("predecessor_probe_plan_sha256s", [])
+        )
+        if predecessor_chain:
+            invalid_predecessor_batches = int(
+                await conn.fetchval(
+                    """select count(*)
+                         from analytics_history_media_migration_plan_batches
+                        where plan_sha256=any($1::text[])
+                          and status not in ('completed','superseded')""",
+                    list(predecessor_chain),
+                )
+            )
+            retained_assets = int(
+                await conn.fetchval(
+                    """select count(*)
+                         from analytics_history_media_r2_migrations
+                        where run_id=$1 and probe_plan_sha256=any($2::text[])""",
+                    run_id,
+                    list(predecessor_chain),
+                )
+            )
+            if invalid_predecessor_batches or retained_assets != int(
+                manifest["retained_asset_count"]
+            ):
+                raise RuntimeError("successor Probe predecessor state changed")
+            if retained_assets + int(manifest["asset_count"]) != int(
+                manifest["root_asset_count"]
+            ):
+                raise RuntimeError("successor Probe asset conservation changed")
         controller = AdaptiveProbeController(initial_concurrency=args.concurrency)
         processed = 0
         totals: Counter[str] = Counter()
+        peak_head_workers = 0
+        head_worker_threads = 0
         while args.max_batches <= 0 or processed < args.max_batches:
             batch = await conn.fetchrow(
                 """select * from analytics_history_media_migration_plan_batches
@@ -2685,8 +3196,15 @@ async def _execute_probe(args: argparse.Namespace) -> None:
             attempt = 0
             while True:
                 try:
-                    outcomes = await _collect_probe_head_outcomes(
+                    head_batch = await _collect_probe_head_outcomes(
                         rows, client=client, concurrency=controller.concurrency
+                    )
+                    outcomes = head_batch.outcomes
+                    peak_head_workers = max(
+                        peak_head_workers, head_batch.peak_workers
+                    )
+                    head_worker_threads = max(
+                        head_worker_threads, head_batch.worker_threads
                     )
                     controller.record_success()
                     break
@@ -2708,6 +3226,23 @@ async def _execute_probe(args: argparse.Namespace) -> None:
             )
             totals.update(counts)
             processed += 1
+            print(
+                json.dumps(
+                    {
+                        "event": "probe_batch_completed",
+                        "plan_sha256": args.plan_sha256,
+                        "batch_no": int(batch["batch_no"]),
+                        "asset_count": int(batch["asset_count"]),
+                        "outcomes": dict(sorted(counts.items())),
+                        "requested_concurrency": head_batch.requested_concurrency,
+                        "peak_head_workers": head_batch.peak_workers,
+                        "head_worker_threads": head_batch.worker_threads,
+                        "max_pool_connections": max_pool_connections,
+                        "next_concurrency": controller.concurrency,
+                    }
+                ),
+                flush=True,
+            )
         remaining = int(
             await conn.fetchval(
                 """select count(*) from analytics_history_media_migration_plan_batches
@@ -2730,6 +3265,9 @@ async def _execute_probe(args: argparse.Namespace) -> None:
                     "remaining_batches": remaining,
                     "outcomes": dict(sorted(totals.items())),
                     "next_concurrency": controller.concurrency,
+                    "peak_head_workers": peak_head_workers,
+                    "head_worker_threads": head_worker_threads,
+                    "max_pool_connections": max_pool_connections,
                 }
             )
         )
@@ -2781,6 +3319,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
             )
             if parent_run_id != run_id:
                 raise RuntimeError("copy parent probe belongs to another run")
+            probe_chain = probe_plan_chain_sha256s(parent)
             incomplete_batches = int(
                 await conn.fetchval(
                     """select count(*) from analytics_history_media_migration_plan_batches
@@ -2792,13 +3331,38 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 raise RuntimeError(
                     f"PROBE_NOT_COMPLETE: batches={incomplete_batches}"
                 )
+            invalid_predecessor_batches = int(
+                await conn.fetchval(
+                    """select count(*)
+                         from analytics_history_media_migration_plan_batches
+                        where plan_sha256=any($1::text[])
+                          and status not in ('completed','superseded')""",
+                    list(probe_chain[:-1]),
+                )
+            )
+            if invalid_predecessor_batches:
+                raise RuntimeError("predecessor Probe chain is not terminal")
+            completed_chain_assets = int(
+                await conn.fetchval(
+                    """select count(*)
+                         from analytics_history_media_r2_migrations
+                        where run_id=$1 and probe_plan_sha256=any($2::text[])""",
+                    run_id,
+                    list(probe_chain),
+                )
+            )
+            root_asset_count = int(
+                parent.get("root_asset_count", parent["asset_count"])
+            )
+            if completed_chain_assets != root_asset_count:
+                raise RuntimeError("Probe chain ledger assets are incomplete")
             oversized = int(
                 await conn.fetchval(
                     """select count(*) from analytics_history_media_r2_migrations
-                         where run_id=$1 and probe_plan_sha256=$2
+                         where run_id=$1 and probe_plan_sha256=any($2::text[])
                            and status='copy_required' and byte_size > $3""",
                     run_id,
-                    args.parent_plan_sha256,
+                    list(probe_chain),
                     SINGLE_COPY_LIMIT,
                 )
             )
@@ -2810,12 +3374,12 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                           source_name,source_key,source_last_modified,source_etag,source_sha256,
                           target_sha256,byte_size,status,history_manifest_sha256,error_code
                      from analytics_history_media_r2_migrations
-                    where run_id=$1 and probe_plan_sha256=$2
+                    where run_id=$1 and probe_plan_sha256=any($2::text[])
                       and status='copy_required'
                     order by id"""
             rowset_sha, count, counts, byte_counts, diagnostics = (
                 await _stream_plan_rowset(
-                    conn, query, run_id, args.parent_plan_sha256
+                    conn, query, run_id, list(probe_chain)
                 )
             )
             batch_rows: list[dict[str, Any]] = []
@@ -2823,7 +3387,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 async for record in conn.cursor(
                     query,
                     run_id,
-                    args.parent_plan_sha256,
+                    list(probe_chain),
                     prefetch=COPY_BATCH_SIZE,
                 ):
                     batch_rows.append(dict(record))
@@ -2849,6 +3413,8 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 "run_id": str(run_id),
                 "history_watermark": int(run["history_watermark"]),
                 "parent_probe_plan_sha256": parent["plan_sha256"],
+                "probe_chain_plan_sha256s": list(probe_chain),
+                "probe_chain_sha256": _sha256_json(list(probe_chain)),
                 "count": count,
                 "counts": dict(sorted(counts.items())),
                 "bytes": dict(sorted(byte_counts.items())),
@@ -2972,10 +3538,10 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
             await conn.execute(
                 """update analytics_history_media_r2_migrations
                       set copy_plan_sha256=$3,updated_at=now()
-                    where run_id=$1 and probe_plan_sha256=$2
+                    where run_id=$1 and probe_plan_sha256=any($2::text[])
                       and status='copy_required'""",
                 run_id,
-                args.parent_plan_sha256,
+                list(probe_chain),
                 plan_sha,
             )
         else:
@@ -3867,6 +4433,12 @@ def _resolve_copy_max_pool_connections(
     return connections
 
 
+def _resolve_probe_max_pool_connections(concurrency: int) -> int:
+    if concurrency not in {8, 16, 32, 64, 128}:
+        raise ValueError("Probe concurrency must be 8, 16, 32, 64, or 128")
+    return PROBE_MAX_CONCURRENCY
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -3892,6 +4464,12 @@ def _parser() -> argparse.ArgumentParser:
     plan_probe.add_argument("--config", required=True)
     plan_probe.add_argument("--artifact-digest", required=True)
     plan_probe.add_argument("--output", required=True)
+    successor_probe = commands.add_parser("plan-probe-successor")
+    successor_probe.add_argument("--run-id", required=True)
+    successor_probe.add_argument("--predecessor-plan-sha256", required=True)
+    successor_probe.add_argument("--config", required=True)
+    successor_probe.add_argument("--artifact-digest", required=True)
+    successor_probe.add_argument("--output", required=True)
     execute_probe = commands.add_parser("execute-probe")
     execute_probe.add_argument("--plan-sha256", required=True)
     execute_probe.add_argument("--confirm", required=True)
@@ -3941,6 +4519,8 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _probe(args)
     elif args.command == "plan-probe":
         await _create_probe_plan(args)
+    elif args.command == "plan-probe-successor":
+        await _create_successor_probe_plan(args)
     elif args.command == "execute-probe":
         await _execute_probe(args)
     elif args.command == "plan-copy":

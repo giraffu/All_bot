@@ -18,8 +18,8 @@ description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
 - 冷媒体恢复只写 restore outbox；Web 不直连 NAS。Worker 复验摘要、回填原件并
   重建输出缩略图后才提交当前 revision 回执。
 - 永久原件使用 SHA-256 寻址；History 和原 key 映射保存在回执。
-- R2 同桶迁移用冻结账本和服务端复制，正文不经执行器；NAS/旧源验 SHA
-  禁止全桶扫描。
+- R2 迁移用冻结账本；Probe 专用 HEAD 池只走零交集 successor，Copy 聚合计划链；
+  正文不经执行器，禁止全桶扫描。
 - History R2 全量链路使用父计划限定的 Probe→Copy→Switch batches；只分别接受
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
