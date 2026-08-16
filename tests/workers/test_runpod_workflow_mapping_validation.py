@@ -164,6 +164,12 @@ def test_baked_runpod_worker_imports_task_patchers_from_its_own_bundle(tmp_path)
     assert completed.returncode == 0, completed.stderr
 
 
+def test_minimax_h3_runpod_domain_contract_matches_control_plane_source():
+    assert (
+        ROOT / "workers/runpod_runtime/src/domain_config/minimax_h3.py"
+    ).read_bytes() == (ROOT / "src/domain_config/minimax_h3.py").read_bytes()
+
+
 @pytest.mark.parametrize("dockerfile_path", BAKED_PROFILE_DOCKERFILES)
 def test_profile_image_build_fails_when_runpod_worker_bundle_cannot_import(
     dockerfile_path,
