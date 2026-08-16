@@ -703,7 +703,23 @@ async def test_lmstudio_readiness_requires_vision_context_and_parallel_four():
 
 
 @pytest.mark.asyncio
-async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
+@pytest.mark.parametrize(
+    "structured_message",
+    [
+        {
+            "role": "assistant",
+            "content": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
+        },
+    ],
+)
+async def test_lmstudio_provider_uses_visual_notes_then_structured_response(
+    structured_message,
+):
     requests = []
 
     async def handler(request):
@@ -732,7 +748,7 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
             json={
                 "choices": [
                     {
-                        "text": '{"optimized_fields":{"positive_prompt":"done"},"warnings":[]}',
+                        "message": structured_message,
                         "finish_reason": "stop",
                     }
                 ],
@@ -764,7 +780,7 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
     assert result["optimized_fields"]["positive_prompt"] == "done"
     assert [path for path, _payload in requests] == [
         "/v1/responses",
-        "/v1/completions",
+        "/v1/chat/completions",
     ]
     visual_payload = requests[0][1]
     assert visual_payload["reasoning"] == {"effort": "none"}
@@ -775,13 +791,58 @@ async def test_lmstudio_provider_uses_visual_notes_then_structured_response():
         for item in message["content"]
     )
     structured_payload = requests[1][1]
+    assert structured_payload["store"] is False
     assert structured_payload["stream"] is False
     assert structured_payload["max_tokens"] == 3072
-    completion_prompt = structured_payload["prompt"]
-    assert '"optimized_fields"' in completion_prompt
-    assert '"warnings"' in completion_prompt
-    assert "subject faces camera" in completion_prompt
-    assert completion_prompt.endswith("<think>\n</think>\n")
+    assert structured_payload["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "prompt_optimization_result",
+            "strict": True,
+            "schema": schema,
+        },
+    }
+    assert structured_payload["messages"][0]["role"] == "system"
+    assert '"optimized_fields"' in structured_payload["messages"][0]["content"]
+    assert '"warnings"' in structured_payload["messages"][0]["content"]
+    assert structured_payload["messages"][1]["role"] == "user"
+    assert "subject faces camera" in structured_payload["messages"][1]["content"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_provider_rejects_mixed_structured_output_channels():
+    async def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": '{"optimized_fields":{},"warnings":[]}',
+                            "reasoning_content": '{"optimized_fields":{},"warnings":[]}',
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = LMStudioChatProvider(
+        base_url="http://lmstudio",
+        model="ltx-prompt-optimizer",
+        client=client,
+    )
+
+    with pytest.raises(ModelResponseError, match="lmstudio_mixed_output_channels"):
+        await provider.optimize(
+            system_prompt="system",
+            user_prompt="user",
+            image_data_urls=[],
+            json_schema={"type": "object"},
+        )
     await client.aclose()
 
 
@@ -792,9 +853,9 @@ async def test_lmstudio_provider_streams_completion_text_deltas():
     async def handler(request):
         requests.append((request.url.path, json.loads(request.content)))
         stream_body = (
-            'data: {"choices":[{"text":"{\\"optimized_fields\\":'
-            '{\\"positive_prompt\\":\\"hello "}]}\n'
-            'data: {"choices":[{"text":"world\\"},\\"warnings\\":[]}"}]}\n'
+            'data: {"choices":[{"delta":{"reasoning_content":"{\\"optimized_fields\\":'
+            '{\\"positive_prompt\\":\\"hello "}}]}\n'
+            'data: {"choices":[{"delta":{"reasoning_content":"world\\"},\\"warnings\\":[]}"}}]}\n'
             "data: [DONE]\n"
         )
         return httpx.Response(200, text=stream_body)
@@ -819,8 +880,9 @@ async def test_lmstudio_provider_streams_completion_text_deltas():
         on_text_delta=on_text_delta,
     )
 
-    assert requests[0][0] == "/v1/completions"
+    assert requests[0][0] == "/v1/chat/completions"
     assert requests[0][1]["stream"] is True
+    assert requests[0][1]["response_format"]["type"] == "json_schema"
     assert result["optimized_fields"]["positive_prompt"] == "hello world"
     assert "".join(delta for _field, delta in streamed) == "hello world"
     assert {field for field, _delta in streamed} == {"positive_prompt"}

@@ -171,10 +171,14 @@ vision=true、context>=16384、parallel>=4。不满足时所有 lane heartbeat=e
 图片在内存转 JPEG 并缩至长边 1536px，以 data URL 调用 LM Studio
 `/v1/responses`。当前 Qwen3.6 VLM 采用 Provider 内部两阶段：第一阶段在
 `reasoning.effort=none` 下提取不落盘的视觉观察，第二阶段把视觉观察、原始输入和
-版本化模板合并为纯文本请求，再使用 JSON Schema structured output。纯文本 Profile
+版本化模板合并为纯文本请求，再通过 `/v1/chat/completions` 的
+`response_format.json_schema` 使用 structured output。纯文本 Profile
 跳过第一阶段。若 HauhauCS 视觉阶段只返回 reasoning item，可仅将其作为不落盘的
-视觉观察继续；最终结构化阶段禁止 reasoning fallback，并把动态 schema 同时放入
-API format 和 system 指令，仍由 OutputValidator fail closed。两个请求都必须
+视觉观察继续；最终结构化阶段把动态 schema 同时放入 API format 和 system 指令，
+仍由 OutputValidator fail closed。当前 HauhauCS/Qwen chat template 可能把 grammar
+约束后的唯一 JSON 放入 `reasoning_content` 而把 `content` 留空，Provider 只允许二者
+恰好一个承载结构化结果，禁止跨通道拼接；这不是接受未约束的 reasoning fallback。
+两个请求都必须
 `store=false`，不得把原始响应写日志；超时 180 秒，
 只对 429、5xx、网络错误或 timeout 重试一次。非法 JSON、未知字段、空文本或超过
 2000 字符直接失败。不得通过剥离 Markdown fence 等宽松解析绕过 fail-closed。
