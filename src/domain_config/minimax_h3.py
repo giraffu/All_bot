@@ -44,6 +44,78 @@ MINIMAX_H3_ASPECT_RATIOS = {
 MINIMAX_H3_MAX_PIXELS = 768 * 1344
 MINIMAX_H3_MODEL_FL = "MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors"
 MINIMAX_H3_MODEL_REF = "MiniMaxH3/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+MINIMAX_H3_ADDON_MIN_STRENGTH = 0.1
+MINIMAX_H3_ADDON_MAX_STRENGTH = 2.0
+
+
+@dataclass(frozen=True, slots=True)
+class MiniMaxH3AddonModel:
+    id: str
+    label_zh: str
+    label_en: str
+    model_path: str
+    default_strength: float
+    prompt_prefix: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MiniMaxH3AddonSelection:
+    name: str
+    strength: float
+
+
+# Public catalog intentionally maps one option to one locally pinned file. This
+# avoids loading the same physical LoRA twice when users combine options and
+# makes each Web strength control unambiguous.
+MINIMAX_H3_ADDON_MODELS = {
+    "naughty_times": MiniMaxH3AddonModel(
+        "naughty_times",
+        "NaughtyTimes v2（成人动作强化）",
+        "NaughtyTimes v2 (adult motion)",
+        "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
+        1.0,
+    ),
+    "sex_pose": MiniMaxH3AddonModel(
+        "sex_pose",
+        "HMNSFW AIO v2（成人姿势）",
+        "HMNSFW AIO v2 (adult poses)",
+        "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        0.5,
+        "hmmotion",
+    ),
+    "breasts": MiniMaxH3AddonModel(
+        "breasts",
+        "HMBreasts（乳房）",
+        "HMBreasts",
+        "MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
+        1.0,
+        "HMBreasts",
+    ),
+    "vagassist": MiniMaxH3AddonModel(
+        "vagassist",
+        "VagAssist（阴道/肛门辅助）",
+        "VagAssist (vagina/anus assist)",
+        "MiniMaxH3/vagassist_e40.safetensors",
+        1.0,
+        "Vagina, anus",
+    ),
+    "pussy": MiniMaxH3AddonModel(
+        "pussy",
+        "HMPussy v6（阴道）",
+        "HMPussy v6",
+        "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
+        0.35,
+        "Vagina",
+    ),
+    "penis": MiniMaxH3AddonModel(
+        "penis",
+        "HMPenis v2（阴茎）",
+        "HMPenis v2",
+        "MiniMaxH3/HMPenis_v2_e35.safetensors",
+        1.0,
+        "HMPenis",
+    ),
+}
 
 
 class MiniMaxH3ValidationError(ValueError):
@@ -68,6 +140,66 @@ class MiniMaxH3Spec:
     images: tuple[str, ...]
     reference_descriptions: tuple[str, ...]
     model_name: str
+    addon_items: tuple[MiniMaxH3AddonSelection, ...]
+
+
+def normalize_minimax_h3_addon_items(
+    inputs: dict[str, Any],
+) -> tuple[MiniMaxH3AddonSelection, ...]:
+    raw_items = inputs.get("lora_items")
+    legacy_names = inputs.get("addon_models")
+    legacy_name = str(inputs.get("lora_name") or "").strip()
+    legacy_strength = inputs.get("lora_strength")
+    configured_formats = sum(
+        value not in (None, "", [], ())
+        for value in (raw_items, legacy_names, legacy_name)
+    )
+    if configured_formats > 1:
+        raise MiniMaxH3ValidationError("附加模型参数格式不能混用。")
+    if raw_items is None and legacy_names not in (None, [], ()):
+        if not isinstance(legacy_names, (list, tuple)):
+            raise MiniMaxH3ValidationError("addon_models 必须为有序数组。")
+        raw_items = [{"name": name} for name in legacy_names]
+    if raw_items is None:
+        if not legacy_name:
+            if legacy_strength not in (None, ""):
+                raise MiniMaxH3ValidationError("选择附加模型后才能设置强度。")
+            return ()
+        raw_items = [{"name": legacy_name, "strength": legacy_strength}]
+    if not isinstance(raw_items, (list, tuple)):
+        raise MiniMaxH3ValidationError("附加模型必须为有序数组。")
+    if len(raw_items) > len(MINIMAX_H3_ADDON_MODELS):
+        raise MiniMaxH3ValidationError("附加模型必须为最多 6 项的数组。")
+    result: list[MiniMaxH3AddonSelection] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            raise MiniMaxH3ValidationError("附加模型配置格式错误。")
+        name = str(raw.get("name") or "").strip()
+        model = MINIMAX_H3_ADDON_MODELS.get(name)
+        if model is None:
+            raise MiniMaxH3ValidationError("不支持该附加模型。")
+        if name in seen:
+            raise MiniMaxH3ValidationError("附加模型不得重复选择。")
+        seen.add(name)
+        raw_strength = raw.get("strength")
+        try:
+            strength = (
+                model.default_strength
+                if raw_strength in (None, "")
+                else float(raw_strength)
+            )
+        except (TypeError, ValueError) as exc:
+            raise MiniMaxH3ValidationError("附加模型强度必须为数字。") from exc
+        if not (
+            math.isfinite(strength)
+            and MINIMAX_H3_ADDON_MIN_STRENGTH
+            <= strength
+            <= MINIMAX_H3_ADDON_MAX_STRENGTH
+        ):
+            raise MiniMaxH3ValidationError("附加模型强度必须在 0.1 至 2.0 之间。")
+        result.append(MiniMaxH3AddonSelection(name=name, strength=strength))
+    return tuple(result)
 
 
 def _string_tuple(value: Any, *, field: str) -> tuple[str, ...]:
@@ -124,13 +256,7 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
     if any(inputs.get(key) not in (None, "", [], ()) for key in forbidden):
         raise MiniMaxH3ValidationError(f"{PRODUCT_NAME}不允许覆盖底层执行参数。")
 
-    if any(
-        inputs.get(key) not in (None, "", [], ())
-        for key in ("addon_models", "lora_items", "lora_name", "lora_strength")
-    ):
-        raise MiniMaxH3ValidationError(
-            "高级图生视频pro使用固定模型栈，不接受附加模型参数。"
-        )
+    addon_items = normalize_minimax_h3_addon_items(inputs)
 
     duration = normalize_minimax_h3_duration_seconds(
         inputs.get("duration", inputs.get("length", 5))
@@ -189,4 +315,5 @@ def build_minimax_h3_spec(task_type: str, inputs: dict[str, Any]) -> MiniMaxH3Sp
         images=images,
         reference_descriptions=descriptions,
         model_name=MINIMAX_H3_MODEL_FL,
+        addon_items=addon_items,
     )

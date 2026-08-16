@@ -89,7 +89,8 @@ manifest 和专项文档读取，不在此维护快照。
 - 节点缺失、模型路径不匹配、目标 profile 不支持或 manifest 不完整时 fail
   closed；不要静默忽略用户参数或回退到另一模型。
 - 参数数量、强度、分辨率、时长与输入张数必须由服务端/domain config 校验；
-  Worker 仍做防御性校验。H3 固定栈仅兼容空旧 LoRA 字段，非空拒绝。
+  Worker 仍防御校验。H3 基础链固定，LoRA 目录/数量/强度/节点链由 domain
+  config 和 patcher fail closed；未知选项不得忽略。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
 - 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试

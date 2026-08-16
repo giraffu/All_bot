@@ -39,15 +39,11 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
             "lora_name": LIGHTX2V_LORA,
             "strength_model": 1.0,
         }
-        assert workflow["9"]["inputs"] == {
-            "model": ["8", 0],
-            "lora_name": NAUGHTYTIMES_LORA,
-            "strength_model": 1.0,
-        }
         assert workflow["2"] == {
-            "inputs": {"model": ["9", 0], "attention": "comfy kitchen attention"},
+            "inputs": {"model": ["8", 0], "attention": "comfy kitchen attention"},
             "class_type": "ModelAttentionBackend",
         }
+        assert "9" not in workflow
         assert workflow["3"]["inputs"] == {
             "model": ["2", 0],
             "shift_video": 12.0,
@@ -99,15 +95,15 @@ def test_minimax_h3_api_workflows_are_deterministic_and_synced():
 
 
 @pytest.mark.parametrize("params", [
-    {"lora_name": "sex_pose", "lora_strength": 0.75},
     {"lora_strength": 1.0},
-    {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
+    {"lora_items": [{"name": "missing", "strength": 0.75}]},
+    {"lora_items": [{"name": "penis"}, {"name": "penis"}]},
     {"addon_models": ["duplicate"]},
 ])
-def test_minimax_h3_patcher_rejects_client_addon_overrides(params):
+def test_minimax_h3_patcher_rejects_invalid_addon_overrides(params):
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
-    with pytest.raises(ValueError, match="fixed MiniMax H3"):
+    with pytest.raises(ValueError, match="MiniMax H3 addon"):
         patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene", **params})
 
 
@@ -130,15 +126,70 @@ def test_minimax_h3_patcher_tolerates_legacy_empty_addon_placeholders():
     assert result["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
 
 
-def test_minimax_h3_patcher_without_addon_keeps_fixed_author_stack():
+def test_minimax_h3_patcher_without_addon_keeps_10eros_plus_lightx2v_only():
     patcher = WorkflowPatcher("workers/comfy_agent/workflows")
     workflow = patcher.load_workflow("minimax_h3_t2v")
     patched = patcher.patch_workflow("minimax_h3_t2v", workflow, {"prompt": "scene"})
     assert not {"10", "11", "12", "13"} & patched.keys()
     assert patched["8"]["inputs"]["lora_name"] == LIGHTX2V_LORA
-    assert patched["9"]["inputs"]["lora_name"] == NAUGHTYTIMES_LORA
+    assert "9" not in patched
+    assert patched["2"]["inputs"]["model"] == ["8", 0]
     assert patched["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
     assert patched["30"]["inputs"]["prompt"] == "scene"
+
+
+def test_minimax_h3_patcher_injects_selected_addons_after_lightx2v_in_order():
+    patcher = WorkflowPatcher("workers/comfy_agent/workflows")
+    workflow = patcher.load_workflow("minimax_h3_t2v")
+    patched = patcher.patch_workflow(
+        "minimax_h3_t2v",
+        workflow,
+        {
+            "prompt": "two adults move in a bedroom",
+            "lora_items": [
+                {"name": "naughty_times", "strength": 0.8},
+                {"name": "sex_pose", "strength": 0.45},
+                {"name": "pussy", "strength": 0.3},
+            ],
+        },
+    )
+    assert patched["100"]["inputs"] == {
+        "model": ["8", 0],
+        "lora_name": NAUGHTYTIMES_LORA,
+        "strength_model": 0.8,
+    }
+    assert patched["101"]["inputs"] == {
+        "model": ["100", 0],
+        "lora_name": "MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        "strength_model": 0.45,
+    }
+    assert patched["102"]["inputs"] == {
+        "model": ["101", 0],
+        "lora_name": "MiniMaxH3/hmpussy_v6_epoch30.safetensors",
+        "strength_model": 0.3,
+    }
+    assert patched["2"]["inputs"]["model"] == ["102", 0]
+    assert patched["30"]["inputs"]["prompt"] == (
+        "hmmotion, Vagina, two adults move in a bedroom"
+    )
+
+
+def test_runpod_minimax_h3_worker_injects_same_addon_chain():
+    workflow = json.loads(
+        Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+    patch_runpod_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={
+            "prompt": "scene",
+            "lora_items": [{"name": "breasts", "strength": 1.2}],
+        },
+    )
+    assert workflow["100"]["inputs"]["model"] == ["8", 0]
+    assert workflow["100"]["inputs"]["strength_model"] == 1.2
+    assert workflow["2"]["inputs"]["model"] == ["100", 0]
+    assert workflow["30"]["inputs"]["prompt"] == "HMBreasts, scene"
 
 
 def test_runpod_minimax_h3_worker_uses_prompt_without_trigger_injection():

@@ -11,6 +11,11 @@ from src.domain_config.scail2_video import (
     normalize_scail2_negative_prompt,
     normalize_scail2_positive_prompt,
 )
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
+    MiniMaxH3ValidationError,
+    normalize_minimax_h3_addon_items,
+)
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     WAN22_VIDEO_V2_MODEL_PROFILE,
@@ -1443,13 +1448,30 @@ def patch_minimax_h3_workflow(
         for key in ("model_name", "checkpoint", "timeline_data", "sampler_name", "scheduler", "steps")
     ):
         raise ValueError("MiniMax H3 rejects model, sampler, and timeline overrides")
-    if any(
-        params.get(key) not in (None, "", [], ())
-        for key in ("addon_models", "lora_items", "lora_name", "lora_strength")
-    ):
-        raise ValueError("MiniMax H3 uses a fixed MiniMax H3 stack and rejects addon overrides")
     for node_id in ["10", "11", "12", "13", *map(str, range(100, 120))]:
         workflow.pop(node_id, None)
+    try:
+        addon_items = normalize_minimax_h3_addon_items(params)
+    except MiniMaxH3ValidationError as exc:
+        raise ValueError(f"invalid MiniMax H3 addon configuration: {exc}") from exc
+    model_input = ["8", 0]
+    prompt_parts: list[str] = []
+    for offset, selection in enumerate(addon_items):
+        addon = MINIMAX_H3_ADDON_MODELS[selection.name]
+        for part in (part.strip() for part in addon.prompt_prefix.split(",")):
+            if part and part not in prompt_parts:
+                prompt_parts.append(part)
+        node_id = str(100 + offset)
+        workflow[node_id] = {
+            "inputs": {
+                "model": model_input,
+                "lora_name": addon.model_path,
+                "strength_model": round(selection.strength, 6),
+            },
+            "class_type": "LoraLoaderModelOnly",
+        }
+        model_input = [node_id, 0]
+    workflow["2"]["inputs"]["model"] = model_input
     names = [str(params.get(key) or "").strip() for key in ("image", "image2", "image3", "image4")]
     count = sum(bool(name) for name in names)
     minimum, maximum = _MINIMAX_H3_COUNTS[task_type]
@@ -1472,7 +1494,11 @@ def patch_minimax_h3_workflow(
         workflow["30"]["inputs"]["width"] = ["41", 0]
         workflow["30"]["inputs"]["height"] = ["41", 1]
     guide_inputs = workflow["30"]["inputs"]
-    guide_inputs["prompt"] = str(params.get("prompt") or "").strip()
+    base_prompt = str(params.get("prompt") or "").strip()
+    prompt_prefix = ", ".join(prompt_parts)
+    guide_inputs["prompt"] = (
+        f"{prompt_prefix}, {base_prompt}" if prompt_prefix else base_prompt
+    )
     if task_type != "minimax_h3_ref2v":
         guide_inputs["length"] = _minimax_h3_frame_count(params)
     if task_type == "minimax_h3_ref2v":

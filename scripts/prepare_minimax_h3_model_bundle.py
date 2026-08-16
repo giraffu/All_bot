@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1"
+VERSION = "2026-08-16-10eros-beta2-addon6-lightx2v8-v1"
 MIN_FREE_BYTES = 55 * 1024**3
 FILES = (
     (
@@ -58,6 +58,36 @@ FILES = (
         "947efec5a357505bb93bdc1b050d33786ec150aa1c85f24337f0d59f39aaf31a",
         2_242_444_272,
         "https://civitai.red/api/download/models/3212436?fileId=3094173",
+    ),
+    (
+        "loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors",
+        "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
+        310_168_344,
+        "https://civitai.red/api/download/models/3206518",
+    ),
+    (
+        "loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
+        "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
+        310_168_344,
+        "https://civitai.red/api/download/models/3216751",
+    ),
+    (
+        "loras/MiniMaxH3/vagassist_e40.safetensors",
+        "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a",
+        310_168_344,
+        "https://civitai.red/api/download/models/3215304",
+    ),
+    (
+        "loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors",
+        "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee",
+        626_294_968,
+        "https://civitai.red/api/download/models/3215304?fileId=3097100",
+    ),
+    (
+        "loras/MiniMaxH3/HMPenis_v2_e35.safetensors",
+        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
+        310_168_344,
+        "https://civitai.red/api/download/models/3218160",
     ),
 )
 
@@ -145,12 +175,17 @@ def prepare(registry: ModelRegistry) -> Path:
                 "Comfy-Org/MiniMax-H3",
                 "lightx2v/Minimax-h3-Turbo",
                 "civitai:modelVersion/3212436:file/3094173",
+                "civitai:modelVersion/3206518",
+                "civitai:modelVersion/3216751",
+                "civitai:modelVersion/3215304",
+                "civitai:modelVersion/3218160",
             ],
             "revision": "10eros=47aa7e38; comfy=014cd40f; lightx2v=62487ee6",
             "variant": (
-                "10Eros-Max Beta2 pruned base plus separately loaded LightX2V "
-                "FL2VA 8-step v1.0 and NaughtyTimes v2 pruned rank256 LoRAs; "
-                "official Qwen3-VL encoder and FP16 video/FP32 audio VAEs"
+                "10Eros-Max Beta2 pruned base plus fixed LightX2V FL2VA 8-step "
+                "v1.0 acceleration and six optional one-file LoRAs: NaughtyTimes "
+                "v2, HMNSFW AIO v2, HMBreasts, VagAssist, HMPussy v6 and HMPenis "
+                "v2; official Qwen3-VL encoder and FP16 video/FP32 audio VAEs"
             ),
         },
         files=manifest_files,

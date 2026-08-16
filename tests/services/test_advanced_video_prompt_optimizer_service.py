@@ -35,7 +35,7 @@ async def test_bot_optimizer_stages_flf_frames_and_uses_shared_h3_contract():
     request = submit.await_args.kwargs["request"]
     assert request.target_task_type == "minimax_h3_flf2v"
     assert request.template.id == "minimax_h3_10eros_naughtytimes"
-    assert request.template.version == 3
+    assert request.template.version == 4
     assert [item.role for item in request.media] == ["start_image", "end_image"]
     assert request.context == {"duration_seconds": 10}
     assert request.lora_items == []

@@ -496,6 +496,46 @@ async def test_submit_face_swap_selects_version_endpoint(
 
 
 @pytest.mark.asyncio
+async def test_submit_minimax_h3_forwards_optional_lora_strengths(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=httpx.Response(200, json={"task_id": "backend-h3"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    result = await client.submit_minimax_h3(
+        "task-h3",
+        task_type="minimax_h3_t2v",
+        prompt="scene",
+        images=(),
+        reference_descriptions=(),
+        duration=5,
+        resolution_preset="preview",
+        aspect_ratio="16:9",
+        width=672,
+        height=384,
+        frame_count=124,
+        fps=24,
+        seed=123,
+        lora_items=(
+            {"name": "naughty_times", "strength": 0.8},
+            {"name": "sex_pose", "strength": 0.45},
+        ),
+        priority=2,
+    )
+
+    assert result == "backend-h3"
+    assert request.await_args.args[:2] == (
+        "POST",
+        api_client_module.MINIMAX_H3_ENDPOINTS["minimax_h3_t2v"],
+    )
+    assert request.await_args.kwargs["json"]["lora_items"] == [
+        {"name": "naughty_times", "strength": 0.8},
+        {"name": "sex_pose", "strength": 0.45},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_submit_scail2_face_swap_marks_reference_preprocessed(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(

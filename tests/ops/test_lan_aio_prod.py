@@ -268,7 +268,7 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-16-10eros-beta2-naughtytimes-v2-r256-lightx2v8-v1/manifest.json"
+        "minimax_h3/2026-08-16-10eros-beta2-addon6-lightx2v8-v1/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
@@ -2025,7 +2025,8 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
     ops = RecordingOps()
     slot = ops.slots["gpu-177-gpu0-image_to_video"]
     rollback_ref = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "9" * 64
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
+        + "9" * 64
     )
     resolved = {
         "profile": "image_to_video",
@@ -2041,7 +2042,8 @@ def test_lan_release_rollout_accepts_explicit_exact_rollback_ref():
 
     assert ops.verified_rollback_ref == rollback_ref
     expected_target_ref = (
-        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video@sha256:" + "1" * 64
+        "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video@sha256:"
+        + "1" * 64
     )
     assert ops.pulled_refs == [rollback_ref, expected_target_ref]
     assert ops.verified_target_ref == expected_target_ref

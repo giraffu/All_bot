@@ -24,6 +24,7 @@ class ImageService:
         frame_count: int,
         fps: int,
         seed: int | None,
+        lora_items: tuple[dict[str, Any], ...] = (),
         priority: int = 0,
     ) -> str:
         return await api_client.submit_minimax_h3(
@@ -40,6 +41,7 @@ class ImageService:
             frame_count=frame_count,
             fps=fps,
             seed=seed,
+            lora_items=lora_items,
             priority=priority,
         )
 

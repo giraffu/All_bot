@@ -741,6 +741,7 @@ class APIClient:
         frame_count: int,
         fps: int,
         seed: int | None,
+        lora_items: tuple[dict[str, Any], ...] = (),
         priority: int = 0,
     ) -> str:
         endpoint = MINIMAX_H3_ENDPOINTS.get(task_type)
@@ -762,6 +763,8 @@ class APIClient:
             "extract_last_frame": True,
             "priority": priority,
         }
+        if lora_items:
+            payload["lora_items"] = list(lora_items)
         response = await self._request(
             "POST", endpoint, json=payload, circuit_breaker_key="submit"
         )

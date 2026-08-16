@@ -74,6 +74,20 @@ export interface LabModeConfig {
   uploadSlots?: readonly LabUploadSlotConfig[]
 }
 
+export interface MiniMaxH3AddonItem {
+  name: string
+  strength: number
+}
+
+export const MINIMAX_H3_ADDON_OPTIONS = [
+  { value: 'naughty_times', labelKey: 'lab.workbench.minimax_h3_addon_options.naughty_times', defaultStrength: 1.0 },
+  { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addon_options.sex_pose', defaultStrength: 0.5 },
+  { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addon_options.breasts', defaultStrength: 1.0 },
+  { value: 'vagassist', labelKey: 'lab.workbench.minimax_h3_addon_options.vagassist', defaultStrength: 1.0 },
+  { value: 'pussy', labelKey: 'lab.workbench.minimax_h3_addon_options.pussy', defaultStrength: 0.35 },
+  { value: 'penis', labelKey: 'lab.workbench.minimax_h3_addon_options.penis', defaultStrength: 1.0 },
+] as const
+
 export const EDIT_LORA_OPTIONS = [
   { value: '', label: '无' },
   { value: 'qwen/YARN_1.0.safetensors', label: '逼真' },

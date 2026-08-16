@@ -1,6 +1,7 @@
 import pytest
 
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
     MINIMAX_H3_FLF2V,
     MINIMAX_H3_I2V,
     MINIMAX_H3_REF2V,
@@ -11,15 +12,49 @@ from src.domain_config.minimax_h3 import (
 )
 
 
-@pytest.mark.parametrize("inputs", [
-    {"lora_name": "penis"},
-    {"lora_strength": 1.0},
-    {"lora_items": [{"name": "sex_pose", "strength": 0.75}]},
-    {"addon_models": ["duplicate"]},
-])
-def test_minimax_h3_rejects_non_empty_client_addon_configuration(inputs):
-    with pytest.raises(MiniMaxH3ValidationError, match="固定模型栈"):
-        build_minimax_h3_spec(MINIMAX_H3_T2V, {"duration": 5, **inputs})
+def test_minimax_h3_exposes_all_six_local_addons_and_defaults_to_none():
+    assert tuple(MINIMAX_H3_ADDON_MODELS) == (
+        "naughty_times",
+        "sex_pose",
+        "breasts",
+        "vagassist",
+        "pussy",
+        "penis",
+    )
+    assert build_minimax_h3_spec(MINIMAX_H3_T2V, {}).addon_items == ()
+
+
+def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
+    spec = build_minimax_h3_spec(
+        MINIMAX_H3_T2V,
+        {
+            "lora_items": [
+                {"name": "naughty_times", "strength": 0.8},
+                {"name": "sex_pose"},
+                {"name": "pussy"},
+            ]
+        },
+    )
+    assert [(item.name, item.strength) for item in spec.addon_items] == [
+        ("naughty_times", 0.8),
+        ("sex_pose", 0.5),
+        ("pussy", 0.35),
+    ]
+
+
+@pytest.mark.parametrize(
+    "inputs,match",
+    [
+        ({"lora_strength": 1.0}, "选择附加模型"),
+        ({"lora_name": "missing"}, "不支持"),
+        ({"lora_items": [{"name": "penis"}, {"name": "penis"}]}, "不得重复"),
+        ({"lora_items": [{"name": "penis", "strength": 0.0}]}, "0.1 至 2.0"),
+        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 6 项"),
+    ],
+)
+def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):
+    with pytest.raises(MiniMaxH3ValidationError, match=match):
+        build_minimax_h3_spec(MINIMAX_H3_T2V, inputs)
 
 
 @pytest.mark.parametrize("inputs", [

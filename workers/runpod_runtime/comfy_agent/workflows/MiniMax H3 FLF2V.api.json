@@ -17,21 +17,10 @@
     },
     "class_type": "LoraLoaderModelOnly"
   },
-  "9": {
-    "inputs": {
-      "model": [
-        "8",
-        0
-      ],
-      "lora_name": "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors",
-      "strength_model": 1.0
-    },
-    "class_type": "LoraLoaderModelOnly"
-  },
   "2": {
     "inputs": {
       "model": [
-        "9",
+        "8",
         0
       ],
       "attention": "comfy kitchen attention"

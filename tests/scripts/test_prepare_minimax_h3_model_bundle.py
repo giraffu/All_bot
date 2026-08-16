@@ -7,7 +7,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_six_pinned_assets():
+def test_split_author_stack_uses_exact_eleven_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -34,7 +34,27 @@ def test_split_author_stack_uses_exact_six_pinned_assets():
         2_242_444_272,
         "https://civitai.red/api/download/models/3212436?fileId=3094173",
     )
-    assert len(files) == 6
+    assert files["loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors"][1:3] == (
+        "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
+        "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/vagassist_e40.safetensors"][1:3] == (
+        "2c2fdb66bf558de1aabda504a81d4ada5f4cebc20e8f519dc6ed3bb6d4be8c9a",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/hmpussy_v6_epoch30.safetensors"][1:3] == (
+        "3080f4fbcbba4fc06bd09240c7eedb6a5128eb0e19feb001cdf97a7a0941a6ee",
+        626_294_968,
+    )
+    assert files["loras/MiniMaxH3/HMPenis_v2_e35.safetensors"][1:3] == (
+        "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
+        310_168_344,
+    )
+    assert len(files) == 11
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):
@@ -102,8 +122,8 @@ def test_prepare_minimax_h3_bundle_registers_complete_partial_without_eof_range(
     assert registry.blob_path(sha256).read_bytes() == payload
 
 
-def test_prepare_reuses_four_existing_blobs_and_downloads_only_two(monkeypatch, tmp_path):
-    payloads = [f"asset-{index}".encode() for index in range(6)]
+def test_prepare_reuses_nine_existing_blobs_and_downloads_only_two(monkeypatch, tmp_path):
+    payloads = [f"asset-{index}".encode() for index in range(11)]
     assets = tuple(
         (
             f"kind/asset-{index}.safetensors",
@@ -117,7 +137,7 @@ def test_prepare_reuses_four_existing_blobs_and_downloads_only_two(monkeypatch, 
     monkeypatch.setattr(module, "MIN_FREE_BYTES", 1)
     registry = ModelRegistry(tmp_path / "registry")
     registry.ensure_layout()
-    for (_path, sha256, _size, _url), payload in zip(assets[:4], payloads[:4]):
+    for (_path, sha256, _size, _url), payload in zip(assets[:9], payloads[:9]):
         blob = registry.blob_path(sha256)
         blob.parent.mkdir(parents=True, exist_ok=True)
         blob.write_bytes(payload)
@@ -134,7 +154,7 @@ def test_prepare_reuses_four_existing_blobs_and_downloads_only_two(monkeypatch, 
     manifest_path = module.prepare(registry)
     manifest = yaml.safe_load(manifest_path.read_text())
 
-    assert downloads == [4, 5]
-    assert [item["relative_path"] for item in manifest["files"]] == [
+    assert downloads == [9, 10]
+    assert [item["relative_path"] for item in manifest["files"]] == sorted(
         item[0] for item in assets
-    ]
+    )
