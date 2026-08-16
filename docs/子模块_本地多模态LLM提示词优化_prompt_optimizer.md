@@ -86,16 +86,16 @@ tokens 起步。并发数、实际显存占用和模型是否已加载属于运�
 | `ltx_t2v` | `ltx_t2v` | 没有参考图，必须完整描述主体、场景、风格、构图、灯光、动作、镜头、时间演化和音频。不可使用 I2V 的省略式写法。 |
 | `ltx_t2v_ic` | `ltx_t2v_ic` | 通用 LLM 只生成目标场景/动作/音频，不改写人物参考表。若生成完整 Worker 输入，必须保留 `### Reference Sheet Description` 与 `### Target Description` 两段标题，以及人物段的 Left/Right Panel 契约。负向词只使用该链路规定的最小基线。 |
 | `image_to_video`、`wan22_video_v2` | `wan22_i2v` | 依次写场景/可见外观、动作/运动/故事、镜头/构图。参考图提供首帧事实；存在结束帧时明确自然过渡。profile/LoRA 的模型配置不交给 LLM。 |
-| `minimax_h3_t2v` | `minimax_h3_t2v_prompt@3` | 无图，只依据原始提示词；直接输出官方三字段音画时间线，不得声称看到了画面。 |
-| `minimax_h3_i2v` | `minimax_h3_i2v_prompt@3` | `start_image` 是精确首帧；先输出官方 `<Picture 1>` 0.00 秒对齐句，再从首帧连续发展。 |
-| `minimax_h3_flf2v` | `minimax_h3_flf2v_prompt@3` | 首尾帧都是硬约束；先输出包含动态结束时间和实际最终 Shot 的官方 Picture 1/2 对齐句，再描述连续过渡。 |
+| `minimax_h3_t2v` | `minimax_h3_t2v_prompt@4` | 无图，只依据原始提示词；直接输出官方三字段音画时间线，不得声称看到了画面。 |
+| `minimax_h3_i2v` | `minimax_h3_i2v_prompt@4` | `start_image` 是精确首帧；先输出官方 `<Picture 1>` 0.00 秒对齐句，再从首帧连续发展。 |
+| `minimax_h3_flf2v` | `minimax_h3_flf2v_prompt@4` | 首尾帧都是硬约束；先输出包含动态结束时间和实际最终 Shot 的官方 Picture 1/2 对齐句，再描述连续过渡。 |
 | SCAIL2 动作迁移（短/长） | `scail2_action_transfer` | driving video 拥有动作、节奏、镜头；参考图拥有人物身份、服装和风格。提示词只写必要的风格或例外约束，不重新发明动作。 |
 | SCAIL2 视频替换 | `scail2_video_replacement` | driving video 拥有背景、灯光、镜头和运动；参考图提供替换主体。强调自然融入和需保留项。 |
 | SCAIL2 换脸 v2 | `scail2_face_swap_append_only` | 不重写 domain config 的固定换脸契约，只把用户要求压缩成狭窄的 additional guidance。不得从人脸参考图引入身体、服装、姿势或背景。 |
 
 ### 4.1 MiniMax H3 官方 Base 输出
 
-当前 H3 模板 `minimax_h3_10eros_naughtytimes@2` 采用官方
+当前 H3 模板 `minimax_h3_10eros_naughtytimes@3` 采用官方
 [`h3-prompt-writing/base-en.txt`](https://github.com/MiniMax-AI/MiniMax-H3/blob/main/skills/h3-prompt-writing/references/base-en.txt)
 格式。三个核心字段顺序固定为：
 
@@ -110,6 +110,9 @@ non_diegetic_music: ...
 T2V 不加对齐句；I2V 使用官方固定首帧句；FLF2V 的首行由 Profile 根据 5/10/15 秒
 动态渲染，模型只把 `Shot N` 换成正文实际最终镜头号。Worker 不依赖 meta-prompt
 自觉，必须在最终结果和流式发布前复验三个字段、对齐句、图片锚点、Shot 顺序与时间戳。
+服务端还从明确的说话/唱歌标记与引号中提取台词，按台词本身检测语言并把语言标签与
+逐字原文写入 snapshot。最终结果必须包含匹配的 `<d>[Language] 原文</d>`；外围叙述
+使用中文或英文都不能改变台词语言，除非用户明确要求翻译对白。
 本地链路没有调用 MiniMax 托管的 H3-Context-IR，而是由本地 VLM 生成兼容的 Base IR；
 因此“格式兼容”不等于复现托管 Context-IR 的多阶段推理质量。
 

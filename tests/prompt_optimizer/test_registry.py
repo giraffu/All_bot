@@ -213,12 +213,12 @@ def test_resolver_fails_closed_for_unknown_or_incompatible_contracts(
 @pytest.mark.parametrize(
     ("target_task_type", "roles", "profile_ref"),
     [
-        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@3"),
-        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@3"),
+        ("minimax_h3_t2v", (), "minimax_h3_t2v_prompt@4"),
+        ("minimax_h3_i2v", ("start_image",), "minimax_h3_i2v_prompt@4"),
         (
             "minimax_h3_flf2v",
             ("start_image", "end_image"),
-            "minimax_h3_flf2v_prompt@3",
+            "minimax_h3_flf2v_prompt@4",
         ),
     ],
 )
@@ -229,7 +229,7 @@ def test_minimax_h3_profiles_share_official_base_prompt_template(
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=2,
+        template_version=3,
         media=_media(*roles),
         context={"duration_seconds": 15},
     )
@@ -238,9 +238,9 @@ def test_minimax_h3_profiles_share_official_base_prompt_template(
     assert capability["templates"] == [
         {
             "id": "minimax_h3_10eros_naughtytimes",
-            "version": 2,
+            "version": 3,
             "label": "高级图生视频pro",
-            "description": "MiniMax H3 官方三字段音画时间线提示词",
+            "description": "MiniMax H3 官方结构与自动对白语言保留",
             "is_default": True,
         }
     ]
@@ -274,7 +274,7 @@ def test_minimax_h3_prompt_renders_official_three_fields_and_mode_alignment(
     resolved = resolve_prompt_optimization(
         target_task_type=target_task_type,
         template_id="minimax_h3_10eros_naughtytimes",
-        template_version=2,
+        template_version=3,
         media=_media(*roles),
         context={"duration_seconds": 10},
     )
@@ -316,7 +316,7 @@ def test_minimax_h3_profiles_fail_closed_on_wrong_media_order_or_duration(
         resolve_prompt_optimization(
             target_task_type=target,
             template_id="minimax_h3_10eros_naughtytimes",
-            template_version=2,
+            template_version=3,
             media=_media(*roles),
             context={"duration_seconds": duration},
         )
@@ -327,3 +327,26 @@ def test_minimax_h3_v1_prompt_assets_remain_readable_but_inactive():
     assert get_profile_by_ref("minimax_h3_i2v_prompt@1").active is False
     assert get_template_by_ref("minimax_h3_10eros_naughtytimes@1").active is False
     assert get_profile_by_ref("minimax_h3_i2v_prompt@2").active is False
+    assert get_template_by_ref("minimax_h3_10eros_naughtytimes@2").active is False
+    assert get_profile_by_ref("minimax_h3_i2v_prompt@3").active is False
+
+
+def test_minimax_h3_current_template_injects_detected_dialogue_language_contract():
+    resolved = resolve_prompt_optimization(
+        target_task_type="minimax_h3_t2v",
+        template_id="minimax_h3_10eros_naughtytimes",
+        template_version=3,
+        media=[],
+        context={"duration_seconds": 10},
+    )
+    _system, user = render_prompt_messages(
+        profile=resolved.profile,
+        template=resolved.template,
+        prompt='中文场景描述，女人 says: "Keep looking at me."',
+        context=resolved.normalized_context,
+    )
+
+    assert resolved.profile.ref == "minimax_h3_t2v_prompt@4"
+    assert "Server-detected dialogue language contract" in user
+    assert "[English]" in user
+    assert "Keep looking at me." in user

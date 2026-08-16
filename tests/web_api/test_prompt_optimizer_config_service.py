@@ -38,6 +38,8 @@ def test_h3_admin_default_is_one_shared_english_runtime_config():
     assert "overall_soundscape" in config["system_template"]
     assert "non_diegetic_music" in config["system_template"]
     assert "official H3 base prompt structure" in config["system_template"]
+    assert "SERVER-DETECTED DIALOGUE LANGUAGE" in config["system_template"]
+    assert "{dialogue_language_instructions}" in config["user_template"]
     assert MINIMAX_H3_HMNSFW_TRANSLATION_ZH not in config["system_template"]
 
 
@@ -58,6 +60,27 @@ def test_h3_legacy_saved_config_falls_forward_to_official_built_in_template():
     assert config["revision"] == 0
     assert config["updated_by"] == "built-in"
     assert "integrated_multimodal_description" in config["system_template"]
+
+
+def test_h3_saved_official_config_without_dialogue_contract_falls_forward():
+    old_official = SimpleNamespace(
+        scene_key="minimax_h3",
+        display_name="old official",
+        description="old official",
+        system_template=(
+            "integrated_multimodal_description overall_soundscape "
+            "non_diegetic_music {duration_seconds}"
+        ),
+        user_template="{media_frame_instructions} {original_prompt}",
+        revision=8,
+        content_hash="old-official-hash",
+        updated_by="admin",
+    )
+
+    config = serialize_config(old_official, "minimax_h3")
+
+    assert config["revision"] == 0
+    assert "{dialogue_language_instructions}" in config["user_template"]
 
 
 @pytest.mark.asyncio

@@ -300,7 +300,7 @@ async def test_minimax_h3_executor_normalizes_complete_reordered_header():
 
 
 def _official_h3_prompt(
-    mode: str, *, duration: int = 10, second_shot: bool = False
+    mode: str, *, duration: int = 10, second_shot: bool = False, dialogue: str = ""
 ) -> str:
     alignment = ""
     if mode == "i2v":
@@ -328,6 +328,8 @@ def _official_h3_prompt(
     )
     if anchor:
         shot_body += f" {anchor.strip()}"
+    if dialogue:
+        shot_body += f" {dialogue.strip()}"
     if second_shot:
         shot_body += (
             " [Shot 2] At 00:05.000, the camera cuts to a close shot that reaches "
@@ -346,15 +348,15 @@ def _official_h3_prompt(
 @pytest.mark.parametrize(
     ("mode", "profile_ref", "media"),
     [
-        ("t2v", "minimax_h3_t2v_prompt@3", []),
+        ("t2v", "minimax_h3_t2v_prompt@4", []),
         (
             "i2v",
-            "minimax_h3_i2v_prompt@3",
+            "minimax_h3_i2v_prompt@4",
             [{"role": "start_image", "object_key": "start.webp"}],
         ),
         (
             "flf2v",
-            "minimax_h3_flf2v_prompt@3",
+            "minimax_h3_flf2v_prompt@4",
             [
                 {"role": "start_image", "object_key": "start.webp"},
                 {"role": "end_image", "object_key": "end.webp"},
@@ -365,7 +367,7 @@ def _official_h3_prompt(
 async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_output(
     mode, profile_ref, media
 ):
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     expected = _official_h3_prompt(mode, second_shot=mode == "flf2v")
     result = await execute_prompt_optimization(
         {
@@ -387,7 +389,7 @@ async def test_minimax_h3_official_profiles_accept_mode_specific_three_field_out
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variations():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     generated = _official_h3_prompt("i2v")
     generated = generated.split("\n\n", 1)[1]
     generated = generated.replace(
@@ -397,7 +399,7 @@ async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variatio
 
     result = await execute_prompt_optimization(
         {
-            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "profile_ref": "minimax_h3_i2v_prompt@4",
             "template_ref": template.ref,
             "template_hash": template.content_hash,
             "target_task_type": "minimax_h3_i2v",
@@ -418,13 +420,13 @@ async def test_minimax_h3_i2v_server_compiles_harmless_model_formatting_variatio
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_restores_omitted_integrated_field_header():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     generated = _official_h3_prompt("i2v").split("\n\n", 1)[1]
     generated = generated.removeprefix("integrated_multimodal_description: ")
 
     result = await execute_prompt_optimization(
         {
-            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "profile_ref": "minimax_h3_i2v_prompt@4",
             "template_ref": template.ref,
             "template_hash": template.content_hash,
             "target_task_type": "minimax_h3_i2v",
@@ -442,7 +444,7 @@ async def test_minimax_h3_i2v_server_restores_omitted_integrated_field_header():
 
 @pytest.mark.asyncio
 async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     alignment, core = _official_h3_prompt("i2v").split("\n\n", 1)
     generated = (
         alignment
@@ -455,7 +457,7 @@ async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor()
 
     result = await execute_prompt_optimization(
         {
-            "profile_ref": "minimax_h3_i2v_prompt@3",
+            "profile_ref": "minimax_h3_i2v_prompt@4",
             "template_ref": template.ref,
             "template_hash": template.content_hash,
             "target_task_type": "minimax_h3_i2v",
@@ -477,7 +479,7 @@ async def test_minimax_h3_i2v_server_restores_deterministic_first_frame_anchor()
 
 @pytest.mark.asyncio
 async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors():
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     alignment, core = _official_h3_prompt("flf2v", second_shot=True).split("\n\n", 1)
     generated = (
         alignment
@@ -489,7 +491,7 @@ async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors()
 
     result = await execute_prompt_optimization(
         {
-            "profile_ref": "minimax_h3_flf2v_prompt@3",
+            "profile_ref": "minimax_h3_flf2v_prompt@4",
             "template_ref": template.ref,
             "template_hash": template.content_hash,
             "target_task_type": "minimax_h3_flf2v",
@@ -525,7 +527,7 @@ async def test_minimax_h3_flf2v_server_restores_deterministic_keyframe_anchors()
     ],
 )
 async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(invalid):
-    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
     media = (
         [{"role": "start_image", "object_key": "start.webp"}]
         if "For the target video" in invalid
@@ -537,11 +539,11 @@ async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(i
         else []
     )
     profile_ref = (
-        "minimax_h3_i2v_prompt@3"
+        "minimax_h3_i2v_prompt@4"
         if len(media) == 1
-        else "minimax_h3_flf2v_prompt@3"
+        else "minimax_h3_flf2v_prompt@4"
         if len(media) == 2
-        else "minimax_h3_t2v_prompt@3"
+        else "minimax_h3_t2v_prompt@4"
     )
     with pytest.raises(PromptOptimizationExecutionError, match="minimax_h3"):
         await execute_prompt_optimization(
@@ -549,7 +551,7 @@ async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(i
                 "profile_ref": profile_ref,
                 "template_ref": template.ref,
                 "template_hash": template.content_hash,
-                "target_task_type": profile_ref.replace("_prompt@3", ""),
+                "target_task_type": profile_ref.replace("_prompt@4", ""),
                 "prompt": "two adults",
                 "context": {"duration_seconds": 10},
                 "media": media,
@@ -558,6 +560,60 @@ async def test_minimax_h3_official_profile_rejects_invalid_fields_or_alignment(i
             load_media=lambda _key: asyncio.sleep(0, result=b"image"),
             preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
         )
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_retries_when_model_translates_detected_dialogue():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@3")
+    translated = _official_h3_prompt(
+        "t2v", dialogue="(S1) says: <d>[Chinese] 不要离开我。</d>"
+    )
+    preserved = _official_h3_prompt(
+        "t2v", dialogue="(S1) says: <d>[English] Please do not leave me.</d>"
+    )
+    provider = SequencedProvider([translated, preserved])
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_t2v_prompt@4",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_t2v",
+            "prompt": '女人低声说：“Please do not leave me.”',
+            "context": {"duration_seconds": 10},
+            "media": [],
+        },
+        provider=provider,
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert len(provider.calls) == 2
+    assert "<d>[English] Please do not leave me.</d>" in result["result_text"]
+    assert "dialogue" in provider.calls[1]["system_prompt"].casefold()
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_inactive_v3_snapshot_remains_replayable():
+    template = get_template_by_ref("minimax_h3_10eros_naughtytimes@2")
+    expected = _official_h3_prompt("t2v")
+
+    result = await execute_prompt_optimization(
+        {
+            "profile_ref": "minimax_h3_t2v_prompt@3",
+            "template_ref": template.ref,
+            "template_hash": template.content_hash,
+            "target_task_type": "minimax_h3_t2v",
+            "prompt": "two adults move through the room",
+            "context": {"duration_seconds": 10},
+            "media": [],
+        },
+        provider=FakeProvider(expected),
+        load_media=lambda _key: asyncio.sleep(0, result=b"image"),
+        preprocess_media=lambda _payload: "data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert result["result_text"] == expected
 
 
 @pytest.mark.asyncio
