@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from src.domain_config.minimax_h3 import (
@@ -10,6 +13,37 @@ from src.domain_config.minimax_h3 import (
     build_minimax_h3_spec,
     normalize_minimax_h3_duration_seconds,
 )
+
+
+def test_web_locales_hide_model_names():
+    public_copy = ""
+    root = Path(__file__).resolve().parents[2]
+    for language in ("zh", "en"):
+        locale = json.loads((root / "shared/locales" / f"{language}.json").read_text())
+        workbench = locale["lab"]["workbench"]
+        public_copy += " " + json.dumps(
+            {
+                "title": locale["lab"]["cards"]["minimax_h3_title"],
+                "description": locale["lab"]["cards"]["minimax_h3_desc"],
+                "addons": workbench["minimax_h3_addons"],
+                "options": workbench["minimax_h3_addon_options"],
+            },
+            ensure_ascii=False,
+        )
+        assert "minimax_h3_base_stack" not in workbench
+
+    for private_term in (
+        "10Eros",
+        "LightX2V",
+        "LoRA",
+        "NaughtyTimes",
+        "HMNSFW",
+        "HMBreasts",
+        "VagAssist",
+        "HMPussy",
+        "HMPenis",
+    ):
+        assert private_term not in public_copy
 
 
 def test_minimax_h3_exposes_all_six_local_addons_and_defaults_to_none():

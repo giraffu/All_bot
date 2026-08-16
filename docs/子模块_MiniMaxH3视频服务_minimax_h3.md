@@ -9,6 +9,11 @@
 历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
 Worker pool、RunPod/LAN 支持任务列表或新建入口。
 
+Bot/Web 的终端用户界面只展示“效果增强”和用途标签，不展示 MiniMax H3、基础链、
+checkpoint、LoRA 术语、作者资产名或物理文件名。Web 不渲染基础链说明；Bot 设置
+摘要只显示启用数量。下文模型名、目录 ID、强度和文件路径均是内部运行契约，不是
+用户文案；展示脱敏不得改变提交 payload 或 Worker 注入顺序。
+
 Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控制。
 提示词优化另由 `MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED` 控制。测试与正式 Dashboard
 可分别维护共享场景配置 `minimax_h3`，但开关关闭时 Web/Bot 不展示优化入口。

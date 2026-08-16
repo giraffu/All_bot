@@ -843,16 +843,15 @@
       "minimax_h3_first_frame_ratio": "Aspect ratio follows the first frame",
       "minimax_h3_resolution_presets": {"preview": "Fast (about 512p)", "small": "Clear (about 600p)", "standard": "Standard (about 720p)", "hd": "HD (about 810p)"},
       "minimax_h3_modes": {"t2v": "Text", "i2v": "Image", "flf2v": "First/Last"},
-      "minimax_h3_base_stack": "The base chain is fixed to 10Eros-Max Beta2 + LightX2V 8-step. Optional LoRAs default to off and load only when selected.",
-      "minimax_h3_addons": "Optional LoRAs (multi-select)",
-      "minimax_h3_addon_strength": "Strength",
+      "minimax_h3_addons": "Enhancements (multi-select)",
+      "minimax_h3_addon_strength": "Effect strength",
       "minimax_h3_addon_options": {
-        "naughty_times": "NaughtyTimes v2 (adult motion)",
-        "sex_pose": "HMNSFW AIO v2 (adult poses)",
-        "breasts": "HMBreasts",
-        "vagassist": "VagAssist (vagina/anus assist)",
-        "pussy": "HMPussy v6",
-        "penis": "HMPenis v2"
+        "naughty_times": "Adult motion",
+        "sex_pose": "Adult poses",
+        "breasts": "Breast detail",
+        "vagassist": "Vaginal/anal assistance",
+        "pussy": "Vaginal detail",
+        "penis": "Penile detail"
       },
       "upload_slots": {
         "face_image": "Face Image",

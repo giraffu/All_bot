@@ -55,6 +55,14 @@ PRESET_LABELS = {
     "standard": ("标准（约 720p）", "Standard (approx. 720p)"),
     "hd": ("高清（约 810p）", "HD (approx. 810p)"),
 }
+ADDON_EFFECT_LABELS = {
+    "naughty_times": ("成人动作强化", "Adult motion"),
+    "sex_pose": ("成人姿势", "Adult poses"),
+    "breasts": ("乳房细节", "Breast detail"),
+    "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
+    "pussy": ("阴道细节", "Vaginal detail"),
+    "penis": ("阴茎细节", "Penile detail"),
+}
 
 
 def _lang(context) -> str:
@@ -107,19 +115,19 @@ def _settings_keyboard(context, data: dict) -> InlineKeyboardMarkup:
     addon_buttons = [
         InlineKeyboardButton(
             ("✅ " if model_id in data.get("addon_models", []) else "")
-            + _text(context, model.label_zh, model.label_en),
+            + _text(context, *ADDON_EFFECT_LABELS[model_id]),
             callback_data=f"avp_addon_{model_id}",
         )
-        for model_id, model in MINIMAX_H3_ADDON_MODELS.items()
+        for model_id in MINIMAX_H3_ADDON_MODELS
     ]
     rows.append(
         [
             InlineKeyboardButton(
-                _text(context, "全选 LoRA", "Select all LoRAs"),
+                _text(context, "全选效果", "Select all effects"),
                 callback_data="avp_addon_all",
             ),
             InlineKeyboardButton(
-                _text(context, "清空 LoRA", "Clear LoRAs"),
+                _text(context, "清空效果", "Clear effects"),
                 callback_data="avp_addon_none",
             ),
         ]
@@ -143,17 +151,16 @@ def _settings_text(context, data: dict) -> str:
         if data.get("mode") in {"i2v", "flf2v"}
         else data["aspect"]
     )
-    selected = [
-        name
+    selected_count = sum(
+        name in MINIMAX_H3_ADDON_MODELS
         for name in data.get("addon_models", [])
-        if name in MINIMAX_H3_ADDON_MODELS
-    ]
-    addon_zh = "、".join(MINIMAX_H3_ADDON_MODELS[name].label_zh for name in selected) or "无"
-    addon_en = ", ".join(MINIMAX_H3_ADDON_MODELS[name].label_en for name in selected) or "None"
+    )
+    effect_zh = f"已启用 {selected_count} 项" if selected_count else "未启用"
+    effect_en = f"{selected_count} enabled" if selected_count else "Off"
     return _text(
         context,
-        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n基础链路：10Eros Beta2 + LightX2V 8-step\n附加模型：{addon_zh}\n\n附加模型默认关闭，Bot 使用各模型的建议默认强度。",
-        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nBase chain: 10Eros Beta2 + LightX2V 8-step\nAdd-ons: {addon_en}\n\nAdd-ons default to off. The Bot uses each model's recommended default strength.",
+        f"🎬 *高级图生视频pro*\n\n请选择设置：\n时长：{data['duration']} 秒\n画质：{_text(context, *PRESET_LABELS[data['preset']])}\n比例：{aspect}\n效果增强：{effect_zh}\n\n效果增强默认关闭；启用后使用推荐参数。",
+        f"🎬 *Advanced Image-to-Video Pro*\n\nChoose settings:\nDuration: {data['duration']}s\nQuality: {_text(context, *PRESET_LABELS[data['preset']])}\nAspect: {aspect}\nEnhancements: {effect_en}\n\nEnhancements default to off and use recommended settings when enabled.",
     )
 
 

@@ -22,10 +22,9 @@ const labels: Record<string, string> = {
   'lab.workbench.continue_generation': '继续生成',
   'lab.cards.minimax_h3_title': '高级图生视频pro',
   'lab.cards.minimax_h3_desc': '高级视频描述',
-  'lab.workbench.minimax_h3_base_stack': '基础链路固定使用 10Eros Beta2 + LightX2V 8-step；附加 LoRA 默认关闭。',
-  'lab.workbench.minimax_h3_addons': '附加 LoRA（可多选）',
-  'lab.workbench.minimax_h3_addon_strength': '强度',
-  'lab.workbench.minimax_h3_addon_options.naughty_times': 'NaughtyTimes v2',
+  'lab.workbench.minimax_h3_addons': '效果增强（可多选）',
+  'lab.workbench.minimax_h3_addon_strength': '效果强度',
+  'lab.workbench.minimax_h3_addon_options.naughty_times': '成人动作强化',
 }
 
 let workbench: any
@@ -313,13 +312,28 @@ describe('CustomFeatures LTX result actions', () => {
   })
 })
 
-describe('CustomFeatures MiniMax H3 optional add-ons', () => {
-  it('shows the fixed base chain and one strength control per selected add-on', () => {
+describe('CustomFeatures advanced video effects', () => {
+  it('hides model internals while keeping semantic effect controls', () => {
     workbench = createMinimaxWorkbench()
     const wrapper = mountView()
 
-    expect(wrapper.text()).toContain('10Eros Beta2 + LightX2V 8-step')
-    expect(wrapper.text()).toContain('NaughtyTimes v2')
+    expect(wrapper.text()).toContain('效果增强（可多选）')
+    expect(wrapper.text()).toContain('成人动作强化')
+    expect(wrapper.text()).not.toContain('minimax_h3_base_stack')
+    for (const privateTerm of [
+      '基础链路',
+      '10Eros',
+      'LightX2V',
+      'LoRA',
+      'NaughtyTimes',
+      'HMNSFW',
+      'HMBreasts',
+      'VagAssist',
+      'HMPussy',
+      'HMPenis',
+    ]) {
+      expect(wrapper.text()).not.toContain(privateTerm)
+    }
     expect(wrapper.findAll('.minimax-h3-addon-strength')).toHaveLength(1)
   })
 })
