@@ -1023,6 +1023,61 @@ def build_successor_copy_plan(
     return manifest, batches
 
 
+def build_copy_predecessor_recovery_plan(
+    *,
+    current_manifest: dict[str, Any],
+    current_plan_sha256: str,
+    predecessor_plan_sha256: str,
+    frontier_batch: dict[str, Any],
+    rows: Iterable[dict[str, Any]],
+    runtime_identity: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Freeze the sole predecessor batch that could contain uncommitted copies."""
+
+    chain = copy_plan_chain_sha256s(current_manifest)
+    if current_plan_sha256 != chain[-1]:
+        raise RuntimeError("copy recovery current plan identity changed")
+    if len(chain) < 2 or predecessor_plan_sha256 != chain[-2]:
+        raise RuntimeError("copy recovery requires the direct predecessor plan")
+    first_id = int(frontier_batch["first_ledger_id"])
+    last_id = int(frontier_batch["last_ledger_id"])
+    candidates = sorted(
+        (_normalized_frozen_copy_row(dict(row)) for row in rows),
+        key=lambda row: int(row["id"]),
+    )
+    if not candidates:
+        raise RuntimeError("copy recovery frontier has no unfinished assets")
+    if any(not first_id <= int(row["id"]) <= last_id for row in candidates):
+        raise RuntimeError("copy recovery row is outside the predecessor frontier")
+    batch = _finalize_plan_batch(
+        batch_no=0,
+        rows=candidates,
+        row_transform=_plan_row,
+    )
+    rowset = StreamingJsonArraySha256()
+    for row in candidates:
+        rowset.add(_plan_row(row))
+    manifest: dict[str, Any] = {
+        "schema": "allbot-history-media-r2-copy-recovery-plan/v1",
+        "run_id": str(current_manifest["run_id"]),
+        "history_watermark": int(current_manifest["history_watermark"]),
+        "current_copy_plan_sha256": current_plan_sha256,
+        "predecessor_copy_plan_sha256": predecessor_plan_sha256,
+        "copy_chain_plan_sha256s": list(chain),
+        "copy_chain_sha256": _sha256_json(list(chain)),
+        "frontier_batch_no": int(frontier_batch["batch_no"]),
+        "frontier_batch_rowset_sha256": str(frontier_batch["rowset_sha256"]),
+        "count": len(candidates),
+        "history_count": len({int(row["history_id"]) for row in candidates}),
+        "batch_count": 1,
+        "batches_sha256": _sha256_json([batch]),
+        "rowset_sha256": rowset.hexdigest(),
+        "runtime_identity": dict(runtime_identity or {}),
+    }
+    manifest["plan_sha256"] = _sha256_json(manifest)
+    return manifest, [batch]
+
+
 def probe_plan_chain_sha256s(manifest: dict[str, Any]) -> tuple[str, ...]:
     plan_sha = str(manifest.get("plan_sha256") or "")
     if (
@@ -1486,6 +1541,48 @@ def _normalize_etag(value: Any) -> str:
     if not etag:
         raise RuntimeError("object HEAD did not return ETag")
     return etag
+
+
+def classify_copy_predecessor_recovery(
+    *,
+    source_head: dict[str, Any] | None,
+    target_head: dict[str, Any] | None,
+    expected_size: int,
+    expected_last_modified: datetime,
+    expected_etag: str,
+    current_plan_sha256: str,
+    predecessor_plan_sha256: str,
+) -> str:
+    """Classify a stopped Copy frontier using HEAD identities only."""
+
+    if source_head is None:
+        raise RuntimeError("copy recovery source disappeared")
+    source_size = int(source_head["ContentLength"])
+    source_modified = _normalize_modified(source_head["LastModified"])
+    source_etag = _normalize_etag(source_head.get("ETag"))
+    if (
+        source_size != int(expected_size)
+        or source_modified != expected_last_modified
+        or source_etag != _normalize_etag(expected_etag)
+    ):
+        raise RuntimeError("copy recovery source identity changed")
+    if target_head is None:
+        return "missing"
+
+    target_size = int(target_head["ContentLength"])
+    target_etag = _normalize_etag(target_head.get("ETag"))
+    if target_size != source_size or target_etag != source_etag:
+        raise RuntimeError("copy recovery target identity differs from source")
+    metadata = {
+        str(key).lower(): str(value)
+        for key, value in dict(target_head.get("Metadata") or {}).items()
+    }
+    marker = metadata.get(COPY_PLAN_METADATA_KEY)
+    if marker == current_plan_sha256:
+        return "current"
+    if marker == predecessor_plan_sha256:
+        return "predecessor"
+    raise RuntimeError("copy recovery target has unrecognized copy plan marker")
 
 
 def server_side_copy_r2_object(
@@ -3723,6 +3820,346 @@ async def _execute_probe(args: argparse.Namespace) -> None:
         client.close()
 
 
+async def _create_copy_predecessor_recovery_plan(args: argparse.Namespace) -> None:
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    run_id = uuid.UUID(args.run_id)
+    try:
+        await _ensure_schema(conn)
+        current_run_id, current = await _load_plan(
+            conn, args.current_plan_sha256, "copy"
+        )
+        if current_run_id != run_id:
+            raise RuntimeError("copy recovery current plan belongs to another run")
+        chain = copy_plan_chain_sha256s(current)
+        if len(chain) < 2:
+            raise RuntimeError("copy recovery requires a successor Copy plan")
+        predecessor_sha = chain[-2]
+        current_batches = await conn.fetch(
+            """select status,count(*) batches from analytics_history_media_migration_plan_batches
+                 where plan_sha256=$1 group by status""",
+            args.current_plan_sha256,
+        )
+        if not current_batches or any(
+            row["status"] not in {"pending", "completed"} for row in current_batches
+        ):
+            raise RuntimeError("copy recovery current plan is not safely stopped")
+        predecessor_batches = [
+            dict(row)
+            for row in await conn.fetch(
+                """select batch_no,first_ledger_id,last_ledger_id,
+                          first_history_id,last_history_id,asset_count,history_count,
+                          rowset_sha256,cas_state_sha256,status
+                     from analytics_history_media_migration_plan_batches
+                    where plan_sha256=$1 order by batch_no""",
+                predecessor_sha,
+            )
+        ]
+        frontier = next(
+            (row for row in predecessor_batches if row["status"] != "completed"),
+            None,
+        )
+        if frontier is None or frontier["status"] != "superseded":
+            raise RuntimeError("copy recovery predecessor frontier is unavailable")
+        frontier_no = int(frontier["batch_no"])
+        if any(
+            (int(row["batch_no"]) < frontier_no and row["status"] != "completed")
+            or (
+                int(row["batch_no"]) >= frontier_no
+                and row["status"] != "superseded"
+            )
+            for row in predecessor_batches
+        ):
+            raise RuntimeError("copy recovery predecessor batch sequence changed")
+        rows = [
+            dict(row)
+            for row in await conn.fetch(
+                """select id,history_id,role,ordinal,original_ref,target_key,
+                          source_name,source_key,source_last_modified,source_etag,
+                          source_sha256,target_sha256,byte_size,status,
+                          history_manifest_sha256,error_code
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and copy_plan_sha256=$2
+                      and copy_completed_at is null
+                      and status in ('copy_required','failed')
+                      and id between $3 and $4 order by id""",
+                run_id,
+                args.current_plan_sha256,
+                int(frontier["first_ledger_id"]),
+                int(frontier["last_ledger_id"]),
+            )
+        ]
+        manifest, batches = build_copy_predecessor_recovery_plan(
+            current_manifest=current,
+            current_plan_sha256=args.current_plan_sha256,
+            predecessor_plan_sha256=predecessor_sha,
+            frontier_batch=frontier,
+            rows=rows,
+            runtime_identity=_runtime_identity(
+                artifact_digest=args.artifact_digest, config=config
+            ),
+        )
+        await _insert_plan_with_batches(
+            conn, manifest=manifest, plan_type="copy", batches=batches
+        )
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(_canonical_json(manifest) + b"\n")
+        os.chmod(output, 0o600)
+        print(
+            json.dumps(
+                {
+                    "plan_sha256": manifest["plan_sha256"],
+                    "current_copy_plan_sha256": args.current_plan_sha256,
+                    "predecessor_copy_plan_sha256": predecessor_sha,
+                    "frontier_batch_no": frontier_no,
+                    "assets": manifest["count"],
+                    "manifest": str(output),
+                }
+            )
+        )
+    finally:
+        await conn.close()
+
+
+async def _collect_copy_predecessor_recovery(
+    groups: list[list[dict[str, Any]]],
+    *,
+    client: Any,
+    current_plan_sha256: str,
+    predecessor_plan_sha256: str,
+    concurrency: int,
+    head_func: Any = _head_s3_identity,
+) -> list[tuple[list[dict[str, Any]], str, dict[str, Any] | None]]:
+    if not 1 <= concurrency <= 128:
+        raise ValueError("copy recovery concurrency must be between 1 and 128")
+    loop = asyncio.get_running_loop()
+
+    def inspect_group(
+        group: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], str, dict[str, Any] | None]:
+        row = group[0]
+        source_head = head_func(client, BUCKET, str(row["source_key"]))
+        target_head = head_func(client, BUCKET, str(row["target_key"]))
+        outcome = classify_copy_predecessor_recovery(
+            source_head=source_head,
+            target_head=target_head,
+            expected_size=int(row["byte_size"]),
+            expected_last_modified=row["source_last_modified"],
+            expected_etag=str(row["source_etag"]),
+            current_plan_sha256=current_plan_sha256,
+            predecessor_plan_sha256=predecessor_plan_sha256,
+        )
+        return group, outcome, target_head
+
+    executor = ThreadPoolExecutor(
+        max_workers=concurrency,
+        thread_name_prefix="history-r2-copy-recovery-head",
+    )
+    futures: list[asyncio.Future[Any]] = []
+    try:
+        futures = [loop.run_in_executor(executor, inspect_group, group) for group in groups]
+        return list(await asyncio.gather(*futures))
+    except BaseException:
+        for future in futures:
+            future.cancel()
+        await asyncio.gather(*futures, return_exceptions=True)
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+async def _execute_copy_predecessor_recovery(args: argparse.Namespace) -> None:
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    max_pool_connections = _resolve_copy_max_pool_connections(
+        args.concurrency, None
+    )
+    client = _s3_client(
+        config["target"], max_pool_connections=max_pool_connections
+    )
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    try:
+        run_id, recovery = await _load_plan(conn, args.plan_sha256, "copy")
+        if recovery.get("schema") != "allbot-history-media-r2-copy-recovery-plan/v1":
+            raise RuntimeError("copy recovery plan schema is invalid")
+        validate_copy_gate(
+            expected_plan_sha256=recovery["plan_sha256"],
+            supplied_plan_sha256=args.plan_sha256,
+            confirmation=args.confirm,
+        )
+        _validate_runtime_identity(
+            recovery["runtime_identity"],
+            artifact_digest=args.artifact_digest,
+            config=config,
+        )
+        current_sha = str(recovery["current_copy_plan_sha256"])
+        predecessor_sha = str(recovery["predecessor_copy_plan_sha256"])
+        current_run_id, current = await _load_plan(conn, current_sha, "copy")
+        if current_run_id != run_id or copy_plan_chain_sha256s(current) != tuple(
+            recovery["copy_chain_plan_sha256s"]
+        ):
+            raise RuntimeError("copy recovery chain identity changed")
+        current_batch_states = await conn.fetch(
+            """select status,count(*) batches from analytics_history_media_migration_plan_batches
+                 where plan_sha256=$1 group by status""",
+            current_sha,
+        )
+        if not current_batch_states or any(
+            row["status"] not in {"pending", "completed"}
+            for row in current_batch_states
+        ):
+            raise RuntimeError("copy recovery current plan is not safely stopped")
+        frontier = await conn.fetchrow(
+            """select * from analytics_history_media_migration_plan_batches
+                 where plan_sha256=$1 and batch_no=$2 and status='superseded'""",
+            predecessor_sha,
+            int(recovery["frontier_batch_no"]),
+        )
+        if (
+            not frontier
+            or str(frontier["rowset_sha256"])
+            != recovery["frontier_batch_rowset_sha256"]
+        ):
+            raise RuntimeError("copy recovery predecessor frontier changed")
+        rows = [
+            dict(row)
+            for row in await conn.fetch(
+                """select id,history_id,role,ordinal,original_ref,target_key,
+                          source_name,source_key,source_last_modified,source_etag,
+                          source_sha256,target_sha256,byte_size,status,
+                          history_manifest_sha256,error_code
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and copy_plan_sha256=$2
+                      and copy_completed_at is null
+                      and status in ('copy_required','failed')
+                      and id between $3 and $4 order by id""",
+                run_id,
+                current_sha,
+                int(frontier["first_ledger_id"]),
+                int(frontier["last_ledger_id"]),
+            )
+        ]
+        normalized = [_normalized_frozen_copy_row(row) for row in rows]
+        digest = StreamingJsonArraySha256()
+        for row in normalized:
+            digest.add(_plan_row(row))
+        if digest.count != int(recovery["count"]) or digest.hexdigest() != recovery[
+            "rowset_sha256"
+        ]:
+            raise RuntimeError("copy recovery rowset changed")
+        groups = group_copy_candidates(rows)
+        outcomes = await _collect_copy_predecessor_recovery(
+            groups,
+            client=client,
+            current_plan_sha256=current_sha,
+            predecessor_plan_sha256=predecessor_sha,
+            concurrency=args.concurrency,
+        )
+        outcome_counts = Counter(outcome for _group, outcome, _head in outcomes)
+        row_counts: Counter[str] = Counter()
+        async with conn.transaction():
+            locked = await conn.fetch(
+                """select id,copy_plan_sha256,status,copy_completed_at
+                     from analytics_history_media_r2_migrations
+                    where id=any($1::bigint[]) order by id for update""",
+                [int(row["id"]) for row in rows],
+            )
+            if len(locked) != len(rows) or any(
+                str(row["copy_plan_sha256"]) != current_sha
+                or row["status"] not in {"copy_required", "failed"}
+                or row["copy_completed_at"] is not None
+                for row in locked
+            ):
+                raise RuntimeError("copy recovery ledger ownership changed")
+            for group, outcome, target_head in outcomes:
+                ids = [int(row["id"]) for row in group]
+                row_counts[outcome] += len(ids)
+                if outcome == "missing":
+                    result = await conn.execute(
+                        """update analytics_history_media_r2_migrations
+                              set status='copy_required',error_code=null,error_detail=null,
+                                  updated_at=now()
+                            where id=any($1::bigint[]) and copy_plan_sha256=$2
+                              and status in ('copy_required','failed')
+                              and copy_completed_at is null""",
+                        ids,
+                        current_sha,
+                    )
+                else:
+                    owner = current_sha if outcome == "current" else predecessor_sha
+                    method = (
+                        "r2_copy_object_recovered"
+                        if outcome == "current"
+                        else "r2_copy_object_recovered_predecessor"
+                    )
+                    result = await conn.execute(
+                        """update analytics_history_media_r2_migrations
+                              set copy_plan_sha256=$2,status='copied_verified',
+                                  target_sha256=source_sha256,target_etag=$3,
+                                  copy_method=$4,error_code=null,error_detail=null,
+                                  copy_completed_at=coalesce(copy_completed_at,now()),
+                                  updated_at=now()
+                            where id=any($1::bigint[]) and copy_plan_sha256=$5
+                              and status in ('copy_required','failed')
+                              and copy_completed_at is null""",
+                        ids,
+                        owner,
+                        _normalize_etag(target_head.get("ETag")),
+                        method,
+                        current_sha,
+                    )
+                if int(result.rsplit(" ", 1)[-1]) != len(ids):
+                    raise RuntimeError("copy recovery ledger CAS changed")
+            completed = await conn.execute(
+                """update analytics_history_media_migration_plan_batches
+                      set status='completed',outcome_counts=$3::jsonb,
+                          completed_at=now(),updated_at=now()
+                    where plan_sha256=$1 and batch_no=$2 and status='pending'""",
+                args.plan_sha256,
+                0,
+                json.dumps(dict(sorted(row_counts.items()))),
+            )
+            if completed != "UPDATE 1":
+                raise RuntimeError("copy recovery plan batch state changed")
+        receipt = {
+            "schema": "allbot-history-media-r2-copy-recovery-receipt/v1",
+            "plan_sha256": args.plan_sha256,
+            "current_copy_plan_sha256": current_sha,
+            "predecessor_copy_plan_sha256": predecessor_sha,
+            "frontier_batch_no": int(recovery["frontier_batch_no"]),
+            "rowset_sha256": recovery["rowset_sha256"],
+            "asset_outcomes": dict(sorted(row_counts.items())),
+            "object_outcomes": dict(sorted(outcome_counts.items())),
+            "max_pool_connections": max_pool_connections,
+            "concurrency": args.concurrency,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        receipt["receipt_sha256"] = _sha256_json(receipt)
+        receipt_output = Path(args.receipt_output)
+        receipt_output.parent.mkdir(parents=True, exist_ok=True)
+        receipt_output.write_bytes(_canonical_json(receipt) + b"\n")
+        os.chmod(receipt_output, 0o600)
+        print(json.dumps(receipt), flush=True)
+        await _create_plan(
+            SimpleNamespace(
+                run_id=str(run_id),
+                parent_plan_sha256=current["parent_probe_plan_sha256"],
+                config=args.config,
+                artifact_digest=args.artifact_digest,
+                output=args.next_plan_output,
+                supersedes_plan_sha256=current_sha,
+            ),
+            plan_type="copy",
+        )
+    finally:
+        await conn.close()
+        client.close()
+
+
 async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
@@ -5193,6 +5630,12 @@ def _parser() -> argparse.ArgumentParser:
     plan_copy.add_argument("--artifact-digest", required=True)
     plan_copy.add_argument("--output", required=True)
     plan_copy.add_argument("--supersedes-plan-sha256")
+    plan_copy_recovery = commands.add_parser("plan-copy-recovery")
+    plan_copy_recovery.add_argument("--run-id", required=True)
+    plan_copy_recovery.add_argument("--current-plan-sha256", required=True)
+    plan_copy_recovery.add_argument("--config", required=True)
+    plan_copy_recovery.add_argument("--artifact-digest", required=True)
+    plan_copy_recovery.add_argument("--output", required=True)
     plan_switch = commands.add_parser("plan-switch")
     plan_switch.add_argument("--run-id", required=True)
     plan_switch.add_argument("--parent-plan-sha256", required=True)
@@ -5212,6 +5655,16 @@ def _parser() -> argparse.ArgumentParser:
     copy.add_argument("--retry-jitter-ratio", type=_unit_ratio, default=0.25)
     copy.add_argument("--next-plan-output")
     copy.add_argument("--verification-output")
+    copy_recovery = commands.add_parser("execute-copy-recovery")
+    copy_recovery.add_argument("--plan-sha256", required=True)
+    copy_recovery.add_argument("--confirm", required=True)
+    copy_recovery.add_argument("--config", required=True)
+    copy_recovery.add_argument("--artifact-digest", required=True)
+    copy_recovery.add_argument(
+        "--concurrency", type=_bounded_copy_concurrency, default=64
+    )
+    copy_recovery.add_argument("--receipt-output", required=True)
+    copy_recovery.add_argument("--next-plan-output", required=True)
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)
@@ -5237,8 +5690,12 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _execute_probe(args)
     elif args.command == "plan-copy":
         await _create_plan(args, plan_type="copy")
+    elif args.command == "plan-copy-recovery":
+        await _create_copy_predecessor_recovery_plan(args)
     elif args.command == "execute-copy":
         await _execute_copy(args)
+    elif args.command == "execute-copy-recovery":
+        await _execute_copy_predecessor_recovery(args)
     elif args.command == "plan-switch":
         await _create_plan(args, plan_type="switch")
     elif args.command == "execute-switch":

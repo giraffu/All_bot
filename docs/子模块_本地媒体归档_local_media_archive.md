@@ -350,6 +350,19 @@ p95 相对 canary 基线显著恶化时，于当前批次提交后暂停。连�
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
 资产保持旧 History 引用。
+
+Copy successor 若在目标 HEAD 发现 direct predecessor marker，普通执行器仍必须立即
+暂停，不能把 predecessor marker 当作当前计划成功。此状态可能来自 predecessor 已完成
+CopyObject、但在账本提交前受控停机。修复入口分为独立的 `plan-copy-recovery` 与
+`execute-copy-recovery`：计划只冻结 direct predecessor 的第一个 superseded frontier
+批次内、当前计划尚未提交的资产，并绑定新 artifact、行集 SHA 与精确
+`COPY_HISTORY_MEDIA_<recovery-plan-sha>`。执行只对该 frontier 做来源和目标 HEAD；只有
+来源 size/Last-Modified/ETag 未变、目标 size/ETag 相同且 marker 精确属于当前计划或
+direct predecessor 时，才在一个本地事务恢复账本归属。任意其它 marker、来源变化、
+行集漂移或 CAS 变化整批失败关闭。对账完成后自动冻结新的 Copy successor；真正继续
+Copy 仍需该 successor 的新 COPY 令牌。该协议不接受任意旧计划 marker，也不扩展历史
+marker 例外，不调用 GET、ListObjects、CopyObject、DELETE 或生产 History 更新。
+
 Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计划内、
 `copied_verified`、`switch_completed_at is null` 且原路径不同于目标路径的资产，
 因此不会再次纳入既有已完成 Switch、其它 Probe、unresolved 或 blocked。计划每

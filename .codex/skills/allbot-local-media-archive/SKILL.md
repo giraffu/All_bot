@@ -24,19 +24,20 @@ description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
+- direct predecessor marker 仅可用新 COPY 令牌的 frontier recovery HEAD 对账；
+  普通 Copy 失败关闭。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 来源离线不是丢失。确认丢失要求全部登记来源两轮 not-found 且间隔至少 24 小时。
 - R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
 - Worker 配置须为当前用户的 0600 文件；校验网络物理路由和 filesystem 根目录，
   检测到本地 7890 代理时 fail closed。
-- canary 可配置最多 100 个 `history_ids` 精确领取，禁止改写全局优先级。
+- canary 最多精确领取 100 个 `history_ids`，禁止改写全局优先级。
 - 私有配置只输出来源名/指纹；只有 `archived_verified` 提供原件。
 - 租约每 5 分钟续期；回执必须匹配 revision，陈旧 Worker 不得覆盖新清单。
-- restore outbox 与 archive outbox 状态不得复用；收藏、公开、活跃 Gallery、
-  owner R2 miss 和每日热集 reconciliation 都只负责幂等 enqueue。
+- restore/archive outbox 状态不得复用；所有热集触发只幂等 enqueue。
 - TLS 必须验证包含 NAS IP SAN 的内部 CA；禁止 `verify=false`。
-- PiGallery2 不复用归档目录、账号或容器；live 容量、凭据、digest 和部署结果只属运行态。
+- PiGallery2 与归档完全隔离；live 容量、凭据、digest 和部署结果只属运行态。
 
 ## 最小验证
 
