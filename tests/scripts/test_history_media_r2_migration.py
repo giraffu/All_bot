@@ -1,63 +1,287 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from io import BytesIO
-import json
 import copy
-from pathlib import Path
+import json
 import subprocess
 import sys
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from pathlib import Path
 
-from botocore.exceptions import ClientError
 import pytest
+from botocore.exceptions import ClientError
 
 from scripts.history_media_r2_migration import (
-    AssetIdentity,
     MIGRATION_DDL,
+    AdaptiveCopyController,
+    AdaptiveProbeController,
+    AssetIdentity,
+    CopyObjectCircuitBreaker,
     SourceFactCache,
     StreamingJsonArraySha256,
-    build_candidate_keys,
-    build_copy_plan,
-    build_standard_target,
-    classify_target_status,
-    classify_reference,
-    group_copy_candidates,
-    evaluate_missing_round,
-    hash_body,
-    history_assets_from_record,
-    normalize_asyncpg_dsn,
     _add_r2_custom_headers,
+    _collect_probe_head_outcomes,
     _parser,
     _persist_copy_success,
     _persist_probe_batch,
-    _process_r2_custom_arguments,
     _probe_r2_rows,
     _probe_target_rows,
-    _collect_probe_head_outcomes,
+    _process_r2_custom_arguments,
     _resolve_copy_max_pool_connections,
     _resolve_probe_max_pool_connections,
+    _run_copy_group_batch,
     _runtime_identity,
-    _validate_runtime_identity,
     _s3_client,
-    AdaptiveCopyController,
-    AdaptiveProbeController,
+    _timed_server_side_copy_with_retries,
+    _validate_runtime_identity,
+    build_candidate_keys,
+    build_copy_plan,
     build_probe_plan,
+    build_standard_target,
+    build_successor_copy_plan,
     build_successor_probe_plan,
     classify_r2_head_outcomes,
+    classify_reference,
+    classify_target_status,
+    evaluate_missing_round,
+    group_copy_candidates,
+    hash_body,
+    history_assets_from_record,
+    is_transient_copy_failure,
+    normalize_asyncpg_dsn,
     normalized_history_cas_state,
     probe_plan_chain_sha256s,
-    is_transient_copy_failure,
     replace_asset_reference,
     server_side_copy_r2_object,
     validate_copy_gate,
     validate_copy_verification_heads,
     validate_probe_gate,
-    validate_switch_gate,
     validate_resume_identity,
+    validate_switch_gate,
 )
+
+
+def test_copy_retries_one_transient_object_with_exponential_backoff(monkeypatch):
+    calls = 0
+    sleeps: list[float] = []
+
+    def copy_object(_client, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 3:
+            raise RuntimeError("ReadTimeoutError")
+        return {"etag": "target", "multipart": False, "recovered": False}
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.server_side_copy_r2_object",
+        copy_object,
+    )
+
+    result = _timed_server_side_copy_with_retries(
+        object(),
+        max_retries=5,
+        retry_base_seconds=1,
+        retry_max_seconds=16,
+        sleep_fn=sleeps.append,
+        jitter_fn=lambda delay: delay,
+    )
+
+    assert result["error"] is None
+    assert result["attempt_count"] == 4
+    assert [event["kind"] for event in result["request_events"]] == [
+        "timeout_or_5xx",
+        "timeout_or_5xx",
+        "timeout_or_5xx",
+        "ok",
+    ]
+    assert sleeps == [1, 2, 4]
+
+
+def test_copy_exhausts_only_the_failed_object_after_five_retries(monkeypatch):
+    sleeps: list[float] = []
+
+    def copy_object(_client, **_kwargs):
+        raise RuntimeError("Connection reset by peer")
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.server_side_copy_r2_object",
+        copy_object,
+    )
+
+    result = _timed_server_side_copy_with_retries(
+        object(),
+        max_retries=5,
+        retry_base_seconds=1,
+        retry_max_seconds=16,
+        sleep_fn=sleeps.append,
+        jitter_fn=lambda delay: delay,
+    )
+
+    assert isinstance(result["error"], RuntimeError)
+    assert result["attempt_count"] == 6
+    assert sleeps == [1, 2, 4, 8, 16]
+    assert {event["kind"] for event in result["request_events"]} == {
+        "connection_transient"
+    }
+
+
+@pytest.mark.asyncio
+async def test_copy_persists_fast_success_before_slow_peer_finishes():
+    slow_started = threading.Event()
+    release_slow = threading.Event()
+    queued_fast_persisted = asyncio.Event()
+    persisted: list[int] = []
+    worker_ids: set[int] = set()
+
+    def copy_one(group):
+        worker_ids.add(threading.get_ident())
+        row_id = group[0]["id"]
+        if row_id == 2:
+            slow_started.set()
+            assert release_slow.wait(5)
+        return {
+            "outcome": {"etag": f"target-{row_id}", "multipart": False},
+            "error": None,
+            "elapsed_ms": 1.0,
+            "attempt_count": 1,
+            "request_events": [{"at": 1.0, "kind": "ok"}],
+        }
+
+    async def persist_success(group, _outcome):
+        persisted.append(group[0]["id"])
+        if group[0]["id"] == 3:
+            queued_fast_persisted.set()
+
+    async def persist_failure(_group, _error):
+        raise AssertionError("no object should fail")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        task = asyncio.create_task(
+            _run_copy_group_batch(
+                [[{"id": 1}], [{"id": 2}], [{"id": 3}]],
+                executor=executor,
+                copy_one=copy_one,
+                persist_success=persist_success,
+                persist_failure=persist_failure,
+            )
+        )
+        assert await asyncio.to_thread(slow_started.wait, 2)
+        await asyncio.wait_for(queued_fast_persisted.wait(), timeout=2)
+        assert not task.done()
+        release_slow.set()
+        result = await task
+
+    assert persisted == [1, 3, 2]
+    assert result["copied_objects"] == 3
+    assert worker_ids.isdisjoint(
+        {thread.ident for thread in threading.enumerate() if thread.is_alive()}
+    )
+
+
+@pytest.mark.asyncio
+async def test_copy_success_commit_fails_closed_after_plan_ownership_changes():
+    class Conn:
+        async def execute(self, _query, *_params):
+            return "UPDATE 0"
+
+    with pytest.raises(RuntimeError, match="ownership changed"):
+        await _persist_copy_success(
+            Conn(),
+            [{"id": 1}],
+            {"etag": "target", "multipart": False, "recovered": False},
+            copy_plan_sha256="a" * 64,
+        )
+
+
+def test_successor_copy_plan_freezes_only_unfinished_predecessor_assets():
+    rows = [
+        {
+            "id": index,
+            "history_id": 100 + index,
+            "role": "output",
+            "ordinal": 0,
+            "original_ref": f"old-{index}.png",
+            "target_key": f"task-results/t-{index}/primary.png",
+            "source_name": "r2-user-data-prod",
+            "source_key": f"old-{index}.png",
+            "source_last_modified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "source_etag": f"etag-{index}",
+            "source_sha256": None,
+            "target_sha256": "copied" if index == 1 else None,
+            "byte_size": 100 + index,
+            "status": "copied_verified" if index == 1 else "copy_required",
+            "history_manifest_sha256": "f" * 64,
+        }
+        for index in range(1, 4)
+    ]
+    predecessor, _ = build_successor_copy_plan(
+        predecessor_manifest=None,
+        predecessor_plan_sha256=None,
+        retained_rows=[],
+        successor_rows=rows,
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=103,
+        runtime_identity={"artifact_digest": "sha256:" + "a" * 64},
+        batch_size=2,
+    )
+
+    successor, batches = build_successor_copy_plan(
+        predecessor_manifest=predecessor,
+        predecessor_plan_sha256=predecessor["plan_sha256"],
+        retained_rows=[rows[0]],
+        successor_rows=[{**rows[1], "status": "failed"}, rows[2]],
+        runtime_identity={"artifact_digest": "sha256:" + "b" * 64},
+        batch_size=1,
+    )
+
+    assert successor["predecessor_copy_plan_sha256s"] == [predecessor["plan_sha256"]]
+    assert successor["retained_asset_count"] == 1
+    assert successor["count"] == 2
+    assert successor["conserved_asset_count"] == 3
+    assert successor["intersection_asset_count"] == 0
+    assert successor["counts"] == {"copy_required": 2}
+    assert len(batches) == 2
+    assert successor["batches_sha256"]
+
+
+def test_successor_copy_plan_rejects_overlap_with_completed_assets():
+    row = {
+        "id": 1,
+        "history_id": 1,
+        "role": "output",
+        "ordinal": 0,
+        "target_key": "task-results/t/primary.png",
+        "status": "copy_required",
+    }
+    predecessor, _ = build_successor_copy_plan(
+        predecessor_manifest=None,
+        predecessor_plan_sha256=None,
+        retained_rows=[],
+        successor_rows=[row],
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=1,
+    )
+
+    with pytest.raises(RuntimeError, match="overlaps"):
+        build_successor_copy_plan(
+            predecessor_manifest=predecessor,
+            predecessor_plan_sha256=predecessor["plan_sha256"],
+            retained_rows=[row],
+            successor_rows=[row],
+        )
+
+
+def test_copy_object_circuit_ignores_isolated_error_and_opens_on_systemic_windows():
+    breaker = CopyObjectCircuitBreaker(max_error_rate=0.5, consecutive_windows=3)
+
+    assert breaker.observe(copied_objects=63, failed_objects=1) is False
+    assert breaker.observe(copied_objects=32, failed_objects=32) is False
+    assert breaker.observe(copied_objects=31, failed_objects=33) is False
+    assert breaker.observe(copied_objects=30, failed_objects=34) is True
 
 
 @pytest.mark.asyncio
@@ -324,9 +548,7 @@ def test_successor_probe_excludes_completed_assets_and_conserves_root_plan():
     assert predecessor == predecessor_before
     assert successor["schema"] == "allbot-history-media-r2-probe-successor-plan/v1"
     assert successor["predecessor_probe_plan_sha256"] == predecessor["plan_sha256"]
-    assert successor["predecessor_probe_plan_sha256s"] == [
-        predecessor["plan_sha256"]
-    ]
+    assert successor["predecessor_probe_plan_sha256s"] == [predecessor["plan_sha256"]]
     assert successor["root_asset_count"] == 4
     assert successor["retained_asset_count"] == 2
     assert successor["asset_count"] == 2
@@ -509,7 +731,10 @@ def test_normalized_history_cas_accepts_only_original_current_or_completed_paths
             "switch_plan_sha256": "b" * 64,
         },
     ]
-    current = {("input", 0): "task-inputs/r/0.png", ("output", 0): "task-results/b/primary.png"}
+    current = {
+        ("input", 0): "task-inputs/r/0.png",
+        ("output", 0): "task-results/b/primary.png",
+    }
     first = normalized_history_cas_state(7, current, ledger)
     current[("input", 0)] = "old-in.png"
     assert normalized_history_cas_state(7, current, ledger) == first
@@ -787,16 +1012,37 @@ def test_execute_copy_concurrency_is_bounded():
     assert args.copy_concurrency == 64
     assert args.max_pool_connections is None
     assert (
-        _parser().parse_args(
-            [*base, "--copy-concurrency", "64", "--max-pool-connections", "96"]
-        ).max_pool_connections
+        _parser()
+        .parse_args([*base, "--copy-concurrency", "64", "--max-pool-connections", "96"])
+        .max_pool_connections
         == 96
     )
     with pytest.raises(SystemExit):
         _parser().parse_args([*base, "--copy-concurrency", "0"])
-    assert _parser().parse_args([*base, "--copy-concurrency", "128"]).copy_concurrency == 128
+    assert (
+        _parser().parse_args([*base, "--copy-concurrency", "128"]).copy_concurrency
+        == 128
+    )
     with pytest.raises(SystemExit):
         _parser().parse_args([*base, "--copy-concurrency", "129"])
+    parsed = _parser().parse_args(
+        [
+            *base,
+            "--object-max-retries",
+            "5",
+            "--retry-base-seconds",
+            "1",
+            "--retry-max-seconds",
+            "16",
+            "--retry-jitter-ratio",
+            "0.25",
+        ]
+    )
+    assert parsed.object_max_retries == 5
+    with pytest.raises(SystemExit):
+        _parser().parse_args([*base, "--object-max-retries", "-1"])
+    with pytest.raises(SystemExit):
+        _parser().parse_args([*base, "--retry-jitter-ratio", "1.1"])
 
 
 def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypatch):
@@ -974,13 +1220,19 @@ def test_large_server_side_copy_uses_multipart_copy_without_media_body():
 
 def test_execute_copy_has_no_client_side_media_transfer_path():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._execute_copy)
-    timed_source = inspect.getsource(module._timed_server_side_copy)
-    forbidden = ("_read_s3_sha", "_open_source_body", "NamedTemporaryFile", "upload_fileobj")
+    timed_source = inspect.getsource(module._timed_server_side_copy_with_retries)
+    forbidden = (
+        "_read_s3_sha",
+        "_open_source_body",
+        "NamedTemporaryFile",
+        "upload_fileobj",
+    )
     assert not any(name in source + timed_source for name in forbidden)
-    assert "_timed_server_side_copy" in source
+    assert "_timed_server_side_copy_with_retries" in source
     assert "server_side_copy_r2_object" in timed_source
 
 
@@ -990,14 +1242,17 @@ def test_execute_copy_sizes_worker_pool_to_requested_concurrency():
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._execute_copy)
+    group_source = inspect.getsource(module._run_copy_group_batch)
 
     assert "ThreadPoolExecutor(max_workers=args.copy_concurrency)" in source
-    assert "loop.run_in_executor" in source
+    assert "loop.run_in_executor" in group_source
+    assert "asyncio.as_completed" in group_source
     assert "copy_executor" in source
 
 
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._seed)
@@ -1005,11 +1260,14 @@ def test_seed_uses_one_bulk_copy_stage_per_history_batch():
     assert "BACKEND_BATCH_SQL" in source
     assert "for asset in assets" in source
     assert "await conn.fetchrow(BACKEND" not in source
-    assert "select id from analytics_media_asset_catalog where history_id=$1" not in source
+    assert (
+        "select id from analytics_media_asset_catalog where history_id=$1" not in source
+    )
 
 
 def test_initial_probe_does_not_starve_pending_rows_with_deferred_failures():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._probe)
@@ -1022,6 +1280,7 @@ def test_initial_probe_does_not_starve_pending_rows_with_deferred_failures():
 
 def test_receipt_only_probe_is_fail_closed_and_skips_legacy_sources():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._probe)
@@ -1032,7 +1291,9 @@ def test_receipt_only_probe_is_fail_closed_and_skips_legacy_sources():
 
 
 def test_probe_cli_exposes_receipt_only_mode():
-    script = Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    script = (
+        Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    )
     result = subprocess.run(
         [sys.executable, str(script), "probe", "--help"],
         check=True,
@@ -1044,6 +1305,7 @@ def test_probe_cli_exposes_receipt_only_mode():
 
 def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._create_plan)
@@ -1052,7 +1314,9 @@ def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
     assert '"run_status_at_freeze"' in source
     assert '"partial_scope"' in source
 
-    script = Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    script = (
+        Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    )
     result = subprocess.run(
         [sys.executable, str(script), "plan-copy", "--help"],
         check=True,
@@ -1064,6 +1328,7 @@ def test_frozen_copy_plan_cannot_bypass_incomplete_probe_batches():
 
 def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     assert "_stream_plan_rowset" in inspect.getsource(module._create_plan)
@@ -1135,7 +1400,10 @@ async def test_target_only_probe_deduplicates_keys_and_persists_serially():
     ]
     assert (
         await _probe_target_rows(
-            conn, rows, target_client=client, concurrency=8  # type: ignore[arg-type]
+            conn,
+            rows,
+            target_client=client,
+            concurrency=8,  # type: ignore[arg-type]
         )
         == 3
     )
@@ -1201,7 +1469,10 @@ async def test_r2_only_probe_resolves_old_keys_with_head_only():
 
     assert (
         await _probe_r2_rows(
-            conn, rows, r2_client=client, concurrency=8  # type: ignore[arg-type]
+            conn,
+            rows,
+            r2_client=client,
+            concurrency=8,  # type: ignore[arg-type]
         )
         == 0
     )
@@ -1215,6 +1486,7 @@ async def test_r2_only_probe_resolves_old_keys_with_head_only():
 
 def test_frozen_probe_executor_has_only_head_object_storage_io():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._execute_probe) + inspect.getsource(
@@ -1241,6 +1513,7 @@ def test_migration_ledger_is_independent_and_bound_to_history_watermark():
 
 def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_assets():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._create_plan)
@@ -1262,6 +1535,7 @@ def test_copy_and_switch_plans_are_strictly_parent_scoped_and_exclude_completed_
 
 def test_successor_freeze_supersedes_only_unfinished_batches_and_copy_uses_chain():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     successor_source = inspect.getsource(module._create_successor_probe_plan)
@@ -1296,6 +1570,7 @@ def test_successor_freeze_supersedes_only_unfinished_batches_and_copy_uses_chain
 
 def test_copy_execution_recomputes_frozen_rowset_in_ledger_id_order():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module._execute_copy)
@@ -1307,8 +1582,9 @@ def test_copy_execution_recomputes_frozen_rowset_in_ledger_id_order():
     assert "order by history_id,role,ordinal" not in rowset_check
 
 
-def test_copy_replacement_plan_supersedes_only_an_unexecuted_frozen_plan():
+def test_copy_replacement_plan_retains_completed_and_supersedes_only_remainder():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     parsed = _parser().parse_args(
@@ -1333,10 +1609,12 @@ def test_copy_replacement_plan_supersedes_only_an_unexecuted_frozen_plan():
     source = inspect.getsource(module._replace_unexecuted_copy_plan)
     assert "for update" in source.lower()
     assert "copy_completed_at is not null" in source
-    assert "status<>'copy_required'" in source
-    assert "status='superseded'" in source
+    assert "status='failed'" in source
+    assert '{"pending", "completed"}' in source
+    assert "status<>'completed'" in source
     assert "copy_plan_sha256=$4" in source
-    assert "status='pending'" in source
+    assert "retained_assets" in source
+    assert "conserved_asset_count" in source
 
     execute_source = inspect.getsource(module._execute_copy)
     assert "copy plan has been superseded" in execute_source
@@ -1351,26 +1629,58 @@ def test_copy_replacement_plan_supersedes_only_an_unexecuted_frozen_plan():
     )
 
 
+def test_copy_successor_verification_and_switch_aggregate_the_full_plan_chain():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    verify_source = inspect.getsource(module._verify_copy_plan_objects)
+    planner_source = inspect.getsource(module._create_plan)
+    execute_source = inspect.getsource(module._execute_copy)
+
+    assert "copy_plan_sha256=any($2::text[])" in verify_source
+    assert 'copy_plan_sha256=str(row["copy_plan_sha256"])' in verify_source
+    assert '"copy_chain_plan_sha256s"' in planner_source
+    assert "predecessor Copy chain is not terminal" in planner_source
+    assert "copy_plan_sha256=any($2::text[])" in planner_source
+    assert "copy plan batches identity changed" in execute_source
+
+
 def test_standard_targets_require_explicit_dual_ids():
     input_asset = AssetIdentity(1, "input", 2, "7/input_images/a.JPEG")
     output_asset = AssetIdentity(1, "output", 0, "7/output_images/result.png")
     extra_asset = AssetIdentity(1, "extra:mask preview", 3, "mask.webp")
 
-    assert build_standard_target(
-        input_asset, registry_task_id="registry-1", backend_task_id=None
-    ) == "task-inputs/registry-1/2.jpeg"
-    assert build_standard_target(
-        output_asset, registry_task_id="registry-1", backend_task_id="backend-1"
-    ) == "task-results/backend-1/primary.png"
-    assert build_standard_target(
-        extra_asset, registry_task_id="registry-1", backend_task_id="backend-1"
-    ) == "task-results/backend-1/extras/extra-mask-preview-3.webp"
-    assert build_standard_target(
-        output_asset, registry_task_id="registry-1", backend_task_id=None
-    ) is None
-    assert build_standard_target(
-        input_asset, registry_task_id=None, backend_task_id="backend-1"
-    ) is None
+    assert (
+        build_standard_target(
+            input_asset, registry_task_id="registry-1", backend_task_id=None
+        )
+        == "task-inputs/registry-1/2.jpeg"
+    )
+    assert (
+        build_standard_target(
+            output_asset, registry_task_id="registry-1", backend_task_id="backend-1"
+        )
+        == "task-results/backend-1/primary.png"
+    )
+    assert (
+        build_standard_target(
+            extra_asset, registry_task_id="registry-1", backend_task_id="backend-1"
+        )
+        == "task-results/backend-1/extras/extra-mask-preview-3.webp"
+    )
+    assert (
+        build_standard_target(
+            output_asset, registry_task_id="registry-1", backend_task_id=None
+        )
+        is None
+    )
+    assert (
+        build_standard_target(
+            input_asset, registry_task_id=None, backend_task_id="backend-1"
+        )
+        is None
+    )
 
 
 def test_external_and_unmanaged_references_are_blocked():
@@ -1420,12 +1730,14 @@ def test_target_status_requires_full_digest_equality():
         "copy_required",
         None,
     )
-    assert classify_target_status(
-        source_sha256="a" * 64, target_sha256="a" * 64
-    ) == ("target_verified", None)
-    assert classify_target_status(
-        source_sha256="a" * 64, target_sha256="b" * 64
-    ) == ("target_conflict", "TARGET_SHA256_CONFLICT")
+    assert classify_target_status(source_sha256="a" * 64, target_sha256="a" * 64) == (
+        "target_verified",
+        None,
+    )
+    assert classify_target_status(source_sha256="a" * 64, target_sha256="b" * 64) == (
+        "target_conflict",
+        "TARGET_SHA256_CONFLICT",
+    )
 
 
 def test_resume_must_keep_frozen_history_watermark():
@@ -1444,24 +1756,33 @@ def test_source_fact_cache_reuses_only_unchanged_head_identity():
         last_modified=last_modified,
         sha256="a" * 64,
     )
-    assert cache.lookup(
-        source="r2-user-data-prod",
-        key="a.png",
-        byte_size=3,
-        last_modified=last_modified,
-    ) == "a" * 64
-    assert cache.lookup(
-        source="r2-user-data-prod",
-        key="a.png",
-        byte_size=4,
-        last_modified=last_modified,
-    ) is None
-    assert cache.lookup(
-        source="r2-user-data-prod",
-        key="a.png",
-        byte_size=3,
-        last_modified=last_modified + timedelta(seconds=1),
-    ) is None
+    assert (
+        cache.lookup(
+            source="r2-user-data-prod",
+            key="a.png",
+            byte_size=3,
+            last_modified=last_modified,
+        )
+        == "a" * 64
+    )
+    assert (
+        cache.lookup(
+            source="r2-user-data-prod",
+            key="a.png",
+            byte_size=4,
+            last_modified=last_modified,
+        )
+        is None
+    )
+    assert (
+        cache.lookup(
+            source="r2-user-data-prod",
+            key="a.png",
+            byte_size=3,
+            last_modified=last_modified + timedelta(seconds=1),
+        )
+        is None
+    )
 
 
 def test_missing_confirmation_requires_all_not_found_twice_and_24_hours():
@@ -1472,18 +1793,24 @@ def test_missing_confirmation_requires_all_not_found_twice_and_24_hours():
         first_missing_at=None,
         now=now,
     ) == ("provisional_missing", 1, now)
-    assert evaluate_missing_round(
-        statuses=("not_found", "not_found"),
-        previous_rounds=1,
-        first_missing_at=now - timedelta(hours=24),
-        now=now,
-    )[0] == "confirmed_lost"
-    assert evaluate_missing_round(
-        statuses=("not_found", "source_offline"),
-        previous_rounds=1,
-        first_missing_at=now - timedelta(days=2),
-        now=now,
-    )[0] == "source_offline"
+    assert (
+        evaluate_missing_round(
+            statuses=("not_found", "not_found"),
+            previous_rounds=1,
+            first_missing_at=now - timedelta(hours=24),
+            now=now,
+        )[0]
+        == "confirmed_lost"
+    )
+    assert (
+        evaluate_missing_round(
+            statuses=("not_found", "source_offline"),
+            previous_rounds=1,
+            first_missing_at=now - timedelta(days=2),
+            now=now,
+        )[0]
+        == "source_offline"
+    )
 
 
 def test_copy_plan_is_compact_stable_and_exactly_gated():
@@ -1567,6 +1894,7 @@ def test_history_reference_replacement_preserves_unselected_assets():
 
 def test_script_has_no_bucket_list_or_delete_operation():
     import inspect
+
     import scripts.history_media_r2_migration as module
 
     source = inspect.getsource(module)
@@ -1575,7 +1903,9 @@ def test_script_has_no_bucket_list_or_delete_operation():
 
 
 def test_cli_is_directly_executable_and_exposes_all_phases():
-    script = Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    script = (
+        Path(__file__).resolve().parents[2] / "scripts/history_media_r2_migration.py"
+    )
     result = subprocess.run(
         [sys.executable, str(script), "--help"],
         check=True,
