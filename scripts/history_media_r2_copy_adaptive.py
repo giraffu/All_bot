@@ -51,7 +51,7 @@ class ResourceGate:
     def evaluate(
         self,
         *,
-        cpu_percent: float,
+        capacity_cpu_percent: float,
         fd_count: int,
         fd_soft_limit: int,
         db_commit_p95_ms: float | None = None,
@@ -65,7 +65,7 @@ class ResourceGate:
             > self.db_commit_p95_baseline_ms * self.db_latency_multiplier
         ):
             return "db_commit_latency_regressed"
-        if cpu_percent > self.max_cpu_percent:
+        if capacity_cpu_percent > self.max_cpu_percent:
             self.high_cpu_batches += 1
         else:
             self.high_cpu_batches = 0
@@ -80,6 +80,15 @@ class CopyHealthDecision:
     reason: str
     error_rate: float
     sample_count: int
+
+
+@dataclass(frozen=True)
+class ResourceSample:
+    process_cpu_percent: float
+    capacity_cpu_percent: float
+    available_cpu_count: int
+    fd_count: int
+    fd_soft_limit: int
 
 
 class CopyHealthWindow:
@@ -145,14 +154,31 @@ class CopyHealthWindow:
         )
 
 
-def _resource_sample(
-    *, cpu_started: float, wall_started: float
-) -> tuple[float, int, int]:
+def _available_cpu_count() -> int:
+    """Return CPUs available to this process, respecting container cpusets."""
+    try:
+        affinity_count = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        affinity_count = 0
+    return max(1, affinity_count or os.cpu_count() or 1)
+
+
+def _resource_sample(*, cpu_started: float, wall_started: float) -> ResourceSample:
     wall_seconds = max(time.perf_counter() - wall_started, 1e-9)
-    cpu_percent = max(0.0, (time.process_time() - cpu_started) / wall_seconds * 100)
+    process_cpu_percent = max(
+        0.0, (time.process_time() - cpu_started) / wall_seconds * 100
+    )
+    available_cpu_count = _available_cpu_count()
+    capacity_cpu_percent = process_cpu_percent / available_cpu_count
     fd_count = len(os.listdir("/proc/self/fd"))
     fd_soft_limit = int(resource.getrlimit(resource.RLIMIT_NOFILE)[0])
-    return round(cpu_percent, 3), fd_count, fd_soft_limit
+    return ResourceSample(
+        process_cpu_percent=round(process_cpu_percent, 3),
+        capacity_cpu_percent=round(capacity_cpu_percent, 3),
+        available_cpu_count=available_cpu_count,
+        fd_count=fd_count,
+        fd_soft_limit=fd_soft_limit,
+    )
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -245,24 +271,26 @@ async def run_adaptive_copy(
             continue
 
         remaining = int(summary["remaining"])
-        cpu_percent, fd_count, fd_soft_limit = _resource_sample(
+        resource_sample = _resource_sample(
             cpu_started=cpu_started, wall_started=wall_started
         )
         db_commit_p95_ms = float(
             (summary.get("db_commit_latency_ms") or {}).get("p95", 0.0)
         )
         resource_reason = resource_gate.evaluate(
-            cpu_percent=cpu_percent,
-            fd_count=fd_count,
-            fd_soft_limit=fd_soft_limit,
+            capacity_cpu_percent=resource_sample.capacity_cpu_percent,
+            fd_count=resource_sample.fd_count,
+            fd_soft_limit=resource_sample.fd_soft_limit,
             db_commit_p95_ms=db_commit_p95_ms,
         )
         _emit(
             {
                 "adaptive_event": "batch_resource",
-                "cpu_percent": cpu_percent,
-                "fd_count": fd_count,
-                "fd_soft_limit": fd_soft_limit,
+                "process_cpu_percent": resource_sample.process_cpu_percent,
+                "capacity_cpu_percent": resource_sample.capacity_cpu_percent,
+                "available_cpu_count": resource_sample.available_cpu_count,
+                "fd_count": resource_sample.fd_count,
+                "fd_soft_limit": resource_sample.fd_soft_limit,
                 "db_commit_p95_ms": db_commit_p95_ms,
             }
         )

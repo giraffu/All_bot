@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,9 @@ import pytest
 from scripts.history_media_r2_copy_adaptive import (
     CopyHealthWindow,
     ResourceGate,
+    ResourceSample,
+    _available_cpu_count,
+    _resource_sample,
     run_adaptive_copy,
 )
 
@@ -31,29 +35,160 @@ def test_database_migration_artifact_contains_frozen_history_r2_runner():
 
 def test_resource_gate_pauses_on_sustained_cpu_fd_or_db_regression():
     cpu_gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
-    assert cpu_gate.evaluate(cpu_percent=71, fd_count=10, fd_soft_limit=100) is None
-    assert cpu_gate.evaluate(cpu_percent=75, fd_count=10, fd_soft_limit=100) is None
     assert (
-        cpu_gate.evaluate(cpu_percent=80, fd_count=10, fd_soft_limit=100)
+        cpu_gate.evaluate(
+            capacity_cpu_percent=71, fd_count=10, fd_soft_limit=100
+        )
+        is None
+    )
+    assert (
+        cpu_gate.evaluate(
+            capacity_cpu_percent=75, fd_count=10, fd_soft_limit=100
+        )
+        is None
+    )
+    assert (
+        cpu_gate.evaluate(capacity_cpu_percent=80, fd_count=10, fd_soft_limit=100)
         == "sustained_cpu_above_limit"
     )
 
     fd_gate = ResourceGate()
     assert (
-        fd_gate.evaluate(cpu_percent=1, fd_count=51, fd_soft_limit=100)
+        fd_gate.evaluate(capacity_cpu_percent=1, fd_count=51, fd_soft_limit=100)
         == "fd_above_half_soft_limit"
     )
 
     db_gate = ResourceGate(db_commit_p95_baseline_ms=5, db_latency_multiplier=3)
     assert (
         db_gate.evaluate(
-            cpu_percent=1,
+            capacity_cpu_percent=1,
             fd_count=10,
             fd_soft_limit=100,
             db_commit_p95_ms=16,
         )
         == "db_commit_latency_regressed"
     )
+
+
+def test_resource_sample_normalizes_process_cpu_to_available_capacity(monkeypatch):
+    import scripts.history_media_r2_copy_adaptive as runner
+
+    monkeypatch.setattr(runner.os, "sched_getaffinity", lambda _pid: set(range(32)))
+    monkeypatch.setattr(runner.time, "perf_counter", lambda: 10.0)
+    monkeypatch.setattr(runner.time, "process_time", lambda: 9.36)
+    monkeypatch.setattr(runner.os, "listdir", lambda _path: ["1", "2"])
+    monkeypatch.setattr(runner.resource, "getrlimit", lambda _kind: (1024, 1024))
+
+    sample = _resource_sample(cpu_started=0.0, wall_started=0.0)
+
+    assert sample.process_cpu_percent == pytest.approx(93.6)
+    assert sample.capacity_cpu_percent == pytest.approx(2.925)
+    assert sample.available_cpu_count == 32
+    assert sample.fd_count == 2
+    assert sample.fd_soft_limit == 1024
+
+    gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
+    for _ in range(3):
+        assert (
+            gate.evaluate(
+                capacity_cpu_percent=sample.capacity_cpu_percent,
+                fd_count=sample.fd_count,
+                fd_soft_limit=sample.fd_soft_limit,
+            )
+            is None
+        )
+
+
+def test_resource_gate_still_pauses_on_genuine_capacity_saturation():
+    gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
+
+    assert (
+        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
+        is None
+    )
+    assert (
+        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
+        is None
+    )
+    assert (
+        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
+        == "sustained_cpu_above_limit"
+    )
+
+
+def test_available_cpu_count_prefers_cpuset_and_falls_back(monkeypatch):
+    import scripts.history_media_r2_copy_adaptive as runner
+
+    monkeypatch.setattr(runner.os, "sched_getaffinity", lambda _pid: {2, 4, 6})
+    assert _available_cpu_count() == 3
+
+    def unavailable(_pid):
+        raise OSError("affinity unavailable")
+
+    monkeypatch.setattr(runner.os, "sched_getaffinity", unavailable)
+    monkeypatch.setattr(runner.os, "cpu_count", lambda: 8)
+    assert _available_cpu_count() == 8
+
+    monkeypatch.setattr(runner.os, "cpu_count", lambda: None)
+    assert _available_cpu_count() == 1
+
+
+def test_resource_sample_preserves_single_cpu_gate_semantics(monkeypatch):
+    import scripts.history_media_r2_copy_adaptive as runner
+
+    monkeypatch.setattr(runner.os, "sched_getaffinity", lambda _pid: {0})
+    monkeypatch.setattr(runner.time, "perf_counter", lambda: 4.0)
+    monkeypatch.setattr(runner.time, "process_time", lambda: 3.0)
+    monkeypatch.setattr(runner.os, "listdir", lambda _path: [])
+    monkeypatch.setattr(runner.resource, "getrlimit", lambda _kind: (1024, 1024))
+
+    sample = _resource_sample(cpu_started=0.0, wall_started=0.0)
+
+    assert sample.process_cpu_percent == 75
+    assert sample.capacity_cpu_percent == 75
+
+
+@pytest.mark.asyncio
+async def test_adaptive_runner_logs_raw_and_capacity_cpu(monkeypatch, capsys):
+    import scripts.history_media_r2_copy_adaptive as runner
+
+    monkeypatch.setattr(
+        runner,
+        "_resource_sample",
+        lambda **_kwargs: ResourceSample(
+            process_cpu_percent=93.6,
+            capacity_cpu_percent=2.925,
+            available_cpu_count=32,
+            fd_count=12,
+            fd_soft_limit=1024,
+        ),
+    )
+
+    async def execute_batch(_args):
+        return {"remaining": 0, "copied_objects": 1}
+
+    result = await run_adaptive_copy(
+        SimpleNamespace(
+            plan_sha256="e" * 64,
+            confirm="COPY_HISTORY_MEDIA_" + "e" * 64,
+            config="/tmp/config.json",
+            limit=1,
+            copy_concurrency=128,
+            max_pool_connections=192,
+            circuit_breaker_windows=3,
+        ),
+        execute_batch=execute_batch,
+        sleep=asyncio.sleep,
+    )
+
+    emitted = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    resource_event = next(
+        event for event in emitted if event.get("adaptive_event") == "batch_resource"
+    )
+    assert resource_event["process_cpu_percent"] == 93.6
+    assert resource_event["capacity_cpu_percent"] == 2.925
+    assert resource_event["available_cpu_count"] == 32
+    assert result["status"] == "completed"
 
 
 @pytest.mark.asyncio
