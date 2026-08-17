@@ -342,7 +342,7 @@ size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆�
 不得小于 copy concurrency，省略时取并发的 1.5 倍并向上取整。所有线程共享同一个
 仅执行 HEAD/CopyObject 的 boto3 client，数据库结果仍串行提交；每批报告 Copy-only
 对象/秒、R2 对象操作延迟和数据库提交延迟。`history_media_r2_copy_adaptive.py`
-从 64 起步并在 128→64→32→16→8 档位调整：对象级瞬态错误先重试；429 立即降档，
+默认从 128 起步并在 128→64→32→16→8 档位调整：对象级瞬态错误先重试；429 立即降档，
 持续 timeout/5xx 超过窗口预算才降档，低错误率窗口允许回升，最高 128；非瞬态错误
 直接暂停。SIGTERM/SIGINT 只登记
 graceful pause，当前批次完成并

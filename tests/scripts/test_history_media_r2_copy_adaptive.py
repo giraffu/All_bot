@@ -11,10 +11,27 @@ from scripts.history_media_r2_copy_adaptive import (
     CopyHealthWindow,
     ResourceGate,
     ResourceSample,
+    _parser,
     _available_cpu_count,
     _resource_sample,
     run_adaptive_copy,
 )
+
+
+def test_adaptive_copy_cli_defaults_to_128_with_object_retries():
+    args = _parser().parse_args(
+        [
+            "--plan-sha256",
+            "a" * 64,
+            "--confirm",
+            "COPY_HISTORY_MEDIA_" + "a" * 64,
+            "--config",
+            "/secure/config.json",
+        ]
+    )
+
+    assert args.copy_concurrency == 128
+    assert args.object_max_retries == 5
 
 
 def test_web_api_image_contains_adaptive_copy_runner():
