@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from config import MINIO_BUCKET
 from shared.r2_retention_contract import build_staged_user_upload_key
 from src.services.storage import storage
+from src.core.media_paths import normalize_owned_user_upload_key
 
 logger = logging.getLogger(__name__)
 
@@ -71,3 +72,32 @@ async def get_presigned_upload_url_payload(
         "object_key": f"{MINIO_BUCKET}/{object_key}",
         "expires_in_minutes": 15,
     }
+
+
+async def get_owned_upload_preview_url_payload(
+    *,
+    object_key: str,
+    current_user,
+    get_presigned_url_func=None,
+) -> dict:
+    try:
+        normalized = normalize_owned_user_upload_key(
+            object_key,
+            user_id=current_user.id,
+            allowed_extensions={"png", "jpg", "jpeg", "webp"},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Upload does not belong to current user") from exc
+    get_presigned_url_func = get_presigned_url_func or storage.get_presigned_url
+    try:
+        preview_url = get_presigned_url_func(normalized, bucket=MINIO_BUCKET)
+    except Exception as exc:
+        logger.warning(
+            "Failed to presign owned upload preview user_id=%s error_type=%s",
+            current_user.id,
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=503, detail="Preview is temporarily unavailable") from exc
+    if not preview_url:
+        raise HTTPException(status_code=404, detail="Preview is unavailable")
+    return {"object_key": normalized, "preview_url": preview_url}

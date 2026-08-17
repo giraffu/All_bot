@@ -152,3 +152,29 @@ async def test_storage_router_routes_to_service():
         content_type="image/png",
         current_user=current_user,
     )
+
+
+@pytest.mark.asyncio
+async def test_owned_upload_preview_is_owner_fenced_and_presigned():
+    response = await storage_api_service.get_owned_upload_preview_url_payload(
+        object_key=f"{storage_api_service.MINIO_BUCKET}/staging/user-uploads/123/image.png",
+        current_user=_build_current_user(),
+        get_presigned_url_func=lambda key, **_: f"https://preview.example/{key}",
+    )
+
+    assert response == {
+        "object_key": "staging/user-uploads/123/image.png",
+        "preview_url": "https://preview.example/staging/user-uploads/123/image.png",
+    }
+
+
+@pytest.mark.asyncio
+async def test_owned_upload_preview_rejects_another_users_object():
+    with pytest.raises(HTTPException) as exc_info:
+        await storage_api_service.get_owned_upload_preview_url_payload(
+            object_key="staging/user-uploads/999/image.png",
+            current_user=_build_current_user(),
+            get_presigned_url_func=lambda *_args, **_kwargs: "should-not-run",
+        )
+
+    assert exc_info.value.status_code == 403

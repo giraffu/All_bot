@@ -30,6 +30,7 @@ import {
   closeTaskStream,
 } from './taskStreamTransport'
 import type { Task } from './taskStoreTypes'
+import type { PromptOptimizationTaskContext } from './taskStoreTypes'
 import type { TaskRecord } from '@/types/gallery'
 import {
   getOldestTerminalFloatingTaskIdsForNewTask,
@@ -41,6 +42,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const activeTasks = ref<Task[]>([])
   const detailModalVisible = ref(false)
   const currentDetailRecord = ref<TaskRecord | null>(null)
+  const pendingPromptApplyTaskId = ref<string | null>(null)
   const authStore = useAuthStore()
   const detachedResultProbeTaskIds = new Set<string>()
   const resultPollingTaskIds = new Set<string>()
@@ -147,8 +149,13 @@ export const useTasksStore = defineStore('tasks', () => {
       },
       onSuccess: (currentTask) => {
         resultPollingTaskIds.delete(currentTask.id)
+        currentTask.completedAt = Date.now()
         touchTaskActivity(currentTask)
-        message.success(`任务 [${currentTask.title}] 生成完成！`)
+        message.success(
+          currentTask.kind === 'prompt_optimization'
+            ? `任务 [${currentTask.title}] 优化完成！`
+            : `任务 [${currentTask.title}] 生成完成！`
+        )
       },
       onTimeout: (currentTask) => {
         resultPollingTaskIds.delete(currentTask.id)
@@ -359,6 +366,58 @@ export const useTasksStore = defineStore('tasks', () => {
     return true
   }
 
+  const addPromptOptimizationTask = (
+    taskId: string,
+    title: string,
+    promptOptimization: PromptOptimizationTaskContext,
+  ) => {
+    const added = addTask(taskId, 'prompt_optimize', title)
+    const task = activeTasks.value.find(item => item.id === taskId)
+    if (task) {
+      task.kind = 'prompt_optimization'
+      task.promptOptimization = promptOptimization
+      task.submittedAt = task.submittedAt ?? Date.now()
+      touchTaskActivity(task)
+    }
+    return added
+  }
+
+  const requestPromptTaskApply = async (taskId: string) => {
+    const task = activeTasks.value.find(item => item.id === taskId)
+    const origin = task?.promptOptimization?.originDraft
+    if (!task || task.resultKind !== 'text' || !task.resultText || !origin) {
+      return false
+    }
+    pendingPromptApplyTaskId.value = taskId
+    await router.push({
+      name: 'CustomFeatures',
+      query: { type: origin.routeType },
+    })
+    return true
+  }
+
+  const consumePromptTaskApply = (
+    modeId: string,
+    applyDraft: (task: Task) => void | Promise<void>,
+  ) => {
+    const taskId = pendingPromptApplyTaskId.value
+    if (!taskId) return false
+    const task = activeTasks.value.find(item => item.id === taskId)
+    if (!task || task.promptOptimization?.originDraft.modeId !== modeId) {
+      return false
+    }
+    pendingPromptApplyTaskId.value = null
+    void applyDraft(task)
+    return true
+  }
+
+  const markPromptTaskApplied = (taskId: string) => {
+    const task = activeTasks.value.find(item => item.id === taskId)
+    if (!task?.promptOptimization) return
+    task.promptOptimization.autoApplied = true
+    touchTaskActivity(task)
+  }
+
   const removeTask = (taskId: string) => {
     statusPollingTaskIds.delete(taskId)
     detachedResultProbeTaskIds.delete(taskId)
@@ -431,7 +490,12 @@ export const useTasksStore = defineStore('tasks', () => {
     activeTasks,
     detailModalVisible,
     currentDetailRecord,
+    pendingPromptApplyTaskId,
     addTask,
+    addPromptOptimizationTask,
+    requestPromptTaskApply,
+    consumePromptTaskApply,
+    markPromptTaskApplied,
     settleExternalTask,
     removeTask,
     clearCompleted,

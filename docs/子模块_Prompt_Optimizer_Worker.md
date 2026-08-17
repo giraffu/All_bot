@@ -163,6 +163,19 @@ Central 的 `PromptOptimizeRequest` 必须显式保留 `trusted_context`、
 原文恢复，片段以 `partial_unvalidated=true` 只读返回，退款状态只有账本确认后才显示
 `refunded`。
 
+Web 把 `prompt_optimize` 作为全局任务而非页面内请求：任务 ID、不可变原草稿、目标
+模式和提交时间写入浏览器 `active_tasks`，保留 24 小时。路由切换、刷新、关闭标签页
+后由 Pinia 任务恢复逻辑续接粗状态与最终文本结果；排队时展示目标类型队列位次，终态
+展示实测总耗时。原编辑上下文仍完全一致时可自动应用；上下文已变化或页面已离开时
+禁止覆盖当前输入，只在全局结果卡提供“返回原任务并应用”。恢复用户上传图片预览时
+调用 owner-fenced `/api/storage/preview-url`，不得把另一用户对象签名给浏览器。
+
+主 Bot 的 H3 消费者使用独立 24 小时 Redis draft 保存冻结生成设置和 staging keys，
+提交成功后退出 Telegram FSM。`advanced_video_prompt_task_service.py` 的启动恢复循环
+轮询 owner-fenced 文本结果并主动发新消息；`avpopt_*` 全局 callback 读取 draft，二次
+确认费用后才调用既有生成提交 facade。该 continuation 不改变 Central task type、四
+lane Worker、1 灵石优化扣费或文本结果存储。
+
 ## 4. Worker 与 LM Studio
 
 一个容器启动 `prompt_optimizer_test_01..04` 四条 lane，每条只 pop

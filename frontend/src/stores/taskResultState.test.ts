@@ -34,6 +34,27 @@ test('decideTaskResultFromResponse resolves when result url becomes available', 
   })
 })
 
+test('decideTaskResultFromResponse resolves prompt optimizer text results without a media url', () => {
+  const decision = decideTaskResultFromResponse(
+    {
+      status: 'success',
+      result_kind: 'text',
+      result_text: 'optimized prompt',
+      result_meta: { prompt_optimizer: { primary_field: 'positive_prompt' } }
+    },
+    1,
+    10
+  )
+
+  assert.deepEqual(decision, {
+    type: 'resolved',
+    resultKind: 'text',
+    resultText: 'optimized prompt',
+    extraOutputs: {},
+    resultMeta: { prompt_optimizer: { primary_field: 'positive_prompt' } }
+  })
+})
+
 test('decideTaskResultFromError keeps retrying transient not-ready responses', () => {
   const decision = decideTaskResultFromError(404, 4, 10)
 
@@ -81,6 +102,18 @@ test('restorePersistedTask routes success without result url to result polling b
     awaitingResult: true,
     resultUrl: undefined
   })
+})
+
+test('restorePersistedTask keeps a completed text task terminal after browser restoration', () => {
+  const restoration = restorePersistedTask({
+    status: 'success',
+    progress: 100,
+    awaitingResult: false,
+    resultKind: 'text',
+    resultText: 'optimized prompt'
+  })
+
+  assert.equal(restoration.type, 'idle')
 })
 
 test('restorePersistedTask keeps awaiting-result tasks in running state and resumes result polling', () => {

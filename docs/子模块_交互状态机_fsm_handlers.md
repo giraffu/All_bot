@@ -5,10 +5,14 @@
 收集 0/1/2 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：可直接生成，或在测试环境按独立
-开关发起 1 灵石优化。优化使用用户/会话/模式/时长/原文派生的确定性请求
-ID，成功只回显并保存优化文案，不自动提交视频，同时提供“使用优化提示词生成”和
-“恢复原提示词”；失败保留原文并显示账本确认的退款状态。Bot 临时图片先复制到当前
-用户专属 staging key，任务终态后清理。优化后台任务必须先通过
+开关发起 1 灵石优化。优化提交前先把冻结的模式、时长、画质、效果增强、原文和
+owner-fenced staging key 写入 24 小时 Redis draft；提交 Central 成功后立即结束 FSM，
+因此全局菜单、其它功能或 Bot 重启都不会使结果丢失。`src/bot_main.py` 的恢复循环按
+draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback 不依赖
+`context.user_data`，先校验 Telegram user/chat owner，再展示冻结设置与费用，只有用户
+二次确认才提交收费生成。重复确认在 draft 的 `generation_submitting/submitted` 状态
+下 fail closed，不重复扣费或提交。失败保留原文并沿用 Task Core 幂等退款。Bot 临时
+图片先复制到当前用户专属 staging key，生成提交或终态失败后清理。优化后台任务必须先通过
 `get_or_create_user_by_telegram` 把 Telegram 平台 ID 映射为内部用户 ID；计费、结果
 归属和 staging key 一律使用内部用户 ID，禁止把平台 ID 直接传入共享优化服务。
 历史 LTX 设置 callback 只提示过期，不得静默改投新任务；旧 History/扩展 callback
@@ -54,6 +58,8 @@ stateDiagram-v2
     WAITING_PROMPT --> WAITING_CONFIRMATION : 输入提示词 / 优化提示词
     WAITING_PROMPT --> CANCEL : 主菜单打断 / 超时
     WAITING_CONFIRMATION --> SUBMIT : 确认生成
+    WAITING_CONFIRMATION --> DETACHED_OPTIMIZER : 提交提示词优化
+    DETACHED_OPTIMIZER --> [*] : 持久 draft 接管，退出 FSM
     WAITING_CONFIRMATION --> CANCEL : 放弃生成
     SUBMIT --> [*] : 释放 FSM，移交 Bot task flow
     CANCEL --> [*] : 清理 user_data 与临时文件
