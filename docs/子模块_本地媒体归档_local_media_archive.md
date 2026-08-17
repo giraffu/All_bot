@@ -162,7 +162,8 @@ manifest digest、离线导入对应平台镜像，并在 `.env` 使用导入后
 Worker 以 8 并发和全天 50 MiB/s 总上限启动，每 15 分钟按吞吐和错误率在
 8/16/32 间调整；达不到上限不判失败。`.part` 总容量 100 GiB，已用和预留达到
 90 GiB 即暂停新对象；下载前 HEAD 预检单对象大小，启动清理陈旧 part。配置必须
-是当前用户所有的普通 0600 文件。启动清空代理变量，发现 `127.0.0.1:7890` 则
+是当前用户所有的普通 0600 文件。通用归档 Worker 启动清空代理变量，发现
+`127.0.0.1:7890` 则
 直接拒绝，并使用 `ip route get` 校验 NAS 直连 endpoint 固定走声明的物理接口和
 源地址；默认部署使用 `eno1`、`10.250.150.1/30` 到 NAS
 `10.250.150.2/30`，且不配置网关；R2
@@ -353,6 +354,18 @@ graceful pause，当前批次完成并
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
 资产保持旧 History 引用。
+
+通用归档 Worker 仍禁止 7890、环境代理和 tun/wg 路由。冻结的 History R2 Copy
+只有在配置显式声明精确 `https_proxy` 传输且 URL 为
+`http://127.0.0.1:7890` 时，才可使用这一窄例外。计划 runtime identity 保存传输
+模式、端口和代理 URL 的 SHA-256，不保存明文 URL；缺省 transport 固定为 direct，
+boto3 client 显式传入空代理表，因此 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`
+均不能改变冻结路由。执行器必须先通过确认令牌、artifact digest、脚本、endpoint、
+全局/批次行集和来源资格校验，再探测本机 listener 并创建只用于本批 HEAD/CopyObject
+的代理 client；listener 不可达时 fail closed。代理切换不能热改运行中容器：须先构建
+新 artifact，受控停止旧执行器，保留全部 `copied_verified`，冻结零交集 successor，
+取得新 `COPY_HISTORY_MEDIA_<sha>` 后先运行 CopyObject canary。HEAD 延迟 A/B 只作为
+候选依据，不能替代 CopyObject marker、来源保留、错误率、FD 和数据库提交验收。
 
 Copy successor 若在目标 HEAD 发现 direct predecessor marker，普通执行器仍必须立即
 暂停，不能把 predecessor marker 当作当前计划成功。此状态可能来自 predecessor 已完成

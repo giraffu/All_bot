@@ -14,6 +14,7 @@ import json
 import os
 import random
 import re
+import socket
 import stat
 import sys
 import threading
@@ -59,6 +60,7 @@ COPY_BATCH_SIZE = 10_000
 SWITCH_HISTORY_BATCH_SIZE = 1_000
 PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
+R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ReadTimeoutError|"
     r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
@@ -1402,6 +1404,61 @@ def _endpoint_fingerprint(value: Any) -> str:
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
+@dataclass(frozen=True)
+class R2Transport:
+    mode: str
+    proxy_url: str | None = None
+
+    def identity(self) -> dict[str, Any]:
+        if self.mode == "direct":
+            return {"mode": "direct"}
+        assert self.proxy_url is not None
+        return {
+            "mode": "https_proxy",
+            "proxy_port": 7890,
+            "proxy_sha256": hashlib.sha256(self.proxy_url.encode()).hexdigest(),
+        }
+
+
+def _r2_transport(config: dict[str, Any]) -> R2Transport:
+    raw = config.get("r2_transport")
+    if raw is None:
+        return R2Transport(mode="direct")
+    if not isinstance(raw, dict):
+        raise ValueError("r2_transport must be an object")
+    unknown = set(raw) - {"mode", "proxy_url"}
+    if unknown:
+        raise ValueError("r2_transport contains unknown fields")
+    mode = str(raw.get("mode") or "")
+    if mode == "direct":
+        if raw.get("proxy_url") not in {None, ""}:
+            raise ValueError("direct r2_transport must not define proxy_url")
+        return R2Transport(mode="direct")
+    if mode != "https_proxy":
+        raise ValueError("r2_transport mode must be direct or https_proxy")
+    proxy_url = str(raw.get("proxy_url") or "")
+    if proxy_url != R2_COPY_PROXY_URL:
+        raise ValueError("R2 Copy proxy must be exact loopback port 7890")
+    return R2Transport(mode="https_proxy", proxy_url=proxy_url)
+
+
+def _validate_r2_transport_runtime(
+    transport: R2Transport,
+    *,
+    create_connection: Callable[..., Any] = socket.create_connection,
+) -> None:
+    if transport.mode == "direct":
+        return
+    connection = None
+    try:
+        connection = create_connection(("127.0.0.1", 7890), 2.0)
+    except OSError:
+        raise RuntimeError("configured R2 proxy is unavailable") from None
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def _runtime_identity(
     *, artifact_digest: str, config: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1429,6 +1486,7 @@ def _runtime_identity(
         identity["source_endpoint_sha256"] = _endpoint_fingerprint(
             (r2_source or {}).get("endpoint")
         )
+        identity["r2_transport"] = _r2_transport(config).identity()
     return identity
 
 
@@ -1480,10 +1538,21 @@ def _add_r2_custom_headers(
         params["headers"].update(custom_headers)
 
 
-def _s3_client(config: dict[str, Any], *, max_pool_connections: int | None = None):
+def _s3_client(
+    config: dict[str, Any],
+    *,
+    max_pool_connections: int | None = None,
+    transport: R2Transport | None = None,
+):
+    selected_transport = transport or R2Transport(mode="direct")
     botocore_config: dict[str, Any] = {
         "signature_version": "s3v4",
         "retries": {"max_attempts": 3, "mode": "standard"},
+        "proxies": (
+            {"https": selected_transport.proxy_url}
+            if selected_transport.mode == "https_proxy"
+            else {}
+        ),
     }
     if max_pool_connections is not None:
         botocore_config["max_pool_connections"] = max_pool_connections
@@ -4708,6 +4777,7 @@ async def _verify_copy_plan_objects(
 async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
     execution_started = time.perf_counter()
     config = _load_secure_config(Path(args.config))
+    transport = _r2_transport(config)
     target = config["target"]
     if target.get("bucket") != BUCKET:
         raise RuntimeError("target is restricted to user-data-prod")
@@ -4719,7 +4789,7 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
     max_pool_connections = _resolve_copy_max_pool_connections(
         args.copy_concurrency, args.max_pool_connections
     )
-    target_client = _s3_client(target, max_pool_connections=max_pool_connections)
+    target_client = None
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         run_id, manifest = await _load_plan(conn, args.plan_sha256, "copy")
@@ -4901,6 +4971,13 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                     "copy plan source is not eligible for same-R2 server-side copy"
                 )
 
+        _validate_r2_transport_runtime(transport)
+        target_client = _s3_client(
+            target,
+            max_pool_connections=max_pool_connections,
+            transport=transport,
+        )
+
         copied_objects = 0
         copied_rows = 0
         recovered_objects = 0
@@ -5019,6 +5096,7 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             "remaining": remaining,
             "copy_concurrency": args.copy_concurrency,
             "max_pool_connections": max_pool_connections,
+            "r2_transport": transport.identity(),
             "copy_elapsed_seconds": round(copy_elapsed_seconds, 3),
             "total_elapsed_seconds": round(time.perf_counter() - execution_started, 3),
             "copy_objects_per_second": round(
@@ -5103,7 +5181,8 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
         return summary
     finally:
         await conn.close()
-        target_client.close()
+        if target_client is not None:
+            target_client.close()
 
 
 def _replace_extra_path(

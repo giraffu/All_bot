@@ -35,11 +35,13 @@ from scripts.history_media_r2_migration import (
     _process_r2_custom_arguments,
     _resolve_copy_max_pool_connections,
     _resolve_probe_max_pool_connections,
+    _r2_transport,
     _run_copy_group_batch,
     _runtime_identity,
     _s3_client,
     _timed_server_side_copy_with_retries,
     _validate_runtime_identity,
+    _validate_r2_transport_runtime,
     build_candidate_keys,
     build_copy_plan,
     build_probe_plan,
@@ -718,6 +720,97 @@ def test_runtime_identity_binds_artifact_and_endpoints_without_credentials():
         )
 
 
+def test_runtime_identity_binds_explicit_r2_proxy_without_exposing_its_url():
+    config = {
+        "target": {
+            "bucket": "user-data-prod",
+            "endpoint": "https://r2.example.invalid",
+        },
+        "sources": [
+            {
+                "name": "r2-user-data-prod",
+                "endpoint": "https://r2.example.invalid",
+            }
+        ],
+        "r2_transport": {
+            "mode": "https_proxy",
+            "proxy_url": "http://127.0.0.1:7890",
+        },
+    }
+
+    identity = _runtime_identity(
+        artifact_digest="sha256:" + "a" * 64,
+        config=config,
+    )
+
+    assert identity["r2_transport"] == {
+        "mode": "https_proxy",
+        "proxy_port": 7890,
+        "proxy_sha256": identity["r2_transport"]["proxy_sha256"],
+    }
+    assert len(identity["r2_transport"]["proxy_sha256"]) == 64
+    assert "127.0.0.1" not in json.dumps(identity)
+    assert "http://" not in json.dumps(identity)
+
+    direct_config = {key: value for key, value in config.items() if key != "r2_transport"}
+    with pytest.raises(RuntimeError, match="runtime identity changed"):
+        _validate_runtime_identity(
+            identity,
+            artifact_digest="sha256:" + "a" * 64,
+            config=direct_config,
+        )
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"mode": "https_proxy", "proxy_url": "http://127.0.0.1:7891"},
+        {"mode": "https_proxy", "proxy_url": "http://localhost:7890"},
+        {"mode": "https_proxy", "proxy_url": "https://127.0.0.1:7890"},
+        {"mode": "https_proxy", "proxy_url": "http://user@127.0.0.1:7890"},
+        {"mode": "direct", "proxy_url": "http://127.0.0.1:7890"},
+        {"mode": "socks5", "proxy_url": "http://127.0.0.1:7890"},
+    ],
+)
+def test_r2_proxy_rejects_every_noncanonical_transport(transport):
+    with pytest.raises(ValueError):
+        _r2_transport({"r2_transport": transport})
+
+
+def test_r2_proxy_runtime_preflight_closes_probe_socket_and_fails_closed():
+    class Connection:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    connection = Connection()
+    calls = []
+
+    def connect(address, timeout):
+        calls.append((address, timeout))
+        return connection
+
+    transport = _r2_transport(
+        {
+            "r2_transport": {
+                "mode": "https_proxy",
+                "proxy_url": "http://127.0.0.1:7890",
+            }
+        }
+    )
+    _validate_r2_transport_runtime(transport, create_connection=connect)
+
+    assert calls == [(("127.0.0.1", 7890), 2.0)]
+    assert connection.closed is True
+
+    def unavailable(_address, _timeout):
+        raise OSError("listener unavailable")
+
+    with pytest.raises(RuntimeError, match="configured R2 proxy is unavailable"):
+        _validate_r2_transport_runtime(transport, create_connection=unavailable)
+
+
 def test_copy_stage_verification_requires_exact_marker_and_retained_source():
     modified = datetime(2026, 8, 9, tzinfo=timezone.utc)
     row = {
@@ -1355,8 +1448,47 @@ def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypat
 
     assert pool == 96
     assert captured["config"].max_pool_connections == 96
+    assert captured["config"].proxies == {}
     with pytest.raises(ValueError, match="not be smaller"):
         _resolve_copy_max_pool_connections(64, 63)
+
+
+def test_copy_client_uses_only_the_frozen_explicit_https_proxy(monkeypatch):
+    captured = {}
+
+    class Events:
+        def register(self, *_args):
+            return None
+
+    class Client:
+        meta = type("Meta", (), {"events": Events()})()
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.boto3.client",
+        lambda *_args, **kwargs: captured.update(kwargs) or Client(),
+    )
+    transport = _r2_transport(
+        {
+            "r2_transport": {
+                "mode": "https_proxy",
+                "proxy_url": "http://127.0.0.1:7890",
+            }
+        }
+    )
+
+    _s3_client(
+        {
+            "endpoint": "https://example.invalid",
+            "access_key": "key",
+            "secret_key": "secret",
+        },
+        max_pool_connections=128,
+        transport=transport,
+    )
+
+    assert captured["config"].proxies == {
+        "https": "http://127.0.0.1:7890"
+    }
 
 
 @pytest.mark.parametrize(
