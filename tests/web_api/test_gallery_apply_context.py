@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from src.database.models import GalleryPost, History
 from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
+from src.domain_config.task_type_registry import gallery_supported_task_types
 from src.core import gallery_core
 from src.core import gallery_submission_effects
 from src.core.media_paths import MINIO_BUCKET
@@ -15,7 +16,14 @@ from src.services import storage as storage_module
 from src.web_api.services import gallery_response_builder
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.services import gallery_media_resolver
-from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
+from src.web_api.services.gallery_service_queries import (
+    get_gallery_apply_context_api_payload,
+    get_gallery_apply_context_payload,
+)
+from src.services.gallery_apply_context_service import (
+    GalleryApplyContextError,
+    ensure_gallery_apply_prompt_access,
+)
 from src.web_api.services.gallery_service_support import (
     logger as gallery_support_logger,
     pick_gallery_media_urls,
@@ -60,6 +68,156 @@ class _FakeSession:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", gallery_supported_task_types())
+async def test_gallery_apply_prompt_access_is_locked_for_every_gallery_task_type(
+    task_type,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id=f"task-{task_type}",
+        type=task_type,
+        prompt="secret prompt",
+    )
+    post = GalleryPost(
+        id=2,
+        task_id=f"task-{task_type}",
+        user_id=123,
+        media_type="video",
+    )
+    session = _FakeSession([_FakeResult(single=None)])
+
+    with pytest.raises(GalleryApplyContextError) as exc_info:
+        await ensure_gallery_apply_prompt_access(
+            db=session,
+            post=post,
+            history=history,
+            current_user_id=999,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "gallery_prompt_unlock_required"
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_context_allows_author_without_unlock_lookup():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-author",
+        type="custom_video",
+        prompt="author prompt",
+        width=720,
+        height=1280,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-author",
+        user_id=123,
+        media_type="video",
+    )
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        current_user_id=123,
+    )
+
+    assert response.prompt == "author prompt"
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_context_allows_user_with_prompt_unlock():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-unlocked",
+        type="custom_video",
+        prompt="unlocked prompt",
+        width=720,
+        height=1280,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-unlocked",
+        user_id=123,
+        media_type="video",
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+            _FakeResult(single=77),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        current_user_id=999,
+    )
+
+    assert response.prompt == "unlocked prompt"
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_context_rejects_locked_prompt_before_returning_context():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-locked",
+        type="custom_video",
+        prompt="must not leak",
+        width=720,
+        height=1280,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-locked",
+        user_id=123,
+        media_type="video",
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+            _FakeResult(single=None),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_gallery_apply_context_payload(
+            post_id=2,
+            db=session,
+            current_user_id=999,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "gallery_prompt_unlock_required"
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_context_api_forwards_authenticated_user_to_access_gate():
+    service_fn = AsyncMock(return_value=SimpleNamespace(prompt="allowed"))
+    db = object()
+
+    response = await get_gallery_apply_context_api_payload(
+        post_id=2,
+        current_user=SimpleNamespace(id=999),
+        db=db,
+        service_fn=service_fn,
+    )
+
+    assert response.prompt == "allowed"
+    service_fn.assert_awaited_once_with(
+        db=db,
+        post_id=2,
+        current_user_id=999,
+    )
 
 
 @pytest.mark.asyncio

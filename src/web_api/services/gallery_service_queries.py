@@ -255,6 +255,7 @@ async def build_apply_context_payload(
     build_history_apply_context_response_fn,
     should_return_apply_input_file,
     build_input_file_url,
+    current_user_id: int | None = None,
 ) -> ApplyContextResponse:
     try:
         return await build_gallery_apply_context_payload(
@@ -264,6 +265,7 @@ async def build_apply_context_payload(
             should_return_apply_input_file=should_return_apply_input_file,
             build_input_file_url=build_input_file_url,
             release_read_transaction_fn=release_read_transaction,
+            current_user_id=current_user_id,
         )
     except GalleryApplyContextError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -276,6 +278,7 @@ async def get_gallery_apply_context_payload(
     build_history_apply_context_response_fn=build_history_apply_context_response,
     should_return_apply_input_file=default_should_return_gallery_apply_input_file,
     build_input_file_url=build_storage_input_file_url,
+    current_user_id: int | None = None,
 ) -> ApplyContextResponse:
     return await build_apply_context_payload(
         post_id=post_id,
@@ -283,6 +286,7 @@ async def get_gallery_apply_context_payload(
         build_history_apply_context_response_fn=build_history_apply_context_response_fn,
         should_return_apply_input_file=should_return_apply_input_file,
         build_input_file_url=build_input_file_url,
+        current_user_id=current_user_id,
     )
 
 
@@ -294,10 +298,10 @@ async def get_gallery_apply_context_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> ApplyContextResponse:
-    _ = current_user
     return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_gallery_apply_context_payload,
         session_factory=session_factory or AsyncSessionLocal,
         post_id=post_id,
+        current_user_id=current_user.id,
     )
