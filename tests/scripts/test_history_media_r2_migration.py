@@ -24,7 +24,9 @@ from scripts.history_media_r2_migration import (
     SourceFactCache,
     StreamingJsonArraySha256,
     _add_r2_custom_headers,
+    _collect_copy_predecessor_recovery,
     _collect_probe_head_outcomes,
+    _execute_copy_predecessor_recovery,
     _parser,
     _persist_copy_success,
     _persist_probe_batch,
@@ -42,8 +44,10 @@ from scripts.history_media_r2_migration import (
     build_copy_plan,
     build_probe_plan,
     build_standard_target,
+    build_copy_predecessor_recovery_plan,
     build_successor_copy_plan,
     build_successor_probe_plan,
+    classify_copy_predecessor_recovery,
     classify_r2_head_outcomes,
     classify_reference,
     classify_target_status,
@@ -63,6 +67,285 @@ from scripts.history_media_r2_migration import (
     validate_resume_identity,
     validate_switch_gate,
 )
+
+
+def _copy_head(*, marker: str | None, size: int = 100, etag: str = "etag"):
+    metadata = {} if marker is None else {"allbot-copy-plan-sha256": marker}
+    return {
+        "ContentLength": size,
+        "LastModified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "ETag": etag,
+        "Metadata": metadata,
+    }
+
+
+def test_copy_recovery_accepts_only_exact_current_or_direct_predecessor_marker():
+    current = "c" * 64
+    predecessor = "p" * 64
+    source = _copy_head(marker=None)
+
+    assert (
+        classify_copy_predecessor_recovery(
+            source_head=source,
+            target_head=None,
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+        == "missing"
+    )
+    assert (
+        classify_copy_predecessor_recovery(
+            source_head=source,
+            target_head=_copy_head(marker=current),
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+        == "current"
+    )
+    assert (
+        classify_copy_predecessor_recovery(
+            source_head=source,
+            target_head=_copy_head(marker=predecessor),
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+        == "predecessor"
+    )
+
+    with pytest.raises(RuntimeError, match="unrecognized copy plan marker"):
+        classify_copy_predecessor_recovery(
+            source_head=source,
+            target_head=_copy_head(marker="x" * 64),
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+
+
+def test_copy_recovery_rejects_changed_source_or_nonidentical_target():
+    current = "c" * 64
+    predecessor = "p" * 64
+    expected_modified = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    with pytest.raises(RuntimeError, match="source identity changed"):
+        classify_copy_predecessor_recovery(
+            source_head=_copy_head(marker=None, size=101),
+            target_head=_copy_head(marker=predecessor, size=101),
+            expected_size=100,
+            expected_last_modified=expected_modified,
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+
+    with pytest.raises(RuntimeError, match="target identity differs"):
+        classify_copy_predecessor_recovery(
+            source_head=_copy_head(marker=None),
+            target_head=_copy_head(marker=predecessor, etag="different"),
+            expected_size=100,
+            expected_last_modified=expected_modified,
+            expected_etag="etag",
+            current_plan_sha256=current,
+            predecessor_plan_sha256=predecessor,
+        )
+
+
+def test_copy_predecessor_recovery_plan_freezes_only_the_stopped_frontier():
+    rows = [
+        {
+            "id": index,
+            "history_id": 100 + index,
+            "role": "output",
+            "ordinal": 0,
+            "original_ref": f"old-{index}.png",
+            "target_key": f"task-results/t-{index}/primary.png",
+            "source_name": "r2-user-data-prod",
+            "source_key": f"old-{index}.png",
+            "source_last_modified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "source_etag": f"etag-{index}",
+            "source_sha256": None,
+            "target_sha256": None,
+            "byte_size": 100 + index,
+            "status": "failed" if index == 2 else "copy_required",
+            "history_manifest_sha256": "f" * 64,
+        }
+        for index in range(1, 4)
+    ]
+    predecessor, _ = build_successor_copy_plan(
+        predecessor_manifest=None,
+        predecessor_plan_sha256=None,
+        retained_rows=[],
+        successor_rows=rows,
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=103,
+    )
+    current, _ = build_successor_copy_plan(
+        predecessor_manifest=predecessor,
+        predecessor_plan_sha256=predecessor["plan_sha256"],
+        retained_rows=[],
+        successor_rows=rows,
+    )
+    frontier = {
+        "batch_no": 1,
+        "first_ledger_id": 1,
+        "last_ledger_id": 3,
+        "first_history_id": 101,
+        "last_history_id": 103,
+        "asset_count": 3,
+        "history_count": 3,
+        "rowset_sha256": "b" * 64,
+        "cas_state_sha256": None,
+    }
+
+    recovery, batches = build_copy_predecessor_recovery_plan(
+        current_manifest=current,
+        current_plan_sha256=current["plan_sha256"],
+        predecessor_plan_sha256=predecessor["plan_sha256"],
+        frontier_batch=frontier,
+        rows=rows,
+        runtime_identity={"artifact_digest": "sha256:" + "d" * 64},
+    )
+
+    assert recovery["current_copy_plan_sha256"] == current["plan_sha256"]
+    assert recovery["predecessor_copy_plan_sha256"] == predecessor["plan_sha256"]
+    assert recovery["frontier_batch_no"] == 1
+    assert recovery["count"] == 3
+    assert recovery["batch_count"] == 1
+    assert batches[0]["asset_count"] == 3
+    assert recovery["plan_sha256"]
+
+    with pytest.raises(RuntimeError, match="direct predecessor"):
+        build_copy_predecessor_recovery_plan(
+            current_manifest=current,
+            current_plan_sha256=current["plan_sha256"],
+            predecessor_plan_sha256="x" * 64,
+            frontier_batch=frontier,
+            rows=rows,
+        )
+
+
+def test_copy_recovery_commands_keep_a_separate_exact_copy_gate():
+    recovery_plan = _parser().parse_args(
+        [
+            "plan-copy-recovery",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--current-plan-sha256",
+            "c" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "d" * 64,
+            "--output",
+            "/secure/recovery-plan.json",
+        ]
+    )
+    assert recovery_plan.command == "plan-copy-recovery"
+
+    execute = _parser().parse_args(
+        [
+            "execute-copy-recovery",
+            "--plan-sha256",
+            "r" * 64,
+            "--confirm",
+            "COPY_HISTORY_MEDIA_" + "r" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "d" * 64,
+            "--concurrency",
+            "128",
+            "--receipt-output",
+            "/secure/recovery-receipt.json",
+            "--next-plan-output",
+            "/secure/successor.json",
+        ]
+    )
+    assert execute.command == "execute-copy-recovery"
+    assert execute.concurrency == 128
+
+
+@pytest.mark.asyncio
+async def test_copy_recovery_head_pool_exceeds_32_and_releases_threads():
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+    modified = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    def head(_client, _bucket, key):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            threading.Event().wait(0.04)
+            return None if key.startswith("target-") else _copy_head(marker=None)
+        finally:
+            with lock:
+                active -= 1
+
+    groups = [
+        [
+            {
+                "id": index,
+                "history_id": index,
+                "role": "output",
+                "ordinal": 0,
+                "source_key": f"source-{index}",
+                "target_key": f"target-{index}",
+                "byte_size": 100,
+                "source_last_modified": modified,
+                "source_etag": "etag",
+            }
+        ]
+        for index in range(40)
+    ]
+
+    outcomes = await _collect_copy_predecessor_recovery(
+        groups,
+        client=object(),
+        current_plan_sha256="c" * 64,
+        predecessor_plan_sha256="p" * 64,
+        concurrency=40,
+        head_func=head,
+    )
+
+    assert len(outcomes) == 40
+    assert {outcome for _group, outcome, _head in outcomes} == {"missing"}
+    assert peak > 32
+    assert not any(
+        thread.name.startswith("history-r2-copy-recovery-head")
+        for thread in threading.enumerate()
+        if thread.is_alive()
+    )
+
+
+def test_copy_recovery_executor_is_head_only_and_uses_ledger_cas():
+    import inspect
+
+    source = inspect.getsource(_execute_copy_predecessor_recovery)
+    for forbidden in (
+        ".get_object(",
+        ".copy_object(",
+        ".list_objects",
+        ".delete_object(",
+    ):
+        assert forbidden not in source
+    assert "for update" in source.lower()
+    assert "copy recovery rowset changed" in source
+    assert "copy_plan_sha256=$5" in source
+    assert "r2_copy_object_recovered_predecessor" in source
 
 
 def test_copy_retries_one_transient_object_with_exponential_backoff(monkeypatch):
