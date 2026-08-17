@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -106,3 +106,50 @@ async def test_confirm_claims_draft_before_background_submission(monkeypatch):
     assert current.status == "generation_submitting"
     assert len(captured) == 1
     captured[0].close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "image_paths", "allow_contribute"),
+    [
+        ("t2v", [], False),
+        ("i2v", ["start.png"], True),
+        ("flf2v", ["start.png", "end.png"], True),
+    ],
+)
+async def test_optimized_h3_generation_preserves_gallery_eligibility(
+    monkeypatch,
+    mode,
+    image_paths,
+    allow_contribute,
+):
+    draft = build_draft(
+        mode=mode,
+        object_keys=tuple(f"staged-{index}" for index, _path in enumerate(image_paths)),
+        image_suffixes=tuple(".png" for _path in image_paths),
+    )
+    submit = AsyncMock()
+    monkeypatch.setattr(
+        callbacks,
+        "_materialize_draft_images",
+        AsyncMock(return_value=image_paths),
+    )
+    monkeypatch.setattr(callbacks, "submit_advanced_video_pro_plan", submit)
+    monkeypatch.setattr(
+        callbacks.advanced_video_prompt_task_store,
+        "save",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        callbacks,
+        "cleanup_prompt_draft_objects",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(callbacks, "cleanup_fsm_temp_files", Mock())
+
+    await callbacks._submit_confirmed_generation(
+        draft,
+        context=SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock())),
+    )
+
+    assert submit.await_args.kwargs["allow_contribute"] is allow_contribute

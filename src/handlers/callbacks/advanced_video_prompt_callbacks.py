@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import MINIO_BUCKET
 from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
+from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.handlers.callback_router import register_callback
 from src.services.advanced_video_pro_submission_service import (
     AdvancedVideoProSubmissionError,
@@ -152,7 +153,7 @@ async def _submit_confirmed_generation(draft, *, context) -> None:
             user_id=draft.telegram_user_id,
             username=draft.username,
             cleanup=True,
-            allow_contribute=False,
+            allow_contribute=is_gallery_supported_task_type(plan.task_type),
         )
         await advanced_video_prompt_task_store.save(
             draft.with_updates(status="generation_submitted"),
