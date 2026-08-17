@@ -18,20 +18,19 @@ description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
 - 冷媒体恢复只写 restore outbox；Web 不直连 NAS。Worker 复验摘要、回填原件并
   重建输出缩略图后才提交当前 revision 回执。
 - 永久原件使用 SHA-256 寻址；History 和原 key 映射保存在回执。
-- R2 迁移冻结账本；Probe successor 零交集，Copy 聚合链，CPU 按可用核容量
-  门禁；禁止正文下载和全桶扫描。
+- R2 迁移冻结账本；Probe successor 零交集，Copy 聚合链；禁止正文下载和全桶扫描。
 - History R2 全量链路使用父计划限定的 Probe→Copy→Switch batches；只分别接受
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
-- direct predecessor marker 仅可用新 COPY 令牌的 frontier recovery HEAD 对账；
-  普通 Copy 失败关闭。
+- direct predecessor marker 仅可由新 COPY 令牌的 frontier HEAD recovery 对账。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
-- 来源离线不是丢失。确认丢失要求全部登记来源两轮 not-found 且间隔至少 24 小时。
+- 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
 - R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
-- Worker 配置须为当前用户的 0600 文件；校验网络物理路由和 filesystem 根目录，
-  检测到本地 7890 代理时 fail closed。
+- Worker 使用用户 0600 配置并校验路由/filesystem，默认拒绝 7890。
+  仅冻结的 History R2 Copy 可绑定 loopback 7890 指纹和 artifact/successor；
+  须重新授权及 CopyObject canary，禁止热改与环境代理。
 - canary 最多精确领取 100 个 `history_ids`，禁止改写全局优先级。
 - 私有配置只输出来源名/指纹；只有 `archived_verified` 提供原件。
 - 租约每 5 分钟续期；回执必须匹配 revision，陈旧 Worker 不得覆盖新清单。
