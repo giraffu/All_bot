@@ -244,6 +244,13 @@ create table if not exists analytics_history_media_migration_plans (
     created_at timestamptz not null default now(),
     unique (run_id, plan_type, rowset_sha256)
 );
+alter table analytics_history_media_migration_plans
+  drop constraint if exists analytics_history_media_migration_plans_run_id_plan_type_rowset_sha256_key;
+create index if not exists ix_history_media_migration_plans_rowset
+  on analytics_history_media_migration_plans(run_id,plan_type,rowset_sha256);
+create unique index if not exists ux_history_media_migration_noncopy_rowset
+  on analytics_history_media_migration_plans(run_id,plan_type,rowset_sha256)
+  where plan_type<>'copy';
 create table if not exists analytics_history_media_migration_plan_batches (
     plan_sha256 char(64) not null references analytics_history_media_migration_plans(plan_sha256),
     batch_no integer not null check (batch_no >= 0),
@@ -2576,6 +2583,143 @@ async def _insert_plan_with_batches(
             )
 
 
+async def _replace_unexecuted_copy_plan(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    old_plan_sha256: str,
+    manifest: dict[str, Any],
+    batches: list[dict[str, Any]],
+) -> None:
+    """Atomically supersede one untouched Copy plan with a new artifact-bound plan."""
+
+    async with conn.transaction():
+        old_plan = await conn.fetchrow(
+            """select run_id,manifest from analytics_history_media_migration_plans
+                 where plan_sha256=$1 and plan_type='copy' for update""",
+            old_plan_sha256,
+        )
+        if not old_plan or old_plan["run_id"] != run_id:
+            raise RuntimeError("copy replacement predecessor identity changed")
+        old_manifest = (
+            json.loads(old_plan["manifest"])
+            if isinstance(old_plan["manifest"], str)
+            else dict(old_plan["manifest"])
+        )
+        if (
+            old_manifest.get("plan_sha256") != old_plan_sha256
+            or _sha256_json(
+                {
+                    key: value
+                    for key, value in old_manifest.items()
+                    if key != "plan_sha256"
+                }
+            )
+            != old_plan_sha256
+            or old_manifest.get("parent_probe_plan_sha256")
+            != manifest.get("parent_probe_plan_sha256")
+            or old_manifest.get("rowset_sha256") != manifest.get("rowset_sha256")
+        ):
+            raise RuntimeError("copy replacement predecessor manifest changed")
+        old_batches = await conn.fetch(
+            """select batch_no,first_ledger_id,last_ledger_id,
+                      first_history_id,last_history_id,asset_count,history_count,
+                      rowset_sha256,status
+                 from analytics_history_media_migration_plan_batches
+                 where plan_sha256=$1 order by batch_no for update""",
+            old_plan_sha256,
+        )
+        if not old_batches or any(row["status"] != "pending" for row in old_batches):
+            raise RuntimeError("copy replacement predecessor is not wholly pending")
+        batch_fields = (
+            "batch_no",
+            "first_ledger_id",
+            "last_ledger_id",
+            "first_history_id",
+            "last_history_id",
+            "asset_count",
+            "history_count",
+            "rowset_sha256",
+        )
+        frozen_batches = [
+            {field: row[field] for field in batch_fields} for row in old_batches
+        ]
+        replacement_batches = [
+            {field: batch[field] for field in batch_fields} for batch in batches
+        ]
+        if frozen_batches != replacement_batches:
+            raise RuntimeError("copy replacement predecessor batches changed")
+        ledger_state = await conn.fetchrow(
+            """select count(*)::bigint total,
+                      count(*) filter (where copy_completed_at is not null)::bigint completed,
+                      count(*) filter (where status<>'copy_required')::bigint ineligible
+                 from analytics_history_media_r2_migrations
+                where run_id=$1 and copy_plan_sha256=$2""",
+            run_id,
+            old_plan_sha256,
+        )
+        if (
+            int(ledger_state["total"]) != int(manifest["count"])
+            or int(ledger_state["completed"]) != 0
+            or int(ledger_state["ineligible"]) != 0
+        ):
+            raise RuntimeError("copy replacement predecessor has execution progress")
+        await _insert_plan_with_batches(
+            conn, manifest=manifest, plan_type="copy", batches=batches
+        )
+        await conn.execute(
+            """update analytics_history_media_migration_plan_batches
+                  set status='superseded',updated_at=now()
+                where plan_sha256=$1 and status='pending'""",
+            old_plan_sha256,
+        )
+        await conn.execute(
+            """update analytics_history_media_r2_migrations
+                  set copy_plan_sha256=$4,updated_at=now()
+                where run_id=$1 and copy_plan_sha256=$2
+                  and copy_completed_at is null and status=$3""",
+            run_id,
+            old_plan_sha256,
+            "copy_required",
+            manifest["plan_sha256"],
+        )
+        replacement_count = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and copy_completed_at is null and status='copy_required'""",
+                run_id,
+                manifest["plan_sha256"],
+            )
+        )
+        if replacement_count != int(manifest["count"]):
+            raise RuntimeError("copy replacement ledger reassignment changed")
+
+
+async def _reject_unacknowledged_copy_replan(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    manifest: dict[str, Any],
+) -> None:
+    active_plan = await conn.fetchval(
+        """select p.plan_sha256
+             from analytics_history_media_migration_plans p
+            where p.run_id=$1 and p.plan_type='copy'
+              and p.rowset_sha256=$2 and p.plan_sha256<>$3
+              and exists (
+                select 1 from analytics_history_media_migration_plan_batches b
+                 where b.plan_sha256=p.plan_sha256 and b.status<>'superseded'
+              )
+            order by p.created_at desc limit 1""",
+        run_id,
+        manifest["rowset_sha256"],
+        manifest["plan_sha256"],
+    )
+    if active_plan is not None:
+        raise RuntimeError("existing copy plan must be explicitly superseded")
+
+
 async def _create_probe_plan(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
@@ -3305,6 +3449,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     run_id = uuid.UUID(args.run_id)
     try:
+        await _ensure_schema(conn)
         run = await conn.fetchrow(
             "select history_watermark,sha_bytes_read,status from analytics_history_media_migration_runs where id=$1",
             run_id,
@@ -3430,6 +3575,13 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     artifact_digest=args.artifact_digest, config=config
                 ),
             }
+            supersedes_plan_sha256 = getattr(
+                args, "supersedes_plan_sha256", None
+            )
+            if supersedes_plan_sha256:
+                manifest["supersedes_copy_plan_sha256"] = (
+                    supersedes_plan_sha256
+                )
             manifest["plan_sha256"] = _sha256_json(manifest)
         else:
             parent_run_id, parent = await _load_plan(
@@ -3531,10 +3683,24 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
             }
             manifest["plan_sha256"] = _sha256_json(manifest)
         plan_sha = manifest["plan_sha256"]
-        await _insert_plan_with_batches(
-            conn, manifest=manifest, plan_type=plan_type, batches=batches
-        )
-        if plan_type == "copy":
+        supersedes_plan_sha256 = getattr(args, "supersedes_plan_sha256", None)
+        if plan_type == "copy" and supersedes_plan_sha256:
+            await _replace_unexecuted_copy_plan(
+                conn,
+                run_id=run_id,
+                old_plan_sha256=supersedes_plan_sha256,
+                manifest=manifest,
+                batches=batches,
+            )
+        else:
+            if plan_type == "copy":
+                await _reject_unacknowledged_copy_replan(
+                    conn, run_id=run_id, manifest=manifest
+                )
+            await _insert_plan_with_batches(
+                conn, manifest=manifest, plan_type=plan_type, batches=batches
+            )
+        if plan_type == "copy" and not supersedes_plan_sha256:
             await conn.execute(
                 """update analytics_history_media_r2_migrations
                       set copy_plan_sha256=$3,updated_at=now()
@@ -3728,16 +3894,25 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 artifact_digest=args.artifact_digest or "",
                 config=config,
             )
+        superseded_batches = int(
+            await conn.fetchval(
+                """select count(*) from analytics_history_media_migration_plan_batches
+                     where plan_sha256=$1 and status='superseded'""",
+                args.plan_sha256,
+            )
+        )
+        if superseded_batches:
+            raise RuntimeError("copy plan has been superseded")
         rowset_sha, _count, _counts, _bytes, _diagnostics = (
             await _stream_plan_rowset(
                 conn,
-                """select history_id,role,ordinal,original_ref,target_key,
+                """select id,history_id,role,ordinal,original_ref,target_key,
                       source_name,source_key,source_last_modified,source_etag,source_sha256,
                       target_sha256,byte_size,status,history_manifest_sha256,
                       copy_plan_sha256
                  from analytics_history_media_r2_migrations
                 where run_id=$1 and copy_plan_sha256=$2
-                order by history_id,role,ordinal""",
+                order by id""",
                 run_id,
                 args.plan_sha256,
                 copy_plan_sha256=args.plan_sha256,
@@ -4485,6 +4660,7 @@ def _parser() -> argparse.ArgumentParser:
     plan_copy.add_argument("--config", required=True)
     plan_copy.add_argument("--artifact-digest", required=True)
     plan_copy.add_argument("--output", required=True)
+    plan_copy.add_argument("--supersedes-plan-sha256")
     plan_switch = commands.add_parser("plan-switch")
     plan_switch.add_argument("--run-id", required=True)
     plan_switch.add_argument("--parent-plan-sha256", required=True)

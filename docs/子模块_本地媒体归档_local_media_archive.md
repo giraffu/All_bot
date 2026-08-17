@@ -363,6 +363,15 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 复制与引用切换
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
+
+Copy 计划的全局 rowset 与内部批次都按迁移账本 `id` 顺序冻结和重算，不能在执行端
+改用 History 坐标排序。若旧 artifact 在任何 R2 写入前因实现缺陷错误拒绝 rowset，
+不得修改旧 manifest、复用旧确认或让补丁 artifact 消费旧计划。`plan-copy` 只有在显式
+提供 `--supersedes-plan-sha256`，且旧计划全部批次仍为 pending、所有账本行仍为
+`copy_required`、`copy_completed_at` 全空、父 Probe 与 rowset SHA 均未变化时，才原子
+插入绑定新 artifact 的替代计划、把旧批次置为 superseded 并重绑账本。旧计划随后由
+执行器明确拒绝；替代计划必须展示新 SHA 并重新取得
+`COPY_HISTORY_MEDIA_<new-sha>`。
 冻结全量链路不允许 `--allow-incomplete` 绕过未完成 Probe 批次。plan/report 与执行前
 rowset 复核使用数据库 cursor 增量计算 canonical JSON SHA，不把完整账本载入内存；
 Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute-probe`、
