@@ -5,7 +5,15 @@ from sqlalchemy.dialects import postgresql
 from src.services.gallery_feed_queries import (
     build_gallery_feed_query,
     fetch_gallery_feed_page,
+    resolve_gallery_task_type_filter_values,
 )
+
+
+def test_advanced_video_pro_filter_groups_i2v_and_flf2v_only():
+    assert resolve_gallery_task_type_filter_values("minimax_h3") == (
+        "minimax_h3_i2v",
+        "minimax_h3_flf2v",
+    )
 
 
 class _ScalarResult:

@@ -74,6 +74,49 @@ def test_ltx_history_context_is_merged_into_extra_outputs():
 
 
 @pytest.mark.asyncio
+async def test_web_success_persists_versioned_minimax_h3_context():
+    persist_mock = AsyncMock()
+    submission_context = TaskSubmissionContext(
+        task_type="minimax_h3_i2v",
+        is_video_task=True,
+        user_logger=None,
+        prompt="move",
+        saved_inputs=["start.png"],
+        metadata={
+            "minimax_h3_mode": "i2v",
+            "requested_duration": 15,
+            "minimax_h3_resolution_preset": "hd",
+            "minimax_h3_aspect_ratio": "source",
+            "lora_items": [{"name": "pussy", "strength": 0.35}],
+        },
+        allow_contribute=True,
+        final_priority=0,
+    )
+
+    await task_web_terminal_finalization.finalize_monitored_web_task_success(
+        backend_task_id="backend-h3",
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-h3",
+        submission_context=submission_context,
+        result_path="result.mp4",
+        extra_outputs={"last_frame": {"path": "tail.png"}},
+        persist_successful_web_history_func=persist_mock,
+        cleanup_task_runtime_state_func=AsyncMock(),
+        logger=task_web_terminal_finalization.logging.getLogger(__name__),
+    )
+
+    assert persist_mock.await_args.kwargs["extra_outputs"]["_minimax_h3_context"] == {
+        "version": 1,
+        "mode": "i2v",
+        "requested_duration": 15,
+        "resolution_preset": "hd",
+        "aspect_ratio": "source",
+        "lora_items": [{"name": "pussy", "strength": 0.35}],
+    }
+
+
+@pytest.mark.asyncio
 async def test_web_success_persists_clean_prompt_and_structured_generation_context():
     persist_mock = AsyncMock()
     cleanup_mock = AsyncMock()

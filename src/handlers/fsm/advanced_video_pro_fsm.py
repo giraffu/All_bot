@@ -17,7 +17,11 @@ from telegram.ext import (
 )
 
 from src.core.user_core import get_or_create_user_by_telegram
-from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
+from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_ADDON_MODELS,
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
+)
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import AdvancedVideoProState
 from src.handlers.fsm.fsm_shared import (
@@ -514,7 +518,7 @@ async def _submit_generation(
             user_id=user.id,
             username=user.username,
             cleanup=True,
-            allow_contribute=False,
+            allow_contribute=plan.task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V},
         ),
     )
     _clear(context, preserve_paths=True)

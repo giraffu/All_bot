@@ -19,8 +19,7 @@ description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举
 | QQCC 修仙市集 | `allbot-qqcc-lazy-bot` |
 | 计费和幂等 | `allbot-billing-auth` |
 
-任务类型、媒体候选、旧分辨率映射和迁移命令的完整枚举只放专项文档，不复制
-到本 Skill。
+动态枚举与迁移命令只放专项文档。
 
 ## 2. 稳定模块边界
 
@@ -59,15 +58,15 @@ description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举
 
 ## 4. apply-context
 
-- 服务端返回 `source_post_id`、prompt、negative prompt、输入素材、时长、
-  分辨率、LoRA 和媒体尺寸等当前任务所需上下文；前端不得自行猜历史字段。
+- 服务端返回任务所需 apply-context；前端不得猜历史字段。
 - 每类任务的支持范围、必要重新上传素材和历史兼容映射以 Gallery 专项文档
   和 focused tests 为准。
 - Wan22 拼接记录和当前关闭的 `i2i_draw` 必须由服务端拒绝 apply-context，
   不能只隐藏前端按钮。
-- LTX、Wan22、SCAIL-2、自由 P 图版本和 face swap 的输入顺序、可复用素材、
-  History context 与禁用理由属于公开响应契约，修改时同步前端 presenter 和
-  回归测试。
+- 各模板的输入顺序、复用素材、History context 与禁用理由属于公开响应契约，
+  修改时同步前端 presenter 和回归测试。
+- H3 仅 I2V/FLF2V 可投稿；应用锁定 `_minimax_h3_context`、重传 1/2 张图且不复用原图，
+  缺上下文以 `minimax_h3_context_missing` 拒绝。
 - QQCC 原生应用只承接安全单图模板，并传 `source_post_id`、
   `allow_contribute=False`、`client_type=bot:qqcc`；复杂模板只返回 Web
   handoff。

@@ -457,6 +457,7 @@
       "img2video_group": "图生视频",
       "img2video": "图生视频(附加模型)",
       "high_res_video": "高级图生视频",
+      "minimax_h3": "高级图生视频pro",
     "wan22_video_v2": "图生视频 v2",
     "scail2_action_transfer": "动作迁移",
     "scail2_action_transfer_long": "动作迁移",
@@ -525,6 +526,8 @@
       "wan22_stitched": "拼接视频暂不支持一键应用，请选择单段视频模板。",
       "missing_scail2_motion_video": "该投稿缺少可复用驱动视频，暂不支持一键应用。",
       "i2i_draw_disabled": "局部重绘已在 Web 端关闭，暂不支持一键应用。",
+      "minimax_h3_context_missing": "该历史作品缺少完整的 Pro 参数，只能继续互动，暂不支持一键应用。",
+      "minimax_h3_mode_not_supported": "该 Pro 模式暂不支持一键应用。",
       "unsupported": "当前作品暂不支持一键应用。"
     },
     "close": {
@@ -573,6 +576,15 @@
       "prompt_locked_image_hint": "工作台会沿用原作品提示词，您只需上传参考图即可。",
       "prompt_locked_video_hint": "系统会沿用模板内的描述与模型配置，您只需上传基础图片即可。",
       "template_locked_settings": "分辨率与时长已根据模板锁定，无需手动选择。"
+    },
+    "advanced_video_pro": {
+      "notice": "模板参数已锁定，请重新上传自己的图片后生成。",
+      "locked_title": "锁定的原作品配置",
+      "mode": "模式",
+      "aspect": "比例",
+      "required_images": "请重新上传 {count} 张图片。",
+      "required_end_frame": "终止帧（必传）",
+      "aspect_mismatch": "首尾帧比例差不能超过 1%，请重新上传。"
     },
     "image_prompt": {
       "title_i2i_pro": "幻想换脸",

@@ -13,6 +13,7 @@ import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { stitchLtxHistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
 import type { HistoryItem, TaskRecord } from '@/types/gallery'
+import { isGallerySubmissionEligible } from '@/utils/gallerySubmissionEligibility'
 
 const { isMobile } = useViewport()
 const { t, te } = useI18n()
@@ -361,7 +362,7 @@ const handleWan22ChainStitch = async () => {
           <div class="hidden lg:flex mt-auto flex-col space-y-3 pt-6">
             <template v-if="currentRecord.output_file">
               <a-button
-                v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'free_edit_v2_5', 'pornmaster_flux2_edit_bf16', 'pornmaster_flux2_single_edit', 'pornmaster_flux2_multi_edit', 'ltx_video', 'ltx_video_flf2v', 'wan22_video_v2', 'scail2_action_transfer', 'scail2_action_transfer_long', 'scail2_video_replacement', 'scail2_face_swap_v2'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+                v-if="isGallerySubmissionEligible(currentRecord)"
                 type="primary"
                 :disabled="currentRecord.is_public"
                 class="task-detail-primary-btn w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
@@ -448,7 +449,7 @@ const handleWan22ChainStitch = async () => {
           </div>
           
           <button 
-            v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'free_edit_v2_5', 'pornmaster_flux2_edit_bf16', 'pornmaster_flux2_single_edit', 'pornmaster_flux2_multi_edit', 'ltx_video', 'ltx_video_flf2v', 'wan22_video_v2', 'scail2_action_transfer', 'scail2_action_transfer_long', 'scail2_video_replacement', 'scail2_face_swap_v2'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+            v-if="isGallerySubmissionEligible(currentRecord)"
             @click="!currentRecord.is_public && submitToGallery(currentRecord)"
             :disabled="currentRecord.is_public || submittingTasks[currentRecord.task_id]"
             class="task-detail-mobile-submit px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"

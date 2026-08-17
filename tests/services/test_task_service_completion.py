@@ -21,6 +21,9 @@ from src.constants import (
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,
+    MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_I2V,
+    MODE_MINIMAX_H3_T2V,
     MODE_NAME_MAP,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
@@ -494,6 +497,54 @@ async def test_handle_task_completion_merges_qqcc_regenerate_meta_into_extra_out
 
 
 @pytest.mark.asyncio
+async def test_handle_task_completion_persists_minimax_h3_context(monkeypatch):
+    download_output = AsyncMock(
+        return_value=TaskSuccessPersistenceResult(
+            media_bytes=b"video", output_file="result.mp4", width=640, height=960,
+            duration=10,
+        )
+    )
+    monkeypatch.setattr(completion_helpers, "download_and_log_task_output", download_output)
+    monkeypatch.setattr(completion_helpers, "send_result_media", AsyncMock())
+    monkeypatch.setattr(completion_helpers, "cleanup_completion_status_message", AsyncMock())
+
+    await completion_helpers.handle_task_completion(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        internal_user_id=456,
+        prompt="move",
+        task_type="minimax_h3_flf2v",
+        registry_task_id="registry-h3",
+        backend_task_id="backend-h3",
+        saved_input_images=["first.png", "last.png"],
+        user_logger=SimpleNamespace(username="tester"),
+        is_video=True,
+        send_result=True,
+        reply_markup=None,
+        status_msg=MagicMock(),
+        delete_status=True,
+        allow_contribute=True,
+        result_meta={
+            "minimax_h3_mode": "flf2v",
+            "requested_duration": 10,
+            "minimax_h3_resolution_preset": "standard",
+            "minimax_h3_aspect_ratio": "source",
+            "lora_items": [{"name": "sex_pose", "strength": 0.5}],
+        },
+    )
+
+    context = download_output.await_args.kwargs["extra_outputs"]["_minimax_h3_context"]
+    assert context == {
+        "version": 1,
+        "mode": "flf2v",
+        "requested_duration": 10,
+        "resolution_preset": "standard",
+        "aspect_ratio": "source",
+        "lora_items": [{"name": "sex_pose", "strength": 0.5}],
+    }
+
+
+@pytest.mark.asyncio
 async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     persist_mock = AsyncMock(
         return_value=TaskSuccessPersistenceResult(
@@ -556,6 +607,33 @@ def test_build_result_reply_markup_injects_gallery_button_when_missing():
 
     first_row = final_markup.inline_keyboard[0]
     assert first_row[0].callback_data == "submit_gallery_task-3"
+
+
+@pytest.mark.parametrize(
+    ("task_type", "has_gallery_button"),
+    [
+        (MODE_MINIMAX_H3_I2V, True),
+        (MODE_MINIMAX_H3_FLF2V, True),
+        (MODE_MINIMAX_H3_T2V, False),
+        ("minimax_h3_ref2v", False),
+    ],
+)
+def test_build_result_reply_markup_limits_minimax_h3_gallery_button(
+    task_type, has_gallery_button
+):
+    markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-h3",
+        allow_contribute=True,
+        reply_markup=None,
+    )
+    callbacks = [
+        button.callback_data
+        for row in markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert ("submit_gallery_task-h3" in callbacks) is has_gallery_button
 
 
 @pytest.mark.parametrize(

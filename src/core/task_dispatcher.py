@@ -53,6 +53,8 @@ from src.domain_config.ltx_t2v import (
     build_ltx_t2v_spec,
 )
 from src.domain_config.minimax_h3 import (
+    MINIMAX_H3_FLF2V,
+    MINIMAX_H3_I2V,
     MINIMAX_H3_MAX_SEED,
     MINIMAX_H3_TASK_TYPES,
     MiniMaxH3ValidationError,
@@ -1072,7 +1074,7 @@ class MiniMaxH3Strategy(BaseTaskStrategy):
                 for item in spec.addon_items
             ],
             "extract_last_frame": True,
-            "gallery_supported": False,
+            "gallery_supported": self.task_type in {MINIMAX_H3_I2V, MINIMAX_H3_FLF2V},
         }
 
     async def submit_task(

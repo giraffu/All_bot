@@ -1,5 +1,6 @@
 import { getCanonicalTemplateTaskType } from '@/constants/templateTaskMeta'
 import { normalizeLtxVideoLoraItems } from '@/features/generation/imageToVideo'
+import { MINIMAX_H3_ADDON_OPTIONS } from '@/features/generation/labModeConfig'
 import type {
   NormalizeContextOptions,
   RawApplyContextResponse,
@@ -44,6 +45,22 @@ const asStringList = (value: unknown): string[] => {
     .filter((item): item is string => Boolean(item))
 }
 
+const normalizeMinimaxH3LoraItems = (value: unknown) => {
+  if (!Array.isArray(value)) return []
+  const allowed = new Set(MINIMAX_H3_ADDON_OPTIONS.map(option => option.value))
+  const seen = new Set<string>()
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const name = asNonEmptyString((item as { name?: unknown }).name)
+    const strength = asNullableNumber((item as { strength?: unknown }).strength)
+    if (!name || !allowed.has(name as any) || seen.has(name) || strength === null || strength < 0.1 || strength > 2) {
+      return []
+    }
+    seen.add(name)
+    return [{ name, strength }]
+  })
+}
+
 export const normalizeTemplateApplyContext = (
   rawContext: RawApplyContextResponse | null | undefined,
   options: NormalizeContextOptions
@@ -67,6 +84,8 @@ export const normalizeTemplateApplyContext = (
     billing_resolution: rawContext.billing_resolution ?? null,
     requested_duration: rawContext.requested_duration ?? null,
     required_image_count: rawContext.required_image_count ?? null,
+    resolution_preset: rawContext.resolution_preset ?? null,
+    aspect_ratio: rawContext.aspect_ratio ?? null,
     task_id: rawContext.task_id ?? null,
     media_type: rawContext.media_type ?? null,
     prompt: rawContext.prompt ?? null,
@@ -96,9 +115,11 @@ export const normalizeTemplateApplyContext = (
     negativePrompt: asNonEmptyString(rawContext.negative_prompt),
     loraName: asNonEmptyString(rawContext.lora_name),
     loraStrength: asNullableNumber(rawContext.lora_strength),
-    loraItems: normalizeLtxVideoLoraItems(
-      Array.isArray(rawContext.lora_items) ? rawContext.lora_items as Array<{ name?: string; strength?: number }> : [],
-    ),
+    loraItems: rawTaskType.startsWith('minimax_h3_')
+      ? normalizeMinimaxH3LoraItems(rawContext.lora_items)
+      : normalizeLtxVideoLoraItems(
+          Array.isArray(rawContext.lora_items) ? rawContext.lora_items as Array<{ name?: string; strength?: number }> : [],
+        ),
     inputFile: asNonEmptyString(rawContext.input_file) ?? inputFiles[0] ?? null,
     inputFileUrl: asNonEmptyString(rawContext.input_file_url) ?? inputFileUrls[0] ?? null,
     inputFiles,
@@ -108,6 +129,8 @@ export const normalizeTemplateApplyContext = (
     duration: asPositiveInteger(rawContext.duration),
     requestedDuration: asPositiveInteger(rawContext.requested_duration),
     requiredImageCount: asPositiveInteger(rawContext.required_image_count),
+    resolutionPreset: asNonEmptyString(rawContext.resolution_preset),
+    aspectRatio: asNonEmptyString(rawContext.aspect_ratio),
     billingResolution: asNonEmptyString(rawContext.billing_resolution)
   }
 }

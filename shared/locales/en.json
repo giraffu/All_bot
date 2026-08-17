@@ -456,6 +456,7 @@
       "img2video_group": "Img2Video",
       "img2video": "Img2Video (Addon)",
       "high_res_video": "High-Res Video",
+      "minimax_h3": "Advanced Image-to-Video Pro",
     "wan22_video_v2": "Img2Video V2",
     "scail2_action_transfer": "Action Transfer",
     "scail2_action_transfer_long": "Action Transfer",
@@ -524,6 +525,8 @@
       "wan22_stitched": "Stitched videos cannot be applied as templates. Please choose a single video segment.",
       "missing_scail2_motion_video": "This post is missing a reusable motion video and cannot be applied as a template.",
       "i2i_draw_disabled": "Inpaint has been turned off on Web and cannot be applied as a template.",
+      "minimax_h3_context_missing": "This historical post is missing complete Pro settings. Community interactions remain available, but template apply is disabled.",
+      "minimax_h3_mode_not_supported": "This Pro mode does not support template apply.",
       "unsupported": "This post cannot be applied as a template."
     },
     "close": {
@@ -572,6 +575,15 @@
       "prompt_locked_image_hint": "The original template prompt will be reused. You only need to upload your reference image.",
       "prompt_locked_video_hint": "The template description and model settings will be reused. You only need to upload the base image.",
       "template_locked_settings": "Resolution and duration are locked to match the template."
+    },
+    "advanced_video_pro": {
+      "notice": "Template parameters are locked. Upload your own images to generate.",
+      "locked_title": "Locked source configuration",
+      "mode": "Mode",
+      "aspect": "Aspect ratio",
+      "required_images": "Please upload {count} new image(s).",
+      "required_end_frame": "End Frame (Required)",
+      "aspect_mismatch": "The first and last frame aspect ratios must differ by no more than 1%."
     },
     "image_prompt": {
       "title_i2i_pro": "Face Swap Pro",

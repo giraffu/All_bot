@@ -35,6 +35,23 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - ComfyUI history 同时包含视频和尾帧时，MP4 是主结果，名称含 `last_frame` 的 PNG
   只能进入 `extra_outputs.last_frame`。
 
+## Gallery 与模板应用
+
+- 只有 `minimax_h3_i2v` 与 `minimax_h3_flf2v` 可投稿；T2V、历史 REF2V 和
+  QQCC 自生成结果不开放投稿。Web 与主 Bot 新生成的 I2V/FLF2V 都写入
+  `allow_contribute=true`，模板派生结果固定为 `false`。
+- 两种可投稿类型在 Gallery 统一显示为“高级图生视频pro”，筛选值
+  `minimax_h3` 同时查询两类 History。点赞、点踩、收藏、评论、举报、关注、排行和
+  提示词解锁继续复用 Gallery 通用能力。
+- Web finalizer 与主 Bot 完成链路把模式、时长、`resolution_preset`、
+  `aspect_ratio` 和有序 `lora_items` 写入版本 1 的 `_minimax_h3_context`。
+  不迁移旧记录；缺少完整上下文的历史投稿仍可互动，但
+  `template_apply_disabled_reason=minimax_h3_context_missing`。
+- 一键应用不返回或复用原始 `input_file/input_files`。I2V 要求重新上传 1 张首帧，
+  FLF2V 要求重新上传有序的 2 张首尾帧并在提交前校验比例差不超过 1%。原提示词、
+  时长、档位、`source` 比例和有序附加模型全部锁定；成功提交携带
+  `is_template=true` 与 `source_post_id` 后立即关闭模板会话。
+
 ## 提示词优化契约
 
 新 Prompt Optimizer 任务使用三个 `profile@5` 与
@@ -129,11 +146,14 @@ DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
 
 ```bash
 python -m pytest -q tests/config/test_minimax_h3.py \
+  tests/services/test_minimax_h3_history_context_service.py \
+  tests/web_api/test_gallery_apply_context.py \
   tests/workers/test_minimax_h3_workflows.py \
   tests/ops/test_runpod_minimax_h3_profile.py \
   tests/scripts/test_prepare_minimax_h3_model_bundle.py
 cd frontend && npm test -- --run \
   src/composables/lab-workbench/useLabSubmitPayload.test.ts \
   src/composables/lab-workbench/usePromptOptimizer.test.ts \
-  src/views/CustomFeatures.test.ts
+  src/views/CustomFeatures.test.ts \
+  src/components/template-apply/TemplateAdvancedVideoProPanel.test.ts
 ```

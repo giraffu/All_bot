@@ -71,6 +71,11 @@ sequenceDiagram
 - Gallery/修仙笔记展示用响应会从 `History.input_file` 暴露 `input_file/input_file_url/input_files/input_file_urls`，仅用于原始输入缩略图和详情预览；`txt2img` 不展示输入，单输入任务展示一张，多输入任务按顺序展示并在卡片角标显示叠层/`+N`。
 - Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿展示为“参考图 / 驱动视频”。
 - SCAIL-2 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。展示两份原始输入不代表 apply-context 复用两份输入。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
+- 高级图生视频pro 只接收 Web/主 Bot 新生成的 I2V 与 FLF2V 投稿，统一在一个
+  Gallery 页签展示并复用全部通用互动。应用模板时锁定原提示词、时长、画质档位、
+  比例及有序效果增强参数，要求使用者重新上传 1 张首帧或 2 张首尾帧；原作者输入
+  不向应用者复用。缺少完整 Pro 上下文的旧投稿仍可点赞、收藏、评论和举报，但不能
+  一键应用。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
 - 举报入口为 `POST /api/gallery/posts/{post_id}/reports`，请求体只包含 `reason=children|gore|gross|other`；同一用户对同一作品重复举报返回 `409`，不覆盖旧原因，作品已下架或不存在时不可举报。
 - 作者调用投稿删除入口时，系统在删除 `GalleryPost` 前把同作品 pending 举报

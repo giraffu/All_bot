@@ -212,4 +212,39 @@ describe('normalizeTemplateApplyContext', () => {
       requestedDuration: 20
     })
   })
+
+  it('normalizes MiniMax H3 locked context with its public addon catalog', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 31,
+        source_post_id: 31,
+        task_type: 'minimax_h3_flf2v',
+        prompt: 'locked motion',
+        requested_duration: 10,
+        required_image_count: 2,
+        resolution_preset: 'standard',
+        aspect_ratio: 'source',
+        lora_items: [
+          { name: 'sex_pose', strength: 0.5 },
+          { name: 'naughty_times', strength: 1.2 },
+          { name: 'ltx2.3/not-allowed.safetensors', strength: 1 },
+        ],
+      },
+      { source: 'gallery', entryEntityId: 31 }
+    )
+
+    expect(normalized).toMatchObject({
+      rawTaskType: 'minimax_h3_flf2v',
+      taskType: 'minimax_h3_flf2v',
+      sourcePostId: 31,
+      requestedDuration: 10,
+      requiredImageCount: 2,
+      resolutionPreset: 'standard',
+      aspectRatio: 'source',
+      loraItems: [
+        { name: 'sex_pose', strength: 0.5 },
+        { name: 'naughty_times', strength: 1.2 },
+      ],
+    })
+  })
 })

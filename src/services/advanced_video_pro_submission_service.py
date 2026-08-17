@@ -130,6 +130,14 @@ async def submit_advanced_video_pro_plan(
     deduct_quota: bool = True,
     process_task_func: Callable[..., Awaitable[Any]] = process_standard_generation_task,
 ) -> Any:
+    persisted_result_meta = {
+        **dict(result_meta or {}),
+        "minimax_h3_mode": plan.mode,
+        "requested_duration": plan.duration,
+        "minimax_h3_resolution_preset": plan.resolution_preset,
+        "minimax_h3_aspect_ratio": plan.aspect_ratio,
+        "lora_items": list(plan.addon_items),
+    }
     return await process_task_func(
         context=context,
         chat_id=chat_id,
@@ -148,7 +156,7 @@ async def submit_advanced_video_pro_plan(
         cleanup=cleanup,
         allow_contribute=allow_contribute,
         display_mode_name_override=display_mode_name,
-        result_meta=result_meta,
+        result_meta=persisted_result_meta,
         base_priority=base_priority,
         allow_cancel=allow_cancel,
         user_cancel_allowed=user_cancel_allowed,

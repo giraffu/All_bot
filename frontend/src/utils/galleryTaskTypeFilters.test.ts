@@ -49,6 +49,16 @@ describe('galleryTaskTypeFilters', () => {
     expect(tabs.map(tab => tab.id)).toEqual(['ltx_video'])
   })
 
+  it('groups MiniMax H3 image modes under one Pro tab', () => {
+    const tabs = buildGalleryTaskTypeTabs([
+      { id: 'minimax_h3_i2v', name: '高级图生视频pro · 图生视频' },
+      { id: 'minimax_h3_flf2v', name: '高级图生视频pro · 首尾帧' },
+    ])
+
+    expect(tabs.map(tab => tab.id)).toEqual(['minimax_h3'])
+    expect(isGalleryGroupedTaskType('minimax_h3')).toBe(true)
+  })
+
   it('hides disabled Web gallery task types from config consumers', () => {
     const visibleTypes = filterVisibleGalleryTaskTypes([
       { id: 'i2i_pro', name: '图片生成' },

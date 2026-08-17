@@ -7,6 +7,11 @@ from sqlalchemy import select
 from src.database.models import GalleryPost, History
 from src.domain_config.scail2_video import is_scail2_task_type
 from src.domain_config.task_type_registry import apply_input_reuse_task_types
+from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
+from src.services.minimax_h3_history_context_service import (
+    is_minimax_h3_gallery_task_type,
+    resolve_valid_minimax_h3_history_context,
+)
 from src.services.wan22_video_v2_extension_service import is_wan22_stitched_result
 
 TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
@@ -14,6 +19,12 @@ TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
     "missing_scail2_motion_video"
 )
 TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = "i2i_draw_disabled"
+TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING = (
+    "minimax_h3_context_missing"
+)
+TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED = (
+    "minimax_h3_mode_not_supported"
+)
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
 
 
@@ -47,6 +58,15 @@ def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
 def resolve_history_template_apply_disabled_reason(
     history: History | None,
 ) -> str | None:
+    task_type = str(getattr(history, "type", None) or "") if history else ""
+    if task_type in MINIMAX_H3_TASK_TYPES:
+        if not is_minimax_h3_gallery_task_type(task_type):
+            return TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED
+        if not resolve_valid_minimax_h3_history_context(
+            task_type=task_type,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        ):
+            return TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING
     if history and getattr(history, "type", None) == "i2i_draw":
         return TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED
     if history and is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
