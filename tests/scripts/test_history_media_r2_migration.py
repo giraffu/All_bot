@@ -1294,6 +1294,63 @@ def test_successor_freeze_supersedes_only_unfinished_batches_and_copy_uses_chain
     assert parsed.command == "plan-probe-successor"
 
 
+def test_copy_execution_recomputes_frozen_rowset_in_ledger_id_order():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_copy)
+    rowset_check = source.split("if rowset_sha !=", 1)[0].rsplit(
+        "await _stream_plan_rowset", 1
+    )[1]
+
+    assert "order by id" in rowset_check
+    assert "order by history_id,role,ordinal" not in rowset_check
+
+
+def test_copy_replacement_plan_supersedes_only_an_unexecuted_frozen_plan():
+    import inspect
+    import scripts.history_media_r2_migration as module
+
+    parsed = _parser().parse_args(
+        [
+            "plan-copy",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--parent-plan-sha256",
+            "a" * 64,
+            "--supersedes-plan-sha256",
+            "b" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "c" * 64,
+            "--output",
+            "/secure/replacement.json",
+        ]
+    )
+    assert parsed.supersedes_plan_sha256 == "b" * 64
+
+    source = inspect.getsource(module._replace_unexecuted_copy_plan)
+    assert "for update" in source.lower()
+    assert "copy_completed_at is not null" in source
+    assert "status<>'copy_required'" in source
+    assert "status='superseded'" in source
+    assert "copy_plan_sha256=$4" in source
+    assert "status='pending'" in source
+
+    execute_source = inspect.getsource(module._execute_copy)
+    assert "copy plan has been superseded" in execute_source
+    assert "existing copy plan must be explicitly superseded" in inspect.getsource(
+        module._reject_unacknowledged_copy_replan
+    )
+
+    assert (
+        "drop constraint if exists "
+        "analytics_history_media_migration_plans_run_id_plan_type_rowset_sha256_key"
+        in MIGRATION_DDL
+    )
+
+
 def test_standard_targets_require_explicit_dual_ids():
     input_asset = AssetIdentity(1, "input", 2, "7/input_images/a.JPEG")
     output_asset = AssetIdentity(1, "output", 0, "7/output_images/result.png")
