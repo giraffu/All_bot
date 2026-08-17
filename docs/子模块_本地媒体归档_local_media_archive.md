@@ -341,11 +341,14 @@ size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆�
 不得小于 copy concurrency，省略时取并发的 1.5 倍并向上取整。所有线程共享同一个
 仅执行 HEAD/CopyObject 的 boto3 client，数据库结果仍串行提交；每批报告 Copy-only
 对象/秒、R2 对象操作延迟和数据库提交延迟。`history_media_r2_copy_adaptive.py`
-从 64 起步并在 128→64→32→16→8 档位调整：429、5xx 和 timeout 只降一级并退避，
-连续三个干净批次才升一级，最高 128；非瞬态错误直接暂停。SIGTERM/SIGINT 只登记
+从 64 起步并在 128→64→32→16→8 档位调整：对象级瞬态错误先重试；429 立即降档，
+持续 timeout/5xx 超过窗口预算才降档，低错误率窗口允许回升，最高 128；非瞬态错误
+直接暂停。SIGTERM/SIGINT 只登记
 graceful pause，当前批次完成并
-提交账本后退出；进程还在连续三批 CPU 超过 70%、FD 超过软上限 50% 或数据库提交
-p95 相对 canary 基线显著恶化时，于当前批次提交后暂停。连接池在每批结束时关闭，
+提交账本后退出；CPU 门禁把进程 CPU 时间除以当前进程 cpuset/可用逻辑 CPU 数，按
+整机可用容量百分比判断，日志同时保留原始进程 CPU 百分比、容量百分比和 CPU 数。
+连续三批容量 CPU 超过 70%、FD 超过软上限 50% 或数据库提交 p95 相对 canary 基线
+显著恶化时，于当前批次提交后暂停。连接池在每批结束时关闭，
 避免长跑累计 FD。当前生产执行器在
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
