@@ -6,6 +6,7 @@ export const GALLERY_FREE_EDIT_V2_5_GROUP_TASK_TYPE = 'free_edit_v2_5_group'
 export const GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE = 'free_edit_v2_group'
 export const GALLERY_IMG2VIDEO_GROUP_TASK_TYPE = 'img2video_group'
 export const GALLERY_LORA_MODEL_NONE = '__none__'
+export const GALLERY_MINIMAX_H3_GROUP_TASK_TYPE = 'minimax_h3'
 
 const WEB_DISABLED_GALLERY_TASK_TYPES = new Set(['i2i_draw'])
 
@@ -20,6 +21,8 @@ const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
   video_lora: GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
   ltx_video_flf2v: 'ltx_video',
   scail2_action_transfer_long: 'scail2_action_transfer',
+  minimax_h3_i2v: GALLERY_MINIMAX_H3_GROUP_TASK_TYPE,
+  minimax_h3_flf2v: GALLERY_MINIMAX_H3_GROUP_TASK_TYPE,
 }
 
 export function isGalleryGroupedTaskType(taskType: string): boolean {
@@ -29,6 +32,7 @@ export function isGalleryGroupedTaskType(taskType: string): boolean {
     || taskType === GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE
     || taskType === GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE
     || taskType === GALLERY_IMG2VIDEO_GROUP_TASK_TYPE
+    || taskType === GALLERY_MINIMAX_H3_GROUP_TASK_TYPE
   )
 }
 

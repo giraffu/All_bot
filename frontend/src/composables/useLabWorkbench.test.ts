@@ -90,6 +90,9 @@ vi.mock('@/composables/useTaskResult', () => ({
 vi.mock('@/stores/tasks', () => ({
   useTasksStore: () => ({
     showDetailRecord: vi.fn(),
+    activeTasks: [],
+    pendingPromptApplyTaskId: null,
+    consumePromptTaskApply: vi.fn(),
   }),
 }))
 

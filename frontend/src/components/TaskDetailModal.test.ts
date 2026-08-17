@@ -170,4 +170,19 @@ describe('TaskDetailModal Wan22 editor links', () => {
       },
     })
   })
+
+  it('shows contribution actions for H3 image modes but not T2V', async () => {
+    currentDetailRecord = {
+      ...currentDetailRecord,
+      type: 'minimax_h3_i2v',
+      allow_contribute: true,
+      is_public: false,
+    }
+    const supported = mountModal()
+    expect(supported.text()).toContain('history.submit')
+
+    currentDetailRecord = { ...currentDetailRecord, type: 'minimax_h3_t2v' }
+    const unsupported = mountModal()
+    expect(unsupported.text()).toContain('history.cannot_post')
+  })
 })

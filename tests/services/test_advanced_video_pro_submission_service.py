@@ -150,3 +150,10 @@ async def test_submit_forwards_selected_addons():
     assert process.await_args.kwargs["lora_items"] == [
         {"name": "naughty_times", "strength": 0.65}
     ]
+    assert process.await_args.kwargs["result_meta"] == {
+        "minimax_h3_mode": "t2v",
+        "requested_duration": 5,
+        "minimax_h3_resolution_preset": "preview",
+        "minimax_h3_aspect_ratio": "16:9",
+        "lora_items": [{"name": "naughty_times", "strength": 0.65}],
+    }

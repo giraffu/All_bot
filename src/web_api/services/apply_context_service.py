@@ -20,6 +20,9 @@ from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
     is_ltx_video_history_task_type,
 )
+from src.services.minimax_h3_history_context_service import (
+    resolve_valid_minimax_h3_history_context,
+)
 from src.services.gallery_apply_context_service import (
     TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED,
     TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO,
@@ -173,6 +176,8 @@ def build_apply_context_response(
     billing_resolution: str | None,
     requested_duration: int | None,
     required_image_count: int | None,
+    resolution_preset: str | None = None,
+    aspect_ratio: str | None = None,
     task_id: str,
     media_type: str,
     prompt: str | None,
@@ -196,6 +201,8 @@ def build_apply_context_response(
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
         required_image_count=required_image_count,
+        resolution_preset=resolution_preset,
+        aspect_ratio=aspect_ratio,
         task_id=task_id,
         media_type=media_type,
         prompt=prompt,
@@ -328,6 +335,13 @@ async def build_history_apply_context_response(
         prompt_lora_name=lora_name,
         prompt_lora_strength=lora_strength,
     )
+    minimax_h3_context = resolve_valid_minimax_h3_history_context(
+        task_type=history.type,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    if minimax_h3_context:
+        requested_duration = int(minimax_h3_context["requested_duration"])
+        lora_items = list(minimax_h3_context.get("lora_items") or [])
 
     media_type, width, height, duration = resolve_apply_context_media_metadata(
         task_type=history.type,
@@ -382,6 +396,8 @@ async def build_history_apply_context_response(
         required_image_count = (
             2 if len(split_history_input_files(history.input_file)) >= 2 else 1
         )
+    if minimax_h3_context:
+        required_image_count = 1 if history.type == "minimax_h3_i2v" else 2
 
     return build_apply_context_response(
         post_id=post_id,
@@ -389,6 +405,14 @@ async def build_history_apply_context_response(
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
         required_image_count=required_image_count,
+        resolution_preset=(
+            str(minimax_h3_context.get("resolution_preset"))
+            if minimax_h3_context else None
+        ),
+        aspect_ratio=(
+            str(minimax_h3_context.get("aspect_ratio"))
+            if minimax_h3_context else None
+        ),
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,

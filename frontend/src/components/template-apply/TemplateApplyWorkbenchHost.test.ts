@@ -120,6 +120,16 @@ vi.mock('@/components/template-apply/TemplateScail2VideoPanel.vue', () => ({
   }
 }))
 
+vi.mock('@/components/template-apply/TemplateAdvancedVideoProPanel.vue', () => ({
+  __esModule: true,
+  __isTeleport: false,
+  default: {
+    name: 'TemplateAdvancedVideoProPanelStub',
+    props: ['sessionId', 'context'],
+    template: '<div class="panel advanced-video-pro">advanced-video-pro</div>'
+  }
+}))
+
 const ModalStub = defineComponent({
   name: 'AModalStub',
   props: ['open', 'title'],
@@ -184,6 +194,14 @@ describe('TemplateApplyWorkbenchHost', () => {
     confirmTemplateApplyCloseMock.mockReset()
 
     useWorkbenchScrollLockMock.mockReset()
+  })
+
+  it('mounts the dedicated Advanced Video Pro panel', async () => {
+    templateApplyStoreMock.panelKind = 'advancedVideoPro'
+    templateApplyStoreMock.context = { rawTaskType: 'minimax_h3_i2v' }
+    const wrapper = mountHost()
+    await flushPromises()
+    expect(wrapper.find('.advanced-video-pro').exists()).toBe(true)
   })
 
   it('uses the desktop cancel entry to request and execute cleanup', async () => {

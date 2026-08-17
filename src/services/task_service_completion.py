@@ -16,6 +16,9 @@ from src.services.tg_task_runtime import (
 from src.services.ltx_video_extension_service import (
     merge_ltx_history_context_into_extra_outputs,
 )
+from src.services.minimax_h3_history_context_service import (
+    merge_minimax_h3_history_context_into_extra_outputs,
+)
 from src.services.wan22_video_v2_extension_service import (
     merge_wan22_history_context_into_extra_outputs,
 )
@@ -271,6 +274,11 @@ async def handle_task_completion(
         metadata=result_meta,
     )
     persisted_extra_outputs = merge_ltx_history_context_into_extra_outputs(
+        task_type=task_type,
+        extra_outputs=persisted_extra_outputs,
+        metadata=result_meta,
+    )
+    persisted_extra_outputs = merge_minimax_h3_history_context_into_extra_outputs(
         task_type=task_type,
         extra_outputs=persisted_extra_outputs,
         metadata=result_meta,

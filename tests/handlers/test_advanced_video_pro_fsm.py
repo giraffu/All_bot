@@ -1,6 +1,6 @@
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from telegram import Update
@@ -8,6 +8,39 @@ from telegram.ext import ConversationHandler
 
 from src.handlers.conversation_states import AdvancedVideoProState
 from src.handlers.fsm import advanced_video_pro_fsm as fsm
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "images", "allow_contribute"),
+    [
+        ("t2v", [], False),
+        ("i2v", ["start.png"], True),
+        ("flf2v", ["start.png", "end.png"], True),
+    ],
+)
+async def test_pro_main_bot_only_allows_image_modes_to_contribute(
+    monkeypatch, mode, images, allow_contribute
+):
+    submit = Mock(return_value=object())
+    monkeypatch.setattr(fsm, "submit_advanced_video_pro_plan", submit)
+    monkeypatch.setattr(fsm, "create_background_task", Mock())
+    monkeypatch.setattr(fsm, "robust_reply_text", AsyncMock())
+    monkeypatch.setattr(fsm.permission_service, "check_quota", AsyncMock())
+    context = SimpleNamespace(user_data={fsm.DATA_KEY: {}}, lang="zh")
+    update = SimpleNamespace(
+        effective_message=object(),
+        effective_user=SimpleNamespace(id=7, username="alice", full_name="Alice"),
+        effective_chat=SimpleNamespace(id=99),
+    )
+    data = {
+        "mode": mode, "prompt": "move", "images": images,
+        "reference_descriptions": [], "duration": 5, "preset": "preview",
+        "aspect": "16:9", "addon_models": [],
+    }
+
+    assert await fsm._submit_generation(update, context, data) == ConversationHandler.END
+    assert submit.call_args.kwargs["allow_contribute"] is allow_contribute
 
 
 @pytest.mark.asyncio

@@ -55,6 +55,9 @@ export function resolveGalleryTaskTypeLabel(
     img2video_group: 'img2video_group',
     ltx_video: 'high_res_video',
     ltx_video_flf2v: 'high_res_video',
+    minimax_h3: 'minimax_h3',
+    minimax_h3_i2v: 'minimax_h3',
+    minimax_h3_flf2v: 'minimax_h3',
     scail2_action_transfer_long: 'scail2_action_transfer',
   }
   const translationKey = translationKeyMap[taskTypeId] || taskTypeId

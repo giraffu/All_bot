@@ -49,6 +49,19 @@ describe('resolveOriginalInputPreviews', () => {
     ])
   })
 
+  it('labels MiniMax H3 first and last frames in input order', () => {
+    const previews = resolveOriginalInputPreviews({
+      task_type: 'minimax_h3_flf2v',
+      input_files: ['uploads/start.png', 'uploads/end.png'],
+      input_file_urls: ['https://cdn.test/start.png', 'https://cdn.test/end.png'],
+    }, t)
+
+    expect(previews.map(preview => preview.label)).toEqual([
+      'original_inputs.start_frame',
+      'original_inputs.end_frame',
+    ])
+  })
+
   it('labels SCAIL-2 reference image and motion video', () => {
     const previews = resolveOriginalInputPreviews({
       task_type: 'scail2_action_transfer_long',

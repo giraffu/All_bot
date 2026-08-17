@@ -13,6 +13,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_MINIMAX_H3_FLF2V,
+    MODE_MINIMAX_H3_I2V,
     MODE_MINIMAX_H3_REF2V,
     MODE_MINIMAX_H3_T2V,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
@@ -148,6 +149,27 @@ def test_minimax_h3_generates_one_seed_and_persists_it_in_metadata():
 
     assert inputs["seed"] == 123456
     assert metadata["minimax_h3_seed"] == 123456
+
+
+@pytest.mark.parametrize(
+    ("task_type", "images", "gallery_supported"),
+    [
+        (MODE_MINIMAX_H3_T2V, [], False),
+        (MODE_MINIMAX_H3_I2V, ["start.png"], True),
+        (MODE_MINIMAX_H3_FLF2V, ["start.png", "end.png"], True),
+        (MODE_MINIMAX_H3_REF2V, ["ref.png"], False),
+    ],
+)
+def test_minimax_h3_metadata_only_enables_gallery_for_image_modes(
+    task_type, images, gallery_supported
+):
+    strategy = MiniMaxH3Strategy(task_type, seed_provider=lambda: 123)
+    inputs = {"prompt": "scene", "saved_input_images": images}
+    if task_type == MODE_MINIMAX_H3_REF2V:
+        with pytest.raises(CoreDomainError):
+            strategy.get_metadata(inputs)
+        return
+    assert strategy.get_metadata(inputs)["gallery_supported"] is gallery_supported
 
 
 def test_minimax_h3_default_seed_stays_within_central_request_contract(monkeypatch):

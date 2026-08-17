@@ -182,6 +182,12 @@ sequenceDiagram
 - `i2i_draw` 局部重绘当前已在 Web 一键应用关闭：作品仍可展示，但列表/详情必须返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 入口必须返回 400 防绕过。
 - `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和 `_wan22_context.wan22_duration_seconds`，不复刻首尾帧或链式上下文。
 - `ltx_video` 单首帧/首尾帧投稿支持一键应用，保留两张原始输入图顺序，并从 `_ltx_context` 回填 `lora_items`、`ltx_width`、`ltx_height`、`ltx_duration_seconds`；执行别名 `ltx_video_flf2v` 仍按 `ltx_video` 模板入口处理。
+- 高级图生视频pro 只开放 `minimax_h3_i2v` / `minimax_h3_flf2v` 投稿，并在
+  `minimax_h3` 页签合并展示。apply-context 从版本 1 `_minimax_h3_context`
+  精确返回提示词、时长、`resolution_preset`、`aspect_ratio` 和有序
+  `lora_items`，同时返回 `required_image_count=1|2`；不返回任何可复用原图。
+  缺少完整上下文的旧投稿继续支持社区互动，但禁用一键应用并返回
+  `minimax_h3_context_missing`。T2V/REF2V 返回 `minimax_h3_mode_not_supported`。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
 - 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
@@ -198,7 +204,7 @@ sequenceDiagram
 - `txt2img` 没有原始输入，前端不展示输入角标或详情区。
 - 单输入任务在卡片左上角显示 1 张输入缩略图；详情中显示“原始输入”区域。
 - 多输入任务在卡片左上角显示叠层与 `+N`，详情按数组顺序展示全部输入素材。
-- Wan22 首尾帧按顺序显示为“起始帧 / 终止帧”。LTX 高级图生视频单首帧显示为“起始帧”，首尾帧显示为“起始帧 / 终止帧”；历史兼容的视频配音记录可显示为“输入视频”，但当前 Web/Bot 不再提供该入口。SCAIL-2 按顺序显示为“参考图 / 驱动视频”。
+- Wan22 首尾帧按顺序显示为“起始帧 / 终止帧”。LTX 与高级图生视频pro 单首帧显示为“起始帧”，首尾帧显示为“起始帧 / 终止帧”；历史兼容的视频配音记录可显示为“输入视频”，但当前 Web/Bot 不再提供该入口。SCAIL-2 按顺序显示为“参考图 / 驱动视频”。
 - Wan22 与 LTX 的链式视频标签由服务端从历史上下文补齐：单首帧、首尾帧、`segment:{n}` 和 `stitched_video:{n}` 只作为 Gallery/历史展示 tag，不新增单独筛选 tab。
 - SCAIL-2 的展示输入与 apply-context 复用输入必须分开理解：展示层显示 reference image 与 motion/driving video 两份素材；模板应用仍只复用第二个 motion/driving video，复用者重新上传 reference image。
 - 闪回瓶历史详情复用 `HistoryItem.input_file_urls` 展示原始输入。历史列表本身仍以任务输出缩略图为主，不把输入素材替代为结果图。
@@ -243,6 +249,8 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 举报联动下架必须同时更新 `GalleryPost.is_active=False` 与同 `task_id + user_id` 的 `History.is_public=False`，并批量处理同作品 pending 举报；不得只改举报状态。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
 - `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录、缺少 motion video 的 SCAIL-2 记录和 Web 已关闭的 `i2i_draw` 记录，不能只靠前端隐藏按钮。
+- 高级图生视频pro apply-context 必须要求版本化完整上下文且禁止输入复用；前端
+  FLF2V 比例校验不能替代后端/任务域复验。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 - 广场列表热路径不得恢复为“每条媒体公网 HEAD 探测 + 持有 DB 只读事务等待对象存储”的模式。
 

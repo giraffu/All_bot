@@ -13,6 +13,8 @@ export type TemplateApplyTaskType =
   | 'video_lora'
   | 'wan22_video_v2'
   | 'ltx_video'
+  | 'minimax_h3_i2v'
+  | 'minimax_h3_flf2v'
   | 'scail2_action_transfer'
   | 'scail2_action_transfer_long'
   | 'scail2_video_replacement'
@@ -24,6 +26,7 @@ export type TemplateApplyPanelKind =
   | 'faceSwap'
   | 'videoSwap'
   | 'scail2Video'
+  | 'advancedVideoPro'
 
 export interface RawApplyContextResponse {
   post_id: unknown
@@ -31,6 +34,8 @@ export interface RawApplyContextResponse {
   billing_resolution?: unknown
   requested_duration?: unknown
   required_image_count?: unknown
+  resolution_preset?: unknown
+  aspect_ratio?: unknown
   task_id?: unknown
   media_type?: unknown
   prompt?: unknown
@@ -76,6 +81,8 @@ export interface TemplateApplyContext {
   duration: number | null
   requestedDuration: number | null
   requiredImageCount?: number | null
+  resolutionPreset?: string | null
+  aspectRatio?: string | null
   billingResolution: string | null
 }
 

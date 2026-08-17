@@ -23,6 +23,7 @@ export interface OriginalInputPreview {
 const SPLIT_INPUT_RE = /\|/
 const WAN22_TASK_TYPES = new Set(['wan22_video_v2', 'custom_video', 'video_lora'])
 const LTX_TASK_TYPES = new Set(['ltx_video', 'ltx_video_flf2v'])
+const MINIMAX_H3_IMAGE_TASK_TYPES = new Set(['minimax_h3_i2v', 'minimax_h3_flf2v'])
 const SCAIL2_TASK_TYPES = new Set([
   'scail2_action_transfer',
   'scail2_action_transfer_long',
@@ -59,7 +60,7 @@ const resolveInputLabelKey = (
   total: number,
   file: string | null,
 ): string => {
-  if (WAN22_TASK_TYPES.has(taskType)) {
+  if (WAN22_TASK_TYPES.has(taskType) || MINIMAX_H3_IMAGE_TASK_TYPES.has(taskType)) {
     if (total > 1) {
       return index === 0 ? 'start_frame' : 'end_frame'
     }

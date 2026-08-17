@@ -16,6 +16,9 @@ from src.domain_config.scail2_video import is_scail2_task_type
 from src.services.ltx_video_extension_service import (
     merge_ltx_history_context_into_extra_outputs,
 )
+from src.services.minimax_h3_history_context_service import (
+    merge_minimax_h3_history_context_into_extra_outputs,
+)
 from src.services.wan22_video_v2_extension_service import (
     merge_wan22_history_context_into_extra_outputs,
 )
@@ -71,6 +74,11 @@ async def finalize_monitored_web_task_success(
             metadata=submission_context.metadata,
         )
         persisted_extra_outputs = merge_ltx_history_context_into_extra_outputs(
+            task_type=submission_context.task_type,
+            extra_outputs=persisted_extra_outputs,
+            metadata=submission_context.metadata,
+        )
+        persisted_extra_outputs = merge_minimax_h3_history_context_into_extra_outputs(
             task_type=submission_context.task_type,
             extra_outputs=persisted_extra_outputs,
             metadata=submission_context.metadata,

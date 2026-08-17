@@ -49,6 +49,7 @@ class _FakeSession:
     def __init__(self, results):
         self._results = iter(results)
         self.commit = AsyncMock()
+        self.flush = AsyncMock()
         self.add = MagicMock()
 
     async def execute(self, _stmt):
@@ -87,6 +88,114 @@ async def test_free_edit_v25_apply_context_requires_same_number_of_new_images():
     assert response.required_image_count == 2
     assert response.input_files == []
     assert response.input_file_urls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task_type", "mode", "required_image_count"),
+    [
+        ("minimax_h3_i2v", "i2v", 1),
+        ("minimax_h3_flf2v", "flf2v", 2),
+    ],
+)
+async def test_minimax_h3_apply_context_returns_locked_parameters_without_inputs(
+    task_type, mode, required_image_count
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id=f"task-{mode}",
+        type=task_type,
+        prompt="locked cinematic motion",
+        input_file="uploads/start.png|uploads/end.png",
+        requested_duration=None,
+        extra_outputs={
+            "_minimax_h3_context": {
+                "version": 1,
+                "mode": mode,
+                "requested_duration": 10,
+                "resolution_preset": "standard",
+                "aspect_ratio": "source",
+                "lora_items": [
+                    {"name": "sex_pose", "strength": 0.5},
+                    {"name": "naughty_times", "strength": 1.2},
+                ],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=26,
+        task_id=f"task-{mode}",
+        media_type="video",
+        width=640,
+        height=960,
+        duration=10,
+    )
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    response = await get_gallery_apply_context_payload(post_id=26, db=session)
+
+    assert response.required_image_count == required_image_count
+    assert response.requested_duration == 10
+    assert response.resolution_preset == "standard"
+    assert response.aspect_ratio == "source"
+    assert response.lora_items == [
+        {"name": "sex_pose", "strength": 0.5},
+        {"name": "naughty_times", "strength": 1.2},
+    ]
+    assert response.input_file is None
+    assert response.input_file_url is None
+    assert response.input_files == []
+    assert response.input_file_urls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task_type", "extra_outputs", "reason"),
+    [
+        ("minimax_h3_i2v", {}, "minimax_h3_context_missing"),
+        ("minimax_h3_t2v", {}, "minimax_h3_mode_not_supported"),
+        ("minimax_h3_ref2v", {}, "minimax_h3_mode_not_supported"),
+    ],
+)
+async def test_minimax_h3_apply_context_fails_closed(task_type, extra_outputs, reason):
+    history = History(
+        id=11, user_id=123, task_id="task-old-h3", type=task_type,
+        prompt="legacy", extra_outputs=extra_outputs,
+    )
+    post = GalleryPost(id=27, task_id="task-old-h3", media_type="video")
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_gallery_apply_context_payload(post_id=27, db=session)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == reason
+
+
+@pytest.mark.asyncio
+async def test_minimax_h3_legacy_post_stays_interactive_but_marks_apply_disabled():
+    history = History(
+        id=11, user_id=123, task_id="task-old-h3", type="minimax_h3_i2v",
+        prompt="legacy", output_file="history/result.mp4", extra_outputs={},
+    )
+    post = GalleryPost(
+        id=28, task_id="task-old-h3", user_id=None, media_type="video",
+        tags="[]", likes_count=3, dislikes_count=1, applied_count=2,
+        is_active=True, created_at=datetime.now(),
+    )
+    session = _FakeSession([_FakeResult(many=[history])])
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].likes_count == 3
+    assert responses[0].template_apply_supported is False
+    assert responses[0].template_apply_disabled_reason == "minimax_h3_context_missing"
 
 
 def _async_r2_exists_for(existing_keys: set[str]):
@@ -1548,7 +1657,9 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome():
     existing_result = _FakeResult(many=[])
     history_result = _FakeResult(many=[history])
     user_result = _FakeResult(single=user)
-    session = _FakeSession([existing_result, history_result, user_result])
+    session = _FakeSession(
+        [existing_result, history_result, user_result, _FakeResult(single=None)]
+    )
     gallery_submission_outbox = SimpleNamespace(
         check_gallery_submit_limit=AsyncMock(return_value=True),
         increment_gallery_submit=AsyncMock(),

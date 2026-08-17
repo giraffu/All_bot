@@ -101,6 +101,7 @@ declare module 'vue' {
     TaskDetailModal: typeof import('./src/components/TaskDetailModal.vue')['default']
     TaskProgress: typeof import('./src/components/TaskProgress.vue')['default']
     TaskResultPreviewPanel: typeof import('./src/components/TaskResultPreviewPanel.vue')['default']
+    TemplateAdvancedVideoProPanel: typeof import('./src/components/template-apply/TemplateAdvancedVideoProPanel.vue')['default']
     TemplateApplyActionFooter: typeof import('./src/components/template-apply/TemplateApplyActionFooter.vue')['default']
     TemplateApplyButton: typeof import('./src/components/TemplateApplyButton.vue')['default']
     TemplateApplyLoraPromptSection: typeof import('./src/components/template-apply/TemplateApplyLoraPromptSection.vue')['default']

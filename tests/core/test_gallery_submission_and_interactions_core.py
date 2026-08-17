@@ -11,6 +11,7 @@ from src.core.gallery_interactions_core import (
 from src.core.gallery_submission_core import (
     ALLOWED_WEB_SUBMIT_TYPES,
     _build_gallery_tags,
+    _validate_gallery_submit_history,
     process_submit_to_gallery_result_impl,
 )
 
@@ -45,6 +46,7 @@ class _FakeSession:
         self.added = []
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
+        self.flush = AsyncMock()
 
     async def execute(self, _stmt):
         if not self.execute_results:
@@ -76,13 +78,14 @@ class _GallerySubmitOutcome:
 @pytest.mark.asyncio
 async def test_process_submit_to_gallery_result_impl_reactivates_existing_post():
     existing_post = SimpleNamespace(user_id=123, is_active=False)
-    history = SimpleNamespace(is_public=False)
+    history = SimpleNamespace(id=11, is_public=False)
     user = SimpleNamespace(total_contributions=2)
     session = _FakeSession(
         [
             _FakeScalarResult(existing_post),
             _FakeScalarResult(history),
             _FakeScalarResult(user),
+            _FakeScalarResult(None),
         ]
     )
 
@@ -132,6 +135,23 @@ def test_allowed_web_submit_types_include_scail2_video_modes():
     assert "scail2_face_swap_v2" in ALLOWED_WEB_SUBMIT_TYPES
 
 
+def test_allowed_web_submit_types_only_include_minimax_h3_image_modes():
+    assert "minimax_h3_i2v" in ALLOWED_WEB_SUBMIT_TYPES
+    assert "minimax_h3_flf2v" in ALLOWED_WEB_SUBMIT_TYPES
+    assert "minimax_h3_t2v" not in ALLOWED_WEB_SUBMIT_TYPES
+    assert "minimax_h3_ref2v" not in ALLOWED_WEB_SUBMIT_TYPES
+
+
+def test_minimax_h3_template_derived_history_cannot_be_submitted_again():
+    history = SimpleNamespace(
+        type="minimax_h3_i2v",
+        allow_contribute=False,
+        output_file="history/result.mp4",
+    )
+    with pytest.raises(Exception, match="一键应用他人的模板"):
+        _validate_gallery_submit_history(history)
+
+
 @pytest.mark.asyncio
 async def test_toggle_like_impl_raises_duplicate_interaction_when_insert_conflicts():
     post = SimpleNamespace(likes_count=0, dislikes_count=0)
@@ -171,3 +191,21 @@ async def test_record_apply_interaction_impl_updates_counter_on_first_insert():
 
     assert len(session.execute_results) == 0
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_record_apply_interaction_impl_does_not_increment_duplicate_apply():
+    increment_counter = AsyncMock()
+    dependencies = SimpleNamespace(
+        session_factory=lambda: _FakeSession([]),
+        insert_gallery_apply_interaction_if_absent_func=AsyncMock(return_value=0),
+        increment_gallery_apply_counter_func=increment_counter,
+    )
+
+    await record_apply_interaction_impl(
+        user_id=123,
+        post_id=456,
+        dependencies=dependencies,
+    )
+
+    increment_counter.assert_not_awaited()

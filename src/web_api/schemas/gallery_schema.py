@@ -117,6 +117,8 @@ class ApplyContextResponse(BaseModel):
     billing_resolution: Optional[str] = None
     requested_duration: Optional[int] = None
     required_image_count: Optional[int] = None
+    resolution_preset: Optional[str] = None
+    aspect_ratio: Optional[str] = None
     task_id: str
     media_type: str
     prompt: Optional[str]
