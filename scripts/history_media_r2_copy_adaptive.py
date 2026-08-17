@@ -11,6 +11,7 @@ import resource
 import signal
 import sys
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,9 +25,12 @@ if str(ROOT) not in sys.path:
 from scripts.history_media_r2_migration import (
     AdaptiveCopyController,
     _bounded_copy_concurrency,
+    _bounded_copy_retries,
     _execute_copy,
+    _positive_float,
     _positive_pool_connections,
     _resolve_copy_max_pool_connections,
+    _unit_ratio,
 )
 
 BatchExecutor = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -70,6 +74,77 @@ class ResourceGate:
         return None
 
 
+@dataclass(frozen=True)
+class CopyHealthDecision:
+    action: str
+    reason: str
+    error_rate: float
+    sample_count: int
+
+
+class CopyHealthWindow:
+    """Bound global concurrency by recent request health, not batch perfection."""
+
+    def __init__(
+        self,
+        *,
+        max_requests: int = 1000,
+        max_age_seconds: float = 60.0,
+        lower_error_rate: float = 0.005,
+        raise_error_rate: float = 0.002,
+        systemic_error_rate: float = 0.10,
+        minimum_samples: int = 200,
+    ) -> None:
+        self.max_requests = max_requests
+        self.max_age_seconds = max_age_seconds
+        self.lower_error_rate = lower_error_rate
+        self.raise_error_rate = raise_error_rate
+        self.systemic_error_rate = systemic_error_rate
+        self.minimum_samples = minimum_samples
+        self._events: deque[dict[str, Any]] = deque()
+        self._latest: list[dict[str, Any]] = []
+
+    def extend(self, events: list[dict[str, Any]]) -> None:
+        self._latest = sorted(
+            (dict(event) for event in events), key=lambda event: float(event["at"])
+        )
+        self._events.extend(self._latest)
+        while len(self._events) > self.max_requests:
+            self._events.popleft()
+        if self._events:
+            cutoff = float(self._events[-1]["at"]) - self.max_age_seconds
+            while self._events and float(self._events[0]["at"]) < cutoff:
+                self._events.popleft()
+
+    def decision(self, *, current_concurrency: int) -> CopyHealthDecision:
+        sample_count = len(self._events)
+        errors = sum(event["kind"] != "ok" for event in self._events)
+        error_rate = errors / sample_count if sample_count else 0.0
+        latest_rate_limits = sum(
+            event["kind"] == "rate_limit" for event in self._latest
+        )
+        if latest_rate_limits:
+            return CopyHealthDecision("lower", "rate_limit", error_rate, sample_count)
+        if (
+            sample_count >= self.minimum_samples
+            and error_rate >= self.systemic_error_rate
+        ):
+            return CopyHealthDecision(
+                "systemic", "systemic_transient_error_rate", error_rate, sample_count
+            )
+        if sample_count >= self.minimum_samples and error_rate > self.lower_error_rate:
+            return CopyHealthDecision(
+                "lower", "sustained_transient_error_rate", error_rate, sample_count
+            )
+        if sample_count >= self.max_requests and error_rate < self.raise_error_rate:
+            return CopyHealthDecision(
+                "raise", "low_transient_error_rate", error_rate, sample_count
+            )
+        return CopyHealthDecision(
+            "hold", "within_error_budget", error_rate, sample_count
+        )
+
+
 def _resource_sample(
     *, cpu_started: float, wall_started: float
 ) -> tuple[float, int, int]:
@@ -92,13 +167,17 @@ async def run_adaptive_copy(
     pause_requested: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
     configured_pool = args.max_pool_connections
-    maximum_concurrency = 128 if configured_pool is None or configured_pool >= 128 else 64
+    maximum_concurrency = (
+        128 if configured_pool is None or configured_pool >= 128 else 64
+    )
     controller = AdaptiveCopyController(
         initial_concurrency=int(args.copy_concurrency),
         maximum_concurrency=maximum_concurrency,
     )
     _resolve_copy_max_pool_connections(controller.maximum_concurrency, configured_pool)
-    failures_at_eight = 0
+    systemic_windows = 0
+    low_error_windows = 0
+    health = CopyHealthWindow()
     resource_gate = ResourceGate(
         max_cpu_percent=float(getattr(args, "max_cpu_percent", 70.0)),
         cpu_batches_to_pause=int(getattr(args, "cpu_batches_to_pause", 3)),
@@ -118,6 +197,10 @@ async def run_adaptive_copy(
             max_pool_connections=configured_pool,
             next_plan_output=getattr(args, "next_plan_output", None),
             verification_output=getattr(args, "verification_output", None),
+            object_max_retries=int(getattr(args, "object_max_retries", 5)),
+            retry_base_seconds=float(getattr(args, "retry_base_seconds", 1.0)),
+            retry_max_seconds=float(getattr(args, "retry_max_seconds", 16.0)),
+            retry_jitter_ratio=float(getattr(args, "retry_jitter_ratio", 0.25)),
         )
         cpu_started = time.process_time()
         wall_started = time.perf_counter()
@@ -138,18 +221,18 @@ async def run_adaptive_copy(
                 )
                 raise
             if previous == 8:
-                failures_at_eight += 1
-                if failures_at_eight >= int(args.max_failures_at_eight):
+                systemic_windows += 1
+                if systemic_windows >= int(getattr(args, "circuit_breaker_windows", 3)):
                     return {
                         "status": "paused",
-                        "reason": "three_transient_failures_at_eight",
+                        "reason": "systemic_transient_error_circuit_open",
                         "copy_concurrency": 8,
                         "max_pool_connections": _resolve_copy_max_pool_connections(
                             8, configured_pool
                         ),
                     }
             else:
-                failures_at_eight = 0
+                systemic_windows = 0
             wait_seconds = {64: 30, 32: 60, 16: 120, 8: 240}[lowered]
             _emit(
                 {
@@ -183,13 +266,60 @@ async def run_adaptive_copy(
                 "db_commit_p95_ms": db_commit_p95_ms,
             }
         )
-        failures_at_eight = 0
         actual_pool = int(
             summary.get(
                 "max_pool_connections",
                 _resolve_copy_max_pool_connections(concurrency, configured_pool),
             )
         )
+        request_events = list(summary.get("_copy_request_events") or [])
+        health.extend(request_events)
+        health_decision = health.decision(current_concurrency=concurrency)
+        if health_decision.action == "systemic":
+            low_error_windows = 0
+            systemic_windows += 1
+            if concurrency > 8:
+                lowered = controller.record_failure("ReadTimeoutError")
+                _emit(
+                    {
+                        "adaptive_event": "lower",
+                        "reason": health_decision.reason,
+                        "copy_concurrency": lowered,
+                        "request_error_rate": health_decision.error_rate,
+                        "request_sample_count": health_decision.sample_count,
+                    }
+                )
+            elif systemic_windows >= int(getattr(args, "circuit_breaker_windows", 3)):
+                return {
+                    "status": "paused",
+                    "reason": "systemic_transient_error_circuit_open",
+                    "remaining": remaining,
+                    "copy_concurrency": concurrency,
+                    "max_pool_connections": actual_pool,
+                }
+        elif health_decision.action == "lower":
+            low_error_windows = 0
+            systemic_windows = 0
+            lowered = controller.record_failure(
+                "SlowDown"
+                if health_decision.reason == "rate_limit"
+                else "ReadTimeoutError"
+            )
+            _emit(
+                {
+                    "adaptive_event": "lower",
+                    "reason": health_decision.reason,
+                    "copy_concurrency": lowered,
+                    "request_error_rate": health_decision.error_rate,
+                    "request_sample_count": health_decision.sample_count,
+                }
+            )
+        else:
+            systemic_windows = 0
+            if health_decision.action == "raise":
+                low_error_windows += 1
+            else:
+                low_error_windows = 0
         if remaining == 0:
             return {
                 "status": "completed",
@@ -213,10 +343,21 @@ async def run_adaptive_copy(
                 "copy_concurrency": concurrency,
                 "max_pool_connections": actual_pool,
             }
-        previous = controller.concurrency
-        raised = controller.record_success()
-        if raised > previous:
-            _emit({"adaptive_event": "raise", "copy_concurrency": raised})
+        if health_decision.action == "raise" and low_error_windows >= 2:
+            previous = controller.concurrency
+            controller.clean_batches = controller.clean_batches_to_raise - 1
+            raised = controller.record_success()
+            if raised > previous:
+                _emit(
+                    {
+                        "adaptive_event": "raise",
+                        "reason": health_decision.reason,
+                        "copy_concurrency": raised,
+                        "request_error_rate": health_decision.error_rate,
+                        "request_sample_count": health_decision.sample_count,
+                    }
+                )
+            low_error_windows = 0
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -232,7 +373,11 @@ def _parser() -> argparse.ArgumentParser:
         "--copy-concurrency", type=_bounded_copy_concurrency, default=64
     )
     parser.add_argument("--max-pool-connections", type=_positive_pool_connections)
-    parser.add_argument("--max-failures-at-eight", type=int, default=3)
+    parser.add_argument("--circuit-breaker-windows", type=int, default=3)
+    parser.add_argument("--object-max-retries", type=_bounded_copy_retries, default=5)
+    parser.add_argument("--retry-base-seconds", type=_positive_float, default=1.0)
+    parser.add_argument("--retry-max-seconds", type=_positive_float, default=16.0)
+    parser.add_argument("--retry-jitter-ratio", type=_unit_ratio, default=0.25)
     parser.add_argument("--max-cpu-percent", type=float, default=70.0)
     parser.add_argument("--cpu-batches-to-pause", type=int, default=3)
     parser.add_argument("--db-commit-p95-baseline-ms", type=float)
@@ -262,8 +407,8 @@ async def _main_async(args: argparse.Namespace) -> int:
 
 def main() -> None:
     args = _parser().parse_args()
-    if args.max_failures_at_eight <= 0:
-        raise SystemExit("max failures at eight must be positive")
+    if args.circuit_breaker_windows <= 0:
+        raise SystemExit("circuit breaker windows must be positive")
     raise SystemExit(asyncio.run(_main_async(args)))
 
 

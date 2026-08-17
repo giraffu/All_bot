@@ -365,13 +365,23 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 数字目录和孤儿清理均不属于这条迁移链路。
 
 Copy 计划的全局 rowset 与内部批次都按迁移账本 `id` 顺序冻结和重算，不能在执行端
-改用 History 坐标排序。若旧 artifact 在任何 R2 写入前因实现缺陷错误拒绝 rowset，
-不得修改旧 manifest、复用旧确认或让补丁 artifact 消费旧计划。`plan-copy` 只有在显式
-提供 `--supersedes-plan-sha256`，且旧计划全部批次仍为 pending、所有账本行仍为
-`copy_required`、`copy_completed_at` 全空、父 Probe 与 rowset SHA 均未变化时，才原子
-插入绑定新 artifact 的替代计划、把旧批次置为 superseded 并重绑账本。旧计划随后由
-执行器明确拒绝；替代计划必须展示新 SHA 并重新取得
-`COPY_HISTORY_MEDIA_<new-sha>`。
+改用 History 坐标排序。每个对象在专用线程内先做最多 5 次瞬时错误重试，默认退避
+为 1、2、4、8、16 秒并加入随机抖动；其它对象通过 `as_completed` 独立提交
+`copied_verified`，不会因一个慢请求等待整组。执行器按最近 1,000 次请求且不超过
+60 秒的窗口控制全局并发：429/SlowDown 立即降档，timeout/5xx 等错误率持续超过
+0.5% 才降档，低于 0.2% 的连续两个完整窗口可升档。连续系统性高错误窗口由
+circuit breaker 暂停；单个 timeout/reset 不触发全局降速。
+
+旧 manifest、marker 与确认值永远不可热改或跨 artifact 复用。`plan-copy` 显式提供
+`--supersedes-plan-sha256` 时分两类：未执行计划可整体替换；已有进度的计划必须先让
+旧执行器 graceful stop，要求没有 `failed` 或在途批次，再保留全部
+`copied_verified` 及其旧 marker，只冻结仍为 `copy_required` 的零交集 successor。
+事务同时插入绑定新 artifact 的计划、保留 completed 批次、把其余旧批次置为
+superseded，并以计划所有权 CAS 重绑剩余账本；迟到的旧执行器提交会失败关闭。
+manifest 必须证明“Copy 链已完成资产 + successor 资产 = 根 Copy 计划资产数”，保存
+successor rowset/batches SHA 和 predecessor 链 SHA。最终目标/旧源/marker 验收与
+Switch 计划聚合完整 Copy 链，marker 仍按每个对象实际所属计划验证。替代计划必须展示
+新 SHA 并重新取得 `COPY_HISTORY_MEDIA_<new-sha>`。
 冻结全量链路不允许 `--allow-incomplete` 绕过未完成 Probe 批次。plan/report 与执行前
 rowset 复核使用数据库 cursor 增量计算 canonical JSON SHA，不把完整账本载入内存；
 Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute-probe`、

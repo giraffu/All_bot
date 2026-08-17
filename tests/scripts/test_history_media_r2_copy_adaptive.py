@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.history_media_r2_copy_adaptive import ResourceGate, run_adaptive_copy
+from scripts.history_media_r2_copy_adaptive import (
+    CopyHealthWindow,
+    ResourceGate,
+    run_adaptive_copy,
+)
 
 
 def test_web_api_image_contains_adaptive_copy_runner():
@@ -53,20 +57,20 @@ def test_resource_gate_pauses_on_sustained_cpu_fd_or_db_regression():
 
 
 @pytest.mark.asyncio
-async def test_adaptive_runner_lowers_after_transient_failure_and_retries_same_plan():
+async def test_adaptive_runner_keeps_concurrency_for_one_timeout_in_1000_requests():
     calls = []
-    sleeps = []
 
     async def execute_batch(args):
-        calls.append(
-            (args.plan_sha256, args.copy_concurrency, args.max_pool_connections)
-        )
-        if len(calls) == 1:
-            raise RuntimeError("HTTPStatusCode: 503 ServiceUnavailable")
-        return {"remaining": 0, "copied_objects": 25}
-
-    async def sleep(seconds):
-        sleeps.append(seconds)
+        calls.append(args.copy_concurrency)
+        return {
+            "remaining": 0 if len(calls) == 2 else 100,
+            "copied_objects": 999,
+            "_copy_request_events": [
+                *({"at": 1.0, "kind": "ok"} for _ in range(999)),
+                {"at": 1.0, "kind": "timeout_or_5xx"},
+            ],
+            "db_commit_latency_ms": {"p95": 0},
+        }
 
     result = await run_adaptive_copy(
         SimpleNamespace(
@@ -76,17 +80,16 @@ async def test_adaptive_runner_lowers_after_transient_failure_and_retries_same_p
             limit=100,
             copy_concurrency=64,
             max_pool_connections=None,
-            max_failures_at_eight=3,
+            circuit_breaker_windows=3,
             max_cpu_percent=1000,
         ),
         execute_batch=execute_batch,
-        sleep=sleep,
+        sleep=asyncio.sleep,
     )
 
-    assert calls == [("a" * 64, 64, None), ("a" * 64, 32, None)]
-    assert sleeps == [60]
+    assert calls == [64, 64]
     assert result["status"] == "completed"
-    assert result["copy_concurrency"] == 32
+    assert result["copy_concurrency"] == 64
 
 
 @pytest.mark.asyncio
@@ -108,7 +111,7 @@ async def test_adaptive_runner_finishes_current_batch_then_honors_pause():
             limit=100,
             copy_concurrency=64,
             max_pool_connections=96,
-            max_failures_at_eight=3,
+            circuit_breaker_windows=3,
         ),
         execute_batch=execute_batch,
         sleep=asyncio.sleep,
@@ -126,14 +129,18 @@ async def test_adaptive_runner_finishes_current_batch_then_honors_pause():
 
 
 @pytest.mark.asyncio
-async def test_adaptive_runner_can_raise_clean_copy_batches_to_128():
+async def test_adaptive_runner_raises_on_low_nonzero_window_error_rate():
     calls = []
 
     async def execute_batch(args):
         calls.append(args.copy_concurrency)
         return {
-            "remaining": 0 if len(calls) == 4 else 100,
-            "copied_objects": 100,
+            "remaining": 0 if len(calls) == 3 else 100,
+            "copied_objects": 999,
+            "_copy_request_events": [
+                *({"at": 1.0, "kind": "ok"} for _ in range(999)),
+                {"at": 1.0, "kind": "connection_transient"},
+            ],
             "db_commit_latency_ms": {"p95": 0},
         }
 
@@ -143,30 +150,34 @@ async def test_adaptive_runner_can_raise_clean_copy_batches_to_128():
             confirm="COPY_HISTORY_MEDIA_" + "d" * 64,
             config="/tmp/config.json",
             limit=100,
-            copy_concurrency=64,
+            copy_concurrency=32,
             max_pool_connections=None,
-            max_failures_at_eight=3,
+            circuit_breaker_windows=3,
             max_cpu_percent=1000,
         ),
         execute_batch=execute_batch,
         sleep=asyncio.sleep,
     )
 
-    assert calls == [64, 64, 64, 128]
-    assert result["copy_concurrency"] == 128
+    assert calls == [32, 32, 64]
+    assert result["copy_concurrency"] == 64
 
 
 @pytest.mark.asyncio
-async def test_adaptive_runner_pauses_after_repeated_transient_failures_at_eight():
+async def test_adaptive_runner_lowers_immediately_for_rate_limit():
     calls = []
-    sleeps = []
 
     async def execute_batch(args):
         calls.append(args.copy_concurrency)
-        raise RuntimeError("ReadTimeoutError")
-
-    async def sleep(seconds):
-        sleeps.append(seconds)
+        return {
+            "remaining": 0 if len(calls) == 2 else 100,
+            "copied_objects": 999,
+            "_copy_request_events": [
+                *({"at": 1.0, "kind": "ok"} for _ in range(999)),
+                {"at": 1.0, "kind": "rate_limit"},
+            ],
+            "db_commit_latency_ms": {"p95": 0},
+        }
 
     result = await run_adaptive_copy(
         SimpleNamespace(
@@ -176,13 +187,65 @@ async def test_adaptive_runner_pauses_after_repeated_transient_failures_at_eight
             limit=100,
             copy_concurrency=64,
             max_pool_connections=None,
-            max_failures_at_eight=3,
+            circuit_breaker_windows=3,
+            max_cpu_percent=1000,
         ),
         execute_batch=execute_batch,
-        sleep=sleep,
+        sleep=asyncio.sleep,
     )
 
-    assert calls == [64, 32, 16, 8, 8, 8]
-    assert sleeps == [60, 120, 240, 240, 240]
+    assert calls == [64, 32]
+    assert result["status"] == "completed"
+
+
+def test_copy_health_window_lowers_only_after_sustained_half_percent_errors():
+    health = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
+    health.extend(
+        [*({"at": 1.0, "kind": "ok"} for _ in range(994))]
+        + [*({"at": 1.0, "kind": "timeout_or_5xx"} for _ in range(6))]
+    )
+
+    decision = health.decision(current_concurrency=64)
+
+    assert decision.action == "lower"
+    assert decision.reason == "sustained_transient_error_rate"
+    assert decision.error_rate == pytest.approx(0.006)
+
+
+@pytest.mark.asyncio
+async def test_adaptive_runner_opens_circuit_after_systemic_errors_at_minimum():
+    calls = []
+
+    async def execute_batch(args):
+        calls.append(args.copy_concurrency)
+        return {
+            "remaining": 100,
+            "copied_objects": 800,
+            "_copy_request_events": [
+                *({"at": float(len(calls)), "kind": "ok"} for _ in range(800)),
+                *(
+                    {"at": float(len(calls)), "kind": "timeout_or_5xx"}
+                    for _ in range(200)
+                ),
+            ],
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    result = await run_adaptive_copy(
+        SimpleNamespace(
+            plan_sha256="c" * 64,
+            confirm="COPY_HISTORY_MEDIA_" + "c" * 64,
+            config="/tmp/config.json",
+            limit=1000,
+            copy_concurrency=8,
+            max_pool_connections=None,
+            circuit_breaker_windows=3,
+            max_cpu_percent=1000,
+        ),
+        execute_batch=execute_batch,
+        sleep=asyncio.sleep,
+    )
+
+    assert calls == [8, 8, 8]
     assert result["status"] == "paused"
-    assert result["reason"] == "three_transient_failures_at_eight"
+    assert result["reason"] == "systemic_transient_error_circuit_open"
