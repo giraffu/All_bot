@@ -398,7 +398,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--verification-output")
     parser.add_argument("--limit", type=int, default=10_000)
     parser.add_argument(
-        "--copy-concurrency", type=_bounded_copy_concurrency, default=64
+        "--copy-concurrency", type=_bounded_copy_concurrency, default=128
     )
     parser.add_argument("--max-pool-connections", type=_positive_pool_connections)
     parser.add_argument("--circuit-breaker-windows", type=int, default=3)

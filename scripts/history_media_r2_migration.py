@@ -102,7 +102,7 @@ def classify_copy_request_failure(exc: BaseException) -> str:
 
 @dataclass
 class AdaptiveCopyController:
-    initial_concurrency: int = 64
+    initial_concurrency: int = 128
     clean_batches_to_raise: int = 3
     maximum_concurrency: int = 128
 
