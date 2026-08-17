@@ -5,13 +5,15 @@ export type ExternalTaskOutcome =
   | { status: 'failed'; error: string }
 
 export function createPendingTask(taskId: string, type: string, title: string): Task {
+  const now = Date.now()
   return {
     id: taskId,
     type,
     title,
     progress: 0,
     status: 'pending',
-    updatedAt: Date.now(),
+    updatedAt: now,
+    submittedAt: now,
   }
 }
 

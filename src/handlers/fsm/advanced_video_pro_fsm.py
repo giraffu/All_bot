@@ -33,8 +33,8 @@ from src.services.advanced_video_pro_submission_service import (
     submit_advanced_video_pro_plan,
     validate_advanced_video_pro_frame_aspects,
 )
-from src.services.advanced_video_prompt_optimizer_service import (
-    optimize_advanced_video_prompt,
+from src.services.advanced_video_prompt_task_service import (
+    start_advanced_video_prompt_task,
 )
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_user_data,
@@ -543,63 +543,6 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return AdvancedVideoProState.WAIT_CONFIRMATION
 
 
-async def _run_prompt_optimization(
-    *,
-    context,
-    message,
-    data: dict,
-    request_token: str,
-    telegram_user_id: int,
-    username: str | None,
-    client_request_id: str,
-) -> None:
-    try:
-        internal_user, _ = await get_or_create_user_by_telegram(
-            telegram_user_id,
-            username=username,
-        )
-        optimized = await optimize_advanced_video_prompt(
-            internal_user_id=internal_user.id,
-            username=username,
-            mode=data["mode"],
-            prompt=data["original_prompt"],
-            images=list(data.get("images", [])),
-            duration_seconds=int(data["duration"]),
-            client_request_id=client_request_id,
-        )
-    except Exception:
-        logger.exception("MiniMax H3 prompt optimization callback failed")
-        current = context.user_data.get(DATA_KEY)
-        if current is data and data.get("optimizer_request_token") == request_token:
-            data["optimizer_pending"] = False
-            await robust_edit_text(
-                message,
-                _text(
-                    context,
-                    "提示词优化失败，原提示词已保留。请重新点击“优化提示词”重试，"
-                    "或直接使用当前提示词生成。",
-                    "Prompt optimization failed and the original prompt was preserved. "
-                    "Select Optimize prompt to retry, or generate with the current prompt.",
-                ),
-                reply_markup=_prompt_action_keyboard(context),
-            )
-        return
-    current = context.user_data.get(DATA_KEY)
-    if current is not data or data.get("optimizer_request_token") != request_token:
-        return
-    data["prompt"] = optimized
-    data["optimizer_pending"] = False
-    await robust_edit_text(
-        message,
-        _text(
-            context,
-            f"✨ 提示词优化完成：\n\n{optimized}\n\n请确认后生成。",
-            f"✨ Prompt optimization complete:\n\n{optimized}\n\nReview it before generating.",
-        ),
-        reply_markup=_prompt_action_keyboard(context, can_restore=True),
-    )
-
-
 async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     data = context.user_data.get(DATA_KEY)
@@ -670,19 +613,72 @@ async def prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "✨ Optimizing prompt, please wait…",
             ),
         )
-        create_background_task(
-            context,
-            _run_prompt_optimization(
-                context=context,
-                message=query.message,
-                data=data,
-                request_token=request_token,
+        try:
+            internal_user, _ = await get_or_create_user_by_telegram(
+                user.id,
+                username=user.username,
+            )
+            plan = build_advanced_video_pro_submission_plan(
+                mode=data["mode"],
+                prompt=data["original_prompt"],
+                images=data.get("images", []),
+                reference_descriptions=data.get("reference_descriptions", []),
+                duration=data["duration"],
+                resolution_preset=data["preset"],
+                aspect_ratio=(
+                    "source"
+                    if data["mode"] in {"i2v", "flf2v"}
+                    else data["aspect"]
+                ),
+                addon_items=[
+                    {"name": name}
+                    for name in data.get("addon_models", [])
+                    if name in MINIMAX_H3_ADDON_MODELS
+                ],
+            )
+            draft = await start_advanced_video_prompt_task(
+                token=request_token,
+                internal_user_id=internal_user.id,
                 telegram_user_id=user.id,
                 username=user.username,
+                chat_id=update.effective_chat.id,
+                language=_lang(context),
                 client_request_id=client_request_id,
+                mode=data["mode"],
+                original_prompt=data["original_prompt"],
+                image_paths=list(data.get("images", [])),
+                duration=int(data["duration"]),
+                resolution_preset=data["preset"],
+                aspect_ratio=plan.aspect_ratio,
+                addon_models=list(data.get("addon_models", [])),
+                reference_descriptions=list(data.get("reference_descriptions", [])),
+                generation_cost=plan.cost,
+            )
+        except Exception:
+            logger.exception("MiniMax H3 prompt optimization submission failed")
+            data["optimizer_pending"] = False
+            await robust_edit_text(
+                query.message,
+                _text(
+                    context,
+                    "提示词优化提交失败，原提示词已保留。请稍后重试或直接生成。",
+                    "Prompt optimization submission failed. The original prompt was preserved; retry later or generate directly.",
+                ),
+                reply_markup=_prompt_action_keyboard(context),
+            )
+            return AdvancedVideoProState.WAIT_CONFIRMATION
+        await robust_edit_text(
+            query.message,
+            _text(
+                context,
+                f"✨ 提示词优化任务已提交（{draft.optimizer_task_id}）。\n\n"
+                "现在可以继续使用其他功能；完成后 Bot 会自动发送结果，结果保留 24 小时。",
+                f"✨ Prompt optimization task submitted ({draft.optimizer_task_id}).\n\n"
+                "You can continue using other features. The Bot will send the result automatically and keep it for 24 hours.",
             ),
         )
-        return AdvancedVideoProState.WAIT_CONFIRMATION
+        _clear(context)
+        return ConversationHandler.END
     if query.data == "avp_prompt_restore":
         data["prompt"] = data.get("original_prompt", data.get("prompt", ""))
         await robust_edit_text(

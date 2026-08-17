@@ -19,6 +19,12 @@ export interface RuntimeTaskLike {
   error?: string
   awaitingResult?: boolean
   updatedAt?: number
+  kind?: 'generation' | 'prompt_optimization'
+  resultKind?: 'media' | 'text'
+  resultText?: string
+  submittedAt?: number
+  startedAt?: number
+  completedAt?: number
   cancelMessage?: string
 }
 
@@ -125,6 +131,13 @@ export function serializeTasksForStorage<T extends PersistableTaskLike>(
 }
 
 function isStaleActiveTask(task: RuntimeTaskLike, now: number): boolean {
+  if (
+    task.kind === 'prompt_optimization'
+    && typeof task.updatedAt === 'number'
+    && now - task.updatedAt > STALE_ACTIVE_TASK_TTL_MS
+  ) {
+    return true
+  }
   if (task.awaitingResult) {
     return false
   }
@@ -237,6 +250,7 @@ function applyTaskStatusPayload<T extends RuntimeTaskLike>(
     return touchTaskActivity({
       ...task,
       status: 'running',
+      startedAt: task.startedAt ?? Date.now(),
       queuePos: undefined,
       awaitingResult: false,
       error: undefined
@@ -259,6 +273,7 @@ function applyTaskStatusPayload<T extends RuntimeTaskLike>(
       status: 'failed',
       queuePos: undefined,
       awaitingResult: false,
+      completedAt: Date.now(),
       error: payload.error || '未知错误'
     })
   }
@@ -269,6 +284,7 @@ function applyTaskStatusPayload<T extends RuntimeTaskLike>(
       status: 'cancelled',
       queuePos: undefined,
       awaitingResult: false,
+      completedAt: Date.now(),
       error: undefined,
       cancelMessage: payload.message || payload.error || task.cancelMessage
     })

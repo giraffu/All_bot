@@ -1,15 +1,14 @@
 ---
 name: allbot-prompt-optimizer
-description: 开发和运维 AllBot 通用多模态 Prompt Optimizer，覆盖版本化 Profile/Template Registry、capability API、文本任务结果、LM Studio provider、图片预处理、四 lane Worker 和新目标任务扩展。新增或修改提示词优化任务、模板、模型 provider、媒体适配器或 Worker 部署时必须使用。
+description: 开发和运维 AllBot 多模态 Prompt Optimizer。修改优化任务、模板、模型 provider、媒体适配器或 Worker 部署时必须使用。
 ---
 
 # AllBot Prompt Optimizer
 
 ## 目标与边界
 
-把提示词优化作为独立 Central 任务 `prompt_optimize`，不要绑定某个 Comfy
-workflow。目标任务差异属于 Profile，优化风格属于 Template；队列、扣费 Saga、
-文本结果存储和 Worker 主循环保持通用。
+提示词优化是独立 Central 任务 `prompt_optimize`，不绑定 Comfy workflow。目标差异
+属于 Profile，风格属于 Template；队列、扣费、结果存储和 Worker 主循环保持通用。
 
 先读：
 
@@ -28,9 +27,10 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   `dashboard/backend/routers/prompt_optimizer.py`
 - owner-fenced 结果：`src/web_api/services/prompt_result_store.py`
 - Worker：`workers/prompt_optimizer/`
-- Worker Relay：`workers/local_relay/relay_main.py`
+- Relay：`workers/local_relay/relay_main.py`
 - Central 请求契约：`backend/app/models.py` 的 `PromptOptimizeRequest`
 - 文本增量存储：`src/services/task_text_stream_store.py`
+- Bot draft/投递：`src/services/advanced_video_prompt_task_*`
 - Worker 镜像/Compose：`deploy/docker/Dockerfile.test-execution`、
   `deploy/docker-compose-prompt-optimizer-test.yml`
 - 精确运维入口：`scripts/prompt_optimizer_worker_ops.py`
@@ -52,6 +52,8 @@ workflow。目标任务差异属于 Profile，优化风格属于 Template；队�
   在内存中缩至长边 1536px，不落额外持久副本。
 - 文本结果只进 Redis，TTL 24 小时，不写 History/R2/Gallery。普通日志不得含完整
   原始提示词、图片内容或 LLM 原始响应。
+- Web 用全局任务和 24 小时草稿恢复，且不覆盖已变化的上下文。Bot 先持久化
+  owner-fenced draft 再退出 FSM；callback 不依赖 FSM，收费生成二次确认并幂等。
 - `text_delta` 幂等上报；H3@5 发布前校验结构、时序与服务端台词
   `<d>[Language] 原文</d>`。JSON 匹配增量才能 `/complete`，失败幂等退款。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款

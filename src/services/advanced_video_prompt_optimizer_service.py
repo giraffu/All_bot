@@ -21,6 +21,66 @@ _MODE_TARGETS = {
 }
 
 
+def build_advanced_video_prompt_request(
+    *,
+    mode: str,
+    prompt: str,
+    object_keys: list[str] | tuple[str, ...],
+    duration_seconds: int,
+    client_request_id: str,
+) -> PromptOptimizationTaskRequest:
+    target_task_type = _MODE_TARGETS.get(str(mode))
+    if target_task_type is None:
+        raise ValueError("unsupported MiniMax H3 prompt optimization mode")
+    expected_images = {"t2v": 0, "i2v": 1, "flf2v": 2}[mode]
+    if len(object_keys) != expected_images:
+        raise ValueError("MiniMax H3 optimizer media contract mismatch")
+    return PromptOptimizationTaskRequest.model_validate(
+        {
+            "client_request_id": client_request_id,
+            "target_task_type": target_task_type,
+            "template": {"id": "minimax_h3_10eros_naughtytimes", "version": 4},
+            "prompt": prompt,
+            "context": {"duration_seconds": duration_seconds},
+            "media": [
+                {
+                    "role": "start_image" if index == 0 else "end_image",
+                    "object_key": object_key,
+                }
+                for index, object_key in enumerate(object_keys)
+            ],
+        }
+    )
+
+
+async def submit_advanced_video_prompt_task(
+    *,
+    internal_user_id: int,
+    username: str | None,
+    mode: str,
+    prompt: str,
+    object_keys: list[str] | tuple[str, ...],
+    duration_seconds: int,
+    client_request_id: str,
+    submit_func=submit_prompt_optimization,
+    get_balance=None,
+) -> str:
+    request = build_advanced_video_prompt_request(
+        mode=mode,
+        prompt=prompt,
+        object_keys=object_keys,
+        duration_seconds=duration_seconds,
+        client_request_id=client_request_id,
+    )
+    quota = QuotaManager()
+    submission = await submit_func(
+        request=request,
+        current_user=SimpleNamespace(id=int(internal_user_id), username=username),
+        get_balance=get_balance or quota.get_credits,
+    )
+    return str(submission["task_id"])
+
+
 async def _call_maybe_async(func: Callable, *args):
     value = func(*args)
     return await value if inspect.isawaitable(value) else value
@@ -48,12 +108,13 @@ async def optimize_advanced_video_prompt(
     max_polls: int = 200,
     poll_interval_seconds: float = 1.2,
 ) -> str:
-    target_task_type = _MODE_TARGETS.get(str(mode))
-    if target_task_type is None:
-        raise ValueError("unsupported MiniMax H3 prompt optimization mode")
-    expected_images = {"t2v": 0, "i2v": 1, "flf2v": 2}[mode]
-    if len(images) != expected_images:
-        raise ValueError("MiniMax H3 optimizer media contract mismatch")
+    build_advanced_video_prompt_request(
+        mode=mode,
+        prompt=prompt,
+        object_keys=["pending"] * len(images),
+        duration_seconds=duration_seconds,
+        client_request_id=client_request_id,
+    )
 
     uploader = upload_image or UserLogger(
         internal_user_id,
@@ -68,29 +129,17 @@ async def optimize_advanced_video_prompt(
                 raise RuntimeError("优化素材上传失败")
             object_keys.append(object_key)
 
-        request = PromptOptimizationTaskRequest.model_validate(
-            {
-                "client_request_id": client_request_id,
-                "target_task_type": target_task_type,
-                "template": {"id": "minimax_h3_10eros_naughtytimes", "version": 4},
-                "prompt": prompt,
-                "context": {"duration_seconds": duration_seconds},
-                "media": [
-                    {
-                        "role": "start_image" if index == 0 else "end_image",
-                        "object_key": object_key,
-                    }
-                    for index, object_key in enumerate(object_keys)
-                ],
-            }
+        task_id = await submit_advanced_video_prompt_task(
+            internal_user_id=internal_user_id,
+            username=username,
+            mode=mode,
+            prompt=prompt,
+            object_keys=object_keys,
+            duration_seconds=duration_seconds,
+            client_request_id=client_request_id,
+            submit_func=submit_func,
+            get_balance=get_balance,
         )
-        quota = QuotaManager()
-        submission = await submit_func(
-            request=request,
-            current_user=SimpleNamespace(id=int(internal_user_id), username=username),
-            get_balance=get_balance or quota.get_credits,
-        )
-        task_id = str(submission["task_id"])
         should_cleanup = False
         for _ in range(max_polls):
             result = await get_result_func(task_id, int(internal_user_id))

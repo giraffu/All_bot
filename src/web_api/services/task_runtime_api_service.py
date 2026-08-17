@@ -53,6 +53,7 @@ async def get_task_status_payload_for_user(
     get_owned_active_task_func=None,
     get_user_history_record_func=None,
     get_task_status_func=None,
+    get_owned_prompt_result_func=None,
 ) -> dict:
     if session_factory is None:
         session_factory = AsyncSessionLocal
@@ -61,6 +62,10 @@ async def get_task_status_payload_for_user(
         get_user_history_record_func or get_user_history_record
     )
     get_task_status_func = get_task_status_func or image_service.get_task_status
+    if get_owned_prompt_result_func is None:
+        from src.web_api.services.prompt_result_store import get_owned_prompt_result
+
+        get_owned_prompt_result_func = get_owned_prompt_result
 
     owned_active_task = await get_owned_active_task_func(task_id, user_id)
     owned_history = await get_user_history_record_func(
@@ -68,6 +73,23 @@ async def get_task_status_payload_for_user(
     )
 
     if not owned_active_task and not owned_history:
+        prompt_result = await get_owned_prompt_result_func(task_id, user_id)
+        if prompt_result:
+            return {
+                "status": (
+                    "failed"
+                    if prompt_result.get("status") == "failed"
+                    else "success"
+                ),
+                "task_id": task_id,
+                "task_type": "prompt_optimize",
+                "media_type": None,
+                **(
+                    {"error": prompt_result.get("message") or "prompt optimizer failed"}
+                    if prompt_result.get("status") == "failed"
+                    else {}
+                ),
+            }
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail="任务不存在或无权限")

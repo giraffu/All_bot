@@ -7,6 +7,7 @@ import src.handlers.callback_router as router
 
 # 导入拆分后的子模块，触发装饰器注册路由
 import src.handlers.callbacks.affiliate_callbacks  # noqa: F401
+import src.handlers.callbacks.advanced_video_prompt_callbacks  # noqa: F401
 import src.handlers.callbacks.billing_callbacks  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks_browse  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks_interactions  # noqa: F401
@@ -29,6 +30,8 @@ MAIN_BOT_REQUIRED_CALLBACK_PREFIXES = (
     "cancel_task_",
     "ltx_stitch_chain",
     "wan22v2_stitch_chain",
+    "avpopt_prepare:",
+    "avpopt_confirm:",
 )
 
 router.validate_callback_routes(

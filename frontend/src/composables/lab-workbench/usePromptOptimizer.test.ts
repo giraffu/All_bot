@@ -1,17 +1,22 @@
+// @vitest-environment jsdom
 import { effectScope, nextTick, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 
 vi.mock('@/api', () => ({ default: { get, post } }))
 vi.mock('ant-design-vue', () => ({
-  message: { error: vi.fn(), info: vi.fn() },
+  message: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }))
 
 import { usePromptOptimizer } from './usePromptOptimizer'
+import { useTasksStore } from '@/stores/tasks'
 
 describe('usePromptOptimizer', () => {
   beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
     get.mockReset()
     post.mockReset()
     const values = new Map<string, string>()
@@ -21,7 +26,6 @@ describe('usePromptOptimizer', () => {
       setItem: (key: string, value: string) => values.set(key, value),
       removeItem: (key: string) => values.delete(key),
     })
-    vi.stubGlobal('window', { setTimeout })
     vi.stubGlobal('crypto', { randomUUID: () => 'request-uuid' })
   })
 
@@ -39,9 +43,6 @@ describe('usePromptOptimizer', () => {
             },
           ],
         },
-      })
-      .mockResolvedValueOnce({
-        data: { status: 'success', result_text: 'optimized prompt' },
       })
     post.mockResolvedValueOnce({ data: { task_id: 'task-1' } })
 
@@ -62,6 +63,13 @@ describe('usePromptOptimizer', () => {
     await nextTick()
     await Promise.resolve()
     await optimizer.optimizePrompt()
+
+    const task = useTasksStore().activeTasks.find(item => item.id === 'task-1')!
+    task.status = 'success'
+    task.resultKind = 'text'
+    task.resultText = 'optimized prompt'
+    await nextTick()
+    await Promise.resolve()
 
     expect(post.mock.calls[0][1]).toMatchObject({
       client_request_id: 'request-uuid',
@@ -85,7 +93,6 @@ describe('usePromptOptimizer', () => {
           }],
         },
       })
-      .mockResolvedValueOnce({ data: { status: 'success', result_text: 'optimized t2v' } })
     post.mockResolvedValueOnce({ data: { task_id: 'task-t2v' } })
 
     const scope = effectScope()
@@ -126,7 +133,6 @@ describe('usePromptOptimizer', () => {
           }],
         },
       })
-      .mockResolvedValueOnce({ data: { status: 'success', result_text: 'optimized h3' } })
     post.mockResolvedValueOnce({ data: { task_id: 'task-h3' } })
 
     const scope = effectScope()

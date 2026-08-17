@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -8,6 +8,8 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { useTasksStore } from '@/stores/tasks'
+import type { PromptOptimizationOriginDraft } from '@/stores/taskStoreTypes'
+import api from '@/api'
 import {
   DEFAULT_LAB_MODE_ID,
   DEFAULT_VIDEO_DURATION,
@@ -116,6 +118,83 @@ export function useLabWorkbench() {
     uploadFile,
     t,
   })
+
+  const capturePromptOptimizationDraft = (): PromptOptimizationOriginDraft => ({
+    modeId: currentModeId.value,
+    routeType: getLabModeConfig(currentModeId.value).taskType,
+    prompt: prompt.value,
+    duration: duration.value,
+    uploadedReferences: references.uploadedReferences.value.map(item => ({ ...item })),
+    settings: {
+      resolution: resolution.value,
+      selectedCharacterIds: [...selectedCharacterIds.value],
+      useT2VReferences: useT2VReferences.value,
+      environmentSource: environmentSource.value,
+      selectedEnvironmentId: selectedEnvironmentId.value,
+      minimaxH3Mode: minimaxH3Mode.value,
+      minimaxH3ResolutionPreset: minimaxH3ResolutionPreset.value,
+      minimaxH3AspectRatio: minimaxH3AspectRatio.value,
+      minimaxH3ReferenceDescriptions: [...minimaxH3ReferenceDescriptions.value],
+      minimaxH3AddonNames: [...minimaxH3AddonNames.value],
+      minimaxH3AddonItems: minimaxH3AddonItems.value.map(item => ({ ...item })),
+      selectedLtxLoraNames: [...selectedLtxLoraNames.value],
+      ltxLoraItems: ltxLoraItems.value.map(item => ({ ...item })),
+    },
+  })
+
+  const restorePromptOptimizationDraft = async (draft: PromptOptimizationOriginDraft) => {
+    currentModeId.value = draft.modeId as UnifiedLabModeId
+    prompt.value = draft.prompt
+    duration.value = draft.duration
+    const restoredReferences = await Promise.all(
+      draft.uploadedReferences.map(async (item) => {
+        if (item.preview && !item.preview.startsWith('blob:')) return { ...item }
+        try {
+          const response = await api.get('/storage/preview-url', {
+            params: { object_key: item.key },
+          })
+          return { ...item, preview: String(response.data.preview_url || '') }
+        } catch {
+          return { ...item, preview: '' }
+        }
+      }),
+    )
+    const settings = draft.settings
+    resolution.value = String(settings.resolution ?? resolution.value)
+    selectedCharacterIds.value = Array.isArray(settings.selectedCharacterIds)
+      ? settings.selectedCharacterIds.map(String)
+      : []
+    useT2VReferences.value = Boolean(settings.useT2VReferences)
+    environmentSource.value = settings.environmentSource === 'official' ? 'official' : 'upload'
+    selectedEnvironmentId.value = String(settings.selectedEnvironmentId ?? '')
+    minimaxH3Mode.value = ['t2v', 'i2v', 'flf2v'].includes(String(settings.minimaxH3Mode))
+      ? settings.minimaxH3Mode as 't2v' | 'i2v' | 'flf2v'
+      : 't2v'
+    minimaxH3ResolutionPreset.value = ['preview', 'small', 'standard', 'hd'].includes(String(settings.minimaxH3ResolutionPreset))
+      ? settings.minimaxH3ResolutionPreset as 'preview' | 'small' | 'standard' | 'hd'
+      : 'preview'
+    minimaxH3AspectRatio.value = ['16:9', '9:16', '1:1', '4:3', '3:4'].includes(String(settings.minimaxH3AspectRatio))
+      ? settings.minimaxH3AspectRatio as '16:9' | '9:16' | '1:1' | '4:3' | '3:4'
+      : '16:9'
+    minimaxH3ReferenceDescriptions.value = Array.isArray(settings.minimaxH3ReferenceDescriptions)
+      ? settings.minimaxH3ReferenceDescriptions.map(String)
+      : ['', '', '', '']
+    minimaxH3AddonNames.value = Array.isArray(settings.minimaxH3AddonNames)
+      ? settings.minimaxH3AddonNames.map(String)
+      : []
+    minimaxH3AddonItems.value = Array.isArray(settings.minimaxH3AddonItems)
+      ? settings.minimaxH3AddonItems as MiniMaxH3AddonItem[]
+      : []
+    selectedLtxLoraNames.value = Array.isArray(settings.selectedLtxLoraNames)
+      ? settings.selectedLtxLoraNames.map(String)
+      : []
+    ltxLoraItems.value = Array.isArray(settings.ltxLoraItems)
+      ? settings.ltxLoraItems as LtxVideoLoraItem[]
+      : []
+    await nextTick()
+    references.clearReferences()
+    references.uploadedReferences.value = restoredReferences
+  }
   const promptOptimizer = usePromptOptimizer({
     currentModeId,
     prompt,
@@ -126,6 +205,8 @@ export function useLabWorkbench() {
     environmentSource,
     selectedEnvironmentId,
     minimaxH3Mode,
+    captureOriginDraft: capturePromptOptimizationDraft,
+    applyOriginDraft: restorePromptOptimizationDraft,
   })
 
   function resetFormState(options?: { preserveMode?: boolean }) {

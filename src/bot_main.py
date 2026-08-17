@@ -118,6 +118,16 @@ async def post_init(application):
     application.bot_data["bg_tasks"].add(task_zombies)
     task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 
+    from src.services.advanced_video_prompt_task_service import (
+        run_advanced_video_prompt_delivery_loop,
+    )
+
+    task_prompt_delivery = asyncio.create_task(
+        run_advanced_video_prompt_delivery_loop(application)
+    )
+    application.bot_data["bg_tasks"].add(task_prompt_delivery)
+    task_prompt_delivery.add_done_callback(application.bot_data["bg_tasks"].discard)
+
 
 async def post_shutdown(application):
     core_logger = logging.getLogger("bot.core")

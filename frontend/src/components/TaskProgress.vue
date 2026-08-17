@@ -19,6 +19,7 @@ const getTaskLabel = (task: any) => {
   }
 
   if (task.status === 'running') {
+    if (task.kind === 'prompt_optimization') return '优化中'
     return task.awaitingResult ? '保存结果中' : '生成中'
   }
 
@@ -51,11 +52,17 @@ const handleClose = async (task: any) => {
     message.info(task.refundMessage || '任务已取消')
     return
   }
-  message.info('任务进入后台，完成后可在闪回瓶查看')
+  message.info(
+    task.kind === 'prompt_optimization'
+      ? '已收起提示词优化任务'
+      : '任务进入后台，完成后可在闪回瓶查看'
+  )
 }
 
 const handleTaskClick = (task: any) => {
   if (task.status === 'pending') {
+    expandedTaskId.value = expandedTaskId.value === task.id ? null : task.id
+  } else if (task.status === 'success' && task.resultKind === 'text') {
     expandedTaskId.value = expandedTaskId.value === task.id ? null : task.id
   } else if (task.status === 'success' && task.resultUrl) {
     // 触发全局弹窗，传入 task.id，并用现有信息作为 fallback 
@@ -67,6 +74,25 @@ const handleTaskClick = (task: any) => {
     // 移除任务（关闭悬浮球）
     tasksStore.removeTask(task.id)
   }
+}
+
+const copyPromptResult = async (task: any) => {
+  await navigator.clipboard.writeText(String(task.resultText || ''))
+  message.success('优化提示词已复制')
+}
+
+const applyPromptResult = async (task: any) => {
+  const accepted = await tasksStore.requestPromptTaskApply(task.id)
+  if (accepted) {
+    expandedTaskId.value = null
+    message.success('已返回原生成任务并应用优化提示词')
+  }
+}
+
+const taskElapsed = (task: any) => {
+  const start = Number(task.submittedAt || task.updatedAt || 0)
+  const end = Number(task.completedAt || Date.now())
+  return start > 0 ? `${Math.max(0, (end - start) / 1000).toFixed(1)} 秒` : ''
 }
 
 const doCancelTask = async (taskId: string) => {
@@ -126,7 +152,7 @@ const doCancelTask = async (taskId: string) => {
             </template>
             <template v-else-if="task.status === 'running'">
               <loading-outlined class="task-fab-icon task-fab-icon-running" />
-              <span class="task-fab-label">{{ task.awaitingResult ? '保存中' : '生成中' }}</span>
+              <span class="task-fab-label">{{ task.kind === 'prompt_optimization' ? '优化中' : task.awaitingResult ? '保存中' : '生成中' }}</span>
             </template>
             <template v-else-if="task.status === 'cancelled'">
               <close-outlined class="task-fab-icon task-fab-icon-warn" />
@@ -176,6 +202,22 @@ const doCancelTask = async (taskId: string) => {
             </a-button>
           </div>
         </transition>
+
+        <transition name="fade-slide">
+          <div
+            v-if="expandedTaskId === task.id && task.status === 'success' && task.resultKind === 'text'"
+            class="task-fab-prompt-result"
+          >
+            <div class="task-fab-prompt-title">提示词优化完成 · {{ taskElapsed(task) }}</div>
+            <div class="task-fab-prompt-text">{{ task.resultText }}</div>
+            <div class="flex justify-end gap-2">
+              <a-button size="small" @click.stop="copyPromptResult(task)">复制</a-button>
+              <a-button type="primary" size="small" @click.stop="applyPromptResult(task)">
+                返回原任务并应用
+              </a-button>
+            </div>
+          </div>
+        </transition>
       </div>
     </transition-group>
   </div>
@@ -183,11 +225,9 @@ const doCancelTask = async (taskId: string) => {
 
 <style scoped>
 .task-fab-list {
-  max-height: calc(100dvh - 8rem);
-  overflow-y: auto;
+  overflow: visible;
   overscroll-behavior: contain;
   padding: 0.5rem;
-  scrollbar-width: thin;
 }
 
 .task-fab-shell {
@@ -340,6 +380,37 @@ const doCancelTask = async (taskId: string) => {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   transform: translateY(-50%);
+}
+
+.task-fab-prompt-result {
+  position: absolute;
+  right: 4rem;
+  bottom: 0;
+  z-index: 50;
+  width: min(24rem, calc(100vw - 6rem));
+  border: 1px solid var(--task-fab-popover-border);
+  border-radius: 0.9rem;
+  background: var(--task-fab-popover-bg);
+  padding: 0.85rem;
+  box-shadow: var(--task-fab-popover-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.task-fab-prompt-title {
+  margin-bottom: 0.55rem;
+  color: var(--task-fab-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.task-fab-prompt-text {
+  max-height: 12rem;
+  margin-bottom: 0.7rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: var(--task-fab-popover-text);
+  font-size: 0.78rem;
+  line-height: 1.55;
 }
 
 .task-fab-popover-text {

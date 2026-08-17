@@ -23,3 +23,28 @@ async def test_get_queue_status_payload_returns_backend_status_when_available():
     )
 
     assert result == payload
+
+
+@pytest.mark.asyncio
+async def test_prompt_text_result_remains_visible_to_status_after_active_registry_cleanup():
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="prompt-task",
+        user_id=77,
+        get_owned_active_task_func=AsyncMock(return_value=None),
+        get_user_history_record_func=AsyncMock(return_value=None),
+        get_owned_prompt_result_func=AsyncMock(
+            return_value={
+                "task_id": "prompt-task",
+                "task_type": "prompt_optimize",
+                "result_kind": "text",
+                "result_text": "optimized prompt",
+            }
+        ),
+    )
+
+    assert payload == {
+        "status": "success",
+        "task_id": "prompt-task",
+        "task_type": "prompt_optimize",
+        "media_type": None,
+    }

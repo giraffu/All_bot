@@ -3,13 +3,20 @@ import type { TaskExtraOutputs, Wan22ResultMeta } from '@/types/gallery'
 export interface TaskResultResponsePayload {
   status?: string
   result_url?: string | null
+  result_kind?: 'media' | 'text' | string | null
+  result_text?: string | null
+  partial_result_text?: string | null
+  refund_status?: string | null
+  message?: string | null
   extra_outputs?: TaskExtraOutputs | null
-  result_meta?: Wan22ResultMeta | null
+  result_meta?: (Wan22ResultMeta & Record<string, unknown>) | Record<string, unknown> | null
 }
 
 export interface TaskResultDecision {
   type: 'resolved' | 'retry' | 'timeout' | 'forbidden'
   resultUrl?: string
+  resultKind?: 'media' | 'text'
+  resultText?: string
   extraOutputs?: TaskExtraOutputs
   resultMeta?: Wan22ResultMeta
 }
@@ -17,6 +24,8 @@ export interface TaskResultDecision {
 export interface ResumableTaskLike {
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
+  resultKind?: 'media' | 'text'
+  resultText?: string
   extraOutputs?: TaskExtraOutputs
   resultMeta?: Wan22ResultMeta
 }
@@ -52,6 +61,20 @@ export function decideTaskResultFromResponse(
     }
   }
 
+  if (
+    payload.status === 'success'
+    && payload.result_kind === 'text'
+    && String(payload.result_text || '').trim()
+  ) {
+    return {
+      type: 'resolved',
+      resultKind: 'text',
+      resultText: String(payload.result_text).trim(),
+      extraOutputs: payload.extra_outputs ?? {},
+      resultMeta: payload.result_meta ?? {}
+    }
+  }
+
   if (payload.status === 'pending_result' && retryCount < maxRetries) {
     return { type: 'retry' }
   }
@@ -82,7 +105,9 @@ export function shouldResumeTaskStatusPolling(task: ResumableTaskLike): boolean 
 export function restorePersistedTask<T extends RecoverableTaskLike>(
   task: T
 ): TaskRestoreDecision<T> {
-  if (task.awaitingResult || (task.status === 'success' && !task.resultUrl)) {
+  const hasTerminalResult = Boolean(task.resultUrl)
+    || (task.resultKind === 'text' && Boolean(task.resultText))
+  if (task.awaitingResult || (task.status === 'success' && !hasTerminalResult)) {
     return {
       type: 'poll_result',
       task: {
@@ -115,7 +140,7 @@ export function applyTaskResultResponseToTask<T extends RecoverableTaskLike>(
 ): TaskResultTransition<T> {
   const decision = decideTaskResultFromResponse(payload, retryCount, maxRetries)
 
-  if (decision.type === 'resolved' && decision.resultUrl) {
+  if (decision.type === 'resolved' && (decision.resultUrl || decision.resultText)) {
     return {
       type: 'resolved',
       task: {
@@ -123,6 +148,8 @@ export function applyTaskResultResponseToTask<T extends RecoverableTaskLike>(
         progress: 100,
         status: 'success',
         resultUrl: decision.resultUrl,
+        ...(decision.resultKind ? { resultKind: decision.resultKind } : {}),
+        ...(decision.resultText ? { resultText: decision.resultText } : {}),
         extraOutputs: decision.extraOutputs ?? {},
         resultMeta: decision.resultMeta ?? {},
         awaitingResult: false,
