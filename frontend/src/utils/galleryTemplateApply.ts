@@ -3,6 +3,7 @@ import type { GalleryPost } from '@/types/gallery'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = 'i2i_draw_disabled'
+export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED = 'gallery_prompt_unlock_required'
 
 export const resolveGalleryTemplateApplyDisabledReason = (
   post: GalleryPost | null | undefined
@@ -20,6 +21,14 @@ export const resolveGalleryTemplateApplyDisabledReason = (
       || (post.result_meta?.wan22_is_stitched
         ? GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
         : 'unsupported')
+  }
+
+  if (post.result_meta?.wan22_is_stitched) {
+    return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
+  }
+
+  if (post.prompt_is_masked === true) {
+    return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED
   }
 
   if (post.template_apply_supported === true) {
@@ -47,6 +56,9 @@ export const resolveGalleryTemplateApplyDisabledMessage = (
   }
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED) {
     return t('template_apply.disabled.i2i_draw_disabled')
+  }
+  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED) {
+    return t('template_apply.disabled.gallery_prompt_unlock_required')
   }
   return t('template_apply.disabled.unsupported')
 }

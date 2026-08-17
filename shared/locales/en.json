@@ -527,6 +527,7 @@
       "i2i_draw_disabled": "Inpaint has been turned off on Web and cannot be applied as a template.",
       "minimax_h3_context_missing": "This historical post is missing complete Pro settings. Community interactions remain available, but template apply is disabled.",
       "minimax_h3_mode_not_supported": "This Pro mode does not support template apply.",
+      "gallery_prompt_unlock_required": "Unlock this post's prompt before applying it as a template.",
       "unsupported": "This post cannot be applied as a template."
     },
     "close": {

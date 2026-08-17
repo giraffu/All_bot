@@ -416,6 +416,53 @@ describe('Gallery template apply integration', () => {
     expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
   })
 
+  it('disables template apply while a gallery prompt is still locked', async () => {
+    const lockedPost = {
+      ...samplePost,
+      task_type: 'minimax_h3_i2v',
+      prompt: 'demo ******',
+      prompt_unlocked: false,
+      prompt_unlockable: true,
+      prompt_is_masked: true,
+      template_apply_supported: true,
+    }
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/config') {
+        return Promise.resolve({
+          data: {
+            allowed_types: [],
+            lora_models: [],
+            img2img_lora_models: []
+          }
+        })
+      }
+      if (url === '/gallery/posts') {
+        return Promise.resolve({
+          data: {
+            items: [lockedPost],
+            total: 1,
+            page: 1,
+            pages: 1
+          }
+        })
+      }
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const { wrapper, applyButton } = await openDetailAndFindApplyButton()
+
+    expect(applyButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请先解锁该投稿的提示词')
+
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(
+      apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
+    ).toBe(false)
+    expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
+  })
+
   it('switches page with paged navigation and requests the target page', async () => {
     primeGalleryApi({ paged: true })
 

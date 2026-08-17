@@ -528,6 +528,7 @@
       "i2i_draw_disabled": "局部重绘已在 Web 端关闭，暂不支持一键应用。",
       "minimax_h3_context_missing": "该历史作品缺少完整的 Pro 参数，只能继续互动，暂不支持一键应用。",
       "minimax_h3_mode_not_supported": "该 Pro 模式暂不支持一键应用。",
+      "gallery_prompt_unlock_required": "请先解锁该投稿的提示词，再使用一键应用。",
       "unsupported": "当前作品暂不支持一键应用。"
     },
     "close": {
