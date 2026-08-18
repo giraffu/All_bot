@@ -4,7 +4,8 @@
 
 本模块负责统一提交、排队、监控、取消与清理图片/视频生成任务。当前架构下，任务调度不是单一 `task_core.py` 单体，而是由以下几层组成：
 
-- `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
+- `src/core/task_application.py`：任务提交 application service，公开 `TaskApplication.submit(command, policy, journal)`
+- `src/core/task_core.py`：运行态/持久化 facade 与旧提交兼容适配；旧 `process_and_submit_task(...)` 不再承载提交编排
 - `src/core/task_core_types.py`：任务 core 数据契约，包含 `TaskSuccessPersistenceCommand` 等成功持久化命令对象
 - `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
@@ -23,7 +24,7 @@
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
-所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
+所有 Bot / Web 任务都应通过显式构造的 `TaskApplication` + dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。入口迁移期间旧 facade 只负责把宽参数转换为 command/policy/journal。
 
 ## 2. 启动与装配
 
@@ -94,12 +95,13 @@ sequenceDiagram
 
 当前统一提交入口：
 
-- `src/core/task_core.py::process_and_submit_task(...)`
+- `src/core/task_application.py::TaskApplication.submit(...)`
 
 职责：
 
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
-- `task_core.py` 仅保留 facade；具体步骤继续拆到 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`
+- `task_application.py` 持有 dependencies 并编排 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`；`task_core.py` 的宽提交函数仅为待退出兼容层
+- `TaskSubmissionCommand` 保存用户、任务、输入、双 ID 关联数据；`TaskSubmissionPolicy` 保存入口控制、幂等键和 timeout；`SubmissionJournal` 统一 durable phase hook，避免继续向 facade 增加 callback
 - 进行并发锁检查与扣费
 - 并发锁检查会把 `task_type` 传给 billing seam；低阶外门用户按目标执行池 `projected_pending > 50 × max(accepting_workers, 1)` 做扣费前准入，Central 指标缺失或任务未映射时 fail-open
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
