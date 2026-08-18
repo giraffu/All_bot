@@ -45,7 +45,7 @@ services:
       CLARITY_S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       CLARITY_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       CLARITY_S3_BUCKET: clarity-media
-      CLARITY_ALLOWED_ORIGINS: '["http://localhost:${CLARITY_WEB_PORT:-8095}"]'
+      CLARITY_ALLOWED_ORIGINS: '${CLARITY_ALLOWED_ORIGINS:?set CLARITY_ALLOWED_ORIGINS to a JSON origin allowlist}'
     depends_on:
       postgres:
         condition: service_healthy
