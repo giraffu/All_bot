@@ -29,6 +29,14 @@ COPY shared /app/shared
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=task-control-worker
 CMD ["python", "-m", "src.task_control_worker"]
 
+FROM ${RUNTIME_BASE_IMAGE} AS billing-reconciler
+ARG ALLBOT_GIT_SHA
+COPY config.py /app/config.py
+COPY src /app/src
+COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=billing-reconciler
+CMD ["python", "-m", "src.billing_reconciler"]
+
 FROM ${RUNTIME_BASE_IMAGE} AS payment-api
 ARG ALLBOT_GIT_SHA
 COPY config.py /app/config.py

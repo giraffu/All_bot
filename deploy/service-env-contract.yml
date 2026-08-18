@@ -2,7 +2,7 @@
   "schema_version": 1,
   "external_patterns": ["ALLBOT_WORKER_*", "CLOUD_TEST_WORKER_*", "CLOUD_TEST_SHARED_AIO_*"],
   "shared_defaults": {
-    "services": ["central-api", "web-api", "task-control-worker", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot", "support-bot"],
+    "services": ["central-api", "web-api", "task-control-worker", "billing-reconciler", "payment-api", "dashboard-backend", "main-bot", "qqcc-bot", "qqcc-config-backend", "private-bot-worker", "paid-group-bot", "support-bot"],
     "keys": ["DB_POOL_SIZE", "DB_MAX_OVERFLOW", "R2_MAX_POOL_CONNECTIONS", "R2_EXISTS_POSITIVE_TTL_SECONDS", "R2_EXISTS_NEGATIVE_TTL_SECONDS", "R2_EXISTS_CACHE_MAX_ENTRIES", "R2_HEAD_SEMAPHORE_LIMIT", "R2_HEAD_CONNECT_TIMEOUT_SECONDS", "R2_HEAD_READ_TIMEOUT_SECONDS", "R2_HEAD_MAX_ATTEMPTS", "POLL_INTERVAL", "POLL_TIMEOUT", "ENABLE_PUBLIC_SHARE", "ENABLE_FREE_EDIT_V2", "ENABLE_SCAIL2_LONG_ACTION_TRANSFER", "DAILY_LIMIT"]
   },
   "services": {
@@ -22,6 +22,15 @@
       "enabled_if": {"key": "TASK_CONTROL_WORKER_ENABLED", "equals": "true"},
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "WORKER_REDIS_URL", "API_BASE", "API_TOKEN", "BOT_TOKEN", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE"],
       "patterns": ["DATABASE_*", "REDIS_*", "WORKER_REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "TASK_*", "WEB_FINALIZER_*", "MAIN_BOT_ZOMBIE_*", "QQCC_BOT_ZOMBIE_*"]
+    },
+    "billing-reconciler": {
+      "enabled_if": {"key": "BILLING_RECONCILER_ENABLED", "equals": "true"},
+      "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "TELEGRAM_FILE_BASE_URL"],
+      "required_if": [
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}}
+      ],
+      "patterns": ["DATABASE_*", "REDIS_*", "BOT_*", "TELEGRAM_*", "TON_*", "USDT_TON_*", "VITE_MERCHANT_ADDRESS", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED", "BILLING_RECONCILER_*"]
     },
     "payment-api": {
       "environments": ["prod"],

@@ -67,6 +67,23 @@ services:
       <<: *python-health
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/healthz', timeout=5)"]
 
+  billing-reconciler:
+    <<: *app-base
+    image: ${ALLBOT_BILLING_RECONCILER_IMAGE:?release.env must pin ALLBOT_BILLING_RECONCILER_IMAGE by digest}
+    profiles: ["billing-reconciler"]
+    env_file:
+      - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/billing-reconciler.env
+        required: false
+        format: raw
+    environment:
+      BILLING_RECONCILER_ENABLED: ${BILLING_RECONCILER_ENABLED:-false}
+    command: ["python", "-m", "src.billing_reconciler"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8032/healthz', timeout=5)"]
+
   payment-api:
     <<: *app-base
     image: ${ALLBOT_PAYMENT_API_IMAGE:?release.env must pin ALLBOT_PAYMENT_API_IMAGE by digest}

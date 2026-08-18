@@ -86,6 +86,17 @@ def test_task_control_worker_is_profile_gated_and_disabled_by_default():
     assert "8031/healthz" in service["healthcheck"]["test"][3]
 
 
+def test_billing_reconciler_is_profile_gated_and_disabled_by_default():
+    service = _compose(BASE)["services"]["billing-reconciler"]
+
+    assert service["profiles"] == ["billing-reconciler"]
+    assert service["environment"]["BILLING_RECONCILER_ENABLED"] == (
+        "${BILLING_RECONCILER_ENABLED:-false}"
+    )
+    assert service["command"] == ["python", "-m", "src.billing_reconciler"]
+    assert "8032/healthz" in service["healthcheck"]["test"][3]
+
+
 def test_service_projection_files_are_optional_during_partial_project_parse():
     services = _compose(BASE)["services"]
 
