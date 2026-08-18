@@ -10,6 +10,7 @@
     "build:release": "vue-tsc -b && vite build --mode release",
     "build:cf-prod": "vue-tsc -b && vite build --mode cf-prod",
     "build:cf-test": "vue-tsc -b && vite build --mode cf-test",
+    "contract:check": "python3 ../scripts/generate_task_type_contract.py --check",
     "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest",
     "preview": "vite preview"

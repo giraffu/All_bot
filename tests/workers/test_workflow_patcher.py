@@ -16,15 +16,16 @@ WORKER_WORKFLOW_DIR = str(
 )
 
 
-def test_wan22_explicit_lora_catalog_is_mirrored_for_runpod_runtime():
+def test_wan22_explicit_lora_catalog_has_no_runpod_runtime_source_copy():
     repo_root = Path(__file__).resolve().parents[2]
-    assert (repo_root / "src" / "wan22_explicit_lora_catalog.py").read_bytes() == (
+    assert (repo_root / "src" / "wan22_explicit_lora_catalog.py").is_file()
+    assert not (
         repo_root
         / "workers"
         / "runpod_runtime"
         / "src"
         / "wan22_explicit_lora_catalog.py"
-    ).read_bytes()
+    ).exists()
 
 
 def _write_json(path: Path, payload) -> None:

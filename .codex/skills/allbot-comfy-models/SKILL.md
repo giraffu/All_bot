@@ -34,6 +34,9 @@ manifest 和专项文档读取，不在此维护快照。
 - 用户能力和参数：task registry/domain config、Bot/Web schema 与 presenter。
 - task type → workflow/profile：Worker registry、workflow resolver、release
   artifact catalog 和 focused tests。
+- workflow resolver 对未知类型和 registry 中没有 workflow 的类型显式报错；
+  禁止继续猜测 `<task_type>.json`。RunPod profile、Worker mapping 与 registry
+  由 `tests/config/test_task_type_contract.py` 做双向门禁。
 - 节点、输入名和默认值：`workers/comfy_agent/workflows/*.json` 及对应
   patcher；禁止凭记忆编辑。
 - 模型是否可运行：目标 profile 的模型 manifest、镜像内 workflow checksum、
@@ -74,6 +77,9 @@ manifest 和专项文档读取，不在此维护快照。
 5. 同步 Bot/Web/QQCC schema 与 i18n；服务端必须再次校验，不依赖前端菜单。
 6. 若模型或 workflow 进入 artifact，更新 checksum/manifest/profile，走同
    SHA 构建和 canary；代码合入本身不代表模型已在运行节点生效。
+7. registry 变化后运行
+   `python scripts/generate_task_type_contract.py --write`，再运行 `--check`；
+   生成的前端合约不可手工维护。
 
 ## 5. 高压红线
 

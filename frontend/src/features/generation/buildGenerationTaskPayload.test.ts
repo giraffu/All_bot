@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { buildGenerationTaskPayload } from './buildGenerationTaskPayload'
 
 describe('buildGenerationTaskPayload', () => {
+  it('fails closed for a task type missing from the generated public contract', () => {
+    expect(() => buildGenerationTaskPayload({
+      taskType: 'not_registered',
+      images: [],
+    })).toThrow('Unknown task type: not_registered')
+  })
+
   it('builds single image payload with template metadata', () => {
     expect(
       buildGenerationTaskPayload({
