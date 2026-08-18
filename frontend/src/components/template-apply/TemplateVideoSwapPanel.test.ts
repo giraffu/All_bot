@@ -54,12 +54,12 @@ vi.mock('@/composables/useTemplateApplyUpload', async () => {
   }
 })
 
-vi.mock('@/composables/useTaskStream', async () => {
+vi.mock('@/composables/useTaskSubmission', async () => {
   const { ref } = await vi.importActual<typeof import('vue')>('vue')
   sharedRefs.isSubmittingRef = ref(false)
 
   return {
-    useTaskStream: () => ({
+    useTaskSubmission: () => ({
       isSubmitting: sharedRefs.isSubmittingRef,
       submitTask: submitTaskMock
     })

@@ -5,9 +5,10 @@ import {
   fetchSystemStatus,
   fetchSystemWorkers,
   syncUserConcurrency,
-} from '../api/api'
+} from '../api/queueStatsApi'
+import type { ConcurrencyStat, DashboardWorker } from '../api/queueStatsApi'
 
-interface QueueTypeDetail {
+export interface QueueTypeDetail {
   active_count?: number | null
   pending_count?: number | null
   low_trust_free_tier_user_count?: number | null
@@ -18,7 +19,7 @@ interface QueueTypeDetail {
   oldest_pending_created_at?: string | null
 }
 
-interface QueueStatus {
+export interface QueueStatus {
   queue_size: number
   queue_by_type: Record<string, number>
   queue_by_type_details: Record<string, QueueTypeDetail>
@@ -38,6 +39,38 @@ interface QueueStatus {
   }>
   low_trust_free_tier_pending_user_count: number
   low_trust_free_tier_pending_task_count: number
+  concurrency_locks?: number
+}
+
+export interface QueueTypeDisplay {
+  type: string
+  count: number
+  activeCount: number
+  pendingCount: number
+  lowTrustFreeTierUserCount: number
+  lowTrustFreeTierTaskCount: number
+  maxPendingWaitSeconds: number | null
+  maxNonLowTrustPendingWaitSeconds: number | null
+  oldestPendingTaskId: string | null
+  oldestPendingCreatedAt: string | null
+}
+
+export interface RunPodProfileQueueDisplay {
+  profile: string
+  label?: string
+  autoscalerEnabled: boolean
+  supportedTaskTypes: string[]
+  activeCount: number
+  pendingCount: number
+  activeCountByTaskType: Record<string, number>
+  pendingCountByTaskType: Record<string, number>
+  nonLowTrustClearPendingCount: number
+  nonLowTrustClearPendingCountByTaskType: Record<string, number>
+  lastNonLowTrustPendingQueueIndex: number | null
+  maxPendingWaitSeconds: number | null
+  maxNonLowTrustPendingWaitSeconds: number | null
+  oldestPendingTaskId: string | null
+  oldestPendingCreatedAt: string | null
 }
 
 const defaultStatus = (): QueueStatus => ({
@@ -61,15 +94,15 @@ const concurrencyRefreshTicks = 6
 
 export function useQueueStatsMonitor() {
   const status = ref(defaultStatus())
-  const workers = ref<any[]>([])
-  const concurrencyStats = ref<any[]>([])
+  const workers = ref<DashboardWorker[]>([])
+  const concurrencyStats = ref<ConcurrencyStat[]>([])
   const cleaning = ref(false)
   const syncing = ref<Record<string | number, boolean>>({})
 
   let timer: ReturnType<typeof setInterval> | null = null
   let tick = 0
 
-  const queueByTypeDisplay = computed(() => {
+  const queueByTypeDisplay = computed<QueueTypeDisplay[]>(() => {
     const queueByType = status.value.queue_by_type || {}
     const queueByTypeDetails = status.value.queue_by_type_details || {}
     const taskTypes = Array.from(
@@ -132,8 +165,8 @@ export function useQueueStatsMonitor() {
       })
   })
 
-  const runpodProfileQueueDisplay = computed(() => {
-    const rawDetails = (status.value as any).runpod_profile_queue_details || []
+  const runpodProfileQueueDisplay = computed<RunPodProfileQueueDisplay[]>(() => {
+    const rawDetails = status.value.runpod_profile_queue_details || []
 
     return rawDetails.map((item: any) => {
       const rawWaitSeconds = item.max_pending_wait_seconds
@@ -191,7 +224,7 @@ export function useQueueStatsMonitor() {
   const updateQueue = async () => {
     try {
       const [statusData, workersData] = await Promise.all([
-        fetchSystemStatus(),
+        fetchSystemStatus<QueueStatus>(),
         fetchSystemWorkers(),
       ])
 

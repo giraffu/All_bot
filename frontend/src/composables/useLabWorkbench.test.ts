@@ -71,8 +71,8 @@ vi.mock('@/composables/useUpload', () => ({
   }),
 }))
 
-vi.mock('@/composables/useTaskStream', () => ({
-  useTaskStream: () => ({
+vi.mock('@/composables/useTaskSubmission', () => ({
+  useTaskSubmission: () => ({
     isSubmitting: ref(false),
     submitTask: mocks.submitTask,
   }),

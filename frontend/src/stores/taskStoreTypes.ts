@@ -27,27 +27,6 @@ export type PromptOptimizationTaskContext = {
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
 export type TaskRefundStatus = 'pending' | 'refunded' | 'unconfirmed'
 
-export interface TaskProgressPayload {
-  status?: TaskStatus
-  progress?: number
-  queue_pos?: number | null
-  error?: string
-  message?: string
-  task_id?: string
-  task_type?: string | null
-  media_type?: string | null
-  result_url?: string
-  result_kind?: string
-  result_text?: string
-  extra_outputs?: TaskExtraOutputs
-  result_meta?: Wan22ResultMeta
-  [key: string]: unknown
-}
-
-export interface TaskStreamHandle {
-  close: () => void
-}
-
 export interface Task {
   id: string
   type: string
@@ -66,7 +45,6 @@ export interface Task {
   extraOutputs?: TaskExtraOutputs
   resultMeta?: Wan22ResultMeta
   error?: string
-  eventSource?: TaskStreamHandle
   retryCount?: number
   awaitingResult?: boolean
   updatedAt?: number

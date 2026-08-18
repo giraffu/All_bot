@@ -51,6 +51,9 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
   loop 默认仍开启，只有显式滚动切换后才退出原宿主。
 - `billing-reconciler` 是默认禁用的 TON/USDT-TON 轮询宿主，通道各自监督；
   主 Bot 旧轮询默认保持，只有验证新宿主 health/checkpoint 后才显式关闭。
+- 公共 Web 的任务提交使用 typed `useTaskSubmission` 与 status/result polling；
+  无生产调用的 SSE client 已删除，后端 stream 路由暂作兼容。Dashboard 新 SFC
+  强制 TypeScript，legacy 清单只能单调缩减。
 
 完整入口归属见
 [入口职责矩阵](./入口职责矩阵_entry_responsibility_matrix.md)。

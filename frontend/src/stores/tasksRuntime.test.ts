@@ -283,7 +283,6 @@ test('serializeTasksForStorage preserves per-task updatedAt instead of overwriti
     {
       ...createTask({ id: 'task-1' }),
       updatedAt: now - 60_000,
-      eventSource: { close() {} }
     },
     {
       ...createTask({ id: 'task-2' }),

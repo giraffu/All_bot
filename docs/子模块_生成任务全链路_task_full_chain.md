@@ -110,15 +110,15 @@ sequenceDiagram
 
 前端通常通过以下链路提交：
 
-- `frontend/src/composables/useTaskStream.ts`
+- `frontend/src/composables/useTaskSubmission.ts`
 - `frontend/src/stores/tasks.ts`
 - `frontend/src/stores/taskSessionState.ts`
-- `frontend/src/stores/taskStreamTransport.ts`
 - `frontend/src/stores/tasksRuntime.ts`
 
 提交后会发生：
 
-1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
+1. `useTaskSubmission.submitTask(...)` 调用 `POST /tasks/generate`；提交提示从共享
+   i18n 读取，composable 名称不再暗示已经退出生产调用的 SSE transport
 2. 后端返回 `task_id` 后，前端把该任务写入 `tasksStore`
    - Web 不使用悬浮任务数量做并发准入；身份对应的并发额度由后端
      `check_concurrency_lock(...)` 权威判断，避免付费身份额度提升后仍被客户端旧上限拦截
@@ -692,7 +692,8 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 兼容实时流：
   - `GET /api/tasks/{task_id}/stream`
   - service 入口：`src/web_api/services/task_stream_api_service.py`
-  - 后端 SSE 与 Redis Pub/Sub 能力保留，但不再作为 Web 前端默认用户侧进度展示路径
+  - 后端 SSE 与 Redis Pub/Sub 能力保留，但公共 Web 已删除无生产调用的 SSE
+    client/stream handle；前端只走 status/result polling
 
 - 结果态：
   - `GET /api/tasks/{task_id}/result`

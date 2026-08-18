@@ -31,6 +31,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   `dashboard/backend/routers/qqcc.py`。
 - Config UI：`dashboard/frontend/src/QqccConfigApp.vue` 与
   `QqccBotSettings.vue`。
+- QQCC Config Web 的公开 payload 类型集中在 `types/qqccConfig.ts`，HTTP 只经
+  `api/qqccConfigApi.ts` typed adapter；加载/保存生命周期复用
+  `useQqccConfigPersistence.ts`，组件不再自行复制请求状态机。
 - 私有 Bot 申请：`qqcc_bot/private_bot_fsm.py`，只注册在官方 QQCC。
 - 私有 webhook：`src/web_api/routers/private_bots.py` → Redis stream →
   `python -m qqcc_private_bot.worker`。

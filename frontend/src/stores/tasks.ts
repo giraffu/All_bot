@@ -26,9 +26,6 @@ import {
   settleExternalTaskSession,
   type ExternalTaskOutcome,
 } from './taskSessionState'
-import {
-  closeTaskStream,
-} from './taskStreamTransport'
 import type { Task } from './taskStoreTypes'
 import type { PromptOptimizationTaskContext } from './taskStoreTypes'
 import type { TaskRecord } from '@/types/gallery'
@@ -55,8 +52,7 @@ export const useTasksStore = defineStore('tasks', () => {
       return
     }
 
-    closeTaskStream(task)
-    removeTaskSession(activeTasks.value, taskId, closeTaskStream)
+    removeTaskSession(activeTasks.value, taskId)
     detachedResultProbeTaskIds.delete(taskId)
     resultPollingTaskIds.delete(taskId)
     statusPollingTaskIds.delete(taskId)
@@ -232,7 +228,6 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const finalizeCancelledTask = async (task: Task, cancelMessage?: string) => {
-    closeTaskStream(task)
     statusPollingTaskIds.delete(task.id)
     task.status = 'cancelled'
     task.awaitingResult = false
@@ -269,7 +264,6 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const startStatusPolling = (task: Task) => {
-    closeTaskStream(task)
     if (statusPollingTaskIds.has(task.id)) {
       return
     }
@@ -422,7 +416,7 @@ export const useTasksStore = defineStore('tasks', () => {
     statusPollingTaskIds.delete(taskId)
     detachedResultProbeTaskIds.delete(taskId)
     resultPollingTaskIds.delete(taskId)
-    removeTaskSession(activeTasks.value, taskId, closeTaskStream)
+    removeTaskSession(activeTasks.value, taskId)
   }
 
   const settleExternalTask = (
@@ -433,7 +427,6 @@ export const useTasksStore = defineStore('tasks', () => {
     if (!task) return false
 
     const shouldNotify = task.status !== outcome.status
-    closeTaskStream(task)
     statusPollingTaskIds.delete(taskId)
     detachedResultProbeTaskIds.delete(taskId)
     resultPollingTaskIds.delete(taskId)

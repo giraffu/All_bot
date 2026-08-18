@@ -1069,6 +1069,7 @@
     "face_image": "人脸图"
   },
   "task": {
+    "submission_queued": "任务已提交，开始排队生成...",
     "img2img": "🎨 懒人/自由P图",
     "img2img_lora": "🎨 图生图 (附加模型)",
     "i2i_pro": "🌟 幻想换脸",

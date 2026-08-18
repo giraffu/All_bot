@@ -1,17 +1,16 @@
-from datetime import datetime
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram import Bot
 
 from dashboard.backend.auth import TokenData, get_current_user
+from dashboard.backend.services.support_ticket_admin_service import (
+    SupportTicketAdminError,
+    get_support_ticket_admin,
+    list_support_tickets_admin,
+    reply_support_ticket_admin,
+    update_support_ticket_admin,
+)
 from src.database.core import get_db
-from src.database.models import SupportMessage, SupportTicket
-from src.services.r2_presign import build_r2_presigned_url
-from src.services.support_ticket_service import STATUSES, list_tickets
 
 router = APIRouter(prefix="/api/support-tickets", tags=["support_tickets"])
 
@@ -28,41 +27,17 @@ class ReplyTicketRequest(BaseModel):
     )
 
 
-def ticket_payload(ticket: SupportTicket) -> dict:
-    return {
-        "id": ticket.id,
-        "telegram_user_id": ticket.telegram_user_id,
-        "internal_user_id": ticket.internal_user_id,
-        "category": ticket.category,
-        "status": ticket.status,
-        "username": ticket.username,
-        "full_name": ticket.full_name,
-        "assigned_admin": ticket.assigned_admin,
-        "created_at": ticket.created_at,
-        "last_message_at": ticket.last_message_at,
-        "closed_at": ticket.closed_at,
-    }
+ERRORS = {
+    "invalid_status": (422, "Invalid status"),
+    "ticket_not_found": (404, "Ticket not found"),
+    "support_bot_not_configured": (503, "Support Bot is not configured"),
+    "reply_delivery_failed": (502, "Unable to deliver reply"),
+}
 
 
-def message_payload(message: SupportMessage) -> dict:
-    attachments = []
-    for item in message.attachments or []:
-        item = dict(item)
-        item["url"] = (
-            build_r2_presigned_url(
-                str(item.get("object_key") or ""), expires_hours=0.25
-            )
-            if item.get("object_key")
-            else ""
-        )
-        attachments.append(item)
-    return {
-        "id": message.id,
-        "sender_type": message.sender_type,
-        "body": message.body,
-        "attachments": attachments,
-        "created_at": message.created_at,
-    }
+def _map_service_error(exc: SupportTicketAdminError) -> HTTPException:
+    status_code, detail = ERRORS.get(exc.code, (500, "Support ticket operation failed"))
+    return HTTPException(status_code, detail)
 
 
 @router.get("")
@@ -74,17 +49,12 @@ async def get_tickets(
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ):
-    if status and status not in STATUSES:
-        raise HTTPException(422, "Invalid status")
-    items, total = await list_tickets(
-        db, page=page, page_size=page_size, status=status, category=category
-    )
-    return {
-        "items": [ticket_payload(item) for item in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+    try:
+        return await list_support_tickets_admin(
+            db, page=page, page_size=page_size, status=status, category=category
+        )
+    except SupportTicketAdminError as exc:
+        raise _map_service_error(exc) from exc
 
 
 @router.get("/{ticket_id}")
@@ -93,24 +63,10 @@ async def get_ticket(
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ):
-    ticket = await db.get(SupportTicket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    messages = (
-        (
-            await db.execute(
-                select(SupportMessage)
-                .where(SupportMessage.ticket_id == ticket_id)
-                .order_by(SupportMessage.created_at, SupportMessage.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return {
-        **ticket_payload(ticket),
-        "messages": [message_payload(message) for message in messages],
-    }
+    try:
+        return await get_support_ticket_admin(db, ticket_id=ticket_id)
+    except SupportTicketAdminError as exc:
+        raise _map_service_error(exc) from exc
 
 
 @router.patch("/{ticket_id}")
@@ -120,19 +76,16 @@ async def update_ticket(
     db: AsyncSession = Depends(get_db),
     admin: TokenData = Depends(get_current_user),
 ):
-    ticket = await db.get(SupportTicket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    ticket.status, ticket.assigned_admin = payload.status, admin.username
-    ticket.closed_at = datetime.now() if payload.status == "closed" else None
-    if payload.internal_note:
-        db.add(
-            SupportMessage(
-                ticket_id=ticket.id, sender_type="internal", body=payload.internal_note
-            )
+    try:
+        return await update_support_ticket_admin(
+            db,
+            ticket_id=ticket_id,
+            status=payload.status,
+            internal_note=payload.internal_note,
+            admin_username=admin.username,
         )
-    await db.commit()
-    return ticket_payload(ticket)
+    except SupportTicketAdminError as exc:
+        raise _map_service_error(exc) from exc
 
 
 @router.post("/{ticket_id}/reply")
@@ -142,32 +95,13 @@ async def reply_ticket(
     db: AsyncSession = Depends(get_db),
     admin: TokenData = Depends(get_current_user),
 ):
-    ticket = await db.get(SupportTicket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    token = os.getenv("SUPPORT_BOT_TOKEN")
-    if not token:
-        raise HTTPException(503, "Support Bot is not configured")
     try:
-        async with Bot(token=token) as bot:
-            sent = await bot.send_message(
-                chat_id=ticket.telegram_user_id, text=payload.body
-            )
-    except Exception as exc:
-        raise HTTPException(502, "Unable to deliver reply") from exc
-    ticket.status, ticket.assigned_admin, ticket.last_message_at = (
-        payload.status,
-        admin.username,
-        datetime.now(),
-    )
-    ticket.closed_at = datetime.now() if payload.status == "closed" else None
-    db.add(
-        SupportMessage(
-            ticket_id=ticket.id,
-            sender_type="admin",
+        return await reply_support_ticket_admin(
+            db,
+            ticket_id=ticket_id,
             body=payload.body,
-            telegram_message_id=sent.message_id,
+            status=payload.status,
+            admin_username=admin.username,
         )
-    )
-    await db.commit()
-    return ticket_payload(ticket)
+    except SupportTicketAdminError as exc:
+        raise _map_service_error(exc) from exc
