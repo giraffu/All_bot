@@ -10,10 +10,27 @@ MIGRATION_PATH = (
     / "versions"
     / "d1e2f3a4b5c6_harden_gallery_uniqueness.py"
 )
+LEGACY_CONSTRAINT_MIGRATION_PATH = (
+    ROOT
+    / "migrations"
+    / "versions"
+    / "e2f3a4b5c6d7_drop_legacy_gallery_action_constraint.py"
+)
 
 
 def _load_migration():
     spec = importlib.util.spec_from_file_location("gallery_consistency_migration", MIGRATION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_legacy_constraint_migration():
+    spec = importlib.util.spec_from_file_location(
+        "gallery_legacy_constraint_migration",
+        LEGACY_CONSTRAINT_MIGRATION_PATH,
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -97,3 +114,15 @@ def test_gallery_orm_uses_the_same_partial_unique_indexes():
             "postgresql"
         ]["where"]
     )
+
+
+def test_legacy_gallery_action_constraint_is_removed_after_partial_indexes():
+    migration = _load_legacy_constraint_migration()
+    fake_op = _Op()
+    migration.op = fake_op
+
+    migration.upgrade()
+
+    execute = next(call for call in fake_op.calls if call[0] == "execute")
+    assert "DROP CONSTRAINT IF EXISTS uix_user_post_action" in execute[1]
+    assert migration.down_revision == "d1e2f3a4b5c6"
