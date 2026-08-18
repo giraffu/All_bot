@@ -211,7 +211,7 @@ async def test_adaptive_runner_logs_raw_and_capacity_cpu(monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
-async def test_adaptive_runner_keeps_concurrency_for_one_timeout_in_1000_requests():
+async def test_adaptive_runner_does_not_downshift_for_one_timeout_in_1000_requests():
     calls = []
 
     async def execute_batch(args):
@@ -241,9 +241,9 @@ async def test_adaptive_runner_keeps_concurrency_for_one_timeout_in_1000_request
         sleep=asyncio.sleep,
     )
 
-    assert calls == [64, 64]
+    assert calls == [64, 128]
     assert result["status"] == "completed"
-    assert result["copy_concurrency"] == 64
+    assert result["copy_concurrency"] == 128
 
 
 @pytest.mark.asyncio
@@ -313,8 +313,8 @@ async def test_adaptive_runner_raises_on_low_nonzero_window_error_rate():
         sleep=asyncio.sleep,
     )
 
-    assert calls == [32, 32, 64]
-    assert result["copy_concurrency"] == 64
+    assert calls == [32, 64, 128]
+    assert result["copy_concurrency"] == 128
 
 
 @pytest.mark.asyncio
@@ -366,7 +366,7 @@ def test_copy_health_window_lowers_only_after_sustained_half_percent_errors():
     assert decision.error_rate == pytest.approx(0.006)
 
 
-def test_copy_health_window_lowers_for_one_server_5xx_but_not_one_timeout():
+def test_copy_health_window_uses_rate_for_5xx_and_timeout_but_rate_limit_is_immediate():
     server_error = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
     server_error.extend(
         [*({"at": 1.0, "kind": "ok"} for _ in range(999))]
@@ -375,8 +375,19 @@ def test_copy_health_window_lowers_for_one_server_5xx_but_not_one_timeout():
 
     decision = server_error.decision(current_concurrency=128)
 
-    assert decision.action == "lower"
-    assert decision.reason == "server_5xx"
+    assert decision.action == "raise"
+
+    sustained_server_errors = CopyHealthWindow(
+        max_requests=1000, max_age_seconds=60
+    )
+    sustained_server_errors.extend(
+        [*({"at": 1.0, "kind": "ok"} for _ in range(994))]
+        + [*({"at": 1.0, "kind": "server_5xx"} for _ in range(6))]
+    )
+    sustained = sustained_server_errors.decision(current_concurrency=128)
+
+    assert sustained.action == "lower"
+    assert sustained.reason == "sustained_transient_error_rate"
 
     timeout = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
     timeout.extend(
@@ -386,8 +397,48 @@ def test_copy_health_window_lowers_for_one_server_5xx_but_not_one_timeout():
 
     assert timeout.decision(current_concurrency=128).action == "raise"
 
+    rate_limit = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
+    rate_limit.extend([{"at": 1.0, "kind": "rate_limit"}])
+    immediate = rate_limit.decision(current_concurrency=128)
 
-def test_copy_latency_window_lowers_on_extreme_or_sustained_tail_and_recovers():
+    assert immediate.action == "lower"
+    assert immediate.reason == "rate_limit"
+
+
+def test_copy_health_window_can_raise_after_time_window_without_1000_requests():
+    health = CopyHealthWindow(
+        max_requests=1000,
+        max_age_seconds=60,
+        minimum_samples=200,
+        minimum_observation_seconds=30,
+    )
+    health.extend(
+        [{"at": float(second), "kind": "ok"} for second in range(31)]
+    )
+
+    decision = health.decision(current_concurrency=16)
+
+    assert decision.action == "raise"
+    assert decision.sample_count == 31
+
+
+def test_copy_health_window_reset_discards_pre_downshift_errors():
+    health = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
+    health.extend(
+        [*({"at": 1.0, "kind": "ok"} for _ in range(994))]
+        + [*({"at": 1.0, "kind": "timeout"} for _ in range(6))]
+    )
+    assert health.decision(current_concurrency=128).action == "lower"
+
+    health.reset()
+    health.extend([{"at": float(second), "kind": "ok"} for second in range(31)])
+
+    decision = health.decision(current_concurrency=64)
+    assert decision.action == "raise"
+    assert decision.error_rate == 0
+
+
+def test_copy_latency_window_observes_tail_without_controlling_concurrency():
     latency = CopyLatencyWindow(
         p95_lower_ms=8_000,
         p95_raise_ms=5_000,
@@ -401,15 +452,15 @@ def test_copy_latency_window_lowers_on_extreme_or_sustained_tail_and_recovers():
     extreme = latency.decision(p95_ms=4_000, max_ms=120_001)
 
     assert first.action == "hold"
-    assert second.action == "lower"
-    assert second.reason == "sustained_r2_p95_latency"
+    assert second.action == "hold"
+    assert second.reason == "sustained_r2_p95_observed"
     assert recovered.action == "raise"
-    assert extreme.action == "lower"
-    assert extreme.reason == "r2_extreme_long_tail"
+    assert extreme.action == "hold"
+    assert extreme.reason == "r2_extreme_long_tail_observed"
 
 
 @pytest.mark.asyncio
-async def test_adaptive_runner_uses_128_64_32_16_for_r2_latency_pressure():
+async def test_adaptive_runner_does_not_downshift_for_latency_without_errors():
     calls = []
 
     async def execute_batch(args):
@@ -442,9 +493,51 @@ async def test_adaptive_runner_uses_128_64_32_16_for_r2_latency_pressure():
         sleep=asyncio.sleep,
     )
 
-    assert calls == [128, 64, 32, 16]
+    assert calls == [128, 128, 128, 128]
     assert result["status"] == "completed"
-    assert result["copy_concurrency"] == 16
+    assert result["copy_concurrency"] == 128
+
+
+@pytest.mark.asyncio
+async def test_adaptive_runner_resets_observation_after_downshift_and_recovers():
+    calls = []
+
+    async def execute_batch(args):
+        calls.append(args.copy_concurrency)
+        if len(calls) == 1:
+            events = [{"at": 1.0, "kind": "rate_limit"}]
+        else:
+            events = [
+                {"at": float(second), "kind": "ok"} for second in range(31)
+            ]
+        return {
+            "remaining": 0 if len(calls) == 3 else 100,
+            "copied_objects": len(events),
+            "_copy_request_events": events,
+            "r2_object_operation_latency_ms": {
+                "p95": 25_000,
+                "max": 180_000,
+            },
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    result = await run_adaptive_copy(
+        SimpleNamespace(
+            plan_sha256="9" * 64,
+            confirm="COPY_HISTORY_MEDIA_" + "9" * 64,
+            config="/tmp/config.json",
+            limit=100,
+            copy_concurrency=128,
+            max_pool_connections=192,
+            circuit_breaker_windows=3,
+            max_cpu_percent=1000,
+        ),
+        execute_batch=execute_batch,
+        sleep=asyncio.sleep,
+    )
+
+    assert calls == [128, 64, 128]
+    assert result["status"] == "completed"
 
 
 @pytest.mark.asyncio
