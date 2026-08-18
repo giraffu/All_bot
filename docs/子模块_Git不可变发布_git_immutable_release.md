@@ -64,6 +64,11 @@ RunPod 消费的 GPU module 必须在 catalog 声明 `runpod_single_manifest=tru
 发布器据此显式构建 `linux/amd64` 并关闭 BuildKit provenance，使运行 digest
 直接指向单一 Docker image manifest，而不是带 attestation 的 OCI index。
 LAN-only GPU module 不受此标记影响。
+当 GPU Dockerfile 同时声明 `ALLBOT_RUNTIME_PACKAGE_SHA256` 与
+`ALLBOT_WORKFLOW_MAPPING_SHA256` 时，发布器从指定 SHA 的干净 checkout 自动计算
+canonical worker package 与 `workflows/mappings.json` 哈希，作为 build args 和 OCI
+labels 注入；只声明其中一个或 checkout 缺少对应运行时文件时 fail closed。不得手工填
+占位哈希或删除 Dockerfile 自检。
 
 本地操作者通过 SSH alias `allbot-do-sgp1-build` 登录专用构建主机。SSH 登录用户是
 `deploy`，但持久 Buildx builder 归 `actions` OS 用户所有；必须在云主机内执行

@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -257,6 +258,51 @@ def test_runpod_gpu_build_emits_single_linux_amd64_manifest_without_provenance()
     ]
     assert ["--platform", "linux/amd64"] in adjacent_arguments
     assert "--provenance=false" in build
+
+
+def test_gpu_build_injects_canonical_runtime_and_workflow_hashes():
+    from workers.comfy_agent.runtime_manifest import hash_runtime_package
+
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+    calls = []
+    digest = "sha256:" + "2" * 64
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+            if "--format" in command:
+                return module.CommandResult(0, digest, "")
+            return module.CommandResult(1, "", "not found")
+        return module.CommandResult(0, "", "")
+
+    module.build_modules(
+        catalog,
+        ["minimax_h3"],
+        sha="b" * 40,
+        image_prefix="ghcr.io/example",
+        dependencies=module.ReleaseDependencies(
+            run=fake_run,
+            temporary_checkout=lambda _sha: module.null_checkout(ROOT),
+        ),
+    )
+
+    build = next(call for call in calls if call[:3] == ["docker", "buildx", "build"])
+    adjacent_arguments = [
+        build[index : index + 2] for index in range(len(build) - 1)
+    ]
+    runtime_hash = hash_runtime_package(ROOT / "workers/comfy_agent")
+    workflow_hash = hashlib.sha256(
+        (ROOT / "workers/comfy_agent/workflows/mappings.json").read_bytes()
+    ).hexdigest()
+    assert [
+        "--build-arg",
+        f"ALLBOT_RUNTIME_PACKAGE_SHA256={runtime_hash}",
+    ] in adjacent_arguments
+    assert [
+        "--build-arg",
+        f"ALLBOT_WORKFLOW_MAPPING_SHA256={workflow_hash}",
+    ] in adjacent_arguments
 
 
 def test_gpu_build_accepts_declared_exact_external_base_ref():
