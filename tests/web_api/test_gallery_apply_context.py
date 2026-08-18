@@ -1816,7 +1816,13 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome():
     history_result = _FakeResult(many=[history])
     user_result = _FakeResult(single=user)
     session = _FakeSession(
-        [existing_result, history_result, user_result, _FakeResult(single=None)]
+        [
+            existing_result,
+            history_result,
+            user_result,
+            _FakeResult(single=1),
+            _FakeResult(single=None),
+        ]
     )
     gallery_submission_outbox = SimpleNamespace(
         check_gallery_submit_limit=AsyncMock(return_value=True),

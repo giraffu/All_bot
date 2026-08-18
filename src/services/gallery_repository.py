@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from src.database.core import AsyncSessionLocal
@@ -10,6 +10,37 @@ from src.services.media_archive_service import enqueue_history_media_restore
 
 async def get_gallery_post_by_id(session, post_id: int):
     return await session.get(GalleryPost, post_id)
+
+
+async def acquire_gallery_reaction_lock(session, *, user_id: int, post_id: int) -> None:
+    bind = session.get_bind() if hasattr(session, "get_bind") else None
+    if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
+        return
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(:reaction_owner, 0))"
+        ),
+        {"reaction_owner": f"gallery-reaction:{user_id}:{post_id}"},
+    )
+
+
+async def acquire_gallery_submission_lock(
+    session,
+    *,
+    user_id: int,
+    task_id: str,
+) -> None:
+    bind = session.get_bind() if hasattr(session, "get_bind") else None
+    if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
+        return
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(:submission_owner, 0))"
+        ),
+        {"submission_owner": f"gallery-submit:{user_id}:{task_id}"},
+    )
 
 
 async def get_gallery_post_by_task_id(session, task_id: str):
@@ -67,8 +98,9 @@ async def create_gallery_post_from_history(
     history,
     user,
 ):
-    session.add(
-        GalleryPost(
+    result = await session.execute(
+        insert(GalleryPost)
+        .values(
             task_id=task_id,
             user_id=user_id,
             media_type=media_type,
@@ -77,12 +109,21 @@ async def create_gallery_post_from_history(
             duration=duration,
             tags=tags_json,
         )
+        .on_conflict_do_nothing(
+            index_elements=[GalleryPost.task_id, GalleryPost.user_id]
+        )
+        .returning(GalleryPost.id)
     )
+    created_post_id = result.scalar_one_or_none()
+    if created_post_id is None:
+        await session.rollback()
+        return "duplicate"
     if user:
         user.total_contributions = (user.total_contributions or 0) + 1
     history.is_public = True
     await enqueue_history_media_restore(session, history, priority=0)
     await session.commit()
+    return "created"
 
 
 async def get_gallery_reaction_interaction(session, *, user_id: int, post_id: int):
@@ -161,7 +202,10 @@ async def insert_gallery_reaction_if_absent(
     result = await session.execute(
         insert(UserInteraction)
         .values(user_id=user_id, post_id=post_id, action_type=action)
-        .on_conflict_do_nothing()
+        .on_conflict_do_nothing(
+            index_elements=[UserInteraction.user_id, UserInteraction.post_id],
+            index_where=UserInteraction.action_type.in_(["like", "dislike"]),
+        )
     )
     return result.rowcount
 
@@ -191,7 +235,10 @@ async def insert_gallery_apply_interaction_if_absent(
     result = await session.execute(
         insert(UserInteraction)
         .values(user_id=user_id, post_id=post_id, action_type="apply")
-        .on_conflict_do_nothing()
+        .on_conflict_do_nothing(
+            index_elements=[UserInteraction.user_id, UserInteraction.post_id],
+            index_where=UserInteraction.action_type == "apply",
+        )
     )
     return result.rowcount
 

@@ -24,6 +24,11 @@ async def toggle_like_impl(
         raise GalleryCoreError("无效的操作类型")
 
     async with session_factory() as session:
+        await dependencies.acquire_gallery_reaction_lock_func(
+            session,
+            user_id=user_id,
+            post_id=post_id,
+        )
         post = await dependencies.get_gallery_post_by_id_func(session, post_id)
         if not post:
             raise GalleryCoreError("帖子不存在")
