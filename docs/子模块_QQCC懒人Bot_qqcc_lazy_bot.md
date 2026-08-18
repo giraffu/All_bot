@@ -28,9 +28,11 @@ worker，不启用 polling watchdog，但复用 QQCC 上下文的非关键交互
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
-主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
+主菜单可额外展示非生成入口：`修仙市集`、`排队状态`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
 
-Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_row=null` 表示继续使用升级前固定分行的行数与每行按钮数量，因此未调整顺序的官方或私有 Bot 上线后不会改变菜单；此模式也会按 `button_order` 填充各行。设为 `1..4` 后，Bot 先按现有开关、全局 gate、场景有效性和官方/私有上下文过滤按钮，再按 `button_order` 排序并统一分行。隐藏项不占空位，但配置中保留原排序位置，重新开启或补齐有效场景后回到该位置。排序只接受 `quick_faceswap` / `ai_draw_v1` / `ai_draw_v2` / `ai_filter` / `video_edit_v1` / `video_edit_v2` / `ai_video` / `market` / `private_bot` / `main_bot_link`；未知、重复和旧兼容 key 被丢弃，缺失的有效 key 按默认顺序追加。官方与每个私有 Bot 通过各自现有配置 JSON 独立保存，不新增数据库表。
+`排队状态` 复用主 Bot 的共享队列展示 seam，返回 Central 总排队数、分类统计、等待分级和当前用户 active task 位次。官方与私有 QQCC Bot 都可使用；`main_buttons.queue` 只控制入口可见性，不改变计费、队列或 Worker 调度。
+
+Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_row=null` 表示继续使用升级前固定分行的行数与每行按钮数量，因此未调整顺序的官方或私有 Bot 上线后不会改变菜单；此模式也会按 `button_order` 填充各行。设为 `1..4` 后，Bot 先按现有开关、全局 gate、场景有效性和官方/私有上下文过滤按钮，再按 `button_order` 排序并统一分行。隐藏项不占空位，但配置中保留原排序位置，重新开启或补齐有效场景后回到该位置。排序只接受 `quick_faceswap` / `ai_draw_v1` / `ai_draw_v2` / `ai_filter` / `video_edit_v1` / `video_edit_v2` / `ai_video` / `market` / `queue` / `private_bot` / `main_bot_link`；未知、重复和旧兼容 key 被丢弃，缺失的有效 key 按默认顺序追加。官方与每个私有 Bot 通过各自现有配置 JSON 独立保存，不新增数据库表。
 
 ## 2. 功能边界
 
@@ -54,6 +56,7 @@ Telegram 底部主菜单的编排由 `main_menu_layout` 控制。`buttons_per_ro
 主菜单非生成入口：
 
 - `修仙市集`
+- `排队状态`
 - `前往主bot`
 - `私有bot`（仅官方 QQCC；私有实例隐藏）
 

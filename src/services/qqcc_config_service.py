@@ -41,6 +41,7 @@ MAIN_BUTTON_KEYS = (
     "video_edit_v2",
     "ai_video",
     "market",
+    "queue",
     "main_bot_link",
     "private_bot",
 )
@@ -53,6 +54,7 @@ MAIN_MENU_BUTTON_ORDER = (
     "video_edit_v2",
     "ai_video",
     "market",
+    "queue",
     "private_bot",
     "main_bot_link",
 )
@@ -336,6 +338,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "video_edit_v2": True,
         "ai_video": True,
         "market": True,
+        "queue": True,
         "main_bot_link": True,
         "private_bot": True,
     },

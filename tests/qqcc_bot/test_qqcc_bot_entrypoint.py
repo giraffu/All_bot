@@ -52,13 +52,14 @@ def _clear_main_bot_link_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_qqcc_main_menu_only_contains_lazy_generation_entries():
+def test_qqcc_main_menu_includes_queue_status_entry():
     keyboard = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh"))
 
     assert keyboard == [
         ["快速换脸"],
         ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]
@@ -90,6 +91,7 @@ def test_qqcc_legacy_main_menu_applies_custom_order_without_changing_row_sizes()
         ["AI动图V2"],
         ["私有bot"],
         ["前往主bot"],
+        ["⏳ 排队状态"],
     ]
 
 
@@ -107,6 +109,7 @@ def _config_with_all_main_menu_entries(*, buttons_per_row: int):
                 "buttons_per_row": buttons_per_row,
                 "button_order": [
                     "market",
+                    "queue",
                     "private_bot",
                     "main_bot_link",
                     "quick_faceswap",
@@ -142,6 +145,7 @@ def test_qqcc_main_menu_supports_one_to_four_buttons_per_row(buttons_per_row):
 
     assert flat == [
         "修仙市集",
+        "⏳ 排队状态",
         "私有bot",
         "前往主bot",
         "快速换脸",
@@ -171,9 +175,9 @@ def test_qqcc_main_menu_filters_hidden_buttons_before_chunking():
     )
 
     assert rows == [
-        ["前往主bot", "快速换脸", "AI滤镜"],
-        ["AI绘图V2", "AI视频", "AI动图V2"],
-        ["AI绘图V1", "AI动图V1"],
+        ["⏳ 排队状态", "前往主bot", "快速换脸"],
+        ["AI滤镜", "AI绘图V2", "AI视频"],
+        ["AI动图V2", "AI绘图V1", "AI动图V1"],
     ]
 
 
@@ -295,7 +299,12 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert main_rows == [["AI绘图V2"], ["私有bot"], ["前往主bot"]]
+    assert main_rows == [
+        ["AI绘图V2"],
+        ["⏳ 排队状态"],
+        ["私有bot"],
+        ["前往主bot"],
+    ]
 
 
 def test_qqcc_main_menu_shows_default_ai_draw_scenes():
@@ -306,6 +315,7 @@ def test_qqcc_main_menu_shows_default_ai_draw_scenes():
         ["快速换脸"],
         ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]
@@ -326,6 +336,7 @@ def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
         ["快速换脸"],
         ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]
@@ -351,6 +362,7 @@ def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
         ["快速换脸"],
         ["AI绘图V2", "AI滤镜", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]
@@ -651,8 +663,74 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
         "menu.main_menu",
         "menu.back_main",
         "menu.open_main_bot",
+        "menu.queue",
         "qqcc.menu.market",
     }
+
+
+@pytest.mark.asyncio
+async def test_qqcc_queue_menu_shows_shared_queue_status(monkeypatch):
+    monkeypatch.setattr(
+        prompt_handlers,
+        "_load_menu_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
+    queue_reply = AsyncMock(return_value="当前总排队 4 人")
+    monkeypatch.setattr(prompt_handlers, "get_queue_status_reply", queue_reply)
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    user = SimpleNamespace(id=123)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_message=message,
+        message=message,
+        edited_message=None,
+    )
+    context = SimpleNamespace(lang="zh")
+
+    await prompt_handlers.handle_queue_status(update, context)
+
+    queue_reply.assert_awaited_once_with(
+        context=context,
+        user=user,
+        task_type_display_names=prompt_handlers.TASK_TYPE_DISPLAY_NAMES,
+    )
+    reply_text.assert_awaited_once_with(
+        text="当前总排队 4 人",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_queue_menu_rejects_stale_button_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        prompt_handlers,
+        "_load_menu_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {"main_buttons": {"queue": False}}
+            )
+        ),
+    )
+    queue_reply = AsyncMock(return_value="unexpected")
+    monkeypatch.setattr(prompt_handlers, "get_queue_status_reply", queue_reply)
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_message=message,
+        message=message,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: {"qqcc.feature_disabled": "功能暂未开放"}.get(key, key),
+    )
+
+    await prompt_handlers.handle_queue_status(update, context)
+
+    queue_reply.assert_not_awaited()
+    assert reply_text.await_args.kwargs["text"] == "功能暂未开放"
 
 
 def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(
@@ -958,6 +1036,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
         ["快速换脸"],
         ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]
@@ -1043,6 +1122,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
         ["快速换脸"],
         ["AI绘图V2", "AI动图V2"],
         ["修仙市集"],
+        ["⏳ 排队状态"],
         ["私有bot"],
         ["前往主bot"],
     ]

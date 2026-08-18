@@ -22,7 +22,13 @@ from src.handlers.message_handler_common import (
     extract_prompt_message_text,
     get_reply_message,
 )
+from src.handlers.message_handler_menu import reply_with_async_payload
+from src.handlers.message_handler_profile_menu import (
+    TASK_TYPE_DISPLAY_NAMES,
+    handle_queue_status_impl,
+)
 from src.handlers.message_handler_prompt import handle_prompt_impl
+from src.handlers.message_handler_runtime import get_queue_status_reply
 from src.services.qqcc_config_service import (
     get_qqcc_copywriting_override,
     has_enabled_qqcc_draw_scenes,
@@ -223,6 +229,20 @@ async def handle_market_menu(update, context, text: str = None):
     return await open_qqcc_gallery_market_menu(update, context)
 
 
+async def handle_queue_status(update, context, text: str = None):
+    config = await _load_menu_config(context)
+    if not is_qqcc_main_button_enabled(config, "queue"):
+        return await _reply_feature_disabled(update, context, config)
+    return await handle_queue_status_impl(
+        update,
+        context,
+        build_payload=get_queue_status_reply,
+        reply_with_async_payload=reply_with_async_payload,
+        reply_text=robust_reply_text,
+        task_type_display_names=TASK_TYPE_DISPLAY_NAMES,
+    )
+
+
 async def handle_open_main_bot(update, context, text: str = None):
     config = await _load_menu_config(context)
     if not is_qqcc_main_bot_link_enabled(config):
@@ -254,6 +274,7 @@ QQCC_PROMPT_ROUTES = {
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,
     "menu.open_main_bot": handle_open_main_bot,
+    "menu.queue": handle_queue_status,
     "qqcc.menu.market": handle_market_menu,
 }
 

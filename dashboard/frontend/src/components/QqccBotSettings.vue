@@ -32,6 +32,7 @@ type MainButtonKey =
   | 'video_edit_v2'
   | 'ai_video'
   | 'market'
+  | 'queue'
   | 'main_bot_link'
   | 'private_bot'
 type MainMenuButtonKey = Exclude<MainButtonKey, 'quick_undress' | 'photo_edit'>
@@ -296,6 +297,7 @@ const emptyConfig = (): QqccBotConfig => ({
     video_edit_v2: false,
     ai_video: false,
     market: false,
+    queue: false,
     main_bot_link: false,
     private_bot: false,
   },
@@ -308,6 +310,7 @@ const emptyConfig = (): QqccBotConfig => ({
       'video_edit',
       'ai_video',
       'market',
+      'queue',
       'private_bot',
       'main_bot_link',
     ],
@@ -380,6 +383,7 @@ const mainButtonOptions: Array<{ key: MainMenuButtonKey; label: string }> = [
   { key: 'video_edit_v2', label: 'AI动图V2' },
   { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
+  { key: 'queue', label: '排队状态' },
   { key: 'private_bot', label: '私有bot' },
   { key: 'main_bot_link', label: '前往主bot' },
 ]
