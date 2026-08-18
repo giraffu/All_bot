@@ -68,6 +68,10 @@ tests，再读取对应章节，不要为单一鉴权改动加载全部计费资
 - TON / USDT-TON 轮询游标只有在目标交易成功处理后才前移；抓链或履约失败
   保持原位。USDT-TON 还必须校验官方 Jetton master、目标钱包、未中止交易、
   六位精度金额和订单 forward payload。
+- `billing-reconciler` 是 TON 与 USDT-TON 轮询的目标宿主，两个通道由独立
+  supervisor 运行；模块/profile 默认禁用。迁移必须先启用并确认 channel health
+  与 checkpoint 继续前移，再关闭 `MAIN_BOT_PAYMENT_POLLING_ENABLED`。旧宿主
+  默认开启，发布代码本身不得改变支付轮询归属。
 - 低阶用户容量准入只使用目标 Worker pool 的健康 enabled 快照；观测缺失或
   请求异常按领域文档的 fail-open 语义告警，不能扩大成全体停服。
 

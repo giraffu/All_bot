@@ -97,21 +97,22 @@ async def post_init(application):
     if "bg_tasks" not in application.bot_data:
         application.bot_data["bg_tasks"] = set()
 
-    payment_validator = build_ton_payment_validator_if_available(application)
-    if payment_validator is not None:
-        task_payment = asyncio.create_task(payment_validator.poll_transactions())
-        application.bot_data["bg_tasks"].add(task_payment)
-        task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
+    if _env_enabled("MAIN_BOT_PAYMENT_POLLING_ENABLED", default=True):
+        payment_validator = build_ton_payment_validator_if_available(application)
+        if payment_validator is not None:
+            task_payment = asyncio.create_task(payment_validator.poll_transactions())
+            application.bot_data["bg_tasks"].add(task_payment)
+            task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
 
-    usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
-    if usdt_payment_validator is not None:
-        task_usdt_payment = asyncio.create_task(
-            usdt_payment_validator.poll_transactions()
-        )
-        application.bot_data["bg_tasks"].add(task_usdt_payment)
-        task_usdt_payment.add_done_callback(
-            application.bot_data["bg_tasks"].discard
-        )
+        usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
+        if usdt_payment_validator is not None:
+            task_usdt_payment = asyncio.create_task(
+                usdt_payment_validator.poll_transactions()
+            )
+            application.bot_data["bg_tasks"].add(task_usdt_payment)
+            task_usdt_payment.add_done_callback(
+                application.bot_data["bg_tasks"].discard
+            )
 
     # Recover tasks from Redis
     task_recover = asyncio.create_task(

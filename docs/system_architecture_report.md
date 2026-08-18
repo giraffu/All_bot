@@ -49,6 +49,8 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 - `task-control-worker` 是默认禁用的独立后台宿主；submission reconciliation、
   Web finalizer 和通用 zombie sweep 各自持有 leader lease。旧 Web/Bot/QQCC
   loop 默认仍开启，只有显式滚动切换后才退出原宿主。
+- `billing-reconciler` 是默认禁用的 TON/USDT-TON 轮询宿主，通道各自监督；
+  主 Bot 旧轮询默认保持，只有验证新宿主 health/checkpoint 后才显式关闭。
 
 完整入口归属见
 [入口职责矩阵](./入口职责矩阵_entry_responsibility_matrix.md)。
