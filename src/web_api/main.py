@@ -19,6 +19,8 @@ from src.task_core_provider_setup import ensure_task_core_service_providers_regi
 from src.task_application_runtime import configure_task_application
 from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 from src.web_api.services.r2_public_probe_service import r2_public_probe_service
+from src.payment_callback_router import router as alipay_callback_router
+from src.services.alipay_direct_service import validate_alipay_direct_startup_config
 
 from src.database.core import engine
 from src.web_api.routers import (
@@ -87,6 +89,9 @@ class LtxT2VFeatureGateMiddleware(BaseHTTPMiddleware):
 async def lifespan(fastapi_app: FastAPI):
     # Startup: setup resources if needed
     logger.info("Web BFF API is starting up...")
+    fastapi_app.state.alipay_direct_configured = (
+        validate_alipay_direct_startup_config()
+    )
     ensure_task_core_service_providers_registered()
     configure_task_application()
     ensure_billing_core_providers_registered()
@@ -251,6 +256,7 @@ app.include_router(
     tags=["Internal Media Archive"],
 )
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
+app.include_router(alipay_callback_router, tags=["Payment"])
 app.include_router(
     private_bots.router,
     prefix="/api/private-bots",

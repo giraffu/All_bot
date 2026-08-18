@@ -65,7 +65,9 @@ sequenceDiagram
 ## 3. 已落地的数据模型
 
 - `orders`
-  - 保存本地业务单、支付渠道、`tx_hash`、支付状态、`commission_usdt`、支付时间。
+  - 保存本地业务单、支付渠道、RMB `payment_provider`、`tx_hash`、支付状态、`commission_usdt`、支付时间。
+  - RMB 新订单在创建时把提供方固定为 `HUANYUY` 或 `ALIPAY_DIRECT`；历史 RMB
+    订单迁移回填为 `HUANYUY`，非 RMB 订单保持空值。
   - `tx_hash` 唯一，用于 TON 等外部流水幂等拦截。
 - `affiliate_transactions`
   - 返佣主账本，记录 `IN/OUT`、`transaction_type`、`reference_type/reference_id`、`idempotency_key`。
@@ -108,6 +110,17 @@ sequenceDiagram
   `RMB_RECONCILIATION_ENABLED` 默认关闭；启用时
   `HUANYUY_QUERY_URL` 条件必填，查单返回必须同时匹配订单号、金额和平台流水，
   HTML、404、未知状态与字段缺失一律失败并保留重试。
+- RMB provider 路由以 `ALIPAY_DIRECT_ENABLED`、`users.alipay_direct_enabled` 与
+  用户选择的支付方式共同决策：只有三者同时命中支付宝时走官方直连，微信始终
+  走 `HUANYUY`。Web 与 Bot 使用同一个 `internal_user_id` 白名单；电脑 Web
+  生成 `alipay.trade.page.pay` URL，手机 Web 与 Telegram Bot 生成
+  `alipay.trade.wap.pay` URL。提供方一经写入订单不可随全局开关变化；直连创建
+  失败将订单和补偿 job 收口为失败，禁止自动创建第二条环宇交易。
+- 支付宝证书模式由 `alipay_direct_service` 使用 RSA2 完成应用请求签名、应用
+  证书 SN、根证书 SN、支付宝响应/回调验签和主动查单。启动时仅当
+  `ALIPAY_DIRECT_ENABLED=true` 才强制要求完整 `ALIPAY_*` 配置并校验应用私钥
+  与应用公钥证书匹配。私钥和证书只允许通过受保护 Base64 环境投影进入
+  `web-api`、`main-bot` 与 `payment-api`，不得进入 Git、镜像或日志。
 - Payment API 的 reconciler 只处理新建 job：60 秒后首次查单，按
   1/2/5/10/30 分钟及每小时退避，最多跟踪 24 小时。查到已支付后仍调用
   `fulfill_payment_command(...)`，所以 Webhook、查单和崩溃重放共享同一幂等
@@ -232,8 +245,14 @@ sequenceDiagram
   - 平台正式通知使用 GET，POST 仅作兼容。成功或重复通知必须返回精确纯文本
     大写 `SUCCESS` 阻断第三方重试；非法通知返回
     `fail`。
+- 支付宝直连回调：`POST /api/pay/notify/alipay`
+  - 同时挂载于 Web API 与 Payment API；只有 RSA2、证书 SN、AppID、Seller ID、
+    订单提供方、订单号、金额及成功交易状态全部匹配才进入共享履约内核。
+  - 成功和幂等重复通知返回精确小写纯文本 `success`；非法通知返回 `fail`。
+  - 浏览器同步回跳只回到充值页轮询本地订单，不作为到账证据。
 - Payment API 健康：`GET /healthz`
-  - 返回非敏感服务状态与 RMB reconciler 是否启用，不暴露 URL、凭据或订单。
+  - 返回非敏感服务状态、RMB reconciler 是否启用及支付宝直连配置是否就绪，
+    不暴露 URL、凭据、证书或订单。
 - Telegram 登录：`POST /api/auth/telegram`
   - 支持 Mini App `initData` 与 Login Widget 字段。
 - 密码登录：`POST /api/auth/login`

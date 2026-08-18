@@ -48,6 +48,11 @@ class _FakeSession:
 
     def add(self, obj):
         self.added.append(obj)
+        if getattr(obj, "__tablename__", None) == "orders":
+            obj.id = 101
+
+    async def flush(self):
+        return None
 
 
 def _build_plan():
@@ -118,11 +123,8 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
     request = SimpleNamespace(headers={"origin": "https://test.example"})
     current_user = SimpleNamespace(id=2002)
 
-    monkeypatch.setattr(
-        payment_api_service.RMBPaymentService,
-        "create_payment_url",
-        AsyncMock(return_value={"code": 1, "payurl": "https://pay.example"}),
-    )
+    create_url = AsyncMock(return_value={"code": 1, "payurl": "https://pay.example"})
+    monkeypatch.setattr(payment_api_service, "create_rmb_payment_url", create_url)
     monkeypatch.setattr(
         payment_api_service, "generate_business_order_id", lambda: "bo_test_1"
     )
@@ -141,7 +143,9 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
     assert created_order.settlement_snapshot["plan_id"] == 1
     assert result["data"]["order_id"] == "bo_test_1"
     assert result["data"]["legacy_order_id"].startswith("WEB_")
-    payment_api_service.RMBPaymentService.create_payment_url.assert_awaited_once()
+    create_url.assert_awaited_once()
+    assert created_order.payment_provider == "HUANYUY"
+    assert db.added[1].order_id == created_order.id
 
 
 @pytest.mark.asyncio
@@ -151,8 +155,8 @@ async def test_create_order_supports_nested_gateway_payurl_payload(monkeypatch):
     current_user = SimpleNamespace(id=2002)
 
     monkeypatch.setattr(
-        payment_api_service.RMBPaymentService,
-        "create_payment_url",
+        payment_api_service,
+        "create_rmb_payment_url",
         AsyncMock(
             return_value={
                 "code": 1,
@@ -178,6 +182,75 @@ async def test_create_order_supports_nested_gateway_payurl_payload(monkeypatch):
         result["data"]["pay_url"]
         == "https://pay.example/submit.php?foo=bar+baz&biz=value"
     )
+
+
+@pytest.mark.asyncio
+async def test_allowlisted_user_uses_direct_page_and_failed_creation_never_falls_back(
+    monkeypatch,
+):
+    db = _FakeSession([_build_plan()])
+    current_user = SimpleNamespace(id=2002, alipay_direct_enabled=True)
+    monkeypatch.setenv("ALIPAY_DIRECT_ENABLED", "true")
+    direct_service = SimpleNamespace(
+        config=SimpleNamespace(return_base_url="https://web.test.example")
+    )
+    monkeypatch.setattr(
+        payment_api_service,
+        "get_alipay_direct_service",
+        lambda: direct_service,
+    )
+    create_url = AsyncMock(side_effect=RuntimeError("signing failed"))
+    monkeypatch.setattr(payment_api_service, "create_rmb_payment_url", create_url)
+
+    with pytest.raises(Exception) as exc_info:
+        await payment_api_service.create_rmb_order_payload(
+            db=db,
+            current_user=current_user,
+            plan_id=1,
+            pay_type="alipay",
+            request_origin="https://spoofed.example",
+            client_type="desktop",
+        )
+
+    assert exc_info.value.status_code == 503
+    created_order = db.added[0]
+    assert created_order.payment_provider == "ALIPAY_DIRECT"
+    assert created_order.status == "FAILED"
+    assert db.added[1].status == "completed"
+    create_url.assert_awaited_once_with(
+        provider="ALIPAY_DIRECT",
+        out_trade_no=created_order.order_id,
+        plan_name="RMB Plan",
+        amount=Decimal("19.90"),
+        pay_type="alipay",
+        client_type="desktop",
+        return_url=f"https://web.test.example/billing?order_id={created_order.business_order_id}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_huanyuy_uncertain_creation_keeps_reconciliation_job_pending(monkeypatch):
+    db = _FakeSession([_build_plan()])
+    current_user = SimpleNamespace(id=2002, alipay_direct_enabled=False)
+    monkeypatch.setattr(
+        payment_api_service,
+        "create_rmb_payment_url",
+        AsyncMock(side_effect=TimeoutError("gateway response lost")),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await payment_api_service.create_rmb_order_payload(
+            db=db,
+            current_user=current_user,
+            plan_id=1,
+            pay_type="alipay",
+            request_origin="https://web.test.example",
+        )
+
+    assert exc_info.value.status_code == 503
+    assert db.added[0].payment_provider == "HUANYUY"
+    assert db.added[0].status == "PENDING"
+    assert db.added[1].status == "pending"
 
 
 @pytest.mark.asyncio

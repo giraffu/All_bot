@@ -83,8 +83,12 @@ async def global_middleware(update: Update, context):
 
 async def post_init(application):
     from src.handlers.prompt_router import build_global_menu_filter
+    from src.services.alipay_direct_service import (
+        validate_alipay_direct_startup_config,
+    )
 
     build_global_menu_filter()
+    validate_alipay_direct_startup_config()
     ensure_task_core_service_providers_registered()
     configure_task_application()
     ensure_billing_core_providers_registered()

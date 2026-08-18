@@ -82,6 +82,7 @@ export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
     appendQueryParam(params, 'identity', params_obj.identity)
     appendQueryParam(params, 'user_group', params_obj.user_group)
     appendQueryParam(params, 'submission_banned', params_obj.submission_banned)
+    appendQueryParam(params, 'alipay_direct_enabled', params_obj.alipay_direct_enabled)
     appendQueryParam(params, 'sort_by', params_obj.sort_by)
     appendQueryParam(params, 'sort_order', params_obj.sort_order)
   }))
@@ -177,6 +178,9 @@ export const updateUserSubmissionBan = async (userId, isSubmissionBanned, reason
   if (reason) payload.reason = reason
   return post(`/api/users/${userId}/submission_ban`, payload)
 }
+
+export const updateUserAlipayDirect = async (userId, enabled) =>
+  post(`/api/users/${userId}/alipay-direct`, { enabled })
 
 export const clearUserHistory = async (userId) => del(`/api/users/${userId}/history`)
 

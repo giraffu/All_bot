@@ -172,9 +172,14 @@ async def test_buy_rmb_plan_failure_replaces_connecting_message(monkeypatch):
         AsyncMock(return_value=(SimpleNamespace(id=1), "public-order-1")),
     )
     monkeypatch.setattr(
-        billing_callbacks.RMBPaymentService,
-        "create_payment_url",
+        billing_callbacks,
+        "create_rmb_payment_url",
         AsyncMock(return_value={"code": 0, "msg": "Invalid response format"}),
+    )
+    monkeypatch.setattr(
+        billing_callbacks,
+        "fail_rmb_payment_creation",
+        AsyncMock(),
     )
 
     await billing_callbacks.buy_rmb_plan_callback(update, context)

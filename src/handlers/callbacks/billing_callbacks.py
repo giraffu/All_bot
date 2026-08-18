@@ -15,10 +15,14 @@ from src.services.order_v2_service import (
     build_order_v2_payload,
     is_order_v2_enabled,
 )
-from src.services.rmb_payment_service import RMBPaymentService
+from src.services.rmb_payment_provider_service import (
+    create_rmb_payment_url,
+    select_rmb_payment_provider,
+)
 from src.services.telegram_billing_service import (
     create_rmb_pending_order,
     create_stars_pending_order,
+    fail_rmb_payment_creation,
     get_visible_membership_plan,
     list_visible_membership_plans,
 )
@@ -332,10 +336,16 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
     timestamp = int(time.time())
     out_trade_no = f"RMB_{tg_id}_{plan_id}_{timestamp}"
 
-    _new_order, public_order_id = await create_rmb_pending_order(
+    payment_provider = select_rmb_payment_provider(
+        user=internal_user,
+        pay_type=pay_type,
+    )
+
+    new_order, public_order_id = await create_rmb_pending_order(
         internal_user_id=internal_user_id,
         plan=plan,
         out_trade_no=out_trade_no,
+        payment_provider=payment_provider,
     )
 
     if plan.duration_days == 0:
@@ -352,12 +362,18 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             days=plan.duration_days,
         )
 
-    pay_resp = await RMBPaymentService.create_payment_url(
-        out_trade_no=out_trade_no,
-        plan_name=display_name,
-        amount=plan.price_rmb,
-        pay_type=pay_type,
-    )
+    try:
+        pay_resp = await create_rmb_payment_url(
+            provider=payment_provider,
+            out_trade_no=out_trade_no,
+            plan_name=display_name,
+            amount=plan.price_rmb,
+            pay_type=pay_type,
+            client_type="mobile",
+        )
+    except Exception:
+        await fail_rmb_payment_creation(order_id=new_order.id)
+        pay_resp = {"code": 0, "msg": "Payment link creation failed. Please retry."}
 
     if (
         pay_resp
@@ -412,6 +428,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
     else:
+        await fail_rmb_payment_creation(order_id=new_order.id)
         error_msg = pay_resp.get("msg", "未知错误") if pay_resp else "请求无响应"
         reply_markup = InlineKeyboardMarkup(
             [

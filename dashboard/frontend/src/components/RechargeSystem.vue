@@ -50,6 +50,7 @@ const orderColumns = [
   { title: '用户名', dataIndex: 'username', key: 'username' },
   { title: '套餐', dataIndex: 'plan_name', key: 'plan_name' },
   { title: '支付金额', dataIndex: 'final_price', key: 'final_price' },
+  { title: '支付提供方', dataIndex: 'payment_provider', key: 'payment_provider' },
   { title: '状态', dataIndex: 'status', key: 'status' },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
 ]
@@ -256,6 +257,11 @@ onUnmounted(() => window.clearTimeout(internalUserSearchTimer))
               </template>
               <template v-else-if="column.key === 'final_price'">
                 <span>{{ formatOrderPrice(record) }}</span>
+              </template>
+              <template v-else-if="column.key === 'payment_provider'">
+                <a-tag :color="record.payment_provider === 'ALIPAY_DIRECT' ? 'blue' : 'default'">
+                  {{ record.payment_provider === 'ALIPAY_DIRECT' ? '支付宝直连' : record.payment_provider === 'HUANYUY' ? '环宇' : '-' }}
+                </a-tag>
               </template>
               <template v-else-if="column.key === 'created_at'">
                 {{ formatDate(record.created_at) }}

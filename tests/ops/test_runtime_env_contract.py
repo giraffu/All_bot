@@ -99,6 +99,7 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_GATEWAY": f"https://gateway-{suffix}.example.com",
         "HUANYUY_SITENAME": f"AllBot {suffix}",
         "RMB_RECONCILIATION_ENABLED": "false",
+        "ALIPAY_DIRECT_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
@@ -379,6 +380,41 @@ def test_rmb_query_url_is_required_only_when_reconciliation_is_enabled():
         "/order-query"
     )
     assert snapshot.projections["payment-api"]["RMB_RECONCILIATION_ENABLED"] == "true"
+
+
+@pytest.mark.parametrize("service", ["web-api", "main-bot", "payment-api"])
+def test_alipay_direct_configuration_is_conditionally_required_and_scoped(service):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values["ALIPAY_DIRECT_ENABLED"] = "true"
+
+    with pytest.raises(module.ContractError, match="ALIPAY_APP_ID"):
+        module.build_snapshot(contract, "test", values, services={service})
+
+    values.update(
+        {
+            "ALIPAY_APP_ID": "2021000000000001",
+            "ALIPAY_SELLER_ID": "2088000000000001",
+            "ALIPAY_APP_PRIVATE_KEY_B64": "cHJpdmF0ZQ==",
+            "ALIPAY_APP_CERT_B64": "YXBwLWNlcnQ=",
+            "ALIPAY_PUBLIC_CERT_B64": "YWxpcGF5LWNlcnQ=",
+            "ALIPAY_ROOT_CERT_B64": "cm9vdC1jZXJ0",
+            "ALIPAY_NOTIFY_URL": "https://api-test.example/api/pay/notify/alipay",
+            "ALIPAY_RETURN_BASE_URL": "https://web-test.example",
+        }
+    )
+    snapshot = module.build_snapshot(
+        contract,
+        "test",
+        values,
+        services={service},
+    )
+
+    projection = snapshot.projections[service]
+    assert projection["ALIPAY_DIRECT_ENABLED"] == "true"
+    assert projection["ALIPAY_APP_ID"] == "2021000000000001"
+    assert set(snapshot.projections) == {service}
 
 
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])
@@ -1364,7 +1400,7 @@ def test_test_snapshot_includes_dashboard_services():
     assert "qqcc-config-backend" in snapshot.projections
     assert "dashboard-backend" in snapshot.projections
     assert "dashboard-frontend" in snapshot.projections
-    assert "payment-api" not in snapshot.projections
+    assert "payment-api" in snapshot.projections
     assert "paid-group-bot" not in snapshot.projections
     assert "support-bot" not in snapshot.projections
 

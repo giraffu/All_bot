@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
+from sqlalchemy import select
 
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.services.payment_fulfillment_service import (
@@ -23,6 +24,11 @@ from src.services.rmb_payment_service import (
 from src.services.rmb_payment_reconciliation_service import (
     build_rmb_payment_reconciler_if_enabled,
 )
+from src.payment_callback_router import router as alipay_callback_router
+from src.services.alipay_direct_service import validate_alipay_direct_startup_config
+from src.database.core import AsyncSessionLocal
+from src.database.models import Order
+from src.services.rmb_payment_provider_service import HUANYUY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("payment_api")
@@ -34,6 +40,7 @@ async def register_payment_api_providers():
 @asynccontextmanager
 async def payment_api_lifespan(_app: FastAPI):
     await register_payment_api_providers()
+    _app.state.alipay_direct_configured = validate_alipay_direct_startup_config()
     reconciler = build_rmb_payment_reconciler_if_enabled()
     _app.state.reconciler_enabled = reconciler is not None
     reconciler_task = (
@@ -51,6 +58,8 @@ async def payment_api_lifespan(_app: FastAPI):
 app = FastAPI(title="RMB Payment Webhook API", lifespan=payment_api_lifespan)
 app.state.notification_tasks = set()
 app.state.reconciler_enabled = False
+app.state.alipay_direct_configured = False
+app.include_router(alipay_callback_router, tags=["Payment"])
 
 
 def _order_log_key(out_trade_no: str | None) -> str:
@@ -102,6 +111,20 @@ def _callback_is_valid(params: dict[str, str]) -> bool:
     return RMBPaymentService.verify_callback_sign(params, HUANYUY_KEY)
 
 
+async def _callback_provider_is_valid(out_trade_no: str) -> bool:
+    async with AsyncSessionLocal() as session:
+        order = (
+            await session.execute(
+                select(Order).where(Order.order_id == out_trade_no)
+            )
+        ).scalar_one_or_none()
+    return bool(
+        order
+        and order.payment_channel == "RMB"
+        and (order.payment_provider or HUANYUY) == HUANYUY
+    )
+
+
 @app.api_route(
     "/api/pay/notify/huanyuy",
     methods=["GET", "POST"],
@@ -119,6 +142,12 @@ async def huanyuy_notify(request: Request):
     if not _callback_is_valid(params):
         logger.warning(
             "RMB callback rejected order_key=%s reason=validation_failed",
+            order_key,
+        )
+        return PlainTextResponse("fail")
+    if not await _callback_provider_is_valid(params["out_trade_no"]):
+        logger.warning(
+            "RMB callback rejected order_key=%s reason=provider_mismatch",
             order_key,
         )
         return PlainTextResponse("fail")
@@ -161,6 +190,7 @@ async def payment_health():
     return {
         "status": "ok",
         "rmb_reconciliation_enabled": bool(app.state.reconciler_enabled),
+        "alipay_direct_configured": bool(app.state.alipay_direct_configured),
     }
 
 

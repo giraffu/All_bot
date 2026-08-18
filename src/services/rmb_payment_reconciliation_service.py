@@ -21,8 +21,8 @@ from src.services.payment_fulfillment_service import (
 from src.services.rmb_payment_service import (
     HUANYUY_QUERY_URL,
     RMBOrderQueryStatus,
-    RMBPaymentService,
 )
+from src.services.rmb_payment_provider_service import HUANYUY, query_rmb_order
 
 logger = logging.getLogger("rmb_payment_reconciliation")
 RETRY_DELAYS_SECONDS = (60, 120, 300, 600, 1800, 3600)
@@ -34,6 +34,7 @@ class ClaimedRMBReconciliationJob:
     order_id: int
     out_trade_no: str
     expected_amount: Any
+    payment_provider: str
     attempt_count: int
     lease_token: str
     created_at: datetime
@@ -164,6 +165,7 @@ async def claim_due_rmb_reconciliation_jobs(
                     order_id=order.id,
                     out_trade_no=str(order.order_id),
                     expected_amount=order.final_price,
+                    payment_provider=order.payment_provider or HUANYUY,
                     attempt_count=job.attempt_count,
                     lease_token=lease_token,
                     created_at=job.created_at,
@@ -237,7 +239,7 @@ async def reschedule_rmb_reconciliation_job(
 def build_default_rmb_reconciliation_dependencies() -> RMBReconciliationDependencies:
     return RMBReconciliationDependencies(
         claim_jobs_func=claim_due_rmb_reconciliation_jobs,
-        query_order_func=RMBPaymentService.query_order,
+        query_order_func=query_rmb_order,
         fulfill_order_func=fulfill_rmb_order,
         complete_job_func=complete_rmb_reconciliation_job,
         reschedule_job_func=reschedule_rmb_reconciliation_job,
@@ -274,6 +276,7 @@ class RMBPaymentReconciler:
     async def _process_job(self, job: ClaimedRMBReconciliationJob) -> None:
         try:
             query_result = await self.dependencies.query_order_func(
+                provider=job.payment_provider,
                 out_trade_no=job.out_trade_no,
                 expected_amount=job.expected_amount,
                 query_url=self.query_url,

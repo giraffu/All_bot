@@ -70,6 +70,7 @@ class UserListQuery:
     identity: str | None = None
     user_group: str | None = None
     submission_banned: bool | None = None
+    alipay_direct_enabled: bool | None = None
     username: str | None = None
     username_partial: bool = False
     sort_by: str | None = None
@@ -162,6 +163,10 @@ def _build_user_list_stmt(query: UserListQuery):
             stmt = stmt.where(User.user_group == query.user_group)
     if query.submission_banned is not None:
         stmt = stmt.where(User.is_submission_banned.is_(query.submission_banned))
+    if query.alipay_direct_enabled is not None:
+        stmt = stmt.where(
+            User.alipay_direct_enabled.is_(query.alipay_direct_enabled)
+        )
     if query.username:
         if query.username_partial:
             stmt = stmt.where(User.username.ilike(f"%{query.username}%"))
@@ -208,6 +213,7 @@ async def get_users_payload(
     identity: str | None = None,
     user_group: str | None = None,
     submission_banned: bool | None = None,
+    alipay_direct_enabled: bool | None = None,
     username: str | None = None,
     username_partial: bool = False,
     sort_by: str | None = None,
@@ -225,6 +231,7 @@ async def get_users_payload(
             identity=identity,
             user_group=user_group,
             submission_banned=submission_banned,
+            alipay_direct_enabled=alipay_direct_enabled,
             username=username,
             username_partial=username_partial,
             sort_by=sort_by,
@@ -1643,3 +1650,48 @@ async def update_user_submission_ban_payload(
     except Exception as exc:
         active_logger.error(f"Error updating user submission ban status: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def update_user_alipay_direct_payload(
+    *,
+    user_id: int,
+    request,
+    db,
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    try:
+        user = await _load_user(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        old_status = bool(user.alipay_direct_enabled)
+        user.alipay_direct_enabled = bool(request.enabled)
+        await db.commit()
+
+        from src.services.log_service import LogService
+
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_update_alipay_direct",
+            credit_change=0,
+            current_balance=user.credits,
+            extra_info={
+                "old_status": old_status,
+                "new_status": user.alipay_direct_enabled,
+                "source": "dashboard_admin_edit",
+            },
+        )
+        return {
+            "status": "ok",
+            "id": user.id,
+            "alipay_direct_enabled": user.alipay_direct_enabled,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        active_logger.error(
+            "Error updating user Alipay direct status: %s",
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=500, detail="Failed to update Alipay direct status")
