@@ -23,6 +23,7 @@ import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -56,7 +57,7 @@ MULTIPART_COPY_PART_SIZE = 512 * 1024 * 1024
 MAX_DIAGNOSTICS = 100
 COPY_PLAN_METADATA_KEY = "allbot-copy-plan-sha256"
 PROBE_BATCH_SIZE = 10_000
-COPY_BATCH_SIZE = 10_000
+COPY_BATCH_SIZE = 1_000
 SWITCH_HISTORY_BATCH_SIZE = 1_000
 PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
@@ -132,12 +133,48 @@ class AdaptiveCopyController:
     def record_success(self) -> int:
         self.clean_batches += 1
         if self.clean_batches >= self.clean_batches_to_raise:
-            raised = {16: 32, 32: 64, 64: 128, 128: 128}[
-                self.concurrency
-            ]
+            raised = {16: 32, 32: 64, 64: 128, 128: 128}[self.concurrency]
             self.concurrency = min(raised, self.maximum_concurrency)
             self.clean_batches = 0
         return self.concurrency
+
+
+class AdaptiveConcurrencyLimiter:
+    """Thread-safe live limit shared by bulk and retry Copy executors."""
+
+    def __init__(self, *, limit: int) -> None:
+        if limit <= 0:
+            raise ValueError("adaptive concurrency limit must be positive")
+        self._condition = threading.Condition()
+        self._limit = int(limit)
+        self._active = 0
+        self.peak_active = 0
+
+    @property
+    def limit(self) -> int:
+        with self._condition:
+            return self._limit
+
+    def set_limit(self, limit: int) -> None:
+        if limit <= 0:
+            raise ValueError("adaptive concurrency limit must be positive")
+        with self._condition:
+            self._limit = int(limit)
+            self._condition.notify_all()
+
+    @contextmanager
+    def slot(self):
+        with self._condition:
+            while self._active >= self._limit:
+                self._condition.wait()
+            self._active += 1
+            self.peak_active = max(self.peak_active, self._active)
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._active -= 1
+                self._condition.notify_all()
 
 
 @dataclass
@@ -157,6 +194,7 @@ class CopyObjectCircuitBreaker:
         )
         self.systemic_windows = self.systemic_windows + 1 if systemic else 0
         return self.systemic_windows >= self.consecutive_windows
+
 
 @dataclass
 class AdaptiveProbeController:
@@ -576,9 +614,9 @@ def classify_r2_head_outcomes(
             outcomes.append(
                 {
                     "id": int(row["id"]),
-                    "status": "target_verified"
-                    if target_is_current
-                    else "target_conflict",
+                    "status": (
+                        "target_verified" if target_is_current else "target_conflict"
+                    ),
                     "source_key": target_key,
                     "byte_size": int(target_head["ContentLength"]),
                     "last_modified": _normalize_modified(target_head["LastModified"]),
@@ -1269,8 +1307,7 @@ async def _cas_state_for_histories(
     lock_clause = " for update" if lock_rows else ""
     histories = await production.fetch(
         """select id,input_file,output_file,extra_outputs from history
-             where id=any($1::integer[]) order by id"""
-        + lock_clause,
+             where id=any($1::integer[]) order by id""" + lock_clause,
         history_ids,
     )
     if len(histories) != len(set(history_ids)):
@@ -1547,11 +1584,16 @@ def _s3_client(
     *,
     max_pool_connections: int | None = None,
     transport: R2Transport | None = None,
+    external_retry_lane: bool = False,
 ):
     selected_transport = transport or R2Transport(mode="direct")
     botocore_config: dict[str, Any] = {
         "signature_version": "s3v4",
-        "retries": {"max_attempts": 3, "mode": "standard"},
+        "retries": (
+            {"total_max_attempts": 1, "mode": "standard"}
+            if external_retry_lane
+            else {"max_attempts": 3, "mode": "standard"}
+        ),
         "proxies": (
             {"https": selected_transport.proxy_url}
             if selected_transport.mode == "https_proxy"
@@ -1560,6 +1602,8 @@ def _s3_client(
     }
     if max_pool_connections is not None:
         botocore_config["max_pool_connections"] = max_pool_connections
+    if external_retry_lane:
+        botocore_config.update({"connect_timeout": 5, "read_timeout": 30})
     client = boto3.client(
         "s3",
         endpoint_url=config["endpoint"],
@@ -1879,6 +1923,184 @@ def _timed_server_side_copy_with_retries(
             sleep_fn(delay)
 
     raise AssertionError("copy retry loop exhausted without returning")
+
+
+def _timed_server_side_copy_attempt(
+    client: Any,
+    *,
+    concurrency_limiter: AdaptiveConcurrencyLimiter,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Run one CopyObject attempt under the shared live concurrency limit."""
+    started: float | None = None
+    try:
+        with concurrency_limiter.slot():
+            started = time.perf_counter()
+            outcome = server_side_copy_r2_object(client, **kwargs)
+        return {
+            "outcome": outcome,
+            "error": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+            "request_event": {"at": time.monotonic(), "kind": "ok"},
+        }
+    except BaseException as exc:  # noqa: BLE001 - classify at object boundary
+        return {
+            "outcome": None,
+            "error": exc,
+            "elapsed_ms": (
+                (time.perf_counter() - started) * 1000 if started is not None else 0.0
+            ),
+            "request_event": {
+                "at": time.monotonic(),
+                "kind": classify_copy_request_failure(exc),
+            },
+        }
+
+
+async def _run_copy_group_batch_with_retry_lane(
+    groups: list[list[dict[str, Any]]],
+    *,
+    bulk_executor: ThreadPoolExecutor,
+    retry_executor: ThreadPoolExecutor,
+    concurrency_limiter: AdaptiveConcurrencyLimiter,
+    copy_one_attempt: Callable[[list[dict[str, Any]]], dict[str, Any]],
+    persist_success: Callable[[list[dict[str, Any]], dict[str, Any]], Awaitable[None]],
+    persist_failure: Callable[[list[dict[str, Any]], BaseException], Awaitable[None]],
+    max_retries: int = 5,
+    retry_base_seconds: float = 1.0,
+    retry_max_seconds: float = 16.0,
+    retry_jitter_ratio: float = 0.25,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    max_bulk_in_flight: int | None = None,
+    object_circuit: CopyObjectCircuitBreaker | None = None,
+) -> dict[str, Any]:
+    """Keep first attempts flowing while a bounded retry lane owns long tails."""
+    if not 0 <= max_retries <= 10:
+        raise ValueError("object max retries must be between 0 and 10")
+    if retry_base_seconds <= 0 or retry_max_seconds <= 0:
+        raise ValueError("copy retry delays must be positive")
+    if not 0 <= retry_jitter_ratio <= 1:
+        raise ValueError("copy retry jitter ratio must be between 0 and 1")
+
+    loop = asyncio.get_running_loop()
+    bulk_window = max_bulk_in_flight or max(1, bulk_executor._max_workers * 4)
+    group_iterator = iter(groups)
+    tasks: set[asyncio.Task[Any]] = set()
+    copied_objects = 0
+    copied_rows = 0
+    recovered_objects = 0
+    exhausted_transient_objects = 0
+    retried_objects = 0
+    operation_latencies_ms: list[float] = []
+    request_events: list[dict[str, Any]] = []
+    first_fatal_error: BaseException | None = None
+    circuit_copied = 0
+    circuit_failed = 0
+
+    async def run_attempt(
+        group: list[dict[str, Any]], attempt: int, object_started: float
+    ) -> tuple[list[dict[str, Any]], int, float, dict[str, Any]]:
+        if attempt:
+            delay = min(retry_max_seconds, retry_base_seconds * (2 ** (attempt - 1)))
+            spread = delay * retry_jitter_ratio
+            if spread:
+                delay = random.uniform(max(0.0, delay - spread), delay + spread)
+            await sleep(delay)
+        executor = retry_executor if attempt else bulk_executor
+        result = await loop.run_in_executor(executor, copy_one_attempt, group)
+        return group, attempt, object_started, result
+
+    def schedule_bulk(slots: int) -> None:
+        for _ in range(slots):
+            try:
+                group = next(group_iterator)
+            except StopIteration:
+                return
+            tasks.add(asyncio.create_task(run_attempt(group, 0, time.perf_counter())))
+
+    schedule_bulk(min(bulk_window, len(groups)))
+    try:
+        while tasks:
+            completed, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            tasks = set(pending)
+            bulk_slots = 0
+            for task in completed:
+                group, attempt, object_started, result = await task
+                request_events.append(dict(result["request_event"]))
+                error = result["error"]
+                if error is not None:
+                    kind = classify_copy_request_failure(error)
+                    if kind != "fatal" and attempt < max_retries:
+                        if attempt == 0:
+                            retried_objects += 1
+                            bulk_slots += 1
+                        tasks.add(
+                            asyncio.create_task(
+                                run_attempt(group, attempt + 1, object_started)
+                            )
+                        )
+                        continue
+                    await persist_failure(group, error)
+                    operation_latencies_ms.append(
+                        (time.perf_counter() - object_started) * 1000
+                    )
+                    if kind == "fatal":
+                        first_fatal_error = first_fatal_error or error
+                    else:
+                        exhausted_transient_objects += 1
+                        circuit_failed += 1
+                    if attempt == 0:
+                        bulk_slots += 1
+                    continue
+
+                outcome = result["outcome"]
+                await persist_success(group, outcome)
+                operation_latencies_ms.append(
+                    (time.perf_counter() - object_started) * 1000
+                )
+                copied_objects += 1
+                copied_rows += len(group)
+                recovered_objects += int(bool(outcome.get("recovered")))
+                circuit_copied += 1
+                if attempt == 0:
+                    bulk_slots += 1
+
+            circuit_total = circuit_copied + circuit_failed
+            if (
+                object_circuit is not None
+                and circuit_total >= bulk_window
+                and object_circuit.observe(
+                    copied_objects=circuit_copied,
+                    failed_objects=circuit_failed,
+                )
+            ):
+                first_fatal_error = first_fatal_error or RuntimeError(
+                    "ServiceUnavailable: systemic object copy circuit open"
+                )
+            if circuit_total >= bulk_window:
+                circuit_copied = 0
+                circuit_failed = 0
+            if first_fatal_error is None and bulk_slots:
+                schedule_bulk(bulk_slots)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    if first_fatal_error is not None:
+        raise first_fatal_error
+    return {
+        "copied_objects": copied_objects,
+        "copied_rows": copied_rows,
+        "recovered_objects": recovered_objects,
+        "retried_objects": retried_objects,
+        "exhausted_transient_objects": exhausted_transient_objects,
+        "operation_latencies_ms": operation_latencies_ms,
+        "request_events": request_events,
+        "limiter_peak_active": concurrency_limiter.peak_active,
+    }
 
 
 async def _run_copy_group_batch(
@@ -2599,11 +2821,11 @@ async def _probe(args: argparse.Namespace) -> None:
         phase = (
             "probe-target"
             if args.target_only
-            else "probe-r2"
-            if args.r2_only
-            else "probe-receipts"
-            if args.receipt_only
-            else "probe"
+            else (
+                "probe-r2"
+                if args.r2_only
+                else "probe-receipts" if args.receipt_only else "probe"
+            )
         )
         await conn.execute(
             "update analytics_history_media_migration_runs set status='running',phase=$2,error=null,updated_at=now() where id=$1",
@@ -3671,16 +3893,12 @@ async def _persist_probe_batch(
             error_code = (
                 "TARGET_EXISTS_UNVERIFIED"
                 if status == "target_conflict"
-                else "R2_CANDIDATES_NOT_FOUND"
-                if status == "pending_probe"
-                else None
+                else "R2_CANDIDATES_NOT_FOUND" if status == "pending_probe" else None
             )
             source_name = (
                 "target:user-data-prod"
                 if status in {"target_verified", "target_conflict"}
-                else "r2-user-data-prod"
-                if status == "copy_required"
-                else None
+                else "r2-user-data-prod" if status == "copy_required" else None
             )
             await conn.execute(
                 """update analytics_history_media_r2_migrations set
@@ -3991,10 +4209,7 @@ async def _create_copy_predecessor_recovery_plan(args: argparse.Namespace) -> No
         frontier_no = int(frontier["batch_no"])
         if any(
             (int(row["batch_no"]) < frontier_no and row["status"] != "completed")
-            or (
-                int(row["batch_no"]) >= frontier_no
-                and row["status"] != "superseded"
-            )
+            or (int(row["batch_no"]) >= frontier_no and row["status"] != "superseded")
             for row in predecessor_batches
         ):
             raise RuntimeError("copy recovery predecessor batch sequence changed")
@@ -4085,7 +4300,9 @@ async def _collect_copy_predecessor_recovery(
     )
     futures: list[asyncio.Future[Any]] = []
     try:
-        futures = [loop.run_in_executor(executor, inspect_group, group) for group in groups]
+        futures = [
+            loop.run_in_executor(executor, inspect_group, group) for group in groups
+        ]
         return list(await asyncio.gather(*futures))
     except BaseException:
         for future in futures:
@@ -4100,12 +4317,8 @@ async def _execute_copy_predecessor_recovery(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
         raise RuntimeError("target is restricted to user-data-prod")
-    max_pool_connections = _resolve_copy_max_pool_connections(
-        args.concurrency, None
-    )
-    client = _s3_client(
-        config["target"], max_pool_connections=max_pool_connections
-    )
+    max_pool_connections = _resolve_copy_max_pool_connections(args.concurrency, None)
+    client = _s3_client(config["target"], max_pool_connections=max_pool_connections)
     conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
     try:
         run_id, recovery = await _load_plan(conn, args.plan_sha256, "copy")
@@ -4172,9 +4385,10 @@ async def _execute_copy_predecessor_recovery(args: argparse.Namespace) -> None:
         digest = StreamingJsonArraySha256()
         for row in normalized:
             digest.add(_plan_row(row))
-        if digest.count != int(recovery["count"]) or digest.hexdigest() != recovery[
-            "rowset_sha256"
-        ]:
+        if (
+            digest.count != int(recovery["count"])
+            or digest.hexdigest() != recovery["rowset_sha256"]
+        ):
             raise RuntimeError("copy recovery rowset changed")
         groups = group_copy_candidates(rows)
         outcomes = await _collect_copy_predecessor_recovery(
@@ -4711,9 +4925,7 @@ async def _persist_copy_success(
     method = (
         "r2_multipart_copy"
         if copied["multipart"]
-        else "r2_copy_object_recovered"
-        if copied.get("recovered")
-        else "r2_copy_object"
+        else "r2_copy_object_recovered" if copied.get("recovered") else "r2_copy_object"
     )
     ownership_clause = " and copy_plan_sha256=$4" if copy_plan_sha256 else ""
     params: tuple[Any, ...] = (ids, copied["etag"], method)
@@ -4724,8 +4936,7 @@ async def _persist_copy_success(
              status='copied_verified',target_sha256=source_sha256,
              target_etag=$2,copy_method=$3,error_code=null,error_detail=null,
              copy_completed_at=coalesce(copy_completed_at,now()),updated_at=now()
-           where id=any($1::bigint[])"""
-        + ownership_clause,
+           where id=any($1::bigint[])""" + ownership_clause,
         *params,
     )
     if copy_plan_sha256 and result != f"UPDATE {len(ids)}":
@@ -4746,8 +4957,7 @@ async def _persist_copy_failure(
     result = await conn.execute(
         """update analytics_history_media_r2_migrations set status='failed',
              error_code='COPY_FAILED',error_detail=$2,updated_at=now()
-           where id=any($1::bigint[])"""
-        + ownership_clause,
+           where id=any($1::bigint[])""" + ownership_clause,
         *params,
     )
     if copy_plan_sha256 and result != f"UPDATE {len(params[0])}":
@@ -4830,6 +5040,154 @@ async def _verify_copy_plan_objects(
     return {"ledger_rows": ledger_rows, "verified_objects": verified_objects}
 
 
+async def _validate_copy_plan_preflight(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    manifest: dict[str, Any],
+    plan_sha256: str,
+) -> None:
+    """Validate immutable global Copy identity once per supervisor lifetime."""
+    if manifest.get("batches_sha256"):
+        frozen_batches = await conn.fetch(
+            """select batch_no,first_ledger_id,last_ledger_id,
+                      first_history_id,last_history_id,asset_count,history_count,
+                      rowset_sha256,cas_state_sha256
+                 from analytics_history_media_migration_plan_batches
+                where plan_sha256=$1 order by batch_no""",
+            plan_sha256,
+        )
+        batch_digest = StreamingJsonArraySha256()
+        for record in frozen_batches:
+            batch_digest.add(dict(record))
+        if (
+            len(frozen_batches) != int(manifest["batch_count"])
+            or batch_digest.hexdigest() != manifest["batches_sha256"]
+        ):
+            raise RuntimeError("copy plan batches identity changed")
+
+    rowset_sha, _count, _counts, _bytes, _diagnostics = await _stream_plan_rowset(
+        conn,
+        """select id,history_id,role,ordinal,original_ref,target_key,
+                  source_name,source_key,source_last_modified,source_etag,source_sha256,
+                  target_sha256,byte_size,status,history_manifest_sha256,
+                  copy_plan_sha256
+             from analytics_history_media_r2_migrations
+            where run_id=$1 and copy_plan_sha256=$2
+            order by id""",
+        run_id,
+        plan_sha256,
+        copy_plan_sha256=plan_sha256,
+    )
+    if rowset_sha != manifest["rowset_sha256"]:
+        raise RuntimeError("copy plan rowset changed")
+
+    predecessor_copy_plans = tuple(
+        str(value) for value in manifest.get("predecessor_copy_plan_sha256s", [])
+    )
+    if predecessor_copy_plans:
+        if tuple(copy_plan_chain_sha256s(manifest)[:-1]) != predecessor_copy_plans:
+            raise RuntimeError("copy predecessor chain identity changed")
+        invalid_predecessor_batches = int(
+            await conn.fetchval(
+                """select count(*)
+                     from analytics_history_media_migration_plan_batches
+                    where plan_sha256=any($1::text[])
+                      and status not in ('completed','superseded')""",
+                list(predecessor_copy_plans),
+            )
+        )
+        retained_assets = int(
+            await conn.fetchval(
+                """select count(*)
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and copy_plan_sha256=any($2::text[])
+                      and status='copied_verified'
+                      and copy_completed_at is not null""",
+                run_id,
+                list(predecessor_copy_plans),
+            )
+        )
+        if (
+            invalid_predecessor_batches
+            or retained_assets != int(manifest["retained_asset_count"])
+            or retained_assets + int(manifest["count"])
+            != int(manifest["root_asset_count"])
+        ):
+            raise RuntimeError("copy predecessor retained state changed")
+
+    conflicting_target = await conn.fetchval(
+        """select target_key from (
+             select target_key,
+                    count(distinct (source_name,source_key,byte_size,
+                                    source_last_modified,source_etag,source_sha256)) identities
+               from analytics_history_media_r2_migrations
+              where run_id=$1 and copy_plan_sha256=$2
+              group by target_key
+           ) grouped where identities > 1 limit 1""",
+        run_id,
+        plan_sha256,
+    )
+    if conflicting_target is not None:
+        raise RuntimeError(
+            "copy plan contains a target with conflicting frozen sources"
+        )
+    ineligible_source_count = int(
+        await conn.fetchval(
+            """select count(*) from analytics_history_media_r2_migrations
+                 where run_id=$1 and copy_plan_sha256=$2
+                   and status in ('copy_required','failed')
+                   and source_name is distinct from 'r2-user-data-prod'""",
+            run_id,
+            plan_sha256,
+        )
+    )
+    if ineligible_source_count:
+        raise RuntimeError("copy plan contains a non-R2 source")
+    multipart_count = int(
+        await conn.fetchval(
+            """select count(*) from analytics_history_media_r2_migrations
+                 where run_id=$1 and copy_plan_sha256=$2
+                   and status in ('copy_required','failed') and byte_size > $3""",
+            run_id,
+            plan_sha256,
+            SINGLE_COPY_LIMIT,
+        )
+    )
+    if multipart_count:
+        raise RuntimeError("frozen production copy plan contains multipart objects")
+
+
+async def _validate_copy_batch_identity(
+    conn: asyncpg.Connection,
+    *,
+    run_id: uuid.UUID,
+    plan_sha256: str,
+    batch: dict[str, Any],
+) -> None:
+    rows = await conn.fetch(
+        """select id,history_id,role,ordinal,original_ref,target_key,
+                  source_name,source_key,source_last_modified,source_etag,source_sha256,
+                  target_sha256,byte_size,status,history_manifest_sha256,
+                  copy_plan_sha256
+             from analytics_history_media_r2_migrations
+            where run_id=$1 and copy_plan_sha256=$2
+              and id between $3 and $4
+            order by id""",
+        run_id,
+        plan_sha256,
+        int(batch["first_ledger_id"]),
+        int(batch["last_ledger_id"]),
+    )
+    digest = StreamingJsonArraySha256()
+    for record in rows:
+        digest.add(_plan_row(_normalized_frozen_copy_row(dict(record))))
+    if len(rows) != int(batch["asset_count"]) or digest.hexdigest() != str(
+        batch["rowset_sha256"]
+    ):
+        raise RuntimeError("copy batch rowset changed")
+
+
 async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
     execution_started = time.perf_counter()
     config = _load_secure_config(Path(args.config))
@@ -4860,23 +5218,6 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 artifact_digest=args.artifact_digest or "",
                 config=config,
             )
-        if manifest.get("batches_sha256"):
-            frozen_batches = await conn.fetch(
-                """select batch_no,first_ledger_id,last_ledger_id,
-                          first_history_id,last_history_id,asset_count,history_count,
-                          rowset_sha256,cas_state_sha256
-                     from analytics_history_media_migration_plan_batches
-                    where plan_sha256=$1 order by batch_no""",
-                args.plan_sha256,
-            )
-            batch_digest = StreamingJsonArraySha256()
-            for record in frozen_batches:
-                batch_digest.add(dict(record))
-            if (
-                len(frozen_batches) != int(manifest["batch_count"])
-                or batch_digest.hexdigest() != manifest["batches_sha256"]
-            ):
-                raise RuntimeError("copy plan batches identity changed")
         superseded_batches = int(
             await conn.fetchval(
                 """select count(*) from analytics_history_media_migration_plan_batches
@@ -4886,118 +5227,58 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
         )
         if superseded_batches:
             raise RuntimeError("copy plan has been superseded")
-        rowset_sha, _count, _counts, _bytes, _diagnostics = await _stream_plan_rowset(
-            conn,
-            """select id,history_id,role,ordinal,original_ref,target_key,
-                      source_name,source_key,source_last_modified,source_etag,source_sha256,
-                      target_sha256,byte_size,status,history_manifest_sha256,
-                      copy_plan_sha256
-                 from analytics_history_media_r2_migrations
-                where run_id=$1 and copy_plan_sha256=$2
-                order by id""",
-            run_id,
-            args.plan_sha256,
-            copy_plan_sha256=args.plan_sha256,
-        )
-        if rowset_sha != manifest["rowset_sha256"]:
-            raise RuntimeError("copy plan rowset changed")
-        predecessor_copy_plans = tuple(
-            str(value) for value in manifest.get("predecessor_copy_plan_sha256s", [])
-        )
-        if predecessor_copy_plans:
-            if tuple(copy_plan_chain_sha256s(manifest)[:-1]) != predecessor_copy_plans:
-                raise RuntimeError("copy predecessor chain identity changed")
-            invalid_predecessor_batches = int(
-                await conn.fetchval(
-                    """select count(*)
-                         from analytics_history_media_migration_plan_batches
-                        where plan_sha256=any($1::text[])
-                          and status not in ('completed','superseded')""",
-                    list(predecessor_copy_plans),
-                )
+        if not bool(getattr(args, "skip_global_preflight", False)):
+            await _validate_copy_plan_preflight(
+                conn,
+                run_id=run_id,
+                manifest=manifest,
+                plan_sha256=args.plan_sha256,
             )
-            retained_assets = int(
-                await conn.fetchval(
-                    """select count(*)
-                         from analytics_history_media_r2_migrations
-                        where run_id=$1 and copy_plan_sha256=any($2::text[])
-                          and status='copied_verified'
-                          and copy_completed_at is not null""",
-                    run_id,
-                    list(predecessor_copy_plans),
-                )
-            )
-            if (
-                invalid_predecessor_batches
-                or retained_assets != int(manifest["retained_asset_count"])
-                or retained_assets + int(manifest["count"])
-                != int(manifest["root_asset_count"])
-            ):
-                raise RuntimeError("copy predecessor retained state changed")
-        conflicting_target = await conn.fetchval(
-            """select target_key from (
-                 select target_key,
-                        count(distinct (source_name,source_key,byte_size,
-                                        source_last_modified,source_etag,source_sha256)) identities
-                   from analytics_history_media_r2_migrations
-                  where run_id=$1 and copy_plan_sha256=$2
-                  group by target_key
-               ) grouped where identities > 1 limit 1""",
-            run_id,
-            args.plan_sha256,
-        )
-        if conflicting_target is not None:
-            raise RuntimeError(
-                "copy plan contains a target with conflicting frozen sources"
-            )
-        ineligible_source_count = int(
-            await conn.fetchval(
-                """select count(*) from analytics_history_media_r2_migrations
-                     where run_id=$1 and copy_plan_sha256=$2
-                       and status in ('copy_required','failed')
-                       and source_name is distinct from 'r2-user-data-prod'""",
-                run_id,
-                args.plan_sha256,
-            )
-        )
-        if ineligible_source_count:
-            raise RuntimeError("copy plan contains a non-R2 source")
-        multipart_count = int(
-            await conn.fetchval(
-                """select count(*) from analytics_history_media_r2_migrations
-                     where run_id=$1 and copy_plan_sha256=$2
-                       and status in ('copy_required','failed') and byte_size > $3""",
-                run_id,
-                args.plan_sha256,
-                SINGLE_COPY_LIMIT,
-            )
-        )
-        if multipart_count:
-            raise RuntimeError("frozen production copy plan contains multipart objects")
+        if bool(getattr(args, "preflight_only", False)):
+            return {
+                "preflight": "validated",
+                "remaining": int(manifest["count"]),
+            }
+        copy_shard_count = int(getattr(args, "copy_shard_count", 1))
+        copy_shard_index = int(getattr(args, "copy_shard_index", 0))
+        if copy_shard_count <= 0 or not 0 <= copy_shard_index < copy_shard_count:
+            raise ValueError("copy shard identity is invalid")
         active_batch = await conn.fetchrow(
             """select * from analytics_history_media_migration_plan_batches
                  where plan_sha256=$1 and status<>'completed'
+                   and mod(batch_no,$2)=$3
                  order by batch_no limit 1""",
             args.plan_sha256,
+            copy_shard_count,
+            copy_shard_index,
         )
+        if active_batch:
+            await _validate_copy_batch_identity(
+                conn,
+                run_id=run_id,
+                plan_sha256=args.plan_sha256,
+                batch=dict(active_batch),
+            )
         first_ledger_id = int(active_batch["first_ledger_id"]) if active_batch else 0
         last_ledger_id = (
             int(active_batch["last_ledger_id"])
             if active_batch
             else 9_223_372_036_854_775_807
         )
-        rows = await conn.fetch(
-            """select * from analytics_history_media_r2_migrations
-                 where run_id=$1 and copy_plan_sha256=$2
-                   and status in ('copy_required','failed')
-                   and id between $4 and $5
-                 order by history_id,role,ordinal limit $3""",
-            run_id,
-            args.plan_sha256,
-            args.limit,
-            first_ledger_id,
-            last_ledger_id,
-        )
+        rows = []
+        if active_batch:
+            rows = await conn.fetch(
+                """select * from analytics_history_media_r2_migrations
+                     where run_id=$1 and copy_plan_sha256=$2
+                       and status in ('copy_required','failed')
+                       and id between $4 and $5
+                     order by history_id,role,ordinal limit $3""",
+                run_id,
+                args.plan_sha256,
+                args.limit,
+                first_ledger_id,
+                last_ledger_id,
+            )
         selected_targets = list(dict.fromkeys(str(row["target_key"]) for row in rows))
         if selected_targets:
             rows = await conn.fetch(
@@ -5027,16 +5308,32 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                     "copy plan source is not eligible for same-R2 server-side copy"
                 )
 
+        bulk_executor = getattr(args, "bulk_executor", None)
+        retry_executor = getattr(args, "retry_executor", None)
+        concurrency_limiter = getattr(args, "concurrency_limiter", None)
+        external_retry_lane = (
+            bulk_executor is not None
+            or retry_executor is not None
+            or concurrency_limiter is not None
+        )
+        if external_retry_lane and not all(
+            value is not None
+            for value in (bulk_executor, retry_executor, concurrency_limiter)
+        ):
+            raise RuntimeError("copy retry lane dependencies are incomplete")
+
         _validate_r2_transport_runtime(transport)
         target_client = _s3_client(
             target,
             max_pool_connections=max_pool_connections,
             transport=transport,
+            external_retry_lane=external_retry_lane,
         )
 
         copied_objects = 0
         copied_rows = 0
         recovered_objects = 0
+        retried_objects = 0
         exhausted_transient_objects = 0
         r2_operation_latencies_ms: list[float] = []
         db_commit_latencies_ms: list[float] = []
@@ -5052,6 +5349,19 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 retry_base_seconds=float(getattr(args, "retry_base_seconds", 1.0)),
                 retry_max_seconds=float(getattr(args, "retry_max_seconds", 16.0)),
                 retry_jitter_ratio=float(getattr(args, "retry_jitter_ratio", 0.25)),
+                bucket=BUCKET,
+                source_key=str(group[0]["source_key"]),
+                target_key=str(group[0]["target_key"]),
+                expected_size=int(group[0]["byte_size"]),
+                expected_last_modified=group[0]["source_last_modified"],
+                expected_etag=group[0]["source_etag"],
+                copy_plan_sha256=args.plan_sha256,
+            )
+
+        def copy_one_attempt(group: list[dict[str, Any]]) -> dict[str, Any]:
+            return _timed_server_side_copy_attempt(
+                target_client,
+                concurrency_limiter=args.concurrency_limiter,
                 bucket=BUCKET,
                 source_key=str(group[0]["source_key"]),
                 target_key=str(group[0]["target_key"]),
@@ -5085,24 +5395,40 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             )
             db_commit_latencies_ms.append((time.perf_counter() - db_started) * 1000)
 
-        with ThreadPoolExecutor(max_workers=args.copy_concurrency) as copy_executor:
-            result = await _run_copy_group_batch(
+        if external_retry_lane:
+            result = await _run_copy_group_batch_with_retry_lane(
                 groups,
-                executor=copy_executor,
-                copy_one=copy_one,
+                bulk_executor=bulk_executor,
+                retry_executor=retry_executor,
+                concurrency_limiter=concurrency_limiter,
+                copy_one_attempt=copy_one_attempt,
                 persist_success=persist_success,
                 persist_failure=persist_failure,
-                max_in_flight=scheduling_window,
+                max_retries=int(getattr(args, "object_max_retries", 5)),
+                retry_base_seconds=float(getattr(args, "retry_base_seconds", 1.0)),
+                retry_max_seconds=float(getattr(args, "retry_max_seconds", 16.0)),
+                retry_jitter_ratio=float(getattr(args, "retry_jitter_ratio", 0.25)),
+                max_bulk_in_flight=args.copy_concurrency,
                 object_circuit=object_circuit,
             )
-            copied_objects += int(result["copied_objects"])
-            copied_rows += int(result["copied_rows"])
-            recovered_objects += int(result["recovered_objects"])
-            exhausted_transient_objects += int(
-                result["exhausted_transient_objects"]
-            )
-            r2_operation_latencies_ms.extend(result["operation_latencies_ms"])
-            copy_request_events.extend(result["request_events"])
+        else:
+            with ThreadPoolExecutor(max_workers=args.copy_concurrency) as copy_executor:
+                result = await _run_copy_group_batch(
+                    groups,
+                    executor=copy_executor,
+                    copy_one=copy_one,
+                    persist_success=persist_success,
+                    persist_failure=persist_failure,
+                    max_in_flight=scheduling_window,
+                    object_circuit=object_circuit,
+                )
+        copied_objects += int(result["copied_objects"])
+        copied_rows += int(result["copied_rows"])
+        recovered_objects += int(result["recovered_objects"])
+        retried_objects += int(result.get("retried_objects", 0))
+        exhausted_transient_objects += int(result["exhausted_transient_objects"])
+        r2_operation_latencies_ms.extend(result["operation_latencies_ms"])
+        copy_request_events.extend(result["request_events"])
         copy_elapsed_seconds = time.perf_counter() - copy_started
         remaining = int(
             await conn.fetchval(
@@ -5141,17 +5467,26 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             "copied": copied_rows,
             "copied_objects": copied_objects,
             "recovered_objects": recovered_objects,
+            "retried_objects": retried_objects,
             "exhausted_transient_objects": exhausted_transient_objects,
             "remaining": remaining,
-            "copy_concurrency": args.copy_concurrency,
-            "max_pool_connections": max_pool_connections,
+            "copy_concurrency": int(
+                getattr(args, "global_copy_concurrency", args.copy_concurrency)
+            ),
+            "max_pool_connections": int(
+                getattr(args, "global_max_pool_connections", max_pool_connections)
+            ),
+            "lane_copy_concurrency": args.copy_concurrency,
+            "lane_max_pool_connections": max_pool_connections,
             "r2_transport": transport.identity(),
             "copy_elapsed_seconds": round(copy_elapsed_seconds, 3),
             "total_elapsed_seconds": round(time.perf_counter() - execution_started, 3),
             "copy_objects_per_second": round(
-                copied_objects / copy_elapsed_seconds
-                if copy_elapsed_seconds > 0
-                else 0.0,
+                (
+                    copied_objects / copy_elapsed_seconds
+                    if copy_elapsed_seconds > 0
+                    else 0.0
+                ),
                 3,
             ),
             "r2_object_operation_latency_ms": _latency_summary(
@@ -5163,6 +5498,9 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 event["kind"] != "ok" for event in copy_request_events
             ),
             "_copy_request_events": copy_request_events,
+            "shard_complete": active_batch is None,
+            "copy_shard_count": copy_shard_count,
+            "copy_shard_index": copy_shard_index,
         }
         print(
             json.dumps(
@@ -5173,10 +5511,15 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
         )
-        if remaining == 0 and manifest.get("schema") in {
-            "allbot-history-media-r2-copy-plan/v2",
-            "allbot-history-media-r2-copy-plan/v3",
-        }:
+        if (
+            remaining == 0
+            and bool(getattr(args, "finalize_plan", True))
+            and manifest.get("schema")
+            in {
+                "allbot-history-media-r2-copy-plan/v2",
+                "allbot-history-media-r2-copy-plan/v3",
+            }
+        ):
             verified_copy_chain = copy_plan_chain_sha256s(manifest)
             verification = await _verify_copy_plan_objects(
                 conn,
