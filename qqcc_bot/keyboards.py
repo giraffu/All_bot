@@ -123,6 +123,11 @@ def _get_visible_qqcc_main_menu_buttons(
             global_enabled and _can_show_market(config),
         ),
         (
+            "queue",
+            get_text("menu.queue", lang),
+            is_qqcc_main_button_enabled(config, "queue"),
+        ),
+        (
             "private_bot",
             get_text("qqcc.menu.private_bot", lang),
             include_private_bot_entry
@@ -154,7 +159,7 @@ def _build_legacy_qqcc_main_menu_rows(
     if feature_row:
         keyboard.append(feature_row)
 
-    for key in ("market", "private_bot", "main_bot_link"):
+    for key in ("market", "queue", "private_bot", "main_bot_link"):
         label = visible_buttons.get(key)
         if label:
             keyboard.append([label])
