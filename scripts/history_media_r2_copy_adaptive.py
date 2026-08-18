@@ -310,6 +310,16 @@ class ShardedBatchCoordinator:
         self._terminal_lanes: set[int] = set()
         self._finalized = False
         self._preflight_done = False
+        self._live_request_events: deque[dict[str, Any]] = deque(maxlen=1000)
+
+    def _record_request_event(self, event: dict[str, Any]) -> None:
+        self._live_request_events.append(dict(event))
+
+    def _with_live_request_events(self, summary: dict[str, Any]) -> dict[str, Any]:
+        result = dict(summary)
+        result["_copy_request_events"] = list(self._live_request_events)
+        self._live_request_events.clear()
+        return result
 
     def _batch_args(
         self, batch_args: argparse.Namespace | SimpleNamespace, lane: int
@@ -339,6 +349,7 @@ class ShardedBatchCoordinator:
                 "global_copy_concurrency": self.maximum_concurrency,
                 "bulk_workers": self.bulk_workers,
                 "retry_workers": self.retry_workers,
+                "request_event_sink": self._record_request_event,
                 "finalize_plan": False,
                 "skip_global_preflight": True,
             }
@@ -397,12 +408,15 @@ class ShardedBatchCoordinator:
                     }
                 )
                 self._finalized = True
-                return await self.execute_batch(SimpleNamespace(**final_values))
+                final_summary = await self.execute_batch(
+                    SimpleNamespace(**final_values)
+                )
+                return self._with_live_request_events(final_summary)
             if summary.get("shard_complete"):
                 self._terminal_lanes.add(lane)
                 self._start_available_lanes(batch_args)
                 continue
-            return summary
+            return self._with_live_request_events(summary)
         if not self._finalized:
             final_values = dict(vars(batch_args))
             final_values.update(
@@ -415,7 +429,8 @@ class ShardedBatchCoordinator:
                 }
             )
             self._finalized = True
-            return await self.execute_batch(SimpleNamespace(**final_values))
+            final_summary = await self.execute_batch(SimpleNamespace(**final_values))
+            return self._with_live_request_events(final_summary)
         return {
             "remaining": 0,
             "copied_objects": 0,
@@ -577,7 +592,13 @@ async def run_adaptive_copy(
                 _resolve_copy_max_pool_connections(concurrency, configured_pool),
             )
         )
-        request_events = list(summary.get("_copy_request_events") or [])
+        all_request_events = list(summary.get("_copy_request_events") or [])
+        request_events = [
+            event
+            for event in all_request_events
+            if int(event.get("copy_concurrency", concurrency)) == concurrency
+        ]
+        stale_request_events = len(all_request_events) - len(request_events)
         health.extend(request_events)
         health_decision = health.decision(current_concurrency=concurrency)
         r2_latency = summary.get("r2_object_operation_latency_ms") or {}
@@ -597,6 +618,7 @@ async def run_adaptive_copy(
                 "latency_reason": latency_decision.reason,
                 "request_error_rate": health_decision.error_rate,
                 "request_sample_count": health_decision.sample_count,
+                "stale_request_events_ignored": stale_request_events,
             }
         )
         if health_decision.action == "systemic":

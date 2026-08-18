@@ -42,6 +42,7 @@ from scripts.history_media_r2_migration import (
     _run_copy_group_batch_with_retry_lane,
     _runtime_identity,
     _s3_client,
+    _timed_server_side_copy_attempt,
     _timed_server_side_copy_with_retries,
     _validate_runtime_identity,
     _validate_r2_transport_runtime,
@@ -1568,6 +1569,7 @@ async def test_copy_retry_lane_keeps_transient_retries_out_of_bulk_workers():
         failures.append((group[0]["id"], error))
 
     limiter = AdaptiveConcurrencyLimiter(limit=3)
+    live_events = []
     with (
         ThreadPoolExecutor(max_workers=2, thread_name_prefix="copy-bulk") as bulk,
         ThreadPoolExecutor(max_workers=1, thread_name_prefix="copy-retry") as retry,
@@ -1584,6 +1586,7 @@ async def test_copy_retry_lane_keeps_transient_retries_out_of_bulk_workers():
             retry_base_seconds=0.001,
             retry_max_seconds=0.001,
             retry_jitter_ratio=0,
+            request_event_sink=live_events.append,
         )
 
     assert failures == []
@@ -1594,6 +1597,27 @@ async def test_copy_retry_lane_keeps_transient_retries_out_of_bulk_workers():
     )
     assert limiter.peak_active <= 3
     assert result["retried_objects"] == 1
+    assert live_events == result["request_events"]
+
+
+def test_copy_attempt_records_the_live_concurrency_epoch(monkeypatch):
+    import scripts.history_media_r2_migration as module
+
+    limiter = AdaptiveConcurrencyLimiter(limit=128)
+
+    def copy_object(_client, **_kwargs):
+        limiter.set_limit(64)
+        return {"recovered": False}
+
+    monkeypatch.setattr(module, "server_side_copy_r2_object", copy_object)
+
+    result = _timed_server_side_copy_attempt(object(), concurrency_limiter=limiter)
+
+    assert result["request_event"] == {
+        "at": result["request_event"]["at"],
+        "kind": "ok",
+        "copy_concurrency": 128,
+    }
 
 
 def test_shared_bulk_and_retry_executors_reach_but_never_exceed_128():

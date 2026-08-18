@@ -25,10 +25,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
 - direct predecessor marker 仅可由新 COPY 令牌的 frontier HEAD recovery 对账。
-- History R2 Copy 由单一 supervisor 共享全局并发门禁和独立 bulk/retry 线程池；
-  冻结批次可分散到多个逻辑 lane 连续补位，但禁止启动多个无共享上限的执行器。
-  瞬态错误率和限流是主要降档信号，R2 长尾延迟只观测；每个对象独立提交，
-  单个慢请求不得阻塞其它 lane。精确批次、档位与阈值从当前 artifact 代码读取。
+- History R2 Copy 的 lane 与 bulk/retry 池共用全局门禁；健康事件跨 lane 实时聚合并
+  绑定实际并发 epoch，旧 epoch 不参与新档位决策。错误率/限流决定降档，长尾延迟
+  只观测；参数从 artifact 读取。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
