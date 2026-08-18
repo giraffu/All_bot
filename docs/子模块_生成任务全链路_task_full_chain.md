@@ -27,7 +27,7 @@ MiniMax H3 用户入口使用 T2V/I2V/FLF2V 三个独立业务/执行类型，�
 
 当前系统中更准确的生成任务主链是：
 
-`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / coarse status / result`
+`Frontend -> Web API -> TaskApplication -> dispatcher -> Central -> Worker -> ComfyUI -> finalizer / History`
 
 要点：
 
@@ -211,7 +211,7 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 - 挂载 side effect
 - 在失败时退款并释放锁
 
-当前 `process_and_submit_task(...)` 内部已继续拆成稳定步骤：
+当前提交编排已移入 `TaskApplication.submit(command, policy, journal)`，并继续拆成稳定步骤；旧 `process_and_submit_task(...)` 只负责把宽参数转换为新对象：
 
 - `task_core_process_flow.build_prepared_task_submission_request(...)`
 - `task_core_process_flow.prepare_task_submission_context(...)`

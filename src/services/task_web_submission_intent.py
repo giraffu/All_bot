@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from src.core.task_core_types import TaskSubmissionContext
+from src.core.task_core_types import SubmissionJournal, TaskSubmissionContext
 from src.services.task_web_finalizer import prepare_web_submission_intent
 
 
 @dataclass(slots=True)
-class WebSubmissionIntentJournal:
+class WebSubmissionIntentJournal(SubmissionJournal):
     """Web adapter for the durable boundary immediately before Central dispatch."""
 
     internal_user_id: int

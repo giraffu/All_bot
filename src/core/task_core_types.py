@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from collections.abc import Awaitable
 from typing import Any
 
 from src.core.user_logger_protocol import UserLoggerProtocol
@@ -140,6 +141,58 @@ class TaskSubmissionExecutionResult:
 class TaskSubmissionSideEffectPlan:
     attach_web_monitor: bool = False
     source_post_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSubmissionCommand:
+    internal_user_id: int
+    username: str
+    task_type: str
+    inputs: dict[str, Any]
+    task_id: str
+    source_post_id: int | None = None
+    delivery_context: dict[str, Any] | None = None
+    registry_metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSubmissionPolicy:
+    base_priority: int = 0
+    is_template: bool = False
+    client_type: str = "web"
+    deduct_quota: bool = True
+    check_lock: bool = True
+    side_effect_plan: TaskSubmissionSideEffectPlan | None = None
+    cost_override: int | None = None
+    user_cancel_allowed: bool = True
+    concurrency_idempotency_key: str | None = None
+    debit_idempotency_key: str | None = None
+    allow_contribute_override: bool | None = None
+    prepare_timeout_seconds: float | None = None
+    debit_timeout_seconds: float | None = None
+    dispatch_timeout_seconds: float | None = None
+    refund_idempotency_key: str | None = None
+    refund_task_type: str | None = None
+    release_idempotency_key: str | None = None
+
+
+class SubmissionJournal:
+    """Application seam for durable submission state owned by each entrypoint."""
+
+    async def before_debit(self, **_event: Any) -> None:
+        return None
+
+    async def after_debit(self, **_event: Any) -> None:
+        return None
+
+    async def before_dispatch(self, **_event: Any) -> None:
+        return None
+
+    def should_compensate(self, _error: Exception) -> bool | Awaitable[bool]:
+        return True
+
+    async def before_compensation(self, **_event: Any) -> None:
+        return None
 
 
 @dataclass(frozen=True, slots=True)

@@ -25,11 +25,12 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 
 ## 2. 稳定接口与分层
 
-- `process_and_submit_task(...)` 是任务提交 facade，编排身份/权限、输入归一、
-  provider 选择、扣费、持久化、Central 提交和失败补偿。
-- `process_and_submit_task(base_priority=..., user_cancel_allowed=...)` 可表达
-  入口控制语义。优先级只影响队列；`user_cancel_allowed=false` 必须写入
-  active registry，由 core runtime 权威拒绝取消。
+- `TaskApplication(dependencies=...).submit(command, policy, journal)` 是新的任务
+  提交 application seam：command 只放请求事实，policy 放入口控制/idempotency/
+  timeout，journal 承载 Web intent、Bot recovery 或私有 QQCC ledger 状态。
+- `process_and_submit_task(...)` 当前仅是旧入口兼容适配层，会构造上述三个对象；
+  禁止再增加 callback 参数。优先级只影响队列；`user_cancel_allowed=false`
+  必须通过 policy 写入 active registry，由 core runtime 权威拒绝取消。
 - `cleanup_task_runtime_state(...)` 是成功、失败、取消、finalizer 和恢复脚本
   的统一运行态清理 seam，不复制散落 Redis/DB 删除。
 - Web side-effect monitor 使用
@@ -46,9 +47,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
   HTTP 实现。
 
-以上是新代码目标边界，不是“迁移已完成”的声明。当前 task core 仍有
-default-dependencies/runtime 兼容装配和较宽 facade；修改时优先显式传入
-command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
+入口迁移尚未全部完成：旧 facade 仍保留 default dependencies 和 callback journal
+适配，直到 Web/Bot/QQCC/Dashboard 全部显式装配 `TaskApplication` 后删除。新增代码
+只能使用 command/policy/journal，不扩大旧签名、延迟导入或模块级默认绑定。
 
 ## 3. 双 ID 与终态不变量
 
