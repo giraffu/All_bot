@@ -5,18 +5,11 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Mapping
 
 
-POST_COMFY_PHASES = frozenset(
-    {
-        "gpu_done",
-        "delivering",
-        "reporting_complete",
-    }
-)
+POST_COMFY_PHASES = frozenset({"gpu_done", "delivering", "reporting_complete"})
 
 FAST_IMAGE_PIPELINE_POLICY = "image_claim3_comfy2_delivery1_v1"
 MEDIA_PIPELINE_POLICY = "media_claim2_comfy1_delivery1_v1"
 LEGACY_BF16_LAN_PIPELINE_POLICY = "bf16_lan_claim3_comfy2_delivery1"
-# Import compatibility for tests and older code that named the pilot policy.
 BF16_LAN_PIPELINE_POLICY = LEGACY_BF16_LAN_PIPELINE_POLICY
 
 

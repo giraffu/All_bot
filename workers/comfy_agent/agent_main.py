@@ -54,6 +54,12 @@ from comfy_client import ComfyClient
 from dotenv import load_dotenv
 from minio import Minio  # type: ignore
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pipeline_slots import (
+    PipelineAdmission,
+    PipelineDeliveryGate,
+    resolve_pipeline_limits,
+)
+from runtime_manifest import load_runtime_manifest
 from workflow_patcher import WorkflowPatcher
 
 __all__ = [
@@ -188,6 +194,7 @@ STATUS_REPORT_RETRY_MAX_SECONDS = float(
 )
 UPLOAD_SIDECAR_URL = os.getenv("UPLOAD_SIDECAR_URL", "").rstrip("/")
 RESULT_SPOOL_DIR = os.getenv("RESULT_SPOOL_DIR", "/app/spool")
+AGENT_LOG_DIR = os.getenv("AGENT_LOG_DIR", "./logs")
 PREFETCH_ENABLED = os.getenv("PREFETCH_ENABLED", "false").strip().lower() in {
     "1",
     "true",
@@ -215,9 +222,32 @@ PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
     "yes",
     "on",
 }
-PIPELINE_MAX_RUNNING_TASKS = max(
+_PIPELINE_MAX_RUNNING_TASKS = max(
     1,
     int(os.getenv("PIPELINE_MAX_RUNNING_TASKS", "2")),
+)
+_PIPELINE_MAX_CLAIMED_TASKS = max(
+    _PIPELINE_MAX_RUNNING_TASKS,
+    int(
+        os.getenv(
+            "PIPELINE_MAX_CLAIMED_TASKS",
+            str(_PIPELINE_MAX_RUNNING_TASKS + (1 if PREFETCH_RESERVE_TASK else 0)),
+        )
+    ),
+)
+_PIPELINE_DELIVERY_CONCURRENCY = max(
+    1,
+    int(os.getenv("PIPELINE_DELIVERY_CONCURRENCY", "1")),
+)
+(
+    PIPELINE_MAX_RUNNING_TASKS,
+    PIPELINE_MAX_CLAIMED_TASKS,
+    PIPELINE_DELIVERY_CONCURRENCY,
+) = resolve_pipeline_limits(
+    policy=os.getenv("PIPELINE_PROFILE_POLICY", ""),
+    max_running_tasks=_PIPELINE_MAX_RUNNING_TASKS,
+    max_claimed_tasks=_PIPELINE_MAX_CLAIMED_TASKS,
+    delivery_concurrency=_PIPELINE_DELIVERY_CONCURRENCY,
 )
 PIPELINE_TASK_TYPES = os.getenv("PIPELINE_TASK_TYPES", "all")
 CANCEL_LOCK_ON_POP = (
@@ -301,8 +331,11 @@ handler.addFilter(CorrelationIdFilter())
 
 # Also log to file if the directory exists
 handlers = [handler]
-os.makedirs("/app/logs", exist_ok=True)
-file_handler = logging.FileHandler(f"/app/logs/agent_{AGENT_ID}.log")
+os.makedirs(AGENT_LOG_DIR, exist_ok=True)
+file_handler = logging.FileHandler(
+    os.path.join(AGENT_LOG_DIR, f"agent_{AGENT_ID}.log"),
+    encoding="utf-8",
+)
 file_handler.setFormatter(formatter)
 file_handler.addFilter(CorrelationIdFilter())
 handlers.append(file_handler)
@@ -409,6 +442,15 @@ class ComfyAgent:
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
         self._reserved_prefetch_task: dict[str, Any] | None = None
+        self._claim_lock = asyncio.Lock()
+        self._pipeline_admission = PipelineAdmission(
+            max_claimed_tasks=PIPELINE_MAX_CLAIMED_TASKS,
+            max_comfy_inflight=PIPELINE_MAX_RUNNING_TASKS,
+        )
+        self._delivery_gate = PipelineDeliveryGate(
+            concurrency=PIPELINE_DELIVERY_CONCURRENCY,
+        )
+        self._runtime_manifest = load_runtime_manifest()
         self._prefetch_task_types = {
             task_type.strip()
             for task_type in PREFETCH_TASK_TYPES.split(",")
@@ -448,6 +490,25 @@ class ComfyAgent:
         self._active_execution = execution
         self._executions[task_id] = execution
         return execution
+
+    def _register_claimed_task(
+        self,
+        task: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not task:
+            return task
+        task_id = str(task.get("task_id", ""))
+        if not task_id:
+            return task
+        if task_id in self._executions:
+            logger.info("Ignoring redelivered claim for active task %s", task_id)
+            return None
+        self._executions[task_id] = TaskExecutionContext(
+            task_id=task_id,
+            task_type=str(task.get("type", "")),
+            phase="claimed",
+        )
+        return task
 
     async def _acknowledge_redelivered_task(self, task_id: str) -> None:
         execution = self._executions.get(task_id)
@@ -845,6 +906,7 @@ class ComfyAgent:
             status=self._worker_status(),
             health_payload=self._heartbeat_health_payload(),
             pool_payload=self._heartbeat_pool_payload(),
+            runtime_manifest=self._runtime_manifest,
             executions=self._heartbeat_executions(),
         )
 
@@ -1162,26 +1224,35 @@ class ComfyAgent:
         )
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
-        if self._reserved_prefetch_task is not None:
-            task = self._reserved_prefetch_task
-            self._reserved_prefetch_task = None
-            logger.info("Using locally reserved prefetched task %s", task.get("task_id"))
-        else:
-            task = await self._pipeline_coordinator.pop_next_task(
-                agent_id=AGENT_ID,
-                supported_task_types=SUPPORTED_TASK_TYPES,
-                preferred_task_types=PREFERRED_TASK_TYPES,
-                pipeline_task_types=self._pipeline_task_types,
-                cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
-                pipeline=pipeline,
-            )
-        task_id = str((task or {}).get("task_id", ""))
-        if task_id and task_id in self._executions:
-            logger.info("Ignoring redelivered claim for active task %s", task_id)
-            await self._acknowledge_redelivered_task(task_id)
-            self._discard_prefetched_task(task_id)
-            return None
-        return task
+        async with self._claim_lock:
+            if pipeline and not self._pipeline_admission.can_take_task(
+                self._executions,
+                self._reserved_prefetch_task,
+            ):
+                return None
+            if self._reserved_prefetch_task is not None:
+                task = self._reserved_prefetch_task
+                self._reserved_prefetch_task = None
+                logger.info(
+                    "Using locally reserved prefetched task %s",
+                    task.get("task_id"),
+                )
+            else:
+                task = await self._pipeline_coordinator.pop_next_task(
+                    agent_id=AGENT_ID,
+                    supported_task_types=SUPPORTED_TASK_TYPES,
+                    preferred_task_types=PREFERRED_TASK_TYPES,
+                    pipeline_task_types=self._pipeline_task_types,
+                    cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+                    pipeline=pipeline,
+                )
+            task_id = str((task or {}).get("task_id", ""))
+            if task_id and task_id in self._executions:
+                logger.info("Ignoring redelivered claim for active task %s", task_id)
+                await self._acknowledge_redelivered_task(task_id)
+                self._discard_prefetched_task(task_id)
+                return None
+            return self._register_claimed_task(task) if pipeline else task
 
     async def _prepare_and_submit_task(
         self,
@@ -1341,7 +1412,10 @@ class ComfyAgent:
                     self._comfy_poll_paused = False
 
                 if PIPELINE_ENABLED:
-                    if len(self._executions) >= PIPELINE_MAX_RUNNING_TASKS:
+                    if not self._pipeline_admission.can_take_task(
+                        self._executions,
+                        self._reserved_prefetch_task,
+                    ):
                         await asyncio.sleep(0.5)
                         continue
                     task = await self._pop_next_task(pipeline=True)

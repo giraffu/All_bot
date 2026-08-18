@@ -32,6 +32,27 @@ class AgentFinalizer:
         execution.params = retry_params
         return retry_params
 
+    async def _reserve_comfy_slot_for_retry(
+        self,
+        execution: TaskExecutionContext,
+    ) -> None:
+        """Move a quality retry back into the GPU phase without over-admission."""
+        while True:
+            async with self.agent._claim_lock:
+                other_executions = {
+                    task_id: candidate
+                    for task_id, candidate in self.agent._executions.items()
+                    if task_id != execution.task_id
+                }
+                admission = self.agent._pipeline_admission
+                if (
+                    admission.comfy_inflight_count(other_executions)
+                    < admission.max_comfy_inflight
+                ):
+                    execution.phase = "preparing"
+                    return
+            await asyncio.sleep(0.1)
+
     async def retry_execution_after_quality_issue(
         self,
         execution: TaskExecutionContext,
@@ -54,6 +75,7 @@ class AgentFinalizer:
             retry_number,
             quality_retry_attempts,
         )
+        await self._reserve_comfy_slot_for_retry(execution)
         await submit_task_workflow_func(
             task_id=task_id,
             task_type=task_type,
@@ -181,85 +203,47 @@ class AgentFinalizer:
                 await self.agent.report_cancelled(task_id)
                 return
 
-            execution.phase = "finalizing"
+            execution.phase = "gpu_done"
             await self.agent.report_status(
                 task_id,
                 "running",
-                execution_phase="finalizing",
+                execution_phase="gpu_done",
                 set_current=False,
             )
-
-            if not cancel_lock_on_pop and await self.agent.check_task_cancelled(task_id):
-                self.logger.info(
-                    "Task %s was cancelled during execution, skipping upload.",
+            async with self.agent._delivery_gate.slot():
+                execution.phase = "delivering"
+                await self.agent.report_status(
                     task_id,
+                    "running",
+                    execution_phase="delivering",
+                    set_current=False,
                 )
-                await self.agent.report_cancelled(task_id)
-                return
-
-            try:
-                materialized_outputs = (
-                    await self.materialize_outputs_with_quality_retry(
-                        execution=execution,
-                        task_type=task_type,
-                        quality_retry_attempts=quality_retry_attempts,
-                        agent_id=agent_id,
-                        submit_task_workflow_func=submit_task_workflow_func,
-                        wait_for_task_completion_func=wait_for_task_completion_func,
-                        resolve_execution_result_from_history_func=(
-                            resolve_execution_result_from_history_func
-                        ),
-                        materialize_task_outputs_func=materialize_task_outputs_func,
-                        assess_materialized_output_quality_func=(
-                            assess_materialized_output_quality_func
-                        ),
-                    )
+                delivered = await self._deliver_execution(
+                    execution=execution,
+                    cancel_lock_on_pop=cancel_lock_on_pop,
+                    upload_sidecar_url=upload_sidecar_url,
+                    result_spool_dir=result_spool_dir,
+                    result_bucket=result_bucket,
+                    quality_retry_attempts=quality_retry_attempts,
+                    agent_id=agent_id,
+                    submit_task_workflow_func=submit_task_workflow_func,
+                    wait_for_task_completion_func=wait_for_task_completion_func,
+                    resolve_execution_result_from_history_func=(
+                        resolve_execution_result_from_history_func
+                    ),
+                    materialize_task_outputs_func=materialize_task_outputs_func,
+                    assess_materialized_output_quality_func=(
+                        assess_materialized_output_quality_func
+                    ),
+                    spool_materialized_outputs_func=spool_materialized_outputs_func,
+                    upload_spooled_outputs_via_sidecar_func=(
+                        upload_spooled_outputs_via_sidecar_func
+                    ),
+                    upload_materialized_outputs_func=upload_materialized_outputs_func,
+                    report_materialized_outputs_func=report_materialized_outputs_func,
                 )
-                if materialized_outputs is None:
-                    await self.agent.report_cancelled(task_id)
+                if not delivered:
                     return
-                if upload_sidecar_url:
-                    spooled_outputs = await spool_materialized_outputs_func(
-                        outputs=materialized_outputs,
-                        spool_dir=result_spool_dir,
-                        task_id=task_id,
-                        logger=self.logger,
-                    )
-                    uploaded_outputs_payload = (
-                        await upload_spooled_outputs_via_sidecar_func(
-                            sidecar_url=upload_sidecar_url,
-                            result_bucket=result_bucket,
-                            task_id=task_id,
-                            spooled_outputs=spooled_outputs,
-                            logger=self.logger,
-                        )
-                    )
-                else:
-                    uploaded_outputs_payload = await upload_materialized_outputs_func(
-                        minio_client=self.agent.minio_client,
-                        result_bucket=result_bucket,
-                        task_id=task_id,
-                        outputs=materialized_outputs,
-                        logger=self.logger,
-                    )
-            except Exception as exc:
-                self.logger.error(
-                    "Failed to fetch from ComfyUI or upload result: %s",
-                    exc,
-                )
-                raise Exception(f"Result processing failed: {exc}") from exc
-
-            if "result_path" not in uploaded_outputs_payload:
-                uploaded_outputs_payload = {
-                    "result_path": execution.task_result,
-                    "extra_outputs": uploaded_outputs_payload,
-                }
-            await report_materialized_outputs_func(
-                report_complete_func=self.agent.report_complete,
-                task_id=task_id,
-                uploaded_outputs_payload=uploaded_outputs_payload,
-                result_path=execution.task_result,
-            )
             self.agent._record_task_success_for_health()
             self.logger.info("Task %s completed successfully", task_id)
 
@@ -284,3 +268,92 @@ class AgentFinalizer:
                 "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
             )
             os._exit(wan22_timeout_exit_code)
+
+    async def _deliver_execution(
+        self,
+        *,
+        execution: TaskExecutionContext,
+        cancel_lock_on_pop: bool,
+        upload_sidecar_url: str,
+        result_spool_dir: str,
+        result_bucket: str,
+        quality_retry_attempts: int,
+        agent_id: str,
+        submit_task_workflow_func: Callable[..., Awaitable[Any]],
+        wait_for_task_completion_func: Callable[..., Awaitable[bool]],
+        resolve_execution_result_from_history_func: Callable[..., Awaitable[Any]],
+        materialize_task_outputs_func: Callable[..., Awaitable[Any]],
+        assess_materialized_output_quality_func: Callable[..., Awaitable[Any]],
+        spool_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        upload_spooled_outputs_via_sidecar_func: Callable[..., Awaitable[Any]],
+        upload_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        report_materialized_outputs_func: Callable[..., Awaitable[Any]],
+    ) -> bool:
+        task_id = execution.task_id
+        task_type = execution.task_type
+        if not cancel_lock_on_pop and await self.agent.check_task_cancelled(task_id):
+            self.logger.info(
+                "Task %s was cancelled during execution, skipping upload.",
+                task_id,
+            )
+            await self.agent.report_cancelled(task_id)
+            return False
+
+        try:
+            materialized_outputs = await self.materialize_outputs_with_quality_retry(
+                execution=execution,
+                task_type=task_type,
+                quality_retry_attempts=quality_retry_attempts,
+                agent_id=agent_id,
+                submit_task_workflow_func=submit_task_workflow_func,
+                wait_for_task_completion_func=wait_for_task_completion_func,
+                resolve_execution_result_from_history_func=(
+                    resolve_execution_result_from_history_func
+                ),
+                materialize_task_outputs_func=materialize_task_outputs_func,
+                assess_materialized_output_quality_func=(
+                    assess_materialized_output_quality_func
+                ),
+            )
+            if materialized_outputs is None:
+                await self.agent.report_cancelled(task_id)
+                return False
+            if upload_sidecar_url:
+                spooled_outputs = await spool_materialized_outputs_func(
+                    outputs=materialized_outputs,
+                    spool_dir=result_spool_dir,
+                    task_id=task_id,
+                    logger=self.logger,
+                )
+                uploaded_outputs_payload = await upload_spooled_outputs_via_sidecar_func(
+                    sidecar_url=upload_sidecar_url,
+                    result_bucket=result_bucket,
+                    task_id=task_id,
+                    spooled_outputs=spooled_outputs,
+                    logger=self.logger,
+                )
+            else:
+                uploaded_outputs_payload = await upload_materialized_outputs_func(
+                    minio_client=self.agent.minio_client,
+                    result_bucket=result_bucket,
+                    task_id=task_id,
+                    outputs=materialized_outputs,
+                    logger=self.logger,
+                )
+        except Exception as exc:
+            self.logger.error("Failed to fetch or upload result: %s", exc)
+            raise Exception(f"Result processing failed: {exc}") from exc
+
+        if "result_path" not in uploaded_outputs_payload:
+            uploaded_outputs_payload = {
+                "result_path": execution.task_result,
+                "extra_outputs": uploaded_outputs_payload,
+            }
+        execution.phase = "reporting_complete"
+        await report_materialized_outputs_func(
+            report_complete_func=self.agent.report_complete,
+            task_id=task_id,
+            uploaded_outputs_payload=uploaded_outputs_payload,
+            result_path=execution.task_result,
+        )
+        return True

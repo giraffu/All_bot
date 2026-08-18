@@ -52,6 +52,20 @@ def test_heartbeat_request_accepts_pool_bundle_versions_json_string():
     assert request.model_bundle_versions == '{"wan22_video_v2_baseline":"2026-06-10"}'
 
 
+def test_heartbeat_request_accepts_runtime_manifest():
+    request = HeartbeatRequest(
+        agent_id="agent-1",
+        types="img2img",
+        runtime_manifest={
+            "git_sha": "abc123",
+            "runtime_package_sha256": "a" * 64,
+            "workflow_mapping_sha256": "b" * 64,
+        },
+    )
+
+    assert request.runtime_manifest["git_sha"] == "abc123"
+
+
 @pytest.mark.asyncio
 async def test_complete_route_returns_stable_retryable_promotion_error_and_counts_it(
     monkeypatch,

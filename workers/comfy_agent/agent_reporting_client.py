@@ -57,6 +57,7 @@ class AgentReportingClient:
         status: str,
         health_payload: dict[str, Any],
         pool_payload: dict[str, Any],
+        runtime_manifest: dict[str, Any],
         executions: list[Any],
     ) -> None:
         try:
@@ -68,6 +69,7 @@ class AgentReportingClient:
                     "status": status,
                     **health_payload,
                     **pool_payload,
+                    "runtime_manifest": runtime_manifest,
                 },
             )
             for execution in executions:

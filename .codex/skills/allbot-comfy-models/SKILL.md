@@ -58,9 +58,10 @@ manifest 和专项文档读取，不在此维护快照。
 - 多个 task type 共享 workflow 时，在 patcher 按类型注入差异，不复制 JSON。
 - 主 Bot、QQCC 和管理后台可有不同选项 catalog；私有选项不得泄漏到公开
   catalog，兼容字段只读解析，不作为新入口。
-- `workers/comfy_agent/` 与 `workers/runpod_runtime/` 的
-  workflow/mapping/checksum 必须保持发布契约要求的一致；不要只改测试执行
-  Worker 或正式 GPU runtime。
+- `workers/comfy_agent/` 是 agent、patcher 与 workflow 唯一源码；GPU profile
+  只在构建时组合它、根 `src/`、`shared/` 和 `workers/runpod_runtime/` 的薄
+  entrypoint/relay/requirements。禁止在 runtime 目录恢复复制源码。镜像必须嵌入
+  Git SHA、canonical package hash、mapping hash，并由 heartbeat 报告。
 
 ## 4. 修改流程
 

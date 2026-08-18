@@ -1411,10 +1411,7 @@ def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
 
 
 def test_ltx_video_workflow_uses_baked_sageattention():
-    for path in (
-        Path("workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),
-        Path("workers/runpod_runtime/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),
-    ):
+    for path in (Path("workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json"),):
         workflow = json.loads(path.read_text(encoding="utf-8"))
 
         assert workflow["257"]["inputs"]["sage_attention"] == "auto"

@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ALLBOT_GIT_SHA="${ALLBOT_GIT_SHA:-$(git rev-parse HEAD)}"
+ALLBOT_RUNTIME_PACKAGE_SHA256="$({
+    python3 -c 'from pathlib import Path; from workers.comfy_agent.runtime_manifest import hash_runtime_package; print(hash_runtime_package(Path("workers/comfy_agent")))'
+})"
+ALLBOT_WORKFLOW_MAPPING_SHA256="$({
+    sha256sum workers/comfy_agent/workflows/mappings.json | awk '{print $1}'
+})"
 
 PROFILE="img2img_lora"
 IMAGE_REF="${RUNPOD_PROFILE_IMAGE_REF:-}"
@@ -237,9 +243,13 @@ stage_profile_context() {
     local destination="$2"
     mkdir -p \
         "${destination}/shared" \
+        "${destination}/src" \
+        "${destination}/workers/comfy_agent" \
         "${destination}/workers/runpod_runtime" \
         "${destination}/workers/runpod_profiles"
     cp -a shared/. "${destination}/shared/"
+    cp -a src/. "${destination}/src/"
+    cp -a workers/comfy_agent/. "${destination}/workers/comfy_agent/"
     cp -a workers/runpod_runtime/. "${destination}/workers/runpod_runtime/"
     cp -a "workers/runpod_profiles/${profile}" \
         "${destination}/workers/runpod_profiles/${profile}"
@@ -342,9 +352,13 @@ docker build \
     --build-arg "KJNODES_REF=${KJNODES_REF}" \
     --build-arg "REUSE_BASE_CUSTOM_NODES=${REUSE_BASE_CUSTOM_NODES}" \
     --build-arg "ALLBOT_GIT_SHA=${ALLBOT_GIT_SHA}" \
+    --build-arg "ALLBOT_RUNTIME_PACKAGE_SHA256=${ALLBOT_RUNTIME_PACKAGE_SHA256}" \
+    --build-arg "ALLBOT_WORKFLOW_MAPPING_SHA256=${ALLBOT_WORKFLOW_MAPPING_SHA256}" \
     --label "org.opencontainers.image.revision=${ALLBOT_GIT_SHA}" \
     --label "io.allbot.runpod.agent-revision=${ALLBOT_GIT_SHA}" \
     --label "io.allbot.runpod.workflow-revision=${ALLBOT_GIT_SHA}" \
+    --label "io.allbot.worker.package-sha256=${ALLBOT_RUNTIME_PACKAGE_SHA256}" \
+    --label "io.allbot.worker.workflow-mapping-sha256=${ALLBOT_WORKFLOW_MAPPING_SHA256}" \
     -t "$IMAGE_REF" \
     "$context_for_build"
 

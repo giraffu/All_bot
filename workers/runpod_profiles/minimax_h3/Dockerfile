@@ -52,7 +52,19 @@ RUN set -euo pipefail; \
     install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes; \
     install_node "${RESERVED_VRAM_REPO}" "${RESERVED_VRAM_REF}" 22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c ComfyUI-ReservedVRAM
 
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
+
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
@@ -74,7 +86,6 @@ RUN set -euo pipefail; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-ARG ALLBOT_GIT_SHA
 LABEL org.opencontainers.image.title="AllBot MiniMax H3 author stack profile" \
       org.opencontainers.image.description="Pinned 10Eros Beta2, LightX2V 8-step and NaughtyTimes v2 T2V/I2V/FLF2V runtime with external model manifest" \
       org.opencontainers.image.revision=$ALLBOT_GIT_SHA \

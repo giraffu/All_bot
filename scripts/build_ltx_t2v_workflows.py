@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / "workers/comfy_agent/workflows"
-REMOTE = ROOT / "workers/runpod_runtime/comfy_agent/workflows"
 VALIDATION = ROOT / "ops/gpu_pool_controller/validation_workflows/ltx_t2v"
 
 T2V_NAME = "LTX 2.3 Sulphur T2V.json"
@@ -334,7 +333,7 @@ def main() -> None:
         IC_NAME: build_t2v(ingredients=True, sulphur=False),
         CHARACTER_NAME: build_character(),
     }
-    for directory in (LOCAL, REMOTE):
+    for directory in (LOCAL,):
         directory.mkdir(parents=True, exist_ok=True)
         for filename, workflow in generated.items():
             write_json(directory / filename, workflow)

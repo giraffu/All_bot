@@ -29,6 +29,11 @@ LABEL org.opencontainers.image.description="ComfyUI runtime profile with Wan22 A
 LABEL allbot.runpod.profile="wan22_aio_video"
 LABEL allbot.runpod.models="external-r2-manifest"
 ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
       io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
@@ -263,6 +268,11 @@ RUN set -euo pipefail; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 RUN python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
