@@ -44,6 +44,11 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       central-api: {condition: service_healthy}
+  task-control-worker:
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      central-api: {condition: service_healthy}
   dashboard-backend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8043:8043"]
     depends_on:

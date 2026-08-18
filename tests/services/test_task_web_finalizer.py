@@ -886,6 +886,44 @@ async def test_process_all_reschedules_after_central_error(
 
 
 @pytest.mark.asyncio
+async def test_process_all_filters_due_records_by_submission_phase(monkeypatch):
+    records = {
+        "dispatching": _build_v2_dispatching_record(
+            registry_task_id="dispatching"
+        ),
+        "accepted": {
+            **_build_v2_dispatching_record(registry_task_id="accepted"),
+            "phase": "accepted",
+        },
+    }
+    process = AsyncMock(return_value=False)
+    monkeypatch.setattr(task_web_finalizer, "_legacy_index_next_scan_at", float("inf"))
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "get_due_pending_web_finalizer_ids",
+        AsyncMock(return_value=list(records)),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "get_pending_web_finalizer",
+        AsyncMock(side_effect=lambda task_id: records[task_id]),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "increment_task_submission_metric",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(task_web_finalizer, "process_pending_web_finalizer", process)
+
+    await task_web_finalizer.process_all_pending_web_finalizers(
+        phases={"prepared", "dispatching", "reconciling"}
+    )
+
+    process.assert_awaited_once_with("dispatching")
+
+
+
+@pytest.mark.asyncio
 async def test_terminal_event_accelerates_only_matching_registry(
     monkeypatch,
     _mock_finalizer_due_schedule,

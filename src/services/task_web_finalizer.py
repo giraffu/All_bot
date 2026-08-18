@@ -830,11 +830,16 @@ async def process_pending_web_finalizer(
         )
 
 
-async def process_all_pending_web_finalizers() -> int:
+async def process_all_pending_web_finalizers(
+    *,
+    phases: set[str] | None = None,
+    include_legacy_records: bool = True,
+    index_legacy_records: bool = True,
+) -> int:
     global _legacy_index_cursor, _legacy_index_next_scan_at
 
     now = _now_timestamp()
-    if now >= _legacy_index_next_scan_at:
+    if index_legacy_records and now >= _legacy_index_next_scan_at:
         _legacy_index_cursor, indexed_count = (
             await redis_client.index_legacy_pending_web_finalizers(
                 cursor=_legacy_index_cursor,
@@ -861,6 +866,15 @@ async def process_all_pending_web_finalizers() -> int:
             len(due_task_ids),
         )
     for registry_task_id in due_task_ids:
+        if phases is not None:
+            record = await redis_client.get_pending_web_finalizer(registry_task_id)
+            if not record:
+                continue
+            if _is_versioned_submission_intent(record):
+                if str(record.get("phase") or "") not in phases:
+                    continue
+            elif not include_legacy_records:
+                continue
         try:
             finalized = await process_pending_web_finalizer(registry_task_id)
         except Exception:

@@ -51,6 +51,11 @@ _shared_bootstrap_lock = asyncio.Lock()
 _shared_bootstrap_complete = False
 
 
+def _env_enabled(name: str, *, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def _clean_official_qqcc_zombies(application) -> None:
     while True:
         try:
@@ -103,7 +108,10 @@ async def post_init(application):
         )
         application.bot_data["bg_tasks"].add(task_recover)
         task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
-        if application.bot_data["bot_client_type"] == QQCC_BOT_CLIENT_TYPE:
+        if (
+            application.bot_data["bot_client_type"] == QQCC_BOT_CLIENT_TYPE
+            and _env_enabled("QQCC_BOT_ZOMBIE_SWEEP_ENABLED", default=True)
+        ):
             task_zombies = asyncio.create_task(
                 _clean_official_qqcc_zombies(application),
                 name="qqcc-zombie-cleaner",

@@ -5,7 +5,7 @@
     {"patterns": ["REQUIRED_CHANNEL_ID", "CHANNEL_*", "REFUGE_*", "MAIN_BOT_LAZY_BOT_*"], "services": ["bot"]},
     {"patterns": ["SUPPORT_BOT_*"], "services": ["dashboard-backend", "support-bot"]},
     {"patterns": ["BOT_*", "QQCC_*", "PRIVATE_QQCC_BOT_*", "TELEGRAM_*"], "services": ["bot", "qqcc-bot", "qqcc-private-bot-worker", "qqcc-config-backend", "qqcc-config-frontend"]},
-    {"patterns": ["DATABASE_*", "CLOUD_*_DATABASE_*", "REDIS_*", "CLOUD_*_REDIS_*", "JWT_*"], "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "qqcc-config-backend", "bot", "qqcc-bot", "qqcc-private-bot-worker", "paid-group-guard-bot"]},
+    {"patterns": ["DATABASE_*", "CLOUD_*_DATABASE_*", "REDIS_*", "CLOUD_*_REDIS_*", "JWT_*"], "services": ["central-api", "web-api", "task-control-worker", "payment-api", "dashboard-backend", "qqcc-config-backend", "bot", "qqcc-bot", "qqcc-private-bot-worker", "paid-group-guard-bot"]},
     {"patterns": ["MINIO_*", "R2_*"], "services": ["central-api", "web-api", "dashboard-backend", "bot", "qqcc-bot", "qqcc-private-bot-worker", "worker"]},
     {"patterns": ["MEDIA_ARCHIVE_*"], "services": ["web-api"]},
     {"patterns": ["DASHBOARD_*"], "services": ["dashboard-backend", "dashboard-frontend"]},
