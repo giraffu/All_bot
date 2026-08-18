@@ -450,6 +450,12 @@ async def start_image_to_video(
 
 async def start_custom_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Legacy /custom_video entry point backed by the unified image-to-video flow."""
+    from src.services.compat_telemetry import record_compat_hit
+
+    record_compat_hit(
+        "compat.bot.image_to_video.custom_video_entry",
+        entrypoint="Telegram /custom_video or fsm_start_custom_video",
+    )
     return await _start_image_to_video_flow(
         update,
         context,

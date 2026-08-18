@@ -19,6 +19,7 @@ from src.constants import (
 from src.database.models import GalleryPost, History, User
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
+from src.services.compat_telemetry import record_compat_hit
 
 GALLERY_LORA_MODEL_NONE = "__none__"
 GALLERY_LTX_VIDEO_TASK_TYPES = (MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V)
@@ -64,6 +65,11 @@ def resolve_gallery_task_type_filter_values(task_type: str | None):
     if not task_type or task_type == "all":
         return None
 
+    if task_type == "free_edit_v2_group":
+        record_compat_hit(
+            "compat.gallery.free_edit_v2_group",
+            entrypoint="Gallery task_type filter",
+        )
     grouped_values = GALLERY_GROUPED_TASK_TYPE_FAMILIES.get(task_type)
     if grouped_values is None:
         return (task_type,)
