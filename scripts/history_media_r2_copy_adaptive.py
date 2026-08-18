@@ -108,6 +108,7 @@ class CopyHealthWindow:
         raise_error_rate: float = 0.002,
         systemic_error_rate: float = 0.10,
         minimum_samples: int = 200,
+        minimum_observation_seconds: float = 30.0,
     ) -> None:
         self.max_requests = max_requests
         self.max_age_seconds = max_age_seconds
@@ -115,8 +116,14 @@ class CopyHealthWindow:
         self.raise_error_rate = raise_error_rate
         self.systemic_error_rate = systemic_error_rate
         self.minimum_samples = minimum_samples
+        self.minimum_observation_seconds = minimum_observation_seconds
         self._events: deque[dict[str, Any]] = deque()
         self._latest: list[dict[str, Any]] = []
+
+    def reset(self) -> None:
+        """Start a fresh observation epoch after changing concurrency."""
+        self._events.clear()
+        self._latest = []
 
     def extend(self, events: list[dict[str, Any]]) -> None:
         self._latest = sorted(
@@ -134,28 +141,32 @@ class CopyHealthWindow:
         sample_count = len(self._events)
         errors = sum(event["kind"] != "ok" for event in self._events)
         error_rate = errors / sample_count if sample_count else 0.0
+        observation_seconds = (
+            float(self._events[-1]["at"]) - float(self._events[0]["at"])
+            if sample_count > 1
+            else 0.0
+        )
+        observation_ready = (
+            sample_count >= self.minimum_samples
+            or observation_seconds >= self.minimum_observation_seconds
+        )
         latest_rate_limits = sum(
             event["kind"] == "rate_limit" for event in self._latest
         )
         if latest_rate_limits:
             return CopyHealthDecision("lower", "rate_limit", error_rate, sample_count)
-        latest_server_errors = sum(
-            event["kind"] == "server_5xx" for event in self._latest
-        )
-        if latest_server_errors:
-            return CopyHealthDecision("lower", "server_5xx", error_rate, sample_count)
         if (
-            sample_count >= self.minimum_samples
+            observation_ready
             and error_rate >= self.systemic_error_rate
         ):
             return CopyHealthDecision(
                 "systemic", "systemic_transient_error_rate", error_rate, sample_count
             )
-        if sample_count >= self.minimum_samples and error_rate > self.lower_error_rate:
+        if observation_ready and error_rate > self.lower_error_rate:
             return CopyHealthDecision(
                 "lower", "sustained_transient_error_rate", error_rate, sample_count
             )
-        if sample_count >= self.max_requests and error_rate < self.raise_error_rate:
+        if observation_ready and error_rate < self.raise_error_rate:
             return CopyHealthDecision(
                 "raise", "low_transient_error_rate", error_rate, sample_count
             )
@@ -173,7 +184,7 @@ class CopyLatencyDecision:
 
 
 class CopyLatencyWindow:
-    """React to R2 capacity pressure even when SDK retries hide most errors."""
+    """Report R2 latency without turning one long tail into a global downshift."""
 
     def __init__(
         self,
@@ -197,19 +208,19 @@ class CopyLatencyWindow:
         self.sustained_windows = sustained_windows
         self.high_p95_windows = 0
 
+    def reset(self) -> None:
+        self.high_p95_windows = 0
+
     def decision(self, *, p95_ms: float, max_ms: float) -> CopyLatencyDecision:
         if max_ms >= self.max_lower_ms:
-            self.high_p95_windows = max(
-                self.high_p95_windows, self.sustained_windows
-            )
             return CopyLatencyDecision(
-                "lower", "r2_extreme_long_tail", p95_ms, max_ms
+                "hold", "r2_extreme_long_tail_observed", p95_ms, max_ms
             )
         if p95_ms >= self.p95_lower_ms:
             self.high_p95_windows += 1
             if self.high_p95_windows >= self.sustained_windows:
                 return CopyLatencyDecision(
-                    "lower", "sustained_r2_p95_latency", p95_ms, max_ms
+                    "hold", "sustained_r2_p95_observed", p95_ms, max_ms
                 )
             return CopyLatencyDecision(
                 "hold", "r2_p95_latency_observing", p95_ms, max_ms
@@ -273,7 +284,6 @@ async def run_adaptive_copy(
     )
     _resolve_copy_max_pool_connections(controller.maximum_concurrency, configured_pool)
     systemic_windows = 0
-    healthy_windows = 0
     health = CopyHealthWindow()
     latency = CopyLatencyWindow(
         p95_lower_ms=R2_P95_LOWER_MS,
@@ -337,6 +347,9 @@ async def run_adaptive_copy(
                     }
             else:
                 systemic_windows = 0
+            if lowered < previous:
+                health.reset()
+                latency.reset()
             wait_seconds = {64: 30, 32: 60, 16: 120}[lowered]
             _emit(
                 {
@@ -401,10 +414,11 @@ async def run_adaptive_copy(
             }
         )
         if health_decision.action == "systemic":
-            healthy_windows = 0
             systemic_windows += 1
             if concurrency > 16:
                 lowered = controller.record_failure("ReadTimeoutError")
+                health.reset()
+                latency.reset()
                 _emit(
                     {
                         "adaptive_event": "lower",
@@ -423,15 +437,14 @@ async def run_adaptive_copy(
                     "max_pool_connections": actual_pool,
                 }
         elif health_decision.action == "lower":
-            healthy_windows = 0
             systemic_windows = 0
             lowered = controller.record_failure(
                 "SlowDown"
                 if health_decision.reason == "rate_limit"
-                else "HTTPStatusCode: 503"
-                if health_decision.reason == "server_5xx"
                 else "ReadTimeoutError"
             )
+            health.reset()
+            latency.reset()
             _emit(
                 {
                     "adaptive_event": "lower",
@@ -441,28 +454,8 @@ async def run_adaptive_copy(
                     "request_sample_count": health_decision.sample_count,
                 }
             )
-        elif latency_decision.action == "lower":
-            healthy_windows = 0
-            systemic_windows = 0
-            lowered = controller.record_failure("ReadTimeoutError")
-            _emit(
-                {
-                    "adaptive_event": "lower",
-                    "reason": latency_decision.reason,
-                    "copy_concurrency": lowered,
-                    "r2_p95_ms": latency_decision.p95_ms,
-                    "r2_max_ms": latency_decision.max_ms,
-                }
-            )
         else:
             systemic_windows = 0
-            if (
-                health_decision.action == "raise"
-                and latency_decision.action == "raise"
-            ):
-                healthy_windows += 1
-            else:
-                healthy_windows = 0
         if remaining == 0:
             return {
                 "status": "completed",
@@ -486,7 +479,7 @@ async def run_adaptive_copy(
                 "copy_concurrency": concurrency,
                 "max_pool_connections": actual_pool,
             }
-        if healthy_windows >= 2:
+        if health_decision.action == "raise":
             previous = controller.concurrency
             controller.clean_batches = controller.clean_batches_to_raise - 1
             raised = controller.record_success()
@@ -494,13 +487,14 @@ async def run_adaptive_copy(
                 _emit(
                     {
                         "adaptive_event": "raise",
-                        "reason": "healthy_error_and_latency_windows",
+                        "reason": "healthy_request_window",
                         "copy_concurrency": raised,
                         "request_error_rate": health_decision.error_rate,
                         "request_sample_count": health_decision.sample_count,
                     }
                 )
-            healthy_windows = 0
+            health.reset()
+            latency.reset()
 
 
 def _parser() -> argparse.ArgumentParser:
