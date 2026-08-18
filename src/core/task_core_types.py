@@ -91,6 +91,7 @@ class TaskSuccessPersistenceCommand:
     output_height: int | None = None
     output_duration: int | None = None
     result_path: str | None = None
+    result_asset: dict[str, object] | None = None
     extra_outputs: dict[str, object] | None = None
     source: str = "bot"
     refresh_user_group_after_log: bool = False

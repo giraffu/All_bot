@@ -575,10 +575,14 @@ Worker 执行流程：
 9. 将结果上传到 `staging/worker-results/{backend_task_id}/...`。云正式/云测试
    worker 可先写入 `RESULT_SPOOL_DIR`，再交给 relay sidecar
    上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时由 worker 直接上传。两条路径都必须
-   上报本地实测的 SHA-256 和字节数，不得信任外部声明值。
+   上报本地实测的 SHA-256、字节数、content type 与实际媒体
+   `width/height/duration`；维度字段为 optional 以兼容旧 Worker。
    - Worker 到本机 sidecar 的 loopback 请求只限制 connect/write/pool 等本地传输阶段，不设置独立 read deadline；R2 put 的超时与有界重试由 sidecar/MinIO adapter 统一拥有。禁止让 agent 的较短 read timeout 抢先于仍在执行的 sidecar 上传，否则会形成“Central 已报失败、R2 稍后成功”的冲突终态。
 10. 向 Central API 调 `/api/agent/task/complete`。Central 先把 staging 服务端复制到
-    `task-results/{backend_task_id}/primary.<ext>` 及 `extras/...`，完整校验后才写 done。
+    `task-results/{backend_task_id}/primary.<ext>` 及 `extras/...`。有 provider
+    原生 checksum 时 staging 零读取校验，否则只完整流读一次；copy 写入可信
+    SHA metadata，durable 目标只做 HEAD，不再二次完整读取。完成后的
+    `result_asset` 随 Redis task/status 继续传给 Web finalizer。
     Worker 会对断连或 4xx/5xx 进行短退避重试，
     全部失败后必须抛错进入失败路径。
 11. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
@@ -640,6 +644,13 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - Pub/Sub 终态经 backend index 设 due-now；ZSET兜底，旧 Hash 以 bounded
   `HSCAN` + `ZADD NX` 补索引
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
+- 新协议 Web 结果若同时满足
+  `task-results/{backend_task_id}/...`、object key 一致、SHA/size/content type
+  完整且实际维度齐全，History 直接引用 durable key，不再调用结果下载或媒体探测。
+  旧 Worker、旧任务或 metadata 不完整时继续走原下载/存储探测兜底。现有
+  task-result → History 原件复制和缩略图 warmup 暂不退出；每次执行写
+  `history_r2_compatibility_warmup_completed` 结构化成本日志，待 retention/
+  archive 契约独立确认后再删除兼容复制。
 - Central 完成契约同时支持 `result_kind=media + result_path` 与 `result_kind=text + result_text + result_meta`。共享 terminal router 判定成功时，媒体结果仍要求非空 `result_path`，文本结果则要求 `result_kind=text` 和非空 `result_text`；不得用媒体路径条件把成功文本误路由为失败退款。`prompt_optimize` 文本终态由 Web finalizer 按 owner 写入 24 小时 Redis result store，跳过 History/R2/Gallery；媒体任务继续保持原结果路径和 History 语义。Worker 上报文本结果时必须携带 Profile/Template refs 和字段白名单元数据，Web 在存储前再次 fail closed 校验。
 - `prompt_optimize` 终态前可由 `text_delta` 和 Web SSE 展示预览。快照按 backend ID
   保存、registry ID 做 owner fence；sequence 幂等。仅完整 JSON 校验和 `/complete`

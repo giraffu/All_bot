@@ -21,7 +21,7 @@ from app.agent_router_helpers import (
 from app.config import settings
 from app.dependencies import get_minio_client, get_queue_manager
 from app.queue_manager import QueueManager
-from app.result_storage import ResultPromotionError
+from app.result_storage import ResultPromotionError, get_result_storage_io_metrics
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from pydantic import Field
@@ -246,6 +246,7 @@ async def result_storage_metrics(
             completion_counts.get("asset_contract", 0) / media_total
             if media_total else None
         ),
+        "io": get_result_storage_io_metrics(),
     }
 
 

@@ -73,6 +73,9 @@ class UploadAsset(BaseModel):
     media_type: str | None = None
     sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     byte_size: int = Field(ge=0)
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    duration: float | None = Field(default=None, gt=0)
 
 
 class UploadResultRequest(BaseModel):
@@ -80,6 +83,14 @@ class UploadResultRequest(BaseModel):
     result_bucket: str
     primary: UploadAsset
     extra_outputs: dict[str, UploadAsset] = Field(default_factory=dict)
+
+
+def _asset_media_metadata(asset: UploadAsset) -> dict[str, int | float]:
+    return {
+        field: value
+        for field in ("width", "height", "duration")
+        if (value := getattr(asset, field)) is not None
+    }
 
 
 def _headers() -> dict[str, str]:
@@ -457,6 +468,7 @@ async def upload_result(request: UploadResultRequest) -> dict[str, Any]:
                 "content_type": asset.content_type,
                 "media_type": asset.media_type or "image",
                 "ordinal": ordinal,
+                **_asset_media_metadata(asset),
             }
     except Exception as exc:
         elapsed_ms = (time.monotonic() - started) * 1000
@@ -484,6 +496,7 @@ async def upload_result(request: UploadResultRequest) -> dict[str, Any]:
             "sha256": request.primary.sha256,
             "byte_size": request.primary.byte_size,
             "content_type": request.primary.content_type,
+            **_asset_media_metadata(request.primary),
         },
         "extra_outputs": extra_outputs_payload,
         "extra_output_assets": extra_output_assets,

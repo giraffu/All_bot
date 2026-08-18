@@ -92,6 +92,10 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
   当前 Gallery R2/S3 resolver 下载目标作品并刷新。测试 Bot 不持久化缓存。
 - Worker sidecar 上传必须等 R2 put 成功后才向 Central `/complete`；不能把
   本地 spool 成功误写成已交付。
+- 用户上传 staging 转 task input 时，每个 source 只 hash 一次，copy 写 checksum
+  metadata、目标只 HEAD；多输入默认最多 3 并发且保持顺序。正式结果的
+  task-result → History 兼容 warmup 尚未退出，必须保留成本 telemetry 后再按
+  retention/归档契约单独退场。
 - 存储异常应降级用户展示但保留可恢复信息；不能因一次慢探测阻断整个 feed。
 - R2 审计、backfill、缩略图补齐和 shadow 同步默认 dry-run。执行前明确
   env、bucket、范围、cursor、方向和授权，不得把生产 env 或预签 URL输出。

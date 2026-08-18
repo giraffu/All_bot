@@ -1119,6 +1119,10 @@ async def test_build_task_status_response_skips_type_position_by_default():
                 "error_msg": "",
                 "result_path": "",
                 "extra_outputs": "",
+                "result_asset": {
+                    "object_key": "task-results/task-1/primary.png",
+                    "sha256": "a" * 64,
+                },
             }
 
         async def get_queue_position(self, task_id):
@@ -1144,6 +1148,7 @@ async def test_build_task_status_response_skips_type_position_by_default():
 
     assert result.queue_pos == 4
     assert result.queue_type_pos is None
+    assert result.result_asset["object_key"] == "task-results/task-1/primary.png"
 
 
 @pytest.mark.asyncio

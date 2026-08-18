@@ -420,6 +420,14 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
             "status": "done",
             "result_path": "bot-data/history/task-1/output.png",
             "extra_outputs": {"last_frame": "bot-data/history/task-1/last.png"},
+            "result_asset": {
+                "object_key": "task-results/backend-1/primary.png",
+                "sha256": "a" * 64,
+                "byte_size": 7,
+                "content_type": "image/png",
+                "width": 512,
+                "height": 512,
+            },
         }
 
     monkeypatch.setattr(
@@ -468,6 +476,14 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
         submission_context=context_obj,
         result_path="bot-data/history/task-1/output.png",
         extra_outputs={"last_frame": "bot-data/history/task-1/last.png"},
+        result_asset={
+            "object_key": "task-results/backend-1/primary.png",
+            "sha256": "a" * 64,
+            "byte_size": 7,
+            "content_type": "image/png",
+            "width": 512,
+            "height": 512,
+        },
         logger_override=task_web_finalizer.logger,
     )
     cancellation_mock.assert_not_awaited()

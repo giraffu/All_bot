@@ -232,6 +232,8 @@ async def complete_task_flow(
     result_kind: str | None,
     result_text: str | None,
     result_meta: dict[str, Any] | None,
+    result_asset: dict[str, Any] | None,
+    extra_output_assets: dict[str, Any] | None,
     get_task_type_func,
     persist_task_update_func,
     done_status,
@@ -243,32 +245,48 @@ async def complete_task_flow(
     serialized_result_meta = (
         json.dumps(result_meta) if isinstance(result_meta, dict) else ""
     )
+    serialized_result_asset = (
+        json.dumps(result_asset) if isinstance(result_asset, dict) else ""
+    )
+    serialized_extra_output_assets = (
+        json.dumps(extra_output_assets)
+        if isinstance(extra_output_assets, dict)
+        else ""
+    )
+    task_mapping = {
+        "status": done_status,
+        "result_path": result_path,
+        "extra_outputs": serialized_extra_outputs,
+        "result_kind": result_kind or ("media" if result_path else ""),
+        "result_text": result_text or "",
+        "result_meta": serialized_result_meta,
+        "progress": 1.0,
+        "cancel_requested": 0,
+        "cancel_requested_at": "",
+        "cancel_locked": 0,
+        "execution_phase": "",
+        "cancel_locked_at": "",
+    }
+    event_payload = {
+        "status": "done",
+        "result_path": result_path,
+        "extra_outputs": extra_outputs if isinstance(extra_outputs, dict) else None,
+        "result_kind": result_kind or ("media" if result_path else None),
+        "result_text": result_text,
+        "result_meta": result_meta if isinstance(result_meta, dict) else None,
+        "progress": 1.0,
+        "task_type": task_type,
+    }
+    if isinstance(result_asset, dict):
+        task_mapping["result_asset"] = serialized_result_asset
+        event_payload["result_asset"] = result_asset
+    if isinstance(extra_output_assets, dict):
+        task_mapping["extra_output_assets"] = serialized_extra_output_assets
+        event_payload["extra_output_assets"] = extra_output_assets
     await persist_task_update_func(
         task_id,
-        task_mapping={
-            "status": done_status,
-            "result_path": result_path,
-            "extra_outputs": serialized_extra_outputs,
-            "result_kind": result_kind or ("media" if result_path else ""),
-            "result_text": result_text or "",
-            "result_meta": serialized_result_meta,
-            "progress": 1.0,
-            "cancel_requested": 0,
-            "cancel_requested_at": "",
-            "cancel_locked": 0,
-            "execution_phase": "",
-            "cancel_locked_at": "",
-        },
-        event_payload={
-            "status": "done",
-            "result_path": result_path,
-            "extra_outputs": extra_outputs if isinstance(extra_outputs, dict) else None,
-            "result_kind": result_kind or ("media" if result_path else None),
-            "result_text": result_text,
-            "result_meta": result_meta if isinstance(result_meta, dict) else None,
-            "progress": 1.0,
-            "task_type": task_type,
-        },
+        task_mapping=task_mapping,
+        event_payload=event_payload,
         remove_from_running=True,
     )
 
