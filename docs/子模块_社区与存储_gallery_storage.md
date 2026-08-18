@@ -22,7 +22,8 @@
   - 核心帖子实体；`(task_id, user_id)` unique 防止并发重复投稿。
 - `user_interactions`
   - 记录 `like / dislike / apply`。reaction 与 apply 分别使用
-    `(user_id, post_id)` partial unique index，ORM 与 migration 同名同条件。
+    `(user_id, post_id)` partial unique index，ORM 与 migration 同名同条件；旧的
+    `(user_id, post_id, action_type)` 唯一约束不再保留，避免重复 schema 防线。
 - `gallery_comments`
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
 - `gallery_reports`
