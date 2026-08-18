@@ -569,6 +569,9 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
         "up -d --no-deps --force-recreate --wait --wait-timeout 120 "
         "dashboard-backend"
     ) in captured["script"]
+    assert 'org.opencontainers.image.revision' in captured["script"]
+    assert "release image has no valid source revision" in captured["script"]
+    assert "grep -v '^ALLBOT_RELEASE_SHA='" in captured["script"]
 
 
 def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):
