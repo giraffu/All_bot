@@ -1,9 +1,6 @@
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from sqlalchemy.exc import IntegrityError
-
-
 class AuthUserLike(Protocol):
     id: int
     telegram_id: int
@@ -142,6 +139,7 @@ async def bind_user_password_flow(
     rate_limit_error_factory: Callable[[str], Exception],
     auth_core_error_factory: Callable[[str], Exception],
     insufficient_permission_error_factory: Callable[[str], Exception],
+    is_integrity_error_func: Callable[[Exception], bool],
     check_script: str,
     incr_script: str,
 ) -> None:
@@ -179,7 +177,9 @@ async def bind_user_password_flow(
                 password=password,
                 get_password_hash_func=get_password_hash_func,
             )
-        except IntegrityError:
+        except Exception as error:
+            if not is_integrity_error_func(error):
+                raise
             await session.rollback()
             await increment_rate_limit_func(
                 redis=redis,

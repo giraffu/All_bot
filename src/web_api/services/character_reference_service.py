@@ -14,7 +14,7 @@ from shared.character_reference_sheet import (
     INGREDIENTS_CHARACTER_PANEL_VERSION,
     compose_ingredients_character_panel,
 )
-from src.core.media_paths import normalize_owned_user_upload_key
+from src.media_paths import normalize_owned_user_upload_key
 from src.core.billing_core import get_concurrent_task_limit_for_identity
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import (

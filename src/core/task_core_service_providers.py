@@ -35,6 +35,7 @@ class TaskCoreSubmissionOutboxProtocol(Protocol):
     add_pending_refund: AsyncCallable
     get_active_tasks: AsyncCallable
     get_all_user_concurrencies: AsyncCallable
+    sync_user_concurrency: AsyncCallable
 
 
 class TaskCoreApiClientProtocol(Protocol):
@@ -87,11 +88,9 @@ class TaskCoreRuntimeCapabilities:
     get_active_tasks_func: AsyncCallable
     get_all_user_concurrencies_func: AsyncCallable
     cancel_task_func: AsyncCallable
+    sync_user_concurrency_func: AsyncCallable
     get_task_func: AsyncCallable
     find_task_by_backend_task_id_func: AsyncCallable
-    set_runtime_value_func: AsyncCallable
-    expire_runtime_value_func: AsyncCallable
-    delete_runtime_value_func: AsyncCallable
 
 
 _configured_task_core_service_providers: TaskCoreServiceProviders | None = None
@@ -231,9 +230,7 @@ def build_task_core_runtime_capabilities() -> TaskCoreRuntimeCapabilities:
         get_active_tasks_func=submission_outbox.get_active_tasks,
         get_all_user_concurrencies_func=submission_outbox.get_all_user_concurrencies,
         cancel_task_func=api_client.cancel_task,
+        sync_user_concurrency_func=submission_outbox.sync_user_concurrency,
         get_task_func=task_registry.get_task,
         find_task_by_backend_task_id_func=task_registry.find_task_by_backend_task_id,
-        set_runtime_value_func=submission_outbox.redis.set,
-        expire_runtime_value_func=submission_outbox.redis.expire,
-        delete_runtime_value_func=submission_outbox.redis.delete,
     )

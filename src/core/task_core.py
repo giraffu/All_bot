@@ -7,8 +7,8 @@ from src.core.task_core_error_helpers import (
     is_task_backend_busy_error,
     normalize_terminal_status,
 )
-from src.core.media_paths import resolve_storage_object
-from src.core.media_processor import (
+from src.media_paths import resolve_storage_object
+from src.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
     generate_and_upload_thumbnail,

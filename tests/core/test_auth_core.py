@@ -89,6 +89,7 @@ def _build_auth_core_dependencies(
         ),
         get_user_detailed_stats_func=get_user_detailed_stats_func or AsyncMock(),
         check_web_access_func=check_web_access_func or AsyncMock(return_value=True),
+        is_integrity_error_func=lambda error: isinstance(error, IntegrityError),
     )
 
 

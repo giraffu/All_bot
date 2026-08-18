@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 import re
 
-from src.core.media_paths import normalize_storage_object_key
+from src.media_paths import normalize_storage_object_key
 from src.core.task_core_types import CoreDomainError, TaskSuccessPersistenceResult
 
 

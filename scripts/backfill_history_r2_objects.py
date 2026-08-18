@@ -55,7 +55,7 @@ def _load_env_file_from_argv(argv: list[str]) -> None:
 
 _load_env_file_from_argv(sys.argv)
 
-from src.core.media_paths import (  # noqa: E402
+from src.media_paths import (  # noqa: E402
     build_flat_r2_compatibility_key,
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
@@ -63,7 +63,7 @@ from src.core.media_paths import (  # noqa: E402
     get_media_type_from_history,
     resolve_storage_object,
 )
-from src.core.media_processor import generate_and_upload_thumbnail  # noqa: E402
+from src.media_processor import generate_and_upload_thumbnail  # noqa: E402
 from src.core.media_urls import build_thumbnail_file_path  # noqa: E402
 from src.database.core import AsyncSessionLocal  # noqa: E402
 from src.database.models import (  # noqa: E402

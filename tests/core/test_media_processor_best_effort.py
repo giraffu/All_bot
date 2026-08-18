@@ -1,5 +1,5 @@
 
-from src.core import media_processor
+from src import media_processor
 
 
 def test_extract_media_metadata_from_bytes_best_effort_returns_fallback_on_probe_error(

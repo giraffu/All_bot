@@ -18,7 +18,7 @@ description: "AllBot 代码库架构设计词汇与 seam 选择指南。设计/�
 - **Locality**：深模块给维护者带来的定位收益，修一次影响所有调用点。
 
 ## 2. AllBot 架构映射
-- `src/core/` 只能依赖内部协议、domain config、provider/capability 或显式 dependencies；不得导入 Telegram `Update`、Web `Request` 或基础设施实现。这是目标边界，不是对当前代码已完全达标的声明。
+- `src/core/` 只能依赖内部协议、domain config、provider/capability 或显式 dependencies；不得导入 Telegram `Update`、Web `Request` 或基础设施实现。AST 门禁禁止 core 直接 import `config`、`httpx`、`PIL`、SQLAlchemy、`src.database`、`src.services`、FastAPI 和 Telegram；媒体路径/处理 adapter 位于 `src/media_paths.py`、`src/media_processor.py`。
 - 审查现状时必须区分两层证据：没有 Telegram/FastAPI 平台对象只证明入口对象隔离；若仍直接依赖 `config`、SQLAlchemy、HTTP client、PIL/subprocess 或默认 provider，必须继续记录为基础设施隔离债务，不能把规范当现状。
 - Task core facade 应保持小 interface；复杂输入准备、billing、submission、side effect、runtime cleanup 放到实现层或 builder。
 - Billing core、task core、Gallery feed、worker patcher 都应让测试和调用方穿过同一个 seam。

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from src.constants import MODE_NAME_MAP
 from src.lora_catalog import ALL_LORA_MODELS
-from src.domain_config.task_type_registry import gallery_supported_task_types
+from src.domain_config.task_type_registry import (
+    gallery_supported_task_types,
+    resolve_user_task_display_key,
+)
 from src.gallery_core_dependencies import (
     GallerySubmissionDependencies,
     get_default_gallery_submission_dependencies,
@@ -14,12 +17,6 @@ from src.gallery_core_dependencies import (
 )
 from src.core.gallery_core_errors import GalleryCoreError
 from src.core.gallery_submission_effects import build_gallery_submit_side_effects
-from src.services.user_visible_generation_presenter import (
-    resolve_user_task_display_key,
-)
-
-if TYPE_CHECKING:
-    from src.database.models import History
 
 ALLOWED_WEB_SUBMIT_TYPES = list(gallery_supported_task_types())
 
@@ -32,7 +29,7 @@ def _detect_media_type(output_file: str) -> str:
     return "video" if is_video else "image"
 
 
-def _build_gallery_tags(history: History) -> list[str]:
+def _build_gallery_tags(history: Any) -> list[str]:
     tags: list[str] = []
     base_tag = MODE_NAME_MAP.get(history.type) or resolve_user_task_display_key(
         history.type
@@ -78,7 +75,7 @@ async def _resolve_gallery_submit_capabilities(
     return check_gallery_submit_limit_func, increment_gallery_submit_func
 
 
-def _validate_gallery_submit_history(history: History | None) -> None:
+def _validate_gallery_submit_history(history: Any | None) -> None:
     if not history:
         raise GalleryCoreError("无法找到对应的任务记录，投稿失败")
     if getattr(history, "allow_contribute", True) is False:

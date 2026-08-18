@@ -1,6 +1,6 @@
 import asyncio
 
-from src.core.media_processor import (
+from src.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
 )

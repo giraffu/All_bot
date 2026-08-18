@@ -45,7 +45,8 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   `--check`、Central/Worker/profile 一致性测试防漂移，禁止手改生成文件。
 - `src/core/` 只能依赖内部类型、协议和显式 provider/dependencies，禁止
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
-  HTTP 实现。
+  HTTP 实现。Core 不拼 Redis key；并发计数校准通过 submission outbox 的
+  `sync_user_concurrency(...)` capability 执行。
 
 入口迁移尚未全部完成：旧 facade 仍保留 default dependencies 和 callback journal
 适配，直到 Web/Bot/QQCC/Dashboard 全部显式装配 `TaskApplication` 后删除。新增代码

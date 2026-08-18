@@ -794,3 +794,29 @@ def apply_input_reuse_task_types() -> set[str]:
         for entry in TASK_TYPE_REGISTRY.values()
         if entry.apply_input_reuse_supported
     }
+
+
+def resolve_user_task_display_key(task_type: str | None) -> str:
+    raw = str(task_type or "").strip()
+    normalized = raw.replace("-", "_")
+    if not normalized:
+        return "task_type.other"
+    entry = get_task_type_entry(raw)
+    if entry is None:
+        entry = next(
+            (
+                candidate
+                for candidate in iter_task_type_entries()
+                if raw
+                in {
+                    candidate.public_type,
+                    candidate.execution_type,
+                    candidate.central_type,
+                }
+            ),
+            None,
+        )
+    if entry is None:
+        return "task_type.other"
+    display_value = raw if raw != entry.central_type else entry.task_type
+    return f"task_type.{display_value.replace('-', '_')}"

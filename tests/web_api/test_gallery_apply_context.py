@@ -11,7 +11,7 @@ from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
 from src.domain_config.task_type_registry import gallery_supported_task_types
 from src.core import gallery_core
 from src.core import gallery_submission_effects
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.services import storage as storage_module
 from src.web_api.services import gallery_response_builder
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
