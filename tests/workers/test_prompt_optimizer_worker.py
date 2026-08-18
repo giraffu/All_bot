@@ -131,6 +131,9 @@ async def test_executor_fails_closed_on_template_hash_mismatch():
     [
         "hmmotion, " + "word " * 210,
         "HMBreasts, " + "word " * 210,
+        "dynv2, " + "word " * 210,
+        "inniepussy, " + "word " * 210,
+        "fj., " + "word " * 210,
         "too short",
         "word " * 271,
     ],

@@ -5,7 +5,7 @@
 `minimax_h3` 是独立 GPU profile，不是 LTX alias。用户只开放三个任务：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`。Web 使用一个“高级图生
 视频pro”工作台切换三种模式，主 Bot 使用同一组模式。两端均可从
-六个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录建议强度。
+十三个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
 历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
 Worker pool、RunPod/LAN 支持任务列表或新建入口。
 
@@ -27,7 +27,7 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
 - `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
-  目录的事实源。新请求使用最多 8 个有序 `lora_items[{name,strength}]`，强度限定
+  目录的事实源。新请求使用最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
   主模型、采样器、steps、timeline、本地路径或参考音视频。
@@ -83,11 +83,23 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-八个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+十三个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
 （0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v1（0.75，
-无触发词）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6（0.35）与 HMPenis v2
-（1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。目录一项只映射一个物理
+无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
+`inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
+Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
+（0.35）与 HMPenis v2（1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。
+Breast Play 作者明确建议 `0.7..0.8`，Footjobs Type B 明确建议 `0.4..0.7` 且通常
+从 `0.5` 开始；HMInnie、Deepthroat H3 v0.2 与 POV Missionary 未公开 LoRA strength
+区间，因此其目录值是保守的系统初始值，必须由后续 GPU A/B 校准，不能称为作者推荐。
+目录一项只映射一个物理
 文件，避免同一 LoRA 以别名被重复加载。
+
+HMInnie 的 `inniepussy` 替换提示词中的通用阴道名词，可与 HMPussy 叠加，但叠加不代表
+已验证最优；Footjobs 只自动注入短触发词 `fj.`，不自动拼接作者给出的整段示例提示词。
+Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连续性；当前系统固定
+24fps，但公开 workflow guidance 为 1，因此只视为待 canary 候选。POV Missionary
+作者仍标记为早期实验版。五个新模型在实机 canary 完成前均不得标记为已验证。
 
 三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
 LoraLoaderModelOnly(LightX2V, 1.0) → [用户选中 LoRA 有序链] →
@@ -97,7 +109,7 @@ Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再
 25 steps。输出继续解码 H3 原生同步音轨。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包不包含
-REF2VA 或 RedMix，但包含上述八个可选 LoRA。旧 checkpoint、
+REF2VA 或 RedMix，但包含上述十三个可选 LoRA。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续三模式 GPU canary 才能定论。
@@ -109,8 +121,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-18-10eros-beta2-addon8-lightx2v8-v1`、13 个文件的字节数与
-SHA256，总计 68,540,306,863 bytes（63.83 GiB）。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-18-10eros-beta2-addon13-lightx2v8-v1`、18 个文件的字节数与
+SHA256，总计 70,055,451,231 bytes（65.24 GiB）。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

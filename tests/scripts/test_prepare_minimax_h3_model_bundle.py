@@ -7,7 +7,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_thirteen_pinned_assets():
+def test_split_author_stack_uses_exact_eighteen_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -64,7 +64,27 @@ def test_split_author_stack_uses_exact_thirteen_pinned_assets():
         "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
         310_168_344,
     )
-    assert len(files) == 13
+    assert files["loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors"][1:3] == (
+        "f9cbcaa596b6b281f154388e407e7b4c4ee97ba9917614ab36bc5e86edf374f5",
+        298_260_984,
+    )
+    assert files["loras/MiniMaxH3/HMInnie_v1_e50.safetensors"][1:3] == (
+        "499196c9d0e5f81ff575ba39a82987112c3bb1e09fbede858877cd950d6c8833",
+        310_168_344,
+    )
+    assert files["loras/MiniMaxH3/deepthroat_v02.safetensors"][1:3] == (
+        "1fd239662f6290255b0bb3a220764fb53aab2859378f7fd3024030c1e1991cb2",
+        298_263_792,
+    )
+    assert files["loras/MiniMaxH3/H3_Mis_Insrt_v07.safetensors"][1:3] == (
+        "8d1ed16cdae02e25308063053f7f459b88fb4c50d7e6ea4d05ebc4950a992584",
+        310_190_448,
+    )
+    assert files["loras/MiniMaxH3/H3_Footjob_TypeB_v1.safetensors"][1:3] == (
+        "6e293977389020e2e327d5e375cdc55352659f0ac61b41f270ec5ddf453fc620",
+        298_260_800,
+    )
+    assert len(files) == 18
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):
