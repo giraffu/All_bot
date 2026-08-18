@@ -24,8 +24,8 @@ vi.mock('@/composables/useTemplateApplyUpload', () => ({
     hasPendingUploads: { value: false },
   })
 }))
-vi.mock('@/composables/useTaskStream', () => ({
-  useTaskStream: () => ({ isSubmitting: { value: false }, submitTask: mocks.submitTask })
+vi.mock('@/composables/useTaskSubmission', () => ({
+  useTaskSubmission: () => ({ isSubmitting: { value: false }, submitTask: mocks.submitTask })
 }))
 vi.mock('@/composables/useTaskResult', () => ({
   useTaskResult: () => ({

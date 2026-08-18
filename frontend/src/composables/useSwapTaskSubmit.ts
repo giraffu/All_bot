@@ -1,4 +1,5 @@
 import { message } from 'ant-design-vue'
+import type { TaskSubmissionPayload } from './useTaskSubmission'
 
 import { buildSwapTaskPayload } from '@/features/generation/buildSwapTaskPayload'
 
@@ -15,7 +16,7 @@ type UseSwapTaskSubmitOptions = {
   getIsTemplateApplied?: () => boolean
   getSourcePostId?: () => number | null
   warningMessage: string
-  submitTask: (payload: unknown, taskTitle: string) => Promise<string | null>
+  submitTask: (payload: TaskSubmissionPayload, taskTitle: string) => Promise<string | null>
   setSubmittedTaskId: (taskId: string | null) => void
   onSubmitted?: (taskId: string) => Promise<void> | void
 }

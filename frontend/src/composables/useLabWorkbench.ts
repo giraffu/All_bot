@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useTaskResult } from '@/composables/useTaskResult'
-import { useTaskStream } from '@/composables/useTaskStream'
+import { useTaskSubmission } from '@/composables/useTaskSubmission'
 import { useUpload } from '@/composables/useUpload'
 import { useTasksStore } from '@/stores/tasks'
 import type { PromptOptimizationOriginDraft } from '@/stores/taskStoreTypes'
@@ -71,7 +71,7 @@ export function useLabWorkbench() {
   const { t } = useI18n()
   const { loadApplyContext, clearApplyContext } = useGalleryApplyContext()
   const { uploading, progress: uploadProgress, uploadFile } = useUpload()
-  const { isSubmitting, submitTask } = useTaskStream()
+  const { isSubmitting, submitTask } = useTaskSubmission()
   const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
   const tasksStore = useTasksStore()
 

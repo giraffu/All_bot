@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
-import { useTaskStream } from '@/composables/useTaskStream'
+import { useTaskSubmission } from '@/composables/useTaskSubmission'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { MINIMAX_H3_ADDON_OPTIONS } from '@/features/generation/labModeConfig'
 import { useTemplateApplyStore } from '@/stores/templateApply'
@@ -32,7 +32,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const templateApplyStore = useTemplateApplyStore()
-const { isSubmitting, submitTask } = useTaskStream()
+const { isSubmitting, submitTask } = useTaskSubmission()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const sessionIdRef = computed(() => props.sessionId)
 const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTemplateApplyUpload(sessionIdRef)

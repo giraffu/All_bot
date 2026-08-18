@@ -46,6 +46,11 @@ sequenceDiagram
 - 管理员显式触发的终止、清理与只读查询
 - 用户列表过滤/排序与用户资产迁移预览；用户转移接口支持 `dry_run=true` 先返回迁移计划且不修改数据库
 - 管理接口鉴权与审计
+- Dashboard router 只负责鉴权、schema 和 HTTP 错误映射；客服工单的
+  查询、状态转换、Telegram 投递与事务提交已收口到
+  `support_ticket_admin_service.py`。`private_bots.py` 与
+  `reference_assets.py` 是剩余的事务型 router 迁移清单；AST 门禁只允许
+  该清单缩小，禁止新 router 重新直接调用 session 事务方法。
 
 ### 3.2 Dashboard 不负责什么
 
@@ -80,6 +85,10 @@ sequenceDiagram
   backend/frontend，并通过 `admin-test.aivison.it.com` 的 Access 与应用登录
   双层保护。
 - 前端队列监控默认约 10 秒轮询一次；并发统计约 60 秒刷新一次；活动任务表约 15 秒刷新一次。除非有明确压测证据，不要降到 2 秒或更高频。
+- `QueueStats.vue` 已使用 `<script setup lang="ts">`，系统状态与 RunPod autoscaler
+  分别通过 typed API adapter 进入 `useQueueStatsMonitor`/组件；不得重新从组件
+  直接拼 HTTP payload。Dashboard 的 legacy JavaScript SFC 由测试中的缩减清单
+  管理，新 SFC 禁止无 TypeScript，迁移一个就必须从清单删除一个。
 - Dashboard Nginx 网关会对 `/api/stats*` 做约 15 秒短缓存，对 `/api/system/status`、`/api/system/workers`、`/api/system/concurrency_stats` 做约 5 秒短缓存；登录、退款、封禁、删除、清理僵尸任务等写操作不得缓存。
 - Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
@@ -119,7 +128,8 @@ sequenceDiagram
 - 覆盖 `queue_by_type_details` 的 active/pending 分离、pending 采样从 Worker Redis 空队列兜底到通用 Redis、最长 pending 等待按 `created_at` 而不是 zset score 计算、low trust free tier pending 用户/任务数聚合，以及 Redis / 低信任统计失败时的降级返回。
 - 覆盖 `runpod_profile_queue_details` 的 8 类正式 RunPod profile 固定返回、`i2i_pro` 四执行类型汇总（含 legacy `face_swap`）、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`pornmaster_flux2_edit_bf16` 自动 add/down、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`，以及最长等待与非低信任最长等待取 profile 内最大 pending 等待。
 - 覆盖 `healthy_workers`、`accepting_workers`、`error_workers`、`quarantined_workers`、`workers_by_status` 与 `workers_by_control_state` 聚合
-- 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
+- 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示、`vue-tsc`
+  和 legacy JavaScript SFC 只减不增门禁
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。
 - 覆盖历史输出缩略图解析在 SQL 只读事务结束后执行、R2 缩略图异常降级，以及图片缩略图打开原图、视频列表不加载原件且点击后使用当前页弹窗播放。
 - 覆盖 Dashboard RunPod 管理入口的 profile 校验、精确 slot add、手动批次并发/连续追加、Redis slot 原子预留与 autoscaler 互斥、逐 Pod 终止清理、旧 `desired_count` 兼容、worker pause/delete slot 解析，以及弹窗保持打开、slot 展示、最近操作分页、前端 typecheck / 系统监控页渲染。

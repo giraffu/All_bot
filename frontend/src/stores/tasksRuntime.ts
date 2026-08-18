@@ -92,9 +92,7 @@ export function reconcileTasksAfterForeground<T extends RuntimeTaskLike>(
   })
 }
 
-export interface PersistableTaskLike extends RuntimeTaskLike {
-  eventSource?: unknown
-}
+export type PersistableTaskLike = RuntimeTaskLike
 
 export const STALE_ACTIVE_TASK_TTL_MS = 24 * 60 * 60 * 1000
 export const POLL_TASK_RESULT_MAX_RETRIES = 120
@@ -123,8 +121,8 @@ function hydrateStoredTask<T extends RuntimeTaskLike>(task: T, now: number): T {
 export function serializeTasksForStorage<T extends PersistableTaskLike>(
   tasks: T[],
   now = Date.now()
-): Array<Omit<T, 'eventSource'> & { updatedAt: number }> {
-  return tasks.map(({ eventSource: _eventSource, ...task }) => ({
+): Array<T & { updatedAt: number }> {
+  return tasks.map(task => ({
     ...task,
     updatedAt: typeof task.updatedAt === 'number' ? task.updatedAt : now
   }))

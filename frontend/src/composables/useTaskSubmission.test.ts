@@ -29,9 +29,9 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ updateBalance: mocks.updateBalance }),
 }))
 
-import { useTaskStream } from './useTaskStream'
+import { useTaskSubmission } from './useTaskSubmission'
 
-describe('useTaskStream', () => {
+describe('useTaskSubmission', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.post.mockResolvedValue({
@@ -40,7 +40,7 @@ describe('useTaskStream', () => {
   })
 
   it('lets the backend decide concurrency and tracks a fourth active task', async () => {
-    const { submitTask } = useTaskStream()
+    const { submitTask } = useTaskSubmission()
 
     await expect(
       submitTask({ task_type: 'img2video' }, '第四个任务')

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
@@ -18,6 +18,7 @@ import {
   type Wan22LoraHelpModel,
   type Wan22LoraStrengthStage,
 } from '../data/wan22LoraHelp'
+import { useQqccConfigPersistence } from '../composables/useQqccConfigPersistence'
 
 type MainButtonKey =
   | 'quick_undress'
@@ -512,8 +513,6 @@ const copywritingOptions: Array<{
   },
 ]
 
-const loading = ref(false)
-const saving = ref(false)
 const uploadingDemoKeys = ref<ReadonlySet<string>>(new Set())
 const generatingDemoKeys = ref<ReadonlySet<string>>(new Set())
 const configKey = ref('')
@@ -2063,57 +2062,20 @@ const confirmSceneConfig = () => {
   closeSceneConfig()
 }
 
-const loadConfig = async () => {
-  loading.value = true
-  try {
-    const payload = await props.fetchConfig()
-    applyResponse(payload)
-  } catch {
-    message.error('加载懒人Bot配置失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-const saveConfig = async () => {
-  if (!validateVideoScenes()) {
-    message.error('请完善AI动图场景的按钮名称和提示词')
-    return
-  }
-  if (!validateAiVideoScenes()) {
-    message.error('请完善AI视频场景的按钮名称和提示词')
-    return
-  }
-  if (!validateDrawScenes()) {
-    message.error('请完善AI绘图场景的按钮名称和提示词')
-    return
-  }
-  if (!validateFilterScenes()) {
-    message.error('请完善AI滤镜场景的按钮名称和提示词')
-    return
-  }
-  if (!validateSceneCreditCosts()) {
-    message.error('灵石消耗必须留空或填写大于等于 1 的整数')
-    return
-  }
-  if (hasDrawPostprocessCycle(config.draw_scenes)) {
-    message.error('AI绘图后处理配置不能形成循环')
-    return
-  }
-  saving.value = true
-  try {
-    const saved = await props.updateConfig(buildPayload())
-    applyResponse(saved)
-    message.success('懒人Bot配置已保存')
-  } catch {
-    message.error('保存懒人Bot配置失败')
-  } finally {
-    saving.value = false
-  }
-}
-
-onMounted(() => {
-  void loadConfig()
+const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
+  fetchConfig: props.fetchConfig,
+  updateConfig: props.updateConfig,
+  applyResponse,
+  buildPayload,
+  validate: () => {
+    if (!validateVideoScenes()) return '请完善AI动图场景的按钮名称和提示词'
+    if (!validateAiVideoScenes()) return '请完善AI视频场景的按钮名称和提示词'
+    if (!validateDrawScenes()) return '请完善AI绘图场景的按钮名称和提示词'
+    if (!validateFilterScenes()) return '请完善AI滤镜场景的按钮名称和提示词'
+    if (!validateSceneCreditCosts()) return '灵石消耗必须留空或填写大于等于 1 的整数'
+    if (hasDrawPostprocessCycle(config.draw_scenes)) return 'AI绘图后处理配置不能形成循环'
+    return null
+  },
 })
 </script>
 
