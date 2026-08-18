@@ -1,10 +1,17 @@
 import asyncio
+import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.services import billing_reconciler
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_build_runners_keeps_ton_and_usdt_independent(monkeypatch):
@@ -88,7 +95,6 @@ async def test_disabled_entrypoint_does_not_initialize_payment_runtime(monkeypat
         "start_server",
         AsyncMock(return_value=FakeServer()),
     )
-    monkeypatch.setattr(entrypoint, "engine", SimpleNamespace(dispose=AsyncMock()))
     monkeypatch.setattr(
         entrypoint,
         "build_notification_application",
@@ -101,3 +107,20 @@ async def test_disabled_entrypoint_does_not_initialize_payment_runtime(monkeypat
     )
 
     runner.assert_not_awaited()
+
+
+def test_disabled_entrypoint_imports_without_runtime_configuration():
+    result = subprocess.run(
+        [sys.executable, "-c", "import src.billing_reconciler"],
+        cwd=ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "PYTHONPATH": str(ROOT),
+            "BILLING_RECONCILER_ENABLED": "false",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

@@ -9,17 +9,6 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from telegram.ext import ApplicationBuilder
-
-from src.billing_core_provider_setup import ensure_billing_core_providers_registered
-from src.database.core import engine, init_db
-from src.services.billing_reconciler import run_billing_reconcilers
-from src.services.telegram_runtime_bootstrap import (
-    build_telegram_bot_base_url,
-    build_telegram_httpx_request,
-    resolve_telegram_file_base_url,
-)
-
 logger = logging.getLogger("billing-reconciler")
 BILLING_RECONCILER_HEALTH_PORT = 8032
 
@@ -61,6 +50,14 @@ async def _handle_health_request(reader, writer, *, payload) -> None:
 
 
 def build_notification_application(token: str):
+    from telegram.ext import ApplicationBuilder
+
+    from src.services.telegram_runtime_bootstrap import (
+        build_telegram_bot_base_url,
+        build_telegram_httpx_request,
+        resolve_telegram_file_base_url,
+    )
+
     request = build_telegram_httpx_request(connection_pool_size=20)
     return (
         ApplicationBuilder()
@@ -75,7 +72,7 @@ def build_notification_application(token: str):
 async def run_billing_reconciler_worker(
     *,
     stop_event: asyncio.Event | None = None,
-    reconciler_runner: Callable[..., Awaitable[None]] = run_billing_reconcilers,
+    reconciler_runner: Callable[..., Awaitable[None]] | None = None,
 ) -> None:
     enabled = billing_reconciler_enabled()
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
@@ -101,9 +98,17 @@ async def run_billing_reconciler_worker(
     application = None
     worker_task = None
     wait_task = None
+    engine_resource = None
     local_stop = stop_event or asyncio.Event()
     try:
         if enabled:
+            from src.billing_core_provider_setup import (
+                ensure_billing_core_providers_registered,
+            )
+            from src.database.core import engine, init_db
+            from src.services.billing_reconciler import run_billing_reconcilers
+
+            engine_resource = engine
             token = os.getenv("BOT_TOKEN", "").strip()
             if not token:
                 raise RuntimeError("BOT_TOKEN is required when billing reconciler is enabled")
@@ -111,8 +116,9 @@ async def run_billing_reconciler_worker(
             await init_db()
             application = build_notification_application(token)
             await application.initialize()
+            runner = reconciler_runner or run_billing_reconcilers
             worker_task = asyncio.create_task(
-                reconciler_runner(
+                runner(
                     application,
                     task_states=task_states,
                     stop_event=local_stop,
@@ -143,7 +149,8 @@ async def run_billing_reconciler_worker(
             await application.shutdown()
         server.close()
         await server.wait_closed()
-        await engine.dispose()
+        if engine_resource is not None:
+            await engine_resource.dispose()
 
 
 def main() -> None:

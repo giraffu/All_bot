@@ -148,6 +148,8 @@ sequenceDiagram
   `prepared/dispatching/reconciling` 的版本化 intent，且不重复扫描 legacy
   Hash；finalizer 处理 `accepted/terminal` 并独占 legacy 索引与终态事件监听；
   generic zombie sweep 继续由现有 cleaner 排除私有 QQCC 任务。
+- disabled 模式只启动 `/healthz`，入口不得导入或初始化数据库、Redis、Bot
+  provider；因此无需向未启用的服务投影业务凭据。
 - 滚动切换顺序是：先构建/部署精确 digest，保持 disabled；启用后确认
   `/healthz` 中三个 lease runner 稳定，再分别将
   `WEB_FINALIZER_IN_WEB_ENABLED`、`MAIN_BOT_ZOMBIE_SWEEP_ENABLED`、

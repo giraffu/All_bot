@@ -7,16 +7,10 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from src.billing_core_provider_setup import ensure_billing_core_providers_registered
-from src.database.core import engine, init_db
-from src.services.redis_client import redis_client
-from src.services.task_control_worker import (
+from src.control_worker_health import (
     build_task_control_health_payload,
     build_task_control_worker_id,
-    run_task_control_services,
 )
-from src.task_application_runtime import configure_task_application
-from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger("task-control-worker")
 TASK_CONTROL_HEALTH_PORT = 8031
@@ -55,7 +49,7 @@ async def _handle_health_request(
 async def run_task_control_worker(
     *,
     stop_event: asyncio.Event | None = None,
-    service_runner: Callable[..., Awaitable[None]] = run_task_control_services,
+    service_runner: Callable[..., Awaitable[None]] | None = None,
 ) -> None:
     enabled = task_control_enabled()
     worker_id = build_task_control_worker_id()
@@ -76,14 +70,30 @@ async def run_task_control_worker(
     )
     service_task: asyncio.Task[None] | None = None
     wait_task: asyncio.Task[bool] | None = None
+    redis_resource = None
+    engine_resource = None
     try:
         if enabled:
+            from src.billing_core_provider_setup import (
+                ensure_billing_core_providers_registered,
+            )
+            from src.database.core import engine, init_db
+            from src.services.redis_client import redis_client
+            from src.services.task_control_worker import run_task_control_services
+            from src.task_application_runtime import configure_task_application
+            from src.task_core_provider_setup import (
+                ensure_task_core_service_providers_registered,
+            )
+
+            redis_resource = redis_client
+            engine_resource = engine
             ensure_task_core_service_providers_registered()
             configure_task_application()
             ensure_billing_core_providers_registered()
             await init_db()
+            runner = service_runner or run_task_control_services
             service_task = asyncio.create_task(
-                service_runner(worker_id=worker_id, task_states=task_states),
+                runner(worker_id=worker_id, task_states=task_states),
                 name="task-control-services",
             )
             logger.info("Task control worker enabled worker_id=%s", worker_id)
@@ -107,8 +117,10 @@ async def run_task_control_worker(
             await asyncio.gather(service_task, return_exceptions=True)
         server.close()
         await server.wait_closed()
-        await redis_client.close()
-        await engine.dispose()
+        if redis_resource is not None:
+            await redis_resource.close()
+        if engine_resource is not None:
+            await engine_resource.dispose()
 
 
 def main() -> None:
