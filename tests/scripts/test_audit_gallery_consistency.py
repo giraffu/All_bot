@@ -55,6 +55,8 @@ def test_reports_contain_aggregate_evidence_without_database_url(tmp_path):
 
     json_path, md_path = audit._write_reports(tmp_path, payload)
 
+    assert "_test_" in json_path.name
+    assert "_test_" in md_path.name
     rendered = json_path.read_text() + md_path.read_text()
     assert "postgresql://" not in rendered
     assert "duplicate_post_groups" in rendered
