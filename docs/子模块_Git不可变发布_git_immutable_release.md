@@ -20,7 +20,7 @@ base、repository、部署目标、环境支持和结果检查。模块独立构
 全局 release index，也不因 changed paths 扩大集合。
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module payment-api \
   --sha <40位main-sha>
 ```
@@ -41,7 +41,7 @@ SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模�
 Runner 内的 builder 名称为 `allbot-sgp1`：
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module main-bot \
   --sha <40位main-sha> \
   --builder allbot-sgp1 \
@@ -104,7 +104,7 @@ loopback 通道访问同一个 registry 后端，模块必须先在 catalog 声�
 `external_base_arg`，再显式传入仅改变 registry transport 的别名：
 
 ```bash
-python scripts/release.py build --module minimax_h3 --sha <40位main-sha> \
+python3 scripts/release.py build --module minimax_h3 --sha <40位main-sha> \
   --builder allbot-sgp1-host \
   --image-prefix 127.0.0.1:<通道端口>/allbot \
   --external-base-ref \
@@ -141,7 +141,7 @@ release_docker_gateway="$(docker network inspect bridge \
 release_proxy_url="http://${release_docker_gateway}:${release_proxy_port}"
 HTTP_PROXY="$release_proxy_url" HTTPS_PROXY="$release_proxy_url" \
 http_proxy="$release_proxy_url" https_proxy="$release_proxy_url" \
-python scripts/release.py build --module <module> --sha <40位main-sha>
+python3 scripts/release.py build --module <module> --sha <40位main-sha>
 ```
 
 这里的端口只是调用时参数，不是稳定配置；应从当前 loopback proxy URL 解析，不应
@@ -163,13 +163,13 @@ python scripts/release.py build --module <module> --sha <40位main-sha>
 ## 部署
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env test --module payment-api \
   --artifact ghcr.io/example/payment-api@sha256:<digest>
 ```
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module payment-api \
   --artifact ghcr.io/example/payment-api@sha256:<digest> --confirm-prod
 ```
@@ -228,8 +228,8 @@ API 域名和 Bot 用户名均与目标环境一致；未切换时部署失败�
 ## 状态与恢复
 
 ```bash
-python scripts/release.py status --env prod --module payment-api
-python scripts/release.py rollback \
+python3 scripts/release.py status --env prod --module payment-api
+python3 scripts/release.py rollback \
   --env prod --module payment-api --confirm-prod
 ```
 

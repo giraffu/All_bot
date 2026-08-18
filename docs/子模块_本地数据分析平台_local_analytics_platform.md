@@ -1,123 +1,117 @@
-# 子模块: 本地数据分析平台 (Local Analytics Platform)
+# 子模块：本地数据分析平台（Local Analytics Platform）
 
-## 1. 目标与范围
+本文件只维护当前边界、事实源和运维入口。字段清单、提示词规则版本、一次刷新
+结果和历史功能演进不在这里重复；分别以代码、专项文档和 archive 为准。
 
-本模块是项目根目录下的独立本地分析服务，代码位于 `local_analytics_platform/`。它不挂载到现有 Dashboard 菜单，不导入 `dashboard/backend` 或 `dashboard/frontend` 模块，也不承担线上管理后台的用户、任务、RunPod 或系统管理功能。
+## 1. 定位与入口
 
-当前入口:
+本地分析平台是 `local_analytics_platform/` 下的独立 LAN 服务，不属于线上
+Dashboard，也不复用 `dashboard/backend` 或 Dashboard Vue 应用。
 
-- 前端页面: `local_analytics_platform/static/index.html`
-- 后端 API: `local_analytics_platform/app/main.py`
-- 容器编排: `local_analytics_platform/docker-compose.yml`
-- 默认本地端口: `8098`（`8095` 保留给独立 Clarity AI 媒体增强平台）
+| 责任 | 当前入口 |
+| --- | --- |
+| FastAPI 装配 | `local_analytics_platform/app/main.py` |
+| 页面 | `local_analytics_platform/static/index.html` |
+| 本地编排 | `local_analytics_platform/docker-compose.yml` |
+| 模块说明和常用命令 | `local_analytics_platform/README.md` |
+| Shadow 同步后刷新 | `scripts/run_local_analytics_shadow_pipeline.py` |
+| 用户画像快照 | `local_analytics_platform/app/refresh_user_profile_snapshots.py` |
+| Prompt Mart / slim / token / vector | 对应 `refresh_prompt_*.py` 入口 |
 
-## 2. 数据边界
+默认 LAN 端口和实时容器状态属于部署配置/运行态；操作前从 Compose、env 和 live
+health 回读，不从本文复制历史快照。
 
-- 数据库必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式配置，当前本地主服务器运行态指向 `127.0.0.1:5434/bot_db_prod_shadow`。
-- 后端所有业务查询通过 PostgreSQL 只读事务执行，并设置短 `statement_timeout`；不得回写 shadow 业务表。
-- 后端 asyncpg 连接池默认 `LOCAL_ANALYTICS_DB_POOL_MAX_SIZE=5`。慢 Tab 的主接口会对互不依赖的统计 SQL 做端点内限流并发：`/api/credit-flow-analytics` 限制 2 条重查询并发，`/api/generation`、`/api/prompts`、`/api/prompt-slim` 限制 4 条并发；不要盲目调高连接池或端点并发，否则本地 PostgreSQL 容易因并行重扫描耗尽临时空间。
-- 媒体桶默认显示为 `user-data-prod-shadow`。未配置 `LOCAL_ANALYTICS_MEDIA_PUBLIC_BASE_URL` 时只展示对象 key，不生成可访问媒体 URL。
-- 本平台不要求冷热桶或 R2 全量合并；媒体数据只作为分析样本和引用核验辅助。
+## 2. 按任务路由
 
-## 3. 当前功能
+| 任务 | 必读事实源 / Skill |
+| --- | --- |
+| 页面、API、shadow 数据边界 | 本文 + `local_analytics_platform/README.md` |
+| 词元、同义映射、删除规则、模板候选和自由 P 图拆解 | `allbot-local-analytics-prompt-semantics` + `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` |
+| History 媒体、NAS MinIO、归档状态 | `allbot-local-media-archive` + 归档专项文档 |
+| R2 治理/媒体引用 | `allbot-gallery-storage`；需要删除或迁移时再加 `allbot-ops-deployment` |
+| 登录、公网 hostname、Access/Tunnel | `allbot-cloudflare-ops` |
+| Compose、重启、配置投影、数据库迁移 | `allbot-ops-deployment` |
+| 慢查询、页面 5xx、刷新卡住、定时任务失败 | `ops-log-monitor` + `allbot-diagnosing-bugs` |
 
-- 用户画像: 以“固定画像看板 + 人群透视分析 + 用户宽表 + 单用户详情抽屉”为主。顶部固定 KPI 展示总用户、周期活跃、从未活跃、沉睡、入宗门、生成、真实付费、低信任免费层、豁免低信任与投稿封禁的当前值、总用户占比和较上一快照变化；中部固定 ECharts 展示人群规模趋势、用户状态占比、转化漏斗、每日新增/活跃和充值率对比；下部保留人群透视与用户下钻。从未活跃用户指没有 `last_activity`、没有生成计数且没有历史生成记录的用户；沉睡用户指曾经有活跃/生成痕迹，但当前统计周期内没有 `last_activity` 或生成记录的用户。用户画像 Tab 使用 `start_date/end_date` 精确起止日期控件；`GET /api/user-analytics`、`GET /api/user-analytics/users` 和 `GET /api/user-analytics/groups` 继续兼容 `days`，但前端默认传入日期范围。`GET /api/user-analytics` 新增 `visualizations.metrics/trend/trust_composition/conversion_funnel/recharge_rates`，其中人群规模趋势读取本地派生表 `analytics_user_profile_daily_snapshots` 并按所选日期范围合并每日数据和最近快照；表缺失时稳定返回当前汇总与空快照趋势。`GET /api/user-analytics/users` 会先按日期范围收敛“人群下钻用户列表”的用户池：选定区间内有注册、最近活跃、生成、灵石流水、真实充值、邀请、Gallery 投稿、提示词解锁、关注关系或签到信号的用户才进入列表；列表再支持搜索、分页、分层、排序，并支持 `dimension/group_key` 按同一分桶口径下钻。`GET /api/user-analytics/groups` 复用同一用户画像宽表 CTE，并继承下钻用户列表的日期、搜索和分层筛选，不再有独立人群预筛；它按 `channel_member/trust/payer/identity/user_group/generation_band/credit_band/checkin_band/invitation/community/prompt_unlock/social/submission` 单维度聚合用户数、占比、活跃率、入宗门率、低信任、真实充值、灵石收支、邀请转化、投稿信号、提示词解锁、关注和签到等指标。`GET /api/user-analytics/users/{user_id}` 返回 `profile/credit_flow/recharge/invitation/generation/checkin/community/prompt_unlock/social` 九个画像 section，抽屉只展示统计和样本 ID/任务元数据，不返回完整 prompt 文本。低信任免费层只读复用线上口径：`users.checkin_count > 7`、自身不存在任何 `orders.status='SUCCESS'`，且不满足真实 `referrals` 邀请数 `>100` 与受邀成功订单用户去重率 `>3%` 的高质量邀请者豁免；豁免低信任用户为同样 `checkin_count > 7` 且自身无任何 `SUCCESS` 订单、但命中该高质量邀请者豁免的用户。真实充值用户只统计真实成功订单，即 `orders.status='SUCCESS'`、`final_price > 0`、`payment_channel in ('RMB','TON','XTR')`、`internal_user_id is not null`。受邀充值率和受邀充值人数按 `referrals` 命中的受邀者任意 `SUCCESS` 订单去重计算，手工赠送、礼品单和 0 元成功订单也计入；金额/USDT 字段仍只对有渠道和金额的订单自然汇总。affiliate 余额按 `affiliate_transactions.status='SUCCESS'` 下 `IN - OUT` 聚合。
-- 灵石收支: 基于 `user_logs`、`users`、`orders` 只读聚合灵石收入、支出、净变化、来源组成、消耗去向、健康指标和可疑用户复核线索；签到收入在分析层拆为“免费签到”和“身份加成签到”，新流水优先读取 `checkin_base_reward` / `checkin_identity_bonus` 元数据，旧流水按奖励总额、当前身份和修为兼容推断；`/api/credit-flow-analytics` 额外返回 `daily_categories[]` 用于每日来源/去向堆叠；风险判断只用于人工复核，不修改用户资产。
-- 充值情况: 参考管理后台充值口径，只读聚合成功/处理中/失败订单、RMB / TON / Stars、USDT 估算、套餐发放灵石、分时充值、渠道/套餐/付费分层、受邀充值、Top 付费用户、最近订单和充值健康指标；真实收入仅统计 `RMB`、`TON`、`XTR` 成功订单，`manual_` / `GIFT:` 等内部赠送单单独展示；`/api/finance` 的 `daily[]` 返回 `rmb_usdt_amount`、`ton_usdt_amount`、`stars_usdt_amount`，并提供 `/api/finance/hourly-comparison` 与 `/api/finance/hourly-cumulative` 支持分时日期对比和累计周期。
-- 生成分析: 合并原经营概览里的生成总览，按趋势、质量漏斗、来源组成、任务类型、灵石消耗效率、Worker 成功/失败和耗时、用户排行、近期高信号作品综合分析生成健康度；提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison` 支持分时生成和任务类型分布的不同日期对比及累计分析。
-- 历史生成: “生成分析”下方的独立 Tab 通过 `GET /api/generation-history` 分页读取 `history` 明细，固定每页 10 条。默认显示全部任务类别并按创建时间倒序；任务类别筛选项按全量记录数倒序并显示数量，另可切换为按任务类别数量倒序。单行展示用户 ID、用户昵称、任务类型、来源、提示词、计费分辨率、时长、宽高、收藏数量、反馈和创建时间；“收藏数量”当前是单条 `history.is_favorited` 转换出的 `0/1`，不是 Gallery 点赞数。输入/输出列分别展示该角色的本地可用数与逻辑资产总数，并通过 `GET /api/generation-history/{id}/media?role_group=input|output|all` 懒加载目录；只有 `archived_verified` 资产返回本地 `content_url`。图片与视频由登录后的 LAN 服务从 NAS 只读流式返回，视频支持 Range；未归档资产只展示状态与原始引用，不生成失效链接，也不改写 History。
-- 经营概览: 不再作为可见 Tab；`/api/overview` 仅保留给侧栏 shadow 状态、数据源展示和旧 `#overview` 链接兼容。
-- 时间周期: 顶栏周期按当前 Tab 独立保存。用户画像 Tab 使用“开始日期/结束日期”精确日期控件，日期范围直接决定用户宽表和人群透视的分析范围；其它 Tab 继续使用“统计周期”下拉。切换周期或点击刷新只加载当前 Tab 对应 API，不再全量请求用户画像、收支、充值、生成、提示词和媒体核验；提示词洞察不再有独立的 `Prompt 周期` 控件。
-- Tab 刷新性能: 前端只刷新当前 Tab；提示词洞察页的任务类型下拉直接复用 `/api/prompts.distributions.task_type`，不再为筛选项额外预取完整 `/api/generation`。后端对灵石收支、生成分析、提示词洞察和提示词瘦身的独立子查询做限流并发，以降低单次刷新等待时间。
-- 核心可视化: 用户画像、灵石收支、充值情况和生成分析继续使用本地静态 `ECharts 6.0.0`，替代旧 `div` 高度柱状块；用户画像固定图表与表格化人群透视/下钻列表共存，仍保持独立静态页面，不引入 Dashboard Vue 构建链。
-- 提示词洞察: 默认读取本地 Prompt Mart，不在页面刷新时现场扫描 `history.prompt`。Mart 先把 `history.prompt` 做 `v4-task-type-prefix-strip` 归一化和 hash 去重：Unicode NFKC、英文 casefold、清理零宽/控制字符、压缩空白，剥离 prompt 开头连续的任意 `[...]` 方括号元信息，去掉常见中英文标点两侧空格，并合并重复标点；SQL 与 Python `_normalize_prompt_text()` 保持同一规则。`prompt_hash` 使用 `task_type + 归一化 prompt` 生成，因此同一文本只在同任务类型内去重。Mart 写入 `analytics_prompt_occurrence`、`analytics_prompt_dim`、`analytics_prompt_group_stats` 与 `analytics_prompt_rollup_stats`，其中 occurrence 保留 `raw_prompt` 原文和 `history.rating` 生成结果反馈，group/rollup 记录 `variant_count`；页面常用的 7/30/90/180/240/360 天周期优先读取 rollup，提示词洞察的统计周期选择“所有”时优先读取 `analytics_prompt_group_stats` 全量聚合。默认排除 `allow_contribute=false` 的一键应用衍生记录和 `prompts.ini` 内置默认模板，展示提示词总览、字数/任务类型/复用分层、分页搜索、相同提示词使用次数、使用用户数、收藏、点赞、点踩、评论、应用、Prompt 解锁和 Gallery 投稿等价值信号；筛选支持搜索、任务类型、来源范围、最少用户/次数和排序，不提供内置类别或候选标签。详情面板可通过 `/api/prompts/{prompt_hash}/variants` 按当前 `days`、`task_type` 和 `template_scope` 懒加载同组原文变体，用于核对哪些 prompt 被归一化合并。原始 Gallery 模板仍作为可分析来源保留互动数据，内置模板可通过 `builtin_template` 来源范围单独查看。
-- 提示词瘦身: 优秀提示词沉淀使用独立持久化宽表 `analytics_prompt_slim_candidates`，刷新命令为 `docker exec allbot-local-analytics-platform python -m app.refresh_prompt_slim_table --statement-timeout-ms 3600000`。该表只纳入自然输入和源模板，排除内置模板与一键应用衍生记录，以同任务类型内的 `prompt_hash` 为粒度保留归一化 prompt、代表原文、变体数、字数、使用次数/用户数组、任务类型/来源分布、生成后 `history.rating` 点赞点踩、Gallery 点赞点踩/评论/应用、提示词解锁及相关用户数组。当前 `slim-v3-task-type-prefix-strip` 规则会把剥离开头方括号元信息后少于 20 字的 prompt 以 `too_short` 自动剔除；短且一次性且无正信号、纯符号数字和明显测试/空值 prompt 也会写入 `low_quality_reasons`；刷新只自动更新 `auto_rejected/candidate`，不覆盖 `manual_keep`、`manual_reject`、`excellent`、`archived` 等人工阶段。前端“提示词瘦身”Tab 通过 `GET /api/prompt-slim` 直接读取该宽表，支持阶段、任务类型、来源、规则原因、关键词、最少用户/次数和排序筛选，展示阶段/原因/任务/来源/字数分布、分页行详情和用户 ID 样本；该接口不回源联查 `history`、`gallery_posts` 或 `user_interactions`。
-- 提示词向量化: 维护 `analytics_prompt_embeddings` 与 `analytics_prompt_vector_state`，不修改 `analytics_prompt_slim_candidates`，不生成相似边、相似簇、近似族、语义场景或语义图谱。刷新命令为 `docker exec allbot-local-analytics-platform python -m app.refresh_prompt_vectors --limit 1000 --batch-size 8 --statement-timeout-ms 3600000`；去掉 `--limit` 后可按缺失 embedding 断点续跑，`--embed-only` 保留为兼容 no-op，`--skip-token-refresh` 用于向量续跑时跳过全量词元重算，`--similarity-only` 与 `--cluster-only` 已禁用。命令通过 LM Studio OpenAI-compatible `/v1/embeddings` 调用 `qwen3-embedding-8b`（模型 key `text-embedding-qwen3-embedding-8b`），将 L2 normalized float16 bytes 写入 `analytics_prompt_embeddings`，并把模型、维度、覆盖和刷新状态写入 `analytics_prompt_vector_state`。前端“提示词向量化”Tab 通过 `GET /api/prompt-vectors` 展示 `ready/model/summary/distributions.task_type/distributions.status/resume`；“续跑向量化”按钮调用 `POST /api/prompt-vectors/resume`，在当前容器后台启动同一脚本的缺失向量续跑并传入 `--skip-token-refresh`，复用 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 防止重复启动。
-- 提示词词元: 独立维护 `analytics_prompt_token_alias_rules`、`analytics_prompt_token_custom_terms`、`analytics_prompt_token_deleted_rules`、`analytics_prompt_token_extract_cache`、`analytics_prompt_token_stats` 和 `analytics_prompt_token_prompts`，刷新命令为 `docker exec allbot-local-analytics-platform python -m app.refresh_prompt_vectors --tokens-only --statement-timeout-ms 3600000`。词元提取从 `quality_stage='candidate'` 的 `analytics_prompt_slim_candidates.prompt` 读取候选提示词，英文/数字按 prompt 分隔符取词，中文使用 `token-v6-available-task-scope-cjk-lexeme-derived` 口径按内置常用词汇/短语词表和派生短语规则提取，只有未命中词表的短中文片段才作为兜底词元，并过滤“人的”“的一”、`字腿/腿呈/双腿成` 等语法或缺前缀碎片，避免旧 2-4 字 ngram 跨词边界生成异常词元。tokens-only 重建会优先读取 `analytics_prompt_token_extract_cache` 中按 `normalization_version + token_version + prompt_hash` 保存的原始 raw tokens，并用 `prompt_checksum` 判断 prompt 文本是否变化；命中缓存则直接复用，未命中才重新调用抽词并回填缓存。缓存不应用同义映射，也不保存手工指定词元；重建会在缓存 raw tokens 基础上再按 `analytics_prompt_token_custom_terms` 扫描原 prompt 文本，把命中的指定词元追加进去，再应用同义映射。指定词元通过 `GET/PUT /api/prompt-token-custom-terms` 维护，单行支持一个或用中文/英文逗号分隔的多个词元；手工指定词元和映射代表词尊重人工输入，可使用明确的单字中文词元或短语，只有“的/地/得/之”等明确语法碎片、停用词和纯数字会被拒绝；保存后标记为待重建，`POST /api/prompt-token-custom-terms/rebuild` 在当前容器后台启动 tokens-only 重建。词元同义映射通过 `GET/PUT /api/prompt-token-aliases` 维护，单行包含代表词元和用中文/英文逗号分隔的同义词元；保存后只写入映射规则并把状态标记为待重建，`POST /api/prompt-token-aliases/rebuild` 在当前容器后台启动 `refresh_prompt_vectors --tokens-only`，下一次 tokens-only 重建才会把同义词元替换为代表词元并合并统计；指定词元被补抽后可继续作为同义词或代表词元参与这一映射流程。词元删除通过 `GET/POST /api/prompt-token-deletions` 与 `POST /api/prompt-token-deletions/restore` 维护 `analytics_prompt_token_deleted_rules`，属于查询层软隐藏：删除后立即从词元表、搜索结果和提示词详情的其它词元中隐藏，恢复后立即生效，不需要 tokens-only 重建，也不改原始 prompt 或物化统计。词元统计 scope 分为全局、当前可用任务分类和二级附加模型；一级分类不直接展示历史 `task_type`，而是把旧 `edit/image/img2img_lora` 归到“自由P图”、`pornmaster_flux2_*` 归到“自由P图 v2”、`text_to_image` 归到“文生图”、`custom_video/video_lora/image_to_video/video_insert/video_edit` 归到“图生视频”、LTX/SCAIL-2 执行别名归到当前用户侧入口；`i2i_draw`、旧快速图/视频场景和无法匹配当前入口的历史类型统一归到“无可用任务”。二级模型 scope 从 `analytics_prompt_occurrence.raw_prompt` 的 `[模型: ...]` 元信息解析，并挂到归一后的一级任务分类下，避免同一归一化 prompt 跨模型使用时被代表样本误分。`analytics_prompt_token_stats` 为每个 scope 保留完整可搜索分页词元，并记录 `scope_kind/scope_label/parent_task_type/model_key/model_label`；`analytics_prompt_token_prompts` 保存每条候选提示词的词元数组、原始任务类型、scope 数组、scope 级使用次数/用户数、质量分和最近出现时间，支撑按分类下钻。前端“提示词词元”Tab 通过 `GET /api/prompt-tokens?task_type=&model_key=&min_prompt_count=5` 展示可搜索分页表格，默认隐藏当前 scope 下提示词数少于 5 的低频词元；调低到 1 可查看全部已物化词元，调高阈值只重新查询统计表，不触发重建。点击“查看”后通过 `GET /api/prompt-token-prompts?token=...&task_type=&model_key=&min_prompt_count=5` 打开抽屉，分页展示包含该词元且属于当前分类的提示词，并在每行展示除当前选中词元外、同样满足当前 scope 与低频阈值且未被软删除的其它词元。
-- 提示词词元分类 v2: 有效分类统一为 `保持口径`、`人物主体`、`身体部分`、`动作姿势`、`成人主题`、`服饰配件`、`场景`、`镜头构图`、`风格质量`、`表情情绪` 和少量 `外观特征` 规则元数据；旧 `表情状态`、`场景环境`、`场景物体`、`成人角色`、`成人解剖`、`身体部位`、`身体/镜头`、`姿势动作`、`成人动作` 已迁移到新分类，`观测高频词` 不再自动生成有效词元，`生成编辑`、`技术参数` 和任务流程词默认软删除。`原图背景/背景不变/保持背景` 归入 `保持口径 / 背景保持`，不再并入普通 `背景`；`木瓜奶` 作为 `身体部分 / 胸部` 短语保留，`木瓜形/木瓜狀/木瓜胸/木瓜式奶` 映射到 `木瓜奶`，单独 `木瓜` 软删除；`视频/图生视频/动作迁移/换脸/lora/帧率/采样器/步数/提示词强度/图片/图像/照片` 等任务或技术流程词软删除，不参与词元表、详情其它词元或模板槽位。人物主体补充 `人数`、`性别`、`年龄`、`年龄性别`、`数字年龄`、`族裔国别`、`族裔年龄性别`、`关系角色` 子类，`1boy/1girl/一位/两人/俩人/多人` 等按代表词归一，`台灣/臺灣/亞洲/東亞/韓國` 等繁简异体和常见英文/日韩表达映射到标准中文代表词；`小男孩/小女孩/中学生/初中生/未成年` 与 `10岁小男孩/12岁女孩` 等真实数字年龄短语先作为普通发现标签展示，供人工审核，不在词元层隐藏或过滤。`五个黑人` 这类复合表达在抽取时拆为 `五人` 与 `黑人`，`亚洲小男孩/黑人男孩` 等高置信族裔年龄性别组合词保留独立标签，不并入普通 `亚洲人/黑人`。
-- 词元规则表展示只返回 `enabled=true` 的指定词元和映射规则；历史 disabled 行不会再参与分类页签统计。2026-07-08 对旧 `观测高频词/技术参数/生成编辑` 残留做了清理：弱语义、技术参数和流程词继续软删除；`bed/chest/areola/doggy/cowgirl/female/japanese/bob/ahegao` 等明确英文入口被迁移为中文代表词别名；`床` 这类明确单字中文允许作为 curated seed，但仍由噪声表拦截 `小/大/的` 等无意义单字。
-- 词元标签价值清理: 自动种子和一键覆盖规则会过滤过宽、过程化或技术化词元，避免把 `背景/环境/场景/人物/角色/主体/女性/男性/女人/男人/面部/脸部/表情/身体/衣服/头发/发型/发色/比例/特征/镜头/视角/角度/构图/焦点/相机/摄影/拍摄/高清/画质/清晰/细节/光影/skin/hair/face/body/angle/shot/focus` 等低信息量词作为有效标签；`水印/文字/裁剪/放大/去除/融合/修改/速度/等待/强烈/反复/晃动/呼吸` 等编辑流程词和 `少指/多指/多余肢体/坏手/索尼a7r5/单反/焦距/闪光灯` 等错误质量或设备技术词默认软删除。对长句式词元采用“保留基础词、软删原长句”的口径，例如 `米色罗纹针织腿套 -> 腿套`、`左手叉腰 -> 叉腰`、`黑暗的无人密室 -> 密室`、`在陰暗的儲藏室 -> 储藏室`、`单独洗手间隔间里 -> 洗手间`、`头上戴着貓耳朵 -> 猫耳朵`；有价值但错类的词不删除，`戏服/凤冠` 归入 `服饰配件`，`无套灌精` 归入 `成人主题` 并作为 `内射` 同义入口。删除或移动指定词元后，需要同步检查同名映射代表词和同义词；低价值代表映射应禁用并把代表词/别名写入删除表，保留的映射代表词分类应跟随指定词元分类。
-- 词元属性拆分与碎片清理: 普通核心解剖部位 `乳房/阴茎/阴道/肛门` 保留基础标签，但尺寸、颜色、密度和状态必须拆为独立标签，例如 `大奶/巨乳/爆乳/丰满胸部 -> 大胸`、`小奶/贫乳/貧乳 -> 小胸`、`无胸 -> 平胸`、`陰毛濃密/多陰毛 -> 浓密阴毛`、`少量陰毛/稀疏陰毛 -> 稀疏阴毛`、`沒有陰毛/無陰毛 -> 无阴毛`、`小鸡巴/small penis -> 小阴茎`、`大鸡巴/big cock -> 大阴茎`。`门/双腿/雙腿/便器/字腿/型腿/形腿/腿成/腿呈/双腿呈/张开双腿成/字型腿/度弯腰` 等缺前缀或低价值碎片进入软删除；`m 字腿/m型开腿/m形开腿/腿成m形/腿呈m形/雙腿呈m字型/字開腳` 通过派生抽取归 `m字开腿`，`雙腿大幅打開/雙腿張開/双腿呈张开/双腿打开` 归 `双腿分开`，普通 `双腿/雙腿` 不再全局展示。
-- 提示词词元性能口径: tokens-only 重建开始时会一次性构建指定词元匹配器并逐条 prompt 复用，CJK/韩文/日文词元按首字符候选桶缩小扫描范围，英文/拉丁词元使用预编译边界正则，保持“raw token 缓存 -> 指定词元补抽 -> 同义映射 -> stats/prompts 写表”的既有语义。重建结果返回 `phase_seconds`，用于区分 `scan_prompts`、`write_stats`、`create_indexes` 以及每个索引的 `create_index_seconds`。tokens-only 索引白名单只保留词元表默认分页排序索引 `idx_prompt_token_stats_prompt_sort`、筛选项索引 `idx_prompt_token_stats_scope_options` 和详情抽屉流式读取索引 `idx_prompt_token_prompts_score`；重复主键的 token 索引、未被查询计划使用的 tokens/scopes GIN、`top` 索引和 use/user 专用排序索引会在重建时退役。索引构建阶段通过 `LOCAL_ANALYTICS_TOKEN_INDEX_MAINTENANCE_WORK_MEM` 和 `LOCAL_ANALYTICS_TOKEN_INDEX_MAX_PARALLEL_WORKERS` 控制维护内存与并行 worker，默认分别为 `1GB` 和 `4`。tokens-only 同步维护小型摘要表 `analytics_prompt_token_scope_summary`，记录每个 scope 的候选提示词数；`GET /api/prompt-tokens` 优先从该摘要表读取 `candidate_count`，摘要缺失时才回退扫描 `analytics_prompt_token_prompts`。进入或刷新“提示词词元”Tab 时前端先加载词元表并异步自动加载指定词元表、映射表和删除表；三张规则表都只渲染当前 25 行分页，指定词元表和映射表按分类显示可横向滚动的子页签，避免一次性创建上千个可编辑输入和 textarea；词元表翻页可传 `include_filters=false` 跳过任务/模型筛选项查询，前端分页、排序、低频阈值和搜索只刷新词元表与分页摘要，不重复渲染规则表；`GET /api/prompt-token-prompts` 的分页 `total` 复用当前词元统计行的 `prompt_count`，不再额外对提示词明细表执行 `count(*)`。
-- 已下线提示词派生分析: “近似代表”“近似图”“语义场景”“语义图谱”四个 Tab、API、刷新入口和自动链路已退出当前平台；对应 `/api/prompt-near-representatives*`、`/api/prompt-near-graph*`、`/api/prompt-scenes*`、`/api/prompt-graph*` 与 `/api/prompt-vectors/clusters/{cluster_id}` 不再作为公开接口。历史派生表不会在应用启动或测试中自动删除，如需清理本地 shadow 旧表，先运行 `python scripts/cleanup_local_analytics_prompt_derivatives.py` dry-run，确认后再显式追加 `--execute`。清理脚本只处理旧 prompt 派生表，不删除 Prompt Mart、`analytics_prompt_slim_candidates`、`analytics_prompt_embeddings`、`analytics_prompt_vector_state` 或 `analytics_user_profile_daily_snapshots`。
-- 模板候选: v1 为只读候选沉淀，不保存草稿、不发布线上模板、不调用 LLM。物化层维护 `analytics_prompt_template_candidates`、`analytics_prompt_template_candidate_prompts` 和 `analytics_prompt_template_state`，刷新命令为 `docker exec allbot-local-analytics-platform python -m app.refresh_prompt_template_candidates --statement-timeout-ms 3600000`。刷新只读使用 `analytics_prompt_token_prompts`、`analytics_prompt_token_stats` 和 `analytics_prompt_slim_candidates` 的已有结果，按当前词元 scope 复用“自由P图 / 自由P图 v2 / 文生图 / 图生视频 / 无可用任务”等一级任务分类与附加模型二级 scope；软删除词元和低频词元不参与模板 key，`自由P图` 与 `自由P图 v2` 默认补入“P图 / 主体人物 / 人物一致”的任务语义。模板 key 由 scope 和规范化槽位词元集合哈希生成，槽位使用分类 v2：任务意图、保持口径、主体人物、身体部分、动作姿势、成人主题、服饰配件、场景、镜头构图、风格质量和表情情绪；`观测高频词`、`生成编辑`、`技术参数` 和任务流程词不参与模板 key。后端提供 `GET /api/prompt-template-candidates?task_type=&model_key=&q=&page=&limit=&sort=score&min_prompts=20`、`GET /api/prompt-template-candidates/{template_key}/prompts` 和 `POST /api/prompt-template-candidates/refresh`；前端“模板候选”Tab 锁定全量周期，展示任务/模型筛选、搜索、最低提示词数、排序、分页模板表和详情抽屉，详情抽屉分页展示模板下候选提示词及对应词元槽位。
-- 模板候选审核暂存: 模板候选刷新同时为每个候选物化 `similarity_bucket`、`similarity_score` 和 `similarity_metrics`，分为 `高度相似`、`较相似`、`中等相似`、`差异较大` 四档；相似度只用于本地分析浏览，不改模板 key 和线上 prompt。人工暂存维护在 `analytics_prompt_template_candidate_review_marks`，按 `template_version + template_key + prompt_hash` 持久保存候选提示词快照；模板级低质量标记维护在 `analytics_prompt_template_candidate_template_review_marks`，按 `template_version + template_key` 保存 `low_quality/low_quality_marked_at`。`GET /api/prompt-template-candidates` 支持 `similarity_bucket` 与 `review_status=all|processed|unprocessed|low_quality`，返回 `marked_prompt_count/low_quality/processed`；`processed` 表示模板下至少 1 条暂存 prompt，或模板被标记为低质量。详情接口返回 summary 的 `low_quality`，并返回每条 prompt 的 `review_checked/review_marked_at`；`POST /api/prompt-template-candidates/review-marks` 用 `{template_key,prompt_hash,checked}` 勾选或取消暂存，`POST /api/prompt-template-candidates/template-review-marks` 用 `{template_key,low_quality}` 勾选或取消模板低质量。暂存汇总接口 `GET /api/prompt-template-candidates/review-marks` 按页返回暂存 prompt，支持任务、附加模型、相似度、关键词和 `processed_status=all|processed|unprocessed` 筛选；每条暂存 prompt 另有独立 `review_processed/review_processed_at` 审核处理状态，可通过 `POST /api/prompt-template-candidates/review-marks/processed` 更新。前端“模板候选”页提供模板级低质量 checkbox、“暂存汇总”抽屉，可逐条勾选已处理、按处理状态筛选、分页加载、复制当前页或导出当前页 CSV；这些入口仍只读写本地审核状态，不写入 `analytics_prompt_decomposition_saved_templates`。
-- 自由P图拆解: 新增只读人工浏览/沉淀页，后端以 `analytics_prompt_token_prompts`、`analytics_prompt_token_stats`、`analytics_prompt_decomposition_saved_templates` 为主数据源，固定使用 `edit` scope（自由P图）和 `prompt_count >= 20` 的已分类标签，不把未分类词元放进筛选器。筛选层将分类 v2 词元重新组织为浏览友好的一级分组：`保持口径`、`场景`、`物品`、`表情`、`成人主题`、`动作姿势`、`画面风格构图`、`身体细节`、`外观特征`、`服饰配件`、`人物主体`；二级分组直接复用规则表 `category/subcategory`。其中 `场景 + 家具`、`成人主题 + 器具道具` 折叠到 `物品`，`镜头构图 + 风格质量` 折叠到 `画面风格构图`，`身体部分` 在该页展示为 `身体细节`。后端提供 `GET /api/prompt-decomposition`、`GET /api/prompt-decomposition/saved`、`POST /api/prompt-decomposition/saved`、`DELETE /api/prompt-decomposition/saved/{saved_id}`；前端“自由P图拆解”Tab 支持多标签交集筛选、真实 prompt 拆解抽屉和“优秀模板沉淀”保存，不触发 tokens-only 重建。
-- 媒体核验: 从 `history.input_file`、`history.output_file`、`history.extra_outputs` 解析输入输出对象引用。
+不要为了一个词元规则任务加载本平台全部 API，也不要把本文件当成提示词语义规则
+清单。
 
-## 4. 运维口径
+## 3. 数据边界
 
-- 启停只操作 `allbot-local-analytics-platform` 容器，不重建现有 Dashboard backend/frontend。
-- 本地分析 Compose 会把仓库根目录 `prompts.ini` 只读挂载到容器 `/app/prompts.ini`，作为内置模板识别依据；如需对照其它模板文件，可通过 `LOCAL_ANALYTICS_PROMPTS_INI` 指向指定 INI。
-- Shadow 数据同步会默认保留旧 `bot_db_prod_shadow` 中的本地分析表，但 prompt 表使用显式白名单，只保留 Prompt Mart、提示词瘦身、词元映射规则、指定词元规则、词元删除规则、词元抽取缓存、词元统计与词元提示词映射、embedding/state 和用户画像快照，避免旧相似/场景/图谱派生表被通配恢复；对应开关为 `.env.cloud-prod-shadow-sync.local` 的 `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true`。
-- Shadow 替换同时按 `analytics_media_%` 保留归档目录、blob、来源尝试和运行记录；
-  替换后必须核对这些表的行数、主键和状态汇总，不能只验证业务表新鲜度。
-- Shadow 同步后的分析入口为 `scripts/run_local_analytics_shadow_pipeline.py`，默认 dry-run；真实执行使用 `--execute`。一次性恢复旧分析表可执行 `python scripts/run_local_analytics_shadow_pipeline.py --execute --restore-from-db bot_db_prod_shadow_previous_20260627_050741 --batch-size 128`。该脚本会先等待 cloud-prod shadow sync 锁释放，按需复制白名单本地分析表，再运行 `python -m app.refresh_user_profile_snapshots` upsert 当天 `analytics_user_profile_daily_snapshots`。传入 `--user-profile-only` 后立即结束，不检查 LM Studio，也不运行 Prompt Mart、slim、tokens 或 embedding；未传该参数时才继续完整提示词链。完整链先检测 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应的宿主锁；若上一轮向量刷新仍在运行，输出 `skipped_vector_lock_held` 并跳过 Prompt Mart/slim/token/embedding，但当天用户画像快照已完成。无向量锁时继续执行：增量 `refresh_prompt_mart` -> `refresh_prompt_slim_table` -> `refresh_prompt_vectors --tokens-only` -> LM Studio 可用时 `refresh_prompt_vectors --embed-only --skip-token-refresh`。只有需要人工重建 Mart 时才追加 `--full-mart`。
-- systemd 自动刷新为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，并固定使用 `--user-profile-only`，只更新当天用户画像快照。提示词 Mart、词元和 embedding 不再由每日定时器自动刷新，需要时由操作者显式运行完整 pipeline。脚本仍用 `.local-analytics-refresh.lock` 防止并发，并等待 05:00 cloud-prod shadow 同步锁释放。
-- 数据新鲜度分两层核验：05:00 shadow 同步更新业务原始表并原样保留本地分析表，05:45 画像任务才基于当前 shadow upsert 当天快照。影子库业务表最新时间不能证明画像趋势已刷新；`GET /api/user-analytics` 会在快照缺日时沿用最近一条快照铺满趋势日期，因此必须同时检查 `analytics_user_profile_daily_snapshots.snapshot_date/captured_at`。补历史缺日时逐日运行 `python -m app.refresh_user_profile_snapshots --snapshot-date YYYY-MM-DD`，该入口是可重复 upsert，且不触发提示词或向量流程。
-- 显式运行完整提示词 pipeline 前应确认 LM Studio Server 已启动并加载模型：`lms server start`，然后 `lms load text-embedding-qwen3-embedding-8b --identifier qwen3-embedding-8b --gpu max -y`。若完整链发现 LM Studio 不可用，会保留 Mart/瘦身/词元刷新结果并跳过 embedding；这不影响每日 `--user-profile-only` 任务。
-- 本地主服务器旧版 `docker-compose 1.29.2` recreate 可能触发 `ContainerConfig` 兼容问题；恢复时只删除 `local-analytics-platform` service 对应容器后再 `up -d --no-deps`。
-- 该平台当前面向本地/LAN 分析使用。应用层登录由 `LOCAL_ANALYTICS_AUTH_ENABLED=true` 显式开启，使用 `LOCAL_ANALYTICS_AUTH_USERNAME`、`LOCAL_ANALYTICS_AUTH_PASSWORD_HASH`、`LOCAL_ANALYTICS_AUTH_SESSION_SECRET` 和签名 HttpOnly cookie；密码 hash 可用 `python -m local_analytics_platform.app.auth hash-password '<password>'` 生成，公网入口不得只使用明文 `LOCAL_ANALYTICS_AUTH_PASSWORD`。应用登录运行配置在 `local_analytics_platform/.env`，管理员密码保存在 `/home/hfy/.local-analytics-platform/admin-password.txt`，两者均为 `600` 权限且不得提交 Git。
-- 当前公网入口为 `https://analytics.aivison.it.com`，通过独立 Cloudflare Tunnel `allbot-local-analytics` 回源 `http://127.0.0.1:8098`，并由 Cloudflare Access app `local-analytics` 只允许 `cv1347968277@gmail.com` 一次性验证码登录；不要裸露 `8098` 或 shadow 数据库端口。Cloudflare 账号、token、DNS、Access 与 Tunnel SOP 统一维护在 `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` 和 `allbot-cloudflare-ops`，本文只记录本地分析平台的应用层边界。
-- Cloudflare Tunnel 由用户级 systemd 服务 `/home/hfy/.config/systemd/user/cloudflared-local-analytics.service` 管理，配置文件为 `/home/hfy/.cloudflared/allbot-local-analytics.yml`，凭据文件为 `/home/hfy/.cloudflared/allbot-local-analytics.json`；当前服务已启用 `systemctl --user enable --now cloudflared-local-analytics.service`。由于本轮没有无密码 sudo，该 tunnel 暂未安装为系统级 service；若 `loginctl show-user hfy -p Linger` 为 `Linger=no`，不能把它等同于系统级开机自启服务。
+- 业务事实来自显式配置的 shadow PostgreSQL。用户、订单、History、Gallery 和
+  账本等线上镜像表只允许只读查询，禁止从本平台回写业务状态。
+- `analytics_*` 是本地派生数据，不等于线上业务事实。刷新器可以在 shadow
+  数据库内维护这些分析表；因此“业务表只读”不代表整个连接绝不写入。
+- API 查询使用短事务、`statement_timeout` 和有界连接池/子查询并发。调整并发前
+  先观测数据库临时空间、连接数和端点分段延迟，不用扩大池掩盖全表扫描。
+- 用户画像趋势依赖 `analytics_user_profile_daily_snapshots`。业务表最新时间只能
+  证明 shadow 已同步，不能证明画像快照或 Prompt 派生数据已刷新。
+- NAS 归档原件只通过登录保护的本地 API 只读流式提供；浏览器不获得 MinIO
+  凭据。R2 治理页面只消费脱敏摘要，不返回对象 key、预签 URL 或 secret。
 
-## 5. 验证要求
+## 4. 当前模块地图
 
-- `GET /api/health` 返回 `bot_db_prod_shadow`。
-- `GET /api/user-analytics`、`/api/user-analytics/groups`、`/api/user-analytics/users`、`/api/user-analytics/users/{user_id}`、`/api/credit-flow-analytics`、`/api/overview`、`/api/finance`、`/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`、`/api/generation`、`/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`、`/api/prompts`、`/api/prompt-slim`、`/api/prompt-vectors`、`/api/prompt-tokens`、`/api/prompt-template-candidates`、`/api/prompt-decomposition`、`/api/media-audit` 均能返回基础数据；`/api/user-analytics.summary` 应包含低信任、豁免低信任、邀请关系、受邀充值、真实充值率和 affiliate 余额字段；`/api/user-analytics.visualizations` 应包含固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比，且快照表缺失时稳定返回空快照趋势；`/api/user-analytics?start_date=&end_date=`、`/api/user-analytics/users?start_date=&end_date=` 应按精确日期范围收敛周期并拒绝反向日期；`/api/user-analytics/groups?start_date=&end_date=&search=&segment=` 应继承下钻用户列表的日期、搜索和分层范围，不出现独立人群预筛；`/api/user-analytics/groups` 应覆盖真实充值、低信任、灵石收支、邀请、Gallery signal、prompt unlock、followers/following 与签到聚合口径；用户宽表应覆盖同一画像字段，并支持按 `dimension/group_key` 与人群分桶一致下钻；单用户详情缺少邀请/订单/投稿/关注/解锁时应返回稳定空结构；`/api/credit-flow-analytics` 应包含 `daily_categories[]`，`/api/finance.daily[]` 应包含三类渠道折算 USDT 字段。`/api/prompts` 应至少包含 `summary/distributions/prompt_groups/pagination/mart/candidates`，不返回内置 `tag_summary` 或 `distributions.category`，`prompt_groups[]` 应包含 `variant_count`，其中 `mart.rollup_stats_count` 应大于 0；`GET /api/prompts/{prompt_hash}/variants` 应能返回同组 `raw_prompt` 变体。`/api/prompt-slim` 应至少包含 `summary/distributions/rows/pagination`，且 SQL 不需要 join 原始业务表。`/api/prompt-vectors` 在表未构建时应返回稳定空状态，构建后应包含 `ready/model/summary/distributions.task_type/distributions.status/resume`；`POST /api/prompt-vectors/resume` 应能启动或报告现有向量化后台进程且不触发全量词元重算；`/api/prompt-token-custom-terms` 应可读取/保存指定词元并在保存后返回待重建状态，`POST /api/prompt-token-custom-terms/rebuild` 应能启动或报告现有 tokens-only 后台重建；`/api/prompt-token-aliases` 应可读取/保存词元同义映射并在保存后返回待重建状态，`POST /api/prompt-token-aliases/rebuild` 应能启动或报告现有 tokens-only 后台重建；`/api/prompt-token-deletions` 应可读取/标记软删除词元，`/api/prompt-token-deletions/restore` 应可恢复词元且无需重建；`/api/prompt-tokens?min_prompt_count=5` 应返回按低频阈值过滤且排除软删除词元后的可搜索分页词元表，`/api/prompt-token-prompts?token=&min_prompt_count=5` 应返回该词元对应提示词分页，且每行 `other_tokens` 同步按当前 scope、低频阈值和软删除规则过滤；`/api/prompt-template-candidates?min_prompts=20` 应返回只读模板候选分页、任务/模型筛选项和刷新状态，`/api/prompt-template-candidates/{template_key}/prompts` 应返回模板下候选提示词分页，`POST /api/prompt-template-candidates/refresh` 应能启动或报告现有模板候选后台刷新；`GET /api/prompt-decomposition` 应返回固定 `edit` scope 的一级/二级标签筛选、真实 prompt 列表、分页和摘要，`GET /api/prompt-decomposition/saved` / `POST /api/prompt-decomposition/saved` / `DELETE /api/prompt-decomposition/saved/{saved_id}` 应支持优秀模板沉淀且不要求 tokens-only 重建。`/api/prompt-vectors/clusters/{cluster_id}`、`/api/prompt-near-representatives*`、`/api/prompt-near-graph*`、`/api/prompt-scenes*` 和 `/api/prompt-graph*` 应保持下线。
-- 词元性能验证应覆盖 `analytics_prompt_token_scope_summary` 重建写入、`GET /api/prompt-tokens?include_filters=false` 不返回筛选项且仍返回分页摘要、`GET /api/prompt-token-prompts` 使用 stats `prompt_count` 作为分页总数，以及 tokens-only 返回 `phase_seconds.create_index_seconds`。前端验收应确认刷新/进入词元 Tab 时先渲染词元表，再异步请求 `/api/prompt-token-custom-terms`、`/api/prompt-token-aliases` 和 `/api/prompt-token-deletions`；指定词元表、映射表和删除表都有 25 行分页，指定词元表按分类一级页签与子分类二级页签筛选，表格只展示词元、备注和操作列，映射表继续按分类页签切换；词元表分页、搜索、排序、低频阈值切换和删除/恢复后不重复渲染当前不可见规则行，删除后保持当前页码或在越界时回退到最后有效页；运行态索引应只包含 prompt token stats/prompts 主键、`idx_prompt_token_stats_prompt_sort`、`idx_prompt_token_stats_scope_options` 和 `idx_prompt_token_prompts_score`。
-- `analytics_prompt_slim_candidates` 刷新后应有 `candidate/auto_rejected` 分布，且 `quality_stage='candidate' order by quality_score desc limit 100` 不需要 join 原始业务表。
-- Playwright 桌面与窄屏检查应确认 `body[data-loaded="true"]`、用户画像固定图表、人群透视表、下钻用户列表、抽屉打开态、灵石/充值/生成 Tab 的 ECharts 容器非空、有坐标轴或图例、无前端 console error、无整页水平溢出；静态测试应确认核心 Tab 不再出现 `spark-bars` / `hourly-bars` 主图容器，且用户画像 Tab 不再挂载旧增长/旧分布/旧排行榜容器。
-- 启用 `LOCAL_ANALYTICS_AUTH_ENABLED=true` 时，未登录访问 `/` 应跳转 `/login`，未登录访问 `/api/*` 应返回 401；登录成功后应能访问主页面，`POST /api/auth/logout` 应清除会话。
-- 现有 Dashboard 后端路由表不得出现 `/api/local-analytics`。
+| 能力 | 主要代码 |
+| --- | --- |
+| 健康与总览兼容 | `routes_health.py`、`routes_overview.py` |
+| 用户画像与人群下钻 | `routes_users.py`、`user_profile_analytics.py` |
+| 灵石和充值 | `routes_credit_flow.py`、`routes_finance.py` |
+| 生成分析与 History 明细 | `routes_generation.py`、`routes_generation_history.py` |
+| Prompt Mart、瘦身、向量、词元、模板和拆解 | `routes_prompts.py` 及 `prompt_*.py` |
+| 归档媒体 | `routes_archive.py` |
+| R2 治理摘要 | `routes_r2_governance.py` |
+| 登录/session | `auth.py` |
 
-## 6. Changelog
+`/api/overview` 只保留状态摘要和旧链接兼容，不是业务首页事实源。已退役的“近似
+代表、近似图、语义场景、语义图谱”不再作为公开 Tab/API；旧派生表只有在
+`scripts/cleanup_local_analytics_prompt_derivatives.py` dry-run 明确命中后，才能
+经新的删除授权执行。
 
-- 2026-08-06: “历史生成”输入/输出列接入 NAS 归档目录，按角色展示本地可用数并懒加载预览；原件只通过登录后的 LAN Range 接口返回，Cloudflare 请求仍在 NAS 访问前拒绝。
-- 2026-08-05: 每日 05:45 本地分析任务改为 `--user-profile-only`，只刷新 `analytics_user_profile_daily_snapshots`；Prompt Mart、词元和 embedding 改为显式人工运行，避免“不做向量化”时连带停更用户画像趋势。
-- 2026-06-26: 新增提示词候选向量化与“向量相似”审核 Tab；新增 `analytics_prompt_embeddings`、`analytics_prompt_similarity_edges`、`analytics_prompt_similarity_clusters`、`analytics_prompt_similarity_members` 和 `analytics_prompt_vector_state`，使用 LM Studio `text-embedding-qwen3-embedding-8b` + USEARCH 同任务类型内聚类，仅生成审核候选。
-- 2026-06-27: cloud-prod shadow sync 默认保留 `analytics_prompt_*` 本地分析表；新增 `scripts/run_local_analytics_shadow_pipeline.py` 与 `allbot-local-analytics-refresh.timer`，形成每日 05:45 的 Mart 增量刷新、瘦身与向量断点续跑链路。
-- 2026-06-28: 灵石收支页将签到收入拆分为免费签到与身份加成签到；签到流水新增基础奖励和身份加成元数据，旧流水由本地分析 SQL 兼容推断。
-- 2026-06-28: 用户画像每日趋势新增“每日新增入宗门”和“每日新增生成用户”；前者按新增注册日统计当前已入宗门用户，后者按 `history` 首次生成日统计真实产出用户。
-- 2026-06-28: 向量相似页新增“续跑向量化”按钮和 `POST /api/prompt-vectors/resume`，用于容器/前端重建后从缺失 embedding 继续跑，并复用原 `.refresh_prompt_vectors.lock` 防并发。
-- 2026-06-29: 新增 Prompt 语义场景提炼 v1，写入 `analytics_prompt_semantic_scenes`、`analytics_prompt_semantic_scene_members`、`analytics_prompt_semantic_scene_state`，新增 `python -m app.refresh_prompt_scenes`、`GET /api/prompt-scenes`、`GET /api/prompt-scenes/{scene_id}` 和前端“语义场景”Tab；自动链路在 embedding 覆盖完整后先刷新语义场景，再刷新相似边/近重复族。
-- 2026-06-29: 核心四个 Tab 可视化升级为本地静态 `ECharts 6.0.0`；新增灵石 `daily_categories[]`、充值渠道折算 USDT 日字段、充值/生成小时对比与累计接口、生成类型日期对比接口，并补充 focused API 与静态图表回归测试。
-- 2026-06-30: 新增 Prompt 语义图谱 v1，写入 `analytics_prompt_graph_*` 派生表，新增 `python -m app.refresh_prompt_graph`、`GET /api/prompt-graph`、`GET /api/prompt-graph/communities/{community_id}` 和前端“语义图谱”Tab；自动链路在语义场景与相似边/近重复族刷新后生成图谱投影。
-- 2026-06-30: 语义图谱升级为 v2：图谱 scene 改为按任务类型从现有相似边/微簇生成自然社区，不再复用固定 1000 个 semantic scene；前端默认展示候选量最大的单任务图，可下拉切换任务，移除跨任务 centroid bridge 入口并保留长尾/未入场景汇总节点。
-- 2026-07-01: 用户画像补充低信任免费层、低信任用户邀请价值样本、邀请转化漏斗、受邀充值排行和 affiliate 返佣余额；低信任按 `checkin_count > 7`、自身无任何 `SUCCESS` 订单且不满足高质量邀请者豁免实时计算，高质量邀请者豁免为真实邀请数 `>100` 且受邀成功订单用户去重率 `>3%`；受邀充值率/人数统计任意 `SUCCESS` 订单，真实充值和收入指标仍只统计 `RMB/TON/XTR + final_price > 0` 订单，返佣余额按 affiliate ledger `IN - OUT` 只读聚合；低信任样本按其带来的非低信任受邀者和充值转化优先排序，供人工评估真实拉新价值。
-- 2026-07-01: 用户画像补充真实充值率概览和按邀请人等权平均的受邀充值率；充值用户按历史 `SUCCESS + final_price > 0 + RMB/TON/XTR` 订单去重，活跃充值率分母使用当前统计周期活跃用户，邀请/低信任排行展示行级受邀充值率和低信任非低信任占比。
-- 2026-07-01: 用户画像新增用户宽表与单用户详情抽屉；新增 `local_analytics_platform/app/user_profile_analytics.py`、`GET /api/user-analytics/users` 和 `GET /api/user-analytics/users/{user_id}`，按用户聚合灵石收支、充值、邀请、生成规律、签到、投稿、提示词解锁和关注关系，前端抽屉默认不展示完整 prompt 文本。
-- 2026-07-01: 用户画像 Tab 完全切换为人群透视分析；新增 `GET /api/user-analytics/groups`，并让 `GET /api/user-analytics/users` 支持 `dimension/group_key` 下钻，前端移除旧用户增长概览、漏斗图、分布图和排行榜容器。
-- 2026-07-01: 用户画像统计周期改为开始/结束日期控件；`GET /api/user-analytics/users` 和 `/api/user-analytics/groups` 新增 `start_date/end_date`，用户宽表先按日期范围收敛有画像信号的用户池，人群透视继承下钻用户列表的日期、搜索和分层范围，前端移除人群透视独立预筛控件。
-- 2026-07-01: 用户画像新增固定可视化看板与 `analytics_user_profile_daily_snapshots`；`GET /api/user-analytics` 支持 `start_date/end_date` 并返回 `visualizations.metrics/trend/trust_composition/conversion_funnel/recharge_rates`，固定 KPI 展示占比与较上一快照变化；本地分析 pipeline 在 Prompt 链前刷新用户画像快照，shadow 同步和恢复保留 `analytics_user_profile_*`。
-- 2026-07-02: 新增“近似代表”阈值实验 Tab；新增 `local_analytics_platform/app/prompt_near_representatives.py`、`GET /api/prompt-near-representatives` 和 `GET /api/prompt-near-representatives/groups/{representative_hash}`，实时复用现有相似边按 `0.86-0.99` 阈值重组代表组，不新增持久化表、不改自动刷新链。
-- 2026-07-02: 新增“近似图”Tab；新增 `local_analytics_platform/app/prompt_near_graph.py`、`python -m app.refresh_prompt_near_graph_edges`、`GET /api/prompt-near-graph` 和 `GET /api/prompt-near-graph/families/{family_id}`，从 embedding 离线生成 `0.90+` 高召回阈值边，按 `0.90-0.99` 阈值展示守卫式近似族、族间桥接边和孤立非单点族。
-- 2026-07-05: 提示词分析收口为“提示词向量化”：前端移除“近似代表”“近似图”“语义场景”“语义图谱”四个 Tab；`GET /api/prompt-vectors` 只返回 embedding 覆盖、模型、任务类型/状态分布与续跑状态；自动链路停止生成相似边、场景和图谱，shadow 表恢复改为显式白名单，并新增 dry-run 默认的旧派生表清理脚本。
-- 2026-07-05: 用户画像固定 KPI 和快照表新增从未活跃用户与沉睡用户，人群规模趋势替代旧“核心规模趋势”，趋势数据按用户画像 Tab 当前日期范围铺满并用 `period_active_users` 表示随统计周期选择的活跃规模。
-- 2026-07-05: 优化本地分析 Tab 刷新速度：灵石收支、生成分析、提示词洞察和提示词瘦身主接口改为端点内限流并发查询；提示词洞察任务类型下拉改为复用 `/api/prompts` 分布数据，不再额外预取完整 `/api/generation`；新增 `LOCAL_ANALYTICS_DB_POOL_MAX_SIZE` 连接池上限说明，默认保持 5 以保护本地 PostgreSQL 临时空间。
-- 2026-07-05: 本地数据分析平台新增可选应用层登录，启用后未登录页面跳转 `/login`、API 返回 401；Compose 透传 `LOCAL_ANALYTICS_AUTH_*`，公网访问要求 Cloudflare Tunnel + Access 与应用登录双层保护。
-- 2026-07-05: 本地主服务器新增 Cloudflare Account API 总管令牌文件 `/home/hfy/.cloudflare/allbot-cloudflare-admin.token`，并以 `/home/hfy/.cloudflare/allbot-local-analytics.token` 作为本地分析平台公网配置兼容入口；令牌明文不进入仓库或文档。
-- 2026-07-05: 本地数据分析平台正式配置公网入口 `https://analytics.aivison.it.com`；新增独立 Cloudflare Tunnel `allbot-local-analytics`、proxied CNAME、Cloudflare Access app `local-analytics` 和 `cv1347968277@gmail.com` allow policy；本地应用登录已启用，管理员密码仅保存于宿主机密钥文件。
-- 2026-07-05: Cloudflare 账号、token、DNS、Tunnel、Access 与本地分析公网入口 SOP 拆分为独立 `allbot-cloudflare-ops` Skill 和 `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`，本文保留本地分析应用边界并引用专项文档。
-- 2026-07-08: 提示词词元新增分类化规则覆盖能力：`analytics_prompt_token_custom_terms` 和 `analytics_prompt_token_alias_rules` 扩展分类/子分类、来源和批次字段；新增 `local_analytics_platform/app/prompt_token_rules.py` 与 `POST /api/prompt-token-rules/overwrite-generated`，按当前全部 `analytics_prompt_token_stats` 生成基础指定词元、标准中文代表词映射、长词元拆解覆盖报告，并在同一写事务中清空词元删除表、指定词元表和映射表后写入新规则。覆盖后仍标记为待 tokens-only 重建生效；重建时继续复用 raw token 抽取缓存，先扫描指定词元，再应用同义映射。
-- 2026-07-08: 优化提示词词元 tokens-only 与分页性能；新增 `analytics_prompt_token_scope_summary` scope 候选数摘要表，`GET /api/prompt-tokens` 优先读取摘要并支持 `include_filters=false` 翻页快路径，`GET /api/prompt-token-prompts` 复用 stats `prompt_count` 作为分页总数；tokens-only 改为一次性构建指定词元匹配器并返回阶段耗时。随后收缩 tokens-only 索引白名单，退役重复/未使用的大索引并设置索引构建维护参数，本地全量 tokens-only 复测总耗时约 246.96 秒，其中 prompt 扫描约 220.41 秒、索引重建约 18.07 秒。
-- 2026-07-08: 提示词词元 Tab 规则表 UI 继续收口；移除指定词元表、词元映射表和词元删除表的手动加载按钮，进入 Tab 后异步自动加载三张表，同时三张表统一按 25 行分页渲染，指定词元表和词元映射表按分类展示子页签，分页控件改为单行横向排布；随后模板候选前端静态资源版本更新为 `20260708-template-candidates-v1`，避免浏览器混用旧 JS 模块缓存。
-- 2026-07-08: 新增“模板候选”v1 只读物化层：`analytics_prompt_template_candidates`、`analytics_prompt_template_candidate_prompts`、`analytics_prompt_template_state`，刷新入口 `python -m app.refresh_prompt_template_candidates`；前端模板候选 Tab 改为任务/附加模型/搜索/最低提示词数/排序筛选的分页表格，并支持详情抽屉分页查看模板下候选提示词。首次本地刷新扫描 782,672 条候选提示词，物化 14,183 个模板候选和 122,988 条明细，默认 `min_prompts=20` 下展示 685 个候选。
-- 2026-07-08: 提示词词元分类升级为 v2；合并表情/场景/成人主题/身体/动作等旧分类，清空旧 `观测高频词` 自动有效词元路径，技术参数和任务流程词转入软删除；补充 `背景保持`、`木瓜奶`、人数/性别/族裔等抽取和归一规则，并同步模板候选槽位到 `身体部分`、`动作姿势`、`成人主题`、`场景`、`表情情绪` 等新口径。本地复测两轮 tokens-only，最终物化约 167,409 个词元、507,664 条词元提示词明细；模板候选刷新后物化 15,973 个模板候选和 143,110 条候选提示词明细，默认 `min_prompts=20` 下展示约 859 个候选。
-- 2026-07-08: 清理旧 `观测高频词/技术参数/生成编辑` 规则残留；规则表 API 改为只返回 enabled 行，并把旧三类中的 43 组高置信语义映射迁到新分类，238 个代表词/别名作为有效指定词元补回，剩余技术/流程/弱语义词继续软删除。随后 tokens-only 重建物化 162,575 个词元和 494,289 条词元提示词明细，模板候选刷新后物化 15,661 个模板候选和 139,347 条候选提示词明细。
-- 2026-07-09: 按“标签价值”口径继续清理提示词词元分类，软删除 128 个过宽、流程化、技术化或长句式误分类词元，禁用 68 组以低价值词为代表的映射，移除 8 组低价值同义入口；`戏服/凤冠/无套灌精` 改入正确分类，并新增 `腿套/叉腰/密室/储藏室/洗手间/猫耳朵/抓拍/瓜子脸` 等基础词元与同义入口。规则治理备份位于 `/tmp/prompt_token_tag_value_cleanup_20260708_165427/`，随后刷新模板候选，物化 16,359 个模板候选和 147,081 条候选提示词明细。
-- 2026-07-09: 同步用户手工删除/移动后的词元映射表；`女性/女人/男性/男人/面部/脸部/表情/身体/衣服/高清/画质/清晰/细节/光影` 及其中英文别名等宽泛代表词禁用并加入词元删除表，保留的 39 个映射代表词分类同步到指定词元分类。规则治理备份位于 `/tmp/prompt_token_mapping_sync_20260708_175159/`；随后 tokens-only 重建物化 182,963 个词元和 549,703 条词元提示词明细，模板候选刷新后物化 17,730 个模板候选和 167,309 条明细。
-- 2026-07-09: 全盘扫描繁简/异体、多语言、人群年龄、族裔国别、性别和数字年龄短语候选，只自动写入当前词元统计或原始 prompt 中真实命中的高置信项；新增 `人物主体 / 年龄`、`年龄性别`、`数字年龄`、`族裔国别`、`族裔年龄性别` 发现标签，并把 `陰茎/陰莖/陰道/台灣/臺灣/亞洲/東亞/韓國` 等繁简异体归到标准中文代表词。`年轻女生/年輕女生/年轻女性`、`亚洲女生/亚洲女性`、`台湾男生/台湾男性` 等同义口径合并到女性/男性代表词；`亚洲小男孩/黑人男孩` 等组合人群保留独立标签，不并入普通族裔。
-- 2026-07-09: 词元属性拆分、碎片清理与全类目规则复审；保留 `乳房/阴茎/阴道/肛门` 等核心部位基础标签，但把胸部尺寸、阴毛密度、阴茎尺寸/颜色等属性拆成独立代表词；`门/双腿/雙腿/便器/字腿/型腿/腿成/度弯腰` 等碎片写入软删除，`m 字腿/腿成m形/字開腳` 派生为 `m字开腿`，`雙腿大幅打開/雙腿張開` 归 `双腿分开`。规则治理报告与备份位于 `/tmp/prompt_token_attribute_cleanup_20260709_043756/`。
-- 2026-07-09: 对 `M/m + 腿` 相关词元做二次审计并升级到 `token-v6-available-task-scope-cjk-lexeme-derived`；补充 `m型开腿/m形开腿/腿呈m形/雙腿呈m字型/张开双腿成m型` 等派生抽取，软隐藏 `腿呈/雙腿呈/张开双腿成/字型腿/高度彎腰` 等碎片。v6 tokens-only 重建候选 801,888 条、物化 206,913 个词元，`m字开腿` 归并到 48,716 条提示词；模板候选刷新后物化 19,740 个候选。审计备份位于 `/tmp/prompt_token_m_leg_audit_20260709_132834/`。
-- 2026-07-09: 新增“自由P图拆解”Tab 和 `analytics_prompt_decomposition_saved_templates`；后端以 `edit` scope 的真实 prompt 和分类 v2 标签构建一级/二级筛选，提供 `GET /api/prompt-decomposition`、`GET /api/prompt-decomposition/saved`、`POST /api/prompt-decomposition/saved`、`DELETE /api/prompt-decomposition/saved/{saved_id}`；前端支持多标签交集筛选、提示词拆解抽屉和优秀模板沉淀。保存接口补充 ISO 时间戳到 `datetime` 的归一，避免 `asyncpg` 因字符串 `last_seen` 写入失败。
-- 2026-07-09: 指定词元表 UI 改为分类一级页签 + 子分类二级页签筛选；表格去掉分类/子分类列，仅保留词元、备注和操作列，新增词元继承当前选中的分类与子分类元数据，保存 API 和规则表结构不变。
-- 2026-07-10: 模板候选新增相似度分桶和审核暂存；`analytics_prompt_template_candidates` 物化 `similarity_bucket/similarity_score/similarity_metrics`，新增 `analytics_prompt_template_candidate_review_marks` 保存候选 prompt 暂存快照。列表支持 `similarity_bucket` 与 `review_status=all|processed|unprocessed` 筛选，详情抽屉每条候选 prompt 可勾选/取消暂存；`已处理` 仅表示该模板下至少 1 条候选 prompt 被暂存，不写入 `analytics_prompt_decomposition_saved_templates`，也不修改原始 prompt、词元规则或生产生成逻辑。
-- 2026-07-10: 模板候选新增“暂存汇总”入口；`GET /api/prompt-template-candidates/review-marks` 汇总已暂存候选 prompt，支持任务、附加模型、相似度和关键词筛选。前端在模板候选筛选栏提供“暂存汇总”按钮，右侧抽屉支持逐条复制、复制全部和 CSV 导出，方便把审核暂存 prompt 批量带到人工整理流程。
-- 2026-07-10: 模板候选“暂存汇总”升级为分页审核流；`analytics_prompt_template_candidate_review_marks` 增加 `review_processed/review_processed_at`，`GET /api/prompt-template-candidates/review-marks` 支持 `processed_status` 并默认每页 50 条，新增 `POST /api/prompt-template-candidates/review-marks/processed` 切换单条暂存 prompt 的已处理状态。前端汇总抽屉增加处理状态筛选、分页控件和行级“已处理”勾选，复制/导出限定当前页，避免一次加载大量暂存提示词。
-- 2026-07-10: 模板候选新增模板级低质量标记；新增 `analytics_prompt_template_candidate_template_review_marks` 保存 `low_quality/low_quality_marked_at`，`POST /api/prompt-template-candidates/template-review-marks` 可勾选或取消模板低质量。`review_status=processed` 现在包含“有暂存 prompt 或低质量”的模板，`review_status=unprocessed` 排除低质量模板，新增 `review_status=low_quality` 只看低质量模板；前端列表操作列新增紧凑低质量 checkbox，模板 badge 同时展示 `低质量` 与 `已暂存 · N`。
-- 2026-07-07: 提示词词元新增原始抽取缓存 `analytics_prompt_token_extract_cache`，tokens-only 重建按 `prompt_checksum` 复用每条 prompt 的 raw tokens，缓存未命中才重新抽词；`GET /api/prompt-tokens` 和 `GET /api/prompt-token-prompts` 新增默认 `min_prompt_count=5` 的低频展示阈值，页面可即时调整，详情 `other_tokens` 同步按当前 scope 和阈值过滤。
-- 2026-07-07: 提示词词元新增手工同义映射表 `analytics_prompt_token_alias_rules`、`GET/PUT /api/prompt-token-aliases` 与 `POST /api/prompt-token-aliases/rebuild`；映射保存后标记为待重建，由 tokens-only 重建把同义词元物化替换为代表词元，并合并词元表与提示词详情中的其它词元展示。
-- 2026-07-07: 提示词词元新增指定词元表 `analytics_prompt_token_custom_terms`、`GET/PUT /api/prompt-token-custom-terms` 与 `POST /api/prompt-token-custom-terms/rebuild`；tokens-only 重建复用 raw token 缓存后再扫描原 prompt 文本补抽指定词元，随后继续应用同义映射。
-- 2026-07-07: 提示词词元新增软删除表 `analytics_prompt_token_deleted_rules`、`GET/POST /api/prompt-token-deletions` 与 `POST /api/prompt-token-deletions/restore`；删除后查询层立即隐藏词元，恢复后立即回到词元表，不需要 tokens-only 重建。
-- 2026-07-07: 提示词词元从向量化页拆为独立 Tab；新增 `analytics_prompt_token_stats`、`analytics_prompt_token_prompts`、`GET /api/prompt-tokens`、`GET /api/prompt-token-prompts`、`refresh_prompt_vectors --tokens-only` 与 `--skip-token-refresh`，每日 shadow pipeline 在 LM Studio 可用性检查前先刷新高频词元和词元提示词映射，`GET /api/prompt-vectors` 只保留基础 embedding 状态；中文词元升级为 `token-v2-cjk-lexeme`，使用常用词汇/短语词表替代旧滑窗 ngram，减少跨词边界碎片；同日词元统计升级为 `token-v3-scope-cjk-lexeme`，支持全局、任务类型和附加模型二级 scope 筛选与下钻；随后升级为 `token-v4-available-task-scope-cjk-lexeme`，一级任务下拉改为当前可用任务分类，无法对应当前入口的历史类型统一归入“无可用任务”，附加模型二级筛选挂到归一后的任务分类下。
+## 5. 刷新与新鲜度
+
+稳定顺序是：
+
+1. 云正式数据只读同步到本地 shadow；
+2. 刷新/补齐当天用户画像快照；
+3. 按需要刷新 Prompt Mart、slim、tokens、embedding 和模板候选；
+4. 分别检查业务 shadow、画像快照和 Prompt state 的时间/版本；
+5. 再通过目标 API/页面验证，不用“容器运行中”代替数据新鲜度。
+
+`scripts/run_local_analytics_shadow_pipeline.py` 是同步后编排入口，默认 dry-run；
+命令参数和当前阶段组合从 `--help`、代码和 focused tests 获取。向量锁被占用时，
+允许画像快照已更新而 Prompt 链跳过；报告必须区分这两层结果。
+
+规则或 normalization version 变化时，增量刷新可以拒绝旧版本。只有代码明确要求
+时才做 full rebuild；不要为一次小规则调整反复全量扫描。
+
+## 6. 安全与运维门禁
+
+- LAN 使用也要保留 bind/Trusted Host/Origin/登录边界；公网访问必须同时启用
+  应用登录和 Cloudflare Access，不能暴露数据库、MinIO 或服务端口。
+- 密码只保存 hash；session secret、数据库 URL、MinIO/R2 凭据、媒体 URL 和
+  用户提示词不得进入 Git、日志或报告。
+- 查慢、5xx、磁盘/临时空间不足时先只读采集 health、release/config 身份、
+  PostgreSQL 活动和目标端点延迟；日志检查不授权 restart、清表或重建。
+- shadow 同步、派生表重建、旧表清理、Compose 重启和公网入口变更都是 mutation。
+  生产/Cloudflare/数据库 mutation 仍需用户明确授权。
+- 当前功能清单以实际路由注册和静态页面 Tab 为准；不要从 archive changelog 恢复
+  已退役 API。
+
+## 7. 最小验证
+
+```bash
+.venv/bin/python -m pytest -q tests/local_analytics
+python3 scripts/doc_quality_checker.py
+```
+
+运行态变更还需验证：
+
+- `/api/health`、登录/session 和目标 Tab API；
+- shadow 业务表时间、画像 `snapshot_date/captured_at` 与 Prompt state 分层新鲜度；
+- 只读业务事务、派生表写入范围和数据库资源占用；
+- NAS/R2 页面不泄露凭据、对象 key 或私密媒体；
+- Cloudflare 入口未登录/已授权行为与本地应用登录均成立。
+
+历史功能演进已归档到
+`docs/archive/knowledge-base-changelog/local_analytics_platform_history_through_20260818.md`，
+只用于追溯，不作为当前 SOP。

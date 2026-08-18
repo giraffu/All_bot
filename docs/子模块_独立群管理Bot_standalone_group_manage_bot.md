@@ -51,5 +51,5 @@ config contract/环境投影，不写入 Git。
 ```bash
 pytest -q tests/standalone_group_manage_bot tests/dashboard/test_group_manage_admin_service.py
 npm --prefix dashboard/frontend run typecheck
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```

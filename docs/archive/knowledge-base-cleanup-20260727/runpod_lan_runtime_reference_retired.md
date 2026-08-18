@@ -1,4 +1,7 @@
-# RunPod 与 LAN AIO Runtime 细节
+# RunPod 与 LAN AIO Runtime 细节（已退役 Skill Reference）
+
+> 本文件包含旧 release track、attestation、profile 和一次性 canary 口径，只用于
+> 追溯。当前操作读取 GPU 专项文档、operator config、provider 和 live state。
 
 本文件用于承接低频、易过期的 RunPod / LAN AIO 操作记忆。执行任何 mutation 前，必须回到主技能、相关 docs、脚本 `--help`、Central `/system/workers` 和当前环境做复核。
 

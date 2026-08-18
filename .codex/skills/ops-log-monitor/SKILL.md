@@ -1,6 +1,6 @@
 ---
 name: ops-log-monitor
-description: "监控多环境日志、分析异常并生成 incident 报告。用户要求查日志、监控错误或排障线上问题时使用。"
+description: "AllBot 只读运维观测与事故分诊。用户说网站/Bot/管理后台或 API 不可用、5xx/502、超时、变慢、告警、容器退出/重启循环、磁盘或连接异常、定时任务失败，或要求查 test/prod/LAN 日志、health、metrics、trace、数据库/Redis/Central/Worker 状态时使用；输出脱敏 incident 证据，不自动重启或修复。"
 ---
 
 # AllBot 日志监控与排障
@@ -23,6 +23,8 @@ description: "监控多环境日志、分析异常并生成 incident 报告。�
 | GPU/RunPod/LAN | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
 | Telegram 文件/API | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` |
 | 媒体/R2/Gallery | `docs/子模块_社区与存储_gallery_storage.md` |
+| Dashboard、数据库/Redis、备份恢复 | `docs/子模块_后台监控与清理_dashboard_monitoring.md`、`docs/子模块_容灾与持久化_database_recovery.md` |
+| 本地分析、shadow、刷新 timer | `docs/子模块_本地数据分析平台_local_analytics_platform.md` |
 
 只读命中的一行，再用部署声明和实时发现确定实际目标集合。
 
@@ -47,6 +49,8 @@ description: "监控多环境日志、分析异常并生成 incident 报告。�
   storage 分段测量，分别记录 DNS/TLS/TTFB/总时长。
 - Telegram 文件故障先验证 API/file endpoint 连通与响应；SSH 不可用时只能
   报告未检查远端容器，不能猜测。
+- “容器退出”先区分应用异常、healthcheck、OOM、磁盘、依赖不可达和人为发布；
+  只读日志证据不授权 `restart` 或 `compose up`。
 - 命令输出进入临时目录或内存，只保留聚合、时间、计数、错误类与脱敏样本。
 
 ## 4. 脱敏与授权红线

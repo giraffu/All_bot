@@ -21,7 +21,8 @@
 - `gallery_posts`
   - 核心帖子实体，保存媒体类型、宽高、时长、互动计数、`comments_count`、上下架状态。
 - `user_interactions`
-  - 记录 `like / dislike / apply`，通过唯一约束拦截重复互动。
+  - 记录 `like / dislike / apply`。ORM 声明三列唯一约束，但仓库 migration 未
+    创建该约束，且三列键不能表达 like/dislike 互斥；真实约束需按环境核验。
 - `gallery_comments`
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
 - `gallery_reports`
@@ -54,7 +55,7 @@ sequenceDiagram
         Core->>R2: 后台准备媒体与缩略图
     else 点赞或点踩
         API->>Core: toggle_like()
-        Core->>PG: user_interactions 唯一约束 + 原子计数
+        Core->>PG: interaction insert/delete + 原子计数（约束需核验）
     else 评论
         API->>PG: 插入 gallery_comments
         PG->>PG: 原子 +1 comments_count，并再次校验帖子仍 active
@@ -230,7 +231,7 @@ sequenceDiagram
 - 云正式只读审计示例：
 
 ```bash
-python scripts/audit_visible_hotset_r2_objects.py \
+python3 scripts/audit_visible_hotset_r2_objects.py \
   --env-file .env.cloud.prod \
   --recent-limit 8 \
   --concurrency 48 \
@@ -245,6 +246,15 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 云正式已为 Gallery/History 热路径补充并发索引：活跃帖子按创建时间翻页、`history.task_id`、用户历史倒序、用户可见收藏、`task_id + user_id` 与 `user_interactions(user_id, action_type, post_id)`。新增列表查询条件时，应优先确认是否命中现有索引。
 
 ## 5. 核心红线
+
+- `src/database/models.py` 的 `uix_user_post_action` 不是“迁移已落地”的证据；
+  Alembic upgrade 历史没有创建该 constraint。操作生产前只读查询
+  `pg_constraint`/`pg_indexes`，不要根据 ORM 猜测。
+- `(user_id, post_id, action_type)` 即使存在，也只能防同 action 重复，不能防
+  一个用户同时 like 与 dislike。目标 schema 应对 reaction 使用
+  `(user_id, post_id)` partial unique，apply 另保留 action 级幂等，或拆表。
+- `GalleryPost.task_id` 只有普通索引，投稿采用先查后插。增加
+  `(task_id, user_id)` unique 前必须先审计/合并重复帖子和互动，并重算计数。
 
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
@@ -265,7 +275,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 ## 6. 测试关注面
 
 - 重复投稿与 `allow_contribute=False` 拦截
-- 并发点赞/点踩的一致性
+- 并发点赞/点踩互斥、apply 幂等、计数一致性和真实 PostgreSQL migration 约束
 - 评论并发下架时的回滚与 404
 - 举报成功、无效原因、作品不存在/已下架、重复举报 `409`；Dashboard 举报筛选、标记处理、图片/视频弹窗预览、用户级封禁下架、作者 pending 举报批量 resolved
 - `my-favorites` 过滤 like/apply 的正确性

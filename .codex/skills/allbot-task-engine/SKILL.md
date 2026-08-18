@@ -1,6 +1,6 @@
 ---
 name: "allbot-task-engine"
-description: "处理任务 facade、provider/dependencies、双 ID、扣费补偿、队列/Worker、终态持久化与运行态清理。"
+description: "处理 AllBot 任务提交与执行生命周期：facade、provider/dependencies、双 ID、扣费补偿、Central 队列、Worker 接单、pending/running 卡住、取消/zombie、结果不返回、终态持久化与运行态清理。开发任务能力或排查队列积压、Worker 不接单时必须使用。"
 ---
 
 # AllBot 任务引擎
@@ -43,6 +43,10 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
   HTTP 实现。
 
+以上是新代码目标边界，不是“迁移已完成”的声明。当前 task core 仍有
+default-dependencies/runtime 兼容装配和较宽 facade；修改时优先显式传入
+command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
+
 ## 3. 双 ID 与终态不变量
 
 - `registry_task_id` 是 AllBot 用户态 ID，`backend_task_id` 是 Central/Worker
@@ -50,7 +54,11 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
 - 多阶段任务保持一个根 registry ID，并使用确定性 backend/stage ID。中间
   stage 不得重复扣费、暴露结果或创建重复 History。
 - 扣费与入队是 Saga：扣费成功但提交失败必须补偿；执行失败或取消必须进入
- 统一终态/退款；不能静默丢失状态。
+  统一终态/退款；不能静默丢失状态。
+- 普通 Web 主链当前先 dispatch 再写 pending finalizer；finalizer attach 失败与
+  backend 接纳结果可能形成歧义。只有能证明 Central 未接纳时才能按提交失败
+  退款/删 registry；否则应保留 owner/并发状态等待恢复。私有 QQCC 的 durable
+  submission ledger 不能被误当成所有入口都已有的通用 outbox。
 - 退款幂等键从根 registry task 派生。Web monitor、取消 API、Bot completion
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
@@ -126,7 +134,8 @@ description: "处理任务 facade、provider/dependencies、双 ID、扣费补�
 ## 7. 最小验证
 
 - core：提交成功、provider 失败、扣费后提交失败补偿、重复终态幂等、runtime
-  cleanup 和用户锁释放。
+  cleanup 和用户锁释放；另覆盖“dispatch 成功 + finalizer attach 失败”且不得
+  错误退款/删 registry。
 - Web：API、monitor、取消/不可取消、超时、结果轮询和退款幂等。
 - Central/Worker：queue pop、status/complete、unsupported type、mapping
   validation、重复上报和上传前不得 complete。

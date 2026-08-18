@@ -1,6 +1,6 @@
 ---
 name: "allbot-local-media-archive"
-description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
+description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/restore outbox、来源丢失核验、冷媒体恢复、迁移 copy/probe/switch 和 R2 冷清理门禁。用户报告归档不新鲜、NAS 原件打不开、媒体丢失/待恢复、容量或清理问题时使用。"
 ---
 
 # AllBot 本地媒体归档
@@ -18,7 +18,8 @@ description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
 - 冷媒体恢复只写 restore outbox；Web 不直连 NAS。Worker 复验摘要、回填原件并
   重建输出缩略图后才提交当前 revision 回执。
 - 永久原件使用 SHA-256 寻址；History 和原 key 映射保存在回执。
-- 迁移冻结账本；Probe successor 零交集，Copy 默认128并聚合链；禁正文下载/全桶扫描。
+- 迁移使用冻结账本和父计划限定的 Probe→Copy→Switch；并发默认值和批次参数从
+  当前脚本 `--help`/代码读取，不写成 Skill 快照。禁止正文下载式探测和无界全桶扫描。
 - History R2 全量链路使用父计划限定的 Probe→Copy→Switch batches；只分别接受
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
@@ -43,7 +44,7 @@ description: "维护 History 媒体归档、来源恢复与 R2 清理门禁。"
 ```bash
 pytest -q tests/core/test_media_archive.py tests/database/test_media_archive_schema.py
 pytest -q tests/local_analytics tests/services/test_storage_web_history_r2_cache.py
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 真实部署还需验证 MinIO digest/TLS/权限/versioning/重启、直连路由、NAS 回读、

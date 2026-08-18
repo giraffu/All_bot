@@ -22,6 +22,7 @@ manifest 和专项文档读取，不在此维护快照。
 | 本地多模态 LLM 提示词优化、task profile | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` |
 | 用户提交到 Worker 结果回流 | `docs/子模块_生成任务全链路_task_full_chain.md` |
 | GPU profile、artifact、RunPod/LAN | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
+| 运行时 profile 兼容背景 | `references/runtime-profiles.md`，随后必须用 registry/provider/live 复核 |
 | QQCC 场景/选项 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` |
 | 不可变发布 | `docs/子模块_Git不可变发布_git_immutable_release.md` |
 

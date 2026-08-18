@@ -207,9 +207,9 @@ unknown Host 回落到管理员站点。gate=`true` 时 validator 与 config con
 - `docker compose -f deploy/docker-compose-cloud-base.yml -f deploy/docker-compose-cloud-test.overlay.yml config -q`
 - `docker compose -f deploy/docker-compose-cloud-base.yml -f deploy/docker-compose-cloud-prod.overlay.yml config -q`
 - `python -m alembic heads`
-- `python scripts/doc_quality_checker.py`
-- 未启用门禁校验：`python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env> --allow-disabled`
-- 启用前严格校验：`python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env>`
+- `python3 scripts/doc_quality_checker.py`
+- 未启用门禁校验：`python3 scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env> --allow-disabled`
+- 启用前严格校验：`python3 scripts/validate_private_qqcc_bot_env.py --env-file <ignored-test-or-prod-env>`
 - `pytest -q tests/ops/test_runtime_env_contract.py tests/ops/test_release_cli.py`
 - focused tests 覆盖 schema/加密、申请 FSM/lifecycle、同 Bot active-task 救援轮换、owner auth/API 与 limiter/Host、webhook queue/入口与 metrics、private worker 有界背压/startup PEL catch-up、官方 membership checker、运行时配置、确定性 submission/debit/refund/concurrency 幂等、迟到扣费 fence、账本 retention 和恢复过滤。
 

@@ -57,11 +57,10 @@
 - [子模块: 容灾与持久化 (Database & Recovery)](./docs/子模块_容灾与持久化_database_recovery.md)
 - [子模块: 局域网 GPU 节点 SSH 管理 (LAN GPU SSH Access)](./docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md)
 - [子模块: 局域网 GPU 节点资源与运维 (LAN GPU Resource Ops)](./docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md)
-- [子模块：并发 AI 工作区与单批次 main 集成](./docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md)
+- [子模块：并发 AI 工作区与不可变 handoff 集成](./docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md)
 - [子模块: 本地数据分析平台 (Local Analytics Platform)](./docs/子模块_本地数据分析平台_local_analytics_platform.md)
 - [本地数据分析平台提示词词义分析指南](./docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md)
 - [子模块：本地正式灾备切换](./docs/子模块_本地正式灾备切换_local_prod_fallback.md)
-- [热点文件门禁与回归触发规则](./docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md)
 - [子模块: 生成任务全链路 (Task Full Chain)](./docs/子模块_生成任务全链路_task_full_chain.md)
 - [子模块: 用户认证与权限管理 (User Auth & Permission)](./docs/子模块_用户认证与权限_user_auth_permission.md)
 - [子模块: 社区广场与分级存储 (Gallery & Storage)](./docs/子模块_社区与存储_gallery_storage.md)
@@ -76,7 +75,13 @@
 
 历史迁云、一次性变更说明和问题复盘已归档到 [`docs/archive/2026-06-cloud-migration/`](./docs/archive/2026-06-cloud-migration/README.md) 与 [`docs/archive/2026-06-runtime-canaries/`](./docs/archive/2026-06-runtime-canaries/README.md)。归档材料不作为当前部署 SOP，排障报告默认保留在 `logs/`。
 
-## 持续集成与部署
+## 集成与发布
 
-- 本项目通过 GitHub Actions 实现对 Markdown 文档的自动校验（`markdownlint`）和自动目录更新。
-- 代码发布统一走 `scripts/release.py`：受保护 main 的完整 SHA 经 CI 构建 digest-pinned 镜像，先部署/验收云测试，再把同 SHA、同 digest 晋级正式；禁止代码/env rsync、云端现场 build 和源码挂载。本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时灾备入口。
+- A–H 功能槽位提交并推送任务分支后写入不可变 handoff；本机单写者逐项合并并
+  推送 main，不创建逐任务 PR，也不把 CI 或共享测试站作为 main 合入门禁。
+- 发布由操作者从完整 Git SHA 运行 `scripts/release.py build --module ...`，再把
+  精确 digest 部署到明确环境。test 与 prod 各自选择 artifact；不存在“必须先在
+  test 晋级同一 digest”这一自动资格链。
+- 生产、数据库、Cloudflare、RunPod/GPU/LAN 与灾备 mutation 必须由用户明确
+  授权。禁止源码/env rsync、目标机 build、源码 bind mount、mutable tag 和
+  force push main。

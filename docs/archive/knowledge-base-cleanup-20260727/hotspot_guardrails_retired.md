@@ -1,4 +1,7 @@
-# 热点文件门禁（已退役）
+# 热点文件门禁（已退役，历史归档）
+
+> 当前流程不再使用 changed-path classifier；请读取 ADR 0009、领域 Skill 和
+> focused tests。本文只保留旧规则退出原因。
 
 旧 changed-path classifier、四级 scope、`requires_full_ci` 和 hotspot GitHub
 workflow 已由 ADR 0009 取代并删除。

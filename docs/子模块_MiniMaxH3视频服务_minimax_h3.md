@@ -145,7 +145,7 @@ DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
 ## 最小验证
 
 ```bash
-python -m pytest -q tests/config/test_minimax_h3.py \
+.venv/bin/python -m pytest -q tests/config/test_minimax_h3.py \
   tests/services/test_minimax_h3_history_context_service.py \
   tests/web_api/test_gallery_apply_context.py \
   tests/workers/test_minimax_h3_workflows.py \

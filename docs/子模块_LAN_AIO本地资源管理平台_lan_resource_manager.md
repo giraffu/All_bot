@@ -102,11 +102,11 @@ operation 持久化到平台 data volume。容器重启后未完成 mutation 标
 最小验证：
 
 ```bash
-python -m pytest -q lan_resource_manager/tests
-python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
+.venv/bin/python -m pytest -q lan_resource_manager/tests
+.venv/bin/python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
   tests/ops/test_auto_integrate_handoffs.py tests/ops/test_release_cli.py
 cd lan_resource_manager/frontend && npm test && npm run build
 docker compose --env-file lan_resource_manager/.env.example \
   -f lan_resource_manager/compose.yml config
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```

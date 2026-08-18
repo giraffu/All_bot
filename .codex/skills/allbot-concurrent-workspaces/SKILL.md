@@ -1,6 +1,6 @@
 ---
 name: allbot-concurrent-workspaces
-description: "管理 AllBot A-H 固定 worktree、不可变 handoff、needs-rebase 与轻量 main 单写者协调。"
+description: "管理 AllBot A–H 固定 worktree、任务 claim、分支提交/推送、不可变 handoff、needs-rebase、槽位释放和轻量 main 单写者集成。用户要求在仓库写代码/文档、继续或交接并发任务、查看槽位/队列或处理合并冲突时使用。"
 ---
 
 # AllBot 并发工作区
@@ -16,14 +16,14 @@ description: "管理 AllBot A-H 固定 worktree、不可变 handoff、needs-reba
 主目录写仓库任务先执行：
 
 ```bash
-python scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
+python3 scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
 ```
 
 后续读取、修改、测试和 Git 只在返回的 A-H worktree。任务自行决定 focused
 tests，提交并推送精确远端 head 后执行：
 
 ```bash
-python scripts/manage_ai_workspaces.py handoff --slot <A-H>
+python3 scripts/manage_ai_workspaces.py handoff --slot <A-H>
 ```
 
 handoff 成功入队后才释放槽位。功能槽位不得直接 push main，也不负责构建或
@@ -47,7 +47,7 @@ handoff 成功入队后才释放槽位。功能槽位不得直接 push main，�
 `needs-rebase` 不自动重试。原槽位或新槽位从最新 main 重做，推送新 head 后：
 
 ```bash
-python scripts/manage_ai_workspaces.py handoff \
+python3 scripts/manage_ai_workspaces.py handoff \
   --slot <A-H> --supersedes <旧handoff-id>
 ```
 
@@ -56,6 +56,6 @@ python scripts/manage_ai_workspaces.py handoff \
 ## 最小验证
 
 ```bash
-python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
+.venv/bin/python -m pytest -q tests/ops/test_manage_ai_workspaces.py \
   tests/ops/test_auto_integrate_handoffs.py
 ```

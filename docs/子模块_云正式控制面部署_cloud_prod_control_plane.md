@@ -46,7 +46,7 @@ GPU。
 只从受保护 main 的完整 SHA 构建明确模块：
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module <module> --sha <40位main-sha>
 ```
 
@@ -62,7 +62,7 @@ build-only base 可按内容身份复用；业务 artifact 仍绑定完整 Git S
 只有用户明确确认本次正式 mutation 后执行：
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module <module> \
   --artifact <repository@sha256:digest> --confirm-prod
 ```
@@ -127,8 +127,8 @@ mutation。
 ## 8. 状态、回滚与验收
 
 ```bash
-python scripts/release.py status --env prod --module <module>
-python scripts/release.py rollback \
+python3 scripts/release.py status --env prod --module <module>
+python3 scripts/release.py rollback \
   --env prod --module <module> --confirm-prod
 ```
 
@@ -143,10 +143,10 @@ remote state 是发布器账本，不是 live 健康的替代品。部署后至�
 ## 9. 最小验证
 
 ```bash
-python -m pytest -q tests/ops/test_release_cli.py \
+.venv/bin/python -m pytest -q tests/ops/test_release_cli.py \
   tests/ops/test_runtime_env_contract.py \
   tests/ops/test_immutable_compose.py
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 再按目标模块运行 focused tests。交付必须区分：

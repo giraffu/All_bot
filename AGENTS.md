@@ -29,7 +29,7 @@
 `allbot-concurrent-workspaces`，再执行：
 
 ```bash
-python scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
+python3 scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
 ```
 
 后续读取、编辑、测试和 Git 只在返回的 A–H worktree。无空槽时在编辑前停止，
@@ -38,7 +38,7 @@ python scripts/manage_ai_workspaces.py claim --task <kebab-case-slug>
 完成后在槽位运行 focused tests，提交并推送任务分支，再执行：
 
 ```bash
-python scripts/manage_ai_workspaces.py handoff --slot <A-H>
+python3 scripts/manage_ai_workspaces.py handoff --slot <A-H>
 ```
 
 handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽位。功能槽位
@@ -88,6 +88,22 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 | 日志采集、异常归因和事故报告 | `ops-log-monitor` |
 | 全局静态分析、死代码和质量评估 | `allbot-code-analyzer` |
 
+### 运维意图优先路由
+
+用户常用现象不一定包含模块名。遇到以下描述先命中症状入口，再叠加技术域
+Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维规则。
+
+| 用户现象 / 操作 | 先加载 | 再按证据叠加 |
+| --- | --- | --- |
+| 网站/管理后台/Bot 不可用、5xx、超时、告警、容器退出 | `ops-log-monitor` + `allbot-diagnosing-bugs` | `allbot-ops-deployment` 或所属业务 Skill |
+| 启停、重启、重建、配置/env、健康检查、迁移、备份/恢复 | `allbot-ops-deployment` | 数据库、服务或环境专题文档 |
+| 任务 pending/running 卡住、队列积压、Worker 不接单、结果不返回 | `allbot-task-engine` + `allbot-diagnosing-bugs` | `ops-log-monitor`、GPU/R2/计费 Skill |
+| 域名 404/502、TLS、DNS、Tunnel、Access、Pages、CORS | `allbot-cloudflare-ops` | `ops-log-monitor` 或 `allbot-ops-deployment` |
+| SSH 超时/拒绝/断连/公钥或主机指纹失败 | `allbot-cloud-ssh` | 线上事故再加诊断/日志 Skill |
+| GPU/RunPod/LAN 掉线、OOM/Xid、显卡空闲但不接单 | `allbot-ops-deployment` + `allbot-diagnosing-bugs` | LAN 单卡 mutation 加 `allbot-lan-aio-operator` |
+| R2 媒体 404、预签/CORS、对象丢失、存储迁移或清理 | `allbot-gallery-storage` | 全量归档加 `allbot-local-media-archive`；mutation 加部署 Skill |
+| 本地分析页面慢/500、shadow 不新鲜、刷新或定时任务失败 | `ops-log-monitor` + `allbot-diagnosing-bugs` | 词元语义任务才加分析语义 Skill |
+
 一个任务可以叠加多个 Skill。常见组合：
 
 - 新功能/修 bug：领域 Skill + `allbot-tdd`；线上异常再加
@@ -123,7 +139,7 @@ handoff 以远端 branch/head/base SHA 写入不可变集成队列并释放槽�
 知识变更运行：
 
 ```bash
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 若新增 Skill，同步 Skill 文件、本路由、`docs/skills/README.md` 和审计矩阵。

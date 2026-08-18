@@ -42,7 +42,7 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
   RunPod/LAN operator 和 exact slot 管理，不随控制面部署联动。
 
 模块清单会变化，不在本文复制完整 catalog。执行前以
-`python scripts/release.py --help`、catalog 和目标模块条目为准。
+`python3 scripts/release.py --help`、catalog 和目标模块条目为准。
 
 ## 3. 不可变发布流程
 
@@ -51,7 +51,7 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
 只从受保护 main 的完整 SHA 构建明确模块：
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module <module> --sha <40位main-sha>
 ```
 
@@ -69,7 +69,7 @@ transport，把同一 repository path 的精确 digest 从云 builder 写入本�
 ### 3.2 部署
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env test --module <module> \
   --artifact <repository@sha256:digest>
 ```
@@ -87,8 +87,8 @@ contract。
 ### 3.3 状态与回滚
 
 ```bash
-python scripts/release.py status --env test --module <module>
-python scripts/release.py rollback --env test --module <module>
+python3 scripts/release.py status --env test --module <module>
+python3 scripts/release.py rollback --env test --module <module>
 ```
 
 持久 Runner 使用 remote state；本地 CLI 默认使用 XDG state。状态文件只是发布器
@@ -125,10 +125,10 @@ RunPod mutation 使用受控 provider；LAN mutation 必须加载
 ## 6. 最小验证
 
 ```bash
-python -m pytest -q tests/ops/test_release_cli.py \
+.venv/bin/python -m pytest -q tests/ops/test_release_cli.py \
   tests/ops/test_runtime_env_contract.py \
   tests/ops/test_immutable_compose.py
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 部署后的 focused smoke 按目标模块选择：

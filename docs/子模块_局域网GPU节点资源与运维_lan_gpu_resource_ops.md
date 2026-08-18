@@ -74,7 +74,7 @@ R2 key、presigned URL、数据库 URL 或完整 Compose expansion。
 所有生产 mutation 都要求用户明确指定目标 node/GPU/slot/profile，并且只通过：
 
 ```bash
-python scripts/lan_aio_fleet_prod_ops.py <command>
+python3 scripts/lan_aio_fleet_prod_ops.py <command>
 ```
 
 标准能力：
@@ -124,10 +124,10 @@ ComfyUI `input/output/temp`、模型 cache、runtime workspace 和 operator stat
 ## 8. 最小验证
 
 ```bash
-python -m pytest -q tests/ops/test_lan_aio_prod.py \
+.venv/bin/python -m pytest -q tests/ops/test_lan_aio_prod.py \
   tests/ops/test_gpu_release_rollout.py \
   tests/ops/test_runpod_bootstrap.py
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 涉及 Worker runtime、workflow 或模型时，再运行对应 worker mapping/patcher 和

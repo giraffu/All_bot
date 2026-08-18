@@ -191,7 +191,8 @@ pytest   tests/core/test_task_runtime_cleanup.py
 - 改 `task_core` facade / provider / dependencies / monitor：直接跑完整黄金路径集
 - 改 `queue_manager`、`backend/app/main.py`、`main_t2i_wiring.py`：直接跑完整黄金路径集
 - 改 `tasks.py` router/service：至少跑 Web API 相关 3 组测试，再视影响补全量
-- 若同时需要判断热点文件应该触发哪组回归，配合 `docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md` 一起使用
+- 回归范围由命中的领域 Skill、实际接口/状态流和本清单共同决定；不再使用已退役
+  的 changed-path/hotspot classifier 推导自动门禁。
 
 ## 9. 收口原则
 
