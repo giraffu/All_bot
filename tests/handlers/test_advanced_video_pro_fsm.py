@@ -219,7 +219,13 @@ async def test_pro_prompt_is_reviewed_before_generation_and_offers_optimizer(mon
         for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert callbacks == ["avp_prompt_optimize", "avp_prompt_generate"]
+    labels = [
+        button.text
+        for row in reply.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == ["avp_prompt_generate", "avp_prompt_optimize"]
+    assert labels == ["🎬 无需优化，直接生成", "✨ 优化后再生成（1灵石）"]
 
 
 @pytest.mark.asyncio

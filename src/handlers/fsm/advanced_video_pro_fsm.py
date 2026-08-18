@@ -206,30 +206,31 @@ def _optimizer_enabled() -> bool:
 def _prompt_action_keyboard(
     context, *, can_restore: bool = False
 ) -> InlineKeyboardMarkup:
-    rows = []
+    rows = [
+        [
+            InlineKeyboardButton(
+                _text(
+                    context,
+                    "🎬 无需优化，直接生成",
+                    "🎬 Generate directly without optimization",
+                ),
+                callback_data="avp_prompt_generate",
+            )
+        ]
+    ]
     if _optimizer_enabled():
         rows.append(
             [
                 InlineKeyboardButton(
                     _text(
                         context,
-                        "✨ 优化提示词（1灵石）",
-                        "✨ Optimize prompt (1 credit)",
+                        "✨ 优化后再生成（1灵石）",
+                        "✨ Optimize before generating (1 credit)",
                     ),
                     callback_data="avp_prompt_optimize",
                 )
             ]
         )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _text(
-                    context, "🎬 使用当前提示词生成", "🎬 Generate with current prompt"
-                ),
-                callback_data="avp_prompt_generate",
-            )
-        ]
-    )
     if can_restore:
         rows.append(
             [
