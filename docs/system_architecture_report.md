@@ -13,7 +13,7 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 | 用户入口 | Telegram/Web 交互、认证、输入收集、展示 | `src/bot_main.py`、`src/web_api/main.py`、`qqcc_bot/main.py` |
 | 业务编排 | 任务、计费、用户、Gallery 的公开 facade | `src/core/`、`src/services/` |
 | 执行控制面 | 队列、Worker 协议、状态和调度 | `backend/app/` |
-| 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | 测试执行 `workers/comfy_agent/`；正式 LAN/RunPod `workers/runpod_runtime/` |
+| 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | canonical `workers/comfy_agent/`；LAN/RunPod 仅保留运行 adapter/config |
 | 管理与运维 | Dashboard、独立模块发布、GPU/LAN/RunPod operator | `dashboard/`、`scripts/release.py`、`deploy/module-catalog.json`、`ops/` |
 
 正式与测试环境都只消费精确、不可变的 artifact，但不要求两者天然使用同一
@@ -46,6 +46,9 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
   是 `src/web_api`。
 - Dashboard 编排管理视图，但不复制 QueueManager、billing 或 Gallery 的
   底层业务语义。
+- `task-control-worker` 是默认禁用的独立后台宿主；submission reconciliation、
+  Web finalizer 和通用 zombie sweep 各自持有 leader lease。旧 Web/Bot/QQCC
+  loop 默认仍开启，只有显式滚动切换后才退出原宿主。
 
 完整入口归属见
 [入口职责矩阵](./入口职责矩阵_entry_responsibility_matrix.md)。
@@ -98,17 +101,16 @@ AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlche
 
 详见 [社区与存储](./子模块_社区与存储_gallery_storage.md)。
 
-### 3.4 当前一致性缺口
+### 3.4 当前演进边界
 
-- 普通 Web 任务先 dispatch，再挂载 pending finalizer；finalizer 写入失败仍可能
-  进入普通补偿。私有 QQCC 已有 durable dispatch ledger/fence，但 Web 主链尚未
-  形成同等 outbox。排障和改动时必须区分“确定未接纳”和“派发结果歧义”。
-- `UserInteraction` ORM 声明 `(user_id, post_id, action_type)` 唯一，但仓库
-  Alembic upgrade 没有对应创建记录；即使存在，该键也不能阻止同一用户同时
-  like/dislike。`GalleryPost.task_id` 也只是普通索引。变更前先只读核对真实
-  `pg_constraint/pg_indexes`，迁移前先处理重复数据和 counter drift。
-- 测试 Worker 与正式 `workers/runpod_runtime` 仍是两棵会漂移的源码/runtime
-  事实源。workflow/profile 改动必须同时验证两边，直到收敛为 canonical package。
+- Web dispatch 已使用版本化 submission intent 区分确定拒绝与结果歧义；
+  `dispatching/reconciling` 不猜测退款，恢复需满足连续 Central 404 门槛。
+- Gallery 修复工具、partial unique indexes、advisory transaction lock 与计数重算
+  已形成代码契约；真实环境修复仍必须先备份、dry-run 并单独授权。
+- Worker runtime 已收口到 `workers/comfy_agent`，镜像 manifest 暴露源码与
+  workflow mapping hash；任何 GPU profile rollout 仍需逐 profile canary。
+- 后台职责的独立进程已作为 disabled artifact 交付，但环境启用、旧 loop 关闭
+  和服务部署不是代码提交的隐式动作。
 
 ## 4. 部署与运行态
 

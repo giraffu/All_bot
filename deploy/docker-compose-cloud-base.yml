@@ -50,6 +50,23 @@ services:
       <<: *python-health
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=5)"]
 
+  task-control-worker:
+    <<: *app-base
+    image: ${ALLBOT_TASK_CONTROL_WORKER_IMAGE:?release.env must pin ALLBOT_TASK_CONTROL_WORKER_IMAGE by digest}
+    profiles: ["task-control"]
+    env_file:
+      - path: ${ALLBOT_SERVICE_ENV_ROOT:?ALLBOT_SERVICE_ENV_ROOT is required}/task-control-worker.env
+        required: false
+        format: raw
+    environment:
+      TASK_CONTROL_WORKER_ENABLED: ${TASK_CONTROL_WORKER_ENABLED:-false}
+    command: ["python", "-m", "src.task_control_worker"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/healthz', timeout=5)"]
+
   payment-api:
     <<: *app-base
     image: ${ALLBOT_PAYMENT_API_IMAGE:?release.env must pin ALLBOT_PAYMENT_API_IMAGE by digest}

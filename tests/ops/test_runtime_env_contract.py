@@ -630,6 +630,7 @@ def test_changed_key_names_expand_to_affected_services_and_unknown_is_all():
     assert module.affected_services(contract, {"BOT_TOKEN"}) == {
         "dashboard-backend",
         "main-bot",
+        "task-control-worker",
         "web-api",
     }
     assert module.affected_services(contract, {"HUANYUY_KEY"}) == {

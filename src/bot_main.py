@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 install_telegram_runtime_patches(logger=logger)
 
 
+def _env_enabled(name: str, *, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def clean_zombies_loop(bot=None):
     from src.services.zombie_cleaner_service import clean_zombies
 
@@ -116,9 +121,10 @@ async def post_init(application):
     task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
 
     # Start automated zombie task cleaner
-    task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
-    application.bot_data["bg_tasks"].add(task_zombies)
-    task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
+    if _env_enabled("MAIN_BOT_ZOMBIE_SWEEP_ENABLED", default=True):
+        task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
+        application.bot_data["bg_tasks"].add(task_zombies)
+        task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 
     from src.services.advanced_video_prompt_task_service import (
         run_advanced_video_prompt_delivery_loop,

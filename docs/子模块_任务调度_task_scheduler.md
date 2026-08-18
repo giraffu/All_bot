@@ -19,6 +19,7 @@
 - `src/services/task_web_lifecycle_monitor.py`：Web runtime monitor stage，负责 backend 轮询、终态 snapshot 构造与 terminal router 对接
 - `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
+- `src/services/task_control_worker.py`、`src/task_control_worker.py`：默认禁用的独立控制进程，把 submission reconciliation、Web finalizer 与通用 zombie sweep 放在三个独立 leader lease 下运行
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
@@ -142,6 +143,16 @@ sequenceDiagram
 - `task_submission_metrics` 中的 `finalizer_due_records_processed`、
   `finalizer_central_status_requests` 与 `finalizer_legacy_indexed_records` 用于
   对照调度成本；只有真正发起 Central status 查询时才增加请求指标。
+- 新 `task-control-worker` 以 `task-control` Compose profile 和
+  `TASK_CONTROL_WORKER_ENABLED=false` 双重门禁交付。reconciliation 只处理
+  `prepared/dispatching/reconciling` 的版本化 intent，且不重复扫描 legacy
+  Hash；finalizer 处理 `accepted/terminal` 并独占 legacy 索引与终态事件监听；
+  generic zombie sweep 继续由现有 cleaner 排除私有 QQCC 任务。
+- 滚动切换顺序是：先构建/部署精确 digest，保持 disabled；启用后确认
+  `/healthz` 中三个 lease runner 稳定，再分别将
+  `WEB_FINALIZER_IN_WEB_ENABLED`、`MAIN_BOT_ZOMBIE_SWEEP_ENABLED`、
+  `QQCC_BOT_ZOMBIE_SWEEP_ENABLED` 设为 false。回滚按相反顺序。三个旧开关默认
+  均为 true，所以仅发布代码不会改变现有运行职责。
 - 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - 取消退款同样必须幂等。`finalize_task_cancellation(...)` 会用 `registry_task_id` 派生 `task_refund:refund_user_cancel:<registry_task_id>`，账本层把它写入 `user_logs.extra_info.credit_idempotency_key` 并在用户行锁内检查；用户取消接口、Web monitor 或恢复流程重复看到 `cancelled` 时，只能第一次真正增加灵石。
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。

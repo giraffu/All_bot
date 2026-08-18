@@ -21,6 +21,14 @@ COPY scripts/r2_staging_lifecycle.py scripts/r2_temp_cleanup.py scripts/r2_temp_
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=web-api
 CMD ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
 
+FROM ${RUNTIME_BASE_IMAGE} AS task-control-worker
+ARG ALLBOT_GIT_SHA
+COPY config.py /app/config.py
+COPY src /app/src
+COPY shared /app/shared
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module=task-control-worker
+CMD ["python", "-m", "src.task_control_worker"]
+
 FROM ${RUNTIME_BASE_IMAGE} AS payment-api
 ARG ALLBOT_GIT_SHA
 COPY config.py /app/config.py

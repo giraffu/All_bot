@@ -76,6 +76,10 @@ finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独�
   处理中保留 due member，并以单任务 lease 防多实例重复收口；终态才原子清理
   record、due member 与 backend index。Central 终态 Pub/Sub 只把任务提前设为
   due-now，事件丢失仍由 ZSET 轮询兜底。
+- `task-control-worker` 是 submission reconciliation、Web finalizer 和 generic
+  zombie sweep 的目标宿主，三者使用独立 Redis leader lease。该模块/profile
+  默认禁用；迁移时先启用并确认 health/lease，再分别关闭 Web、主 Bot、QQCC
+  的旧循环。短暂重叠仍必须依赖单任务 lease/幂等账本保证安全，不能同时翻转。
 - Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
   失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
   也不能借此自动重启或删除 provider/GPU runtime。
