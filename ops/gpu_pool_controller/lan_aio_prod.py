@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import posixpath
@@ -2263,6 +2264,370 @@ printf "%s|%s\\n" "$before" "$after"
             "bytes_after": int(after_text or 0),
         }
 
+    def _node_storage_gc_host(self, node_id: str) -> str:
+        hosts = {
+            slot.ssh_host
+            for slot in self.slots.values()
+            if self.config.assignments[slot.assignment_id].node_id == node_id
+        }
+        if not hosts:
+            raise RuntimeError(f"unknown LAN AIO node: {node_id}")
+        if len(hosts) != 1:
+            raise RuntimeError(
+                f"node storage GC requires one SSH host for {node_id}: {sorted(hosts)}"
+            )
+        return next(iter(hosts))
+
+    def _node_physical_slots(self, node_id: str) -> set[str]:
+        return {
+            physical_slot_key(slot)
+            for slot in self.slots.values()
+            if self.config.assignments[slot.assignment_id].node_id == node_id
+        }
+
+    def _protected_node_containers(self, node_id: str) -> set[str]:
+        ledger = self.state_store.load_current() or {}
+        protected: set[str] = set()
+        for physical_slot, state in (ledger.get("physical_slots") or {}).items():
+            if not str(physical_slot).startswith(f"{node_id}:"):
+                continue
+            container_name = str((state.get("current") or {}).get("container_name") or "")
+            if container_name:
+                protected.add(container_name)
+        return protected
+
+    def _run_remote_root_script(self, host: str, script: str) -> str:
+        sudo_password = os.environ.get("LAN_AIO_GPU_SUDO_PASSWORD", "")
+        command = "bash -lc " + shlex.quote(script)
+        if not sudo_password:
+            return self._ssh(host, command, capture=True).strip()
+        transport = (
+            ["sudo", "-S", "-p", "", "bash", "-lc", script]
+            if host == "local://"
+            else [
+                "ssh",
+                *SSH_BATCH_OPTIONS,
+                host,
+                "sudo -S -p '' bash -lc " + shlex.quote(script),
+            ]
+        )
+        return self._local(
+            transport,
+            input_text=sudo_password + "\n",
+            capture=True,
+        ).strip()
+
+    @staticmethod
+    def _validate_node_storage_gc_targets(
+        *,
+        node_id: str,
+        remove_containers: list[str],
+        remove_workspaces: list[str],
+    ) -> None:
+        if not re.fullmatch(r"gpu-[a-zA-Z0-9_-]+", node_id):
+            raise RuntimeError(f"unsafe node id: {node_id}")
+        container_pattern = re.compile(
+            rf"^allbot-lan-aio-{re.escape(node_id)}-gpu[0-9]+-[a-zA-Z0-9_.-]+$"
+        )
+        for container_name in remove_containers:
+            if not container_pattern.fullmatch(container_name):
+                raise RuntimeError(f"unsafe container name: {container_name}")
+        workspace_patterns = (
+            re.compile(
+                rf"^/srv/allbot/runpod-runtime/slots/{re.escape(node_id)}-gpu[0-9]+/"
+                r"profiles/[^/]+/workspace$"
+            ),
+            re.compile(
+                rf"^/home/[^/]+/allbot-runpod-runtime/slots/{re.escape(node_id)}-gpu[0-9]+/"
+                r"profiles/[^/]+/workspace$"
+            ),
+        )
+        for workspace in remove_workspaces:
+            if not any(pattern.fullmatch(workspace) for pattern in workspace_patterns):
+                raise RuntimeError(f"unsafe workspace path for {node_id}: {workspace}")
+
+    def node_storage_gc(
+        self,
+        *,
+        node_id: str,
+        remove_containers: list[str],
+        remove_workspaces: list[str],
+        prune_unused_images: bool,
+        prune_dangling_volumes: bool,
+        execute: bool,
+    ) -> dict[str, Any]:
+        containers = sorted(set(remove_containers))
+        workspaces = sorted(set(remove_workspaces))
+        if not (
+            containers
+            or workspaces
+            or prune_unused_images
+            or prune_dangling_volumes
+        ):
+            raise RuntimeError("node storage GC requires at least one explicit target")
+        self._validate_node_storage_gc_targets(
+            node_id=node_id,
+            remove_containers=containers,
+            remove_workspaces=workspaces,
+        )
+        protected_containers = self._protected_node_containers(node_id)
+        protected_targets = protected_containers.intersection(containers)
+        if protected_targets:
+            raise RuntimeError(
+                "refusing to delete protected current container(s): "
+                + ", ".join(sorted(protected_targets))
+            )
+        host = self._node_storage_gc_host(node_id)
+        plan = {
+            "node_id": node_id,
+            "remove_containers": containers,
+            "remove_workspaces": workspaces,
+            "protected_containers": sorted(protected_containers),
+            "prune_unused_images": bool(prune_unused_images),
+            "prune_dangling_volumes": bool(prune_dangling_volumes),
+            "execute": bool(execute),
+        }
+        plan_json = json.dumps(plan, sort_keys=True)
+        encoded_plan = base64.b64encode(plan_json.encode("utf-8")).decode("ascii")
+        script = f"""set -euo pipefail
+# node_storage_gc_plan={plan_json}
+execute={1 if execute else 0}
+python3 - <<'PY'
+import base64
+import json
+import os
+import shutil
+import subprocess
+
+plan = json.loads(base64.b64decode({encoded_plan!r}).decode("utf-8"))
+
+def run(*args, check=True):
+    return subprocess.run(
+        list(args), check=check, text=True, capture_output=True
+    )
+
+def lines(*args):
+    completed = run(*args)
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+def inspect_container(name):
+    completed = run("docker", "inspect", name, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(f"target container is missing: {{name}}")
+    payload = json.loads(completed.stdout)
+    if len(payload) != 1:
+        raise RuntimeError(f"unexpected inspect result for {{name}}")
+    return payload[0]
+
+targets = set(plan["remove_containers"])
+protected = set(plan["protected_containers"])
+if targets & protected:
+    raise RuntimeError(
+        "target contains protected current container(s): "
+        + ", ".join(sorted(targets & protected))
+    )
+for name in sorted(targets):
+    inspected = inspect_container(name)
+    actual_name = str(inspected.get("Name") or "").removeprefix("/")
+    if actual_name != name:
+        raise RuntimeError(f"container name mismatch: {{actual_name}} != {{name}}")
+    if bool((inspected.get("State") or {{}}).get("Running")):
+        raise RuntimeError(f"refusing to delete running container: {{name}}")
+
+def load_all_containers():
+    containers = []
+    for container_id in lines("docker", "ps", "-aq"):
+        inspected = json.loads(run("docker", "inspect", container_id).stdout)[0]
+        containers.append(inspected)
+    return containers
+
+all_containers = load_all_containers()
+
+workspace_rows = []
+for workspace in plan["remove_workspaces"]:
+    if os.path.lexists(workspace):
+        if os.path.islink(workspace) or os.path.realpath(workspace) != workspace:
+            raise RuntimeError(f"workspace must be a real directory: {{workspace}}")
+        if not os.path.isdir(workspace):
+            raise RuntimeError(f"workspace is not a directory: {{workspace}}")
+    for inspected in all_containers:
+        owner = str(inspected.get("Name") or "").removeprefix("/")
+        if owner in targets:
+            continue
+        for mount in inspected.get("Mounts") or []:
+            source = os.path.realpath(str(mount.get("Source") or ""))
+            if not source:
+                continue
+            if (
+                source == workspace
+                or source.startswith(workspace + os.sep)
+                or workspace.startswith(source + os.sep)
+            ):
+                raise RuntimeError(
+                    f"workspace {{workspace}} is mounted by non-target container {{owner}}"
+                )
+    size = 0
+    if os.path.isdir(workspace):
+        completed = run("du", "-sb", workspace)
+        size = int(completed.stdout.split()[0])
+    workspace_rows.append({{"path": workspace, "bytes": size}})
+
+def unused_image_ids(containers, excluded_names):
+    all_ids = set(lines("docker", "image", "ls", "-aq", "--no-trunc"))
+    used_ids = {{
+        str(item.get("Image") or "")
+        for item in containers
+        if str(item.get("Name") or "").removeprefix("/") not in excluded_names
+    }}
+    return sorted(image_id for image_id in all_ids if image_id not in used_ids)
+
+image_candidates = (
+    unused_image_ids(all_containers, targets)
+    if plan["prune_unused_images"]
+    else []
+)
+volume_candidates = []
+if plan["prune_dangling_volumes"]:
+    predicted_volumes = set(lines("docker", "volume", "ls", "-qf", "dangling=true"))
+    volume_users = {{}}
+    for inspected in all_containers:
+        owner = str(inspected.get("Name") or "").removeprefix("/")
+        for mount in inspected.get("Mounts") or []:
+            if mount.get("Type") != "volume" or not mount.get("Name"):
+                continue
+            volume_users.setdefault(str(mount["Name"]), set()).add(owner)
+    predicted_volumes.update(
+        name for name, owners in volume_users.items() if owners and owners <= targets
+    )
+    volume_candidates = sorted(predicted_volumes)
+disk_before = shutil.disk_usage("/")
+
+if plan["execute"]:
+    for name in sorted(targets):
+        run("docker", "rm", name)
+    refreshed_containers = load_all_containers()
+    for workspace in plan["remove_workspaces"]:
+        for inspected in refreshed_containers:
+            owner = str(inspected.get("Name") or "").removeprefix("/")
+            for mount in inspected.get("Mounts") or []:
+                source = os.path.realpath(str(mount.get("Source") or ""))
+                if source and (
+                    source == workspace
+                    or source.startswith(workspace + os.sep)
+                    or workspace.startswith(source + os.sep)
+                ):
+                    raise RuntimeError(
+                        f"workspace {{workspace}} became mounted by {{owner}}"
+                    )
+    if plan["prune_unused_images"]:
+        refreshed_images = unused_image_ids(refreshed_containers, set())
+        if refreshed_images != image_candidates:
+            raise RuntimeError("unused image set changed after dry-run validation")
+    if plan["prune_dangling_volumes"]:
+        refreshed_volumes = sorted(
+            lines("docker", "volume", "ls", "-qf", "dangling=true")
+        )
+        if refreshed_volumes != volume_candidates:
+            raise RuntimeError("dangling volume set changed after dry-run validation")
+    for row in workspace_rows:
+        workspace = row["path"]
+        if not os.path.isdir(workspace):
+            continue
+        run("find", workspace, "-xdev", "-depth", "-mindepth", "1", "-delete")
+        os.rmdir(workspace)
+    if plan["prune_unused_images"]:
+        run("docker", "image", "prune", "-a", "-f")
+    if plan["prune_dangling_volumes"]:
+        if volume_candidates:
+            run("docker", "volume", "rm", *volume_candidates)
+
+disk_after = shutil.disk_usage("/")
+result = {{
+    "bytes_before": disk_before.used,
+    "bytes_after": disk_after.used,
+    "available_before": disk_before.free,
+    "available_after": disk_after.free,
+    "containers": sorted(targets),
+    "workspaces": workspace_rows,
+    "unused_images": image_candidates,
+    "dangling_volumes": volume_candidates,
+}}
+print("ALLBOT_NODE_STORAGE_GC_RESULT=" + json.dumps(result, sort_keys=True))
+PY
+"""
+        output = self._run_remote_root_script(host, script)
+        marker = "ALLBOT_NODE_STORAGE_GC_RESULT="
+        result_line = next(
+            (line for line in reversed(output.splitlines()) if line.startswith(marker)),
+            "",
+        )
+        if not result_line:
+            raise RuntimeError("node storage GC did not return a result payload")
+        payload = json.loads(result_line[len(marker) :])
+        return {
+            "ok": True,
+            "action": "node-storage-gc",
+            "node_id": node_id,
+            "dry_run": not execute,
+            **payload,
+        }
+
+    def execute_node_storage_mutation(
+        self,
+        *,
+        node_id: str,
+        operation_id: str,
+        execute: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
+        physical_slots = self._node_physical_slots(node_id)
+        if not physical_slots:
+            raise RuntimeError(f"node storage GC has no catalog slots for {node_id}")
+        with self.state_store.mutation_lock():
+            live_before = self.live_current_snapshot(physical_slots)
+            if live_before.get("errors"):
+                raise RuntimeError(
+                    f"refusing node storage GC with live errors: {live_before['errors']}"
+                )
+            self.state_store.begin_operation(
+                operation_id,
+                action="node-storage-gc",
+                physical_slots=sorted(physical_slots),
+                request={
+                    "node_id": node_id,
+                    "catalog_sha256": self.catalog_sha256,
+                    "live_before": live_before.get("current"),
+                },
+            )
+            try:
+                result = execute()
+                live_after = self.live_current_snapshot(physical_slots)
+                if live_after.get("errors"):
+                    raise RuntimeError(
+                        f"node storage GC post-check failed: {live_after['errors']}"
+                    )
+                if live_after.get("current") != live_before.get("current"):
+                    raise RuntimeError(
+                        "node storage GC changed live current identity: "
+                        f"before={live_before.get('current')}, "
+                        f"after={live_after.get('current')}"
+                    )
+                self.state_store.finish_operation(
+                    operation_id,
+                    status="succeeded",
+                    result={
+                        "payload": result,
+                        "live_after": live_after.get("current"),
+                    },
+                )
+                return {**result, "operation_id": operation_id}
+            except Exception as exc:
+                self.state_store.finish_operation(
+                    operation_id,
+                    status="failed",
+                    error=str(exc),
+                )
+                raise
+
     def _wait_worker_ids_idle(self, targets: set[str]) -> None:
         deadline = time.time() + 7200
         while time.time() < deadline:
@@ -3915,6 +4280,7 @@ def build_parser() -> argparse.ArgumentParser:
             "pull-image",
             "warm-cache",
             "cache-gc",
+            "node-storage-gc",
             "drain-legacy",
             "wait-idle",
             "takeover",
@@ -3966,6 +4332,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--artifact", default=None)
     parser.add_argument("--rollback-ref", default=None)
+    parser.add_argument("--remove-container", action="append", default=[])
+    parser.add_argument("--remove-workspace", action="append", default=[])
+    parser.add_argument("--prune-unused-images", action="store_true")
+    parser.add_argument("--prune-dangling-volumes", action="store_true")
     return parser
 
 
@@ -4218,6 +4588,33 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
         return _handle_candidate_plan(args, ops)
     if args.action in {"state-init", "state-reconcile"}:
         return _handle_state_action(args, ops)
+    if args.action == "node-storage-gc":
+        if not args.node_id:
+            raise SystemExit("node-storage-gc requires --node-id")
+        if args.slot or args.profile or args.physical_slot:
+            raise SystemExit(
+                "node-storage-gc accepts --node-id and exact storage targets only"
+            )
+        operation_id = args.operation_id or _new_operation_id(args.action)
+        execute_gc = lambda: ops.node_storage_gc(
+            node_id=args.node_id,
+            remove_containers=args.remove_container,
+            remove_workspaces=args.remove_workspace,
+            prune_unused_images=args.prune_unused_images,
+            prune_dangling_volumes=args.prune_dangling_volumes,
+            execute=args.execute,
+        )
+        payload = (
+            ops.execute_node_storage_mutation(
+                node_id=args.node_id,
+                operation_id=operation_id,
+                execute=execute_gc,
+            )
+            if args.execute
+            else execute_gc()
+        )
+        _print_json_payload(payload)
+        return 0
     if args.action == "recover":
         return _handle_recover(args, ops)
     if args.action == "release-rollout":

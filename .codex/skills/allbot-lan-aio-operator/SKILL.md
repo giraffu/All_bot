@@ -44,6 +44,7 @@ python3 scripts/lan_aio_fleet_prod_ops.py <command> [exact target/options]
 | 只读发现 | `list`、`status`、`render`、`candidate-plan` |
 | 账本初始化/对账 | `state-init`、`state-reconcile` |
 | 镜像和模型 | `preflight`、`pull-image`、`warm-cache`、`cache-gc` |
+| 节点存储回收 | `node-storage-gc --node-id <exact-node>` |
 | 单卡切换/恢复 | `takeover`、`recover`、`restart-aio`、`retire-legacy` |
 | disabled 验收 | `canary-start-disabled`、`canary-stop-disabled` |
 | 故障隔离 | `isolate-quarantined` |
@@ -56,6 +57,10 @@ mutation 必须使用 helper 要求的 `--execute`、精确 node/GPU/slot/profil
 ## 3. 稳定事务边界
 
 - 一次只操作一个 physical GPU/slot；禁止跨节点批量切换。
+- Docker daemon 的未引用镜像/悬空卷属于节点级资源，只能通过
+  `node-storage-gc` 的精确单节点例外处理。该动作必须显式列出待删容器和
+  workspace，默认 dry-run；当前台账容器、运行容器、跨节点目录或被非目标容器
+  挂载的 workspace 一律拒绝。它不切换 profile、不停止 current runtime。
 - 切换前必须证明 Central 与 ComfyUI 都无 running task；等待自然空闲，不强杀。
 - `takeover` 负责 drain → disabled candidate → health/heartbeat → enable → ledger
   commit；失败按 helper 的 auto rollback 收口，不能拆成手工 Docker 步骤。
