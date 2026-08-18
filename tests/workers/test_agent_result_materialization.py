@@ -46,6 +46,15 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
         "_extract_last_frame_from_video_bytes",
         lambda _video_bytes, _logger: b"png-bytes",
     )
+    monkeypatch.setattr(
+        materialization,
+        "_probe_materialized_media_metadata",
+        lambda _payload, content_type: (
+            (1280, 720, 5.25)
+            if content_type == "video/mp4"
+            else (640, 360, None)
+        ),
+    )
     execution = SimpleNamespace(
         prompt_id="prompt-1",
         task_id="task-1",
@@ -64,11 +73,24 @@ async def test_materialize_wan22_aio_extracts_fallback_last_frame(monkeypatch):
     )
 
     assert outputs.primary.object_name == "task-1__image_to_video_42_video_00001.mp4"
+    assert (outputs.primary.width, outputs.primary.height) == (1280, 720)
+    assert outputs.primary.duration == 5.25
     assert outputs.extra_outputs["last_frame"].object_name == (
         "task-1__image_to_video_42_last_frame_00001.png"
     )
     assert outputs.extra_outputs["last_frame"].media_type == "image"
     assert outputs.extra_outputs["last_frame"].file_data == b"png-bytes"
+    assert (
+        outputs.extra_outputs["last_frame"].width,
+        outputs.extra_outputs["last_frame"].height,
+    ) == (640, 360)
+
+
+def test_materialized_image_metadata_uses_actual_decoded_dimensions():
+    assert materialization._probe_materialized_media_metadata(
+        _png("black"),
+        "image/png",
+    ) == (32, 32, None)
 
 
 @pytest.mark.asyncio

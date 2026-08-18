@@ -20,6 +20,9 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
             object_name="history/task-1/original.png",
             content_type="image/png",
             file_data=b"primary",
+            width=512,
+            height=768,
+            duration=None,
         ),
         extra_outputs={
             "last_frame": SimpleNamespace(
@@ -27,6 +30,9 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
                 content_type="image/png",
                 media_type="image",
                 file_data=b"extra",
+                width=512,
+                height=768,
+                duration=None,
             )
         },
     )
@@ -48,6 +54,8 @@ async def test_spool_materialized_outputs_writes_primary_and_extra_files(tmp_pat
         "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494"
     )
     assert spooled.primary.byte_size == 7
+    assert spooled.primary.width == 512
+    assert spooled.primary.height == 768
     assert spooled.extra_outputs["last_frame"].media_type == "image"
     assert spooled.extra_outputs["last_frame"].object_name == (
         "staging/worker-results/task-1/extras/last_frame-0.png"
@@ -102,6 +110,8 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
             content_type="image/png",
             sha256="a" * 64,
             byte_size=7,
+            width=512,
+            height=768,
         ),
         extra_outputs={
             "last_frame": reporting.SpooledOutputAsset(
@@ -111,6 +121,8 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
                 media_type="image",
                 sha256="b" * 64,
                 byte_size=5,
+                width=512,
+                height=768,
             )
         },
     )
@@ -128,6 +140,8 @@ async def test_upload_spooled_outputs_via_sidecar_returns_extra_outputs(monkeypa
     assert requests[0][0] == "/api/local/upload-result"
     assert requests[0][1]["primary"]["object_name"] == "primary.png"
     assert requests[0][1]["primary"]["sha256"] == "a" * 64
+    assert requests[0][1]["primary"]["width"] == 512
+    assert requests[0][1]["primary"]["height"] == 768
     assert client_timeouts[0].connect == 10.0
     assert client_timeouts[0].read is None
     assert client_timeouts[0].write == 30.0
@@ -158,6 +172,9 @@ async def test_direct_upload_uses_staging_keys_and_reports_integrity_metadata():
             object_name="raw.png",
             content_type="image/png",
             file_data=b"primary",
+            width=512,
+            height=768,
+            duration=None,
         ),
         extra_outputs={
             "last_frame": SimpleNamespace(
@@ -165,6 +182,9 @@ async def test_direct_upload_uses_staging_keys_and_reports_integrity_metadata():
                 content_type="image/png",
                 media_type="image",
                 file_data=b"extra",
+                width=512,
+                height=768,
+                duration=None,
             )
         },
     )
@@ -187,6 +207,8 @@ async def test_direct_upload_uses_staging_keys_and_reports_integrity_metadata():
         "sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
         "byte_size": 7,
         "content_type": "image/png",
+        "width": 512,
+        "height": 768,
     }
     assert uploads[0][5]["sha256"] == payload["result_asset"]["sha256"]
 

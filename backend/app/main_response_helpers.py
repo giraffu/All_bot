@@ -420,6 +420,10 @@ async def build_task_status_response(
         result_path = task.get("result_path")
         extra_outputs = queue_manager._maybe_parse_json_dict(task.get("extra_outputs"))
         result_meta = queue_manager._maybe_parse_json_dict(task.get("result_meta"))
+        result_asset = queue_manager._maybe_parse_json_dict(task.get("result_asset"))
+        extra_output_assets = queue_manager._maybe_parse_json_dict(
+            task.get("extra_output_assets")
+        )
         response_kwargs = {
             "status": status,
             "queue_pos": queue_pos,
@@ -432,6 +436,8 @@ async def build_task_status_response(
             "result_kind": task.get("result_kind") or None,
             "result_text": task.get("result_text") or None,
             "result_meta": result_meta,
+            "result_asset": result_asset,
+            "extra_output_assets": extra_output_assets,
             "cancel_requested": queue_manager._as_bool(task.get("cancel_requested")),
             "cancel_requested_at": (
                 float(task["cancel_requested_at"])

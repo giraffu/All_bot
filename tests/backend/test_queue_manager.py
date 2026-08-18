@@ -1485,6 +1485,38 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
 
 
 @pytest.mark.asyncio
+async def test_complete_task_persists_durable_asset_metadata_for_consumers():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-asset"
+    result_asset = {
+        "object_key": "task-results/task-asset/primary.png",
+        "sha256": "a" * 64,
+        "byte_size": 7,
+        "content_type": "image/png",
+        "width": 512,
+        "height": 512,
+    }
+    await redis.hset(
+        task_key,
+        mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.RUNNING},
+    )
+    await redis.sadd(manager.running_key, "task-asset")
+
+    await manager.complete_task(
+        "task-asset",
+        result_asset["object_key"],
+        result_asset=result_asset,
+        extra_output_assets={},
+    )
+
+    assert json.loads(redis.hashes[task_key]["result_asset"]) == result_asset
+    event = json.loads(redis.published[-1][1])
+    assert event["result_asset"] == result_asset
+    assert event["extra_output_assets"] == {}
+
+
+@pytest.mark.asyncio
 async def test_complete_task_falls_back_to_edit_when_type_missing():
     redis = _FakeRedis()
     manager = QueueManager(redis)

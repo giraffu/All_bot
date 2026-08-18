@@ -26,6 +26,7 @@ class TaskTerminalSnapshot:
     result_kind: str | None = None
     result_text: str | None = None
     result_meta: dict[str, Any] | None = None
+    result_asset: dict[str, Any] | None = None
     error: str | None = None
     message: str | None = None
 
@@ -62,6 +63,7 @@ def build_task_terminal_snapshot(
     result_kind: str | None = None,
     result_text: str | None = None,
     result_meta: dict[str, Any] | None = None,
+    result_asset: dict[str, Any] | None = None,
     error: str | None = None,
     message: str | None = None,
 ) -> TaskTerminalSnapshot:
@@ -72,6 +74,7 @@ def build_task_terminal_snapshot(
         result_kind=result_kind,
         result_text=result_text,
         result_meta=result_meta,
+        result_asset=result_asset,
         error=error,
         message=message,
     )

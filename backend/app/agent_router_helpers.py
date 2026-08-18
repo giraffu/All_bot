@@ -219,6 +219,10 @@ async def complete_task_payload(
         task_id=task_id,
     )
     completion_kwargs = {"extra_outputs": extra_outputs}
+    if promoted.result_asset is not None:
+        completion_kwargs["result_asset"] = promoted.result_asset
+    if promoted.extra_output_assets is not None:
+        completion_kwargs["extra_output_assets"] = promoted.extra_output_assets
     if result_kind is not None:
         completion_kwargs["result_kind"] = result_kind
     if result_text is not None:

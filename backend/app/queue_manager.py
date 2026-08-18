@@ -620,6 +620,8 @@ class QueueManager:
             "result_kind": "",
             "result_text": "",
             "result_meta": "",
+            "result_asset": "",
+            "extra_output_assets": "",
             "trace_id": trace_id,
         }
 
@@ -860,6 +862,8 @@ class QueueManager:
         result_kind: str | None = None,
         result_text: str | None = None,
         result_meta: dict[str, Any] | None = None,
+        result_asset: dict[str, Any] | None = None,
+        extra_output_assets: dict[str, Any] | None = None,
     ):
         await complete_task_flow(
             task_id=task_id,
@@ -868,6 +872,8 @@ class QueueManager:
             result_kind=result_kind,
             result_text=result_text,
             result_meta=result_meta,
+            result_asset=result_asset,
+            extra_output_assets=extra_output_assets,
             get_task_type_func=self._get_task_type,
             persist_task_update_func=self._persist_task_update,
             done_status=TaskStatus.DONE,

@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -25,6 +26,9 @@ class MaterializedPrimaryResult:
     view_type: str
     content_type: str
     file_data: bytes
+    width: int | None = None
+    height: int | None = None
+    duration: float | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,9 @@ class MaterializedExtraOutput:
     media_type: str
     content_type: str
     file_data: bytes
+    width: int | None = None
+    height: int | None = None
+    duration: float | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,53 @@ def _resolve_content_type(file_name: str) -> str:
     if lower_name.endswith(".jpg") or lower_name.endswith(".jpeg"):
         return "image/jpeg"
     return "image/png"
+
+
+def _probe_materialized_media_metadata(
+    payload: bytes,
+    content_type: str,
+) -> tuple[int | None, int | None, float | None]:
+    if not payload:
+        return None, None, None
+    if content_type.startswith("image/"):
+        try:
+            with Image.open(io.BytesIO(payload)) as image:
+                return int(image.width), int(image.height), None
+        except Exception:
+            return None, None, None
+    if not content_type.startswith("video/"):
+        return None, None, None
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.mp4"
+            input_path.write_bytes(payload)
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height:format=duration",
+                    "-of",
+                    "json",
+                    str(input_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        if result.returncode != 0:
+            return None, None, None
+        probed = json.loads(result.stdout or "{}")
+        stream = next(iter(probed.get("streams") or []), {})
+        width = int(stream.get("width") or 0) or None
+        height = int(stream.get("height") or 0) or None
+        duration = float((probed.get("format") or {}).get("duration") or 0) or None
+        return width, height, duration
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None, None, None
 
 
 def _build_fallback_last_frame_object_name(primary_object_name: str) -> str:
@@ -233,6 +287,12 @@ async def _materialize_character_reference(
     result_name = f"{execution.task_id}_character_reference.png"
     execution.task_result = result_name
     execution.task_result_priority = 0
+    payload = await asyncio.to_thread(_compose_character_sheet, image_bytes)
+    width, height, duration = await asyncio.to_thread(
+        _probe_materialized_media_metadata,
+        payload,
+        "image/png",
+    )
     return MaterializedTaskOutputs(
         primary=MaterializedPrimaryResult(
             object_name=result_name,
@@ -240,7 +300,10 @@ async def _materialize_character_reference(
             subfolder="",
             view_type="output",
             content_type="image/png",
-            file_data=await asyncio.to_thread(_compose_character_sheet, image_bytes),
+            file_data=payload,
+            width=width,
+            height=height,
+            duration=duration,
         ),
         extra_outputs={},
     )
@@ -274,6 +337,11 @@ async def _materialize_character_reference_view(
     result_name = f"{execution.task_id}_character_reference_view_{view_index:02d}.png"
     execution.task_result = result_name
     execution.task_result_priority = 0
+    width, height, duration = await asyncio.to_thread(
+        _probe_materialized_media_metadata,
+        payload,
+        "image/png",
+    )
     return MaterializedTaskOutputs(
         primary=MaterializedPrimaryResult(
             object_name=result_name,
@@ -282,6 +350,9 @@ async def _materialize_character_reference_view(
             view_type="output",
             content_type="image/png",
             file_data=payload,
+            width=width,
+            height=height,
+            duration=duration,
         ),
         extra_outputs={},
     )
@@ -345,13 +416,22 @@ async def materialize_task_outputs(
         original_subfolder,
         type=view_type,
     )
+    primary_content_type = _resolve_content_type(original_filename)
+    primary_width, primary_height, primary_duration = await asyncio.to_thread(
+        _probe_materialized_media_metadata,
+        primary_bytes,
+        primary_content_type,
+    )
     primary = MaterializedPrimaryResult(
         object_name=execution.task_result,
         file_name=original_filename,
         subfolder=original_subfolder,
         view_type=view_type,
-        content_type=_resolve_content_type(original_filename),
+        content_type=primary_content_type,
         file_data=primary_bytes,
+        width=primary_width,
+        height=primary_height,
+        duration=primary_duration,
     )
 
     materialized_extra_outputs: dict[str, MaterializedExtraOutput] = {}
@@ -366,11 +446,20 @@ async def materialize_task_outputs(
             extra_subfolder,
             type=extra_view_type,
         )
+        extra_content_type = _resolve_content_type(extra_filename)
+        extra_width, extra_height, extra_duration = await asyncio.to_thread(
+            _probe_materialized_media_metadata,
+            extra_file_data,
+            extra_content_type,
+        )
         materialized_extra_outputs[name] = MaterializedExtraOutput(
             object_name=extra_output["path"],
             media_type=extra_output.get("media_type", "image"),
-            content_type=_resolve_content_type(extra_filename),
+            content_type=extra_content_type,
             file_data=extra_file_data,
+            width=extra_width,
+            height=extra_height,
+            duration=extra_duration,
         )
 
     if (
@@ -384,11 +473,21 @@ async def materialize_task_outputs(
             logger,
         )
         if fallback_last_frame:
+            fallback_width, fallback_height, fallback_duration = (
+                await asyncio.to_thread(
+                    _probe_materialized_media_metadata,
+                    fallback_last_frame,
+                    "image/png",
+                )
+            )
             materialized_extra_outputs["last_frame"] = MaterializedExtraOutput(
                 object_name=_build_fallback_last_frame_object_name(primary.object_name),
                 media_type="image",
                 content_type="image/png",
                 file_data=fallback_last_frame,
+                width=fallback_width,
+                height=fallback_height,
+                duration=fallback_duration,
             )
 
     return MaterializedTaskOutputs(

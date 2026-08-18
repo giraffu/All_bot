@@ -30,6 +30,7 @@ async def _persist_successful_web_history(
     allow_contribute: bool,
     is_video: bool,
     result_path: str,
+    result_asset: dict[str, object] | None = None,
     extra_outputs: dict[str, object] | None = None,
     billing_resolution: str | None,
     output_width: int | None,
@@ -47,6 +48,9 @@ async def _persist_successful_web_history(
             warmup_web_history=True,
         )
 
+    asset_options = {}
+    if result_asset is not None:
+        asset_options["result_asset"] = result_asset
     await persist_successful_task_result_func(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,
@@ -65,6 +69,7 @@ async def _persist_successful_web_history(
         output_duration=output_duration,
         requested_duration=requested_duration,
         postprocess_plan=postprocess_plan,
+        **asset_options,
     )
 
 
@@ -149,6 +154,7 @@ async def persist_successful_task_result_command(
         output_height=command.output_height,
         output_duration=command.output_duration,
         result_path=command.result_path,
+        result_asset=command.result_asset,
         extra_outputs=command.extra_outputs,
         refresh_user_group_after_log=command.refresh_user_group_after_log,
         warmup_web_history=command.warmup_web_history,
@@ -191,6 +197,7 @@ async def persist_successful_task_result(
     output_height: int | None = None,
     output_duration: int | None = None,
     result_path: str | None = None,
+    result_asset: dict[str, object] | None = None,
     extra_outputs: dict[str, object] | None = None,
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
@@ -226,6 +233,7 @@ async def persist_successful_task_result(
             output_height=output_height,
             output_duration=output_duration,
             result_path=result_path,
+            result_asset=result_asset,
             extra_outputs=extra_outputs,
             source=source,
             refresh_user_group_after_log=refresh_user_group_after_log,
@@ -272,6 +280,7 @@ async def persist_successful_task_result_default(
     output_height: int | None = None,
     output_duration: int | None = None,
     result_path: str | None = None,
+    result_asset: dict[str, object] | None = None,
     extra_outputs: dict[str, object] | None = None,
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
@@ -296,6 +305,7 @@ async def persist_successful_task_result_default(
         output_height=output_height,
         output_duration=output_duration,
         result_path=result_path,
+        result_asset=result_asset,
         extra_outputs=extra_outputs,
         source=source,
         refresh_user_group_after_log=refresh_user_group_after_log,
@@ -317,6 +327,7 @@ async def persist_successful_web_history_default(
     allow_contribute: bool,
     is_video: bool,
     result_path: str,
+    result_asset: dict[str, object] | None = None,
     extra_outputs: dict[str, object] | None = None,
     billing_resolution: str | None,
     output_width: int | None,
@@ -336,6 +347,7 @@ async def persist_successful_web_history_default(
         allow_contribute=allow_contribute,
         is_video=is_video,
         result_path=result_path,
+        result_asset=result_asset,
         extra_outputs=extra_outputs,
         billing_resolution=billing_resolution,
         output_width=output_width,

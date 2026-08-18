@@ -95,6 +95,9 @@ manifest 和专项文档读取，不在此维护快照。
   config 和 patcher fail closed；未知选项不得忽略。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
+- Worker `result_asset` 以实际输出 bytes 计算 SHA/size/content type，并尽力探测
+  实际 width/height/duration；字段保持向后兼容，但新 Worker 不得用请求参数冒充
+  实际媒体 metadata。
 - 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试
   `ltx_t2v_ic` 固定恰好两个有序人物面板和一张环境图；角色可混用用户私有与
   published 官方角色，环境可选 published 官方单图或当前用户临时上传单图，采用 Runexx 的

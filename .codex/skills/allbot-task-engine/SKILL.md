@@ -93,6 +93,10 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
   Worker 重启且本地 execution 不存在时可恢复接纳。
 - `gpu_done` 只表示释放 Comfy 槽；结果上传成功且 Central `/complete` 确认后
   才能终态。claimed、execution、delivery 和 reserved 都计入对应有界容量。
+- 新 Worker media completion 携带 SHA-256、byte size、content type 和可选实际
+  维度。Central 只完整校验 staging 一次（原生 checksum 可零读取），durable
+  copy 后只 HEAD；Web 仅在 durable key 与完整可信 metadata 一致时零下载写
+  History，legacy/缺字段必须保留下载兜底。
 - 文本 Worker 的 `text_delta`/snapshot 仅属于可恢复运行态；attempt、sequence、
   owner 和字段契约必须在 Central 原子校验。重复 chunk 不重复追加，跳号用快照
   修复；计费、退款和成功持久化仍只跟随权威终态。

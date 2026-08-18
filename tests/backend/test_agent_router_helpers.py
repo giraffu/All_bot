@@ -667,6 +667,15 @@ async def test_complete_task_promotes_new_worker_assets_before_marking_done():
         return_value=SimpleNamespace(
             result_path="task-results/task-1/primary.png",
             extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+            result_asset={
+                "object_key": "task-results/task-1/primary.png",
+                "sha256": "a" * 64,
+                "byte_size": 7,
+                "content_type": "image/png",
+                "width": 512,
+                "height": 512,
+            },
+            extra_output_assets={},
         )
     )
 
@@ -688,6 +697,15 @@ async def test_complete_task_promotes_new_worker_assets_before_marking_done():
         "task-1",
         "task-results/task-1/primary.png",
         extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+        result_asset={
+            "object_key": "task-results/task-1/primary.png",
+            "sha256": "a" * 64,
+            "byte_size": 7,
+            "content_type": "image/png",
+            "width": 512,
+            "height": 512,
+        },
+        extra_output_assets={},
     )
 
 

@@ -89,7 +89,9 @@ sequenceDiagram
   `web_uploads/` 或数字用户目录当作待提交临时区。
 - `task_submission_service` 在正式排队前将 staging 输入服务端复制到
   `task-inputs/{registry_task_id}/{ordinal}.<ext>`；只有持久 key 可进入队列、
-  History 和媒体归档 outbox。复制失败时不提交任务。
+  History 和媒体归档 outbox。每个 source 只计算一次 SHA-256，copy 写入可信
+  metadata，目标只做 HEAD；provider 原生 checksum 可免应用层读取。多输入保持
+  原顺序并使用默认 3 的有界并发。复制失败时不提交任务。
 - `user-data-prod` 的对象过期规则只能匹配 `staging/` 前缀并保留 1 天；
   `history/`、`task-results/`、`task-inputs/`、`web_uploads/`、数字用户目录、
   `template-submissions/` 和兼容期 `temps/` 不在该规则内。新模板投稿只写

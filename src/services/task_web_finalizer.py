@@ -475,6 +475,9 @@ async def _finalize_pending_web_success(
         )
         await remove_record_func()
         return
+    asset_options = {}
+    if terminal_snapshot.result_asset is not None:
+        asset_options["result_asset"] = terminal_snapshot.result_asset
     await finalize_monitored_web_task_success_default(
         backend_task_id=record["backend_task_id"],
         internal_user_id=record["internal_user_id"],
@@ -484,6 +487,7 @@ async def _finalize_pending_web_success(
         result_path=terminal_snapshot.result_path,
         extra_outputs=terminal_snapshot.extra_outputs,
         logger_override=logger,
+        **asset_options,
     )
     await remove_record_func()
 
@@ -556,6 +560,7 @@ async def _finalize_terminal_record(
         result_kind=status_data.get("result_kind"),
         result_text=status_data.get("result_text"),
         result_meta=status_data.get("result_meta"),
+        result_asset=status_data.get("result_asset"),
         error=status_data.get("error") or status_data.get("error_msg"),
         message=status_data.get("message"),
     )

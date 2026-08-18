@@ -3,18 +3,34 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import re
 from typing import Any
 
-from minio.commonconfig import CopySource
+from minio.commonconfig import CopySource, REPLACE
 from minio.error import S3Error
 
 from shared.r2_retention_contract import build_task_result_key
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_io_metrics: Counter[str] = Counter()
+
+
+def get_result_storage_io_metrics() -> dict[str, int]:
+    return {
+        key: int(_io_metrics.get(key, 0))
+        for key in (
+            "head_requests",
+            "copy_operations",
+            "application_full_reads",
+            "application_full_read_bytes",
+            "native_checksum_verifications",
+        )
+    }
 
 
 class ResultPromotionError(RuntimeError):
@@ -28,6 +44,8 @@ class ResultPromotionError(RuntimeError):
 class PromotedCompletion:
     result_path: str
     extra_outputs: dict[str, Any] | None
+    result_asset: dict[str, Any] | None = None
+    extra_output_assets: dict[str, Any] | None = None
 
 
 def _metadata_sha256(stat: Any) -> str:
@@ -39,6 +57,26 @@ def _metadata_sha256(stat: Any) -> str:
     return ""
 
 
+def _native_sha256(stat: Any) -> str:
+    metadata = getattr(stat, "metadata", None) or {}
+    candidates = [
+        getattr(stat, "checksum_sha256", None),
+        metadata.get("x-amz-checksum-sha256"),
+        metadata.get("X-Amz-Checksum-Sha256"),
+    ]
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if _SHA256.fullmatch(value.lower()):
+            return value.lower()
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (ValueError, TypeError):
+            continue
+        if len(decoded) == 32:
+            return decoded.hex()
+    return ""
+
+
 def _is_not_found(exc: Exception) -> bool:
     if isinstance(exc, S3Error):
         return exc.code in {"NoSuchKey", "NoSuchObject", "NotFound"}
@@ -46,6 +84,7 @@ def _is_not_found(exc: Exception) -> bool:
 
 
 def _stat_optional(client, bucket: str, key: str):
+    _io_metrics["head_requests"] += 1
     try:
         return client.stat_object(bucket, key)
     except Exception as exc:
@@ -80,14 +119,18 @@ def _matches(stat: Any, *, sha256: str, byte_size: int) -> bool:
 def _object_sha256(client, bucket: str, key: str) -> str:
     response = client.get_object(bucket, key)
     digest = hashlib.sha256()
+    bytes_read = 0
     try:
         for chunk in iter(lambda: response.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
+            bytes_read += len(chunk)
     finally:
         response.close()
         release = getattr(response, "release_conn", None)
         if callable(release):
             release()
+    _io_metrics["application_full_reads"] += 1
+    _io_metrics["application_full_read_bytes"] += bytes_read
     return digest.hexdigest()
 
 
@@ -99,28 +142,44 @@ def _promote_one(
     durable_key: str,
     sha256: str,
     byte_size: int,
+    content_type: str,
 ) -> None:
     durable_stat = _stat_optional(client, bucket, durable_key)
     if durable_stat is not None:
-        if _matches(
-            durable_stat, sha256=sha256, byte_size=byte_size
-        ) and _object_sha256(client, bucket, durable_key) == sha256:
+        if _matches(durable_stat, sha256=sha256, byte_size=byte_size):
             return
-        raise ResultPromotionError("durable result exists with different content", code="durable_content_conflict")
+        raise ResultPromotionError(
+            "durable result exists with different content",
+            code="durable_content_conflict",
+        )
 
     staging_stat = _stat_optional(client, bucket, staging_key)
     if staging_stat is None or not _matches(
         staging_stat, sha256=sha256, byte_size=byte_size
     ):
         raise ResultPromotionError("staging result integrity validation failed", code="staging_integrity_failed")
-    if _object_sha256(client, bucket, staging_key) != sha256:
+    native_sha256 = _native_sha256(staging_stat)
+    if native_sha256:
+        _io_metrics["native_checksum_verifications"] += 1
+    if native_sha256 and native_sha256 != sha256:
+        raise ResultPromotionError(
+            "staging result native checksum validation failed",
+            code="staging_native_checksum_failed",
+        )
+    if not native_sha256 and _object_sha256(client, bucket, staging_key) != sha256:
         raise ResultPromotionError("staging result SHA-256 validation failed", code="staging_sha256_failed")
     try:
         client.copy_object(
             bucket,
             durable_key,
             CopySource(bucket, staging_key),
+            metadata={
+                "sha256": sha256,
+                "Content-Type": content_type or "application/octet-stream",
+            },
+            metadata_directive=REPLACE,
         )
+        _io_metrics["copy_operations"] += 1
     except Exception as exc:
         raise ResultPromotionError("R2 staging promotion copy failed", code="durable_copy_failed", retryable=True) from exc
     durable_stat = _stat_optional(client, bucket, durable_key)
@@ -128,8 +187,37 @@ def _promote_one(
         durable_stat, sha256=sha256, byte_size=byte_size
     ):
         raise ResultPromotionError("durable result verification failed after copy", code="durable_verification_failed", retryable=True)
-    if _object_sha256(client, bucket, durable_key) != sha256:
-        raise ResultPromotionError("durable result SHA-256 validation failed after copy", code="durable_sha256_failed")
+
+
+def _durable_asset_payload(
+    asset: dict[str, Any],
+    *,
+    object_key: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "object_key": object_key,
+        "sha256": str(asset.get("sha256") or "").strip().lower(),
+        "byte_size": int(asset["byte_size"]),
+        "content_type": str(asset.get("content_type") or "").strip(),
+    }
+    for field in ("width", "height"):
+        try:
+            value = int(asset.get(field))
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            payload[field] = value
+    try:
+        duration = float(asset.get("duration"))
+    except (TypeError, ValueError):
+        duration = 0
+    if duration > 0:
+        payload["duration"] = duration
+    if asset.get("media_type"):
+        payload["media_type"] = str(asset["media_type"])
+    if asset.get("ordinal") is not None:
+        payload["ordinal"] = int(asset["ordinal"])
+    return payload
 
 
 async def promote_completion_assets(
@@ -170,6 +258,7 @@ async def promote_completion_assets(
         durable_key=durable_result,
         sha256=sha256,
         byte_size=byte_size,
+        content_type=str(result_asset.get("content_type") or ""),
     )
 
     original_extras = dict(extra_outputs or {})
@@ -177,6 +266,7 @@ async def promote_completion_assets(
     if set(original_extras) != set(asset_extras):
         raise ResultPromotionError("extra output asset contract is incomplete", code="extra_asset_contract_incomplete")
     promoted_extras: dict[str, Any] = {}
+    promoted_extra_assets: dict[str, Any] = {}
     for name, original in original_extras.items():
         asset = asset_extras[name]
         extra_staging, extra_sha, extra_size = _validate_asset(
@@ -199,12 +289,22 @@ async def promote_completion_assets(
             durable_key=durable_extra,
             sha256=extra_sha,
             byte_size=extra_size,
+            content_type=str(asset.get("content_type") or ""),
         )
         promoted_extras[name] = {
             **dict(original or {}),
             "path": durable_extra,
         }
+        promoted_extra_assets[name] = _durable_asset_payload(
+            asset,
+            object_key=durable_extra,
+        )
     return PromotedCompletion(
         result_path=durable_result,
         extra_outputs=promoted_extras,
+        result_asset=_durable_asset_payload(
+            result_asset,
+            object_key=durable_result,
+        ),
+        extra_output_assets=promoted_extra_assets,
     )

@@ -85,9 +85,12 @@ sequenceDiagram
 - Central Redis 连接瞬断重试耗尽时，执行面 API 统一返回 `503 Service Unavailable` 与 `Retry-After: 2`，语义是控制面 Redis 暂时不可用、上游可按忙碌/补偿路径处理；排障时应区别于业务参数错误和 Worker 执行失败。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。媒体 Worker 先写
   `staging/worker-results/{backend_task_id}/...`，并上报 `staging_key`、
-  `sha256`、`byte_size` 和 `content_type`。Central 在任何 done 终态写入前将
-  staging 对象服务端复制到 `task-results/{backend_task_id}/...`，复验大小、
-  SHA-256 和元数据后才确认完成。复制与重复 `/complete` 必须幂等；
+  `sha256`、`byte_size`、`content_type`，以及可选的实际
+  `width/height/duration`。Central 在任何 done 终态写入前校验 staging：
+  provider 有原生 SHA-256 时不读取对象，否则只流式完整读取 staging 一次。
+  随后以已验证 SHA metadata 服务端复制到
+  `task-results/{backend_task_id}/...`，目标只用 HEAD 复验大小和 hash
+  metadata，不再第二次完整下载 durable 对象。复制与重复 `/complete` 必须幂等；
   不完整、跨任务或校验不符的 staging 报文直接拒绝，不得先写 done。
   旧 Worker 不携资产元数据时仅在一个兼容发布周期内沿用原
   `result_path`；全部媒体 Worker 切换后将
@@ -98,7 +101,8 @@ sequenceDiagram
   `result_promotion_rejected` 结构化日志记录 code/task/agent；受 agent token
   保护的 `GET /api/agent/task/result-storage-metrics` 返回当前进程按 code 聚合的
   失败计数，以及 `asset_contract`、`legacy_media`、`text` 完成计数和媒体新契约
-  覆盖率。成功请求同时写 `result_completion_accepted` 结构化日志，供按 agent
+  覆盖率；`io` 同时记录 HEAD、copy、原生 checksum 和应用层完整读取次数/字节数。
+  成功请求同时写 `result_completion_accepted` 结构化日志，供按 agent
   审计；这些进程内计数重启后不作为持久账本。
   文本结果不依赖媒体资产契约。Worker 端必须对完成回报进行有限重试，全部失败后
   显式失败。

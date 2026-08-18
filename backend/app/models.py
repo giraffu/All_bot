@@ -102,6 +102,8 @@ class TaskStatusResponse(BaseModel):
     result_kind: Optional[str] = None
     result_text: Optional[str] = None
     result_meta: Optional[Dict[str, Any]] = None
+    result_asset: Optional[Dict[str, Any]] = None
+    extra_output_assets: Optional[Dict[str, Any]] = None
     cancel_requested: Optional[bool] = None
     cancel_requested_at: Optional[float] = None
     cancel_locked: Optional[bool] = None
