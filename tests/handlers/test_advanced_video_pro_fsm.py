@@ -79,7 +79,7 @@ async def test_pro_t2v_settings_route_directly_to_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pro_settings_hide_model_internals_but_keep_six_effect_choices(monkeypatch):
+async def test_pro_settings_hide_model_internals_but_keep_eight_effect_choices(monkeypatch):
     edit = AsyncMock()
     monkeypatch.setattr(fsm, "robust_edit_text", edit)
     query = SimpleNamespace(data="avp_mode_t2v", answer=AsyncMock(), message=object())
@@ -106,6 +106,8 @@ async def test_pro_settings_hide_model_internals_but_keep_six_effect_choices(mon
         "LoRA",
         "NaughtyTimes",
         "HMNSFW",
+        "Motion Booster",
+        "Mystic XXX",
         "HMBreasts",
         "VagAssist",
         "HMPussy",
@@ -115,11 +117,15 @@ async def test_pro_settings_hide_model_internals_but_keep_six_effect_choices(mon
     assert "效果增强：未启用" in settings_text
     assert "成人动作测试一" in button_text
     assert "成人动作测试二" in button_text
+    assert "成人动作强化" in button_text
+    assert "人体结构增强" in button_text
     assert "全选效果" in button_text
     assert "清空效果" in button_text
     callbacks = [button.callback_data for row in keyboard for button in row]
     assert "avp_addon_naughty_times" in callbacks
     assert "avp_addon_sex_pose" in callbacks
+    assert "avp_addon_motion_booster" in callbacks
+    assert "avp_addon_mystic_xxx" in callbacks
     assert "avp_addon_breasts" in callbacks
     assert "avp_addon_vagassist" in callbacks
     assert "avp_addon_pussy" in callbacks

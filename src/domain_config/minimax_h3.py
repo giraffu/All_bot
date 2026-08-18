@@ -83,6 +83,21 @@ MINIMAX_H3_ADDON_MODELS = {
         0.5,
         "hmmotion",
     ),
+    "motion_booster": MiniMaxH3AddonModel(
+        "motion_booster",
+        "H3 Motion Booster v2（成人动作强化）",
+        "H3 Motion Booster v2 (adult motion boost)",
+        "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
+        0.7,
+        "dynv2",
+    ),
+    "mystic_xxx": MiniMaxH3AddonModel(
+        "mystic_xxx",
+        "Mystic XXX v1（人体结构增强）",
+        "Mystic XXX v1 (anatomy enhancement)",
+        "MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
+        0.75,
+    ),
     "breasts": MiniMaxH3AddonModel(
         "breasts",
         "HMBreasts（乳房）",
@@ -169,7 +184,9 @@ def normalize_minimax_h3_addon_items(
     if not isinstance(raw_items, (list, tuple)):
         raise MiniMaxH3ValidationError("附加模型必须为有序数组。")
     if len(raw_items) > len(MINIMAX_H3_ADDON_MODELS):
-        raise MiniMaxH3ValidationError("附加模型必须为最多 6 项的数组。")
+        raise MiniMaxH3ValidationError(
+            f"附加模型必须为最多 {len(MINIMAX_H3_ADDON_MODELS)} 项的数组。"
+        )
     result: list[MiniMaxH3AddonSelection] = []
     seen: set[str] = set()
     for raw in raw_items:

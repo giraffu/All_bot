@@ -27,7 +27,7 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
 - `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
-  目录的事实源。新请求使用最多 6 个有序 `lora_items[{name,strength}]`，强度限定
+  目录的事实源。新请求使用最多 8 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
   主模型、采样器、steps、timeline、本地路径或参考音视频。
@@ -83,8 +83,9 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-六个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
-（0.5）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6（0.35）与 HMPenis v2
+八个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v1（0.75，
+无触发词）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6（0.35）与 HMPenis v2
 （1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。目录一项只映射一个物理
 文件，避免同一 LoRA 以别名被重复加载。
 
@@ -96,7 +97,7 @@ Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再
 25 steps。输出继续解码 H3 原生同步音轨。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包不包含
-REF2VA 或 RedMix，但包含上述六个可选 LoRA。旧 checkpoint、
+REF2VA 或 RedMix，但包含上述八个可选 LoRA。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续三模式 GPU canary 才能定论。
@@ -108,8 +109,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-16-10eros-beta2-addon6-lightx2v8-v1`、11 个文件的字节数与
-SHA256，总计 67,788,745,063 bytes（63.13 GiB）。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-18-10eros-beta2-addon8-lightx2v8-v1`、13 个文件的字节数与
+SHA256，总计 68,540,306,863 bytes（63.83 GiB）。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

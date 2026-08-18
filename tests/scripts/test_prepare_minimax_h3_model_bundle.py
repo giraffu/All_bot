@@ -7,7 +7,7 @@ from ops.gpu_pool_controller.model_repo import ModelRegistry
 from scripts import prepare_minimax_h3_model_bundle as module
 
 
-def test_split_author_stack_uses_exact_eleven_pinned_assets():
+def test_split_author_stack_uses_exact_thirteen_pinned_assets():
     files = {entry[0]: entry for entry in module.FILES}
 
     assert files[
@@ -38,6 +38,16 @@ def test_split_author_stack_uses_exact_eleven_pinned_assets():
         "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
         310_168_344,
     )
+    assert files["loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors"][1:4] == (
+        "f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3",
+        155_110_272,
+        "https://civitai.red/api/download/models/3228867?fileId=3111185",
+    )
+    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V1.safetensors"][1:4] == (
+        "7dd837f4c5420d4ec59f3ff1757b3f9d264a6c0f120d65d9c4f59c77584dd0be",
+        596_451_528,
+        "https://civitai.red/api/download/models/3226233?fileId=3108441",
+    )
     assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
         "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
         310_168_344,
@@ -54,7 +64,7 @@ def test_split_author_stack_uses_exact_eleven_pinned_assets():
         "c6c58e9fee848b45e99f97d2520aba4ac63dfc354c07e13c29ac5d8a31a68060",
         310_168_344,
     )
-    assert len(files) == 11
+    assert len(files) == 13
 
 
 def test_naughtytimes_download_requires_civitai_token(monkeypatch):
