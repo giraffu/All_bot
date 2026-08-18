@@ -7,6 +7,8 @@ cd "${ROOT_DIR}"
 
 DIFF_RANGE="${1:-${COMPAT_GATE_DIFF_RANGE:-}}"
 
+python3 scripts/validate_compat_registry.py
+
 if [[ -z "${DIFF_RANGE}" ]]; then
   echo "Usage: ./scripts/check_compat_registry.sh <git-diff-range>" >&2
   exit 1
@@ -19,10 +21,10 @@ if [[ ${#changed_files[@]} -eq 0 ]]; then
   exit 0
 fi
 
-doc_changed="false"
+registry_changed="false"
 for file in "${changed_files[@]}"; do
-  if [[ "${file}" == "docs/compat_seam_exit_table.md" ]]; then
-    doc_changed="true"
+  if [[ "${file}" == "config/compat_registry.json" ]]; then
+    registry_changed="true"
     break
   fi
 done
@@ -37,11 +39,11 @@ if [[ -z "${added_compat_lines}" ]]; then
   exit 0
 fi
 
-if [[ "${doc_changed}" == "true" ]]; then
-  echo "Compat registry gate: detected compat markers and compat exit table was updated."
+if [[ "${registry_changed}" == "true" ]]; then
+  echo "Compat registry gate: detected compat markers and machine registry was updated."
   exit 0
 fi
 
-echo "::error::Detected new compat/legacy/alias markers, but docs/compat_seam_exit_table.md was not updated."
+echo "::error::Detected new compat/legacy/alias markers, but config/compat_registry.json was not updated."
 echo "${added_compat_lines}"
 exit 1

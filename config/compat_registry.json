@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "web-task-status-sse",
+      "status": "active-compat",
+      "entrypoint": "src/web_api/routers/tasks.py:task_status_stream",
+      "owner": "public-web",
+      "telemetry_key": "compat.web.task_status_sse",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "GET /api/tasks/{task_id}/status followed by GET /result polling",
+      "exit_condition": "Supported clients use polling and the telemetry key has zero hits for the full observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "not_applicable"
+    },
+    {
+      "id": "bot-custom-video-entry",
+      "status": "active-compat",
+      "entrypoint": "src/handlers/fsm/image_to_video_fsm.py:start_custom_video",
+      "owner": "tg-fsm",
+      "telemetry_key": "compat.bot.image_to_video.custom_video_entry",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "start_image_to_video and canonical image-to-video callbacks",
+      "exit_condition": "Product menus and already-issued callbacks no longer reach the alias and telemetry is zero for the observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "issued_callbacks_must_expire"
+    },
+    {
+      "id": "central-legacy-wan22-task-types",
+      "status": "active-compat",
+      "entrypoint": "backend/app/main_simple_task_routes.py:normalize_simple_task_request_model",
+      "owner": "task-engine",
+      "telemetry_key": "compat.central.legacy_wan22_task_type",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "wan22_video_v2 canonical task contract",
+      "exit_condition": "No video_insert/video_edit requests or queued records remain and telemetry is zero for the observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "queued_legacy_tasks_must_be_drained"
+    },
+    {
+      "id": "billing-legacy-order-payload",
+      "status": "active-compat",
+      "entrypoint": "src/services/order_v2_service.py:parse_order_payload",
+      "owner": "billing-auth",
+      "telemetry_key": "compat.billing.order_legacy_payload",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "ORDER_V2 payload containing a business_order_id",
+      "exit_condition": "All displayed legacy payment callbacks have expired or settled and telemetry is zero for the observation window.",
+      "minimum_zero_hit_days": 60,
+      "historical_data": "unsettled_legacy_orders_must_be_zero"
+    },
+    {
+      "id": "gallery-free-edit-v2-group",
+      "status": "active-compat",
+      "entrypoint": "src/services/gallery_feed_queries.py:resolve_gallery_task_type_filter_values",
+      "owner": "gallery-storage",
+      "telemetry_key": "compat.gallery.free_edit_v2_group",
+      "telemetry_source": "compat_hit_log",
+      "replacement": "free_edit_v3_group",
+      "exit_condition": "Supported clients send the v3 group and telemetry is zero for the observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "not_applicable"
+    },
+    {
+      "id": "task-type-image-to-video-literal",
+      "status": "active-compat",
+      "entrypoint": "src/constants.py:MODE_IMAGE_TO_VIDEO_LITERAL",
+      "owner": "task-engine",
+      "telemetry_key": "compat.task_type.image_to_video_literal",
+      "telemetry_source": "task_type_queue_and_history_query",
+      "replacement": "video_lora canonical task type",
+      "exit_condition": "Queue, registry and retained History contain no literal image_to_video values during the observation window.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "history_task_types_must_be_migrated_or_retained_reader_supported"
+    },
+    {
+      "id": "qqcc-wan22-legacy-config",
+      "status": "active-compat",
+      "entrypoint": "src/services/qqcc_config_service.py:normalize_qqcc_config",
+      "owner": "qqcc-lazy-bot",
+      "telemetry_key": "compat.qqcc.wan22_legacy_config",
+      "telemetry_source": "config_audit_query",
+      "replacement": "canonical Wan22 scene model fields",
+      "exit_condition": "Official and private configurations are resaved in canonical form and no legacy fields are found.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "all_supported_checkpoints_must_be_resaved"
+    },
+    {
+      "id": "qqcc-next-scene-normalization",
+      "status": "active-compat",
+      "entrypoint": "src/services/qqcc_video_scene_chain_service.py:_next_scene_id",
+      "owner": "qqcc-lazy-bot",
+      "telemetry_key": "compat.qqcc.next_scene_id_normalization",
+      "telemetry_source": "config_audit_query",
+      "replacement": "validated canonical next_scene_id graph",
+      "exit_condition": "All supported checkpoints validate and have been resaved without damaged or legacy targets.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "all_supported_checkpoints_must_be_resaved"
+    },
+    {
+      "id": "qqcc-null-buttons-per-row",
+      "status": "active-compat",
+      "entrypoint": "src/services/qqcc_config_service.py:_normalize_main_menu_layout",
+      "owner": "qqcc-lazy-bot",
+      "telemetry_key": "compat.qqcc.buttons_per_row_null",
+      "telemetry_source": "config_audit_query",
+      "replacement": "explicit buttons_per_row integer from 1 through 4",
+      "exit_condition": "Official and private configurations contain explicit valid column counts.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "all_supported_configs_must_be_resaved"
+    },
+    {
+      "id": "identity-legacy-user-adopt",
+      "status": "runtime-verification-required",
+      "entrypoint": "src/services/user_persistence_service.py",
+      "owner": "billing-auth",
+      "telemetry_key": "compat.identity.legacy_user_adopt",
+      "telemetry_source": "database_audit_query",
+      "replacement": "strict internal_user_id and telegram_id identity mapping",
+      "exit_condition": "A read-only identity audit confirms no adoptable mixed-ID users remain.",
+      "minimum_zero_hit_days": 30,
+      "historical_data": "mixed_identity_rows_must_be_zero"
+    }
+  ]
+}

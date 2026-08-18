@@ -28,6 +28,7 @@ from src.web_api.schemas.task_schema import (
 from src.web_api.services.task_result_service import get_task_result_payload
 from src.web_api.services.task_submission_service import submit_generation_task
 from src.web_api.services.user_task_api_service import cancel_pending_task_payload
+from src.services.compat_telemetry import record_compat_hit
 from src.web_api.services.task_runtime_api_service import (
     build_task_status_stream_response_for_user,
     get_queue_status_payload,
@@ -132,6 +133,10 @@ async def task_status_stream(
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
     Also periodically sends queue position while pending.
     """
+    record_compat_hit(
+        "compat.web.task_status_sse",
+        entrypoint="GET /api/tasks/{task_id}/stream",
+    )
     return await build_task_status_stream_response_for_user(
         task_id=task_id,
         user_id=current_user.id,

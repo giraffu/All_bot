@@ -44,8 +44,9 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 - `docs/domain/CONTEXT.md` 只作为 glossary。
 - `docs/knowledge_base_audit_matrix.md` 一份活跃资料一行，分节表示责任域，
   顶部记录静态复核日期和归档入口；不登记 archive 行或追加 changelog。
-- `docs/compat_seam_exit_table.md` 只登记尚存兼容层和有价值 seam，并写明
-  责任域、运行时调用方、退出信号和最近静态复核日期。
+- `config/compat_registry.json` 是兼容退出的机器事实源，必须包含 owner、
+  telemetry key、替代入口、无命中观测窗口和历史数据条件；
+  `docs/compat_seam_exit_table.md` 只保留人工导航和运维查询口径。
 - 事故、上线记录、迁移证据、canary、一次性 ID 和运行态进入
   `docs/archive/`、`docs/release_evidence/` 或 `logs/`。
 

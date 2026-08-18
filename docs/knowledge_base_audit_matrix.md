@@ -19,7 +19,8 @@
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
 | `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central 入口归属与重叠 | 应用入口、router、provider 注册 | current | 新接口或职责移动 |
-| `docs/compat_seam_exit_table.md` | 尚存兼容层和退出条件 | 静态调用、数据/运行态观测 | runtime-verification-required | 删除兼容层 |
+| `config/compat_registry.json` | 兼容层的 owner、埋点、替代入口与退出条件 | `validate_compat_registry.py`、代码埋点、数据/运行态观测 | runtime-verification-required | 新增或删除兼容层 |
+| `docs/compat_seam_exit_table.md` | 兼容 registry 的人工导航与运维查询口径 | `config/compat_registry.json` | current | 删除兼容层 |
 | `docs/测试与入口命名约定.md` | 测试与入口命名 | tests、公开 facade | current | 新测试/入口 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | 业务文档索引 | business 文档 | current | 业务视角导航 |
 | `docs/business/00_DICT_全局业务数据字典.md` | 业务数据字典 | schema、API、领域模型 | current | 字段/口径变更 |

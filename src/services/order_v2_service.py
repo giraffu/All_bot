@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 
 from src.database.models import MembershipPlan, Order
 from src.services.membership_settlement_service import build_plan_settlement_snapshot
+from src.services.compat_telemetry import record_compat_hit
 
 ORDER_V2_ENABLED_ENV = "ORDER_V2_ENABLED"
 ORDER_V2_PREFIX = "ORDER_V2:"
@@ -66,6 +67,10 @@ def parse_order_payload(payload: str) -> ParsedOrderPayload:
         )
 
     if payload.startswith(ORDER_LEGACY_PREFIX):
+        record_compat_hit(
+            "compat.billing.order_legacy_payload",
+            entrypoint="payment callback ORDER payload parser",
+        )
         parts = payload.split(":")
         if len(parts) >= 4:
             try:

@@ -151,25 +151,22 @@ Web 统一入口在：
 - `src/web_api/routers/tasks.py`
 - `POST /api/tasks/generate`
 
-这个入口本身应保持薄壳，主要负责：
-
-- 接收 `TaskGenerateRequest`
-- 注入当前用户
-- 转发到 service
-- 把领域异常映射为 HTTP 状态码
+该入口只做 schema、用户注入、service 转发和 HTTP 异常映射。
 
 ### 5.2 提交 service
 
 真正的 Web 提交 service 在：
 
 - `src/web_api/services/task_submission_service.py`
+- `src/web_api/services/web_submission_preparation.py`
 
-当前职责：
+准入、角色引用、输入归一和 free-edit/scail2 pipeline policy 收口到
+`web_submission_preparation.py`；编排 service 仅保留 ID、素材 promotion、
+application 调用与失败清理。
+
+职责：
 
 - 先执行 Web 入口级禁用任务检查；`i2i_draw` 局部重绘当前在 Web 端关闭，会在生成 `task_id`、扣费和入队前返回领域错误
-- 把 `prompt` 补入 `req.inputs`
-- 生成 Web 侧 `task_id`
-- 设定 correlation id
 - 从启动时显式装配的 `TaskApplication` 调用 `submit(command, policy, journal)`
 - 通过 `WebSubmissionIntentJournal` 在派发前持久化完整 intent
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`

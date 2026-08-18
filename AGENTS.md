@@ -133,6 +133,8 @@ Skill；不要等用户说出 Cloudflare、Central 或 Compose 才加载运维�
   只作历史证据。
 - `docs/knowledge_base_audit_matrix.md`：一份活跃资料一行的当前事实源台账，
   不记录逐日 changelog。
+- `config/compat_registry.json`：兼容入口、owner、telemetry key、替代入口和
+  退出条件的机器事实源；新兼容分支必须先登记。
 - `docs/archive/`、`docs/release_evidence/`、`logs/`：历史、取证、canary、
   事故和一次性运行态，不作为当前 SOP。
 

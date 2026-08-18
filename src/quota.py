@@ -51,9 +51,6 @@ REFERRAL_REWARD_OPERATION_TYPES = (
 
 
 class QuotaManager:
-    def __init__(self):
-        pass
-
     async def get_daily_usage(self, user_id: int) -> int:
         """Get number of generation tasks performed by user today"""
         async with AsyncSessionLocal() as session:
