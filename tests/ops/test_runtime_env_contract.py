@@ -101,6 +101,7 @@ def _environment(environment: str) -> dict[str, str]:
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED": "true" if environment == "test" else "false",
+        "WEB_FINALIZER_IN_WEB_ENABLED": "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES": (
             "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,"
@@ -146,6 +147,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
+    assert web["WEB_FINALIZER_IN_WEB_ENABLED"] == "false"
     assert bot["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
     assert all(
         "LTX_T2V_BACKEND_ENABLED" not in projection
@@ -217,6 +219,16 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
 
     assert module.affected_services(contract, {"LTX_T2V_BACKEND_ENABLED"}) == {
         "web-api"
+    }
+
+
+def test_web_finalizer_owner_flag_reconfigures_web_api():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(contract, {"WEB_FINALIZER_IN_WEB_ENABLED"}) == {
+        "task-control-worker",
+        "web-api",
     }
 
 
