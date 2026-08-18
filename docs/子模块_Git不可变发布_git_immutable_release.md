@@ -183,6 +183,10 @@ Compose image adapter 使用
 其健康检查完成。即使镜像 digest 未变化，配置 revision 切换也必须创建新容器；
 不得在 `up -d` 返回后立即读取健康状态，以免把正常启动窗口误判为失败并触发
 无效回滚。
+每次替换前必须从已 pull 镜像的
+`org.opencontainers.image.revision` label 读取并校验完整 40 位 SHA，原子重写
+runtime candidate 的 `ALLBOT_RELEASE_SHA`；禁止继承旧总包 SHA 或使用
+`module-release` 占位值覆盖镜像事实。
 目标机的 `/etc/allbot/<env>.env` 必须保持 `root:root 600`。远端 operator 使用
 `sudo -n docker compose` 读取该文件；deploy 用户仍只负责 runtime candidate，
 禁止用 chmod/chgrp 放宽 env 权限来绕过发布失败。
