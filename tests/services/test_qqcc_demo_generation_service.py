@@ -340,10 +340,7 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
             "duration": 15,
             "end_frame_draw_scene_id": "tail_scene",
             "lora_items": [
-                {
-                    "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                    "strength": 0.75,
-                }
+                {"name": "deepthroat", "strength": 0.75}
             ],
             "demo_input_media": {
                 "object_key": "qqcc/demo/ai_video/cinema/input",
@@ -370,6 +367,7 @@ async def test_submit_ai_video_demo_uses_pro_i2v_without_running_tail_chain():
         frame_count=362,
         fps=24,
             seed=None,
+            lora_items=({"name": "deepthroat", "strength": 0.75},),
             priority=0,
     )
 

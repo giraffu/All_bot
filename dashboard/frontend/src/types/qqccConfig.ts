@@ -43,7 +43,7 @@ interface SceneDemoFields {
 }
 
 export interface VideoLoraItem { name: string; strength: number }
-export interface AiVideoLoraItem { path: string; strength: number }
+export interface AiVideoLoraItem { name: string; strength: number }
 
 export interface VideoSceneConfig extends SceneDemoFields {
   id: string

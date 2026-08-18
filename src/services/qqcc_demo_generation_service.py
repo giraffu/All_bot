@@ -164,6 +164,7 @@ async def _submit_scene(
                 "duration": int(scene.get("duration") or 5),
                 "resolution_preset": str(scene.get("resolution") or "preview"),
                 "aspect_ratio": "source",
+                "lora_items": scene.get("lora_items") or [],
             },
         )
         return await image_service_instance.submit_minimax_h3_task(
@@ -180,6 +181,10 @@ async def _submit_scene(
             frame_count=spec.frame_count,
             fps=spec.fps,
             seed=None,
+            lora_items=tuple(
+                {"name": item.name, "strength": item.strength}
+                for item in spec.addon_items
+            ),
             priority=0,
         )
 

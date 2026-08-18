@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks
 from dashboard.backend.routers import qqcc as router_module
 from dashboard.backend.schemas import QqccBotConfigRequest
 from src.database.models import PrivateQqccBot, RuntimeCheckpoint
+from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.lora_catalog import LTX_VIDEO_LORA_MODELS
 from src.qqcc_ltx_lora_catalog import QQCC_LTX23_LIBRARY_MODELS
 from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
@@ -330,7 +331,7 @@ def test_normalize_qqcc_main_menu_layout_falls_back_for_invalid_columns(
     assert config["video_scenes"][0]["negative_prompt"] == ""
 
 
-def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
+def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_h3_addons():
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
@@ -353,25 +354,10 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
                     "engine": "ltx_video",
                     "end_frame_draw_scene_id": "tail_pose",
                     "lora_items": [
-                        {
-                            "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                            "strength": 99,
-                        },
-                        {
-                            "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
-                            "strength": 0.04,
-                        },
-                        {
-                            "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
-                            "strength": 1.5,
-                        },
-                        {
-                            "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
-                        },
-                        {
-                            "path": "ltx2.3/sfbehind_LTX2_3_v0_1.safetensors",
-                            "strength": 1,
-                        },
+                        {"name": "motion_booster", "strength": 0.73},
+                        {"name": "mystic_xxx"},
+                        {"name": "motion_booster", "strength": 1.5},
+                        {"name": "missing", "strength": 1},
                     ],
                 },
                 {
@@ -397,7 +383,10 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
                 "duration": 10,
                 "resolution": "preview",
             "engine": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-            "lora_items": [],
+            "lora_items": [
+                {"name": "motion_booster", "strength": 0.75},
+                {"name": "mystic_xxx", "strength": 0.75},
+            ],
             "credit_cost": None,
             "end_frame_draw_scene_id": "tail_pose",
             "next_scene_id": None,
@@ -469,10 +458,17 @@ def test_normalize_qqcc_config_clears_legacy_missing_video_scene_link():
     options = config_service_module.build_qqcc_config_options()
     assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_MINIMAX_H3
     assert options["ai_video_engines"] == [
-        {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": False}
+        {"value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3, "supports_lora": True}
     ]
-    assert options["ai_video_addon_models_version"] == 1
-    assert options["ai_video_addon_models"] == []
+    assert options["ai_video_addon_models_version"] == 2
+    assert options["ai_video_addon_models"] == [
+        {
+            "value": model.id,
+            "label": model.label_zh,
+            "default_strength": model.default_strength,
+        }
+        for model in MINIMAX_H3_ADDON_MODELS.values()
+    ]
 
 
 def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():
@@ -483,7 +479,10 @@ def test_qqcc_legacy_ltx_lora_is_removed_from_pro_options():
     assert admin_only_path not in LTX_VIDEO_LORA_MODELS
 
     options = config_service_module.build_qqcc_config_options()
-    assert options["ai_video_addon_models"] == []
+    assert all(
+        item["value"] not in QQCC_LTX23_LIBRARY_MODELS
+        for item in options["ai_video_addon_models"]
+    )
 
     config = normalize_qqcc_config(
         {
