@@ -1,9 +1,9 @@
-from src.core.media_paths import (
+from src.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     resolve_storage_object,
 )
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.media_processor import generate_and_upload_thumbnail
 
 from src.gallery_core_dependencies import get_gallery_storage_service
 

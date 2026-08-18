@@ -43,11 +43,17 @@ from src.services.telegram_runtime_bootstrap import (
 )
 from src.services.telegram_update_processor import build_qqcc_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 
 logger = logging.getLogger("qqcc_bot.core")
 install_telegram_runtime_patches(logger=logger)
 _shared_bootstrap_lock = asyncio.Lock()
 _shared_bootstrap_complete = False
+
+
+def _env_enabled(name: str, *, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def _clean_official_qqcc_zombies(application) -> None:
@@ -102,7 +108,10 @@ async def post_init(application):
         )
         application.bot_data["bg_tasks"].add(task_recover)
         task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
-        if application.bot_data["bot_client_type"] == QQCC_BOT_CLIENT_TYPE:
+        if (
+            application.bot_data["bot_client_type"] == QQCC_BOT_CLIENT_TYPE
+            and _env_enabled("QQCC_BOT_ZOMBIE_SWEEP_ENABLED", default=True)
+        ):
             task_zombies = asyncio.create_task(
                 _clean_official_qqcc_zombies(application),
                 name="qqcc-zombie-cleaner",
@@ -123,6 +132,7 @@ async def ensure_shared_qqcc_runtime_bootstrap() -> None:
 
         build_global_menu_filter()
         ensure_task_core_service_providers_registered()
+        configure_task_application()
         ensure_billing_core_providers_registered()
         await init_db()
         _shared_bootstrap_complete = True

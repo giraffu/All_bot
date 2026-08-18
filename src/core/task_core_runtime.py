@@ -1,7 +1,5 @@
 import logging
 
-import httpx
-
 from src.core.billing_core import release_concurrency_lock
 from src.core.task_core_default_dependencies import (
     build_default_task_core_runtime_dependencies,
@@ -9,6 +7,14 @@ from src.core.task_core_default_dependencies import (
 from src.core.task_core_types import CoreDomainError
 
 logger = logging.getLogger(__name__)
+
+
+def _http_status_code(error: Exception) -> int | None:
+    response = getattr(error, "response", None)
+    try:
+        return int(getattr(response, "status_code", None))
+    except (TypeError, ValueError):
+        return None
 
 
 async def cleanup_task_runtime_state(
@@ -128,8 +134,9 @@ async def cancel_backend_task_best_effort(
     try:
         await cancel_task_func(backend_task_id)
         return True
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
+    except Exception as exc:
+        status_code = _http_status_code(exc)
+        if status_code == 404:
             logger_override.info(
                 "Backend task %s already missing during cleanup of %s.",
                 backend_task_id,
@@ -137,15 +144,6 @@ async def cancel_backend_task_best_effort(
             )
             return False
 
-        logger_override.exception(
-            "Failed to cancel backend task %s for registry task %s.",
-            backend_task_id,
-            registry_task_id,
-        )
-        if raise_on_error:
-            raise
-        return False
-    except Exception:
         logger_override.exception(
             "Failed to cancel backend task %s for registry task %s.",
             backend_task_id,
@@ -212,29 +210,14 @@ async def sync_user_concurrency(
     """
     同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
     """
-    from config import REDIS_PREFIX
-
-    key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
-    ownership_key = f"{REDIS_PREFIX}acquired_task_concurrency:{user_id}"
-
     if submission_outbox is not None:
-        redis_client = submission_outbox
-        if actual_count > 0:
-            await redis_client.redis.set(key, actual_count)
-            await redis_client.redis.expire(key, 3600)
-        else:
-            await redis_client.redis.delete(key, ownership_key)
+        await submission_outbox.sync_user_concurrency(user_id, actual_count)
         return
 
     runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
         release_concurrency_lock_func=release_concurrency_lock
     )
-    if actual_count > 0:
-        await runtime_dependencies.set_runtime_value_func(key, actual_count)
-        await runtime_dependencies.expire_runtime_value_func(key, 3600)
-    else:
-        await runtime_dependencies.delete_runtime_value_func(key)
-        await runtime_dependencies.delete_runtime_value_func(ownership_key)
+    await runtime_dependencies.sync_user_concurrency_func(user_id, actual_count)
 
 
 async def cancel_user_task(
@@ -283,11 +266,12 @@ async def cancel_user_task(
     try:
         cancel_task_func = cancel_task_func or runtime_dependencies.cancel_task_func
         cancel_result = await cancel_task_func(backend_task_id)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise CoreDomainError("任务不存在或已结束，当前无法取消")
-        raise CoreDomainError(f"撤销请求失败: HTTP {e.response.status_code}")
     except Exception as e:
+        status_code = _http_status_code(e)
+        if status_code == 404:
+            raise CoreDomainError("任务不存在或已结束，当前无法取消")
+        if status_code is not None:
+            raise CoreDomainError(f"撤销请求失败: HTTP {status_code}")
         logger.error(f"中控取消任务网络异常: {e}")
         raise CoreDomainError("撤销请求失败，请稍后重试")
 

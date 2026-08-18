@@ -175,6 +175,80 @@ async def test_toggle_like_impl_raises_duplicate_interaction_when_insert_conflic
 
 
 @pytest.mark.asyncio
+async def test_toggle_like_acquires_pair_lock_before_reading_reaction():
+    events = []
+    post = SimpleNamespace(likes_count=0, dislikes_count=0)
+    session = _FakeSession([], post=post)
+
+    async def acquire_lock(*_args, **_kwargs):
+        events.append("lock")
+
+    async def get_post(*_args, **_kwargs):
+        events.append("post")
+        return post
+
+    async def get_reaction(*_args, **_kwargs):
+        events.append("reaction")
+        return None
+
+    dependencies = SimpleNamespace(
+        session_factory=lambda: session,
+        acquire_gallery_reaction_lock_func=acquire_lock,
+        get_gallery_post_by_id_func=get_post,
+        get_gallery_reaction_interaction_func=get_reaction,
+        insert_gallery_reaction_if_absent_func=AsyncMock(return_value=1),
+        increment_gallery_reaction_counter_func=AsyncMock(return_value=(1, 0)),
+    )
+
+    result = await toggle_like_impl(
+        user_id=123,
+        post_id=456,
+        action="like",
+        dependencies=dependencies,
+    )
+
+    assert events == ["lock", "post", "reaction"]
+    assert result["likes_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicate_submission_has_no_quota_or_media_side_effects():
+    session = _FakeSession([])
+    history = SimpleNamespace(
+        type="txt2img",
+        allow_contribute=True,
+        output_file="history/result.png",
+        prompt="prompt",
+    )
+    increment_limit = AsyncMock()
+    build_side_effects = AsyncMock()
+    dependencies = SimpleNamespace(
+        session_factory=lambda: session,
+        acquire_gallery_submission_lock_func=AsyncMock(),
+        get_gallery_post_by_task_id_func=AsyncMock(return_value=None),
+        get_gallery_history_for_user_task_func=AsyncMock(return_value=history),
+        get_gallery_user_func=AsyncMock(return_value=SimpleNamespace(total_contributions=0)),
+        create_gallery_post_from_history_func=AsyncMock(return_value="duplicate"),
+        check_gallery_submit_limit_func=None,
+        increment_gallery_submit_func=None,
+    )
+
+    with pytest.raises(Exception, match="已经投稿"):
+        await process_submit_to_gallery_result_impl(
+            gallery_submit_outcome_cls=_GallerySubmitOutcome,
+            user_id=123,
+            task_id="task-1",
+            dependencies=dependencies,
+            check_gallery_submit_limit_func=AsyncMock(return_value=True),
+            increment_gallery_submit_func=increment_limit,
+            build_gallery_submit_side_effects_func=build_side_effects,
+        )
+
+    increment_limit.assert_not_awaited()
+    build_side_effects.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_record_apply_interaction_impl_updates_counter_on_first_insert():
     session = _FakeSession(
         [

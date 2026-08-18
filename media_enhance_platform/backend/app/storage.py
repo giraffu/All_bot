@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import shutil
 from pathlib import Path
-from typing import BinaryIO
-
 import boto3
 
 from .config import get_settings

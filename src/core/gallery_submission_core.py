@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from src.constants import MODE_NAME_MAP
 from src.lora_catalog import ALL_LORA_MODELS
-from src.domain_config.task_type_registry import gallery_supported_task_types
+from src.domain_config.task_type_registry import (
+    gallery_supported_task_types,
+    resolve_user_task_display_key,
+)
 from src.gallery_core_dependencies import (
     GallerySubmissionDependencies,
     get_default_gallery_submission_dependencies,
@@ -14,12 +17,6 @@ from src.gallery_core_dependencies import (
 )
 from src.core.gallery_core_errors import GalleryCoreError
 from src.core.gallery_submission_effects import build_gallery_submit_side_effects
-from src.services.user_visible_generation_presenter import (
-    resolve_user_task_display_key,
-)
-
-if TYPE_CHECKING:
-    from src.database.models import History
 
 ALLOWED_WEB_SUBMIT_TYPES = list(gallery_supported_task_types())
 
@@ -32,7 +29,7 @@ def _detect_media_type(output_file: str) -> str:
     return "video" if is_video else "image"
 
 
-def _build_gallery_tags(history: History) -> list[str]:
+def _build_gallery_tags(history: Any) -> list[str]:
     tags: list[str] = []
     base_tag = MODE_NAME_MAP.get(history.type) or resolve_user_task_display_key(
         history.type
@@ -78,7 +75,7 @@ async def _resolve_gallery_submit_capabilities(
     return check_gallery_submit_limit_func, increment_gallery_submit_func
 
 
-def _validate_gallery_submit_history(history: History | None) -> None:
+def _validate_gallery_submit_history(history: Any | None) -> None:
     if not history:
         raise GalleryCoreError("无法找到对应的任务记录，投稿失败")
     if getattr(history, "allow_contribute", True) is False:
@@ -102,6 +99,7 @@ async def _reactivate_existing_gallery_post(
     task_id: str,
     gallery_submit_outcome_cls,
     dependencies: GallerySubmissionDependencies,
+    increment_gallery_submit_func,
 ):
     if existing.user_id != user_id:
         raise GalleryCoreError("无法操作他人的投稿！")
@@ -120,6 +118,7 @@ async def _reactivate_existing_gallery_post(
         history=history,
         user=user_obj,
     )
+    await increment_gallery_submit_func(user_id)
     return gallery_submit_outcome_cls(
         payload={
             "status": "success",
@@ -150,7 +149,7 @@ async def _create_gallery_post_from_history(
     media_type = _detect_media_type(history.output_file)
     tags = _build_gallery_tags(history)
     user_obj = await dependencies.get_gallery_user_func(session, user_id)
-    await dependencies.create_gallery_post_from_history_func(
+    create_state = await dependencies.create_gallery_post_from_history_func(
         session,
         task_id=task_id,
         user_id=user_id,
@@ -162,7 +161,7 @@ async def _create_gallery_post_from_history(
         history=history,
         user=user_obj,
     )
-    return history, media_type, tags
+    return history, media_type, tags, create_state or "created"
 
 
 def _build_gallery_submit_success_payload(tags: list[str]) -> dict[str, Any]:
@@ -206,6 +205,11 @@ async def process_submit_to_gallery_result_impl(
         raise GalleryCoreError("您今日的投稿次数已达 10 次上限，请明日再来~")
 
     async with session_factory() as session:
+        await dependencies.acquire_gallery_submission_lock_func(
+            session,
+            user_id=user_id,
+            task_id=task_id,
+        )
         existing = await dependencies.get_gallery_post_by_task_id_func(session, task_id)
 
         if existing:
@@ -216,9 +220,10 @@ async def process_submit_to_gallery_result_impl(
                 task_id=task_id,
                 gallery_submit_outcome_cls=gallery_submit_outcome_cls,
                 dependencies=dependencies,
+                increment_gallery_submit_func=increment_gallery_submit_func,
             )
 
-        history, media_type, tags = await _create_gallery_post_from_history(
+        history, media_type, tags, create_state = await _create_gallery_post_from_history(
             session=session,
             task_id=task_id,
             user_id=user_id,
@@ -227,6 +232,8 @@ async def process_submit_to_gallery_result_impl(
             duration=duration,
             dependencies=dependencies,
         )
+        if create_state == "duplicate":
+            raise GalleryCoreError("您已经投稿过此内容啦！")
 
         side_effects = build_gallery_submit_side_effects_func(
             task_id=task_id,

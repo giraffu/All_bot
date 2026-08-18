@@ -202,18 +202,20 @@ def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
 
 def test_runpod_runtime_bakes_agent_id_into_pop_requests():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-    agent = Path("workers/runpod_runtime/comfy_agent/agent_main.py").read_text(
+    coordinator = Path(
+        "workers/comfy_agent/agent_pipeline_coordinator.py"
+    ).read_text(
         encoding="utf-8"
     )
 
-    assert 'params: dict[str, str] = {"agent_id": AGENT_ID}' in agent
+    assert 'params: dict[str, str] = {"agent_id": agent_id}' in coordinator
     assert "write_text(" not in bootstrap
 
 
 def test_runpod_runtime_bakes_wan22_node_inputs():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
     patchers = Path(
-        "workers/runpod_runtime/comfy_agent/workflow_task_patchers.py"
+        "workers/comfy_agent/workflow_task_patchers.py"
     ).read_text(encoding="utf-8")
 
     assert "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095" in patchers
@@ -669,7 +671,7 @@ def test_profile_build_script_can_reuse_base_custom_nodes(tmp_path):
     assert "REUSE_BASE_CUSTOM_NODES=true" in rendered
 
 
-def test_pornmaster_profile_stages_character_runtime_installer(tmp_path):
+def test_pornmaster_profile_stages_canonical_character_runtime(tmp_path):
     calls = tmp_path / "docker-calls.txt"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -678,9 +680,9 @@ def test_pornmaster_profile_stages_character_runtime_installer(tmp_path):
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'context="${!#}"\n'
-        'test -f "$context/workers/runpod_profiles/pornmaster_flux2_edit/'
+        'test -f "$context/workers/comfy_agent/workflow_task_patchers.py"\n'
+        'test ! -e "$context/workers/runpod_profiles/pornmaster_flux2_edit/'
         'install_character_runtime_overlay.py"\n'
-        'test ! -e "$context/workers/comfy_agent"\n'
         'printf \'%s\\n\' "$*" >> "$DOCKER_CALLS"\n',
         encoding="utf-8",
     )
@@ -710,39 +712,21 @@ def test_pornmaster_profile_stages_character_runtime_installer(tmp_path):
     assert calls.exists()
 
 
-def test_character_runtime_installer_patches_selected_view_contract(tmp_path):
-    runtime_dir = tmp_path / "comfy_agent"
-    runtime_dir.mkdir()
-    shutil.copy2(
-        "workers/runpod_runtime/comfy_agent/workflow_task_patchers.py",
-        runtime_dir / "workflow_task_patchers.py",
-    )
-    shutil.copy2(
-        "workers/runpod_runtime/comfy_agent/agent_result_materialization.py",
-        runtime_dir / "agent_result_materialization.py",
-    )
-
-    subprocess.run(
-        [
-            sys.executable,
-            "workers/runpod_profiles/pornmaster_flux2_edit/"
-            "install_character_runtime_overlay.py",
-            str(runtime_dir),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    patcher = (runtime_dir / "workflow_task_patchers.py").read_text(
+def test_character_runtime_contract_is_part_of_canonical_worker():
+    patchers = Path("workers/comfy_agent/workflow_task_patchers.py").read_text(
         encoding="utf-8"
     )
-    materializer = (runtime_dir / "agent_result_materialization.py").read_text(
+    dockerfile = PORNMASTER_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert 'workflow[selected_prefix + "100"]["inputs"]["unet_name"]' in patchers
+    assert "install_character_runtime_overlay" not in dockerfile
+    materializer = Path(
+        "workers/comfy_agent/agent_result_materialization.py"
+    ).read_text(
         encoding="utf-8"
     )
-    assert 'selected_prefix + "100"' in patcher
-    assert "PORNMASTER_FLUX2_BF16_UNET_NAME" in patcher
-    assert "if selected_index and index != selected_index" in patcher
+    assert "PORNMASTER_FLUX2_BF16_UNET_NAME" in patchers
+    assert "if selected_index and index != selected_index" in patchers
     assert "async def _materialize_character_reference_view" in materializer
     assert "(execution.params or {}).get(\"character_view_index\")" in materializer
 

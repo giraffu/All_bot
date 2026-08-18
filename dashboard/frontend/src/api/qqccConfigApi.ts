@@ -5,6 +5,15 @@ import {
   clearQqccConfigAuthToken,
   getQqccConfigAuthToken,
 } from '../composables/useQqccConfigAuth'
+import type {
+  DemoMediaSlot,
+  QqccBotConfig,
+  QqccBotConfigResponse,
+  QqccDemoGenerationResponse,
+  QqccDemoMediaUploadResponse,
+  SceneConfig,
+  SceneConfigKind,
+} from '../types/qqccConfig'
 
 export const resolveQqccApiBaseUrl = () => {
   const explicitBaseUrl = import.meta.env.VITE_QQCC_CONFIG_API_BASE_URL?.trim()
@@ -51,11 +60,15 @@ export const loginQqccConfig = async (username: string, password: string) => {
   return qqccConfigApi.post('/api/auth/login', formData).then(unwrapData)
 }
 
-export const fetchQqccConfig = async () =>
-  qqccConfigApi.get('/api/qqcc/config', { params: { _t: Date.now() } }).then(unwrapData)
+export const fetchQqccConfig = async (): Promise<QqccBotConfigResponse> =>
+  qqccConfigApi
+    .get<QqccBotConfigResponse>('/api/qqcc/config', { params: { _t: Date.now() } })
+    .then(unwrapData)
 
-export const updateQqccConfig = async (payload: unknown) =>
-  qqccConfigApi.put('/api/qqcc/config', payload).then(unwrapData)
+export const updateQqccConfig = async (
+  payload: QqccBotConfig,
+): Promise<QqccBotConfigResponse> =>
+  qqccConfigApi.put<QqccBotConfigResponse>('/api/qqcc/config', payload).then(unwrapData)
 
 const fileToBase64 = async (file: File) => {
   const bytes = new Uint8Array(await file.arrayBuffer())
@@ -68,11 +81,11 @@ const fileToBase64 = async (file: File) => {
 }
 
 export const uploadQqccDemoMedia = async (
-  sceneKind: 'video' | 'video_v1' | 'ai_video' | 'draw' | 'draw_v1' | 'filter',
+  sceneKind: SceneConfigKind,
   sceneId: string,
-  slot: 'input' | 'output',
+  slot: DemoMediaSlot,
   file: File,
-) => {
+): Promise<QqccDemoMediaUploadResponse> => {
   const contentBase64 = await fileToBase64(file)
   return qqccConfigApi
     .put(
@@ -83,14 +96,25 @@ export const uploadQqccDemoMedia = async (
         content_base64: contentBase64,
       },
     )
-    .then(unwrapData)
+    .then(unwrapData) as Promise<QqccDemoMediaUploadResponse>
 }
 
-export const generateQqccDemoMedia = async (sceneKind: string, scene: unknown) =>
-  qqccConfigApi.post(`/api/qqcc/demo-generation/${encodeURIComponent(sceneKind)}`, { scene }).then(unwrapData)
+export const generateQqccDemoMedia = async (
+  sceneKind: SceneConfigKind,
+  scene: SceneConfig,
+): Promise<QqccDemoGenerationResponse> =>
+  qqccConfigApi
+    .post<QqccDemoGenerationResponse>(`/api/qqcc/demo-generation/${encodeURIComponent(sceneKind)}`, { scene })
+    .then(unwrapData)
 
-export const getQqccDemoGeneration = async (sceneKind: string, sceneId: string, generationId: string) =>
-  qqccConfigApi.get(`/api/qqcc/demo-generation/${encodeURIComponent(sceneKind)}/${encodeURIComponent(sceneId)}/${encodeURIComponent(generationId)}`).then(unwrapData)
+export const getQqccDemoGeneration = async (
+  sceneKind: SceneConfigKind,
+  sceneId: string,
+  generationId: string,
+): Promise<QqccDemoGenerationResponse> =>
+  qqccConfigApi
+    .get<QqccDemoGenerationResponse>(`/api/qqcc/demo-generation/${encodeURIComponent(sceneKind)}/${encodeURIComponent(sceneId)}/${encodeURIComponent(generationId)}`)
+    .then(unwrapData)
 
 export type PrivateBotRuntimeStatus =
   | 'provisioning'

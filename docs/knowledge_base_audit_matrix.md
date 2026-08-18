@@ -19,7 +19,8 @@
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
 | `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central 入口归属与重叠 | 应用入口、router、provider 注册 | current | 新接口或职责移动 |
-| `docs/compat_seam_exit_table.md` | 尚存兼容层和退出条件 | 静态调用、数据/运行态观测 | runtime-verification-required | 删除兼容层 |
+| `config/compat_registry.json` | 兼容层的 owner、埋点、替代入口与退出条件 | `validate_compat_registry.py`、代码埋点、数据/运行态观测 | runtime-verification-required | 新增或删除兼容层 |
+| `docs/compat_seam_exit_table.md` | 兼容 registry 的人工导航与运维查询口径 | `config/compat_registry.json` | current | 删除兼容层 |
 | `docs/测试与入口命名约定.md` | 测试与入口命名 | tests、公开 facade | current | 新测试/入口 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | 业务文档索引 | business 文档 | current | 业务视角导航 |
 | `docs/business/00_DICT_全局业务数据字典.md` | 业务数据字典 | schema、API、领域模型 | current | 字段/口径变更 |
@@ -34,9 +35,9 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_任务调度_task_scheduler.md` | task facade、队列与清理 | `src/core/task_core*`、QueueManager | current | 任务生命周期 |
-| `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路 | Web/Bot、Central、Worker、History | current | 跨层任务改动 |
-| `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 协议 | `backend/app`、API client、Worker | current | 队列或 worker 协议 |
+| `docs/子模块_任务调度_task_scheduler.md` | TaskApplication、提交 intent、due finalizer、队列与清理 | `src/core/task_application.py`、`task_core*`、`task_web_finalizer.py`、QueueManager | current | 任务生命周期 |
+| `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路与生成 task type contract | Web/Bot、Central、Worker、History | current | 跨层任务或任务类型改动 |
+| `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性、状态协议与任务类型门禁 | `backend/app`、API client、Worker | current | 队列、worker 协议或 task enum |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
 | `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、返佣兑 USDT | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env、当次节点探测 | runtime-verification-required | Telegram 文件/代理 |
@@ -47,7 +48,7 @@
 | `docs/子模块_客服Bot_support_bot.md` | 客服工单 Bot | support bot、Dashboard、schema | current | 客服能力 |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | JWT/密码/权限 | auth core、Web security | current | 鉴权 |
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
-| `docs/子模块_社区与存储_gallery_storage.md` | Gallery、R2、apply-context | Gallery core/services、storage、R2 scripts | current | 社区/媒体 |
+| `docs/子模块_社区与存储_gallery_storage.md` | Gallery 一致性、R2、apply-context | Gallery core/services、migration、audit/storage scripts | current | 社区/媒体 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界与分层新鲜度 | local analytics routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
@@ -57,7 +58,7 @@
 
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
-| `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | workflow JSON、mapping、patcher | current | 模型/workflow |
+| `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | canonical Worker、workflow JSON、mapping、patcher | current | 模型/workflow |
 | `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 三个公开模式、固定 10Eros/LightX2V 基础链、六个可选 LoRA、模型包与 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |

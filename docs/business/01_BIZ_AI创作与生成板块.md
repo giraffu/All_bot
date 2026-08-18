@@ -85,7 +85,7 @@ sequenceDiagram
 ## 5. 当前实现红线
 
 - 任务主链不再按“单体 Task/Billing Core + finally 写历史释放锁”的旧口径理解。
-- `task_core.py` 当前是 facade；真实默认装配在 provider/dependencies、submission、web-monitor、runtime 子模块。
+- `TaskApplication` 是生产提交门面；真实装配在入口 composition root、provider/dependencies、submission、web-monitor、runtime 子模块，`task_core.py` 的宽提交接口仅保留兼容测试。
 - Bot 主链当前以分域 entrypoints 和 `run_bot_task_application(...)` 为真实入口，不再依赖历史兼容层作为业务主入口。
 - Web 结果除了 stream 外，还存在 history fallback 与结果查询链路。
 

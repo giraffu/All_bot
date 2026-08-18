@@ -1,16 +1,17 @@
 # LAN / RunPod Worker Runtime
 
-This directory is the self-contained worker bundle baked into LAN AIO and
-RunPod GPU profile images. It is not a standalone remote-host deployment kit.
+This directory contains only the RunPod/LAN adapter around the canonical GPU
+worker. It is not a second worker package or a standalone host deployment kit.
 
-- `comfy_agent/`: production GPU agent, workflow mappings, and RunPod pipeline
-  controls.
 - `runpod_relay/`: Pod-local Central API and result-upload relay.
 - `scripts/`: image startup, model sync, and runtime validation.
-- `src/`: minimal domain/config modules required by the baked bundle.
+- `requirements.txt`: dependencies installed by GPU profile images.
+- `../comfy_agent/`: the sole agent, patcher and workflow source.
+- `../../src/`: the sole domain/config source consumed by the image.
 - `../runpod_profiles/`: profile Dockerfiles that copy this bundle to
   `/opt/allbot/runtime/runpod_worker`.
 
-There is no standalone host compatibility entrypoint. Change this runtime only
-together with the affected GPU artifact, parity tests, and release/canary
-gates.
+Profile Dockerfiles compose these sources at `/opt/allbot/runtime/runpod_worker`.
+Builds embed Git SHA, canonical package hash and workflow mapping hash; the
+agent verifies and reports them in heartbeat metadata. Change the adapter only
+with the affected artifact, focused tests and per-profile canary gate.

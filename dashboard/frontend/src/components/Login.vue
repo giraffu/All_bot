@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { login } from '../api/api'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
@@ -19,11 +19,11 @@ const handleLogin = async () => {
   error.value = ''
   
   try {
-    const res = await login(username.value, password.value)
+    const res = await login(username.value, password.value) as { access_token?: string }
     if (res.access_token) {
       setAuthToken(res.access_token)
     }
-  } catch (err) {
+  } catch {
     error.value = '用户名或密码错误'
   } finally {
     loading.value = false

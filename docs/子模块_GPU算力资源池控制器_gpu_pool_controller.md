@@ -33,7 +33,8 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - Worker Agent 从 Central 领取支持的 task type，调用同容器/目标 ComfyUI，
   上传结果并在 `/complete` 前确认交付成功。
 - RunPod 是云端弹性 adapter；LAN AIO 是单物理卡受控容器 adapter。二者都
-  必须使用 exact digest 和 baked `workers/runpod_runtime`，不能主机源码覆盖。
+  必须使用 exact digest；镜像从 canonical `workers/comfy_agent`、根 `src`、
+  `shared` 与薄 `workers/runpod_runtime` adapter 组合，不能主机源码覆盖。
 - LAN AIO transport 与 accelerator 是正交 seam：远端 NVIDIA 节点使用
   `lan_ssh + nvidia`，本地主 Ryzen APU 可使用 `lan_local + rocm`。`lan_local`
   只把同一套受管 operator 命令落到本机 shell/filesystem，不授权自由 compose；
@@ -76,10 +77,11 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - `img2img_rocm_gfx1151` 是 `img2img_lora_rocm_gfx1151` LAN runtime 的独立
   release module。它与 CUDA `img2img` 共享 task/workflow/model manifest 语义，
   但 artifact、accelerator contract 和验证证据完全分离。
-- workflow 只维护 `workers/comfy_agent/workflows/` 和相应 baked
-  `workers/runpod_runtime` bundle；Central 不携带 workflow。
-- 凡 baked `workers/runpod_runtime` 的 RunPod profile 必须同时包含
-  `shared/`，并在构建阶段 smoke import
+- agent、patcher、workflow 只维护 `workers/comfy_agent/`；profile 构建直接
+  复制 canonical package 和根 `src/`，`runpod_runtime` 只留 entrypoint、relay、
+  requirements 与运维脚本。镜像 ENV/label 嵌入 Git SHA、package hash 与 mapping
+  hash，agent 启动时验证并在 heartbeat 的 `runtime_manifest` 报告；Central 不携带 workflow。
+- 每个 RunPod profile 必须同时包含 `shared/`，并在构建阶段 smoke import
   `shared.character_reference_sheet`；否则 `comfy_agent` 会在 ComfyUI 和 relay
   就绪后才因结果物化依赖缺失而退出，且无 heartbeat。
 - profile 必须在镜像构建时安装 baked worker 的 `requirements.txt`；bootstrap

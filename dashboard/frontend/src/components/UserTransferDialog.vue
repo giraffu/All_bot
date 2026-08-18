@@ -1,47 +1,35 @@
-<script setup>
-const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false,
-  },
-  loading: {
-    type: Boolean,
-    default: false,
-  },
-  searchLoading: {
-    type: Boolean,
-    default: false,
-  },
-  sourceUser: {
-    type: Object,
-    default: null,
-  },
-  targetUserId: {
-    type: Number,
-    default: null,
-  },
-  targetOptions: {
-    type: Array,
-    default: () => [],
-  },
-  confirmText: {
-    type: String,
-    default: '',
-  },
-  note: {
-    type: String,
-    default: '后台用户数据转移',
-  },
+<script setup lang="ts">
+interface TransferUser { id: number; full_name?: string | null; username?: string | null }
+interface SelectOption { label: string; value: number }
+
+withDefaults(defineProps<{
+  visible?: boolean
+  loading?: boolean
+  searchLoading?: boolean
+  sourceUser?: TransferUser | null
+  targetUserId?: number | null
+  targetOptions?: SelectOption[]
+  confirmText?: string
+  note?: string
+}>(), {
+  visible: false,
+  loading: false,
+  searchLoading: false,
+  sourceUser: null,
+  targetUserId: null,
+  targetOptions: () => [],
+  confirmText: '',
+  note: '后台用户数据转移',
 })
 
-const emit = defineEmits([
-  'update:visible',
-  'update:targetUserId',
-  'update:confirmText',
-  'update:note',
-  'search-targets',
-  'submit',
-])
+const emit = defineEmits<{
+  'update:visible': [value: boolean]
+  'update:targetUserId': [value: number]
+  'update:confirmText': [value: string]
+  'update:note': [value: string]
+  'search-targets': [query: string]
+  submit: []
+}>()
 </script>
 
 <template>

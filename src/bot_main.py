@@ -48,9 +48,15 @@ from src.services.telegram_runtime_bootstrap import (
 )
 from src.services.telegram_update_processor import build_main_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 
 logger = logging.getLogger(__name__)
 install_telegram_runtime_patches(logger=logger)
+
+
+def _env_enabled(name: str, *, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def clean_zombies_loop(bot=None):
@@ -80,6 +86,7 @@ async def post_init(application):
 
     build_global_menu_filter()
     ensure_task_core_service_providers_registered()
+    configure_task_application()
     ensure_billing_core_providers_registered()
 
     await init_db()
@@ -90,21 +97,22 @@ async def post_init(application):
     if "bg_tasks" not in application.bot_data:
         application.bot_data["bg_tasks"] = set()
 
-    payment_validator = build_ton_payment_validator_if_available(application)
-    if payment_validator is not None:
-        task_payment = asyncio.create_task(payment_validator.poll_transactions())
-        application.bot_data["bg_tasks"].add(task_payment)
-        task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
+    if _env_enabled("MAIN_BOT_PAYMENT_POLLING_ENABLED", default=True):
+        payment_validator = build_ton_payment_validator_if_available(application)
+        if payment_validator is not None:
+            task_payment = asyncio.create_task(payment_validator.poll_transactions())
+            application.bot_data["bg_tasks"].add(task_payment)
+            task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
 
-    usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
-    if usdt_payment_validator is not None:
-        task_usdt_payment = asyncio.create_task(
-            usdt_payment_validator.poll_transactions()
-        )
-        application.bot_data["bg_tasks"].add(task_usdt_payment)
-        task_usdt_payment.add_done_callback(
-            application.bot_data["bg_tasks"].discard
-        )
+        usdt_payment_validator = build_usdt_ton_payment_validator_if_available(application)
+        if usdt_payment_validator is not None:
+            task_usdt_payment = asyncio.create_task(
+                usdt_payment_validator.poll_transactions()
+            )
+            application.bot_data["bg_tasks"].add(task_usdt_payment)
+            task_usdt_payment.add_done_callback(
+                application.bot_data["bg_tasks"].discard
+            )
 
     # Recover tasks from Redis
     task_recover = asyncio.create_task(
@@ -114,9 +122,10 @@ async def post_init(application):
     task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
 
     # Start automated zombie task cleaner
-    task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
-    application.bot_data["bg_tasks"].add(task_zombies)
-    task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
+    if _env_enabled("MAIN_BOT_ZOMBIE_SWEEP_ENABLED", default=True):
+        task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
+        application.bot_data["bg_tasks"].add(task_zombies)
+        task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 
     from src.services.advanced_video_prompt_task_service import (
         run_advanced_video_prompt_delivery_loop,

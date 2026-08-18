@@ -24,6 +24,11 @@ ARG XFORMERS_CUDA_ARCH_LIST=12.0
 ARG XFORMERS_MAX_JOBS=16
 ARG XFORMERS_NVCC_THREADS=4
 ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
 
 LABEL org.opencontainers.image.title="AllBot SCAIL-2 ComfyUI test profile"
 LABEL org.opencontainers.image.description="Test-only ComfyUI runtime for Nomadoor SCAIL-2 workflows; model files are synced from the R2/LAN manifest at startup."
@@ -122,11 +127,16 @@ RUN set -euo pipefail; \
 
 COPY workers/runpod_runtime/scripts/runpod_sync_models_from_r2.py /opt/allbot/runpod_worker/scripts/runpod_sync_models_from_r2.py
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY workers/runpod_runtime/scripts/lan_scail2_comfyui_entrypoint.sh /opt/allbot/lan_scail2_comfyui_entrypoint.sh
-COPY workers/runpod_runtime/comfy_agent/workflows/SCAIL-2_*.json /opt/allbot/scail2-workflows/
+COPY workers/comfy_agent/workflows/SCAIL-2_*.json /opt/allbot/scail2-workflows/
 COPY workers/runpod_runtime/requirements.txt /opt/allbot/runpod_worker/requirements.txt
 
 RUN set -euo pipefail; \

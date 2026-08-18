@@ -242,6 +242,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
             content_type="image/png",
             sha256="986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
             byte_size=7,
+            width=512,
+            height=768,
         ),
         extra_outputs={
             "last_frame": relay.UploadAsset(
@@ -251,6 +253,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
                 media_type="image",
                 sha256="c8dee78f8c7b466c881847accc196998bad00e2b96c5ef913dfbe454d3807c96",
                 byte_size=5,
+                width=512,
+                height=768,
             )
         },
     )
@@ -265,6 +269,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
             "sha256": "986a1b7135f4986150aa5fa0028feeaa66cdaf3ed6a00a355dd86e042f7fb494",
             "byte_size": 7,
             "content_type": "image/png",
+            "width": 512,
+            "height": 768,
         },
         "extra_outputs": {
             "last_frame": {"path": "last_frame.png", "media_type": "image"}
@@ -277,6 +283,8 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
                 "content_type": "image/png",
                 "media_type": "image",
                 "ordinal": 0,
+                "width": 512,
+                "height": 768,
             }
         },
     }

@@ -1068,6 +1068,7 @@
     "face_image": "Face Image"
   },
   "task": {
+    "submission_queued": "Task submitted and queued for generation...",
     "img2img": "🎨 Custom Edit",
     "img2img_lora": "🎨 Img2Img (Addon)",
     "i2i_pro": "🌟 Pro Face Swap",

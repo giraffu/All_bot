@@ -90,6 +90,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_buttons"]["video_edit_v1"] is False
     assert config["main_buttons"]["video_edit_v2"] is True
     assert config["main_buttons"]["ai_video"] is True
+    assert config["main_buttons"]["queue"] is True
     assert config["ai_video_scenes"] == []
     assert config["main_buttons"]["private_bot"] is True
     assert config["filter_scenes"] == []
@@ -104,6 +105,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
                 "video_edit_v2",
             "ai_video",
             "market",
+            "queue",
             "private_bot",
             "main_bot_link",
         ],
@@ -294,6 +296,7 @@ def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
                 "video_edit_v1",
                 "video_edit_v2",
             "ai_video",
+            "queue",
             "private_bot",
             "main_bot_link",
         ],
@@ -891,6 +894,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "video_edit_v2": True,
         "ai_video": True,
         "market": True,
+        "queue": True,
         "main_bot_link": True,
         "private_bot": True,
     }

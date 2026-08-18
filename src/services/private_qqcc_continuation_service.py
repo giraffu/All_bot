@@ -1326,7 +1326,7 @@ async def execute_private_qqcc_continuation_stage_default(
 
 
 async def _load_continuation_output_bytes(output_file: str) -> bytes:
-    from src.core.media_paths import resolve_storage_object
+    from src.media_paths import resolve_storage_object
     from src.services.storage import storage
 
     bucket_name, object_name = resolve_storage_object(output_file)

@@ -31,6 +31,9 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
   `dashboard/backend/routers/qqcc.py`。
 - Config UI：`dashboard/frontend/src/QqccConfigApp.vue` 与
   `QqccBotSettings.vue`。
+- QQCC Config Web 的公开 payload 类型集中在 `types/qqccConfig.ts`，HTTP 只经
+  `api/qqccConfigApi.ts` typed adapter；加载/保存生命周期复用
+  `useQqccConfigPersistence.ts`，组件不再自行复制请求状态机。
 - 私有 Bot 申请：`qqcc_bot/private_bot_fsm.py`，只注册在官方 QQCC。
 - 私有 webhook：`src/web_api/routers/private_bots.py` → Redis stream →
   `python -m qqcc_private_bot.worker`。
@@ -45,6 +48,8 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot、场景配置、�
 - 官方菜单由配置归一化后生成。V1/V2 场景开关、排序、显隐和旧 callback
   兼容的完整契约以 QQCC 专项文档和配置 service 为准，前端不得另存默认
   场景或模型事实表。
+- `排队状态` 菜单复用主 Bot 的共享队列展示 seam，只做 Central 与
+  active task 的只读呈现；QQCC 不复制队列统计、任务类型映射或调度逻辑。
 - quick image/video FSM 只处理 Telegram 状态、文件、额度提示和清理。
   场景归一、后处理链、尾帧链、固定价格和执行 payload 必须留在 submission
   service，不能重新堆回 handler。

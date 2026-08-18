@@ -14,10 +14,15 @@ from shared.character_reference_sheet import (
     INGREDIENTS_CHARACTER_PANEL_VERSION,
     compose_ingredients_character_panel,
 )
-from src.core.media_paths import normalize_owned_user_upload_key
+from src.media_paths import normalize_owned_user_upload_key
 from src.core.billing_core import get_concurrent_task_limit_for_identity
-from src.core.task_core import process_and_submit_task
-from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.core.task_application import TaskApplication
+from src.core.task_core_types import (
+    SubmissionReconciliationPending,
+    TaskSubmissionCommand,
+    TaskSubmissionPolicy,
+    TaskSubmissionSideEffectPlan,
+)
 from src.database.models import CharacterReference, CharacterReferenceView
 from src.domain_config.ltx_t2v import (
     CHARACTER_REFERENCE_BUILD_COST,
@@ -25,6 +30,8 @@ from src.domain_config.ltx_t2v import (
 )
 from src.quota import QuotaManager
 from src.services.storage import storage
+from src.services.task_web_submission_intent import WebSubmissionIntentJournal
+from src.task_application_runtime import get_task_application
 from src.web_api.common.utils import release_read_transaction
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services.task_submission_service import submit_generation_task
@@ -664,7 +671,9 @@ async def resolve_ready_character_sheet(
     )
 
 
-async def build_character(*, db, current_user, payload) -> dict:
+async def build_character(
+    *, db, current_user, payload, task_application: TaskApplication | None = None
+) -> dict:
     object_key = _normalize_owned_upload_key(payload.source_object_key, current_user.id)
     if not await storage.async_object_exists(MINIO_BUCKET, object_key):
         raise HTTPException(status_code=400, detail="源图不存在或上传尚未完成。")
@@ -705,25 +714,41 @@ async def build_character(*, db, current_user, payload) -> dict:
     )
     db.add(row)
     await db.commit()
+    submission_journal = WebSubmissionIntentJournal(
+        internal_user_id=current_user.id,
+        username=current_user.username,
+        task_id=task_id,
+    )
     try:
-        result = await process_and_submit_task(
-            user_id=current_user.id,
-            username=current_user.username,
-            task_type=CHARACTER_REFERENCE_BUILD_TASK_TYPE,
-            inputs={
-                "images": [f"{MINIO_BUCKET}/{object_key}"],
-                "character_id": character_id,
-                "prompt": "Generate six separate consistent adult character reference views on pure black backgrounds: front close-up face, three-quarter face, front waist-up, front full body, side full body, back full body. Preserve identity, face, hairstyle, skin tone, body, clothing and accessories. No text, labels, borders or collage.",
-            },
-            task_id=task_id,
-            submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-                attach_web_monitor=True
+        application = task_application or get_task_application()
+        result = await application.submit(
+            TaskSubmissionCommand(
+                internal_user_id=current_user.id,
+                username=current_user.username,
+                task_type=CHARACTER_REFERENCE_BUILD_TASK_TYPE,
+                inputs={
+                    "images": [f"{MINIO_BUCKET}/{object_key}"],
+                    "character_id": character_id,
+                    "prompt": "Generate six separate consistent adult character reference views on pure black backgrounds: front close-up face, three-quarter face, front waist-up, front full body, side full body, back full body. Preserve identity, face, hairstyle, skin tone, body, clothing and accessories. No text, labels, borders or collage.",
+                },
+                task_id=task_id,
+                registry_metadata={"character_id": character_id},
             ),
-            cost_override=CHARACTER_REFERENCE_BUILD_COST,
-            user_cancel_allowed=True,
-            registry_metadata={"character_id": character_id},
-            allow_contribute_override=False,
+            TaskSubmissionPolicy(
+                side_effect_plan=TaskSubmissionSideEffectPlan(
+                    attach_web_monitor=True
+                ),
+                cost_override=CHARACTER_REFERENCE_BUILD_COST,
+                user_cancel_allowed=True,
+                allow_contribute_override=False,
+                refund_idempotency_key=(
+                    submission_journal.refund_idempotency_key
+                ),
+            ),
+            submission_journal,
         )
+    except SubmissionReconciliationPending as exc:
+        result = {"task_id": exc.registry_task_id, "cost": exc.cost}
     except Exception:
         row.status = "failed"
         row.updated_at = datetime.now()

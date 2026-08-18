@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.database.models import History
 from src.web_api.services import users_history_mutation_service as mutation_service
 

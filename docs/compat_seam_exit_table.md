@@ -1,5 +1,10 @@
 # Compat / Seam 当前退出表
 
+机器可校验的事实源是 `config/compat_registry.json`：每个条目必须包含入口、
+owner、telemetry key、替代入口、无命中观测窗口和历史数据退出条件。
+`scripts/validate_compat_registry.py` 验证 schema、唯一性和声明为
+`compat_hit_log` 的真实埋点。本表只是人工导航摘要，不重复机器字段。
+
 本表只跟踪仍在运行或仍需运行态确认的兼容层。已删除、已下沉和已完成条目
 保存在
 [`docs/archive/knowledge-base-cleanup-20260727/`](archive/knowledge-base-cleanup-20260727/)，
@@ -16,6 +21,7 @@
 | 对象 | 状态 | 责任域 | 运行时调用方 | 当前用途 | 退出信号 | 最近复核（静态） |
 | --- | --- | --- | --- | --- | --- | --- |
 | `image_to_video_fsm.start_custom_video` | active-compat | TG FSM | `/custom_video`、旧菜单与 callback handler | 保持已发消息和旧入口可达 | 产品入口与已发 callback 不再使用旧名 | 2026-07-27 |
+| Web task status SSE route | active-compat | Public Web | 旧 Web/第三方客户端 | 保留旧实时状态协议；官方 Web 已用 polling | `compat.web.task_status_sse` 连续 30 天无命中 | 2026-08-18 |
 | `MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | active-compat | Task engine | task constants、提交与 History 恢复 | 归一历史任务值和 payload | 数据与调用方全部改用 canonical type | 2026-07-27 |
 | QQCC Wan22 单模型字段与旧模型名 | active-compat | QQCC | `qqcc_config_service`、quick-video continuation | 读取升级前场景和 payload | 官方/私有配置迁移且观察窗口无旧字段 | 2026-07-27 |
 | QQCC `next_scene_id` 容错归一 | active-compat | QQCC | `qqcc_config_service`、`qqcc_video_scene_chain_service` | 安全加载旧或损坏配置 | 支持中的 checkpoint 重存且回滚点退出 | 2026-07-27 |
@@ -29,10 +35,14 @@
 
 ## 维护规则
 
-- 新兼容层必须写清调用方、目标 canonical interface、退出信号和验证方式。
+- 新兼容层先登记 `config/compat_registry.json`，再写代码；门禁会拒绝
+  只新增 `compat/legacy/alias` 标记却没更新 registry 的变更。
+- `compat_hit_log` 只记 telemetry key 和入口，不记用户 payload、token、
+  object key 或 callback 原文。运维查询使用 `event=compat_hit` +
+  `telemetry_key`，避免靠搜业务文案猜测是否命中。
 - 已删除代码不留在活跃表；删除证据进入归档或 Git 历史。
-- 只有静态 `rg` 不足以删除数据/协议兼容；涉及历史 payload、队列、数据库或
-  已发 Telegram callback 时必须补运行态/数据观测。
+- 只有静态 `rg` 不足以删除数据/协议兼容；必须同时满足 registry
+  中的连续无命中窗口和 `historical_data` 条件。
 - 测试 seam 只有在 fake、环境差异或可替换 adapter 存在时保留；仅一行转发
   且无 interface 价值的浅壳应删除。
 - 完成退出后同步专项文档、Skill 和审计矩阵，并运行 focused tests。

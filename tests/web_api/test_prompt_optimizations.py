@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from config import MINIO_BUCKET
-from src.core.task_core_types import CoreDomainError
+from src.core.task_core_types import CoreDomainError, SubmissionReconciliationPending
 from src.web_api.routers.prompt_optimizations import _require_enabled
 from src.web_api.schemas.prompt_optimization_schema import PromptOptimizationTaskRequest
 from src.web_api.services.prompt_optimization_service import (
@@ -14,6 +14,7 @@ from src.web_api.services.prompt_optimization_service import (
     submit_prompt_optimization,
 )
 from src.web_api.services.prompt_optimizer_config_service import get_default_config
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 async def _load_config(scene_key: str):
@@ -71,7 +72,7 @@ async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
         current_user=SimpleNamespace(id=7, username="alice"),
         get_balance=AsyncMock(return_value=19),
         object_size=AsyncMock(return_value=1024),
-        submit_task_func=submit,
+        task_application=LegacyTaskApplicationAdapter(submit),
         load_config_func=_load_config,
     )
 
@@ -93,10 +94,36 @@ async def test_submit_uses_deterministic_idempotency_and_immutable_refs():
         "max_chars": 2000,
     }
     assert kwargs["registry_metadata"]["record_history"] is False
+    assert kwargs["submission_before_dispatch_func"] is not None
+    assert kwargs["submission_should_compensate_func"] is not None
     assert kwargs["allow_contribute_override"] is False
     assert (
-        "761206f6-50ed-437c-855a-af14544352f9" in kwargs["submission_idempotency_key"]
+        "761206f6-50ed-437c-855a-af14544352f9"
+        in kwargs["submission_idempotency_key"]
     )
+
+
+@pytest.mark.asyncio
+async def test_submit_returns_pending_when_dispatch_is_reconciling():
+    result = await submit_prompt_optimization(
+        request=_request(),
+        current_user=SimpleNamespace(id=7, username="alice"),
+        get_balance=AsyncMock(return_value=19),
+        object_size=AsyncMock(return_value=1024),
+        task_application=LegacyTaskApplicationAdapter(
+            AsyncMock(
+                side_effect=SubmissionReconciliationPending(
+                    registry_task_id="prompt-task",
+                    cost=1,
+                )
+            )
+        ),
+        load_config_func=_load_config,
+    )
+
+    assert result["task_id"] == "prompt-task"
+    assert result["status"] == "pending"
+    assert result["cost"] == 1
 
 
 @pytest.mark.asyncio
@@ -115,7 +142,7 @@ async def test_submit_rejects_media_owned_by_another_user_before_storage_lookup(
             current_user=SimpleNamespace(id=7, username="alice"),
             get_balance=AsyncMock(),
             object_size=object_size,
-            submit_task_func=AsyncMock(),
+            task_application=LegacyTaskApplicationAdapter(AsyncMock()),
             load_config_func=_load_config,
         )
     object_size.assert_not_awaited()
@@ -129,7 +156,7 @@ async def test_submit_rejects_oversized_media():
             current_user=SimpleNamespace(id=7, username="alice"),
             get_balance=AsyncMock(),
             object_size=AsyncMock(return_value=PROMPT_MEDIA_MAX_BYTES + 1),
-            submit_task_func=AsyncMock(),
+            task_application=LegacyTaskApplicationAdapter(AsyncMock()),
             load_config_func=_load_config,
         )
 
@@ -146,7 +173,7 @@ async def test_submit_pure_t2v_uses_v4_and_accepts_no_media():
         current_user=SimpleNamespace(id=7, username="alice"),
         get_balance=AsyncMock(return_value=18),
         object_size=AsyncMock(),
-        submit_task_func=submit,
+        task_application=LegacyTaskApplicationAdapter(submit),
         load_config_func=_load_config,
     )
 
@@ -175,7 +202,7 @@ async def test_submit_minimax_h3_uses_fixed_stack_and_shared_scene_config():
         current_user=SimpleNamespace(id=7, username="alice"),
         get_balance=AsyncMock(return_value=18),
         object_size=AsyncMock(return_value=1024),
-        submit_task_func=submit,
+        task_application=LegacyTaskApplicationAdapter(submit),
         load_config_func=load_config,
     )
 
@@ -204,7 +231,7 @@ async def test_submit_minimax_h3_rejects_any_addon_before_media_lookup():
             current_user=SimpleNamespace(id=7, username="alice"),
             get_balance=AsyncMock(),
             object_size=object_size,
-            submit_task_func=AsyncMock(),
+            task_application=LegacyTaskApplicationAdapter(AsyncMock()),
             load_config_func=_load_config,
         )
     object_size.assert_not_awaited()
@@ -252,7 +279,7 @@ async def test_submit_ic_t2v_resolves_two_owner_fenced_characters(monkeypatch):
         current_user=SimpleNamespace(id=7, username="alice"),
         get_balance=AsyncMock(return_value=18),
         object_size=AsyncMock(return_value=1024),
-        submit_task_func=submit,
+        task_application=LegacyTaskApplicationAdapter(submit),
         load_config_func=_load_config,
     )
 

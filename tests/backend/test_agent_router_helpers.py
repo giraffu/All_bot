@@ -52,6 +52,20 @@ def test_heartbeat_request_accepts_pool_bundle_versions_json_string():
     assert request.model_bundle_versions == '{"wan22_video_v2_baseline":"2026-06-10"}'
 
 
+def test_heartbeat_request_accepts_runtime_manifest():
+    request = HeartbeatRequest(
+        agent_id="agent-1",
+        types="img2img",
+        runtime_manifest={
+            "git_sha": "abc123",
+            "runtime_package_sha256": "a" * 64,
+            "workflow_mapping_sha256": "b" * 64,
+        },
+    )
+
+    assert request.runtime_manifest["git_sha"] == "abc123"
+
+
 @pytest.mark.asyncio
 async def test_complete_route_returns_stable_retryable_promotion_error_and_counts_it(
     monkeypatch,
@@ -653,6 +667,15 @@ async def test_complete_task_promotes_new_worker_assets_before_marking_done():
         return_value=SimpleNamespace(
             result_path="task-results/task-1/primary.png",
             extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+            result_asset={
+                "object_key": "task-results/task-1/primary.png",
+                "sha256": "a" * 64,
+                "byte_size": 7,
+                "content_type": "image/png",
+                "width": 512,
+                "height": 512,
+            },
+            extra_output_assets={},
         )
     )
 
@@ -674,6 +697,15 @@ async def test_complete_task_promotes_new_worker_assets_before_marking_done():
         "task-1",
         "task-results/task-1/primary.png",
         extra_outputs={"last_frame": {"path": "task-results/task-1/extra.png"}},
+        result_asset={
+            "object_key": "task-results/task-1/primary.png",
+            "sha256": "a" * 64,
+            "byte_size": 7,
+            "content_type": "image/png",
+            "width": 512,
+            "height": 512,
+        },
+        extra_output_assets={},
     )
 
 

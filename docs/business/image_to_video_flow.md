@@ -18,7 +18,7 @@ sequenceDiagram
     FSM-->>User: 同屏选择模型/帧模式/分辨率，再上传图片并输入提示词
     FSM->>Entry: 进入视频 entrypoint
     Entry->>Flow: 组装 BotTaskFlowContext 五段式上下文
-    Flow->>Core: process_and_submit_task(...)
+    Flow->>Core: TaskApplication.submit(command, policy, journal)
     Core->>Backend: 派发 registry_task_id / backend_task_id
     Flow-->>User: 前台进度通知 / 排队状态
     Backend->>Store: 上传视频结果

@@ -9,7 +9,7 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
-import { useTaskStream } from '@/composables/useTaskStream'
+import { useTaskSubmission } from '@/composables/useTaskSubmission'
 import {
   getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost
@@ -34,7 +34,7 @@ warnIfPropsExceedBudget('TemplateScail2VideoPanel', Object.keys(props).length)
 
 const { t } = useI18n()
 const templateApplyStore = useTemplateApplyStore()
-const { isSubmitting, submitTask } = useTaskStream()
+const { isSubmitting, submitTask } = useTaskSubmission()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const sessionIdRef = computed(() => props.sessionId)
 const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTemplateApplyUpload(sessionIdRef)

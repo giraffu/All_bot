@@ -5,13 +5,17 @@ from fastapi import HTTPException
 
 from src.core import task_core
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
-from src.core.task_core_types import TaskSubmissionExecutionResult
+from src.core.task_core_types import (
+    SubmissionReconciliationPending,
+    TaskSubmissionExecutionResult,
+)
 from src.database import core as db_core
 from src.database.models import History
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services import task_submission_service
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 class _FakeResult:
@@ -51,6 +55,36 @@ class _FakeSession:
 
 def _build_current_user():
     return type("User", (), {"id": 123, "username": "tester"})()
+
+
+@pytest.mark.asyncio
+async def test_web_returns_task_id_when_dispatch_requires_reconciliation(monkeypatch):
+    process_task = AsyncMock(
+        side_effect=SubmissionReconciliationPending(
+            registry_task_id="deterministic-task",
+            cost=6,
+        )
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
+    )
+
+    response = await task_submission_service.submit_generation_task(
+        req=TaskGenerateRequest(task_type="txt2img", inputs={}, prompt="hello"),
+        current_user=_build_current_user(),
+        get_balance=AsyncMock(return_value=94),
+        task_id_override="deterministic-task",
+    )
+
+    assert response.task_id == "deterministic-task"
+    assert response.status == "pending"
+    assert response.submission_state == "reconciling"
+    assert response.cost == 6
+    submit_kwargs = process_task.await_args.kwargs
+    assert submit_kwargs["submission_before_dispatch_func"] is not None
+    assert submit_kwargs["submission_should_compensate_func"] is not None
 
 
 def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
@@ -117,8 +151,10 @@ def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
 
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_and_submit_task_with_dependencies,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            process_and_submit_task_with_dependencies
+        ),
     )
     monkeypatch.setattr(
         tasks_router.quota_manager,
@@ -288,8 +324,8 @@ async def test_web_generate_rejects_i2i_draw_without_submitting(monkeypatch):
     process_task = AsyncMock()
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
 
     request = TaskGenerateRequest(
@@ -318,8 +354,8 @@ async def test_web_generate_submits_free_edit_v3_as_one_five_credit_logical_task
     process_task = AsyncMock(return_value={"task_id": "logical-task-1", "cost": 5})
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
     monkeypatch.setattr(
         tasks_router.quota_manager,
@@ -361,8 +397,8 @@ async def test_web_scail2_face_swap_prepares_first_frame_and_persists_continuati
     )
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
     monkeypatch.setattr(
         task_submission_service,
@@ -434,8 +470,10 @@ async def test_web_scail2_face_swap_cleans_hidden_frame_when_submission_fails(
     )
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        AsyncMock(side_effect=RuntimeError("submission failed")),
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            AsyncMock(side_effect=RuntimeError("submission failed"))
+        ),
     )
 
     with pytest.raises(RuntimeError, match="submission failed"):
@@ -465,8 +503,8 @@ async def test_web_generate_submits_free_edit_v25_as_one_three_credit_stage(
     process_task = AsyncMock(return_value={"task_id": "logical-v25", "cost": 3})
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
     monkeypatch.setattr(
         tasks_router.quota_manager,
@@ -502,8 +540,8 @@ async def test_internal_free_edit_submission_merges_private_context_and_task_id(
     process_task = AsyncMock(return_value={"task_id": "character-view-1", "cost": 5})
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
 
     response = await task_submission_service.submit_generation_task(
@@ -547,7 +585,9 @@ async def test_web_generate_submits_two_image_free_edit_v25_for_seven_credits(
 ):
     process_task = AsyncMock(return_value={"task_id": "logical-v25-2", "cost": 7})
     monkeypatch.setattr(
-        task_submission_service, "process_and_submit_task", process_task
+        task_submission_service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
     monkeypatch.setattr(
         tasks_router.quota_manager,
@@ -599,8 +639,8 @@ async def test_web_generate_rejects_invalid_or_legacy_free_edit_requests(
     process_task = AsyncMock()
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -629,8 +669,8 @@ async def test_web_generate_requires_one_or_two_free_edit_v2_5_images(
     process_task = AsyncMock()
     monkeypatch.setattr(
         task_submission_service,
-        "process_and_submit_task",
-        process_task,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_task),
     )
 
     with pytest.raises(HTTPException) as exc_info:

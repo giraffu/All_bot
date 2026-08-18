@@ -1,6 +1,6 @@
 import pytest
 
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.web_api.common.utils import (
     build_storage_input_file_url,
     call_with_optional_db,

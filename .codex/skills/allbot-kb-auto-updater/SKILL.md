@@ -53,7 +53,8 @@ description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项�
    - 若影响全局路由，再同步 `AGENTS.md` 与 `docs/skills/README.md`。
 4. **废弃或兼容壳退出**：
    - 删除或标记归档对应 docs/skill 说明。
-   - 若存在 compat seam 退出，应在文档中明确新的真实入口。
+   - 新增或退出 compat seam 时同步 `config/compat_registry.json`，确保
+     owner、telemetry key、替代入口、观测窗口和历史数据条件可机器校验。
 
 ## 4. 质量检查与验收
 - 技能与文档中的主入口函数、关键对象名、异常类型、超时值、双 ID 语义必须与代码一致。

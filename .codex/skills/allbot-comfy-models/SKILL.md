@@ -34,6 +34,9 @@ manifest 和专项文档读取，不在此维护快照。
 - 用户能力和参数：task registry/domain config、Bot/Web schema 与 presenter。
 - task type → workflow/profile：Worker registry、workflow resolver、release
   artifact catalog 和 focused tests。
+- workflow resolver 对未知类型和 registry 中没有 workflow 的类型显式报错；
+  禁止继续猜测 `<task_type>.json`。RunPod profile、Worker mapping 与 registry
+  由 `tests/config/test_task_type_contract.py` 做双向门禁。
 - 节点、输入名和默认值：`workers/comfy_agent/workflows/*.json` 及对应
   patcher；禁止凭记忆编辑。
 - 模型是否可运行：目标 profile 的模型 manifest、镜像内 workflow checksum、
@@ -58,9 +61,10 @@ manifest 和专项文档读取，不在此维护快照。
 - 多个 task type 共享 workflow 时，在 patcher 按类型注入差异，不复制 JSON。
 - 主 Bot、QQCC 和管理后台可有不同选项 catalog；私有选项不得泄漏到公开
   catalog，兼容字段只读解析，不作为新入口。
-- `workers/comfy_agent/` 与 `workers/runpod_runtime/` 的
-  workflow/mapping/checksum 必须保持发布契约要求的一致；不要只改测试执行
-  Worker 或正式 GPU runtime。
+- `workers/comfy_agent/` 是 agent、patcher 与 workflow 唯一源码；GPU profile
+  只在构建时组合它、根 `src/`、`shared/` 和 `workers/runpod_runtime/` 的薄
+  entrypoint/relay/requirements。禁止在 runtime 目录恢复复制源码。镜像必须嵌入
+  Git SHA、canonical package hash、mapping hash，并由 heartbeat 报告。
 
 ## 4. 修改流程
 
@@ -73,6 +77,9 @@ manifest 和专项文档读取，不在此维护快照。
 5. 同步 Bot/Web/QQCC schema 与 i18n；服务端必须再次校验，不依赖前端菜单。
 6. 若模型或 workflow 进入 artifact，更新 checksum/manifest/profile，走同
    SHA 构建和 canary；代码合入本身不代表模型已在运行节点生效。
+7. registry 变化后运行
+   `python scripts/generate_task_type_contract.py --write`，再运行 `--check`；
+   生成的前端合约不可手工维护。
 
 ## 5. 高压红线
 
@@ -94,6 +101,9 @@ manifest 和专项文档读取，不在此维护快照。
   config 和 patcher fail closed；未知选项不得忽略。
 - workflow 执行成功但上传/回报失败不能写成业务成功；结果物化遵守 task engine
   的终态与退款语义。
+- Worker `result_asset` 以实际输出 bytes 计算 SHA/size/content type，并尽力探测
+  实际 width/height/duration；字段保持向后兼容，但新 Worker 不得用请求参数冒充
+  实际媒体 metadata。
 - 人物参考表与场景背景属于 conditioning，不是交付首尾帧。当前测试
   `ltx_t2v_ic` 固定恰好两个有序人物面板和一张环境图；角色可混用用户私有与
   published 官方角色，环境可选 published 官方单图或当前用户临时上传单图，采用 Runexx 的

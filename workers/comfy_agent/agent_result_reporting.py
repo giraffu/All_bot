@@ -18,12 +18,27 @@ class SpooledOutputAsset:
     media_type: str | None = None
     sha256: str = ""
     byte_size: int = 0
+    width: int | None = None
+    height: int | None = None
+    duration: float | None = None
 
 
 @dataclass(frozen=True)
 class SpooledTaskOutputs:
     primary: SpooledOutputAsset
     extra_outputs: dict[str, SpooledOutputAsset]
+
+
+def _media_metadata_payload(asset) -> dict[str, int | float]:
+    payload: dict[str, int | float] = {}
+    for field in ("width", "height"):
+        value = getattr(asset, field, None)
+        if isinstance(value, int) and value > 0:
+            payload[field] = value
+    duration = getattr(asset, "duration", None)
+    if isinstance(duration, (int, float)) and duration > 0:
+        payload["duration"] = float(duration)
+    return payload
 
 
 async def upload_materialized_outputs(
@@ -85,6 +100,7 @@ async def upload_materialized_outputs(
             "content_type": extra_output.content_type,
             "media_type": extra_output.media_type,
             "ordinal": ordinal,
+            **_media_metadata_payload(extra_output),
         }
     return {
         "result_path": primary_key,
@@ -93,6 +109,7 @@ async def upload_materialized_outputs(
             "sha256": primary_sha256,
             "byte_size": len(outputs.primary.file_data),
             "content_type": outputs.primary.content_type,
+            **_media_metadata_payload(outputs.primary),
         },
         "extra_outputs": extra_outputs_payload,
         "extra_output_assets": extra_output_assets,
@@ -135,6 +152,9 @@ async def spool_materialized_outputs(
             object_name=extra_output.object_name,
             content_type=extra_output.content_type,
             media_type=extra_output.media_type,
+            width=getattr(extra_output, "width", None),
+            height=getattr(extra_output, "height", None),
+            duration=getattr(extra_output, "duration", None),
         )
         logger.info("Spooled extra result %s for task %s to %s", name, task_id, extra_path)
 
@@ -158,6 +178,9 @@ async def spool_materialized_outputs(
             media_type=asset.media_type,
             sha256=hashlib.sha256(outputs.extra_outputs[name].file_data).hexdigest(),
             byte_size=len(outputs.extra_outputs[name].file_data),
+            width=asset.width,
+            height=asset.height,
+            duration=asset.duration,
         )
     return SpooledTaskOutputs(
         primary=SpooledOutputAsset(
@@ -166,6 +189,9 @@ async def spool_materialized_outputs(
             content_type=outputs.primary.content_type,
             sha256=primary_sha256,
             byte_size=len(outputs.primary.file_data),
+            width=getattr(outputs.primary, "width", None),
+            height=getattr(outputs.primary, "height", None),
+            duration=getattr(outputs.primary, "duration", None),
         ),
         extra_outputs=staged_extra_outputs,
     )
@@ -181,6 +207,7 @@ def _spooled_asset_payload(asset: SpooledOutputAsset) -> dict[str, Any]:
         payload["media_type"] = asset.media_type
     payload["sha256"] = asset.sha256
     payload["byte_size"] = asset.byte_size
+    payload.update(_media_metadata_payload(asset))
     return payload
 
 

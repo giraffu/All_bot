@@ -386,6 +386,7 @@ async def test_attach_web_task_monitor_awaits_pending_finalizer_enqueue(monkeypa
         registry_task_id="registry-1",
         submission_context=submission_context,
         cost=5,
+        source_post_id=None,
     )
 
 

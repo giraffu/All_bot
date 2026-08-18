@@ -11,6 +11,7 @@ class FakeMinio:
     def __init__(self, objects):
         self.objects = dict(objects)
         self.copy_calls = []
+        self.get_calls = []
 
     def stat_object(self, bucket, key):
         value = self.objects.get((bucket, key))
@@ -20,15 +21,22 @@ class FakeMinio:
             size=value["size"],
             metadata={"x-amz-meta-sha256": value["sha256"]},
             content_type=value.get("content_type", "application/octet-stream"),
+            checksum_sha256=value.get("native_checksum"),
         )
 
     def get_object(self, bucket, key):
+        self.get_calls.append((bucket, key))
         return io.BytesIO(self.objects[(bucket, key)]["data"])
 
-    def copy_object(self, bucket, destination, source):
-        self.copy_calls.append((bucket, destination, source.bucket_name, source.object_name))
+    def copy_object(self, bucket, destination, source, **kwargs):
+        self.copy_calls.append(
+            (bucket, destination, source.bucket_name, source.object_name, kwargs)
+        )
         source_value = self.objects[(source.bucket_name, source.object_name)]
         self.objects[(bucket, destination)] = dict(source_value)
+        metadata = kwargs.get("metadata") or {}
+        if metadata.get("sha256"):
+            self.objects[(bucket, destination)]["sha256"] = metadata["sha256"]
 
 
 @pytest.mark.asyncio
@@ -88,6 +96,15 @@ async def test_promotes_staging_assets_before_returning_durable_completion():
         }
     }
     assert len(client.copy_calls) == 2
+    assert client.get_calls == [
+        ("user-data-prod", primary_key),
+        ("user-data-prod", extra_key),
+    ]
+    assert all(
+        call[4]["metadata_directive"] == "REPLACE"
+        and call[4]["metadata"]["sha256"]
+        for call in client.copy_calls
+    )
 
 
 @pytest.mark.asyncio
@@ -123,6 +140,52 @@ async def test_duplicate_promotion_is_idempotent_when_durable_sha_matches():
 
     assert promoted.result_path == durable
     assert client.copy_calls == []
+    assert client.get_calls == []
+
+
+@pytest.mark.asyncio
+async def test_native_source_checksum_avoids_application_level_media_read():
+    staging = "staging/worker-results/backend-1/primary.png"
+    data = b"primary"
+    sha256 = hashlib.sha256(data).hexdigest()
+    client = FakeMinio(
+        {
+            ("user-data-prod", staging): {
+                "size": len(data),
+                "sha256": sha256,
+                "native_checksum": sha256,
+                "data": data,
+            }
+        }
+    )
+
+    promoted = await promote_completion_assets(
+        task_id="backend-1",
+        result_path=staging,
+        extra_outputs={},
+        result_asset={
+            "staging_key": staging,
+            "sha256": sha256,
+            "byte_size": len(data),
+            "content_type": "image/png",
+            "width": 512,
+            "height": 512,
+        },
+        extra_output_assets={},
+        minio_client=client,
+        bucket="user-data-prod",
+    )
+
+    assert promoted.result_path == "task-results/backend-1/primary.png"
+    assert promoted.result_asset == {
+        "object_key": "task-results/backend-1/primary.png",
+        "sha256": sha256,
+        "byte_size": len(data),
+        "content_type": "image/png",
+        "width": 512,
+        "height": 512,
+    }
+    assert client.get_calls == []
 
 
 @pytest.mark.asyncio

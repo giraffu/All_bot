@@ -4,8 +4,8 @@ from functools import lru_cache
 
 from src.core.async_side_effect_runner import get_default_async_side_effect_runner
 from src.core.billing_core import release_concurrency_lock
-from src.core.media_paths import resolve_storage_object
-from src.core.media_processor import (
+from src.media_paths import resolve_storage_object
+from src.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
     generate_and_upload_thumbnail,
@@ -88,13 +88,11 @@ def build_default_task_core_runtime_dependencies(
             runtime_capabilities.get_all_user_concurrencies_func
         ),
         cancel_task_func=runtime_capabilities.cancel_task_func,
+        sync_user_concurrency_func=runtime_capabilities.sync_user_concurrency_func,
         get_task_func=runtime_capabilities.get_task_func,
         find_task_by_backend_task_id_func=(
             runtime_capabilities.find_task_by_backend_task_id_func
         ),
-        set_runtime_value_func=runtime_capabilities.set_runtime_value_func,
-        expire_runtime_value_func=runtime_capabilities.expire_runtime_value_func,
-        delete_runtime_value_func=runtime_capabilities.delete_runtime_value_func,
     )
 
 

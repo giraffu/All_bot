@@ -1243,6 +1243,14 @@ class WorkerLog(Base):
 
 class GalleryPost(Base):
     __tablename__ = "gallery_posts"
+    __table_args__ = (
+        Index(
+            "uq_gallery_posts_task_user",
+            "task_id",
+            "user_id",
+            unique=True,
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(String(64), index=True)
@@ -1288,8 +1296,21 @@ class GalleryPost(Base):
 class UserInteraction(Base):
     __tablename__ = "user_interactions"
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "post_id", "action_type", name="uix_user_post_action"
+        Index(
+            "uq_user_interactions_reaction",
+            "user_id",
+            "post_id",
+            unique=True,
+            postgresql_where=text("action_type IN ('like', 'dislike')"),
+            sqlite_where=text("action_type IN ('like', 'dislike')"),
+        ),
+        Index(
+            "uq_user_interactions_apply",
+            "user_id",
+            "post_id",
+            unique=True,
+            postgresql_where=text("action_type = 'apply'"),
+            sqlite_where=text("action_type = 'apply'"),
         ),
     )
 

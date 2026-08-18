@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.backfill_history_r2_objects as backfill_module
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
     build_input_file_candidates,

@@ -53,7 +53,7 @@
 | `pornmaster_flux2_single_edit` | `PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 15.image`、`prompt -> CLIPTextEncode 185.text`、`negative_prompt -> CLIPTextEncode 254.text`、`seed -> RandomNoise 28.noise_seed` |
 | `pornmaster_flux2_multi_edit` | `PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 17.image`、`image2 -> LoadImage 29.image`、`prompt -> CLIPTextEncode 8.text`、`negative_prompt -> CLIPTextEncode 49.text`、`seed -> RandomNoise 43.noise_seed` |
 
-这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `workers/runpod_runtime/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `workers/runpod_runtime/src/workflow_mapping_validation.py`。
+这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。文件只维护在 `workers/comfy_agent/workflows/`，映射只维护 `src/workflow_mapping_validation.py`；GPU profile 构建时直接复制这两份 canonical source。
 
 旧 `pornmaster_flux2_edit_baseline/2026-06-27` FP8 bundle 及其本地导入、LAN 上传、R2 manifest 发布脚本均已退役。不得再用历史 workflow 或缓存恢复 FP8 worker；当前模型口径只维护 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`。
 
@@ -241,7 +241,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
   - 未显式传 `strength` 时，会回落到 `src/lora_catalog.py` 中登记的默认强度。
   - `ltx_video_flf2v` 通过 `LoadImage 16` 接收终止帧，并在 `26:297` / `26:312` 写入第二帧条件；`SaveImage 902` 保存尾帧。默认与 10Eros v1.2 FLF2V workflow 的时空 VAE 解码节点 `26:149` 必须保持 `last_frame_fix=true`：解码器会临时重复末端 latent、补足时间边界上下文，再丢弃额外帧，避免最终画面出现轻微形变；本地 `workers/` 与 RunPod/LAN bundle `workers/runpod_runtime/` 必须同轮同步。
   - `ltx_video_v2v_audio` 通过 `VHS_LoadVideo 900` 接收输入视频，patcher 固定 `force_rate=24`、`frame_load_cap=duration_seconds*24+1`。
-  - 三个 LTX task type 都需要 worker 声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并同步 `workers/runpod_runtime/`。
+  - 三个 LTX task type 都需要 worker 声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并重建对应 profile exact digest。
   - 2026-06-22 新增的 10Eros v1.2 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，只通过单 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 测试覆盖；默认三份 `LTX 2.3 *.json` 仍保持旧主模型绑定。
   - 10Eros v1.2 主模型节点应指向 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 10Eros v1.2-only，旧 v1 不再作为正式 RunPod 回退。新增或切换主模型时，不要直接覆盖旧 workflow 文件名，先复制新 workflow 并用 override canary。
   - 统一 LTX 镜像使用三份独立 `* 10Eros LoRA.json` workflow：节点 `257` 加载官方 dev FP8，固定节点 `905` 以 `1.0` 加载 `LTX_10Eros-v12_LoRA_fro99-avgrank91.safetensors`，节点 `256` 仍只承接用户可选 LoRA。清空节点 `256` 时必须让下游回连 `191`，不得删除或绕过固定节点 `905`。旧完整 checkpoint workflow 保留为独立 profile 的回滚资产。
@@ -273,8 +273,7 @@ SCAIL-2 当前是正式可用的视频生视频能力。用户侧只展示三个
 | `scail2_video_replacement` | 视频换人 | `SCAIL-2_Replacement_audio.api.json` | `replacement_mode=true` |
 | `scail2_face_swap_v2` | 视频换脸两阶段 | `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json` | `replacement_mode=true`，仅接受 `reference_preprocessed=true` |
 
-Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
-`workers/runpod_runtime/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
+Nomadoor 的四个 UI workflow 只保存在 `workers/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
 派生的 API-format workflow，不得直接把 UI JSON 提交给 worker。`SCAIL-2_Animation_WAN-Context-Windows.json`
 原始文件是 ComfyUI UI workflow，保存时长为 133 帧、16fps，约 8.3s；已转换为
 `SCAIL-2_Animation_WAN-Context-Windows.api.json` 给动作迁移 10/15/20s 隐藏执行路由使用，但该能力
@@ -314,9 +313,8 @@ SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测�
 把前段噪声片段重排复制到后续窗口，带来动作循环伪影。
 audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVideo 113`
 的 audio 输出，且 `trim_to_audio=false`。重导 workflow 后要同时更新：
-`SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
-`src/workflow_mapping_validation.py`、`workers/runpod_runtime/src/workflow_mapping_validation.py` 与
-`workers/runpod_runtime/comfy_agent/workflows/`。
+`SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py` 与
+`src/workflow_mapping_validation.py`。GPU profile 直接消费 canonical 文件，不维护副本。
 视频换脸是 Central 两阶段方案，不把图片换脸模型混装进 SCAIL-2 runtime。共享首帧准备服务先从本地文件或对象存储视频抽取首帧并保存隐藏对象；第一阶段以固定优先级 100 向 `i2i_pro` 提交标准 `face_swap_v2`，人脸参考图做人脸来源、驱动首帧做 body。第一阶段结果不写 History/Gallery。continuation 必须先持久化派发意图、切换 TaskRegistry，再用确定性 backend ID 按根任务原始正常优先级提交第二阶段；内部请求必须带 `reference_preprocessed=true`，缺失或 false 由 Central 拒绝。普通 Worker 与 RunPod/LAN baked runtime 的 `agent_workflow_execution` 还会在加载 workflow、接触 ComfyUI 前重复校验该标记，防止错误控制面任务占用 SCAIL 算力。第二阶段不可取消、不扣费，最终只写一条 `scail2_face_swap_v2` 视频记录。
 
 SCAIL-2 Worker 只把“换脸后的首帧”作为 `LoadImage 58` 提交给

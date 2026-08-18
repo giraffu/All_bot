@@ -28,6 +28,11 @@ def _build_bot(bot_token: str | None, proxy_url: str | None):
     return Bot(token=bot_token)
 
 
+def _configured_proxy_url() -> str | None:
+    """Return an explicitly configured proxy without inventing a local default."""
+    return os.getenv("PROXY_URL") or None
+
+
 async def _fetch_ton_balances(client: httpx.AsyncClient, ton_address: str | None) -> tuple[float, float]:
     if not ton_address:
         return 0.0, 0.0
@@ -162,7 +167,7 @@ async def _update_external_balances_once(
 async def update_external_balances():
     ton_address = os.getenv("VITE_MERCHANT_ADDRESS")
     bot_token = os.getenv("BOT_TOKEN")
-    proxy_url = os.getenv("PROXY_URL", "http://127.0.0.1:7890")
+    proxy_url = _configured_proxy_url()
     bot = _build_bot(bot_token, proxy_url)
 
     async with httpx.AsyncClient() as client:

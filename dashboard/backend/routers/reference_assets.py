@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import MINIO_BUCKET
 from dashboard.backend.auth import TokenData, get_current_user
 from shared.character_reference_sheet import compose_ingredients_character_panel
-from src.core.task_core import process_and_submit_task
-from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.core.task_core_types import (
+    TaskSubmissionCommand,
+    TaskSubmissionPolicy,
+    TaskSubmissionSideEffectPlan,
+)
 from src.database.core import get_db
 from src.database.models import (
     CharacterReference,
@@ -22,6 +25,7 @@ from src.database.models import (
     OfficialEnvironmentAsset,
 )
 from src.services.storage import storage
+from src.task_application_runtime import get_task_application
 from src.web_api.services.character_reference_service import (
     CHARACTER_REQUIRED_VIEW_TYPES,
     CHARACTER_VIEW_BY_TYPE,
@@ -387,22 +391,26 @@ async def _submit_operator_task(
 ) -> dict:
     operator_id = int(os.getenv("DASHBOARD_OFFICIAL_ASSET_OPERATOR_USER_ID", "0"))
     task_id = str(uuid.uuid4())
-    result = await process_and_submit_task(
-        user_id=operator_id,
-        username="dashboard:official-assets",
-        task_type=task_type,
-        inputs={**inputs, "prompt": prompt},
-        task_id=task_id,
-        client_type="dashboard:official-assets",
-        cost_override=0,
-        deduct_quota=False,
-        check_lock=False,
-        user_cancel_allowed=True,
-        submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-            attach_web_monitor=True
+    result = await get_task_application().submit(
+        TaskSubmissionCommand(
+            internal_user_id=operator_id,
+            username="dashboard:official-assets",
+            task_type=task_type,
+            inputs={**inputs, "prompt": prompt},
+            task_id=task_id,
+            registry_metadata={"record_history": False, "_official_asset": marker},
         ),
-        registry_metadata={"record_history": False, "_official_asset": marker},
-        allow_contribute_override=False,
+        TaskSubmissionPolicy(
+            client_type="dashboard:official-assets",
+            cost_override=0,
+            deduct_quota=False,
+            check_lock=False,
+            user_cancel_allowed=True,
+            side_effect_plan=TaskSubmissionSideEffectPlan(
+                attach_web_monitor=True
+            ),
+            allow_contribute_override=False,
+        ),
     )
     return {"task_id": result["task_id"], "status": "pending", "cost": 0}
 

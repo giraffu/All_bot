@@ -11,7 +11,7 @@ from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
 from src.domain_config.task_type_registry import gallery_supported_task_types
 from src.core import gallery_core
 from src.core import gallery_submission_effects
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.services import storage as storage_module
 from src.web_api.services import gallery_response_builder
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
@@ -1816,7 +1816,13 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome():
     history_result = _FakeResult(many=[history])
     user_result = _FakeResult(single=user)
     session = _FakeSession(
-        [existing_result, history_result, user_result, _FakeResult(single=None)]
+        [
+            existing_result,
+            history_result,
+            user_result,
+            _FakeResult(single=1),
+            _FakeResult(single=None),
+        ]
     )
     gallery_submission_outbox = SimpleNamespace(
         check_gallery_submit_limit=AsyncMock(return_value=True),

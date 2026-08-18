@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Literal
 
-from src.core.media_paths import (
+from src.media_paths import (
     get_media_type_from_history,
     resolve_storage_object,
 )

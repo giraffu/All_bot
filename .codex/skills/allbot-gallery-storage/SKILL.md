@@ -37,13 +37,14 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 - 投稿必须尊重 `History.allow_contribute`，模板应用结果和 QQCC 自生成结果
   不得再次投稿。
-- like/dislike/apply 的目标不变量是单用户/作品的互斥 reaction、幂等 apply 和
-  原子计数；捕获 `IntegrityError` 前先 `flush()`。但当前 Alembic upgrade 没有
-  创建 ORM 所写的 `uix_user_post_action`，且该三列键即使存在也不能阻止 like 与
-  dislike 并存。不得把 model declaration 当成真实环境约束。
-- `GalleryPost.task_id` 当前只是普通索引，投稿还是 check-then-insert。处理并发
-  投稿/互动前先只读核对 `pg_constraint/pg_indexes` 和重复/counter drift；设计
-  migration 时先去重和重算，不能直接创建 unique 让线上 migration 中途失败。
+- like/dislike/apply 的不变量是互斥 reaction、幂等 apply 和原子计数。
+  reaction 修改前取 `(user_id, post_id)` advisory transaction lock；DB
+  使用 reaction/apply 两个 partial unique index。
+- 投稿使用 `(task_id, user_id)` unique、同粒度 advisory lock 和显式
+  conflict target/`RETURNING`；只有 created/reactivated 才更新 History、贡献数、
+  限额和媒体 side effect。
+- migration 前先运行 `scripts/audit_gallery_consistency.py`；默认 dry-run。
+  修复与在线索引 migration 分开，残留冲突必须 fail closed。
 - 评论创建、分页和计数保持限频与原子更新；帖子并发下架时整笔回滚，不能
   留下脏评论。
 - 未解锁 prompt 在列表和详情必须由服务端遮罩。提示词解锁以
@@ -91,6 +92,10 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
   当前 Gallery R2/S3 resolver 下载目标作品并刷新。测试 Bot 不持久化缓存。
 - Worker sidecar 上传必须等 R2 put 成功后才向 Central `/complete`；不能把
   本地 spool 成功误写成已交付。
+- 用户上传 staging 转 task input 时，每个 source 只 hash 一次，copy 写 checksum
+  metadata、目标只 HEAD；多输入默认最多 3 并发且保持顺序。正式结果的
+  task-result → History 兼容 warmup 尚未退出，必须保留成本 telemetry 后再按
+  retention/归档契约单独退场。
 - 存储异常应降级用户展示但保留可恢复信息；不能因一次慢探测阻断整个 feed。
 - R2 审计、backfill、缩略图补齐和 shadow 同步默认 dry-run。执行前明确
   env、bucket、范围、cursor、方向和授权，不得把生产 env 或预签 URL输出。

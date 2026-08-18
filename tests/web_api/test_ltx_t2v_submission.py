@@ -9,6 +9,7 @@ from src.web_api.core.security import create_access_token
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.services import task_submission_service as service
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 def _user():
@@ -52,7 +53,11 @@ async def test_ltx_t2v_backend_flag_defaults_closed(monkeypatch):
 async def test_ltx_t2v_operator_canary_bypasses_closed_user_flag(monkeypatch):
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "false")
     submit = AsyncMock(return_value={"task_id": "task-canary", "cost": 12})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
 
     response = await service.submit_generation_task(
         req=TaskGenerateRequest(
@@ -74,7 +79,11 @@ async def test_ltx_t2v_ic_resolves_ordered_msr_characters_server_side(monkeypatc
     monkeypatch.setenv("LTX_T2V_BACKEND_ENABLED", "true")
     monkeypatch.setenv("LTX_T2V_MSR_ENABLED", "true")
     submit = AsyncMock(return_value={"task_id": "task-msr", "cost": 12})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
 
     class _Session:
         async def __aenter__(self):

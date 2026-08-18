@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +36,7 @@ class TaskGenerateRequest(BaseModel):
 class TaskGenerateResponse(BaseModel):
     task_id: str
     status: str
+    submission_state: Literal["accepted", "reconciling"] = "accepted"
     message: str
     cost: int
     balance_remaining: int

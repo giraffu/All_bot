@@ -26,6 +26,7 @@ from app.queue_manager import TaskAdmissionConflictError
 from fastapi import HTTPException
 
 from src.domain_config.task_type_registry import get_central_task_type
+from src.services.compat_telemetry import record_compat_hit
 
 SIMPLE_TASK_KEYS = (
     "img2img",
@@ -131,6 +132,11 @@ def _legacy_video_resolution_preset(width, height) -> str:
 def normalize_simple_task_request_model(task_key: str, request_model):
     if task_key not in LEGACY_WAN22_SIMPLE_TASK_KEYS:
         return request_model
+
+    record_compat_hit(
+        "compat.central.legacy_wan22_task_type",
+        entrypoint=f"Central simple task type {task_key}",
+    )
 
     payload = _request_model_to_dict(request_model)
     payload["length"] = _legacy_video_length_to_duration_seconds(

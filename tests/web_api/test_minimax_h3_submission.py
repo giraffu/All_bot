@@ -6,6 +6,7 @@ import pytest
 from src.core.task_core_types import CoreDomainError
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services import task_submission_service as service
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 @pytest.mark.asyncio
@@ -24,7 +25,11 @@ async def test_minimax_h3_backend_flag_defaults_closed(monkeypatch):
 async def test_minimax_h3_operator_canary_uses_existing_submission_saga(monkeypatch):
     monkeypatch.setenv("MINIMAX_H3_BACKEND_ENABLED", "false")
     submit = AsyncMock(return_value={"task_id": "h3-canary", "cost": 10})
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
     response = await service.submit_generation_task(
         req=TaskGenerateRequest(
             task_type="minimax_h3_i2v",

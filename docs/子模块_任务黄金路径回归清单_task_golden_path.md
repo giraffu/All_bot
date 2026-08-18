@@ -8,7 +8,7 @@
 - `backend/app/main.py` 与 `backend/app/main_t2i_wiring.py` 的中控任务创建入口
 - `backend/app/queue_manager.py` 的排队、取消、zombie 清理与 worker 视图
 - `src/web_api/routers/tasks.py` 及对应 API service / SSE stream 路径
-- `src/core/task_core.py` facade 以及 provider / default dependencies / submission / web-monitor / runtime 子模块
+- `src/core/task_application.py`、入口 runtime 装配以及 provider / dependencies / submission / web-monitor / runtime 子模块
 
 本清单只关注“任务能否被正确提交、排队、取消、完成、回查与恢复”，不扩展到支付、安全、部署与前端视觉回归。
 
@@ -80,8 +80,9 @@ pytest   tests/core/test_task_runtime_cleanup.py
 
 ### 6.1 提交与补偿
 
-- [ ] `task_core` 提交失败时会退款并释放并发锁
-- [ ] facade 默认路径与显式 `dependencies` 注入路径口径一致
+- [ ] `TaskApplication` 提交失败时会退款并释放并发锁
+- [ ] 四类生产入口显式装配 application，未装配时 fail closed
+- [ ] 旧兼容 facade 只有显式 `dependencies` 路径
 - [ ] 中控同步任务必须先订阅，再入队，再等待
 - [ ] `registry_task_id` 与 `backend_task_id` 的返回与后续流转不混淆
 

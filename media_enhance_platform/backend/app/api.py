@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
-import os
-import secrets
 import subprocess
 import tempfile
 import uuid
@@ -16,7 +14,6 @@ from fastapi import (
     Cookie,
     Depends,
     File,
-    Form,
     HTTPException,
     Request,
     Response,
@@ -31,7 +28,6 @@ from sqlalchemy.orm import selectinload
 from .config import get_settings
 from .database import get_db
 from .models import (
-    AuditLog,
     CreditEntry,
     MediaFile,
     MediaKind,
@@ -39,7 +35,6 @@ from .models import (
     Task,
     TaskAttempt,
     TaskStatus,
-    TaskType,
     Ticket,
     TicketKind,
     TicketStatus,

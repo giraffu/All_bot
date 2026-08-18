@@ -1,9 +1,8 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { 
   ThunderboltOutlined, 
   PictureOutlined, 
-  VideoCameraOutlined,
   DashboardOutlined,
   SyncOutlined,
   RobotOutlined,
@@ -21,8 +20,16 @@ import {
   fetchRunPodAutoscaler,
   fetchRunPodOperations,
   updateRunPodAutoscalerSettings,
-} from '../api/api'
-import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
+  type RunPodAutoscalerConfig,
+  type RunPodDecision,
+  type RunPodOperation,
+} from '../api/runpodAutoscalerApi'
+import {
+  useQueueStatsMonitor,
+  type QueueTypeDisplay,
+  type RunPodProfileQueueDisplay,
+} from '../composables/useQueueStatsMonitor'
+import type { DashboardWorker } from '../api/queueStatsApi'
 import { isRunPodManualAgentId } from '../utils/runpodProfiles'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
@@ -43,19 +50,25 @@ const {
 
 const workerHistoryOpen = ref(false)
 const selectedWorkerHistoryId = ref('')
-const autoscalerConfig = ref({})
-const autoscalerDecisions = ref([])
-const thresholdDrafts = ref({})
-const durationDrafts = ref({})
+type ProfileRow = RunPodProfileQueueDisplay & {
+  autoscalerSupportedTaskTypes: string[]
+  runpodServerCount: number
+  localWorkerCount: number
+}
+
+const autoscalerConfig = ref<RunPodAutoscalerConfig>({})
+const autoscalerDecisions = ref<RunPodDecision[]>([])
+const thresholdDrafts = ref<Record<string, number>>({})
+const durationDrafts = ref<Record<string, number>>({})
 const savingSettingsProfile = ref('')
 const togglingAutoscalerProfile = ref('')
 const runpodOperationLogOpen = ref(false)
 const runpodOperationLogLoading = ref(false)
-const runpodOperations = ref([])
-let autoscalerSettingsTimer = null
+const runpodOperations = ref<RunPodOperation[]>([])
+let autoscalerSettingsTimer: ReturnType<typeof setInterval> | null = null
 const autoscalerSettingsRefreshIntervalMs = 10000
 
-const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
+const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE: Record<string, number> = {
   img2img: 20 * 60,
   image_to_video: 30 * 60,
   wan22_video_v2: 30 * 60,
@@ -65,7 +78,7 @@ const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
   pornmaster_flux2_edit: 30 * 60,
 }
 
-const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
+const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: Record<string, number> = {
   img2img: 13,
   img2img_lora: 13,
   image_to_video: 60,
@@ -86,13 +99,13 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   unknown: 100,
 }
 
-const WORKER_PROFILE_TASK_TYPE_EXTENSIONS = {
+const WORKER_PROFILE_TASK_TYPE_EXTENSIONS: Record<string, string[]> = {
   scail2: ['scail2_action_transfer_long', 'scail2_face_swap_v2'],
 }
 
 const HIDDEN_WORKER_PROFILES = new Set(['pornmaster_flux2_edit'])
 
-const uniqueTaskTypes = (taskTypes) => Array.from(new Set((taskTypes || []).filter(Boolean)))
+const uniqueTaskTypes = (taskTypes: string[]) => Array.from(new Set(taskTypes.filter(Boolean)))
 
 const taskTotals = computed(() => {
   const totals = queueByTypeDisplay.value.reduce(
@@ -133,22 +146,22 @@ const lowTrustPendingTotals = computed(() => {
   }
 })
 
-const isTruthyFlag = (value) =>
+const isTruthyFlag = (value: unknown) =>
   value === true || value === 1 || value === '1' || value === 'true' || value === 'True'
 
-const splitWorkerTypes = (worker) =>
+const splitWorkerTypes = (worker: DashboardWorker) =>
   String(worker.types || '')
     .split(',')
     .map((type) => type.trim())
     .filter(Boolean)
 
-const isRunPodServerWorker = (worker) => {
+const isRunPodServerWorker = (worker: DashboardWorker) => {
   const provider = String(worker.provider || '').toLowerCase()
   const agentId = String(worker.agent_id || '')
   return provider === 'runpod' || isRunPodManualAgentId(agentId)
 }
 
-const supportsRunPodProfile = (worker, profile) => {
+const supportsRunPodProfile = (worker: DashboardWorker, profile: ProfileRow) => {
   const supportedTaskTypes = new Set(profile.supportedTaskTypes || [])
   const runtimeProfile = String(worker.runtime_profile || '').trim()
   if (runtimeProfile && runtimeProfile === profile.profile) {
@@ -157,7 +170,7 @@ const supportsRunPodProfile = (worker, profile) => {
   return splitWorkerTypes(worker).some((type) => supportedTaskTypes.has(type))
 }
 
-const isAcceptingWorker = (worker) =>
+const isAcceptingWorker = (worker: DashboardWorker) =>
   ['idle', 'running'].includes(String(worker.status || '').toLowerCase()) &&
   String(worker.control_state || 'enabled').toLowerCase() === 'enabled'
 
@@ -166,15 +179,20 @@ const workerProfilePressure = computed(() =>
 )
 
 const queueByTypeLookup = computed(() =>
-  queueByTypeDisplay.value.reduce((acc, item) => {
+  queueByTypeDisplay.value.reduce<Record<string, QueueTypeDisplay>>((acc, item) => {
     acc[item.type] = item
     return acc
   }, {})
 )
 
-const aggregateWorkerProfileTaskStats = (profile) => {
+const aggregateWorkerProfileTaskStats = (profile: RunPodProfileQueueDisplay) => {
   let hasQueueTypeDetail = false
-  const totals = {
+  const totals: {
+    activeCount: number
+    pendingCount: number
+    maxPendingWaitSeconds: number | null
+    maxNonLowTrustPendingWaitSeconds: number | null
+  } = {
     activeCount: 0,
     pendingCount: 0,
     maxPendingWaitSeconds: null,
@@ -220,7 +238,7 @@ const aggregateWorkerProfileTaskStats = (profile) => {
   return totals
 }
 
-const runpodProfileRows = computed(() =>
+const runpodProfileRows = computed<ProfileRow[]>(() =>
   runpodProfileQueueDisplay.value
     .filter((profile) => !HIDDEN_WORKER_PROFILES.has(profile.profile))
     .map((profile) => {
@@ -229,10 +247,12 @@ const runpodProfileRows = computed(() =>
         ...autoscalerSupportedTaskTypes,
         ...(WORKER_PROFILE_TASK_TYPE_EXTENSIONS[profile.profile] || []),
       ])
-      const displayProfile = {
+      const displayProfile: ProfileRow = {
         ...profile,
         autoscalerSupportedTaskTypes,
         supportedTaskTypes,
+        runpodServerCount: 0,
+        localWorkerCount: 0,
       }
       const supportingWorkers = workers.value.filter(
         (worker) =>
@@ -265,19 +285,19 @@ const runpodProfileRows = computed(() =>
 
 const scaleUpThresholdSecondsByProfile = computed(() => ({
   ...DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE,
-  ...(autoscalerConfig.value?.scale_up_wait_seconds_by_profile || {}),
+    ...(autoscalerConfig.value.scale_up_wait_seconds_by_profile || {}),
 }))
 
 const taskDurationSecondsByType = computed(() => ({
   ...DEFAULT_TASK_DURATION_SECONDS_BY_TYPE,
-  ...(autoscalerConfig.value?.task_duration_seconds_by_type || {}),
+    ...(autoscalerConfig.value.task_duration_seconds_by_type || {}),
 }))
 
 const profileAutoscalerPausedByProfile = computed(() => {
-  const pausedProfiles = new Set(autoscalerConfig.value?.paused_profiles || [])
+  const pausedProfiles = new Set(autoscalerConfig.value.paused_profiles || [])
   return {
-    ...(autoscalerConfig.value?.profile_autoscaler_paused_by_profile || {}),
-    ...Array.from(pausedProfiles).reduce((acc, profile) => {
+    ...(autoscalerConfig.value.profile_autoscaler_paused_by_profile || {}),
+    ...Array.from(pausedProfiles).reduce<Record<string, boolean>>((acc, profile) => {
       acc[profile] = true
       return acc
     }, {}),
@@ -285,7 +305,7 @@ const profileAutoscalerPausedByProfile = computed(() => {
 })
 
 const autoscalerDecisionsByProfile = computed(() =>
-  autoscalerDecisions.value.reduce((acc, decision) => {
+  autoscalerDecisions.value.reduce<Record<string, RunPodDecision>>((acc, decision) => {
     if (decision?.profile) {
       acc[decision.profile] = decision
     }
@@ -293,7 +313,7 @@ const autoscalerDecisionsByProfile = computed(() =>
   }, {})
 )
 
-const thresholdMinutesForProfile = (profile) => {
+const thresholdMinutesForProfile = (profile: string) => {
   const seconds = Number(
     scaleUpThresholdSecondsByProfile.value[profile] ??
       DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE[profile] ??
@@ -302,19 +322,19 @@ const thresholdMinutesForProfile = (profile) => {
   return Math.max(1, Math.round(seconds / 60))
 }
 
-const thresholdDraftValue = (profile) => {
+const thresholdDraftValue = (profile: string) => {
   const value = thresholdDrafts.value[profile]
   return value === undefined || value === null ? thresholdMinutesForProfile(profile) : value
 }
 
-const setThresholdDraft = (profile, value) => {
+const setThresholdDraft = (profile: string, value: number) => {
   thresholdDrafts.value = {
     ...thresholdDrafts.value,
     [profile]: value,
   }
 }
 
-const durationSecondsForProfile = (profileRow) => {
+const durationSecondsForProfile = (profileRow: ProfileRow) => {
   const taskTypes = profileRow?.autoscalerSupportedTaskTypes || profileRow?.supportedTaskTypes || []
   const firstTaskType = taskTypes[0] || 'unknown'
   const seconds = Number(
@@ -325,49 +345,59 @@ const durationSecondsForProfile = (profileRow) => {
   return Math.max(1, Math.round(seconds))
 }
 
-const durationDraftValue = (profileRow) => {
+const durationDraftValue = (profileRow: ProfileRow) => {
   const profile = profileRow.profile
   const value = durationDrafts.value[profile]
   return value === undefined || value === null ? durationSecondsForProfile(profileRow) : value
 }
 
-const setDurationDraft = (profile, value) => {
+const setDurationDraft = (profile: string, value: number) => {
   durationDrafts.value = {
     ...durationDrafts.value,
     [profile]: value,
   }
 }
 
-const isThresholdValid = (profile) => {
+const updateDurationDraft = (profile: string, value: number | null) => {
+  if (value !== null) setDurationDraft(profile, value)
+}
+
+const updateThresholdDraft = (profile: string, value: number | null) => {
+  if (value !== null) setThresholdDraft(profile, value)
+}
+
+const concurrencyRowKey = (record: { user_id: string | number }) => record.user_id
+
+const isThresholdValid = (profile: string) => {
   const minutes = Number(thresholdDraftValue(profile))
   return Number.isInteger(minutes) && minutes >= 1 && minutes <= 240
 }
 
-const isThresholdDirty = (profile) => {
+const isThresholdDirty = (profile: string) => {
   const minutes = Number(thresholdDraftValue(profile))
   return Number.isFinite(minutes) && minutes !== thresholdMinutesForProfile(profile)
 }
 
-const isDurationValid = (profileRow) => {
+const isDurationValid = (profileRow: ProfileRow) => {
   const seconds = Number(durationDraftValue(profileRow))
   return Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600
 }
 
-const isDurationDirty = (profileRow) => {
+const isDurationDirty = (profileRow: ProfileRow) => {
   const seconds = Number(durationDraftValue(profileRow))
   return Number.isFinite(seconds) && seconds !== durationSecondsForProfile(profileRow)
 }
 
-const isRunPodSettingsDirty = (profileRow) =>
+const isRunPodSettingsDirty = (profileRow: ProfileRow) =>
   isProfileAutoscalerEnabled(profileRow) &&
   (isThresholdDirty(profileRow.profile) || isDurationDirty(profileRow))
 
 const syncThresholdDraftsFromConfig = () => {
-  thresholdDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
+  thresholdDrafts.value = runpodProfileQueueDisplay.value.reduce<Record<string, number>>((acc, profile) => {
     acc[profile.profile] = thresholdMinutesForProfile(profile.profile)
     return acc
   }, {})
-  durationDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
+  durationDrafts.value = runpodProfileRows.value.reduce<Record<string, number>>((acc, profile) => {
     acc[profile.profile] = durationSecondsForProfile(profile)
     return acc
   }, {})
@@ -388,7 +418,7 @@ const loadAutoscalerSettings = async ({ syncDrafts = true } = {}) => {
 
 const refreshAutoscalerDecisions = () => loadAutoscalerSettings({ syncDrafts: false })
 
-const clearTimeDisplayForProfile = (profileRow) => {
+const clearTimeDisplayForProfile = (profileRow: ProfileRow) => {
   if (!isProfileAutoscalerEnabled(profileRow)) return '-'
   const decision = autoscalerDecisionsByProfile.value[profileRow.profile]
   if (!decision) return '-'
@@ -405,19 +435,19 @@ const clearTimeDisplayForProfile = (profileRow) => {
   )
 }
 
-const decisionReasonForProfile = (profile) =>
+const decisionReasonForProfile = (profile: string) =>
   autoscalerDecisionsByProfile.value[profile]?.reason || ''
 
-const isProfileAutoscalerEnabled = (profileRow) =>
+const isProfileAutoscalerEnabled = (profileRow: ProfileRow) =>
   profileRow?.autoscalerEnabled !== false
 
-const isProfileAutoscalerPaused = (profile) =>
+const isProfileAutoscalerPaused = (profile: string) =>
   profileAutoscalerPausedByProfile.value?.[profile] === true
 
-const localOnlyProfileLabel = (profileRow) =>
+const localOnlyProfileLabel = (profileRow: ProfileRow) =>
   isProfileAutoscalerEnabled(profileRow) ? '' : '本地/手动'
 
-const saveRunPodSettings = async (profileRow) => {
+const saveRunPodSettings = async (profileRow: ProfileRow) => {
   if (!isProfileAutoscalerEnabled(profileRow)) {
     message.info(`${profileRow.profile} 不接入 RunPod 自动管理`)
     return
@@ -437,7 +467,7 @@ const saveRunPodSettings = async (profileRow) => {
     profileRow.autoscalerSupportedTaskTypes ||
     profileRow.supportedTaskTypes ||
     []
-  ).reduce((acc, taskType) => {
+  ).reduce<Record<string, number>>((acc, taskType) => {
     acc[taskType] = durationSeconds
     return acc
   }, {})
@@ -462,7 +492,7 @@ const saveRunPodSettings = async (profileRow) => {
   }
 }
 
-const toggleProfileAutoscaler = async (profileRow) => {
+const toggleProfileAutoscaler = async (profileRow: ProfileRow) => {
   if (!isProfileAutoscalerEnabled(profileRow)) {
     message.info(`${profileRow.profile} 不接入 RunPod 自动管理`)
     return
@@ -498,18 +528,18 @@ const runpodCreateDeleteOperations = computed(() =>
     .slice(0, 50)
 )
 
-const operationActionLabel = (action) => {
+const operationActionLabel = (action?: string) => {
   if (action === 'add') return '创建'
   if (action === 'delete') return '删除'
   return action || '-'
 }
 
-const operationSourceLabel = (source) => {
+const operationSourceLabel = (source?: string) => {
   if (source === 'autoscaler') return '自动'
   return '手动'
 }
 
-const operationStatusColor = (status) => {
+const operationStatusColor = (status?: string) => {
   if (status === 'succeeded') return 'green'
   if (status === 'failed') return 'red'
   if (status === 'running') return 'blue'
@@ -519,7 +549,7 @@ const operationStatusColor = (status) => {
   return 'default'
 }
 
-const operationDetailText = (operation) => {
+const operationDetailText = (operation: RunPodOperation) => {
   if (operation.error) return operation.error
   if (operation.trigger_reason) return operation.trigger_reason
   const logTail = Array.isArray(operation.log_tail) ? operation.log_tail : []
@@ -527,11 +557,11 @@ const operationDetailText = (operation) => {
   return '-'
 }
 
-const formatOperationTime = (value) => {
+const formatOperationTime = (value?: string | number) => {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
-  const pad = (num) => String(num).padStart(2, '0')
+  const pad = (num: number) => String(num).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
@@ -576,9 +606,9 @@ const handleCleanZombies = () => {
   })
 }
 
-const formatDuration = (timestamp) => {
+const formatDuration = (timestamp?: number | string | null) => {
   if (!timestamp) return '-'
-  const diff = Math.floor(Date.now() / 1000) - Math.floor(timestamp)
+  const diff = Math.floor(Date.now() / 1000) - Math.floor(Number(timestamp))
   if (diff < 0) return '0s'
   if (diff < 60) return `${diff}s`
   const m = Math.floor(diff / 60)
@@ -586,7 +616,7 @@ const formatDuration = (timestamp) => {
   return `${m}m ${s}s`
 }
 
-const formatWaitDuration = (seconds) => {
+const formatWaitDuration = (seconds?: number | string | null) => {
   if (seconds === null || seconds === undefined) return '-'
   const totalSeconds = Math.max(0, Math.floor(Number(seconds)))
   if (!Number.isFinite(totalSeconds)) return '-'
@@ -599,7 +629,7 @@ const formatWaitDuration = (seconds) => {
   return `${hours}h ${remainingMinutes}m`
 }
 
-const formatTimeUntil = (timestamp) => {
+const formatTimeUntil = (timestamp?: number | string | null) => {
   if (!timestamp) return '-'
   const diff = Math.ceil(Number(timestamp) - Date.now() / 1000)
   if (diff <= 0) return '即将恢复'
@@ -609,12 +639,12 @@ const formatTimeUntil = (timestamp) => {
   return `${m}m ${s}s 后`
 }
 
-const isPausedControlWorker = (worker) => {
+const isPausedControlWorker = (worker: DashboardWorker) => {
   const controlState = String(worker.control_state || '').toLowerCase()
   return controlState === 'disabled' || controlState === 'draining'
 }
 
-const isRunPodLocked = (worker) =>
+const isRunPodLocked = (worker: DashboardWorker) =>
   isRunPodServerWorker(worker) &&
   (isTruthyFlag(worker.runpod_locked) || isTruthyFlag(worker.locked))
 
@@ -637,7 +667,7 @@ const healthSummary = computed(() => {
   return { color: 'success', text: '可用', online: true }
 })
 
-const getWorkerStatusMeta = (worker) => {
+const getWorkerStatusMeta = (worker: DashboardWorker) => {
   if (isPausedControlWorker(worker)) {
     return {
       cardClass: 'border-t-2 border-t-orange-500',
@@ -692,23 +722,23 @@ const getWorkerStatusMeta = (worker) => {
   }
 }
 
-const isFaultWorker = (worker) =>
-  !isPausedControlWorker(worker) && ['error', 'quarantined'].includes(worker.status)
+const isFaultWorker = (worker: DashboardWorker) =>
+  !isPausedControlWorker(worker) && ['error', 'quarantined'].includes(String(worker.status))
 
-const openWorkerHistory = (agentId) => {
+const openWorkerHistory = (agentId?: string) => {
   if (!agentId) return
   selectedWorkerHistoryId.value = agentId
   workerHistoryOpen.value = true
 }
 
-const handleWorkerHistoryOpenChange = (open) => {
+const handleWorkerHistoryOpenChange = (open: boolean) => {
   workerHistoryOpen.value = open
   if (!open) {
     selectedWorkerHistoryId.value = ''
   }
 }
 
-const handleSyncLock = async (userId) => {
+const handleSyncLock = async (userId: string | number) => {
   try {
     const res = await syncLock(userId)
     if (res.status === 'success') {
@@ -1006,7 +1036,7 @@ onUnmounted(() => {
                       :min="1"
                       :max="3600"
                       :value="durationDraftValue(item)"
-                      @update:value="value => setDurationDraft(item.profile, value)"
+                      @update:value="updateDurationDraft(item.profile, $event)"
                     />
                     <span class="scale-threshold-unit">秒</span>
                   </div>
@@ -1020,7 +1050,7 @@ onUnmounted(() => {
                       :min="1"
                       :max="240"
                       :value="thresholdDraftValue(item.profile)"
-                      @update:value="value => setThresholdDraft(item.profile, value)"
+                      @update:value="updateThresholdDraft(item.profile, $event)"
                     />
                     <span class="scale-threshold-unit">分钟</span>
                     <a-button
@@ -1267,7 +1297,7 @@ onUnmounted(() => {
     <a-card class="mb-4">
       <a-table 
         :dataSource="concurrencyStats" 
-        :rowKey="record => record.user_id" 
+        :rowKey="concurrencyRowKey"
         size="small"
         :pagination="{ pageSize: 5 }"
       >

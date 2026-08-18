@@ -13,6 +13,7 @@ from src.web_api.routers import tasks as tasks_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 from src.web_api.services.task_submission_service import submit_generation_task
 from src.web_api.services.user_task_api_service import cancel_pending_task_payload
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 @pytest.mark.asyncio
@@ -47,11 +48,9 @@ async def test_cancel_pending_task_payload_maps_domain_error_to_400():
 async def test_submit_generation_task_returns_submission_result():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
+    submit = AsyncMock(return_value={"task_id": "task-1", "cost": 5})
 
     with patch(
-        "src.web_api.services.task_submission_service.process_and_submit_task",
-        new=AsyncMock(return_value={"task_id": "task-1", "cost": 5}),
-    ), patch(
         "src.web_api.services.task_submission_service.uuid.uuid4",
         return_value="task-1",
     ):
@@ -60,6 +59,7 @@ async def test_submit_generation_task_returns_submission_result():
             current_user=current_user,
             get_balance=AsyncMock(return_value=95),
             logger=MagicMock(),
+            task_application=LegacyTaskApplicationAdapter(submit),
         )
 
     assert result == TaskGenerateResponse(
@@ -79,11 +79,9 @@ async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_input
         prompt="sky city",
     )
     current_user = type("User", (), {"id": 123, "username": "tester"})()
+    process_mock = AsyncMock(return_value={"task_id": "task-1", "cost": 2})
 
     with patch(
-        "src.web_api.services.task_submission_service.process_and_submit_task",
-        new=AsyncMock(return_value={"task_id": "task-1", "cost": 2}),
-    ) as process_mock, patch(
         "src.web_api.services.task_submission_service.uuid.uuid4",
         return_value="task-1",
     ):
@@ -92,6 +90,7 @@ async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_input
             current_user=current_user,
             get_balance=AsyncMock(return_value=98),
             logger=MagicMock(),
+            task_application=LegacyTaskApplicationAdapter(process_mock),
         )
 
     process_mock.assert_awaited_once()
@@ -111,11 +110,9 @@ async def test_submit_generation_task_promotes_staged_web_inputs_before_queueing
     )
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     promote = AsyncMock(return_value=["task-inputs/task-1/0.png"])
+    process_mock = AsyncMock(return_value={"task_id": "task-1", "cost": 2})
 
     with patch(
-        "src.web_api.services.task_submission_service.process_and_submit_task",
-        new=AsyncMock(return_value={"task_id": "task-1", "cost": 2}),
-    ) as process_mock, patch(
         "src.web_api.services.task_submission_service.uuid.uuid4",
         return_value="task-1",
     ):
@@ -124,6 +121,7 @@ async def test_submit_generation_task_promotes_staged_web_inputs_before_queueing
             current_user=current_user,
             get_balance=AsyncMock(return_value=98),
             promote_staged_inputs_func=promote,
+            task_application=LegacyTaskApplicationAdapter(process_mock),
         )
 
     assert promote.await_args.kwargs["task_id"] == "task-1"
@@ -146,18 +144,16 @@ async def test_submit_generation_task_reraises_domain_errors(side_effect):
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     logger = MagicMock()
+    submit = AsyncMock(side_effect=side_effect)
 
-    with patch(
-        "src.web_api.services.task_submission_service.process_and_submit_task",
-        new=AsyncMock(side_effect=side_effect),
-    ):
-        with pytest.raises(type(side_effect)) as exc_info:
-            await submit_generation_task(
-                req=request,
-                current_user=current_user,
-                get_balance=AsyncMock(return_value=100),
-                logger=logger,
-            )
+    with pytest.raises(type(side_effect)) as exc_info:
+        await submit_generation_task(
+            req=request,
+            current_user=current_user,
+            get_balance=AsyncMock(return_value=100),
+            logger=logger,
+            task_application=LegacyTaskApplicationAdapter(submit),
+        )
 
     assert str(exc_info.value) == str(side_effect)
     logger.error.assert_called_once()
@@ -168,18 +164,16 @@ async def test_submit_generation_task_reraises_unexpected_error_and_logs():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     logger = MagicMock()
+    submit = AsyncMock(side_effect=RuntimeError("boom"))
 
-    with patch(
-        "src.web_api.services.task_submission_service.process_and_submit_task",
-        new=AsyncMock(side_effect=RuntimeError("boom")),
-    ):
-        with pytest.raises(RuntimeError, match="boom"):
-            await submit_generation_task(
-                req=request,
-                current_user=current_user,
-                get_balance=AsyncMock(return_value=100),
-                logger=logger,
-            )
+    with pytest.raises(RuntimeError, match="boom"):
+        await submit_generation_task(
+            req=request,
+            current_user=current_user,
+            get_balance=AsyncMock(return_value=100),
+            logger=logger,
+            task_application=LegacyTaskApplicationAdapter(submit),
+        )
 
     logger.error.assert_called_once()
 

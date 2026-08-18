@@ -4,7 +4,8 @@
 
 本模块负责统一提交、排队、监控、取消与清理图片/视频生成任务。当前架构下，任务调度不是单一 `task_core.py` 单体，而是由以下几层组成：
 
-- `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
+- `src/core/task_application.py`：任务提交 application service，公开 `TaskApplication.submit(command, policy, journal)`
+- `src/core/task_core.py`：运行态/持久化 facade 与旧提交兼容适配；旧 `process_and_submit_task(...)` 不再承载提交编排
 - `src/core/task_core_types.py`：任务 core 数据契约，包含 `TaskSuccessPersistenceCommand` 等成功持久化命令对象
 - `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
@@ -18,12 +19,14 @@
 - `src/services/task_web_lifecycle_monitor.py`：Web runtime monitor stage，负责 backend 轮询、终态 snapshot 构造与 terminal router 对接
 - `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
+- `src/services/task_control_worker.py`、`src/task_control_worker.py`：默认禁用的独立控制进程，把 submission reconciliation、Web finalizer 与通用 zombie sweep 放在三个独立 leader lease 下运行
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
+- `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
-所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
+所有 Bot / Web / QQCC / Dashboard 任务都通过启动时显式构造的 `TaskApplication` + dependencies 边界进入调度链，不在上层直接 import 基础设施实现。旧 facade 只保留为必须显式传 dependencies 的测试/兼容适配器。
 
 ## 2. 启动与装配
 
@@ -32,19 +35,22 @@
 `task_core` 相关 provider 必须在应用入口注册，而不是在 core 模块导入时自动完成。当前注册路径为：
 
 - `src/task_core_provider_setup.py`
+- `src/task_application_runtime.py`
 - `src/web_api/main.py`
 - `src/bot_main.py`
+- `qqcc_bot/main.py`
+- `dashboard/backend/main.py`
 
 这意味着：
 
 - 生产运行时应先完成 `configure_task_core_service_providers(...)`
+- 随后由入口调用 `configure_task_application()`；未配置时获取 application 会 fail closed
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
-- `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；需要日志或持久化能力时，通过 protocol/dependency 从 runtime 默认装配注入。
+- `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；AST 门禁同时拒绝 `config`、`httpx`、PIL、SQLAlchemy、`src.database` 和 `src.services`。需要日志、持久化、异常分类或 Redis key 操作时，通过 protocol/dependency 从 runtime 默认装配注入。
 
-这是新代码目标边界，不代表迁移已经完成。当前仍保留
-`task_core_default_dependencies.py`、`task_core_process_defaults.py` 等默认装配
-兼容入口，部分 builder 会延迟加载 service/基础设施 provider；新增入口优先在
-应用边界构造 dependencies，不扩大模块级 fallback。
+`task_core_process_defaults.py` 只在入口 composition root 构造 dependencies，部分
+builder 会延迟加载 service/基础设施 provider；core 兼容 facade 不再自行寻找默认
+runtime。新增入口必须在应用边界构造 dependencies，不增加模块级 fallback。
 
 ### 2.2 双 ID 语义
 
@@ -61,21 +67,22 @@
 sequenceDiagram
     autonumber
     actor U as 用户 / Bot / Web
-    participant Facade as task_core facade
+    participant App as TaskApplication
     participant Deps as provider + dependencies
     participant Dispatcher as StrategyFactory / Dispatcher
     participant Registry as TaskRegistry / Outbox
     participant Backend as Central API / Worker
     participant Monitor as Web Monitor / Bot Flow
 
-    U->>Facade: 1. 调用 process_and_submit_task(...)
-    Facade->>Deps: 2. 组装默认依赖 / 使用显式注入依赖
-    Facade->>Registry: 3. 检查并发、扣费、写 registry_task_id
-    Facade->>Dispatcher: 4. 生成 workflow/payload
-    Dispatcher->>Backend: 5. 派发 backend_task_id
-    Facade->>Monitor: 6. 提交成功后写入持久化 Web finalizer 或进入 Bot 前台监控
-    Monitor->>Registry: 7. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
-    Registry-->>U: 8. 返回 registry_task_id、终态 payload 或历史结果
+    U->>App: 1. submit(command, policy, journal)
+    App->>Deps: 2. 使用启动时显式装配的 dependencies
+    App->>Registry: 3. 检查并发、扣费、写 registry_task_id
+    App->>Registry: 4. journal 写 durable phase
+    App->>Dispatcher: 5. 生成 workflow/payload
+    Dispatcher->>Backend: 6. 派发确定性 backend_task_id
+    App->>Monitor: 7. 写 accepted 并启动 finalizer，或返回 reconciling
+    Monitor->>Registry: 8. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
+    Registry-->>U: 9. 返回 registry_task_id、终态 payload 或历史结果
 ```
 
 执行面补充口径：
@@ -93,12 +100,13 @@ sequenceDiagram
 
 当前统一提交入口：
 
-- `src/core/task_core.py::process_and_submit_task(...)`
+- `src/core/task_application.py::TaskApplication.submit(...)`
 
 职责：
 
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
-- `task_core.py` 仅保留 facade；具体步骤继续拆到 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`
+- `task_application.py` 持有 dependencies 并编排 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`；`task_core.py` 的宽提交函数仅为待退出兼容层
+- `TaskSubmissionCommand` 保存用户、任务、输入、双 ID 关联数据；`TaskSubmissionPolicy` 保存入口控制、幂等键和 timeout；`SubmissionJournal` 统一 durable phase hook，避免继续向 facade 增加 callback
 - 进行并发锁检查与扣费
 - 并发锁检查会把 `task_type` 传给 billing seam；低阶外门用户按目标执行池 `projected_pending > 50 × max(accepting_workers, 1)` 做扣费前准入，Central 指标缺失或任务未映射时 fail-open
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
@@ -123,7 +131,30 @@ sequenceDiagram
 
 补充约束：
 
-- Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop；`task_web_finalizer.py` 在获取 Redis lock 后必须重新读取单条 pending record，不能继续使用 `hgetall` 快照里的旧 record，避免 stale snapshot 重复收口。
+- Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop。Hash
+  `pending_web_finalizers` 保存恢复 record，ZSET `pending_web_finalizers:due`
+  只保存下一次到期时间；runner 每轮用 `ZRANGEBYSCORE` 读取至多 100 条，不再
+  `HGETALL`。处理期间不删除 due member，拿到单任务 lease 后必须重新读取 Hash；
+  非终态、锁竞争和异常分别更新下一次 due，进程崩溃后由 lease 过期自动恢复。
+- `comfy:task_events:{backend_task_id}` 的终态事件通过 backend index 将对应
+  registry task 提前设为 due-now；Pub/Sub 只作为低延迟提示，丢事件时仍由
+  ZSET reconciliation 收口。滚动升级期间 bounded `HSCAN` 每分钟补索引旧
+  Hash record，使用 `ZADD NX`，禁止恢复旧全表扫描。
+- `task_submission_metrics` 中的 `finalizer_due_records_processed`、
+  `finalizer_central_status_requests` 与 `finalizer_legacy_indexed_records` 用于
+  对照调度成本；只有真正发起 Central status 查询时才增加请求指标。
+- 新 `task-control-worker` 以 `task-control` Compose profile 和
+  `TASK_CONTROL_WORKER_ENABLED=false` 双重门禁交付。reconciliation 只处理
+  `prepared/dispatching/reconciling` 的版本化 intent，且不重复扫描 legacy
+  Hash；finalizer 处理 `accepted/terminal` 并独占 legacy 索引与终态事件监听；
+  generic zombie sweep 继续由现有 cleaner 排除私有 QQCC 任务。
+- disabled 模式只启动 `/healthz`，入口不得导入或初始化数据库、Redis、Bot
+  provider；因此无需向未启用的服务投影业务凭据。
+- 滚动切换顺序是：先构建/部署精确 digest，保持 disabled；启用后确认
+  `/healthz` 中三个 lease runner 稳定，再分别将
+  `WEB_FINALIZER_IN_WEB_ENABLED`、`MAIN_BOT_ZOMBIE_SWEEP_ENABLED`、
+  `QQCC_BOT_ZOMBIE_SWEEP_ENABLED` 设为 false。回滚按相反顺序。三个旧开关默认
+  均为 true，所以仅发布代码不会改变现有运行职责。
 - 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - 取消退款同样必须幂等。`finalize_task_cancellation(...)` 会用 `registry_task_id` 派生 `task_refund:refund_user_cancel:<registry_task_id>`，账本层把它写入 `user_logs.extra_info.credit_idempotency_key` 并在用户行锁内检查；用户取消接口、Web monitor 或恢复流程重复看到 `cancelled` 时，只能第一次真正增加灵石。
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
@@ -166,7 +197,7 @@ Bot 任务恢复契约，避免进程恢复时补写内部阶段。`send_result=
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
 当前 Bot `task_service_flow.py` 与 Web `task_web_lifecycle_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
 Bot 前台 `monitor_task_progress(...)` 已进一步拆出纯状态渲染 `render_progress_transition(...)`；Telegram I/O、取消/失败处理仍留在 runtime 层，双 ID 与 FSM 全局菜单退出语义不变。
-Bot 提交到 `task_core.process_and_submit_task(...)` 时必须携带纯数据 `delivery_context`（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
+Bot 通过 `TaskSubmissionCommand.delivery_context` 携带纯数据（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；`BotRecoverySubmissionJournal` 同时锁定 recovery 使用的 registry identity。这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
 
 ## 5. API 口径
 
@@ -193,11 +224,12 @@ Web 端已形成两条路径：
 
 SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义，不再稳定制造无效轮询。
 
-普通 Web 提交当前在 Central dispatch 返回后才写
-`pending_web_finalizers`。如果 dispatch 已被接纳而 finalizer 写入失败，默认异常
-路径不能证明任务未接纳；此时退款、删除 registry 和释放并发锁会产生孤儿计算
-风险。只有确定拒绝才可补偿；派发结果歧义必须保留 owner 状态等待恢复。私有
-QQCC 的 durable submission ledger/fence 只覆盖私有入口，不是 Web 通用 outbox。
+Web 生成、Prompt Optimizer 和人物构建在 Central dispatch 前共享
+`WebSubmissionIntentJournal`，在 `pending_web_finalizers` 中先写完整上下文和
+`prepared/dispatching` phase。写入失败时不调 Central，按根 task ID 幂等退款；
+`dispatching` 后的任何异常都保留 registry/并发 owner，对外返回同一 task ID
+和 `submission_state=reconciling`。恢复器只把成功访问 Central 得到的 404
+计为“不存在”；必须连续 3 次、跨度至少 60 秒才取消/退款。
 
 ### 6.2 僵尸任务与强制终止
 
@@ -218,6 +250,8 @@ QQCC 的 durable submission ledger/fence 只覆盖私有入口，不是 Web 通�
 
 - facade 提交成功 / 失败 / 补偿
 - dispatch 成功但 finalizer attach 失败时不错误退款、不删 registry、不重复派发
+- finalizer due ZSET：到期批量上限、lease 竞争/崩溃恢复、异常重排、Pub/Sub
+  丢失兜底、旧 Hash bounded HSCAN 且运行路径不调用 `HGETALL`
 - provider/dependencies 显式注入契约
 - Web monitor 成功 / 取消 / 失败
 - 双 ID 清理

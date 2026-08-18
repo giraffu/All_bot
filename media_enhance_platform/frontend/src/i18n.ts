@@ -99,6 +99,7 @@ const zh = {
   },
   legal: {
     draft: '上线前待完善',
+    icp: '鄂ICP备2026044153号-1',
     terms: '用户协议',
     privacy: '隐私政策',
     copyright: '版权投诉',
@@ -162,6 +163,7 @@ const en = {
   },
   legal: {
     draft: 'Pending before launch', terms: 'Terms of Service', privacy: 'Privacy Policy', copyright: 'Copyright complaint', frame: 'This V1 page is a structural draft and is not final legal text. Operator identity, address, contact email and reviewed terms are required before public launch.', copyrightIntro: 'If you believe media on this service infringes your rights, submit verifiable details. It will be handled as a copyright ticket.', email: 'Contact email',
+    icp: '鄂ICP备2026044153号-1',
   },
   admin: {
     title: 'Operations console', tasks: 'Tasks', users: 'Users & points', tickets: 'Support & complaints', failedRetry: 'Retry failure', refund: 'Refund', adjust: 'Adjust points', reason: 'Reason', reply: 'Admin reply', open: 'Open',

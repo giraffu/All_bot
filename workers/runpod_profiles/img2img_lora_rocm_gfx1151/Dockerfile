@@ -7,6 +7,11 @@ ARG KJNODES_REPO=https://github.com/kijai/ComfyUI-KJNodes.git
 ARG KJNODES_REF=7967a946c296a74901606e6a8d1195aa2b6f9215
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
 
 LABEL org.opencontainers.image.title="AllBot img2img ROCm gfx1151 ComfyUI profile"
 LABEL org.opencontainers.image.description="Ryzen AI Max+ 395 gfx1151 production img2img runtime using AMD-validated ROCm 7.2.1 and PyTorch 2.9.1."
@@ -54,6 +59,11 @@ RUN set -euo pipefail; \
     rm -rf "${node_dir}/.git"
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh

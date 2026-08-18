@@ -11,6 +11,8 @@ from src.core.task_core_dependencies import TaskCoreSubmissionDependencies
 from src.core.task_core_error_helpers import is_task_backend_busy_error
 from src.core.task_core_types import (
     CoreDomainError,
+    DispatchOutcomeUnknownError,
+    DispatchRejectedError,
     TaskSubmissionContext,
     TaskSubmissionExecutionResult,
 )
@@ -65,6 +67,7 @@ async def dispatch_registered_task(
     is_task_backend_busy_error_func: Callable[[str], bool],
     logger: logging.Logger,
 ) -> str:
+    del mark_task_status_func
     try:
         backend_task_id = await dispatch_to_worker_func(
             registry_task_id,
@@ -79,13 +82,12 @@ async def dispatch_registered_task(
         return backend_task_id
     except Exception as exc:
         logger.error("Dispatch to worker failed: %s", exc, exc_info=True)
-        if registry_task_id:
-            with contextlib.suppress(Exception):
-                await mark_task_status_func(registry_task_id, "failed")
         error_msg = str(exc)
+        if isinstance(exc, CoreDomainError):
+            raise DispatchRejectedError(error_msg) from exc
         if is_task_backend_busy_error_func(error_msg):
-            raise CoreDomainError("当前服务器繁忙，请稍后再试") from exc
-        raise CoreDomainError(f"System error: {error_msg}") from exc
+            raise DispatchOutcomeUnknownError("当前服务器繁忙，请稍后再试") from exc
+        raise DispatchOutcomeUnknownError(f"System error: {error_msg}") from exc
 
 
 async def execute_task_submission_saga(
@@ -114,6 +116,7 @@ async def execute_task_submission_saga(
             task_type=task_type,
             cost=cost,
             saved_inputs=submission_context.registry_saved_inputs(),
+            submission_context=submission_context,
         )
     backend_task_id = await dispatch_registered_task_func(
         registry_task_id=registry_task_id,

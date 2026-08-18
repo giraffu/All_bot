@@ -379,6 +379,11 @@ def test_self_hosted_workflows_are_manual_main_gated_and_least_privilege():
     assert "packages: write" not in deploy
     assert "secrets.GHCR_TOKEN || github.token" in build
     assert "git rev-parse origin/main" in build
+    assert "actions/setup-node@v4" in build
+    assert "node-version: 24" in build
+    assert build.index("actions/setup-node@v4") < build.index(
+        "python3 scripts/release.py build"
+    )
     assert "GPU module must be built locally" not in build
     assert "environment: ${{ inputs.environment }}" in deploy
     assert "confirm_production" in deploy
@@ -564,6 +569,9 @@ def test_compose_deploy_waits_for_target_health(monkeypatch):
         "up -d --no-deps --force-recreate --wait --wait-timeout 120 "
         "dashboard-backend"
     ) in captured["script"]
+    assert 'org.opencontainers.image.revision' in captured["script"]
+    assert "release image has no valid source revision" in captured["script"]
+    assert "grep -v '^ALLBOT_RELEASE_SHA='" in captured["script"]
 
 
 def test_compose_deploy_uses_active_compose_contract_by_default(monkeypatch):

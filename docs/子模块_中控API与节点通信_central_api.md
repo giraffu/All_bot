@@ -85,9 +85,12 @@ sequenceDiagram
 - Central Redis 连接瞬断重试耗尽时，执行面 API 统一返回 `503 Service Unavailable` 与 `Retry-After: 2`，语义是控制面 Redis 暂时不可用、上游可按忙碌/补偿路径处理；排障时应区别于业务参数错误和 Worker 执行失败。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。媒体 Worker 先写
   `staging/worker-results/{backend_task_id}/...`，并上报 `staging_key`、
-  `sha256`、`byte_size` 和 `content_type`。Central 在任何 done 终态写入前将
-  staging 对象服务端复制到 `task-results/{backend_task_id}/...`，复验大小、
-  SHA-256 和元数据后才确认完成。复制与重复 `/complete` 必须幂等；
+  `sha256`、`byte_size`、`content_type`，以及可选的实际
+  `width/height/duration`。Central 在任何 done 终态写入前校验 staging：
+  provider 有原生 SHA-256 时不读取对象，否则只流式完整读取 staging 一次。
+  随后以已验证 SHA metadata 服务端复制到
+  `task-results/{backend_task_id}/...`，目标只用 HEAD 复验大小和 hash
+  metadata，不再第二次完整下载 durable 对象。复制与重复 `/complete` 必须幂等；
   不完整、跨任务或校验不符的 staging 报文直接拒绝，不得先写 done。
   旧 Worker 不携资产元数据时仅在一个兼容发布周期内沿用原
   `result_path`；全部媒体 Worker 切换后将
@@ -98,7 +101,8 @@ sequenceDiagram
   `result_promotion_rejected` 结构化日志记录 code/task/agent；受 agent token
   保护的 `GET /api/agent/task/result-storage-metrics` 返回当前进程按 code 聚合的
   失败计数，以及 `asset_contract`、`legacy_media`、`text` 完成计数和媒体新契约
-  覆盖率。成功请求同时写 `result_completion_accepted` 结构化日志，供按 agent
+  覆盖率；`io` 同时记录 HEAD、copy、原生 checksum 和应用层完整读取次数/字节数。
+  成功请求同时写 `result_completion_accepted` 结构化日志，供按 agent
   审计；这些进程内计数重启后不作为持久账本。
   文本结果不依赖媒体资产契约。Worker 端必须对完成回报进行有限重试，全部失败后
   显式失败。
@@ -113,7 +117,7 @@ sequenceDiagram
 - `/api/agent/task/pop` 与 `/peek` 可选携带 `preferred_types`，但必须同时携带 `types` 且前者是后者的子集，否则返回 422。参数缺失或清洗后为空时完全沿用旧 score 顺序。参数有效时，Central 在单次 Redis Lua 中按 score 扫描候选：记录最早 fallback，但只要领取瞬间存在 preferred 就优先原子 `ZREM` 最早 preferred；没有 preferred 才领取最早 fallback。已经 running 的 fallback 不抢占，下一次领取重新判断。真实原子出队失败不盲 retry；`peek` 使用相同分组顺序但不修改队列。
 - 新版 worker 会在 `/api/agent/task/pop` query 中携带 `agent_id`。Central 会读取 `comfy:agent:control:{agent_id}` 控制键；若 worker 处于 `draining` 或 `disabled`，则返回空任务并保留 pending 队列不变。旧 worker 不传 `agent_id` 时保持兼容旧行为。
 - `/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，只扫描 pending 队列中最早匹配的任务并返回 `{ "task": task_details | null }`。它不得 `zrem` pending、不得写 running set、不得标记 `running`、不得写 task heartbeat；真实接单和取消语义仍必须以后续 `/api/agent/task/pop` 为准。
-- 任务类型事实表位于 `src/domain_config/task_type_registry.py`，当前提供查询 helper 并驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，同时作为一致性门禁；Central simple route 的 task key -> `TaskType` 值由 registry 的 `central_type` 派生，队列 task type 与 worker `SUPPORTED_TASK_TYPES` 分发语义保持不变。新增 Central simple route 或 workflow 映射时，必须同步 registry 并跑 `tests/config/test_task_type_registry.py`。
+- 任务类型事实表位于 `src/domain_config/task_type_registry.py`，它是唯一人工维护源，并驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与前端只读生成合约。Central simple route 的 task key -> `TaskType` 值由 registry 的 `central_type` 派生；`tests/config/test_task_type_contract.py` 双向校验 Central Enum、RunPod profile、Worker mapping 和 registry，未知 Central Enum 值由 Pydantic 拒绝。新增 Central route 或 workflow 时，必须同步 registry、运行 `python scripts/generate_task_type_contract.py --write`，再执行生成文件 `--check` 与一致性测试。
 - `pornmaster_flux2_edit_bf16` 使用独立 simple route `/api/v1/pornmaster_flux2_edit_bf16` 和同名队列类型，只接受单图输入。2026-07-12 已通过单服务 force-recreate `central-api-prod` 重新注册挂载代码，正式 OpenAPI 已包含该 POST；未重建镜像、未进入维护、未重启其它服务。
 - GPU pool 控制器使用 `POST /api/agent/task/control/{agent_id}` 与 `GET /api/agent/task/control/{agent_id}` 管理 worker `enabled/draining/disabled` 状态；接口沿用 `AGENT_SECRET_TOKEN`，用于模型同步、任务类型切换和单 worker canary 前的安全 drain。
 - Dashboard 的 RunPod / LAN AIO worker `重启` 按钮也复用该 control 协议：重启前先把目标 agent 置为 `disabled`，底层运维脚本原地重启对应 Pod/容器并等待新 heartbeat 后再置为 `enabled`；Central 不负责直接重启 Pod、Docker 或 GPU 节点。

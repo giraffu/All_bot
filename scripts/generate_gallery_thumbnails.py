@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.media_processor import generate_and_upload_thumbnail
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("ThumbnailGenerator")

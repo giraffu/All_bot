@@ -27,7 +27,7 @@ MiniMax H3 用户入口使用 T2V/I2V/FLF2V 三个独立业务/执行类型，�
 
 当前系统中更准确的生成任务主链是：
 
-`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / coarse status / result`
+`Frontend -> Web API -> TaskApplication -> dispatcher -> Central -> Worker -> ComfyUI -> finalizer / History`
 
 要点：
 
@@ -56,7 +56,7 @@ sequenceDiagram
     actor U as 用户
     participant FE as Frontend
     participant API as Web API
-    participant Core as task_core facade
+    participant Core as TaskApplication
     participant Dispatch as dispatcher/image_service/api_client
     participant CAPI as Central API / Queue
     participant Agent as comfy_agent
@@ -65,16 +65,17 @@ sequenceDiagram
 
     U->>FE: 1. 提交生成表单
     FE->>API: 2. POST /api/tasks/generate
-    API->>Core: 3. process_and_submit_task(...)
-    Core->>Dispatch: 4. 构建 payload 并提交 backend_task_id
-    Dispatch->>CAPI: 5. 写入执行面队列
-    Agent->>CAPI: 6. pop 拉取匹配任务
-    Agent->>Comfy: 7. patch workflow 后提交执行
-    Comfy-->>Agent: 8. WS 进度 / 完成 / 错误
-    Agent-->>CAPI: 9. /status /complete 回报
-    Core->>Monitor: 10. Web side-effect monitor 持续收口
-    Monitor-->>API: 11. history / result / stream 可查询
-    API-->>FE: 12. 低频粗状态与 result 轮询回显结果
+    API->>Core: 3. submit(command, policy, Web journal)
+    Core->>Monitor: 4. 持久化 prepared/dispatching intent
+    Core->>Dispatch: 5. 构建 payload 并提交确定性 backend_task_id
+    Dispatch->>CAPI: 6. 写入执行面队列
+    Agent->>CAPI: 7. pop 拉取匹配任务
+    Agent->>Comfy: 8. patch workflow 后提交执行
+    Comfy-->>Agent: 9. WS 进度 / 完成 / 错误
+    Agent-->>CAPI: 10. /status /complete 回报
+    Core->>Monitor: 11. Web side-effect monitor 持续收口
+    Monitor-->>API: 12. history / result / stream 可查询
+    API-->>FE: 13. 低频粗状态与 result 轮询回显结果
 ```
 
 ## 4. 前端入口链路
@@ -109,15 +110,15 @@ sequenceDiagram
 
 前端通常通过以下链路提交：
 
-- `frontend/src/composables/useTaskStream.ts`
+- `frontend/src/composables/useTaskSubmission.ts`
 - `frontend/src/stores/tasks.ts`
 - `frontend/src/stores/taskSessionState.ts`
-- `frontend/src/stores/taskStreamTransport.ts`
 - `frontend/src/stores/tasksRuntime.ts`
 
 提交后会发生：
 
-1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
+1. `useTaskSubmission.submitTask(...)` 调用 `POST /tasks/generate`；提交提示从共享
+   i18n 读取，composable 名称不再暗示已经退出生产调用的 SSE transport
 2. 后端返回 `task_id` 后，前端把该任务写入 `tasksStore`
    - Web 不使用悬浮任务数量做并发准入；身份对应的并发额度由后端
      `check_concurrency_lock(...)` 权威判断，避免付费身份额度提升后仍被客户端旧上限拦截
@@ -150,26 +151,24 @@ Web 统一入口在：
 - `src/web_api/routers/tasks.py`
 - `POST /api/tasks/generate`
 
-这个入口本身应保持薄壳，主要负责：
-
-- 接收 `TaskGenerateRequest`
-- 注入当前用户
-- 转发到 service
-- 把领域异常映射为 HTTP 状态码
+该入口只做 schema、用户注入、service 转发和 HTTP 异常映射。
 
 ### 5.2 提交 service
 
 真正的 Web 提交 service 在：
 
 - `src/web_api/services/task_submission_service.py`
+- `src/web_api/services/web_submission_preparation.py`
 
-当前职责：
+准入、角色引用、输入归一和 free-edit/scail2 pipeline policy 收口到
+`web_submission_preparation.py`；编排 service 仅保留 ID、素材 promotion、
+application 调用与失败清理。
+
+职责：
 
 - 先执行 Web 入口级禁用任务检查；`i2i_draw` 局部重绘当前在 Web 端关闭，会在生成 `task_id`、扣费和入队前返回领域错误
-- 把 `prompt` 补入 `req.inputs`
-- 生成 Web 侧 `task_id`
-- 设定 correlation id
-- 调用 `process_and_submit_task(...)`
+- 从启动时显式装配的 `TaskApplication` 调用 `submit(command, policy, journal)`
+- 通过 `WebSubmissionIntentJournal` 在派发前持久化完整 intent
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`
 - 返回给前端 `pending` 初态和余额变化
 
@@ -182,6 +181,7 @@ Web 统一入口在：
 - 完成了 registry 注册
 - 完成了 backend 提交
 - 挂好了 Web monitor side effect
+- 或已进入 `reconciling`，前端仍按返回的同一 task ID 继续轮询
 
 人物一致性文生视频是一个服务端组合特例：客户端只提交 `character_id`、画面
 prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已就绪人物参考表和
@@ -194,8 +194,8 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 
 统一主门面是：
 
-- `src/core/task_core.py`
-- `process_and_submit_task(...)`
+- `src/core/task_application.py`
+- `TaskApplication.submit(command, policy, journal)`
 
 它不是简单转发，而是负责编排整个业务提交过程：
 
@@ -208,13 +208,9 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 - 挂载 side effect
 - 在失败时退款并释放锁
 
-当前 `process_and_submit_task(...)` 内部已继续拆成稳定步骤：
-
-- `task_core_process_flow.build_prepared_task_submission_request(...)`
-- `task_core_process_flow.prepare_task_submission_context(...)`
-- `task_core_process_flow.maybe_deduct_submission_credits(...)`
-- `task_core_process_flow.execute_task_submission_attempt(...)`
-- `task_core_process_flow.release_submission_lock_if_needed(...)`
+生产 Web/Bot/QQCC/Dashboard 已全部使用该门面。旧 `process_and_submit_task(...)`
+只保留为要求显式 dependencies 的测试/兼容适配器；输入准备、扣费、派发、补偿
+和锁释放由 `task_core_process_flow.py` 的阶段函数实现。
 
 ### 6.2 provider / dependency 边界
 
@@ -266,7 +262,7 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 
 ### 6.4 Bot 取消与优先级控制
 
-Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，向 `process_and_submit_task(...)` 透传两个任务控制语义：
+Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，通过 `TaskSubmissionPolicy` 传入两个任务控制语义：
 
 - `base_priority`: 默认 `0`，透传到现有 Central 队列优先级计算；QQCC 链式 continuation 子任务使用 `100` 表达“排在第一”。
 - `user_cancel_allowed`: 默认 `true`，写入 active task registry；`false` 时用户取消入口直接返回 `not_cancellable`，不调用 Central cancel，也不触发退款。
@@ -290,7 +286,9 @@ focused smoke 对各最终 digest 执行双工具验证。runner 还必须区分
 
 ### 6.5 QQCC 私有 Bot 的租户归属
 
-私有 Bot 复用同一 `process_and_submit_task(...)`、用户表、余额、会员和 Central/worker 执行链。发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
+私有 Bot 复用同一 `TaskApplication`、用户表、余额、会员和 Central/worker 执行链，
+并由 `PrivateBotSubmissionJournal` 把 debit/dispatch/compensation 映射到持久 ledger。
+发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
 
 Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webhook:updates`。private worker 对同一 Bot 顺序处理、不同 Bot 并行处理；启动恢复只解析 exact private client type 并把任务交回相应 Application。官方 `bot:qqcc` 与不同 private ID 不能相互恢复。暂停/禁用只停止新任务，已扣费任务继续沿原实例 client type 完成，账本与退款规则不变。
 
@@ -305,7 +303,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 下发前的任务类型分流主要在：
 
 - `src/core/task_dispatcher.py`
-- `src/domain_config/task_type_registry.py`（只读事实表、查询 helper 与一致性门禁；当前驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，dispatcher 策略仍由 core 显式装配）
+- `src/domain_config/task_type_registry.py`（任务类型唯一人工维护源；驱动 Gallery/apply、Central simple task、workflow facts 和前端只读生成合约，dispatcher 策略仍由 core 显式装配）
 
 这里决定：
 
@@ -314,7 +312,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 - 如何构造 metadata / payload
 - 调用 `image_service` 的哪个提交方法
 
-`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置、apply 输入复用白名单、Central simple task 映射与 workflow filename facts；dispatcher 策略与 worker `SUPPORTED_TASK_TYPES` 仍沿用显式事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
+`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，并驱动 Gallery 可投稿类型、展示配置、apply 输入复用白名单、Central simple task 映射、workflow filename facts，以及 `frontend/src/generated/taskTypeContract.ts`。前端生成提交会先用该只读合约验证 `task_type`，未知类型在发出 HTTP 前失败；生成文件由 `scripts/generate_task_type_contract.py` 确定性产出，禁止手改。`tests/config/test_task_type_registry.py` 校验既有领域事实，`tests/config/test_task_type_contract.py` 再双向约束 Central Enum、RunPod profile、Worker mapping 与生成文件。Worker resolver 对未知类型或缺 workflow 的 registry 类型显式失败，不再猜测同名 JSON。
 
 用户展示层另行把 registry 的 public type、legacy alias、执行/内部阶段类型归一为稳定 `task_type.*` 展示 key。Web 历史、队列、详情、用户主页、Gallery 卡片和 Bot 结果只渲染共享中英文 locale；未知类型统一回退“生成任务/其他任务”，不得回显原始 task type。Dashboard、日志与 Central/Worker 协议仍保留原始诊断值。
 
@@ -458,7 +456,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 当前底层 Worker 主循环主要在：
 
 - `workers/comfy_agent/agent_main.py`
-- `workers/runpod_runtime/comfy_agent/agent_main.py` 是 LAN/RunPod GPU profile 烘焙的正式执行 runtime
+- LAN/RunPod 镜像直接复制该 canonical package；`runpod_runtime` 只留适配脚本
 
 启动后主要做三件事：
 
@@ -536,16 +534,16 @@ Worker 拉到任务后会先处理输入：
 
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
-- RunPod profile 镜像必须把 `workers/runpod_runtime/` 烘焙到 `/opt/allbot/runtime/runpod_worker`，并以镜像 label/manifest 固定 agent 与 workflow revision；Pod 启动不访问 AllBot Git 分支。当 `i2i_pro` profile 同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap_v2/face_swap` 时，baked bundle 的 `workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 workflows 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 同理内置 replacement/audio/context-window/v10 workflow；源码变化只有重建并发布对应 profile digest 后才会进入 LAN/RunPod。
+- GPU profile 把 canonical `workers/comfy_agent`、根 `src`、`shared` 与薄 runtime adapter 组合到 `/opt/allbot/runtime/runpod_worker`，并嵌入 Git SHA、package/mapping hash；Pod 不访问 AllBot Git。profile 所需 override/workflow 必须在构建时 fail closed，源码变化只有重建 exact digest 才生效。
 - `face_swap_v2` 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 对两个业务类型都只写入 `face_image -> 2`、`body_image -> 3`。当前 i2i_pro/专属 face-swap profile 对 `face_swap` 和 `face_swap_v2` 都执行 `face_swap_v2.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
 - `image_to_video`、legacy `video_insert` / `video_edit` 与 `wan22_video_v2` 共用 `Wan22AioV82.json`。Wan22 请求优先读取最多 5 个 `{name,strength}`，无列表时兼容 `lora_name/lora_strength`；patcher 清空旧槽后按序写入节点 `26`/`18` 的高/低噪双文件。主 Bot 仍保持既有单模型入口，QQCC 官方/私有场景可配置 5 项；v2 使用相同注入规则。
-- 对 `image_to_video` / `video_insert` / `video_edit` 这类共享 workflow 的 alias，`TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和 `TASK_SPECIFIC_PATCHERS` 必须同轮更新，并同步 `workers/` 与 `workers/runpod_runtime/`。只让挂载目录里的 workflow/mapping 先生效、但容器镜像中的 `workflow_task_patchers.py` 仍是旧版，会出现“读到新 `Wan22AioV82.json` 但仍按旧 patcher 提交”的半更新状态，典型表现是 ComfyUI `/prompt` 400、`LoadImage` 还在读取模板占位文件。
+- 共享 workflow alias 的 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与 `TASK_SPECIFIC_PATCHERS` 必须同轮更新 canonical tree。生产禁止局部 bind mount，否则会形成新 workflow + 旧 patcher 的半更新并导致 `/prompt` 400。
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。历史生产 worker3 / `192.168.1.177:8189` 的 `FL_RIFE` 修复已随 gpu-177 旧链路退役；gpu-177 GPU0 AIO `8190` 当前按 `image_to_video` profile 渲染，gpu-177 GPU1 Wan22 v2 在 2026-07-01 正确切换后首单 OOM（status 137）并标记 `blocked_oom_32gb`，`wan22_video_v2` 需要使用 RunPod 或 48GB+ LAN 容量。所有 Wan22 AIO 容量都必须由 AIO 镜像/manifest 提供 RIFE 缓存。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。
 - 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，懒人动图历史类型仍是其具体 mode；执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
-- LTX API workflow 事实源在 `workers/comfy_agent/workflows`，现有 `LTX 2.3 I2V 6.1.json` 不变；新增 `LTX 2.3 FLF2V 6.1.json` 绑定 `ltx_video_flf2v`，新增 `LTX 2.3 V2V Audio 6.1.json` 绑定 `ltx_video_v2v_audio`，`workers/runpod_runtime/` 同步同名副本。FLF2V 使用额外 `LoadImage` 节点 `16` 与 end-frame resize 节点 `26:313`，并把第二张图注入 `26:297` / `26:312` 的 image slot；V2V Audio 使用 `VHS_LoadVideo` 节点 `900` 读输入视频并按所选时长采样，视频合成仍沿用 LTX workflow 的音频连接。两个新 workflow 都通过 `ImageFromBatch` / `SaveImage` 节点 `901` / `902` 保存输出尾帧，worker materialization 会写入 `extra_outputs.last_frame` 供扩展生成使用。V2V Audio 的真实口型/音轨效果必须以目标 ComfyUI 节点集 `/object_info`、实际生成结果与 `ffprobe` 音轨检查为准。
+- LTX API workflow 唯一事实源是 `workers/comfy_agent/workflows`。FLF2V 的第二张图注入 end-frame slot；V2V Audio 读取输入视频并沿用音频连接；两者保存 `extra_outputs.last_frame`。真实口型/音轨仍以目标 `/object_info`、生成结果和 `ffprobe` 为准。
 - SCAIL-2 用户侧任务类型包括 `scail2_action_transfer`（动作迁移）、`scail2_video_replacement`（视频换人）以及 `scail2_face_swap_v2`（视频换脸 v10 two-stage）；内部保留 `scail2_action_transfer_long` 作为动作迁移 10/15/20s 的隐藏 Central/Worker 执行类型。Web payload 使用 `inputs.images=[参考图, 驱动视频]`、可选 `prompt`、`negative_prompt`、`duration`；Bot 入口在“视频生视频”二级菜单下，SCAIL-2 任务都收集参考图、驱动视频和可选正向提示词，Bot 可跳过、Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词。负面词使用默认值，驱动视频上限 40MB。公开动作迁移支持 `5s/8s/10s/15s/20s`，计费 `40/80/120/180/260` 灵石；视频换人和视频换脸 v2 仍只支持 `5s/8s`，计费 `40/80` 灵石。业务/History/Gallery 记录长动作迁移仍写 `scail2_action_transfer`；dispatcher 在提交 Central 前按 duration 选择执行类型：`5s/8s -> scail2_action_transfer -> SCAIL-2_Animation_multi-char_audio.api.json`，`10s/15s/20s -> scail2_action_transfer_long -> SCAIL-2_Animation_WAN-Context-Windows.api.json`。长时长只按 `16fps * 秒数 + 1` 写 `161/241/321` 帧，不开放无限长度输入。SCAIL-2 Web/Bot 成功结果可投稿；Web 一键应用只复用原 motion/driving video，复用者重新上传 reference image，衍生任务必须保持 `allow_contribute=false`；旧 `scail2_action_transfer_long` 历史/广场/模板数据展示和筛选归并为“动作迁移”。业务 workflow 必须是 API format；当前正式 LAN 四任务默认覆盖到 audio/context-window/v10 workflow，其中 `scail2_action_transfer_long -> SCAIL-2_Animation_WAN-Context-Windows.api.json`，`scail2_face_swap_v2 -> SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 workflow 只消费已经完成图片换脸的首帧，把它作为 SCAIL-2 reference image，并走视频换人式 `human` track / replacement workflow；首帧提取与标准 `face_swap_v2` 属于进入 SCAIL 队列前的控制面第一阶段。worker patcher 固定 512x896、`force_rate=16`、`skip_first_frames=0`；动作迁移执行类型强制 `replacement_mode=false`，视频换人与视频换脸 v2 强制 `replacement_mode=true`。云测试执行 runtime 可以是 gpu-002 LAN AIO SCAIL-2 容器 `http://192.168.1.2:8190` + `cloud_worker_test_08`；云正式 LAN slot0 `lan_aio_prod_gpu002_gpu0_scail2_01` 接四类 SCAIL-2 执行任务并只写 `user-data-prod`，正式 RunPod `scail2` profile 仍只接动作迁移与视频换人。
 - SCAIL-2 长动作迁移的 Context Windows 节点当前保持 `freenoise=true`；`workflow_task_patchers.py` 会对 `scail2_action_transfer_long` 再次写入该值，避免 workflow 重导出后把 FreeNoise 关闭。该选择优先减少长时长生成耗时，代价是动作循环类伪影风险可能回归。
 - 视频换脸使用标准 Central 两阶段 continuation：共享服务从 Bot 本地视频或 Web 对象键抽取首帧，第一阶段 `face_swap_v2` 固定优先级 100；成功后先持久化 intent 并切换 TaskRegistry，再以确定性 backend ID、根任务正常 `final_priority` 提交 `reference_preprocessed=true` 的 SCAIL-2 阶段。根业务 ID、原始 `[人脸参考图, 驱动视频]`、40/80 灵石扣费与最终 History/Gallery 类型保持不变；第一阶段可取消，第二阶段不可取消，中间图不投递/不落历史。恢复逻辑先查询确定性阶段 ID，存在时禁止重复提交。Central 请求模型与 Worker workflow execution 都会拒绝缺少严格 `reference_preprocessed=true` 的视频换脸第二阶段；SCAIL-2 Worker 只执行 replacement workflow，不加载 `face_swap_v2.json`、不创建辅助 ComfyClient、不访问外部 8188。
@@ -572,10 +570,14 @@ Worker 执行流程：
 9. 将结果上传到 `staging/worker-results/{backend_task_id}/...`。云正式/云测试
    worker 可先写入 `RESULT_SPOOL_DIR`，再交给 relay sidecar
    上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时由 worker 直接上传。两条路径都必须
-   上报本地实测的 SHA-256 和字节数，不得信任外部声明值。
+   上报本地实测的 SHA-256、字节数、content type 与实际媒体
+   `width/height/duration`；维度字段为 optional 以兼容旧 Worker。
    - Worker 到本机 sidecar 的 loopback 请求只限制 connect/write/pool 等本地传输阶段，不设置独立 read deadline；R2 put 的超时与有界重试由 sidecar/MinIO adapter 统一拥有。禁止让 agent 的较短 read timeout 抢先于仍在执行的 sidecar 上传，否则会形成“Central 已报失败、R2 稍后成功”的冲突终态。
 10. 向 Central API 调 `/api/agent/task/complete`。Central 先把 staging 服务端复制到
-    `task-results/{backend_task_id}/primary.<ext>` 及 `extras/...`，完整校验后才写 done。
+    `task-results/{backend_task_id}/primary.<ext>` 及 `extras/...`。有 provider
+    原生 checksum 时 staging 零读取校验，否则只完整流读一次；copy 写入可信
+    SHA metadata，durable 目标只做 HEAD，不再二次完整读取。完成后的
+    `result_asset` 随 Redis task/status 继续传给 Web finalizer。
     Worker 会对断连或 4xx/5xx 进行短退避重试，
     全部失败后必须抛错进入失败路径。
 11. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
@@ -587,6 +589,8 @@ Worker 执行流程：
 维护口径：
 
 - `workers/comfy_agent/agent_main.py` 继续作为启动、shutdown、loop orchestration 和依赖组装 shell；健康/隔离与控制面恢复已下沉到 `agent_health.py`，Central 上报和 retry 下沉到 `agent_reporting_client.py`，预取生命周期下沉到 `agent_prefetch_manager.py`，双槽 pop/prepare/submit 与后台 finalizer 调度下沉到 `agent_pipeline_coordinator.py`，等待完成、quality retry、结果物化、sidecar/R2 上传、complete/fail/cancel 回报和 timeout interrupt 下沉到 `agent_finalizer.py`。旧 `_record_*`、`report_*`、`_prefetch_*`、`_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)`、`_finalize_execution(...)` 方法名保留为薄委托。
+- `pipeline_slots.py` 声明 profile policy 的 claimed/Comfy/delivery 上限；镜像嵌入
+  Git SHA、package/mapping hash，Worker 启动核验并随 heartbeat 报告
 - 输入准备、workflow 执行、结果物化、结果上报等底层 helper 已拆出；旧 `process_task(...)` 仍保留串行兼容路径，串行路径通过 coordinator prepare/submit 后同步调用 finalizer，双槽主链通过 coordinator 启动后台 finalizer。
 - `workers/local_relay/relay_main.py` 是本地 worker relay 与上传 sidecar；非终态 status 可本地 ACK 后合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。`/health` 只表示进程存活，`/ready` 检查 Central 与上传 client，供宿主机 watchdog 判定是否精确恢复 relay；`/ready` 404 是旧运行版本信号，watchdog 只记录不重启。sidecar 上传失败时当前任务应走 failed/status 路径，不得提前 complete。
 - 新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先把阶段逻辑下沉到对应 helper，并补 `tests/workers/test_comfy_agent.py` / `tests/workers/test_agent_result_materialization.py` focused tests。
@@ -623,11 +627,25 @@ Web 任务提交成功后，真正负责“收尾”的是：
 
 当前口径是“持久化 finalizer + 恢复循环”：
 
-- 提交成功时先由 `task_web_side_effects.py` 把收尾上下文写入 Redis `pending_web_finalizers`
-- Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
+- `WebSubmissionIntentJournal` 派发前写 version 2 intent，派发后转
+  `accepted`
+- phase 为 `prepared -> dispatching -> accepted -> terminal`，歧义为
+  `reconciling`；无版本旧 record 仍可收口
+- apply 在 `accepted` 后记录，`apply_recorded` 抑制重复
+- finalizer Hash 保存 record；due ZSET 至多取 100 个到期 ID，不用 `HGETALL`
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
-- 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
+- 多 worker 拿 lease 后读 Hash；非终态改 due score，终态清 record/due/index，
+  崩溃靠 lease 过期恢复
+- Pub/Sub 终态经 backend index 设 due-now；ZSET兜底，旧 Hash 以 bounded
+  `HSCAN` + `ZADD NX` 补索引
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
+- 新协议 Web 结果若同时满足
+  `task-results/{backend_task_id}/...`、object key 一致、SHA/size/content type
+  完整且实际维度齐全，History 直接引用 durable key，不再调用结果下载或媒体探测。
+  旧 Worker、旧任务或 metadata 不完整时继续走原下载/存储探测兜底。现有
+  task-result → History 原件复制和缩略图 warmup 暂不退出；每次执行写
+  `history_r2_compatibility_warmup_completed` 结构化成本日志，待 retention/
+  archive 契约独立确认后再删除兼容复制。
 - Central 完成契约同时支持 `result_kind=media + result_path` 与 `result_kind=text + result_text + result_meta`。共享 terminal router 判定成功时，媒体结果仍要求非空 `result_path`，文本结果则要求 `result_kind=text` 和非空 `result_text`；不得用媒体路径条件把成功文本误路由为失败退款。`prompt_optimize` 文本终态由 Web finalizer 按 owner 写入 24 小时 Redis result store，跳过 History/R2/Gallery；媒体任务继续保持原结果路径和 History 语义。Worker 上报文本结果时必须携带 Profile/Template refs 和字段白名单元数据，Web 在存储前再次 fail closed 校验。
 - `prompt_optimize` 终态前可由 `text_delta` 和 Web SSE 展示预览。快照按 backend ID
   保存、registry ID 做 owner fence；sequence 幂等。仅完整 JSON 校验和 `/complete`
@@ -655,10 +673,9 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - router 不应该自己做历史落库
 - 前端不应该自己做终态补偿
 - 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
-- 普通 Web 链路的 pending finalizer 在 dispatch 返回后才写 Redis。若 Central
-  已接纳而该写入失败，不能把异常等同于“未派发”；自动退款/删 registry 会留下
-  无 owner 的 backend task。排障先核对 Central backend ID 与 registry；修复应
-  使用 dispatch 前 durable intent/outbox 或歧义恢复，不能盲目重试提交。
+- accepted 写失败时返回 `submission_state=reconciling`，不退款、删
+  registry 或重复 dispatch。Central 404 连续 3 次且跨度不少于 60 秒才判定
+  未接纳；超时、5xx、断网不计数，超过 15 分钟只告警。
 
 ### 10.3 粗状态、SSE 与结果查询
 
@@ -672,7 +689,8 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 兼容实时流：
   - `GET /api/tasks/{task_id}/stream`
   - service 入口：`src/web_api/services/task_stream_api_service.py`
-  - 后端 SSE 与 Redis Pub/Sub 能力保留，但不再作为 Web 前端默认用户侧进度展示路径
+  - 后端 SSE 与 Redis Pub/Sub 能力保留，但公共 Web 已删除无生产调用的 SSE
+    client/stream handle；前端只走 status/result polling
 
 - 结果态：
   - `GET /api/tasks/{task_id}/result`
@@ -813,7 +831,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 ## 14. 当前稳定结论
 
 - Web 主入口是 `POST /api/tasks/generate`
-- `task_core.process_and_submit_task(...)` 是统一业务提交门面
+- `TaskApplication.submit(command, policy, journal)` 是统一业务提交门面，入口未显式装配时 fail closed
 - `registry_task_id` 与 `backend_task_id` 必须显式区分
 - `task_dispatcher.py` 决定任务类型如何下发到底层
 - Central API 是执行面，不是业务编排面

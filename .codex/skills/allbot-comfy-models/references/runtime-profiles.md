@@ -3,10 +3,10 @@
 本文件收纳低频、易过期的 ComfyUI runtime / RunPod / LAN profile 记忆。使用前仍需用代码、compose、Central `/system/workers`、目标 ComfyUI `/object_info` 和当前环境变量复核。
 
 ## 使用规则
-- 测试执行事实源是 `workers/comfy_agent/`；正式 LAN/RunPod 镜像事实源是 `workers/runpod_runtime/` 与 `workers/runpod_profiles/`。
+- 测试与 LAN/RunPod 的 Worker 唯一事实源都是 `workers/comfy_agent/`；正式镜像由 `workers/runpod_profiles/` 组合 canonical package、根 `src/`、`shared/` 与薄 runtime adapter。
 - 新增或重导 workflow 时，优先验证节点 ID、输入名、`SUPPORTED_TASK_TYPES`、workflow override 和 patcher 绑定。
-- LAN/RunPod 镜像运行 `workers/runpod_runtime/` bundle；公共 workflow、mapping 或 patcher 变化必须同轮更新两个运行时并通过 parity test。
-- 生产 worker 的 workflow/mapping 可能来自 bind mount，而 patcher 可能来自镜像；只更新一边会造成半更新。
+- `workers/runpod_runtime/` 只保留 entrypoint、relay、requirements 和运维脚本，禁止恢复 agent/workflow/domain config 副本。
+- 镜像必须从同一 canonical tree 复制 workflow/mapping/patcher，嵌入 Git SHA、package hash 和 mapping hash；启动校验后由 heartbeat 报告。生产禁止 bind mount 覆盖其中一部分。
 
 ## 当前 profile 口径
 - `image_to_video` 与 `wan22_video_v2` 是 Wan22 split video 主 profile；`wan22_aio_video` 只保留兼容/回滚语义。
@@ -16,7 +16,8 @@
 
 ## 复核 checklist
 - 目标 worker 是否声明目标 `SUPPORTED_TASK_TYPES`。
-- workflow 文件、mapping、patcher、validation 与 RunPod bundle 是否同轮维护。
+- workflow、mapping、patcher 与 validation 是否在 canonical tree 同轮维护。
+- heartbeat `runtime_manifest` 是否与目标镜像 SHA/package/mapping hash 一致。
 - ComfyUI `/object_info` 是否包含 workflow 所需 custom nodes。
 - 模型 manifest / LAN cache / RunPod bootstrap 是否只同步模型目录，不误写 input/output/temp/custom_nodes/workflows。
 - 视频 runtime 是否具备离线后处理依赖，例如 RIFE 小权重和 ffmpeg/ffprobe。

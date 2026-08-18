@@ -275,6 +275,7 @@ describe('QqccBotSettings', () => {
           ai_filter: true,
           video_edit: false,
           market: true,
+          queue: true,
           main_bot_link: true,
           private_bot: true,
         },
@@ -704,6 +705,7 @@ describe('QqccBotSettings', () => {
         'video_edit_v2',
         'market',
         'ai_video',
+        'queue',
         'private_bot',
         'main_bot_link',
       ],
@@ -748,6 +750,7 @@ describe('QqccBotSettings', () => {
     expect(payload.main_buttons.photo_edit).toBe(false)
     expect(payload.main_buttons.video_edit).toBe(false)
     expect(payload.main_buttons.market).toBe(true)
+    expect(payload.main_buttons.queue).toBe(true)
     expect(payload.main_buttons.private_bot).toBe(false)
     expect(payload.video_scenes).toEqual([
       {

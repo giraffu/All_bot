@@ -119,6 +119,14 @@ sequenceDiagram
   行为一致，不按 z-a 反转。
 - 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
 - TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
+- TON 与 USDT-TON 的目标宿主是独立 `billing-reconciler`，两个通道各自受监督，
+  单通道崩溃不终止另一通道。该镜像同时受 Compose profile 与
+  `BILLING_RECONCILER_ENABLED=false` 双门禁；主 Bot 的旧轮询由
+  `MAIN_BOT_PAYMENT_POLLING_ENABLED=true` 保持。滚动切换必须先启用新宿主并
+  验证 `/healthz` 与两个 checkpoint，再关闭旧宿主；回滚顺序相反。支付通道
+  自身的 `TON_PAYMENT_POLLING_ENABLED` / `USDT_TON_PAYMENT_ENABLED` 语义不变。
+  disabled 模式只提供 `/healthz`，不得导入或初始化数据库、Telegram、账本
+  provider，也不要求投影支付凭据。
 - TON / USDT-TON 首次启用且对应 checkpoint 不存在时，只把索引器当前最新
   `lt` 写成基线，不履约当前批次中的历史交易；checkpoint 读取失败时保持停止，
   不能把数据库异常误判为首次启用。已有 checkpoint 后才从下一 `lt` 正常处理，

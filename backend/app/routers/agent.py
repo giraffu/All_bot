@@ -21,7 +21,7 @@ from app.agent_router_helpers import (
 from app.config import settings
 from app.dependencies import get_minio_client, get_queue_manager
 from app.queue_manager import QueueManager
-from app.result_storage import ResultPromotionError
+from app.result_storage import ResultPromotionError, get_result_storage_io_metrics
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from pydantic import Field
@@ -87,6 +87,7 @@ class HeartbeatRequest(BaseModel):
     image_ref: Optional[str] = None
     model_bundle_versions: Optional[Any] = None
     pool_managed: Optional[Any] = None
+    runtime_manifest: Optional[Any] = None
 
 
 class AgentControlRequest(BaseModel):
@@ -245,6 +246,7 @@ async def result_storage_metrics(
             completion_counts.get("asset_contract", 0) / media_total
             if media_total else None
         ),
+        "io": get_result_storage_io_metrics(),
     }
 
 
@@ -305,6 +307,7 @@ async def heartbeat(
         "image_ref": req.image_ref,
         "model_bundle_versions": req.model_bundle_versions,
         "pool_managed": req.pool_managed,
+        "runtime_manifest": req.runtime_manifest,
     }
     return await heartbeat_payload(
         agent_id=req.agent_id,

@@ -16,6 +16,7 @@ from src.core.exceptions import (
 )
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 from src.web_api.services.r2_public_probe_service import r2_public_probe_service
 
@@ -40,6 +41,11 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def _env_enabled(name: str, *, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class MaintenanceMiddleware(BaseHTTPMiddleware):
@@ -82,20 +88,24 @@ async def lifespan(fastapi_app: FastAPI):
     # Startup: setup resources if needed
     logger.info("Web BFF API is starting up...")
     ensure_task_core_service_providers_registered()
+    configure_task_application()
     ensure_billing_core_providers_registered()
     await r2_public_probe_service.start()
-    finalizer_task = asyncio.create_task(
-        run_pending_web_finalizer_loop(),
-        name="web-task-finalizer-loop",
-    )
+    finalizer_task = None
+    if _env_enabled("WEB_FINALIZER_IN_WEB_ENABLED", default=True):
+        finalizer_task = asyncio.create_task(
+            run_pending_web_finalizer_loop(),
+            name="web-task-finalizer-loop",
+        )
     yield
     # Shutdown: cleanup resources
     logger.info("Web BFF API is shutting down...")
-    finalizer_task.cancel()
-    try:
-        await finalizer_task
-    except asyncio.CancelledError:
-        pass
+    if finalizer_task is not None:
+        finalizer_task.cancel()
+        try:
+            await finalizer_task
+        except asyncio.CancelledError:
+            pass
     await r2_public_probe_service.close()
     await engine.dispose()
 

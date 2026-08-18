@@ -13,7 +13,6 @@ from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.domain_config.task_type_registry import is_gallery_supported_task_type
 from src.handlers.callback_router import register_callback
 from src.services.advanced_video_pro_submission_service import (
-    AdvancedVideoProSubmissionError,
     build_advanced_video_pro_submission_plan,
     submit_advanced_video_pro_plan,
 )

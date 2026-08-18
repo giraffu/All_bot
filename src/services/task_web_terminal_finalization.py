@@ -63,6 +63,7 @@ async def finalize_monitored_web_task_success(
     submission_context: TaskSubmissionContext,
     result_path: str,
     extra_outputs: dict[str, object] | None,
+    result_asset: dict[str, object] | None = None,
     persist_successful_web_history_func: Callable[..., Awaitable[None]],
     cleanup_task_runtime_state_func: Callable[..., Awaitable[None]],
     logger: logging.Logger,
@@ -98,6 +99,8 @@ async def finalize_monitored_web_task_success(
             metadata=generation_metadata,
         )
         persistence_options = {}
+        if result_asset is not None:
+            persistence_options["result_asset"] = result_asset
         if submission_context.metadata.get("record_history") is False:
             persistence_options["postprocess_plan"] = TaskPersistencePostprocessPlan(
                 source="web",
@@ -199,6 +202,7 @@ async def finalize_monitored_web_task_success_default(
     submission_context: TaskSubmissionContext,
     result_path: str,
     extra_outputs: dict[str, object] | None = None,
+    result_asset: dict[str, object] | None = None,
     logger_override: logging.Logger | None = None,
 ):
     await finalize_monitored_web_task_success(
@@ -209,6 +213,7 @@ async def finalize_monitored_web_task_success_default(
         submission_context=submission_context,
         result_path=result_path,
         extra_outputs=extra_outputs,
+        result_asset=result_asset,
         persist_successful_web_history_func=persist_successful_web_history_default,
         cleanup_task_runtime_state_func=cleanup_task_runtime_state,
         logger=logger_override or logging.getLogger(__name__),

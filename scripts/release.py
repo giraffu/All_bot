@@ -1243,6 +1243,8 @@ root={shlex.quote(root)}
 test -f "$root/deploy/docker-compose-cloud-base.yml"
 test -f "$root/{target["overlay"]}"
 docker pull {artifact}
+release_sha=$(docker image inspect --format '{{{{ index .Config.Labels "org.opencontainers.image.revision" }}}}' {artifact})
+[[ "$release_sha" =~ ^[0-9a-f]{{40}}$ ]] || {{ echo 'release image has no valid source revision' >&2; exit 1; }}
 install -d -m 700 {runtime_root}
 runtime={runtime_root}/runtime.env
 if [ ! -f "$runtime" ]; then
@@ -1252,9 +1254,9 @@ if [ ! -f "$runtime" ]; then
   chmod 600 "$runtime"
 fi
 candidate="$runtime.new"
-grep -v '^{image_env}=' "$runtime" > "$candidate" || true
+grep -v '^{image_env}=' "$runtime" | grep -v '^ALLBOT_RELEASE_SHA=' > "$candidate" || true
 printf '%s=%s\\n' {image_env} {artifact} >> "$candidate"
-grep -q '^ALLBOT_RELEASE_SHA=' "$candidate" || printf 'ALLBOT_RELEASE_SHA=module-release\\n' >> "$candidate"
+printf '%s=%s\\n' ALLBOT_RELEASE_SHA "$release_sha" >> "$candidate"
 grep -q '^ALLBOT_SERVICE_ENV_ROOT=' "$candidate" || printf 'ALLBOT_SERVICE_ENV_ROOT=/var/lib/allbot/config/{environment}/current\\n' >> "$candidate"
 compose=(sudo -n docker compose --env-file {target["env_file"]} --env-file "$candidate" -p {target["project"]} -f "$root/deploy/docker-compose-cloud-base.yml" -f "$root/{target["overlay"]}")
 {f'compose+=(--profile {profile})' if profile else ':'}

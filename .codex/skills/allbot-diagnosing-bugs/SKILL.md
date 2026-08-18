@@ -17,7 +17,7 @@ description: "AllBot 专用 bug 诊断闭环。用户报告线上/测试环境�
 - 优先顺序：focused test、API/curl 脚本、任务链路 replay、Playwright、worker/ComfyUI 最小任务、日志 trace replay、临时 harness。
 - AllBot 常见反馈环：
   - Web/API：pytest 覆盖 router/service/presenter，或 curl 测 `/api/tasks/generate`、`/result`、Gallery/apply-context。
-  - 任务链路：用云测试或本地 mock seam 验证 `process_and_submit_task(...)`、Web finalizer、Central queue/worker 回报。
+  - 任务链路：用云测试或本地 mock seam 验证 `TaskApplication.submit(...)`、对应入口 journal、Web finalizer、Central queue/worker 回报。
   - Telegram FSM：用 handler focused tests 覆盖 callback 应答、全局菜单退出、临时文件清理。
   - Worker/workflow：用 workflow mapping 校验、agent focused tests、目标 ComfyUI `/object_info` 和最小 smoke 任务。
   - R2/媒体：用只读审计或短签/HEAD 快探测复现空白、pending_result、legacy URL 回退。

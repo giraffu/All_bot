@@ -15,6 +15,8 @@ def test_cloud_compose_uses_one_image_contract_per_module():
     expected = {
         "central-api": "ALLBOT_CENTRAL_IMAGE",
         "web-api": "ALLBOT_WEB_API_IMAGE",
+        "task-control-worker": "ALLBOT_TASK_CONTROL_WORKER_IMAGE",
+        "billing-reconciler": "ALLBOT_BILLING_RECONCILER_IMAGE",
         "payment-api": "ALLBOT_PAYMENT_API_IMAGE",
         "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
         "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
@@ -55,6 +57,8 @@ def test_python_bases_and_thin_targets_are_explicit():
     targets = (
         "central-api",
         "web-api",
+        "task-control-worker",
+        "billing-reconciler",
         "payment-api",
         "main-bot",
         "qqcc-bot",
@@ -135,6 +139,8 @@ def test_web_api_image_and_release_smoke_require_ffmpeg():
         (ROOT / "deploy/module-catalog.json").read_text(encoding="utf-8")
     )["modules"]
     assert catalog["web-api"]["base"] == "python-ffmpeg-runtime-base"
+    assert catalog["task-control-worker"]["base"] == "python-ffmpeg-runtime-base"
+    assert catalog["billing-reconciler"]["base"] == "python-runtime-base"
     assert catalog["main-bot"]["base"] == "python-ffmpeg-runtime-base"
 
     assert not (ROOT / ".github/workflows/modular-release-v2.yml").exists()

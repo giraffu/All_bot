@@ -9,12 +9,14 @@ from pydantic import ValidationError
 
 from config import MINIO_BUCKET
 from src.core.task_core import ConcurrencyLimitError
+from src.core.task_core_types import SubmissionReconciliationPending
 from src.web_api.schemas.character_schema import (
     CharacterBuildRequest,
     CharacterPromptProfile,
     CharacterViewUploadRequest,
 )
 from src.web_api.services import character_reference_service as service
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 class _ScalarResult:
@@ -554,7 +556,11 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
         "async_object_size",
         AsyncMock(return_value=20 * 1024 * 1024),
     )
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
     monkeypatch.setattr(
         service,
         "QuotaManager",
@@ -575,9 +581,52 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
     assert result["balance_remaining"] == 82
     assert db.added[0].status == "pending"
     assert submit.await_args.kwargs["allow_contribute_override"] is False
+    assert submit.await_args.kwargs["submission_before_dispatch_func"] is not None
+    assert submit.await_args.kwargs["submission_should_compensate_func"] is not None
     assert submit.await_args.kwargs["inputs"]["images"] == [
         f"{MINIO_BUCKET}/staging/user-uploads/123/source.webp"
     ]
+
+
+@pytest.mark.asyncio
+async def test_character_build_stays_pending_while_dispatch_reconciles(monkeypatch):
+    db = _Session([0])
+    monkeypatch.setattr(
+        service.storage, "async_object_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        service.storage, "async_object_size", AsyncMock(return_value=1024)
+    )
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            AsyncMock(
+                side_effect=SubmissionReconciliationPending(
+                    registry_task_id="task-reconciling",
+                    cost=18,
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "QuotaManager",
+        lambda: SimpleNamespace(get_credits=AsyncMock(return_value=82)),
+    )
+
+    result = await service.build_character(
+        db=db,
+        current_user=_user(),
+        payload=CharacterBuildRequest(
+            name="Alice",
+            description="adult woman with short black hair",
+            source_object_key="staging/user-uploads/123/source.webp",
+        ),
+    )
+
+    assert result["task_id"] == "task-reconciling"
+    assert db.added[0].status == "pending"
 
 
 @pytest.mark.asyncio

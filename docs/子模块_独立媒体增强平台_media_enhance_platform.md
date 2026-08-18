@@ -12,6 +12,9 @@ PostgreSQL 数据、MinIO 对象存储和 Worker HTTP 契约。它不复用 AllB
 本地唯一局域网入口是 `http://<LAN-IP>:8095`。Nginx 代理 `/api`，
 PostgreSQL、MinIO 和后端不发布 LAN 端口。V1 不部署云测试、云正式、
 Cloudflare、RunPod 或 LAN GPU，也不修改现有 Worker 支持列表。
+Compose 通过 `CLARITY_ALLOWED_ORIGINS` 接收严格 JSON Origin 白名单；
+本地默认只允许 `http://localhost:8095`，公网入口必须在忽略提交的
+`.env` 中显式列出 HTTPS 根域和 `www` 域名，禁止使用 `*`。
 
 ## 2. 目录与服务
 
@@ -64,6 +67,7 @@ V1 只校验 JSON、关键节点和参数注入，不宣称真实 GPU 画质验�
 点数调整/退款、客服与投诉处理。中英文共用同一信息架构。
 
 定价由后端 catalog 下发；套餐购买在 V1 标记“暂未开放”，按钮转客服工单。
+站点页脚展示已核准的 `鄂ICP备2026044153号-1`，并链接工信部备案系统。
 协议与隐私页只是上线前结构草案，不是正式法律意见；公网发布前必须补齐
 运营主体、地址、客服/版权邮箱和审阅后的条款。
 

@@ -2,6 +2,11 @@ ARG RUNTIME_BASE_IMAGE=192.168.1.115:5000/allbot/allbot-gpu-lan-all@sha256:c6756
 FROM ${RUNTIME_BASE_IMAGE}
 
 ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
 ARG RUNTIME_REQUIREMENTS_SHA256=d81a4ee4dc26db0deb2d554bd59b277dfae0bf9071454a5d955f8fff4925ed13
 
 LABEL org.opencontainers.image.title="AllBot LAN SCAIL-2 flex runtime"
@@ -20,6 +25,11 @@ RUN set -euo pipefail; \
     rm -rf /opt/allbot/runtime/runpod_worker
 
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 
 RUN set -euo pipefail; \

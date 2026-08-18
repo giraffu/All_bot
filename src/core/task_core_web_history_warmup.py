@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 
-from src.core.media_paths import resolve_storage_object
-from src.core.media_paths import build_history_r2_media_key, build_history_r2_thumbnail_key
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.media_paths import resolve_storage_object
+from src.media_paths import build_history_r2_media_key, build_history_r2_thumbnail_key
+from src.media_processor import generate_and_upload_thumbnail
 from src.core.task_core_default_dependencies import (
     build_default_task_core_warmup_dependencies,
 )
@@ -36,6 +37,7 @@ def schedule_web_history_r2_warmup(
         return
 
     async def _runner():
+        started = time.monotonic()
         bucket_name, object_name = resolve_storage_object_func(output_file)
         warmup_results = await asyncio.gather(
             copy_to_r2_func(
@@ -60,6 +62,21 @@ def schedule_web_history_r2_warmup(
                     source,
                     result,
                 )
+        logger.info(
+            "history_r2_compatibility_warmup_completed",
+            extra={
+                "event": "history_r2_compatibility_warmup_completed",
+                "task_id": task_id,
+                "source": source,
+                "media_type": media_type,
+                "copy_succeeded": not isinstance(warmup_results[0], Exception),
+                "thumbnail_succeeded": not isinstance(
+                    warmup_results[1],
+                    Exception,
+                ),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            },
+        )
 
         if source == "web":
             try:

@@ -71,6 +71,12 @@ async function logout() {
         <RouterLink to="/legal/copyright">{{ t('legal.copyright') }}</RouterLink>
       </div>
       <span class="muted">© 2026 {{ t('brand.name') }} · {{ t('brand.secondary') }}</span>
+      <a
+        class="icp-link"
+        href="https://beian.miit.gov.cn/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >{{ t('legal.icp') }}</a>
     </footer>
   </div>
 </template>

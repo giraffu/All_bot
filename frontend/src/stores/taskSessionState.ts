@@ -54,13 +54,11 @@ export function settleExternalTaskSession(
 export function removeTaskSession(
   tasks: Task[],
   taskId: string,
-  closeTaskStream: (task: Task) => void,
 ): void {
   const index = tasks.findIndex(task => task.id === taskId)
   if (index === -1) {
     return
   }
-  closeTaskStream(tasks[index])
   tasks.splice(index, 1)
 }
 

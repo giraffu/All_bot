@@ -1,6 +1,6 @@
 import pytest
 
-from src.core import media_paths
+from src import media_paths
 
 
 @pytest.mark.parametrize(

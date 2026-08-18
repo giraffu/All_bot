@@ -17,7 +17,7 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 | facade、provider/dependencies、扣费补偿 | `docs/子模块_任务调度_task_scheduler.md`、`src/core/task_core*.py` |
 | Web 提交、monitor、取消、结果 | `docs/子模块_生成任务全链路_task_full_chain.md`、`src/web_api/services/*task*` |
 | Central 队列与 Worker 协议 | `docs/子模块_中控API与节点通信_central_api.md`、`backend/app/queue_manager.py` |
-| 新任务类型与 workflow | `src/domain_config/task_type_registry.py`、`src/workflow_mapping_validation.py`、`allbot-comfy-models` |
+| 新任务类型与 workflow | `src/domain_config/task_type_registry.py`、`scripts/generate_task_type_contract.py`、`src/workflow_mapping_validation.py`、`allbot-comfy-models` |
 | 黄金路径 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` |
 
 任务类型枚举、profile 深度、某次 worker override 和历史迁移只保留在 registry、
@@ -25,11 +25,13 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 
 ## 2. 稳定接口与分层
 
-- `process_and_submit_task(...)` 是任务提交 facade，编排身份/权限、输入归一、
-  provider 选择、扣费、持久化、Central 提交和失败补偿。
-- `process_and_submit_task(base_priority=..., user_cancel_allowed=...)` 可表达
-  入口控制语义。优先级只影响队列；`user_cancel_allowed=false` 必须写入
-  active registry，由 core runtime 权威拒绝取消。
+- `TaskApplication(dependencies=...).submit(command, policy, journal)` 是新的任务
+  提交 application seam：command 只放请求事实，policy 放入口控制/idempotency/
+  timeout，journal 承载 Web intent、Bot recovery 或私有 QQCC ledger 状态。
+- `process_and_submit_task(...)` 只保留为测试/兼容适配层，调用时必须显式提供
+  `TaskCoreProcessDependencies`；生产 Web/Bot/QQCC/Dashboard 不得再导入它，也不得
+  增加 callback 参数。优先级只影响队列；`user_cancel_allowed=false`
+  必须通过 policy 写入 active registry，由 core runtime 权威拒绝取消。
 - `cleanup_task_runtime_state(...)` 是成功、失败、取消、finalizer 和恢复脚本
   的统一运行态清理 seam，不复制散落 Redis/DB 删除。
 - Web side-effect monitor 使用
@@ -39,13 +41,18 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   新结果字段同步检查 History、Gallery/apply、Bot presentation 和扩展 context。
 - 入口层负责 Telegram/Web 适配；core 负责业务编排；Central 负责队列与执行
   状态；Worker 负责输入、workflow、ComfyUI、结果物化和上报。
+- `src/domain_config/task_type_registry.py` 是任务类型唯一人工维护源；前端只读
+  `frontend/src/generated/taskTypeContract.ts`。registry 变化后运行生成器并用
+  `--check`、Central/Worker/profile 一致性测试防漂移，禁止手改生成文件。
 - `src/core/` 只能依赖内部类型、协议和显式 provider/dependencies，禁止
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
-  HTTP 实现。
+  HTTP 实现。Core 不拼 Redis key；并发计数校准通过 submission outbox 的
+  `sync_user_concurrency(...)` capability 执行。
 
-以上是新代码目标边界，不是“迁移已完成”的声明。当前 task core 仍有
-default-dependencies/runtime 兼容装配和较宽 facade；修改时优先显式传入
-command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
+Web、主 Bot、QQCC（含私有 Worker）和 Dashboard 启动入口显式调用
+`configure_task_application()`；未装配时 `get_task_application()` fail closed。Web
+finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独立 journal。
+新增代码只能使用 command/policy/journal，不扩大旧签名或增加模块级 fallback。
 
 ## 3. 双 ID 与终态不变量
 
@@ -55,19 +62,29 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
   stage 不得重复扣费、暴露结果或创建重复 History。
 - 扣费与入队是 Saga：扣费成功但提交失败必须补偿；执行失败或取消必须进入
   统一终态/退款；不能静默丢失状态。
-- 普通 Web 主链当前先 dispatch 再写 pending finalizer；finalizer attach 失败与
-  backend 接纳结果可能形成歧义。只有能证明 Central 未接纳时才能按提交失败
-  退款/删 registry；否则应保留 owner/并发状态等待恢复。私有 QQCC 的 durable
-  submission ledger 不能被误当成所有入口都已有的通用 outbox。
+- Web 主链在 Central dispatch 前写入 version 2 submission intent，phase 为
+  `prepared -> dispatching -> accepted -> terminal`，歧义进入 `reconciling`。
+  `dispatching` 落盘后禁止自动退款、删 registry 或重复派发；API 返回
+  同一 task ID 和 `submission_state=reconciling`。Central 明确 404 必须连续
+  3 次且跨度至少 60 秒才可判定未接纳；超时、5xx 和断网不计数。
 - 退款幂等键从根 registry task 派生。Web monitor、取消 API、Bot completion
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
   cleanup；清理失败需保留可恢复证据。
+- Web finalizer record 的 Hash 是恢复事实，due-time ZSET 是调度索引；写 record
+  必须同步刷新 due score。runner 只取到期小批次，禁止周期性 `HGETALL`。
+  处理中保留 due member，并以单任务 lease 防多实例重复收口；终态才原子清理
+  record、due member 与 backend index。Central 终态 Pub/Sub 只把任务提前设为
+  due-now，事件丢失仍由 ZSET 轮询兜底。
+- `task-control-worker` 是 submission reconciliation、Web finalizer 和 generic
+  zombie sweep 的目标宿主，三者使用独立 Redis leader lease。该模块/profile
+  默认禁用；迁移时先启用并确认 health/lease，再分别关闭 Web、主 Bot、QQCC
+  的旧循环。短暂重叠仍必须依赖单任务 lease/幂等账本保证安全，不能同时翻转。
 - Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
   失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
   也不能借此自动重启或删除 provider/GPU runtime。
-- Web 用户锁在提交、拒绝、取消、monitor 超时、finalizer 异常和断连时都有
-  释放路径。
+- Web 用户锁在派发前失败、确定未接纳、取消和终态时释放；
+  `dispatching/reconciling` 期间必须保留 owner，不得因 monitor 超时或断网释放。
 - presentation 的 `record_history=false` 只隐藏内部 stage 的 History/计数，
   不跳过结果物化和运行态清理；`send_result=false` 也不能替代 History 语义。
 
@@ -87,6 +104,10 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
   Worker 重启且本地 execution 不存在时可恢复接纳。
 - `gpu_done` 只表示释放 Comfy 槽；结果上传成功且 Central `/complete` 确认后
   才能终态。claimed、execution、delivery 和 reserved 都计入对应有界容量。
+- 新 Worker media completion 携带 SHA-256、byte size、content type 和可选实际
+  维度。Central 只完整校验 staging 一次（原生 checksum 可零读取），durable
+  copy 后只 HEAD；Web 仅在 durable key 与完整可信 metadata 一致时零下载写
+  History，legacy/缺字段必须保留下载兜底。
 - 文本 Worker 的 `text_delta`/snapshot 仅属于可恢复运行态；attempt、sequence、
   owner 和字段契约必须在 Central 原子校验。重复 chunk 不重复追加，跳号用快照
   修复；计费、退款和成功持久化仍只跟随权威终态。
