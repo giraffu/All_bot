@@ -47,6 +47,7 @@ from dashboard.backend.services.runpod_autoscaler_service import (
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 
 logging.basicConfig(level=logging.INFO)
 background_tasks = set()
@@ -68,6 +69,7 @@ def _initial_dashboard_health() -> dict:
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     ensure_task_core_service_providers_registered()
+    configure_task_application()
     ensure_billing_core_providers_registered()
     database_ready = await _initialize_database_with_retries(
         attempts=DB_INIT_RETRY_ATTEMPTS,

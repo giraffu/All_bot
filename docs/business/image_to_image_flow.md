@@ -18,7 +18,7 @@ sequenceDiagram
     FSM-->>User: 选择模型、上传图片、输入提示词
     FSM->>Entry: 进入生成 entrypoint
     Entry->>Flow: 组装 BotTaskFlowContext
-    Flow->>Core: process_and_submit_task(...)
+    Flow->>Core: TaskApplication.submit(command, policy, journal)
     Core->>Backend: 派发任务
     Flow-->>User: 前台进度通知
     Backend->>Store: 上传图片结果

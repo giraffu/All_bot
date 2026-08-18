@@ -53,6 +53,7 @@ from src.services.private_qqcc_continuation_service import (
     PrivateQqccContinuationUnavailable,
     activate_private_qqcc_continuation_task,
 )
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 @pytest.mark.asyncio
@@ -1615,13 +1616,15 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service_flow.process_and_submit_task",
-        AsyncMock(
-            return_value={
-                "cost": 5,
-                "registry_task_id": "task-6",
-                "saved_inputs": ["input.png"],
-            }
+        "src.services.task_service_flow.get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            AsyncMock(
+                return_value={
+                    "cost": 5,
+                    "registry_task_id": "task-6",
+                    "saved_inputs": ["input.png"],
+                }
+            )
         ),
     )
     monkeypatch.setattr(
@@ -1689,13 +1692,15 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service_flow.process_and_submit_task",
-        AsyncMock(
-            return_value={
-                "cost": 5,
-                "registry_task_id": "task-7",
-                "saved_inputs": ["input.png"],
-            }
+        "src.services.task_service_flow.get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            AsyncMock(
+                return_value={
+                    "cost": 5,
+                    "registry_task_id": "task-7",
+                    "saved_inputs": ["input.png"],
+                }
+            )
         ),
     )
     monkeypatch.setattr(

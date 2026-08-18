@@ -11,7 +11,7 @@ description: "AllBot 测试驱动开发纪律。用户要求 test-first、红绿
 - 测行为，不测内部形状。测试名称应描述用户或系统能力，而不是私有函数名。
 - 首选 public seam：
   - Web API：router/service/presenter 返回与副作用。
-  - Task core：`process_and_submit_task(...)`、monitor/finalizer、显式 `dependencies`。
+  - Task core：`TaskApplication.submit(command, policy, journal)`、monitor/finalizer、显式 `dependencies`；旧宽 facade 只用于兼容测试。
   - Billing：履约命令、账本/幂等/会员结算结果。
   - Gallery：apply-context、prompt unlock、互动并发、媒体 URL 策略。
   - TG FSM：入口 handler、callback route、全局菜单退出、临时文件清理。

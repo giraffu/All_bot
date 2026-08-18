@@ -104,6 +104,18 @@ async def test_process_and_submit_task_uses_explicit_process_dependencies():
 
 
 @pytest.mark.asyncio
+async def test_legacy_process_and_submit_task_requires_explicit_dependencies():
+    with pytest.raises(TypeError, match="dependencies"):
+        await task_core.process_and_submit_task(
+            user_id=123,
+            username="tester",
+            task_type="custom_video",
+            inputs={"prompt": "hello"},
+            task_id="registry-1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_process_and_submit_task_rejects_pool_pressure_before_prepare_or_debit():
     check_lock = AsyncMock(return_value=(False, "pool overloaded"))
     prepare_payload = AsyncMock()

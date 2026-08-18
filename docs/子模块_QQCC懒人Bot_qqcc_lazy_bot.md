@@ -231,7 +231,7 @@ QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 使�
 
 ## 4. 任务来源归属
 
-Telegram Bot 任务默认来源为 `client_type="bot"`。QQCC Bot 在 `application.bot_data["bot_client_type"]` 写入 `bot:qqcc`，`run_bot_task_application(...)` 读取该值并透传到 `process_and_submit_task(client_type=...)`。
+Telegram Bot 任务默认来源为 `client_type="bot"`。QQCC Bot 在 `application.bot_data["bot_client_type"]` 写入 `bot:qqcc`，`run_bot_task_application(...)` 读取该值并通过 `TaskSubmissionPolicy.client_type` 传入启动时显式装配的 `TaskApplication`。私有 Bot 的 debit/dispatch/compensation 由 `PrivateBotSubmissionJournal` 映射到租户 ledger。
 `bot:qqcc` 常量与上下文判断统一来自 `src/services/qqcc_runtime_context.py`，避免 QQCC main、quick image/video FSM 和 callback 侧各自复制来源判断。
 
 active task registry 必须持久化 `client_type`：

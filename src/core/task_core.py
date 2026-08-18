@@ -78,18 +78,9 @@ __all__ = [
     "persist_successful_task_result",
     "process_and_submit_task",
     "StrategyFactory",
-    "get_default_task_core_process_dependencies",
     "resolve_storage_object",
     "sync_user_concurrency",
 ]
-
-
-def get_default_task_core_process_dependencies() -> TaskCoreProcessDependencies:
-    from src.task_core_process_defaults import (
-        build_runtime_default_task_core_process_dependencies,
-    )
-
-    return build_runtime_default_task_core_process_dependencies(logger_override=logger)
 
 
 class _CallbackSubmissionJournal(SubmissionJournal):
@@ -212,9 +203,9 @@ async def process_and_submit_task(
     submission_refund_task_type: str | None = None,
     submission_release_idempotency_key: str | None = None,
     submission_before_compensation_func: Callable[..., Awaitable[Any]] | None = None,
-    dependencies: TaskCoreProcessDependencies | None = None,
+    *,
+    dependencies: TaskCoreProcessDependencies,
 ) -> dict:
-    dependencies = dependencies or get_default_task_core_process_dependencies()
     journal = _CallbackSubmissionJournal(
         before_debit_func=submission_before_debit_func,
         after_debit_func=submission_after_debit_func,

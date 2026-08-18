@@ -16,6 +16,7 @@ from src.web_api.schemas.character_schema import (
     CharacterViewUploadRequest,
 )
 from src.web_api.services import character_reference_service as service
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
 
 
 class _ScalarResult:
@@ -555,7 +556,11 @@ async def test_character_build_is_private_and_costs_eighteen(monkeypatch):
         "async_object_size",
         AsyncMock(return_value=20 * 1024 * 1024),
     )
-    monkeypatch.setattr(service, "process_and_submit_task", submit)
+    monkeypatch.setattr(
+        service,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(submit),
+    )
     monkeypatch.setattr(
         service,
         "QuotaManager",
@@ -594,11 +599,13 @@ async def test_character_build_stays_pending_while_dispatch_reconciles(monkeypat
     )
     monkeypatch.setattr(
         service,
-        "process_and_submit_task",
-        AsyncMock(
-            side_effect=SubmissionReconciliationPending(
-                registry_task_id="task-reconciling",
-                cost=18,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(
+            AsyncMock(
+                side_effect=SubmissionReconciliationPending(
+                    registry_task_id="task-reconciling",
+                    cost=18,
+                )
             )
         ),
     )

@@ -6,10 +6,12 @@ from typing import Any
 
 from config import MINIO_BUCKET
 from src.media_paths import normalize_owned_user_upload_key
-from src.core.task_core import process_and_submit_task
+from src.core.task_application import TaskApplication
 from src.core.task_core_types import (
     CoreDomainError,
     SubmissionReconciliationPending,
+    TaskSubmissionCommand,
+    TaskSubmissionPolicy,
     TaskSubmissionSideEffectPlan,
 )
 from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
@@ -24,6 +26,7 @@ from src.prompt_optimizer.registry import (
 from src.services.storage import storage
 from src.services.task_text_stream_store import build_text_stream_contract
 from src.services.task_web_submission_intent import WebSubmissionIntentJournal
+from src.task_application_runtime import get_task_application
 
 PROMPT_MEDIA_MAX_BYTES = 20 * 1024 * 1024
 PROMPT_RESULT_TTL_SECONDS = 24 * 60 * 60
@@ -84,7 +87,7 @@ async def submit_prompt_optimization(
     object_size: Callable[
         [str, str], Awaitable[int | None]
     ] = storage.async_object_size,
-    submit_task_func=process_and_submit_task,
+    task_application: TaskApplication | None = None,
     load_config_func=None,
 ) -> dict[str, Any]:
     requested_media = [item.model_dump() for item in request.media]
@@ -254,33 +257,37 @@ async def submit_prompt_optimization(
         task_id=task_id,
     )
     try:
-        result = await submit_task_func(
-            user_id=current_user.id,
-            username=current_user.username,
-            task_type=PROMPT_OPTIMIZE_TASK_TYPE,
-            inputs=inputs,
-            task_id=task_id,
-            client_type="web",
-            cost_override=PROMPT_OPTIMIZATION_COST,
-            check_lock=True,
-            user_cancel_allowed=True,
-            submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-                attach_web_monitor=True
+        application = task_application or get_task_application()
+        result = await application.submit(
+            TaskSubmissionCommand(
+                internal_user_id=current_user.id,
+                username=current_user.username,
+                task_type=PROMPT_OPTIMIZE_TASK_TYPE,
+                inputs=inputs,
+                task_id=task_id,
+                registry_metadata={
+                    "record_history": False,
+                    "_prompt_optimizer": optimizer_meta,
+                },
             ),
-            submission_concurrency_idempotency_key=(
-                f"prompt-optimize:{idempotency_scope}"
+            TaskSubmissionPolicy(
+                client_type="web",
+                cost_override=PROMPT_OPTIMIZATION_COST,
+                check_lock=True,
+                user_cancel_allowed=True,
+                side_effect_plan=TaskSubmissionSideEffectPlan(
+                    attach_web_monitor=True
+                ),
+                concurrency_idempotency_key=f"prompt-optimize:{idempotency_scope}",
+                debit_idempotency_key=(
+                    f"prompt-optimize-debit:{idempotency_scope}"
+                ),
+                refund_idempotency_key=(
+                    submission_journal.refund_idempotency_key
+                ),
+                allow_contribute_override=False,
             ),
-            submission_idempotency_key=f"prompt-optimize-debit:{idempotency_scope}",
-            submission_refund_idempotency_key=(
-                submission_journal.refund_idempotency_key
-            ),
-            submission_before_dispatch_func=submission_journal.before_dispatch,
-            submission_should_compensate_func=submission_journal.should_compensate,
-            registry_metadata={
-                "record_history": False,
-                "_prompt_optimizer": optimizer_meta,
-            },
-            allow_contribute_override=False,
+            submission_journal,
         )
     except SubmissionReconciliationPending as exc:
         result = {"task_id": exc.registry_task_id, "cost": exc.cost}
