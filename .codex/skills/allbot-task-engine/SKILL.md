@@ -17,7 +17,7 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 | facade、provider/dependencies、扣费补偿 | `docs/子模块_任务调度_task_scheduler.md`、`src/core/task_core*.py` |
 | Web 提交、monitor、取消、结果 | `docs/子模块_生成任务全链路_task_full_chain.md`、`src/web_api/services/*task*` |
 | Central 队列与 Worker 协议 | `docs/子模块_中控API与节点通信_central_api.md`、`backend/app/queue_manager.py` |
-| 新任务类型与 workflow | `src/domain_config/task_type_registry.py`、`src/workflow_mapping_validation.py`、`allbot-comfy-models` |
+| 新任务类型与 workflow | `src/domain_config/task_type_registry.py`、`scripts/generate_task_type_contract.py`、`src/workflow_mapping_validation.py`、`allbot-comfy-models` |
 | 黄金路径 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` |
 
 任务类型枚举、profile 深度、某次 worker override 和历史迁移只保留在 registry、
@@ -39,6 +39,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   新结果字段同步检查 History、Gallery/apply、Bot presentation 和扩展 context。
 - 入口层负责 Telegram/Web 适配；core 负责业务编排；Central 负责队列与执行
   状态；Worker 负责输入、workflow、ComfyUI、结果物化和上报。
+- `src/domain_config/task_type_registry.py` 是任务类型唯一人工维护源；前端只读
+  `frontend/src/generated/taskTypeContract.ts`。registry 变化后运行生成器并用
+  `--check`、Central/Worker/profile 一致性测试防漂移，禁止手改生成文件。
 - `src/core/` 只能依赖内部类型、协议和显式 provider/dependencies，禁止
   Telegram `Update`、Web `Request/APIRouter`、基础设施 session 或 Worker
   HTTP 实现。

@@ -308,7 +308,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 下发前的任务类型分流主要在：
 
 - `src/core/task_dispatcher.py`
-- `src/domain_config/task_type_registry.py`（只读事实表、查询 helper 与一致性门禁；当前驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，dispatcher 策略仍由 core 显式装配）
+- `src/domain_config/task_type_registry.py`（任务类型唯一人工维护源；驱动 Gallery/apply、Central simple task、workflow facts 和前端只读生成合约，dispatcher 策略仍由 core 显式装配）
 
 这里决定：
 
@@ -317,7 +317,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 - 如何构造 metadata / payload
 - 调用 `image_service` 的哪个提交方法
 
-`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置、apply 输入复用白名单、Central simple task 映射与 workflow filename facts；dispatcher 策略与 worker `SUPPORTED_TASK_TYPES` 仍沿用显式事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
+`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，并驱动 Gallery 可投稿类型、展示配置、apply 输入复用白名单、Central simple task 映射、workflow filename facts，以及 `frontend/src/generated/taskTypeContract.ts`。前端生成提交会先用该只读合约验证 `task_type`，未知类型在发出 HTTP 前失败；生成文件由 `scripts/generate_task_type_contract.py` 确定性产出，禁止手改。`tests/config/test_task_type_registry.py` 校验既有领域事实，`tests/config/test_task_type_contract.py` 再双向约束 Central Enum、RunPod profile、Worker mapping 与生成文件。Worker resolver 对未知类型或缺 workflow 的 registry 类型显式失败，不再猜测同名 JSON。
 
 用户展示层另行把 registry 的 public type、legacy alias、执行/内部阶段类型归一为稳定 `task_type.*` 展示 key。Web 历史、队列、详情、用户主页、Gallery 卡片和 Bot 结果只渲染共享中英文 locale；未知类型统一回退“生成任务/其他任务”，不得回显原始 task type。Dashboard、日志与 Central/Worker 协议仍保留原始诊断值。
 

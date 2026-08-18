@@ -1,4 +1,8 @@
 import type { LtxVideoLoraItem } from './imageToVideo'
+import {
+  isTaskTypeId,
+  type TaskTypeId,
+} from '@/generated/taskTypeContract'
 
 export type PromptTarget = 'topLevel' | 'inputs'
 
@@ -21,7 +25,7 @@ export type BuildGenerationTaskPayloadOptions = {
 }
 
 export type GenerationTaskPayload = {
-  task_type: string
+  task_type: TaskTypeId
   inputs: Record<string, unknown>
   priority: number
   is_template: boolean
@@ -53,6 +57,10 @@ export function buildGenerationTaskPayload(
   const normalizedPrompt = prompt?.trim()
   const normalizedTaskType =
     normalizeEditLoraTask && taskType === 'edit' && loraName ? 'img2img_lora' : taskType
+
+  if (!isTaskTypeId(normalizedTaskType)) {
+    throw new Error(`Unknown task type: ${normalizedTaskType}`)
+  }
 
   const payload: GenerationTaskPayload = {
     task_type: normalizedTaskType,

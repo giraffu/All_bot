@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from src.domain_config.task_type_registry import workflow_filename_facts
+from src.domain_config.task_type_registry import (
+    get_task_type_entry,
+    workflow_filename_facts,
+)
 
 WORKFLOW_FILENAME_OVERRIDES_ENV = "TASK_TYPE_WORKFLOW_OVERRIDES"
 
@@ -53,10 +56,20 @@ def _load_workflow_filename_overrides() -> dict[str, str]:
 
 
 def resolve_workflow_filename(task_type: str) -> str:
+    normalized_task_type = str(task_type or "").strip()
+    registered_filename = TASK_TYPE_WORKFLOW_FILENAMES.get(normalized_task_type)
+    if registered_filename is None:
+        if get_task_type_entry(normalized_task_type) is not None:
+            raise WorkflowMappingValidationError(
+                f"registered task type has no workflow: {normalized_task_type}"
+            )
+        raise WorkflowMappingValidationError(
+            f"unknown task type has no workflow contract: {normalized_task_type}"
+        )
     overrides = _load_workflow_filename_overrides()
-    if task_type in overrides:
-        return overrides[task_type]
-    return TASK_TYPE_WORKFLOW_FILENAMES.get(task_type, f"{task_type}.json")
+    if normalized_task_type in overrides:
+        return overrides[normalized_task_type]
+    return registered_filename
 
 
 def _load_json_file(file_path: Path) -> Any:

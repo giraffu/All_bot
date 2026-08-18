@@ -111,3 +111,11 @@ def test_invalid_workflow_override_fails_fast(monkeypatch, raw_override):
 
     with pytest.raises(WorkflowMappingValidationError):
         resolve_workflow_filename("t2i-pornmaster-turbo")
+
+
+def test_unknown_or_non_worker_task_type_fails_closed():
+    with pytest.raises(WorkflowMappingValidationError, match="unknown task type"):
+        resolve_workflow_filename("not_registered")
+
+    with pytest.raises(WorkflowMappingValidationError, match="has no workflow"):
+        resolve_workflow_filename("prompt_optimize")

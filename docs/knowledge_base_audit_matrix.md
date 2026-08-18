@@ -35,8 +35,8 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_任务调度_task_scheduler.md` | task facade、提交 intent、due finalizer、队列与清理 | `src/core/task_core*`、`task_web_finalizer.py`、QueueManager | current | 任务生命周期 |
-| `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路 | Web/Bot、Central、Worker、History | current | 跨层任务改动 |
-| `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性与状态协议 | `backend/app`、API client、Worker | current | 队列或 worker 协议 |
+| `docs/子模块_生成任务全链路_task_full_chain.md` | 入口到结果的完整链路与生成 task type contract | Web/Bot、Central、Worker、History | current | 跨层任务或任务类型改动 |
+| `docs/子模块_中控API与节点通信_central_api.md` | Central/Agent 队列、资产完整性、状态协议与任务类型门禁 | `backend/app`、API client、Worker | current | 队列、worker 协议或 task enum |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | 端到端行为清单 | public facade/API/FSM/provider tests | current | 高风险回归 |
 | `docs/子模块_交互状态机_fsm_handlers.md` | Telegram FSM/callback/file、返佣兑 USDT | handlers、runtime bootstrap、FSM services | current | Bot 交互 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Bot API/file endpoint | runtime bootstrap、Bot env、当次节点探测 | runtime-verification-required | Telegram 文件/代理 |
