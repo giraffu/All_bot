@@ -11,6 +11,7 @@ from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import (
     ConcurrencyLimitError,
     CoreDomainError,
+    SubmissionReconciliationPending,
     TaskSubmissionExecutionResult,
     TaskSubmissionSideEffectPlan,
     VideoTaskRequest,
@@ -384,7 +385,10 @@ async def test_uncertain_private_dispatch_does_not_run_saga_refund_compensation(
         logger=MagicMock(),
     )
 
-    with pytest.raises(CoreDomainError, match="不会重复派发或自动退款"):
+    with pytest.raises(
+        SubmissionReconciliationPending,
+        match="不会重复派发或自动退款",
+    ) as exc_info:
         await task_core.process_and_submit_task(
             user_id=123,
             username="tester",
@@ -395,6 +399,7 @@ async def test_uncertain_private_dispatch_does_not_run_saga_refund_compensation(
             dependencies=dependencies,
         )
 
+    assert exc_info.value.registry_task_id == "deterministic-task"
     compensate.assert_not_awaited()
     dependencies.release_concurrency_lock_func.assert_not_awaited()
 

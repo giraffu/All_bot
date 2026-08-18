@@ -5,7 +5,10 @@ from fastapi import HTTPException
 
 from src.core import task_core
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
-from src.core.task_core_types import TaskSubmissionExecutionResult
+from src.core.task_core_types import (
+    SubmissionReconciliationPending,
+    TaskSubmissionExecutionResult,
+)
 from src.database import core as db_core
 from src.database.models import History
 from src.web_api.routers import tasks as tasks_router
@@ -51,6 +54,32 @@ class _FakeSession:
 
 def _build_current_user():
     return type("User", (), {"id": 123, "username": "tester"})()
+
+
+@pytest.mark.asyncio
+async def test_web_returns_task_id_when_dispatch_requires_reconciliation(monkeypatch):
+    process_task = AsyncMock(
+        side_effect=SubmissionReconciliationPending(
+            registry_task_id="deterministic-task",
+            cost=6,
+        )
+    )
+    monkeypatch.setattr(task_submission_service, "process_and_submit_task", process_task)
+
+    response = await task_submission_service.submit_generation_task(
+        req=TaskGenerateRequest(task_type="txt2img", inputs={}, prompt="hello"),
+        current_user=_build_current_user(),
+        get_balance=AsyncMock(return_value=94),
+        task_id_override="deterministic-task",
+    )
+
+    assert response.task_id == "deterministic-task"
+    assert response.status == "pending"
+    assert response.submission_state == "reconciling"
+    assert response.cost == 6
+    submit_kwargs = process_task.await_args.kwargs
+    assert submit_kwargs["submission_before_dispatch_func"] is not None
+    assert submit_kwargs["submission_should_compensate_func"] is not None
 
 
 def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):

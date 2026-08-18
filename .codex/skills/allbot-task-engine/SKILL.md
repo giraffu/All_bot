@@ -55,10 +55,11 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
   stage 不得重复扣费、暴露结果或创建重复 History。
 - 扣费与入队是 Saga：扣费成功但提交失败必须补偿；执行失败或取消必须进入
   统一终态/退款；不能静默丢失状态。
-- 普通 Web 主链当前先 dispatch 再写 pending finalizer；finalizer attach 失败与
-  backend 接纳结果可能形成歧义。只有能证明 Central 未接纳时才能按提交失败
-  退款/删 registry；否则应保留 owner/并发状态等待恢复。私有 QQCC 的 durable
-  submission ledger 不能被误当成所有入口都已有的通用 outbox。
+- Web 主链在 Central dispatch 前写入 version 2 submission intent，phase 为
+  `prepared -> dispatching -> accepted -> terminal`，歧义进入 `reconciling`。
+  `dispatching` 落盘后禁止自动退款、删 registry 或重复派发；API 返回
+  同一 task ID 和 `submission_state=reconciling`。Central 明确 404 必须连续
+  3 次且跨度至少 60 秒才可判定未接纳；超时、5xx 和断网不计数。
 - 退款幂等键从根 registry task 派生。Web monitor、取消 API、Bot completion
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
@@ -66,8 +67,8 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
 - Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
   失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
   也不能借此自动重启或删除 provider/GPU runtime。
-- Web 用户锁在提交、拒绝、取消、monitor 超时、finalizer 异常和断连时都有
-  释放路径。
+- Web 用户锁在派发前失败、确定未接纳、取消和终态时释放；
+  `dispatching/reconciling` 期间必须保留 owner，不得因 monitor 超时或断网释放。
 - presentation 的 `record_history=false` 只隐藏内部 stage 的 History/计数，
   不跳过结果物化和运行态清理；`send_result=false` 也不能替代 History 语义。
 

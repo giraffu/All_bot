@@ -33,6 +33,7 @@ def attach_web_task_monitor(
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     cost: int,
+    source_post_id: int | None = None,
     monitor_web_task_func: Callable[..., Awaitable[None]],
     create_task_func=None,
 ):
@@ -46,6 +47,7 @@ def attach_web_task_monitor(
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         cost=cost,
+        source_post_id=source_post_id,
     )
 
 
@@ -109,15 +111,17 @@ async def attach_submission_side_effects(
                 registry_task_id=registry_task_id,
                 submission_context=submission_context,
                 cost=cost,
+                source_post_id=submission_side_effect_plan.source_post_id,
             )
             if inspect.isawaitable(maybe_awaitable):
                 await maybe_awaitable
         except Exception as exc:
             raise core_domain_error_cls(f"后台监控挂载失败: {exc}")
 
-    schedule_apply_interaction_func(
-        internal_user_id, submission_side_effect_plan.source_post_id
-    )
+    if not submission_side_effect_plan.attach_web_monitor:
+        schedule_apply_interaction_func(
+            internal_user_id, submission_side_effect_plan.source_post_id
+        )
 
 
 def attach_web_task_monitor_default(
@@ -128,6 +132,7 @@ def attach_web_task_monitor_default(
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     cost: int,
+    source_post_id: int | None = None,
     monitor_web_task_func=None,
     dependencies=None,
 ):
@@ -141,6 +146,7 @@ def attach_web_task_monitor_default(
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         cost=cost,
+        source_post_id=source_post_id,
         monitor_web_task_func=monitor_web_task_func,
         create_task_func=side_effect_dependencies.create_task_func,
     )

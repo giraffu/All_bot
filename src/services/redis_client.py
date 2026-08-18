@@ -316,6 +316,21 @@ class RedisClient:
             )
             raise
 
+    async def increment_task_submission_metric(
+        self,
+        metric_name: str,
+        amount: int = 1,
+    ) -> None:
+        key = f"{REDIS_PREFIX}task_submission_metrics"
+        try:
+            await self.redis.hincrby(key, metric_name, int(amount))
+        except Exception as e:
+            logger.error(
+                "Failed to increment task submission metric %s: %s",
+                metric_name,
+                e,
+            )
+
     async def get_pending_web_finalizer(
         self,
         registry_task_id: str,

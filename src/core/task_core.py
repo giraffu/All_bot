@@ -45,6 +45,7 @@ from src.core.task_core_types import (
     CoreDomainError,
     InsufficientCreditsError,
     QueueCapacityError,
+    SubmissionReconciliationPending,
     TaskCancellationFinalizationResult,
     TaskPersistencePostprocessPlan,
     TaskSubmissionSideEffectPlan,
@@ -333,8 +334,9 @@ async def process_and_submit_task(
             # The deterministic dispatch may exist. Its registry owner must
             # retain concurrency until reconciliation or terminal recovery.
             task_submitted_successfully = True
-            raise CoreDomainError(
-                "任务已进入派发确认阶段，系统不会重复派发或自动退款，请稍后重试"
+            raise SubmissionReconciliationPending(
+                registry_task_id=registry_task_id,
+                cost=request.cost,
             ) from e
 
     finally:
