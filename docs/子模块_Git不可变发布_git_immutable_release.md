@@ -38,6 +38,8 @@ python3 scripts/release.py build \
 `repository@sha256:digest`。
 
 SGP1 repository-level self-hosted Runner 只承接受保护 `main` 的手动模块构建。
+工作流显式使用 Node 24 构建 Pages 与前端产物，不依赖 Runner 宿主机的系统
+Node 版本；`vue-tsc` 与 Vite 构建失败时不得发布旧或本地临时产物。
 Runner 内的 builder 名称为 `allbot-sgp1`：
 
 ```bash

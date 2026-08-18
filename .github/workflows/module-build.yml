@@ -59,6 +59,11 @@ jobs:
           print("\n".join(modules))
           PY
 
+      - name: Install supported Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Login to GHCR with ephemeral token
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
