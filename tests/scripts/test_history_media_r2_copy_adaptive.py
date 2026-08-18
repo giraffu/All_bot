@@ -12,6 +12,7 @@ from scripts.history_media_r2_copy_adaptive import (
     CopyLatencyWindow,
     ResourceGate,
     ResourceSample,
+    ShardedBatchCoordinator,
     _parser,
     _available_cpu_count,
     _resource_sample,
@@ -111,6 +112,115 @@ async def test_sharded_runner_refills_a_fast_lane_before_the_slowest_lane_finish
         (1, 1, 12, 4, 8, 12, 24),
         (1, 2, 12, 4, 8, 12, 24),
     ]
+    assert result["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_sharded_coordinator_reports_one_live_health_window_across_lanes():
+    both_lanes_started = asyncio.Event()
+    release_lane = asyncio.Event()
+    lane_count = 0
+
+    async def execute_batch(args):
+        nonlocal lane_count
+        if getattr(args, "preflight_only", False):
+            return {"preflight": "validated", "remaining": 100}
+        lane_count += 1
+        args.request_event_sink(
+            {
+                "at": float(args.copy_shard_index),
+                "kind": "ok",
+                "copy_concurrency": 16,
+            }
+        )
+        if lane_count == 2:
+            both_lanes_started.set()
+        await both_lanes_started.wait()
+        if args.copy_shard_index == 1:
+            await release_lane.wait()
+        return {
+            "remaining": 100,
+            "copied_objects": 1,
+            "_copy_request_events": [{"at": 999.0, "kind": "timeout"}],
+            "r2_object_operation_latency_ms": {"p95": 1, "max": 1},
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    args = SimpleNamespace(
+        plan_sha256="8" * 64,
+        confirm="COPY_HISTORY_MEDIA_" + "8" * 64,
+        config="/tmp/config.json",
+        limit=1_000,
+        shard_count=2,
+        shard_size=1_000,
+        retry_concurrency=4,
+        copy_concurrency=16,
+        max_pool_connections=24,
+    )
+    coordinator = ShardedBatchCoordinator(args, execute_batch=execute_batch)
+    try:
+        summary = await coordinator.execute_next(args)
+        assert summary["_copy_request_events"] == [
+            {"at": 0.0, "kind": "ok", "copy_concurrency": 16},
+            {"at": 1.0, "kind": "ok", "copy_concurrency": 16},
+        ]
+    finally:
+        release_lane.set()
+        await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_adaptive_runner_ignores_request_events_from_an_old_concurrency_epoch():
+    calls = []
+
+    async def execute_batch(args):
+        calls.append(args.copy_concurrency)
+        if len(calls) == 1:
+            events = [
+                *(
+                    {"at": 1.0, "kind": "ok", "copy_concurrency": 128}
+                    for _ in range(994)
+                ),
+                *(
+                    {"at": 1.0, "kind": "timeout", "copy_concurrency": 128}
+                    for _ in range(6)
+                ),
+            ]
+        elif len(calls) == 2:
+            events = [
+                *(
+                    {"at": 1.5, "kind": "ok", "copy_concurrency": 128}
+                    for _ in range(999)
+                ),
+                {"at": 1.5, "kind": "rate_limit", "copy_concurrency": 128},
+            ]
+        else:
+            events = [
+                {"at": 2.0, "kind": "ok", "copy_concurrency": 64} for _ in range(200)
+            ]
+        return {
+            "remaining": 0 if len(calls) == 3 else 100,
+            "copied_objects": 1000,
+            "_copy_request_events": events,
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    result = await run_adaptive_copy(
+        SimpleNamespace(
+            plan_sha256="6" * 64,
+            confirm="COPY_HISTORY_MEDIA_" + "6" * 64,
+            config="/tmp/config.json",
+            limit=1_000,
+            copy_concurrency=128,
+            max_pool_connections=192,
+            circuit_breaker_windows=3,
+            max_cpu_percent=1000,
+        ),
+        execute_batch=execute_batch,
+        sleep=asyncio.sleep,
+    )
+
+    assert calls == [128, 64, 64]
     assert result["status"] == "completed"
 
 

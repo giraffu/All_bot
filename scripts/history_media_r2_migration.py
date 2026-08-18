@@ -1933,15 +1933,21 @@ def _timed_server_side_copy_attempt(
 ) -> dict[str, Any]:
     """Run one CopyObject attempt under the shared live concurrency limit."""
     started: float | None = None
+    attempt_concurrency = concurrency_limiter.limit
     try:
         with concurrency_limiter.slot():
+            attempt_concurrency = concurrency_limiter.limit
             started = time.perf_counter()
             outcome = server_side_copy_r2_object(client, **kwargs)
         return {
             "outcome": outcome,
             "error": None,
             "elapsed_ms": (time.perf_counter() - started) * 1000,
-            "request_event": {"at": time.monotonic(), "kind": "ok"},
+            "request_event": {
+                "at": time.monotonic(),
+                "kind": "ok",
+                "copy_concurrency": attempt_concurrency,
+            },
         }
     except BaseException as exc:  # noqa: BLE001 - classify at object boundary
         return {
@@ -1953,6 +1959,7 @@ def _timed_server_side_copy_attempt(
             "request_event": {
                 "at": time.monotonic(),
                 "kind": classify_copy_request_failure(exc),
+                "copy_concurrency": attempt_concurrency,
             },
         }
 
@@ -1973,6 +1980,7 @@ async def _run_copy_group_batch_with_retry_lane(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     max_bulk_in_flight: int | None = None,
     object_circuit: CopyObjectCircuitBreaker | None = None,
+    request_event_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Keep first attempts flowing while a bounded retry lane owns long tails."""
     if not 0 <= max_retries <= 10:
@@ -2028,7 +2036,10 @@ async def _run_copy_group_batch_with_retry_lane(
             bulk_slots = 0
             for task in completed:
                 group, attempt, object_started, result = await task
-                request_events.append(dict(result["request_event"]))
+                request_event = dict(result["request_event"])
+                request_events.append(request_event)
+                if request_event_sink is not None:
+                    request_event_sink(dict(request_event))
                 error = result["error"]
                 if error is not None:
                     kind = classify_copy_request_failure(error)
@@ -5410,6 +5421,7 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
                 retry_jitter_ratio=float(getattr(args, "retry_jitter_ratio", 0.25)),
                 max_bulk_in_flight=args.copy_concurrency,
                 object_circuit=object_circuit,
+                request_event_sink=getattr(args, "request_event_sink", None),
             )
         else:
             with ThreadPoolExecutor(max_workers=args.copy_concurrency) as copy_executor:
