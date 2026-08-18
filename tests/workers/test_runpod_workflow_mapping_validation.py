@@ -1,12 +1,9 @@
-import importlib.util
 import json
-import os
 from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
+from src import workflow_mapping_validation as canonical_validation
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
@@ -14,15 +11,15 @@ from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_TASK_PROFILES,
 )
 from ops.gpu_pool_controller.runtime import LAN_AIO_ALL_WORKFLOW_OVERRIDES
-from src.workflow_mapping_validation import resolve_workflow_filename
+from src.workflow_mapping_validation import (
+    resolve_workflow_filename,
+    validate_workflow_directory,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MAIN_RUNTIME_TYPES_PATH = ROOT / "workers/comfy_agent/agent_runtime_types.py"
-RUNPOD_RUNTIME_TYPES_PATH = ROOT / "workers/runpod_runtime/comfy_agent/agent_runtime_types.py"
 MAIN_WORKFLOW_DIR = ROOT / "workers/comfy_agent/workflows"
-RUNPOD_VALIDATION_PATH = ROOT / "workers/runpod_runtime/src/workflow_mapping_validation.py"
-RUNPOD_WORKFLOW_DIR = ROOT / "workers/runpod_runtime/comfy_agent/workflows"
+RUNPOD_WORKFLOW_DIR = MAIN_WORKFLOW_DIR
 BAKED_PROFILE_DOCKERFILES = tuple(
     ROOT / "workers/runpod_profiles" / profile / "Dockerfile"
     for profile in (
@@ -43,12 +40,6 @@ I2I_PRO_BASELINE_MODELS = {
     "z_image/ae.safetensors",
     "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors",
 }
-EXPECTED_MAIN_ONLY_WORKFLOWS = {
-    "DasiwaLTX23WorkflowsI2VFLF2V_omniforgeCLTX23V39.json",
-}
-EXPECTED_RUNPOD_WORKFLOW_DRIFTS = {
-    "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json",
-}
 PROFILE_WORKFLOW_OVERRIDES = {
     "face_swap": json.loads(RUNPOD_FACE_SWAP_WORKFLOW_OVERRIDES),
     "i2i_pro": json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
@@ -57,14 +48,7 @@ PROFILE_WORKFLOW_OVERRIDES = {
 
 
 def _load_runpod_validation_module():
-    spec = importlib.util.spec_from_file_location(
-        "runpod_workflow_mapping_validation",
-        RUNPOD_VALIDATION_PATH,
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return canonical_validation
 
 
 def _workflow_model_refs(path: Path) -> set[str]:
@@ -81,18 +65,7 @@ def _workflow_model_refs(path: Path) -> set[str]:
     return refs
 
 
-def _workflow_files(workflow_dir: Path) -> set[str]:
-    return {path.name for path in workflow_dir.glob("*.json")}
-
-
-def test_runpod_task_execution_context_matches_main_worker_contract():
-    assert RUNPOD_RUNTIME_TYPES_PATH.read_text(
-        encoding="utf-8"
-    ) == MAIN_RUNTIME_TYPES_PATH.read_text(encoding="utf-8")
-
-
 def test_lan_all_profile_validates_every_execution_workflow(monkeypatch):
-    validation = _load_runpod_validation_module()
     task_types = {
         "img2img",
         "img2img_lora",
@@ -115,17 +88,16 @@ def test_lan_all_profile_validates_every_execution_workflow(monkeypatch):
         "ltx_t2v_ic",
     }
     monkeypatch.setenv(
-        validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
+        "WORKFLOW_FILENAME_OVERRIDES",
         LAN_AIO_ALL_WORKFLOW_OVERRIDES,
     )
 
-    mappings = validation.validate_workflow_directory(str(RUNPOD_WORKFLOW_DIR))
+    mappings = validate_workflow_directory(str(MAIN_WORKFLOW_DIR))
 
     assert task_types <= set(mappings)
 
 
 def test_scail2_flex_profile_validates_only_six_execution_workflows(monkeypatch):
-    validation = _load_runpod_validation_module()
     task_types = {
         "scail2_action_transfer",
         "scail2_action_transfer_long",
@@ -135,39 +107,13 @@ def test_scail2_flex_profile_validates_only_six_execution_workflows(monkeypatch)
         "img2img_lora",
     }
     monkeypatch.setenv(
-        validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
+        "WORKFLOW_FILENAME_OVERRIDES",
         LAN_AIO_ALL_WORKFLOW_OVERRIDES,
     )
 
-    mappings = validation.validate_workflow_directory(str(RUNPOD_WORKFLOW_DIR))
+    mappings = validate_workflow_directory(str(MAIN_WORKFLOW_DIR))
 
     assert task_types <= set(mappings)
-
-
-def test_baked_runpod_worker_imports_task_patchers_from_its_own_bundle(tmp_path):
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "workers" / "runpod_runtime")
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS",
-        ],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-
-
-def test_minimax_h3_runpod_domain_contract_matches_control_plane_source():
-    assert (
-        ROOT / "workers/runpod_runtime/src/domain_config/minimax_h3.py"
-    ).read_bytes() == (ROOT / "src/domain_config/minimax_h3.py").read_bytes()
 
 
 @pytest.mark.parametrize("dockerfile_path", BAKED_PROFILE_DOCKERFILES)
@@ -177,26 +123,12 @@ def test_profile_image_build_fails_when_runpod_worker_bundle_cannot_import(
     dockerfile = dockerfile_path.read_text(encoding="utf-8")
 
     assert (
-        "PYTHONPATH=/opt/allbot/runtime/runpod_worker "
-        "python3 -c 'from comfy_agent.workflow_task_patchers import "
-        "TASK_SPECIFIC_PATCHERS'"
-    ) in dockerfile
-
-
-def test_runpod_workflow_directory_only_has_documented_drift():
-    main_files = _workflow_files(MAIN_WORKFLOW_DIR)
-    runpod_files = _workflow_files(RUNPOD_WORKFLOW_DIR)
-
-    assert main_files - runpod_files == EXPECTED_MAIN_ONLY_WORKFLOWS
-    assert runpod_files - main_files == set()
-
-    changed_files = {
-        filename
-        for filename in main_files & runpod_files
-        if (MAIN_WORKFLOW_DIR / filename).read_bytes()
-        != (RUNPOD_WORKFLOW_DIR / filename).read_bytes()
-    }
-    assert changed_files == EXPECTED_RUNPOD_WORKFLOW_DRIFTS
+        "COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent"
+        in dockerfile
+    )
+    assert "COPY src /opt/allbot/runtime/runpod_worker/src" in dockerfile
+    assert "PYTHONPATH=/opt/allbot/runtime/runpod_worker python3 -c" in dockerfile
+    assert "from comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS" in dockerfile
 
 
 @pytest.mark.parametrize(
@@ -210,12 +142,7 @@ def test_ltx_flf2v_workflows_enable_last_frame_decode_fix(filename):
     main_workflow = json.loads(
         (MAIN_WORKFLOW_DIR / filename).read_text(encoding="utf-8")
     )
-    runpod_workflow = json.loads(
-        (RUNPOD_WORKFLOW_DIR / filename).read_text(encoding="utf-8")
-    )
-
     assert main_workflow["26:149"]["inputs"]["last_frame_fix"] is True
-    assert runpod_workflow["26:149"]["inputs"]["last_frame_fix"] is True
 
 
 def test_runpod_profile_supported_task_types_have_main_and_runpod_workflow_files():

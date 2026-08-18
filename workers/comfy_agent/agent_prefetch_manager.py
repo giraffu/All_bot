@@ -124,26 +124,41 @@ class AgentPrefetchManager:
                 endpoint = "/api/agent/task/pop"
                 params = self.agent._build_pop_params(pipeline=True)
                 params["types"] = prefetch_types
-            response = await self.agent._master_get(endpoint, params=params)
-            if response.status_code != 200:
-                self.logger.debug("Prefetch peek returned HTTP %s", response.status_code)
-                return
-            task = response.json().get("task")
+                async with self.agent._claim_lock:
+                    if not self.agent._pipeline_admission.can_reserve_task(
+                        self.agent._executions,
+                        self.agent._reserved_prefetch_task,
+                    ):
+                        return
+                    response = await self.agent._master_get(endpoint, params=params)
+                    if response.status_code != 200:
+                        self.logger.debug(
+                            "Prefetch pop returned HTTP %s",
+                            response.status_code,
+                        )
+                        return
+                    task = response.json().get("task")
+                    task_id = str((task or {}).get("task_id", ""))
+                    if task_id in self.agent._executions:
+                        await self.agent._acknowledge_redelivered_task(task_id)
+                        self.agent._discard_prefetched_task(task_id)
+                        return
+                    if task_id:
+                        self.agent._reserved_prefetch_task = task
+            else:
+                response = await self.agent._master_get(endpoint, params=params)
+                if response.status_code != 200:
+                    self.logger.debug(
+                        "Prefetch peek returned HTTP %s",
+                        response.status_code,
+                    )
+                    return
+                task = response.json().get("task")
+
             if not task:
                 return
-
             task_id = str(task.get("task_id", ""))
             task_type = str(task.get("type", ""))
-            if reserve_task and task_id in self.agent._executions:
-                self.logger.info(
-                    "Ignoring redelivered reserved claim for active task %s",
-                    task_id,
-                )
-                await self.agent._acknowledge_redelivered_task(task_id)
-                self.agent._discard_prefetched_task(task_id)
-                return
-            if reserve_task and task_id:
-                self.agent._reserved_prefetch_task = task
             if not task_id or not self.should_prefetch_task_type(
                 task_type,
                 prefetch_enabled=prefetch_enabled,
@@ -190,6 +205,11 @@ class AgentPrefetchManager:
             current_task_type,
             prefetch_enabled=prefetch_enabled,
             prefetch_depth=prefetch_depth,
+        ):
+            return
+        if reserve_task and not self.agent._pipeline_admission.can_reserve_task(
+            self.agent._executions,
+            self.agent._reserved_prefetch_task,
         ):
             return
         if self.agent._prefetch_task and not self.agent._prefetch_task.done():

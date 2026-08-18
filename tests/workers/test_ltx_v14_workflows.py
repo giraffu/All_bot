@@ -6,7 +6,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIRS = (
     ROOT / "workers/comfy_agent/workflows",
-    ROOT / "workers/runpod_runtime/comfy_agent/workflows",
 )
 
 
@@ -43,4 +42,3 @@ def test_ltx_v14_workflow_contract(directory, task_type, filename, image_count):
     serialized = json.dumps(workflow)
     assert "distilled-lora" not in serialized
     assert "10Eros-v12_LoRA" not in serialized
-

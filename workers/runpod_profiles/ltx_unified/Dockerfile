@@ -7,6 +7,11 @@ LABEL allbot.runpod.profile="ltx_unified"
 LABEL allbot.runpod.models="external-lan-manifest"
 LABEL allbot.runpod.scope="ltx-video-and-t2v"
 ARG ALLBOT_GIT_SHA
+ARG ALLBOT_RUNTIME_PACKAGE_SHA256
+ARG ALLBOT_WORKFLOW_MAPPING_SHA256
+ENV ALLBOT_GIT_SHA=$ALLBOT_GIT_SHA \
+    ALLBOT_RUNTIME_PACKAGE_SHA256=$ALLBOT_RUNTIME_PACKAGE_SHA256 \
+    ALLBOT_WORKFLOW_MAPPING_SHA256=$ALLBOT_WORKFLOW_MAPPING_SHA256
 ARG LICON_MSR_REVISION=94a52bfec735ff6f802c480f7fe8fdac1d279a7f
 ARG KJNODES_REVISION=5fc6db6b39638a692f114c4bb5b6949f801b4efa
 LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
@@ -18,6 +23,11 @@ ENV PIP_NO_CACHE_DIR=1
 
 COPY workers/runpod_profiles/ltx_unified/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
 COPY workers/runpod_runtime /opt/allbot/runtime/runpod_worker
+COPY workers/comfy_agent /opt/allbot/runtime/runpod_worker/comfy_agent
+COPY src /opt/allbot/runtime/runpod_worker/src
+RUN test -n "$ALLBOT_GIT_SHA" && \
+    test -n "$ALLBOT_RUNTIME_PACKAGE_SHA256" && \
+    test -n "$ALLBOT_WORKFLOW_MAPPING_SHA256"
 COPY shared /opt/allbot/runtime/runpod_worker/shared
 COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh

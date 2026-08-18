@@ -6,8 +6,8 @@ import pytest
 from scripts.build_minimax_h3_api_workflows import build
 from src.workflow_mapping_validation import resolve_workflow_filename, validate_workflow_directory
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
-from workers.runpod_runtime.comfy_agent.workflow_task_patchers import (
-    patch_minimax_h3_workflow as patch_runpod_minimax_h3_workflow,
+from workers.comfy_agent.workflow_task_patchers import (
+    patch_minimax_h3_workflow,
 )
 
 
@@ -23,13 +23,11 @@ LIGHTX2V_LORA = "MiniMaxH3/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safeten
 NAUGHTYTIMES_LORA = "MiniMaxH3/NaughtyTimes_pruned_r256_v2.safetensors"
 
 
-def test_minimax_h3_api_workflows_are_deterministic_and_synced():
+def test_minimax_h3_api_workflows_are_deterministic():
     validate_workflow_directory("workers/comfy_agent/workflows")
     for task_type, filename in TASKS.items():
         assert resolve_workflow_filename(task_type) == filename
         main = Path("workers/comfy_agent/workflows") / filename
-        runpod = Path("workers/runpod_runtime/comfy_agent/workflows") / filename
-        assert main.read_bytes() == runpod.read_bytes()
         workflow = json.loads(main.read_text())
         assert workflow == build(task_type)
         assert workflow["1"]["inputs"]["unet_name"] == TEN_EROS_BETA2_MODEL
@@ -174,11 +172,11 @@ def test_minimax_h3_patcher_injects_selected_addons_after_lightx2v_in_order():
     )
 
 
-def test_runpod_minimax_h3_worker_injects_same_addon_chain():
+def test_minimax_h3_worker_injects_addon_chain():
     workflow = json.loads(
-        Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+        Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
     )
-    patch_runpod_minimax_h3_workflow(
+    patch_minimax_h3_workflow(
         workflow,
         task_type="minimax_h3_t2v",
         params={
@@ -192,9 +190,11 @@ def test_runpod_minimax_h3_worker_injects_same_addon_chain():
     assert workflow["30"]["inputs"]["prompt"] == "HMBreasts, scene"
 
 
-def test_runpod_minimax_h3_worker_uses_prompt_without_trigger_injection():
-    workflow = json.loads(Path("workers/runpod_runtime/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text())
-    patch_runpod_minimax_h3_workflow(
+def test_minimax_h3_worker_uses_prompt_without_trigger_injection():
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+    patch_minimax_h3_workflow(
         workflow,
         task_type="minimax_h3_t2v",
         params={"prompt": "scene", "frame_count": 243},

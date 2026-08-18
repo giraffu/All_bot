@@ -2,14 +2,14 @@ import asyncio
 
 import pytest
 
-from workers.runpod_runtime.comfy_agent.pipeline_slots import (
+from workers.comfy_agent.pipeline_slots import (
     FAST_IMAGE_PIPELINE_POLICY,
     MEDIA_PIPELINE_POLICY,
     PipelineAdmission,
     PipelineDeliveryGate,
     resolve_pipeline_limits,
 )
-from workers.runpod_runtime.comfy_agent.agent_runtime_types import TaskExecutionContext
+from workers.comfy_agent.agent_runtime_types import TaskExecutionContext
 
 
 def _execution(task_id: str, phase: str) -> TaskExecutionContext:

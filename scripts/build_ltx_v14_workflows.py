@@ -5,10 +5,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW_DIRS = (
-    ROOT / "workers/comfy_agent/workflows",
-    ROOT / "workers/runpod_runtime/comfy_agent/workflows",
-)
+WORKFLOW_DIRS = (ROOT / "workers/comfy_agent/workflows",)
 MODEL = "LTX 2.3/10Eros_v1.4_DMD_int8_convrot.safetensors"
 FIRST_SIGMAS = "1.000,0.955,0.893,0.812,0.715,0.603,0.482,0.241,0.121,0.0"
 FINAL_SIGMAS = "0.92,0.725,0.421875,0.0"

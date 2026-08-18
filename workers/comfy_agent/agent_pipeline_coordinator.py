@@ -145,8 +145,10 @@ class AgentPipelineCoordinator:
         task_type = str(task.get("type", ""))
         params = self.parse_task_params(task)
 
-        if task_id in self.agent._executions:
-            execution = self.agent._executions[task_id]
+        execution = self.agent._executions.get(task_id)
+        if execution is not None and not (
+            execution.phase == "claimed" and not execution.prompt_id
+        ):
             self.logger.info(
                 "Ignoring duplicate launch for active task %s in phase %s",
                 task_id,
@@ -156,10 +158,15 @@ class AgentPipelineCoordinator:
             return None
 
         self.logger.info("Processing task %s of type %s", task_id, task_type)
-        execution = self.agent._start_task_execution(
-            task_id=task_id,
-            task_type=task_type,
-        )
+        if execution is None:
+            execution = self.agent._start_task_execution(
+                task_id=task_id,
+                task_type=task_type,
+            )
+        else:
+            execution.task_type = task_type
+            execution.phase = "preparing"
+            self.agent._active_execution = execution
         downloaded_input_paths = execution.downloaded_input_paths
 
         if allow_cancel_check and await self.agent.check_task_cancelled(task_id):

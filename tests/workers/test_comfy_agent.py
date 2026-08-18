@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import io
 import logging
@@ -16,11 +17,6 @@ MODULE_PATH = ROOT / "workers" / "comfy_agent" / "agent_main.py"
 MODULE_DIR = str(MODULE_PATH.parent)
 WORKFLOW_EXECUTION_PATHS = (
     ROOT / "workers" / "comfy_agent" / "agent_workflow_execution.py",
-    ROOT
-    / "workers"
-    / "runpod_runtime"
-    / "comfy_agent"
-    / "agent_workflow_execution.py",
 )
 
 
@@ -99,12 +95,47 @@ def load_workflow_execution_module(module_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit():
-    module = load_agent_main_module(
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
+async def test_quality_retry_waits_for_a_free_comfy_slot(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    retry_execution = module.TaskExecutionContext(
+        task_id="retry-task",
+        task_type="i2i_pro",
     )
-    agent = module.ComfyAgent.__new__(module.ComfyAgent)
-    agent._claim_lock = __import__("asyncio").Lock()
+    retry_execution.phase = "delivering"
+    blocker = module.TaskExecutionContext(
+        task_id="gpu-task",
+        task_type="i2i_pro",
+    )
+    blocker.phase = "queued"
+    agent._executions = {
+        retry_execution.task_id: retry_execution,
+        blocker.task_id: blocker,
+    }
+    agent._pipeline_admission = module.PipelineAdmission(
+        max_claimed_tasks=2,
+        max_comfy_inflight=1,
+    )
+
+    reservation = asyncio.create_task(
+        agent._finalizer._reserve_comfy_slot_for_retry(retry_execution)
+    )
+    await asyncio.sleep(0)
+    assert reservation.done() is False
+    assert retry_execution.phase == "delivering"
+
+    blocker.phase = "gpu_done"
+    await asyncio.wait_for(reservation, timeout=0.5)
+
+    assert retry_execution.phase == "preparing"
+
+
+@pytest.mark.asyncio
+async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
     agent._executions = {}
     agent._reserved_prefetch_task = {
         "task_id": "reserved-task",
@@ -124,12 +155,9 @@ async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit():
 
 
 @pytest.mark.asyncio
-async def test_runpod_worker_does_not_pop_fourth_claim():
-    module = load_agent_main_module(
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
-    )
-    agent = module.ComfyAgent.__new__(module.ComfyAgent)
-    agent._claim_lock = __import__("asyncio").Lock()
+async def test_runpod_worker_does_not_pop_fourth_claim(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
     agent._reserved_prefetch_task = None
     agent._executions = {
         task_id: module.TaskExecutionContext(
@@ -157,13 +185,12 @@ async def test_runpod_worker_does_not_pop_fourth_claim():
 
 
 @pytest.mark.asyncio
-async def test_runpod_worker_acknowledges_redelivered_active_claim_without_relaunch():
-    module = load_agent_main_module(
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
-    )
+async def test_runpod_worker_acknowledges_redelivered_active_claim_without_relaunch(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
     module.SUPPORTED_TASK_TYPES = "t2i-pornmaster-turbo"
-    agent = module.ComfyAgent.__new__(module.ComfyAgent)
-    agent._claim_lock = __import__("asyncio").Lock()
+    agent = module.ComfyAgent()
     existing = module.TaskExecutionContext(
         task_id="task-1",
         task_type="t2i-pornmaster-turbo",
@@ -192,6 +219,7 @@ async def test_runpod_worker_acknowledges_redelivered_active_claim_without_relau
             )
         )
     )
+    agent._master_get = agent.master_client.get
     agent.report_status = mock.AsyncMock()
 
     task = await agent._pop_next_task(pipeline=True)
@@ -209,15 +237,12 @@ async def test_runpod_worker_acknowledges_redelivered_active_claim_without_relau
 
 @pytest.mark.asyncio
 async def test_runpod_reserved_prefetch_discards_redelivered_active_claim(monkeypatch):
-    module = load_agent_main_module(
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
-    )
+    module = build_agent_module(monkeypatch)
     monkeypatch.setattr(module, "PREFETCH_ENABLED", True)
     monkeypatch.setattr(module, "PREFETCH_DEPTH", 1)
     monkeypatch.setattr(module, "PREFETCH_RESERVE_TASK", True)
     monkeypatch.setattr(module, "SUPPORTED_TASK_TYPES", "t2i-pornmaster-turbo")
-    agent = module.ComfyAgent.__new__(module.ComfyAgent)
-    agent._claim_lock = __import__("asyncio").Lock()
+    agent = module.ComfyAgent()
     existing = module.TaskExecutionContext(
         task_id="task-1",
         task_type="t2i-pornmaster-turbo",
@@ -247,6 +272,7 @@ async def test_runpod_reserved_prefetch_discards_redelivered_active_claim(monkey
             )
         )
     )
+    agent._master_get = agent.master_client.get
     agent.report_status = mock.AsyncMock()
     agent._prepare_task_inputs = mock.AsyncMock()
 
@@ -308,7 +334,6 @@ async def test_standard_worker_reserved_prefetch_discards_active_task(monkeypatc
     "module_path",
     (
         ROOT / "workers" / "comfy_agent" / "agent_main.py",
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
     ),
 )
 def test_worker_rejects_duplicate_execution_start_without_overwriting_prompt(
@@ -421,7 +446,6 @@ def test_agent_main_removes_debug_side_paths():
     "module_path",
     (
         ROOT / "workers" / "comfy_agent" / "agent_main.py",
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
     ),
 )
 async def test_all_profile_releases_comfy_memory_before_each_submission(
@@ -452,7 +476,6 @@ async def test_all_profile_releases_comfy_memory_before_each_submission(
     "module_path",
     (
         ROOT / "workers" / "comfy_agent" / "agent_main.py",
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
     ),
 )
 async def test_explicit_multi_model_profile_releases_comfy_memory(
@@ -648,14 +671,11 @@ async def test_reserved_prefetch_considers_all_eligible_worker_types(monkeypatch
 async def test_runpod_reserved_prefetch_considers_all_eligible_worker_types(
     monkeypatch,
 ):
-    module = load_agent_main_module(
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py"
-    )
+    module = build_agent_module(monkeypatch)
     monkeypatch.setattr(module, "PREFETCH_ENABLED", True)
     monkeypatch.setattr(module, "PREFETCH_DEPTH", 1)
     monkeypatch.setattr(module, "PREFETCH_RESERVE_TASK", True)
-    agent = module.ComfyAgent.__new__(module.ComfyAgent)
-    agent._claim_lock = __import__("asyncio").Lock()
+    agent = module.ComfyAgent()
     agent._executions = {}
     agent._reserved_prefetch_task = None
     agent._prefetch_cache = {}
@@ -677,6 +697,7 @@ async def test_runpod_reserved_prefetch_considers_all_eligible_worker_types(
         return None
 
     agent.master_client = SimpleNamespace(get=fake_master_get)
+    agent._master_get = fake_master_get
     agent._prepare_task_inputs = fake_prepare_task_inputs
 
     agent._schedule_prefetch(current_task_type="face_swap")
@@ -1470,6 +1491,11 @@ async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
         return SimpleNamespace(status_code=200)
 
     agent.master_client.post = fake_post
+    agent._runtime_manifest = {
+        "git_sha": "abc123",
+        "runtime_package_sha256": "a" * 64,
+        "workflow_mapping_sha256": "b" * 64,
+    }
     agent._active_execution = module.TaskExecutionContext(
         task_id="task-99",
         task_type="wan22_video_v2",
@@ -1479,6 +1505,7 @@ async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
 
     assert requests[0][0] == "/api/agent/task/heartbeat"
     assert requests[0][1]["status"] == "running"
+    assert requests[0][1]["runtime_manifest"]["git_sha"] == "abc123"
     assert requests[1] == (
         "/api/agent/task/task_heartbeat",
         {"task_id": "task-99", "agent_id": module.AGENT_ID},
@@ -1577,7 +1604,6 @@ def test_pipeline_pop_params_omit_preferred_types_outside_pipeline_subset(monkey
     "module_path",
     (
         ROOT / "workers" / "comfy_agent" / "agent_main.py",
-        ROOT / "workers" / "runpod_runtime" / "comfy_agent" / "agent_main.py",
     ),
 )
 def test_agent_rejects_preferred_types_outside_supported_set(monkeypatch, module_path):
