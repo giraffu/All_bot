@@ -18,4 +18,9 @@ describe('bilingual catalog', () => {
   it('contains status copy for the no-worker V1 state', () => {
     expect(i18n.global.t('workspace.noWorker')).toBe('等待算力接入')
   })
+
+  it('publishes the approved ICP filing number', () => {
+    i18n.global.locale.value = 'zh'
+    expect(i18n.global.t('legal.icp')).toBe('鄂ICP备2026044153号-1')
+  })
 })
