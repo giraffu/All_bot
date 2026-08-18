@@ -12,6 +12,9 @@ PostgreSQL 数据、MinIO 对象存储和 Worker HTTP 契约。它不复用 AllB
 本地唯一局域网入口是 `http://<LAN-IP>:8095`。Nginx 代理 `/api`，
 PostgreSQL、MinIO 和后端不发布 LAN 端口。V1 不部署云测试、云正式、
 Cloudflare、RunPod 或 LAN GPU，也不修改现有 Worker 支持列表。
+Compose 通过 `CLARITY_ALLOWED_ORIGINS` 接收严格 JSON Origin 白名单；
+本地默认只允许 `http://localhost:8095`，公网入口必须在忽略提交的
+`.env` 中显式列出 HTTPS 根域和 `www` 域名，禁止使用 `*`。
 
 ## 2. 目录与服务
 
