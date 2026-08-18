@@ -4,8 +4,9 @@
 `advanced_video_pro_fsm.py`。入口选择 H3 三个公开模式、时长、画质档位与比例，再按模式
 收集 0/1/2 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
-用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：可直接生成，或在测试环境按独立
-开关发起 1 灵石优化。优化提交前先把冻结的模式、时长、画质、效果增强、原文和
+用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
+生成”，第二按钮可在测试环境按独立开关发起“优化后再生成（1 灵石）”。优化提交前
+先把冻结的模式、时长、画质、效果增强、原文和
 owner-fenced staging key 写入 24 小时 Redis draft；提交 Central 成功后立即结束 FSM，
 因此全局菜单、其它功能或 Bot 重启都不会使结果丢失。`src/bot_main.py` 的恢复循环按
 draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback 不依赖
