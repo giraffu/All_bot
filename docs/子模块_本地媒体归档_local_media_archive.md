@@ -338,10 +338,11 @@ size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆�
 冻结来源身份完全一致时才合并为一次 CopyObject，成功后整组账本行一并收口；来源
 身份冲突必须在任何对象写入前 fail closed。进程若在对象复制后、账本提交前退出，
 重跑只接受 plan marker、大小和冻结来源身份全部匹配的目标，其余已存在目标仍拒绝。
-`--copy-concurrency` 限定为 1–128，默认 1；`--max-pool-connections` 可显式配置，
-不得小于 copy concurrency，省略时取并发的 1.5 倍并向上取整。所有线程共享同一个
-仅执行 HEAD/CopyObject 的 boto3 client，数据库结果仍串行提交；每批报告 Copy-only
-对象/秒、R2 对象操作延迟和数据库提交延迟。`history_media_r2_copy_adaptive.py`
+`execute-copy` 的 `--copy-concurrency` 限定为 1–128，默认 1；
+`--max-pool-connections` 可显式配置，不得小于 copy concurrency，省略时取并发的
+1.5 倍并向上取整。直接执行入口的线程共享一个只执行 HEAD/CopyObject 的 boto3
+client，数据库结果仍串行提交；每批报告 Copy-only 对象/秒、R2 对象操作延迟和数据库
+提交延迟。`history_media_r2_copy_adaptive.py`
 默认从 128 起步并仅在 128→64→32→16 档位调整：对象级瞬态错误先重试；
 429/SlowDown 立即降一档；timeout、reset 和 5xx 统一进入最近请求错误率，单个错误不降档。
 观察已覆盖至少 200 个请求或 30 秒后，瞬态错误率超过 0.5% 才降档，低于 0.2% 可回升
@@ -354,10 +355,16 @@ graceful pause，当前批次完成并
 提交账本后退出；CPU 门禁把进程 CPU 时间除以当前进程 cpuset/可用逻辑 CPU 数，按
 整机可用容量百分比判断，日志同时保留原始进程 CPU 百分比、容量百分比和 CPU 数。
 连续三批容量 CPU 超过 70%、FD 超过软上限 50% 或数据库提交 p95 相对 canary 基线
-显著恶化时，于当前批次提交后暂停。批内调度使用有界在途队列，任一对象完成
-即补位并立即提交其 `copied_verified`，不等待同窗口的长尾对象。在途上限为
-当前并发的四倍，实际 HEAD/CopyObject worker 仍不超过当前并发。连接池在每批结束时关闭，
-避免长跑累计 FD。当前生产执行器在
+显著恶化时，于当前批次提交后暂停。自适应入口以一个 supervisor 管理十条逻辑 lane，
+新的 Copy successor 默认冻结为每批 1,000 个资产；每条 lane 完成一个批次便立即领取
+同余序列的下一批，不等待其它 lane 的长尾。所有 lane 共享一个动态总并发门禁，默认
+总并发 128 由 112 个 bulk worker 和 16 个 retry worker 共同组成，并非每条 lane 各自
+128。总连接池按 lane 划分且总容量不低于总并发；每条 lane 每批使用独立 client 并在
+批次成功、失败或取消后关闭，supervisor 退出时统一关闭 bulk/retry 线程池。首尝试与
+瞬态重试分属独立有界线程池，SDK 在
+该模式只执行一次网络尝试，外层重试负责 1、2、4、8、16 秒退避，避免 SDK 隐藏重试
+长期占满 bulk worker。任一对象完成即提交其 `copied_verified`，一个慢对象只占对应
+lane/retry 槽位，实际 HEAD/CopyObject 总数始终不超过当前动态档位。当前生产执行器在
 冻结计划含超过单次 CopyObject 上限的对象时暂停，不能未经独立设计和 canary 临时
 切入 multipart。非 R2、跨 endpoint、来源变化或 marker 不匹配均 fail closed，失败
 资产保持旧 History 引用。
@@ -401,8 +408,10 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 数字目录和孤儿清理均不属于这条迁移链路。
 
 Copy 计划的全局 rowset 与内部批次都按迁移账本 `id` 顺序冻结和重算，不能在执行端
-改用 History 坐标排序。每个对象在专用线程内先做最多 5 次瞬时错误重试，默认退避
-为 1、2、4、8、16 秒并加入随机抖动；其它对象通过 `as_completed` 独立提交
+改用 History 坐标排序。successor 的每个 1,000 资产批次在领取时重算自己的 rowset
+SHA；supervisor 启动时只做一次全局行集、父链、来源资格和 multipart 预检，避免十条
+lane 重复扫描数百万行。每个对象最多做 5 次瞬时错误重试，默认退避为
+1、2、4、8、16 秒并加入随机抖动；bulk lane 持续补充新对象，完成结果独立提交
 `copied_verified`，不会因一个慢请求等待整组。执行器按最近 1,000 次请求且不超过
 60 秒的窗口控制全局并发：429/SlowDown 立即降档，timeout/reset/5xx 等错误率在至少
 200 个请求或 30 秒观察后超过 0.5% 才降档，低于 0.2% 可升一档。档位改变立即清空观察窗口；

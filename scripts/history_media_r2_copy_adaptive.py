@@ -13,6 +13,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.history_media_r2_migration import (
     AdaptiveCopyController,
+    AdaptiveConcurrencyLimiter,
     _bounded_copy_concurrency,
     _bounded_copy_retries,
     _execute_copy,
@@ -155,10 +157,7 @@ class CopyHealthWindow:
         )
         if latest_rate_limits:
             return CopyHealthDecision("lower", "rate_limit", error_rate, sample_count)
-        if (
-            observation_ready
-            and error_rate >= self.systemic_error_rate
-        ):
+        if observation_ready and error_rate >= self.systemic_error_rate:
             return CopyHealthDecision(
                 "systemic", "systemic_transient_error_rate", error_rate, sample_count
             )
@@ -227,9 +226,7 @@ class CopyLatencyWindow:
             )
         self.high_p95_windows = 0
         if p95_ms <= self.p95_raise_ms and max_ms <= self.max_raise_ms:
-            return CopyLatencyDecision(
-                "raise", "healthy_r2_latency", p95_ms, max_ms
-            )
+            return CopyLatencyDecision("raise", "healthy_r2_latency", p95_ms, max_ms)
         return CopyLatencyDecision("hold", "r2_latency_guard_band", p95_ms, max_ms)
 
 
@@ -262,6 +259,195 @@ def _resource_sample(*, cpu_started: float, wall_started: float) -> ResourceSamp
 
 def _emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True), flush=True)
+
+
+def _partition_capacity(total: int, parts: int, index: int) -> int:
+    base, remainder = divmod(total, parts)
+    return base + int(index < remainder)
+
+
+class ShardedBatchCoordinator:
+    """Roll fixed logical lanes over frozen batches without a global tail barrier."""
+
+    def __init__(
+        self,
+        args: argparse.Namespace | SimpleNamespace,
+        *,
+        execute_batch: BatchExecutor,
+    ) -> None:
+        self.args = args
+        self.execute_batch = execute_batch
+        self.shard_count = int(args.shard_count)
+        self.shard_size = int(args.shard_size)
+        self.retry_workers = int(args.retry_concurrency)
+        pool_ceiling = (
+            int(args.max_pool_connections)
+            if args.max_pool_connections is not None
+            else 128
+        )
+        self.maximum_concurrency = next(
+            (level for level in (128, 64, 32, 16) if pool_ceiling >= level), 0
+        )
+        if self.maximum_concurrency == 0:
+            raise ValueError("adaptive Copy connection pool must support at least 16")
+        if self.shard_count <= 0:
+            raise ValueError("copy shard count must be positive")
+        if self.shard_size <= 0:
+            raise ValueError("copy shard size must be positive")
+        if not 0 < self.retry_workers < self.maximum_concurrency:
+            raise ValueError("retry concurrency must be below total concurrency")
+        self.bulk_workers = self.maximum_concurrency - self.retry_workers
+        self.bulk_executor = ThreadPoolExecutor(
+            max_workers=self.bulk_workers,
+            thread_name_prefix="history-r2-copy-bulk",
+        )
+        self.retry_executor = ThreadPoolExecutor(
+            max_workers=self.retry_workers,
+            thread_name_prefix="history-r2-copy-retry",
+        )
+        self.limiter = AdaptiveConcurrencyLimiter(limit=self.maximum_concurrency)
+        self._tasks: dict[int, asyncio.Task[dict[str, Any]]] = {}
+        self._terminal_lanes: set[int] = set()
+        self._finalized = False
+        self._preflight_done = False
+
+    def _batch_args(
+        self, batch_args: argparse.Namespace | SimpleNamespace, lane: int
+    ) -> SimpleNamespace:
+        global_pool = int(
+            batch_args.max_pool_connections
+            or _resolve_copy_max_pool_connections(self.maximum_concurrency, None)
+        )
+        lane_concurrency = _partition_capacity(
+            self.maximum_concurrency, self.shard_count, lane
+        )
+        lane_pool = _partition_capacity(global_pool, self.shard_count, lane)
+        if lane_concurrency <= 0 or lane_pool < lane_concurrency:
+            raise ValueError("copy shard capacity is smaller than its lane count")
+        values = dict(vars(batch_args))
+        values.update(
+            {
+                "limit": self.shard_size,
+                "copy_concurrency": lane_concurrency,
+                "max_pool_connections": lane_pool,
+                "global_max_pool_connections": global_pool,
+                "copy_shard_count": self.shard_count,
+                "copy_shard_index": lane,
+                "bulk_executor": self.bulk_executor,
+                "retry_executor": self.retry_executor,
+                "concurrency_limiter": self.limiter,
+                "global_copy_concurrency": self.maximum_concurrency,
+                "bulk_workers": self.bulk_workers,
+                "retry_workers": self.retry_workers,
+                "finalize_plan": False,
+                "skip_global_preflight": True,
+            }
+        )
+        return SimpleNamespace(**values)
+
+    def _start_available_lanes(
+        self, batch_args: argparse.Namespace | SimpleNamespace
+    ) -> None:
+        for lane in range(self.shard_count):
+            if lane in self._terminal_lanes or lane in self._tasks:
+                continue
+            self._tasks[lane] = asyncio.create_task(
+                self.execute_batch(self._batch_args(batch_args, lane))
+            )
+
+    async def execute_next(
+        self, batch_args: argparse.Namespace | SimpleNamespace
+    ) -> dict[str, Any]:
+        if not self._preflight_done:
+            preflight_values = dict(vars(batch_args))
+            preflight_values.update(
+                {
+                    "preflight_only": True,
+                    "skip_global_preflight": False,
+                    "copy_shard_count": 1,
+                    "copy_shard_index": 0,
+                }
+            )
+            await self.execute_batch(SimpleNamespace(**preflight_values))
+            self._preflight_done = True
+        self.limiter.set_limit(int(batch_args.copy_concurrency))
+        self._start_available_lanes(batch_args)
+        while self._tasks:
+            done, _pending = await asyncio.wait(
+                set(self._tasks.values()), return_when=asyncio.FIRST_COMPLETED
+            )
+            completed_lanes = sorted(
+                lane for lane, task in self._tasks.items() if task in done
+            )
+            lane = completed_lanes[0]
+            task = self._tasks.pop(lane)
+            summary = await task
+            if int(summary.get("remaining", 1)) == 0:
+                if self._tasks:
+                    await asyncio.gather(*self._tasks.values(), return_exceptions=False)
+                    self._tasks.clear()
+                final_values = dict(vars(batch_args))
+                final_values.update(
+                    {
+                        "limit": self.shard_size,
+                        "copy_shard_count": 1,
+                        "copy_shard_index": 0,
+                        "finalize_plan": True,
+                        "skip_global_preflight": True,
+                    }
+                )
+                self._finalized = True
+                return await self.execute_batch(SimpleNamespace(**final_values))
+            if summary.get("shard_complete"):
+                self._terminal_lanes.add(lane)
+                self._start_available_lanes(batch_args)
+                continue
+            return summary
+        if not self._finalized:
+            final_values = dict(vars(batch_args))
+            final_values.update(
+                {
+                    "limit": self.shard_size,
+                    "copy_shard_count": 1,
+                    "copy_shard_index": 0,
+                    "finalize_plan": True,
+                    "skip_global_preflight": True,
+                }
+            )
+            self._finalized = True
+            return await self.execute_batch(SimpleNamespace(**final_values))
+        return {
+            "remaining": 0,
+            "copied_objects": 0,
+            "_copy_request_events": [],
+            "r2_object_operation_latency_ms": {"p95": 0, "max": 0},
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    async def close(self) -> None:
+        if self._tasks:
+            await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+        self.bulk_executor.shutdown(wait=True, cancel_futures=False)
+        self.retry_executor.shutdown(wait=True, cancel_futures=False)
+
+
+async def run_sharded_adaptive_copy(
+    args: argparse.Namespace | SimpleNamespace,
+    *,
+    execute_batch: BatchExecutor = _execute_copy,
+    sleep: Sleep = asyncio.sleep,
+    pause_requested: Callable[[], bool] = lambda: False,
+) -> dict[str, Any]:
+    coordinator = ShardedBatchCoordinator(args, execute_batch=execute_batch)
+    try:
+        return await run_adaptive_copy(
+            args,
+            execute_batch=coordinator.execute_next,
+            sleep=sleep,
+            pause_requested=pause_requested,
+        )
+    finally:
+        await coordinator.close()
 
 
 async def run_adaptive_copy(
@@ -505,7 +691,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-digest")
     parser.add_argument("--next-plan-output")
     parser.add_argument("--verification-output")
-    parser.add_argument("--limit", type=int, default=10_000)
+    parser.add_argument("--limit", type=int, default=1_000)
+    parser.add_argument("--shard-count", type=int, default=10)
+    parser.add_argument("--shard-size", type=int, default=1_000)
+    parser.add_argument("--retry-concurrency", type=int, default=16)
     parser.add_argument(
         "--copy-concurrency", type=_bounded_copy_concurrency, default=128
     )
@@ -533,7 +722,7 @@ async def _main_async(args: argparse.Namespace) -> int:
 
     for name in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(name, request_pause)
-    result = await run_adaptive_copy(args, pause_requested=lambda: pause)
+    result = await run_sharded_adaptive_copy(args, pause_requested=lambda: pause)
     _emit(result)
     if result["status"] == "completed":
         return 0

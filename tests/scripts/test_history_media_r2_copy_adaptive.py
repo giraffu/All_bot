@@ -16,6 +16,7 @@ from scripts.history_media_r2_copy_adaptive import (
     _available_cpu_count,
     _resource_sample,
     run_adaptive_copy,
+    run_sharded_adaptive_copy,
 )
 
 
@@ -33,7 +34,84 @@ def test_adaptive_copy_cli_defaults_to_128_with_object_retries():
 
     assert args.copy_concurrency == 128
     assert args.object_max_retries == 5
+    assert args.shard_count == 10
+    assert args.shard_size == 1_000
+    assert args.retry_concurrency == 16
     assert not hasattr(args, "r2_p95_lower_ms")
+
+
+@pytest.mark.asyncio
+async def test_sharded_runner_refills_a_fast_lane_before_the_slowest_lane_finishes():
+    calls: list[tuple[int, int, int, int, int, int]] = []
+    lane_calls = {0: 0, 1: 0}
+    slow_lane_release = asyncio.Event()
+    fast_lane_refilled = asyncio.Event()
+
+    async def execute_batch(args):
+        if getattr(args, "preflight_only", False):
+            return {"preflight": "validated", "remaining": 100}
+        if getattr(args, "finalize_plan", False):
+            return {
+                "remaining": 0,
+                "copied_objects": 0,
+                "_copy_request_events": [],
+                "r2_object_operation_latency_ms": {"p95": 0, "max": 0},
+                "db_commit_latency_ms": {"p95": 0},
+            }
+        lane = args.copy_shard_index
+        lane_calls[lane] += 1
+        calls.append(
+            (
+                lane,
+                lane_calls[lane],
+                args.bulk_executor._max_workers,
+                args.retry_executor._max_workers,
+                args.copy_concurrency,
+                args.max_pool_connections,
+                args.global_max_pool_connections,
+            )
+        )
+        if lane == 0 and lane_calls[lane] == 1:
+            await slow_lane_release.wait()
+        if lane == 1 and lane_calls[lane] == 2:
+            fast_lane_refilled.set()
+            slow_lane_release.set()
+        return {
+            "remaining": 0 if lane == 0 else 100,
+            "copied_objects": 1,
+            "_copy_request_events": [{"at": float(len(calls)), "kind": "ok"}],
+            "r2_object_operation_latency_ms": {"p95": 1, "max": 1},
+            "db_commit_latency_ms": {"p95": 0},
+        }
+
+    result = await asyncio.wait_for(
+        run_sharded_adaptive_copy(
+            SimpleNamespace(
+                plan_sha256="7" * 64,
+                confirm="COPY_HISTORY_MEDIA_" + "7" * 64,
+                config="/tmp/config.json",
+                limit=1_000,
+                shard_count=2,
+                shard_size=1_000,
+                retry_concurrency=4,
+                copy_concurrency=16,
+                max_pool_connections=24,
+                circuit_breaker_windows=3,
+                max_cpu_percent=1000,
+            ),
+            execute_batch=execute_batch,
+            sleep=asyncio.sleep,
+        ),
+        timeout=2,
+    )
+
+    assert fast_lane_refilled.is_set()
+    assert calls[:3] == [
+        (0, 1, 12, 4, 8, 12, 24),
+        (1, 1, 12, 4, 8, 12, 24),
+        (1, 2, 12, 4, 8, 12, 24),
+    ]
+    assert result["status"] == "completed"
 
 
 def test_web_api_image_contains_adaptive_copy_runner():
@@ -55,15 +133,11 @@ def test_database_migration_artifact_contains_frozen_history_r2_runner():
 def test_resource_gate_pauses_on_sustained_cpu_fd_or_db_regression():
     cpu_gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
     assert (
-        cpu_gate.evaluate(
-            capacity_cpu_percent=71, fd_count=10, fd_soft_limit=100
-        )
+        cpu_gate.evaluate(capacity_cpu_percent=71, fd_count=10, fd_soft_limit=100)
         is None
     )
     assert (
-        cpu_gate.evaluate(
-            capacity_cpu_percent=75, fd_count=10, fd_soft_limit=100
-        )
+        cpu_gate.evaluate(capacity_cpu_percent=75, fd_count=10, fd_soft_limit=100)
         is None
     )
     assert (
@@ -122,12 +196,10 @@ def test_resource_gate_still_pauses_on_genuine_capacity_saturation():
     gate = ResourceGate(max_cpu_percent=70, cpu_batches_to_pause=3)
 
     assert (
-        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
-        is None
+        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024) is None
     )
     assert (
-        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
-        is None
+        gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024) is None
     )
     assert (
         gate.evaluate(capacity_cpu_percent=75, fd_count=2, fd_soft_limit=1024)
@@ -377,9 +449,7 @@ def test_copy_health_window_uses_rate_for_5xx_and_timeout_but_rate_limit_is_imme
 
     assert decision.action == "raise"
 
-    sustained_server_errors = CopyHealthWindow(
-        max_requests=1000, max_age_seconds=60
-    )
+    sustained_server_errors = CopyHealthWindow(max_requests=1000, max_age_seconds=60)
     sustained_server_errors.extend(
         [*({"at": 1.0, "kind": "ok"} for _ in range(994))]
         + [*({"at": 1.0, "kind": "server_5xx"} for _ in range(6))]
@@ -412,9 +482,7 @@ def test_copy_health_window_can_raise_after_time_window_without_1000_requests():
         minimum_samples=200,
         minimum_observation_seconds=30,
     )
-    health.extend(
-        [{"at": float(second), "kind": "ok"} for second in range(31)]
-    )
+    health.extend([{"at": float(second), "kind": "ok"} for second in range(31)])
 
     decision = health.decision(current_concurrency=16)
 
@@ -507,9 +575,7 @@ async def test_adaptive_runner_resets_observation_after_downshift_and_recovers()
         if len(calls) == 1:
             events = [{"at": 1.0, "kind": "rate_limit"}]
         else:
-            events = [
-                {"at": float(second), "kind": "ok"} for second in range(31)
-            ]
+            events = [{"at": float(second), "kind": "ok"} for second in range(31)]
         return {
             "remaining": 0 if len(calls) == 3 else 100,
             "copied_objects": len(events),
@@ -551,10 +617,7 @@ async def test_adaptive_runner_opens_circuit_after_systemic_errors_at_minimum():
             "copied_objects": 800,
             "_copy_request_events": [
                 *({"at": float(len(calls)), "kind": "ok"} for _ in range(800)),
-                *(
-                    {"at": float(len(calls)), "kind": "timeout"}
-                    for _ in range(200)
-                ),
+                *({"at": float(len(calls)), "kind": "timeout"} for _ in range(200)),
             ],
             "db_commit_latency_ms": {"p95": 0},
         }

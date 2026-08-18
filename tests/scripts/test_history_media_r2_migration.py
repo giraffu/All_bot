@@ -17,7 +17,9 @@ from botocore.exceptions import ClientError
 
 from scripts.history_media_r2_migration import (
     MIGRATION_DDL,
+    COPY_BATCH_SIZE,
     AdaptiveCopyController,
+    AdaptiveConcurrencyLimiter,
     AdaptiveProbeController,
     AssetIdentity,
     CopyObjectCircuitBreaker,
@@ -37,6 +39,7 @@ from scripts.history_media_r2_migration import (
     _resolve_probe_max_pool_connections,
     _r2_transport,
     _run_copy_group_batch,
+    _run_copy_group_batch_with_retry_lane,
     _runtime_identity,
     _s3_client,
     _timed_server_side_copy_with_retries,
@@ -476,7 +479,8 @@ async def test_copy_persists_fast_success_before_slow_peer_finishes():
         release_slow.set()
         result = await task
 
-    assert persisted == [1, 3, 2]
+    assert set(persisted[:2]) == {1, 3}
+    assert persisted[-1] == 2
     assert result["copied_objects"] == 3
     assert worker_ids.isdisjoint(
         {thread.ident for thread in threading.enumerate() if thread.is_alive()}
@@ -606,6 +610,39 @@ def test_successor_copy_plan_freezes_only_unfinished_predecessor_assets():
     assert successor["counts"] == {"copy_required": 2}
     assert len(batches) == 2
     assert successor["batches_sha256"]
+
+
+def test_copy_successor_defaults_to_one_thousand_asset_batches():
+    row = {
+        "id": 1,
+        "history_id": 1,
+        "role": "output",
+        "ordinal": 0,
+        "original_ref": "old.png",
+        "target_key": "task-results/t/primary.png",
+        "source_name": "r2-user-data-prod",
+        "source_key": "old.png",
+        "source_last_modified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "source_etag": "etag",
+        "source_sha256": None,
+        "target_sha256": None,
+        "byte_size": 100,
+        "status": "copy_required",
+        "history_manifest_sha256": "f" * 64,
+    }
+
+    manifest, batches = build_successor_copy_plan(
+        predecessor_manifest=None,
+        predecessor_plan_sha256=None,
+        retained_rows=[],
+        successor_rows=[row],
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=1,
+    )
+
+    assert COPY_BATCH_SIZE == 1_000
+    assert manifest["batch_size"] == 1_000
+    assert batches[0]["asset_count"] == 1
 
 
 def test_successor_copy_plan_rejects_overlap_with_completed_assets():
@@ -827,7 +864,9 @@ def test_runtime_identity_binds_explicit_r2_proxy_without_exposing_its_url():
     assert "127.0.0.1" not in json.dumps(identity)
     assert "http://" not in json.dumps(identity)
 
-    direct_config = {key: value for key, value in config.items() if key != "r2_transport"}
+    direct_config = {
+        key: value for key, value in config.items() if key != "r2_transport"
+    }
     with pytest.raises(RuntimeError, match="runtime identity changed"):
         _validate_runtime_identity(
             identity,
@@ -1496,6 +1535,103 @@ def test_execute_copy_concurrency_is_bounded():
         _parser().parse_args([*base, "--retry-jitter-ratio", "1.1"])
 
 
+@pytest.mark.asyncio
+async def test_copy_retry_lane_keeps_transient_retries_out_of_bulk_workers():
+    thread_lanes: list[tuple[int, str]] = []
+    attempts: dict[int, int] = {}
+
+    def copy_one_attempt(group):
+        item_id = group[0]["id"]
+        attempts[item_id] = attempts.get(item_id, 0) + 1
+        thread_lanes.append((item_id, threading.current_thread().name))
+        if item_id == 1 and attempts[item_id] == 1:
+            return {
+                "outcome": None,
+                "error": RuntimeError("ReadTimeoutError: transient timeout"),
+                "elapsed_ms": 1,
+                "request_event": {"at": 1.0, "kind": "timeout"},
+            }
+        return {
+            "outcome": {"recovered": False},
+            "error": None,
+            "elapsed_ms": 1,
+            "request_event": {"at": 2.0, "kind": "ok"},
+        }
+
+    successes = []
+    failures = []
+
+    async def persist_success(group, outcome):
+        successes.append((group[0]["id"], outcome))
+
+    async def persist_failure(group, error):
+        failures.append((group[0]["id"], error))
+
+    limiter = AdaptiveConcurrencyLimiter(limit=3)
+    with (
+        ThreadPoolExecutor(max_workers=2, thread_name_prefix="copy-bulk") as bulk,
+        ThreadPoolExecutor(max_workers=1, thread_name_prefix="copy-retry") as retry,
+    ):
+        result = await _run_copy_group_batch_with_retry_lane(
+            [[{"id": 1}], [{"id": 2}], [{"id": 3}]],
+            bulk_executor=bulk,
+            retry_executor=retry,
+            concurrency_limiter=limiter,
+            copy_one_attempt=copy_one_attempt,
+            persist_success=persist_success,
+            persist_failure=persist_failure,
+            max_retries=1,
+            retry_base_seconds=0.001,
+            retry_max_seconds=0.001,
+            retry_jitter_ratio=0,
+        )
+
+    assert failures == []
+    assert sorted(item_id for item_id, _outcome in successes) == [1, 2, 3]
+    assert any(item_id == 1 and "copy-retry" in name for item_id, name in thread_lanes)
+    assert all(
+        "copy-bulk" in name for item_id, name in thread_lanes if item_id in {2, 3}
+    )
+    assert limiter.peak_active <= 3
+    assert result["retried_objects"] == 1
+
+
+def test_shared_bulk_and_retry_executors_reach_but_never_exceed_128():
+    limiter = AdaptiveConcurrencyLimiter(limit=128)
+    release = threading.Event()
+    all_started = threading.Event()
+    active = 0
+    lock = threading.Lock()
+
+    def occupy_slot():
+        nonlocal active
+        with limiter.slot():
+            with lock:
+                active += 1
+                if active == 128:
+                    all_started.set()
+            assert release.wait(10)
+            with lock:
+                active -= 1
+
+    with (
+        ThreadPoolExecutor(max_workers=112, thread_name_prefix="copy-bulk") as bulk,
+        ThreadPoolExecutor(max_workers=16, thread_name_prefix="copy-retry") as retry,
+    ):
+        futures = [bulk.submit(occupy_slot) for _ in range(112)]
+        futures.extend(retry.submit(occupy_slot) for _ in range(16))
+        assert all_started.wait(10)
+        assert limiter.peak_active == 128
+        release.set()
+        for future in futures:
+            future.result(timeout=10)
+
+    assert not any(
+        thread.name.startswith(("copy-bulk", "copy-retry"))
+        for thread in threading.enumerate()
+    )
+
+
 def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypatch):
     captured = {}
 
@@ -1561,9 +1697,38 @@ def test_copy_client_uses_only_the_frozen_explicit_https_proxy(monkeypatch):
         transport=transport,
     )
 
-    assert captured["config"].proxies == {
-        "https": "http://127.0.0.1:7890"
-    }
+    assert captured["config"].proxies == {"https": "http://127.0.0.1:7890"}
+
+
+def test_sharded_copy_client_delegates_retries_to_the_bounded_retry_lane(monkeypatch):
+    captured = {}
+
+    class Events:
+        def register(self, *_args):
+            return None
+
+    class Client:
+        meta = type("Meta", (), {"events": Events()})()
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.boto3.client",
+        lambda *_args, **kwargs: captured.update(kwargs) or Client(),
+    )
+
+    _s3_client(
+        {
+            "endpoint": "https://example.invalid",
+            "access_key": "key",
+            "secret_key": "secret",
+        },
+        max_pool_connections=20,
+        external_retry_lane=True,
+    )
+
+    config = captured["config"]
+    assert config.retries["total_max_attempts"] == 1
+    assert config.connect_timeout == 5
+    assert config.read_timeout == 30
 
 
 @pytest.mark.parametrize(
@@ -1735,10 +1900,25 @@ def test_execute_copy_sizes_worker_pool_to_requested_concurrency():
     source = inspect.getsource(module._execute_copy)
     group_source = inspect.getsource(module._run_copy_group_batch)
 
-    assert "ThreadPoolExecutor(max_workers=args.copy_concurrency)" in source
+    assert "max_workers=args.copy_concurrency" in source
     assert "loop.run_in_executor" in group_source
     assert "asyncio.FIRST_COMPLETED" in group_source
     assert "copy_executor" in source
+
+
+def test_execute_copy_supports_striped_batches_and_shared_retry_lane():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_copy)
+
+    assert "mod(batch_no,$2)=$3" in source
+    assert "copy_shard_count" in source
+    assert "copy_shard_index" in source
+    assert "_run_copy_group_batch_with_retry_lane" in source
+    assert "bulk_executor" in source
+    assert "retry_executor" in source
 
 
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
@@ -1824,7 +2004,9 @@ def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
 
     assert "_stream_plan_rowset" in inspect.getsource(module._create_plan)
     assert "_stream_plan_rowset" in inspect.getsource(module._report)
-    assert "_stream_plan_rowset" in inspect.getsource(module._execute_copy)
+    assert "_stream_plan_rowset" in inspect.getsource(
+        module._validate_copy_plan_preflight
+    )
     assert "limit $3" in inspect.getsource(module._execute_copy)
 
 
@@ -2064,7 +2246,7 @@ def test_copy_execution_recomputes_frozen_rowset_in_ledger_id_order():
 
     import scripts.history_media_r2_migration as module
 
-    source = inspect.getsource(module._execute_copy)
+    source = inspect.getsource(module._validate_copy_plan_preflight)
     rowset_check = source.split("if rowset_sha !=", 1)[0].rsplit(
         "await _stream_plan_rowset", 1
     )[1]
@@ -2127,7 +2309,7 @@ def test_copy_successor_verification_and_switch_aggregate_the_full_plan_chain():
 
     verify_source = inspect.getsource(module._verify_copy_plan_objects)
     planner_source = inspect.getsource(module._create_plan)
-    execute_source = inspect.getsource(module._execute_copy)
+    execute_source = inspect.getsource(module._validate_copy_plan_preflight)
 
     assert "copy_plan_sha256=any($2::text[])" in verify_source
     assert 'copy_plan_sha256=str(row["copy_plan_sha256"])' in verify_source
