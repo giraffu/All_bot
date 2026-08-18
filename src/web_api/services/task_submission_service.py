@@ -6,7 +6,7 @@ from asgi_correlation_id import correlation_id
 
 from config import MINIO_BUCKET
 from src.core.task_core import process_and_submit_task
-from src.core.task_core_types import CoreDomainError
+from src.core.task_core_types import CoreDomainError, SubmissionReconciliationPending
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.services.scail2_face_swap_pipeline_service import (
@@ -15,6 +15,7 @@ from src.services.scail2_face_swap_pipeline_service import (
 )
 from src.services.storage import storage
 from src.services.storage_r2_promotion import promote_staged_user_inputs
+from src.services.task_web_submission_intent import WebSubmissionIntentJournal
 from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -206,34 +207,59 @@ async def submit_generation_task(
                 ),
             }
 
-        result = await process_and_submit_task(
-            user_id=current_user.id,
+        submission_journal = WebSubmissionIntentJournal(
+            internal_user_id=current_user.id,
             username=current_user.username,
-            task_type=req.task_type,
-            inputs=inputs,
             task_id=task_id,
-            base_priority=req.priority,
-            is_template=is_template,
             source_post_id=req.source_post_id,
-            submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-                attach_web_monitor=True,
-                source_post_id=req.source_post_id,
-            ),
-            cost_override=(
-                WEB_FREE_EDIT_V3_COST
-                if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE
-                else None
-            ),
-            user_cancel_allowed=True,
-            registry_metadata=registry_metadata or None,
-            allow_contribute_override=allow_contribute_override,
         )
+
+        try:
+            result = await process_and_submit_task(
+                user_id=current_user.id,
+                username=current_user.username,
+                task_type=req.task_type,
+                inputs=inputs,
+                task_id=task_id,
+                base_priority=req.priority,
+                is_template=is_template,
+                source_post_id=req.source_post_id,
+                submission_side_effect_plan=TaskSubmissionSideEffectPlan(
+                    attach_web_monitor=True,
+                    source_post_id=req.source_post_id,
+                ),
+                cost_override=(
+                    WEB_FREE_EDIT_V3_COST
+                    if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE
+                    else None
+                ),
+                user_cancel_allowed=True,
+                registry_metadata=registry_metadata or None,
+                allow_contribute_override=allow_contribute_override,
+                submission_before_dispatch_func=submission_journal.before_dispatch,
+                submission_should_compensate_func=submission_journal.should_compensate,
+                submission_refund_idempotency_key=(
+                    submission_journal.refund_idempotency_key
+                ),
+            )
+        except SubmissionReconciliationPending as exc:
+            scail2_first_frame_to_cleanup = None
+            balance = await get_balance(current_user.id)
+            return TaskGenerateResponse(
+                task_id=exc.registry_task_id,
+                status="pending",
+                submission_state="reconciling",
+                message="Task dispatch is being reconciled",
+                cost=exc.cost,
+                balance_remaining=balance,
+            )
         scail2_first_frame_to_cleanup = None
 
         balance = await get_balance(current_user.id)
         return TaskGenerateResponse(
             task_id=result["task_id"],
             status="pending",
+            submission_state="accepted",
             message="Task submitted successfully",
             cost=result["cost"],
             balance_remaining=balance,

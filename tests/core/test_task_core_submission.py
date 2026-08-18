@@ -10,16 +10,16 @@ from src.core.task_core_submission import (
     execute_task_submission_saga,
     register_task_submission,
 )
-from src.core.task_core_types import CoreDomainError
+from src.core.task_core_types import DispatchOutcomeUnknownError
 
 
 @pytest.mark.asyncio
-async def test_dispatch_registered_task_marks_failed_and_maps_busy_error():
+async def test_dispatch_registered_task_keeps_registry_pending_when_outcome_is_unknown():
     dispatch_to_worker = AsyncMock(side_effect=Exception("Connection refused"))
     update_backend_task_id = AsyncMock()
     mark_task_status = AsyncMock()
 
-    with pytest.raises(CoreDomainError, match="当前服务器繁忙，请稍后再试"):
+    with pytest.raises(DispatchOutcomeUnknownError, match="当前服务器繁忙，请稍后再试"):
         await dispatch_registered_task(
             registry_task_id="registry-1",
             task_type="face_swap",
@@ -33,7 +33,7 @@ async def test_dispatch_registered_task_marks_failed_and_maps_busy_error():
         )
 
     update_backend_task_id.assert_not_called()
-    mark_task_status.assert_awaited_once_with("registry-1", "failed")
+    mark_task_status.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -101,6 +101,7 @@ async def test_submission_ledger_hook_is_durable_before_external_dispatch():
             "task_type": "face_swap",
             "cost": 10,
             "saved_inputs": ["saved.png"],
+            "submission_context": submission_context,
         }
 
     async def dispatch(**_kwargs):
@@ -119,6 +120,34 @@ async def test_submission_ledger_hook_is_durable_before_external_dispatch():
     )
 
     assert events == ["registered", "ledger_dispatching", "external_dispatch"]
+
+
+@pytest.mark.asyncio
+async def test_failed_durable_intent_write_prevents_external_dispatch():
+    dispatch = AsyncMock()
+
+    async def fail_before_dispatch(**_kwargs):
+        raise RuntimeError("redis unavailable")
+
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        await execute_task_submission_saga(
+            task_type="face_swap",
+            inputs={"foo": "bar"},
+            registry_task_id="deterministic-task",
+            cost=10,
+            submission_context=SimpleNamespace(
+                user_logger=SimpleNamespace(user_id=42, username="tester"),
+                final_priority=7,
+                registry_saved_inputs=lambda: ["saved.png"],
+            ),
+            register_task_submission_func=AsyncMock(
+                return_value="deterministic-task"
+            ),
+            dispatch_registered_task_func=dispatch,
+            before_dispatch_func=fail_before_dispatch,
+        )
+
+    dispatch.assert_not_awaited()
 
 
 @pytest.mark.asyncio

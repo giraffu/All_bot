@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.services import task_web_finalizer
+from src.core import gallery_core
 from src.web_api.services import character_reference_service
 from src.web_api.services import prompt_result_store
 
@@ -31,6 +32,109 @@ def _build_record(
         },
         "cost": cost,
     }
+
+
+def _build_v2_dispatching_record(**kwargs) -> dict:
+    record = _build_record(**kwargs)
+    record.update(
+        {
+            "version": 2,
+            "phase": "dispatching",
+            "created_at": "2026-08-18T00:00:00+00:00",
+            "updated_at": "2026-08-18T00:00:00+00:00",
+            "not_found_count": 0,
+            "first_not_found_at": None,
+            "source_post_id": None,
+            "apply_recorded": False,
+        }
+    )
+    return record
+
+
+@pytest.mark.asyncio
+async def test_prepare_submission_intent_persists_full_context_before_dispatch(
+    monkeypatch,
+):
+    writes = AsyncMock()
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        writes,
+    )
+    context = task_web_finalizer.TaskSubmissionContext(
+        task_type="txt2img",
+        is_video_task=False,
+        user_logger=SimpleNamespace(user_id=123, username="tester"),
+        prompt="moonlit courtyard",
+        saved_inputs=["123/input_images/source.png"],
+        metadata={},
+        allow_contribute=True,
+        final_priority=3,
+    )
+
+    await task_web_finalizer.prepare_web_submission_intent(
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-1",
+        submission_context=context,
+        cost=8,
+        source_post_id=99,
+    )
+
+    assert writes.await_count == 2
+    prepared = writes.await_args_list[0].args[1]
+    dispatching = writes.await_args_list[1].args[1]
+    assert prepared["version"] == 2
+    assert prepared["phase"] == "prepared"
+    assert prepared["backend_task_id"] == "registry-1"
+    assert prepared["submission_context"]["saved_inputs"] == [
+        "123/input_images/source.png"
+    ]
+    assert prepared["source_post_id"] == 99
+    assert dispatching["phase"] == "dispatching"
+
+
+@pytest.mark.asyncio
+async def test_accepting_intent_records_apply_once(monkeypatch):
+    current = _build_v2_dispatching_record()
+    current["source_post_id"] = 99
+    apply_interaction = AsyncMock()
+
+    async def persist(_task_id, next_record):
+        nonlocal current
+        current = next_record
+
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "get_pending_web_finalizer",
+        AsyncMock(side_effect=lambda _task_id: current),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        AsyncMock(side_effect=persist),
+    )
+    monkeypatch.setattr(gallery_core, "record_apply_interaction", apply_interaction)
+    context = task_web_finalizer._deserialize_submission_context(
+        internal_user_id=123,
+        username="tester",
+        payload=current["submission_context"],
+    )
+
+    for _ in range(2):
+        await task_web_finalizer.enqueue_pending_web_finalizer(
+            backend_task_id="registry-1",
+            internal_user_id=123,
+            username="tester",
+            registry_task_id="registry-1",
+            submission_context=context,
+            cost=8,
+            source_post_id=99,
+        )
+
+    apply_interaction.assert_awaited_once_with(123, 99)
+    assert current["phase"] == "accepted"
+    assert current["apply_recorded"] is True
 
 
 def _build_free_edit_v3_record(*, stage: str = "bf16") -> dict:
@@ -130,6 +234,118 @@ def _mock_pending_record(monkeypatch, record):
         get_pending_mock,
     )
     return get_pending_mock
+
+
+@pytest.mark.asyncio
+async def test_v2_intent_requires_three_not_found_observations_over_sixty_seconds(
+    monkeypatch,
+):
+    current = {"record": _build_v2_dispatching_record(cost=13)}
+    persisted = []
+    cancellation = AsyncMock()
+    remove = AsyncMock()
+    _mock_finalizer_lock(monkeypatch)
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "get_pending_web_finalizer",
+        AsyncMock(side_effect=lambda _task_id: current["record"]),
+    )
+
+    async def persist(_task_id, next_record):
+        current["record"] = next_record
+        persisted.append(next_record.copy())
+
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        AsyncMock(side_effect=persist),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer,
+        "finalize_monitored_web_task_cancellation_default",
+        cancellation,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "remove_pending_web_finalizer",
+        remove,
+    )
+    timestamps = iter([1000.0, 1030.0, 1061.0])
+    monkeypatch.setattr(task_web_finalizer, "_now_timestamp", lambda: next(timestamps))
+
+    assert await task_web_finalizer.process_pending_web_finalizer("registry-1") is False
+    assert await task_web_finalizer.process_pending_web_finalizer("registry-1") is False
+    assert await task_web_finalizer.process_pending_web_finalizer("registry-1") is True
+
+    assert [item["not_found_count"] for item in persisted[:3]] == [1, 2, 3]
+    assert persisted[-1]["phase"] == "terminal"
+    cancellation.assert_awaited_once()
+    remove.assert_awaited_once_with("registry-1")
+
+
+@pytest.mark.asyncio
+async def test_v2_intent_does_not_count_central_transport_failure_as_not_found(
+    monkeypatch,
+):
+    record = _build_v2_dispatching_record()
+    record["created_at"] = task_web_finalizer._now_iso()
+    persist = AsyncMock()
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        persist,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(side_effect=TimeoutError("central timed out")),
+    )
+
+    with pytest.raises(TimeoutError, match="central timed out"):
+        await task_web_finalizer.process_pending_web_finalizer("registry-1")
+
+    persist.assert_not_awaited()
+    assert record["not_found_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stale_uncertain_intent_alerts_without_refund(monkeypatch):
+    record = _build_v2_dispatching_record()
+    record["created_at"] = "1970-01-01T00:00:00+00:00"
+    persist = AsyncMock()
+    cancellation = AsyncMock()
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        persist,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(side_effect=TimeoutError("central timed out")),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer,
+        "finalize_monitored_web_task_cancellation_default",
+        cancellation,
+    )
+
+    with pytest.raises(TimeoutError):
+        await task_web_finalizer.process_pending_web_finalizer("registry-1")
+
+    alerted = persist.await_args.args[1]
+    assert alerted["phase"] == "reconciling"
+    assert alerted["uncertain_alerted_at"]
+    cancellation.assert_not_awaited()
 
 
 @pytest.mark.asyncio

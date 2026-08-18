@@ -71,11 +71,12 @@ sequenceDiagram
     U->>Facade: 1. 调用 process_and_submit_task(...)
     Facade->>Deps: 2. 组装默认依赖 / 使用显式注入依赖
     Facade->>Registry: 3. 检查并发、扣费、写 registry_task_id
-    Facade->>Dispatcher: 4. 生成 workflow/payload
-    Dispatcher->>Backend: 5. 派发 backend_task_id
-    Facade->>Monitor: 6. 提交成功后写入持久化 Web finalizer 或进入 Bot 前台监控
-    Monitor->>Registry: 7. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
-    Registry-->>U: 8. 返回 registry_task_id、终态 payload 或历史结果
+    Facade->>Registry: 4. Web 写 prepared/dispatching intent
+    Facade->>Dispatcher: 5. 生成 workflow/payload
+    Dispatcher->>Backend: 6. 派发确定性 backend_task_id
+    Facade->>Monitor: 7. 写 accepted 并启动 finalizer，或返回 reconciling
+    Monitor->>Registry: 8. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
+    Registry-->>U: 9. 返回 registry_task_id、终态 payload 或历史结果
 ```
 
 执行面补充口径：
@@ -193,11 +194,12 @@ Web 端已形成两条路径：
 
 SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义，不再稳定制造无效轮询。
 
-普通 Web 提交当前在 Central dispatch 返回后才写
-`pending_web_finalizers`。如果 dispatch 已被接纳而 finalizer 写入失败，默认异常
-路径不能证明任务未接纳；此时退款、删除 registry 和释放并发锁会产生孤儿计算
-风险。只有确定拒绝才可补偿；派发结果歧义必须保留 owner 状态等待恢复。私有
-QQCC 的 durable submission ledger/fence 只覆盖私有入口，不是 Web 通用 outbox。
+Web 生成、Prompt Optimizer 和人物构建在 Central dispatch 前共享
+`WebSubmissionIntentJournal`，在 `pending_web_finalizers` 中先写完整上下文和
+`prepared/dispatching` phase。写入失败时不调 Central，按根 task ID 幂等退款；
+`dispatching` 后的任何异常都保留 registry/并发 owner，对外返回同一 task ID
+和 `submission_state=reconciling`。恢复器只把成功访问 Central 得到的 404
+计为“不存在”；必须连续 3 次、跨度至少 60 秒才取消/退款。
 
 ### 6.2 僵尸任务与强制终止
 

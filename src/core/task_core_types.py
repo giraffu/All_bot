@@ -153,6 +153,25 @@ class CoreDomainError(Exception):
     pass
 
 
+class DispatchRejectedError(CoreDomainError):
+    """Central definitively rejected a dispatch request."""
+
+
+class DispatchOutcomeUnknownError(CoreDomainError):
+    """Central may have accepted the deterministic task before the error."""
+
+
+class SubmissionReconciliationPending(CoreDomainError):
+    """A durable submission intent must be reconciled instead of compensated."""
+
+    def __init__(self, *, registry_task_id: str, cost: int):
+        super().__init__(
+            "任务已进入派发确认阶段，系统不会重复派发或自动退款，请稍后重试"
+        )
+        self.registry_task_id = registry_task_id
+        self.cost = int(cost)
+
+
 class InsufficientCreditsError(CoreDomainError):
     pass
 

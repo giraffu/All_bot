@@ -66,15 +66,16 @@ sequenceDiagram
     U->>FE: 1. 提交生成表单
     FE->>API: 2. POST /api/tasks/generate
     API->>Core: 3. process_and_submit_task(...)
-    Core->>Dispatch: 4. 构建 payload 并提交 backend_task_id
-    Dispatch->>CAPI: 5. 写入执行面队列
-    Agent->>CAPI: 6. pop 拉取匹配任务
-    Agent->>Comfy: 7. patch workflow 后提交执行
-    Comfy-->>Agent: 8. WS 进度 / 完成 / 错误
-    Agent-->>CAPI: 9. /status /complete 回报
-    Core->>Monitor: 10. Web side-effect monitor 持续收口
-    Monitor-->>API: 11. history / result / stream 可查询
-    API-->>FE: 12. 低频粗状态与 result 轮询回显结果
+    Core->>Monitor: 4. 持久化 prepared/dispatching intent
+    Core->>Dispatch: 5. 构建 payload 并提交确定性 backend_task_id
+    Dispatch->>CAPI: 6. 写入执行面队列
+    Agent->>CAPI: 7. pop 拉取匹配任务
+    Agent->>Comfy: 8. patch workflow 后提交执行
+    Comfy-->>Agent: 9. WS 进度 / 完成 / 错误
+    Agent-->>CAPI: 10. /status /complete 回报
+    Core->>Monitor: 11. Web side-effect monitor 持续收口
+    Monitor-->>API: 12. history / result / stream 可查询
+    API-->>FE: 13. 低频粗状态与 result 轮询回显结果
 ```
 
 ## 4. 前端入口链路
@@ -170,6 +171,7 @@ Web 统一入口在：
 - 生成 Web 侧 `task_id`
 - 设定 correlation id
 - 调用 `process_and_submit_task(...)`
+- 通过 `WebSubmissionIntentJournal` 在派发前持久化完整 intent
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`
 - 返回给前端 `pending` 初态和余额变化
 
@@ -182,6 +184,7 @@ Web 统一入口在：
 - 完成了 registry 注册
 - 完成了 backend 提交
 - 挂好了 Web monitor side effect
+- 或已进入 `reconciling`，前端仍按返回的同一 task ID 继续轮询
 
 人物一致性文生视频是一个服务端组合特例：客户端只提交 `character_id`、画面
 prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已就绪人物参考表和
@@ -623,7 +626,11 @@ Web 任务提交成功后，真正负责“收尾”的是：
 
 当前口径是“持久化 finalizer + 恢复循环”：
 
-- 提交成功时先由 `task_web_side_effects.py` 把收尾上下文写入 Redis `pending_web_finalizers`
+- `WebSubmissionIntentJournal` 派发前写 version 2 intent，派发后转
+  `accepted`
+- phase 为 `prepared -> dispatching -> accepted -> terminal`，歧义为
+  `reconciling`；无版本旧 record 仍可收口
+- apply 在 `accepted` 后记录，`apply_recorded` 抑制重复
 - Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
 - 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
@@ -655,10 +662,9 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - router 不应该自己做历史落库
 - 前端不应该自己做终态补偿
 - 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
-- 普通 Web 链路的 pending finalizer 在 dispatch 返回后才写 Redis。若 Central
-  已接纳而该写入失败，不能把异常等同于“未派发”；自动退款/删 registry 会留下
-  无 owner 的 backend task。排障先核对 Central backend ID 与 registry；修复应
-  使用 dispatch 前 durable intent/outbox 或歧义恢复，不能盲目重试提交。
+- accepted 写失败时返回 `submission_state=reconciling`，不退款、删
+  registry 或重复 dispatch。Central 404 连续 3 次且跨度不少于 60 秒才判定
+  未接纳；超时、5xx、断网不计数，超过 15 分钟只告警。
 
 ### 10.3 粗状态、SSE 与结果查询
 

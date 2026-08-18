@@ -17,7 +17,10 @@ from shared.character_reference_sheet import (
 from src.core.media_paths import normalize_owned_user_upload_key
 from src.core.billing_core import get_concurrent_task_limit_for_identity
 from src.core.task_core import process_and_submit_task
-from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.core.task_core_types import (
+    SubmissionReconciliationPending,
+    TaskSubmissionSideEffectPlan,
+)
 from src.database.models import CharacterReference, CharacterReferenceView
 from src.domain_config.ltx_t2v import (
     CHARACTER_REFERENCE_BUILD_COST,
@@ -25,6 +28,7 @@ from src.domain_config.ltx_t2v import (
 )
 from src.quota import QuotaManager
 from src.services.storage import storage
+from src.services.task_web_submission_intent import WebSubmissionIntentJournal
 from src.web_api.common.utils import release_read_transaction
 from src.web_api.schemas.task_schema import TaskGenerateRequest
 from src.web_api.services.task_submission_service import submit_generation_task
@@ -705,6 +709,11 @@ async def build_character(*, db, current_user, payload) -> dict:
     )
     db.add(row)
     await db.commit()
+    submission_journal = WebSubmissionIntentJournal(
+        internal_user_id=current_user.id,
+        username=current_user.username,
+        task_id=task_id,
+    )
     try:
         result = await process_and_submit_task(
             user_id=current_user.id,
@@ -723,7 +732,14 @@ async def build_character(*, db, current_user, payload) -> dict:
             user_cancel_allowed=True,
             registry_metadata={"character_id": character_id},
             allow_contribute_override=False,
+            submission_before_dispatch_func=submission_journal.before_dispatch,
+            submission_should_compensate_func=submission_journal.should_compensate,
+            submission_refund_idempotency_key=(
+                submission_journal.refund_idempotency_key
+            ),
         )
+    except SubmissionReconciliationPending as exc:
+        result = {"task_id": exc.registry_task_id, "cost": exc.cost}
     except Exception:
         row.status = "failed"
         row.updated_at = datetime.now()
