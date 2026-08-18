@@ -74,6 +74,8 @@ def _environment(environment: str) -> dict[str, str]:
         "REQUIRED_CHANNEL_ID": "-1001234567890",
         "MAIN_BOT_LAZY_BOT_ENABLED": "true",
         "MAIN_BOT_LAZY_BOT_USERNAME": "@QQCC666_bot",
+        "MAIN_BOT_PAYMENT_POLLING_ENABLED": "false",
+        "MAIN_BOT_ZOMBIE_SWEEP_ENABLED": "false",
         "QQCC_BOT_TOKEN": f"{suffix}-qqcc-token",
         "JWT_SECRET_KEY": f"{suffix}-jwt-secret",
         "DASHBOARD_SECRET_KEY": f"{suffix}-dashboard-secret",
@@ -155,6 +157,8 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         if service != "web-api"
     )
     assert bot["BOT_TOKEN"] == "prod-bot-token"
+    assert bot["MAIN_BOT_PAYMENT_POLLING_ENABLED"] == "false"
+    assert bot["MAIN_BOT_ZOMBIE_SWEEP_ENABLED"] == "false"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
     assert dashboard_backend["SUPPORT_BOT_TOKEN"] == "prod-support-token"
     assert support_bot["SUPPORT_BOT_TOKEN"] == "prod-support-token"
@@ -230,6 +234,23 @@ def test_web_finalizer_owner_flag_reconfigures_web_api():
         "task-control-worker",
         "web-api",
     }
+
+
+@pytest.mark.parametrize(
+    ("flag", "services"),
+    [
+        ("MAIN_BOT_PAYMENT_POLLING_ENABLED", {"main-bot"}),
+        (
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+            {"main-bot", "task-control-worker"},
+        ),
+    ],
+)
+def test_main_bot_owner_flags_reconfigure_main_bot(flag, services):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(contract, {flag}) == services
 
 
 def test_minimax_h3_optimizer_flag_reconfigures_web_and_main_bot():
