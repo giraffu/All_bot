@@ -35,6 +35,11 @@ from scripts.history_media_r2_migration import (
 
 BatchExecutor = Callable[[Any], Awaitable[dict[str, Any]]]
 Sleep = Callable[[float], Awaitable[None]]
+R2_P95_LOWER_MS = 8_000.0
+R2_P95_RAISE_MS = 5_000.0
+R2_MAX_LOWER_MS = 120_000.0
+R2_MAX_RAISE_MS = 30_000.0
+R2_LATENCY_SUSTAINED_WINDOWS = 2
 
 
 @dataclass
@@ -134,6 +139,11 @@ class CopyHealthWindow:
         )
         if latest_rate_limits:
             return CopyHealthDecision("lower", "rate_limit", error_rate, sample_count)
+        latest_server_errors = sum(
+            event["kind"] == "server_5xx" for event in self._latest
+        )
+        if latest_server_errors:
+            return CopyHealthDecision("lower", "server_5xx", error_rate, sample_count)
         if (
             sample_count >= self.minimum_samples
             and error_rate >= self.systemic_error_rate
@@ -152,6 +162,64 @@ class CopyHealthWindow:
         return CopyHealthDecision(
             "hold", "within_error_budget", error_rate, sample_count
         )
+
+
+@dataclass(frozen=True)
+class CopyLatencyDecision:
+    action: str
+    reason: str
+    p95_ms: float
+    max_ms: float
+
+
+class CopyLatencyWindow:
+    """React to R2 capacity pressure even when SDK retries hide most errors."""
+
+    def __init__(
+        self,
+        *,
+        p95_lower_ms: float = 8_000,
+        p95_raise_ms: float = 5_000,
+        max_lower_ms: float = 120_000,
+        max_raise_ms: float = 30_000,
+        sustained_windows: int = 2,
+    ) -> None:
+        if not 0 < p95_raise_ms < p95_lower_ms:
+            raise ValueError("R2 p95 raise threshold must be below lower threshold")
+        if not 0 < max_raise_ms < max_lower_ms:
+            raise ValueError("R2 max raise threshold must be below lower threshold")
+        if sustained_windows <= 0:
+            raise ValueError("R2 latency sustained windows must be positive")
+        self.p95_lower_ms = p95_lower_ms
+        self.p95_raise_ms = p95_raise_ms
+        self.max_lower_ms = max_lower_ms
+        self.max_raise_ms = max_raise_ms
+        self.sustained_windows = sustained_windows
+        self.high_p95_windows = 0
+
+    def decision(self, *, p95_ms: float, max_ms: float) -> CopyLatencyDecision:
+        if max_ms >= self.max_lower_ms:
+            self.high_p95_windows = max(
+                self.high_p95_windows, self.sustained_windows
+            )
+            return CopyLatencyDecision(
+                "lower", "r2_extreme_long_tail", p95_ms, max_ms
+            )
+        if p95_ms >= self.p95_lower_ms:
+            self.high_p95_windows += 1
+            if self.high_p95_windows >= self.sustained_windows:
+                return CopyLatencyDecision(
+                    "lower", "sustained_r2_p95_latency", p95_ms, max_ms
+                )
+            return CopyLatencyDecision(
+                "hold", "r2_p95_latency_observing", p95_ms, max_ms
+            )
+        self.high_p95_windows = 0
+        if p95_ms <= self.p95_raise_ms and max_ms <= self.max_raise_ms:
+            return CopyLatencyDecision(
+                "raise", "healthy_r2_latency", p95_ms, max_ms
+            )
+        return CopyLatencyDecision("hold", "r2_latency_guard_band", p95_ms, max_ms)
 
 
 def _available_cpu_count() -> int:
@@ -193,17 +261,27 @@ async def run_adaptive_copy(
     pause_requested: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
     configured_pool = args.max_pool_connections
-    maximum_concurrency = (
-        128 if configured_pool is None or configured_pool >= 128 else 64
+    pool_ceiling = configured_pool if configured_pool is not None else 128
+    maximum_concurrency = next(
+        (level for level in (128, 64, 32, 16) if pool_ceiling >= level), 0
     )
+    if maximum_concurrency == 0:
+        raise ValueError("adaptive Copy connection pool must support at least 16")
     controller = AdaptiveCopyController(
         initial_concurrency=int(args.copy_concurrency),
         maximum_concurrency=maximum_concurrency,
     )
     _resolve_copy_max_pool_connections(controller.maximum_concurrency, configured_pool)
     systemic_windows = 0
-    low_error_windows = 0
+    healthy_windows = 0
     health = CopyHealthWindow()
+    latency = CopyLatencyWindow(
+        p95_lower_ms=R2_P95_LOWER_MS,
+        p95_raise_ms=R2_P95_RAISE_MS,
+        max_lower_ms=R2_MAX_LOWER_MS,
+        max_raise_ms=R2_MAX_RAISE_MS,
+        sustained_windows=R2_LATENCY_SUSTAINED_WINDOWS,
+    )
     resource_gate = ResourceGate(
         max_cpu_percent=float(getattr(args, "max_cpu_percent", 70.0)),
         cpu_batches_to_pause=int(getattr(args, "cpu_batches_to_pause", 3)),
@@ -246,20 +324,20 @@ async def run_adaptive_copy(
                     }
                 )
                 raise
-            if previous == 8:
+            if previous == 16:
                 systemic_windows += 1
                 if systemic_windows >= int(getattr(args, "circuit_breaker_windows", 3)):
                     return {
                         "status": "paused",
                         "reason": "systemic_transient_error_circuit_open",
-                        "copy_concurrency": 8,
+                        "copy_concurrency": 16,
                         "max_pool_connections": _resolve_copy_max_pool_connections(
-                            8, configured_pool
+                            16, configured_pool
                         ),
                     }
             else:
                 systemic_windows = 0
-            wait_seconds = {64: 30, 32: 60, 16: 120, 8: 240}[lowered]
+            wait_seconds = {64: 30, 32: 60, 16: 120}[lowered]
             _emit(
                 {
                     "adaptive_event": "lower" if lowered < previous else "retry",
@@ -303,10 +381,29 @@ async def run_adaptive_copy(
         request_events = list(summary.get("_copy_request_events") or [])
         health.extend(request_events)
         health_decision = health.decision(current_concurrency=concurrency)
+        r2_latency = summary.get("r2_object_operation_latency_ms") or {}
+        latency_decision = latency.decision(
+            p95_ms=float(r2_latency.get("p95", 0.0)),
+            max_ms=float(r2_latency.get("max", 0.0)),
+        )
+        _emit(
+            {
+                "adaptive_event": "batch_r2_health",
+                "r2_p95_ms": latency_decision.p95_ms,
+                "r2_max_ms": latency_decision.max_ms,
+                "copy_objects_per_second": float(
+                    summary.get("copy_objects_per_second", 0.0)
+                ),
+                "latency_action": latency_decision.action,
+                "latency_reason": latency_decision.reason,
+                "request_error_rate": health_decision.error_rate,
+                "request_sample_count": health_decision.sample_count,
+            }
+        )
         if health_decision.action == "systemic":
-            low_error_windows = 0
+            healthy_windows = 0
             systemic_windows += 1
-            if concurrency > 8:
+            if concurrency > 16:
                 lowered = controller.record_failure("ReadTimeoutError")
                 _emit(
                     {
@@ -326,11 +423,13 @@ async def run_adaptive_copy(
                     "max_pool_connections": actual_pool,
                 }
         elif health_decision.action == "lower":
-            low_error_windows = 0
+            healthy_windows = 0
             systemic_windows = 0
             lowered = controller.record_failure(
                 "SlowDown"
                 if health_decision.reason == "rate_limit"
+                else "HTTPStatusCode: 503"
+                if health_decision.reason == "server_5xx"
                 else "ReadTimeoutError"
             )
             _emit(
@@ -342,12 +441,28 @@ async def run_adaptive_copy(
                     "request_sample_count": health_decision.sample_count,
                 }
             )
+        elif latency_decision.action == "lower":
+            healthy_windows = 0
+            systemic_windows = 0
+            lowered = controller.record_failure("ReadTimeoutError")
+            _emit(
+                {
+                    "adaptive_event": "lower",
+                    "reason": latency_decision.reason,
+                    "copy_concurrency": lowered,
+                    "r2_p95_ms": latency_decision.p95_ms,
+                    "r2_max_ms": latency_decision.max_ms,
+                }
+            )
         else:
             systemic_windows = 0
-            if health_decision.action == "raise":
-                low_error_windows += 1
+            if (
+                health_decision.action == "raise"
+                and latency_decision.action == "raise"
+            ):
+                healthy_windows += 1
             else:
-                low_error_windows = 0
+                healthy_windows = 0
         if remaining == 0:
             return {
                 "status": "completed",
@@ -371,7 +486,7 @@ async def run_adaptive_copy(
                 "copy_concurrency": concurrency,
                 "max_pool_connections": actual_pool,
             }
-        if health_decision.action == "raise" and low_error_windows >= 2:
+        if healthy_windows >= 2:
             previous = controller.concurrency
             controller.clean_batches = controller.clean_batches_to_raise - 1
             raised = controller.record_success()
@@ -379,13 +494,13 @@ async def run_adaptive_copy(
                 _emit(
                     {
                         "adaptive_event": "raise",
-                        "reason": health_decision.reason,
+                        "reason": "healthy_error_and_latency_windows",
                         "copy_concurrency": raised,
                         "request_error_rate": health_decision.error_rate,
                         "request_sample_count": health_decision.sample_count,
                     }
                 )
-            low_error_windows = 0
+            healthy_windows = 0
 
 
 def _parser() -> argparse.ArgumentParser:

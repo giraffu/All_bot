@@ -49,6 +49,7 @@ from scripts.history_media_r2_migration import (
     build_copy_predecessor_recovery_plan,
     build_successor_copy_plan,
     build_successor_probe_plan,
+    classify_copy_request_failure,
     classify_copy_predecessor_recovery,
     classify_r2_head_outcomes,
     classify_reference,
@@ -378,12 +379,27 @@ def test_copy_retries_one_transient_object_with_exponential_backoff(monkeypatch)
     assert result["error"] is None
     assert result["attempt_count"] == 4
     assert [event["kind"] for event in result["request_events"]] == [
-        "timeout_or_5xx",
-        "timeout_or_5xx",
-        "timeout_or_5xx",
+        "timeout",
+        "timeout",
+        "timeout",
         "ok",
     ]
     assert sleeps == [1, 2, 4]
+
+
+@pytest.mark.parametrize(
+    ("error_text", "expected"),
+    [
+        ("ReadTimeoutError: read timed out", "timeout"),
+        ("HTTPStatusCode: 503 ServiceUnavailable", "server_5xx"),
+        ("An error occurred (500) when calling CopyObject", "server_5xx"),
+        ("Connection reset by peer", "connection_transient"),
+    ],
+)
+def test_copy_request_health_class_separates_server_errors_from_timeouts(
+    error_text, expected
+):
+    assert classify_copy_request_failure(RuntimeError(error_text)) == expected
 
 
 def test_copy_exhausts_only_the_failed_object_after_five_retries(monkeypatch):
@@ -465,6 +481,65 @@ async def test_copy_persists_fast_success_before_slow_peer_finishes():
     assert worker_ids.isdisjoint(
         {thread.ident for thread in threading.enumerate() if thread.is_alive()}
     )
+
+
+@pytest.mark.asyncio
+async def test_copy_scheduler_refills_bounded_window_before_slow_peer_finishes():
+    slow_started = threading.Event()
+    release_slow = threading.Event()
+    later_started = threading.Event()
+    active = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def copy_one(group):
+        nonlocal active, peak
+        row_id = group[0]["id"]
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            if row_id == 1:
+                slow_started.set()
+                assert release_slow.wait(5)
+            if row_id == 3:
+                later_started.set()
+            return {
+                "outcome": {"etag": f"target-{row_id}", "multipart": False},
+                "error": None,
+                "elapsed_ms": 1.0,
+                "attempt_count": 1,
+                "request_events": [{"at": 1.0, "kind": "ok"}],
+            }
+        finally:
+            with lock:
+                active -= 1
+
+    async def persist_success(_group, _outcome):
+        return None
+
+    async def persist_failure(_group, _error):
+        raise AssertionError("no object should fail")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        task = asyncio.create_task(
+            _run_copy_group_batch(
+                [[{"id": value}] for value in range(1, 7)],
+                executor=executor,
+                copy_one=copy_one,
+                persist_success=persist_success,
+                persist_failure=persist_failure,
+                max_in_flight=2,
+            )
+        )
+        assert await asyncio.to_thread(slow_started.wait, 2)
+        assert await asyncio.to_thread(later_started.wait, 2)
+        assert not task.done()
+        release_slow.set()
+        result = await task
+
+    assert peak == 2
+    assert result["copied_objects"] == 6
 
 
 @pytest.mark.asyncio
@@ -1506,15 +1581,16 @@ def test_adaptive_copy_lowers_one_level_for_transient_r2_failures(error_text):
     assert controller.record_failure(error_text) == 32
 
 
-def test_adaptive_copy_uses_64_32_16_8_and_requires_three_clean_batches_to_raise():
-    controller = AdaptiveCopyController(initial_concurrency=64)
+def test_adaptive_copy_uses_128_64_32_16_and_requires_three_clean_batches_to_raise():
+    controller = AdaptiveCopyController(initial_concurrency=128)
 
+    assert controller.record_failure("HTTPStatusCode: 503") == 64
     assert controller.record_failure("HTTPStatusCode: 503") == 32
     assert controller.record_failure("ConnectTimeoutError") == 16
-    assert controller.record_failure("SlowDown") == 8
-    assert controller.record_success() == 8
-    assert controller.record_success() == 8
+    assert controller.record_failure("SlowDown") == 16
     assert controller.record_success() == 16
+    assert controller.record_success() == 16
+    assert controller.record_success() == 32
 
 
 def test_adaptive_copy_rejects_non_transient_failures():
@@ -1661,7 +1737,7 @@ def test_execute_copy_sizes_worker_pool_to_requested_concurrency():
 
     assert "ThreadPoolExecutor(max_workers=args.copy_concurrency)" in source
     assert "loop.run_in_executor" in group_source
-    assert "asyncio.as_completed" in group_source
+    assert "asyncio.FIRST_COMPLETED" in group_source
     assert "copy_executor" in source
 
 

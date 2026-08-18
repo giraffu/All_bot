@@ -81,13 +81,17 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     if re.search(r"429|TooManyRequests|SlowDown", error_text, re.IGNORECASE):
         return "rate_limit"
     if re.search(
-        r"ReadTimeout|ConnectTimeout|RequestTimeout|InternalError|"
-        r"ServiceUnavailable|HTTPStatusCode[^0-9]*(?:500|502|503|504)|"
+        r"InternalError|ServiceUnavailable|"
+        r"HTTPStatusCode[^0-9]*(?:500|502|503|504)|"
         r"An error occurred \((?:500|502|503|504)\)",
         error_text,
         re.IGNORECASE,
     ):
-        return "timeout_or_5xx"
+        return "server_5xx"
+    if re.search(
+        r"ReadTimeout|ConnectTimeout|RequestTimeout", error_text, re.IGNORECASE
+    ):
+        return "timeout"
     if re.search(
         r"EndpointConnection|ConnectionClosed|ProtocolError|RemoteDisconnected|"
         r"Connection reset by peer",
@@ -107,11 +111,11 @@ class AdaptiveCopyController:
     maximum_concurrency: int = 128
 
     def __post_init__(self) -> None:
-        if self.initial_concurrency not in {8, 16, 32, 64, 128}:
-            raise ValueError("adaptive copy concurrency must be 8, 16, 32, 64, or 128")
+        if self.initial_concurrency not in {16, 32, 64, 128}:
+            raise ValueError("adaptive copy concurrency must be 16, 32, 64, or 128")
         if self.clean_batches_to_raise <= 0:
             raise ValueError("clean batch threshold must be positive")
-        if self.maximum_concurrency not in {8, 16, 32, 64, 128}:
+        if self.maximum_concurrency not in {16, 32, 64, 128}:
             raise ValueError("adaptive copy maximum concurrency is invalid")
         if self.maximum_concurrency < self.initial_concurrency:
             raise ValueError("adaptive copy maximum is below its initial concurrency")
@@ -122,13 +126,13 @@ class AdaptiveCopyController:
         if not is_transient_copy_failure(error_text):
             raise RuntimeError("non-transient copy failure")
         self.clean_batches = 0
-        self.concurrency = {128: 64, 64: 32, 32: 16, 16: 8, 8: 8}[self.concurrency]
+        self.concurrency = {128: 64, 64: 32, 32: 16, 16: 16}[self.concurrency]
         return self.concurrency
 
     def record_success(self) -> int:
         self.clean_batches += 1
         if self.clean_batches >= self.clean_batches_to_raise:
-            raised = {8: 16, 16: 32, 32: 64, 64: 128, 128: 128}[
+            raised = {16: 32, 32: 64, 64: 128, 128: 128}[
                 self.concurrency
             ]
             self.concurrency = min(raised, self.maximum_concurrency)
@@ -1884,8 +1888,10 @@ async def _run_copy_group_batch(
     copy_one: Callable[[list[dict[str, Any]]], dict[str, Any]],
     persist_success: Callable[[list[dict[str, Any]], dict[str, Any]], Awaitable[None]],
     persist_failure: Callable[[list[dict[str, Any]], BaseException], Awaitable[None]],
+    max_in_flight: int | None = None,
+    object_circuit: CopyObjectCircuitBreaker | None = None,
 ) -> dict[str, Any]:
-    """Persist each completed object independently while its peers remain in flight."""
+    """Continuously refill a bounded queue and persist each completed object."""
     loop = asyncio.get_running_loop()
 
     async def run_group(
@@ -1901,23 +1907,73 @@ async def _run_copy_group_batch(
     first_fatal_error: BaseException | None = None
     operation_latencies_ms: list[float] = []
     request_events: list[dict[str, Any]] = []
-    tasks = [asyncio.create_task(run_group(group)) for group in groups]
-    for completed in asyncio.as_completed(tasks):
-        group, attempt = await completed
-        operation_latencies_ms.append(float(attempt["elapsed_ms"]))
-        request_events.extend(attempt["request_events"])
-        if attempt["error"] is not None:
-            await persist_failure(group, attempt["error"])
-            if classify_copy_request_failure(attempt["error"]) == "fatal":
-                first_fatal_error = first_fatal_error or attempt["error"]
-            else:
-                exhausted_transient_objects += 1
-            continue
-        outcome = attempt["outcome"]
-        await persist_success(group, outcome)
-        copied_objects += 1
-        copied_rows += len(group)
-        recovered_objects += int(bool(outcome.get("recovered")))
+    if not groups:
+        max_in_flight = 1
+    elif max_in_flight is None:
+        max_in_flight = len(groups)
+    if max_in_flight <= 0:
+        raise ValueError("copy max_in_flight must be positive")
+
+    group_iterator = iter(groups)
+    tasks: set[asyncio.Task[tuple[list[dict[str, Any]], dict[str, Any]]]] = set()
+    circuit_copied = 0
+    circuit_failed = 0
+
+    def refill(slots: int) -> None:
+        for _ in range(slots):
+            try:
+                group = next(group_iterator)
+            except StopIteration:
+                break
+            tasks.add(asyncio.create_task(run_group(group)))
+
+    refill(min(max_in_flight, len(groups)))
+    try:
+        while tasks:
+            completed, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            tasks = set(pending)
+            for task in completed:
+                group, attempt = await task
+                operation_latencies_ms.append(float(attempt["elapsed_ms"]))
+                request_events.extend(attempt["request_events"])
+                if attempt["error"] is not None:
+                    await persist_failure(group, attempt["error"])
+                    if classify_copy_request_failure(attempt["error"]) == "fatal":
+                        first_fatal_error = first_fatal_error or attempt["error"]
+                    else:
+                        exhausted_transient_objects += 1
+                        circuit_failed += 1
+                    continue
+                outcome = attempt["outcome"]
+                await persist_success(group, outcome)
+                copied_objects += 1
+                copied_rows += len(group)
+                recovered_objects += int(bool(outcome.get("recovered")))
+                circuit_copied += 1
+            circuit_total = circuit_copied + circuit_failed
+            if (
+                object_circuit is not None
+                and circuit_total >= max_in_flight
+                and object_circuit.observe(
+                    copied_objects=circuit_copied,
+                    failed_objects=circuit_failed,
+                )
+            ):
+                first_fatal_error = first_fatal_error or RuntimeError(
+                    "ServiceUnavailable: systemic object copy circuit open"
+                )
+            if circuit_total >= max_in_flight:
+                circuit_copied = 0
+                circuit_failed = 0
+            if first_fatal_error is None:
+                refill(len(completed))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     if first_fatal_error is not None:
         raise first_fatal_error
     return {
@@ -5030,30 +5086,23 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             db_commit_latencies_ms.append((time.perf_counter() - db_started) * 1000)
 
         with ThreadPoolExecutor(max_workers=args.copy_concurrency) as copy_executor:
-            for offset in range(0, len(groups), scheduling_window):
-                batch = groups[offset : offset + scheduling_window]
-                result = await _run_copy_group_batch(
-                    batch,
-                    executor=copy_executor,
-                    copy_one=copy_one,
-                    persist_success=persist_success,
-                    persist_failure=persist_failure,
-                )
-                copied_objects += int(result["copied_objects"])
-                copied_rows += int(result["copied_rows"])
-                recovered_objects += int(result["recovered_objects"])
-                exhausted_transient_objects += int(
-                    result["exhausted_transient_objects"]
-                )
-                r2_operation_latencies_ms.extend(result["operation_latencies_ms"])
-                copy_request_events.extend(result["request_events"])
-                if object_circuit.observe(
-                    copied_objects=int(result["copied_objects"]),
-                    failed_objects=int(result["exhausted_transient_objects"]),
-                ):
-                    raise RuntimeError(
-                        "ServiceUnavailable: systemic object copy circuit open"
-                    )
+            result = await _run_copy_group_batch(
+                groups,
+                executor=copy_executor,
+                copy_one=copy_one,
+                persist_success=persist_success,
+                persist_failure=persist_failure,
+                max_in_flight=scheduling_window,
+                object_circuit=object_circuit,
+            )
+            copied_objects += int(result["copied_objects"])
+            copied_rows += int(result["copied_rows"])
+            recovered_objects += int(result["recovered_objects"])
+            exhausted_transient_objects += int(
+                result["exhausted_transient_objects"]
+            )
+            r2_operation_latencies_ms.extend(result["operation_latencies_ms"])
+            copy_request_events.extend(result["request_events"])
         copy_elapsed_seconds = time.perf_counter() - copy_started
         remaining = int(
             await conn.fetchval(
