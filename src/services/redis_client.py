@@ -306,15 +306,102 @@ class RedisClient:
         self,
         registry_task_id: str,
         finalizer_data: Dict[str, Any],
+        *,
+        due_at: float | None = None,
     ) -> None:
         key = f"{REDIS_PREFIX}pending_web_finalizers"
+        due_key = f"{REDIS_PREFIX}pending_web_finalizers:due"
+        backend_index_key = f"{REDIS_PREFIX}pending_web_finalizers:backend_index"
+        backend_set_key = (
+            f"{REDIS_PREFIX}pending_web_finalizer_backends:{registry_task_id}"
+        )
+        backend_task_id = finalizer_data.get("backend_task_id")
         try:
-            await self.redis.hset(key, registry_task_id, json.dumps(finalizer_data))
+            pipeline = self.redis.pipeline(transaction=True)
+            pipeline.hset(key, registry_task_id, json.dumps(finalizer_data))
+            pipeline.zadd(
+                due_key,
+                {registry_task_id: float(due_at if due_at is not None else time.time())},
+            )
+            if backend_task_id:
+                pipeline.hset(backend_index_key, backend_task_id, registry_task_id)
+                pipeline.sadd(backend_set_key, backend_task_id)
+            await pipeline.execute()
         except Exception as e:
             logger.error(
                 f"Failed to persist pending web finalizer for {registry_task_id}: {e}"
             )
             raise
+
+    async def schedule_pending_web_finalizer(
+        self,
+        registry_task_id: str,
+        *,
+        due_at: float,
+    ) -> None:
+        due_key = f"{REDIS_PREFIX}pending_web_finalizers:due"
+        await self.redis.zadd(due_key, {registry_task_id: float(due_at)})
+
+    async def get_due_pending_web_finalizer_ids(
+        self,
+        *,
+        now: float,
+        limit: int = 100,
+    ) -> list[str]:
+        due_key = f"{REDIS_PREFIX}pending_web_finalizers:due"
+        values = await self.redis.zrangebyscore(
+            due_key,
+            "-inf",
+            float(now),
+            start=0,
+            num=max(1, int(limit)),
+        )
+        return [str(value) for value in values]
+
+    async def index_legacy_pending_web_finalizers(
+        self,
+        *,
+        cursor: int,
+        due_at: float,
+        count: int = 200,
+    ) -> tuple[int, int]:
+        key = f"{REDIS_PREFIX}pending_web_finalizers"
+        due_key = f"{REDIS_PREFIX}pending_web_finalizers:due"
+        backend_index_key = f"{REDIS_PREFIX}pending_web_finalizers:backend_index"
+        next_cursor, records = await self.redis.hscan(key, cursor=cursor, count=count)
+        if not records:
+            return int(next_cursor), 0
+        pipeline = self.redis.pipeline(transaction=True)
+        for registry_task_id, raw_record in records.items():
+            pipeline.zadd(
+                due_key,
+                {registry_task_id: float(due_at)},
+                nx=True,
+            )
+            try:
+                backend_task_id = json.loads(raw_record).get("backend_task_id")
+            except (TypeError, ValueError):
+                backend_task_id = None
+            if backend_task_id:
+                pipeline.hset(
+                    backend_index_key,
+                    backend_task_id,
+                    registry_task_id,
+                )
+                pipeline.sadd(
+                    f"{REDIS_PREFIX}pending_web_finalizer_backends:{registry_task_id}",
+                    backend_task_id,
+                )
+        await pipeline.execute()
+        return int(next_cursor), len(records)
+
+    async def resolve_pending_web_finalizer_registry_id(
+        self,
+        backend_task_id: str,
+    ) -> str | None:
+        key = f"{REDIS_PREFIX}pending_web_finalizers:backend_index"
+        value = await self.redis.hget(key, backend_task_id)
+        return str(value) if value else None
 
     async def increment_task_submission_metric(
         self,
@@ -347,19 +434,22 @@ class RedisClient:
             )
             return None
 
-    async def get_pending_web_finalizers(self) -> Dict[str, Any]:
-        key = f"{REDIS_PREFIX}pending_web_finalizers"
-        try:
-            finalizers_raw = await self.redis.hgetall(key)
-            return {k: json.loads(v) for k, v in finalizers_raw.items()}
-        except Exception as e:
-            logger.error(f"Failed to get pending web finalizers from Redis: {e}")
-            return {}
-
     async def remove_pending_web_finalizer(self, registry_task_id: str) -> None:
         key = f"{REDIS_PREFIX}pending_web_finalizers"
+        due_key = f"{REDIS_PREFIX}pending_web_finalizers:due"
+        backend_index_key = f"{REDIS_PREFIX}pending_web_finalizers:backend_index"
+        backend_set_key = (
+            f"{REDIS_PREFIX}pending_web_finalizer_backends:{registry_task_id}"
+        )
         try:
-            await self.redis.hdel(key, registry_task_id)
+            backend_task_ids = await self.redis.smembers(backend_set_key)
+            pipeline = self.redis.pipeline(transaction=True)
+            pipeline.hdel(key, registry_task_id)
+            pipeline.zrem(due_key, registry_task_id)
+            if backend_task_ids:
+                pipeline.hdel(backend_index_key, *backend_task_ids)
+            pipeline.delete(backend_set_key)
+            await pipeline.execute()
         except Exception as e:
             logger.error(
                 f"Failed to remove pending web finalizer for {registry_task_id}: {e}"

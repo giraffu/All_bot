@@ -631,9 +631,12 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - phase 为 `prepared -> dispatching -> accepted -> terminal`，歧义为
   `reconciling`；无版本旧 record 仍可收口
 - apply 在 `accepted` 后记录，`apply_recorded` 抑制重复
-- Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
+- finalizer Hash 保存 record；due ZSET 至多取 100 个到期 ID，不用 `HGETALL`
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
-- 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
+- 多 worker 拿 lease 后读 Hash；非终态改 due score，终态清 record/due/index，
+  崩溃靠 lease 过期恢复
+- Pub/Sub 终态经 backend index 设 due-now；ZSET兜底，旧 Hash 以 bounded
+  `HSCAN` + `ZADD NX` 补索引
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
 - Central 完成契约同时支持 `result_kind=media + result_path` 与 `result_kind=text + result_text + result_meta`。共享 terminal router 判定成功时，媒体结果仍要求非空 `result_path`，文本结果则要求 `result_kind=text` 和非空 `result_text`；不得用媒体路径条件把成功文本误路由为失败退款。`prompt_optimize` 文本终态由 Web finalizer 按 owner 写入 24 小时 Redis result store，跳过 History/R2/Gallery；媒体任务继续保持原结果路径和 History 语义。Worker 上报文本结果时必须携带 Profile/Template refs 和字段白名单元数据，Web 在存储前再次 fail closed 校验。
 - `prompt_optimize` 终态前可由 `text_delta` 和 Web SSE 展示预览。快照按 backend ID

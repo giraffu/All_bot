@@ -1,5 +1,7 @@
 import asyncio
 import copy
+import inspect
+import json
 import logging
 import time
 import uuid
@@ -39,6 +41,16 @@ WEB_SUBMISSION_INTENT_VERSION = 2
 WEB_SUBMISSION_NOT_FOUND_THRESHOLD = 3
 WEB_SUBMISSION_NOT_FOUND_MIN_SPAN_SECONDS = 60
 WEB_SUBMISSION_UNCERTAIN_ALERT_SECONDS = 15 * 60
+WEB_FINALIZER_PENDING_POLL_SECONDS = 30
+WEB_FINALIZER_RUNNING_POLL_SECONDS = 20
+WEB_FINALIZER_RECONCILE_POLL_SECONDS = 30
+WEB_FINALIZER_ERROR_RETRY_SECONDS = 15
+WEB_FINALIZER_DUE_BATCH_SIZE = 100
+WEB_FINALIZER_LEGACY_INDEX_BATCH_SIZE = 200
+WEB_FINALIZER_LEGACY_RESCAN_SECONDS = 60
+
+_legacy_index_cursor = 0
+_legacy_index_next_scan_at = 0.0
 
 
 def _now_timestamp() -> float:
@@ -47,6 +59,23 @@ def _now_timestamp() -> float:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _schedule_finalizer_after(
+    registry_task_id: str,
+    delay_seconds: float,
+) -> None:
+    await redis_client.schedule_pending_web_finalizer(
+        registry_task_id,
+        due_at=time.time() + max(0.0, float(delay_seconds)),
+    )
+
+
+async def _get_backend_task_status(backend_task_id: str) -> dict[str, Any] | None:
+    await redis_client.increment_task_submission_metric(
+        "finalizer_central_status_requests"
+    )
+    return await image_service.get_task_status(backend_task_id)
 
 
 def _free_edit_v3_stage2_task_id(registry_task_id: str) -> str:
@@ -331,7 +360,7 @@ async def _resume_free_edit_v3_face_swap(
         status="pending",
     )
 
-    existing_stage2 = await image_service.get_task_status(stage2_backend_task_id)
+    existing_stage2 = await _get_backend_task_status(stage2_backend_task_id)
     if existing_stage2 is None:
         submitted_task_id = await image_service.submit_face_swap_task(
             stage2_backend_task_id,
@@ -390,7 +419,7 @@ async def _resume_scail2_face_swap_video(
         status="pending",
     )
 
-    existing_stage2 = await image_service.get_task_status(stage2_backend_task_id)
+    existing_stage2 = await _get_backend_task_status(stage2_backend_task_id)
     if existing_stage2 is None:
         submitted_task_id = await image_service.submit_scail2_video_task(
             stage2_backend_task_id,
@@ -648,11 +677,13 @@ async def process_pending_web_finalizer(
     del record
     lock_token = await redis_client.acquire_pending_web_finalizer_lock(registry_task_id)
     if not lock_token:
+        await _schedule_finalizer_after(registry_task_id, 2)
         return False
 
     try:
         record = await redis_client.get_pending_web_finalizer(registry_task_id)
         if not record:
+            await redis_client.remove_pending_web_finalizer(registry_task_id)
             return False
 
         if (
@@ -660,20 +691,32 @@ async def process_pending_web_finalizer(
             and record["continuation"].get("stage") == "face_swap_dispatching"
         ):
             await _resume_free_edit_v3_face_swap(record)
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_RUNNING_POLL_SECONDS,
+            )
             return True
         if (
             _is_scail2_face_swap_record(record)
             and record["continuation"].get("stage") == "scail2_dispatching"
         ):
             await _resume_scail2_face_swap_video(record)
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_RUNNING_POLL_SECONDS,
+            )
             return True
 
         backend_task_id = record.get("backend_task_id")
         if not backend_task_id:
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_RECONCILE_POLL_SECONDS,
+            )
             return False
 
         try:
-            status_data = await image_service.get_task_status(backend_task_id)
+            status_data = await _get_backend_task_status(backend_task_id)
         except Exception as exc:
             if _is_versioned_submission_intent(record):
                 await _alert_stale_uncertain_intent(record, error=exc)
@@ -682,6 +725,10 @@ async def process_pending_web_finalizer(
             if _is_versioned_submission_intent(record):
                 should_finalize = await _record_authoritative_not_found(record)
                 if not should_finalize:
+                    await _schedule_finalizer_after(
+                        registry_task_id,
+                        WEB_FINALIZER_RECONCILE_POLL_SECONDS,
+                    )
                     return False
                 record = (
                     await redis_client.get_pending_web_finalizer(registry_task_id)
@@ -705,6 +752,12 @@ async def process_pending_web_finalizer(
             )
 
         if not is_backend_terminal_status(status_data.get("status")):
+            delay = (
+                WEB_FINALIZER_RUNNING_POLL_SECONDS
+                if normalize_backend_status(status_data.get("status")) == "running"
+                else WEB_FINALIZER_PENDING_POLL_SECONDS
+            )
+            await _schedule_finalizer_after(registry_task_id, delay)
             return False
 
         if (
@@ -725,6 +778,10 @@ async def process_pending_web_finalizer(
             await _resume_free_edit_v3_face_swap(
                 record,
                 stage1_result_path=status_data.get("result_path"),
+            )
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_RUNNING_POLL_SECONDS,
             )
             return True
         if (
@@ -748,6 +805,10 @@ async def process_pending_web_finalizer(
                 record,
                 stage1_result_path=status_data.get("result_path"),
             )
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_RUNNING_POLL_SECONDS,
+            )
             return True
 
         if _is_versioned_submission_intent(record):
@@ -765,18 +826,46 @@ async def process_pending_web_finalizer(
 
 
 async def process_all_pending_web_finalizers() -> int:
-    finalized_count = 0
-    pending_finalizers = await redis_client.get_pending_web_finalizers()
-    for registry_task_id, record in pending_finalizers.items():
-        try:
-            finalized = await process_pending_web_finalizer(
-                registry_task_id,
-                record=record,
+    global _legacy_index_cursor, _legacy_index_next_scan_at
+
+    now = _now_timestamp()
+    if now >= _legacy_index_next_scan_at:
+        _legacy_index_cursor, indexed_count = (
+            await redis_client.index_legacy_pending_web_finalizers(
+                cursor=_legacy_index_cursor,
+                due_at=now,
+                count=WEB_FINALIZER_LEGACY_INDEX_BATCH_SIZE,
             )
+        )
+        if indexed_count:
+            await redis_client.increment_task_submission_metric(
+                "finalizer_legacy_indexed_records",
+                indexed_count,
+            )
+        if _legacy_index_cursor == 0:
+            _legacy_index_next_scan_at = now + WEB_FINALIZER_LEGACY_RESCAN_SECONDS
+
+    finalized_count = 0
+    due_task_ids = await redis_client.get_due_pending_web_finalizer_ids(
+        now=now,
+        limit=WEB_FINALIZER_DUE_BATCH_SIZE,
+    )
+    if due_task_ids:
+        await redis_client.increment_task_submission_metric(
+            "finalizer_due_records_processed",
+            len(due_task_ids),
+        )
+    for registry_task_id in due_task_ids:
+        try:
+            finalized = await process_pending_web_finalizer(registry_task_id)
         except Exception:
             logger.exception(
                 "Failed to process pending web finalizer for %s",
                 registry_task_id,
+            )
+            await _schedule_finalizer_after(
+                registry_task_id,
+                WEB_FINALIZER_ERROR_RETRY_SECONDS,
             )
             continue
         if finalized:
@@ -784,15 +873,86 @@ async def process_all_pending_web_finalizers() -> int:
     return finalized_count
 
 
+async def run_pending_web_finalizer_event_listener() -> None:
+    pattern = "comfy:task_events:*"
+    while True:
+        pubsub = None
+        try:
+            pubsub = redis_client.redis.pubsub()
+            await pubsub.psubscribe(pattern)
+            while True:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if not message or not message.get("data"):
+                    await asyncio.sleep(0)
+                    continue
+                try:
+                    payload = json.loads(message["data"])
+                except (TypeError, ValueError):
+                    continue
+                if not is_backend_terminal_status(payload.get("status")):
+                    continue
+                channel = message.get("channel") or ""
+                if isinstance(channel, bytes):
+                    channel = channel.decode("utf-8", errors="replace")
+                backend_task_id = str(channel).rsplit(":", 1)[-1]
+                registry_task_id = (
+                    await redis_client.resolve_pending_web_finalizer_registry_id(
+                        backend_task_id
+                    )
+                )
+                if not registry_task_id:
+                    continue
+                await redis_client.schedule_pending_web_finalizer(
+                    registry_task_id,
+                    due_at=_now_timestamp(),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Pending web finalizer event listener failed; retrying.")
+            await asyncio.sleep(5)
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.punsubscribe(pattern)
+                except Exception:
+                    logger.debug(
+                        "Failed to unsubscribe finalizer event listener.",
+                        exc_info=True,
+                    )
+                close_result = (
+                    pubsub.aclose() if hasattr(pubsub, "aclose") else pubsub.close()
+                )
+                if inspect.isawaitable(close_result):
+                    try:
+                        await close_result
+                    except Exception:
+                        logger.debug(
+                            "Failed to close finalizer event listener.",
+                            exc_info=True,
+                        )
+
+
 async def run_pending_web_finalizer_loop(
     *,
     interval_seconds: float = 5.0,
 ) -> None:
-    while True:
-        try:
-            await process_all_pending_web_finalizers()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Pending web finalizer loop failed.")
-        await asyncio.sleep(interval_seconds)
+    event_listener = asyncio.create_task(
+        run_pending_web_finalizer_event_listener(),
+        name="web-finalizer-terminal-events",
+    )
+    try:
+        while True:
+            try:
+                await process_all_pending_web_finalizers()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Pending web finalizer loop failed.")
+            await asyncio.sleep(interval_seconds)
+    finally:
+        event_listener.cancel()
+        await asyncio.gather(event_listener, return_exceptions=True)
