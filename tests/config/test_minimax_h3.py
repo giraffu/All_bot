@@ -32,6 +32,12 @@ def test_web_locales_hide_model_names():
         assert workbench["minimax_h3_addon_options"]["sex_pose"] == (
             expected_addon_labels[1]
         )
+        assert workbench["minimax_h3_addon_options"]["motion_booster"] == (
+            "成人动作强化" if language == "zh" else "Adult motion boost"
+        )
+        assert workbench["minimax_h3_addon_options"]["mystic_xxx"] == (
+            "人体结构增强" if language == "zh" else "Anatomy enhancement"
+        )
         public_copy += " " + json.dumps(
             {
                 "title": locale["lab"]["cards"]["minimax_h3_title"],
@@ -49,6 +55,8 @@ def test_web_locales_hide_model_names():
         "LoRA",
         "NaughtyTimes",
         "HMNSFW",
+        "Motion Booster",
+        "Mystic XXX",
         "HMBreasts",
         "VagAssist",
         "HMPussy",
@@ -57,10 +65,12 @@ def test_web_locales_hide_model_names():
         assert private_term not in public_copy
 
 
-def test_minimax_h3_exposes_all_six_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_all_eight_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
+        "motion_booster",
+        "mystic_xxx",
         "breasts",
         "vagassist",
         "pussy",
@@ -76,6 +86,12 @@ def test_minimax_h3_uses_neutral_public_labels_for_adult_motion_addons():
     assert MINIMAX_H3_ADDON_MODELS["sex_pose"].label_zh.endswith(
         "（成人动作测试二）"
     )
+    assert MINIMAX_H3_ADDON_MODELS["motion_booster"].label_zh.endswith(
+        "（成人动作强化）"
+    )
+    assert MINIMAX_H3_ADDON_MODELS["mystic_xxx"].label_zh.endswith(
+        "（人体结构增强）"
+    )
 
 
 def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
@@ -85,6 +101,8 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
             "lora_items": [
                 {"name": "naughty_times", "strength": 0.8},
                 {"name": "sex_pose"},
+                {"name": "motion_booster"},
+                {"name": "mystic_xxx"},
                 {"name": "pussy"},
             ]
         },
@@ -92,6 +110,8 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
     assert [(item.name, item.strength) for item in spec.addon_items] == [
         ("naughty_times", 0.8),
         ("sex_pose", 0.5),
+        ("motion_booster", 0.7),
+        ("mystic_xxx", 0.75),
         ("pussy", 0.35),
     ]
 
@@ -103,7 +123,7 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ({"lora_name": "missing"}, "不支持"),
         ({"lora_items": [{"name": "penis"}, {"name": "penis"}]}, "不得重复"),
         ({"lora_items": [{"name": "penis", "strength": 0.0}]}, "0.1 至 2.0"),
-        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 6 项"),
+        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 8 项"),
     ],
 )
 def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):

@@ -63,6 +63,8 @@ PRESET_LABELS = {
 ADDON_EFFECT_LABELS = {
     "naughty_times": ("成人动作测试一", "Adult action test 1"),
     "sex_pose": ("成人动作测试二", "Adult action test 2"),
+    "motion_booster": ("成人动作强化", "Adult motion boost"),
+    "mystic_xxx": ("人体结构增强", "Anatomy enhancement"),
     "breasts": ("乳房细节", "Breast detail"),
     "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
     "pussy": ("阴道细节", "Vaginal detail"),

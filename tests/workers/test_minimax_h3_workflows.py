@@ -190,6 +190,36 @@ def test_minimax_h3_worker_injects_addon_chain():
     assert workflow["30"]["inputs"]["prompt"] == "HMBreasts, scene"
 
 
+def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger():
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+    patch_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={
+            "prompt": "scene",
+            "lora_items": [
+                {"name": "motion_booster", "strength": 0.7},
+                {"name": "mystic_xxx", "strength": 0.75},
+            ],
+        },
+    )
+
+    assert workflow["100"]["inputs"] == {
+        "model": ["8", 0],
+        "lora_name": "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
+        "strength_model": 0.7,
+    }
+    assert workflow["101"]["inputs"] == {
+        "model": ["100", 0],
+        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
+        "strength_model": 0.75,
+    }
+    assert workflow["2"]["inputs"]["model"] == ["101", 0]
+    assert workflow["30"]["inputs"]["prompt"] == "dynv2, scene"
+
+
 def test_minimax_h3_worker_uses_prompt_without_trigger_injection():
     workflow = json.loads(
         Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()

@@ -82,6 +82,8 @@ export interface MiniMaxH3AddonItem {
 export const MINIMAX_H3_ADDON_OPTIONS = [
   { value: 'naughty_times', labelKey: 'lab.workbench.minimax_h3_addon_options.naughty_times', defaultStrength: 1.0 },
   { value: 'sex_pose', labelKey: 'lab.workbench.minimax_h3_addon_options.sex_pose', defaultStrength: 0.5 },
+  { value: 'motion_booster', labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster', defaultStrength: 0.7 },
+  { value: 'mystic_xxx', labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx', defaultStrength: 0.75 },
   { value: 'breasts', labelKey: 'lab.workbench.minimax_h3_addon_options.breasts', defaultStrength: 1.0 },
   { value: 'vagassist', labelKey: 'lab.workbench.minimax_h3_addon_options.vagassist', defaultStrength: 1.0 },
   { value: 'pussy', labelKey: 'lab.workbench.minimax_h3_addon_options.pussy', defaultStrength: 0.35 },

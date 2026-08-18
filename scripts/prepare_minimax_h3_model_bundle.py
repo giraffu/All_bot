@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-16-10eros-beta2-addon6-lightx2v8-v1"
+VERSION = "2026-08-18-10eros-beta2-addon8-lightx2v8-v1"
 MIN_FREE_BYTES = 55 * 1024**3
 FILES = (
     (
@@ -64,6 +64,18 @@ FILES = (
         "608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb",
         310_168_344,
         "https://civitai.red/api/download/models/3206518",
+    ),
+    (
+        "loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors",
+        "f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3",
+        155_110_272,
+        "https://civitai.red/api/download/models/3228867?fileId=3111185",
+    ),
+    (
+        "loras/MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
+        "7dd837f4c5420d4ec59f3ff1757b3f9d264a6c0f120d65d9c4f59c77584dd0be",
+        596_451_528,
+        "https://civitai.red/api/download/models/3226233?fileId=3108441",
     ),
     (
         "loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors",
@@ -176,6 +188,8 @@ def prepare(registry: ModelRegistry) -> Path:
                 "lightx2v/Minimax-h3-Turbo",
                 "civitai:modelVersion/3212436:file/3094173",
                 "civitai:modelVersion/3206518",
+                "civitai:modelVersion/3228867:file/3111185",
+                "civitai:modelVersion/3226233:file/3108441",
                 "civitai:modelVersion/3216751",
                 "civitai:modelVersion/3215304",
                 "civitai:modelVersion/3218160",
@@ -183,9 +197,10 @@ def prepare(registry: ModelRegistry) -> Path:
             "revision": "10eros=47aa7e38; comfy=014cd40f; lightx2v=62487ee6",
             "variant": (
                 "10Eros-Max Beta2 pruned base plus fixed LightX2V FL2VA 8-step "
-                "v1.0 acceleration and six optional one-file LoRAs: NaughtyTimes "
-                "v2, HMNSFW AIO v2, HMBreasts, VagAssist, HMPussy v6 and HMPenis "
-                "v2; official Qwen3-VL encoder and FP16 video/FP32 audio VAEs"
+                "v1.0 acceleration and eight optional one-file LoRAs: NaughtyTimes "
+                "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v1, HMBreasts, "
+                "VagAssist, HMPussy v6 and HMPenis v2; official Qwen3-VL encoder "
+                "and FP16 video/FP32 audio VAEs"
             ),
         },
         files=manifest_files,
