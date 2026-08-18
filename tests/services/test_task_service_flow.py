@@ -19,19 +19,31 @@ from src.services.private_qqcc_continuation_service import (
 )
 from src.services.task_service_entrypoint_support import build_bot_task_flow_context
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskSubmissionContext
+from tests.task_application_test_support import LegacyTaskApplicationAdapter
+
+
+@pytest.fixture(autouse=True)
+def _configured_task_application(monkeypatch):
+    unexpected_submit = AsyncMock(side_effect=AssertionError("unexpected task submit"))
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(unexpected_submit),
+    )
 
 
 @pytest.mark.asyncio
 async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monkeypatch):
-    process_submit = AsyncMock(
-        return_value={
-            "cost": 18,
-            "registry_task_id": "registry-1",
-            "backend_task_id": "backend-1",
-            "saved_inputs": ["input-a.png"],
-        }
+    application = SimpleNamespace(
+        submit=AsyncMock(
+            return_value={
+                "cost": 18,
+                "registry_task_id": "registry-1",
+                "backend_task_id": "backend-1",
+                "saved_inputs": ["input-a.png"],
+            }
+        )
     )
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
     runtime_state = SimpleNamespace(
         task_submitted=False,
         actual_cost=0,
@@ -51,6 +63,7 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
                 source_post_id=9,
                 deduct_quota=False,
             ),
+            task_application=application,
         )
         assert correlation_id.get() == task_id
     finally:
@@ -63,20 +76,21 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     assert runtime_state.actual_cost == 18
     assert runtime_state.registry_task_id == "registry-1"
     assert runtime_state.backend_task_id == "backend-1"
-    process_submit.assert_awaited_once()
-    kwargs = process_submit.await_args.kwargs
-    assert kwargs["user_id"] == 456
-    assert kwargs["username"] == "tester"
-    assert kwargs["task_type"] == "ltx_video"
-    assert kwargs["inputs"] == {"prompt": "hello"}
-    assert kwargs["task_id"] == task_id
-    assert kwargs["client_type"] == "bot"
-    assert kwargs["source_post_id"] == 9
-    assert kwargs["deduct_quota"] is False
-    assert kwargs["cost_override"] is None
-    assert kwargs["delivery_context"] is None
-    assert kwargs["base_priority"] == 0
-    assert kwargs["user_cancel_allowed"] is True
+    application.submit.assert_awaited_once()
+    command, policy, journal = application.submit.await_args.args
+    assert command.internal_user_id == 456
+    assert command.username == "tester"
+    assert command.task_type == "ltx_video"
+    assert command.inputs == {"prompt": "hello"}
+    assert command.task_id == task_id
+    assert command.source_post_id == 9
+    assert command.delivery_context is None
+    assert policy.client_type == "bot"
+    assert policy.deduct_quota is False
+    assert policy.cost_override is None
+    assert policy.base_priority == 0
+    assert policy.user_cancel_allowed is True
+    assert journal.expected_registry_task_id == task_id
 
 
 def test_select_result_saved_inputs_uses_requested_indices_with_fallback():
@@ -155,7 +169,11 @@ async def test_submit_bot_task_uses_submission_client_type(monkeypatch):
             "saved_inputs": [],
         }
     )
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
 
     await task_service_flow.submit_bot_task(
         submission=BotTaskSubmissionContext(
@@ -186,7 +204,11 @@ async def test_submit_bot_task_passes_recovery_contract_to_registry(monkeypatch)
             "saved_inputs": [],
         }
     )
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
 
     recovery_metadata = {
         "_bot_task_recovery": {
@@ -427,7 +449,11 @@ async def test_private_bot_submission_is_fenced_and_idempotent(monkeypatch):
 
     monkeypatch.setattr(private_qqcc_bot_runtime, "private_bot_admission_lock", admission_lock)
     monkeypatch.setattr(private_qqcc_bot_runtime, "private_bot_accepts_new_tasks", accepts)
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
     expected_key = "private_bot_update:17:901:0"
     expected_task_id = str(uuid.uuid5(uuid.NAMESPACE_URL, expected_key))
     ledger_request = SimpleNamespace(registry_task_id=expected_task_id)
@@ -552,7 +578,11 @@ async def test_durable_private_submission_replay_signals_upstream_to_skip_second
         AsyncMock(return_value=True),
     )
     process_submit = AsyncMock()
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
     task_id = str(
         uuid.uuid5(uuid.NAMESPACE_URL, "private_bot_update:17:901:0")
     )
@@ -786,7 +816,11 @@ async def test_failed_ledger_replay_only_rechecks_idempotent_refund_and_never_di
         AsyncMock(return_value=True),
     )
     process_submit = AsyncMock()
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
     task_id = str(
         uuid.uuid5(uuid.NAMESPACE_URL, "private_bot_update:17:901:0")
     )
@@ -889,7 +923,11 @@ async def test_definitively_missing_dispatch_is_failed_refunded_and_cleaned(monk
         AsyncMock(return_value=True),
     )
     process_submit = AsyncMock()
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
     task_id = str(
         uuid.uuid5(uuid.NAMESPACE_URL, "private_bot_update:17:901:0")
     )
@@ -1104,7 +1142,11 @@ async def test_submit_bot_task_passes_priority_and_user_cancel_lock(monkeypatch)
             "saved_inputs": [],
         }
     )
-    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+    monkeypatch.setattr(
+        task_service_flow,
+        "get_task_application",
+        lambda: LegacyTaskApplicationAdapter(process_submit),
+    )
 
     await task_service_flow.submit_bot_task(
         submission=BotTaskSubmissionContext(

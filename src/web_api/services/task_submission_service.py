@@ -5,9 +5,14 @@ from collections.abc import Awaitable, Callable
 from asgi_correlation_id import correlation_id
 
 from config import MINIO_BUCKET
-from src.core.task_core import process_and_submit_task
-from src.core.task_core_types import CoreDomainError, SubmissionReconciliationPending
-from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.core.task_application import TaskApplication
+from src.core.task_core_types import (
+    CoreDomainError,
+    SubmissionReconciliationPending,
+    TaskSubmissionCommand,
+    TaskSubmissionPolicy,
+    TaskSubmissionSideEffectPlan,
+)
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.services.scail2_face_swap_pipeline_service import (
     cleanup_scail2_face_swap_first_frame,
@@ -16,6 +21,7 @@ from src.services.scail2_face_swap_pipeline_service import (
 from src.services.storage import storage
 from src.services.storage_r2_promotion import promote_staged_user_inputs
 from src.services.task_web_submission_intent import WebSubmissionIntentJournal
+from src.task_application_runtime import get_task_application
 from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -53,6 +59,7 @@ async def submit_generation_task(
     registry_metadata_extra: dict | None = None,
     allow_contribute_override: bool | None = None,
     promote_staged_inputs_func=None,
+    task_application: TaskApplication | None = None,
 ) -> TaskGenerateResponse:
     scail2_first_frame_to_cleanup = None
     try:
@@ -215,32 +222,36 @@ async def submit_generation_task(
         )
 
         try:
-            result = await process_and_submit_task(
-                user_id=current_user.id,
-                username=current_user.username,
-                task_type=req.task_type,
-                inputs=inputs,
-                task_id=task_id,
-                base_priority=req.priority,
-                is_template=is_template,
-                source_post_id=req.source_post_id,
-                submission_side_effect_plan=TaskSubmissionSideEffectPlan(
-                    attach_web_monitor=True,
+            application = task_application or get_task_application()
+            result = await application.submit(
+                TaskSubmissionCommand(
+                    internal_user_id=current_user.id,
+                    username=current_user.username,
+                    task_type=req.task_type,
+                    inputs=inputs,
+                    task_id=task_id,
                     source_post_id=req.source_post_id,
+                    registry_metadata=registry_metadata or None,
                 ),
-                cost_override=(
-                    WEB_FREE_EDIT_V3_COST
-                    if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE
-                    else None
+                TaskSubmissionPolicy(
+                    base_priority=req.priority,
+                    is_template=is_template,
+                    side_effect_plan=TaskSubmissionSideEffectPlan(
+                        attach_web_monitor=True,
+                        source_post_id=req.source_post_id,
+                    ),
+                    cost_override=(
+                        WEB_FREE_EDIT_V3_COST
+                        if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE
+                        else None
+                    ),
+                    user_cancel_allowed=True,
+                    allow_contribute_override=allow_contribute_override,
+                    refund_idempotency_key=(
+                        submission_journal.refund_idempotency_key
+                    ),
                 ),
-                user_cancel_allowed=True,
-                registry_metadata=registry_metadata or None,
-                allow_contribute_override=allow_contribute_override,
-                submission_before_dispatch_func=submission_journal.before_dispatch,
-                submission_should_compensate_func=submission_journal.should_compensate,
-                submission_refund_idempotency_key=(
-                    submission_journal.refund_idempotency_key
-                ),
+                submission_journal,
             )
         except SubmissionReconciliationPending as exc:
             scail2_first_frame_to_cleanup = None

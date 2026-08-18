@@ -28,8 +28,9 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
 - `TaskApplication(dependencies=...).submit(command, policy, journal)` 是新的任务
   提交 application seam：command 只放请求事实，policy 放入口控制/idempotency/
   timeout，journal 承载 Web intent、Bot recovery 或私有 QQCC ledger 状态。
-- `process_and_submit_task(...)` 当前仅是旧入口兼容适配层，会构造上述三个对象；
-  禁止再增加 callback 参数。优先级只影响队列；`user_cancel_allowed=false`
+- `process_and_submit_task(...)` 只保留为测试/兼容适配层，调用时必须显式提供
+  `TaskCoreProcessDependencies`；生产 Web/Bot/QQCC/Dashboard 不得再导入它，也不得
+  增加 callback 参数。优先级只影响队列；`user_cancel_allowed=false`
   必须通过 policy 写入 active registry，由 core runtime 权威拒绝取消。
 - `cleanup_task_runtime_state(...)` 是成功、失败、取消、finalizer 和恢复脚本
   的统一运行态清理 seam，不复制散落 Redis/DB 删除。
@@ -48,9 +49,10 @@ description: "处理 AllBot 任务提交与执行生命周期：facade、provide
   HTTP 实现。Core 不拼 Redis key；并发计数校准通过 submission outbox 的
   `sync_user_concurrency(...)` capability 执行。
 
-入口迁移尚未全部完成：旧 facade 仍保留 default dependencies 和 callback journal
-适配，直到 Web/Bot/QQCC/Dashboard 全部显式装配 `TaskApplication` 后删除。新增代码
-只能使用 command/policy/journal，不扩大旧签名、延迟导入或模块级默认绑定。
+Web、主 Bot、QQCC（含私有 Worker）和 Dashboard 启动入口显式调用
+`configure_task_application()`；未装配时 `get_task_application()` fail closed。Web
+finalizer intent、Bot recovery identity 和私有 QQCC ledger 分别使用独立 journal。
+新增代码只能使用 command/policy/journal，不扩大旧签名或增加模块级 fallback。
 
 ## 3. 双 ID 与终态不变量
 

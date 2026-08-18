@@ -2,17 +2,22 @@ import asyncio
 import contextlib
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable, Optional
 
 from asgi_correlation_id import correlation_id
 
 from src.core.billing_core import get_user_priority_and_identity, refund_credits
+from src.core.task_application import TaskApplication
 from src.core.task_core import (
     ConcurrencyLimitError,
     CoreDomainError,
     InsufficientCreditsError,
-    process_and_submit_task,
+)
+from src.core.task_core_types import (
+    SubmissionJournal,
+    TaskSubmissionCommand,
+    TaskSubmissionPolicy,
 )
 from src.core.task_core_runtime import cleanup_task_runtime_state
 from src.logger import UserLogger
@@ -42,8 +47,11 @@ from src.services.private_bot_update_admission import (
 )
 from src.services.private_qqcc_bot_service import parse_private_bot_client_type
 from src.services import private_bot_submission_ledger
+from src.services.private_bot_submission_journal import PrivateBotSubmissionJournal
 from src.services.task_registry import TaskRegistry
 from src.services.task_recovery_contract import build_bot_task_recovery_contract
+from src.services.task_bot_submission_journal import BotRecoverySubmissionJournal
+from src.task_application_runtime import get_task_application
 from src.services.private_bot_task_monitor_lease import (
     PrivateBotTaskMonitorLeaseError,
 )
@@ -156,6 +164,7 @@ async def submit_bot_task(
     *,
     submission: BotTaskSubmissionContext,
     delivery_context: dict | None = None,
+    task_application: TaskApplication | None = None,
 ) -> tuple[str, str, list[str]]:
     private_submission_key = next_private_bot_submission_key()
     task_id = submission.task_id_override or (
@@ -164,83 +173,81 @@ async def submit_bot_task(
         else str(uuid.uuid4())
     )
     correlation_id.set(task_id)
+    application = task_application or get_task_application()
 
-    async def submit_once(
-        *,
-        before_debit_func=None,
-        after_debit_func=None,
-        before_dispatch_func=None,
-        should_compensate_func=None,
-        before_compensation_func=None,
-    ):
-        return await process_and_submit_task(
-            user_id=submission.internal_user_id,
-            username=submission.username,
-            task_type=submission.task_type,
-            inputs=submission.inputs,
-            task_id=task_id,
-            client_type=submission.client_type,
-            source_post_id=submission.source_post_id,
-            deduct_quota=submission.deduct_quota,
-            delivery_context=delivery_context,
-            cost_override=submission.cost_override,
-            base_priority=submission.base_priority,
-            user_cancel_allowed=submission.user_cancel_allowed,
-            submission_concurrency_idempotency_key=(
-                private_bot_submission_ledger.private_bot_submission_concurrency_idempotency_key(
-                    task_id
-                )
-                if private_submission_key
-                else None
+    async def submit_once(*, journal: SubmissionJournal):
+        return await application.submit(
+            TaskSubmissionCommand(
+                internal_user_id=submission.internal_user_id,
+                username=submission.username,
+                task_type=submission.task_type,
+                inputs=submission.inputs,
+                task_id=task_id,
+                source_post_id=submission.source_post_id,
+                delivery_context=delivery_context,
+                registry_metadata=submission.recovery_metadata or None,
             ),
-            submission_idempotency_key=(
-                f"task_debit:{private_submission_key}"
-                if private_submission_key
-                else None
+            TaskSubmissionPolicy(
+                client_type=submission.client_type,
+                deduct_quota=submission.deduct_quota,
+                cost_override=submission.cost_override,
+                base_priority=submission.base_priority,
+                user_cancel_allowed=submission.user_cancel_allowed,
+                concurrency_idempotency_key=(
+                    private_bot_submission_ledger.private_bot_submission_concurrency_idempotency_key(
+                        task_id
+                    )
+                    if private_submission_key
+                    else None
+                ),
+                debit_idempotency_key=(
+                    f"task_debit:{private_submission_key}"
+                    if private_submission_key
+                    else None
+                ),
+                prepare_timeout_seconds=(
+                    private_bot_submission_ledger.PRIVATE_BOT_PREPARATION_HARD_DEADLINE_SECONDS
+                    if private_submission_key
+                    else None
+                ),
+                debit_timeout_seconds=(
+                    private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
+                    if private_submission_key
+                    else None
+                ),
+                dispatch_timeout_seconds=(
+                    private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
+                    if private_submission_key
+                    else None
+                ),
+                refund_idempotency_key=(
+                    private_bot_submission_ledger.private_bot_submission_refund_idempotency_key(
+                        task_id
+                    )
+                    if private_submission_key
+                    else None
+                ),
+                refund_task_type=(
+                    "refund_private_submission" if private_submission_key else None
+                ),
+                release_idempotency_key=(
+                    private_bot_submission_ledger.private_bot_submission_release_idempotency_key(
+                        task_id
+                    )
+                    if private_submission_key
+                    else None
+                ),
             ),
-            registry_metadata=submission.recovery_metadata or None,
-            submission_prepare_timeout_seconds=(
-                private_bot_submission_ledger.PRIVATE_BOT_PREPARATION_HARD_DEADLINE_SECONDS
-                if private_submission_key
-                else None
-            ),
-            submission_before_debit_func=before_debit_func,
-            submission_after_debit_func=after_debit_func,
-            submission_debit_timeout_seconds=(
-                private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
-                if private_submission_key
-                else None
-            ),
-            submission_before_dispatch_func=before_dispatch_func,
-            submission_dispatch_timeout_seconds=(
-                private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
-                if private_submission_key
-                else None
-            ),
-            submission_should_compensate_func=should_compensate_func,
-            submission_refund_idempotency_key=(
-                private_bot_submission_ledger.private_bot_submission_refund_idempotency_key(
-                    task_id
-                )
-                if private_submission_key
-                else None
-            ),
-            submission_refund_task_type=(
-                "refund_private_submission" if private_submission_key else None
-            ),
-            submission_release_idempotency_key=(
-                private_bot_submission_ledger.private_bot_submission_release_idempotency_key(
-                    task_id
-                )
-                if private_submission_key
-                else None
-            ),
-            submission_before_compensation_func=before_compensation_func,
+            journal,
         )
 
     private_bot_id = parse_private_bot_client_type(submission.client_type)
     if private_bot_id is None:
-        result = await submit_once()
+        result = await submit_once(
+            journal=BotRecoverySubmissionJournal(
+                expected_registry_task_id=task_id
+            )
+        )
     else:
         # This lock is shared with pause/disable/unlink. The state recheck and
         # durable task registration therefore form one linearized admission.
@@ -351,118 +358,28 @@ async def submit_bot_task(
                     raise CoreDomainError(
                         "任务仍由原派发器处理；为避免重复派发，本次不会重新提交"
                     )
-                dispatching_persisted = False
-                compensation_requested = False
-                compensation_cost = 0
-                compensation_debit_confirmed = False
                 dispatch_owner_token = uuid.uuid4().hex
-                owner_deadline_at = datetime.now() + timedelta(
-                    seconds=private_bot_submission_ledger.PRIVATE_BOT_PREPARATION_HARD_DEADLINE_SECONDS
-                )
-                reconcile_not_before_at = owner_deadline_at + timedelta(
-                    seconds=private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_SETTLE_GRACE_SECONDS
+                journal = PrivateBotSubmissionJournal(
+                    submission=submission,
+                    ledger_request=ledger_request,
+                    registry_task_id=task_id,
+                    owner_token=dispatch_owner_token,
+                    compensate_func=compensate_failed_private_bot_submission,
                 )
                 try:
                     ledger_snapshot = await private_bot_submission_ledger.claim_private_bot_submission_owner(
                         request=ledger_request,
                         owner_token=dispatch_owner_token,
-                        owner_deadline_at=owner_deadline_at,
-                        reconcile_not_before_at=reconcile_not_before_at,
+                        owner_deadline_at=journal.owner_deadline_at,
+                        reconcile_not_before_at=journal.reconcile_not_before_at,
                     )
                 except private_bot_submission_ledger.PrivateBotSubmissionLedgerError as exc:
                     raise CoreDomainError(str(exc)) from exc
 
-                async def before_debit_func(*, cost, **_kwargs):
-                    nonlocal owner_deadline_at, reconcile_not_before_at
-                    owner_deadline_at = datetime.now() + timedelta(
-                        seconds=private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
-                    )
-                    reconcile_not_before_at = owner_deadline_at + timedelta(
-                        seconds=private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_SETTLE_GRACE_SECONDS
-                    )
-                    await private_bot_submission_ledger.record_private_bot_submission_cost(
-                        request=ledger_request,
-                        actual_cost=cost,
-                        owner_token=dispatch_owner_token,
-                        owner_deadline_at=owner_deadline_at,
-                        reconcile_not_before_at=reconcile_not_before_at,
-                    )
-
-                async def before_dispatch_func(
-                    *, registry_task_id, cost, saved_inputs, **_kwargs
-                ):
-                    nonlocal dispatching_persisted, owner_deadline_at, reconcile_not_before_at
-                    owner_deadline_at = datetime.now() + timedelta(
-                        seconds=private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_HARD_DEADLINE_SECONDS
-                    )
-                    reconcile_not_before_at = owner_deadline_at + timedelta(
-                        seconds=private_bot_submission_ledger.PRIVATE_BOT_DISPATCH_SETTLE_GRACE_SECONDS
-                    )
-                    await private_bot_submission_ledger.mark_private_bot_submission_dispatching(
-                        request=ledger_request,
-                        registry_task_id=registry_task_id,
-                        actual_cost=cost,
-                        saved_inputs=saved_inputs,
-                        owner_token=dispatch_owner_token,
-                        owner_deadline_at=owner_deadline_at,
-                        reconcile_not_before_at=reconcile_not_before_at,
-                    )
-                    dispatching_persisted = True
-
-                async def after_debit_func(
-                    *, cost, credits_deducted, **_kwargs
-                ):
-                    try:
-                        await before_debit_func(cost=cost)
-                    except Exception:
-                        if credits_deducted:
-                            await compensate_failed_private_bot_submission(
-                                submission=submission,
-                                ledger_request=ledger_request,
-                                actual_cost=int(cost),
-                                registry_task_id=task_id,
-                                debit_confirmed=True,
-                            )
-                        raise
-
-                async def before_compensation_func(
-                    *, cost, credits_deducted, **_kwargs
-                ):
-                    nonlocal compensation_cost, compensation_requested, compensation_debit_confirmed
-                    await private_bot_submission_ledger.mark_private_bot_submission_failed(
-                        request=ledger_request,
-                        actual_cost=cost,
-                        error_code="submission_failed_before_dispatch",
-                        error_message="Task submission failed before a durable dispatch outcome.",
-                    )
-                    compensation_requested = True
-                    compensation_cost = int(cost)
-                    compensation_debit_confirmed = bool(credits_deducted)
-
                 try:
-                    result = await submit_once(
-                        before_debit_func=before_debit_func,
-                        after_debit_func=after_debit_func,
-                        before_dispatch_func=before_dispatch_func,
-                        should_compensate_func=(
-                            lambda error: (
-                                not dispatching_persisted
-                                or private_bot_submission_ledger.is_definitive_dispatch_rejection(
-                                    error
-                                )
-                            )
-                        ),
-                        before_compensation_func=before_compensation_func,
-                    )
+                    result = await submit_once(journal=journal)
                 except Exception:
-                    if compensation_requested:
-                        await compensate_failed_private_bot_submission(
-                            submission=submission,
-                            ledger_request=ledger_request,
-                            actual_cost=compensation_cost,
-                            registry_task_id=task_id,
-                            debit_confirmed=compensation_debit_confirmed,
-                        )
+                    await journal.compensate_if_requested()
                     raise
                 await private_bot_submission_ledger.mark_private_bot_submission_submitted(
                     request=ledger_request,

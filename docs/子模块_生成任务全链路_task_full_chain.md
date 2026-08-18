@@ -56,7 +56,7 @@ sequenceDiagram
     actor U as 用户
     participant FE as Frontend
     participant API as Web API
-    participant Core as task_core facade
+    participant Core as TaskApplication
     participant Dispatch as dispatcher/image_service/api_client
     participant CAPI as Central API / Queue
     participant Agent as comfy_agent
@@ -65,7 +65,7 @@ sequenceDiagram
 
     U->>FE: 1. 提交生成表单
     FE->>API: 2. POST /api/tasks/generate
-    API->>Core: 3. process_and_submit_task(...)
+    API->>Core: 3. submit(command, policy, Web journal)
     Core->>Monitor: 4. 持久化 prepared/dispatching intent
     Core->>Dispatch: 5. 构建 payload 并提交确定性 backend_task_id
     Dispatch->>CAPI: 6. 写入执行面队列
@@ -170,7 +170,7 @@ Web 统一入口在：
 - 把 `prompt` 补入 `req.inputs`
 - 生成 Web 侧 `task_id`
 - 设定 correlation id
-- 调用 `process_and_submit_task(...)`
+- 从启动时显式装配的 `TaskApplication` 调用 `submit(command, policy, journal)`
 - 通过 `WebSubmissionIntentJournal` 在派发前持久化完整 intent
 - 开启 `TaskSubmissionSideEffectPlan(attach_web_monitor=True)`
 - 返回给前端 `pending` 初态和余额变化
@@ -197,8 +197,8 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 
 统一主门面是：
 
-- `src/core/task_core.py`
-- `process_and_submit_task(...)`
+- `src/core/task_application.py`
+- `TaskApplication.submit(command, policy, journal)`
 
 它不是简单转发，而是负责编排整个业务提交过程：
 
@@ -211,13 +211,9 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 - 挂载 side effect
 - 在失败时退款并释放锁
 
-当前提交编排已移入 `TaskApplication.submit(command, policy, journal)`，并继续拆成稳定步骤；旧 `process_and_submit_task(...)` 只负责把宽参数转换为新对象：
-
-- `task_core_process_flow.build_prepared_task_submission_request(...)`
-- `task_core_process_flow.prepare_task_submission_context(...)`
-- `task_core_process_flow.maybe_deduct_submission_credits(...)`
-- `task_core_process_flow.execute_task_submission_attempt(...)`
-- `task_core_process_flow.release_submission_lock_if_needed(...)`
+生产 Web/Bot/QQCC/Dashboard 已全部使用该门面。旧 `process_and_submit_task(...)`
+只保留为要求显式 dependencies 的测试/兼容适配器；输入准备、扣费、派发、补偿
+和锁释放由 `task_core_process_flow.py` 的阶段函数实现。
 
 ### 6.2 provider / dependency 边界
 
@@ -269,7 +265,7 @@ prompt 与可选音频 prompt。提交 service 在扣费前按 owner 解析已�
 
 ### 6.4 Bot 取消与优先级控制
 
-Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，向 `process_and_submit_task(...)` 透传两个任务控制语义：
+Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，通过 `TaskSubmissionPolicy` 传入两个任务控制语义：
 
 - `base_priority`: 默认 `0`，透传到现有 Central 队列优先级计算；QQCC 链式 continuation 子任务使用 `100` 表达“排在第一”。
 - `user_cancel_allowed`: 默认 `true`，写入 active task registry；`false` 时用户取消入口直接返回 `not_cancellable`，不调用 Central cancel，也不触发退款。
@@ -293,7 +289,9 @@ focused smoke 对各最终 digest 执行双工具验证。runner 还必须区分
 
 ### 6.5 QQCC 私有 Bot 的租户归属
 
-私有 Bot 复用同一 `process_and_submit_task(...)`、用户表、余额、会员和 Central/worker 执行链。发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
+私有 Bot 复用同一 `TaskApplication`、用户表、余额、会员和 Central/worker 执行链，
+并由 `PrivateBotSubmissionJournal` 把 debit/dispatch/compensation 映射到持久 ledger。
+发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
 
 Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webhook:updates`。private worker 对同一 Bot 顺序处理、不同 Bot 并行处理；启动恢复只解析 exact private client type 并把任务交回相应 Application。官方 `bot:qqcc` 与不同 private ID 不能相互恢复。暂停/禁用只停止新任务，已扣费任务继续沿原实例 client type 完成，账本与退款规则不变。
 
@@ -835,7 +833,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 ## 14. 当前稳定结论
 
 - Web 主入口是 `POST /api/tasks/generate`
-- `task_core.process_and_submit_task(...)` 是统一业务提交门面
+- `TaskApplication.submit(command, policy, journal)` 是统一业务提交门面，入口未显式装配时 fail closed
 - `registry_task_id` 与 `backend_task_id` 必须显式区分
 - `task_dispatcher.py` 决定任务类型如何下发到底层
 - Central API 是执行面，不是业务编排面

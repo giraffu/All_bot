@@ -48,6 +48,7 @@ from src.services.telegram_runtime_bootstrap import (
 )
 from src.services.telegram_update_processor import build_main_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 
 logger = logging.getLogger(__name__)
 install_telegram_runtime_patches(logger=logger)
@@ -80,6 +81,7 @@ async def post_init(application):
 
     build_global_menu_filter()
     ensure_task_core_service_providers_registered()
+    configure_task_application()
     ensure_billing_core_providers_registered()
 
     await init_db()

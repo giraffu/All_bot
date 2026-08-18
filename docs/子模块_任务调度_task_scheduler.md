@@ -25,7 +25,7 @@
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
-所有 Bot / Web 任务都应通过显式构造的 `TaskApplication` + dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。入口迁移期间旧 facade 只负责把宽参数转换为 command/policy/journal。
+所有 Bot / Web / QQCC / Dashboard 任务都通过启动时显式构造的 `TaskApplication` + dependencies 边界进入调度链，不在上层直接 import 基础设施实现。旧 facade 只保留为必须显式传 dependencies 的测试/兼容适配器。
 
 ## 2. 启动与装配
 
@@ -34,19 +34,22 @@
 `task_core` 相关 provider 必须在应用入口注册，而不是在 core 模块导入时自动完成。当前注册路径为：
 
 - `src/task_core_provider_setup.py`
+- `src/task_application_runtime.py`
 - `src/web_api/main.py`
 - `src/bot_main.py`
+- `qqcc_bot/main.py`
+- `dashboard/backend/main.py`
 
 这意味着：
 
 - 生产运行时应先完成 `configure_task_core_service_providers(...)`
+- 随后由入口调用 `configure_task_application()`；未配置时获取 application 会 fail closed
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
 - `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；AST 门禁同时拒绝 `config`、`httpx`、PIL、SQLAlchemy、`src.database` 和 `src.services`。需要日志、持久化、异常分类或 Redis key 操作时，通过 protocol/dependency 从 runtime 默认装配注入。
 
-这是新代码目标边界，不代表迁移已经完成。当前仍保留
-`task_core_default_dependencies.py`、`task_core_process_defaults.py` 等默认装配
-兼容入口，部分 builder 会延迟加载 service/基础设施 provider；新增入口优先在
-应用边界构造 dependencies，不扩大模块级 fallback。
+`task_core_process_defaults.py` 只在入口 composition root 构造 dependencies，部分
+builder 会延迟加载 service/基础设施 provider；core 兼容 facade 不再自行寻找默认
+runtime。新增入口必须在应用边界构造 dependencies，不增加模块级 fallback。
 
 ### 2.2 双 ID 语义
 
@@ -63,20 +66,20 @@
 sequenceDiagram
     autonumber
     actor U as 用户 / Bot / Web
-    participant Facade as task_core facade
+    participant App as TaskApplication
     participant Deps as provider + dependencies
     participant Dispatcher as StrategyFactory / Dispatcher
     participant Registry as TaskRegistry / Outbox
     participant Backend as Central API / Worker
     participant Monitor as Web Monitor / Bot Flow
 
-    U->>Facade: 1. 调用 process_and_submit_task(...)
-    Facade->>Deps: 2. 组装默认依赖 / 使用显式注入依赖
-    Facade->>Registry: 3. 检查并发、扣费、写 registry_task_id
-    Facade->>Registry: 4. Web 写 prepared/dispatching intent
-    Facade->>Dispatcher: 5. 生成 workflow/payload
+    U->>App: 1. submit(command, policy, journal)
+    App->>Deps: 2. 使用启动时显式装配的 dependencies
+    App->>Registry: 3. 检查并发、扣费、写 registry_task_id
+    App->>Registry: 4. journal 写 durable phase
+    App->>Dispatcher: 5. 生成 workflow/payload
     Dispatcher->>Backend: 6. 派发确定性 backend_task_id
-    Facade->>Monitor: 7. 写 accepted 并启动 finalizer，或返回 reconciling
+    App->>Monitor: 7. 写 accepted 并启动 finalizer，或返回 reconciling
     Monitor->>Registry: 8. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
     Registry-->>U: 9. 返回 registry_task_id、终态 payload 或历史结果
 ```
@@ -181,7 +184,7 @@ Bot 任务恢复契约，避免进程恢复时补写内部阶段。`send_result=
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
 当前 Bot `task_service_flow.py` 与 Web `task_web_lifecycle_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
 Bot 前台 `monitor_task_progress(...)` 已进一步拆出纯状态渲染 `render_progress_transition(...)`；Telegram I/O、取消/失败处理仍留在 runtime 层，双 ID 与 FSM 全局菜单退出语义不变。
-Bot 提交到 `task_core.process_and_submit_task(...)` 时必须携带纯数据 `delivery_context`（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
+Bot 通过 `TaskSubmissionCommand.delivery_context` 携带纯数据（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；`BotRecoverySubmissionJournal` 同时锁定 recovery 使用的 registry identity。这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
 
 ## 5. API 口径
 

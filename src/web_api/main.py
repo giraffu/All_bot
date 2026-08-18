@@ -16,6 +16,7 @@ from src.core.exceptions import (
 )
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 from src.web_api.services.r2_public_probe_service import r2_public_probe_service
 
@@ -82,6 +83,7 @@ async def lifespan(fastapi_app: FastAPI):
     # Startup: setup resources if needed
     logger.info("Web BFF API is starting up...")
     ensure_task_core_service_providers_registered()
+    configure_task_application()
     ensure_billing_core_providers_registered()
     await r2_public_probe_service.start()
     finalizer_task = asyncio.create_task(

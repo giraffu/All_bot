@@ -43,6 +43,7 @@ from src.services.telegram_runtime_bootstrap import (
 )
 from src.services.telegram_update_processor import build_qqcc_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.task_application_runtime import configure_task_application
 
 logger = logging.getLogger("qqcc_bot.core")
 install_telegram_runtime_patches(logger=logger)
@@ -123,6 +124,7 @@ async def ensure_shared_qqcc_runtime_bootstrap() -> None:
 
         build_global_menu_filter()
         ensure_task_core_service_providers_registered()
+        configure_task_application()
         ensure_billing_core_providers_registered()
         await init_db()
         _shared_bootstrap_complete = True

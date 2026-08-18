@@ -31,10 +31,10 @@ Telegram `Update`、FastAPI `Request/APIRouter` 或基础设施 session 带进 c
 AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlchemy、
 `src.database`、`src.services`、FastAPI 和 Telegram。媒体路径与处理实现已迁到
 `src/media_paths.py`、`src/media_processor.py`，SQLAlchemy 异常识别和 Redis key
-操作由外层 adapter/capability 注入。迁移仍未完全结束：task core 保留
-default-dependencies/runtime 装配兼容入口，部分默认 builder 会延迟导入
-基础设施 provider，旧公开 facade 也尚未全部退出。因此不能把“入口全部显式
-注册、core 已无间接基础设施装配”当成现状。
+操作由外层 adapter/capability 注入。Web、主 Bot、QQCC 和 Dashboard 启动入口
+显式装配 `TaskApplication`；生产提交只使用 command/policy/journal。旧宽 facade
+仅保留为强制显式 dependencies 的测试/兼容入口。部分 runtime builder 仍会延迟
+导入基础设施 provider，因此不能把“core 已无间接基础设施装配”当成现状。
 
 ### 2.2 入口与服务
 
