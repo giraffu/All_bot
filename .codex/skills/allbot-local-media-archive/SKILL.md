@@ -25,6 +25,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
 - direct predecessor marker 仅可由新 COPY 令牌的 frontier HEAD recovery 对账。
+- History R2 Copy 自适应并发必须同时使用请求错误率和 R2 操作延迟
+  作为降档/回升信号；批内必须有界连续补位并逐对象提交，不得因单个
+  长尾请求阻塞已完成对象。精确档位与阈值从当前 artifact 代码读取。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
