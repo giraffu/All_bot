@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from src.domain_config.task_type_registry import get_task_type_entry, iter_task_type_entries
+from src.domain_config.task_type_registry import resolve_user_task_display_key
 from src.lora_catalog import LTX_VIDEO_LORA_CALLBACK_CHOICES
 from src.lora_mapping import extract_prompt_lora_context
 
@@ -60,32 +60,6 @@ class UserVisiblePrompt:
 
 def _normalize_key(value: str | None) -> str:
     return str(value or "").strip().replace("-", "_")
-
-
-def resolve_user_task_display_key(task_type: str | None) -> str:
-    raw = str(task_type or "").strip()
-    normalized = _normalize_key(raw)
-    if not normalized:
-        return "task_type.other"
-    entry = get_task_type_entry(raw)
-    if entry is None:
-        entry = next(
-            (
-                candidate
-                for candidate in iter_task_type_entries()
-                if raw
-                in {
-                    candidate.public_type,
-                    candidate.execution_type,
-                    candidate.central_type,
-                }
-            ),
-            None,
-        )
-    if entry is None:
-        return "task_type.other"
-    display_value = raw if raw != entry.central_type else entry.task_type
-    return f"task_type.{_normalize_key(display_value)}"
 
 
 def resolve_credit_ledger_display_key(operation_type: str | None) -> str:

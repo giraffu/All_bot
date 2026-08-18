@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from config import MINIO_BUCKET
 from shared.r2_retention_contract import build_staged_user_upload_key
 from src.services.storage import storage
-from src.core.media_paths import normalize_owned_user_upload_key
+from src.media_paths import normalize_owned_user_upload_key
 
 logger = logging.getLogger(__name__)
 

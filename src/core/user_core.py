@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple
+from typing import Any
 
 from src.user_core_bindings import get_default_user_core_bindings
 
-if TYPE_CHECKING:
-    from src.database.models import User
-
-
 async def get_or_create_user_by_telegram(
     tg_id: int, username: str = None, full_name: str = None, language_code: str = None
-) -> Tuple[User, bool]:
+) -> tuple[Any, bool]:
     """稳定 facade：core 不直接处理数据库细节。"""
     bindings = get_default_user_core_bindings()
     return await bindings.get_or_create_user_by_telegram_func(
@@ -23,7 +19,7 @@ async def get_or_create_user_by_telegram(
 
 async def get_or_create_user_by_google(
     google_id: str, email: str, full_name: str = None
-) -> User:
+) -> Any:
     """稳定 facade：core 不直接处理数据库细节。"""
     bindings = get_default_user_core_bindings()
     return await bindings.get_or_create_user_by_google_func(

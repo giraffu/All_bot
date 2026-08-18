@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.database.models import GalleryPost, History, User
 from src.web_api.presenters import media_presenter
 from src.web_api.services import history_input_presenter

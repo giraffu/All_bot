@@ -8,7 +8,7 @@ import tempfile
 from io import BytesIO
 from PIL import Image, ImageOps
 
-from src.core.media_paths import resolve_storage_object
+from src.media_paths import resolve_storage_object
 from src.core.task_core_service_providers import get_task_core_storage_service
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ from src.core.media_archive import (
     plan_archive_asset_restore_keys,
     plan_archive_thumbnail_restore_keys,
 )
-from src.core.media_paths import (
+from src.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     build_flat_r2_compatibility_key,

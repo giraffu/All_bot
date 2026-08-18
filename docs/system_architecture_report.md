@@ -28,10 +28,13 @@ bucket、域名和开关由目标环境逐服务配置投影提供。
 provider/dependencies，平台入口先转换为 `internal_user_id`。新代码不得把
 Telegram `Update`、FastAPI `Request/APIRouter` 或基础设施 session 带进 core。
 
-当前迁移尚未完全结束：task core 仍保留 default-dependencies/runtime 装配兼容
-入口，部分默认 builder 会延迟导入 `src.services` 或基础设施 provider；公开任务
-facade 参数也仍较宽。因此不能把“core 已完全隔离、入口全部显式注册”当成现状。
-新增代码优先显式 command/policy/dependencies，并逐步缩小默认兼容面。
+AST 门禁已禁止 `src/core/` 直接导入 `config`、`httpx`、PIL、SQLAlchemy、
+`src.database`、`src.services`、FastAPI 和 Telegram。媒体路径与处理实现已迁到
+`src/media_paths.py`、`src/media_processor.py`，SQLAlchemy 异常识别和 Redis key
+操作由外层 adapter/capability 注入。迁移仍未完全结束：task core 保留
+default-dependencies/runtime 装配兼容入口，部分默认 builder 会延迟导入
+基础设施 provider，旧公开 facade 也尚未全部退出。因此不能把“入口全部显式
+注册、core 已无间接基础设施装配”当成现状。
 
 ### 2.2 入口与服务
 

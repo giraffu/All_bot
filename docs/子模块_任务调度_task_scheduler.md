@@ -20,6 +20,7 @@
 - `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
+- `src/services/redis_client.py`：实现 `sync_user_concurrency(...)` capability 并拥有 Redis key/TTL；core 不读取 `REDIS_PREFIX`
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
 - `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
@@ -40,7 +41,7 @@
 
 - 生产运行时应先完成 `configure_task_core_service_providers(...)`
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
-- `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；需要日志或持久化能力时，通过 protocol/dependency 从 runtime 默认装配注入。
+- `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；AST 门禁同时拒绝 `config`、`httpx`、PIL、SQLAlchemy、`src.database` 和 `src.services`。需要日志、持久化、异常分类或 Redis key 操作时，通过 protocol/dependency 从 runtime 默认装配注入。
 
 这是新代码目标边界，不代表迁移已经完成。当前仍保留
 `task_core_default_dependencies.py`、`task_core_process_defaults.py` 等默认装配

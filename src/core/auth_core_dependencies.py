@@ -14,6 +14,7 @@ class AuthCoreDependencies:
     get_or_create_user_by_telegram_func: Callable[..., Awaitable[tuple[Any, bool]]]
     get_user_detailed_stats_func: Callable[[int], Awaitable[dict]]
     check_web_access_func: Callable[[int], Awaitable[bool]]
+    is_integrity_error_func: Callable[[Exception], bool]
     get_user_by_username_func: Callable[..., Awaitable[Any]] | None = None
     get_user_by_id_func: Callable[..., Awaitable[Any]] | None = None
 
@@ -59,4 +60,5 @@ def build_auth_core_dependencies(
         check_web_access_func=permission_service_impl.check_web_access,
         get_user_by_username_func=get_user_by_username_func,
         get_user_by_id_func=get_user_by_id_func,
+        is_integrity_error_func=repository_bindings.is_integrity_error_func,
     )

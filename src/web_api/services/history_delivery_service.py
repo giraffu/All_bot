@@ -6,7 +6,7 @@ import httpx
 from fastapi import HTTPException
 
 from config import BOT_TOKEN
-from src.core.media_paths import get_media_type_from_history, resolve_storage_object
+from src.media_paths import get_media_type_from_history, resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.services.storage import storage

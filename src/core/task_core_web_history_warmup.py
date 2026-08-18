@@ -3,9 +3,9 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-from src.core.media_paths import resolve_storage_object
-from src.core.media_paths import build_history_r2_media_key, build_history_r2_thumbnail_key
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.media_paths import resolve_storage_object
+from src.media_paths import build_history_r2_media_key, build_history_r2_thumbnail_key
+from src.media_processor import generate_and_upload_thumbnail
 from src.core.task_core_default_dependencies import (
     build_default_task_core_warmup_dependencies,
 )

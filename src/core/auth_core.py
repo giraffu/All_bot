@@ -188,6 +188,7 @@ async def bind_user_password(
         rate_limit_error_factory=RateLimitError,
         auth_core_error_factory=AuthCoreError,
         insufficient_permission_error_factory=InsufficientPermissionError,
+        is_integrity_error_func=dependencies.is_integrity_error_func,
         check_script=CHECK_RATE_LIMIT_SCRIPT,
         incr_script=INCR_RATE_LIMIT_SCRIPT,
     )

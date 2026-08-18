@@ -1,6 +1,6 @@
 import asyncio
 
-from src.core.media_paths import get_media_type_from_history
+from src.media_paths import get_media_type_from_history
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,

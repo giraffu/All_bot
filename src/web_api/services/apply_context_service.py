@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from logging import Logger
 
-from src.core.media_paths import get_media_type_from_history
+from src.media_paths import get_media_type_from_history
 from src.core.video_billing import (
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,

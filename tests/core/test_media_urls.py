@@ -3,7 +3,7 @@ from src.core.media_urls import (
     build_r2_thumbnail_info,
     build_storage_presigned_url,
 )
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 
 
 def test_build_r2_media_key_candidates_include_mirrored_full_object_path():

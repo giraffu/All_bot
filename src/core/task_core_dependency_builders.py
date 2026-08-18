@@ -38,11 +38,9 @@ def build_task_core_runtime_dependencies(
     get_active_tasks_func,
     get_all_user_concurrencies_func,
     cancel_task_func,
+    sync_user_concurrency_func,
     get_task_func,
     find_task_by_backend_task_id_func,
-    set_runtime_value_func,
-    expire_runtime_value_func,
-    delete_runtime_value_func,
 ) -> TaskCoreRuntimeDependencies:
     return TaskCoreRuntimeDependencies(
         release_concurrency_lock_func=release_concurrency_lock_func,
@@ -50,11 +48,9 @@ def build_task_core_runtime_dependencies(
         get_active_tasks_func=get_active_tasks_func,
         get_all_user_concurrencies_func=get_all_user_concurrencies_func,
         cancel_task_func=cancel_task_func,
+        sync_user_concurrency_func=sync_user_concurrency_func,
         get_task_func=get_task_func,
         find_task_by_backend_task_id_func=find_task_by_backend_task_id_func,
-        set_runtime_value_func=set_runtime_value_func,
-        expire_runtime_value_func=expire_runtime_value_func,
-        delete_runtime_value_func=delete_runtime_value_func,
     )
 
 

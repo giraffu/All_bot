@@ -2,7 +2,7 @@ import logging
 
 from fastapi import HTTPException
 
-from src.core.media_processor import extract_media_metadata_from_storage
+from src.media_processor import extract_media_metadata_from_storage
 from src.web_api.common.utils import build_storage_input_file_url, release_read_transaction
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import PaginatedHistory

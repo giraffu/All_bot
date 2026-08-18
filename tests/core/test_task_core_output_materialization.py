@@ -98,7 +98,7 @@ async def test_durable_worker_result_is_not_uploaded_again_under_user_namespace(
 async def test_durable_worker_result_reference_is_canonicalized_before_history_persistence(
     monkeypatch, result_path
 ):
-    from src.core import media_paths
+    from src import media_paths
 
     monkeypatch.setattr(media_paths, "MINIO_BUCKET", "user-data-prod")
     monkeypatch.setattr(media_paths, "MINIO_RESULT_BUCKET", "worker-results-prod")

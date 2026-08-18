@@ -17,7 +17,7 @@ from typing import Any, Awaitable, Callable
 from sqlalchemy import select
 
 from src.constants import MODE_WAN22_VIDEO_V2
-from src.core.media_paths import resolve_storage_object
+from src.media_paths import resolve_storage_object
 from src.core import user_core
 from src.core.video_billing import resolve_apply_prompt_and_requested_duration
 from src.database.core import AsyncSessionLocal

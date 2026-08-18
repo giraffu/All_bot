@@ -575,6 +575,16 @@ return 0
             logger.error(f"Failed to get user concurrencies: {e}")
             return {}
 
+    async def sync_user_concurrency(self, user_id: int, actual_count: int) -> None:
+        """Set the derived count and clear per-task ownership when it reaches zero."""
+        key = f"{REDIS_PREFIX}user_concurrency:{int(user_id)}"
+        ownership_key = f"{REDIS_PREFIX}acquired_task_concurrency:{int(user_id)}"
+        if int(actual_count) > 0:
+            await self.redis.set(key, int(actual_count))
+            await self.redis.expire(key, 3600)
+        else:
+            await self.redis.delete(key, ownership_key)
+
     async def close(self):
         """关闭连接"""
         await self.redis.aclose()

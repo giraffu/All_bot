@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, call
 
 import httpx
 import pytest
-from config import REDIS_PREFIX
 
 from src.core import task_core
 from src.core import task_core_finalization
@@ -568,21 +567,13 @@ async def test_get_system_task_stats_uses_runtime_redis_provider():
 
 @pytest.mark.asyncio
 async def test_sync_user_concurrency_uses_runtime_redis_provider():
-    redis = SimpleNamespace(
-        set=AsyncMock(),
-        expire=AsyncMock(),
-        delete=AsyncMock(),
-    )
-    redis_client = SimpleNamespace(redis=redis)
+    sync_concurrency = AsyncMock()
+    redis_client = SimpleNamespace(sync_user_concurrency=sync_concurrency)
 
     await task_core.sync_user_concurrency(123, 2, submission_outbox=redis_client)
     await task_core.sync_user_concurrency(123, 0, submission_outbox=redis_client)
 
-    key = f"{REDIS_PREFIX}user_concurrency:123"
-    ownership_key = f"{REDIS_PREFIX}acquired_task_concurrency:123"
-    redis.set.assert_awaited_once_with(key, 2)
-    redis.expire.assert_awaited_once_with(key, 3600)
-    redis.delete.assert_awaited_once_with(key, ownership_key)
+    assert sync_concurrency.await_args_list == [call(123, 2), call(123, 0)]
 
 
 @pytest.mark.asyncio

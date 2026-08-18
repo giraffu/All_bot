@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.database.models import History
-from src.core.media_paths import MINIO_BUCKET
+from src.media_paths import MINIO_BUCKET
 from src.web_api.presenters import media_presenter
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.services import task_result_service

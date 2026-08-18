@@ -6,6 +6,45 @@ from src.services.redis_client import RedisClient
 
 
 @pytest.mark.asyncio
+async def test_sync_user_concurrency_sets_count_and_ttl(monkeypatch):
+    client = RedisClient()
+    fake_redis = type(
+        "FakeRedis",
+        (),
+        {"set": AsyncMock(), "expire": AsyncMock(), "delete": AsyncMock()},
+    )()
+    monkeypatch.setattr(client, "redis", fake_redis)
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    await client.sync_user_concurrency(123, 2)
+
+    fake_redis.set.assert_awaited_once_with("prod_bot_user_concurrency:123", 2)
+    fake_redis.expire.assert_awaited_once_with("prod_bot_user_concurrency:123", 3600)
+    fake_redis.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_user_concurrency_clears_count_and_ownership(monkeypatch):
+    client = RedisClient()
+    fake_redis = type(
+        "FakeRedis",
+        (),
+        {"set": AsyncMock(), "expire": AsyncMock(), "delete": AsyncMock()},
+    )()
+    monkeypatch.setattr(client, "redis", fake_redis)
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    await client.sync_user_concurrency(123, 0)
+
+    fake_redis.delete.assert_awaited_once_with(
+        "prod_bot_user_concurrency:123",
+        "prod_bot_acquired_task_concurrency:123",
+    )
+    fake_redis.set.assert_not_awaited()
+    fake_redis.expire.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_set_comment_lock_fails_open_when_redis_errors(monkeypatch):
     client = RedisClient()
     fake_redis = type(

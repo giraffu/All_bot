@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 
 from src.constants import MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V
-from src.core.media_paths import resolve_storage_object
+from src.media_paths import resolve_storage_object
 from src.core import user_core
 from src.database.core import AsyncSessionLocal
 from src.database.models import History

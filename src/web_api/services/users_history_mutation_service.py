@@ -3,13 +3,13 @@ from sqlalchemy import func, select, update
 
 from src.constants import DEFAULT_FAVORITE_LIMIT, FAVORITE_LIMITS_BY_IDENTITY
 from src.core.gallery_submission_effects import async_copy_to_r2_background
-from src.core.media_paths import (
+from src.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     get_media_type_from_history,
     resolve_storage_object,
 )
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.media_processor import generate_and_upload_thumbnail
 from src.database.models import GalleryPost, History
 from src.services.media_archive_service import enqueue_history_media_restore
 from src.web_api.services.history_query_service import (

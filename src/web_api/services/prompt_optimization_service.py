@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from config import MINIO_BUCKET
-from src.core.media_paths import normalize_owned_user_upload_key
+from src.media_paths import normalize_owned_user_upload_key
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import (
     CoreDomainError,

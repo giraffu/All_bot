@@ -1,6 +1,6 @@
 from config import MINIO_TEMPLATE_BUCKET
 from dashboard.backend.presenters.storage_presenter_utils import build_storage_url
-from src.core.media_paths import build_thumbnail_object_name, resolve_storage_object
+from src.media_paths import build_thumbnail_object_name, resolve_storage_object
 from src.services.qqcc_regenerate_metadata import has_qqcc_regenerate_context
 
 
