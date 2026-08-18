@@ -58,6 +58,7 @@ async def test_payment_health_reports_reconciler_state(monkeypatch):
     assert response.json() == {
         "status": "ok",
         "rmb_reconciliation_enabled": True,
+        "alipay_direct_configured": False,
     }
 
 
@@ -97,6 +98,11 @@ async def test_huanyuy_notify_accepts_signed_get_and_post_and_returns_exact_succ
     monkeypatch.setattr(payment_api_server, "HUANYUY_PID", "merchant-1")
     monkeypatch.setattr(payment_api_server, "HUANYUY_KEY", "callback-secret")
     monkeypatch.setattr(payment_api_server, "fulfill_rmb_order", fulfill_mock)
+    monkeypatch.setattr(
+        payment_api_server,
+        "_callback_provider_is_valid",
+        AsyncMock(return_value=True),
+    )
     monkeypatch.setattr(
         payment_api_server,
         "schedule_payment_notification",
@@ -145,6 +151,11 @@ async def test_huanyuy_notify_rejects_invalid_or_unconfigured_callbacks(
     monkeypatch.setattr(payment_api_server, "HUANYUY_PID", configured_pid)
     monkeypatch.setattr(payment_api_server, "HUANYUY_KEY", configured_key)
     monkeypatch.setattr(payment_api_server, "fulfill_rmb_order", fulfill_mock)
+    monkeypatch.setattr(
+        payment_api_server,
+        "_callback_provider_is_valid",
+        AsyncMock(return_value=True),
+    )
 
     payload = _signed_callback_params()
     payload.update(overrides)
@@ -169,6 +180,11 @@ async def test_huanyuy_notify_acknowledges_duplicate_without_scheduling_notifica
     monkeypatch.setattr(payment_api_server, "fulfill_rmb_order", fulfill_mock)
     monkeypatch.setattr(
         payment_api_server,
+        "_callback_provider_is_valid",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        payment_api_server,
         "schedule_payment_notification",
         schedule_mock,
     )
@@ -185,6 +201,11 @@ async def test_huanyuy_post_accepts_callback_parameters_in_query_string(monkeypa
     monkeypatch.setattr(payment_api_server, "HUANYUY_PID", "merchant-1")
     monkeypatch.setattr(payment_api_server, "HUANYUY_KEY", "callback-secret")
     monkeypatch.setattr(payment_api_server, "fulfill_rmb_order", fulfill_mock)
+    monkeypatch.setattr(
+        payment_api_server,
+        "_callback_provider_is_valid",
+        AsyncMock(return_value=True),
+    )
 
     response = await _request("POST", params=_signed_callback_params())
 

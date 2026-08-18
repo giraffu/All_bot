@@ -28,6 +28,10 @@ class UpdateSubmissionBanRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class UpdateAlipayDirectRequest(BaseModel):
+    enabled: bool
+
+
 class AdminGiftRequest(BaseModel):
     plan_id: int
     note: Optional[str] = "后台手动赠送"
@@ -96,6 +100,7 @@ class OrderResponse(BaseModel):
     original_price: float
     final_price: float
     payment_channel: Optional[str] = None
+    payment_provider: Optional[str] = None
     status: str
     tx_hash: Optional[str]
     created_at: datetime

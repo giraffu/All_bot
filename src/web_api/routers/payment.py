@@ -10,6 +10,7 @@ from src.web_api.services.payment_api_service import (
     get_payment_order_status_payload,
     get_payment_plans_payload,
 )
+from src.services.rmb_payment_provider_service import detect_rmb_client_type
 
 router = APIRouter()
 
@@ -51,6 +52,7 @@ async def create_order(
         plan_id=req.plan_id,
         pay_type=req.pay_type,
         request_origin=request.headers.get("origin"),
+        client_type=detect_rmb_client_type(request.headers.get("user-agent")),
     )
 
 

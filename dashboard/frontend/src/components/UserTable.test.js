@@ -97,6 +97,7 @@ const buildTableState = (overrides = {}) => ({
       referral_count: 3,
       invited_total_usdt: 14.85,
       is_channel_member: false,
+      alipay_direct_enabled: true,
       generation_count: 0,
       created_at: null,
       last_activity: null,
@@ -128,6 +129,7 @@ const buildTableState = (overrides = {}) => ({
   filterIdentity: ref(null),
   filterUserGroup: ref(null),
   filterSubmissionBanned: ref(false),
+  filterAlipayDirect: ref(null),
   searchUsername: ref(''),
   isUsernamePartial: ref(true),
   sortBy: ref('created_at'),
@@ -181,6 +183,7 @@ const buildTableState = (overrides = {}) => ({
   handleEditGroup: vi.fn(),
   handleEditChannelMember: vi.fn(),
   handleToggleSubmissionBan: vi.fn(),
+  handleToggleAlipayDirect: vi.fn(),
   saveIdentity: vi.fn(),
   saveGroup: vi.fn(),
   saveChannelMember: vi.fn(),
@@ -219,5 +222,6 @@ describe('UserTable', () => {
     expect(wrapper.text()).toContain('$ 14.85')
     expect(wrapper.text()).toContain('$ 0.00')
     expect(wrapper.find('.table-stub').attributes('data-scroll-x')).toBe('1540')
+    expect(wrapper.text()).toContain('支付宝直连')
   })
 })

@@ -8,6 +8,7 @@ from dashboard.backend.schemas import (
     TransferUserDataRequest,
     TransferUserDataResponse,
     UpdateSubmissionBanRequest,
+    UpdateAlipayDirectRequest,
     UpdateCreditsRequest,
     UpdateIdentityRequest,
     UpdateGroupRequest,
@@ -26,6 +27,7 @@ from dashboard.backend.services.user_admin_service import (
     update_user_group_payload,
     update_user_identity_payload,
     update_user_submission_ban_payload,
+    update_user_alipay_direct_payload,
 )
 from src.database.core import get_db
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
@@ -44,6 +46,7 @@ async def get_users(
     identity: str = None,
     user_group: str = None,
     submission_banned: bool | None = Query(default=None),
+    alipay_direct_enabled: bool | None = Query(default=None),
     username: str = None,
     username_partial: bool = False,
     sort_by: str | None = Query(default=None),
@@ -61,6 +64,7 @@ async def get_users(
         identity=identity,
         user_group=user_group,
         submission_banned=submission_banned,
+        alipay_direct_enabled=alipay_direct_enabled,
         username=username,
         username_partial=username_partial,
         sort_by=sort_by,
@@ -196,6 +200,21 @@ async def update_user_submission_ban(
 ):
     """Update user submission ban status across bot and web."""
     return await update_user_submission_ban_payload(
+        user_id=user_id,
+        request=request,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/{user_id}/alipay-direct")
+async def update_user_alipay_direct(
+    user_id: int,
+    request: UpdateAlipayDirectRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Enable or disable Alipay direct routing for one internal account."""
+    return await update_user_alipay_direct_payload(
         user_id=user_id,
         request=request,
         db=db,

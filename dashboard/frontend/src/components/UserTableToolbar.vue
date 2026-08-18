@@ -14,6 +14,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  filterAlipayDirect: {
+    type: String,
+    default: null,
+  },
   searchUserId: {
     type: String,
     default: '',
@@ -44,6 +48,7 @@ const emit = defineEmits([
   'update:filterIdentity',
   'update:filterUserGroup',
   'update:filterSubmissionBanned',
+  'update:filterAlipayDirect',
   'update:searchUserId',
   'update:searchUsername',
   'update:isUsernamePartial',
@@ -94,6 +99,18 @@ const handleSearch = () => {
     >
       只看已禁止投稿用户
     </a-checkbox>
+
+    <a-select
+      :value="filterAlipayDirect"
+      placeholder="支付宝直连"
+      allow-clear
+      class="w-36"
+      @update:value="emit('update:filterAlipayDirect', $event)"
+      @change="handleSearch"
+    >
+      <a-select-option value="enabled">已开启</a-select-option>
+      <a-select-option value="disabled">未开启</a-select-option>
+    </a-select>
 
     <div class="flex items-center gap-2">
       <a-input

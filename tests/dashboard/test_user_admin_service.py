@@ -6,6 +6,7 @@ import pytest
 from dashboard.backend.schemas import (
     AdminGiftRequest,
     UpdateChannelMemberRequest,
+    UpdateAlipayDirectRequest,
     UpdateSubmissionBanRequest,
 )
 from dashboard.backend.services import user_admin_service
@@ -235,6 +236,38 @@ async def test_update_user_submission_ban_payload_sets_default_reason_and_timest
 
 
 @pytest.mark.asyncio
+async def test_update_user_alipay_direct_payload_writes_audit_log(monkeypatch):
+    user = User(
+        id=123,
+        username="tester",
+        credits=10,
+        alipay_direct_enabled=False,
+    )
+    db = _FakeUsersDB(user)
+    log_action = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.log_service.LogService.log_action",
+        log_action,
+    )
+
+    result = await user_admin_service.update_user_alipay_direct_payload(
+        user_id=123,
+        request=UpdateAlipayDirectRequest(enabled=True),
+        db=db,
+    )
+
+    assert result == {
+        "status": "ok",
+        "id": 123,
+        "alipay_direct_enabled": True,
+    }
+    assert user.alipay_direct_enabled is True
+    db.commit.assert_awaited_once()
+    log_action.assert_awaited_once()
+    assert log_action.await_args.kwargs["operation_type"] == "admin_update_alipay_direct"
+
+
+@pytest.mark.asyncio
 async def test_get_users_payload_applies_requested_sort_order():
     db = _FakeUserListDB(
         [
@@ -330,6 +363,28 @@ async def test_get_users_payload_filters_submission_banned_users():
     list_stmt = db.executed_stmts[1]
     assert "users.is_submission_banned IS true" in count_stmt
     assert "users.is_submission_banned IS true" in list_stmt
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_filters_alipay_direct_users():
+    db = _FakeUserListDB(
+        [
+            _ScalarResult(value=1),
+            _ScalarResult(
+                rows=[User(id=301, username="direct", alipay_direct_enabled=True)]
+            ),
+            _ScalarResult(rows=[]),
+        ]
+    )
+
+    result = await user_admin_service.get_users_payload(
+        db=db,
+        alipay_direct_enabled=True,
+    )
+
+    assert result["items"][0]["alipay_direct_enabled"] is True
+    assert "users.alipay_direct_enabled IS true" in db.executed_stmts[0]
+    assert "users.alipay_direct_enabled IS true" in db.executed_stmts[1]
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,7 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
         internal_user_id=55,
         plan=plan,
         out_trade_no="RMB-ORDER-1",
+        payment_provider="ALIPAY_DIRECT",
     )
 
     assert session.flushed is True
@@ -61,3 +62,4 @@ async def test_create_rmb_pending_order_creates_future_reconciliation_job_in_tra
     assert isinstance(session.added[1], RMBPaymentReconciliationJob)
     assert session.added[1].order_id == order.id
     assert session.added[1].status == "pending"
+    assert order.payment_provider == "ALIPAY_DIRECT"

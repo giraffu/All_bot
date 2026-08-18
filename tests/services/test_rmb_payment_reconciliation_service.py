@@ -23,6 +23,7 @@ def _job(*, attempt_count: int = 1):
         order_id=22,
         out_trade_no="RMB-ORDER-1",
         expected_amount="30.00",
+        payment_provider="HUANYUY",
         attempt_count=attempt_count,
         lease_token="lease-1",
         created_at=datetime(2026, 7, 28, 12, 0, 0),
@@ -76,6 +77,7 @@ async def test_reconciler_fulfills_verified_paid_order_and_completes_job():
 
     assert processed == 1
     dependencies.query_order_func.assert_awaited_once_with(
+        provider="HUANYUY",
         out_trade_no="RMB-ORDER-1",
         expected_amount="30.00",
         query_url="https://gateway.test/query",

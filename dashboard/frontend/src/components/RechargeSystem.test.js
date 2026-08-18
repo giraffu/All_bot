@@ -85,4 +85,57 @@ describe('RechargeSystem order browsing', () => {
     expect(wrapper.get('[data-testid="order-filters"]').classes()).toContain('order-filters')
     expect(wrapper.get('[data-testid="orders-table"]').attributes('data-scroll-x')).toBe('980')
   })
+
+  it('shows the persisted RMB payment provider', async () => {
+    apiMocks.fetchOrders.mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          order_id: 'ORDER-1',
+          payment_provider: 'ALIPAY_DIRECT',
+          payment_channel: 'RMB',
+          final_price: 0.01,
+          status: 'PENDING',
+        },
+      ],
+      total: 1,
+    })
+    const TableWithCells = defineComponent({
+      props: ['columns', 'dataSource'],
+      template: `
+        <div>
+          <div v-for="record in dataSource" :key="record.id">
+            <div v-for="column in columns" :key="column.key">
+              <slot name="bodyCell" :column="column" :record="record">
+                {{ column.dataIndex ? record[column.dataIndex] : '' }}
+              </slot>
+            </div>
+          </div>
+        </div>
+      `,
+    })
+    const wrapper = mount(RechargeSystem, {
+      global: {
+        stubs: {
+          AInput: InputStub,
+          AButton: ButtonStub,
+          ASelect: PassThroughStub,
+          ASelectOption: PassThroughStub,
+          ATabs: PassThroughStub,
+          ATabPane: PassThroughStub,
+          ATable: TableWithCells,
+          ATag: PassThroughStub,
+          AModal: PassThroughStub,
+          AForm: PassThroughStub,
+          AFormItem: PassThroughStub,
+          AInputNumber: PassThroughStub,
+          ASwitch: PassThroughStub,
+          APopconfirm: PassThroughStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('支付宝直连')
+  })
 })
