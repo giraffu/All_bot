@@ -124,7 +124,18 @@ sequenceDiagram
 
 补充约束：
 
-- Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop；`task_web_finalizer.py` 在获取 Redis lock 后必须重新读取单条 pending record，不能继续使用 `hgetall` 快照里的旧 record，避免 stale snapshot 重复收口。
+- Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop。Hash
+  `pending_web_finalizers` 保存恢复 record，ZSET `pending_web_finalizers:due`
+  只保存下一次到期时间；runner 每轮用 `ZRANGEBYSCORE` 读取至多 100 条，不再
+  `HGETALL`。处理期间不删除 due member，拿到单任务 lease 后必须重新读取 Hash；
+  非终态、锁竞争和异常分别更新下一次 due，进程崩溃后由 lease 过期自动恢复。
+- `comfy:task_events:{backend_task_id}` 的终态事件通过 backend index 将对应
+  registry task 提前设为 due-now；Pub/Sub 只作为低延迟提示，丢事件时仍由
+  ZSET reconciliation 收口。滚动升级期间 bounded `HSCAN` 每分钟补索引旧
+  Hash record，使用 `ZADD NX`，禁止恢复旧全表扫描。
+- `task_submission_metrics` 中的 `finalizer_due_records_processed`、
+  `finalizer_central_status_requests` 与 `finalizer_legacy_indexed_records` 用于
+  对照调度成本；只有真正发起 Central status 查询时才增加请求指标。
 - 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - 取消退款同样必须幂等。`finalize_task_cancellation(...)` 会用 `registry_task_id` 派生 `task_refund:refund_user_cancel:<registry_task_id>`，账本层把它写入 `user_logs.extra_info.credit_idempotency_key` 并在用户行锁内检查；用户取消接口、Web monitor 或恢复流程重复看到 `cancelled` 时，只能第一次真正增加灵石。
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
@@ -220,6 +231,8 @@ Web 生成、Prompt Optimizer 和人物构建在 Central dispatch 前共享
 
 - facade 提交成功 / 失败 / 补偿
 - dispatch 成功但 finalizer attach 失败时不错误退款、不删 registry、不重复派发
+- finalizer due ZSET：到期批量上限、lease 竞争/崩溃恢复、异常重排、Pub/Sub
+  丢失兜底、旧 Hash bounded HSCAN 且运行路径不调用 `HGETALL`
 - provider/dependencies 显式注入契约
 - Web monitor 成功 / 取消 / 失败
 - 双 ID 清理

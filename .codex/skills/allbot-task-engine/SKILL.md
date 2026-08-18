@@ -64,6 +64,11 @@ command/policy/dependencies，不扩大延迟导入或模块级默认绑定。
   和恢复重复看到同一终态时，只允许第一次真正改变账本。
 - finalizer 在写终态前重新读取权威状态并保持幂等。内部异常不能阻断 runtime
   cleanup；清理失败需保留可恢复证据。
+- Web finalizer record 的 Hash 是恢复事实，due-time ZSET 是调度索引；写 record
+  必须同步刷新 due score。runner 只取到期小批次，禁止周期性 `HGETALL`。
+  处理中保留 due member，并以单任务 lease 防多实例重复收口；终态才原子清理
+  record、due member 与 backend index。Central 终态 Pub/Sub 只把任务提前设为
+  due-now，事件丢失仍由 ZSET 轮询兜底。
 - Central zombie 清理必须把 task heartbeat-lost 归因到已绑定 Worker；明显连续
   失联的单实例通过有界、自动过期的 agent control 临时隔离，不能继续无限 pop，
   也不能借此自动重启或删除 provider/GPU runtime。

@@ -32,6 +32,183 @@ async def test_pending_web_finalizer_lock_fails_closed_when_redis_errors(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_pending_web_finalizer_write_updates_hash_due_and_backend_index(
+    monkeypatch,
+):
+    operations = []
+
+    class FakePipeline:
+        def hset(self, *args, **kwargs):
+            operations.append(("hset", args, kwargs))
+            return self
+
+        def zadd(self, *args, **kwargs):
+            operations.append(("zadd", args, kwargs))
+            return self
+
+        def sadd(self, *args, **kwargs):
+            operations.append(("sadd", args, kwargs))
+            return self
+
+        async def execute(self):
+            return [1] * len(operations)
+
+    class FakeRedis:
+        def pipeline(self, transaction=False):
+            assert transaction is True
+            return FakePipeline()
+
+    client = RedisClient()
+    monkeypatch.setattr(client, "redis", FakeRedis())
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    await client.add_pending_web_finalizer(
+        "registry-1",
+        {"backend_task_id": "backend-1", "phase": "accepted"},
+        due_at=123.5,
+    )
+
+    assert operations[0][0] == "hset"
+    assert operations[0][1][:2] == (
+        "prod_bot_pending_web_finalizers",
+        "registry-1",
+    )
+    assert operations[1] == (
+        "zadd",
+        ("prod_bot_pending_web_finalizers:due", {"registry-1": 123.5}),
+        {},
+    )
+    assert operations[2] == (
+        "hset",
+        (
+            "prod_bot_pending_web_finalizers:backend_index",
+            "backend-1",
+            "registry-1",
+        ),
+        {},
+    )
+    assert operations[3] == (
+        "sadd",
+        ("prod_bot_pending_web_finalizer_backends:registry-1", "backend-1"),
+        {},
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_web_finalizer_due_read_is_bounded(monkeypatch):
+    client = RedisClient()
+    zrangebyscore = AsyncMock(return_value=["registry-1", "registry-2"])
+    monkeypatch.setattr(
+        client,
+        "redis",
+        type("FakeRedis", (), {"zrangebyscore": zrangebyscore})(),
+    )
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    assert await client.get_due_pending_web_finalizer_ids(
+        now=456.0,
+        limit=25,
+    ) == ["registry-1", "registry-2"]
+    zrangebyscore.assert_awaited_once_with(
+        "prod_bot_pending_web_finalizers:due",
+        "-inf",
+        456.0,
+        start=0,
+        num=25,
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_finalizer_index_uses_hscan_and_zadd_nx(monkeypatch):
+    operations = []
+
+    class FakePipeline:
+        def zadd(self, *args, **kwargs):
+            operations.append(("zadd", args, kwargs))
+            return self
+
+        def hset(self, *args, **kwargs):
+            operations.append(("hset", args, kwargs))
+            return self
+
+        def sadd(self, *args, **kwargs):
+            operations.append(("sadd", args, kwargs))
+            return self
+
+        async def execute(self):
+            return [1] * len(operations)
+
+    class FakeRedis:
+        async def hscan(self, key, cursor, count):
+            assert key == "prod_bot_pending_web_finalizers"
+            assert (cursor, count) == (17, 200)
+            return 0, {
+                "registry-1": '{"backend_task_id": "backend-1"}',
+                "registry-bad": "not-json",
+            }
+
+        async def hgetall(self, *_args, **_kwargs):
+            raise AssertionError("HGETALL must not be used")
+
+        def pipeline(self, transaction=False):
+            assert transaction is True
+            return FakePipeline()
+
+    client = RedisClient()
+    monkeypatch.setattr(client, "redis", FakeRedis())
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    assert await client.index_legacy_pending_web_finalizers(
+        cursor=17,
+        due_at=789.0,
+        count=200,
+    ) == (0, 2)
+    zadds = [operation for operation in operations if operation[0] == "zadd"]
+    assert len(zadds) == 2
+    assert all(operation[2] == {"nx": True} for operation in zadds)
+
+
+@pytest.mark.asyncio
+async def test_remove_pending_web_finalizer_cleans_due_and_backend_indexes(monkeypatch):
+    operations = []
+
+    class FakePipeline:
+        def __getattr__(self, name):
+            def record(*args, **kwargs):
+                operations.append((name, args, kwargs))
+                return self
+
+            return record
+
+        async def execute(self):
+            return [1] * len(operations)
+
+    class FakeRedis:
+        async def smembers(self, key):
+            assert key == "prod_bot_pending_web_finalizer_backends:registry-1"
+            return {"backend-1", "backend-2"}
+
+        def pipeline(self, transaction=False):
+            assert transaction is True
+            return FakePipeline()
+
+    client = RedisClient()
+    monkeypatch.setattr(client, "redis", FakeRedis())
+    monkeypatch.setattr("src.services.redis_client.REDIS_PREFIX", "prod_bot_")
+
+    await client.remove_pending_web_finalizer("registry-1")
+
+    assert ("hdel", ("prod_bot_pending_web_finalizers", "registry-1"), {}) in operations
+    assert (
+        "zrem",
+        ("prod_bot_pending_web_finalizers:due", "registry-1"),
+        {},
+    ) in operations
+    backend_hdel = next(operation for operation in operations if operation[0] == "hdel" and "backend_index" in operation[1][0])
+    assert set(backend_hdel[1][1:]) == {"backend-1", "backend-2"}
+
+
+@pytest.mark.asyncio
 async def test_get_all_user_concurrencies_uses_scan_not_keys(monkeypatch):
     client = RedisClient()
 
