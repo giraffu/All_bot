@@ -83,7 +83,9 @@ sequenceDiagram
   比例及有序效果增强参数，要求使用者重新上传 1 张首帧或 2 张首尾帧；原作者输入
   不向应用者复用。缺少完整 Pro 上下文的旧投稿仍可点赞、收藏、评论和举报，但不能
   一键应用。
-- 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
+- reaction 以 `(user_id, post_id)` advisory transaction lock 串行切换，
+  reaction/apply partial unique index 防重；投稿以 `(task_id, user_id)` unique
+  和显式 conflict target 保证只有一个事实结果。
 - 举报入口为 `POST /api/gallery/posts/{post_id}/reports`，请求体只包含 `reason=children|gore|gross|other`；同一用户对同一作品重复举报返回 `409`，不覆盖旧原因，作品已下架或不存在时不可举报。
 - 作者调用投稿删除入口时，系统在删除 `GalleryPost` 前把同作品 pending 举报
   统一写为 `status=resolved`、`resolution_action=user_deleted` 并保留举报行；

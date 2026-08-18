@@ -19,10 +19,10 @@
 ## 2. 当前数据模型
 
 - `gallery_posts`
-  - 核心帖子实体，保存媒体类型、宽高、时长、互动计数、`comments_count`、上下架状态。
+  - 核心帖子实体；`(task_id, user_id)` unique 防止并发重复投稿。
 - `user_interactions`
-  - 记录 `like / dislike / apply`。ORM 声明三列唯一约束，但仓库 migration 未
-    创建该约束，且三列键不能表达 like/dislike 互斥；真实约束需按环境核验。
+  - 记录 `like / dislike / apply`。reaction 与 apply 分别使用
+    `(user_id, post_id)` partial unique index，ORM 与 migration 同名同条件。
 - `gallery_comments`
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
 - `gallery_reports`
@@ -79,6 +79,9 @@ sequenceDiagram
 
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
+- 投稿事务先取 `(user_id, task_id)` advisory transaction lock，insert 使用
+  显式 conflict target 和 `RETURNING`。只有真实创建/重新上架才更新
+  History、`total_contributions`、日限额和媒体 side effect。
 
 ### 4.2 用户输入 staging 与持久化
 
@@ -105,20 +108,22 @@ sequenceDiagram
   `resolution_action=user_deleted` 自动转为 resolved，举报快照继续保留在
   Dashboard“已处理”列表。
 
-### 4.2 互动系统
+### 4.3 互动系统
 
 - `POST /api/gallery/posts/{post_id}/interact` 当前只接受 `like|dislike`。
 - `apply` 统计不是在点击时立即加一，而是要等真正进入任务链路后再记 `UserInteraction(action_type='apply')`。
 - 这一点是广场统计真实性的核心红线，不能为了前端方便在 UI 点击时预增计数。
+- like/dislike 在读取当前 reaction 前取 PostgreSQL advisory transaction
+  lock，解决“无现存行可 `FOR UPDATE`”的竞态；partial unique index 作为最终防线。
 
-### 4.3 评论系统
+### 4.4 评论系统
 
 - 已提供创建评论与分页查询接口。
 - 评论前会校验帖子仍处于 `is_active=True`。
 - 评论提交有 Redis 频率锁，防止短时间刷评。
 - `comments_count` 通过数据库原子更新维护，并在提交阶段再次校验帖子没有被并发下架。
 
-### 4.4 举报治理
+### 4.5 举报治理
 
 - Web 修仙市集作品详情弹窗提供举报入口，提交 `POST /api/gallery/posts/{post_id}/reports`。
 - 举报原因是单选枚举：`children` 儿童、`gore` 血腥、`gross` 恶心、`other` 其他；“其他”不要求补充说明。
@@ -133,7 +138,7 @@ sequenceDiagram
   `GalleryPost`；举报行不删除，Dashboard 显示为“已处理 / 用户已删除”。
 - 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
 
-### 4.5 收藏与个人视图
+### 4.6 收藏与个人视图
 
 - 已提供：
   - 广场列表 `posts`
@@ -156,7 +161,7 @@ sequenceDiagram
 - LTX 高级图生视频只保留 `ltx_video` 一个 Gallery 展示/筛选入口；历史或执行别名 `ltx_video_flf2v` 必须 canonical 到 `ltx_video`，投稿允许该别名但不新增展示 tab，筛选时同时查询两种 `History.type`。
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
 
-### 4.6 提示词付费解锁
+### 4.7 提示词付费解锁
 
 - Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。
 - Gallery、用户主页和提示词解锁统一先通过用户展示 presenter 清除历史 `[模型: ...]`、`[强度: ...]`、`[分辨率|时长]` 系统前缀，再执行遮罩或返回正文；前端不能依赖客户端遮罩来保护完整提示词，系统前缀也不得占用半公开比例。
@@ -165,7 +170,7 @@ sequenceDiagram
 - 重复解锁同一帖子必须命中 `gallery_prompt_unlocks.user_id + post_id` 唯一约束或既有记录，不得重复扣费。
 - 作者查看自己的帖子视为已解锁，不创建解锁记录、不发生灵石转账。
 
-### 4.7 Apply Context 已成为 Web 主路径
+### 4.8 Apply Context 已成为 Web 主路径
 
 - Web Gallery 的 apply-context 会携带登录用户身份执行提示词访问门禁：只有投稿
   作者或 `gallery_prompt_unlocks` 中已解锁该帖的用户可以取得完整模板上下文；
@@ -205,7 +210,7 @@ sequenceDiagram
 - Apply-context presenter 的共享 seam 在 `src/services/gallery_apply_context_presenter.py`，Web API 的 `src/web_api/common/utils.py` 只是兼容薄壳；QQCC Bot 不再直接依赖 Web common utils。QQCC market Bot 层拆为 `gallery_market_view.py`、`gallery_market_interactions.py` 与 `gallery_market_apply.py`，原 `gallery_market.py` 只保留 callback facade 与数据加载。
 - QQCC 原生 apply 下载的参考图必须走 FSM 临时目录；提交异常、unsupported task type、`/cancel` 或全局异常兜底都必须删除已下载路径。点击 `一键应用` 本身不得预增 `applied_count`，只有任务成功链路才能记 `UserInteraction(action_type='apply')`。
 
-### 4.8 展示用原始输入预览
+### 4.9 展示用原始输入预览
 
 - `GalleryPostResponse` 现在额外暴露展示字段：`input_file`、`input_file_url`、`input_files`、`input_file_urls`。其中兼容字段指向展示列表第一个输入，数组字段保留 `History.input_file` 的原始顺序。
 - `txt2img` 没有原始输入，前端不展示输入角标或详情区。
@@ -217,7 +222,7 @@ sequenceDiagram
 - 闪回瓶历史详情复用 `HistoryItem.input_file_urls` 展示原始输入。历史列表本身仍以任务输出缩略图为主，不把输入素材替代为结果图。
 - 这些输入 URL 只做短签展示，不在列表热路径增加对象存储 HEAD 探测。
 
-### 4.9 媒体 URL 策略
+### 4.10 媒体 URL 策略
 
 - History、收藏、Gallery 等集合响应不在热路径对每个媒体做公网 `HEAD` 探测；统一使用 `storage.async_r2_object_exists(...)` 已有的进程内正/负缓存与 singleflight，R2 S3 key 命中时优先返回 R2 S3 短签 URL，预签不可用时才退回公网 URL。History `extra_outputs` 必须显式传入 `s3_cached` 列表策略，禁止隐式退回公网探测。
 - Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。
@@ -245,16 +250,23 @@ python3 scripts/audit_visible_hotset_r2_objects.py \
 - 用 AI 生成排查报告时，优先喂入 Markdown 概要和 JSON 的 `summary`；需要列举具体缺失对象时再引用 CSV 附录。不要把 `.env.cloud.prod`、R2 presigned URL、访问密钥或完整生产 compose 渲染输出放入报告。
 - 云正式已为 Gallery/History 热路径补充并发索引：活跃帖子按创建时间翻页、`history.task_id`、用户历史倒序、用户可见收藏、`task_id + user_id` 与 `user_interactions(user_id, action_type, post_id)`。新增列表查询条件时，应优先确认是否命中现有索引。
 
+### 4.11 一致性审计与修复
+
+`scripts/audit_gallery_consistency.py` 默认只读，输出不含连接串或用户内容的
+JSON/Markdown 汇总，检查 revision、索引/约束、重复投稿/apply、双 reaction、
+非法互动、帖子计数和用户贡献数漂移。
+
+`--apply` 按 active 优先、再按 `created_at/id` 最新选主帖；reaction 保留
+最新，apply/解锁保留最早，迁移评论和举报后重算计数。执行必须提供
+备份与环境确认；prod 还要求独立字面确认。修复后再执行
+`d1e2f3a4b5c6` 在线索引 migration，残留冲突会 fail closed。
+
 ## 5. 核心红线
 
-- `src/database/models.py` 的 `uix_user_post_action` 不是“迁移已落地”的证据；
-  Alembic upgrade 历史没有创建该 constraint。操作生产前只读查询
-  `pg_constraint`/`pg_indexes`，不要根据 ORM 猜测。
-- `(user_id, post_id, action_type)` 即使存在，也只能防同 action 重复，不能防
-  一个用户同时 like 与 dislike。目标 schema 应对 reaction 使用
-  `(user_id, post_id)` partial unique，apply 另保留 action 级幂等，或拆表。
-- `GalleryPost.task_id` 只有普通索引，投稿采用先查后插。增加
-  `(task_id, user_id)` unique 前必须先审计/合并重复帖子和互动，并重算计数。
+- ORM partial indexes 不代表已部署；运维仍要只读核对 `pg_indexes`、
+  Alembic revision 和审计报告，不得根据 model 猜测线上 schema。
+- 不得直接执行 Gallery 唯一索引 migration；先确认修复后的重复、双
+  reaction 和 counter drift 全为 0。
 
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。

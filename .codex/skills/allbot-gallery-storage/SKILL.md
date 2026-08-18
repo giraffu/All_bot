@@ -37,13 +37,14 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 - 投稿必须尊重 `History.allow_contribute`，模板应用结果和 QQCC 自生成结果
   不得再次投稿。
-- like/dislike/apply 的目标不变量是单用户/作品的互斥 reaction、幂等 apply 和
-  原子计数；捕获 `IntegrityError` 前先 `flush()`。但当前 Alembic upgrade 没有
-  创建 ORM 所写的 `uix_user_post_action`，且该三列键即使存在也不能阻止 like 与
-  dislike 并存。不得把 model declaration 当成真实环境约束。
-- `GalleryPost.task_id` 当前只是普通索引，投稿还是 check-then-insert。处理并发
-  投稿/互动前先只读核对 `pg_constraint/pg_indexes` 和重复/counter drift；设计
-  migration 时先去重和重算，不能直接创建 unique 让线上 migration 中途失败。
+- like/dislike/apply 的不变量是互斥 reaction、幂等 apply 和原子计数。
+  reaction 修改前取 `(user_id, post_id)` advisory transaction lock；DB
+  使用 reaction/apply 两个 partial unique index。
+- 投稿使用 `(task_id, user_id)` unique、同粒度 advisory lock 和显式
+  conflict target/`RETURNING`；只有 created/reactivated 才更新 History、贡献数、
+  限额和媒体 side effect。
+- migration 前先运行 `scripts/audit_gallery_consistency.py`；默认 dry-run。
+  修复与在线索引 migration 分开，残留冲突必须 fail closed。
 - 评论创建、分页和计数保持限频与原子更新；帖子并发下架时整笔回滚，不能
   留下脏评论。
 - 未解锁 prompt 在列表和详情必须由服务端遮罩。提示词解锁以
