@@ -220,6 +220,43 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
     assert workflow["30"]["inputs"]["prompt"] == "dynv2, scene"
 
 
+def test_minimax_h3_worker_chains_new_action_loras_and_injects_declared_triggers():
+    workflow = json.loads(
+        Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()
+    )
+    patch_minimax_h3_workflow(
+        workflow,
+        task_type="minimax_h3_t2v",
+        params={
+            "prompt": "scene",
+            "lora_items": [
+                {"name": "breast_play"},
+                {"name": "innie"},
+                {"name": "deepthroat"},
+                {"name": "pov_missionary"},
+                {"name": "footjob"},
+            ],
+        },
+    )
+
+    assert [workflow[str(node)]["inputs"]["lora_name"] for node in range(100, 105)] == [
+        "MiniMaxH3/breastplayjiggle_h3_v1.safetensors",
+        "MiniMaxH3/HMInnie_v1_e50.safetensors",
+        "MiniMaxH3/deepthroat_v02.safetensors",
+        "MiniMaxH3/H3_Mis_Insrt_v07.safetensors",
+        "MiniMaxH3/H3_Footjob_TypeB_v1.safetensors",
+    ]
+    assert [workflow[str(node)]["inputs"]["strength_model"] for node in range(100, 105)] == [
+        0.75,
+        0.8,
+        0.75,
+        0.7,
+        0.5,
+    ]
+    assert workflow["2"]["inputs"]["model"] == ["104", 0]
+    assert workflow["30"]["inputs"]["prompt"] == "inniepussy, fj., scene"
+
+
 def test_minimax_h3_worker_uses_prompt_without_trigger_injection():
     workflow = json.loads(
         Path("workers/comfy_agent/workflows/MiniMax H3 T2V.api.json").read_text()

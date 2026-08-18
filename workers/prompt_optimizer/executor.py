@@ -23,7 +23,15 @@ class PromptOptimizationExecutionError(RuntimeError):
 
 
 _MINIMAX_H3_PROFILE_PREFIX = "minimax_h3_"
-_MINIMAX_H3_FORBIDDEN_TRIGGERS = ("hmmotion", "hmbreasts", "hmpenis", "hmpussy")
+_MINIMAX_H3_FORBIDDEN_TRIGGERS = (
+    "hmmotion",
+    "hmbreasts",
+    "hmpenis",
+    "hmpussy",
+    "dynv2",
+    "inniepussy",
+    "fj.",
+)
 _MINIMAX_H3_MAX_GENERATION_ATTEMPTS = 5
 _MINIMAX_H3_HEADER_CLASSES = (
     "handjob",

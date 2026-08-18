@@ -38,6 +38,25 @@ def test_web_locales_hide_model_names():
         assert workbench["minimax_h3_addon_options"]["mystic_xxx"] == (
             "人体结构增强" if language == "zh" else "Anatomy enhancement"
         )
+        expected_new_labels = (
+            {
+                "breast_play": "乳房动态",
+                "innie": "阴道形态",
+                "deepthroat": "深喉动作",
+                "pov_missionary": "POV 传教士动作",
+                "footjob": "足交动作",
+            }
+            if language == "zh"
+            else {
+                "breast_play": "Breast motion",
+                "innie": "Vaginal shape",
+                "deepthroat": "Deep-throat motion",
+                "pov_missionary": "POV missionary motion",
+                "footjob": "Footjob motion",
+            }
+        )
+        for model_id, label in expected_new_labels.items():
+            assert workbench["minimax_h3_addon_options"][model_id] == label
         public_copy += " " + json.dumps(
             {
                 "title": locale["lab"]["cards"]["minimax_h3_title"],
@@ -57,6 +76,11 @@ def test_web_locales_hide_model_names():
         "HMNSFW",
         "Motion Booster",
         "Mystic XXX",
+        "Breast Play & Jiggle",
+        "HMInnie",
+        "Daring",
+        "H3 POV Missionary Insertion",
+        "H3 Footjobs",
         "HMBreasts",
         "VagAssist",
         "HMPussy",
@@ -65,12 +89,17 @@ def test_web_locales_hide_model_names():
         assert private_term not in public_copy
 
 
-def test_minimax_h3_exposes_all_eight_local_addons_and_defaults_to_none():
+def test_minimax_h3_exposes_all_thirteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",
         "sex_pose",
         "motion_booster",
         "mystic_xxx",
+        "breast_play",
+        "innie",
+        "deepthroat",
+        "pov_missionary",
+        "footjob",
         "breasts",
         "vagassist",
         "pussy",
@@ -103,6 +132,11 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
                 {"name": "sex_pose"},
                 {"name": "motion_booster"},
                 {"name": "mystic_xxx"},
+                {"name": "breast_play"},
+                {"name": "innie"},
+                {"name": "deepthroat"},
+                {"name": "pov_missionary"},
+                {"name": "footjob"},
                 {"name": "pussy"},
             ]
         },
@@ -112,6 +146,11 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ("sex_pose", 0.5),
         ("motion_booster", 0.7),
         ("mystic_xxx", 0.75),
+        ("breast_play", 0.75),
+        ("innie", 0.8),
+        ("deepthroat", 0.75),
+        ("pov_missionary", 0.7),
+        ("footjob", 0.5),
         ("pussy", 0.35),
     ]
 
@@ -123,7 +162,7 @@ def test_minimax_h3_normalizes_multiple_addons_with_catalog_defaults():
         ({"lora_name": "missing"}, "不支持"),
         ({"lora_items": [{"name": "penis"}, {"name": "penis"}]}, "不得重复"),
         ({"lora_items": [{"name": "penis", "strength": 0.0}]}, "0.1 至 2.0"),
-        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 8 项"),
+        ({"lora_items": [{"name": name} for name in (*MINIMAX_H3_ADDON_MODELS, "extra")]}, "最多 13 项"),
     ],
 )
 def test_minimax_h3_rejects_invalid_addon_configuration(inputs, match):
