@@ -125,6 +125,8 @@ sequenceDiagram
   `MAIN_BOT_PAYMENT_POLLING_ENABLED=true` 保持。滚动切换必须先启用新宿主并
   验证 `/healthz` 与两个 checkpoint，再关闭旧宿主；回滚顺序相反。支付通道
   自身的 `TON_PAYMENT_POLLING_ENABLED` / `USDT_TON_PAYMENT_ENABLED` 语义不变。
+  disabled 模式只提供 `/healthz`，不得导入或初始化数据库、Telegram、账本
+  provider，也不要求投影支付凭据。
 - TON / USDT-TON 首次启用且对应 checkpoint 不存在时，只把索引器当前最新
   `lt` 写成基线，不履约当前批次中的历史交易；checkpoint 读取失败时保持停止，
   不能把数据库异常误判为首次启用。已有 checkpoint 后才从下一 `lt` 正常处理，

@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import socket
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -12,6 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from config import REDIS_PREFIX
+from src.control_worker_health import (
+    build_task_control_health_payload,
+    build_task_control_worker_id,
+)
 from src.services.redis_client import redis_client
 from src.services.task_web_finalizer import (
     process_all_pending_web_finalizers,
@@ -238,24 +241,6 @@ def build_task_control_specs() -> tuple[LeasedServiceSpec, ...]:
             runner=run_generic_zombie_sweep_loop,
         ),
     )
-
-
-def build_task_control_worker_id() -> str:
-    return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-
-
-def build_task_control_health_payload(
-    *,
-    enabled: bool,
-    worker_id: str,
-    task_states: dict[str, dict[str, Any]],
-) -> dict[str, Any]:
-    return {
-        "status": "enabled" if enabled else "disabled",
-        "worker_id": worker_id,
-        "updated_at": time.time(),
-        "tasks": task_states,
-    }
 
 
 async def run_task_control_services(

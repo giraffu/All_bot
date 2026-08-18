@@ -1,10 +1,16 @@
 import asyncio
-from types import SimpleNamespace
+import os
+from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.services import task_control_worker
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.asyncio
@@ -82,8 +88,6 @@ async def test_disabled_entrypoint_stays_healthy_without_starting_services(monke
     stop_event.set()
     monkeypatch.setenv("TASK_CONTROL_WORKER_ENABLED", "false")
     monkeypatch.setattr(entrypoint.asyncio, "start_server", start_server)
-    monkeypatch.setattr(entrypoint.redis_client, "close", AsyncMock())
-    monkeypatch.setattr(entrypoint, "engine", SimpleNamespace(dispose=AsyncMock()))
 
     await entrypoint.run_task_control_worker(
         stop_event=stop_event,
@@ -92,6 +96,23 @@ async def test_disabled_entrypoint_stays_healthy_without_starting_services(monke
 
     service_runner.assert_not_awaited()
     start_server.assert_awaited_once()
+
+
+def test_disabled_entrypoint_imports_without_runtime_configuration():
+    result = subprocess.run(
+        [sys.executable, "-c", "import src.task_control_worker"],
+        cwd=ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "PYTHONPATH": str(ROOT),
+            "TASK_CONTROL_WORKER_ENABLED": "false",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_task_control_health_payload_does_not_expose_lease_tokens():
