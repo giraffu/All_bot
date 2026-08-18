@@ -134,7 +134,7 @@ I2V/FLF2V，@4 不得用于首帧任务。
 ## 最小验证
 
 ```bash
-python -m pytest -q \
+.venv/bin/python -m pytest -q \
   tests/config/test_ltx_t2v.py \
   tests/web_api/test_ltx_t2v_submission.py \
   tests/workers/test_workflow_patcher.py \

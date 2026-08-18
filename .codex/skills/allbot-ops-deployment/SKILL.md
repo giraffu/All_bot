@@ -1,6 +1,6 @@
 ---
 name: "allbot-ops-deployment"
-description: "处理独立模块不可变构建、精确 digest 部署、目标回滚、迁移和 GPU/RunPod/LAN；生产 mutation 必须用户明确确认。"
+description: "AllBot 发布与环境 mutation 总门禁。构建/部署/回滚模块，启停、重启或重建 Docker/Compose/systemd 服务，修改 env/config/secret 投影，执行 Alembic、数据库/Redis 迁移、备份/恢复、灾备，或操作 test/prod、GPU/RunPod/LAN 时必须使用；生产、数据库、Cloudflare 和 GPU mutation 必须用户明确确认。"
 ---
 
 # AllBot 模块发布
@@ -13,6 +13,8 @@ description: "处理独立模块不可变构建、精确 digest 部署、目标�
 | test/prod 拓扑 | 对应 cloud test/prod 控制面文档 |
 | GPU/RunPod/LAN | GPU 控制器文档；LAN mutation 再加载 `allbot-lan-aio-operator` |
 | Cloudflare Pages | `allbot-cloudflare-ops` |
+| 数据库/Redis 备份、恢复、迁移 | `docs/子模块_容灾与持久化_database_recovery.md` + 目标控制面文档 |
+| 服务不可用、5xx、容器退出 | 先用 `ops-log-monitor` + `allbot-diagnosing-bugs` 建立只读证据 |
 
 ## 发布模型
 
@@ -100,6 +102,6 @@ Environment secret 只能在批准 job 的 tmpfs 中短暂解码并在退出清�
 ## 最小验证
 
 ```bash
-python -m pytest -q tests/ops/test_release_cli.py tests/ops/test_gpu_release_rollout.py
-python scripts/doc_quality_checker.py
+.venv/bin/python -m pytest -q tests/ops/test_release_cli.py tests/ops/test_gpu_release_rollout.py
+python3 scripts/doc_quality_checker.py
 ```

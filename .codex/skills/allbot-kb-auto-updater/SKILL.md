@@ -1,6 +1,6 @@
 ---
 name: "allbot-kb-auto-updater"
-description: "评估代码现状对 docs/skills/memory 的影响，并同步更新知识库。当项目新增功能、重构入口或接口语义变化时，必须调用本技能。"
+description: "按实际代码审计并更新 AllBot 的 AGENTS.md、docs、项目 Skills、领域词汇、ADR 和知识矩阵。用户要求整理/精简知识库、修复过时失真文档、优化 Skill 触发/运维命中、归档历史，或代码新增功能、重构入口/接口/状态语义时必须使用。"
 ---
 
 # AllBot 智能知识库自动更新 (KB Auto-Updater)
@@ -67,7 +67,7 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
   未探测时标记 `runtime-verification-required`，不能写成已验证。
 - ADR 必须说明 context、decision、alternatives、consequences；缺少真实替代方案时不要新增 ADR。
 - 最终总结必须包含 Changelog，列出修改文件与原因。
-- 运行 `python scripts/doc_quality_checker.py`；不得通过提高预算掩盖新增冗余。
+- 运行 `python3 scripts/doc_quality_checker.py`；不得通过提高预算掩盖新增冗余。
 
 ## 5. 使用示例 (最佳实践)
 当开发者完成一轮核心重构后，可直接要求：

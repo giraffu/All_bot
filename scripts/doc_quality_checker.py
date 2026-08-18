@@ -20,9 +20,6 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 MATRIX_RELATIVE_PATH = Path("docs/knowledge_base_audit_matrix.md")
 SKILL_INDEX_RELATIVE_PATH = Path("docs/skills/README.md")
 COMPAT_RELATIVE_PATH = Path("docs/compat_seam_exit_table.md")
-HOTSPOT_RELATIVE_PATH = Path(
-    "docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md"
-)
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+.+$", re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
@@ -32,18 +29,18 @@ DATED_CHANGELOG_RE = re.compile(
     re.MULTILINE,
 )
 DATED_SKILL_FACT_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+ACTIVE_CHANGELOG_HEADING_RE = re.compile(
+    r"^#{1,6}\s+.*(?:changelog|变更记录|更新记录|修改记录|逐日记录)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+SKILL_DESCRIPTION_RE = re.compile(
+    r"^description:\s*[\"']?(.*?)[\"']?\s*$", re.MULTILINE
+)
 DOC_ROUTE_RE = re.compile(r"`docs/[^`\s]+\.md`")
 VALIDATION_RE = re.compile(
     r"(?:最小验证|测试要求|验证清单|Validation Commands|交付格式)",
     re.IGNORECASE,
 )
-HOTSPOT_HISTORY_RE = re.compile(
-    r"^(?:#{1,6}\s+.*(?:当前阶段快照|阶段\s*\d+.*收尾|下一批建议)"
-    r"|[-*]\s+(?:20\d{2}-\d{2}-\d{2}.*(?:基线|复核|阶段)"
-    r"|阶段\s*\d+：))",
-    re.MULTILINE,
-)
-
 MIGRATED_KNOWLEDGE_PATHS = {
     "src/core/gallery_core_dependencies.py": "src/gallery_core_dependencies.py",
     "src/core/gallery_feed_queries.py": "src/services/gallery_feed_queries.py",
@@ -89,6 +86,66 @@ MAX_TOTAL_SKILL_BYTES = 140_000
 MAX_MATRIX_BYTES = 35_000
 MAX_ACTIVE_DOC_BYTES = 1_000_000
 MAX_ACTIVE_DOC_FILE_BYTES = 75_000
+MAX_SKILL_DESCRIPTION_CHARS = 600
+
+# Frontmatter is the automatic trigger surface. Each tuple is an alternative
+# phrase group; at least one phrase from every group must appear in that
+# skill's description. This guards discoverability without forcing exact prose.
+OPERATIONAL_DESCRIPTION_TRIGGER_GROUPS = {
+    "ops-log-monitor": (
+        ("不可用", "5xx", "超时", "告警"),
+        ("日志", "health", "metrics", "trace"),
+        ("只读", "不自动"),
+    ),
+    "allbot-ops-deployment": (
+        ("部署", "回滚"),
+        ("启停", "重启", "重建"),
+        ("数据库", "Redis"),
+        ("备份", "恢复", "灾备"),
+        ("生产", "prod"),
+    ),
+    "allbot-task-engine": (
+        ("pending", "running", "卡住"),
+        ("Worker", "不接单"),
+        ("队列", "zombie", "取消"),
+    ),
+    "allbot-cloudflare-ops": (
+        ("DNS", "Tunnel"),
+        ("404", "502", "TLS"),
+        ("Access", "Pages", "R2"),
+    ),
+    "allbot-cloud-ssh": (
+        ("SSH", "Permission denied"),
+        ("超时", "拒绝连接", "断连"),
+        ("主机密钥", "公钥", "known_hosts"),
+    ),
+    "allbot-lan-aio-operator": (
+        ("OOM", "Xid"),
+        ("不接单", "掉线", "容器停止"),
+        ("takeover", "recover", "restart"),
+    ),
+    "allbot-gallery-storage": (
+        ("R2", "预签", "CORS", "媒体 404"),
+        ("投稿", "点赞", "点踩"),
+    ),
+    "allbot-local-media-archive": (
+        ("NAS", "MinIO"),
+        ("丢失", "恢复"),
+        ("清理", "迁移"),
+    ),
+}
+
+CURRENT_ENTRYPOINT_STALE_FACTS = {
+    "单批次 main PR": "不可变 handoff + 本机 main 单写者，不创建 PR",
+    "共享 test 只有一个写入者": "协调器不部署共享 test",
+    "经 CI 构建 digest-pinned": "操作者从完整 SHA 显式构建目标模块",
+    "先部署/验收云测试，再把同 SHA、同 digest 晋级正式": (
+        "test/prod 各自显式选择精确 artifact"
+    ),
+    "在用户完成测试验收前，不得把测试环境变更直接同步到正式": (
+        "发布器不消费测试资格；prod mutation 只依赖明确授权与精确目标"
+    ),
+}
 
 CONTEXT_PACKET_SKILLS = {
     "allbot-billing-auth",
@@ -170,6 +227,11 @@ def verify_active_docs(root: Path, errors: list[str]) -> None:
             errors.append(f"首行不是一级标题: {rel}")
         if not HEADING_RE.search(text):
             errors.append(f"未检测到 Markdown 标题: {rel}")
+        if ACTIVE_CHANGELOG_HEADING_RE.search(text):
+            errors.append(
+                "活跃文档包含 Changelog/逐日记录；请迁入 docs/archive/: "
+                f"{rel}"
+            )
 
     if total_bytes > MAX_ACTIVE_DOC_BYTES:
         errors.append(
@@ -245,6 +307,24 @@ def verify_skill_routes(root: Path, errors: list[str]) -> None:
                 f"{relative(path, root)} ({size})"
             )
         text = read_text(path)
+        match = SKILL_DESCRIPTION_RE.search(text)
+        description = match.group(1).strip() if match else ""
+        if not description:
+            errors.append(f"Skill 缺少 frontmatter description: {relative(path, root)}")
+        elif len(description) > MAX_SKILL_DESCRIPTION_CHARS:
+            errors.append(
+                "Skill description 过长: "
+                f"{relative(path, root)} ({len(description)} > "
+                f"{MAX_SKILL_DESCRIPTION_CHARS} chars)"
+            )
+        trigger_groups = OPERATIONAL_DESCRIPTION_TRIGGER_GROUPS.get(skill_name, ())
+        for alternatives in trigger_groups:
+            if not any(term.lower() in description.lower() for term in alternatives):
+                errors.append(
+                    "运维 Skill description 缺少用户意图触发词: "
+                    f"{relative(path, root)} 需要包含 "
+                    + " / ".join(alternatives)
+                )
         max_line = max((len(line) for line in text.splitlines()), default=0)
         if max_line > MAX_SKILL_LINE_LENGTH:
             errors.append(
@@ -315,13 +395,6 @@ def verify_matrix(root: Path, errors: list[str]) -> None:
 
 
 def verify_current_history_boundaries(root: Path, errors: list[str]) -> None:
-    hotspot = root / HOTSPOT_RELATIVE_PATH
-    if hotspot.is_file() and HOTSPOT_HISTORY_RE.search(read_text(hotspot)):
-        errors.append(
-            "热点文档包含阶段或日期历史；请迁入 docs/archive/: "
-            f"{relative(hotspot, root)}"
-        )
-
     current_sources = list_active_docs(root)
     current_sources.extend(list_skill_files(root))
     for source in current_sources:
@@ -353,6 +426,25 @@ def verify_current_history_boundaries(root: Path, errors: list[str]) -> None:
             )
 
 
+def verify_current_entrypoints(root: Path, errors: list[str]) -> None:
+    entrypoints = (
+        root / "README.md",
+        root / "AGENTS.md",
+        root / "docs/system_architecture_report.md",
+        root / "docs/子模块_运维指南与容器管理_ops_deployment.md",
+    )
+    for source in entrypoints:
+        if not source.is_file():
+            continue
+        text = read_text(source)
+        for stale, canonical in CURRENT_ENTRYPOINT_STALE_FACTS.items():
+            if stale in text:
+                errors.append(
+                    "当前知识入口包含已退役发布事实: "
+                    f"{relative(source, root)}: {stale} -> {canonical}"
+                )
+
+
 def run(root: Path) -> list[str]:
     errors: list[str] = []
     verify_required_files(root, errors)
@@ -361,6 +453,7 @@ def run(root: Path) -> list[str]:
     verify_skill_routes(root, errors)
     verify_matrix(root, errors)
     verify_current_history_boundaries(root, errors)
+    verify_current_entrypoints(root, errors)
     return errors
 
 

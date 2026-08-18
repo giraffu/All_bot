@@ -655,6 +655,10 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - router 不应该自己做历史落库
 - 前端不应该自己做终态补偿
 - 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
+- 普通 Web 链路的 pending finalizer 在 dispatch 返回后才写 Redis。若 Central
+  已接纳而该写入失败，不能把异常等同于“未派发”；自动退款/删 registry 会留下
+  无 owner 的 backend task。排障先核对 Central backend ID 与 registry；修复应
+  使用 dispatch 前 durable intent/outbox 或歧义恢复，不能盲目重试提交。
 
 ### 10.3 粗状态、SSE 与结果查询
 
@@ -819,24 +823,6 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 
 ## 15. 推荐联读文件
 
-新增 LTX 文生视频与人物一致性任务的固定模型栈、人物所有权、计费、workflow
-和仅限 LAN 的发布边界，见
-`docs/子模块_LTX文生视频与人物一致性_ltx_t2v_characters.md`。
-
-- `frontend/src/composables/useTaskStream.ts`
-- `frontend/src/stores/tasks.ts`
-- `src/web_api/routers/tasks.py`
-- `src/web_api/services/task_submission_service.py`
-- `src/web_api/services/task_stream_api_service.py`
-- `src/web_api/services/task_result_service.py`
-- `src/core/task_core.py`
-- `src/core/task_core_submission.py`
-- `src/services/task_web_lifecycle_monitor.py`
-- `src/core/task_core_runtime.py`
-- `src/core/task_dispatcher.py`
-- `backend/app/main_simple_task_routes.py`
-- `backend/app/queue_manager.py`
-- `backend/app/routers/agent.py`
-- `workers/comfy_agent/agent_main.py`
-- `workers/comfy_agent/workflow_patcher.py`
-- `src/workflow_mapping_validation.py`
+按任务场景从 `allbot-task-engine` 的“按需阅读”表选择任务调度、Central、黄金
+路径或模型专项文档；代码入口以上文章各节列出的当前 facade/router/Worker 为准，
+不在末尾维护第二份易漂移文件清单。

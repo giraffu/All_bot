@@ -1,7 +1,7 @@
 # AllBot Knowledge Base Audit Matrix
 
 本矩阵只登记活跃知识入口和 canonical 事实源，一份资料一行。责任域由分节
-标题确定；本轮静态核对日期为 `2026-08-05`。状态只使用 `current`、
+标题确定；本轮静态核对日期为 `2026-08-18`。状态只使用 `current`、
 `needs-review`、`runtime-verification-required`、`superseded`。
 
 逐日变化、已删除 seam、部署结果、事故和一次性运行态不登记为矩阵行，统一
@@ -14,7 +14,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/knowledge_base_audit_matrix.md` | 活跃知识索引 | 本矩阵、质量检查器的登记/体积门禁 | current | 仅全量知识校准 |
-| `docs/system_architecture_report.md` | 稳定系统拓扑与边界 | 入口、core、Central、Worker、发布契约 | current | 跨模块设计 |
+| `docs/system_architecture_report.md` | 稳定系统拓扑、当前兼容缺口与边界 | 入口、core/default runtime、Central、Worker、schema migrations、发布契约 | current | 跨模块设计 |
 | `docs/SAFE_DEPLOY_GUIDE.md` | 发布快速入口 | `scripts/release.py`、不可变发布文档 | current | 只需发布入口 |
 | `docs/domain/CONTEXT.md` | 共享领域词汇 | 代码模型与领域文档 | current | 术语歧义 |
 | `docs/skills/README.md` | Skill 索引、context packet 与预算 | `.codex/skills`、`AGENTS.md`、质量检查器 | current | 选择/维护 Skill |
@@ -49,7 +49,7 @@
 | `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery、R2、apply-context | Gallery core/services、storage、R2 scripts | current | 社区/媒体 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
-| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/画像双层新鲜度 | local analytics code、shadow sync、snapshot-only timer | runtime-verification-required | 本地分析 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界与分层新鲜度 | local analytics routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
 | `docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md` | 提示词词元治理 | prompt rule/materialization code | current | 词元治理 |
 | `docs/子模块_本地媒体归档_local_media_archive.md` | History 媒体目录、NAS MinIO、恢复与冷清理 | archive core/outbox/API/Worker/Compose | runtime-verification-required | 全量媒体归档 |
 
@@ -77,15 +77,14 @@
 | --- | --- | --- | --- | --- |
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
-| `docs/子模块_运维指南与容器管理_ops_deployment.md` | 独立模块发布、Compose 与一般运维 | module catalog、release CLI、compose adapters | current | 容器运维 |
+| `docs/子模块_运维指南与容器管理_ops_deployment.md` | 症状分诊、独立模块发布、服务/config/数据库 mutation 总门禁 | module catalog、release CLI、env/service contracts、目标 live state | current | 一般运维与环境变更 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、remote module state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与单模块 exact-digest SOP | prod overlay/env contract、remote module state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |
 | `docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md` | DNS/Tunnel/Access/Pages/R2 | Cloudflare 配置与只读探测 | runtime-verification-required | 公网入口 |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | 网络与代理边界 | compose/network/Cloudflare config | current | 网络改动 |
-| `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md` | 旧 main CI 门禁 | 历史 ruleset | superseded | 历史取证 |
-| `docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md` | 旧热点路径门禁 | 历史 classifier/workflow | superseded | 历史取证 |
+| `docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md` | 当前 main 最小写保护 | GitHub live ruleset、handoff 协调器边界 | runtime-verification-required | main 写权限或 ruleset 变更 |
 | `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md` | A–H/handoff/轻量 main 协调 | workspace scripts、integration queue | current | 并发开发 |
 | `docs/并发AI自动接单使用指南_auto_workspace_claim.md` | 用户接单指南 | manage_ai_workspaces.py | current | 主目录写任务 |
 | `docs/子模块_前端浏览器预览截图_frontend_browser_preview.md` | Playwright 截图 | preview skill/scripts | current | UI 验收 |

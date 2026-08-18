@@ -7,13 +7,13 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 
 | Skill | 负责范围 |
 | --- | --- |
-| `allbot-task-engine` | 任务 facade、队列、Worker、双 ID、终态和清理 |
+| `allbot-task-engine` | 任务 facade、队列、Worker、pending/running/zombie、双 ID、终态和清理 |
 | `allbot-billing-auth` | JWT、账本、支付履约、affiliate、会员 |
 | `allbot-gallery-storage` | Gallery、互动、举报、R2、apply-context |
 | `allbot-tg-fsm` | Telegram FSM、callback、菜单、文件、更新并发与独立 Bot 隔离 |
 | `allbot-qqcc-lazy-bot` | QQCC 官方/私有 Bot、配置、webhook 和租户归属 |
-| `allbot-ops-deployment` | 不可变发布、Compose、迁移、测试/正式和灾备 |
-| `allbot-concurrent-workspaces` | A–H worktree、handoff、批次集成 |
+| `allbot-ops-deployment` | 不可变发布、服务启停/重建、env/config、数据库迁移/恢复和灾备 |
+| `allbot-concurrent-workspaces` | A–H worktree、claim、handoff 和 main 单写者集成 |
 | `allbot-cloudflare-ops` | DNS、Tunnel、Access、Pages、R2 公网入口 |
 | `allbot-cloud-ssh` | 云主机 SSH 连接、认证、主机密钥与救援入口 |
 | `allbot-comfy-models` | workflow、LoRA、ControlNet、Worker profile |
@@ -32,7 +32,7 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 | `backend-code-review` | Python/FastAPI 后端审查 |
 | `vue-best-practices` | Vue 3、Composition API、TypeScript |
 | `frontend-browser-preview` | Playwright 预览和响应式截图 |
-| `ops-log-monitor` | 日志采集、异常归因和事故报告 |
+| `ops-log-monitor` | 服务不可用/5xx/超时/容器异常的只读观测、日志归因和事故报告 |
 | `allbot-code-analyzer` | 全局静态分析、死代码和质量评估 |
 
 ## 分层约定
@@ -49,6 +49,18 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 - 事故、上线记录、迁移证据、canary、一次性 ID 和运行态进入
   `docs/archive/`、`docs/release_evidence/` 或 `logs/`。
 
+## 触发与运维命中
+
+- Skill 是否自动命中主要取决于 frontmatter `description`。描述必须同时写能力
+  和用户可能使用的现象/动作，不只写内部模块名。
+- 运维描述至少覆盖普通措辞：服务不可用/5xx/超时、容器重启、数据库/Redis
+  迁移恢复、任务 pending/Worker 不接单、DNS/Tunnel/502、SSH、GPU/OOM、R2
+  媒体 404。全局症状到 Skill 的组合见 `AGENTS.md`“运维意图优先路由”。
+- 模糊事故先加载 `ops-log-monitor` + `allbot-diagnosing-bugs` 建立只读证据；
+  确定技术域后再叠加部署、任务、Cloudflare、SSH、GPU 或存储 Skill。
+- “能读状态”不等于“能修复”。日志/health/metrics 不授权 restart、scale、
+  retry、cancel、迁移、清理或发布。
+
 ## 维护门禁
 
 - 单个 Skill 小于 16 KB，全部 Skills 合计小于 140 KB；超出时把低频细节
@@ -63,5 +75,5 @@ Skill，再按其中“按需阅读”路由打开专项文档；不要预加载
 - 新增 Skill 时同步 `.codex/skills`、`AGENTS.md`、本索引和审计矩阵。
 - 入口、对象名、异常、超时、双 ID、provider/dependencies 或测试 seam
   变化时，同步领域 Skill 和专项文档。
-- 运行 `python scripts/doc_quality_checker.py` 验证路由覆盖、矩阵登记、当前/
+- 运行 `python3 scripts/doc_quality_checker.py` 验证路由覆盖、矩阵登记、当前/
   历史边界、canonical 路径、内部链接、日期化运行态和体积预算。

@@ -4,18 +4,18 @@
 生成或消费 release bundle。先构建明确模块：
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module <module> --sha <40位main-sha>
 ```
 
 部署只接受构建结果中的精确 `repository@sha256:digest`，一次一个模块：
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env test --module <module> --artifact <repository@sha256:digest>
 
 # 只有用户明确授权正式发布后才可执行
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module <module> --artifact <repository@sha256:digest> \
   --confirm-prod
 ```

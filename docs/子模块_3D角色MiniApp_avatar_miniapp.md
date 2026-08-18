@@ -145,7 +145,7 @@ npm run test:e2e
 cd ../..
 docker compose --env-file avatar_miniapp/.env.lan.example \
   -f avatar_miniapp/docker-compose.lan.yml config
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 真实 Blender 验收还需在 Worker 镜像内完成一次 fixture build，并确认 GLB、

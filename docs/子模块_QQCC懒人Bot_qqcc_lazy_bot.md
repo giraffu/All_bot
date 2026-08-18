@@ -312,8 +312,8 @@ QQCC 代码使用独立模块不可变发布。专用
 自由 Compose 或隐式扩大到其它模块。官方 Bot 的 main SHA 构建与测试部署：
 
 ```bash
-python scripts/release.py build --module qqcc-bot --sha <40位main-sha>
-python scripts/release.py deploy \
+python3 scripts/release.py build --module qqcc-bot --sha <40位main-sha>
+python3 scripts/release.py deploy \
   --env test --module qqcc-bot \
   --artifact ghcr.io/giraffu/allbot-qqcc-bot@sha256:<digest>
 ```
@@ -324,7 +324,7 @@ test 执行 `qqcc-bot` deploy；不得为测试临时复用正式 token。
 生产只部署同一精确 artifact，并逐模块确认：
 
 ```bash
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module qqcc-bot \
   --artifact ghcr.io/giraffu/allbot-qqcc-bot@sha256:<digest> \
   --confirm-prod
@@ -333,14 +333,14 @@ python scripts/release.py deploy \
 QQCC Config 前后端是两个独立 artifact，分别构建、部署和回滚：
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module qqcc-config-backend --module qqcc-config-frontend \
   --sha <40位main-sha>
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module qqcc-config-backend \
   --artifact ghcr.io/giraffu/allbot-qqcc-config-backend@sha256:<digest> \
   --confirm-prod
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module qqcc-config-frontend \
   --artifact ghcr.io/giraffu/allbot-qqcc-config-frontend@sha256:<digest> \
   --confirm-prod

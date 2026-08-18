@@ -247,31 +247,60 @@ def test_active_matrix_rejects_archive_rows(tmp_path: Path) -> None:
     assert "审计矩阵不得登记归档材料" in result.stdout
 
 
-def test_hotspot_doc_rejects_phase_history_and_migrated_paths(
+def test_active_doc_rejects_changelog_and_migrated_paths(
     tmp_path: Path,
 ) -> None:
     _valid_fixture(tmp_path)
-    hotspot = "docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md"
+    notes = "docs/current-notes.md"
     _write(
         tmp_path,
-        hotspot,
-        "# Hotspot\n\n"
-        "## 当前阶段快照\n\n"
+        notes,
+        "# Current Notes\n\n"
+        "## Changelog\n\n"
         "- 2026-06-18：阶段 4 已完成。\n"
         "- `src/core/user_core_bindings.py`\n",
     )
     matrix = tmp_path / "docs/knowledge_base_audit_matrix.md"
     matrix.write_text(
         matrix.read_text(encoding="utf-8")
-        + f"| `{hotspot}` | guard | workflow | current | CI change |\n",
+        + f"| `{notes}` | notes | workflow | current | change |\n",
         encoding="utf-8",
     )
 
     result = _run(tmp_path)
 
     assert result.returncode == 1
-    assert "热点文档包含阶段或日期历史" in result.stdout
+    assert "活跃文档包含 Changelog/逐日记录" in result.stdout
     assert "知识文档引用已迁移路径" in result.stdout
+
+
+def test_operational_skill_description_requires_user_symptom_terms(
+    tmp_path: Path,
+) -> None:
+    _valid_fixture(tmp_path)
+    _write(
+        tmp_path,
+        ".codex/skills/allbot-ops-deployment/SKILL.md",
+        "---\nname: allbot-ops-deployment\ndescription: 模块发布工具。\n---\n"
+        "# Ops\n\nRead `docs/system_architecture_report.md`.\n\n"
+        "## 最小验证\n\nRun checker.\n",
+    )
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8") + "\n`allbot-ops-deployment`\n",
+        encoding="utf-8",
+    )
+    index = tmp_path / "docs/skills/README.md"
+    index.write_text(
+        index.read_text(encoding="utf-8") + "\n`allbot-ops-deployment`\n",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "运维 Skill description 缺少用户意图触发词" in result.stdout
+    assert "启停 / 重启 / 重建" in result.stdout
 
 
 def test_current_knowledge_rejects_retired_operational_entrypoints(

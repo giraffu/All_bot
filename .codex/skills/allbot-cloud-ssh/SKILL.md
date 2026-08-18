@@ -100,7 +100,7 @@ Recovery Console。
 ## 最小验证
 
 ```bash
-python /home/hfy/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
+python3 /home/hfy/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
   .codex/skills/allbot-cloud-ssh
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```

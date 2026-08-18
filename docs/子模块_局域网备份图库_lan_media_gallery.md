@@ -39,7 +39,7 @@ rootfs、`cap_drop: ALL` 和 `no-new-privileges`。
 静态验证：
 
 ```bash
-python -m pytest -q lan_media_gallery/tests
+.venv/bin/python -m pytest -q lan_media_gallery/tests
 docker compose -f lan_media_gallery/compose.yml config
 ```
 

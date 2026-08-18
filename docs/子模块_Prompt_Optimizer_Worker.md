@@ -251,4 +251,4 @@ workflow 或 `src` 挂载；仅保留与本地 test relay 共享的日志和结�
 4. 构建并部署新 Worker，验证它识别新 refs。
 5. Central/API 保持 `prompt_optimize`，不要新增队列类型。
 6. Web 最后激活 capability，并提供字段到 UI 控件的 typed mapping。
-7. 运行 focused tests、`python scripts/doc_quality_checker.py` 和 Skill validator。
+7. 运行 focused tests、`python3 scripts/doc_quality_checker.py` 和 Skill validator。

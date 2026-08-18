@@ -109,10 +109,10 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 - 私有镜像必须通过 `RUNPOD_CONTAINER_REGISTRY_AUTH_ID` 引用 RunPod 中已建的
   registry auth；provider 只在显式 `imageName` 请求上注入
   `containerRegistryAuthId`，不将 registry 凭据或 token 放入 Pod env 和日志。
-- Pod 内诊断优先使用 Dashboard 提供的 `ssh.runpod.io` 代理入口；连接、有限重试、
-  PTY 与标准输入命令模板见 `allbot-ops-deployment` 的
-  `references/runpod-lan-runtime.md`。当次 Pod 页面是用户名和直连端口的事实源，
-  不把临时连接信息写入 Git。
+- Pod 内诊断优先使用 Dashboard/RunPod 当前提供的 SSH 入口；先从当次 Pod 页面
+  读取用户名、端口和连接方式，再按 `allbot-cloud-ssh` 分段诊断。旧 Skill
+  reference 已归档，不能用其中的 profile/track/attestation 快照决定当前操作。
+  临时连接信息不得写入 Git。
 - 真实 create/start/stop/restart/delete/scale 同时要求运行开关、`--execute`
   和用户明确的生产确认。
 - rollout 先 disabled 验证 exact image、OCI revision、runtime contract、
@@ -134,7 +134,7 @@ Git catalog 声明“允许管理什么”，不表示当前运行什么。live�
 `allbot-lan-aio-operator`，只使用：
 
 ```bash
-python scripts/lan_aio_fleet_prod_ops.py <command>
+python3 scripts/lan_aio_fleet_prod_ops.py <command>
 ```
 
 - 一次只操作一个 physical GPU/slot，不自由 Compose、不自由镜像、不跨卡批量。

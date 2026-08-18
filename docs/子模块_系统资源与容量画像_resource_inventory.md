@@ -104,7 +104,7 @@
 知识库变更：
 
 ```bash
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 涉及具体子系统时再运行其 focused tests。资源报告自身应复核：

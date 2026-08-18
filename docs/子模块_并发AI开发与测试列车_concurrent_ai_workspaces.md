@@ -13,7 +13,7 @@ handoff 状态为 `pending`、`integrating`、`completed`、`needs-rebase`。
 ## 协调器
 
 ```bash
-python scripts/auto_integrate_handoffs.py integrate-all --execute
+python3 scripts/auto_integrate_handoffs.py integrate-all --execute
 ```
 
 协调器持有进程锁并逐个 fetch 最新 main 和精确远端 head，在临时 worktree
@@ -28,7 +28,7 @@ python scripts/auto_integrate_handoffs.py integrate-all --execute
 冲突项不自动重试。原槽位或新槽位从最新 main 重做并产生新 head：
 
 ```bash
-python scripts/manage_ai_workspaces.py handoff \
+python3 scripts/manage_ai_workspaces.py handoff \
   --slot E --supersedes <旧handoff-id>
 ```
 

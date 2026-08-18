@@ -1,4 +1,4 @@
 interface:
-  display_name: "AllBot 自动并发工作区"
-  short_description: "自动抢占 A-H 槽位并分离高访问能力与外部操作授权"
-  default_prompt: "Use $allbot-concurrent-workspaces to automatically claim a safe AllBot task slot and implement my request there."
+  display_name: "AllBot 并发工作区"
+  short_description: "管理 A–H 槽位、不可变 handoff 与 main 单写者集成"
+  default_prompt: "使用 $allbot-concurrent-workspaces 领取安全的 AllBot 任务槽位，完成提交、推送和 handoff。"

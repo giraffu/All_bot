@@ -1,6 +1,6 @@
 ---
 name: "allbot-lan-resource-manager"
-description: "开发和维护本地主服务器资源管理平台。修改 lan_resource_manager、LAN AIO、模块目录、隔离 runner 或局域网访问控制时必须使用。"
+description: "开发和维护本地主服务器资源管理平台。用户提到 LAN 资源后台/页面、lan_resource_manager、A–H 集成 UI、模块构建发布 runner、LAN AIO 状态/操作、局域网鉴权或平台容器异常时必须使用。"
 ---
 
 # AllBot Local Resource Manager
@@ -39,7 +39,7 @@ description: "开发和维护本地主服务器资源管理平台。修改 lan_r
 ## 最小验证
 
 ```bash
-python -m pytest -q lan_resource_manager/tests
-python -m pytest -q tests/ops/test_auto_integrate_handoffs.py tests/ops/test_release_cli.py
-python scripts/doc_quality_checker.py
+.venv/bin/python -m pytest -q lan_resource_manager/tests
+.venv/bin/python -m pytest -q tests/ops/test_auto_integrate_handoffs.py tests/ops/test_release_cli.py
+python3 scripts/doc_quality_checker.py
 ```

@@ -1,6 +1,6 @@
 ---
 name: "allbot-cloudflare-ops"
-description: "处理 AllBot Cloudflare Token、DNS、Tunnel、Access、Pages、R2 与公网域名。配置或排障公网入口、Token 轮换或策略时必须调用。"
+description: "处理 AllBot Cloudflare Token、DNS、Tunnel、Access、Pages、R2、TLS/CORS 与公网域名。用户报告域名打不开、404/502、重定向循环、证书/TLS、DNS 解析、Tunnel 回源、Access 登录、Pages 发布或 R2 公网/CORS 异常，或要求配置/轮换策略时必须使用。"
 ---
 
 # AllBot Cloudflare Ops

@@ -41,6 +41,11 @@
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
 - `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；需要日志或持久化能力时，通过 protocol/dependency 从 runtime 默认装配注入。
 
+这是新代码目标边界，不代表迁移已经完成。当前仍保留
+`task_core_default_dependencies.py`、`task_core_process_defaults.py` 等默认装配
+兼容入口，部分 builder 会延迟加载 service/基础设施 provider；新增入口优先在
+应用边界构造 dependencies，不扩大模块级 fallback。
+
 ### 2.2 双 ID 语义
 
 任务链路中同时存在两个 ID：
@@ -188,6 +193,12 @@ Web 端已形成两条路径：
 
 SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义，不再稳定制造无效轮询。
 
+普通 Web 提交当前在 Central dispatch 返回后才写
+`pending_web_finalizers`。如果 dispatch 已被接纳而 finalizer 写入失败，默认异常
+路径不能证明任务未接纳；此时退款、删除 registry 和释放并发锁会产生孤儿计算
+风险。只有确定拒绝才可补偿；派发结果歧义必须保留 owner 状态等待恢复。私有
+QQCC 的 durable submission ledger/fence 只覆盖私有入口，不是 Web 通用 outbox。
+
 ### 6.2 僵尸任务与强制终止
 
 当前僵尸任务清理与强制终止会联合处理：
@@ -206,6 +217,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 至少覆盖：
 
 - facade 提交成功 / 失败 / 补偿
+- dispatch 成功但 finalizer attach 失败时不错误退款、不删 registry、不重复派发
 - provider/dependencies 显式注入契约
 - Web monitor 成功 / 取消 / 失败
 - 双 ID 清理

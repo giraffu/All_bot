@@ -46,10 +46,10 @@ Dashboard tests 为事实源。未知历史分类必须显示原始值，不能�
 `support-platform` 组合发布；需要同时更新时也必须分别构建、部署和保存状态。
 
 ```bash
-python scripts/release.py build \
+python3 scripts/release.py build \
   --module support-bot --sha <40位main-sha>
 
-python scripts/release.py deploy \
+python3 scripts/release.py deploy \
   --env prod --module support-bot \
   --artifact <repository@sha256:digest> --confirm-prod
 ```
@@ -61,11 +61,11 @@ python scripts/release.py deploy \
 ## 5. 最小验证
 
 ```bash
-python -m pytest -q tests/support_bot \
+.venv/bin/python -m pytest -q tests/support_bot \
   tests/services/test_support_ticket_submission_service.py \
   tests/database/test_support_ticket_schema.py \
   tests/ops/test_runtime_env_contract.py
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 行为验收至少覆盖：

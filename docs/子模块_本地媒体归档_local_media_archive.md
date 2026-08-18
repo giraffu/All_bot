@@ -75,17 +75,17 @@ UTF-8 TXT，并把同名 JSON 元数据写入 NAS MinIO 的私有前缀。它不
 MinIO bucket versioning 保留旧版本。先执行一本文字 canary，再扩大范围：
 
 ```bash
-python scripts/archive_owned_ebook_site.py \
+python3 scripts/archive_owned_ebook_site.py \
   --config /受限路径/ebook-archive.json \
   --state /受限路径/ebook-archive.sqlite3 \
   --limit-books 1
 
-python scripts/archive_owned_ebook_site.py \
+python3 scripts/archive_owned_ebook_site.py \
   --config /受限路径/ebook-archive.json \
   --state /受限路径/ebook-archive.sqlite3 \
   --limit-books 1 --execute
 
-python scripts/archive_owned_ebook_site.py \
+python3 scripts/archive_owned_ebook_site.py \
   --config /受限路径/ebook-archive.json \
   --state /受限路径/ebook-archive.sqlite3 \
   --concurrency 16 --skip-existing --execute
@@ -474,7 +474,7 @@ pytest -q tests/core/test_media_archive.py tests/database/test_media_archive_sch
 pytest -q tests/scripts/test_history_media_r2_migration.py
 pytest -q tests/local_analytics tests/services/test_storage_web_history_r2_cache.py
 docker compose --env-file ops/media_archive_nas/.env.example -f ops/media_archive_nas/compose.yml config
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 部署后再做小批量真实对象验收、断点重跑、NAS 离线、校验错误、Range、容量告警

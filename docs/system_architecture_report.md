@@ -16,20 +16,22 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 | 执行运行时 | 输入下载、workflow patch、ComfyUI、结果回报 | 测试执行 `workers/comfy_agent/`；正式 LAN/RunPod `workers/runpod_runtime/` |
 | 管理与运维 | Dashboard、独立模块发布、GPU/LAN/RunPod operator | `dashboard/`、`scripts/release.py`、`deploy/module-catalog.json`、`ops/` |
 
-正式与测试环境消费相同的不可变 artifact；数据库、Redis、token、bucket、域名
-和开关由目标环境逐服务配置投影提供。
+正式与测试环境都只消费精确、不可变的 artifact，但不要求两者天然使用同一
+digest；目标 artifact 由操作者按模块和环境明确选择。数据库、Redis、token、
+bucket、域名和开关由目标环境逐服务配置投影提供。
 
 ## 2. 分层边界
 
 ### 2.1 Core
 
-- `src/core/` 使用内部 request/context、domain config 和显式
-  provider/dependencies。
-- core 不导入 Telegram `Update`、FastAPI `Request/APIRouter` 或具体基础设施
-  客户端；平台入口先转换为内部 `internal_user_id`。
-- 入口负责 provider 注册，core 不在 import 时自动装配运行态资源。
-- facade 保持小 interface；复杂输入、扣费、submission、side effect 和清理
-  放在实现层/builder。
+目标边界是：`src/core/` 只使用内部 request/context、domain config 和显式
+provider/dependencies，平台入口先转换为 `internal_user_id`。新代码不得把
+Telegram `Update`、FastAPI `Request/APIRouter` 或基础设施 session 带进 core。
+
+当前迁移尚未完全结束：task core 仍保留 default-dependencies/runtime 装配兼容
+入口，部分默认 builder 会延迟导入 `src.services` 或基础设施 provider；公开任务
+facade 参数也仍较宽。因此不能把“core 已完全隔离、入口全部显式注册”当成现状。
+新增代码优先显式 command/policy/dependencies，并逐步缩小默认兼容面。
 
 ### 2.2 入口与服务
 
@@ -85,11 +87,25 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 ### 3.3 社区与媒体
 
 - 生成 History 是 Gallery 投稿和 apply-context 的来源。
-- 投稿、互动、评论、举报、提示词解锁保持数据库幂等与原子计数。
+- 投稿、互动、评论、举报、提示词解锁以数据库幂等与原子计数为目标；当前
+  Gallery 投稿/like-dislike 的仓库迁移约束仍有缺口，不能只依据 ORM
+  `UniqueConstraint` 假定所有环境已强制不变量。
 - 正式用户可见媒体使用当前 R2；legacy 对象存储只用于迁移、回滚和旧外链取证。
 - 列表媒体解析在释放 DB 事务后执行，并复用 cache/singleflight。
 
 详见 [社区与存储](./子模块_社区与存储_gallery_storage.md)。
+
+### 3.4 当前一致性缺口
+
+- 普通 Web 任务先 dispatch，再挂载 pending finalizer；finalizer 写入失败仍可能
+  进入普通补偿。私有 QQCC 已有 durable dispatch ledger/fence，但 Web 主链尚未
+  形成同等 outbox。排障和改动时必须区分“确定未接纳”和“派发结果歧义”。
+- `UserInteraction` ORM 声明 `(user_id, post_id, action_type)` 唯一，但仓库
+  Alembic upgrade 没有对应创建记录；即使存在，该键也不能阻止同一用户同时
+  like/dislike。`GalleryPost.task_id` 也只是普通索引。变更前先只读核对真实
+  `pg_constraint/pg_indexes`，迁移前先处理重复数据和 counter drift。
+- 测试 Worker 与正式 `workers/runpod_runtime` 仍是两棵会漂移的源码/runtime
+  事实源。workflow/profile 改动必须同时验证两边，直到收敛为 canonical package。
 
 ## 4. 部署与运行态
 
@@ -97,8 +113,10 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 - release index/manifest 保存完整 SHA、digest/checksum、OCI revision 和验证证据。
 - test/prod 只消费不可变产物与各自逐服务配置投影；云端不 rsync、现场 build
   或源码 bind mount。
-- A–H worktree 通过不可变 handoff 进入单批次 main PR；共享 test 只有一个
-  写入者，正式 mutation 每次单独确认。
+- A–H worktree 通过不可变 handoff 进入本机 main 单写者；协调器逐项合并并
+  push main，不创建 PR、不运行 CI、不构建或部署环境。
+- 操作者从完整 SHA 独立构建明确模块，再把精确 digest 部署到 test 或 prod；
+  focused tests 和 test 人工结果不构成发布器资格状态。
 - GPU/LAN/RunPod 当前态来自 provider、Central 和 XDG ledger，不写入本报告。
 
 详见
@@ -119,5 +137,5 @@ AllBot 是面向 Telegram 与 Web 的 AI 图片/视频生成平台，核心由�
 同步对应 Skill/专项文档并运行：
 
 ```bash
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```

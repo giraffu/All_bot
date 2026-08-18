@@ -20,14 +20,14 @@
 main 重做并用新 handoff 替代旧记录：
 
 ```bash
-python scripts/manage_ai_workspaces.py handoff \
+python3 scripts/manage_ai_workspaces.py handoff \
   --slot <A-H> --supersedes <旧handoff-id>
 ```
 
 查看队列：
 
 ```bash
-python scripts/auto_integrate_handoffs.py status
+python3 scripts/auto_integrate_handoffs.py status
 ```
 
 ## 授权边界

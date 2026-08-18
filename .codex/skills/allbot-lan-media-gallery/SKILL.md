@@ -27,9 +27,9 @@ description: "部署和维护 AllBot 局域网只读备份图库，覆盖媒体�
 ## 最小验证
 
 ```bash
-python -m pytest -q lan_media_gallery/tests
+.venv/bin/python -m pytest -q lan_media_gallery/tests
 docker compose -f lan_media_gallery/compose.yml config
-python scripts/doc_quality_checker.py
+python3 scripts/doc_quality_checker.py
 ```
 
 部署后还要验证健康状态、LAN HTTP、认证、`Upload.enabled=false`，并通过

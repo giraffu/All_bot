@@ -98,7 +98,7 @@ description: 开发和运维 AllBot 多模态 Prompt Optimizer。修改优化任
 ## 最小验证
 
 ```bash
-ALLBOT_ENV=test python -m pytest -q \
+ALLBOT_ENV=test .venv/bin/python -m pytest -q \
   tests/prompt_optimizer \
   tests/web_api/test_prompt_optimizations.py \
   tests/web_api/test_prompt_result_store.py \

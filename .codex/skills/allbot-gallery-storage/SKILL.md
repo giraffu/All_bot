@@ -1,6 +1,6 @@
 ---
 name: "allbot-gallery-storage"
-description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举报治理、R2 媒体策略与存储生命周期。"
+description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、提示词解锁、一键应用、举报治理，以及 R2 媒体 404、预签 URL、CORS、缩略图、对象迁移和存储生命周期。社区数据或用户可见媒体异常时使用。"
 ---
 
 # AllBot Gallery 与对象存储
@@ -37,9 +37,13 @@ description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举
 
 - 投稿必须尊重 `History.allow_contribute`，模板应用结果和 QQCC 自生成结果
   不得再次投稿。
-- like/dislike/apply 使用 `user_interactions` 唯一约束和原子计数；捕获
-  `IntegrityError` 前先 `flush()`。点击应用不能预增 `applied_count`，只有
-  任务真正进入成功链路后记账。
+- like/dislike/apply 的目标不变量是单用户/作品的互斥 reaction、幂等 apply 和
+  原子计数；捕获 `IntegrityError` 前先 `flush()`。但当前 Alembic upgrade 没有
+  创建 ORM 所写的 `uix_user_post_action`，且该三列键即使存在也不能阻止 like 与
+  dislike 并存。不得把 model declaration 当成真实环境约束。
+- `GalleryPost.task_id` 当前只是普通索引，投稿还是 check-then-insert。处理并发
+  投稿/互动前先只读核对 `pg_constraint/pg_indexes` 和重复/counter drift；设计
+  migration 时先去重和重算，不能直接创建 unique 让线上 migration 中途失败。
 - 评论创建、分页和计数保持限频与原子更新；帖子并发下架时整笔回滚，不能
   留下脏评论。
 - 未解锁 prompt 在列表和详情必须由服务端遮罩。提示词解锁以
@@ -108,6 +112,8 @@ description: "处理 Gallery 投稿互动、提示词解锁、模板应用、举
 
 - 投稿：重复投稿、`allow_contribute=False`、多 History 同步和硬删除外键。
 - 互动/评论：并发 like/dislike、原子计数、限频和并发下架回滚。
+- schema：仓库 migration 能创建目标 unique/partial unique，重复数据预检和
+  counter 重算可重复执行；不能只在 ORM/SQLite fake 中通过。
 - 解锁：首次扣费、重复幂等、并发唯一冲突、作者免扣和个人列表。
 - 举报：非法 reason、重复 409、媒体预览、单帖/用户级下架和 pending 举报
   同事务收口。
