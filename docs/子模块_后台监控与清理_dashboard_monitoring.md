@@ -147,7 +147,11 @@ sequenceDiagram
 - 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
 - 管理后台卡顿时先区分三类问题：Dashboard stats 重查询、Central 观测接口慢、GPU/ComfyUI 执行停顿。GPU 生成短暂停顿不等同于 Dashboard worker 监控慢。
-- 云测试不再部署 Dashboard 前后端；其行为测试保留在本地与 CI。
+- 云测试部署独立 Dashboard 前后端，公网入口必须经
+  Cloudflare Access；验收时同时检查 Backend health 和 Access 302 挑战。
+- Dashboard Stars 余额监控只在显式设置 `PROXY_URL` 时使用代理；
+  未配置时直连 Telegram，不得默认连接容器内不存在的
+  `127.0.0.1:7890`。
 - 云正式 Dashboard 前端默认通过受控入口 `http://100.107.220.127:8086/`
   提供。`dashboard-backend` 与 `dashboard-frontend` 分别从完整 main SHA 构建，
   并以精确 digest 逐模块部署；正式 mutation 每次都要求 `--confirm-prod`。
