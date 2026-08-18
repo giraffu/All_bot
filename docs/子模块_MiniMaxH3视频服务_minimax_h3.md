@@ -6,6 +6,8 @@
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`。Web 使用一个“高级图生
 视频pro”工作台切换三种模式，主 Bot 使用同一组模式。两端均可从
 十三个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
+QQCC 配置 Web 同样从这一领域目录下发 13 项，场景保存有序 `lora_items`；官方懒人
+Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
 Worker pool、RunPod/LAN 支持任务列表或新建入口。
 

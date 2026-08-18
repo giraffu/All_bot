@@ -322,7 +322,7 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     }
 
 
-def test_qqcc_ai_video_scene_migrates_to_pro_i2v_without_legacy_loras():
+def test_qqcc_ai_video_scene_migrates_to_pro_i2v_with_h3_addons():
     config = normalize_qqcc_config(
         {
             "main_buttons": {"ai_video": True},
@@ -335,10 +335,8 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_without_legacy_loras():
                     "duration": 15,
                     "engine": "ltx_video",
                     "lora_items": [
-                        {
-                            "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                            "strength": 0.75,
-                        },
+                        {"name": "motion_booster", "strength": 0.73},
+                        {"name": "mystic_xxx"},
                     ],
                 }
             ],
@@ -357,7 +355,10 @@ def test_qqcc_ai_video_scene_migrates_to_pro_i2v_without_legacy_loras():
     assert plan.duration == "15s"
     assert plan.total_cost == 30
     assert plan.negative_prompt == "blur, jitter"
-    assert plan.lora_items == []
+    assert plan.lora_items == [
+        {"name": "motion_booster", "strength": 0.75},
+        {"name": "mystic_xxx", "strength": 0.75},
+    ]
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
 
 
@@ -518,6 +519,9 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
                         "prompt": "smooth camera",
                         "negative_prompt": "   ",
                         "duration": 5,
+                        "lora_items": [
+                            {"name": "motion_booster", "strength": 0.7}
+                        ],
                     }
                 ],
             }
@@ -540,6 +544,9 @@ async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_pro
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_i2v"
     assert generation_task.await_args.kwargs["resolution_preset"] == "preview"
     assert generation_task.await_args.kwargs["images"] == ["/tmp/input.png"]
+    assert generation_task.await_args.kwargs["lora_items"] == [
+        {"name": "motion_booster", "strength": 0.7}
+    ]
 
 
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
@@ -1245,6 +1252,9 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status(tm
                         "duration": 5,
                         "engine": "ltx_video",
                         "end_frame_draw_scene_id": "tail_pose",
+                        "lora_items": [
+                            {"name": "pov_missionary", "strength": 0.7}
+                        ],
                     }
                 ],
             }
@@ -1274,10 +1284,84 @@ async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status(tm
     assert generation_task.await_args.kwargs["task_type"] == "minimax_h3_flf2v"
     assert generation_task.await_args.kwargs["images"] == [str(input_path), str(end_path)]
     assert generation_task.await_args.kwargs["aspect_ratio"] == "source"
+    assert generation_task.await_args.kwargs["lora_items"] == [
+        {"name": "pov_missionary", "strength": 0.7}
+    ]
     assert generation_task.await_args.kwargs["allow_cancel"] is False
     assert generation_task.await_args.kwargs["user_cancel_allowed"] is False
     assert generation_task.await_args.kwargs["base_priority"] == 100
     assert generation_task.await_args.kwargs["show_queue_status"] is False
+
+
+@pytest.mark.asyncio
+async def test_private_qqcc_ai_video_tail_stage_keeps_h3_addons(monkeypatch):
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "cinema_tail"},
+        qqcc_config=normalize_qqcc_config(
+            {
+                "main_buttons": {"ai_video": True},
+                "draw_scenes": [
+                    {"id": "tail_pose", "name": "尾帧姿势", "prompt": "tail"}
+                ],
+                "ai_video_scenes": [
+                    {
+                        "id": "cinema_tail",
+                        "name": "电影首尾",
+                        "prompt": "camera orbit",
+                        "duration": 5,
+                        "end_frame_draw_scene_id": "tail_pose",
+                        "lora_items": [
+                            {"name": "motion_booster", "strength": 0.7},
+                            {"name": "mystic_xxx", "strength": 0.75},
+                        ],
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=[],
+    )
+    create_checkpoint = AsyncMock(
+        return_value=SimpleNamespace(chain_id="chain-h3-1")
+    )
+    monkeypatch.setattr(
+        quick_video_service, "create_private_qqcc_continuation", create_checkpoint
+    )
+    monkeypatch.setattr(
+        quick_video_service,
+        "resume_private_qqcc_continuation",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        quick_video_service,
+        "persist_private_qqcc_continuation_input",
+        AsyncMock(return_value="inputs/original.png"),
+    )
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(
+            bot_data={
+                "bot_client_type": "bot:qqcc-private:7",
+                "private_qqcc_bot_id": 7,
+            }
+        ),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_generation_task_func=AsyncMock(),
+        process_video_task_template_func=AsyncMock(),
+        adapt_video_frame_file_func=lambda path, **_kwargs: path,
+    )
+
+    stages = create_checkpoint.await_args.kwargs["stages"]
+    assert stages[-1]["executor"] == "generation"
+    assert stages[-1]["task_kwargs"]["task_type"] == "minimax_h3_flf2v"
+    assert stages[-1]["task_kwargs"]["lora_items"] == [
+        {"name": "motion_booster", "strength": 0.7},
+        {"name": "mystic_xxx", "strength": 0.75},
+    ]
 
 
 def test_build_quick_video_submission_plan_snapshots_full_same_kind_chain_and_cost():

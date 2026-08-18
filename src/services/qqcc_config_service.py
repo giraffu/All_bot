@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import math
 import re
 from typing import Any
 
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import IMAGE_LORA_MODELS
+from src.domain_config.minimax_h3 import MINIMAX_H3_ADDON_MODELS
 from src.qqcc_video_lora_catalog import (
     QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
     QQCC_VIDEO_LORA_MODELS,
@@ -86,7 +88,7 @@ AI_VIDEO_DURATION_KEYS = (5, 10, 15)
 AI_VIDEO_RESOLUTION_KEYS = ("preview", "small", "standard", "hd")
 DEFAULT_AI_VIDEO_SCENE_RESOLUTION = AI_VIDEO_RESOLUTION_KEYS[0]
 AI_VIDEO_SCENE_MAX_COUNT = 20
-AI_VIDEO_MAX_LORA_ITEMS = 3
+AI_VIDEO_MAX_LORA_ITEMS = len(MINIMAX_H3_ADDON_MODELS)
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
@@ -829,9 +831,36 @@ def _normalize_ai_video_scene(
     if duration not in AI_VIDEO_DURATION_KEYS:
         duration = AI_VIDEO_DURATION_KEYS[0]
 
-    # The pro engine currently rejects execution overrides. Keep the versioned
-    # scene field as the future add-on seam, but discard legacy LTX selections.
     lora_items: list[dict[str, Any]] = []
+    seen_loras: set[str] = set()
+    raw_lora_items = raw_scene.get("lora_items")
+    if isinstance(raw_lora_items, list):
+        for raw_item in raw_lora_items:
+            if not isinstance(raw_item, dict):
+                continue
+            raw_name = raw_item.get("name")
+            lora_name = raw_name.strip() if isinstance(raw_name, str) else ""
+            model = MINIMAX_H3_ADDON_MODELS.get(lora_name)
+            if model is None or lora_name in seen_loras:
+                continue
+            seen_loras.add(lora_name)
+            try:
+                raw_strength = raw_item.get("strength")
+                strength = (
+                    model.default_strength
+                    if raw_strength in (None, "")
+                    else float(raw_strength)
+                )
+            except (TypeError, ValueError):
+                strength = model.default_strength
+            if not math.isfinite(strength):
+                strength = model.default_strength
+            strength = float(
+                round(round(min(2.0, max(0.1, strength)) * 20) / 20, 2)
+            )
+            lora_items.append({"name": lora_name, "strength": strength})
+            if len(lora_items) >= AI_VIDEO_MAX_LORA_ITEMS:
+                break
 
     scene = {
         "id": _build_unique_scene_id(
@@ -1713,7 +1742,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "ai_video_engines": [
             {
                 "value": AI_VIDEO_SCENE_ENGINE_MINIMAX_H3,
-                "supports_lora": False,
+                "supports_lora": True,
             }
         ],
         "video_lora_models": [
@@ -1725,8 +1754,15 @@ def build_qqcc_config_options() -> dict[str, Any]:
             for value, label in QQCC_VIDEO_LORA_MODELS.items()
         ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
-        "ai_video_addon_models_version": 1,
-        "ai_video_addon_models": [],
+        "ai_video_addon_models_version": 2,
+        "ai_video_addon_models": [
+            {
+                "value": model.id,
+                "label": model.label_zh,
+                "default_strength": model.default_strength,
+            }
+            for model in MINIMAX_H3_ADDON_MODELS.values()
+        ],
     }
 
 

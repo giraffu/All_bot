@@ -395,6 +395,11 @@ def _build_qqcc_ai_video_chain_segment(
     prompt = str(scene.get("prompt") or "").strip()
     display_name = str(scene.get("name") or "")
     scene_id = str(scene.get("id") or "").strip()
+    lora_items = [
+        {"name": item.get("name"), "strength": item.get("strength")}
+        for item in (scene.get("lora_items") or [])
+        if isinstance(item, dict) and item.get("name")
+    ]
     return QqccVideoChainSegment(
         scene_id=scene_id,
         scene_kind="ai_video",
@@ -420,7 +425,7 @@ def _build_qqcc_ai_video_chain_segment(
             scene_kind="ai_video",
             display_mode_name=display_name,
         ),
-        lora_items=[],
+        lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
     )
 
@@ -547,6 +552,11 @@ def build_quick_video_submission_plan(
         display_mode_name = str(scene.get("name") or "")
         scene_id = str(scene.get("id") or "").strip()
         fixed_credit_cost = resolve_qqcc_scene_fixed_credit_cost(scene)
+        lora_items = [
+            {"name": item.get("name"), "strength": item.get("strength")}
+            for item in (scene.get("lora_items") or [])
+            if isinstance(item, dict) and item.get("name")
+        ]
         return QuickVideoSubmissionPlan(
             kind=(
                 QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
@@ -574,7 +584,7 @@ def build_quick_video_submission_plan(
                 scene_kind="ai_video",
                 display_mode_name=display_mode_name,
             ),
-            lora_items=[],
+            lora_items=lora_items,
             tail_draw_chain=tail_draw_chain,
             scene_kind="ai_video",
             qqcc_chain_segments=chain_segments,
@@ -968,6 +978,7 @@ async def run_quick_video_submission_plan(
                         "allow_contribute": False,
                         "display_mode_name_override": plan.display_mode_name,
                         "result_meta": plan.result_meta,
+                        "lora_items": plan.lora_items,
                         **continuation_controls,
                     },
                 }
@@ -1121,6 +1132,7 @@ async def run_quick_video_submission_plan(
                 display_mode_name_override=plan.display_mode_name,
                 result_meta=plan.result_meta,
                 status_msg_id=status_msg_id,
+                lora_items=plan.lora_items or None,
                 **task_kwargs,
             )
         )
@@ -1276,6 +1288,7 @@ async def _run_tail_frame_video_plan(
                     display_mode_name_override=plan.display_mode_name,
                     result_meta=plan.result_meta,
                     status_msg_id=status_msg_id,
+                    lora_items=plan.lora_items or None,
                     base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
                     allow_cancel=False,
                     user_cancel_allowed=False,

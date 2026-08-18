@@ -109,8 +109,8 @@ bundles:
       comfy_id: local-registry
       model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-18-10eros-beta2-addon13-lightx2v8-v1/files
       discovered_size_gb: 65.24
-      import_status: planned
-      notes: Pinned 10Eros-Max Beta2 base with fixed LightX2V FL2VA 8-step v1.0 acceleration, thirteen optional LoRAs (the previous eight plus Breast Play & Jiggle v1, HMInnie v1, Deepthroat v0.2, POV Missionary v0.7 and Footjobs Type B v1), and official Comfy-Org Qwen3-VL/video/audio VAE assets. All eighteen expected sizes and SHA256 values are pinned; the new bundle still requires preparation, upload and GPU canary. Ref2VA remains excluded.
+      import_status: prepared_by_script
+      notes: Pinned 10Eros-Max Beta2 base with fixed LightX2V FL2VA 8-step v1.0 acceleration, thirteen optional LoRAs (the previous eight plus Breast Play & Jiggle v1, HMInnie v1, Deepthroat v0.2, POV Missionary v0.7 and Footjobs Type B v1), and official Comfy-Org Qwen3-VL/video/audio VAE assets. All eighteen expected sizes and SHA256 values are pinned and the local content-addressed bundle is prepared; runtime canary remains a release-time gate. Ref2VA remains excluded.
     files:
       - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors
         sha256: 57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20

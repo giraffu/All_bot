@@ -112,7 +112,7 @@ interface VideoLoraItem {
 }
 
 interface AiVideoLoraItem {
-  path: string
+  name: string
   strength: number
 }
 
@@ -270,7 +270,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
-  ai_video_addon_models_version: 1,
+  ai_video_addon_models_version: 2,
   ai_video_addon_models: [],
   image_lora_models: [],
   video_resolutions: [],
@@ -760,15 +760,17 @@ const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
   const normalized: AiVideoLoraItem[] = []
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const path = typeof item.path === 'string' ? item.path.trim() : ''
-    const option = allowed.get(path)
-    if (!option || seen.has(path)) continue
-    seen.add(path)
+    const candidate = item as { name?: unknown; path?: unknown; strength?: unknown }
+    const rawName = candidate.name ?? candidate.path
+    const name = typeof rawName === 'string' ? rawName.trim() : ''
+    const option = allowed.get(name)
+    if (!option || seen.has(name)) continue
+    seen.add(name)
     normalized.push({
-      path,
-      strength: normalizeLoraStrength(item.strength, option.default_strength ?? 1),
+      name,
+      strength: normalizeLoraStrength(candidate.strength, option.default_strength ?? 1),
     })
-    if (normalized.length >= 3) break
+    if (normalized.length >= 13) break
   }
   return normalized
 }
@@ -816,13 +818,13 @@ const updateVideoLoraSelection = (names: string[]) => {
   })
 }
 
-const updateAiVideoLoraSelection = (paths: string[]) => {
-  const current = new Map(sceneConfig.lora_items.map(item => [item.path, item.strength]))
-  sceneConfig.lora_items = paths.slice(0, 3).map(path => {
-    const option = modelOptions.ai_video_addon_models.find(item => item.value === path)
+const updateAiVideoLoraSelection = (names: string[]) => {
+  const current = new Map(sceneConfig.lora_items.map(item => [item.name, item.strength]))
+  sceneConfig.lora_items = names.slice(0, 13).map(name => {
+    const option = modelOptions.ai_video_addon_models.find(item => item.value === name)
     return {
-      path,
-      strength: normalizeLoraStrength(current.get(path), option?.default_strength ?? 1),
+      name,
+      strength: normalizeLoraStrength(current.get(name), option?.default_strength ?? 1),
     }
   })
 }
@@ -2632,22 +2634,22 @@ const { loading, saving, loadConfig, saveConfig } = useQqccConfigPersistence({
             <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 3 个）" class="mb-4">
+        <a-form-item v-if="sceneConfig.kind === 'ai_video' && activeLoraOptions.length > 0" label="附加模型（最多 13 个）" class="mb-4">
           <a-select
-            :value="sceneConfig.lora_items.map(item => item.path)"
+            :value="sceneConfig.lora_items.map(item => item.name)"
             mode="multiple"
-            :max-tag-count="3"
+            :max-tag-count="5"
             data-testid="scene-ai-video-lora-select"
             class="w-full"
             :disabled="!activeEngineSupportsLora"
             :get-popup-container="getSceneSelectPopupContainer"
             @change="updateAiVideoLoraSelection"
           >
-            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :disabled="sceneConfig.lora_items.length >= 3 && !sceneConfig.lora_items.some(selected => selected.path === item.value)">{{ item.label }}</a-select-option>
+            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :disabled="sceneConfig.lora_items.length >= 13 && !sceneConfig.lora_items.some(selected => selected.name === item.value)">{{ item.label }}</a-select-option>
           </a-select>
-          <div v-for="item in sceneConfig.lora_items" :key="item.path" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
-            <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.path)?.label || item.path }}</div>
-            <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-ai-video-lora-strength-${item.path}`" />
+          <div v-for="item in sceneConfig.lora_items" :key="item.name" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
+            <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.name)?.label || item.name }}</div>
+            <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-ai-video-lora-strength-${item.name}`" />
           </div>
         </a-form-item>
         </section>
