@@ -320,8 +320,9 @@ def _validate_apply_args(args) -> None:
 def _write_reports(report_dir: Path, payload: dict) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    json_path = report_dir / f"gallery_consistency_audit_{stamp}.json"
-    md_path = report_dir / f"gallery_consistency_audit_{stamp}.md"
+    environment = str(payload["environment"])
+    json_path = report_dir / f"gallery_consistency_audit_{environment}_{stamp}.json"
+    md_path = report_dir / f"gallery_consistency_audit_{environment}_{stamp}.md"
     json_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
