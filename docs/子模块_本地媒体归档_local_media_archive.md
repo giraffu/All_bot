@@ -396,8 +396,9 @@ marker 例外，不调用 GET、ListObjects、CopyObject、DELETE 或生产 Hist
 安全停止的当前 Copy 计划若只残留对象级瞬时 `failed`，使用
 `reconcile-copy-failures` 做无额外阶段令牌的修复性对账；该入口不具备 Copy 权限，
 只对精确计划仍为 `failed` 且错误文本可由当前 artifact 证明为瞬时异常的行执行来源与
-目标 HEAD。`ProxyConnectionError`、urllib3 `ProxyError` 和“无法连接冻结代理”属于
-对象级连接瞬时错误，进入既有指数退避，不再直接终止整个执行器。对账冻结 failed
+目标 HEAD。`ProxyConnectionError`、urllib3 `ProxyError`、“无法连接冻结代理”以及
+SDK 的 `Read timeout on endpoint URL` 文案属于对象级瞬时错误，进入既有指数退避，
+不再直接终止整个执行器。对账冻结 failed
 行集及错误详情摘要，复核原计划 bucket、endpoint 与 transport 指纹，同时把新代码和
 artifact 身份写入 0600 回执；来源 size/Last-Modified/ETag 必须未变。目标缺失时仅把
 行恢复为 `copy_required`，目标存在时只接受 size/ETag 相同且 marker 精确属于当前计划，
