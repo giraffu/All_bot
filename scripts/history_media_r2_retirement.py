@@ -2071,7 +2071,8 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
                    values($1,$2,$3,$4,$5,$6,$7,$8,$9,
                           case when $9 then 'completed' else 'pending' end,
                           case when $9 then
-                            jsonb_build_object('retained_source_is_target',$3)
+                            jsonb_build_object(
+                              'retained_source_is_target',$3::integer)
                             else '{}'::jsonb end,
                           case when $9 then now() else null end,
                           case when $9 then now() else null end)""",

@@ -593,6 +593,8 @@ def test_retirement_execute_surface_only_heads_and_deletes():
         "_materialize_bulk_retirement_order"
     )
     assert "scope still has a live History reference" not in planner_source
+    assert "retained_source_is_target" in planner_source
+    assert "$3::integer" in planner_source
     for forbidden in ("get_object", "list_objects", "delete_object"):
         assert forbidden not in planner_source
     stage_source = inspect.getsource(module._prepare_bulk_retirement_stage)
