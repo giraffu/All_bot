@@ -363,6 +363,7 @@ def build_bulk_retirement_plan(
     objects: Iterable[dict[str, Any]],
     runtime_identity: dict[str, Any],
     switch_plan_sha256s: Iterable[str] | None = None,
+    deferred_live_history_ref_object_count: int = 0,
     canary_size: int = 100,
     batch_size: int = RETIREMENT_BATCH_SIZE,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -487,6 +488,9 @@ def build_bulk_retirement_plan(
         "asset_scope_sha256": str(asset_scope_sha256),
         "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
         "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
+        "deferred_live_history_ref_object_count": int(
+            deferred_live_history_ref_object_count
+        ),
         "object_count": len(frozen),
         "total_bytes": sum(int(item["byte_size"]) for item in frozen),
         "canary_object_count": min(
@@ -512,6 +516,10 @@ def build_bulk_retirement_plan(
             for item in frozen
             if item["retirement_disposition"] == disposition
         )
+    if not 0 <= deferred_live_history_ref_object_count <= manifest[
+        "deferred_object_count"
+    ]:
+        raise RuntimeError("bulk retirement live reference count is inconsistent")
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest, frozen, batches
 
@@ -1561,9 +1569,6 @@ select s.source_name,s.source_key,s.byte_size,coalesce(s.source_etag,'') source_
 async def _prepare_bulk_retirement_stage(
     ledger: asyncpg.Connection,
     switch_plan_sha256s: list[str],
-    *,
-    canary_size: int,
-    batch_size: int,
 ) -> None:
     await ledger.execute(BULK_RETIREMENT_STAGE_SQL, switch_plan_sha256s, timeout=3600)
     invalid = int(
@@ -1625,6 +1630,14 @@ async def _prepare_bulk_retirement_stage(
              from bulk_retirement_blockers b
             where (c.source_name,c.source_key)=(b.source_name,b.source_key)"""
     )
+
+
+async def _materialize_bulk_retirement_order(
+    ledger: asyncpg.Connection,
+    *,
+    canary_size: int,
+    batch_size: int,
+) -> None:
     disposition_rows = await ledger.fetch(
         """select retirement_disposition,count(*) object_count,
                   coalesce(sum(scope_asset_count),0) asset_coordinate_count
@@ -1688,7 +1701,7 @@ async def _prepare_bulk_retirement_stage(
 async def _bulk_production_has_live_refs(
     ledger: asyncpg.Connection,
     production: asyncpg.Connection,
-) -> bool:
+) -> int:
     async with production.transaction():
         await production.execute(
             """create temporary table bulk_retirement_source_keys(
@@ -1700,7 +1713,7 @@ async def _bulk_production_has_live_refs(
             statement = await ledger.prepare(
                 """select distinct sha256(convert_to(source_key,'UTF8'))
                              source_key_sha256
-                      from bulk_retirement_ordered
+                      from bulk_retirement_candidates
                      where retirement_disposition='eligible'
                      order by source_key_sha256"""
             )
@@ -1726,25 +1739,74 @@ async def _bulk_production_has_live_refs(
                  on bulk_retirement_source_keys(source_key_sha256)"""
         )
         await production.execute("analyze bulk_retirement_source_keys")
-        return bool(
+        await production.execute(
+            """create temporary table bulk_retirement_live_source_hashes
+                 on commit drop as
+                 with refs as (
+                   select btrim(x.ref) ref from history h
+                    cross join lateral unnest(
+                      string_to_array(coalesce(h.input_file,''),'|')) x(ref)
+                   union all select btrim(output_file) from history
+                    where btrim(coalesce(output_file,''))<>''
+                   union all select trim(both '"' from p.path::text) from history h
+                    cross join lateral jsonb_path_query(
+                      coalesce(h.extra_outputs::jsonb,'{}'::jsonb),
+                      'strict $.**.path') p(path)
+                 )
+                 select distinct s.source_key_sha256
+                   from refs r join bulk_retirement_source_keys s
+                     on s.source_key_sha256=sha256(convert_to(r.ref,'UTF8'))""",
+            timeout=600,
+        )
+        match_count = int(
             await production.fetchval(
-                """with refs as (
-                     select btrim(x.ref) ref from history h
-                      cross join lateral unnest(
-                        string_to_array(coalesce(h.input_file,''),'|')) x(ref)
-                     union all select btrim(output_file) from history
-                      where btrim(coalesce(output_file,''))<>''
-                     union all select trim(both '"' from p.path::text) from history h
-                      cross join lateral jsonb_path_query(
-                        coalesce(h.extra_outputs::jsonb,'{}'::jsonb),
-                        'strict $.**.path') p(path)
-                   ) select exists(
-                       select 1 from refs r join bulk_retirement_source_keys s
-                         on s.source_key_sha256=
-                            sha256(convert_to(r.ref,'UTF8')) limit 1)""",
-                timeout=600,
+                "select count(*) from bulk_retirement_live_source_hashes"
             )
         )
+        if not match_count:
+            return 0
+        await ledger.execute(
+            """create temporary table bulk_retirement_live_source_hashes(
+                 source_key_sha256 bytea not null primary key)
+                 on commit preserve rows"""
+        )
+        statement = await production.prepare(
+            """select source_key_sha256
+                 from bulk_retirement_live_source_hashes
+                order by source_key_sha256"""
+        )
+        pending: list[tuple[bytes]] = []
+        async with ledger.transaction():
+            async for row in statement.cursor(prefetch=10000):
+                pending.append((bytes(row["source_key_sha256"]),))
+                if len(pending) < 10000:
+                    continue
+                await ledger.copy_records_to_table(
+                    "bulk_retirement_live_source_hashes",
+                    records=pending,
+                    columns=["source_key_sha256"],
+                )
+                pending.clear()
+            if pending:
+                await ledger.copy_records_to_table(
+                    "bulk_retirement_live_source_hashes",
+                    records=pending,
+                    columns=["source_key_sha256"],
+                )
+            updated = await ledger.fetchval(
+                """with changed as (
+                     update bulk_retirement_candidates c
+                        set retirement_disposition='deferred'
+                      where retirement_disposition='eligible'
+                        and sha256(convert_to(source_key,'UTF8')) in (
+                          select source_key_sha256
+                            from bulk_retirement_live_source_hashes)
+                      returning 1)
+                   select count(*) from changed"""
+            )
+        if int(updated) != match_count:
+            raise RuntimeError("bulk retirement live reference classification drifted")
+        return match_count
 
 
 def _candidate_from_bulk_stage(row: Any) -> dict[str, Any]:
@@ -1915,11 +1977,15 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         await _prepare_bulk_retirement_stage(
             ledger,
             sorted(switch_plans),
+        )
+        live_history_ref_object_count = await _bulk_production_has_live_refs(
+            ledger, production
+        )
+        await _materialize_bulk_retirement_order(
+            ledger,
             canary_size=args.canary_size,
             batch_size=args.batch_size,
         )
-        if await _bulk_production_has_live_refs(ledger, production):
-            raise RuntimeError("bulk retirement scope still has a live History reference")
         rowset_sha, batches, object_count, total_bytes = await _bulk_staged_identity(
             ledger
         )
@@ -1962,6 +2028,9 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             "asset_scope_sha256": asset_scope_sha,
             "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
             "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
+            "deferred_live_history_ref_object_count": (
+                live_history_ref_object_count
+            ),
             "object_count": object_count,
             "total_bytes": total_bytes,
             "canary_object_count": min(args.canary_size, object_count),
@@ -2063,6 +2132,9 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
                     "asset_scope_sha256": asset_scope_sha,
                     "eligible_object_count": manifest["eligible_object_count"],
                     "deferred_object_count": manifest["deferred_object_count"],
+                    "deferred_live_history_ref_object_count": (
+                        live_history_ref_object_count
+                    ),
                     "retained_target_count": disposition_summary.get(
                         "retained_target", {"object_count": 0}
                     )["object_count"],
