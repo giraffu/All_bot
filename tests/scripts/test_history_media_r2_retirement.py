@@ -351,6 +351,7 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
     assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v1"
     assert manifest["execution_mode"] == "bulk"
     assert manifest["asset_coordinate_count"] == 7
+    assert manifest["asset_scope_algorithm"] == "history-r2-bulk-scope-merkle-v1"
     assert manifest["object_count"] == 3
     assert manifest["canary_object_count"] == 1
     assert manifest["batch_count"] == 2
@@ -489,6 +490,14 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "_bulk_production_has_live_refs" in planner_source
     for forbidden in ("get_object", "list_objects", "delete_object"):
         assert forbidden not in planner_source
+
+    scope_source = inspect.getsource(module._bulk_scope_fingerprint)
+    assert "10000" in scope_source
+    assert "sha256" in scope_source
+    assert ".cursor(" not in scope_source
+    preflight_source = inspect.getsource(module._bulk_global_preflight)
+    assert "_bulk_plan_coverage_counts" in preflight_source
+    assert "batches_sha256" in preflight_source
 
 
 @pytest.mark.asyncio

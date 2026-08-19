@@ -478,7 +478,7 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 多个已完成 Switch 范围统一退役使用 `plan-bulk-delete`。调用方必须逐个给出不可重复的
 Switch plan SHA 及其预期资产坐标数；冻结器流式重算完整坐标集合，要求所有坐标已经
 Switch、属于同一 migration run，并派生完整 Copy plan 集合。全局 manifest 同时绑定每个
-Switch rowset、资产坐标 SHA、去重旧源 rowset、内部 batches SHA、artifact/runtime
+Switch rowset、每 10,000 坐标分块聚合的资产 SHA、去重旧源 rowset、内部 batches SHA、artifact/runtime
 identity 和 R2 持久目标耐久性；任一计数、来源事实、父链或身份漂移都生成不同计划或
 fail closed。计划先冻结 100 个旧源 canary，余下按最多 1,000 对象形成内部批次。一个
 `DELETE_HISTORY_MEDIA_<global-plan-sha>` 同时授权 canary 和该 manifest 的全部内部批次，

@@ -441,6 +441,7 @@ def build_bulk_retirement_plan(
         "switch_scopes": switch_scopes,
         "asset_coordinate_count": expected_assets,
         "asset_scope_sha256": str(asset_scope_sha256),
+        "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
         "object_count": len(frozen),
         "total_bytes": sum(int(item["byte_size"]) for item in frozen),
         "canary_object_count": min(canary_size, len(frozen)),
@@ -1382,53 +1383,60 @@ async def _bulk_scope_fingerprint(
     ledger: asyncpg.Connection,
     switch_plan_sha256s: list[str],
 ) -> tuple[str, dict[str, int], set[str]]:
-    hasher = hashlib.sha256()
-    first = True
-    counts = {plan_sha: 0 for plan_sha in switch_plan_sha256s}
-    copy_plans: set[str] = set()
-    async with ledger.transaction():
-        statement = await ledger.prepare(
-            """select id,history_id,role,ordinal,original_ref,target_key,
+    row = await ledger.fetchrow(
+        """with scope as materialized (
+             select * from analytics_history_media_r2_migrations
+              where switch_plan_sha256=any($1::text[])
+           ), ordered as (
+             select *,((row_number() over(
+                        order by switch_plan_sha256,id)-1)/10000)::bigint chunk_no,
+                    encode(sha256(convert_to(jsonb_build_array(
+                      id,history_id,role,ordinal,original_ref,target_key,
                       source_name,source_key,byte_size,source_etag,
                       source_last_modified,copy_plan_sha256,switch_plan_sha256,
-                      switch_completed_at
-                 from analytics_history_media_r2_migrations
-                where switch_plan_sha256=any($1::text[])
-                order by switch_plan_sha256,id"""
-        )
-        async for row in statement.cursor(switch_plan_sha256s, prefetch=10000):
-            plan_sha = str(row["switch_plan_sha256"])
-            if (
-                plan_sha not in counts
-                or row["switch_completed_at"] is None
-                or str(row["original_ref"]) == str(row["target_key"])
-                or not row["source_name"]
-                or not row["source_key"]
-            ):
-                raise RuntimeError("bulk retirement Switch scope is not fully completed")
-            counts[plan_sha] += 1
-            copy_plans.add(str(row["copy_plan_sha256"]))
-            identity = {
-                "id": int(row["id"]),
-                "history_id": int(row["history_id"]),
-                "role": str(row["role"]),
-                "ordinal": int(row["ordinal"]),
-                "original_ref": str(row["original_ref"]),
-                "target_key": str(row["target_key"]),
-                "source_name": str(row["source_name"]),
-                "source_key": str(row["source_key"]),
-                "byte_size": int(row["byte_size"]),
-                "source_etag": str(row["source_etag"]),
-                "source_last_modified": _iso(row["source_last_modified"]),
-                "copy_plan_sha256": str(row["copy_plan_sha256"]),
-                "switch_plan_sha256": plan_sha,
-                "switch_completed_at": _iso(row["switch_completed_at"]),
-            }
-            first = _stream_json_identity(hasher, identity, first=first)
-    if first:
+                      switch_completed_at)::text,'UTF8')),'hex') row_sha
+               from scope
+           ), chunks as (
+             select chunk_no,encode(sha256(convert_to(
+                      string_agg(row_sha,'' order by switch_plan_sha256,id),
+                      'UTF8')),'hex') chunk_sha
+               from ordered group by chunk_no
+           ), fingerprint as (
+             select encode(sha256(convert_to(
+                      string_agg(chunk_sha,'' order by chunk_no),'UTF8')),'hex') value
+               from chunks
+           ), counts as (
+             select jsonb_object_agg(switch_plan_sha256,asset_count
+                                      order by switch_plan_sha256) value
+               from (select switch_plan_sha256,count(*) asset_count
+                       from scope group by switch_plan_sha256) c
+           )
+           select (select value from fingerprint) asset_scope_sha256,
+                  (select value from counts) scope_counts,
+                  array(select distinct copy_plan_sha256 from scope order by 1)
+                    copy_plan_sha256s,
+                  count(*) scope_count,
+                  bool_and(switch_completed_at is not null
+                           and original_ref<>target_key
+                           and source_name is not null and source_key is not null)
+                    fully_completed
+             from scope""",
+        switch_plan_sha256s,
+        timeout=3600,
+    )
+    if row is None or not int(row["scope_count"] or 0):
         raise RuntimeError("bulk retirement Switch scope is empty")
-    hasher.update(b"]")
-    return hasher.hexdigest(), counts, copy_plans
+    if not bool(row["fully_completed"]):
+        raise RuntimeError("bulk retirement Switch scope is not fully completed")
+    raw_counts = row["scope_counts"]
+    counts = {
+        str(key): int(value)
+        for key, value in (
+            json.loads(raw_counts) if isinstance(raw_counts, str) else dict(raw_counts)
+        ).items()
+    }
+    copy_plans = {str(value) for value in row["copy_plan_sha256s"]}
+    return str(row["asset_scope_sha256"]), counts, copy_plans
 
 
 BULK_RETIREMENT_STAGE_SQL = """
@@ -1790,6 +1798,7 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             "switch_scopes": switch_scopes,
             "asset_coordinate_count": asset_count,
             "asset_scope_sha256": asset_scope_sha,
+            "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
             "object_count": object_count,
             "total_bytes": total_bytes,
             "canary_object_count": min(args.canary_size, object_count),
@@ -2167,42 +2176,18 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             nas_client.close()
 
 
-async def _bulk_plan_rowset_sha256(
+async def _bulk_plan_coverage_counts(
     ledger: asyncpg.Connection,
     plan_sha256: str,
-) -> tuple[str, int, int]:
-    hasher = hashlib.sha256()
-    first = True
-    object_count = 0
-    asset_count = 0
-    async with ledger.transaction():
-        statement = await ledger.prepare(
-            """select * from analytics_history_media_r2_retirement_objects
-                 where plan_sha256=$1 order by object_no"""
-        )
-        async for row in statement.cursor(plan_sha256, prefetch=5000):
-            item = dict(row)
-            item["durability_basis"] = DURABILITY_R2_PERSISTENT_TARGET
-            item["targets"] = (
-                json.loads(item["target_facts"])
-                if isinstance(item["target_facts"], str)
-                else list(item["target_facts"])
-            )
-            scope_facts = item.get("scope_facts") or {}
-            item["scope_switch_counts"] = (
-                json.loads(scope_facts)
-                if isinstance(scope_facts, str)
-                else dict(scope_facts)
-            )
-            first = _stream_json_identity(
-                hasher, _retirement_object_identity(item), first=first
-            )
-            object_count += 1
-            asset_count += int(item["scope_asset_count"])
-    if first:
-        raise RuntimeError("bulk retirement stored object rowset is empty")
-    hasher.update(b"]")
-    return hasher.hexdigest(), object_count, asset_count
+) -> tuple[int, int]:
+    row = await ledger.fetchrow(
+        """select count(*) object_count,
+                  coalesce(sum(scope_asset_count),0) asset_coordinate_count
+             from analytics_history_media_r2_retirement_objects
+            where plan_sha256=$1""",
+        plan_sha256,
+    )
+    return int(row["object_count"]), int(row["asset_coordinate_count"])
 
 
 async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
@@ -2259,15 +2244,14 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
             or sorted(copy_plans) != manifest["parent_copy_plan_sha256s"]
         ):
             raise RuntimeError("bulk retirement global Switch scope changed")
-        rowset_sha, object_count, asset_count = await _bulk_plan_rowset_sha256(
+        object_count, asset_count = await _bulk_plan_coverage_counts(
             ledger, args.plan_sha256
         )
         if (
-            rowset_sha != manifest["rowset_sha256"]
-            or object_count != int(manifest["object_count"])
+            object_count != int(manifest["object_count"])
             or asset_count != int(manifest["asset_coordinate_count"])
         ):
-            raise RuntimeError("bulk retirement stored rowset changed")
+            raise RuntimeError("bulk retirement stored coverage changed")
         batch_rows = await ledger.fetch(
             """select batch_no,is_canary,object_count,asset_coordinate_count,
                       total_bytes,rowset_sha256
