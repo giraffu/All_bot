@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import ssl
 import subprocess
 import sys
 import threading
@@ -13,7 +14,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import ClientError, ProxyConnectionError
+from botocore.exceptions import ClientError, ProxyConnectionError, SSLError
 
 from scripts.history_media_r2_migration import (
     MIGRATION_DDL,
@@ -570,6 +571,22 @@ def test_proxy_connection_failure_is_object_level_transient():
 
     assert classify_copy_request_failure(error) == "connection_transient"
     assert is_transient_copy_failure(str(error))
+
+
+def test_ssl_unexpected_eof_is_transient_but_certificate_failure_is_fatal():
+    eof = SSLError(
+        endpoint_url="https://redacted.invalid/object",
+        error=ssl.SSLError("UNEXPECTED_EOF_WHILE_READING"),
+    )
+    certificate = SSLError(
+        endpoint_url="https://redacted.invalid/object",
+        error=ssl.SSLCertVerificationError("certificate verify failed"),
+    )
+
+    assert classify_copy_request_failure(eof) == "connection_transient"
+    assert is_transient_copy_failure(str(eof))
+    assert classify_copy_request_failure(certificate) == "fatal"
+    assert not is_transient_copy_failure(str(certificate))
 
 
 def test_copy_retries_proxy_connection_failure_before_succeeding(monkeypatch):
