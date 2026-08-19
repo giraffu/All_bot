@@ -597,6 +597,13 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "for candidate" not in stage_source
     live_ref_source = inspect.getsource(module._bulk_production_has_live_refs)
     assert "retirement_disposition='eligible'" in live_ref_source
+    assert "source_key_sha256 bytea" in live_ref_source
+    assert "create unique index" in live_ref_source
+    assert "analyze bulk_retirement_source_keys" in live_ref_source
+    assert "set local work_mem='256MB'" in live_ref_source
+    assert "max_parallel_workers_per_gather=0" in live_ref_source
+    assert "sha256(convert_to" in live_ref_source
+    assert "source_key text" not in live_ref_source
 
     scope_source = inspect.getsource(module._bulk_scope_fingerprint)
     assert "10000" in scope_source

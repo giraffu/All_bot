@@ -1689,50 +1689,62 @@ async def _bulk_production_has_live_refs(
     ledger: asyncpg.Connection,
     production: asyncpg.Connection,
 ) -> bool:
-    await production.execute(
-        """create temporary table bulk_retirement_source_keys(
-             source_key text not null) on commit preserve rows"""
-    )
-    async with ledger.transaction():
-        statement = await ledger.prepare(
-            """select distinct source_key from bulk_retirement_ordered
-                where retirement_disposition='eligible'
-                order by source_key"""
+    async with production.transaction():
+        await production.execute(
+            """create temporary table bulk_retirement_source_keys(
+                 source_key_sha256 bytea not null) on commit drop"""
         )
-        pending: list[tuple[str]] = []
-        async for row in statement.cursor(prefetch=10000):
-            pending.append((str(row["source_key"]),))
-            if len(pending) == 10000:
+        await production.execute("set local work_mem='256MB'")
+        await production.execute("set local max_parallel_workers_per_gather=0")
+        async with ledger.transaction():
+            statement = await ledger.prepare(
+                """select distinct sha256(convert_to(source_key,'UTF8'))
+                             source_key_sha256
+                      from bulk_retirement_ordered
+                     where retirement_disposition='eligible'
+                     order by source_key_sha256"""
+            )
+            pending: list[tuple[bytes]] = []
+            async for row in statement.cursor(prefetch=10000):
+                pending.append((bytes(row["source_key_sha256"]),))
+                if len(pending) < 10000:
+                    continue
                 await production.copy_records_to_table(
                     "bulk_retirement_source_keys",
                     records=pending,
-                    columns=["source_key"],
+                    columns=["source_key_sha256"],
                 )
                 pending.clear()
-        if pending:
-            await production.copy_records_to_table(
-                "bulk_retirement_source_keys",
-                records=pending,
-                columns=["source_key"],
-            )
-    return bool(
-        await production.fetchval(
-            """with refs as (
-                 select btrim(x.ref) ref from history h
-                  cross join lateral unnest(
-                    string_to_array(coalesce(h.input_file,''),'|')) x(ref)
-                 union all select btrim(output_file) from history
-                  where btrim(coalesce(output_file,''))<>''
-                 union all select trim(both '"' from p.path::text) from history h
-                  cross join lateral jsonb_path_query(
-                    coalesce(h.extra_outputs::jsonb,'{}'::jsonb),
-                    'strict $.**.path') p(path)
-               ) select exists(
-                   select 1 from refs r join bulk_retirement_source_keys s
-                     on s.source_key=r.ref limit 1)""",
-            timeout=600,
+            if pending:
+                await production.copy_records_to_table(
+                    "bulk_retirement_source_keys",
+                    records=pending,
+                    columns=["source_key_sha256"],
+                )
+        await production.execute(
+            """create unique index bulk_retirement_source_keys_sha256
+                 on bulk_retirement_source_keys(source_key_sha256)"""
         )
-    )
+        await production.execute("analyze bulk_retirement_source_keys")
+        return bool(
+            await production.fetchval(
+                """with refs as (
+                     select btrim(x.ref) ref from history h
+                      cross join lateral unnest(
+                        string_to_array(coalesce(h.input_file,''),'|')) x(ref)
+                     union all select btrim(output_file) from history
+                      where btrim(coalesce(output_file,''))<>''
+                     union all select trim(both '"' from p.path::text) from history h
+                      cross join lateral jsonb_path_query(
+                        coalesce(h.extra_outputs::jsonb,'{}'::jsonb),
+                        'strict $.**.path') p(path)
+                   ) select exists(
+                       select 1 from refs r join bulk_retirement_source_keys s
+                         on s.source_key_sha256=
+                            sha256(convert_to(r.ref,'UTF8')) limit 1)""",
+                timeout=600,
+            )
+        )
 
 
 def _candidate_from_bulk_stage(row: Any) -> dict[str, Any]:
