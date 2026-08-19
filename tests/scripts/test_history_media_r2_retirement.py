@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from scripts.history_media_r2_retirement import (
+    BULK_SOURCE_IDENTITY_POLICY,
     DURABILITY_NAS_ARCHIVE,
     DURABILITY_R2_PERSISTENT_TARGET,
     RETIREMENT_BLOCKER_INDEX_DDL,
@@ -167,6 +168,51 @@ def test_r2_persistent_target_still_requires_exact_target_marker_and_size():
                     target_head, ContentLength=99
                 )
             },
+            nas_head=None,
+        )
+
+
+def test_bulk_missing_source_etag_requires_exact_size_and_last_modified():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        source_etag="",
+        source_identity_policy=BULK_SOURCE_IDENTITY_POLICY,
+    )
+    source_head = {
+        "ContentLength": 100,
+        "ETag": '"live-etag-not-used-as-frozen-evidence"',
+        "LastModified": candidate["source_last_modified"],
+    }
+    target_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+    }
+    validate_retirement_object_heads(
+        candidate,
+        source_head=source_head,
+        target_heads={candidate["targets"][0]["target_key"]: target_head},
+        nas_head=None,
+    )
+    with pytest.raises(RuntimeError, match="last-modified"):
+        validate_retirement_object_heads(
+            candidate,
+            source_head=dict(
+                source_head,
+                LastModified=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            ),
+            target_heads={candidate["targets"][0]["target_key"]: target_head},
+            nas_head=None,
+        )
+    with pytest.raises(RuntimeError, match="ETag evidence"):
+        validate_retirement_object_heads(
+            dict(candidate, source_identity_policy=""),
+            source_head=source_head,
+            target_heads={candidate["targets"][0]["target_key"]: target_head},
             nas_head=None,
         )
 
@@ -352,6 +398,7 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
     assert manifest["execution_mode"] == "bulk"
     assert manifest["asset_coordinate_count"] == 7
     assert manifest["asset_scope_algorithm"] == "history-r2-bulk-scope-merkle-v1"
+    assert manifest["source_identity_policy"] == BULK_SOURCE_IDENTITY_POLICY
     assert manifest["object_count"] == 3
     assert manifest["canary_object_count"] == 1
     assert manifest["batch_count"] == 2
