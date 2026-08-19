@@ -1,4 +1,5 @@
 import type { TemplateApplyTaskType, TemplateTaskMeta } from '@/types/templateApply'
+import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
 
 const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
   faceswap: 'face_swap',
@@ -107,12 +108,18 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
 }
 
 export const getCanonicalTemplateTaskType = (taskType: string): TemplateApplyTaskType | null => {
-  if (WEB_DISABLED_TEMPLATE_TASK_TYPES.has(taskType)) {
+  if (
+    WEB_DISABLED_TEMPLATE_TASK_TYPES.has(taskType)
+    || !isGenerationTaskTypeEnabled(taskType)
+  ) {
     return null
   }
 
   const normalizedTaskType = TEMPLATE_TASK_TYPE_ALIASES[taskType] ?? taskType
-  if (WEB_DISABLED_TEMPLATE_TASK_TYPES.has(normalizedTaskType)) {
+  if (
+    WEB_DISABLED_TEMPLATE_TASK_TYPES.has(normalizedTaskType)
+    || !isGenerationTaskTypeEnabled(normalizedTaskType)
+  ) {
     return null
   }
 

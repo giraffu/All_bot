@@ -172,6 +172,7 @@ describe('TaskDetailModal Wan22 editor links', () => {
   })
 
   it('shows contribution actions for H3 image modes but not T2V', async () => {
+    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
     currentDetailRecord = {
       ...currentDetailRecord,
       type: 'minimax_h3_i2v',

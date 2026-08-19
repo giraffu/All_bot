@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from 'vitest'
 import { normalizeTemplateApplyContext } from '@/utils/normalizeTemplateApplyContext'
 
@@ -214,6 +216,7 @@ describe('normalizeTemplateApplyContext', () => {
   })
 
   it('normalizes MiniMax H3 locked context with its public addon catalog', () => {
+    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
     const normalized = normalizeTemplateApplyContext(
       {
         post_id: 31,

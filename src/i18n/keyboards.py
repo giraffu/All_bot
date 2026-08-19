@@ -4,6 +4,7 @@ from typing import Any
 from telegram import ReplyKeyboardMarkup
 
 from src.i18n.translator import get_text
+from src.services.advanced_video_entry_policy import active_advanced_video_menu_key
 from src.services.lazy_bot_entry_service import is_lazy_bot_entry_enabled
 from src.services.main_bot_menu_config_service import (
     DEFAULT_MAIN_BOT_MENU_CONFIG,
@@ -25,7 +26,13 @@ def _build_main_menu_keyboard(lang: str, config: Any) -> ReplyKeyboardMarkup:
     ]
     if not visible_keys:
         visible_keys = ["menu.main_menu"]
-    labels = [get_text(key, lang) for key in visible_keys]
+    labels = [
+        get_text(
+            active_advanced_video_menu_key() if key == "menu.ltx_video" else key,
+            lang,
+        )
+        for key in visible_keys
+    ]
     keyboard = _chunk(labels, normalized["main_menu"]["buttons_per_row"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
