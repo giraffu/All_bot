@@ -64,7 +64,7 @@ CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ProxyConnectionError|ProxyError|"
-    r"Failed to connect to proxy URL|ReadTimeoutError|"
+    r"Failed to connect to proxy URL|ReadTimeoutError|Read\s+timeout|"
     r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
     r"ServiceUnavailable|RequestTimeout|ProtocolError|RemoteDisconnected|"
     r"Connection reset by peer|HTTPStatusCode[^0-9]*(?:429|500|502|503|504)|"
@@ -91,7 +91,9 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     ):
         return "server_5xx"
     if re.search(
-        r"ReadTimeout|ConnectTimeout|RequestTimeout", error_text, re.IGNORECASE
+        r"ReadTimeout|Read\s+timeout|ConnectTimeout|RequestTimeout",
+        error_text,
+        re.IGNORECASE,
     ):
         return "timeout"
     if re.search(

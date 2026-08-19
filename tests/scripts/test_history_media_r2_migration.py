@@ -552,6 +552,7 @@ def test_copy_retries_one_transient_object_with_exponential_backoff(monkeypatch)
     ("error_text", "expected"),
     [
         ("ReadTimeoutError: read timed out", "timeout"),
+        ("Read timeout on endpoint URL: <redacted>", "timeout"),
         ("HTTPStatusCode: 503 ServiceUnavailable", "server_5xx"),
         ("An error occurred (500) when calling CopyObject", "server_5xx"),
         ("Connection reset by peer", "connection_transient"),
@@ -561,6 +562,7 @@ def test_copy_request_health_class_separates_server_errors_from_timeouts(
     error_text, expected
 ):
     assert classify_copy_request_failure(RuntimeError(error_text)) == expected
+    assert is_transient_copy_failure(error_text)
 
 
 def test_proxy_connection_failure_is_object_level_transient():
