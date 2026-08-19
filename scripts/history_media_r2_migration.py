@@ -65,6 +65,7 @@ R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ProxyConnectionError|ProxyError|"
     r"Failed to connect to proxy URL|ReadTimeoutError|Read\s+timeout|"
+    r"UNEXPECTED_EOF_WHILE_READING|EOF occurred in violation of protocol|"
     r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
     r"ServiceUnavailable|RequestTimeout|ProtocolError|RemoteDisconnected|"
     r"Connection reset by peer|HTTPStatusCode[^0-9]*(?:429|500|502|503|504)|"
@@ -99,6 +100,7 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     if re.search(
         r"EndpointConnection|ConnectionClosed|ProxyConnection|ProxyError|"
         r"Failed to connect to proxy URL|ProtocolError|RemoteDisconnected|"
+        r"UNEXPECTED_EOF_WHILE_READING|EOF occurred in violation of protocol|"
         r"Connection reset by peer",
         error_text,
         re.IGNORECASE,
