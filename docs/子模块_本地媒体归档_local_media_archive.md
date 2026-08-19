@@ -480,14 +480,19 @@ Switch plan SHA 及其预期资产坐标数；冻结器流式重算完整坐标�
 Switch、属于同一 migration run，并派生完整 Copy plan 集合。全局 manifest 同时绑定每个
 Switch rowset、每 10,000 坐标分块聚合的资产 SHA、去重旧源 rowset、内部 batches SHA、artifact/runtime
 identity 和 R2 持久目标耐久性；任一计数、来源事实、父链或身份漂移都生成不同计划或
-fail closed。计划先冻结 100 个旧源 canary，余下按最多 1,000 对象形成内部批次。一个
+fail closed。Bulk v2 把全部旧源冻结为三个不相混合的 disposition：`eligible` 先形成
+100 个旧源 canary 和后续最多 1,000 对象批次；仍被其它 Copy/Switch 使用的来源进入
+`deferred` 独立批次，每批执行前重检 blocker，未解除时安全暂停并可用同一计划续跑；
+旧源 key 同时也是任一标准持久目标的对象进入 `retained_target` 审计批次，在冻结时以
+`SOURCE_IS_TARGET` 终态保留，永不进入 HEAD/DELETE 执行集合。三个 disposition 的对象数
+和资产坐标数都写入 manifest，三者之和必须等于完整 Switch 范围。一个
 `DELETE_HISTORY_MEDIA_<global-plan-sha>` 同时授权 canary 和该 manifest 的全部内部批次，
 canary 完整提交后同一执行器自动续跑，不再逐批请求令牌；重启仍只恢复同一冻结计划的
 未完成批次。计划表记录全部 Switch 资产坐标覆盖，删除对象数则按旧来源去重，两者不得
 混为同一计数。冻结阶段不下载媒体正文，也不调用 ListObjects 或任何删除；完整来源与
 标准目标 HEAD 在每个内部批次实际删除前后复核。
 
-Bulk v1 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 ETag 时仍要求 HEAD
+Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 ETag 时仍要求 HEAD
 精确匹配；历史账本 ETag 为空时，只能以冻结 size 加 R2 Last-Modified 的双重精确匹配
 替代，缺任一项或时间漂移都停止。该兼容策略写入全局 manifest，不适用于旧的单范围
 计划，也不能放宽目标对象的 Copy marker、size 或 ETag 门禁。
@@ -502,7 +507,8 @@ Bulk v1 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 
 shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
 的对象都必须留存。
 
-Bulk 执行只对计划内 `source_key` 调用单对象 DELETE；标准持久 `target_key` 永远是生存
+Bulk 执行只对计划内 `eligible` 或已解除 blocker 的 `deferred` 来源调用单对象 DELETE；
+标准持久 `target_key` 和 `retained_target` 永远是生存
 副本，不得进入删除集合，也不提供 bucket/prefix 清理入口。任一批次异常把全局计划及
 运行中批次置为 `paused`，已完成批次和已删除对象回执保留；相同 artifact、runtime 和
 全局令牌可幂等恢复。最后一个批次完成后仍需核对全部对象回执、资产坐标守恒、生产零

@@ -358,6 +358,7 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
         nas_key="",
         scope_asset_count=3,
         scope_switch_counts={"a" * 64: 3},
+        retirement_disposition="eligible",
     )
     second = _candidate(
         source_key="private/second.mp4",
@@ -369,6 +370,7 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
         nas_key="",
         scope_asset_count=2,
         scope_switch_counts={"b" * 64: 2},
+        retirement_disposition="deferred",
     )
     third = _candidate(
         source_key="private/third.png",
@@ -380,6 +382,7 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
         nas_key="",
         scope_asset_count=2,
         scope_switch_counts={"a" * 64: 1, "b" * 64: 1},
+        retirement_disposition="retained_target",
     )
 
     manifest, frozen, batches = build_bulk_retirement_plan(
@@ -394,17 +397,32 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
         batch_size=2,
     )
 
-    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v1"
+    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v2"
     assert manifest["execution_mode"] == "bulk"
     assert manifest["asset_coordinate_count"] == 7
     assert manifest["asset_scope_algorithm"] == "history-r2-bulk-scope-merkle-v1"
     assert manifest["source_identity_policy"] == BULK_SOURCE_IDENTITY_POLICY
     assert manifest["object_count"] == 3
     assert manifest["canary_object_count"] == 1
-    assert manifest["batch_count"] == 2
+    assert manifest["batch_count"] == 3
+    assert manifest["eligible_object_count"] == 1
+    assert manifest["deferred_object_count"] == 1
+    assert manifest["retained_target_object_count"] == 1
     assert batches[0]["is_canary"] is True
     assert batches[0]["object_count"] == 1
-    assert batches[1]["object_count"] == 2
+    assert batches[0]["disposition"] == "eligible"
+    assert batches[1]["disposition"] == "deferred"
+    assert batches[1]["object_count"] == 1
+    assert batches[2]["disposition"] == "retained_target"
+    assert batches[2]["is_retained"] is True
+    assert [item["retirement_disposition"] for item in frozen] == [
+        "eligible",
+        "deferred",
+        "retained_target",
+    ]
+    assert manifest["eligible_asset_coordinate_count"] == 3
+    assert manifest["deferred_asset_coordinate_count"] == 2
+    assert manifest["retained_target_asset_coordinate_count"] == 2
     assert sum(item["scope_asset_count"] for item in frozen) == 7
     assert validate_delete_gate(
         expected_plan_sha256=manifest["plan_sha256"],
@@ -414,6 +432,41 @@ def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
     serialized = json.dumps(manifest)
     assert "private/" not in serialized
     assert "task-results/" not in serialized
+
+
+def test_bulk_retirement_dispositions_are_frozen_and_fail_closed():
+    base = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        scope_asset_count=1,
+        scope_switch_counts={"a" * 64: 1},
+    )
+    kwargs = {
+        "run_id": "11111111-1111-1111-1111-111111111111",
+        "parent_copy_plan_sha256s": ["c" * 64],
+        "switch_scope_counts": {"a" * 64: 1},
+        "switch_scope_rowset_sha256s": {"a" * 64: "e" * 64},
+        "asset_scope_sha256": "1" * 64,
+        "runtime_identity": {},
+    }
+    with pytest.raises(RuntimeError, match="disposition is invalid"):
+        build_bulk_retirement_plan(
+            **kwargs, objects=[dict(base, retirement_disposition="unknown")]
+        )
+    with pytest.raises(RuntimeError, match="no immediately eligible"):
+        build_bulk_retirement_plan(
+            **kwargs, objects=[dict(base, retirement_disposition="deferred")]
+        )
+    eligible_identity = _retirement_object_identity(
+        dict(base, retirement_disposition="eligible")
+    )
+    retained_identity = _retirement_object_identity(
+        dict(base, retirement_disposition="retained_target")
+    )
+    assert eligible_identity != retained_identity
 
 
 def test_bulk_retirement_plan_rejects_scope_count_drift_and_duplicate_switches():
@@ -537,6 +590,13 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "_bulk_production_has_live_refs" in planner_source
     for forbidden in ("get_object", "list_objects", "delete_object"):
         assert forbidden not in planner_source
+    stage_source = inspect.getsource(module._prepare_bulk_retirement_stage)
+    assert "bulk_retirement_blockers" in stage_source
+    assert "retirement_disposition" in stage_source
+    assert "retained_target" in stage_source
+    assert "for candidate" not in stage_source
+    live_ref_source = inspect.getsource(module._bulk_production_has_live_refs)
+    assert "retirement_disposition='eligible'" in live_ref_source
 
     scope_source = inspect.getsource(module._bulk_scope_fingerprint)
     assert "10000" in scope_source
@@ -545,6 +605,9 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     preflight_source = inspect.getsource(module._bulk_global_preflight)
     assert "_bulk_plan_coverage_counts" in preflight_source
     assert "batches_sha256" in preflight_source
+    finalizer_source = inspect.getsource(module._finalize_bulk_delete)
+    assert "retained_target_object_count" in finalizer_source
+    assert "blocked_count" in finalizer_source
 
 
 @pytest.mark.asyncio

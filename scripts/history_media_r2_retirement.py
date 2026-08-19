@@ -44,6 +44,11 @@ DURABILITY_NAS_ARCHIVE = "nas-archive"
 DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
 DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
 BULK_SOURCE_IDENTITY_POLICY = "etag-or-size-last-modified"
+BULK_RETIREMENT_DISPOSITIONS = (
+    "eligible",
+    "deferred",
+    "retained_target",
+)
 RETIREMENT_DDL = """
 create table if not exists analytics_history_media_r2_retirement_plans (
     plan_sha256 char(64) primary key,
@@ -108,10 +113,16 @@ alter table analytics_history_media_r2_retirement_batches
   add column if not exists is_canary boolean not null default false;
 alter table analytics_history_media_r2_retirement_batches
   add column if not exists asset_coordinate_count bigint not null default 0;
+alter table analytics_history_media_r2_retirement_batches
+  add column if not exists disposition text not null default 'eligible';
+alter table analytics_history_media_r2_retirement_batches
+  add column if not exists is_retained boolean not null default false;
 alter table analytics_history_media_r2_retirement_objects
   add column if not exists scope_asset_count integer not null default 0;
 alter table analytics_history_media_r2_retirement_objects
   add column if not exists scope_facts jsonb not null default '{}'::jsonb;
+alter table analytics_history_media_r2_retirement_objects
+  add column if not exists retirement_disposition text not null default 'eligible';
 """
 RETIREMENT_BLOCKER_TIMEOUT_SECONDS = 60.0
 RETIREMENT_BLOCKER_SQL = """with selected as materialized (
@@ -255,6 +266,9 @@ def _retirement_object_identity(candidate: dict[str, Any]) -> dict[str, Any]:
             {
                 "scope_asset_count": int(candidate.get("scope_asset_count") or 0),
                 "scope_switch_counts_sha256": _sha256_json(scope_switch_counts),
+                "retirement_disposition": str(
+                    candidate.get("retirement_disposition") or "eligible"
+                ),
             }
         )
     return identity
@@ -366,16 +380,30 @@ def build_bulk_retirement_plan(
     if not 1 <= canary_size <= batch_size <= RETIREMENT_BATCH_SIZE:
         raise ValueError("bulk retirement batch sizes must satisfy 1 <= canary <= batch <= 1000")
 
-    frozen = sorted(
-        (dict(item) for item in objects),
+    frozen = [dict(item) for item in objects]
+    for candidate in frozen:
+        disposition = str(candidate.get("retirement_disposition") or "eligible")
+        if disposition not in BULK_RETIREMENT_DISPOSITIONS:
+            raise RuntimeError("bulk retirement object disposition is invalid")
+        candidate["retirement_disposition"] = disposition
+    disposition_rank = {
+        disposition: rank
+        for rank, disposition in enumerate(BULK_RETIREMENT_DISPOSITIONS)
+    }
+    frozen.sort(
         key=lambda item: (
+            disposition_rank[str(item["retirement_disposition"])],
             -int(item["byte_size"]),
             _key_sha(str(item["source_name"]), str(item["source_key"])),
-        ),
+        )
     )
     keys = [(str(item["source_name"]), str(item["source_key"])) for item in frozen]
     if not frozen:
         raise RuntimeError("bulk retirement plan has no old sources")
+    if not any(
+        item["retirement_disposition"] == "eligible" for item in frozen
+    ):
+        raise RuntimeError("bulk retirement plan has no immediately eligible old sources")
     if len(keys) != len(set(keys)):
         raise RuntimeError("bulk retirement plan contains a duplicate old source")
     for candidate in frozen:
@@ -401,28 +429,43 @@ def build_bulk_retirement_plan(
 
     identities = [_retirement_object_identity(item) for item in frozen]
     batches: list[dict[str, Any]] = []
-    offset = 0
     batch_no = 0
-    while offset < len(frozen):
-        size = canary_size if batch_no == 0 else batch_size
-        subset = frozen[offset : offset + size]
-        subset_identities = identities[offset : offset + size]
-        batches.append(
-            {
-                "batch_no": batch_no,
-                "is_canary": batch_no == 0,
-                "object_count": len(subset),
-                "asset_coordinate_count": sum(
-                    int(item["scope_asset_count"]) for item in subset
-                ),
-                "total_bytes": sum(int(item["byte_size"]) for item in subset),
-                "rowset_sha256": _sha256_json(subset_identities),
-            }
-        )
-        for item in subset:
-            item["batch_no"] = batch_no
-        offset += len(subset)
-        batch_no += 1
+    for disposition in BULK_RETIREMENT_DISPOSITIONS:
+        indexes = [
+            index
+            for index, item in enumerate(frozen)
+            if item["retirement_disposition"] == disposition
+        ]
+        offset = 0
+        while offset < len(indexes):
+            size = (
+                canary_size
+                if disposition == "eligible" and offset == 0
+                else batch_size
+            )
+            subset_indexes = indexes[offset : offset + size]
+            subset = [frozen[index] for index in subset_indexes]
+            subset_identities = [identities[index] for index in subset_indexes]
+            is_canary = disposition == "eligible" and offset == 0
+            is_retained = disposition == "retained_target"
+            batches.append(
+                {
+                    "batch_no": batch_no,
+                    "is_canary": is_canary,
+                    "disposition": disposition,
+                    "is_retained": is_retained,
+                    "object_count": len(subset),
+                    "asset_coordinate_count": sum(
+                        int(item["scope_asset_count"]) for item in subset
+                    ),
+                    "total_bytes": sum(int(item["byte_size"]) for item in subset),
+                    "rowset_sha256": _sha256_json(subset_identities),
+                }
+            )
+            for item in subset:
+                item["batch_no"] = batch_no
+            offset += len(subset)
+            batch_no += 1
 
     switch_scopes = [
         {
@@ -433,7 +476,7 @@ def build_bulk_retirement_plan(
         for plan_sha in switches
     ]
     manifest: dict[str, Any] = {
-        "schema": "allbot-history-media-r2-bulk-retirement-plan/v1",
+        "schema": "allbot-history-media-r2-bulk-retirement-plan/v2",
         "execution_mode": "bulk",
         "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
         "run_id": str(run_id),
@@ -446,7 +489,12 @@ def build_bulk_retirement_plan(
         "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
         "object_count": len(frozen),
         "total_bytes": sum(int(item["byte_size"]) for item in frozen),
-        "canary_object_count": min(canary_size, len(frozen)),
+        "canary_object_count": min(
+            canary_size,
+            sum(
+                item["retirement_disposition"] == "eligible" for item in frozen
+            ),
+        ),
         "batch_count": len(batches),
         "batch_size": batch_size,
         "rowset_sha256": _sha256_json(identities),
@@ -455,6 +503,15 @@ def build_bulk_retirement_plan(
         "object_keys_redacted": True,
         "runtime_identity": dict(runtime_identity),
     }
+    for disposition in BULK_RETIREMENT_DISPOSITIONS:
+        manifest[f"{disposition}_object_count"] = sum(
+            item["retirement_disposition"] == disposition for item in frozen
+        )
+        manifest[f"{disposition}_asset_coordinate_count"] = sum(
+            int(item["scope_asset_count"])
+            for item in frozen
+            if item["retirement_disposition"] == disposition
+        )
     manifest["plan_sha256"] = _sha256_json(manifest)
     return manifest, frozen, batches
 
@@ -1492,7 +1549,8 @@ with scope as materialized (
         from scope group by source_name,source_key,switch_plan_sha256
     ) c group by source_name,source_key
 )
-select s.source_name,s.source_key,s.byte_size,s.source_etag,s.source_last_modified,
+select s.source_name,s.source_key,s.byte_size,coalesce(s.source_etag,'') source_etag,
+       s.source_last_modified,
        s.asset_count,c.scope_asset_count,c.scope_facts,t.target_facts,
        s.byte_size_variants,s.source_etag_variants,s.source_time_variants
   from source_stats s join scope_counts c using(source_name,source_key)
@@ -1520,38 +1578,91 @@ async def _prepare_bulk_retirement_stage(
     )
     if invalid:
         raise RuntimeError("bulk retirement source or target facts are inconsistent")
-    blocked = bool(
-        await ledger.fetchval(
-            """with blockers as (
-                 select 1 from bulk_retirement_candidates s
-                   join analytics_history_media_r2_migrations m
-                     using(source_name,source_key)
-                  where m.status in ('copy_required','failed')
-                 union all
-                 select 1 from bulk_retirement_candidates s
-                   join analytics_history_media_r2_migrations m
-                     using(source_name,source_key)
-                  where m.original_ref<>m.target_key
-                    and m.switch_completed_at is null
-                 union all
-                 select 1 from bulk_retirement_candidates s
-                   join analytics_history_media_r2_migrations m
-                     on m.target_key=s.source_key
-               ) select exists(select 1 from blockers limit 1)""",
-            timeout=RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
-        )
+    await ledger.execute(
+        "alter table bulk_retirement_candidates "
+        "add column retirement_disposition text not null default 'eligible'"
     )
-    if blocked:
-        raise RuntimeError("bulk retirement scope has a Copy or Switch blocker")
+    await ledger.execute(
+        """create temporary table bulk_retirement_blockers
+             on commit preserve rows as
+             with pending as materialized (
+               select distinct s.source_name,s.source_key
+                 from bulk_retirement_candidates s
+                 join analytics_history_media_r2_migrations m
+                   using(source_name,source_key)
+                where m.status in ('copy_required','failed')
+             ), unswitched as materialized (
+               select distinct s.source_name,s.source_key
+                 from bulk_retirement_candidates s
+                 join analytics_history_media_r2_migrations m
+                   using(source_name,source_key)
+                where m.original_ref<>m.target_key
+                  and m.switch_completed_at is null
+             ), collisions as materialized (
+               select distinct s.source_name,s.source_key
+                 from bulk_retirement_candidates s
+                 join analytics_history_media_r2_migrations m
+                   on m.target_key=s.source_key
+             ), facts as (
+               select source_name,source_key,true pending,false unswitched,
+                      false collision from pending
+               union all
+               select source_name,source_key,false,true,false from unswitched
+               union all
+               select source_name,source_key,false,false,true from collisions
+             )
+             select source_name,source_key,bool_or(pending) pending,
+                    bool_or(unswitched) unswitched,bool_or(collision) collision
+               from facts group by source_name,source_key""",
+        timeout=3600,
+    )
+    await ledger.execute(
+        """update bulk_retirement_candidates c
+              set retirement_disposition=case
+                    when b.collision then 'retained_target'
+                    when b.pending or b.unswitched then 'deferred'
+                    else 'eligible' end
+             from bulk_retirement_blockers b
+            where (c.source_name,c.source_key)=(b.source_name,b.source_key)"""
+    )
+    disposition_rows = await ledger.fetch(
+        """select retirement_disposition,count(*) object_count,
+                  coalesce(sum(scope_asset_count),0) asset_coordinate_count
+             from bulk_retirement_candidates group by retirement_disposition"""
+    )
+    disposition_counts = {
+        str(row["retirement_disposition"]): int(row["object_count"])
+        for row in disposition_rows
+    }
+    eligible_count = disposition_counts.get("eligible", 0)
+    deferred_count = disposition_counts.get("deferred", 0)
+    if not eligible_count:
+        raise RuntimeError("bulk retirement scope has no immediately eligible source")
+    eligible_batch_count = 1 + max(
+        0, (eligible_count - canary_size + batch_size - 1) // batch_size
+    )
+    deferred_batch_count = (
+        (deferred_count + batch_size - 1) // batch_size if deferred_count else 0
+    )
     await ledger.execute(
         """create temporary table bulk_retirement_ordered on commit preserve rows as
              select c.*,
                     (row_number() over(
-                       order by byte_size desc,
+                       order by case retirement_disposition
+                                  when 'eligible' then 0
+                                  when 'deferred' then 1 else 2 end,
+                                byte_size desc,
                                 encode(sha256(
                                   convert_to(source_name,'UTF8')||decode('00','hex')||
                                   convert_to(source_key,'UTF8')),'hex')
-                     )-1)::integer object_no
+                     )-1)::integer object_no,
+                    row_number() over(
+                      partition by retirement_disposition
+                      order by byte_size desc,
+                               encode(sha256(
+                                 convert_to(source_name,'UTF8')||decode('00','hex')||
+                                 convert_to(source_key,'UTF8')),'hex')
+                    )::integer disposition_object_no
                from bulk_retirement_candidates c"""
     )
     await ledger.execute(
@@ -1559,10 +1670,18 @@ async def _prepare_bulk_retirement_stage(
     )
     await ledger.execute(
         """update bulk_retirement_ordered
-              set batch_no=case when object_no<$1 then 0
-                                else 1+((object_no-$1)/$2) end""",
+              set batch_no=case retirement_disposition
+                    when 'eligible' then
+                      case when disposition_object_no<=$1 then 0
+                           else 1+((disposition_object_no-$1-1)/$2) end
+                    when 'deferred' then
+                      $3+((disposition_object_no-1)/$2)
+                    else $3+$4+((disposition_object_no-1)/$2)
+                  end""",
         canary_size,
         batch_size,
+        eligible_batch_count,
+        deferred_batch_count,
     )
 
 
@@ -1577,6 +1696,7 @@ async def _bulk_production_has_live_refs(
     async with ledger.transaction():
         statement = await ledger.prepare(
             """select distinct source_key from bulk_retirement_ordered
+                where retirement_disposition='eligible'
                 order by source_key"""
         )
         pending: list[tuple[str]] = []
@@ -1630,6 +1750,7 @@ def _candidate_from_bulk_stage(row: Any) -> dict[str, Any]:
         "scope_switch_counts": (
             json.loads(scope_facts) if isinstance(scope_facts, str) else dict(scope_facts)
         ),
+        "retirement_disposition": str(row["retirement_disposition"]),
         "archive_sha256": "",
         "nas_bucket": "",
         "nas_key": "",
@@ -1645,6 +1766,7 @@ async def _bulk_staged_identity(
     batch_hasher = hashlib.sha256()
     batch_first = True
     current_batch: int | None = None
+    batch_disposition = ""
     batch_count = 0
     batch_assets = 0
     batch_bytes = 0
@@ -1661,6 +1783,8 @@ async def _bulk_staged_identity(
             {
                 "batch_no": current_batch,
                 "is_canary": current_batch == 0,
+                "disposition": batch_disposition,
+                "is_retained": batch_disposition == "retained_target",
                 "object_count": batch_count,
                 "asset_coordinate_count": batch_assets,
                 "total_bytes": batch_bytes,
@@ -1680,6 +1804,7 @@ async def _bulk_staged_identity(
             if current_batch != row_batch:
                 finish_batch()
                 current_batch = row_batch
+                batch_disposition = str(candidate["retirement_disposition"])
                 batch_hasher = hashlib.sha256()
                 batch_count = 0
                 batch_assets = 0
@@ -1793,6 +1918,18 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         )
         if asset_count != sum(expected_counts.values()):
             raise RuntimeError("bulk retirement asset coordinate count changed")
+        disposition_rows = await ledger.fetch(
+            """select retirement_disposition,count(*) object_count,
+                      coalesce(sum(scope_asset_count),0) asset_coordinate_count
+                 from bulk_retirement_ordered group by retirement_disposition"""
+        )
+        disposition_summary = {
+            str(row["retirement_disposition"]): {
+                "object_count": int(row["object_count"]),
+                "asset_coordinate_count": int(row["asset_coordinate_count"]),
+            }
+            for row in disposition_rows
+        }
         switch_scopes = [
             {
                 "switch_plan_sha256": plan_sha,
@@ -1802,7 +1939,7 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             for plan_sha in sorted(switch_plans)
         ]
         manifest: dict[str, Any] = {
-            "schema": "allbot-history-media-r2-bulk-retirement-plan/v1",
+            "schema": "allbot-history-media-r2-bulk-retirement-plan/v2",
             "execution_mode": "bulk",
             "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
             "run_id": next(iter(run_ids)),
@@ -1824,6 +1961,14 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             "object_keys_redacted": True,
             "runtime_identity": runtime_identity,
         }
+        for disposition in BULK_RETIREMENT_DISPOSITIONS:
+            summary = disposition_summary.get(
+                disposition, {"object_count": 0, "asset_coordinate_count": 0}
+            )
+            manifest[f"{disposition}_object_count"] = summary["object_count"]
+            manifest[f"{disposition}_asset_coordinate_count"] = summary[
+                "asset_coordinate_count"
+            ]
         manifest["plan_sha256"] = _sha256_json(manifest)
         async with ledger.transaction():
             await ledger.execute(
@@ -1840,8 +1985,15 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             await ledger.executemany(
                 """insert into analytics_history_media_r2_retirement_batches(
                      plan_sha256,batch_no,object_count,total_bytes,rowset_sha256,
-                     is_canary,asset_coordinate_count)
-                   values($1,$2,$3,$4,$5,$6,$7)""",
+                     is_canary,asset_coordinate_count,disposition,is_retained,
+                     status,outcome_counts,started_at,completed_at)
+                   values($1,$2,$3,$4,$5,$6,$7,$8,$9,
+                          case when $9 then 'completed' else 'pending' end,
+                          case when $9 then
+                            jsonb_build_object('retained_source_is_target',$3)
+                            else '{}'::jsonb end,
+                          case when $9 then now() else null end,
+                          case when $9 then now() else null end)""",
                 [
                     (
                         manifest["plan_sha256"],
@@ -1851,6 +2003,8 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
                         item["rowset_sha256"],
                         item["is_canary"],
                         item["asset_coordinate_count"],
+                        item["disposition"],
+                        item["is_retained"],
                     )
                     for item in batches
                 ],
@@ -1860,13 +2014,19 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
                      plan_sha256,batch_no,object_no,source_name,source_key,
                      source_key_sha256,byte_size,source_etag,source_last_modified,
                      asset_count,archive_sha256,nas_bucket,nas_key,target_facts,
-                     scope_asset_count,scope_facts)
+                     scope_asset_count,scope_facts,retirement_disposition,
+                     status,error_code)
                    select $1,batch_no,object_no,source_name,source_key,
                           encode(sha256(
                             convert_to(source_name,'UTF8')||decode('00','hex')||
                             convert_to(source_key,'UTF8')),'hex'),
                           byte_size,source_etag,source_last_modified,asset_count,
-                          '', '', '',target_facts,scope_asset_count,scope_facts
+                          '', '', '',target_facts,scope_asset_count,scope_facts,
+                          retirement_disposition,
+                          case when retirement_disposition='retained_target'
+                               then 'blocked' else 'planned' end,
+                          case when retirement_disposition='retained_target'
+                               then 'SOURCE_IS_TARGET' else null end
                      from bulk_retirement_ordered order by object_no""",
                 manifest["plan_sha256"],
                 timeout=3600,
@@ -1889,6 +2049,11 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
                     "rowset_sha256": rowset_sha,
                     "batches_sha256": manifest["batches_sha256"],
                     "asset_scope_sha256": asset_scope_sha,
+                    "eligible_object_count": manifest["eligible_object_count"],
+                    "deferred_object_count": manifest["deferred_object_count"],
+                    "retained_target_count": disposition_summary.get(
+                        "retained_target", {"object_count": 0}
+                    )["object_count"],
                     "manifest": str(output),
                 },
                 sort_keys=True,
@@ -2270,8 +2435,8 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
         ):
             raise RuntimeError("bulk retirement stored coverage changed")
         batch_rows = await ledger.fetch(
-            """select batch_no,is_canary,object_count,asset_coordinate_count,
-                      total_bytes,rowset_sha256
+            """select batch_no,is_canary,disposition,is_retained,status,
+                      object_count,asset_coordinate_count,total_bytes,rowset_sha256
                  from analytics_history_media_r2_retirement_batches
                 where plan_sha256=$1 order by batch_no""",
             args.plan_sha256,
@@ -2280,6 +2445,8 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
             {
                 "batch_no": int(item["batch_no"]),
                 "is_canary": bool(item["is_canary"]),
+                "disposition": str(item["disposition"]),
+                "is_retained": bool(item["is_retained"]),
                 "object_count": int(item["object_count"]),
                 "asset_coordinate_count": int(item["asset_coordinate_count"]),
                 "total_bytes": int(item["total_bytes"]),
@@ -2293,8 +2460,48 @@ async def _bulk_global_preflight(args: argparse.Namespace) -> dict[str, Any]:
             or not batches
             or not batches[0]["is_canary"]
             or any(item["is_canary"] for item in batches[1:])
+            or any(
+                item["is_retained"] != (item["disposition"] == "retained_target")
+                for item in batches
+            )
+            or any(
+                item["disposition"] == "retained_target"
+                and str(batch_rows[index]["status"]) != "completed"
+                for index, item in enumerate(batches)
+            )
         ):
             raise RuntimeError("bulk retirement batch identities changed")
+        disposition_rows = await ledger.fetch(
+            """select retirement_disposition,count(*) object_count,
+                      coalesce(sum(scope_asset_count),0) asset_coordinate_count,
+                      count(*) filter(where status='blocked') blocked_count,
+                      count(*) filter(where error_code='SOURCE_IS_TARGET')
+                        retained_error_count
+                 from analytics_history_media_r2_retirement_objects
+                where plan_sha256=$1 group by retirement_disposition""",
+            args.plan_sha256,
+        )
+        disposition_summary = {
+            str(item["retirement_disposition"]): item for item in disposition_rows
+        }
+        for disposition in BULK_RETIREMENT_DISPOSITIONS:
+            summary = disposition_summary.get(disposition)
+            stored_objects = int(summary["object_count"]) if summary else 0
+            stored_assets = int(summary["asset_coordinate_count"]) if summary else 0
+            if (
+                stored_objects != int(manifest[f"{disposition}_object_count"])
+                or stored_assets
+                != int(manifest[f"{disposition}_asset_coordinate_count"])
+            ):
+                raise RuntimeError("bulk retirement disposition coverage changed")
+        retained_summary = disposition_summary.get("retained_target")
+        retained_count = int(manifest["retained_target_object_count"])
+        if retained_count and (
+            retained_summary is None
+            or int(retained_summary["blocked_count"]) != retained_count
+            or int(retained_summary["retained_error_count"]) != retained_count
+        ):
+            raise RuntimeError("bulk retirement retained target evidence changed")
         await ledger.execute(
             """update analytics_history_media_r2_retirement_plans
                  set status='running',updated_at=now()
@@ -2326,6 +2533,11 @@ async def _finalize_bulk_delete(
         summary = await ledger.fetchrow(
             """select count(*) object_count,
                       count(*) filter(where status='deleted') deleted_count,
+                      count(*) filter(where status='blocked') blocked_count,
+                      count(*) filter(where status='blocked'
+                                        and retirement_disposition='retained_target'
+                                        and error_code='SOURCE_IS_TARGET')
+                        retained_target_count,
                       coalesce(sum(scope_asset_count),0) asset_coordinate_count
                  from analytics_history_media_r2_retirement_objects
                 where plan_sha256=$1""",
@@ -2340,7 +2552,13 @@ async def _finalize_bulk_delete(
         )
         if (
             int(summary["object_count"]) != int(manifest["object_count"])
-            or int(summary["deleted_count"]) != int(manifest["object_count"])
+            or int(summary["deleted_count"])
+            != int(manifest["object_count"])
+            - int(manifest["retained_target_object_count"])
+            or int(summary["blocked_count"])
+            != int(manifest["retained_target_object_count"])
+            or int(summary["retained_target_count"])
+            != int(manifest["retained_target_object_count"])
             or int(summary["asset_coordinate_count"])
             != int(manifest["asset_coordinate_count"])
             or incomplete_batches
