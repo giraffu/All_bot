@@ -13,7 +13,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ProxyConnectionError
 
 from scripts.history_media_r2_migration import (
     MIGRATION_DDL,
@@ -27,8 +27,10 @@ from scripts.history_media_r2_migration import (
     StreamingJsonArraySha256,
     _add_r2_custom_headers,
     _collect_copy_predecessor_recovery,
+    _collect_failed_copy_reconciliation,
     _collect_probe_head_outcomes,
     _execute_copy_predecessor_recovery,
+    _reconcile_failed_copy_and_plan_successor,
     _parser,
     _persist_copy_success,
     _persist_probe_batch,
@@ -37,6 +39,7 @@ from scripts.history_media_r2_migration import (
     _process_r2_custom_arguments,
     _resolve_copy_max_pool_connections,
     _resolve_probe_max_pool_connections,
+    _reconciliation_runtime_identity,
     _r2_transport,
     _run_copy_group_batch,
     _run_copy_group_batch_with_retry_lane,
@@ -55,6 +58,7 @@ from scripts.history_media_r2_migration import (
     build_successor_probe_plan,
     classify_copy_request_failure,
     classify_copy_predecessor_recovery,
+    classify_failed_copy_reconciliation,
     classify_r2_head_outcomes,
     classify_reference,
     classify_target_status,
@@ -165,6 +169,159 @@ def test_copy_recovery_rejects_changed_source_or_nonidentical_target():
             expected_etag="etag",
             current_plan_sha256=current,
             predecessor_plan_sha256=predecessor,
+        )
+
+
+def test_failed_copy_reconciliation_accepts_only_missing_or_exact_current_marker():
+    current = "c" * 64
+    source = _copy_head(marker=None)
+
+    assert classify_failed_copy_reconciliation(
+        source_head=source,
+        target_head=None,
+        expected_size=100,
+        expected_last_modified=source["LastModified"],
+        expected_etag="etag",
+        current_plan_sha256=current,
+    ) == "missing"
+    assert classify_failed_copy_reconciliation(
+        source_head=source,
+        target_head=_copy_head(marker=current),
+        expected_size=100,
+        expected_last_modified=source["LastModified"],
+        expected_etag="etag",
+        current_plan_sha256=current,
+    ) == "current"
+
+    with pytest.raises(RuntimeError, match="unrecognized copy plan marker"):
+        classify_failed_copy_reconciliation(
+            source_head=source,
+            target_head=_copy_head(marker="p" * 64),
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+        )
+
+
+@pytest.mark.asyncio
+async def test_failed_copy_reconciliation_is_head_only_and_releases_pool():
+    modified = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    calls: list[str] = []
+
+    def head(_client, _bucket, key):
+        calls.append(key)
+        if key.startswith("target"):
+            return None
+        return {
+            "ContentLength": 100,
+            "LastModified": modified,
+            "ETag": "etag",
+            "Metadata": {},
+        }
+
+    group = [[{
+        "id": 1,
+        "source_key": "source-redacted",
+        "target_key": "target-redacted",
+        "byte_size": 100,
+        "source_last_modified": modified,
+        "source_etag": "etag",
+    }]]
+    outcomes = await _collect_failed_copy_reconciliation(
+        group,
+        client=object(),
+        current_plan_sha256="c" * 64,
+        concurrency=2,
+        head_func=head,
+    )
+
+    assert outcomes[0][1] == "missing"
+    assert len(calls) == 2
+    assert not any(
+        thread.name.startswith("history-r2-failed-copy-head")
+        for thread in threading.enumerate()
+        if thread.is_alive()
+    )
+
+
+def test_failed_copy_reconciliation_command_has_no_copy_authorization():
+    parsed = _parser().parse_args(
+        [
+            "reconcile-copy-failures",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--plan-sha256",
+            "a" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--receipt-output",
+            "/secure/receipt.json",
+            "--next-plan-output",
+            "/secure/successor.json",
+        ]
+    )
+
+    assert parsed.command == "reconcile-copy-failures"
+    assert not hasattr(parsed, "confirm")
+
+
+def test_failed_copy_reconciliation_is_head_only_and_ledger_cas_guarded():
+    import inspect
+
+    source = inspect.getsource(_reconcile_failed_copy_and_plan_successor)
+    for forbidden in (
+        ".get_object(",
+        ".copy_object(",
+        ".list_objects",
+        ".delete_object(",
+    ):
+        assert forbidden not in source
+    assert "for update" in source.lower()
+    assert "failed_rowset_sha256" in source
+    assert "status='failed'" in source
+    assert "status='copy_required'" in source
+    assert "r2_copy_object_reconciled_failed" in source
+
+
+def test_failed_copy_reconciliation_binds_config_but_accepts_new_artifact(monkeypatch):
+    expected = {
+        "artifact_digest": "sha256:" + "a" * 64,
+        "script_sha256": "old",
+        "bucket": "user-data-prod",
+        "candidate_algorithm": "history-r2-candidates/v1",
+        "target_endpoint_sha256": "target",
+        "source_endpoint_sha256": "source",
+        "r2_transport": {"mode": "https_proxy", "proxy_port": 7890},
+    }
+    actual = {
+        **expected,
+        "artifact_digest": "sha256:" + "b" * 64,
+        "script_sha256": "new",
+    }
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration._runtime_identity",
+        lambda **_kwargs: actual,
+    )
+
+    assert _reconciliation_runtime_identity(
+        expected,
+        artifact_digest="sha256:" + "b" * 64,
+        config={},
+    ) == actual
+
+    changed = {**actual, "r2_transport": {"mode": "direct"}}
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration._runtime_identity",
+        lambda **_kwargs: changed,
+    )
+    with pytest.raises(RuntimeError, match="runtime configuration changed"):
+        _reconciliation_runtime_identity(
+            expected,
+            artifact_digest="sha256:" + "b" * 64,
+            config={},
         )
 
 
@@ -404,6 +561,43 @@ def test_copy_request_health_class_separates_server_errors_from_timeouts(
     error_text, expected
 ):
     assert classify_copy_request_failure(RuntimeError(error_text)) == expected
+
+
+def test_proxy_connection_failure_is_object_level_transient():
+    error = ProxyConnectionError(proxy_url="http://127.0.0.1:7890")
+
+    assert classify_copy_request_failure(error) == "connection_transient"
+    assert is_transient_copy_failure(str(error))
+
+
+def test_copy_retries_proxy_connection_failure_before_succeeding(monkeypatch):
+    calls = 0
+
+    def copy_object(_client, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ProxyConnectionError(proxy_url="http://127.0.0.1:7890")
+        return {"etag": "target", "multipart": False, "recovered": False}
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.server_side_copy_r2_object",
+        copy_object,
+    )
+
+    result = _timed_server_side_copy_with_retries(
+        object(),
+        max_retries=1,
+        sleep_fn=lambda _delay: None,
+        jitter_fn=lambda delay: delay,
+    )
+
+    assert result["error"] is None
+    assert result["attempt_count"] == 2
+    assert [event["kind"] for event in result["request_events"]] == [
+        "connection_transient",
+        "ok",
+    ]
 
 
 def test_copy_exhausts_only_the_failed_object_after_five_retries(monkeypatch):

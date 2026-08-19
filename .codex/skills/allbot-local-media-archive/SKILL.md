@@ -24,17 +24,16 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
-- direct predecessor marker 仅可由新 COPY 令牌的 frontier HEAD recovery 对账。
-- History R2 Copy 的 lane 与 bulk/retry 池共用全局门禁；健康事件跨 lane 实时聚合并
-  绑定实际并发 epoch，旧 epoch 不参与新档位决策。错误率/限流决定降档，长尾延迟
-  只观测；参数从 artifact 读取。
+- direct predecessor marker 仅由新 COPY 令牌的 frontier HEAD recovery 对账；停止计划的
+  transient `failed` 只允许 HEAD 对账目标缺失/当前 marker，再冻结 successor 并重新授权。
+- Copy lane 与 bulk/retry 池共用门禁；健康事件绑定并发 epoch 跨 lane 聚合，
+  错误率/限流决定降档，长尾只观测，参数从 artifact 读取。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
 - R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
-- Worker 使用用户 0600 配置并校验路由/filesystem，默认拒绝 7890。
-  仅冻结的 History R2 Copy 可绑定 loopback 7890 指纹和 artifact/successor；
-  须重新授权及 CopyObject canary，禁止热改与环境代理。
+- Worker 使用 0600 配置并校验路由/filesystem，默认拒绝 7890；仅冻结 History R2 Copy
+  可绑定 loopback 7890 指纹和 artifact/successor，须重新授权并 canary，禁止热改。
 - canary 最多精确领取 100 个 `history_ids`，禁止改写全局优先级。
 - 私有配置只输出来源名/指纹；只有 `archived_verified` 提供原件。
 - 租约每 5 分钟续期；回执必须匹配 revision，陈旧 Worker 不得覆盖新清单。
