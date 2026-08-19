@@ -9,10 +9,17 @@ import pytest
 from scripts.history_media_r2_retirement import (
     DURABILITY_NAS_ARCHIVE,
     DURABILITY_R2_PERSISTENT_TARGET,
+    RETIREMENT_BLOCKER_INDEX_DDL,
+    RETIREMENT_BLOCKER_SQL,
+    RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
     RETIREMENT_DDL,
     _durability_archive_config,
+    _ensure_retirement_blocker_indexes,
     _head_candidates,
     _parser,
+    _mark_retirement_plan_paused,
+    _missing_retirement_blocker_indexes,
+    _retirement_has_blockers,
     _retirement_object_identity,
     _retirement_runtime_identity,
     build_retirement_plan,
@@ -347,9 +354,119 @@ def test_retirement_execute_surface_only_heads_and_deletes():
         assert forbidden not in source
     assert "delete_object" in source
     assert "validate_delete_gate" in source
-    assert "copy_required" in source
-    assert "switch_completed_at" in source
+    assert "_retirement_has_blockers" in source
     assert "target_key" in source
+    blocker_source = RETIREMENT_BLOCKER_SQL
+    assert "copy_required" in blocker_source
+    assert "switch_completed_at" in blocker_source
+
+
+@pytest.mark.asyncio
+async def test_retirement_blocker_gate_is_one_bounded_set_query_for_1000_sources():
+    class Ledger:
+        def __init__(self):
+            self.calls = []
+
+        async def fetchval(self, query, *args, **kwargs):
+            self.calls.append((query, args, kwargs))
+            return True
+
+    ledger = Ledger()
+    objects = [
+        {"source_name": "source", "source_key": f"old-{index}"}
+        for index in range(1000)
+    ]
+
+    assert await _retirement_has_blockers(ledger, objects) is True
+    assert len(ledger.calls) == 1
+    query, args, kwargs = ledger.calls[0]
+    assert query == RETIREMENT_BLOCKER_SQL
+    assert len(args[0]) == 1000
+    assert len(args[1]) == 1000
+    assert kwargs["timeout"] == RETIREMENT_BLOCKER_TIMEOUT_SECONDS
+
+
+def test_retirement_blocker_query_is_set_based_early_exit_and_has_indexes():
+    normalized = " ".join(RETIREMENT_BLOCKER_SQL.lower().split())
+
+    assert "selected as materialized" in normalized
+    assert normalized.count("join analytics_history_media_r2_migrations") == 3
+    assert "union all" in normalized
+    assert "select exists" in normalized
+    assert "limit 1" in normalized
+    assert "count(*)" not in normalized
+    assert "from selected s where exists" not in normalized
+
+    index_sql = " ".join(statement.lower() for _, statement in RETIREMENT_BLOCKER_INDEX_DDL)
+    assert "(source_name,source_key)" in index_sql.replace(" ", "")
+    assert "status in ('copy_required','failed')" in index_sql
+    assert "switch_completed_at is null" in index_sql
+    assert "(target_key)" in index_sql.replace(" ", "")
+    assert all("concurrently" in statement.lower() for _, statement in RETIREMENT_BLOCKER_INDEX_DDL)
+
+
+@pytest.mark.asyncio
+async def test_retirement_pause_reconnects_after_the_execution_connection_is_lost():
+    class Connection:
+        def __init__(self):
+            self.executed = []
+            self.closed = False
+
+        async def execute(self, query, *args):
+            self.executed.append((query, args))
+
+        async def close(self):
+            self.closed = True
+
+    connection = Connection()
+    attempts = 0
+
+    async def connect(_name):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ConnectionError("transient tunnel loss")
+        return connection
+
+    delays = []
+
+    async def delay(seconds):
+        delays.append(seconds)
+
+    await _mark_retirement_plan_paused(
+        "a" * 64,
+        connect_func=connect,
+        sleep_func=delay,
+        attempts=3,
+    )
+
+    assert attempts == 2
+    assert delays == [1]
+    assert connection.closed is True
+    assert connection.executed[0][1] == ("a" * 64,)
+
+
+@pytest.mark.asyncio
+async def test_retirement_blocker_indexes_are_prepared_concurrently_and_verified():
+    class Ledger:
+        def __init__(self):
+            self.executed = []
+
+        async def execute(self, query, **kwargs):
+            self.executed.append((query, kwargs))
+
+        async def fetch(self, query, names):
+            assert "idx.indisvalid" in query
+            return [{"indexname": names[0]}, {"indexname": names[2]}]
+
+    ledger = Ledger()
+    await _ensure_retirement_blocker_indexes(ledger, timeout_seconds=900)
+
+    assert len(ledger.executed) == 3
+    assert all(call[1]["timeout"] == 900 for call in ledger.executed)
+    assert await _missing_retirement_blocker_indexes(ledger) == (
+        RETIREMENT_BLOCKER_INDEX_DDL[1][0],
+    )
 
 
 def test_retirement_report_is_read_only_and_plan_freeze_owns_schema_changes():
@@ -377,6 +494,9 @@ def test_retirement_tables_and_script_are_preserved_and_shipped():
 
 
 def test_retirement_cli_and_local_ledger_tables_are_explicit():
+    prepare = _parser().parse_args(
+        ["prepare-delete-indexes", "--timeout-seconds", "900"]
+    )
     report = _parser().parse_args(
         [
             "report",
@@ -422,6 +542,8 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     )
 
     assert report.command == "report"
+    assert prepare.command == "prepare-delete-indexes"
+    assert prepare.timeout_seconds == 900
     assert not hasattr(report, "confirm")
     assert plan.history_id_file == "/secure/archive-canary.ids"
     assert plan.archive_config is None
