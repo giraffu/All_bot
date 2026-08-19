@@ -15,6 +15,7 @@ from scripts.history_media_r2_retirement import (
     RETIREMENT_DDL,
     _durability_archive_config,
     _ensure_retirement_blocker_indexes,
+    _expected_switch_counts,
     _head_candidates,
     _parser,
     _mark_retirement_plan_paused,
@@ -22,6 +23,7 @@ from scripts.history_media_r2_retirement import (
     _retirement_has_blockers,
     _retirement_object_identity,
     _retirement_runtime_identity,
+    build_bulk_retirement_plan,
     build_retirement_plan,
     classify_retirement_candidate,
     validate_delete_gate,
@@ -121,6 +123,12 @@ def test_r2_persistent_target_rowset_survives_postgres_blank_char_round_trip():
     database_round_trip = dict(frozen, archive_sha256=" " * 64)
 
     assert _retirement_object_identity(database_round_trip) == (
+        _retirement_object_identity(frozen)
+    )
+    schema_upgraded_round_trip = dict(
+        database_round_trip, scope_asset_count=0, scope_facts={}
+    )
+    assert _retirement_object_identity(schema_upgraded_round_trip) == (
         _retirement_object_identity(frozen)
     )
 
@@ -295,6 +303,109 @@ def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
         )
 
 
+def test_bulk_retirement_plan_freezes_two_switch_ranges_under_one_token():
+    first = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        scope_asset_count=3,
+        scope_switch_counts={"a" * 64: 3},
+    )
+    second = _candidate(
+        source_key="private/second.mp4",
+        byte_size=200,
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        scope_asset_count=2,
+        scope_switch_counts={"b" * 64: 2},
+    )
+    third = _candidate(
+        source_key="private/third.png",
+        byte_size=50,
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        scope_asset_count=2,
+        scope_switch_counts={"a" * 64: 1, "b" * 64: 1},
+    )
+
+    manifest, frozen, batches = build_bulk_retirement_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        parent_copy_plan_sha256s=["c" * 64, "d" * 64],
+        switch_scope_counts={"a" * 64: 4, "b" * 64: 3},
+        switch_scope_rowset_sha256s={"a" * 64: "e" * 64, "b" * 64: "f" * 64},
+        asset_scope_sha256="1" * 64,
+        objects=[first, second, third],
+        runtime_identity={"artifact_digest": "sha256:" + "9" * 64},
+        canary_size=1,
+        batch_size=2,
+    )
+
+    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v1"
+    assert manifest["execution_mode"] == "bulk"
+    assert manifest["asset_coordinate_count"] == 7
+    assert manifest["object_count"] == 3
+    assert manifest["canary_object_count"] == 1
+    assert manifest["batch_count"] == 2
+    assert batches[0]["is_canary"] is True
+    assert batches[0]["object_count"] == 1
+    assert batches[1]["object_count"] == 2
+    assert sum(item["scope_asset_count"] for item in frozen) == 7
+    assert validate_delete_gate(
+        expected_plan_sha256=manifest["plan_sha256"],
+        supplied_plan_sha256=manifest["plan_sha256"],
+        confirmation="DELETE_HISTORY_MEDIA_" + manifest["plan_sha256"],
+    ) is None
+    serialized = json.dumps(manifest)
+    assert "private/" not in serialized
+    assert "task-results/" not in serialized
+
+
+def test_bulk_retirement_plan_rejects_scope_count_drift_and_duplicate_switches():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+        scope_asset_count=1,
+        scope_switch_counts={"a" * 64: 1},
+    )
+    kwargs = {
+        "run_id": "11111111-1111-1111-1111-111111111111",
+        "parent_copy_plan_sha256s": ["c" * 64],
+        "switch_scope_counts": {"a" * 64: 2},
+        "switch_scope_rowset_sha256s": {"a" * 64: "e" * 64},
+        "asset_scope_sha256": "1" * 64,
+        "objects": [candidate],
+        "runtime_identity": {},
+    }
+    with pytest.raises(RuntimeError, match="asset coordinate count"):
+        build_bulk_retirement_plan(**kwargs)
+    with pytest.raises(ValueError, match="unique Switch"):
+        build_bulk_retirement_plan(
+            **dict(kwargs, switch_plan_sha256s=["a" * 64, "a" * 64])
+        )
+
+
+def test_bulk_switch_count_parser_is_exact_and_fail_closed():
+    assert _expected_switch_counts(["a" * 64 + "=1828075"]) == {
+        "a" * 64: 1828075
+    }
+    for invalid in ("a=1", "A" * 64 + "=1", "a" * 64 + "=0"):
+        with pytest.raises(ValueError):
+            _expected_switch_counts([invalid])
+    with pytest.raises(ValueError, match="unique"):
+        _expected_switch_counts(["a" * 64 + "=1", "a" * 64 + "=1"])
+
+
 def test_delete_gate_is_distinct_from_copy_and_switch_tokens():
     plan = "a" * 64
     validate_delete_gate(
@@ -353,12 +464,31 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     for forbidden in ("get_object", "list_objects", "copy_object"):
         assert forbidden not in source
     assert "delete_object" in source
+    assert source.count("delete_object") == 1
+    delete_call = source[source.index("delete_object") :]
+    assert 'Key=str(item["source_key"])' in delete_call[:300]
     assert "validate_delete_gate" in source
     assert "_retirement_has_blockers" in source
     assert "target_key" in source
     blocker_source = RETIREMENT_BLOCKER_SQL
     assert "copy_required" in blocker_source
     assert "switch_completed_at" in blocker_source
+
+    bulk_source = inspect.getsource(module._execute_bulk_delete)
+    assert "_execute_delete" in bulk_source
+    assert "_bulk_global_preflight" in bulk_source
+    assert "while True" in bulk_source
+    assert "confirm" not in bulk_source.replace("args.confirm", "")
+    assert "systemctl" not in bulk_source
+    assert "list_objects" not in bulk_source
+    assert "delete_bucket" not in bulk_source
+
+    planner_source = inspect.getsource(module._plan_bulk_delete)
+    assert "_bulk_scope_fingerprint" in planner_source
+    assert "_prepare_bulk_retirement_stage" in planner_source
+    assert "_bulk_production_has_live_refs" in planner_source
+    for forbidden in ("get_object", "list_objects", "delete_object"):
+        assert forbidden not in planner_source
 
 
 @pytest.mark.asyncio
@@ -540,6 +670,38 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             DURABILITY_R2_PERSISTENT_TARGET,
         ]
     )
+    bulk_plan = _parser().parse_args(
+        [
+            "plan-bulk-delete",
+            "--switch-plan-sha256",
+            "a" * 64,
+            "--expected-switch-asset-count",
+            "a" * 64 + "=1828075",
+            "--switch-plan-sha256",
+            "b" * 64,
+            "--expected-switch-asset-count",
+            "b" * 64 + "=796955",
+            "--config",
+            "/secure/r2.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            "/secure/bulk-delete-plan.json",
+        ]
+    )
+    bulk_execute = _parser().parse_args(
+        [
+            "execute-bulk-delete",
+            "--plan-sha256",
+            "a" * 64,
+            "--confirm",
+            "DELETE_HISTORY_MEDIA_" + "a" * 64,
+            "--config",
+            "/secure/r2.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+        ]
+    )
 
     assert report.command == "report"
     assert prepare.command == "prepare-delete-indexes"
@@ -551,6 +713,17 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert execute.archive_config is None
     assert execute.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
     assert execute.delete_concurrency <= 8
+    assert bulk_plan.switch_plan_sha256 == ["a" * 64, "b" * 64]
+    assert bulk_plan.expected_switch_asset_count == [
+        "a" * 64 + "=1828075",
+        "b" * 64 + "=796955",
+    ]
+    assert bulk_plan.canary_size == 100
+    assert bulk_execute.command == "execute-bulk-delete"
+    assert bulk_execute.confirm == "DELETE_HISTORY_MEDIA_" + "a" * 64
     assert "analytics_history_media_r2_retirement_plans" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_objects" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_batches" in RETIREMENT_DDL
+    assert "scope_asset_count" in RETIREMENT_DDL
+    assert "asset_coordinate_count" in RETIREMENT_DDL
+    assert "is_canary" in RETIREMENT_DDL
