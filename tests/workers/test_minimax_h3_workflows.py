@@ -213,7 +213,7 @@ def test_minimax_h3_worker_injects_motion_booster_trigger_but_not_mystic_trigger
     }
     assert workflow["101"]["inputs"] == {
         "model": ["100", 0],
-        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
+        "lora_name": "MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
         "strength_model": 0.75,
     }
     assert workflow["2"]["inputs"]["model"] == ["101", 0]

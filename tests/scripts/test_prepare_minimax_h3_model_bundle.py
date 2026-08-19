@@ -43,10 +43,10 @@ def test_split_author_stack_uses_exact_eighteen_pinned_assets():
         155_110_272,
         "https://civitai.red/api/download/models/3228867?fileId=3111185",
     )
-    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V1.safetensors"][1:4] == (
-        "7dd837f4c5420d4ec59f3ff1757b3f9d264a6c0f120d65d9c4f59c77584dd0be",
-        596_451_528,
-        "https://civitai.red/api/download/models/3226233?fileId=3108441",
+    assert files["loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors"][1:4] == (
+        "2fc32615f20465e0831a5c8069df4006422fc9638a0b7faa216e04a6ddfee8de",
+        172_057_936,
+        "https://civitai.red/api/download/models/3242519?fileId=3125221",
     )
     assert files["loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors"][1:3] == (
         "039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967",
