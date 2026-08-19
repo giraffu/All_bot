@@ -463,18 +463,23 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 `report` 只读汇总父 Copy 计划的去重旧对象、字节、Copy/Switch/目标冲突和本地归档覆盖，
 并可生成按可释放字节排序的最多 1,000 条 History 归档候选；报告不访问对象正文、不写
 数据库。归档继续使用既有 outbox/Worker，精确 canary 每波最多 100 条 History，1,000
-条阶段由十个有序波次组成。`plan-delete` 只接受这批 History 的生产
-`archived_verified` 回执和 archived outbox，逐对象要求父批已 Switch、所有共享资产均有
-同一 SHA-256 NAS 完整回读证据、生产 History 零引用、没有未完成 Copy/Switch 使用且旧
-key 不属于任何标准目标；随后重新 HEAD 旧源、所有新目标 marker/size/ETag 和 NAS
-SHA 元数据，冻结最多 1,000 对象的 0600 计划。manifest 只保存 key 哈希和聚合，不保存
-明文对象 key。
+条阶段由十个有序波次组成。`plan-delete` 必须显式冻结耐久性依据，缺省
+`nas-archive` 只接受这批 History 的生产 `archived_verified` 回执和 archived outbox，
+逐对象要求所有共享资产均有同一 SHA-256 NAS 完整回读证据。操作者也可显式选择
+`r2-persistent-target`：该模式不读取或声称 NAS 回执，只适用于已 Copy 到标准持久目标且
+已完成 Switch 的对象，要求目标精确 Copy plan marker、size、ETag 均通过 HEAD 复核。
+两种模式都要求生产 History 零引用、没有未完成 Copy/Switch 使用、旧 key 不属于任何
+标准目标，并在 manifest、runtime identity 和 rowset SHA 中绑定所选模式；配置或模式
+变化必须生成新计划。计划最多冻结 1,000 对象且为 0600，只保存 key 哈希和聚合，不在
+manifest 保存明文对象 key。
 
 真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`，默认并发 4、硬上限
 8；不能复用 COPY、SWITCH、临时清理或通用冷归档令牌。每批执行前重新扫描生产 History
-与迁移账本并复核全部 HEAD，删除后确认旧源缺失且目标 marker 与 NAS SHA 仍在。系统性
-网络、数据库、身份或行集变化把计划置为 paused；旧源已经因本计划提交窗口消失时，只有
-目标和 NAS 仍完整才可幂等收口。退役 plans/batches/objects 与其它迁移事实表一起跨
+与迁移账本并复核全部 HEAD，删除后确认旧源缺失且耐久副本仍满足冻结依据：NAS 模式复核
+目标 marker 与 NAS SHA，R2 持久目标模式复核目标 marker/size/ETag。系统性网络、数据库、
+身份或行集变化把计划置为 paused；旧源已经因本计划提交窗口消失时，也只有冻结的耐久
+副本仍完整才可幂等收口。R2 持久目标模式不等于完成 NAS 归档；待持久目录迁移验收后，
+从该目录到 NAS 的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨
 shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
 的对象都必须留存。
 

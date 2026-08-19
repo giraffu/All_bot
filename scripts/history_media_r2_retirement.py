@@ -39,6 +39,9 @@ from scripts.media_archive_worker import (
 
 RETIREMENT_BATCH_SIZE = 1000
 MAX_DELETE_CONCURRENCY = 8
+DURABILITY_NAS_ARCHIVE = "nas-archive"
+DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
+DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
 RETIREMENT_DDL = """
 create table if not exists analytics_history_media_r2_retirement_plans (
     plan_sha256 char(64) primary key,
@@ -123,14 +126,25 @@ def classify_retirement_candidate(candidate: dict[str, Any]) -> str:
         return "source_is_target"
     if int(candidate.get("live_history_refs") or 0):
         return "live_history_reference"
-    if int(candidate.get("archive_verified_asset_count") or 0) != int(
-        candidate.get("asset_count") or 0
+    durability_basis = str(
+        candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+    )
+    if durability_basis not in DURABILITY_BASES:
+        return "unknown_durability_basis"
+    if (
+        durability_basis == DURABILITY_R2_PERSISTENT_TARGET
+        and not candidate.get("targets")
     ):
-        return "archive_incomplete"
-    if not str(candidate.get("archive_sha256") or "") or not str(
-        candidate.get("nas_key") or ""
-    ):
-        return "archive_incomplete"
+        return "persistent_target_missing"
+    if durability_basis == DURABILITY_NAS_ARCHIVE:
+        if int(candidate.get("archive_verified_asset_count") or 0) != int(
+            candidate.get("asset_count") or 0
+        ):
+            return "archive_incomplete"
+        if not str(candidate.get("archive_sha256") or "") or not str(
+            candidate.get("nas_key") or ""
+        ):
+            return "archive_incomplete"
     return "eligible"
 
 
@@ -148,6 +162,9 @@ def _retirement_object_identity(candidate: dict[str, Any]) -> dict[str, Any]:
         )
     ]
     return {
+        "durability_basis": str(
+            candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+        ),
         "source_name": str(candidate["source_name"]),
         "source_key_sha256": _key_sha(
             str(candidate["source_name"]), str(candidate["source_key"])
@@ -173,8 +190,11 @@ def build_retirement_plan(
     objects: Iterable[dict[str, Any]],
     report_sha256: str,
     runtime_identity: dict[str, Any],
+    durability_basis: str = DURABILITY_NAS_ARCHIVE,
     batch_size: int = RETIREMENT_BATCH_SIZE,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    if durability_basis not in DURABILITY_BASES:
+        raise ValueError("unknown retirement durability basis")
     if not 1 <= batch_size <= RETIREMENT_BATCH_SIZE:
         raise ValueError("retirement batch size must be between 1 and 1000")
     frozen = sorted(
@@ -190,6 +210,12 @@ def build_retirement_plan(
     if not frozen:
         raise RuntimeError("retirement plan has no eligible old sources")
     for candidate in frozen:
+        candidate_basis = str(
+            candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+        )
+        if candidate_basis != durability_basis:
+            raise RuntimeError("retirement object durability basis changed")
+        candidate["durability_basis"] = candidate_basis
         classification = classify_retirement_candidate(candidate)
         if classification != "eligible":
             raise RuntimeError(
@@ -214,7 +240,8 @@ def build_retirement_plan(
         for item in subset:
             item["batch_no"] = batch_no
     manifest: dict[str, Any] = {
-        "schema": "allbot-history-media-r2-retirement-plan/v1",
+        "schema": "allbot-history-media-r2-retirement-plan/v2",
+        "durability_basis": durability_basis,
         "run_id": str(run_id),
         "parent_copy_plan_sha256": str(parent_copy_plan_sha256),
         "parent_switch_plan_sha256s": sorted(
@@ -293,6 +320,13 @@ def validate_retirement_survivor_heads(
             expected_target_etag
         ):
             raise RuntimeError("verified target identity changed")
+    durability_basis = str(
+        candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+    )
+    if durability_basis == DURABILITY_R2_PERSISTENT_TARGET:
+        return
+    if durability_basis != DURABILITY_NAS_ARCHIVE:
+        raise RuntimeError("unknown retirement durability basis")
     if nas_head is None:
         raise RuntimeError("NAS archive object is missing")
     if int(nas_head.get("ContentLength") or -1) != int(candidate["byte_size"]):
@@ -312,6 +346,22 @@ def _secure_json(path: Path) -> dict[str, Any]:
     ):
         raise PermissionError("archive config must be a current-user owned 0600 file")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _durability_archive_config(
+    durability_basis: str, archive_config_path: str | None
+) -> dict[str, Any] | None:
+    if durability_basis == DURABILITY_R2_PERSISTENT_TARGET:
+        if archive_config_path:
+            raise ValueError(
+                "archive config is not accepted for r2-persistent-target durability"
+            )
+        return None
+    if durability_basis != DURABILITY_NAS_ARCHIVE:
+        raise ValueError("unknown retirement durability basis")
+    if not archive_config_path:
+        raise ValueError("archive config is required for nas-archive durability")
+    return _secure_json(Path(archive_config_path))
 
 
 def _load_history_ids(path: Path) -> tuple[int, ...]:
@@ -357,24 +407,35 @@ def _retirement_runtime_identity(
     *,
     artifact_digest: str,
     r2_config: dict[str, Any],
-    archive_config: dict[str, Any],
+    durability_basis: str,
+    archive_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     target = r2_config["target"]
-    nas = archive_config["nas"]
     identity = _runtime_identity(artifact_digest=artifact_digest, config=r2_config)
     identity.update(
         {
-            "retirement_protocol": "history-r2-old-source-retirement/v1",
+            "retirement_protocol": "history-r2-old-source-retirement/v2",
+            "durability_basis": durability_basis,
             "retirement_script_sha256": hashlib.sha256(
                 Path(__file__).read_bytes()
-            ).hexdigest(),
-            "nas_bucket": str(nas["bucket"]),
-            "nas_endpoint_sha256": hashlib.sha256(
-                str(nas["endpoint"]).encode()
             ).hexdigest(),
             "delete_bucket": str(target["bucket"]),
         }
     )
+    if durability_basis == DURABILITY_NAS_ARCHIVE:
+        if archive_config is None:
+            raise ValueError("archive config is required for nas-archive durability")
+        nas = archive_config["nas"]
+        identity.update(
+            {
+                "nas_bucket": str(nas["bucket"]),
+                "nas_endpoint_sha256": hashlib.sha256(
+                    str(nas["endpoint"]).encode()
+                ).hexdigest(),
+            }
+        )
+    elif durability_basis != DURABILITY_R2_PERSISTENT_TARGET:
+        raise ValueError("unknown retirement durability basis")
     return identity
 
 
@@ -570,7 +631,7 @@ async def _head_candidates(
     *,
     r2_client: Any,
     r2_bucket: str,
-    nas_client: Any,
+    nas_client: Any | None,
     concurrency: int,
     allow_source_missing: bool = False,
 ) -> int:
@@ -597,9 +658,18 @@ async def _head_candidates(
             )
             for item in candidate["targets"]
         }
-        nas = nas_client.head_object(
-            Bucket=str(candidate["nas_bucket"]), Key=str(candidate["nas_key"])
+        nas = None
+        durability_basis = str(
+            candidate.get("durability_basis") or DURABILITY_NAS_ARCHIVE
         )
+        if durability_basis == DURABILITY_NAS_ARCHIVE:
+            if nas_client is None:
+                raise RuntimeError("NAS client is required for nas-archive durability")
+            nas = nas_client.head_object(
+                Bucket=str(candidate["nas_bucket"]), Key=str(candidate["nas_key"])
+            )
+        elif durability_basis != DURABILITY_R2_PERSISTENT_TARGET:
+            raise RuntimeError("unknown retirement durability basis")
         if source is None:
             validate_retirement_survivor_heads(
                 candidate, target_heads=targets, nas_head=nas
@@ -634,19 +704,27 @@ async def _plan_delete(args: argparse.Namespace) -> None:
     if report.get("parent_copy_plan_sha256") != args.parent_copy_plan_sha256:
         raise RuntimeError("retirement report Copy parent changed")
     r2_config = _load_secure_config(Path(args.config))
-    archive_config = _secure_json(Path(args.archive_config))
+    archive_config = _durability_archive_config(
+        args.durability_basis, args.archive_config
+    )
     clear_proxy_environment()
     validate_endpoint_route(r2_config["target"])
-    validate_endpoint_route(archive_config["nas"])
+    if archive_config is not None:
+        validate_endpoint_route(archive_config["nas"])
     runtime_identity = _retirement_runtime_identity(
         artifact_digest=args.artifact_digest,
         r2_config=r2_config,
+        durability_basis=args.durability_basis,
         archive_config=archive_config,
     )
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
     production = await _connect("PRODUCTION_DATABASE_URL")
     r2_client = _s3_client(r2_config["target"], max_connections=16)
-    nas_client = _s3_client(archive_config["nas"], max_connections=16)
+    nas_client = (
+        _s3_client(archive_config["nas"], max_connections=16)
+        if archive_config is not None
+        else None
+    )
     try:
         await ledger.execute(RETIREMENT_DDL)
         parent = await ledger.fetchrow(
@@ -689,8 +767,10 @@ async def _plan_delete(args: argparse.Namespace) -> None:
         all_history_ids = sorted({int(row["history_id"]) for row in all_rows})
         if len(all_history_ids) > 10000:
             raise RuntimeError("retirement source fanout exceeds 10000 Histories")
-        evidence_rows = await production.fetch(
-            PRODUCTION_ARCHIVE_EVIDENCE_SQL, all_history_ids
+        evidence_rows = (
+            await production.fetch(PRODUCTION_ARCHIVE_EVIDENCE_SQL, all_history_ids)
+            if args.durability_basis == DURABILITY_NAS_ARCHIVE
+            else []
         )
         evidence = {
             (int(row["history_id"]), str(row["role"]), int(row["ordinal"])): dict(row)
@@ -782,6 +862,7 @@ async def _plan_delete(args: argparse.Namespace) -> None:
             ]
             candidates.append(
                 {
+                    "durability_basis": args.durability_basis,
                     "source_name": source[0],
                     "source_key": source[1],
                     "byte_size": int(rows[0]["byte_size"]),
@@ -823,7 +904,7 @@ async def _plan_delete(args: argparse.Namespace) -> None:
             ),
         )[: args.limit]
         if not candidates:
-            raise RuntimeError("no archived zero-reference old sources are eligible")
+            raise RuntimeError("no durable zero-reference old sources are eligible")
         await _head_candidates(
             candidates,
             r2_client=r2_client,
@@ -848,6 +929,7 @@ async def _plan_delete(args: argparse.Namespace) -> None:
             objects=candidates,
             report_sha256=report_sha,
             runtime_identity=runtime_identity,
+            durability_basis=args.durability_basis,
             batch_size=args.batch_size,
         )
         async with ledger.transaction():
@@ -922,7 +1004,8 @@ async def _plan_delete(args: argparse.Namespace) -> None:
         await production.close()
         await ledger.close()
         r2_client.close()
-        nas_client.close()
+        if nas_client is not None:
+            nas_client.close()
 
 
 async def _source_missing(client: Any, bucket: str, key: str) -> bool:
@@ -943,13 +1026,18 @@ async def _execute_delete(args: argparse.Namespace) -> None:
     ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
     production = await _connect("PRODUCTION_DATABASE_URL")
     r2_config = _load_secure_config(Path(args.config))
-    archive_config = _secure_json(Path(args.archive_config))
+    archive_config = _durability_archive_config(
+        args.durability_basis, args.archive_config
+    )
     clear_proxy_environment()
     validate_endpoint_route(r2_config["target"])
-    validate_endpoint_route(archive_config["nas"])
+    if archive_config is not None:
+        validate_endpoint_route(archive_config["nas"])
     r2_client = _s3_client(r2_config["target"], max_connections=args.delete_concurrency)
-    nas_client = _s3_client(
-        archive_config["nas"], max_connections=args.delete_concurrency
+    nas_client = (
+        _s3_client(archive_config["nas"], max_connections=args.delete_concurrency)
+        if archive_config is not None
+        else None
     )
     try:
         await ledger.execute(RETIREMENT_DDL)
@@ -978,9 +1066,15 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             supplied_plan_sha256=args.plan_sha256,
             confirmation=args.confirm,
         )
+        manifest_durability_basis = str(
+            manifest.get("durability_basis") or DURABILITY_NAS_ARCHIVE
+        )
+        if args.durability_basis != manifest_durability_basis:
+            raise RuntimeError("retirement durability basis changed")
         actual_runtime = _retirement_runtime_identity(
             artifact_digest=args.artifact_digest,
             r2_config=r2_config,
+            durability_basis=manifest_durability_basis,
             archive_config=archive_config,
         )
         if actual_runtime != manifest["runtime_identity"]:
@@ -1005,6 +1099,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             )
         ]
         for item in objects:
+            item["durability_basis"] = manifest_durability_basis
             item["targets"] = (
                 json.loads(item["target_facts"])
                 if isinstance(item["target_facts"], str)
@@ -1023,6 +1118,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             )
         ]
         for item in all_objects:
+            item["durability_basis"] = manifest_durability_basis
             item["targets"] = (
                 json.loads(item["target_facts"])
                 if isinstance(item["target_facts"], str)
@@ -1097,11 +1193,17 @@ async def _execute_delete(args: argparse.Namespace) -> None:
                     )
                     for target in item["targets"]
                 }
-                nas_head = await asyncio.to_thread(
-                    nas_client.head_object,
-                    Bucket=str(item["nas_bucket"]),
-                    Key=str(item["nas_key"]),
-                )
+                nas_head = None
+                if manifest_durability_basis == DURABILITY_NAS_ARCHIVE:
+                    if nas_client is None:
+                        raise RuntimeError(
+                            "NAS client is required for nas-archive durability"
+                        )
+                    nas_head = await asyncio.to_thread(
+                        nas_client.head_object,
+                        Bucket=str(item["nas_bucket"]),
+                        Key=str(item["nas_key"]),
+                    )
                 for target in item["targets"]:
                     head = target_heads[str(target["target_key"])]
                     if str(
@@ -1111,10 +1213,9 @@ async def _execute_delete(args: argparse.Namespace) -> None:
                         raise RuntimeError(
                             "verified target marker changed after delete"
                         )
-                if str((nas_head.get("Metadata") or {}).get("sha256") or "") != str(
-                    item["archive_sha256"]
-                ):
-                    raise RuntimeError("NAS archive SHA-256 changed after delete")
+                validate_retirement_survivor_heads(
+                    item, target_heads=target_heads, nas_head=nas_head
+                )
 
         await asyncio.gather(*(delete_one(item) for item in objects))
         async with ledger.transaction():
@@ -1173,7 +1274,8 @@ async def _execute_delete(args: argparse.Namespace) -> None:
         await production.close()
         await ledger.close()
         r2_client.close()
-        nas_client.close()
+        if nas_client is not None:
+            nas_client.close()
 
 
 def _bounded_delete_concurrency(value: str) -> int:
@@ -1196,7 +1298,10 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("--report", required=True)
     plan.add_argument("--history-id-file", required=True)
     plan.add_argument("--config", required=True)
-    plan.add_argument("--archive-config", required=True)
+    plan.add_argument("--archive-config")
+    plan.add_argument(
+        "--durability-basis", choices=DURABILITY_BASES, default=DURABILITY_NAS_ARCHIVE
+    )
     plan.add_argument("--artifact-digest", required=True)
     plan.add_argument("--limit", type=int, default=1000)
     plan.add_argument("--batch-size", type=int, default=1000)
@@ -1206,7 +1311,10 @@ def _parser() -> argparse.ArgumentParser:
     execute.add_argument("--plan-sha256", required=True)
     execute.add_argument("--confirm", required=True)
     execute.add_argument("--config", required=True)
-    execute.add_argument("--archive-config", required=True)
+    execute.add_argument("--archive-config")
+    execute.add_argument(
+        "--durability-basis", choices=DURABILITY_BASES, default=DURABILITY_NAS_ARCHIVE
+    )
     execute.add_argument("--artifact-digest", required=True)
     execute.add_argument(
         "--delete-concurrency", type=_bounded_delete_concurrency, default=4

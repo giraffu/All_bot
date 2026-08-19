@@ -7,8 +7,13 @@ from datetime import datetime, timezone
 import pytest
 
 from scripts.history_media_r2_retirement import (
+    DURABILITY_NAS_ARCHIVE,
+    DURABILITY_R2_PERSISTENT_TARGET,
     RETIREMENT_DDL,
+    _durability_archive_config,
+    _head_candidates,
     _parser,
+    _retirement_runtime_identity,
     build_retirement_plan,
     classify_retirement_candidate,
     validate_delete_gate,
@@ -68,6 +73,157 @@ def test_retirement_candidate_requires_archive_coverage_for_every_asset():
     assert classify_retirement_candidate(_candidate()) == "eligible"
 
 
+def test_r2_persistent_target_is_an_explicit_durability_basis_without_nas():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+    )
+
+    assert classify_retirement_candidate(candidate) == "eligible"
+    manifest, _frozen, _batches = build_retirement_plan(
+        run_id="11111111-1111-1111-1111-111111111111",
+        parent_copy_plan_sha256="p" * 64,
+        parent_switch_plan_sha256s=["s" * 64],
+        objects=[candidate],
+        report_sha256="r" * 64,
+        runtime_identity={"artifact_digest": "sha256:" + "f" * 64},
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+    )
+
+    assert manifest["durability_basis"] == DURABILITY_R2_PERSISTENT_TARGET
+    assert manifest["schema"] == "allbot-history-media-r2-retirement-plan/v2"
+
+    assert (
+        classify_retirement_candidate(dict(candidate, targets=[]))
+        == "persistent_target_missing"
+    )
+
+
+def test_r2_persistent_target_still_requires_exact_target_marker_and_size():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+    )
+    source_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "LastModified": candidate["source_last_modified"],
+    }
+    target_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+    }
+
+    validate_retirement_object_heads(
+        candidate,
+        source_head=source_head,
+        target_heads={candidate["targets"][0]["target_key"]: target_head},
+        nas_head=None,
+    )
+    with pytest.raises(RuntimeError, match="target size"):
+        validate_retirement_object_heads(
+            candidate,
+            source_head=source_head,
+            target_heads={
+                candidate["targets"][0]["target_key"]: dict(
+                    target_head, ContentLength=99
+                )
+            },
+            nas_head=None,
+        )
+
+
+def test_nas_archive_remains_the_default_and_still_requires_readback():
+    candidate = _candidate(durability_basis=DURABILITY_NAS_ARCHIVE)
+    source_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "LastModified": candidate["source_last_modified"],
+    }
+    target_head = {
+        "ContentLength": 100,
+        "ETag": '"source-etag"',
+        "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+    }
+    with pytest.raises(RuntimeError, match="NAS archive object"):
+        validate_retirement_object_heads(
+            candidate,
+            source_head=source_head,
+            target_heads={candidate["targets"][0]["target_key"]: target_head},
+            nas_head=None,
+        )
+
+
+def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
+    with pytest.raises(ValueError, match="required for nas-archive"):
+        _durability_archive_config(DURABILITY_NAS_ARCHIVE, None)
+    with pytest.raises(ValueError, match="not accepted"):
+        _durability_archive_config(
+            DURABILITY_R2_PERSISTENT_TARGET, "/secure/archive.json"
+        )
+    assert (
+        _durability_archive_config(DURABILITY_R2_PERSISTENT_TARGET, None) is None
+    )
+
+    identity = _retirement_runtime_identity(
+        artifact_digest="sha256:" + "f" * 64,
+        r2_config={
+            "target": {
+                "endpoint": "https://r2.invalid",
+                "bucket": "persistent",
+            }
+        },
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_config=None,
+    )
+    assert identity["durability_basis"] == DURABILITY_R2_PERSISTENT_TARGET
+    assert "nas_bucket" not in identity
+    assert "nas_endpoint_sha256" not in identity
+
+
+@pytest.mark.asyncio
+async def test_r2_persistent_target_head_gate_never_requires_nas_client():
+    candidate = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+    )
+
+    class R2:
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            if Key == candidate["source_key"]:
+                return {
+                    "ContentLength": 100,
+                    "ETag": '"source-etag"',
+                    "LastModified": candidate["source_last_modified"],
+                }
+            assert Key == candidate["targets"][0]["target_key"]
+            return {
+                "ContentLength": 100,
+                "ETag": '"source-etag"',
+                "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+            }
+
+    recovered = await _head_candidates(
+        [candidate],
+        r2_client=R2(),
+        r2_bucket="persistent",
+        nas_client=None,
+        concurrency=1,
+    )
+    assert recovered == 0
+
+
 def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
     objects = [
         _candidate(),
@@ -90,6 +246,7 @@ def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
         objects=objects,
         report_sha256="r" * 64,
         runtime_identity={"artifact_digest": "sha256:" + "f" * 64},
+        durability_basis=DURABILITY_NAS_ARCHIVE,
         batch_size=1,
     )
 
@@ -111,6 +268,7 @@ def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
             objects=[objects[0], dict(objects[0])],
             report_sha256="r" * 64,
             runtime_identity={},
+            durability_basis=DURABILITY_NAS_ARCHIVE,
         )
 
 
@@ -223,10 +381,10 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             "/secure/archive-canary.ids",
             "--config",
             "/secure/r2.json",
-            "--archive-config",
-            "/secure/archive.json",
             "--artifact-digest",
             "sha256:" + "b" * 64,
+            "--durability-basis",
+            DURABILITY_R2_PERSISTENT_TARGET,
             "--output",
             "/secure/delete-plan.json",
         ]
@@ -240,16 +398,20 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             "DELETE_HISTORY_MEDIA_" + "a" * 64,
             "--config",
             "/secure/r2.json",
-            "--archive-config",
-            "/secure/archive.json",
             "--artifact-digest",
             "sha256:" + "b" * 64,
+            "--durability-basis",
+            DURABILITY_R2_PERSISTENT_TARGET,
         ]
     )
 
     assert report.command == "report"
     assert not hasattr(report, "confirm")
     assert plan.history_id_file == "/secure/archive-canary.ids"
+    assert plan.archive_config is None
+    assert plan.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
+    assert execute.archive_config is None
+    assert execute.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
     assert execute.delete_concurrency <= 8
     assert "analytics_history_media_r2_retirement_plans" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_objects" in RETIREMENT_DDL
