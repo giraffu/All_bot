@@ -140,6 +140,10 @@ DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
+当前 RTX 5090 运行态同时禁用 DynamicVRAM 并启用 `--cache-none`：
+前者避免 AIMDO 错误的 16 GiB 进程显存上限，后者在图执行期间尽快
+释放已不再需要的大型节点输出，防止 32B 文本编码器与同机其它
+GPU runtime 共同压满宿主机 RAM。
 
 ## 测试 Worker 与正式 GPU 边界
 
