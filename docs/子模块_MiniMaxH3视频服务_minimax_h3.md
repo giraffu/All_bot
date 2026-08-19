@@ -141,13 +141,19 @@ DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安
 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
 
-## LAN 测试切换
+## 测试 Worker 与正式 GPU 边界
 
-测试候选为 `gpu-177-gpu1-minimax_h3_test`，与
-`gpu-177-gpu1-ltx_unified` 共用 `gpu-177:gpu1` 和 8191。只能通过
-`scripts/lan_aio_fleet_prod_ops.py` 读取实时 ledger、确认队列空闲、warm-cache 并做
-单卡 takeover/recover。候选身份固定为 `cloud-test`，只能连接测试 Central 和
-`user-data-test`。测试期间正式 LTX 会在自然 drain 后停止；结束时显式 recover。
+H3 测试 Worker 是测试云主机上的专用 `worker-agent`，与 `worker-relay` 一起运行，
+只连接 test Central 和测试存储，并只声明 T2V/I2V/FLF2V 三种公开类型。普通“启动
+H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 cloud-test
+RunPod；LAN/RunPod runtime 在该语境中都保持正式 Worker 身份。测试 agent 可以经
+受限私网或测试主机 loopback 传输调用已经运行的 H3 ComfyUI，但不得启停、重启、
+切换或重新标记该正式 runtime。
+
+不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
+revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test
+Central `/system/workers` 中目标 agent 为 `enabled`、`idle` 且 profile/types 精确。
+这只能证明测试 Worker 可接单，不等于 GPU artifact canary 已通过。
 
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，逐条检查：Central task type、
 Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
