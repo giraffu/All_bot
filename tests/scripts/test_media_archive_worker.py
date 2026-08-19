@@ -17,6 +17,7 @@ from scripts.media_archive_worker import (
     clear_proxy_environment,
     load_secure_config,
     restore_one_asset,
+    validate_direct_route,
     validate_source_routes,
 )
 
@@ -190,6 +191,61 @@ def test_worker_route_preflight_skips_filesystem_sources(monkeypatch):
     assert checked == [
         {"name": "r2", "type": "s3", "endpoint": "https://r2.example"}
     ]
+
+
+def test_route_preflight_ignores_unroutable_dns_family_when_ipv4_is_safe(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.media_archive_worker.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (0, 0, 0, "", ("2001:db8::1", 443, 0, 0)),
+            (0, 0, 0, "", ("192.0.2.10", 443)),
+        ],
+    )
+
+    def route(command, **_kwargs):
+        if command[-1] == "2001:db8::1":
+            raise subprocess.CalledProcessError(2, command)
+        return subprocess.CompletedProcess(command, 0, "192.0.2.10 dev eth0 src 192.0.2.2\n", "")
+
+    monkeypatch.setattr("scripts.media_archive_worker.subprocess.run", route)
+
+    validate_direct_route("dual-stack.example")
+
+
+def test_route_preflight_requires_at_least_one_routable_safe_address(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.media_archive_worker.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(0, 0, 0, "", ("2001:db8::1", 443, 0, 0))],
+    )
+
+    def no_route(command, **_kwargs):
+        raise subprocess.CalledProcessError(2, command)
+
+    monkeypatch.setattr("scripts.media_archive_worker.subprocess.run", no_route)
+
+    with pytest.raises(RuntimeError, match="no routable address"):
+        validate_direct_route("ipv6-only-unreachable.example")
+
+
+def test_route_preflight_rejects_any_routable_tunnel_address(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.media_archive_worker.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (0, 0, 0, "", ("192.0.2.10", 443)),
+            (0, 0, 0, "", ("192.0.2.11", 443)),
+        ],
+    )
+
+    def route(command, **_kwargs):
+        device = "tun0" if command[-1] == "192.0.2.11" else "eth0"
+        return subprocess.CompletedProcess(
+            command, 0, f"{command[-1]} dev {device} src 192.0.2.2\n", ""
+        )
+
+    monkeypatch.setattr("scripts.media_archive_worker.subprocess.run", route)
+
+    with pytest.raises(RuntimeError, match="non-physical route"):
+        validate_direct_route("mixed-route.example")
 
 
 def test_restore_revalidates_nas_then_uploads_originals_and_rebuilt_thumbnail(tmp_path):

@@ -118,10 +118,18 @@ def validate_direct_route(
     }
     if not addresses:
         raise RuntimeError(f"cannot resolve {hostname}")
+    routable_addresses = 0
     for address in addresses:
-        route = subprocess.run(
-            ["ip", "route", "get", address], capture_output=True, text=True, check=True
-        ).stdout.lower()
+        try:
+            route = subprocess.run(
+                ["ip", "route", "get", address],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.lower()
+        except subprocess.CalledProcessError:
+            continue
+        routable_addresses += 1
         rejected_markers = ["tun0", "wg0", "127.0.0.1"]
         if not allow_tailscale:
             rejected_markers.append("tailscale")
@@ -139,6 +147,8 @@ def validate_direct_route(
             raise RuntimeError(
                 f"unexpected source address for {hostname}: {route.strip()}"
             )
+    if routable_addresses == 0:
+        raise RuntimeError(f"no routable address for {hostname}")
 
 
 def validate_endpoint_route(config: dict) -> None:
