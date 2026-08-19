@@ -20,6 +20,7 @@ ENV PIP_NO_CACHE_DIR=1
 
 RUN set -euo pipefail; \
     command -v ffmpeg >/dev/null; command -v git >/dev/null; command -v python3 >/dev/null; \
+    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
     rm -rf "${COMFYUI_INSTALL_DIR}"; mkdir -p "${COMFYUI_INSTALL_DIR}"; \
     archive=/tmp/ComfyUI.tar.gz; repo_path="${COMFYUI_REPO#https://github.com/}"; repo_path="${repo_path%.git}"; \
     for attempt in 1 2 3; do \
@@ -30,12 +31,13 @@ RUN set -euo pipefail; \
     done; \
     echo "${COMFYUI_ARCHIVE_SHA256}  $archive" | sha256sum -c -; \
     tar -xzf "$archive" --strip-components=1 -C "${COMFYUI_INSTALL_DIR}"; \
-    python3 -m pip install --no-cache-dir -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; \
+    pip_install_with_retry -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; \
     rm -f "$archive"; \
     mkdir -p "${COMFYUI_INSTALL_DIR}/custom_nodes"; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 RUN set -euo pipefail; \
+    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
     install_node() { repo="$1"; ref="$2"; sha="$3"; name="$4"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; archive="/tmp/${name}.tar.gz"; repo_path="${repo#https://github.com/}"; repo_path="${repo_path%.git}"; \
       for attempt in 1 2 3; do \
         rm -f "$archive"; \
@@ -45,7 +47,7 @@ RUN set -euo pipefail; \
       done; \
       echo "$sha  $archive" | sha256sum -c -; \
       rm -rf "$target"; mkdir -p "$target"; tar -xzf "$archive" --strip-components=1 -C "$target"; \
-      if [ -f "$target/requirements.txt" ]; then python3 -m pip install --no-cache-dir -r "$target/requirements.txt"; fi; \
+      if [ -f "$target/requirements.txt" ]; then pip_install_with_retry -r "$target/requirements.txt"; fi; \
       rm -f "$archive"; }; \
     install_node "${KJNODES_REPO}" "${KJNODES_REF}" d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7 ComfyUI-KJNodes; \
     install_node "${VHS_REPO}" "${VHS_REF}" 69042eba3e2193a8f428d14bb9ebe97a03b64c0c4de4665c9c6c5f746e60c195 ComfyUI-VideoHelperSuite; \
@@ -70,8 +72,9 @@ COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/run
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
 RUN set -euo pipefail; \
+    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
-    python3 -m pip install --no-cache-dir -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
+    pip_install_with_retry -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
