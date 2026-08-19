@@ -699,9 +699,18 @@ class ComfyAgent:
             for execution in self._prompt_executions.values()
             if not execution.completed_event.is_set()
         ]
-        if not executions and self._active_execution:
+        if (
+            not executions
+            and self._active_execution
+            and self._active_execution.prompt_id
+        ):
             executions = [self._active_execution]
         if not executions:
+            if self._active_execution:
+                logger.warning(
+                    "WebSocket connection failed before ComfyUI prompt submission; "
+                    "deferring task outcome to the submission readiness check"
+                )
             return
 
         probe_failures = 0

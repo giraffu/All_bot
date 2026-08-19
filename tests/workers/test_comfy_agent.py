@@ -1927,6 +1927,34 @@ def test_user_input_failure_does_not_count_toward_quarantine(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ws_disconnect_during_preparation_does_not_fail_unsubmitted_task(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-preparing",
+        task_type="img2img",
+        phase="preparing",
+    )
+    agent._active_execution = execution
+
+    async def fake_probe():
+        return False
+
+    async def fake_sleep(_seconds):
+        return None
+
+    agent._probe_comfy_ready = fake_probe
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent._handle_ws_connection_error("opening handshake timed out")
+
+    assert execution.completed_event.is_set() is False
+    assert execution.task_error is None
+
+
+@pytest.mark.asyncio
 async def test_ws_disconnect_fails_active_task_when_http_probe_fails(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
