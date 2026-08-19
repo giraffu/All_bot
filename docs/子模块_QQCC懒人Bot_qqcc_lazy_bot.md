@@ -121,6 +121,11 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `QQCC_CONFIG_ADMIN_PASSWORD_HASH`
 - `QQCC_CONFIG_SECRET_KEY`
 
+独立 JWT 有效期为 7 天。配置 API 返回 401，或 Cloudflare Access 在 API 路径
+返回 HTML 登录页时，前端统一清除过期登录态并提示重新登录；由过期触发的登录页
+不会卸载已打开的配置编辑器，重新登录后保留未保存草稿并允许再次保存。管理员主动
+点击“退出”仍销毁当前编辑态，避免下一个登录会话继承旧草稿。
+
 配置结构固定包含：
 
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`

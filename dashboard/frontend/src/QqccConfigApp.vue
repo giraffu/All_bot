@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LogoutOutlined } from '@ant-design/icons-vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import QqccBotSettings from './components/QqccBotSettings.vue'
 import QqccConfigLogin from './components/QqccConfigLogin.vue'
@@ -16,15 +16,23 @@ import { useQqccConfigAuth } from './composables/useQqccConfigAuth'
 
 const { isAuthenticated, clearAuthToken } = useQqccConfigAuth()
 const activeView = ref<'official' | 'private-bots'>('official')
+const hasAuthenticatedOnce = ref(isAuthenticated.value)
+
+watch(isAuthenticated, authenticated => {
+  if (authenticated) {
+    hasAuthenticatedOnce.value = true
+  }
+})
 
 const handleLogout = () => {
+  hasAuthenticatedOnce.value = false
   clearAuthToken()
 }
 </script>
 
 <template>
   <qqcc-config-login v-if="!isAuthenticated" />
-  <a-layout v-else class="qqcc-config-app">
+  <a-layout v-if="hasAuthenticatedOnce" v-show="isAuthenticated" class="qqcc-config-app">
     <a-layout-header class="qqcc-config-header">
       <div class="flex min-w-0 items-center gap-3">
         <div class="qqcc-config-logo">Q</div>
