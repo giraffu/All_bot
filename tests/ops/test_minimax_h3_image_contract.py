@@ -31,8 +31,9 @@ def test_minimax_h3_image_pins_runtime_and_keeps_weights_external():
     assert "https://codeload.github.com/" in dockerfile
     assert "for attempt in 1 2 3" in dockerfile
     assert "pip_install_with_retry()" in dockerfile
-    assert "python3 -m pip install --no-cache-dir \"$@\"" in dockerfile
+    assert "PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache \"$@\"" in dockerfile
     assert "pip_install_with_retry -r" in dockerfile
+    assert "rm -rf /tmp/allbot-pip-cache" in dockerfile
     assert "d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7" in dockerfile
     assert "external-model-manifest" in dockerfile
     assert "COPY models" not in dockerfile

@@ -20,7 +20,7 @@ ENV PIP_NO_CACHE_DIR=1
 
 RUN set -euo pipefail; \
     command -v ffmpeg >/dev/null; command -v git >/dev/null; command -v python3 >/dev/null; \
-    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     rm -rf "${COMFYUI_INSTALL_DIR}"; mkdir -p "${COMFYUI_INSTALL_DIR}"; \
     archive=/tmp/ComfyUI.tar.gz; repo_path="${COMFYUI_REPO#https://github.com/}"; repo_path="${repo_path%.git}"; \
     for attempt in 1 2 3; do \
@@ -31,13 +31,13 @@ RUN set -euo pipefail; \
     done; \
     echo "${COMFYUI_ARCHIVE_SHA256}  $archive" | sha256sum -c -; \
     tar -xzf "$archive" --strip-components=1 -C "${COMFYUI_INSTALL_DIR}"; \
-    pip_install_with_retry -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; \
+    pip_install_with_retry -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; rm -rf /tmp/allbot-pip-cache; \
     rm -f "$archive"; \
     mkdir -p "${COMFYUI_INSTALL_DIR}/custom_nodes"; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 RUN set -euo pipefail; \
-    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     install_node() { repo="$1"; ref="$2"; sha="$3"; name="$4"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; archive="/tmp/${name}.tar.gz"; repo_path="${repo#https://github.com/}"; repo_path="${repo_path%.git}"; \
       for attempt in 1 2 3; do \
         rm -f "$archive"; \
@@ -52,7 +52,8 @@ RUN set -euo pipefail; \
     install_node "${KJNODES_REPO}" "${KJNODES_REF}" d4dc73109ae070afd899a9844cd8b913b602a75cf10d901e2cba100e6dcc89f7 ComfyUI-KJNodes; \
     install_node "${VHS_REPO}" "${VHS_REF}" 69042eba3e2193a8f428d14bb9ebe97a03b64c0c4de4665c9c6c5f746e60c195 ComfyUI-VideoHelperSuite; \
     install_node "${DASIWA_REPO}" "${DASIWA_REF}" bfe493454a24eaf8732d163a3f2061169b319fbc9b5933013aa6da37e1674e18 ComfyUI-DaSiWa-Nodes; \
-    install_node "${RESERVED_VRAM_REPO}" "${RESERVED_VRAM_REF}" 22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c ComfyUI-ReservedVRAM
+    install_node "${RESERVED_VRAM_REPO}" "${RESERVED_VRAM_REF}" 22124250c3da2f3b6cab6ebda7158d281144f6cfa9423c65f20b50112f29465c ComfyUI-ReservedVRAM; \
+    rm -rf /tmp/allbot-pip-cache
 
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_RUNTIME_PACKAGE_SHA256
@@ -72,9 +73,9 @@ COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/run
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
 RUN set -euo pipefail; \
-    pip_install_with_retry() { for attempt in 1 2 3; do if python3 -m pip install --no-cache-dir "$@"; then return 0; fi; test "$attempt" -lt 3; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
-    pip_install_with_retry -r /opt/allbot/runtime/runpod_worker/requirements.txt; \
+    pip_install_with_retry -r /opt/allbot/runtime/runpod_worker/requirements.txt; rm -rf /tmp/allbot-pip-cache; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'MiniMaxH3SigmaShift' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
     grep -q 'LoraLoaderModelOnly' "${COMFYUI_INSTALL_DIR}/nodes.py"; \
