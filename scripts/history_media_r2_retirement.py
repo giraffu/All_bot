@@ -10,6 +10,7 @@ import json
 import os
 import stat
 import sys
+import time
 import uuid
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -97,6 +98,51 @@ create table if not exists analytics_history_media_r2_retirement_objects (
 create index if not exists ix_history_media_r2_retirement_objects_status
   on analytics_history_media_r2_retirement_objects(plan_sha256,status,batch_no,object_no);
 """
+RETIREMENT_BLOCKER_TIMEOUT_SECONDS = 60.0
+RETIREMENT_BLOCKER_SQL = """with selected as materialized (
+  select * from unnest($1::text[],$2::text[]) as x(source_name,source_key)
+), blockers as (
+  select 1 blocker from selected s
+    join analytics_history_media_r2_migrations m
+      using(source_name,source_key)
+   where m.status in ('copy_required','failed')
+  union all
+  select 1 blocker from selected s
+    join analytics_history_media_r2_migrations m
+      using(source_name,source_key)
+   where m.original_ref<>m.target_key and m.switch_completed_at is null
+  union all
+  select 1 blocker from selected s
+    join analytics_history_media_r2_migrations m
+      on m.target_key=s.source_key
+)
+select exists(select 1 from blockers limit 1)
+"""
+RETIREMENT_BLOCKER_INDEX_DDL = (
+    (
+        "ix_history_media_r2_retirement_source_pending",
+        """create index concurrently if not exists
+             ix_history_media_r2_retirement_source_pending
+             on analytics_history_media_r2_migrations(source_name,source_key)
+             where status in ('copy_required','failed')
+               and source_name is not null and source_key is not null""",
+    ),
+    (
+        "ix_history_media_r2_retirement_source_unswitched",
+        """create index concurrently if not exists
+             ix_history_media_r2_retirement_source_unswitched
+             on analytics_history_media_r2_migrations(source_name,source_key)
+             where original_ref<>target_key and switch_completed_at is null
+               and source_name is not null and source_key is not null""",
+    ),
+    (
+        "ix_history_media_r2_retirement_target_key",
+        """create index concurrently if not exists
+             ix_history_media_r2_retirement_target_key
+             on analytics_history_media_r2_migrations(target_key)
+             where target_key is not null""",
+    ),
+)
 
 
 def _sha256_json(value: Any) -> str:
@@ -388,6 +434,147 @@ async def _connect(name: str) -> asyncpg.Connection:
         raise SystemExit(f"{name} is required")
     dsn, ssl_value = normalize_asyncpg_dsn(value)
     return await asyncpg.connect(dsn, ssl=ssl_value)
+
+
+async def _retirement_has_blockers(
+    ledger: asyncpg.Connection,
+    objects: list[dict[str, Any]],
+) -> bool:
+    started = time.monotonic()
+    try:
+        blocked = bool(
+            await ledger.fetchval(
+                RETIREMENT_BLOCKER_SQL,
+                [str(item["source_name"]) for item in objects],
+                [str(item["source_key"]) for item in objects],
+                timeout=RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
+            )
+        )
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "event": "retirement_blocker_gate_failed",
+                    "source_count": len(objects),
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        raise
+    print(
+        json.dumps(
+            {
+                "event": "retirement_blocker_gate",
+                "source_count": len(objects),
+                "blocked": blocked,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            },
+            sort_keys=True,
+        )
+    )
+    return blocked
+
+
+async def _mark_retirement_plan_paused(
+    plan_sha256: str,
+    *,
+    connect_func: Any = None,
+    sleep_func: Any = asyncio.sleep,
+    attempts: int = 3,
+) -> None:
+    connector = connect_func or _connect
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        connection = None
+        try:
+            connection = await connector("LOCAL_ANALYTICS_DATABASE_URL")
+            await connection.execute(
+                """update analytics_history_media_r2_retirement_plans
+                     set status='paused',updated_at=now() where plan_sha256=$1""",
+                plan_sha256,
+            )
+            print(
+                json.dumps(
+                    {
+                        "event": "retirement_plan_paused",
+                        "reconnect_attempt": attempt,
+                    },
+                    sort_keys=True,
+                )
+            )
+            return
+        except Exception as exc:
+            last_error = exc
+            if attempt < attempts:
+                await sleep_func(attempt)
+        finally:
+            if connection is not None:
+                await connection.close()
+    raise RuntimeError("could not mark retirement plan paused via a fresh connection") from last_error
+
+
+async def _ensure_retirement_blocker_indexes(
+    ledger: asyncpg.Connection,
+    *,
+    timeout_seconds: float,
+) -> None:
+    for name, statement in RETIREMENT_BLOCKER_INDEX_DDL:
+        started = time.monotonic()
+        await ledger.execute(statement, timeout=timeout_seconds)
+        print(
+            json.dumps(
+                {
+                    "event": "retirement_blocker_index_ready",
+                    "index": name,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                },
+                sort_keys=True,
+            )
+        )
+
+
+async def _missing_retirement_blocker_indexes(
+    ledger: asyncpg.Connection,
+) -> tuple[str, ...]:
+    required = tuple(name for name, _statement in RETIREMENT_BLOCKER_INDEX_DDL)
+    rows = await ledger.fetch(
+        """select index_rel.relname as indexname
+             from pg_class table_rel
+             join pg_namespace ns on ns.oid=table_rel.relnamespace
+             join pg_index idx on idx.indrelid=table_rel.oid and idx.indisvalid
+             join pg_class index_rel on index_rel.oid=idx.indexrelid
+            where ns.nspname=current_schema()
+              and table_rel.relname='analytics_history_media_r2_migrations'
+              and index_rel.relname=any($1::text[])""",
+        list(required),
+    )
+    present = {str(row["indexname"]) for row in rows}
+    return tuple(name for name in required if name not in present)
+
+
+async def _prepare_delete_indexes(args: argparse.Namespace) -> None:
+    ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
+    try:
+        await _ensure_retirement_blocker_indexes(
+            ledger, timeout_seconds=float(args.timeout_seconds)
+        )
+        missing = await _missing_retirement_blocker_indexes(ledger)
+        if missing:
+            raise RuntimeError("retirement blocker indexes are incomplete")
+        print(
+            json.dumps(
+                {
+                    "event": "retirement_blocker_indexes_verified",
+                    "index_count": len(RETIREMENT_BLOCKER_INDEX_DDL),
+                },
+                sort_keys=True,
+            )
+        )
+    finally:
+        await ledger.close()
 
 
 def _s3_client(config: dict[str, Any], *, max_connections: int) -> Any:
@@ -1044,6 +1231,11 @@ async def _execute_delete(args: argparse.Namespace) -> None:
     )
     try:
         await ledger.execute(RETIREMENT_DDL)
+        missing_indexes = await _missing_retirement_blocker_indexes(ledger)
+        if missing_indexes:
+            raise RuntimeError(
+                "retirement blocker indexes are not prepared; run prepare-delete-indexes"
+            )
         plan = await ledger.fetchrow(
             """select run_id,manifest,status
                  from analytics_history_media_r2_retirement_plans
@@ -1143,26 +1335,7 @@ async def _execute_delete(args: argparse.Namespace) -> None:
         )
         if live_refs:
             raise RuntimeError("retirement batch gained a live History reference")
-        ledger_blockers = int(
-            await ledger.fetchval(
-                """with selected as (
-                     select * from unnest($1::text[],$2::text[])
-                       as x(source_name,source_key)
-                   ) select count(*) from selected s where
-                     exists(select 1 from analytics_history_media_r2_migrations m
-                             where m.source_name=s.source_name and m.source_key=s.source_key
-                               and m.status in ('copy_required','failed'))
-                     or exists(select 1 from analytics_history_media_r2_migrations m
-                               where m.source_name=s.source_name and m.source_key=s.source_key
-                                 and m.original_ref<>m.target_key
-                                 and m.switch_completed_at is null)
-                     or exists(select 1 from analytics_history_media_r2_migrations m
-                               where m.target_key=s.source_key)""",
-                [str(item["source_name"]) for item in objects],
-                [str(item["source_key"]) for item in objects],
-            )
-        )
-        if ledger_blockers:
+        if await _retirement_has_blockers(ledger, objects):
             raise RuntimeError("retirement batch gained a Copy or Switch blocker")
         recovered_missing = await _head_candidates(
             objects,
@@ -1267,11 +1440,19 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             )
         )
     except Exception:
-        await ledger.execute(
-            """update analytics_history_media_r2_retirement_plans
-                 set status='paused',updated_at=now() where plan_sha256=$1""",
-            args.plan_sha256,
-        )
+        try:
+            await _mark_retirement_plan_paused(args.plan_sha256)
+        except Exception as pause_error:
+            print(
+                json.dumps(
+                    {
+                        "event": "retirement_plan_pause_failed",
+                        "error_type": type(pause_error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
         raise
     finally:
         await production.close()
@@ -1291,6 +1472,8 @@ def _bounded_delete_concurrency(value: str) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    prepare = commands.add_parser("prepare-delete-indexes")
+    prepare.add_argument("--timeout-seconds", type=int, default=3600)
     report = commands.add_parser("report")
     report.add_argument("--parent-copy-plan-sha256", required=True)
     report.add_argument("--output", required=True)
@@ -1326,7 +1509,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 async def _main(args: argparse.Namespace) -> None:
-    if args.command == "report":
+    if args.command == "prepare-delete-indexes":
+        if args.timeout_seconds < 1:
+            raise ValueError("index timeout must be positive")
+        await _prepare_delete_indexes(args)
+    elif args.command == "report":
         if not 1 <= args.archive_candidate_limit <= 1000:
             raise ValueError("archive candidate limit must be between 1 and 1000")
         await _report(args)

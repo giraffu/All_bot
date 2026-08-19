@@ -485,6 +485,14 @@ manifest 保存明文对象 key。
 shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
 的对象都必须留存。
 
+大批退役前先运行 `prepare-delete-indexes`，以 `CREATE INDEX CONCURRENTLY` 准备并回读
+pending/failed 来源、未完成 Switch 来源和 `target_key` 三项 blocker 索引。执行门禁把本批
+来源一次性物化为低基数 `selected` 集合，通过三个集合 JOIN 的 `UNION ALL` 和
+`EXISTS ... LIMIT 1` 早停；禁止恢复逐来源相关 `EXISTS`。查询固定 60 秒超时，并只输出
+来源数、耗时和 blocker 布尔值等低基数指标。执行连接中断时必须另建账本连接重试写入
+`paused`；若新连接仍不可用，外部 supervisor 仍按冻结计划和零删除回执 fail closed，不能
+假定计划已暂停或复用其它计划的令牌。
+
 Copy 计划的全局 rowset 与内部批次都按迁移账本 `id` 顺序冻结和重算，不能在执行端
 改用 History 坐标排序。successor 的每个 1,000 资产批次在领取时重算自己的 rowset
 SHA；supervisor 启动时只做一次全局行集、父链、来源资格和 multipart 预检，避免十条

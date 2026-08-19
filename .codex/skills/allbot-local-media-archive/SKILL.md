@@ -26,9 +26,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   必须重算行集和批次 CAS；旧源始终保留。
 - `plan-switch-completed` 只冻结终止 predecessor/当前 completed 批次；一次一份计划，
   仍需精确 SWITCH 令牌。
-- 旧源 retirement 显式冻结耐久性依据：默认 `nas-archive` 要求 NAS SHA 回读；
-  `r2-persistent-target` 要求已完成 Copy/Switch、生产零引用、无迁移依赖及目标
-  marker/size/ETag。两者都只接受 `DELETE_HISTORY_MEDIA_<sha>`。
+- retirement 冻结 `nas-archive` 或 `r2-persistent-target` 耐久性，只接受
+  `DELETE_HISTORY_MEDIA_<sha>`；大批前 `prepare-delete-indexes`，使用 selected
+  集合 JOIN/早停/超时门禁，断线新连接写 `paused`，禁止逐来源相关查询。
 - direct predecessor marker 仅由新 COPY 令牌的 frontier HEAD recovery 对账；停止计划的
   transient `failed` 仅 HEAD 对账后冻结 successor 并重新授权。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
