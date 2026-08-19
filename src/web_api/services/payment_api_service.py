@@ -1,10 +1,10 @@
 import uuid
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 
-from src.database.models import Order
+from src.database.models import Order, RMBPaymentReconciliationJob
 from src.services.membership_plan_catalog import (
     build_visible_membership_plan_lookup_stmt,
     build_visible_membership_plans_stmt,
@@ -18,7 +18,12 @@ from src.services.order_v2_service import (
     get_order_public_id,
     is_order_v2_enabled,
 )
-from src.services.rmb_payment_service import RMBPaymentService
+from src.services.alipay_direct_service import get_alipay_direct_service
+from src.services.rmb_payment_provider_service import (
+    ALIPAY_DIRECT,
+    create_rmb_payment_url,
+    select_rmb_payment_provider,
+)
 from src.services.ton_payment_config import (
     TonPaymentAvailability,
     get_ton_payment_availability,
@@ -94,6 +99,7 @@ async def create_rmb_order_payload(
     plan_id: int,
     pay_type: str,
     request_origin: str | None,
+    client_type: str = "desktop",
     create_payment_url_func=None,
 ) -> dict:
     plan_res = await db.execute(build_visible_membership_plan_lookup_stmt(plan_id))
@@ -103,6 +109,10 @@ async def create_rmb_order_payload(
 
     legacy_order_id = (
         f"WEB_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    )
+    payment_provider = select_rmb_payment_provider(
+        user=current_user,
+        pay_type=pay_type,
     )
     new_order = Order(
         order_id=legacy_order_id,
@@ -115,31 +125,67 @@ async def create_rmb_order_payload(
         settlement_snapshot=build_order_settlement_snapshot(plan),
         status="PENDING",
         payment_channel="RMB",
+        payment_provider=payment_provider,
         created_at=datetime.now(),
     )
     db.add(new_order)
+    await db.flush()
+    reconciliation_job = RMBPaymentReconciliationJob(
+        order_id=new_order.id,
+        status="pending",
+        next_attempt_at=datetime.now() + timedelta(seconds=60),
+    )
+    db.add(reconciliation_job)
     await db.commit()
 
     if create_payment_url_func is None:
-        create_payment_url_func = RMBPaymentService.create_payment_url
+        create_payment_url_func = create_rmb_payment_url
 
     origin = request_origin or "https://web.aivison.it.com"
-    return_url = f"{origin}/billing?order_id={get_order_public_id(new_order)}"
-    pay_result = await create_payment_url_func(
-        out_trade_no=legacy_order_id,
-        plan_name=plan.name,
-        amount=plan.price_rmb,
-        pay_type=pay_type,
-        return_url=return_url,
-    )
+    try:
+        if payment_provider == ALIPAY_DIRECT:
+            origin = get_alipay_direct_service().config.return_base_url
+        return_url = f"{origin}/billing?order_id={get_order_public_id(new_order)}"
+        pay_result = await create_payment_url_func(
+            provider=payment_provider,
+            out_trade_no=legacy_order_id,
+            plan_name=plan.name,
+            amount=plan.price_rmb,
+            pay_type=pay_type,
+            client_type=client_type,
+            return_url=return_url,
+        )
+    except Exception:
+        if payment_provider == ALIPAY_DIRECT:
+            new_order.status = "FAILED"
+            reconciliation_job.status = "completed"
+            reconciliation_job.last_outcome = "payment_url_creation_failed"
+            reconciliation_job.completed_at = datetime.now()
+            await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "RMB_PAYMENT_CREATION_FAILED",
+                "message": "Payment link creation failed. Please retry.",
+            },
+        )
 
     pay_url = _extract_normalized_pay_url(pay_result)
     if pay_result and pay_result.get("code") == 1 and pay_url:
         return build_rmb_order_payload(new_order, pay_url)
 
+    if payment_provider == ALIPAY_DIRECT:
+        new_order.status = "FAILED"
+        reconciliation_job.status = "completed"
+        reconciliation_job.last_outcome = "payment_url_creation_failed"
+        reconciliation_job.completed_at = datetime.now()
+        await db.commit()
     raise HTTPException(
-        status_code=500,
-        detail=f"Failed to create payment url: {pay_result.get('msg')}",
+        status_code=503,
+        detail={
+            "reason": "RMB_PAYMENT_CREATION_FAILED",
+            "message": "Payment link creation failed. Please retry.",
+        },
     )
 
 

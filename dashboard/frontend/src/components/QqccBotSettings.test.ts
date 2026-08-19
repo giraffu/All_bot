@@ -4,6 +4,8 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { QqccConfigAuthExpiredError } from '../composables/useQqccConfigAuth'
+
 const apiMocks = vi.hoisted(() => ({
   fetchQqccBotConfig: vi.fn(),
   updateQqccBotConfig: vi.fn(),
@@ -823,6 +825,18 @@ describe('QqccBotSettings', () => {
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
   })
 
+  it('asks the administrator to log in again when saving with an expired session', async () => {
+    apiMocks.updateQqccBotConfig.mockRejectedValueOnce(new QqccConfigAuthExpiredError())
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(antMocks.error).toHaveBeenCalledWith('登录已过期，请重新登录后再次保存')
+    expect(antMocks.error).not.toHaveBeenCalledWith('保存懒人Bot配置失败')
+  })
+
   it('uses injected config API handlers when provided', async () => {
     const fetchConfig = vi.fn().mockResolvedValue({
       key: 'qqcc_lazy_bot_config:v1',
@@ -900,6 +914,62 @@ describe('QqccBotSettings', () => {
     const payload = updateConfig.mock.calls[0][0]
     expect(payload.scene_preset_version).toBe(1)
     expect(payload.draw_scenes).toEqual([])
+  })
+
+  it('round-trips the backend small AI video resolution option', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        scene_preset_version: 1,
+        global_enabled: true,
+        video_scenes: [],
+        ai_video_scenes: [{
+          id: 'small_video',
+          name: '清晰视频',
+          prompt: 'camera orbit',
+          negative_prompt: '',
+          duration: 10,
+          resolution: 'small',
+          engine: 'minimax_h3',
+          lora_items: [],
+        }],
+        draw_scenes: [],
+        filter_scenes: [],
+      },
+      options: {
+        default_ai_video_resolution: 'small',
+        ai_video_resolutions: [
+          { value: 'preview', label: '极速（约 512p）' },
+          { value: 'small', label: '清晰（约 600p）' },
+          { value: 'standard', label: '标准（约 720p）' },
+          { value: 'hd', label: '高清（约 810p）' },
+        ],
+      },
+    })
+
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const resolutionSelect = wrapper.get('[data-testid="scene-config-resolution"]')
+    expect((resolutionSelect.element as HTMLSelectElement).value).toBe('small')
+    expect(resolutionSelect.findAll('option').map(option => option.attributes('value'))).toEqual([
+      'preview',
+      'small',
+      'standard',
+      'hd',
+    ])
+
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    const saveButton = wrapper.findAll('button').find(button => button.text() === '保存')
+    if (!saveButton) throw new Error('Missing save button')
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig).toHaveBeenCalledOnce()
+    expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0].resolution)
+      .toBe('small')
   })
 
   it('adds and removes dynamic video scenes before saving', async () => {
@@ -1332,7 +1402,7 @@ describe('QqccBotSettings', () => {
     expect((wrapper.get('[data-testid="scene-config-credit-cost"]').element as HTMLInputElement).value).toBe('')
   })
 
-  it('migrates AI video to pro engine and hides empty future add-on catalog', async () => {
+  it('migrates AI video to pro engine and saves selected H3 add-ons', async () => {
     apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
       key: 'qqcc_lazy_bot_config:v1',
       config: {
@@ -1346,15 +1416,18 @@ describe('QqccBotSettings', () => {
         ai_video_scenes: [{
           id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '  blur  ',
           duration: 15, engine: 'ltx_video',
-          lora_items: [{ path: 'ltx/a.safetensors', strength: 0.75 }],
+          lora_items: [{ name: 'motion_booster', strength: 0.7 }],
           end_frame_draw_scene_id: 'tail',
         }],
       },
       options: {
         default_ai_video_engine: 'minimax_h3',
-        ai_video_engines: [{ value: 'minimax_h3', supports_lora: false }],
-        ai_video_addon_models_version: 1,
-        ai_video_addon_models: [],
+        ai_video_engines: [{ value: 'minimax_h3', supports_lora: true }],
+        ai_video_addon_models_version: 2,
+        ai_video_addon_models: [
+          { value: 'motion_booster', label: '成人动作强化', default_strength: 0.7 },
+          { value: 'mystic_xxx', label: '人体结构增强', default_strength: 0.75 },
+        ],
       },
     })
     const wrapper = mountSettings()
@@ -1362,7 +1435,13 @@ describe('QqccBotSettings', () => {
 
     expect(wrapper.get('[data-testid="scene-tab-ai-video"]').text()).toContain('1')
     await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
-    expect(wrapper.find('[data-testid="scene-ai-video-lora-select"]').exists()).toBe(false)
+    const selector = wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
+    if (!selector) throw new Error('Missing AI video LoRA selector')
+    selector.vm.$emit('change', ['motion_booster', 'mystic_xxx'])
+    await flushPromises()
+    await wrapper.get('[data-testid="scene-ai-video-lora-strength-mystic_xxx"]')
+      .setValue(0.85)
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -1375,7 +1454,10 @@ describe('QqccBotSettings', () => {
       duration: 15,
       engine: 'minimax_h3',
       end_frame_draw_scene_id: 'tail',
-      lora_items: [],
+      lora_items: [
+        { name: 'motion_booster', strength: 0.7 },
+        { name: 'mystic_xxx', strength: 0.85 },
+      ],
     }))
   })
 

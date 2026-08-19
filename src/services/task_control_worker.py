@@ -111,11 +111,26 @@ async def _renew_lease_until_lost(
     lease_store: LeaderLeaseStore,
     ttl_seconds: int,
     renew_interval_seconds: float,
+    lease_state: dict[str, Any] | None = None,
 ) -> str:
     while True:
         await asyncio.sleep(max(0.0, renew_interval_seconds))
         if not await lease_store.renew(lease_name, owner_token, ttl_seconds):
+            _record_lease_state(lease_state, "lost")
             return "lease_lost"
+        _record_lease_state(lease_state, "renewing")
+
+
+def _record_lease_state(
+    state: dict[str, Any] | None,
+    status: str,
+) -> None:
+    if state is None:
+        return
+    state["lease"] = {
+        "status": status,
+        "updated_at": time.time(),
+    }
 
 
 async def run_leased_worker_session(
@@ -126,10 +141,13 @@ async def run_leased_worker_session(
     owner_id: str,
     ttl_seconds: int = DEFAULT_LEASE_TTL_SECONDS,
     renew_interval_seconds: float = DEFAULT_LEASE_RENEW_SECONDS,
+    lease_state: dict[str, Any] | None = None,
 ) -> str:
     owner_token = f"{owner_id}:{uuid.uuid4().hex}"
     if not await lease_store.acquire(lease_name, owner_token, ttl_seconds):
+        _record_lease_state(lease_state, "not_acquired")
         return "not_acquired"
+    _record_lease_state(lease_state, "acquired")
 
     runner_task = asyncio.create_task(runner(), name=f"task-control:{lease_name}")
     renew_task = asyncio.create_task(
@@ -139,6 +157,7 @@ async def run_leased_worker_session(
             lease_store=lease_store,
             ttl_seconds=ttl_seconds,
             renew_interval_seconds=renew_interval_seconds,
+            lease_state=lease_state,
         ),
         name=f"task-control:{lease_name}:lease-renewal",
     )
@@ -262,6 +281,7 @@ async def run_task_control_services(
                     runner=spec.runner,
                     lease_store=store,
                     owner_id=owner_id,
+                    lease_state=state,
                 )
                 state.update(outcome=outcome, updated_at=time.time())
             except asyncio.CancelledError:

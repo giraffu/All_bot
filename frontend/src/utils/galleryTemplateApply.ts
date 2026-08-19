@@ -1,15 +1,19 @@
 import type { GalleryPost } from '@/types/gallery'
+import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
 
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = 'i2i_draw_disabled'
-export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED = 'gallery_prompt_unlock_required'
 
 export const resolveGalleryTemplateApplyDisabledReason = (
   post: GalleryPost | null | undefined
 ): string | null => {
   if (!post) {
     return null
+  }
+
+  if (!isGenerationTaskTypeEnabled(post.task_type || '')) {
+    return 'feature_disabled'
   }
 
   if (post.task_type === 'i2i_draw') {
@@ -25,10 +29,6 @@ export const resolveGalleryTemplateApplyDisabledReason = (
 
   if (post.result_meta?.wan22_is_stitched) {
     return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
-  }
-
-  if (post.prompt_is_masked === true) {
-    return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED
   }
 
   if (post.template_apply_supported === true) {
@@ -56,9 +56,6 @@ export const resolveGalleryTemplateApplyDisabledMessage = (
   }
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED) {
     return t('template_apply.disabled.i2i_draw_disabled')
-  }
-  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_PROMPT_UNLOCK_REQUIRED) {
-    return t('template_apply.disabled.gallery_prompt_unlock_required')
   }
   return t('template_apply.disabled.unsupported')
 }

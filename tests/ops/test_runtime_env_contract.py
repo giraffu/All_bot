@@ -74,6 +74,8 @@ def _environment(environment: str) -> dict[str, str]:
         "REQUIRED_CHANNEL_ID": "-1001234567890",
         "MAIN_BOT_LAZY_BOT_ENABLED": "true",
         "MAIN_BOT_LAZY_BOT_USERNAME": "@QQCC666_bot",
+        "MAIN_BOT_PAYMENT_POLLING_ENABLED": "false",
+        "MAIN_BOT_ZOMBIE_SWEEP_ENABLED": "false",
         "QQCC_BOT_TOKEN": f"{suffix}-qqcc-token",
         "JWT_SECRET_KEY": f"{suffix}-jwt-secret",
         "DASHBOARD_SECRET_KEY": f"{suffix}-dashboard-secret",
@@ -97,10 +99,12 @@ def _environment(environment: str) -> dict[str, str]:
         "HUANYUY_GATEWAY": f"https://gateway-{suffix}.example.com",
         "HUANYUY_SITENAME": f"AllBot {suffix}",
         "RMB_RECONCILIATION_ENABLED": "false",
+        "ALIPAY_DIRECT_ENABLED": "false",
         "LTX_T2V_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "LTX_T2V_MSR_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_BACKEND_ENABLED": "true" if environment == "test" else "false",
         "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED": "true" if environment == "test" else "false",
+        "WEB_FINALIZER_IN_WEB_ENABLED": "false",
         "RUNPOD_RELEASE_PROFILE_PINS_JSON": _runpod_release_profile_pins(),
         "RUNPOD_ASSET_CONTRACT_VERIFIED_PROFILES": (
             "img2img,image_to_video,wan22_video_v2,i2i_pro,scail2,ltx_video,"
@@ -146,6 +150,7 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     assert web["LTX_T2V_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_BACKEND_ENABLED"] == "false"
     assert web["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
+    assert web["WEB_FINALIZER_IN_WEB_ENABLED"] == "false"
     assert bot["MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED"] == "false"
     assert all(
         "LTX_T2V_BACKEND_ENABLED" not in projection
@@ -153,6 +158,8 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         if service != "web-api"
     )
     assert bot["BOT_TOKEN"] == "prod-bot-token"
+    assert bot["MAIN_BOT_PAYMENT_POLLING_ENABLED"] == "false"
+    assert bot["MAIN_BOT_ZOMBIE_SWEEP_ENABLED"] == "false"
     assert "UNRELATED_OPERATOR_SECRET" not in bot
     assert dashboard_backend["SUPPORT_BOT_TOKEN"] == "prod-support-token"
     assert support_bot["SUPPORT_BOT_TOKEN"] == "prod-support-token"
@@ -163,6 +170,43 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
         "ALLBOT_CONFIG_REVISION",
         "ALLBOT_ENV",
     }
+
+
+def test_background_ownership_flags_are_projected_to_every_consumer():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    flags = {
+        "TASK_CONTROL_WORKER_ENABLED": "true",
+        "BILLING_RECONCILER_ENABLED": "true",
+        "WEB_FINALIZER_IN_WEB_ENABLED": "true",
+        "MAIN_BOT_PAYMENT_POLLING_ENABLED": "true",
+        "MAIN_BOT_ZOMBIE_SWEEP_ENABLED": "true",
+        "QQCC_BOT_ZOMBIE_SWEEP_ENABLED": "true",
+    }
+    values.update(flags)
+
+    snapshot = module.build_snapshot(contract, "prod", values)
+
+    expected_by_service = {
+        "task-control-worker": {
+            "TASK_CONTROL_WORKER_ENABLED",
+            "WEB_FINALIZER_IN_WEB_ENABLED",
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+            "QQCC_BOT_ZOMBIE_SWEEP_ENABLED",
+        },
+        "billing-reconciler": {"BILLING_RECONCILER_ENABLED"},
+        "web-api": {"WEB_FINALIZER_IN_WEB_ENABLED"},
+        "main-bot": {
+            "MAIN_BOT_PAYMENT_POLLING_ENABLED",
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+        },
+        "qqcc-bot": {"QQCC_BOT_ZOMBIE_SWEEP_ENABLED"},
+    }
+    for service, expected_keys in expected_by_service.items():
+        projection = snapshot.projections[service]
+        for key in expected_keys:
+            assert projection[key] == flags[key]
 
 
 def test_rejects_compose_escaped_bcrypt_hash_before_activation():
@@ -218,6 +262,33 @@ def test_ltx_t2v_backend_flag_only_reconfigures_web_api():
     assert module.affected_services(contract, {"LTX_T2V_BACKEND_ENABLED"}) == {
         "web-api"
     }
+
+
+def test_web_finalizer_owner_flag_reconfigures_web_api():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(contract, {"WEB_FINALIZER_IN_WEB_ENABLED"}) == {
+        "task-control-worker",
+        "web-api",
+    }
+
+
+@pytest.mark.parametrize(
+    ("flag", "services"),
+    [
+        ("MAIN_BOT_PAYMENT_POLLING_ENABLED", {"main-bot"}),
+        (
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+            {"main-bot", "task-control-worker"},
+        ),
+    ],
+)
+def test_main_bot_owner_flags_reconfigure_main_bot(flag, services):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+
+    assert module.affected_services(contract, {flag}) == services
 
 
 def test_minimax_h3_optimizer_flag_reconfigures_web_and_main_bot():
@@ -346,6 +417,41 @@ def test_rmb_query_url_is_required_only_when_reconciliation_is_enabled():
         "/order-query"
     )
     assert snapshot.projections["payment-api"]["RMB_RECONCILIATION_ENABLED"] == "true"
+
+
+@pytest.mark.parametrize("service", ["web-api", "main-bot", "payment-api"])
+def test_alipay_direct_configuration_is_conditionally_required_and_scoped(service):
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("test")
+    values["ALIPAY_DIRECT_ENABLED"] = "true"
+
+    with pytest.raises(module.ContractError, match="ALIPAY_APP_ID"):
+        module.build_snapshot(contract, "test", values, services={service})
+
+    values.update(
+        {
+            "ALIPAY_APP_ID": "2021000000000001",
+            "ALIPAY_SELLER_ID": "2088000000000001",
+            "ALIPAY_APP_PRIVATE_KEY_B64": "cHJpdmF0ZQ==",
+            "ALIPAY_APP_CERT_B64": "YXBwLWNlcnQ=",
+            "ALIPAY_PUBLIC_CERT_B64": "YWxpcGF5LWNlcnQ=",
+            "ALIPAY_ROOT_CERT_B64": "cm9vdC1jZXJ0",
+            "ALIPAY_NOTIFY_URL": "https://api-test.example/api/pay/notify/alipay",
+            "ALIPAY_RETURN_BASE_URL": "https://web-test.example",
+        }
+    )
+    snapshot = module.build_snapshot(
+        contract,
+        "test",
+        values,
+        services={service},
+    )
+
+    projection = snapshot.projections[service]
+    assert projection["ALIPAY_DIRECT_ENABLED"] == "true"
+    assert projection["ALIPAY_APP_ID"] == "2021000000000001"
+    assert set(snapshot.projections) == {service}
 
 
 @pytest.mark.parametrize("service", ["web-api", "main-bot"])
@@ -1331,7 +1437,7 @@ def test_test_snapshot_includes_dashboard_services():
     assert "qqcc-config-backend" in snapshot.projections
     assert "dashboard-backend" in snapshot.projections
     assert "dashboard-frontend" in snapshot.projections
-    assert "payment-api" not in snapshot.projections
+    assert "payment-api" in snapshot.projections
     assert "paid-group-bot" not in snapshot.projections
     assert "support-bot" not in snapshot.projections
 

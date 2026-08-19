@@ -83,6 +83,9 @@ python3 scripts/release.py rollback --env <test|prod> --module <module>
   和回滚命令；只触及目标 service。
 - 同 digest 的 config revision 切换需要显式 recreate；不能假设普通 restart 会
   重载 Compose/env 投影。
+- Compose 服务若在 `environment` 增加自身开关，必须显式合并公共运行环境；
+  `ALLBOT_RELEASE_SHA`、`PYTHONUNBUFFERED` 与 `TZ` 不能因 YAML map 覆盖而丢失。
+  发布验收同时核对 OCI revision、容器 `ALLBOT_RELEASE_SHA` 和精确 image digest。
 - 不在容器内热改代码/config，不打印 `compose config` 或全量 `env` 到报告。
 - 配置变更先通过 schema/service contract；secret 只进入受限文件/tmpfs/secret
   store，不进入 Git、命令回显或 release state。

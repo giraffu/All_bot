@@ -5,7 +5,9 @@
 `minimax_h3` 是独立 GPU profile，不是 LTX alias。用户只开放三个任务：
 `minimax_h3_t2v`、`minimax_h3_i2v`、`minimax_h3_flf2v`。Web 使用一个“高级图生
 视频pro”工作台切换三种模式，主 Bot 使用同一组模式。两端均可从
-六个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录建议强度。
+十三个本地 LoRA 中多选；默认全部关闭，Web 可逐项设置强度，Bot 使用目录默认强度。
+QQCC 配置 Web 同样从这一领域目录下发 13 项，场景保存有序 `lora_items`；官方懒人
+Bot、私有懒人 Bot、场景续链与示例生成都把相同稳定 ID 和强度提交到 I2V/FLF2V。
 历史 `minimax_h3_ref2v` 类型与 workflow 仅用于读取旧任务和代码兼容，不进入 H3
 Worker pool、RunPod/LAN 支持任务列表或新建入口。
 
@@ -27,7 +29,7 @@ Web 由 `enable_minimax_h3` 控制，后端由 `MINIMAX_H3_BACKEND_ENABLED` 控�
 - I2V/FLF2V 固定 `aspect_ratio=source`，按首帧像素预算与 Div32 计算尺寸。FLF2V
   首尾帧比例差异超过 1% 时由入口和 Worker 双重拒绝。
 - `src/domain_config/minimax_h3.py` 是时长、尺寸、帧数、费用、输入数量和公开 LoRA
-  目录的事实源。新请求使用最多 6 个有序 `lora_items[{name,strength}]`，强度限定
+  目录的事实源。新请求使用最多 13 个有序 `lora_items[{name,strength}]`，强度限定
   `0.1..2.0`且不得重复；空列表表示不加载附件。旧 `addon_models` 和
   `lora_name/lora_strength` 仅作有限兼容，不得与 `lora_items` 混用。客户端不能覆盖
   主模型、采样器、steps、timeline、本地路径或参考音视频。
@@ -83,10 +85,23 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
   `2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e`；
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
-六个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
-（0.5）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6（0.35）与 HMPenis v2
-（1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。目录一项只映射一个物理
+十三个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
+（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v2（0.75，
+无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
+`inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
+Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
+（0.35）与 HMPenis v2（1.0）。括号为 Bot 默认强度；Web 可在 `0.1..2.0` 内覆盖。
+Breast Play 作者明确建议 `0.7..0.8`，Footjobs Type B 明确建议 `0.4..0.7` 且通常
+从 `0.5` 开始；HMInnie、Deepthroat H3 v0.2 与 POV Missionary 未公开 LoRA strength
+区间，因此其目录值是保守的系统初始值，必须由后续 GPU A/B 校准，不能称为作者推荐。
+目录一项只映射一个物理
 文件，避免同一 LoRA 以别名被重复加载。
+
+HMInnie 的 `inniepussy` 替换提示词中的通用阴道名词，可与 HMPussy 叠加，但叠加不代表
+已验证最优；Footjobs 只自动注入短触发词 `fj.`，不自动拼接作者给出的整段示例提示词。
+Deepthroat v0.2 按作者说明以 24fps、guidance 4 训练并强调 15 秒连续性；当前系统固定
+24fps，但公开 workflow guidance 为 1，因此只视为待 canary 候选。POV Missionary
+作者仍标记为早期实验版。五个新模型在实机 canary 完成前均不得标记为已验证。
 
 三个 workflow 使用同一基础顺序：`UNETLoader(10Eros Beta2) →
 LoraLoaderModelOnly(LightX2V, 1.0) → [用户选中 LoRA 有序链] →
@@ -96,7 +111,7 @@ Euler/simple/8 steps`。LightX2V 同时覆盖 T2V、I2V 和 FLF2V，FLF2V 不再
 25 steps。输出继续解码 H3 原生同步音轨。
 
 镜像不安装 ContextIR、SageAttention 或旧 `MiniMaxH3TurboSampler`；新模型包不包含
-REF2VA 或 RedMix，但包含上述六个可选 LoRA。旧 checkpoint、
+REF2VA 或 RedMix，但包含上述十三个可选 LoRA。旧 checkpoint、
 blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix INT8 更占磁盘与加载
 内存；8-step 只减少采样计算量，不消除模型加载和 CPU offload 成本。画质、峰值显存和
 实际速度必须通过后续三模式 GPU canary 才能定论。
@@ -108,8 +123,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-16-10eros-beta2-addon6-lightx2v8-v1`、11 个文件的字节数与
-SHA256，总计 67,788,745,063 bytes（63.13 GiB）。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2`、18 个文件的字节数与
+SHA256，总计 69,631,057,639 bytes（64.85 GiB）。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或
@@ -125,14 +140,26 @@ DaSiWa Nodes、KJNodes、VHS 与 `ComfyUI-ReservedVRAM` 源码 revision，不安
 `ComfyUI-MiniMax-ContextIR`、`ComfyUI-MiniMax-H3-Turbo`，也不编译或在启动时依赖
 SageAttention。ComfyUI 从镜像内 `/opt/ComfyUI` 启动，模型卷
 挂载到 `/opt/ComfyUI/models`；禁止源码 bind mount 或在目标机 build。
+当前 RTX 5090 运行态保留 DynamicVRAM，但镜像将 AIMDO cast buffer 的
+最大预留从 16 GiB 收紧为 8 GiB，避免 32 GiB 显卡上 PyTorch 只剩
+16 GiB 可分配空间。运行参数同时启用 `--cache-none`，以便在图执行期间尽快
+释放已不再需要的大型节点输出。不得在当前双 GPU、60 GiB RAM 宿主机
+对 H3 使用 `--disable-dynamic-vram`；遗留 loader 会使 H3 匿名内存升至约
+30 GiB，与同机 WAN22 runtime 叠加后触发宿主机 OOM。
 
-## LAN 测试切换
+## 测试 Worker 与正式 GPU 边界
 
-测试候选为 `gpu-177-gpu1-minimax_h3_test`，与
-`gpu-177-gpu1-ltx_unified` 共用 `gpu-177:gpu1` 和 8191。只能通过
-`scripts/lan_aio_fleet_prod_ops.py` 读取实时 ledger、确认队列空闲、warm-cache 并做
-单卡 takeover/recover。候选身份固定为 `cloud-test`，只能连接测试 Central 和
-`user-data-test`。测试期间正式 LTX 会在自然 drain 后停止；结束时显式 recover。
+H3 测试 Worker 是测试云主机上的专用 `worker-agent`，与 `worker-relay` 一起运行，
+只连接 test Central 和测试存储，并只声明 T2V/I2V/FLF2V 三种公开类型。普通“启动
+H3 测试 Worker”不得选择 LAN `*_test` 候选、接管 LAN slot 或创建 cloud-test
+RunPod；LAN/RunPod runtime 在该语境中都保持正式 Worker 身份。测试 agent 可以经
+受限私网或测试主机 loopback 传输调用已经运行的 H3 ComfyUI，但不得启停、重启、
+切换或重新标记该正式 runtime。
+
+不提交任务的运行验收包括：relay/agent 容器 running、restart count 为 0、OCI
+revision 匹配完整 main SHA、ComfyUI `/system_stats` 与 `/queue` 可达，以及 test
+Central `/system/workers` 中目标 agent 为 `enabled`、`idle` 且 profile/types 精确。
+这只能证明测试 Worker 可接单，不等于 GPU artifact canary 已通过。
 
 验收至少串行提交 T2V、I2V、FLF2V 各一条 5 秒 preview，逐条检查：Central task type、
 Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全部视频帧执行亮度/
@@ -140,7 +167,9 @@ Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全�
 `scripts/minimax_h3_prod_smoke.py` 使用 FFmpeg `signalstats` 扫描全部帧；所有帧的
 `YAVG <= 20` 且 `YMAX <= 32` 时按全黑失败，缺少亮度元数据同样 fail closed。H3 profile 保持
 `reset_comfy_memory_before_task`、`--fast-disk --disable-pinned-memory` 和
-DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
+`--disable-dynamic-vram`。H3 使用 ComfyUI 标准显存管理；禁止启用会在当前
+PyTorch/RTX 5090 组合上设置半卡进程上限的 AIMDO allocator。运行证据写 XDG
+history/evidence，不回写本文。
 
 ## 最小验证
 

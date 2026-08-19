@@ -416,10 +416,9 @@ describe('Gallery template apply integration', () => {
     expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
   })
 
-  it('disables template apply while a gallery prompt is still locked', async () => {
+  it('keeps template apply available while the public prompt is masked', async () => {
     const lockedPost = {
       ...samplePost,
-      task_type: 'minimax_h3_i2v',
       prompt: 'demo ******',
       prompt_unlocked: false,
       prompt_unlockable: true,
@@ -446,21 +445,27 @@ describe('Gallery template apply integration', () => {
           }
         })
       }
+      if (url === `/gallery/items/${lockedPost.id}/apply-context`) {
+        return Promise.resolve({ data: faceSwapContext })
+      }
       throw new Error(`Unexpected GET request: ${url}`)
     })
+    templateApplyStoreMock.openFromRawContext.mockResolvedValue({
+      status: 'opened',
+      sessionId: 'session-masked-prompt'
+    })
 
-    const { wrapper, applyButton } = await openDetailAndFindApplyButton()
+    const { applyButton } = await openDetailAndFindApplyButton()
 
-    expect(applyButton.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('请先解锁该投稿的提示词')
+    expect(applyButton.attributes('disabled')).toBeUndefined()
 
     await applyButton.trigger('click')
     await flushPromises()
 
     expect(
       apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
-    ).toBe(false)
-    expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
+    ).toBe(true)
+    expect(templateApplyStoreMock.openFromRawContext).toHaveBeenCalled()
   })
 
   it('switches page with paged navigation and requests the target page', async () => {

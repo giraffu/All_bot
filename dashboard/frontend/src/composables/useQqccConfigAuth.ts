@@ -2,6 +2,18 @@ import { ref } from 'vue'
 
 const TOKEN_KEY = 'qqcc_config_token'
 
+export class QqccConfigAuthExpiredError extends Error {
+  constructor() {
+    super('QQCC config authentication expired')
+    this.name = 'QqccConfigAuthExpiredError'
+  }
+}
+
+export const isQqccConfigAuthExpiredError = (
+  error: unknown,
+): error is QqccConfigAuthExpiredError =>
+  error instanceof QqccConfigAuthExpiredError
+
 const readStoredToken = () => {
   if (typeof window === 'undefined') {
     return null
@@ -26,6 +38,11 @@ export const clearQqccConfigAuthToken = () => {
     window.localStorage.removeItem(TOKEN_KEY)
   }
   isQqccConfigAuthenticated.value = false
+}
+
+export const expireQqccConfigAuthentication = () => {
+  clearQqccConfigAuthToken()
+  return new QqccConfigAuthExpiredError()
 }
 
 export const useQqccConfigAuth = () => ({

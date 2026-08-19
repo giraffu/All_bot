@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -168,6 +169,9 @@ COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
 )
 COMFY_UPLOAD_RETRY_ATTEMPTS = int(os.getenv("COMFY_UPLOAD_RETRY_ATTEMPTS", "3"))
+COMFY_UPLOAD_TIMEOUT_SECONDS = float(
+    os.getenv("COMFY_UPLOAD_TIMEOUT_SECONDS", "300")
+)
 COMFY_HEALTH_FAILURE_THRESHOLD = int(os.getenv("COMFY_HEALTH_FAILURE_THRESHOLD", "3"))
 COMFY_HEALTH_RECOVERY_THRESHOLD = int(os.getenv("COMFY_HEALTH_RECOVERY_THRESHOLD", "2"))
 COMFY_ERROR_POLL_SECONDS = float(os.getenv("COMFY_ERROR_POLL_SECONDS", "15"))
@@ -346,7 +350,10 @@ logger = logging.getLogger("agent_main")
 
 class ComfyAgent:
     def __init__(self):
-        self.comfy_client = ComfyClient(base_url=COMFY_API_URL)
+        self.comfy_client = ComfyClient(
+            base_url=COMFY_API_URL,
+            upload_timeout_seconds=COMFY_UPLOAD_TIMEOUT_SECONDS,
+        )
         self.patcher = WorkflowPatcher(
             workflows_dir=os.path.join(os.path.dirname(__file__), "workflows")
         )
@@ -692,9 +699,18 @@ class ComfyAgent:
             for execution in self._prompt_executions.values()
             if not execution.completed_event.is_set()
         ]
-        if not executions and self._active_execution:
+        if (
+            not executions
+            and self._active_execution
+            and self._active_execution.prompt_id
+        ):
             executions = [self._active_execution]
         if not executions:
+            if self._active_execution:
+                logger.warning(
+                    "WebSocket connection failed before ComfyUI prompt submission; "
+                    "deferring task outcome to the submission readiness check"
+                )
             return
 
         probe_failures = 0
@@ -742,15 +758,38 @@ class ComfyAgent:
 
     @staticmethod
     def _normalize_input_image_for_comfy(local_path: str) -> str:
-        normalized_path = f"{os.path.splitext(local_path)[0]}_normalized.png"
         try:
             with Image.open(local_path) as image:
+                detected_format = (image.format or "").upper()
+                orientation = image.getexif().get(274, 1)
+                is_animated = bool(getattr(image, "is_animated", False))
                 image.load()
                 normalized = ImageOps.exif_transpose(image)
+                passthrough_suffix = {
+                    "JPEG": ".jpg",
+                    "PNG": ".png",
+                    "WEBP": ".webp",
+                }.get(detected_format)
+                if (
+                    passthrough_suffix
+                    and orientation == 1
+                    and not is_animated
+                    and normalized.mode in ("RGB", "RGBA")
+                ):
+                    normalized_path = (
+                        f"{os.path.splitext(local_path)[0]}_normalized"
+                        f"{passthrough_suffix}"
+                    )
+                    shutil.copyfile(local_path, normalized_path)
+                    return normalized_path
+
                 if normalized.mode not in ("RGB", "RGBA"):
                     normalized = normalized.convert(
                         "RGBA" if "A" in normalized.getbands() else "RGB"
                     )
+                normalized_path = (
+                    f"{os.path.splitext(local_path)[0]}_normalized.png"
+                )
                 normalized.save(normalized_path, format="PNG")
         except (UnidentifiedImageError, OSError, ValueError) as exc:
             raise RuntimeError(

@@ -2,7 +2,8 @@
 
 AI 视频场景面向用户统一称为“高级图生视频pro”。当前普通场景提交 H3 I2V，配置
 尾帧生成链的场景提交 H3 FLF2V。旧 LTX engine 在配置归一化时迁移，旧 LoRA 项
-清空；`ai_video_addon_models` 作为未来附加模型 catalog，当前为空且前端隐藏。
+清空；`ai_video_addon_models` 由 MiniMax H3 领域目录下发 13 个可选附加模型，配置
+后台支持有序多选和逐项强度，官方与私有 Bot、续链及示例生成均透传相同选择。
 AI 视频分辨率 catalog 使用 `preview|small|standard|hd` 四档；旧 `1280x704` 或未知
 值读取时归一为 `preview`。I2V 与尾帧链 FLF2V 都跟随首帧比例，场景固定价格继续
 权威覆盖模型分辨率价格，官方与私有 Bot 保持相同规范化行为。
@@ -120,6 +121,11 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `QQCC_CONFIG_ADMIN_PASSWORD_HASH`
 - `QQCC_CONFIG_SECRET_KEY`
 
+独立 JWT 有效期为 7 天。配置 API 返回 401，或 Cloudflare Access 在 API 路径
+返回 HTML 登录页时，前端统一清除过期登录态并提示重新登录；由过期触发的登录页
+不会卸载已打开的配置编辑器，重新登录后保留未保存草稿并允许再次保存。管理员主动
+点击“退出”仍销毁当前编辑态，避免下一个登录会话继承旧草稿。
+
 配置结构固定包含：
 
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
@@ -129,7 +135,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, aspect_ratio, lora_items, lora_name, lora_strength, end_frame_draw_scene_id, jump_draw_scene_id, credit_cost }]`；`jump_draw_scene_id` 可选且只能引用有效 AI绘图场景，供示范输入跳转按钮使用；其余约束不变。`aspect_ratio` 只允许 `source / 9:16 / 16:9 / 1:1`，缺失、空值或非法值归一为 `source`，旧 checkpoint 无需迁移或提高 preset version；`lora_items` 最多 5 个有序 `{name,strength}`，后端只接受 49 项稳定键、去重保序并截断；旧单模型字段和七个旧键迁移为新列表，响应继续镜像第一项。两个 engine 都保留列表。
-- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, lora_items, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。`engine` 首版固定 `ltx_video`，尺寸固定 `1280x704`，配置时长仅允许数字 `5/10/15/20`（提交到 LTX 任务边界时转为 `5s/10s/15s/20s`）；`lora_items` 使用 `{path,strength}`，来自配置选项接口的 QQCC 专用 LTX catalog，最多 3 个、不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。该专用目录由 `src/qqcc_ltx_lora_catalog.py` 在公开目录之外追加，当前接入本机 2026-07-17 校验库的 32 个权重（26 个为公开目录外新增项）；主 Bot 和公共 Web 不读取该目录。`negative_prompt` trim 后为空仍保存为空，但提交任务时完全省略。
+- `ai_video_scenes`: `[{ id, name, prompt, negative_prompt, engine, duration, resolution, lora_items, end_frame_draw_scene_id, jump_draw_scene_id, demo_input_media, demo_output_media, credit_cost }]`；`jump_draw_scene_id` 语义与 AI动图相同。默认空数组。`engine` 固定 `minimax_h3`，`resolution` 允许 `preview|small|standard|hd`，时长仅允许数字 `5/10/15`；`lora_items` 使用最多 13 个有序 `{name,strength}`，稳定 `name` 来自 `src/domain_config/minimax_h3.py`，不可重复，强度 `0.1..2.0` 且按 `0.05` 归一。旧 `ltx_video` engine 会迁移，旧 `{path,strength}` LTX 项会清空，不能映射为 H3 模型。`negative_prompt` trim 后为空仍保存为空；H3 当前不接收独立负面提示词。
 - `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；不设置应用层数量上限，独立配置 Web 保存完整数组，后端归一化保留全部有效场景；`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
 - `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled, credit_cost }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - 四类场景的 `credit_cost` 只允许 `null` 或大于等于 1 的整数；缺失字段按 `null` 归一，无需迁移。固定价只读取用户直接点击的根场景，代表完整链总价；清空恢复旧动态/分段计费。新增场景从 options 读取默认值：AI动图 `6`、AI视频 `10`、AI绘图/AI滤镜 `2`。修改模型、时长、尾帧或后处理不会自动改价。
@@ -144,7 +150,7 @@ AI动图模型配置中，每个已选 Wan22 附加模型的强度行提供说�
 
 每个场景行只保留一个“场景配置”按钮，弹窗使用单份草稿，取消不修改、确定一次性写回。四类场景均按独立子标题展示“基础配置”和“模型配置”；AI动图/AI视频另有“首尾帧配置”，AI绘图/AI滤镜另有“后处理配置”。灵石消耗属于基础配置；AI动图的分辨率、时长、画面比例和 AI视频的分辨率、时长也在基础配置；AI滤镜的原图换脸从模型区移到后处理区。桌面与移动端弹窗均使用内部滚动。
 
-`video_scenes[].resolution` 允许 `512p`、`720p`、`1024p`，旧场景缺失字段按 `720p` 归一；`ai_video_scenes[].resolution` 当前只允许 `1280x704`。GET options 下发可选清单和默认值，前端不维护另一份运行时清单。PUT 对非法显式值返回 422，并拒绝 AI动图 `1024p + 10s`，不静默改值。QQCC AI动图上传后只显示固定参数摘要和“开始生成”，AI视频继续收图后直接提交；提交、重新生成、结果续作和多段链逐段读取当前场景的分辨率、时长、模型与动态价格，根场景固定价仍只扣一次。非 QQCC 主 Bot 的画质设置和用户权限不变。该扩展继续存储在现有 `runtime_checkpoints` JSON 中，不新增数据库表或 migration，也不改变 workflow、Worker mapping 或 GPU runtime。
+`video_scenes[].resolution` 允许 `512p`、`720p`、`1024p`，旧场景缺失字段按 `720p` 归一；`ai_video_scenes[].resolution` 允许 H3 的 `preview|small|standard|hd`，旧 `1280x704` 或未知值读取时归一为 `preview`。GET options 下发可选清单和默认值，前端不维护另一份运行时清单。PUT 对非法显式值返回 422，并拒绝 AI动图 `1024p + 10s`，不静默改值。QQCC AI动图上传后只显示固定参数摘要和“开始生成”，AI视频继续收图后直接提交；提交、重新生成、结果续作和多段链逐段读取当前场景的分辨率、时长、模型与动态价格，根场景固定价仍只扣一次。非 QQCC 主 Bot 的画质设置和用户权限不变。该扩展继续存储在现有 `runtime_checkpoints` JSON 中，不新增数据库表或 migration。
 
 示范媒体上传主接口为 `PUT /api/qqcc/demo-media-json/{scene_kind}/{scene_id}/{slot}`，前端以 Base64 JSON 传输，规避 Cloudflare 对 multipart 文件请求的边缘拦截；旧 `/demo-media/...` POST/PUT 仅保留兼容，全部仍由独立 QQCC Config JWT 保护。图片上限 10MB、视频上限 50MB；前端先按槽位校验 MIME 与大小，后端解码后仍检查 MIME、文件签名与大小。上传失败时前端必须优先展示后端 `detail` 的安全中文映射或明确的网络/413/401/403 原因。上传返回媒体描述和短期预览 URL，管理员仍需点击页面“保存”把描述写入当前配置。
 
@@ -154,13 +160,13 @@ AI动图模型配置中，每个已选 Wan22 附加模型的强度行提供说�
 
 关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。`quick_faceswap` 关闭后，旧 `random_faceswap_again` 也必须拒绝继续提交。AI 动图每个场景的时长由后台固定，用户在 Bot 中只选择画质；画质只受用户权限过滤，仍保持 `1024p` 与 `10s` 不能同时选择。QQCC draw/filter/video 场景正负提示词只来自场景自身 `prompt` / `negative_prompt`，只作用于 QQCC Bot，主 Bot 不受影响。无尾帧来源时，动图 `image_to_video` 无模型提交 `custom_video`，带模型提交 `video_lora`；动图 `wan22_video_v2` 提交 `wan22_video_v2`。两者都透传场景最多 5 项有序 `lora_items`，旧 `lora_name/lora_strength` 只作首项兼容。配置尾帧来源时，用户仍只发送 1 张图；Bot 会先按被引用 AI绘图场景的完整后处理链串行提交隐藏绘图或滤镜任务，每步使用该场景自己的 `negative_prompt`，链内每个开启 `original_face_swap_enabled` 的步骤都会在本步生成后插入内部原图换脸，成功后下载最终图作为尾帧，再以用户原图和生成尾帧提交首尾帧视频；最终视频仍只使用视频场景自己的 `negative_prompt`。旧 `custom_video` / `video_lora` 传两张图并写入 `use_end_frame=true`；`wan22_video_v2` 传 `images=[start,end]`。官方、私有 durable continuation、示范生成与重新生成必须使用同一模型列表，`_wan22_context` 保存完整列表。提交前按“绘图/滤镜链 + 每步原图换脸 + 视频”做合计额度预检，尾帧链任一步生成/换脸失败都不提交视频，视频失败只按视频任务现有退款策略处理，已成功生成的前置隐藏任务历史不回滚且不可投稿。QQCC 链式生成只把第一个真实子任务按普通 Central 队列规则提交并允许 pending 取消；第 2 个及以后子任务都是同一链路的 continuation，统一以 `base_priority=100` 入队，不展示取消按钮，active task registry 写入 `user_cancel_allowed=false`。用户点旧消息上的取消按钮时，`cancel_user_task(...)` 会返回 `not_cancellable`，不调用 Central cancel，也不触发退款。单任务快速换脸、无尾帧 AI动图、单步 AI绘图和单步 AI滤镜保持普通 pending 可取消。`free_edit_v2` 提交 `pornmaster_flux2_single_edit`，旧 `free_edit` 无模型提交 `edit`，带模型提交 `img2img_lora` 并透传 catalog 默认强度；绘图/滤镜任务透传每步自身 `negative_prompt`，为空时保持空负向。QQCC 直接生成链路中，快速换脸、AI绘图、AI滤镜和 AI动图最终可见结果都提交 `allow_contribute=false`，结果按钮不展示投稿或公开入口；旧消息上的 `submit_gallery_*` / `public_share*` 在 QQCC callback 入口回复 `功能暂未开放`。最终可见结果的完成文案使用 QQCC 实际功能名或场景名，避免显示嵌套链路最后一个底层任务；直接 AI滤镜显示滤镜场景名，AI绘图套滤镜后处理仍显示原 AI绘图场景名。结果 metadata 通过 `_qqcc_regenerate` 写入 History `extra_outputs`，展示层据此追加 `qqcc_regenerate:<task_id>` 的 `重新生成` 按钮；metadata 新增 `scene_kind=draw|filter`，旧历史缺失时按 `draw` 兼容。QQCC 重生成 callback 会校验本人历史、下载原始用户输入、按当前配置重建 quick image/video 提交计划并重新做额度检查；场景禁用/删除或历史缺少原图时只回复失败，不进入 worker。中间绘图、原图换脸和视频尾帧链路也均隐藏且不可投稿。新增配置仍复用 `runtime_checkpoints` 的 `qqcc_lazy_bot_config:v1`，不新增 workflow、RunPod profile 或数据库表。
 
-AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 LTX I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 LTX FLF2V。额度预检为尾帧链费用加 LTX 时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `ltx_video` executor 保存原图、当前尾帧和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。QQCC 控制面发布可直接复用现有正式 LTX GPU runtime，不得因此重建 GPU 容器或创建 RunPod canary；空负面提示词保持工作流默认，非空 LTX 负面提示词只有在 Worker mapping 独立发布验收后才可宣称生效。
+AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 MiniMax H3 I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 H3 FLF2V。额度预检为尾帧链费用加 H3 档位与时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `generation` executor 保存原图、当前尾帧、H3 `lora_items` 和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。H3 附加模型实际生效依赖目标 Worker 镜像、workflow 与 13 模型 bundle 同一轮发布和 canary。
 
-QQCC Config 专用 LoRA 的“可配置”和“运行时可加载”是两个门禁。控制面合入后，认证后台会显示专用目录并允许保存，懒人 Bot 会把保存值转换成 Worker 的 `{name,strength}`；目标 LTX Worker 只有在对应 `.safetensors` 已按同名路径进入 `ComfyUI/models/loras/ltx2.3/` 后才能真正执行。本机完整说明、触发词、示范提示词、模型页、预览图、强度范围与哈希位于 `/srv/allbot/model-registry/bundles/ltx23_explicit_lora_library/2026-07-17`；本轮没有发布 RunPod/LAN AIO manifest，也没有修改正式 GPU 运行时。
+QQCC Config 的“可配置”和 H3 Worker 的“运行时可加载”是两个门禁。控制面合入后，认证后台会显示领域目录并允许保存稳定 `{name,strength}`；目标 H3 Worker 只有在同一版本的 13 模型 bundle 已进入 ComfyUI 模型目录、workflow 动态链可解析对应 ID 且 GPU canary 通过后才能正式执行。完整物理路径、触发词、默认强度、大小与 SHA-256 由 MiniMax H3 文档、领域目录和 model bundle manifest 共同约束，QQCC 配置不得复制这些物理事实。
 
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。
 
-多阶段状态展示按真实子任务序号确定：首个真实任务使用默认 `show_queue_status=true`，保留排队位置和取消按钮；后续 AI绘图后处理、内部原图换脸、AI动图/AI视频尾帧链及最终 Wan22/旧视频/LTX 使用 `show_queue_status=false`，从提交起持续显示现有图片/视频“生成中”，Central pending/队列位置变化不得触发排队回退。成功、失败、拒绝、退款及最终结果仍走原终态展示。官方 QQCC active registry 的恢复 contract 与私有 Bot durable stage plan 都持久化该策略，重启后不得重新显示后续任务排队；单任务功能继续使用默认值。该展示参数不改变 `base_priority`、`user_cancel_allowed`、计费、History、任务顺序或 Worker 调度。
+多阶段状态展示按真实子任务序号确定：首个真实任务使用默认 `show_queue_status=true`，保留排队位置和取消按钮；后续 AI绘图后处理、内部原图换脸、AI动图/AI视频尾帧链及最终 Wan22/旧视频/H3 使用 `show_queue_status=false`，从提交起持续显示现有图片/视频“生成中”，Central pending/队列位置变化不得触发排队回退。成功、失败、拒绝、退款及最终结果仍走原终态展示。官方 QQCC active registry 的恢复 contract 与私有 Bot durable stage plan 都持久化该策略，重启后不得重新显示后续任务排队；单任务功能继续使用默认值。该展示参数不改变 `base_priority`、`user_cancel_allowed`、计费、History、任务顺序或 Worker 调度。
 
 注册的 FSM 只允许：
 

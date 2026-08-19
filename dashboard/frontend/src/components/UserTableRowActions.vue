@@ -14,6 +14,7 @@ import {
   SwapOutlined,
   StopOutlined,
   UnlockOutlined,
+  DollarCircleOutlined,
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -32,6 +33,7 @@ const emit = defineEmits([
   'edit-group',
   'edit-channel-member',
   'toggle-submission-ban',
+  'toggle-alipay-direct',
   'edit-credits',
   'transfer-data',
   'clear-history',
@@ -98,6 +100,18 @@ const emit = defineEmits([
                 <unlock-outlined v-else />
               </template>
               {{ record.is_submission_banned ? '解除投稿封禁' : '禁止投稿' }}
+            </a-button>
+          </a-menu-item>
+          <a-menu-item key="alipay-direct">
+            <a-button
+              type="text"
+              size="small"
+              class="w-full text-left"
+              :danger="record.alipay_direct_enabled"
+              @click="emit('toggle-alipay-direct', record)"
+            >
+              <template #icon><dollar-circle-outlined /></template>
+              {{ record.alipay_direct_enabled ? '关闭支付宝直连' : '开启支付宝直连' }}
             </a-button>
           </a-menu-item>
           <a-menu-item key="credits">

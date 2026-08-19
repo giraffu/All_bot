@@ -4,6 +4,7 @@ import { DEFAULT_WAN22_VIDEO_V2_COST } from './imageToVideo'
 import {
   DEFAULT_LAB_MODE_ID,
   LAB_MODE_CONFIGS,
+  MINIMAX_H3_ADDON_OPTIONS,
   SCAIL2_SHORT_VIDEO_DURATION_OPTIONS,
   SCAIL2_VIDEO_DURATION_OPTIONS,
   UNIFIED_LAB_MODES,
@@ -21,6 +22,30 @@ describe('labModeConfig', () => {
     expect(mode.taskType).toBe('minimax_h3_t2v')
     expect(mode).not.toHaveProperty('addonOptions')
   })
+
+  it('keeps the previously pinned MiniMax H3 add-ons and defaults', () => {
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'motion_booster',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.motion_booster',
+      defaultStrength: 0.7,
+    })
+    expect(MINIMAX_H3_ADDON_OPTIONS).toContainEqual({
+      value: 'mystic_xxx',
+      labelKey: 'lab.workbench.minimax_h3_addon_options.mystic_xxx',
+      defaultStrength: 0.75,
+    })
+  })
+
+  it('offers the selected anatomy and action MiniMax H3 add-ons with pinned defaults', () => {
+    expect(MINIMAX_H3_ADDON_OPTIONS.slice(4, 9)).toEqual([
+      { value: 'breast_play', labelKey: 'lab.workbench.minimax_h3_addon_options.breast_play', defaultStrength: 0.75 },
+      { value: 'innie', labelKey: 'lab.workbench.minimax_h3_addon_options.innie', defaultStrength: 0.8 },
+      { value: 'deepthroat', labelKey: 'lab.workbench.minimax_h3_addon_options.deepthroat', defaultStrength: 0.75 },
+      { value: 'pov_missionary', labelKey: 'lab.workbench.minimax_h3_addon_options.pov_missionary', defaultStrength: 0.7 },
+      { value: 'footjob', labelKey: 'lab.workbench.minimax_h3_addon_options.footjob', defaultStrength: 0.5 },
+    ])
+  })
+
   it('hides character reference and text-to-video modes when production LTX is disabled', () => {
     expect(LAB_MODE_CONFIGS.map(item => item.id)).toContain('character_reference')
     expect(WEB_LTX_T2V_ENABLED).toBe(false)

@@ -83,6 +83,10 @@ python3 scripts/lan_aio_fleet_prod_ops.py <command>
 - cache：`pull-image`、`warm-cache`，只准备目标 slot。
 - cache GC：`cache-gc --slot <non-current-slot>` 只删除该 slot 的模型
   workspace；current、运行容器挂载或非受管路径一律拒绝，默认 dry-run。
+- 节点存储 GC：`node-storage-gc --node-id <exact-node>` 只处理一个明确 LAN
+  节点。待删容器和 workspace 必须逐项传入，未引用镜像与悬空卷必须分别显式
+  开关；默认 dry-run 并输出精确候选。execute 会拒绝 current/运行容器、跨节点
+  路径、符号链接和被非目标容器挂载的目录，操作前后 current identity 必须一致。
 - 验收：空槽使用成对
   `canary-start-disabled` / `canary-stop-disabled`，绝不 enable intake。
 - 切换：`takeover --failure-policy auto_rollback`，事务化完成 drain、disabled
@@ -117,6 +121,9 @@ ComfyUI `input/output/temp`、模型 cache、runtime workspace 和 operator stat
 
 - 正在运行、pending/running task 引用或回滚所需的文件不得清理。
 - 清理必须限定目标节点与明确目录，先 dry-run/统计，再执行受控 helper。
+- Docker 镜像和卷只能在 `node-storage-gc` 内按目标节点处理：镜像仅回收没有任何
+  容器引用的对象，卷仅回收 Docker 判定为 dangling 的对象；保留容器引用的镜像
+  和卷不会进入候选。
 - 不使用宽泛 glob、根目录递归删除或跨节点批量清理。
 - 模型 cache 只按 manifest/marker 管理；不能把释放临时媒体空间扩大成删除模型。
 - 清理结果、释放容量和某次节点快照进入 logs/archive，不写回活跃 SOP。

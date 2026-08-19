@@ -46,18 +46,66 @@ async def test_leased_worker_session_cancels_runner_when_renewal_is_lost():
         finally:
             cancelled.set()
 
+    lease_state = {}
     outcome = await task_control_worker.run_leased_worker_session(
         lease_name="submission-reconciliation",
         runner=runner,
         lease_store=store,
         owner_id="worker-1",
         renew_interval_seconds=0,
+        lease_state=lease_state,
     )
 
     assert started.is_set()
     assert cancelled.is_set()
     assert outcome == "lease_lost"
+    assert lease_state["lease"]["status"] == "lost"
+    assert lease_state["lease"]["updated_at"] > 0
     store.release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_leased_worker_session_reports_acquired_and_renewing():
+    store = AsyncMock()
+    store.acquire.return_value = True
+    allow_renew = asyncio.Event()
+    runner_done = asyncio.Event()
+
+    async def renew(*_args):
+        await allow_renew.wait()
+        return True
+
+    async def runner():
+        await runner_done.wait()
+
+    store.renew.side_effect = renew
+    lease_state = {}
+    session = asyncio.create_task(
+        task_control_worker.run_leased_worker_session(
+            lease_name="web-finalizer",
+            runner=runner,
+            lease_store=store,
+            owner_id="worker-1",
+            renew_interval_seconds=0,
+            lease_state=lease_state,
+        )
+    )
+
+    for _ in range(20):
+        if lease_state.get("lease", {}).get("status") == "acquired":
+            break
+        await asyncio.sleep(0)
+    assert lease_state["lease"]["status"] == "acquired"
+
+    allow_renew.set()
+    for _ in range(20):
+        if lease_state.get("lease", {}).get("status") == "renewing":
+            break
+        await asyncio.sleep(0)
+    assert lease_state["lease"]["status"] == "renewing"
+
+    runner_done.set()
+    assert await session == "worker_completed"
 
 
 def test_task_control_specs_have_independent_leases():

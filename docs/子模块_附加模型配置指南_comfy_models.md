@@ -19,7 +19,7 @@
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
 - LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`workers/runpod_runtime/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
 - MiniMax H3 三个公开模式的固定基础链（10Eros Beta2 + LightX2V 8-step）、
-  六个可选 LoRA、API workflow、模型 bundle、镜像与 LAN canary 契约见
+  十三个可选 LoRA、API workflow、模型 bundle、镜像与 LAN canary 契约见
   [`子模块_MiniMaxH3视频服务_minimax_h3.md`](子模块_MiniMaxH3视频服务_minimax_h3.md)。
 
 ---
@@ -29,7 +29,7 @@
 - 唯一公开目录是 `src/domain_config/minimax_h3.py:MINIMAX_H3_ADDON_MODELS`。每个选项必须
   使用稳定公共 ID、一个已校验的物理文件、建议强度和可选 prompt prefix；不得为
   同一文件注册多个别名。
-- Bot/Web 只提交最多 6 个有序 `{name,strength}`，强度 `0.1..2.0`。Web 逐项可编辑；
+- Bot/Web 只提交最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`。Web 逐项可编辑；
   Bot 只多选并使用目录默认值。空列表是正常默认态，未知、重复、超限、非有限数或
   混用新旧参数均 fail closed。
 - Bot/Web 的用户展示统一使用“效果增强”和用途标签，不显示基础链、checkpoint、
@@ -183,14 +183,14 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 
 `video_scenes[].aspect_ratio` 的 `source / 9:16 / 16:9 / 1:1` 不是 Comfy workflow 参数。它由 `src/services/qqcc_video_frame_adapter.py` 和 QQCC Quick Video plan 在任务提交前适配首帧/尾帧：通用 `smart_image_aspect_service` 在预计保留面积低于 55%、YuNet 不可用/失败或人脸联合安全框装不下时使用完整前景加暗化模糊背景补边；安全比例优先按 YuNet 人脸框移动裁剪，无人脸再使用 SmartCrop 显著性裁剪。私有 continuation 的内部比例字段在调用现有任务入口前剥离。OpenCV/SmartCrop/YuNet 只属于控制面 `python-media-runtime-base`；不得因此修改 `Wan22AioV82.json`、workflow mapping、worker patcher、模型 profile、RunPod/LAN AIO、分辨率档位或计费。
 
-`video_scenes[].next_scene_id` / `ai_video_scenes[].next_scene_id` 同样不是 workflow 参数。它由 QQCC scene-chain resolver、quick video runner、私有 durable continuation 与通用 ffmpeg 拼接器在 Bot/配置服务层处理；每段仍提交现有 Wan22/LTX task type。禁止为模板串联复制 workflow、增加 Worker patcher 字段、建立新 GPU profile 或把 QQCC 内部链元数据发送给 Central。
+`video_scenes[].next_scene_id` / `ai_video_scenes[].next_scene_id` 同样不是 workflow 参数。它由 QQCC scene-chain resolver、quick video runner、私有 durable continuation 与通用 ffmpeg 拼接器在 Bot/配置服务层处理；每段仍提交现有 Wan22/MiniMax H3 task type。禁止为模板串联复制 workflow、增加 Worker patcher 字段、建立新 GPU profile 或把 QQCC 内部链元数据发送给 Central。
 
 - `AI动图` 的 `image_to_video` 与 `wan22_video_v2` 都接受最多 5 个有序 `{name,strength}`。QQCC Config options 从 `src/wan22_explicit_lora_catalog.py` 返回 49 个稳定键、编号中文标签与推荐强度；推荐值取本地 registry 同条目 High/Low 建议的较低者，以适配一个强度同时驱动两阶段。旧 `lora_name/lora_strength` 与七个旧键自动迁移并镜像首项。Vue 复用 AI视频的多选/逐项强度交互、支持搜索，切换 engine 不清空。
 - `wan22_video_v2` 的 R2 baseline 保持 `2026-07-18-lora5` manifest。LAN GPU-177 预热时从受控下载源取得 DaSiWa SnatchKiss v11 FP8-pruned High/Low（每个 `14,528,782,272` bytes），必须以声明的 SHA-256/大小校验后按同相对路径替换 baseline；不上传 v11 对象或 manifest 到 R2。RunPod 保持禁用的旧 manifest 回退，`image_to_video` 与兼容 `wan22_aio_video` 不变。
 - 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。AIO 与 `image_to_video` 保持各自 `2026-07-18-lora5` key；v2 使用独立的 pruned key，旧 6 月 key 均不覆盖。所有候选 manifest 仍须在对象 size/SHA metadata HEAD 与 manifest checksum 通过后才能发布或切换运行时。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
-- `AI视频` 使用独立 `ai_video_scenes`，底层首版固定 `ltx_video`。配置层 LoRA 结构是最多 3 个 `{path,strength}`，强度 `0.1..2.0`、步长 `0.05`；提交边界转换成 LTX 既有 `{name,strength}`。无尾帧引用走 I2V，有引用时复用同一绘图链生成尾帧后走 FLF2V。配置选项必须由 `build_qqcc_config_options()` 返回 LTX engine/catalog，前端不硬编码模型清单。
-- QQCC `AI视频` 的可选 LoRA 不等同于公开高级视频目录。公开入口继续只读取 `src/lora_catalog.py:LTX_VIDEO_LORA_OPTIONS`；QQCC Config 专用扩展目录位于 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占用于选项下发、保存白名单和推荐强度。2026-07-17 专用目录接入本机 `ltx23_explicit_lora_library/2026-07-17` 的 32 个已校验权重（其中 26 个不在公开目录），不得把它们合并回公共 catalog、主 Bot 或公共 Web。权重在本机模型仓库可用不代表 RunPod/LAN AIO manifest 已发布；正式生效仍需把相同相对路径同步到目标 LTX runtime 并完成单 LoRA smoke。
+- `AI视频` 使用独立 `ai_video_scenes`，底层固定 `minimax_h3`。配置层与主 Bot/Web 共用 `src/domain_config/minimax_h3.py` 的 13 项目录，保存最多 13 个有序 `{name,strength}`，强度 `0.1..2.0`、步长 `0.05`；无尾帧引用走 H3 I2V，有引用时复用同一绘图链生成尾帧后走 H3 FLF2V。`build_qqcc_config_options()` 下发稳定 ID、中文标签、默认强度和 `supports_lora=true`，Vue 不硬编码目录。
+- 旧 QQCC LTX `{path,strength}` 只在读取时丢弃，不映射为同名或相似 H3 资产。QQCC 配置保存、官方/私有 Bot、durable continuation、场景多段链和后台示例统一透传 H3 `lora_items`；物理文件路径和触发词只由 H3 Worker 目录解析，不能进入配置 JSON。
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型；`negative_prompt` 写入 single edit workflow 的 `254.text`。
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength；旧 Qwen workflow 负面提示词写入 `4.prompt`。
 - `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA/negative_prompt 配置；`postprocess_filter_scene_id` 只复用 `filter_scenes` 作为终止后处理模板。两者互斥，若同时有效则保留绘图后处理；该能力不新增 task type、workflow、profile 或模型 bundle，链路循环必须在配置归一化时清理。

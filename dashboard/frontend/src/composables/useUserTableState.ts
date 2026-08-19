@@ -14,6 +14,7 @@ import {
   updateUserGroup,
   updateUserIdentity,
   updateUserSubmissionBan,
+  updateUserAlipayDirect,
 } from '../api/api'
 
 export interface DashboardUserRecord {
@@ -27,6 +28,7 @@ export interface DashboardUserRecord {
   user_group?: string | null
   is_channel_member?: boolean | null
   is_submission_banned?: boolean | null
+  alipay_direct_enabled?: boolean | null
   submission_ban_reason?: string | null
   submission_banned_at?: string | null
   [key: string]: unknown
@@ -97,6 +99,7 @@ export function useUserTableState(formatDate: FormatDateFn) {
   const filterIdentity = ref<string | null>(null)
   const filterUserGroup = ref<string | null>(null)
   const filterSubmissionBanned = ref(false)
+  const filterAlipayDirect = ref<string | null>(null)
   const searchUsername = ref('')
   const isUsernamePartial = ref(true)
   const sortBy = ref(DEFAULT_SORT_BY)
@@ -184,6 +187,12 @@ export function useUserTableState(formatDate: FormatDateFn) {
         identity: filterIdentity.value,
         user_group: filterUserGroup.value,
         submission_banned: filterSubmissionBanned.value ? true : null,
+        alipay_direct_enabled:
+          filterAlipayDirect.value === 'enabled'
+            ? true
+            : filterAlipayDirect.value === 'disabled'
+              ? false
+              : null,
         username: searchUsername.value,
         username_partial: isUsernamePartial.value,
         sort_by: sortBy.value,
@@ -358,6 +367,34 @@ export function useUserTableState(formatDate: FormatDateFn) {
           await loadUsersData()
         } catch (err) {
           message.error('更新失败: ' + errorMessage(err))
+        }
+      },
+    })
+  }
+
+  const handleToggleAlipayDirect = (record: DashboardUserRecord) => {
+    const nextStatus = !record.alipay_direct_enabled
+    const targetName = record.full_name || record.username || record.id
+    Modal.confirm({
+      title: nextStatus ? '确认开启支付宝直连？' : '确认关闭支付宝直连？',
+      content: nextStatus
+        ? `开启后，该用户新建的支付宝订单将在全局开关开启时走支付宝官方直连。微信订单不受影响。目标用户：${targetName}`
+        : `关闭后，该用户的新支付宝订单将恢复走环宇；已有订单仍按创建时的提供方处理。目标用户：${targetName}`,
+      okText: nextStatus ? '确认开启' : '确认关闭',
+      okType: nextStatus ? 'primary' : 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          const result = await updateUserAlipayDirect(record.id, nextStatus)
+          record.alipay_direct_enabled = !!result.alipay_direct_enabled
+          message.success(
+            nextStatus
+              ? `用户 ${record.id} 已开启支付宝直连`
+              : `用户 ${record.id} 已关闭支付宝直连`
+          )
+          await loadUsersData()
+        } catch (err) {
+          message.error('更新支付宝直连失败: ' + errorMessage(err))
         }
       },
     })
@@ -556,6 +593,7 @@ export function useUserTableState(formatDate: FormatDateFn) {
     filterIdentity,
     filterUserGroup,
     filterSubmissionBanned,
+    filterAlipayDirect,
     searchUsername,
     isUsernamePartial,
     sortBy,
@@ -609,6 +647,7 @@ export function useUserTableState(formatDate: FormatDateFn) {
     handleEditGroup,
     handleEditChannelMember,
     handleToggleSubmissionBan,
+    handleToggleAlipayDirect,
     saveIdentity,
     saveGroup,
     saveChannelMember,

@@ -46,7 +46,9 @@ def test_seed_exact_id_manifest_preserves_hot_ranking_contract(tmp_path):
     manifest = tmp_path / "ids.txt"
     manifest.write_text("10\n2\n10\n")
     assert load_history_ids(str(manifest)) == (2, 10)
-    assert "id = any($3::int[])" in SEED_IDS_SQL
+    assert "id = any($1::int[])" in SEED_IDS_SQL
+    assert "$2" not in SEED_IDS_SQL
+    assert "$3" not in SEED_IDS_SQL
     assert "row_number() over(partition by h.user_id order by h.id desc)" in SEED_IDS_SQL
 
 

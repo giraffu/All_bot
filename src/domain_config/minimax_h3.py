@@ -83,6 +83,58 @@ MINIMAX_H3_ADDON_MODELS = {
         0.5,
         "hmmotion",
     ),
+    "motion_booster": MiniMaxH3AddonModel(
+        "motion_booster",
+        "H3 Motion Booster v2（成人动作强化）",
+        "H3 Motion Booster v2 (adult motion boost)",
+        "MiniMaxH3/H3_Motion_BoosterV2.safetensors",
+        0.7,
+        "dynv2",
+    ),
+    "mystic_xxx": MiniMaxH3AddonModel(
+        "mystic_xxx",
+        "Mystic XXX v2（人体结构增强）",
+        "Mystic XXX v2 (anatomy enhancement)",
+        "MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
+        0.75,
+    ),
+    "breast_play": MiniMaxH3AddonModel(
+        "breast_play",
+        "Breast Play & Jiggle v1（乳房动态）",
+        "Breast Play & Jiggle v1 (breast motion)",
+        "MiniMaxH3/breastplayjiggle_h3_v1.safetensors",
+        0.75,
+    ),
+    "innie": MiniMaxH3AddonModel(
+        "innie",
+        "HMInnie v1（阴道形态）",
+        "HMInnie v1 (vaginal shape)",
+        "MiniMaxH3/HMInnie_v1_e50.safetensors",
+        0.8,
+        "inniepussy",
+    ),
+    "deepthroat": MiniMaxH3AddonModel(
+        "deepthroat",
+        "Daring Deepthroat v0.2（深喉动作）",
+        "Daring Deepthroat v0.2 (deep-throat motion)",
+        "MiniMaxH3/deepthroat_v02.safetensors",
+        0.75,
+    ),
+    "pov_missionary": MiniMaxH3AddonModel(
+        "pov_missionary",
+        "H3 POV Missionary v0.7（POV 传教士动作）",
+        "H3 POV Missionary v0.7 (POV missionary motion)",
+        "MiniMaxH3/H3_Mis_Insrt_v07.safetensors",
+        0.7,
+    ),
+    "footjob": MiniMaxH3AddonModel(
+        "footjob",
+        "H3 Footjobs Type B v1（足交动作）",
+        "H3 Footjobs Type B v1 (footjob motion)",
+        "MiniMaxH3/H3_Footjob_TypeB_v1.safetensors",
+        0.5,
+        "fj.",
+    ),
     "breasts": MiniMaxH3AddonModel(
         "breasts",
         "HMBreasts（乳房）",
@@ -169,7 +221,9 @@ def normalize_minimax_h3_addon_items(
     if not isinstance(raw_items, (list, tuple)):
         raise MiniMaxH3ValidationError("附加模型必须为有序数组。")
     if len(raw_items) > len(MINIMAX_H3_ADDON_MODELS):
-        raise MiniMaxH3ValidationError("附加模型必须为最多 6 项的数组。")
+        raise MiniMaxH3ValidationError(
+            f"附加模型必须为最多 {len(MINIMAX_H3_ADDON_MODELS)} 项的数组。"
+        )
     result: list[MiniMaxH3AddonSelection] = []
     seen: set[str] = set()
     for raw in raw_items:

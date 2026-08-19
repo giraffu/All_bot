@@ -118,10 +118,18 @@ def validate_direct_route(
     }
     if not addresses:
         raise RuntimeError(f"cannot resolve {hostname}")
+    routable_addresses = 0
     for address in addresses:
-        route = subprocess.run(
-            ["ip", "route", "get", address], capture_output=True, text=True, check=True
-        ).stdout.lower()
+        try:
+            route = subprocess.run(
+                ["ip", "route", "get", address],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.lower()
+        except subprocess.CalledProcessError:
+            continue
+        routable_addresses += 1
         rejected_markers = ["tun0", "wg0", "127.0.0.1"]
         if not allow_tailscale:
             rejected_markers.append("tailscale")
@@ -139,6 +147,8 @@ def validate_direct_route(
             raise RuntimeError(
                 f"unexpected source address for {hostname}: {route.strip()}"
             )
+    if routable_addresses == 0:
+        raise RuntimeError(f"no routable address for {hostname}")
 
 
 def validate_endpoint_route(config: dict) -> None:
@@ -668,6 +678,7 @@ class CatalogRecorder:
         self.run_id = None
         self.assets = 0
         self.bytes_transferred = 0
+        self._operation_lock = asyncio.Lock()
 
     async def __aenter__(self):
         self.conn = await asyncpg.connect(self.database_url)
@@ -692,21 +703,26 @@ class CatalogRecorder:
         return row["id"]
 
     async def ensure_job_assets(self, job: dict) -> None:
-        assert self.conn is not None
-        rows = await self.conn.fetch(
-            "select role,ordinal from analytics_media_asset_catalog where history_id=$1",
-            job["history_id"],
-        )
-        expected = [(asset["role"], asset["ordinal"]) for asset in job["assets"]]
-        stored = {(row["role"], row["ordinal"]) for row in rows}
-        if len(expected) != len(set(expected)) or set(expected) != stored:
-            raise RuntimeError("local archive catalog does not cover claimed job")
+        async with self._operation_lock:
+            assert self.conn is not None
+            rows = await self.conn.fetch(
+                "select role,ordinal from analytics_media_asset_catalog where history_id=$1",
+                job["history_id"],
+            )
+            expected = [(asset["role"], asset["ordinal"]) for asset in job["assets"]]
+            stored = {(row["role"], row["ordinal"]) for row in rows}
+            if len(expected) != len(set(expected)) or set(expected) != stored:
+                raise RuntimeError("local archive catalog does not cover claimed job")
 
     async def record_attempts(self, job: dict, asset: dict, attempts: list[dict]):
-        assert self.conn is not None and self.run_id is not None
         if not attempts:
             return
-        asset_id = await self._asset_id(job, asset)
+        async with self._operation_lock:
+            asset_id = await self._asset_id(job, asset)
+            await self._record_attempts(asset_id, attempts)
+
+    async def _record_attempts(self, asset_id: int, attempts: list[dict]) -> None:
+        assert self.conn is not None and self.run_id is not None
         await self.conn.executemany(
             """insert into analytics_media_source_attempts
                (run_id,asset_id,source,candidate_key,status,error_code,detail)
@@ -731,36 +747,38 @@ class CatalogRecorder:
             )
 
     async def record(self, job: dict, asset: dict, receipt: dict, attempts: list[dict]):
-        assert self.conn is not None and self.run_id is not None
-        asset_id = await self._asset_id(job, asset)
-        await self.record_attempts(job, asset, attempts)
-        await self.conn.execute(
-            """insert into analytics_media_blobs
-               (sha256,byte_size,mime_type,nas_bucket,nas_key,verified_at)
-               values($1,$2,$3,$4,$5,$6)
-               on conflict(sha256) do update set byte_size=excluded.byte_size,
-                 mime_type=excluded.mime_type,nas_bucket=excluded.nas_bucket,
-                 nas_key=excluded.nas_key,verified_at=excluded.verified_at""",
-            receipt["sha256"],
-            receipt["byte_size"],
-            receipt.get("mime_type"),
-            receipt["nas_bucket"],
-            receipt["nas_key"],
-            __import__("datetime").datetime.fromisoformat(
-                receipt["verified_at"].replace("Z", "+00:00")
-            ),
-        )
-        await self.conn.execute(
-            """update analytics_media_asset_catalog set status='archived_verified',
-               found_source=$2,source_key=$3,sha256=$4,last_checked_at=now(),last_error=null
-               where id=$1""",
-            asset_id,
-            receipt["found_source"],
-            receipt["source_key"],
-            receipt["sha256"],
-        )
-        self.assets += 1
-        self.bytes_transferred += int(receipt["byte_size"])
+        async with self._operation_lock:
+            assert self.conn is not None and self.run_id is not None
+            asset_id = await self._asset_id(job, asset)
+            if attempts:
+                await self._record_attempts(asset_id, attempts)
+            await self.conn.execute(
+                """insert into analytics_media_blobs
+                   (sha256,byte_size,mime_type,nas_bucket,nas_key,verified_at)
+                   values($1,$2,$3,$4,$5,$6)
+                   on conflict(sha256) do update set byte_size=excluded.byte_size,
+                     mime_type=excluded.mime_type,nas_bucket=excluded.nas_bucket,
+                     nas_key=excluded.nas_key,verified_at=excluded.verified_at""",
+                receipt["sha256"],
+                receipt["byte_size"],
+                receipt.get("mime_type"),
+                receipt["nas_bucket"],
+                receipt["nas_key"],
+                __import__("datetime").datetime.fromisoformat(
+                    receipt["verified_at"].replace("Z", "+00:00")
+                ),
+            )
+            await self.conn.execute(
+                """update analytics_media_asset_catalog set status='archived_verified',
+                   found_source=$2,source_key=$3,sha256=$4,last_checked_at=now(),last_error=null
+                   where id=$1""",
+                asset_id,
+                receipt["found_source"],
+                receipt["source_key"],
+                receipt["sha256"],
+            )
+            self.assets += 1
+            self.bytes_transferred += int(receipt["byte_size"])
 
     async def __aexit__(self, exc_type, exc, _tb):
         if self.conn is not None and self.run_id is not None:

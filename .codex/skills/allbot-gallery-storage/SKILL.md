@@ -63,7 +63,7 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 
 ## 4. apply-context
 
-- Web apply-context 完整 prompt 仅限作者/已解锁用户；否则服务端返回 403。
+- 列表/详情遮罩未解锁 prompt；Web apply-context 不因展示锁禁用应用，并返回执行上下文。
 - 每类任务的支持范围、必要重新上传素材和历史兼容映射以 Gallery 专项文档
   和 focused tests 为准。
 - Wan22 拼接记录和当前关闭的 `i2i_draw` 必须由服务端拒绝 apply-context，
@@ -122,7 +122,7 @@ description: "处理 Gallery 投稿/重复投稿、点赞点踩/收藏/评论、
 - 解锁：首次扣费、重复幂等、并发唯一冲突、作者免扣和个人列表。
 - 举报：非法 reason、重复 409、媒体预览、单帖/用户级下架和 pending 举报
   同事务收口。
-- apply-context：payload、输入顺序、历史兼容、未解锁 403、禁用记录 400。
+- apply-context：输入顺序、历史兼容、遮罩可应用、禁用记录 400。
 - 存储：R2 hit/miss、短签/空值/`pending_result`、无 legacy URL、缩略图
   fallback、慢对象存储时 DB 事务已释放。
 - QQCC：file ID fallback、安全单图原生应用、复杂模板 Web handoff、不预增

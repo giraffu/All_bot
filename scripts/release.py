@@ -415,6 +415,64 @@ def _validate_build_environment(
         raise ReleaseError("Docker Buildx preflight failed")
 
 
+def _hash_runtime_package(package_root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(package_root.rglob("*")):
+        if not path.is_file() or path.suffix in {".pyc", ".pyo"}:
+            continue
+        if "__pycache__" in path.parts:
+            continue
+        relative_path = path.relative_to(package_root).as_posix().encode("utf-8")
+        digest.update(len(relative_path).to_bytes(8, "big"))
+        digest.update(relative_path)
+        payload = path.read_bytes()
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def _canonical_worker_runtime_build_args(
+    *, checkout: Path, dockerfile_text: str
+) -> tuple[list[str], list[str]]:
+    required_args = (
+        "ALLBOT_RUNTIME_PACKAGE_SHA256",
+        "ALLBOT_WORKFLOW_MAPPING_SHA256",
+    )
+    declared = [
+        name
+        for name in required_args
+        if re.search(rf"^ARG {re.escape(name)}(?:=|$)", dockerfile_text, re.MULTILINE)
+    ]
+    if not declared:
+        return [], []
+    if len(declared) != len(required_args):
+        raise ReleaseError(
+            "canonical worker Dockerfile must declare both runtime hash build args"
+        )
+    package_root = checkout / "workers" / "comfy_agent"
+    mapping_path = package_root / "workflows" / "mappings.json"
+    if not package_root.is_dir() or not mapping_path.is_file():
+        raise ReleaseError("canonical worker runtime package is incomplete")
+    identities = {
+        "ALLBOT_RUNTIME_PACKAGE_SHA256": _hash_runtime_package(package_root),
+        "ALLBOT_WORKFLOW_MAPPING_SHA256": hashlib.sha256(
+            mapping_path.read_bytes()
+        ).hexdigest(),
+    }
+    build_args: list[str] = []
+    labels: list[str] = []
+    label_names = {
+        "ALLBOT_RUNTIME_PACKAGE_SHA256": "io.allbot.worker.package-sha256",
+        "ALLBOT_WORKFLOW_MAPPING_SHA256": (
+            "io.allbot.worker.workflow-mapping-sha256"
+        ),
+    }
+    for name in required_args:
+        build_args.extend(["--build-arg", f"{name}={identities[name]}"])
+        labels.extend(["--label", f"{label_names[name]}={identities[name]}"])
+    return build_args, labels
+
+
 def _build_image(
     name: str,
     module: Mapping[str, Any],
@@ -429,6 +487,9 @@ def _build_image(
     build_progress: str,
     external_base_ref: str | None,
 ) -> str:
+    dockerfile_text = (checkout / str(module["dockerfile"])).read_text(
+        encoding="utf-8"
+    )
     base = module.get("base")
     base_artifact = built.get(str(base)) if base else None
     tag_suffix = sha
@@ -473,6 +534,12 @@ def _build_image(
                 f"ALLBOT_GIT_SHA={sha}",
             ]
         )
+        runtime_build_args, runtime_labels = _canonical_worker_runtime_build_args(
+            checkout=checkout,
+            dockerfile_text=dockerfile_text,
+        )
+        command.extend(runtime_build_args)
+        command.extend(runtime_labels)
         if registry_cache_prefix:
             cache_ref = f"{registry_cache_prefix}:{name}"
             command.extend(
@@ -495,7 +562,7 @@ def _build_image(
         if external_base_ref and external_base_arg:
             declared_ref_match = re.search(
                 rf"^ARG {re.escape(str(external_base_arg))}=([^\s]+)$",
-                (checkout / str(module["dockerfile"])).read_text(encoding="utf-8"),
+                dockerfile_text,
                 flags=re.MULTILINE,
             )
             if not declared_ref_match or not DIGEST_REF_RE.fullmatch(

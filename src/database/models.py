@@ -61,6 +61,9 @@ class User(Base):
     is_submission_banned = Column(
         Boolean, default=False, nullable=False, server_default=text("false")
     )
+    alipay_direct_enabled = Column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
     submission_banned_at = Column(DateTime, nullable=True)
     submission_ban_reason = Column(String(255), nullable=True)
     user_group = Column(
@@ -1044,6 +1047,12 @@ class SiteNotice(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        CheckConstraint(
+            "payment_provider is null or payment_provider in ('HUANYUY', 'ALIPAY_DIRECT')",
+            name="ck_orders_payment_provider",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(String(64), index=True)  # Unique payload for TON transaction
@@ -1065,6 +1074,7 @@ class Order(Base):
         DECIMAL(10, 4), nullable=False, default=0, server_default=text("0")
     )
     payment_channel = Column(String(20), nullable=True, index=True)
+    payment_provider = Column(String(32), nullable=True, index=True)
     paid_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

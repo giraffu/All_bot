@@ -107,3 +107,83 @@ async def test_free_memory_unloads_models_and_releases_allocator(
             {"json": {"unload_models": True, "free_memory": True}},
         )
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", COMFY_CLIENT_PATHS)
+async def test_upload_image_uses_dedicated_media_timeout(
+    monkeypatch, module_path: Path
+):
+    module = load_comfy_client_module(module_path)
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"name": "input.png"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return FakeResponse()
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = module.ComfyClient(
+        "http://comfy.local",
+        upload_timeout_seconds=120.0,
+    )
+    await client.upload_image(b"image-bytes", "input.png")
+
+    assert calls == [
+        (
+            "/upload/image",
+            {
+                "files": {
+                    "image": ("input.png", b"image-bytes", "image/png")
+                },
+                "data": {"overwrite": "true"},
+                "timeout": 120.0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", COMFY_CLIENT_PATHS)
+async def test_upload_image_uses_webp_content_type(monkeypatch, module_path: Path):
+    module = load_comfy_client_module(module_path)
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"name": "input.webp"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return FakeResponse()
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = module.ComfyClient("http://comfy.local")
+    await client.upload_image(b"webp-bytes", "input.webp")
+
+    assert calls[0][1]["files"] == {
+        "image": ("input.webp", b"webp-bytes", "image/webp")
+    }

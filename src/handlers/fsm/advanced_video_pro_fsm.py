@@ -63,6 +63,13 @@ PRESET_LABELS = {
 ADDON_EFFECT_LABELS = {
     "naughty_times": ("成人动作测试一", "Adult action test 1"),
     "sex_pose": ("成人动作测试二", "Adult action test 2"),
+    "motion_booster": ("成人动作强化", "Adult motion boost"),
+    "mystic_xxx": ("人体结构增强", "Anatomy enhancement"),
+    "breast_play": ("乳房动态", "Breast motion"),
+    "innie": ("阴道形态", "Vaginal shape"),
+    "deepthroat": ("深喉动作", "Deep-throat motion"),
+    "pov_missionary": ("POV 传教士动作", "POV missionary motion"),
+    "footjob": ("足交动作", "Footjob motion"),
     "breasts": ("乳房细节", "Breast detail"),
     "vagassist": ("阴道/肛门辅助", "Vaginal/anal assistance"),
     "pussy": ("阴道细节", "Vaginal detail"),
@@ -744,7 +751,7 @@ def get_advanced_video_pro_fsm_handler() -> ConversationHandler:
         entry_points=[
             CommandHandler("advanced_video_pro", start),
             CommandHandler("ltx_video", start),
-            MessageHandler(I18nFilter("menu.ltx_video"), start),
+            MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
             CallbackQueryHandler(start, pattern=r"^fsm_start_ltx_video$"),
             CallbackQueryHandler(legacy_callback, pattern=legacy_pattern),
         ],

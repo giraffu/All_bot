@@ -268,7 +268,7 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert profile.lan_model_workspace_key == "minimax_h3"
     assert profile.model_bundles == ("minimax_h3_runtime",)
     assert profile.model_manifest_key == (
-        "minimax_h3/2026-08-16-10eros-beta2-addon6-lightx2v8-v1/manifest.json"
+        "minimax_h3/2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2/manifest.json"
     )
     assert profile.min_vram_gb == 32
     assert profile.all_in_one_image_ref == (
@@ -298,6 +298,8 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
+    assert "--disable-dynamic-vram" not in environment["COMFY_EXTRA_ARGS"]
+    assert "--cache-none" in environment["COMFY_EXTRA_ARGS"]
     assert "--fast-disk" in environment["COMFY_EXTRA_ARGS"]
     assert "--disable-pinned-memory" in environment["COMFY_EXTRA_ARGS"]
     assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
@@ -1842,6 +1844,162 @@ def test_lan_aio_retire_legacy_keeps_active_aio_running_and_disables_old_persist
         "verify-old-restart-disabled",
         "persistent-disable",
     ]
+
+
+def test_node_storage_gc_rejects_current_container_before_remote_mutation():
+    class RecordingOps(LanAioProdOps):
+        def _node_storage_gc_host(self, node_id: str) -> str:
+            assert node_id == "gpu-177"
+            return "allbot-gpu-177"
+
+        def _protected_node_containers(self, node_id: str) -> set[str]:
+            assert node_id == "gpu-177"
+            return {"allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"}
+
+        def _run_remote_root_script(self, host: str, script: str) -> str:
+            raise AssertionError("remote mutation must not run")
+
+    ops = RecordingOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+
+    with pytest.raises(RuntimeError, match="protected current container"):
+        ops.node_storage_gc(
+            node_id="gpu-177",
+            remove_containers=[
+                "allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"
+            ],
+            remove_workspaces=[],
+            prune_unused_images=False,
+            prune_dangling_volumes=False,
+            execute=True,
+        )
+
+
+def test_node_storage_gc_rejects_workspace_outside_exact_node_root():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe workspace path"):
+        ops.node_storage_gc(
+            node_id="gpu-177",
+            remove_containers=[],
+            remove_workspaces=[
+                "/srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/scail2/workspace"
+            ],
+            prune_unused_images=False,
+            prune_dangling_volumes=False,
+            execute=False,
+        )
+
+
+def test_node_storage_gc_dry_run_uses_exact_targets_and_reports_candidates():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.script = ""
+
+        def _node_storage_gc_host(self, node_id: str) -> str:
+            return "allbot-gpu-177"
+
+        def _protected_node_containers(self, node_id: str) -> set[str]:
+            return {"allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod"}
+
+        def _run_remote_root_script(self, host: str, script: str) -> str:
+            assert host == "allbot-gpu-177"
+            self.script = script
+            return (
+                'ALLBOT_NODE_STORAGE_GC_RESULT={"bytes_before":850000000000,'
+                '"bytes_after":850000000000,"containers":["old-scail"],'
+                '"workspaces":[{"path":"/srv/allbot/runpod-runtime/slots/'
+                'gpu-177-gpu0/profiles/scail2/workspace","bytes":28000000000}],'
+                '"unused_images":["sha256:old"],"dangling_volumes":["old-volume"]}'
+            )
+
+    ops = RecordingOps()
+    result = ops.node_storage_gc(
+        node_id="gpu-177",
+        remove_containers=["allbot-lan-aio-gpu-177-gpu0-scail2-prod"],
+        remove_workspaces=[
+            "/srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2/workspace"
+        ],
+        prune_unused_images=True,
+        prune_dangling_volumes=True,
+        execute=False,
+    )
+
+    assert result["dry_run"] is True
+    assert result["containers"] == ["old-scail"]
+    assert result["unused_images"] == ["sha256:old"]
+    assert "allbot-lan-aio-gpu-177-gpu0-scail2-prod" in ops.script
+    assert "/profiles/scail2/workspace" in ops.script
+    assert "execute=0" in ops.script
+    assert "rm -rf" not in ops.script
+
+
+def test_node_storage_gc_execute_is_audited_and_preserves_current_identity(tmp_path):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+                state_dir=tmp_path / "state",
+            )
+            self.live_checks = 0
+
+        def _node_physical_slots(self, node_id: str) -> set[str]:
+            assert node_id == "gpu-177"
+            return {"gpu-177:gpu0", "gpu-177:gpu1"}
+
+        def live_current_snapshot(self, physical_slots):
+            assert physical_slots == {"gpu-177:gpu0", "gpu-177:gpu1"}
+            self.live_checks += 1
+            return {
+                "current": {
+                    "gpu-177:gpu0": "gpu-177-gpu0-wan22_video_v2",
+                    "gpu-177:gpu1": "gpu-177-gpu1-minimax_h3_test",
+                },
+                "errors": {},
+            }
+
+    ops = RecordingOps()
+    result = ops.execute_node_storage_mutation(
+        node_id="gpu-177",
+        operation_id="node-storage-gc-test",
+        execute=lambda: {
+            "ok": True,
+            "action": "node-storage-gc",
+            "node_id": "gpu-177",
+            "dry_run": False,
+        },
+    )
+
+    history = json.loads(
+        (ops.state_store.history_dir / "node-storage-gc-test.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result["operation_id"] == "node-storage-gc-test"
+    assert ops.live_checks == 2
+    assert history["status"] == "succeeded"
+    assert history["result"]["live_after"] == {
+        "gpu-177:gpu0": "gpu-177-gpu0-wan22_video_v2",
+        "gpu-177:gpu1": "gpu-177-gpu1-minimax_h3_test",
+    }
 
 
 def test_lan_aio_start_disabled_force_recreates_container():

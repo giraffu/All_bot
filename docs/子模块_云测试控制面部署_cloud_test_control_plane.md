@@ -10,6 +10,7 @@ build、维护式整栈脚本和 legacy Compose SOP 已退役，历史原因见
 | --- | --- |
 | 可构建/部署模块、adapter、环境支持 | `deploy/module-catalog.json` |
 | 云控制面 Compose 拓扑 | `deploy/docker-compose-cloud-base.yml`、`deploy/docker-compose-cloud-test.overlay.yml` |
+| 云测试 Worker Compose | `deploy/docker-compose-worker-base.yml` |
 | 服务配置契约 | `deploy/service-env-contract.yml`、`scripts/runtime_env_contract.py` |
 | 构建、部署、回滚和状态 | `scripts/release.py` |
 | 当前配置 | 测试主机 `/etc/allbot/test.env` 与 active config revision |
@@ -31,15 +32,20 @@ PostgreSQL、Redis、配置、Compose 契约和 migration 也都是显式模块�
 主要模块分为：
 
 - 控制面：`central-api`、`web-api`、`main-bot`、`qqcc-bot`、
-  `private-bot-worker`、`worker-relay`。通用 `worker-agent` 只构建不可变镜像，
-  由 RunPod/LAN/专用 agent operator 消费，不伪装成云 Compose service。
+  `private-bot-worker`。
+- 测试执行面：测试云主机以独立 Compose project 运行 `worker-relay` 和
+  `ALLBOT_WORKER_SERVICES` 选中的 `worker-NN`。`worker-agent` 仍是 build-only
+  模块，但由 `docker-compose-worker-base.yml` 在测试云主机消费精确 digest；它不
+  属于控制面 base Compose，也不在目标机 build。
 - 管理面：`dashboard-backend`、`dashboard-frontend`、
   `qqcc-config-backend`、`qqcc-config-frontend`。
 - 公网与媒体：`public-web`、`imgproxy`。
 - 基础设施契约：`postgres`、`redis`、`config-contract`、
   `compose-contract`、`database-migration`。
-- GPU profile：catalog 中声明 test 支持的 GPU 模块；实际运行仍由明确的
-  RunPod/LAN operator 和 exact slot 管理，不随控制面部署联动。
+- GPU profile：catalog 中声明可构建的 GPU 模块。普通“启动测试 Worker”不进入
+  RunPod/LAN operator；LAN/RunPod 保持正式 Worker 身份，不随测试控制面或测试
+  agent 启停联动。只有独立、明确授权的 GPU artifact canary 才能操作 exact
+  provider/slot。
 
 模块清单会变化，不在本文复制完整 catalog。执行前以
 `python3 scripts/release.py --help`、catalog 和目标模块条目为准。
@@ -121,6 +127,33 @@ RunPod mutation 使用受控 provider；LAN mutation 必须加载
 `allbot-lan-aio-operator` 并通过
 `scripts/lan_aio_fleet_prod_ops.py` 操作单一 exact slot。构建 GPU artifact
 不授权 rollout。
+
+### 5.1 测试云 Worker 启动边界
+
+“测试 Worker”固定指测试云主机上的专用 agent。其 release env 必须分别 pin
+`ALLBOT_WORKER_AGENT_IMAGE`、`ALLBOT_WORKER_RELAY_IMAGE` 和完整
+`ALLBOT_RELEASE_SHA`，测试 env 只选择所需 `worker-NN`，并把 Central、对象存储
+和 agent identity 保持在 test。启动使用不可变 release root 中的 Worker Compose：
+
+```bash
+sudo docker compose \
+  --env-file /etc/allbot/test.env \
+  --env-file <worker-release.env> \
+  -p allbot-test-worker \
+  -f <immutable-release-root>/deploy/docker-compose-worker-base.yml \
+  up -d --no-build worker-relay <selected-worker-service>
+```
+
+目标 ComfyUI 若不在测试云主机，只能使用已有受限私网路径，或仅绑定测试主机
+loopback 的临时传输；不得公开 ComfyUI 端口、复制正式 Central/存储凭据，或为了
+测试 agent 去启动、停止、接管 LAN/RunPod 正式 Worker。传输是运行时依赖，不把
+临时端口、主机 IP、agent 数量或在线状态写入 Git。
+
+启动完成至少验证：两个容器 running 且 restart count 为 0、OCI revision 为目标
+完整 SHA、ComfyUI `/system_stats` 与 `/queue` 可达、test Central
+`/system/workers` 出现目标 agent、`control_state=enabled`，以及 supported types
+与目标 profile 精确一致。只有提交并完成最小任务后才能进一步声称模型 canary
+通过；“Worker 正在运行”本身不等于 GPU canary。
 
 ## 6. 最小验证
 

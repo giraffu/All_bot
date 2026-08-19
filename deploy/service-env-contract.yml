@@ -14,9 +14,17 @@
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "WORKER_REDIS_URL", "API_BASE", "API_TOKEN", "BOT_TOKEN", "TELEGRAM_API_BASE_URL", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "MINIO_SECURE", "JWT_SECRET_KEY", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME", "LTX_T2V_BACKEND_ENABLED", "LTX_T2V_MSR_ENABLED", "MINIMAX_H3_PROMPT_OPTIMIZER_ENABLED", "MEDIA_ARCHIVE_AGENT_TOKEN"],
       "required_if": [
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
-        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}}
+        {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_SELLER_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_PRIVATE_KEY_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_PUBLIC_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_ROOT_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_NOTIFY_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_RETURN_BASE_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}}
       ],
-      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "MINIMAX_H3_*", "MEDIA_ARCHIVE_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["DATABASE_*", "REDIS_*", "API_*", "BOT_*", "MINIO_*", "R2_*", "JWT_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "ALIPAY_*", "CORS_*", "FEATURE_*", "ENABLE_*", "MINIMAX_H3_*", "MEDIA_ARCHIVE_*", "WEB_FINALIZER_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "task-control-worker": {
       "enabled_if": {"key": "TASK_CONTROL_WORKER_ENABLED", "equals": "true"},
@@ -33,10 +41,20 @@
       "patterns": ["DATABASE_*", "REDIS_*", "BOT_*", "TELEGRAM_*", "TON_*", "USDT_TON_*", "VITE_MERCHANT_ADDRESS", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED", "BILLING_RECONCILER_*"]
     },
     "payment-api": {
-      "environments": ["prod"],
+      "environments": ["test", "prod"],
       "required": ["ALLBOT_ENV", "ALLBOT_STATE_ROOT", "DATABASE_URL", "REDIS_URL", "API_BASE", "HUANYUY_PID", "HUANYUY_KEY", "HUANYUY_GATEWAY", "HUANYUY_NOTIFY_URL", "HUANYUY_RETURN_URL", "HUANYUY_SITENAME"],
-      "required_if": [{"key": "HUANYUY_QUERY_URL", "when": {"key": "RMB_RECONCILIATION_ENABLED", "equals": "true"}}],
-      "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "required_if": [
+        {"key": "HUANYUY_QUERY_URL", "when": {"key": "RMB_RECONCILIATION_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_SELLER_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_PRIVATE_KEY_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_PUBLIC_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_ROOT_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_NOTIFY_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_RETURN_BASE_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}}
+      ],
+      "patterns": ["DATABASE_*", "REDIS_*", "HUANYUY_*", "ALIPAY_*", "TON_*", "PAYMENT_*", "RMB_*", "JWT_*", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "dashboard-backend": {
       "environments": ["test", "prod"],
@@ -70,9 +88,17 @@
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "TON_PAYMENT_POLLING_ENABLED", "equals": "true"}},
         {"key": "VITE_MERCHANT_ADDRESS", "when": {"key": "USDT_TON_PAYMENT_ENABLED", "equals": "true"}},
         {"key": "MAIN_BOT_LAZY_BOT_ENABLED", "when": {"key": "ALLBOT_ENV", "equals": "prod"}},
-        {"key": "MAIN_BOT_LAZY_BOT_USERNAME", "when": {"key": "ALLBOT_ENV", "equals": "prod"}}
+        {"key": "MAIN_BOT_LAZY_BOT_USERNAME", "when": {"key": "ALLBOT_ENV", "equals": "prod"}},
+        {"key": "ALIPAY_APP_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_SELLER_ID", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_PRIVATE_KEY_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_APP_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_PUBLIC_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_ROOT_CERT_B64", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_NOTIFY_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}},
+        {"key": "ALIPAY_RETURN_BASE_URL", "when": {"key": "ALIPAY_DIRECT_ENABLED", "equals": "true"}}
       ],
-      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "WEBAPP_*", "MINI_APP_*", "MAIN_BOT_LAZY_BOT_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
+      "patterns": ["BOT_*", "TELEGRAM_*", "DATABASE_*", "REDIS_*", "API_*", "MINIO_*", "R2_*", "CHANNEL_*", "REFUGE_*", "ADMIN_*", "ENABLE_*", "TON_*", "USDT_TON_*", "HUANYUY_*", "ALIPAY_*", "WEBAPP_*", "MINI_APP_*", "MAIN_BOT_*", "ORDER_V2_ENABLED", "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "MEMBERSHIP_SETTLEMENT_V2_ENABLED"]
     },
     "qqcc-bot": {
       "enabled_if": {"key": "QQCC_BOT_TOKEN", "nonempty": true},

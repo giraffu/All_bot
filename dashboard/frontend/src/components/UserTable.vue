@@ -23,6 +23,7 @@ const {
   filterIdentity,
   filterUserGroup,
   filterSubmissionBanned,
+  filterAlipayDirect,
   searchUsername,
   isUsernamePartial,
   sortBy,
@@ -76,6 +77,7 @@ const {
   handleEditGroup,
   handleEditChannelMember,
   handleToggleSubmissionBan,
+  handleToggleAlipayDirect,
   saveIdentity,
   saveGroup,
   saveChannelMember,
@@ -231,6 +233,7 @@ const columns = computed(() =>
         v-model:filter-identity="filterIdentity"
         v-model:filter-user-group="filterUserGroup"
         v-model:filter-submission-banned="filterSubmissionBanned"
+        v-model:filter-alipay-direct="filterAlipayDirect"
         v-model:search-user-id="searchUserId"
         v-model:search-username="searchUsername"
         v-model:is-username-partial="isUsernamePartial"
@@ -279,6 +282,9 @@ const columns = computed(() =>
             <span class="text-xs text-blue-500">@{{ record.username || 'n/a' }}</span>
             <a-tag v-if="record.is_submission_banned" color="red" class="mt-1 w-fit">
               投稿封禁
+            </a-tag>
+            <a-tag v-if="record.alipay_direct_enabled" color="blue" class="mt-1 w-fit">
+              支付宝直连
             </a-tag>
           </div>
         </template>
@@ -377,6 +383,7 @@ const columns = computed(() =>
             @edit-group="handleEditGroup"
             @edit-channel-member="handleEditChannelMember"
             @toggle-submission-ban="handleToggleSubmissionBan"
+            @toggle-alipay-direct="handleToggleAlipayDirect"
             @edit-credits="handleEditCredits"
             @transfer-data="handleTransferData"
             @clear-history="handleClearHistory"

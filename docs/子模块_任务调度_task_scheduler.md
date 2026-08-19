@@ -151,7 +151,9 @@ sequenceDiagram
 - disabled 模式只启动 `/healthz`，入口不得导入或初始化数据库、Redis、Bot
   provider；因此无需向未启用的服务投影业务凭据。
 - 滚动切换顺序是：先构建/部署精确 digest，保持 disabled；启用后确认
-  `/healthz` 中三个 lease runner 稳定，再分别将
+  `/healthz` 中三个 lease runner 稳定；每项任务必须返回不含 owner token 的
+  `lease.status`（`acquired/renewing/lost/not_acquired`）与 `lease.updated_at`，
+  不能用空的任务对象推断已获租约。确认持续续租后，再分别将
   `WEB_FINALIZER_IN_WEB_ENABLED`、`MAIN_BOT_ZOMBIE_SWEEP_ENABLED`、
   `QQCC_BOT_ZOMBIE_SWEEP_ENABLED` 设为 false。回滚按相反顺序。三个旧开关默认
   均为 true，所以仅发布代码不会改变现有运行职责。

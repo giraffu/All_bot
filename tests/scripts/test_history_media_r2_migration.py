@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
+import ssl
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -13,10 +16,12 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ProxyConnectionError, SSLError
 
 from scripts.history_media_r2_migration import (
+    COPY_BATCH_SIZE,
     MIGRATION_DDL,
+    AdaptiveConcurrencyLimiter,
     AdaptiveCopyController,
     AdaptiveProbeController,
     AssetIdentity,
@@ -25,6 +30,7 @@ from scripts.history_media_r2_migration import (
     StreamingJsonArraySha256,
     _add_r2_custom_headers,
     _collect_copy_predecessor_recovery,
+    _collect_failed_copy_reconciliation,
     _collect_probe_head_outcomes,
     _execute_copy_predecessor_recovery,
     _parser,
@@ -33,23 +39,30 @@ from scripts.history_media_r2_migration import (
     _probe_r2_rows,
     _probe_target_rows,
     _process_r2_custom_arguments,
+    _r2_transport,
+    _reconcile_failed_copy_and_plan_successor,
+    _reconciliation_runtime_identity,
     _resolve_copy_max_pool_connections,
     _resolve_probe_max_pool_connections,
-    _r2_transport,
     _run_copy_group_batch,
+    _run_copy_group_batch_with_retry_lane,
     _runtime_identity,
     _s3_client,
+    _timed_server_side_copy_attempt,
     _timed_server_side_copy_with_retries,
-    _validate_runtime_identity,
     _validate_r2_transport_runtime,
+    _validate_runtime_identity,
     build_candidate_keys,
     build_copy_plan,
-    build_probe_plan,
-    build_standard_target,
     build_copy_predecessor_recovery_plan,
+    build_probe_plan,
+    build_rolling_switch_scope_identity,
+    build_standard_target,
     build_successor_copy_plan,
     build_successor_probe_plan,
     classify_copy_predecessor_recovery,
+    classify_copy_request_failure,
+    classify_failed_copy_reconciliation,
     classify_r2_head_outcomes,
     classify_reference,
     classify_target_status,
@@ -69,6 +82,123 @@ from scripts.history_media_r2_migration import (
     validate_resume_identity,
     validate_switch_gate,
 )
+
+
+def test_rate_limit_immediately_lowers_shared_limiter_and_starts_cooldown(monkeypatch):
+    import scripts.history_media_r2_migration as module
+
+    raw_request_id = "raw-provider-request-id"
+    error = ClientError(
+        {
+            "Error": {
+                "Code": "SlowDown",
+                "Message": "object-key and endpoint must stay private",
+            },
+            "ResponseMetadata": {
+                "HTTPStatusCode": 429,
+                "RequestId": raw_request_id,
+            },
+        },
+        "CopyObject",
+    )
+
+    def copy_object(_client, **_kwargs):
+        raise module.R2CopyOperationError("copy_object", error)
+
+    monkeypatch.setattr(module, "server_side_copy_r2_object", copy_object)
+    limiter = AdaptiveConcurrencyLimiter(limit=32)
+
+    result = _timed_server_side_copy_attempt(
+        object(),
+        concurrency_limiter=limiter,
+        rate_limit_cooldown_seconds=60,
+    )
+
+    assert result["error"] is not None
+    assert result["request_event"] == {
+        "at": result["request_event"]["at"],
+        "kind": "rate_limit",
+        "copy_concurrency": 32,
+        "stage": "copy_object",
+        "http_status": 429,
+        "provider_request_id_sha256": hashlib.sha256(
+            raw_request_id.encode()
+        ).hexdigest(),
+        "rate_limit_cooldown_seconds": 60,
+        "rate_limit_new_concurrency": 16,
+    }
+    assert limiter.limit == 16
+    assert limiter.cooldown_remaining_seconds > 59
+    serialized = json.dumps(result["request_event"])
+    assert raw_request_id not in serialized
+    assert "object-key" not in serialized
+    assert "endpoint" not in serialized
+
+
+def test_shared_rate_limit_cooldown_blocks_new_slots_for_every_worker():
+    limiter = AdaptiveConcurrencyLimiter(limit=32)
+    limiter.record_rate_limit(cooldown_seconds=0.05)
+    entered: list[float] = []
+    started = time.monotonic()
+
+    def acquire_slot() -> None:
+        with limiter.slot():
+            entered.append(time.monotonic() - started)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(acquire_slot) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=1)
+
+    assert limiter.limit == 16
+    assert min(entered) >= 0.04
+    assert limiter.peak_active <= 2
+
+
+def test_server_side_copy_labels_provider_failure_stage_without_key_leakage():
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            if Key == "private-source-key":
+                return _head(size=3, etag="source")
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def copy_object(self, **_kwargs):
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "SlowDown",
+                        "Message": "private-target-key at https://private.example",
+                    },
+                    "ResponseMetadata": {
+                        "HTTPStatusCode": 429,
+                        "RequestId": "provider-id",
+                    },
+                },
+                "CopyObject",
+            )
+
+    with pytest.raises(Exception) as captured:
+        server_side_copy_r2_object(
+            Client(),
+            bucket="user-data-prod",
+            source_key="private-source-key",
+            target_key="private-target-key",
+            expected_size=3,
+            expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            expected_etag="source",
+            copy_plan_sha256="d" * 64,
+        )
+
+    error = captured.value
+    assert type(error).__name__ == "R2CopyOperationError"
+    assert error.stage == "copy_object"
+    assert classify_copy_request_failure(error) == "rate_limit"
+    assert "private-source-key" not in str(error)
+    assert "private-target-key" not in str(error)
+    assert "private.example" not in str(error)
 
 
 def _copy_head(*, marker: str | None, size: int = 100, etag: str = "etag"):
@@ -160,6 +290,240 @@ def test_copy_recovery_rejects_changed_source_or_nonidentical_target():
             expected_etag="etag",
             current_plan_sha256=current,
             predecessor_plan_sha256=predecessor,
+        )
+
+
+def test_failed_copy_reconciliation_accepts_only_missing_or_exact_current_marker():
+    current = "c" * 64
+    source = _copy_head(marker=None)
+
+    assert classify_failed_copy_reconciliation(
+        source_head=source,
+        target_head=None,
+        expected_size=100,
+        expected_last_modified=source["LastModified"],
+        expected_etag="etag",
+        current_plan_sha256=current,
+    ) == "missing"
+    assert classify_failed_copy_reconciliation(
+        source_head=source,
+        target_head=_copy_head(marker=current),
+        expected_size=100,
+        expected_last_modified=source["LastModified"],
+        expected_etag="etag",
+        current_plan_sha256=current,
+    ) == "current"
+
+    with pytest.raises(RuntimeError, match="unrecognized copy plan marker"):
+        classify_failed_copy_reconciliation(
+            source_head=source,
+            target_head=_copy_head(marker="p" * 64),
+            expected_size=100,
+            expected_last_modified=source["LastModified"],
+            expected_etag="etag",
+            current_plan_sha256=current,
+        )
+
+
+@pytest.mark.asyncio
+async def test_failed_copy_reconciliation_is_head_only_and_releases_pool():
+    modified = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    calls: list[str] = []
+
+    def head(_client, _bucket, key):
+        calls.append(key)
+        if key.startswith("target"):
+            return None
+        return {
+            "ContentLength": 100,
+            "LastModified": modified,
+            "ETag": "etag",
+            "Metadata": {},
+        }
+
+    group = [[{
+        "id": 1,
+        "source_key": "source-redacted",
+        "target_key": "target-redacted",
+        "byte_size": 100,
+        "source_last_modified": modified,
+        "source_etag": "etag",
+    }]]
+    outcomes = await _collect_failed_copy_reconciliation(
+        group,
+        client=object(),
+        current_plan_sha256="c" * 64,
+        concurrency=2,
+        head_func=head,
+    )
+
+    assert outcomes[0][1] == "missing"
+    assert len(calls) == 2
+    assert not any(
+        thread.name.startswith("history-r2-failed-copy-head")
+        for thread in threading.enumerate()
+        if thread.is_alive()
+    )
+
+
+def test_failed_copy_reconciliation_command_has_no_copy_authorization():
+    parsed = _parser().parse_args(
+        [
+            "reconcile-copy-failures",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--plan-sha256",
+            "a" * 64,
+            "--config",
+            "/secure/config.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--receipt-output",
+            "/secure/receipt.json",
+            "--next-plan-output",
+            "/secure/successor.json",
+        ]
+    )
+
+    assert parsed.command == "reconcile-copy-failures"
+    assert not hasattr(parsed, "confirm")
+
+
+def test_rolling_switch_scope_freezes_only_completed_current_batches():
+    predecessor = "a" * 64
+    current = "b" * 64
+    scope = build_rolling_switch_scope_identity(
+        copy_chain=(predecessor, current),
+        parent_copy_plan_sha256=current,
+        completed_current_batches=[
+            {
+                "plan_sha256": current,
+                "batch_no": 3,
+                "first_ledger_id": 3001,
+                "last_ledger_id": 4000,
+                "asset_count": 1000,
+                "rowset_sha256": "d" * 64,
+                "status": "completed",
+            },
+            {
+                "plan_sha256": current,
+                "batch_no": 1,
+                "first_ledger_id": 1001,
+                "last_ledger_id": 2000,
+                "asset_count": 1000,
+                "rowset_sha256": "c" * 64,
+                "status": "completed",
+            },
+        ],
+    )
+
+    assert scope["terminal_predecessor_copy_plan_sha256s"] == [predecessor]
+    assert scope["current_completed_batch_nos"] == [1, 3]
+    assert scope["current_completed_asset_count"] == 2000
+    assert len(scope["completed_copy_batches_sha256"]) == 64
+
+    with pytest.raises(RuntimeError, match="completed Copy batch"):
+        build_rolling_switch_scope_identity(
+            copy_chain=(current,),
+            parent_copy_plan_sha256=current,
+            completed_current_batches=[
+                {
+                    "plan_sha256": current,
+                    "batch_no": 0,
+                    "first_ledger_id": 1,
+                    "last_ledger_id": 1000,
+                    "asset_count": 1000,
+                    "rowset_sha256": "e" * 64,
+                    "status": "running",
+                }
+            ],
+        )
+
+
+def test_rolling_switch_has_a_distinct_freeze_command_and_no_confirmation():
+    parsed = _parser().parse_args(
+        [
+            "plan-switch-completed",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--parent-plan-sha256",
+            "a" * 64,
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            "/secure/rolling-switch.json",
+        ]
+    )
+
+    assert parsed.command == "plan-switch-completed"
+    assert parsed.completed_copy_batches_only is True
+    assert not hasattr(parsed, "confirm")
+
+
+def test_rolling_switch_rowset_is_limited_to_frozen_completed_batches():
+    import scripts.history_media_r2_migration as module
+
+    sql = module.ROLLING_SWITCH_ROWSET_SQL.lower()
+    assert "switch_plan_sha256 is null" in sql
+    assert "b.status='completed'" in sql
+    assert "b.batch_no=any" in sql
+    assert "m.copy_plan_sha256=any" in sql
+
+
+def test_failed_copy_reconciliation_is_head_only_and_ledger_cas_guarded():
+    import inspect
+
+    source = inspect.getsource(_reconcile_failed_copy_and_plan_successor)
+    for forbidden in (
+        ".get_object(",
+        ".copy_object(",
+        ".list_objects",
+        ".delete_object(",
+    ):
+        assert forbidden not in source
+    assert "for update" in source.lower()
+    assert "failed_rowset_sha256" in source
+    assert "status='failed'" in source
+    assert "status='copy_required'" in source
+    assert "r2_copy_object_reconciled_failed" in source
+
+
+def test_failed_copy_reconciliation_binds_config_but_accepts_new_artifact(monkeypatch):
+    expected = {
+        "artifact_digest": "sha256:" + "a" * 64,
+        "script_sha256": "old",
+        "bucket": "user-data-prod",
+        "candidate_algorithm": "history-r2-candidates/v1",
+        "target_endpoint_sha256": "target",
+        "source_endpoint_sha256": "source",
+        "r2_transport": {"mode": "https_proxy", "proxy_port": 7890},
+    }
+    actual = {
+        **expected,
+        "artifact_digest": "sha256:" + "b" * 64,
+        "script_sha256": "new",
+    }
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration._runtime_identity",
+        lambda **_kwargs: actual,
+    )
+
+    assert _reconciliation_runtime_identity(
+        expected,
+        artifact_digest="sha256:" + "b" * 64,
+        config={},
+    ) == actual
+
+    changed = {**actual, "r2_transport": {"mode": "direct"}}
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration._runtime_identity",
+        lambda **_kwargs: changed,
+    )
+    with pytest.raises(RuntimeError, match="runtime configuration changed"):
+        _reconciliation_runtime_identity(
+            expected,
+            artifact_digest="sha256:" + "b" * 64,
+            config={},
         )
 
 
@@ -378,12 +742,82 @@ def test_copy_retries_one_transient_object_with_exponential_backoff(monkeypatch)
     assert result["error"] is None
     assert result["attempt_count"] == 4
     assert [event["kind"] for event in result["request_events"]] == [
-        "timeout_or_5xx",
-        "timeout_or_5xx",
-        "timeout_or_5xx",
+        "timeout",
+        "timeout",
+        "timeout",
         "ok",
     ]
     assert sleeps == [1, 2, 4]
+
+
+@pytest.mark.parametrize(
+    ("error_text", "expected"),
+    [
+        ("ReadTimeoutError: read timed out", "timeout"),
+        ("Read timeout on endpoint URL: <redacted>", "timeout"),
+        ("HTTPStatusCode: 503 ServiceUnavailable", "server_5xx"),
+        ("An error occurred (500) when calling CopyObject", "server_5xx"),
+        ("Connection reset by peer", "connection_transient"),
+    ],
+)
+def test_copy_request_health_class_separates_server_errors_from_timeouts(
+    error_text, expected
+):
+    assert classify_copy_request_failure(RuntimeError(error_text)) == expected
+    assert is_transient_copy_failure(error_text)
+
+
+def test_proxy_connection_failure_is_object_level_transient():
+    error = ProxyConnectionError(proxy_url="http://127.0.0.1:7890")
+
+    assert classify_copy_request_failure(error) == "connection_transient"
+    assert is_transient_copy_failure(str(error))
+
+
+def test_ssl_unexpected_eof_is_transient_but_certificate_failure_is_fatal():
+    eof = SSLError(
+        endpoint_url="https://redacted.invalid/object",
+        error=ssl.SSLError("UNEXPECTED_EOF_WHILE_READING"),
+    )
+    certificate = SSLError(
+        endpoint_url="https://redacted.invalid/object",
+        error=ssl.SSLCertVerificationError("certificate verify failed"),
+    )
+
+    assert classify_copy_request_failure(eof) == "connection_transient"
+    assert is_transient_copy_failure(str(eof))
+    assert classify_copy_request_failure(certificate) == "fatal"
+    assert not is_transient_copy_failure(str(certificate))
+
+
+def test_copy_retries_proxy_connection_failure_before_succeeding(monkeypatch):
+    calls = 0
+
+    def copy_object(_client, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ProxyConnectionError(proxy_url="http://127.0.0.1:7890")
+        return {"etag": "target", "multipart": False, "recovered": False}
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.server_side_copy_r2_object",
+        copy_object,
+    )
+
+    result = _timed_server_side_copy_with_retries(
+        object(),
+        max_retries=1,
+        sleep_fn=lambda _delay: None,
+        jitter_fn=lambda delay: delay,
+    )
+
+    assert result["error"] is None
+    assert result["attempt_count"] == 2
+    assert [event["kind"] for event in result["request_events"]] == [
+        "connection_transient",
+        "ok",
+    ]
 
 
 def test_copy_exhausts_only_the_failed_object_after_five_retries(monkeypatch):
@@ -460,11 +894,71 @@ async def test_copy_persists_fast_success_before_slow_peer_finishes():
         release_slow.set()
         result = await task
 
-    assert persisted == [1, 3, 2]
+    assert set(persisted[:2]) == {1, 3}
+    assert persisted[-1] == 2
     assert result["copied_objects"] == 3
     assert worker_ids.isdisjoint(
         {thread.ident for thread in threading.enumerate() if thread.is_alive()}
     )
+
+
+@pytest.mark.asyncio
+async def test_copy_scheduler_refills_bounded_window_before_slow_peer_finishes():
+    slow_started = threading.Event()
+    release_slow = threading.Event()
+    later_started = threading.Event()
+    active = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def copy_one(group):
+        nonlocal active, peak
+        row_id = group[0]["id"]
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            if row_id == 1:
+                slow_started.set()
+                assert release_slow.wait(5)
+            if row_id == 3:
+                later_started.set()
+            return {
+                "outcome": {"etag": f"target-{row_id}", "multipart": False},
+                "error": None,
+                "elapsed_ms": 1.0,
+                "attempt_count": 1,
+                "request_events": [{"at": 1.0, "kind": "ok"}],
+            }
+        finally:
+            with lock:
+                active -= 1
+
+    async def persist_success(_group, _outcome):
+        return None
+
+    async def persist_failure(_group, _error):
+        raise AssertionError("no object should fail")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        task = asyncio.create_task(
+            _run_copy_group_batch(
+                [[{"id": value}] for value in range(1, 7)],
+                executor=executor,
+                copy_one=copy_one,
+                persist_success=persist_success,
+                persist_failure=persist_failure,
+                max_in_flight=2,
+            )
+        )
+        assert await asyncio.to_thread(slow_started.wait, 2)
+        assert await asyncio.to_thread(later_started.wait, 2)
+        assert not task.done()
+        release_slow.set()
+        result = await task
+
+    assert peak == 2
+    assert result["copied_objects"] == 6
 
 
 @pytest.mark.asyncio
@@ -531,6 +1025,39 @@ def test_successor_copy_plan_freezes_only_unfinished_predecessor_assets():
     assert successor["counts"] == {"copy_required": 2}
     assert len(batches) == 2
     assert successor["batches_sha256"]
+
+
+def test_copy_successor_defaults_to_one_thousand_asset_batches():
+    row = {
+        "id": 1,
+        "history_id": 1,
+        "role": "output",
+        "ordinal": 0,
+        "original_ref": "old.png",
+        "target_key": "task-results/t/primary.png",
+        "source_name": "r2-user-data-prod",
+        "source_key": "old.png",
+        "source_last_modified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "source_etag": "etag",
+        "source_sha256": None,
+        "target_sha256": None,
+        "byte_size": 100,
+        "status": "copy_required",
+        "history_manifest_sha256": "f" * 64,
+    }
+
+    manifest, batches = build_successor_copy_plan(
+        predecessor_manifest=None,
+        predecessor_plan_sha256=None,
+        retained_rows=[],
+        successor_rows=[row],
+        run_id="11111111-1111-1111-1111-111111111111",
+        history_watermark=1,
+    )
+
+    assert COPY_BATCH_SIZE == 1_000
+    assert manifest["batch_size"] == 1_000
+    assert batches[0]["asset_count"] == 1
 
 
 def test_successor_copy_plan_rejects_overlap_with_completed_assets():
@@ -752,7 +1279,9 @@ def test_runtime_identity_binds_explicit_r2_proxy_without_exposing_its_url():
     assert "127.0.0.1" not in json.dumps(identity)
     assert "http://" not in json.dumps(identity)
 
-    direct_config = {key: value for key, value in config.items() if key != "r2_transport"}
+    direct_config = {
+        key: value for key, value in config.items() if key != "r2_transport"
+    }
     with pytest.raises(RuntimeError, match="runtime identity changed"):
         _validate_runtime_identity(
             identity,
@@ -1421,6 +1950,126 @@ def test_execute_copy_concurrency_is_bounded():
         _parser().parse_args([*base, "--retry-jitter-ratio", "1.1"])
 
 
+@pytest.mark.asyncio
+async def test_copy_retry_lane_keeps_transient_retries_out_of_bulk_workers():
+    thread_lanes: list[tuple[int, str]] = []
+    attempts: dict[int, int] = {}
+
+    def copy_one_attempt(group):
+        item_id = group[0]["id"]
+        attempts[item_id] = attempts.get(item_id, 0) + 1
+        thread_lanes.append((item_id, threading.current_thread().name))
+        if item_id == 1 and attempts[item_id] == 1:
+            return {
+                "outcome": None,
+                "error": RuntimeError("ReadTimeoutError: transient timeout"),
+                "elapsed_ms": 1,
+                "request_event": {"at": 1.0, "kind": "timeout"},
+            }
+        return {
+            "outcome": {"recovered": False},
+            "error": None,
+            "elapsed_ms": 1,
+            "request_event": {"at": 2.0, "kind": "ok"},
+        }
+
+    successes = []
+    failures = []
+
+    async def persist_success(group, outcome):
+        successes.append((group[0]["id"], outcome))
+
+    async def persist_failure(group, error):
+        failures.append((group[0]["id"], error))
+
+    limiter = AdaptiveConcurrencyLimiter(limit=3)
+    live_events = []
+    with (
+        ThreadPoolExecutor(max_workers=2, thread_name_prefix="copy-bulk") as bulk,
+        ThreadPoolExecutor(max_workers=1, thread_name_prefix="copy-retry") as retry,
+    ):
+        result = await _run_copy_group_batch_with_retry_lane(
+            [[{"id": 1}], [{"id": 2}], [{"id": 3}]],
+            bulk_executor=bulk,
+            retry_executor=retry,
+            concurrency_limiter=limiter,
+            copy_one_attempt=copy_one_attempt,
+            persist_success=persist_success,
+            persist_failure=persist_failure,
+            max_retries=1,
+            retry_base_seconds=0.001,
+            retry_max_seconds=0.001,
+            retry_jitter_ratio=0,
+            request_event_sink=live_events.append,
+        )
+
+    assert failures == []
+    assert sorted(item_id for item_id, _outcome in successes) == [1, 2, 3]
+    assert any(item_id == 1 and "copy-retry" in name for item_id, name in thread_lanes)
+    assert all(
+        "copy-bulk" in name for item_id, name in thread_lanes if item_id in {2, 3}
+    )
+    assert limiter.peak_active <= 3
+    assert result["retried_objects"] == 1
+    assert live_events == result["request_events"]
+
+
+def test_copy_attempt_records_the_live_concurrency_epoch(monkeypatch):
+    import scripts.history_media_r2_migration as module
+
+    limiter = AdaptiveConcurrencyLimiter(limit=128)
+
+    def copy_object(_client, **_kwargs):
+        limiter.set_limit(64)
+        return {"recovered": False}
+
+    monkeypatch.setattr(module, "server_side_copy_r2_object", copy_object)
+
+    result = _timed_server_side_copy_attempt(object(), concurrency_limiter=limiter)
+
+    assert result["request_event"] == {
+        "at": result["request_event"]["at"],
+        "kind": "ok",
+        "copy_concurrency": 128,
+    }
+
+
+def test_shared_bulk_and_retry_executors_reach_but_never_exceed_128():
+    limiter = AdaptiveConcurrencyLimiter(limit=128)
+    release = threading.Event()
+    all_started = threading.Event()
+    active = 0
+    lock = threading.Lock()
+
+    def occupy_slot():
+        nonlocal active
+        with limiter.slot():
+            with lock:
+                active += 1
+                if active == 128:
+                    all_started.set()
+            assert release.wait(10)
+            with lock:
+                active -= 1
+
+    with (
+        ThreadPoolExecutor(max_workers=112, thread_name_prefix="copy-bulk") as bulk,
+        ThreadPoolExecutor(max_workers=16, thread_name_prefix="copy-retry") as retry,
+    ):
+        futures = [bulk.submit(occupy_slot) for _ in range(112)]
+        futures.extend(retry.submit(occupy_slot) for _ in range(16))
+        assert all_started.wait(10)
+        assert limiter.peak_active == 128
+        release.set()
+        for future in futures:
+            future.result(timeout=10)
+
+    assert not any(
+        thread.name.startswith(("copy-bulk", "copy-retry"))
+        for thread in threading.enumerate()
+    )
+
+
 def test_copy_client_pool_defaults_to_one_and_a_half_times_concurrency(monkeypatch):
     captured = {}
 
@@ -1486,9 +2135,38 @@ def test_copy_client_uses_only_the_frozen_explicit_https_proxy(monkeypatch):
         transport=transport,
     )
 
-    assert captured["config"].proxies == {
-        "https": "http://127.0.0.1:7890"
-    }
+    assert captured["config"].proxies == {"https": "http://127.0.0.1:7890"}
+
+
+def test_sharded_copy_client_delegates_retries_to_the_bounded_retry_lane(monkeypatch):
+    captured = {}
+
+    class Events:
+        def register(self, *_args):
+            return None
+
+    class Client:
+        meta = type("Meta", (), {"events": Events()})()
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_migration.boto3.client",
+        lambda *_args, **kwargs: captured.update(kwargs) or Client(),
+    )
+
+    _s3_client(
+        {
+            "endpoint": "https://example.invalid",
+            "access_key": "key",
+            "secret_key": "secret",
+        },
+        max_pool_connections=20,
+        external_retry_lane=True,
+    )
+
+    config = captured["config"]
+    assert config.retries["total_max_attempts"] == 1
+    assert config.connect_timeout == 5
+    assert config.read_timeout == 30
 
 
 @pytest.mark.parametrize(
@@ -1506,15 +2184,16 @@ def test_adaptive_copy_lowers_one_level_for_transient_r2_failures(error_text):
     assert controller.record_failure(error_text) == 32
 
 
-def test_adaptive_copy_uses_64_32_16_8_and_requires_three_clean_batches_to_raise():
-    controller = AdaptiveCopyController(initial_concurrency=64)
+def test_adaptive_copy_uses_128_64_32_16_and_requires_three_clean_batches_to_raise():
+    controller = AdaptiveCopyController(initial_concurrency=128)
 
+    assert controller.record_failure("HTTPStatusCode: 503") == 64
     assert controller.record_failure("HTTPStatusCode: 503") == 32
     assert controller.record_failure("ConnectTimeoutError") == 16
-    assert controller.record_failure("SlowDown") == 8
-    assert controller.record_success() == 8
-    assert controller.record_success() == 8
+    assert controller.record_failure("SlowDown") == 16
     assert controller.record_success() == 16
+    assert controller.record_success() == 16
+    assert controller.record_success() == 32
 
 
 def test_adaptive_copy_rejects_non_transient_failures():
@@ -1659,10 +2338,25 @@ def test_execute_copy_sizes_worker_pool_to_requested_concurrency():
     source = inspect.getsource(module._execute_copy)
     group_source = inspect.getsource(module._run_copy_group_batch)
 
-    assert "ThreadPoolExecutor(max_workers=args.copy_concurrency)" in source
+    assert "max_workers=args.copy_concurrency" in source
     assert "loop.run_in_executor" in group_source
-    assert "asyncio.as_completed" in group_source
+    assert "asyncio.FIRST_COMPLETED" in group_source
     assert "copy_executor" in source
+
+
+def test_execute_copy_supports_striped_batches_and_shared_retry_lane():
+    import inspect
+
+    import scripts.history_media_r2_migration as module
+
+    source = inspect.getsource(module._execute_copy)
+
+    assert "mod(batch_no,$2)=$3" in source
+    assert "copy_shard_count" in source
+    assert "copy_shard_index" in source
+    assert "_run_copy_group_batch_with_retry_lane" in source
+    assert "bulk_executor" in source
+    assert "retry_executor" in source
 
 
 def test_seed_uses_one_bulk_copy_stage_per_history_batch():
@@ -1748,7 +2442,9 @@ def test_plan_and_report_stream_rowsets_instead_of_fetching_all_rows():
 
     assert "_stream_plan_rowset" in inspect.getsource(module._create_plan)
     assert "_stream_plan_rowset" in inspect.getsource(module._report)
-    assert "_stream_plan_rowset" in inspect.getsource(module._execute_copy)
+    assert "_stream_plan_rowset" in inspect.getsource(
+        module._validate_copy_plan_preflight
+    )
     assert "limit $3" in inspect.getsource(module._execute_copy)
 
 
@@ -1988,7 +2684,7 @@ def test_copy_execution_recomputes_frozen_rowset_in_ledger_id_order():
 
     import scripts.history_media_r2_migration as module
 
-    source = inspect.getsource(module._execute_copy)
+    source = inspect.getsource(module._validate_copy_plan_preflight)
     rowset_check = source.split("if rowset_sha !=", 1)[0].rsplit(
         "await _stream_plan_rowset", 1
     )[1]
@@ -2051,7 +2747,7 @@ def test_copy_successor_verification_and_switch_aggregate_the_full_plan_chain():
 
     verify_source = inspect.getsource(module._verify_copy_plan_objects)
     planner_source = inspect.getsource(module._create_plan)
-    execute_source = inspect.getsource(module._execute_copy)
+    execute_source = inspect.getsource(module._validate_copy_plan_preflight)
 
     assert "copy_plan_sha256=any($2::text[])" in verify_source
     assert 'copy_plan_sha256=str(row["copy_plan_sha256"])' in verify_source

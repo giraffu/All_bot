@@ -441,6 +441,31 @@ def test_agent_main_removes_debug_side_paths():
     assert "exec(" not in content
 
 
+def test_normalize_mislabeled_jpeg_preserves_compact_jpeg(tmp_path):
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch("os.makedirs", return_value=None))
+        stack.enter_context(mock.patch("logging.FileHandler", DummyFileHandler))
+        module = load_agent_main_module()
+
+    source_path = tmp_path / "telegram-upload.png"
+    Image.new("RGB", (713, 1280), (90, 120, 150)).save(
+        source_path,
+        format="JPEG",
+        quality=85,
+    )
+    source_bytes = source_path.read_bytes()
+
+    normalized_path = Path(
+        module.ComfyAgent._normalize_input_image_for_comfy(str(source_path))
+    )
+
+    assert normalized_path.suffix == ".jpg"
+    assert normalized_path.read_bytes() == source_bytes
+    with Image.open(normalized_path) as normalized:
+        assert normalized.format == "JPEG"
+        assert normalized.mode == "RGB"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "module_path",
@@ -1899,6 +1924,34 @@ def test_user_input_failure_does_not_count_toward_quarantine(monkeypatch):
 
     assert agent.task_infra_failures == 0
     assert agent._worker_status() == "idle"
+
+
+@pytest.mark.asyncio
+async def test_ws_disconnect_during_preparation_does_not_fail_unsubmitted_task(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-preparing",
+        task_type="img2img",
+        phase="preparing",
+    )
+    agent._active_execution = execution
+
+    async def fake_probe():
+        return False
+
+    async def fake_sleep(_seconds):
+        return None
+
+    agent._probe_comfy_ready = fake_probe
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent._handle_ws_connection_error("opening handshake timed out")
+
+    assert execution.completed_event.is_set() is False
+    assert execution.task_error is None
 
 
 @pytest.mark.asyncio

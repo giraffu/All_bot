@@ -101,16 +101,16 @@ bundles:
     files: []
 
   minimax_h3_runtime:
-    version: 2026-08-16-10eros-beta2-addon6-lightx2v8-v1
+    version: 2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2
     profiles:
       - minimax_h3
     source:
       node_id: local-model-downloads
       comfy_id: local-registry
-      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-16-10eros-beta2-addon6-lightx2v8-v1/files
-      discovered_size_gb: 63.13
+      model_dir: /srv/allbot/model-registry/bundles/minimax_h3_runtime/2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2/files
+      discovered_size_gb: 64.85
       import_status: prepared_by_script
-      notes: Pinned 10Eros-Max Beta2 base with fixed LightX2V FL2VA 8-step v1.0 acceleration, six optional locally cached LoRAs (NaughtyTimes v2, HMNSFW AIO v2, HMBreasts, VagAssist, HMPussy v6 and HMPenis v2), and official Comfy-Org Qwen3-VL/video/audio VAE assets. All eleven files are SHA256 verified; Ref2VA remains excluded.
+      notes: Pinned 10Eros-Max Beta2 base with fixed LightX2V FL2VA 8-step v1.0 acceleration, thirteen optional LoRAs including Mystic XXX v2, and official Comfy-Org Qwen3-VL/video/audio VAE assets. All eighteen expected sizes and SHA256 values are pinned; bundle preparation and runtime canary remain release-time gates. Ref2VA remains excluded.
     files:
       - relative_path: diffusion_models/MiniMaxH3/10Eros_Max_h3_fl2va_beta2_pruned.safetensors
         sha256: 57da2b2a12b9efc89eeaa6d751e1ef46ef3e406ca227684c31848abc749f1b20
@@ -133,6 +133,27 @@ bundles:
       - relative_path: loras/MiniMaxH3/HMNSFW_AIO_V2.safetensors
         sha256: 608e4212f2788b6063330ff1196fc1f4b4228cfd9a413a63c198a09d7e4a61cb
         size_bytes: 310168344
+      - relative_path: loras/MiniMaxH3/H3_Motion_BoosterV2.safetensors
+        sha256: f6a6897162b921d2b74abe1fdebcd80c8189147e70e0e0738200756c250336c3
+        size_bytes: 155110272
+      - relative_path: loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors
+        sha256: 2fc32615f20465e0831a5c8069df4006422fc9638a0b7faa216e04a6ddfee8de
+        size_bytes: 172057936
+      - relative_path: loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors
+        sha256: f9cbcaa596b6b281f154388e407e7b4c4ee97ba9917614ab36bc5e86edf374f5
+        size_bytes: 298260984
+      - relative_path: loras/MiniMaxH3/HMInnie_v1_e50.safetensors
+        sha256: 499196c9d0e5f81ff575ba39a82987112c3bb1e09fbede858877cd950d6c8833
+        size_bytes: 310168344
+      - relative_path: loras/MiniMaxH3/deepthroat_v02.safetensors
+        sha256: 1fd239662f6290255b0bb3a220764fb53aab2859378f7fd3024030c1e1991cb2
+        size_bytes: 298263792
+      - relative_path: loras/MiniMaxH3/H3_Mis_Insrt_v07.safetensors
+        sha256: 8d1ed16cdae02e25308063053f7f459b88fb4c50d7e6ea4d05ebc4950a992584
+        size_bytes: 310190448
+      - relative_path: loras/MiniMaxH3/H3_Footjob_TypeB_v1.safetensors
+        sha256: 6e293977389020e2e327d5e375cdc55352659f0ac61b41f270ec5ddf453fc620
+        size_bytes: 298260800
       - relative_path: loras/MiniMaxH3/HMBreasts_085e0750_e40.safetensors
         sha256: 039b6d5399def81c9a459d7cca8ccf749195fcb5f766f0899a387ba2fa6ad967
         size_bytes: 310168344

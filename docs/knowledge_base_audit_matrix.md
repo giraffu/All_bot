@@ -47,7 +47,7 @@
 | `docs/子模块_独立群管理Bot_standalone_group_manage_bot.md` | 独立群管理 Bot | group manage code/config | current | 消息治理 |
 | `docs/子模块_客服Bot_support_bot.md` | 客服工单 Bot | support bot、Dashboard、schema | current | 客服能力 |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | JWT/密码/权限 | auth core、Web security | current | 鉴权 |
-| `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、affiliate、USDT 人工出款 | billing core、payment services、RMB reconciliation jobs | current | 金钱与会员 |
+| `docs/子模块_计费与支付_billing_payment.md` | 账本、支付、支付宝直连白名单、affiliate、USDT 人工出款 | billing core、payment providers、RMB reconciliation jobs | current | 金钱与会员 |
 | `docs/子模块_社区与存储_gallery_storage.md` | Gallery 一致性、R2、apply-context | Gallery core/services、migration、audit/storage scripts | current | 社区/媒体 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | Dashboard 监控治理、返佣人工出款 | Dashboard backend/frontend | current | 管理后台 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | LAN 分析平台、shadow/派生数据边界与分层新鲜度 | local analytics routes/refreshers、shadow pipeline、Compose/live state | runtime-verification-required | 本地分析开发或运维 |
@@ -59,7 +59,7 @@
 | 路径 | 用途 | 事实源 | 状态 | 何时加载 |
 | --- | --- | --- | --- | --- |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | workflow/LoRA/模型注入 | canonical Worker、workflow JSON、mapping、patcher | current | 模型/workflow |
-| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 三个公开模式、固定 10Eros/LightX2V 基础链、六个可选 LoRA、模型包与 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
+| `docs/子模块_MiniMaxH3视频服务_minimax_h3.md` | MiniMax H3 三个公开模式、固定 10Eros/LightX2V 基础链、十三个可选 LoRA、测试云 agent 与正式 GPU 边界、模型包与 canary | task registry、API workflow、profile、model manifest | runtime-verification-required | MiniMax H3 开发/发布 |
 | `docs/子模块_本地多模态LLM提示词优化_prompt_optimizer.md` | 本地 VLM 提示词优化与 task profile | task registry、workflow mapping/patcher、模型专项文档、运行时 canary | runtime-verification-required | 接入图片/原始提示词优化，或维护模型专用 meta-prompt |
 | `docs/子模块_Prompt_Optimizer_Worker.md` | 通用优化 Registry/API/Worker/文本结果 | `src/prompt_optimizer/`、Web API、Prompt Worker、Dashboard scene config | current | Registry template 不可变；管理端 current config 通过 revision/hash/rendered snapshot 固定新任务语义 |
 | `docs/子模块_3D角色MiniApp_avatar_miniapp.md` | LAN 3D 角色工作室、fixture 与 CPU 渲染 | `src/avatar_miniapp`、Vue、Compose、focused tests | current | 3D Mini App 开发或本地验收 |
@@ -79,7 +79,7 @@
 | `docs/子模块_Git不可变发布_git_immutable_release.md` | 独立模块内容寻址构建、GitHub 手动 workflow、部署、远程状态与回滚 | `scripts/release.py`、`deploy/module-catalog.json`、`.github/workflows/module-*.yml`、focused tests | current | 发布变更/执行 |
 | `docs/子模块_独立媒体增强平台_media_enhance_platform.md` | 独立媒体增强产品边界、账本、任务与 Worker 契约 | `media_enhance_platform/`、专项 focused tests | current | 媒体增强平台 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | 症状分诊、独立模块发布、服务/config/数据库 mutation 总门禁 | module catalog、release CLI、env/service contracts、目标 live state | current | 一般运维与环境变更 |
-| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 拓扑、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、remote module state | runtime-verification-required | 测试环境 |
+| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | test 控制面/Worker 拓扑、Dashboard 与单模块 exact-digest SOP | test overlay/env contract、Worker Compose、remote module state | runtime-verification-required | 测试环境 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | prod 拓扑与单模块 exact-digest SOP | prod overlay/env contract、remote module state | runtime-verification-required | 正式环境 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | 云故障本地接管 | fallback scripts、DNS/数据门禁 | current | 灾备 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | 云 SSH 密钥边界、build/root 别名与 SGP1 Runner/Buildx 用户上下文 | key metadata、host config、GitHub Runner API、systemd/Buildx 只读探测 | runtime-verification-required | 云登录/Runner 运维 |

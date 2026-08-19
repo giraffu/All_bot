@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
-from src.database.models import GalleryPost, GalleryPromptUnlock, History
+from src.database.models import GalleryPost, History
 from src.domain_config.scail2_video import is_scail2_task_type
 from src.domain_config.task_type_registry import apply_input_reuse_task_types
 from src.domain_config.minimax_h3 import MINIMAX_H3_TASK_TYPES
@@ -25,7 +25,6 @@ TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_CONTEXT_MISSING = (
 TEMPLATE_APPLY_DISABLED_REASON_MINIMAX_H3_MODE_NOT_SUPPORTED = (
     "minimax_h3_mode_not_supported"
 )
-GALLERY_PROMPT_UNLOCK_REQUIRED = "gallery_prompt_unlock_required"
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
 
 
@@ -110,36 +109,6 @@ async def fetch_gallery_apply_context_entities(*, db, post_id: int):
     return post, history
 
 
-async def ensure_gallery_apply_prompt_access(
-    *,
-    db,
-    post: GalleryPost,
-    history: History,
-    current_user_id: int,
-) -> None:
-    author_id = (
-        post.user_id
-        if getattr(post, "user_id", None) is not None
-        else getattr(history, "user_id", None)
-    )
-    if author_id == current_user_id:
-        return
-
-    unlock_id = (
-        await db.execute(
-            select(GalleryPromptUnlock.id).where(
-                GalleryPromptUnlock.user_id == current_user_id,
-                GalleryPromptUnlock.post_id == post.id,
-            )
-        )
-    ).scalar_one_or_none()
-    if unlock_id is None:
-        raise GalleryApplyContextError(
-            status_code=403,
-            detail=GALLERY_PROMPT_UNLOCK_REQUIRED,
-        )
-
-
 async def build_gallery_apply_context_payload(
     *,
     post_id: int,
@@ -162,13 +131,6 @@ async def build_gallery_apply_context_payload(
     disabled_reason = resolve_history_template_apply_disabled_reason(history)
     if disabled_reason:
         raise GalleryApplyContextError(status_code=400, detail=disabled_reason)
-    if current_user_id is not None:
-        await ensure_gallery_apply_prompt_access(
-            db=db,
-            post=post,
-            history=history,
-            current_user_id=current_user_id,
-        )
     if release_read_transaction_fn is not None:
         await release_read_transaction_fn(db)
 

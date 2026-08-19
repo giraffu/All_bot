@@ -47,3 +47,26 @@ async def test_runtime_keyboard_falls_back_to_defaults_when_config_load_fails():
         ],
         [get_text("menu.back_main", "zh")],
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_keyboard_uses_ltx_label_in_prod_and_h3_label_in_test(monkeypatch):
+    config = normalize_main_bot_menu_config(DEFAULT_MAIN_BOT_MENU_CONFIG)
+
+    monkeypatch.setenv("ALLBOT_ENV", "prod")
+    monkeypatch.delenv("MINIMAX_H3_BACKEND_ENABLED", raising=False)
+    prod_keyboard = await get_runtime_main_menu_keyboard(
+        "zh", load_config_func=AsyncMock(return_value=config)
+    )
+
+    monkeypatch.setenv("ALLBOT_ENV", "test")
+    test_keyboard = await get_runtime_main_menu_keyboard(
+        "zh", load_config_func=AsyncMock(return_value=config)
+    )
+
+    prod_labels = sum(_texts(prod_keyboard), [])
+    test_labels = sum(_texts(test_keyboard), [])
+    assert get_text("menu.ltx_video", "zh") in prod_labels
+    assert get_text("menu.advanced_video_pro", "zh") not in prod_labels
+    assert get_text("menu.advanced_video_pro", "zh") in test_labels
+    assert get_text("menu.ltx_video", "zh") not in test_labels

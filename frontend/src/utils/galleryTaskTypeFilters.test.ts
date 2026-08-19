@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   GALLERY_EDIT_GROUP_TASK_TYPE,
@@ -10,6 +12,12 @@ import {
 } from '@/utils/galleryTaskTypeFilters'
 
 describe('galleryTaskTypeFilters', () => {
+  beforeEach(() => {
+    window.__ALLBOT_CONFIG__ = {
+      enable_ltx_video: true,
+      enable_minimax_h3: false,
+    }
+  })
   it('groups new and historical free edits under v3', () => {
     const tabs = buildGalleryTaskTypeTabs([
       { id: 'edit', name: '自由P图' },
@@ -64,8 +72,12 @@ describe('galleryTaskTypeFilters', () => {
       { id: 'i2i_pro', name: '图片生成' },
       { id: 'i2i_draw', name: '局部重绘' },
       { id: 'edit', name: '自由P图' },
+      { id: 'ltx_video', name: '高级图生视频' },
+      { id: 'minimax_h3_i2v', name: '高级图生视频pro' },
     ])
 
-    expect(visibleTypes.map(type => type.id)).toEqual(['i2i_pro', 'edit'])
+    expect(visibleTypes.map(type => type.id)).toEqual([
+      'i2i_pro', 'edit', 'ltx_video',
+    ])
   })
 })

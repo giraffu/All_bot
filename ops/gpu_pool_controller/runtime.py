@@ -32,6 +32,7 @@ LAN_AIO_RESERVE_VRAM_GB_BY_PROFILE = {
     "ltx_unified": 5,
 }
 LAN_AIO_PYTORCH_CROSS_ATTENTION_PROFILES = frozenset({"ltx_unified"})
+LAN_AIO_CACHE_NONE_PROFILES = frozenset({"minimax_h3"})
 LAN_AIO_FAST_DISK_PROFILES = frozenset({"minimax_h3"})
 LAN_AIO_DISABLE_PINNED_MEMORY_PROFILES = frozenset({"minimax_h3"})
 LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
@@ -810,6 +811,8 @@ class RuntimePlanner:
             args.extend(["--reserve-vram", str(reserve_vram)])
         if profile.runtime_profile in LAN_AIO_PYTORCH_CROSS_ATTENTION_PROFILES:
             args.append("--use-pytorch-cross-attention")
+        if profile.runtime_profile in LAN_AIO_CACHE_NONE_PROFILES:
+            args.append("--cache-none")
         if profile.runtime_profile in LAN_AIO_FAST_DISK_PROFILES:
             args.append("--fast-disk")
         if profile.runtime_profile in LAN_AIO_DISABLE_PINNED_MEMORY_PROFILES:
