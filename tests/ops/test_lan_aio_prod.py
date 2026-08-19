@@ -298,7 +298,7 @@ def test_gpu177_minimax_h3_candidate_renders_three_public_types_and_isolated_mod
     assert environment["COMFYUI_DIR"] == "/opt/ComfyUI"
     assert environment["RUNPOD_MODEL_TARGET_DIR"] == "/opt/ComfyUI/models"
     assert environment["RESET_COMFY_MEMORY_BEFORE_TASK"] == "true"
-    assert "--disable-dynamic-vram" in environment["COMFY_EXTRA_ARGS"]
+    assert "--disable-dynamic-vram" not in environment["COMFY_EXTRA_ARGS"]
     assert "--cache-none" in environment["COMFY_EXTRA_ARGS"]
     assert "--fast-disk" in environment["COMFY_EXTRA_ARGS"]
     assert "--disable-pinned-memory" in environment["COMFY_EXTRA_ARGS"]

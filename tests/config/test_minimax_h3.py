@@ -89,6 +89,13 @@ def test_web_locales_hide_model_names():
         assert private_term not in public_copy
 
 
+def test_minimax_h3_image_bounds_aimdo_cast_reservation():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "workers/runpod_profiles/minimax_h3/Dockerfile").read_text()
+
+    assert "DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 8 * 1024 ** 3" in dockerfile
+
+
 def test_minimax_h3_exposes_all_thirteen_local_addons_and_defaults_to_none():
     assert tuple(MINIMAX_H3_ADDON_MODELS) == (
         "naughty_times",

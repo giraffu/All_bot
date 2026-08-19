@@ -32,6 +32,9 @@ RUN set -euo pipefail; \
     done; \
     echo "${COMFYUI_ARCHIVE_SHA256}  $archive" | sha256sum -c -; \
     tar -xzf "$archive" --strip-components=1 -C "${COMFYUI_INSTALL_DIR}"; \
+    aimdo_model_management="${COMFYUI_INSTALL_DIR}/comfy/model_management.py"; \
+    sed -i 's/^DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 16 \* 1024 \*\* 3$/DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 8 * 1024 ** 3/' "$aimdo_model_management"; \
+    grep -qx 'DEFAULT_AIMDO_CAST_BUFFER_RESERVATION_SIZE = 8 \* 1024 \*\* 3' "$aimdo_model_management"; \
     pip_install_with_retry -r "${COMFYUI_INSTALL_DIR}/requirements.txt"; rm -rf /tmp/allbot-pip-cache; \
     rm -f "$archive"; \
     mkdir -p "${COMFYUI_INSTALL_DIR}/custom_nodes"; \
