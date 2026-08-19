@@ -507,6 +507,12 @@ Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 
 shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
 的对象都必须留存。
 
+Bulk 冻结对生产 History 的零引用核对先把 `eligible` 来源在本地计算为固定 32-byte
+SHA-256，再分块写入生产会话专属临时表；临时表建立唯一索引并 ANALYZE，查询会话关闭或
+事务提交即清除。History 三种路径角色只与该摘要集合做一次哈希半连接，摘要碰撞最多
+导致保守阻止删除，不会漏掉真实引用。查询关闭并行且以会话级 256 MB `work_mem` 约束
+单次哈希，避免把数百万条长 key 的哈希表落盘；不得创建生产永久索引或持久辅助表。
+
 Bulk 执行只对计划内 `eligible` 或已解除 blocker 的 `deferred` 来源调用单对象 DELETE；
 标准持久 `target_key` 和 `retained_target` 永远是生存
 副本，不得进入删除集合，也不提供 bucket/prefix 清理入口。任一批次异常把全局计划及
