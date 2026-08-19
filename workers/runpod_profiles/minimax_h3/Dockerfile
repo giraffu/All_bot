@@ -14,13 +14,14 @@ ARG DASIWA_REF=f6c759658513b120678bd5f96c2ec0b046a46a46
 ARG RESERVED_VRAM_REPO=https://github.com/Windecay/ComfyUI-ReservedVRAM.git
 ARG RESERVED_VRAM_REF=be93b9375ebe8b24fa431609f56fa8f441b4b37f
 ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV PIP_NO_CACHE_DIR=1
 
 RUN set -euo pipefail; \
     command -v ffmpeg >/dev/null; command -v git >/dev/null; command -v python3 >/dev/null; \
-    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache --index-url "${PIP_INDEX_URL}" "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     rm -rf "${COMFYUI_INSTALL_DIR}"; mkdir -p "${COMFYUI_INSTALL_DIR}"; \
     archive=/tmp/ComfyUI.tar.gz; repo_path="${COMFYUI_REPO#https://github.com/}"; repo_path="${repo_path%.git}"; \
     for attempt in 1 2 3; do \
@@ -37,7 +38,7 @@ RUN set -euo pipefail; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 RUN set -euo pipefail; \
-    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache --index-url "${PIP_INDEX_URL}" "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     install_node() { repo="$1"; ref="$2"; sha="$3"; name="$4"; target="${COMFYUI_INSTALL_DIR}/custom_nodes/${name}"; archive="/tmp/${name}.tar.gz"; repo_path="${repo#https://github.com/}"; repo_path="${repo_path%.git}"; \
       for attempt in 1 2 3; do \
         rm -f "$archive"; \
@@ -73,7 +74,7 @@ COPY workers/runpod_runtime/scripts/runpod_bootstrap_from_git.sh /opt/allbot/run
 COPY workers/runpod_runtime/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
 RUN set -euo pipefail; \
-    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
+    pip_install_with_retry() { for attempt in 1 2 3 4 5; do if PIP_NO_CACHE_DIR=0 python3 -m pip install --cache-dir /tmp/allbot-pip-cache --index-url "${PIP_INDEX_URL}" "$@"; then return 0; fi; test "$attempt" -lt 5; sleep "$((attempt * 5))"; done; }; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     pip_install_with_retry -r /opt/allbot/runtime/runpod_worker/requirements.txt; rm -rf /tmp/allbot-pip-cache; \
     grep -q 'MiniMaxH3ImageToVideo' "${COMFYUI_INSTALL_DIR}/comfy_extras/nodes_minimax_h3.py"; \
