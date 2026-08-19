@@ -1,6 +1,8 @@
 ARG RUNTIME_BASE_IMAGE
 FROM ${RUNTIME_BASE_IMAGE} AS database-migration
 ARG ALLBOT_GIT_SHA
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 \
+    && rm -rf /var/lib/apt/lists/*
 COPY src /app/src
 COPY shared /app/shared
 COPY scripts/history_media_r2_migration.py scripts/history_media_r2_copy_adaptive.py scripts/history_media_r2_cloud_copy.py scripts/history_media_r2_retirement.py scripts/media_archive_catalog.py scripts/media_archive_worker.py /app/scripts/
