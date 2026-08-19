@@ -61,6 +61,8 @@ def test_pipeline_restores_refreshes_embeddings_in_order(tmp_path):
     assert "analytics_history_media_r2_migrations" in commands
     assert "analytics_history_media_migration_plans" in commands
     assert "analytics_history_media_object_facts" in commands
+    assert "analytics_history_media_r2_cloud_copy_tasks" in commands
+    assert "analytics_history_media_r2_cloud_copy_plan_sessions" in commands
     assert "analytics_prompt_similarity_edges" not in commands
     assert "analytics_prompt_semantic_scenes" not in commands
     assert "analytics_prompt_graph_nodes" not in commands

@@ -384,6 +384,32 @@ boto3 client 显式传入空代理表，因此 `HTTP_PROXY`、`HTTPS_PROXY` 和 
 取得新 `COPY_HISTORY_MEDIA_<sha>` 后先运行 CopyObject canary。HEAD 延迟 A/B 只作为
 候选依据，不能替代 CopyObject marker、来源保留、错误率、FD 和数据库提交验收。
 
+需要避开本地主机到 R2 的异常链路时，Copy successor 可冻结
+`copy_execution.mode=cloud_receipt`、协议版本和固定 `worker_id`。该模式仍使用同一
+不可变 `database-migration` artifact，但拆成两个信任域：本地协调器是
+`analytics_history_media_r2_migrations` 的唯一写者；云端 worker 不暴露服务端口，
+不连接本地分析库或生产库，只读取 0600 R2 配置、执行 HEAD/CopyObject，并写回
+原子替换的 HMAC-SHA256 签名回执。任务 bundle 通过既有 SSH 主机别名传输，绑定
+plan SHA、artifact digest、worker identity、runtime identity、ledger IDs 与 canonical
+rowset SHA；日志和标准输出只允许低基数计数、延迟、错误类别与 request ID 哈希，不能
+输出 endpoint、对象 key、凭据或签名密钥。
+
+本地 `export-copy-task` 在每个冻结计划首次导出前完整重算全局 rowset/batches SHA，
+把结果写入低基数 plan session；之后每个最多 1,000 资产的任务只在事务内锁定当前
+批次并重算批次身份。一个计划同时只能存在一个未过期任务租约。云端禁用 SDK 隐式
+重试，由对象级外层重试负责退避；每个成功对象立即进入签名 checkpoint，进程中断时
+本地只提交已证明的子集，其余仍为 `copy_required`。本地导入器重新验证 bundle、回执
+签名及当前账本行集，以 CAS 写入 `copied_verified`；retryable 不改归属，fatal 隔离。
+签名、计划、artifact、worker、来源身份、marker 或行集任一不符都不得提交。
+
+云端路径启用前先用同一签名 HEAD bundle 对本机与目标云主机做只读 A/B；这一步不得
+调用 GET、ListObjects、CopyObject、DELETE 或数据库写入。artifact、配置和签名密钥可
+在新 COPY 授权前安全暂存，但不得导出或运行 Copy task。取得精确
+`COPY_HISTORY_MEDIA_<cloud-successor-sha>` 后，先运行单个云端 canary，再连续领取同一
+计划任务。`analytics_history_media_r2_cloud_copy_plan_sessions` 和
+`analytics_history_media_r2_cloud_copy_tasks` 是本地迁移状态，必须与其它迁移表一起
+跨 shadow 换库保留。
+
 Copy successor 若在目标 HEAD 发现 direct predecessor marker，普通执行器仍必须立即
 暂停，不能把 predecessor marker 当作当前计划成功。此状态可能来自 predecessor 已完成
 CopyObject、但在账本提交前受控停机。修复入口分为独立的 `plan-copy-recovery` 与

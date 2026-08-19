@@ -62,11 +62,12 @@ SWITCH_HISTORY_BATCH_SIZE = 1_000
 PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
+CLOUD_COPY_PROTOCOL = "history-r2-cloud-copy/v1"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
     r"EndpointConnectionError|ConnectionClosedError|ProxyConnectionError|ProxyError|"
     r"Failed to connect to proxy URL|ReadTimeoutError|Read\s+timeout|"
     r"UNEXPECTED_EOF_WHILE_READING|EOF occurred in violation of protocol|"
-    r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
+    r"ConnectTimeoutError|TimeoutError|TooManyRequests|SlowDown|InternalError|"
     r"ServiceUnavailable|RequestTimeout|ProtocolError|RemoteDisconnected|"
     r"Connection reset by peer|HTTPStatusCode[^0-9]*(?:429|500|502|503|504)|"
     r"An error occurred \((?:429|500|502|503|504)\)",
@@ -93,7 +94,7 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     ):
         return "server_5xx"
     if re.search(
-        r"ReadTimeout|Read\s+timeout|ConnectTimeout|RequestTimeout",
+        r"ReadTimeout|Read\s+timeout|ConnectTimeout|RequestTimeout|TimeoutError",
         error_text,
         re.IGNORECASE,
     ):
@@ -1607,6 +1608,36 @@ def _r2_transport(config: dict[str, Any]) -> R2Transport:
     return R2Transport(mode="https_proxy", proxy_url=proxy_url)
 
 
+def _copy_execution(config: dict[str, Any]) -> dict[str, str]:
+    raw = config.get("copy_execution")
+    if raw is None:
+        return {"mode": "local_ledger"}
+    if not isinstance(raw, dict):
+        raise ValueError("copy_execution must be an object")
+    unknown = set(raw) - {"mode", "worker_id", "protocol"}
+    if unknown:
+        raise ValueError("copy_execution contains unknown fields")
+    mode = str(raw.get("mode") or "")
+    if mode == "local_ledger":
+        if raw.get("worker_id") or raw.get("protocol"):
+            raise ValueError("local copy_execution cannot define cloud identity")
+        return {"mode": "local_ledger"}
+    if mode != "cloud_receipt":
+        raise ValueError("copy_execution mode must be local_ledger or cloud_receipt")
+    worker_id = str(raw.get("worker_id") or "")
+    protocol = str(raw.get("protocol") or "")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,63}", worker_id):
+        raise ValueError("cloud copy worker_id is invalid")
+    if protocol != CLOUD_COPY_PROTOCOL:
+        raise ValueError("cloud copy protocol is unsupported")
+    return {"mode": mode, "protocol": protocol, "worker_id": worker_id}
+
+
+def validate_local_copy_execution(config: dict[str, Any]) -> None:
+    if _copy_execution(config)["mode"] == "cloud_receipt":
+        raise RuntimeError("cloud receipt Copy plan cannot use the local DB executor")
+
+
 def _validate_r2_transport_runtime(
     transport: R2Transport,
     *,
@@ -1652,6 +1683,8 @@ def _runtime_identity(
             (r2_source or {}).get("endpoint")
         )
         identity["r2_transport"] = _r2_transport(config).identity()
+        if "copy_execution" in config:
+            identity["copy_execution"] = _copy_execution(config)
     return identity
 
 
@@ -1699,6 +1732,7 @@ def _reconciliation_runtime_identity(
         "target_endpoint_sha256",
         "source_endpoint_sha256",
         "r2_transport",
+        "copy_execution",
     }
     if any(expected.get(field) != actual.get(field) for field in stable_fields):
         raise RuntimeError("failed Copy reconciliation runtime configuration changed")
@@ -5615,6 +5649,7 @@ async def _validate_copy_batch_identity(
 async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
     execution_started = time.perf_counter()
     config = _load_secure_config(Path(args.config))
+    validate_local_copy_execution(config)
     transport = _r2_transport(config)
     target = config["target"]
     if target.get("bucket") != BUCKET:
