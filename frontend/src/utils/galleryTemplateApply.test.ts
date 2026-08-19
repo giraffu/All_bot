@@ -36,7 +36,7 @@ describe('galleryTemplateApply', () => {
       .toBe('template_apply.disabled.i2i_draw_disabled')
   })
 
-  it('disables template apply while the server marks the prompt as masked', () => {
+  it('keeps template apply available while the public prompt is masked', () => {
     window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
     const reason = resolveGalleryTemplateApplyDisabledReason({
       task_type: 'minimax_h3_i2v',
@@ -46,9 +46,7 @@ describe('galleryTemplateApply', () => {
       prompt_is_masked: true,
     } as any)
 
-    expect(reason).toBe('gallery_prompt_unlock_required')
-    expect(resolveGalleryTemplateApplyDisabledMessage(key => key, reason))
-      .toBe('template_apply.disabled.gallery_prompt_unlock_required')
+    expect(reason).toBeNull()
   })
 
   it('keeps template apply enabled for authors and users who unlocked the prompt', () => {

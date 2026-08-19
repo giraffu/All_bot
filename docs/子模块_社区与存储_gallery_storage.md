@@ -175,12 +175,10 @@ sequenceDiagram
 
 ### 4.8 Apply Context 已成为 Web 主路径
 
-- Web Gallery 的 apply-context 会携带登录用户身份执行提示词访问门禁：只有投稿
-  作者或 `gallery_prompt_unlocks` 中已解锁该帖的用户可以取得完整模板上下文；
-  其他用户返回 `403 gallery_prompt_unlock_required`。该门禁覆盖全部支持模板应用的
-  投稿类型，前端同时依据 `prompt_is_masked` 禁用一键应用并引导先解锁，但前端禁用
-  不能替代服务端授权。QQCC 原生应用在 Bot 内部消费上下文且不向用户展示 prompt，
-  不属于 Web 响应边界。
+- Gallery 列表与详情继续对未解锁提示词返回服务端遮罩文本，但遮罩状态不禁用
+  Web 一键应用。apply-context 作为模板执行入口，会返回执行所需的完整模板上下文；
+  提示词付费解锁只控制 Gallery 展示和复制权限，不阻断模板应用。QQCC 原生应用
+  同样在 Bot 内部消费上下文，不向用户直接展示 prompt。
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
@@ -278,9 +276,9 @@ JSON/Markdown 汇总，检查 revision、索引/约束、重复投稿/apply、�
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
 - 提示词解锁必须先有 `gallery_prompt_unlocks` 唯一记录作为幂等锚点，灵石扣减与作者入账必须同事务完成。
-- 未解锁提示词的完整内容不得通过 gallery 列表、详情或 Web apply-context 响应泄漏；
-  列表/详情只允许返回服务端生成的遮罩 prompt，apply-context 必须返回
-  `403 gallery_prompt_unlock_required`。
+- 未解锁提示词的完整内容不得通过 gallery 列表或详情响应泄漏；这些展示接口只允许
+  返回服务端生成的遮罩 prompt。apply-context 是模板执行契约，不受展示解锁状态
+  限制，前端不能因 `prompt_is_masked` 把一键应用按钮置灰。
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
 - 举报联动下架必须同时更新 `GalleryPost.is_active=False` 与同 `task_id + user_id` 的 `History.is_public=False`，并批量处理同作品 pending 举报；不得只改举报状态。
@@ -301,8 +299,8 @@ JSON/Markdown 汇总，检查 revision、索引/约束、重复投稿/apply、�
 - 用户公开主页公开投稿分页的总数、页数和可见性过滤；个人主页详情提示词解锁入口与解锁后状态同步
 - 好友搜索 username/full_name 模糊匹配、排除自己和当前关注状态；我的关注/我的粉丝列表方向正确性，以及粉丝列表的回关状态
 - 提示词解锁首次扣费、重复请求不重复扣费、唯一约束并发冲突回滚、`my-prompt-unlocks` 列表过滤
-- apply-context 对作者、已解锁用户和未解锁用户的访问控制，以及
-  `requested_duration` / `billing_resolution` / `negative_prompt` /
+- apply-context 对遮罩提示词的一键应用兼容，以及 `requested_duration` /
+  `billing_resolution` / `negative_prompt` /
   `input_file_url` / `input_files` 的返回准确性
 - Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序、LTX 首尾帧标签与 SCAIL-2 展示/复用语义分离
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝；`i2i_draw` Web 一键应用禁用字段与 apply-context 400 拒绝

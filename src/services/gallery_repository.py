@@ -204,7 +204,7 @@ async def insert_gallery_reaction_if_absent(
         .values(user_id=user_id, post_id=post_id, action_type=action)
         .on_conflict_do_nothing(
             index_elements=[UserInteraction.user_id, UserInteraction.post_id],
-            index_where=UserInteraction.action_type.in_(["like", "dislike"]),
+            index_where=text("action_type IN ('like', 'dislike')"),
         )
     )
     return result.rowcount
@@ -237,7 +237,7 @@ async def insert_gallery_apply_interaction_if_absent(
         .values(user_id=user_id, post_id=post_id, action_type="apply")
         .on_conflict_do_nothing(
             index_elements=[UserInteraction.user_id, UserInteraction.post_id],
-            index_where=UserInteraction.action_type == "apply",
+            index_where=text("action_type = 'apply'"),
         )
     )
     return result.rowcount
