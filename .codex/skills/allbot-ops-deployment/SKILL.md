@@ -38,22 +38,16 @@ main，拒绝 PR/fork 和 GPU kind。GPU/ComfyUI 由 operator 直接调用
 操作者判断，不写成 prod 资格；prod 仅额外要求 `--confirm-prod`。模块没有
 test 目标时可拒绝 test，但不阻断直接部署 prod。
 
+“启动测试 Worker”默认在测试云主机运行专用 relay/agent，并只连接 test
+Central/存储；LAN/RunPod 是正式 Worker，不得据此启动、接管或改写其 runtime。
+
 ## 构建前网络与缓存预检
 
 - 控制面 image 先检查 SGP1 builder；仅远端不健康、依赖无受控传输路径或用户明确
   要求时才回退本机，并说明原因。
-- Worker artifact 不要求经过 GHCR；用户要求使用本地 registry 时仍可使用云
-  builder：通过现有 SSH/Tailscale 管理链路，把云构建
-  主机的非冲突 loopback registry 端口临时反向转发到本地 registry；本地发布进程与
-  远端 BuildKit 必须用同一个 registry namespace/tag，分别验证 Registry API、
-  push 后 manifest digest 和 OCI revision。通道只绑定远端 loopback，不新增公网监听、
-  不复制源码、不在目标机 build。registry 大层传输与 BuildKit/Docker 控制面使用
-  独立 SSH 会话，避免大层占满 multiplex 连接导致 build context 超时；结束后关闭
-  通道。运行端若也不能直连 LAN registry，
-  可在部署窗口建立同类 loopback 通道拉取同一 repository path 的精确 digest。
-- 云主机 loopback 反向 registry 通道使用 `actions` 的 `network=host`
-  builder `allbot-sgp1-host`；bridge 模式的 `allbot-sgp1` 看不到宿主 loopback。
-  transport 别名不得改变精确 digest，也不得改坏共享 builder。
+- Worker artifact 可由云 builder 经现有 SSH/Tailscale loopback transport 写入本地
+  registry；构建端、发布端和运行端必须验证同一 repository 的精确 digest/OCI
+  revision。通道不公网监听、不复制源码、不在目标机 build，细节见不可变发布文档。
 - 构建前检查大小写 proxy 变量和 builder daemon env；loopback 代理必须先证明容器
   可达，再按专题文档临时映射 Docker gateway。不得输出凭据、改坏共享 builder，
   或把代理写入 Git、镜像与发布状态。
