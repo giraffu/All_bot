@@ -173,7 +173,10 @@ def _retirement_object_identity(candidate: dict[str, Any]) -> dict[str, Any]:
         "source_etag": str(candidate["source_etag"]),
         "source_last_modified": _iso(candidate["source_last_modified"]),
         "asset_count": int(candidate["asset_count"]),
-        "archive_sha256": str(candidate["archive_sha256"]),
+        # PostgreSQL bpchar pads the empty R2-only archive sentinel to 64 spaces.
+        # Normalize that storage round-trip so the frozen and execution rowsets
+        # have the same identity without weakening any non-empty SHA check.
+        "archive_sha256": str(candidate["archive_sha256"]).strip(),
         "nas_object_sha256": _key_sha(
             str(candidate["nas_bucket"]), str(candidate["nas_key"])
         ),

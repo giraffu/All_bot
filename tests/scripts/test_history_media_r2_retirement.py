@@ -13,6 +13,7 @@ from scripts.history_media_r2_retirement import (
     _durability_archive_config,
     _head_candidates,
     _parser,
+    _retirement_object_identity,
     _retirement_runtime_identity,
     build_retirement_plan,
     classify_retirement_candidate,
@@ -99,6 +100,21 @@ def test_r2_persistent_target_is_an_explicit_durability_basis_without_nas():
     assert (
         classify_retirement_candidate(dict(candidate, targets=[]))
         == "persistent_target_missing"
+    )
+
+
+def test_r2_persistent_target_rowset_survives_postgres_blank_char_round_trip():
+    frozen = _candidate(
+        durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+        archive_verified_asset_count=0,
+        archive_sha256="",
+        nas_bucket="",
+        nas_key="",
+    )
+    database_round_trip = dict(frozen, archive_sha256=" " * 64)
+
+    assert _retirement_object_identity(database_round_trip) == (
+        _retirement_object_identity(frozen)
     )
 
 
