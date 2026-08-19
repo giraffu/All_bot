@@ -172,6 +172,43 @@ def test_builds_scoped_service_projections_without_unrelated_secrets():
     }
 
 
+def test_background_ownership_flags_are_projected_to_every_consumer():
+    module = _load_module()
+    contract = module.load_contract(CONTRACT_PATH)
+    values = _environment("prod")
+    flags = {
+        "TASK_CONTROL_WORKER_ENABLED": "true",
+        "BILLING_RECONCILER_ENABLED": "true",
+        "WEB_FINALIZER_IN_WEB_ENABLED": "true",
+        "MAIN_BOT_PAYMENT_POLLING_ENABLED": "true",
+        "MAIN_BOT_ZOMBIE_SWEEP_ENABLED": "true",
+        "QQCC_BOT_ZOMBIE_SWEEP_ENABLED": "true",
+    }
+    values.update(flags)
+
+    snapshot = module.build_snapshot(contract, "prod", values)
+
+    expected_by_service = {
+        "task-control-worker": {
+            "TASK_CONTROL_WORKER_ENABLED",
+            "WEB_FINALIZER_IN_WEB_ENABLED",
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+            "QQCC_BOT_ZOMBIE_SWEEP_ENABLED",
+        },
+        "billing-reconciler": {"BILLING_RECONCILER_ENABLED"},
+        "web-api": {"WEB_FINALIZER_IN_WEB_ENABLED"},
+        "main-bot": {
+            "MAIN_BOT_PAYMENT_POLLING_ENABLED",
+            "MAIN_BOT_ZOMBIE_SWEEP_ENABLED",
+        },
+        "qqcc-bot": {"QQCC_BOT_ZOMBIE_SWEEP_ENABLED"},
+    }
+    for service, expected_keys in expected_by_service.items():
+        projection = snapshot.projections[service]
+        for key in expected_keys:
+            assert projection[key] == flags[key]
+
+
 def test_rejects_compose_escaped_bcrypt_hash_before_activation():
     module = _load_module()
     contract = module.load_contract(CONTRACT_PATH)

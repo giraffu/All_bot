@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
@@ -20,7 +21,9 @@ from .database.models import (
 )
 from .services.log_service import LogService
 from src.core.exceptions import InsufficientCreditsError
-from src.logger import logger
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

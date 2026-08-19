@@ -124,3 +124,30 @@ def test_disabled_entrypoint_imports_without_runtime_configuration():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_billing_provider_import_does_not_initialize_storage_without_minio():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT)
+    for key in tuple(env):
+        if key.startswith("MINIO_"):
+            env.pop(key)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "import src.billing_core_provider_setup; "
+                "assert 'src.services.storage' not in sys.modules"
+            ),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
