@@ -472,8 +472,20 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 已完成 Switch 的对象，要求目标精确 Copy plan marker、size、ETag 均通过 HEAD 复核。
 两种模式都要求生产 History 零引用、没有未完成 Copy/Switch 使用、旧 key 不属于任何
 标准目标，并在 manifest、runtime identity 和 rowset SHA 中绑定所选模式；配置或模式
-变化必须生成新计划。计划最多冻结 1,000 对象且为 0600，只保存 key 哈希和聚合，不在
-manifest 保存明文对象 key。
+变化必须生成新计划。单范围 `plan-delete` 最多冻结 1,000 对象且为 0600，只保存 key
+哈希和聚合，不在 manifest 保存明文对象 key。
+
+多个已完成 Switch 范围统一退役使用 `plan-bulk-delete`。调用方必须逐个给出不可重复的
+Switch plan SHA 及其预期资产坐标数；冻结器流式重算完整坐标集合，要求所有坐标已经
+Switch、属于同一 migration run，并派生完整 Copy plan 集合。全局 manifest 同时绑定每个
+Switch rowset、资产坐标 SHA、去重旧源 rowset、内部 batches SHA、artifact/runtime
+identity 和 R2 持久目标耐久性；任一计数、来源事实、父链或身份漂移都生成不同计划或
+fail closed。计划先冻结 100 个旧源 canary，余下按最多 1,000 对象形成内部批次。一个
+`DELETE_HISTORY_MEDIA_<global-plan-sha>` 同时授权 canary 和该 manifest 的全部内部批次，
+canary 完整提交后同一执行器自动续跑，不再逐批请求令牌；重启仍只恢复同一冻结计划的
+未完成批次。计划表记录全部 Switch 资产坐标覆盖，删除对象数则按旧来源去重，两者不得
+混为同一计数。冻结阶段不下载媒体正文，也不调用 ListObjects 或任何删除；完整来源与
+标准目标 HEAD 在每个内部批次实际删除前后复核。
 
 真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`，默认并发 4、硬上限
 8；不能复用 COPY、SWITCH、临时清理或通用冷归档令牌。每批执行前重新扫描生产 History
@@ -484,6 +496,13 @@ manifest 保存明文对象 key。
 从该目录到 NAS 的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨
 shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
 的对象都必须留存。
+
+Bulk 执行只对计划内 `source_key` 调用单对象 DELETE；标准持久 `target_key` 永远是生存
+副本，不得进入删除集合，也不提供 bucket/prefix 清理入口。任一批次异常把全局计划及
+运行中批次置为 `paused`，已完成批次和已删除对象回执保留；相同 artifact、runtime 和
+全局令牌可幂等恢复。最后一个批次完成后仍需核对全部对象回执、资产坐标守恒、生产零
+引用、目标存活及 Gallery/owner 读取链路。shadow pause guard 只能由外部操作者在最终
+验收全部通过后解除，退役脚本不得调用 systemctl 或解锁。
 
 大批退役前先运行 `prepare-delete-indexes`，以 `CREATE INDEX CONCURRENTLY` 准备并回读
 pending/failed 来源、未完成 Switch 来源和 `target_key` 三项 blocker 索引。执行门禁把本批
