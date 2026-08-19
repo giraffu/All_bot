@@ -588,6 +588,11 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "_bulk_scope_fingerprint" in planner_source
     assert "_prepare_bulk_retirement_stage" in planner_source
     assert "_bulk_production_has_live_refs" in planner_source
+    assert "_materialize_bulk_retirement_order" in planner_source
+    assert planner_source.index("_bulk_production_has_live_refs") < planner_source.index(
+        "_materialize_bulk_retirement_order"
+    )
+    assert "scope still has a live History reference" not in planner_source
     for forbidden in ("get_object", "list_objects", "delete_object"):
         assert forbidden not in planner_source
     stage_source = inspect.getsource(module._prepare_bulk_retirement_stage)
@@ -604,6 +609,9 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "max_parallel_workers_per_gather=0" in live_ref_source
     assert "sha256(convert_to" in live_ref_source
     assert "source_key text" not in live_ref_source
+    assert "bulk_retirement_live_source_hashes" in live_ref_source
+    assert "update bulk_retirement_candidates" in live_ref_source
+    assert "retirement_disposition='deferred'" in live_ref_source
 
     scope_source = inspect.getsource(module._bulk_scope_fingerprint)
     assert "10000" in scope_source
