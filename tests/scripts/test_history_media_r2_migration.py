@@ -19,10 +19,10 @@ import pytest
 from botocore.exceptions import ClientError, ProxyConnectionError, SSLError
 
 from scripts.history_media_r2_migration import (
-    MIGRATION_DDL,
     COPY_BATCH_SIZE,
-    AdaptiveCopyController,
+    MIGRATION_DDL,
     AdaptiveConcurrencyLimiter,
+    AdaptiveCopyController,
     AdaptiveProbeController,
     AssetIdentity,
     CopyObjectCircuitBreaker,
@@ -33,34 +33,35 @@ from scripts.history_media_r2_migration import (
     _collect_failed_copy_reconciliation,
     _collect_probe_head_outcomes,
     _execute_copy_predecessor_recovery,
-    _reconcile_failed_copy_and_plan_successor,
     _parser,
     _persist_copy_success,
     _persist_probe_batch,
     _probe_r2_rows,
     _probe_target_rows,
     _process_r2_custom_arguments,
+    _r2_transport,
+    _reconcile_failed_copy_and_plan_successor,
+    _reconciliation_runtime_identity,
     _resolve_copy_max_pool_connections,
     _resolve_probe_max_pool_connections,
-    _reconciliation_runtime_identity,
-    _r2_transport,
     _run_copy_group_batch,
     _run_copy_group_batch_with_retry_lane,
     _runtime_identity,
     _s3_client,
     _timed_server_side_copy_attempt,
     _timed_server_side_copy_with_retries,
-    _validate_runtime_identity,
     _validate_r2_transport_runtime,
+    _validate_runtime_identity,
     build_candidate_keys,
     build_copy_plan,
-    build_probe_plan,
-    build_standard_target,
     build_copy_predecessor_recovery_plan,
+    build_probe_plan,
+    build_rolling_switch_scope_identity,
+    build_standard_target,
     build_successor_copy_plan,
     build_successor_probe_plan,
-    classify_copy_request_failure,
     classify_copy_predecessor_recovery,
+    classify_copy_request_failure,
     classify_failed_copy_reconciliation,
     classify_r2_head_outcomes,
     classify_reference,
@@ -386,6 +387,87 @@ def test_failed_copy_reconciliation_command_has_no_copy_authorization():
 
     assert parsed.command == "reconcile-copy-failures"
     assert not hasattr(parsed, "confirm")
+
+
+def test_rolling_switch_scope_freezes_only_completed_current_batches():
+    predecessor = "a" * 64
+    current = "b" * 64
+    scope = build_rolling_switch_scope_identity(
+        copy_chain=(predecessor, current),
+        parent_copy_plan_sha256=current,
+        completed_current_batches=[
+            {
+                "plan_sha256": current,
+                "batch_no": 3,
+                "first_ledger_id": 3001,
+                "last_ledger_id": 4000,
+                "asset_count": 1000,
+                "rowset_sha256": "d" * 64,
+                "status": "completed",
+            },
+            {
+                "plan_sha256": current,
+                "batch_no": 1,
+                "first_ledger_id": 1001,
+                "last_ledger_id": 2000,
+                "asset_count": 1000,
+                "rowset_sha256": "c" * 64,
+                "status": "completed",
+            },
+        ],
+    )
+
+    assert scope["terminal_predecessor_copy_plan_sha256s"] == [predecessor]
+    assert scope["current_completed_batch_nos"] == [1, 3]
+    assert scope["current_completed_asset_count"] == 2000
+    assert len(scope["completed_copy_batches_sha256"]) == 64
+
+    with pytest.raises(RuntimeError, match="completed Copy batch"):
+        build_rolling_switch_scope_identity(
+            copy_chain=(current,),
+            parent_copy_plan_sha256=current,
+            completed_current_batches=[
+                {
+                    "plan_sha256": current,
+                    "batch_no": 0,
+                    "first_ledger_id": 1,
+                    "last_ledger_id": 1000,
+                    "asset_count": 1000,
+                    "rowset_sha256": "e" * 64,
+                    "status": "running",
+                }
+            ],
+        )
+
+
+def test_rolling_switch_has_a_distinct_freeze_command_and_no_confirmation():
+    parsed = _parser().parse_args(
+        [
+            "plan-switch-completed",
+            "--run-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--parent-plan-sha256",
+            "a" * 64,
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            "/secure/rolling-switch.json",
+        ]
+    )
+
+    assert parsed.command == "plan-switch-completed"
+    assert parsed.completed_copy_batches_only is True
+    assert not hasattr(parsed, "confirm")
+
+
+def test_rolling_switch_rowset_is_limited_to_frozen_completed_batches():
+    import scripts.history_media_r2_migration as module
+
+    sql = module.ROLLING_SWITCH_ROWSET_SQL.lower()
+    assert "switch_plan_sha256 is null" in sql
+    assert "b.status='completed'" in sql
+    assert "b.batch_no=any" in sql
+    assert "m.copy_plan_sha256=any" in sql
 
 
 def test_failed_copy_reconciliation_is_head_only_and_ledger_cas_guarded():

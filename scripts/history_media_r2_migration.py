@@ -1059,6 +1059,98 @@ def copy_plan_chain_sha256s(manifest: dict[str, Any]) -> tuple[str, ...]:
     return chain
 
 
+def build_rolling_switch_scope_identity(
+    *,
+    copy_chain: Iterable[str],
+    parent_copy_plan_sha256: str,
+    completed_current_batches: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """Freeze the terminal predecessor chain and exact completed parent batches."""
+
+    chain = tuple(str(value) for value in copy_chain)
+    if not chain or chain[-1] != parent_copy_plan_sha256:
+        raise RuntimeError("rolling Switch parent is not the Copy chain head")
+    canonical_batches: list[dict[str, Any]] = []
+    seen_batch_nos: set[int] = set()
+    for original in completed_current_batches:
+        batch = dict(original)
+        batch_no = int(batch["batch_no"])
+        if (
+            str(batch.get("plan_sha256") or "") != parent_copy_plan_sha256
+            or str(batch.get("status") or "") != "completed"
+            or batch_no in seen_batch_nos
+        ):
+            raise RuntimeError("rolling Switch requires exact completed Copy batches")
+        seen_batch_nos.add(batch_no)
+        canonical_batches.append(
+            {
+                "plan_sha256": parent_copy_plan_sha256,
+                "batch_no": batch_no,
+                "first_ledger_id": int(batch["first_ledger_id"]),
+                "last_ledger_id": int(batch["last_ledger_id"]),
+                "asset_count": int(batch["asset_count"]),
+                "rowset_sha256": str(batch["rowset_sha256"]),
+            }
+        )
+    canonical_batches.sort(key=lambda item: item["batch_no"])
+    return {
+        "terminal_predecessor_copy_plan_sha256s": list(chain[:-1]),
+        "current_completed_batch_nos": [
+            item["batch_no"] for item in canonical_batches
+        ],
+        "current_completed_batch_count": len(canonical_batches),
+        "current_completed_asset_count": sum(
+            item["asset_count"] for item in canonical_batches
+        ),
+        "completed_copy_batches_sha256": _sha256_json(canonical_batches),
+    }
+
+
+ROLLING_SWITCH_ROWSET_SQL = """select m.id,m.history_id,m.role,m.ordinal,
+          m.original_ref,m.target_key,m.source_name,m.source_key,
+          m.source_last_modified,m.source_etag,m.source_sha256,m.target_sha256,
+          m.byte_size,m.status,m.history_manifest_sha256
+     from analytics_history_media_r2_migrations m
+    where m.run_id=$1
+      and (
+        m.copy_plan_sha256=any($2::text[])
+        or (
+          m.copy_plan_sha256=$3
+          and exists(
+            select 1 from analytics_history_media_migration_plan_batches b
+             where b.plan_sha256=$3 and b.batch_no=any($4::integer[])
+               and b.status='completed'
+               and m.id between b.first_ledger_id and b.last_ledger_id
+          )
+        )
+      )
+      and m.status='copied_verified'
+      and m.switch_completed_at is null
+      and m.switch_plan_sha256 is null
+      and m.original_ref <> m.target_key
+    order by m.history_id,m.role,m.ordinal"""
+
+ROLLING_SWITCH_BIND_SQL = """update analytics_history_media_r2_migrations m
+   set switch_plan_sha256=$5,updated_at=now()
+ where m.run_id=$1
+   and (
+     m.copy_plan_sha256=any($2::text[])
+     or (
+       m.copy_plan_sha256=$3
+       and exists(
+         select 1 from analytics_history_media_migration_plan_batches b
+          where b.plan_sha256=$3 and b.batch_no=any($4::integer[])
+            and b.status='completed'
+            and m.id between b.first_ledger_id and b.last_ledger_id
+       )
+     )
+   )
+   and m.status='copied_verified'
+   and m.switch_completed_at is null
+   and m.switch_plan_sha256 is null
+   and m.original_ref <> m.target_key"""
+
+
 def _normalized_frozen_copy_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["status"] = "copy_required"
@@ -5190,17 +5282,68 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
             if parent_run_id != run_id:
                 raise RuntimeError("switch parent copy belongs to another run")
             copy_chain = copy_plan_chain_sha256s(parent)
-            incomplete_copy_batches = int(
-                await conn.fetchval(
-                    """select count(*) from analytics_history_media_migration_plan_batches
-                         where plan_sha256=$1 and status<>'completed'""",
-                    args.parent_plan_sha256,
-                )
+            rolling_switch = bool(
+                getattr(args, "completed_copy_batches_only", False)
             )
-            if incomplete_copy_batches:
-                raise RuntimeError(
-                    f"COPY_NOT_COMPLETE: batches={incomplete_copy_batches}"
+            rolling_scope: dict[str, Any] | None = None
+            if rolling_switch:
+                pending_switch_assets = int(
+                    await conn.fetchval(
+                        """select count(*)
+                             from analytics_history_media_r2_migrations
+                            where run_id=$1 and switch_plan_sha256 is not null
+                              and switch_completed_at is null""",
+                        run_id,
+                    )
                 )
+                if pending_switch_assets:
+                    raise RuntimeError(
+                        "an earlier Switch plan is still pending execution"
+                    )
+                completed_current_batches = [
+                    dict(record)
+                    for record in await conn.fetch(
+                        """select plan_sha256,batch_no,first_ledger_id,last_ledger_id,
+                                  asset_count,rowset_sha256,status
+                             from analytics_history_media_migration_plan_batches
+                            where plan_sha256=$1 and status='completed'
+                            order by batch_no""",
+                        args.parent_plan_sha256,
+                    )
+                ]
+                rolling_scope = build_rolling_switch_scope_identity(
+                    copy_chain=copy_chain,
+                    parent_copy_plan_sha256=args.parent_plan_sha256,
+                    completed_current_batches=completed_current_batches,
+                )
+                query = ROLLING_SWITCH_ROWSET_SQL
+                query_params: tuple[Any, ...] = (
+                    run_id,
+                    list(copy_chain[:-1]),
+                    args.parent_plan_sha256,
+                    rolling_scope["current_completed_batch_nos"],
+                )
+            else:
+                incomplete_copy_batches = int(
+                    await conn.fetchval(
+                        """select count(*) from analytics_history_media_migration_plan_batches
+                             where plan_sha256=$1 and status<>'completed'""",
+                        args.parent_plan_sha256,
+                    )
+                )
+                if incomplete_copy_batches:
+                    raise RuntimeError(
+                        f"COPY_NOT_COMPLETE: batches={incomplete_copy_batches}"
+                    )
+                query = """select id,history_id,role,ordinal,original_ref,target_key,
+                              source_name,source_key,source_last_modified,source_etag,source_sha256,
+                              target_sha256,byte_size,status,history_manifest_sha256
+                         from analytics_history_media_r2_migrations
+                        where run_id=$1 and copy_plan_sha256=any($2::text[])
+                          and status='copied_verified' and switch_completed_at is null
+                          and original_ref <> target_key
+                        order by history_id,role,ordinal"""
+                query_params = (run_id, list(copy_chain))
             invalid_predecessor_copy_batches = int(
                 await conn.fetchval(
                     """select count(*)
@@ -5212,21 +5355,15 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
             )
             if invalid_predecessor_copy_batches:
                 raise RuntimeError("predecessor Copy chain is not terminal")
-            query = """select id,history_id,role,ordinal,original_ref,target_key,
-                          source_name,source_key,source_last_modified,source_etag,source_sha256,
-                          target_sha256,byte_size,status,history_manifest_sha256
-                     from analytics_history_media_r2_migrations
-                    where run_id=$1 and copy_plan_sha256=any($2::text[])
-                      and status='copied_verified' and switch_completed_at is null
-                      and original_ref <> target_key
-                    order by history_id,role,ordinal"""
             (
                 rowset_sha,
                 count,
                 _counts,
                 byte_counts,
                 _diagnostics,
-            ) = await _stream_plan_rowset(conn, query, run_id, list(copy_chain))
+            ) = await _stream_plan_rowset(conn, query, *query_params)
+            if not count:
+                raise RuntimeError("no completed Copy assets are eligible for Switch")
             production = await _connect_env("PRODUCTION_DATABASE_URL")
             try:
                 batch_rows: list[dict[str, Any]] = []
@@ -5258,8 +5395,7 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                 async with conn.transaction():
                     async for record in conn.cursor(
                         query,
-                        run_id,
-                        list(copy_chain),
+                        *query_params,
                         prefetch=SWITCH_HISTORY_BATCH_SIZE,
                     ):
                         row = dict(record)
@@ -5297,6 +5433,13 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     artifact_digest=args.artifact_digest
                 ),
             }
+            if rolling_scope is not None:
+                manifest.update(
+                    {
+                        "rolling_completed_copy_batches_only": True,
+                        **rolling_scope,
+                    }
+                )
             manifest["plan_sha256"] = _sha256_json(manifest)
         plan_sha = manifest["plan_sha256"]
         supersedes_plan_sha256 = getattr(args, "supersedes_plan_sha256", None)
@@ -5328,16 +5471,30 @@ async def _create_plan(args: argparse.Namespace, *, plan_type: str) -> None:
                     plan_sha,
                 )
         else:
-            await conn.execute(
-                """update analytics_history_media_r2_migrations
-                      set switch_plan_sha256=$3,updated_at=now()
-                    where run_id=$1 and copy_plan_sha256=any($2::text[])
-                      and status='copied_verified' and switch_completed_at is null
-                      and original_ref <> target_key""",
-                run_id,
-                list(copy_chain),
-                plan_sha,
-            )
+            if rolling_scope is not None:
+                result = await conn.execute(
+                    ROLLING_SWITCH_BIND_SQL,
+                    run_id,
+                    list(copy_chain[:-1]),
+                    args.parent_plan_sha256,
+                    rolling_scope["current_completed_batch_nos"],
+                    plan_sha,
+                )
+                if result != f"UPDATE {count}":
+                    raise RuntimeError(
+                        "rolling Switch rowset changed before plan binding"
+                    )
+            else:
+                await conn.execute(
+                    """update analytics_history_media_r2_migrations
+                          set switch_plan_sha256=$3,updated_at=now()
+                        where run_id=$1 and copy_plan_sha256=any($2::text[])
+                          and status='copied_verified' and switch_completed_at is null
+                          and original_ref <> target_key""",
+                    run_id,
+                    list(copy_chain),
+                    plan_sha,
+                )
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(_canonical_json(manifest) + b"\n")
@@ -6575,6 +6732,12 @@ def _parser() -> argparse.ArgumentParser:
     plan_switch.add_argument("--parent-plan-sha256", required=True)
     plan_switch.add_argument("--artifact-digest", required=True)
     plan_switch.add_argument("--output", required=True)
+    rolling_switch = commands.add_parser("plan-switch-completed")
+    rolling_switch.add_argument("--run-id", required=True)
+    rolling_switch.add_argument("--parent-plan-sha256", required=True)
+    rolling_switch.add_argument("--artifact-digest", required=True)
+    rolling_switch.add_argument("--output", required=True)
+    rolling_switch.set_defaults(completed_copy_batches_only=True)
     copy = commands.add_parser("execute-copy")
     copy.add_argument("--plan-sha256", required=True)
     copy.add_argument("--confirm", required=True)
@@ -6642,7 +6805,7 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _execute_copy_predecessor_recovery(args)
     elif args.command == "reconcile-copy-failures":
         await _reconcile_failed_copy_and_plan_successor(args)
-    elif args.command == "plan-switch":
+    elif args.command in {"plan-switch", "plan-switch-completed"}:
         await _create_plan(args, plan_type="switch")
     elif args.command == "execute-switch":
         await _execute_switch(args)

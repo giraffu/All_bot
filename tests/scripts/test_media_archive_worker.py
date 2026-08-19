@@ -1,21 +1,22 @@
-import json
+import asyncio
 import io
-from pathlib import Path
+import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from scripts.media_archive_worker import (
     AdaptiveConcurrencyController,
     CatalogRecorder,
+    RateLimiter,
     SpoolBudget,
+    archive_job_claim_params,
     capacity_claim_priority,
     clear_proxy_environment,
     load_secure_config,
-    RateLimiter,
     restore_one_asset,
-    archive_job_claim_params,
     validate_source_routes,
 )
 
@@ -83,6 +84,33 @@ async def test_catalog_preflight_rejects_a_job_before_any_media_transfer():
                 ],
             }
         )
+
+
+@pytest.mark.asyncio
+async def test_catalog_recorder_serializes_shared_asyncpg_connection_operations():
+    class FakeConnection:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+
+        async def fetch(self, _statement, _history_id):
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return [{"role": "output", "ordinal": 0}]
+
+    connection = FakeConnection()
+    catalog = CatalogRecorder("postgresql://catalog", "archive-worker-1")
+    catalog.conn = connection
+    jobs = [
+        {"history_id": value, "assets": [{"role": "output", "ordinal": 0}]}
+        for value in (10, 20, 30)
+    ]
+
+    await asyncio.gather(*(catalog.ensure_job_assets(job) for job in jobs))
+
+    assert connection.peak == 1
 
 
 def test_worker_config_requires_regular_0600_file_owned_by_current_user(tmp_path: Path):
