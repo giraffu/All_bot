@@ -487,6 +487,11 @@ canary 完整提交后同一执行器自动续跑，不再逐批请求令牌；�
 混为同一计数。冻结阶段不下载媒体正文，也不调用 ListObjects 或任何删除；完整来源与
 标准目标 HEAD 在每个内部批次实际删除前后复核。
 
+Bulk v1 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 ETag 时仍要求 HEAD
+精确匹配；历史账本 ETag 为空时，只能以冻结 size 加 R2 Last-Modified 的双重精确匹配
+替代，缺任一项或时间漂移都停止。该兼容策略写入全局 manifest，不适用于旧的单范围
+计划，也不能放宽目标对象的 Copy marker、size 或 ETag 门禁。
+
 真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`，默认并发 4、硬上限
 8；不能复用 COPY、SWITCH、临时清理或通用冷归档令牌。每批执行前重新扫描生产 History
 与迁移账本并复核全部 HEAD，删除后确认旧源缺失且耐久副本仍满足冻结依据：NAS 模式复核

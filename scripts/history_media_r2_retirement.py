@@ -43,6 +43,7 @@ MAX_DELETE_CONCURRENCY = 8
 DURABILITY_NAS_ARCHIVE = "nas-archive"
 DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
 DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
+BULK_SOURCE_IDENTITY_POLICY = "etag-or-size-last-modified"
 RETIREMENT_DDL = """
 create table if not exists analytics_history_media_r2_retirement_plans (
     plan_sha256 char(64) primary key,
@@ -442,6 +443,7 @@ def build_bulk_retirement_plan(
         "asset_coordinate_count": expected_assets,
         "asset_scope_sha256": str(asset_scope_sha256),
         "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
+        "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
         "object_count": len(frozen),
         "total_bytes": sum(int(item["byte_size"]) for item in frozen),
         "canary_object_count": min(canary_size, len(frozen)),
@@ -477,10 +479,19 @@ def validate_retirement_object_heads(
         raise RuntimeError("old source is missing before retirement")
     if int(source_head.get("ContentLength") or -1) != int(candidate["byte_size"]):
         raise RuntimeError("old source size changed")
-    if _strip_etag(source_head.get("ETag")) != _strip_etag(candidate["source_etag"]):
-        raise RuntimeError("old source identity changed")
+    expected_etag = _strip_etag(candidate["source_etag"])
+    if expected_etag:
+        if _strip_etag(source_head.get("ETag")) != expected_etag:
+            raise RuntimeError("old source identity changed")
+    elif candidate.get("source_identity_policy") != BULK_SOURCE_IDENTITY_POLICY:
+        raise RuntimeError("old source ETag evidence is missing")
     expected_modified = candidate.get("source_last_modified")
     actual_modified = source_head.get("LastModified")
+    if not expected_etag and (
+        not isinstance(expected_modified, datetime)
+        or not isinstance(actual_modified, datetime)
+    ):
+        raise RuntimeError("old source Last-Modified evidence is missing")
     if (
         isinstance(expected_modified, datetime)
         and isinstance(actual_modified, datetime)
@@ -1451,10 +1462,12 @@ with scope as materialized (
     join selected_sources s using(source_name,source_key)
 ), source_stats as (
   select source_name,source_key,min(byte_size) byte_size,
-         min(source_etag) source_etag,min(source_last_modified) source_last_modified,
+         min(nullif(trim(both '"' from source_etag),'')) source_etag,
+         min(source_last_modified) source_last_modified,
          count(*)::integer asset_count,
          count(distinct byte_size) byte_size_variants,
-         count(distinct source_etag) source_etag_variants,
+         count(distinct nullif(trim(both '"' from source_etag),''))
+           source_etag_variants,
          count(distinct source_last_modified) source_time_variants
     from all_rows group by source_name,source_key
 ), target_rows as (
@@ -1498,7 +1511,7 @@ async def _prepare_bulk_retirement_stage(
     invalid = int(
         await ledger.fetchval(
             """select count(*) from bulk_retirement_candidates
-                where byte_size_variants<>1 or source_etag_variants<>1
+                where byte_size_variants<>1 or source_etag_variants>1
                    or source_time_variants<>1 or jsonb_array_length(target_facts)=0
                    or exists(
                      select 1 from jsonb_array_elements(target_facts) f
@@ -1610,7 +1623,7 @@ def _candidate_from_bulk_stage(row: Any) -> dict[str, Any]:
         "source_name": str(row["source_name"]),
         "source_key": str(row["source_key"]),
         "byte_size": int(row["byte_size"]),
-        "source_etag": str(row["source_etag"]),
+        "source_etag": str(row["source_etag"] or ""),
         "source_last_modified": row["source_last_modified"],
         "asset_count": int(row["asset_count"]),
         "scope_asset_count": int(row["scope_asset_count"]),
@@ -1799,6 +1812,7 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
             "asset_coordinate_count": asset_count,
             "asset_scope_sha256": asset_scope_sha,
             "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
+            "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
             "object_count": object_count,
             "total_bytes": total_bytes,
             "canary_object_count": min(args.canary_size, object_count),
@@ -2002,6 +2016,9 @@ async def _execute_delete(args: argparse.Namespace) -> None:
                     json.loads(scope_facts)
                     if isinstance(scope_facts, str)
                     else dict(scope_facts)
+                )
+                item["source_identity_policy"] = str(
+                    manifest.get("source_identity_policy") or ""
                 )
             item["archive_verified_asset_count"] = int(item["asset_count"])
         if not is_bulk:
