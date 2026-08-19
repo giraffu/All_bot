@@ -10,18 +10,20 @@ import pytest
 from scripts.history_media_r2_copy_adaptive import (
     CopyHealthWindow,
     CopyLatencyWindow,
+    RATE_LIMIT_COOLDOWN_SECONDS,
     ResourceGate,
     ResourceSample,
     ShardedBatchCoordinator,
     _parser,
     _available_cpu_count,
     _resource_sample,
+    _summarize_request_evidence,
     run_adaptive_copy,
     run_sharded_adaptive_copy,
 )
 
 
-def test_adaptive_copy_cli_defaults_to_128_with_object_retries():
+def test_adaptive_copy_cli_defaults_to_bucket_safe_shared_capacity():
     args = _parser().parse_args(
         [
             "--plan-sha256",
@@ -33,12 +35,82 @@ def test_adaptive_copy_cli_defaults_to_128_with_object_retries():
         ]
     )
 
-    assert args.copy_concurrency == 128
+    assert args.copy_concurrency == 32
+    assert args.maximum_copy_concurrency == 32
+    assert RATE_LIMIT_COOLDOWN_SECONDS == 60
+    assert not hasattr(args, "rate_limit_cooldown_seconds")
     assert args.object_max_retries == 5
     assert args.shard_count == 10
-    assert args.shard_size == 1_000
+    assert args.shard_size == 100
     assert args.retry_concurrency == 16
     assert not hasattr(args, "r2_p95_lower_ms")
+
+    with pytest.raises(SystemExit):
+        _parser().parse_args(
+            [
+                "--plan-sha256",
+                "a" * 64,
+                "--confirm",
+                "COPY_HISTORY_MEDIA_" + "a" * 64,
+                "--config",
+                "/secure/config.json",
+                "--copy-concurrency",
+                "64",
+            ]
+        )
+
+
+def test_request_evidence_summary_is_low_cardinality_and_contains_no_raw_id():
+    raw_request_id = "provider-request-id-must-not-be-logged"
+    summary = _summarize_request_evidence(
+        [
+            {
+                "kind": "rate_limit",
+                "stage": "copy_object",
+                "http_status": 429,
+                "provider_request_id_sha256": "a" * 64,
+                "raw_request_id": raw_request_id,
+            },
+            {"kind": "ok"},
+        ]
+    )
+
+    assert summary == {
+        "request_error_kinds": {"rate_limit": 1},
+        "request_error_stages": {"copy_object": 1},
+        "http_status_counts": {"429": 1},
+        "provider_request_fingerprint_sample": ["a" * 64],
+        "rate_limit_cooldown_seconds": None,
+        "rate_limit_new_concurrency": None,
+    }
+    assert raw_request_id not in json.dumps(summary)
+
+
+@pytest.mark.asyncio
+async def test_sharded_coordinator_caps_all_lanes_at_explicit_bucket_maximum():
+    async def execute_batch(_args):
+        return {"remaining": 0, "copied_objects": 0}
+
+    args = SimpleNamespace(
+        plan_sha256="f" * 64,
+        confirm="COPY_HISTORY_MEDIA_" + "f" * 64,
+        config="/tmp/config.json",
+        limit=100,
+        shard_count=10,
+        shard_size=100,
+        retry_concurrency=16,
+        copy_concurrency=32,
+        maximum_copy_concurrency=32,
+        max_pool_connections=192,
+    )
+    coordinator = ShardedBatchCoordinator(args, execute_batch=execute_batch)
+    try:
+        assert coordinator.maximum_concurrency == 32
+        assert coordinator.limiter.limit == 32
+        assert coordinator.bulk_workers == 16
+        assert coordinator.retry_workers == 16
+    finally:
+        await coordinator.close()
 
 
 @pytest.mark.asyncio

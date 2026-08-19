@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import ssl
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -79,6 +81,123 @@ from scripts.history_media_r2_migration import (
     validate_resume_identity,
     validate_switch_gate,
 )
+
+
+def test_rate_limit_immediately_lowers_shared_limiter_and_starts_cooldown(monkeypatch):
+    import scripts.history_media_r2_migration as module
+
+    raw_request_id = "raw-provider-request-id"
+    error = ClientError(
+        {
+            "Error": {
+                "Code": "SlowDown",
+                "Message": "object-key and endpoint must stay private",
+            },
+            "ResponseMetadata": {
+                "HTTPStatusCode": 429,
+                "RequestId": raw_request_id,
+            },
+        },
+        "CopyObject",
+    )
+
+    def copy_object(_client, **_kwargs):
+        raise module.R2CopyOperationError("copy_object", error)
+
+    monkeypatch.setattr(module, "server_side_copy_r2_object", copy_object)
+    limiter = AdaptiveConcurrencyLimiter(limit=32)
+
+    result = _timed_server_side_copy_attempt(
+        object(),
+        concurrency_limiter=limiter,
+        rate_limit_cooldown_seconds=60,
+    )
+
+    assert result["error"] is not None
+    assert result["request_event"] == {
+        "at": result["request_event"]["at"],
+        "kind": "rate_limit",
+        "copy_concurrency": 32,
+        "stage": "copy_object",
+        "http_status": 429,
+        "provider_request_id_sha256": hashlib.sha256(
+            raw_request_id.encode()
+        ).hexdigest(),
+        "rate_limit_cooldown_seconds": 60,
+        "rate_limit_new_concurrency": 16,
+    }
+    assert limiter.limit == 16
+    assert limiter.cooldown_remaining_seconds > 59
+    serialized = json.dumps(result["request_event"])
+    assert raw_request_id not in serialized
+    assert "object-key" not in serialized
+    assert "endpoint" not in serialized
+
+
+def test_shared_rate_limit_cooldown_blocks_new_slots_for_every_worker():
+    limiter = AdaptiveConcurrencyLimiter(limit=32)
+    limiter.record_rate_limit(cooldown_seconds=0.05)
+    entered: list[float] = []
+    started = time.monotonic()
+
+    def acquire_slot() -> None:
+        with limiter.slot():
+            entered.append(time.monotonic() - started)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(acquire_slot) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=1)
+
+    assert limiter.limit == 16
+    assert min(entered) >= 0.04
+    assert limiter.peak_active <= 2
+
+
+def test_server_side_copy_labels_provider_failure_stage_without_key_leakage():
+    class Client:
+        def head_object(self, *, Bucket, Key):
+            if Key == "private-source-key":
+                return _head(size=3, etag="source")
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def copy_object(self, **_kwargs):
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "SlowDown",
+                        "Message": "private-target-key at https://private.example",
+                    },
+                    "ResponseMetadata": {
+                        "HTTPStatusCode": 429,
+                        "RequestId": "provider-id",
+                    },
+                },
+                "CopyObject",
+            )
+
+    with pytest.raises(Exception) as captured:
+        server_side_copy_r2_object(
+            Client(),
+            bucket="user-data-prod",
+            source_key="private-source-key",
+            target_key="private-target-key",
+            expected_size=3,
+            expected_last_modified=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            expected_etag="source",
+            copy_plan_sha256="d" * 64,
+        )
+
+    error = captured.value
+    assert type(error).__name__ == "R2CopyOperationError"
+    assert error.stage == "copy_object"
+    assert classify_copy_request_failure(error) == "rate_limit"
+    assert "private-source-key" not in str(error)
+    assert "private-target-key" not in str(error)
+    assert "private.example" not in str(error)
 
 
 def _copy_head(*, marker: str | None, size: int = 100, etag: str = "etag"):

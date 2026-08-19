@@ -80,7 +80,8 @@ def is_transient_copy_failure(error_text: str) -> bool:
 
 def classify_copy_request_failure(exc: BaseException) -> str:
     """Return a low-cardinality health class without exposing object identity."""
-    error_text = f"{type(exc).__name__}: {exc}"
+    cause = getattr(exc, "cause", exc)
+    error_text = f"{type(cause).__name__}: {cause}"
     if re.search(r"429|TooManyRequests|SlowDown", error_text, re.IGNORECASE):
         return "rate_limit"
     if re.search(
@@ -109,6 +110,79 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     if is_transient_copy_failure(error_text):
         return "other_transient"
     return "fatal"
+
+
+_COPY_OPERATION_STAGES = {
+    "source_head_before",
+    "target_head_before",
+    "copy_object",
+    "multipart_create",
+    "multipart_part_copy",
+    "multipart_complete",
+    "multipart_abort",
+    "source_head_after",
+    "target_head_after",
+}
+
+
+def copy_request_evidence(exc: BaseException) -> dict[str, Any]:
+    """Return support-safe provider evidence without keys, URLs, or raw request IDs."""
+
+    cause = getattr(exc, "cause", exc)
+    response = getattr(cause, "response", None)
+    metadata = dict(response.get("ResponseMetadata") or {}) if response else {}
+    result: dict[str, Any] = {"kind": classify_copy_request_failure(exc)}
+    stage = getattr(exc, "stage", None)
+    if stage in _COPY_OPERATION_STAGES:
+        result["stage"] = stage
+    status = metadata.get("HTTPStatusCode")
+    if isinstance(status, int) and 100 <= status <= 599:
+        result["http_status"] = status
+    request_id = metadata.get("RequestId")
+    if request_id:
+        result["provider_request_id_sha256"] = hashlib.sha256(
+            str(request_id).encode()
+        ).hexdigest()
+    return result
+
+
+class R2CopyOperationError(RuntimeError):
+    """Sanitized stage wrapper that retains the original exception for classification."""
+
+    def __init__(self, stage: str, cause: BaseException) -> None:
+        if stage not in _COPY_OPERATION_STAGES:
+            raise ValueError("invalid R2 Copy operation stage")
+        self.stage = stage
+        self.cause = cause
+        evidence = copy_request_evidence(self)
+        safe_token = {
+            "rate_limit": "TooManyRequests",
+            "server_5xx": "ServiceUnavailable",
+            "timeout": "ReadTimeoutError",
+            "connection_transient": "ConnectionClosedError",
+            "other_transient": "RequestTimeout",
+            "fatal": "FatalError",
+        }[evidence["kind"]]
+        fields = [f"stage={stage}", f"class={safe_token}"]
+        if "http_status" in evidence:
+            fields.append(f"http_status={evidence['http_status']}")
+        if "provider_request_id_sha256" in evidence:
+            fields.append(
+                "provider_request_id_sha256="
+                + str(evidence["provider_request_id_sha256"])
+            )
+        super().__init__("R2_COPY_OPERATION_FAILED " + " ".join(fields))
+
+
+def _call_r2_copy_operation(
+    stage: str, operation: Callable[..., Any], /, *args: Any, **kwargs: Any
+) -> Any:
+    try:
+        return operation(*args, **kwargs)
+    except R2CopyOperationError:
+        raise
+    except BaseException as exc:
+        raise R2CopyOperationError(stage, exc) from exc
 
 
 @dataclass
@@ -154,6 +228,7 @@ class AdaptiveConcurrencyLimiter:
         self._condition = threading.Condition()
         self._limit = int(limit)
         self._active = 0
+        self._cooldown_until = 0.0
         self.peak_active = 0
 
     @property
@@ -168,11 +243,39 @@ class AdaptiveConcurrencyLimiter:
             self._limit = int(limit)
             self._condition.notify_all()
 
+    @property
+    def cooldown_remaining_seconds(self) -> float:
+        with self._condition:
+            return max(0.0, self._cooldown_until - time.monotonic())
+
+    def record_rate_limit(
+        self, *, cooldown_seconds: float, minimum_concurrency: int = 16
+    ) -> int:
+        if cooldown_seconds <= 0:
+            raise ValueError("rate limit cooldown must be positive")
+        if minimum_concurrency <= 0:
+            raise ValueError("minimum Copy concurrency must be positive")
+        with self._condition:
+            if self._limit > minimum_concurrency:
+                self._limit = max(minimum_concurrency, self._limit // 2)
+            self._cooldown_until = max(
+                self._cooldown_until, time.monotonic() + cooldown_seconds
+            )
+            self._condition.notify_all()
+            return self._limit
+
     @contextmanager
     def slot(self):
         with self._condition:
-            while self._active >= self._limit:
-                self._condition.wait()
+            while True:
+                cooldown_remaining = self._cooldown_until - time.monotonic()
+                if cooldown_remaining > 0:
+                    self._condition.wait(timeout=cooldown_remaining)
+                    continue
+                if self._active >= self._limit:
+                    self._condition.wait()
+                    continue
+                break
             self._active += 1
             self.peak_active = max(self.peak_active, self._active)
         try:
@@ -1780,7 +1883,9 @@ def server_side_copy_r2_object(
     multipart_part_size: int = MULTIPART_COPY_PART_SIZE,
 ) -> dict[str, Any]:
     """Copy one immutable object inside R2 without transferring its body."""
-    source_head = _head_s3_identity(client, bucket, source_key)
+    source_head = _call_r2_copy_operation(
+        "source_head_before", _head_s3_identity, client, bucket, source_key
+    )
     if source_head is None:
         raise RuntimeError("planned source disappeared before server-side copy")
     source_size = int(source_head["ContentLength"])
@@ -1790,7 +1895,9 @@ def server_side_copy_r2_object(
         raise RuntimeError("planned source changed before server-side copy")
     if expected_etag and source_etag != _normalize_etag(expected_etag):
         raise RuntimeError("planned source ETag changed before server-side copy")
-    target_before = _head_s3_identity(client, bucket, target_key)
+    target_before = _call_r2_copy_operation(
+        "target_head_before", _head_s3_identity, client, bucket, target_key
+    )
     if target_before is not None:
         metadata = {
             str(key).lower(): str(value)
@@ -1814,7 +1921,9 @@ def server_side_copy_r2_object(
     destination_race = False
     if not multipart:
         try:
-            client.copy_object(
+            _call_r2_copy_operation(
+                "copy_object",
+                client.copy_object,
                 Bucket=bucket,
                 Key=target_key,
                 CopySource={"Bucket": bucket, "Key": source_key},
@@ -1826,8 +1935,13 @@ def server_side_copy_r2_object(
                     "x-amz-metadata-directive": "MERGE",
                 },
             )
-        except ClientError as exc:
-            code = str((exc.response or {}).get("Error", {}).get("Code", ""))
+        except R2CopyOperationError as exc:
+            cause = exc.cause
+            code = (
+                str((cause.response or {}).get("Error", {}).get("Code", ""))
+                if isinstance(cause, ClientError)
+                else ""
+            )
             if code not in {"412", "PreconditionFailed"}:
                 raise
             destination_race = True
@@ -1839,7 +1953,9 @@ def server_side_copy_r2_object(
             raise RuntimeError("multipart server-side copy would exceed 10000 parts")
         metadata = dict(source_head.get("Metadata") or {})
         metadata[COPY_PLAN_METADATA_KEY] = copy_plan_sha256
-        created = client.create_multipart_upload(
+        created = _call_r2_copy_operation(
+            "multipart_create",
+            client.create_multipart_upload,
             Bucket=bucket,
             Key=target_key,
             Metadata=metadata,
@@ -1851,7 +1967,9 @@ def server_side_copy_r2_object(
             for part_number in range(1, part_count + 1):
                 start = (part_number - 1) * multipart_part_size
                 end = min(source_size, start + multipart_part_size) - 1
-                copied = client.upload_part_copy(
+                copied = _call_r2_copy_operation(
+                    "multipart_part_copy",
+                    client.upload_part_copy,
                     Bucket=bucket,
                     Key=target_key,
                     UploadId=upload_id,
@@ -1865,20 +1983,30 @@ def server_side_copy_r2_object(
                         "PartNumber": part_number,
                     }
                 )
-            client.complete_multipart_upload(
+            _call_r2_copy_operation(
+                "multipart_complete",
+                client.complete_multipart_upload,
                 Bucket=bucket,
                 Key=target_key,
                 UploadId=upload_id,
                 MultipartUpload={"Parts": parts},
             )
         except Exception:
-            client.abort_multipart_upload(
-                Bucket=bucket, Key=target_key, UploadId=upload_id
+            _call_r2_copy_operation(
+                "multipart_abort",
+                client.abort_multipart_upload,
+                Bucket=bucket,
+                Key=target_key,
+                UploadId=upload_id,
             )
             raise
 
-    source_after = _head_s3_identity(client, bucket, source_key)
-    target_after = _head_s3_identity(client, bucket, target_key)
+    source_after = _call_r2_copy_operation(
+        "source_head_after", _head_s3_identity, client, bucket, source_key
+    )
+    target_after = _call_r2_copy_operation(
+        "target_head_after", _head_s3_identity, client, bucket, target_key
+    )
     if source_after is None or target_after is None:
         raise RuntimeError(
             "server-side copy did not leave both source and target present"
@@ -1993,6 +2121,7 @@ def _timed_server_side_copy_attempt(
     client: Any,
     *,
     concurrency_limiter: AdaptiveConcurrencyLimiter,
+    rate_limit_cooldown_seconds: float = 60.0,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run one CopyObject attempt under the shared live concurrency limit."""
@@ -2014,6 +2143,13 @@ def _timed_server_side_copy_attempt(
             },
         }
     except BaseException as exc:  # noqa: BLE001 - classify at object boundary
+        evidence = copy_request_evidence(exc)
+        if evidence["kind"] == "rate_limit":
+            new_limit = concurrency_limiter.record_rate_limit(
+                cooldown_seconds=rate_limit_cooldown_seconds
+            )
+            evidence["rate_limit_cooldown_seconds"] = rate_limit_cooldown_seconds
+            evidence["rate_limit_new_concurrency"] = new_limit
         return {
             "outcome": None,
             "error": exc,
@@ -2022,8 +2158,8 @@ def _timed_server_side_copy_attempt(
             ),
             "request_event": {
                 "at": time.monotonic(),
-                "kind": classify_copy_request_failure(exc),
                 "copy_concurrency": attempt_concurrency,
+                **evidence,
             },
         }
 
@@ -5650,6 +5786,9 @@ async def _execute_copy(args: argparse.Namespace) -> dict[str, Any]:
             return _timed_server_side_copy_attempt(
                 target_client,
                 concurrency_limiter=args.concurrency_limiter,
+                rate_limit_cooldown_seconds=float(
+                    getattr(args, "rate_limit_cooldown_seconds", 60.0)
+                ),
                 bucket=BUCKET,
                 source_key=str(group[0]["source_key"]),
                 target_key=str(group[0]["target_key"]),

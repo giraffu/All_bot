@@ -343,12 +343,14 @@ size、LastModified、ETag，并使用 R2 目标不存在条件原子拒绝覆�
 1.5 倍并向上取整。直接执行入口的线程共享一个只执行 HEAD/CopyObject 的 boto3
 client，数据库结果仍串行提交；每批报告 Copy-only 对象/秒、R2 对象操作延迟和数据库
 提交延迟。`history_media_r2_copy_adaptive.py`
-默认从 128 起步并仅在 128→64→32→16 档位调整：对象级瞬态错误先重试；
-429/SlowDown 立即降一档；timeout、reset 和 5xx 统一进入最近请求错误率，单个错误不降档。
+把所有 lane 的生产总并发固定在 16–32，默认从 32 起步：对象级瞬态错误先重试；
+429/SlowDown 在对象尝试完成边界立即把共享 limiter 降至 16，并对全部 lane 开启
+60 秒桶级冷却，新尝试在冷却结束前不得取得 slot；timeout、reset 和 5xx 统一进入
+最近请求错误率，单个错误不降档。
 观察已覆盖至少 200 个请求或 30 秒后，瞬态错误率超过 0.5% 才降档，低于 0.2% 可回升
 一档；观察集最多保留最近 1,000 个请求和 60 秒，不要求恰好收集 1,000 个请求。每次
 真实降档或回升后都清空错误率与延迟观察窗口，新档位必须使用新样本决策。R2 p95 和单对象
-max 延迟只作观测，不独立改变全局并发，因此单个超长尾不会触发降档。最高仍为 128。这些阈值
+max 延迟只作观测，不独立改变全局并发，因此单个超长尾不会触发降档。最高为 32。这些阈值
 属于 artifact 代码身份，不提供生产 CLI 热调参入口。非瞬态错误
 直接暂停。SIGTERM/SIGINT 只登记
 graceful pause，当前批次完成并
@@ -356,10 +358,11 @@ graceful pause，当前批次完成并
 整机可用容量百分比判断，日志同时保留原始进程 CPU 百分比、容量百分比和 CPU 数。
 连续三批容量 CPU 超过 70%、FD 超过软上限 50% 或数据库提交 p95 相对 canary 基线
 显著恶化时，于当前批次提交后暂停。自适应入口以一个 supervisor 管理十条逻辑 lane，
-新的 Copy successor 默认冻结为每批 1,000 个资产；每条 lane 完成一个批次便立即领取
-同余序列的下一批，不等待其它 lane 的长尾。所有 lane 共享一个动态总并发门禁，默认
-总并发 128 由 112 个 bulk worker 和 16 个 retry worker 共同组成，并非每条 lane 各自
-128。总连接池按 lane 划分且总容量不低于总并发；每条 lane 每批使用独立 client 并在
+新的 Copy successor 仍冻结为每批 1,000 个资产；执行器每条 lane 默认每次只领取
+100 个资产，完成后便立即领取同余序列的下一批，不等待其它 lane 的长尾。所有 lane
+共享一个动态总并发门禁，默认总并发 32 由 16 个 bulk worker 和 16 个 retry worker
+共同组成，并非每条 lane 各自 32。总连接池按 lane 划分且总容量不低于总并发；每条
+lane 每批使用独立 client 并在
 批次成功、失败或取消后关闭，supervisor 退出时统一关闭 bulk/retry 线程池。首尝试与
 瞬态重试分属独立有界线程池，SDK 在
 该模式只执行一次网络尝试，外层重试负责 1、2、4、8、16 秒退避，避免 SDK 隐藏重试
@@ -434,7 +437,12 @@ lane 重复扫描数百万行。每个对象最多做 5 次瞬时错误重试，
 再用该 lane 的尾部样本代替全局流量。每个事件保存取得并发 slot 时的实际档位；档位改变后，
 仍在收口的旧 epoch 事件只用于对象回执和观测，不得进入新窗口或连续触发多次降档。
 延迟长尾只记录不降档。连续系统性高错误窗口由 circuit breaker 暂停；单个瞬态错误不触发
-全局降速。
+全局降速。任一 lane 捕获 429/SlowDown 时无需等待这 100 个资产收口：共享 limiter
+立即降到 16，并以最后一次限流事件为起点延长 60 秒桶冷却；已经在途的请求允许收口，
+所有尚未取得 slot 的 bulk/retry worker 一起等待。事件和日志不得保存对象 key、endpoint
+或原始 provider request ID，只记录 `source_head_before`、`target_head_before`、
+`copy_object`、`source_head_after`、`target_head_after` 等低基数阶段、错误类别、HTTP
+状态和 request ID SHA-256 样本，供 R2 支持工单关联。
 
 旧 manifest、marker 与确认值永远不可热改或跨 artifact 复用。`plan-copy` 显式提供
 `--supersedes-plan-sha256` 时分两类：未执行计划可整体替换；已有进度的计划必须先让
