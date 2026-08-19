@@ -161,7 +161,9 @@ Worker agent、MP4、24fps、音轨、尾帧、显存/OOM/Xid；还必须对全�
 `scripts/minimax_h3_prod_smoke.py` 使用 FFmpeg `signalstats` 扫描全部帧；所有帧的
 `YAVG <= 20` 且 `YMAX <= 32` 时按全黑失败，缺少亮度元数据同样 fail closed。H3 profile 保持
 `reset_comfy_memory_before_task`、`--fast-disk --disable-pinned-memory` 和
-DynamicVRAM；运行证据写 XDG history/evidence，不回写本文。
+`--disable-dynamic-vram`。H3 使用 ComfyUI 标准显存管理；禁止启用会在当前
+PyTorch/RTX 5090 组合上设置半卡进程上限的 AIMDO allocator。运行证据写 XDG
+history/evidence，不回写本文。
 
 ## 最小验证
 
