@@ -63,7 +63,8 @@ PROBE_MAX_CONCURRENCY = 128
 CANDIDATE_ALGORITHM_VERSION = "history-r2-candidates/v1"
 R2_COPY_PROXY_URL = "http://127.0.0.1:7890"
 TRANSIENT_COPY_FAILURE_PATTERN = re.compile(
-    r"EndpointConnectionError|ConnectionClosedError|ReadTimeoutError|"
+    r"EndpointConnectionError|ConnectionClosedError|ProxyConnectionError|ProxyError|"
+    r"Failed to connect to proxy URL|ReadTimeoutError|"
     r"ConnectTimeoutError|TooManyRequests|SlowDown|InternalError|"
     r"ServiceUnavailable|RequestTimeout|ProtocolError|RemoteDisconnected|"
     r"Connection reset by peer|HTTPStatusCode[^0-9]*(?:429|500|502|503|504)|"
@@ -94,7 +95,8 @@ def classify_copy_request_failure(exc: BaseException) -> str:
     ):
         return "timeout"
     if re.search(
-        r"EndpointConnection|ConnectionClosed|ProtocolError|RemoteDisconnected|"
+        r"EndpointConnection|ConnectionClosed|ProxyConnection|ProxyError|"
+        r"Failed to connect to proxy URL|ProtocolError|RemoteDisconnected|"
         r"Connection reset by peer",
         error_text,
         re.IGNORECASE,
@@ -956,6 +958,21 @@ def _normalized_frozen_copy_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _failed_copy_reconciliation_row(row: dict[str, Any]) -> dict[str, Any]:
+    frozen = _plan_row(dict(row))
+    frozen.update(
+        {
+            "id": int(row["id"]),
+            "copy_plan_sha256": str(row["copy_plan_sha256"]),
+            "error_code": str(row.get("error_code") or ""),
+            "error_detail_sha256": hashlib.sha256(
+                str(row.get("error_detail") or "").encode()
+            ).hexdigest(),
+        }
+    )
+    return frozen
+
+
 def build_successor_copy_plan(
     *,
     predecessor_manifest: dict[str, Any] | None,
@@ -1563,6 +1580,24 @@ def _validate_runtime_identity(
         raise RuntimeError("migration runtime identity changed")
 
 
+def _reconciliation_runtime_identity(
+    expected: dict[str, Any], *, artifact_digest: str, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind reconciliation to new code while preserving the stopped plan config."""
+
+    actual = _runtime_identity(artifact_digest=artifact_digest, config=config)
+    stable_fields = {
+        "bucket",
+        "candidate_algorithm",
+        "target_endpoint_sha256",
+        "source_endpoint_sha256",
+        "r2_transport",
+    }
+    if any(expected.get(field) != actual.get(field) for field in stable_fields):
+        raise RuntimeError("failed Copy reconciliation runtime configuration changed")
+    return actual
+
+
 def _process_r2_custom_arguments(
     params: dict[str, Any], context: dict[str, Any], **_kwargs: Any
 ) -> None:
@@ -1700,6 +1735,31 @@ def classify_copy_predecessor_recovery(
     if marker == predecessor_plan_sha256:
         return "predecessor"
     raise RuntimeError("copy recovery target has unrecognized copy plan marker")
+
+
+def classify_failed_copy_reconciliation(
+    *,
+    source_head: dict[str, Any] | None,
+    target_head: dict[str, Any] | None,
+    expected_size: int,
+    expected_last_modified: datetime,
+    expected_etag: str,
+    current_plan_sha256: str,
+) -> str:
+    """Reconcile a failed Copy using HEAD and only the exact current marker."""
+
+    outcome = classify_copy_predecessor_recovery(
+        source_head=source_head,
+        target_head=target_head,
+        expected_size=expected_size,
+        expected_last_modified=expected_last_modified,
+        expected_etag=expected_etag,
+        current_plan_sha256=current_plan_sha256,
+        predecessor_plan_sha256="not-an-accepted-plan-marker",
+    )
+    if outcome not in {"missing", "current"}:
+        raise RuntimeError("failed Copy reconciliation marker is not current")
+    return outcome
 
 
 def server_side_copy_r2_object(
@@ -4324,6 +4384,219 @@ async def _collect_copy_predecessor_recovery(
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+async def _collect_failed_copy_reconciliation(
+    groups: list[list[dict[str, Any]]],
+    *,
+    client: Any,
+    current_plan_sha256: str,
+    concurrency: int,
+    head_func: Any = _head_s3_identity,
+) -> list[tuple[list[dict[str, Any]], str, dict[str, Any] | None]]:
+    """HEAD both sides of stopped failed objects with a bounded private pool."""
+
+    if not 1 <= concurrency <= 128:
+        raise ValueError("failed Copy reconciliation concurrency must be between 1 and 128")
+    loop = asyncio.get_running_loop()
+
+    def inspect_group(
+        group: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], str, dict[str, Any] | None]:
+        row = group[0]
+        source_head = head_func(client, BUCKET, str(row["source_key"]))
+        target_head = head_func(client, BUCKET, str(row["target_key"]))
+        outcome = classify_failed_copy_reconciliation(
+            source_head=source_head,
+            target_head=target_head,
+            expected_size=int(row["byte_size"]),
+            expected_last_modified=row["source_last_modified"],
+            expected_etag=str(row["source_etag"]),
+            current_plan_sha256=current_plan_sha256,
+        )
+        return group, outcome, target_head
+
+    executor = ThreadPoolExecutor(
+        max_workers=concurrency,
+        thread_name_prefix="history-r2-failed-copy-head",
+    )
+    futures: list[asyncio.Future[Any]] = []
+    try:
+        futures = [
+            loop.run_in_executor(executor, inspect_group, group) for group in groups
+        ]
+        return list(await asyncio.gather(*futures))
+    except BaseException:
+        for future in futures:
+            future.cancel()
+        await asyncio.gather(*futures, return_exceptions=True)
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+async def _reconcile_failed_copy_and_plan_successor(args: argparse.Namespace) -> None:
+    """HEAD-reconcile transient failed rows, then freeze an unexecuted successor."""
+
+    config = _load_secure_config(Path(args.config))
+    if config.get("target", {}).get("bucket") != BUCKET:
+        raise RuntimeError("target is restricted to user-data-prod")
+    transport = _r2_transport(config)
+    _validate_r2_transport_runtime(transport)
+    max_pool_connections = _resolve_copy_max_pool_connections(args.concurrency, None)
+    client = _s3_client(
+        config["target"],
+        max_pool_connections=max_pool_connections,
+        transport=transport,
+    )
+    conn = await _connect_env("LOCAL_ANALYTICS_DATABASE_URL")
+    run_id = uuid.UUID(args.run_id)
+    try:
+        current_run_id, current = await _load_plan(conn, args.plan_sha256, "copy")
+        if current_run_id != run_id:
+            raise RuntimeError("failed Copy reconciliation plan belongs to another run")
+        runtime_identity = _reconciliation_runtime_identity(
+            dict(current.get("runtime_identity") or {}),
+            artifact_digest=args.artifact_digest,
+            config=config,
+        )
+        batch_states = await conn.fetch(
+            """select status,count(*) batches
+                 from analytics_history_media_migration_plan_batches
+                where plan_sha256=$1 group by status""",
+            args.plan_sha256,
+        )
+        if not batch_states or any(
+            row["status"] not in {"pending", "completed"} for row in batch_states
+        ):
+            raise RuntimeError("failed Copy reconciliation plan is not safely stopped")
+        rows = [
+            dict(row)
+            for row in await conn.fetch(
+                """select id,history_id,role,ordinal,original_ref,target_key,
+                          source_name,source_key,source_last_modified,source_etag,
+                          source_sha256,target_sha256,byte_size,status,
+                          history_manifest_sha256,error_code,error_detail,
+                          copy_plan_sha256,copy_completed_at
+                     from analytics_history_media_r2_migrations
+                    where run_id=$1 and copy_plan_sha256=$2
+                      and status='failed' and copy_completed_at is null
+                    order by id""",
+                run_id,
+                args.plan_sha256,
+            )
+        ]
+        if not rows:
+            raise RuntimeError("failed Copy reconciliation found no failed rows")
+        if any(
+            row.get("error_code") != "COPY_FAILED"
+            or not is_transient_copy_failure(str(row.get("error_detail") or ""))
+            for row in rows
+        ):
+            raise RuntimeError("failed Copy reconciliation includes a non-transient failure")
+        frozen_digest = StreamingJsonArraySha256()
+        for row in rows:
+            frozen_digest.add(_failed_copy_reconciliation_row(row))
+        frozen_rowset_sha256 = frozen_digest.hexdigest()
+        outcomes = await _collect_failed_copy_reconciliation(
+            group_copy_candidates(rows),
+            client=client,
+            current_plan_sha256=args.plan_sha256,
+            concurrency=args.concurrency,
+        )
+        object_outcomes = Counter(outcome for _group, outcome, _head in outcomes)
+        asset_outcomes: Counter[str] = Counter()
+        async with conn.transaction():
+            locked = [
+                dict(row)
+                for row in await conn.fetch(
+                    """select id,history_id,role,ordinal,original_ref,target_key,
+                              source_name,source_key,source_last_modified,source_etag,
+                              source_sha256,target_sha256,byte_size,status,
+                              history_manifest_sha256,error_code,error_detail,
+                              copy_plan_sha256,copy_completed_at
+                         from analytics_history_media_r2_migrations
+                        where id=any($1::bigint[]) order by id for update""",
+                    [int(row["id"]) for row in rows],
+                )
+            ]
+            locked_digest = StreamingJsonArraySha256()
+            for row in locked:
+                locked_digest.add(_failed_copy_reconciliation_row(row))
+            if (
+                len(locked) != len(rows)
+                or locked_digest.hexdigest() != frozen_rowset_sha256
+                or any(
+                    row["status"] != "failed"
+                    or str(row["copy_plan_sha256"]) != args.plan_sha256
+                    or row["copy_completed_at"] is not None
+                    for row in locked
+                )
+            ):
+                raise RuntimeError("failed Copy reconciliation ledger rowset changed")
+            for group, outcome, target_head in outcomes:
+                ids = [int(row["id"]) for row in group]
+                asset_outcomes[outcome] += len(ids)
+                if outcome == "missing":
+                    result = await conn.execute(
+                        """update analytics_history_media_r2_migrations
+                              set status='copy_required',error_code=null,error_detail=null,
+                                  updated_at=now()
+                            where id=any($1::bigint[]) and copy_plan_sha256=$2
+                              and status='failed' and copy_completed_at is null""",
+                        ids,
+                        args.plan_sha256,
+                    )
+                else:
+                    result = await conn.execute(
+                        """update analytics_history_media_r2_migrations
+                              set status='copied_verified',target_sha256=source_sha256,
+                                  target_etag=$2,copy_method='r2_copy_object_reconciled_failed',
+                                  error_code=null,error_detail=null,
+                                  copy_completed_at=coalesce(copy_completed_at,now()),
+                                  updated_at=now()
+                            where id=any($1::bigint[]) and copy_plan_sha256=$3
+                              and status='failed' and copy_completed_at is null""",
+                        ids,
+                        _normalize_etag(target_head.get("ETag")),
+                        args.plan_sha256,
+                    )
+                if result != f"UPDATE {len(ids)}":
+                    raise RuntimeError("failed Copy reconciliation ledger CAS changed")
+        receipt = {
+            "schema": "allbot-history-media-r2-failed-copy-reconciliation/v1",
+            "run_id": str(run_id),
+            "copy_plan_sha256": args.plan_sha256,
+            "failed_asset_count": len(rows),
+            "failed_rowset_sha256": frozen_rowset_sha256,
+            "asset_outcomes": dict(sorted(asset_outcomes.items())),
+            "object_outcomes": dict(sorted(object_outcomes.items())),
+            "runtime_identity": runtime_identity,
+            "concurrency": args.concurrency,
+            "max_pool_connections": max_pool_connections,
+            "operations": ["HeadObject"],
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        receipt["receipt_sha256"] = _sha256_json(receipt)
+        receipt_output = Path(args.receipt_output)
+        receipt_output.parent.mkdir(parents=True, exist_ok=True)
+        receipt_output.write_bytes(_canonical_json(receipt) + b"\n")
+        os.chmod(receipt_output, 0o600)
+        print(json.dumps(receipt), flush=True)
+        await _create_plan(
+            SimpleNamespace(
+                run_id=str(run_id),
+                parent_plan_sha256=current["parent_probe_plan_sha256"],
+                config=args.config,
+                artifact_digest=args.artifact_digest,
+                output=args.next_plan_output,
+                supersedes_plan_sha256=args.plan_sha256,
+            ),
+            plan_type="copy",
+        )
+    finally:
+        await conn.close()
+        client.close()
+
+
 async def _execute_copy_predecessor_recovery(args: argparse.Namespace) -> None:
     config = _load_secure_config(Path(args.config))
     if config.get("target", {}).get("bucket") != BUCKET:
@@ -6148,6 +6421,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     copy_recovery.add_argument("--receipt-output", required=True)
     copy_recovery.add_argument("--next-plan-output", required=True)
+    reconcile_failures = commands.add_parser("reconcile-copy-failures")
+    reconcile_failures.add_argument("--run-id", required=True)
+    reconcile_failures.add_argument("--plan-sha256", required=True)
+    reconcile_failures.add_argument("--config", required=True)
+    reconcile_failures.add_argument("--artifact-digest", required=True)
+    reconcile_failures.add_argument(
+        "--concurrency", type=_bounded_copy_concurrency, default=16
+    )
+    reconcile_failures.add_argument("--receipt-output", required=True)
+    reconcile_failures.add_argument("--next-plan-output", required=True)
     switch = commands.add_parser("execute-switch")
     switch.add_argument("--plan-sha256", required=True)
     switch.add_argument("--confirm", required=True)
@@ -6179,6 +6462,8 @@ async def _main_async(args: argparse.Namespace) -> None:
         await _execute_copy(args)
     elif args.command == "execute-copy-recovery":
         await _execute_copy_predecessor_recovery(args)
+    elif args.command == "reconcile-copy-failures":
+        await _reconcile_failed_copy_and_plan_successor(args)
     elif args.command == "plan-switch":
         await _create_plan(args, plan_type="switch")
     elif args.command == "execute-switch":

@@ -393,6 +393,19 @@ direct predecessor 时，才在一个本地事务恢复账本归属。任意其�
 Copy 仍需该 successor 的新 COPY 令牌。该协议不接受任意旧计划 marker，也不扩展历史
 marker 例外，不调用 GET、ListObjects、CopyObject、DELETE 或生产 History 更新。
 
+安全停止的当前 Copy 计划若只残留对象级瞬时 `failed`，使用
+`reconcile-copy-failures` 做无额外阶段令牌的修复性对账；该入口不具备 Copy 权限，
+只对精确计划仍为 `failed` 且错误文本可由当前 artifact 证明为瞬时异常的行执行来源与
+目标 HEAD。`ProxyConnectionError`、urllib3 `ProxyError` 和“无法连接冻结代理”属于
+对象级连接瞬时错误，进入既有指数退避，不再直接终止整个执行器。对账冻结 failed
+行集及错误详情摘要，复核原计划 bucket、endpoint 与 transport 指纹，同时把新代码和
+artifact 身份写入 0600 回执；来源 size/Last-Modified/ETag 必须未变。目标缺失时仅把
+行恢复为 `copy_required`，目标存在时只接受 size/ETag 相同且 marker 精确属于当前计划，
+并恢复为 `copied_verified`；predecessor 或任意其它 marker 均失败关闭。远端 HEAD 全部
+通过后才在一个本地事务锁行并重算摘要，随后自动用 `plan-copy --supersedes-plan-sha256`
+冻结 successor。对账不调用 GET、ListObjects、CopyObject、DELETE，不更新生产 History；
+successor 执行仍必须取得新的 `COPY_HISTORY_MEDIA_<successor-sha>`。
+
 Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计划内、
 `copied_verified`、`switch_completed_at is null` 且原路径不同于目标路径的资产，
 因此不会再次纳入既有已完成 Switch、其它 Probe、unresolved 或 blocked。计划每
