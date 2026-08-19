@@ -86,7 +86,7 @@ T2V/I2V/FLF2V 的基础链只固定两个作者原始资产：
 - Comfy-Org 官方 Qwen3-VL NVFP4 AWQ encoder、FP16 video VAE 与 FP32 audio VAE。
 
 十三个可选 LoRA 由同一目录管理：NaughtyTimes v2 R256（1.0）、HMNSFW AIO v2
-（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v1（0.75，
+（0.5）、H3 Motion Booster v2（0.7，触发词 `dynv2`）、Mystic XXX v2（0.75，
 无触发词）、Breast Play & Jiggle v1（0.75）、HMInnie v1（0.8，触发词
 `inniepussy`）、Deepthroat v0.2（0.75）、POV Missionary v0.7（0.7）、Footjobs
 Type B v1（0.5，触发词 `fj.`）、HMBreasts（1.0）、VagAssist（1.0）、HMPussy v6
@@ -123,8 +123,8 @@ blob 与 bundle 不删除，供回溯和回滚。10Eros BF16 主模型比 RedMix
 ## 模型包与镜像
 
 `scripts/prepare_minimax_h3_model_bundle.py` 固定版本
-`2026-08-18-10eros-beta2-addon13-lightx2v8-v1`、18 个文件的字节数与
-SHA256，总计 70,055,451,231 bytes（65.24 GiB）。脚本复用已有内容寻址 blob，只把缺失
+`2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2`、18 个文件的字节数与
+SHA256，总计 69,631,057,639 bytes（64.85 GiB）。脚本复用已有内容寻址 blob，只把缺失
 资产下载到临时文件；尺寸和 SHA256 均通过后才原子落盘。Civitai 附件下载需要通过
 `CIVITAI_API_TOKEN` 鉴权；Token 只发送给 Civitai API host，不转发到重定向后的对象存储。模型只进入
 `/srv/allbot/model-registry`，不得进入 Git 或 OCI 镜像；本次准备不自动上传 LAN、R2 或

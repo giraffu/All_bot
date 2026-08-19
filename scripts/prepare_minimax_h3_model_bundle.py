@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
 
 BUNDLE = "minimax_h3_runtime"
-VERSION = "2026-08-18-10eros-beta2-addon13-lightx2v8-v1"
+VERSION = "2026-08-19-10eros-beta2-addon13-lightx2v8-mystic-v2"
 MIN_FREE_BYTES = 67 * 1024**3
 FILES = (
     (
@@ -72,10 +72,10 @@ FILES = (
         "https://civitai.red/api/download/models/3228867?fileId=3111185",
     ),
     (
-        "loras/MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
-        "7dd837f4c5420d4ec59f3ff1757b3f9d264a6c0f120d65d9c4f59c77584dd0be",
-        596_451_528,
-        "https://civitai.red/api/download/models/3226233?fileId=3108441",
+        "loras/MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
+        "2fc32615f20465e0831a5c8069df4006422fc9638a0b7faa216e04a6ddfee8de",
+        172_057_936,
+        "https://civitai.red/api/download/models/3242519?fileId=3125221",
     ),
     (
         "loras/MiniMaxH3/breastplayjiggle_h3_v1.safetensors",
@@ -219,7 +219,7 @@ def prepare(registry: ModelRegistry) -> Path:
                 "civitai:modelVersion/3212436:file/3094173",
                 "civitai:modelVersion/3206518",
                 "civitai:modelVersion/3228867:file/3111185",
-                "civitai:modelVersion/3226233:file/3108441",
+                "civitai:modelVersion/3242519:file/3125221",
                 "civitai:modelVersion/3225638:file/3107724",
                 "civitai:modelVersion/3222484:file/3104474",
                 "civitai:modelVersion/3226989:file/3109184",
@@ -233,7 +233,7 @@ def prepare(registry: ModelRegistry) -> Path:
             "variant": (
                 "10Eros-Max Beta2 pruned base plus fixed LightX2V FL2VA 8-step "
                 "v1.0 acceleration and thirteen optional one-file LoRAs: NaughtyTimes "
-                "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v1, HMBreasts, "
+                "v2, HMNSFW AIO v2, H3 Motion Booster v2, Mystic XXX v2, HMBreasts, "
                 "VagAssist, HMPussy v6, HMPenis v2, Breast Play & Jiggle v1, HMInnie "
                 "v1, Deepthroat v0.2, POV Missionary v0.7 and Footjobs Type B v1; "
                 "official Qwen3-VL encoder "

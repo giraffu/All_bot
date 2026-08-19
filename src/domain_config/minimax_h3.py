@@ -93,9 +93,9 @@ MINIMAX_H3_ADDON_MODELS = {
     ),
     "mystic_xxx": MiniMaxH3AddonModel(
         "mystic_xxx",
-        "Mystic XXX v1（人体结构增强）",
-        "Mystic XXX v1 (anatomy enhancement)",
-        "MiniMaxH3/MysticXXX_MMH3-V1.safetensors",
+        "Mystic XXX v2（人体结构增强）",
+        "Mystic XXX v2 (anatomy enhancement)",
+        "MiniMaxH3/MysticXXX_MMH3-V2.safetensors",
         0.75,
     ),
     "breast_play": MiniMaxH3AddonModel(
