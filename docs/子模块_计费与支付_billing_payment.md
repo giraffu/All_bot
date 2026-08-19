@@ -140,6 +140,10 @@ sequenceDiagram
   自身的 `TON_PAYMENT_POLLING_ENABLED` / `USDT_TON_PAYMENT_ENABLED` 语义不变。
   disabled 模式只提供 `/healthz`，不得导入或初始化数据库、Telegram、账本
   provider，也不要求投影支付凭据。
+- Billing provider 与 reconciler 的 import/startup 不得经过 Gallery、R2 或
+  MinIO 初始化；额度服务使用标准模块 logger，不借用会构造存储客户端的
+  `src.logger`。因此未配置任何 `MINIO_*` 时，Billing 专用入口仍可装配 TON 与
+  USDT-TON 通道；不能通过补投影无关存储密钥掩盖依赖污染。
 - TON / USDT-TON 首次启用且对应 checkpoint 不存在时，只把索引器当前最新
   `lt` 写成基线，不履约当前批次中的历史交易；checkpoint 读取失败时保持停止，
   不能把数据库异常误判为首次启用。已有 checkpoint 后才从下一 `lt` 正常处理，

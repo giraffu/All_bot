@@ -79,6 +79,11 @@ def test_task_control_worker_is_profile_gated_and_disabled_by_default():
     service = _compose(BASE)["services"]["task-control-worker"]
 
     assert service["profiles"] == ["task-control"]
+    assert service["environment"]["ALLBOT_RELEASE_SHA"] == (
+        "${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}"
+    )
+    assert service["environment"]["PYTHONUNBUFFERED"] == "1"
+    assert service["environment"]["TZ"] == "Asia/Shanghai"
     assert service["environment"]["TASK_CONTROL_WORKER_ENABLED"] == (
         "${TASK_CONTROL_WORKER_ENABLED:-false}"
     )
@@ -90,6 +95,11 @@ def test_billing_reconciler_is_profile_gated_and_disabled_by_default():
     service = _compose(BASE)["services"]["billing-reconciler"]
 
     assert service["profiles"] == ["billing-reconciler"]
+    assert service["environment"]["ALLBOT_RELEASE_SHA"] == (
+        "${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}"
+    )
+    assert service["environment"]["PYTHONUNBUFFERED"] == "1"
+    assert service["environment"]["TZ"] == "Asia/Shanghai"
     assert service["environment"]["BILLING_RECONCILER_ENABLED"] == (
         "${BILLING_RECONCILER_ENABLED:-false}"
     )
