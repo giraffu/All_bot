@@ -502,11 +502,13 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 
 Worker 拉到任务后会先处理输入：
 
-- 从 MinIO 下载输入图片或视频
-- 把输入通过 ComfyUI API 上传到 ComfyUI input 区
+- 从 MinIO 下载输入图片或视频；图片按解码格式校验，JPEG/PNG/WebP
+  保留压缩字节和真实后缀，需转向或转换模式时才重编码
+- 把输入上传到 ComfyUI input 区；媒体上传由
+  `COMFY_UPLOAD_TIMEOUT_SECONDS`（默认 300 秒）独立限时并有界重试
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
 - 输入下载优先使用 boto3 S3 client 读取当前 R2/MinIO 兼容对象存储，`MINIO_BOTO3_DOWNLOAD_ENABLED=false` 时可回退旧 MinIO SDK 路径；`MINIO_REGION` 未显式配置时，R2 endpoint 默认 `auto`，其它 MinIO endpoint 默认 `us-east-1`。
-- 输入下载有两层超时保护：S3/MinIO HTTP 连接与读超时由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL` 控制，连接池由 `MINIO_HTTP_POOL_MAXSIZE` 控制；整次输入文件下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS`、`MINIO_DOWNLOAD_RETRY_DELAY_SECONDS` 控制。下载失败或超时会清理本地目标文件和 `.part.minio` 临时文件，并让任务进入失败补偿路径，避免 worker 长时间停在 `preparing` 而 ComfyUI 队列始终为空。
+- 输入下载的 S3/MinIO 连接、读取、重试与连接池分别由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL`、`MINIO_HTTP_POOL_MAXSIZE` 控制；整次下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS` 和对应 retry/delay 控制。失败会清理目标与 `.part.minio` 临时文件并进入补偿路径。
 - 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间提前下载、规范化和上传下一单输入。候选类型取该 Worker 的 `SUPPORTED_TASK_TYPES`、`PREFETCH_TASK_TYPES` 与流水线允许类型的交集，不再黏附当前任务类型；Central 在整个交集中按既有队列 score 选择，因此同一执行池内不同类型仍遵守用户优先级。默认仍通过 relay/Central `/api/agent/task/peek` 只读观察候选，真实 `/pop` 后只有 `task_id` 命中缓存才复用。
 - `PREFETCH_RESERVE_TASK=true` 是单 Worker 一槽本地预接模式：预取协程改用现有原子 `/api/agent/task/pop?cancel_lock=true` 先接走一单并保存在 Worker 内存中，当前单结束后优先执行该预接单，不再访问 Central 抢第二次。多个 Worker 因此不会预拉同一任务；代价是预接单会提前进入 Central running，且短暂不可取消。该模式不要求修改 Central 服务。
 - flex Worker 启用 preferred 后，预取集合必须只包含 preferred 类型。gpu-002
