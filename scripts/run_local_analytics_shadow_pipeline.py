@@ -46,6 +46,8 @@ LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
     "analytics_history_media_r2_migrations",
     "analytics_history_media_migration_plans",
     "analytics_history_media_object_facts",
+    "analytics_history_media_r2_cloud_copy_plan_sessions",
+    "analytics_history_media_r2_cloud_copy_tasks",
 )
 
 

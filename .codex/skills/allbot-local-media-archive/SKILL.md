@@ -30,6 +30,10 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
   artifact 将生产总并发限制在 16–32。429 在对象边界立即降档并对全部 lane
   启动共享桶冷却；长尾只观测。错误证据只保留低基数阶段/类别、HTTP 状态和
   provider request ID 哈希，参数从 artifact 读取。
+- History R2 Copy 可使用冻结的 `cloud_receipt` 执行模式：本地协调器是迁移账本
+  唯一写者，只通过 SSH 传输 0600 HMAC 签名任务和回执；云端只允许 HEAD/CopyObject，
+  不连接本地或生产数据库。计划、artifact、worker、行集或签名不匹配均失败关闭，
+  云端 canary 仍需 successor 的新 COPY 令牌。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
