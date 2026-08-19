@@ -916,6 +916,62 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes).toEqual([])
   })
 
+  it('round-trips the backend small AI video resolution option', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        scene_preset_version: 1,
+        global_enabled: true,
+        video_scenes: [],
+        ai_video_scenes: [{
+          id: 'small_video',
+          name: '清晰视频',
+          prompt: 'camera orbit',
+          negative_prompt: '',
+          duration: 10,
+          resolution: 'small',
+          engine: 'minimax_h3',
+          lora_items: [],
+        }],
+        draw_scenes: [],
+        filter_scenes: [],
+      },
+      options: {
+        default_ai_video_resolution: 'small',
+        ai_video_resolutions: [
+          { value: 'preview', label: '极速（约 512p）' },
+          { value: 'small', label: '清晰（约 600p）' },
+          { value: 'standard', label: '标准（约 720p）' },
+          { value: 'hd', label: '高清（约 810p）' },
+        ],
+      },
+    })
+
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-ai-video-scene-0"]').trigger('click')
+    const resolutionSelect = wrapper.get('[data-testid="scene-config-resolution"]')
+    expect((resolutionSelect.element as HTMLSelectElement).value).toBe('small')
+    expect(resolutionSelect.findAll('option').map(option => option.attributes('value'))).toEqual([
+      'preview',
+      'small',
+      'standard',
+      'hd',
+    ])
+
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    const saveButton = wrapper.findAll('button').find(button => button.text() === '保存')
+    if (!saveButton) throw new Error('Missing save button')
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig).toHaveBeenCalledOnce()
+    expect(apiMocks.updateQqccBotConfig.mock.calls[0][0].ai_video_scenes[0].resolution)
+      .toBe('small')
+  })
+
   it('adds and removes dynamic video scenes before saving', async () => {
     const wrapper = mountSettings()
     await flushPromises()

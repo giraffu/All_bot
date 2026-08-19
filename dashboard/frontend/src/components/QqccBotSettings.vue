@@ -425,6 +425,12 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 ]
 
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
+const aiVideoResolutionOptions: readonly AiVideoResolutionKey[] = [
+  'preview',
+  'small',
+  'standard',
+  'hd',
+]
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
 const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15]
 const demoSlots: DemoMediaSlot[] = ['input', 'output']
@@ -933,7 +939,7 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (resolutionOptions.includes(raw.default_video_resolution as ResolutionKey)) {
     merged.default_video_resolution = raw.default_video_resolution as ResolutionKey
   }
-  if (['preview', 'standard', 'hd'].includes(raw.default_ai_video_resolution as string)) {
+  if (aiVideoResolutionOptions.includes(raw.default_ai_video_resolution as AiVideoResolutionKey)) {
     merged.default_ai_video_resolution = raw.default_ai_video_resolution as AiVideoResolutionKey
   }
   if (Array.isArray(raw.video_resolutions)) {
@@ -946,7 +952,8 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (Array.isArray(raw.ai_video_resolutions)) {
     merged.ai_video_resolutions = raw.ai_video_resolutions.filter(
       (item): item is ResolutionOption<AiVideoResolutionKey> =>
-        ['preview', 'standard', 'hd'].includes(item?.value as string) && typeof item?.label === 'string',
+        aiVideoResolutionOptions.includes(item?.value as AiVideoResolutionKey)
+        && typeof item?.label === 'string',
     )
   }
   const rawCreditCosts = raw.default_scene_credit_costs
@@ -1322,7 +1329,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           prompt: typeof scene?.prompt === 'string' ? scene.prompt : '',
           negative_prompt: typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : '',
           duration,
-          resolution: ['preview', 'standard', 'hd'].includes(scene?.resolution as string)
+          resolution: aiVideoResolutionOptions.includes(scene?.resolution as AiVideoResolutionKey)
             ? scene.resolution as AiVideoResolutionKey
             : modelOptions.default_ai_video_resolution,
           engine: normalizeAiVideoEngine(scene?.engine),
