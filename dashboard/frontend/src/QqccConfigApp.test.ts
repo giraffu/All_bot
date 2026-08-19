@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { defineComponent, ref } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 import type { Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -131,5 +131,24 @@ describe('QqccConfigApp', () => {
 
     expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(false)
     expect(wrapper.find('.private-bot-admin-stub').exists()).toBe(true)
+  })
+
+  it('keeps the edited settings mounted while an expired login is renewed', async () => {
+    qqccAuthMocks.isAuthenticatedRef = ref(true)
+    const wrapper = mountApp()
+
+    expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(true)
+
+    qqccAuthMocks.isAuthenticatedRef.value = false
+    await nextTick()
+
+    expect(wrapper.find('.qqcc-login-stub').exists()).toBe(true)
+    expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(true)
+
+    qqccAuthMocks.isAuthenticatedRef.value = true
+    await nextTick()
+
+    expect(wrapper.find('.qqcc-login-stub').exists()).toBe(false)
+    expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(true)
   })
 })

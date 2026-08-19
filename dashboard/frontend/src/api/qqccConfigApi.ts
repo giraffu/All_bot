@@ -2,7 +2,7 @@ import axios from 'axios'
 import type { AxiosResponse } from 'axios'
 
 import {
-  clearQqccConfigAuthToken,
+  expireQqccConfigAuthentication,
   getQqccConfigAuthToken,
 } from '../composables/useQqccConfigAuth'
 import type {
@@ -42,10 +42,19 @@ qqccConfigApi.interceptors.request.use(config => {
 })
 
 qqccConfigApi.interceptors.response.use(
-  response => response,
+  response => {
+    const contentType = String(response.headers?.['content-type'] || '').toLowerCase()
+    const apiReturnedHtml =
+      response.config.url?.startsWith('/api/') &&
+      contentType.includes('text/html')
+    if (response.status === 401 || apiReturnedHtml) {
+      return Promise.reject(expireQqccConfigAuthentication())
+    }
+    return response
+  },
   error => {
     if (error.response?.status === 401) {
-      clearQqccConfigAuthToken()
+      return Promise.reject(expireQqccConfigAuthentication())
     }
     return Promise.reject(error)
   }

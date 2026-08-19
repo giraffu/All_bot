@@ -4,6 +4,8 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { QqccConfigAuthExpiredError } from '../composables/useQqccConfigAuth'
+
 const apiMocks = vi.hoisted(() => ({
   fetchQqccBotConfig: vi.fn(),
   updateQqccBotConfig: vi.fn(),
@@ -821,6 +823,18 @@ describe('QqccBotSettings', () => {
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
+  })
+
+  it('asks the administrator to log in again when saving with an expired session', async () => {
+    apiMocks.updateQqccBotConfig.mockRejectedValueOnce(new QqccConfigAuthExpiredError())
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(antMocks.error).toHaveBeenCalledWith('登录已过期，请重新登录后再次保存')
+    expect(antMocks.error).not.toHaveBeenCalledWith('保存懒人Bot配置失败')
   })
 
   it('uses injected config API handlers when provided', async () => {
