@@ -7,9 +7,15 @@ logger = logging.getLogger(__name__)
 
 
 class ComfyClient:
-    def __init__(self, base_url: str):
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        upload_timeout_seconds: float = 300.0,
+    ):
         self.base_url = base_url
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+        self.upload_timeout_seconds = upload_timeout_seconds
 
     async def check_connection(self) -> bool:
         try:
@@ -30,6 +36,8 @@ class ComfyClient:
             content_type = "video/mp4"
         elif filename.lower().endswith(".gif"):
             content_type = "image/gif"
+        elif filename.lower().endswith(".webp"):
+            content_type = "image/webp"
         elif filename.lower().endswith((".jpg", ".jpeg")):
             content_type = "image/jpeg"
 
@@ -40,7 +48,12 @@ class ComfyClient:
             data["subfolder"] = subfolder
 
         # Use multipart explicitly
-        response = await self.client.post("/upload/image", files=files, data=data)
+        response = await self.client.post(
+            "/upload/image",
+            files=files,
+            data=data,
+            timeout=self.upload_timeout_seconds,
+        )
         if response.status_code != 200:
             logger.error(f"ComfyUI upload error: {response.text}")
         response.raise_for_status()
