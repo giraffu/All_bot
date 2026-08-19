@@ -11,7 +11,7 @@ import resource
 import signal
 import sys
 import time
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -42,6 +42,7 @@ R2_P95_RAISE_MS = 5_000.0
 R2_MAX_LOWER_MS = 120_000.0
 R2_MAX_RAISE_MS = 30_000.0
 R2_LATENCY_SUSTAINED_WINDOWS = 2
+RATE_LIMIT_COOLDOWN_SECONDS = 60.0
 
 
 @dataclass
@@ -261,6 +262,72 @@ def _emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True), flush=True)
 
 
+def _summarize_request_evidence(events: list[dict[str, Any]]) -> dict[str, Any]:
+    errors = [event for event in events if event.get("kind") != "ok"]
+    rate_limits = [event for event in errors if event.get("kind") == "rate_limit"]
+    return {
+        "request_error_kinds": dict(
+            sorted(Counter(str(event.get("kind")) for event in errors).items())
+        ),
+        "request_error_stages": dict(
+            sorted(
+                Counter(
+                    str(event["stage"]) for event in errors if event.get("stage")
+                ).items()
+            )
+        ),
+        "http_status_counts": dict(
+            sorted(
+                Counter(
+                    str(event["http_status"])
+                    for event in errors
+                    if event.get("http_status") is not None
+                ).items()
+            )
+        ),
+        "provider_request_fingerprint_sample": sorted(
+            {
+                str(event["provider_request_id_sha256"])
+                for event in errors
+                if event.get("provider_request_id_sha256")
+            }
+        )[:8],
+        "rate_limit_cooldown_seconds": (
+            max(
+                float(event["rate_limit_cooldown_seconds"])
+                for event in rate_limits
+                if event.get("rate_limit_cooldown_seconds") is not None
+            )
+            if any(
+                event.get("rate_limit_cooldown_seconds") is not None
+                for event in rate_limits
+            )
+            else None
+        ),
+        "rate_limit_new_concurrency": (
+            min(
+                int(event["rate_limit_new_concurrency"])
+                for event in rate_limits
+                if event.get("rate_limit_new_concurrency") is not None
+            )
+            if any(
+                event.get("rate_limit_new_concurrency") is not None
+                for event in rate_limits
+            )
+            else None
+        ),
+    }
+
+
+def _bucket_safe_copy_concurrency(value: str) -> int:
+    concurrency = _bounded_copy_concurrency(value)
+    if concurrency not in {16, 32}:
+        raise argparse.ArgumentTypeError(
+            "bucket-safe adaptive Copy concurrency must be 16 or 32"
+        )
+    return concurrency
+
+
 def _partition_capacity(total: int, parts: int, index: int) -> int:
     base, remainder = divmod(total, parts)
     return base + int(index < remainder)
@@ -285,8 +352,16 @@ class ShardedBatchCoordinator:
             if args.max_pool_connections is not None
             else 128
         )
+        configured_maximum = int(
+            getattr(args, "maximum_copy_concurrency", 128)
+        )
         self.maximum_concurrency = next(
-            (level for level in (128, 64, 32, 16) if pool_ceiling >= level), 0
+            (
+                level
+                for level in (128, 64, 32, 16)
+                if pool_ceiling >= level and configured_maximum >= level
+            ),
+            0,
         )
         if self.maximum_concurrency == 0:
             raise ValueError("adaptive Copy connection pool must support at least 16")
@@ -474,8 +549,14 @@ async def run_adaptive_copy(
 ) -> dict[str, Any]:
     configured_pool = args.max_pool_connections
     pool_ceiling = configured_pool if configured_pool is not None else 128
+    configured_maximum = int(getattr(args, "maximum_copy_concurrency", 128))
     maximum_concurrency = next(
-        (level for level in (128, 64, 32, 16) if pool_ceiling >= level), 0
+        (
+            level
+            for level in (128, 64, 32, 16)
+            if pool_ceiling >= level and configured_maximum >= level
+        ),
+        0,
     )
     if maximum_concurrency == 0:
         raise ValueError("adaptive Copy connection pool must support at least 16")
@@ -516,6 +597,7 @@ async def run_adaptive_copy(
             retry_base_seconds=float(getattr(args, "retry_base_seconds", 1.0)),
             retry_max_seconds=float(getattr(args, "retry_max_seconds", 16.0)),
             retry_jitter_ratio=float(getattr(args, "retry_jitter_ratio", 0.25)),
+            rate_limit_cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS,
         )
         cpu_started = time.process_time()
         wall_started = time.perf_counter()
@@ -619,6 +701,7 @@ async def run_adaptive_copy(
                 "request_error_rate": health_decision.error_rate,
                 "request_sample_count": health_decision.sample_count,
                 "stale_request_events_ignored": stale_request_events,
+                **_summarize_request_evidence(request_events),
             }
         )
         if health_decision.action == "systemic":
@@ -715,10 +798,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--verification-output")
     parser.add_argument("--limit", type=int, default=1_000)
     parser.add_argument("--shard-count", type=int, default=10)
-    parser.add_argument("--shard-size", type=int, default=1_000)
+    parser.add_argument("--shard-size", type=int, default=100)
     parser.add_argument("--retry-concurrency", type=int, default=16)
     parser.add_argument(
-        "--copy-concurrency", type=_bounded_copy_concurrency, default=128
+        "--copy-concurrency", type=_bucket_safe_copy_concurrency, default=32
+    )
+    parser.add_argument(
+        "--maximum-copy-concurrency",
+        type=_bucket_safe_copy_concurrency,
+        default=32,
     )
     parser.add_argument("--max-pool-connections", type=_positive_pool_connections)
     parser.add_argument("--circuit-breaker-windows", type=int, default=3)

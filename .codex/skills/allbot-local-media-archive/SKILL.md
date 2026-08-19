@@ -27,7 +27,9 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 - direct predecessor marker 仅由新 COPY 令牌的 frontier HEAD recovery 对账；停止计划的
   transient `failed` 只允许 HEAD 对账目标缺失/当前 marker，再冻结 successor 并重新授权。
 - Copy lane 与 bulk/retry 池共用门禁；健康事件绑定并发 epoch 跨 lane 聚合，
-  错误率/限流决定降档，长尾只观测，参数从 artifact 读取。
+  artifact 将生产总并发限制在 16–32。429 在对象边界立即降档并对全部 lane
+  启动共享桶冷却；长尾只观测。错误证据只保留低基数阶段/类别、HTTP 状态和
+  provider request ID 哈希，参数从 artifact 读取。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
 - 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
