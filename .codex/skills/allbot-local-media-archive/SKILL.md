@@ -17,35 +17,36 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 - NAS 归档异步消费 outbox，禁止进入 GPU Worker/Central 完成同步链路。
 - 冷媒体恢复只写 restore outbox；Web 不直连 NAS。Worker 复验摘要、回填原件并
   重建输出缩略图后才提交当前 revision 回执。
-- 永久原件使用 SHA-256 寻址；History 和原 key 映射保存在回执。
+- 永久原件按 SHA-256 寻址；History/原 key 映射保存在回执。
 - 迁移使用冻结账本和父计划限定的 Probe→Copy→Switch；并发默认值和批次参数从
   当前脚本 `--help`/代码读取，不写成 Skill 快照。禁止正文下载式探测和无界全桶扫描。
 - History R2 全量链路使用父计划限定的 Probe→Copy→Switch batches；只分别接受
   `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
   `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
   必须重算行集和批次 CAS；旧源始终保留。
+- `plan-switch-completed` 只冻结终止 predecessor/当前 completed 批次；一次一份计划，
+  仍需精确 SWITCH 令牌。
+- 旧源 retirement 要求生产零引用、无迁移依赖、目标 marker 和 NAS SHA 回读；只接受
+  独立 `DELETE_HISTORY_MEDIA_<sha>`，不得复用其它授权。
 - direct predecessor marker 仅由新 COPY 令牌的 frontier HEAD recovery 对账；停止计划的
   transient `failed` 只允许 HEAD 对账目标缺失/当前 marker，再冻结 successor 并重新授权。
-- Copy lane 与 bulk/retry 池共用门禁；健康事件绑定并发 epoch 跨 lane 聚合，
-  artifact 将生产总并发限制在 16–32。429 在对象边界立即降档并对全部 lane
-  启动共享桶冷却；长尾只观测。错误证据只保留低基数阶段/类别、HTTP 状态和
-  provider request ID 哈希，参数从 artifact 读取。
+- Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
 - History R2 Copy 可使用冻结的 `cloud_receipt` 执行模式：本地协调器是迁移账本
   唯一写者，只通过 SSH 传输 0600 HMAC 签名任务和回执；云端只允许 HEAD/CopyObject，
   不连接本地或生产数据库。计划、artifact、worker、行集或签名不匹配均失败关闭，
   云端 canary 仍需 successor 的新 COPY 令牌。
 - 没有 NAS 完整回读校验回执，任何 R2 原件都不得删除。
 - 最新 8 条先按用户对原始 History 排名，再过滤不可见记录；Gallery 关系保护引用。
-- 确认丢失要求全部登记来源两轮 not-found，间隔至少 24 小时。
-- R2 删除默认关闭；第一次生产删除需要 dry-run 报告和新的明确确认。
+- 确认丢失要求全来源两轮 not-found，间隔至少 24 小时。
+- R2 删除默认关闭；第一次生产删除需要只读报告、冻结对象/字节计划和新的精确确认。
 - Worker 使用 0600 配置并校验路由/filesystem，默认拒绝 7890；仅冻结 History R2 Copy
   可绑定 loopback 7890 指纹和 artifact/successor，须重新授权并 canary，禁止热改。
 - canary 最多精确领取 100 个 `history_ids`，禁止改写全局优先级。
 - 私有配置只输出来源名/指纹；只有 `archived_verified` 提供原件。
-- 租约每 5 分钟续期；回执必须匹配 revision，陈旧 Worker 不得覆盖新清单。
+- 租约每 5 分钟续期；revision 不匹配不得覆盖新清单。
 - restore/archive outbox 状态不得复用；所有热集触发只幂等 enqueue。
 - TLS 必须验证包含 NAS IP SAN 的内部 CA；禁止 `verify=false`。
-- PiGallery2 与归档完全隔离；live 容量、凭据、digest 和部署结果只属运行态。
+- PiGallery2 与归档隔离；容量、凭据、digest 和部署结果只属运行态。
 
 ## 最小验证
 

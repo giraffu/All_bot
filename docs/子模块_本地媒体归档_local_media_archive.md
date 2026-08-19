@@ -451,6 +451,33 @@ Copy 全批完成后自动生成 `plan-switch`。它只选择精确父 Copy 计�
 是两个独立生产 mutation，必须分别取得精确计划 SHA 授权；旧源删除、flat-root、
 数字目录和孤儿清理均不属于这条迁移链路。
 
+长时间运行的 Copy 不要求等待整个 successor 才开始切换。`plan-switch-completed`
+冻结终止 predecessor 中已提交的对象，以及当前父 Copy 计划内状态为 `completed` 的
+精确批次；当前 pending/running 批次、未提交对象和已有未完成 Switch 计划全部排除。
+冻结器保存 completed batch identity SHA，并继续复用 `execute-switch` 的全局 rowset、
+每批生产 CAS、前序 Switch identity 和 `SWITCH_HISTORY_MEDIA_<sha>` 门禁。一次只能存在
+一份未完成的滚动 Switch 计划；后续新完成的 Copy 批次进入下一份新计划，不能追加或
+热改既有 manifest。
+
+已完成 Switch 的旧来源通过 `scripts/history_media_r2_retirement.py` 进入独立退役协议。
+`report` 只读汇总父 Copy 计划的去重旧对象、字节、Copy/Switch/目标冲突和本地归档覆盖，
+并可生成按可释放字节排序的最多 1,000 条 History 归档候选；报告不访问对象正文、不写
+数据库。归档继续使用既有 outbox/Worker，精确 canary 每波最多 100 条 History，1,000
+条阶段由十个有序波次组成。`plan-delete` 只接受这批 History 的生产
+`archived_verified` 回执和 archived outbox，逐对象要求父批已 Switch、所有共享资产均有
+同一 SHA-256 NAS 完整回读证据、生产 History 零引用、没有未完成 Copy/Switch 使用且旧
+key 不属于任何标准目标；随后重新 HEAD 旧源、所有新目标 marker/size/ETag 和 NAS
+SHA 元数据，冻结最多 1,000 对象的 0600 计划。manifest 只保存 key 哈希和聚合，不保存
+明文对象 key。
+
+真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`，默认并发 4、硬上限
+8；不能复用 COPY、SWITCH、临时清理或通用冷归档令牌。每批执行前重新扫描生产 History
+与迁移账本并复核全部 HEAD，删除后确认旧源缺失且目标 marker 与 NAS SHA 仍在。系统性
+网络、数据库、身份或行集变化把计划置为 paused；旧源已经因本计划提交窗口消失时，只有
+目标和 NAS 仍完整才可幂等收口。退役 plans/batches/objects 与其它迁移事实表一起跨
+shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
+的对象都必须留存。
+
 Copy 计划的全局 rowset 与内部批次都按迁移账本 `id` 顺序冻结和重算，不能在执行端
 改用 History 坐标排序。successor 的每个 1,000 资产批次在领取时重算自己的 rowset
 SHA；supervisor 启动时只做一次全局行集、父链、来源资格和 multipart 预检，避免十条
@@ -490,9 +517,10 @@ Copy 和 Switch 通过 batch 表断点续跑。阶段为 `plan-probe`、`execute
 最终验收必须完整核对计划引用、目标 HEAD/size/Copy marker 和旧来源 HEAD，并确定性
 抽查至少 32 个活跃 Gallery 与 64 个 History/owner，覆盖角色和媒体类型；
 apply-context 的既有不支持场景继续按契约返回 400。只有这些验收和收据全部通过，才能
-解除 shadow pause guard、清理旧 failed unit 状态并手动跑一次 shadow sync；仍不得删除
-任何旧 R2 对象。`analytics_history_media_migration_plan_batches` 与其它迁移事实表必须随
-shadow 换库保留。
+解除 shadow pause guard、清理旧 failed unit 状态并手动跑一次 shadow sync。核心
+Probe→Copy→Switch 验收本身不自动删除旧 R2 对象；只有另行冻结并取得精确 DELETE
+授权的退役计划可以删除其证明为零引用且已归档的对象。迁移 plans/batches、云 Copy 和
+retirement 事实表必须随 shadow 换库保留。
 
 `LOCAL_ANALYTICS_DATABASE_URL` 只指向本地分析库，`execute-switch` 才额外要求
 `PRODUCTION_DATABASE_URL`。probe/copy 的 0600 JSON 配置包含固定

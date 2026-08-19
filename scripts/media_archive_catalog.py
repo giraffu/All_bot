@@ -141,10 +141,10 @@ returning id;
 
 SEED_IDS_SQL = SEED_SQL.replace(
     "from history where id between $1 and $2",
-    "from history where id = any($3::int[])",
+    "from history where id = any($1::int[])",
 ).replace(
     "where h.id between $1 and $2 and (",
-    "where h.id = any($3::int[]) and (",
+    "where h.id = any($1::int[]) and (",
 )
 
 
@@ -224,9 +224,7 @@ async def main_async(args) -> None:
             )
             rows = await conn.fetch(
                 SEED_IDS_SQL if history_ids else SEED_SQL,
-                start_id,
-                end_id,
-                *([list(history_ids)] if history_ids else []),
+                *([list(history_ids)] if history_ids else [start_id, end_id]),
             )
             await conn.execute(
                 "update analytics_media_runs set status='completed',stats=jsonb_build_object('upserted',$2::bigint),completed_at=now() where id=$1",
