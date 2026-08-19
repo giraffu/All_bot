@@ -302,7 +302,13 @@ class AlipayDirectService:
         except (InvalidSignature, ValueError):
             return False
 
-    def _verify_response_signature(self, payload: str, response_key: str) -> dict:
+    def _verify_response_signature(
+        self,
+        payload: str,
+        response_key: str,
+        *,
+        charset: str = "utf-8",
+    ) -> dict:
         parsed = json.loads(payload)
         cert_sn = parsed.get("alipay_cert_sn")
         if cert_sn != self.alipay_public_cert_sn:
@@ -314,11 +320,11 @@ class AlipayDirectService:
         try:
             self.alipay_public_key.verify(
                 base64.b64decode(signature, validate=True),
-                raw_response.encode("utf-8"),
+                raw_response.encode(charset),
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
-        except (InvalidSignature, ValueError) as exc:
+        except (InvalidSignature, LookupError, UnicodeError, ValueError) as exc:
             raise ValueError("Alipay response signature is invalid") from exc
         return response
 
@@ -346,7 +352,9 @@ class AlipayDirectService:
                 if response.status != 200:
                     raise ValueError("Alipay order query returned a non-200 response")
         data = self._verify_response_signature(
-            payload, "alipay_trade_query_response"
+            payload,
+            "alipay_trade_query_response",
+            charset=response.charset or "utf-8",
         )
         if str(data.get("code")) != "10000":
             sub_code = str(data.get("sub_code") or "")

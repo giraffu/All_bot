@@ -15,6 +15,7 @@ from src.services.alipay_direct_service import (
     AlipayDirectService,
     load_alipay_direct_config,
 )
+from src.services.rmb_payment_service import RMBOrderQueryStatus
 
 
 def _cert(key, *, common_name: str, serial: int):
@@ -157,6 +158,69 @@ def test_query_response_requires_matching_certificate_and_rsa2_signature():
     invalid = payload.replace(service.alipay_public_cert_sn, "wrong")
     with pytest.raises(ValueError, match="certificate serial"):
         service._verify_response_signature(invalid, "alipay_trade_query_response")
+
+
+@pytest.mark.asyncio
+async def test_query_order_verifies_response_using_gateway_charset(monkeypatch):
+    service, _app_key, alipay_key = _service()
+    response = {
+        "code": "40004",
+        "msg": "Business Failed",
+        "sub_code": "ACQ.TRADE_NOT_EXIST",
+        "sub_msg": "交易不存在",
+    }
+    raw_response = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
+    signature = base64.b64encode(
+        alipay_key.sign(
+            raw_response.encode("gbk"),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    ).decode()
+    payload = (
+        '{"alipay_trade_query_response":'
+        + raw_response
+        + ',"sign":'
+        + json.dumps(signature)
+        + ',"alipay_cert_sn":'
+        + json.dumps(service.alipay_public_cert_sn)
+        + "}"
+    )
+
+    class FakeResponse:
+        status = 200
+        charset = "gbk"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self):
+            return payload
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "src.services.alipay_direct_service.aiohttp.ClientSession",
+        FakeSession,
+    )
+
+    result = await service.query_order(
+        out_trade_no="ORDER-MISSING",
+        expected_amount="0.01",
+    )
+
+    assert result.status is RMBOrderQueryStatus.NOT_PAID
 
 
 def test_enabled_config_requires_every_secret(monkeypatch):
