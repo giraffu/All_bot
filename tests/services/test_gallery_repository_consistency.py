@@ -143,12 +143,18 @@ async def test_interaction_inserts_target_their_partial_unique_indexes():
     )
 
     reaction_sql = str(
-        reaction_session.statements[0][0].compile(dialect=postgresql.dialect())
+        reaction_session.statements[0][0].compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"render_postcompile": True},
+        )
     ).lower()
     apply_sql = str(
-        apply_session.statements[0][0].compile(dialect=postgresql.dialect())
+        apply_session.statements[0][0].compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"render_postcompile": True},
+        )
     ).lower()
     assert "on conflict (user_id, post_id)" in reaction_sql
-    assert "action_type in" in reaction_sql
+    assert "action_type in ('like', 'dislike')" in reaction_sql
     assert "on conflict (user_id, post_id)" in apply_sql
-    assert "action_type =" in apply_sql
+    assert "action_type = 'apply'" in apply_sql
