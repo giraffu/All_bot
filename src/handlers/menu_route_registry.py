@@ -31,6 +31,7 @@ FSM_MENU_KEYS = (
     "menu.video_lora",
     "menu.custom_video",
     "menu.ltx_video",
+    "menu.advanced_video_pro",
     "menu.wan22_video_v2",
     "menu.photo_edit_undress",
     "menu.photo_edit_faceswap",

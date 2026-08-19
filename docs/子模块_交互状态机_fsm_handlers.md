@@ -1,8 +1,11 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
-主菜单的历史 `menu.ltx_video` 键当前展示为“高级图生视频pro”，实际注册
-`advanced_video_pro_fsm.py`。入口选择 H3 三个公开模式、时长、画质档位与比例，再按模式
-收集 0/1/2 张图片；提交计划由
+主菜单继续使用稳定配置键 `menu.ltx_video`，但实际入口跟随环境能力闸门：正式
+环境在 `MINIMAX_H3_BACKEND_ENABLED=false` 时展示“高级图生视频”并注册
+`ltx_video_fsm.py`；测试环境在该闸门开启时展示“高级图生视频pro”并注册
+`advanced_video_pro_fsm.py`。这使正式 Bot 与 Web 的 LTX 能力保持一致，同时不把
+测试 H3 入口晋级到正式环境。H3 入口选择三个公开模式、时长、画质档位与比例，
+再按模式收集 0/1/2 张图片；提交计划由
 `advanced_video_pro_submission_service.py` 校验并通过公共 Bot task facade 入队。
 用户输入原始提示词后先进入 `WAIT_CONFIRMATION`：第一按钮明确显示“无需优化，直接
 生成”，第二按钮可在测试环境按独立开关发起“优化后再生成（1 灵石）”。优化提交前
@@ -16,12 +19,12 @@ draft 续接结果，完成后主动发送新消息；全局 `avpopt_*` callback
 图片先复制到当前用户专属 staging key，生成提交或终态失败后清理。优化后台任务必须先通过
 `get_or_create_user_by_telegram` 把 Telegram 平台 ID 映射为内部用户 ID；计费、结果
 归属和 staging key 一律使用内部用户 ID，禁止把平台 ID 直接传入共享优化服务。
-历史 LTX 设置 callback 只提示过期，不得静默改投新任务；旧 History/扩展 callback
-仍维持历史记录兼容。
+已发出的 H3 优化 callback 与旧 History 继续维持终态/历史兼容；环境入口切换只
+停止新的入口会话，不能中断已扣费任务或把旧 callback 静默改投另一任务类型。
 该入口画质统一为极速/清晰/标准/高清四档。首帧与首尾帧模式隐藏固定比例按钮并
 展示“跟随首帧”；第二张图片与首帧比例差异超过 1% 时保留首帧和会话状态、删除
 无效尾帧并要求重传。文生视频仍展示固定画面比例。
-高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA 或作者模型名；六个
+高级图生视频pro 的设置摘要不得显示基础链、checkpoint、LoRA 或作者模型名；
 可选附件仅以“效果增强”和用途标签呈现，并提供全选效果和清空效果。效果增强默认
 全部关闭，摘要只显示启用数量；Bot 不让用户输入自由强度，而是把选中项转换为目录
 建议强度后交给 `advanced_video_pro_submission_service.py`。内部 callback ID、目录 ID

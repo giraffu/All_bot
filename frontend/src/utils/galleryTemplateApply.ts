@@ -1,4 +1,5 @@
 import type { GalleryPost } from '@/types/gallery'
+import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
 
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
@@ -10,6 +11,10 @@ export const resolveGalleryTemplateApplyDisabledReason = (
 ): string | null => {
   if (!post) {
     return null
+  }
+
+  if (!isGenerationTaskTypeEnabled(post.task_type || '')) {
+    return 'feature_disabled'
   }
 
   if (post.task_type === 'i2i_draw') {

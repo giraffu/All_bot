@@ -751,7 +751,7 @@ def get_advanced_video_pro_fsm_handler() -> ConversationHandler:
         entry_points=[
             CommandHandler("advanced_video_pro", start),
             CommandHandler("ltx_video", start),
-            MessageHandler(I18nFilter("menu.ltx_video"), start),
+            MessageHandler(I18nFilter("menu.advanced_video_pro"), start),
             CallbackQueryHandler(start, pattern=r"^fsm_start_ltx_video$"),
             CallbackQueryHandler(legacy_callback, pattern=legacy_pattern),
         ],

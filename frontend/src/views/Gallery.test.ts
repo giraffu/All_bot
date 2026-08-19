@@ -417,6 +417,7 @@ describe('Gallery template apply integration', () => {
   })
 
   it('disables template apply while a gallery prompt is still locked', async () => {
+    window.__ALLBOT_CONFIG__ = { enable_minimax_h3: true }
     const lockedPost = {
       ...samplePost,
       task_type: 'minimax_h3_i2v',

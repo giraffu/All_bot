@@ -1,3 +1,5 @@
+import { isGenerationTaskTypeEnabled } from '@/config/generationFeatureAvailability'
+
 export interface GallerySubmissionCandidate {
   type?: string | null
   allow_contribute?: boolean | null
@@ -18,5 +20,6 @@ export const isGallerySubmissionEligible = (
 ): boolean => Boolean(
   candidate
   && candidate.allow_contribute !== false
+  && isGenerationTaskTypeEnabled(String(candidate.type || ''))
   && GALLERY_SUBMISSION_TASK_TYPES.has(String(candidate.type || ''))
 )
