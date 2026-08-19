@@ -153,6 +153,7 @@ def test_database_migration_image_contains_runtime_environment_dependency():
 
     assert "COPY config.py /app/config.py" not in migration
     assert "COPY src /app/src" in migration
+    assert "apt-get install -y --no-install-recommends iproute2" in migration
 
     alembic_env = (ROOT / "migrations/env.py").read_text(encoding="utf-8")
     assert "from config import DATABASE_URL" not in alembic_env
