@@ -68,6 +68,29 @@ async def test_prepare_task_inputs_downloads_ordered_character_panels():
 
 
 @pytest.mark.asyncio
+async def test_prepare_task_inputs_preserves_five_ordered_images():
+    calls = []
+    params = {"images": [f"bucket/reference-{index}.png" for index in range(1, 6)]}
+
+    async def process(**kwargs):
+        calls.append((kwargs["param_key"], kwargs["img_filename"]))
+
+    await prepare_task_inputs(
+        params=params,
+        downloaded_input_paths=[],
+        process_single_input_asset_func=process,
+    )
+
+    assert calls == [
+        ("image", "bucket/reference-1.png"),
+        ("image2", "bucket/reference-2.png"),
+        ("image3", "bucket/reference-3.png"),
+        ("image4", "bucket/reference-4.png"),
+        ("image5", "bucket/reference-5.png"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_prepare_task_inputs_downloads_ltx_character_background():
     calls = []
     params = {"background_image": "web_uploads/user/scene.jpeg"}
