@@ -263,6 +263,12 @@ TASK_COMPLETION_TIMEOUT_SECONDS = float(
 WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS = float(
     os.getenv("WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS", "600")
 )
+RESULT_HISTORY_TIMEOUT_SECONDS = float(
+    os.getenv("RESULT_HISTORY_TIMEOUT_SECONDS", "10")
+)
+RESULT_HISTORY_POLL_SECONDS = float(
+    os.getenv("RESULT_HISTORY_POLL_SECONDS", "0.25")
+)
 RUNPOD_RUNTIME = (
     os.getenv("RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
     or os.getenv("ALLBOT_RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
@@ -1353,6 +1359,8 @@ class ComfyAgent:
             assess_materialized_output_quality_func=(
                 assess_materialized_output_quality
             ),
+            result_history_timeout_seconds=RESULT_HISTORY_TIMEOUT_SECONDS,
+            result_history_poll_seconds=RESULT_HISTORY_POLL_SECONDS,
         )
 
     async def _finalize_execution(self, execution: TaskExecutionContext) -> None:
@@ -1378,6 +1386,8 @@ class ComfyAgent:
             upload_spooled_outputs_via_sidecar_func=upload_spooled_outputs_via_sidecar,
             upload_materialized_outputs_func=upload_materialized_outputs,
             report_materialized_outputs_func=report_materialized_outputs,
+            result_history_timeout_seconds=RESULT_HISTORY_TIMEOUT_SECONDS,
+            result_history_poll_seconds=RESULT_HISTORY_POLL_SECONDS,
         )
 
     def _track_execution_task(self, task: asyncio.Task) -> None:

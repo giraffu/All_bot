@@ -114,18 +114,20 @@ class AgentFinalizer:
         resolve_execution_result_from_history_func: Callable[..., Awaitable[Any]],
         materialize_task_outputs_func: Callable[..., Awaitable[Any]],
         assess_materialized_output_quality_func: Callable[..., Awaitable[Any]],
+        result_history_timeout_seconds: float = 10.0,
+        result_history_poll_seconds: float = 0.25,
     ):
         quality_retry_count = 0
         while True:
-            await resolve_execution_result_from_history_func(
-                comfy_client=self.agent.comfy_client,
+            await self._wait_for_execution_result(
                 execution=execution,
                 task_type=task_type,
-                logger=self.logger,
+                timeout_seconds=result_history_timeout_seconds,
+                poll_seconds=result_history_poll_seconds,
+                resolve_execution_result_from_history_func=(
+                    resolve_execution_result_from_history_func
+                ),
             )
-
-            if not execution.task_result:
-                raise Exception("Task completed but no result path found")
 
             materialized_outputs = await materialize_task_outputs_func(
                 comfy_client=self.agent.comfy_client,
@@ -163,6 +165,51 @@ class AgentFinalizer:
             if not task_completed:
                 return None
 
+    async def _wait_for_execution_result(
+        self,
+        *,
+        execution: TaskExecutionContext,
+        task_type: str,
+        timeout_seconds: float,
+        poll_seconds: float,
+        resolve_execution_result_from_history_func: Callable[..., Awaitable[Any]],
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        bounded_timeout = max(0.0, timeout_seconds)
+        deadline = loop.time() + bounded_timeout
+        attempts = 0
+        while True:
+            attempts += 1
+            await resolve_execution_result_from_history_func(
+                comfy_client=self.agent.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=self.logger,
+            )
+            if execution.task_result:
+                if attempts > 1:
+                    self.logger.info(
+                        "ComfyUI history exposed the result for task %s after %s reads",
+                        execution.task_id,
+                        attempts,
+                    )
+                return
+
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    "Task completed but no result path appeared in ComfyUI history "
+                    f"within {bounded_timeout:.1f}s"
+                )
+            if attempts == 1:
+                self.logger.warning(
+                    "Task %s completed before its result was visible in ComfyUI history; "
+                    "retrying for up to %.1fs",
+                    execution.task_id,
+                    bounded_timeout,
+                )
+            await asyncio.sleep(min(max(0.0, poll_seconds), remaining))
+
     async def finalize_execution(
         self,
         execution: TaskExecutionContext,
@@ -183,6 +230,8 @@ class AgentFinalizer:
         upload_spooled_outputs_via_sidecar_func: Callable[..., Awaitable[Any]],
         upload_materialized_outputs_func: Callable[..., Awaitable[Any]],
         report_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        result_history_timeout_seconds: float = 10.0,
+        result_history_poll_seconds: float = 0.25,
     ) -> None:
         task_id = execution.task_id
         task_type = execution.task_type
@@ -241,6 +290,8 @@ class AgentFinalizer:
                     ),
                     upload_materialized_outputs_func=upload_materialized_outputs_func,
                     report_materialized_outputs_func=report_materialized_outputs_func,
+                    result_history_timeout_seconds=result_history_timeout_seconds,
+                    result_history_poll_seconds=result_history_poll_seconds,
                 )
                 if not delivered:
                     return
@@ -288,6 +339,8 @@ class AgentFinalizer:
         upload_spooled_outputs_via_sidecar_func: Callable[..., Awaitable[Any]],
         upload_materialized_outputs_func: Callable[..., Awaitable[Any]],
         report_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        result_history_timeout_seconds: float,
+        result_history_poll_seconds: float,
     ) -> bool:
         task_id = execution.task_id
         task_type = execution.task_type
@@ -314,6 +367,8 @@ class AgentFinalizer:
                 assess_materialized_output_quality_func=(
                     assess_materialized_output_quality_func
                 ),
+                result_history_timeout_seconds=result_history_timeout_seconds,
+                result_history_poll_seconds=result_history_poll_seconds,
             )
             if materialized_outputs is None:
                 await self.agent.report_cancelled(task_id)
