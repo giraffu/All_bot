@@ -56,6 +56,8 @@ description: 开发和运维 AllBot 多模态 Prompt Optimizer。修改优化任
   owner-fenced draft 再退出 FSM；callback 不依赖 FSM，收费生成二次确认并幂等。
 - `text_delta` 幂等上报；H3@5 发布前校验结构、时序与服务端台词
   `<d>[Language] 原文</d>`。JSON 匹配增量才能 `/complete`，失败幂等退款。
+- Worker 领取任务后必须在媒体预处理和 LM Studio 推理全程每 15 秒续
+  `task_heartbeat`，终态上报前停止；普通 lane heartbeat 不能替代任务续租。
 - 优化任务扣 1 灵石并使用 Task Core Saga；入队/Worker 失败和 pending 取消只退款
   一次。运行任务 pop 时锁定取消。
 - readiness 不满足已加载、vision、16K context、parallel 4 时 heartbeat=error 且

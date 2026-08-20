@@ -180,6 +180,9 @@ lane Worker、1 灵石优化扣费或文本结果存储。
 
 一个容器启动 `prompt_optimizer_test_01..04` 四条 lane，每条只 pop
 `prompt_optimize`，全局最多同时四任务；Web/Task Core 保持单用户并发 1。
+lane 领取任务后在媒体读取、视觉分析和结构化生成期间每 15 秒调用 Central
+`/api/agent/task/task_heartbeat`，避免长推理被 zombie sweep 误判为 Worker 失联；
+任务续租在 `/complete` 或失败终态上报前停止，且不携带提示词或模型输出。
 
 readiness 通过 LM Studio `/api/v1/models` 验证别名 `ltx-prompt-optimizer` 已加载、
 vision=true、context>=16384、parallel>=4。不满足时所有 lane heartbeat=error 并
