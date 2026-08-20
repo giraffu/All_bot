@@ -928,9 +928,15 @@ async def test_central_heartbeat_is_scalar_and_fails_closed_on_http_error():
     )
     central = CentralClient(client=client)
     await central.heartbeat("lane", ready=True, reason="ready")
+    await central.task_heartbeat("task-1", "lane")
     payload = json.loads(requests[0].content)
     assert isinstance(payload["model_bundle_versions"], str)
     assert json.loads(payload["model_bundle_versions"])["model"]
+    assert requests[1].url.path == "/api/agent/task/task_heartbeat"
+    assert json.loads(requests[1].content) == {
+        "task_id": "task-1",
+        "agent_id": "lane",
+    }
     await client.aclose()
 
     async def failed_handler(_request):
@@ -956,3 +962,39 @@ def test_lane_readiness_stays_ready_between_successful_probes():
     assert worker_main._state["ready"] is False
     worker_main._set_lane_readiness(1, True, "ready")
     assert worker_main._state["ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_long_prompt_execution_keeps_task_heartbeat_alive_until_it_finishes():
+    class HeartbeatCentral:
+        def __init__(self):
+            self.calls = []
+            self.two_heartbeats = asyncio.Event()
+
+        async def task_heartbeat(self, task_id, agent_id):
+            self.calls.append((task_id, agent_id))
+            if len(self.calls) >= 2:
+                self.two_heartbeats.set()
+
+    central = HeartbeatCentral()
+
+    async def long_execution():
+        await asyncio.wait_for(central.two_heartbeats.wait(), timeout=0.5)
+        return "optimized"
+
+    result = await worker_main._run_with_task_heartbeats(
+        long_execution(),
+        central=central,
+        task_id="task-long",
+        agent_id="prompt_optimizer_test_02",
+        interval_seconds=0.001,
+    )
+
+    assert result == "optimized"
+    assert central.calls[:2] == [
+        ("task-long", "prompt_optimizer_test_02"),
+        ("task-long", "prompt_optimizer_test_02"),
+    ]
+    calls_after_completion = len(central.calls)
+    await asyncio.sleep(0.01)
+    assert len(central.calls) == calls_after_completion

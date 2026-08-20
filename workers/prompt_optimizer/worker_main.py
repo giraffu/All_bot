@@ -8,8 +8,9 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Awaitable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 from minio import Minio
@@ -31,7 +32,9 @@ LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://127.0.0.1:1234")
 LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "ltx-prompt-optimizer")
 HEALTH_PORT = int(os.getenv("PROMPT_OPTIMIZER_HEALTH_PORT", "8097"))
 POLL_SECONDS = float(os.getenv("PROMPT_OPTIMIZER_POLL_SECONDS", "1.0"))
+TASK_HEARTBEAT_SECONDS = 15.0
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "user-data-test")
+_T = TypeVar("_T")
 
 _state: dict[str, Any] = {
     "ready": False,
@@ -160,6 +163,13 @@ class CentralClient:
                     {"model": LM_STUDIO_MODEL}, separators=(",", ":")
                 ),
             },
+        )
+        response.raise_for_status()
+
+    async def task_heartbeat(self, task_id: str, agent_id: str) -> None:
+        response = await self.client.post(
+            "/api/agent/task/task_heartbeat",
+            json={"task_id": task_id, "agent_id": agent_id},
         )
         response.raise_for_status()
 
@@ -298,6 +308,39 @@ def _parse_params(task: dict[str, Any]) -> dict[str, Any]:
     return params
 
 
+async def _run_with_task_heartbeats(
+    operation: Awaitable[_T],
+    *,
+    central: CentralClient,
+    task_id: str,
+    agent_id: str,
+    interval_seconds: float = TASK_HEARTBEAT_SECONDS,
+) -> _T:
+    async def maintain_heartbeat() -> None:
+        while True:
+            try:
+                await central.task_heartbeat(task_id, agent_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "task heartbeat unavailable task_id=%s reason=%s",
+                    task_id,
+                    type(exc).__name__,
+                )
+            await asyncio.sleep(interval_seconds)
+
+    heartbeat_task = asyncio.create_task(maintain_heartbeat())
+    try:
+        return await operation
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+
+
 async def _lane(
     lane_number: int,
     *,
@@ -337,12 +380,17 @@ async def _lane(
                     agent_id=agent_id,
                     attempt_id=attempt_id,
                 )
-                result = await execute_prompt_optimization(
-                    _parse_params(task),
-                    provider=provider,
-                    load_media=lambda key: _load_object(minio_client, key),
-                    preprocess_media=image_bytes_to_data_url,
-                    on_text_delta=emitter.add,
+                result = await _run_with_task_heartbeats(
+                    execute_prompt_optimization(
+                        _parse_params(task),
+                        provider=provider,
+                        load_media=lambda key: _load_object(minio_client, key),
+                        preprocess_media=image_bytes_to_data_url,
+                        on_text_delta=emitter.add,
+                    ),
+                    central=central,
+                    task_id=task_id,
+                    agent_id=agent_id,
                 )
                 await emitter.flush()
                 await central.complete(task_id, agent_id, result, attempt_id=attempt_id)
