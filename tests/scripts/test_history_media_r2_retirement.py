@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import threading
+import time
+from argparse import Namespace
 from datetime import datetime, timezone
 
 import pytest
@@ -15,6 +18,7 @@ from scripts.history_media_r2_retirement import (
     RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
     RETIREMENT_DDL,
     _durability_archive_config,
+    _delete_sources,
     _ensure_retirement_blocker_indexes,
     _expected_switch_counts,
     _head_candidates,
@@ -24,7 +28,9 @@ from scripts.history_media_r2_retirement import (
     _retirement_has_blockers,
     _retirement_object_identity,
     _retirement_runtime_identity,
+    _validate_retirement_execution_policy,
     build_bulk_retirement_plan,
+    build_bulk_retirement_successor_manifest,
     build_retirement_plan,
     classify_retirement_candidate,
     validate_delete_gate,
@@ -261,8 +267,22 @@ def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
         archive_config=None,
     )
     assert identity["durability_basis"] == DURABILITY_R2_PERSISTENT_TARGET
+    assert identity["retirement_execution_policy"] == {
+        "scheduler": "request-phases-v1",
+        "head_concurrency": 32,
+        "delete_concurrency": 8,
+    }
     assert "nas_bucket" not in identity
     assert "nas_endpoint_sha256" not in identity
+
+    manifest = {"runtime_identity": identity}
+    _validate_retirement_execution_policy(
+        manifest, Namespace(head_concurrency=32, delete_concurrency=8)
+    )
+    with pytest.raises(RuntimeError, match="execution policy"):
+        _validate_retirement_execution_policy(
+            manifest, Namespace(head_concurrency=64, delete_concurrency=8)
+        )
 
 
 @pytest.mark.asyncio
@@ -299,6 +319,108 @@ async def test_r2_persistent_target_head_gate_never_requires_nas_client():
         concurrency=1,
     )
     assert recovered == 0
+
+
+@pytest.mark.asyncio
+async def test_retirement_head_gate_uses_request_level_concurrency_above_delete_cap():
+    candidates = [
+        _candidate(
+            source_key=f"private/source-{index}.png",
+            durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+            targets=[
+                {
+                    "target_key": f"task-results/task-{index}/primary.png",
+                    "copy_plan_sha256": "c" * 64,
+                    "target_etag": "source-etag",
+                }
+            ],
+        )
+        for index in range(64)
+    ]
+
+    class R2:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+            self.lock = threading.Lock()
+            self.release = threading.Event()
+
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            with self.lock:
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+                if self.peak >= 16:
+                    self.release.set()
+            assert self.release.wait(timeout=2)
+            try:
+                if Key.startswith("private/source-"):
+                    return {
+                        "ContentLength": 100,
+                        "ETag": '"source-etag"',
+                        "LastModified": candidates[0]["source_last_modified"],
+                    }
+                return {
+                    "ContentLength": 100,
+                    "ETag": '"source-etag"',
+                    "Metadata": {"allbot-copy-plan-sha256": "c" * 64},
+                }
+            finally:
+                with self.lock:
+                    self.active -= 1
+
+    r2 = R2()
+    recovered = await _head_candidates(
+        candidates,
+        r2_client=r2,
+        r2_bucket="persistent",
+        nas_client=None,
+        concurrency=32,
+    )
+
+    assert recovered == 0
+    assert 16 <= r2.peak <= 32
+    assert not any(
+        thread.name.startswith("history-r2-retirement-head")
+        for thread in threading.enumerate()
+    )
+
+
+@pytest.mark.asyncio
+async def test_retirement_delete_pool_stays_bounded_and_is_released():
+    class R2:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+            self.lock = threading.Lock()
+
+        def delete_object(self, *, Bucket, Key):
+            del Bucket, Key
+            with self.lock:
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+            try:
+                time.sleep(0.02)
+            finally:
+                with self.lock:
+                    self.active -= 1
+
+    r2 = R2()
+    await _delete_sources(
+        [
+            {"source_key": f"private/source-{index}.png"}
+            for index in range(32)
+        ],
+        r2_client=r2,
+        r2_bucket="persistent",
+        concurrency=8,
+    )
+
+    assert r2.peak == 8
+    assert not any(
+        thread.name.startswith("history-r2-retirement-delete")
+        for thread in threading.enumerate()
+    )
 
 
 def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
@@ -496,6 +618,89 @@ def test_bulk_retirement_plan_rejects_scope_count_drift_and_duplicate_switches()
         )
 
 
+def test_bulk_retirement_successor_preserves_completed_objects_and_conserves_scope():
+    predecessor = {
+        "schema": "allbot-history-media-r2-bulk-retirement-plan/v2",
+        "execution_mode": "bulk",
+        "durability_basis": DURABILITY_R2_PERSISTENT_TARGET,
+        "run_id": "11111111-1111-1111-1111-111111111111",
+        "parent_copy_plan_sha256s": ["c" * 64],
+        "parent_switch_plan_sha256s": ["s" * 64],
+        "switch_scopes": [
+            {
+                "switch_plan_sha256": "s" * 64,
+                "asset_coordinate_count": 10,
+                "rowset_sha256": "r" * 64,
+            }
+        ],
+        "asset_coordinate_count": 10,
+        "asset_scope_sha256": "a" * 64,
+        "asset_scope_algorithm": "history-r2-bulk-scope-merkle-v1",
+        "source_identity_policy": BULK_SOURCE_IDENTITY_POLICY,
+        "object_count": 8,
+        "total_bytes": 800,
+        "batch_size": 1000,
+        "plan_sha256": "p" * 64,
+    }
+    batches = [
+        {
+            "batch_no": 0,
+            "is_canary": True,
+            "disposition": "eligible",
+            "is_retained": False,
+            "object_count": 5,
+            "asset_coordinate_count": 7,
+            "total_bytes": 500,
+            "rowset_sha256": "b" * 64,
+        }
+    ]
+
+    manifest = build_bulk_retirement_successor_manifest(
+        predecessor_manifest=predecessor,
+        predecessor_plan_sha256="p" * 64,
+        predecessor_completed_batches_sha256="d" * 64,
+        predecessor_retained_object_count=3,
+        predecessor_retained_asset_coordinate_count=3,
+        remaining_object_count=5,
+        remaining_asset_coordinate_count=7,
+        remaining_total_bytes=500,
+        remaining_rowset_sha256="e" * 64,
+        batches=batches,
+        disposition_summary={
+            "eligible": {"object_count": 5, "asset_coordinate_count": 7}
+        },
+        runtime_identity={"artifact_digest": "sha256:" + "f" * 64},
+    )
+
+    assert manifest["schema"] == "allbot-history-media-r2-bulk-retirement-plan/v3"
+    assert manifest["predecessor_plan_sha256"] == "p" * 64
+    assert manifest["root_object_count"] == 8
+    assert manifest["root_asset_coordinate_count"] == 10
+    assert manifest["predecessor_retained_object_count"] == 3
+    assert manifest["object_count"] == 5
+    assert manifest["asset_coordinate_count"] == 7
+    assert manifest["retained_target_object_count"] == 0
+    assert manifest["plan_sha256"]
+
+    with pytest.raises(RuntimeError, match="object conservation"):
+        build_bulk_retirement_successor_manifest(
+            predecessor_manifest=predecessor,
+            predecessor_plan_sha256="p" * 64,
+            predecessor_completed_batches_sha256="d" * 64,
+            predecessor_retained_object_count=2,
+            predecessor_retained_asset_coordinate_count=3,
+            remaining_object_count=5,
+            remaining_asset_coordinate_count=7,
+            remaining_total_bytes=500,
+            remaining_rowset_sha256="e" * 64,
+            batches=batches,
+            disposition_summary={
+                "eligible": {"object_count": 5, "asset_coordinate_count": 7}
+            },
+            runtime_identity={},
+        )
+
+
 def test_bulk_switch_count_parser_is_exact_and_fail_closed():
     assert _expected_switch_counts(["a" * 64 + "=1828075"]) == {
         "a" * 64: 1828075
@@ -564,13 +769,16 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     source = inspect.getsource(module._execute_delete)
     for forbidden in ("get_object", "list_objects", "copy_object"):
         assert forbidden not in source
-    assert "delete_object" in source
-    assert source.count("delete_object") == 1
-    delete_call = source[source.index("delete_object") :]
-    assert 'Key=str(item["source_key"])' in delete_call[:300]
+    assert "_delete_sources" in source
+    assert source.count("_head_candidates") == 2
+    delete_source = inspect.getsource(module._delete_sources)
+    assert "delete_object" in delete_source
+    assert delete_source.count("delete_object") == 1
+    delete_call = delete_source[delete_source.index("delete_object") :]
+    assert 'Key=str(candidate["source_key"])' in delete_call[:400]
     assert "validate_delete_gate" in source
     assert "_retirement_has_blockers" in source
-    assert "target_key" in source
+    assert "target_key" in inspect.getsource(module._head_candidates)
     blocker_source = RETIREMENT_BLOCKER_SQL
     assert "copy_required" in blocker_source
     assert "switch_completed_at" in blocker_source
@@ -625,6 +833,17 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     finalizer_source = inspect.getsource(module._finalize_bulk_delete)
     assert "retained_target_object_count" in finalizer_source
     assert "blocked_count" in finalizer_source
+
+    successor_source = inspect.getsource(module._plan_bulk_delete_successor)
+    assert "status='planned'" in successor_source
+    assert "_completed_retirement_batch_proof" in successor_source
+    assert "_bulk_predecessor_retained_counts" in successor_source
+    assert "set status='paused'" in successor_source
+    assert "_bulk_production_has_live_refs" not in successor_source
+    assert "_live_reference_counts" in source
+    assert "retirement_execution_policy" in inspect.getsource(
+        module._retirement_runtime_identity
+    )
 
 
 @pytest.mark.asyncio
@@ -838,6 +1057,19 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
             "sha256:" + "b" * 64,
         ]
     )
+    bulk_successor = _parser().parse_args(
+        [
+            "plan-bulk-delete-successor",
+            "--predecessor-plan-sha256",
+            "a" * 64,
+            "--config",
+            "/secure/r2.json",
+            "--artifact-digest",
+            "sha256:" + "b" * 64,
+            "--output",
+            "/secure/bulk-delete-successor.json",
+        ]
+    )
 
     assert report.command == "report"
     assert prepare.command == "prepare-delete-indexes"
@@ -848,7 +1080,8 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert plan.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
     assert execute.archive_config is None
     assert execute.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
-    assert execute.delete_concurrency <= 8
+    assert execute.head_concurrency == 32
+    assert execute.delete_concurrency == 8
     assert bulk_plan.switch_plan_sha256 == ["a" * 64, "b" * 64]
     assert bulk_plan.expected_switch_asset_count == [
         "a" * 64 + "=1828075",
@@ -857,6 +1090,10 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert bulk_plan.canary_size == 100
     assert bulk_execute.command == "execute-bulk-delete"
     assert bulk_execute.confirm == "DELETE_HISTORY_MEDIA_" + "a" * 64
+    assert bulk_execute.head_concurrency == 32
+    assert bulk_execute.delete_concurrency == 8
+    assert bulk_successor.predecessor_plan_sha256 == "a" * 64
+    assert bulk_successor.canary_size == 100
     assert "analytics_history_media_r2_retirement_plans" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_objects" in RETIREMENT_DDL
     assert "analytics_history_media_r2_retirement_batches" in RETIREMENT_DDL

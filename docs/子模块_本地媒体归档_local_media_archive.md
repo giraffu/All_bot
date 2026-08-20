@@ -497,15 +497,30 @@ Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 
 替代，缺任一项或时间漂移都停止。该兼容策略写入全局 manifest，不适用于旧的单范围
 计划，也不能放宽目标对象的 Copy marker、size 或 ETag 门禁。
 
-真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`，默认并发 4、硬上限
-8；不能复用 COPY、SWITCH、临时清理或通用冷归档令牌。每批执行前重新扫描生产 History
-与迁移账本并复核全部 HEAD，删除后确认旧源缺失且耐久副本仍满足冻结依据：NAS 模式复核
-目标 marker 与 NAS SHA，R2 持久目标模式复核目标 marker/size/ETag。系统性网络、数据库、
-身份或行集变化把计划置为 paused；旧源已经因本计划提交窗口消失时，也只有冻结的耐久
-副本仍完整才可幂等收口。R2 持久目标模式不等于完成 NAS 归档；待持久目录迁移验收后，
-从该目录到 NAS 的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨
-shadow 换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源
-的对象都必须留存。
+真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`；不能复用 COPY、
+SWITCH、临时清理或通用冷归档令牌。Bulk v3 把每批调度为三个阶段：删前 HEAD、DELETE、
+删后 HEAD。计划身份固定 `request-phases-v1`，只读 HEAD 默认 32 路、硬上限 64，真实
+DELETE 默认及硬上限为 8；R2/NAS 连接池必须覆盖 HEAD 并发。删前仍重新扫描生产 History
+与迁移账本并复核旧源身份和全部耐久目标，删后仍确认旧源缺失且目标 marker/size/ETag
+未变；NAS 模式另外复核 NAS SHA。每阶段使用生命周期受控的专用线程池并输出对象数、
+请求数、并发与耗时等低基数指标，不输出 key。系统性网络、数据库、身份或行集变化把
+计划置为 paused；旧源已经因本计划提交窗口消失时，也只有冻结的耐久副本仍完整才可
+幂等收口。R2 持久目标模式不等于完成 NAS 归档；待持久目录迁移验收后，从该目录到 NAS
+的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨 shadow
+换库保留。正在运行的 Copy 可以和零交集低并发退役并行，但任何仍作为 Copy 来源的对象
+都必须留存。
+
+运行中的 Bulk retirement 更换 artifact 时不得改写原 manifest，也不得让新 artifact
+冒用旧 digest。先停止 predecessor 执行器；已完成批次、`deleted`/`SOURCE_IS_TARGET`
+回执和对应批次 SHA 永久保留。`plan-bulk-delete-successor` 只冻结 predecessor 中仍为
+`planned` 的对象，证明累计保留对象与 successor 对象等于 root 对象/资产坐标总数，
+并把 predecessor 的非完成批次置为 paused。successor 沿用 predecessor 的 disposition，
+避免再次扫描完整生产 History；每个执行批次仍精确
+重检新增生产引用和本地 blocker。未提交的
+在途删除可由 successor 以 source-already-missing 路径重新完成删后验证；两计划对象交集
+按状态为零。successor 绑定新 artifact、请求调度策略、rowset/batches SHA，仍需新的
+`DELETE_HISTORY_MEDIA_<successor-sha>`；旧 executor 必须保持停止，不能与 successor
+竞争 paused 批次。
 
 Bulk 冻结对生产 History 的零引用核对先把 `eligible` 来源在本地计算为固定 32-byte
 SHA-256，再分块写入生产会话专属临时表；临时表建立唯一索引并 ANALYZE，查询会话关闭或

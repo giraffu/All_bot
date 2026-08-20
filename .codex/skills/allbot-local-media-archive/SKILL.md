@@ -20,21 +20,17 @@ description: "维护 History 全量媒体目录、NAS/MinIO 归档、archive/res
 - 永久原件按 SHA-256 寻址；History/原 key 映射保存在回执。
 - 迁移使用冻结账本和父计划限定的 Probe→Copy→Switch；并发默认值和批次参数从
   当前脚本 `--help`/代码读取，不写成 Skill 快照。禁止正文下载式探测和无界全桶扫描。
-- History R2 全量链路使用父计划限定的 Probe→Copy→Switch batches；只分别接受
-  `PROBE_HISTORY_MEDIA_<sha>`、`COPY_HISTORY_MEDIA_<sha>`、
-  `SWITCH_HISTORY_MEDIA_<sha>`。Probe 只 HEAD，Copy 必须写精确 marker，Switch
-  必须重算行集和批次 CAS；旧源始终保留。
+- History R2 全量链路只接受精确 PROBE/COPY/SWITCH SHA；Probe 只 HEAD，Copy 写
+  marker，Switch 重算行集和批次 CAS，旧源保留。
 - `plan-switch-completed` 只冻结终止 predecessor/当前 completed 批次；一次一份计划，
   仍需精确 SWITCH 令牌。
-- retirement 只接受 `DELETE_HISTORY_MEDIA_<sha>`；使用集合门禁。多个 completed
-  Switch 由 `plan-bulk-delete` 冻结，一令牌覆盖；blocker deferred
-  后重检，source-is-target retained；只删旧源，目标、桶清理、shadow解锁禁止。
-- direct predecessor marker 仅由新 COPY 令牌的 frontier HEAD recovery 对账；停止计划的
-  transient `failed` 仅 HEAD 对账后冻结 successor 并重新授权。
+- Bulk retirement 只接受精确 DELETE SHA；集合门禁将 blocker deferred、source-is-target
+  retained，只删旧源。删前/删后 HEAD 高并发，DELETE 低并发；换 artifact 时暂停
+  predecessor，successor 只冻 remaining planned 并重新授权。
+- predecessor marker/frontier 和 transient failed 只用 HEAD 对账后冻结 successor。
 - Copy lane 共用 artifact 内的动态并发、epoch、429 冷却和低基数错误门禁。
-- `cloud_receipt` Copy 中本地协调器是账本唯一写者；SSH 仅传 0600 HMAC 任务/回执，
-  云端只做 HEAD/CopyObject 且不连数据库。身份或签名不符 fail closed，新 successor
-  canary 仍需 COPY 令牌。
+- `cloud_receipt` Copy 仅本地写账本；云端只做 HEAD/CopyObject 和 HMAC 回执，身份
+  不符 fail closed，successor canary 仍需 COPY 令牌。
 - 未在冻结计划与 runtime identity 中显式选择耐久性依据时，任何 R2 原件都不得删除；
   `r2-persistent-target` 不声称 NAS 已归档，后续 NAS 备份从持久目标另立计划。
 - 最新 8 条先按用户原始 History 排名，再过滤不可见记录；Gallery 保护引用。
