@@ -11,6 +11,7 @@ import os
 import random
 import stat
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable
@@ -51,8 +52,8 @@ RETIREMENT_BATCH_SIZE = 1000
 MAX_DELETE_CONCURRENCY = 8
 MAX_RETIREMENT_HEAD_CONCURRENCY = 128
 DEFAULT_RETIREMENT_HEAD_CONCURRENCY = 128
-DEFAULT_RETIREMENT_DELETE_CONCURRENCY = 8
-RETIREMENT_EXECUTION_SCHEDULER = "request-phases-adaptive-v2"
+DEFAULT_RETIREMENT_DELETE_CONCURRENCY = 4
+RETIREMENT_EXECUTION_SCHEDULER = "persistent-context-bulk-delete-v3"
 RETIREMENT_HEAD_CONCURRENCY_LEVELS = (128, 64, 32)
 RETIREMENT_HEAD_MINIMUM_SAMPLES = 200
 RETIREMENT_HEAD_LOWER_ERROR_RATE = 0.005
@@ -60,6 +61,8 @@ RETIREMENT_HEAD_RAISE_ERROR_RATE = 0.002
 RETIREMENT_HEAD_SYSTEMIC_ERROR_RATE = 0.10
 RETIREMENT_HEAD_HEALTHY_WINDOWS_TO_RAISE = 2
 RETIREMENT_HEAD_RETRY_ATTEMPTS = 5
+RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE = 250
+RETIREMENT_DELETE_RETRY_ATTEMPTS = 5
 DURABILITY_NAS_ARCHIVE = "nas-archive"
 DURABILITY_R2_PERSISTENT_TARGET = "r2-persistent-target"
 DURABILITY_BASES = (DURABILITY_NAS_ARCHIVE, DURABILITY_R2_PERSISTENT_TARGET)
@@ -162,6 +165,32 @@ class RetirementHeadConcurrencyController:
             error_rate=error_rate,
             request_count=request_count,
         )
+
+
+class RetirementRequestExecutors:
+    """Own the bounded request pools used for the complete retirement run."""
+
+    def __init__(self, *, head_concurrency: int, delete_concurrency: int) -> None:
+        if not 1 <= head_concurrency <= MAX_RETIREMENT_HEAD_CONCURRENCY:
+            raise ValueError("retirement HEAD concurrency is out of range")
+        if not 1 <= delete_concurrency <= MAX_DELETE_CONCURRENCY:
+            raise ValueError("retirement delete concurrency is out of range")
+        self.head_executor = ThreadPoolExecutor(
+            max_workers=head_concurrency,
+            thread_name_prefix="history-r2-retirement-head",
+        )
+        self.delete_executor = ThreadPoolExecutor(
+            max_workers=delete_concurrency,
+            thread_name_prefix="history-r2-retirement-delete",
+        )
+        self._closed = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.head_executor.shutdown(wait=True, cancel_futures=True)
+        self.delete_executor.shutdown(wait=True, cancel_futures=True)
 
 
 def _retirement_head_controller(
@@ -1047,6 +1076,100 @@ def _s3_client(config: dict[str, Any], *, max_connections: int) -> Any:
     )
 
 
+@dataclass
+class RetirementExecutionContext:
+    ledger: asyncpg.Connection
+    production: asyncpg.Connection
+    r2_config: dict[str, Any]
+    archive_config: dict[str, Any] | None
+    r2_client: Any
+    nas_client: Any | None
+    head_controller: RetirementHeadConcurrencyController
+    requests: RetirementRequestExecutors
+    head_concurrency: int
+    delete_concurrency: int
+
+    async def reconnect_production(self) -> None:
+        try:
+            await self.production.close()
+        except Exception:
+            pass
+        self.production = await _connect("PRODUCTION_DATABASE_URL")
+
+    async def close(self) -> None:
+        try:
+            await self.production.close()
+        finally:
+            try:
+                await self.ledger.close()
+            finally:
+                self.requests.close()
+                self.r2_client.close()
+                if self.nas_client is not None:
+                    self.nas_client.close()
+
+
+async def _open_retirement_execution_context(
+    args: argparse.Namespace,
+) -> RetirementExecutionContext:
+    r2_config = _load_secure_config(Path(args.config))
+    archive_config = _durability_archive_config(
+        args.durability_basis, args.archive_config
+    )
+    clear_proxy_environment()
+    validate_endpoint_route(r2_config["target"])
+    if archive_config is not None:
+        validate_endpoint_route(archive_config["nas"])
+    head_concurrency = int(
+        getattr(args, "head_concurrency", args.delete_concurrency)
+    )
+    connection_pool_size = max(head_concurrency, args.delete_concurrency)
+    requests = RetirementRequestExecutors(
+        head_concurrency=head_concurrency,
+        delete_concurrency=args.delete_concurrency,
+    )
+    ledger: asyncpg.Connection | None = None
+    production: asyncpg.Connection | None = None
+    r2_client: Any | None = None
+    nas_client: Any | None = None
+    try:
+        ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
+        production = await _connect("PRODUCTION_DATABASE_URL")
+        r2_client = _s3_client(
+            r2_config["target"], max_connections=connection_pool_size
+        )
+        nas_client = (
+            _s3_client(archive_config["nas"], max_connections=connection_pool_size)
+            if archive_config is not None
+            else None
+        )
+        return RetirementExecutionContext(
+            ledger=ledger,
+            production=production,
+            r2_config=r2_config,
+            archive_config=archive_config,
+            r2_client=r2_client,
+            nas_client=nas_client,
+            head_controller=_retirement_head_controller(
+                args, configured_concurrency=head_concurrency
+            ),
+            requests=requests,
+            head_concurrency=head_concurrency,
+            delete_concurrency=int(args.delete_concurrency),
+        )
+    except Exception:
+        if production is not None:
+            await production.close()
+        if ledger is not None:
+            await ledger.close()
+        requests.close()
+        if r2_client is not None:
+            r2_client.close()
+        if nas_client is not None:
+            nas_client.close()
+        raise
+
+
 def _retirement_runtime_identity(
     *,
     artifact_digest: str,
@@ -1074,6 +1197,12 @@ def _retirement_runtime_identity(
                     RETIREMENT_HEAD_HEALTHY_WINDOWS_TO_RAISE
                 ),
                 "delete_concurrency": DEFAULT_RETIREMENT_DELETE_CONCURRENCY,
+                "delete_api": "DeleteObjects",
+                "delete_chunk_size": RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE,
+                "delete_retry_attempts": RETIREMENT_DELETE_RETRY_ATTEMPTS,
+                "post_delete_verification": "source-head-only-full-batch",
+                "request_context_lifecycle": "one-per-bulk-plan",
+                "production_reference_retry_attempts": 3,
             },
             "retirement_script_sha256": hashlib.sha256(
                 Path(__file__).read_bytes()
@@ -1111,6 +1240,16 @@ def _validate_retirement_execution_policy(
         or int(policy.get("head_concurrency") or 0) != int(args.head_concurrency)
         or int(policy.get("delete_concurrency") or 0)
         != int(args.delete_concurrency)
+        or str(policy.get("delete_api") or "") != "DeleteObjects"
+        or int(policy.get("delete_chunk_size") or 0)
+        != RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE
+        or int(policy.get("delete_retry_attempts") or 0)
+        != RETIREMENT_DELETE_RETRY_ATTEMPTS
+        or str(policy.get("post_delete_verification") or "")
+        != "source-head-only-full-batch"
+        or str(policy.get("request_context_lifecycle") or "")
+        != "one-per-bulk-plan"
+        or int(policy.get("production_reference_retry_attempts") or 0) != 3
     ):
         raise RuntimeError("retirement execution policy changed")
 
@@ -1324,6 +1463,7 @@ async def _run_retirement_head_requests(
     *,
     controller: RetirementHeadConcurrencyController,
     retry_sleep: Callable[[float], Awaitable[None]],
+    executor: ThreadPoolExecutor | None = None,
 ) -> tuple[list[Any], int]:
     if not request_funcs:
         return [], controller.current_concurrency
@@ -1336,20 +1476,27 @@ async def _run_retirement_head_requests(
     for attempt in range(1, RETIREMENT_HEAD_RETRY_ATTEMPTS + 1):
         attempt_concurrency = controller.current_concurrency
         peak_concurrency = max(peak_concurrency, attempt_concurrency)
-        executor = ThreadPoolExecutor(
+        active_executor = executor or ThreadPoolExecutor(
             max_workers=attempt_concurrency,
             thread_name_prefix="history-r2-retirement-head",
         )
+        request_slots = threading.BoundedSemaphore(attempt_concurrency)
+
+        def run_request(index: int) -> Any:
+            with request_slots:
+                return request_funcs[index]()
+
         try:
             outcomes = await asyncio.gather(
                 *(
-                    loop.run_in_executor(executor, request_funcs[index])
+                    loop.run_in_executor(active_executor, run_request, index)
                     for index in pending
                 ),
                 return_exceptions=True,
             )
         finally:
-            executor.shutdown(wait=True, cancel_futures=True)
+            if executor is None:
+                active_executor.shutdown(wait=True, cancel_futures=True)
 
         retry_indexes: list[int] = []
         rate_limit_count = 0
@@ -1423,6 +1570,52 @@ async def _live_reference_counts(
     return {str(row["ref"]): int(row["refs"]) for row in rows}
 
 
+async def _live_reference_counts_with_retry(
+    context: RetirementExecutionContext,
+    keys: list[str],
+    *,
+    retry_sleep: Callable[[float], Awaitable[None]] | None = None,
+    attempts: int = 3,
+) -> dict[str, int]:
+    """Recover a transient production connection without weakening the gate."""
+
+    sleep_func = retry_sleep or asyncio.sleep
+    last_error: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await _live_reference_counts(context.production, keys)
+        except (
+            asyncpg.PostgresConnectionError,
+            asyncpg.InterfaceError,
+            OSError,
+            TimeoutError,
+        ) as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            print(
+                json.dumps(
+                    {
+                        "event": "retirement_production_connection_retry",
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                    },
+                    sort_keys=True,
+                )
+            )
+            await sleep_func(min(2 ** (attempt - 1), 4))
+            try:
+                await context.reconnect_production()
+            except (
+                asyncpg.PostgresConnectionError,
+                asyncpg.InterfaceError,
+                OSError,
+                TimeoutError,
+            ) as reconnect_error:
+                last_error = reconnect_error
+    raise RuntimeError("retirement production reference gate unavailable") from last_error
+
+
 async def _head_candidates(
     candidates: list[dict[str, Any]],
     *,
@@ -1434,6 +1627,7 @@ async def _head_candidates(
     phase: str = "head_gate",
     controller: RetirementHeadConcurrencyController | None = None,
     retry_sleep: Callable[[float], Awaitable[None]] | None = None,
+    executor: ThreadPoolExecutor | None = None,
 ) -> int:
     started = time.monotonic()
     active_controller = controller or RetirementHeadConcurrencyController(
@@ -1501,6 +1695,7 @@ async def _head_candidates(
         request_funcs,
         controller=active_controller,
         retry_sleep=sleep_func,
+        executor=executor,
     )
     try:
         missing = 0
@@ -1546,12 +1741,85 @@ async def _head_candidates(
         results.clear()
 
 
+async def _head_source_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    r2_client: Any,
+    r2_bucket: str,
+    concurrency: int,
+    pre_delete_proof: str,
+    expected_pre_delete_proof: str,
+    phase: str = "post_delete",
+    controller: RetirementHeadConcurrencyController | None = None,
+    retry_sleep: Callable[[float], Awaitable[None]] | None = None,
+    executor: ThreadPoolExecutor | None = None,
+) -> int:
+    """Verify only old sources after deletion, bound to the successful pre-gate."""
+
+    current_proof = _sha256_json(
+        [_retirement_object_identity(candidate) for candidate in candidates]
+    )
+    if (
+        not pre_delete_proof
+        or pre_delete_proof != expected_pre_delete_proof
+        or current_proof != expected_pre_delete_proof
+    ):
+        raise RuntimeError("retirement pre-delete survivor proof changed")
+    started = time.monotonic()
+    active_controller = controller or RetirementHeadConcurrencyController(
+        initial_concurrency=concurrency
+    )
+    if active_controller.maximum_concurrency != concurrency:
+        raise ValueError("retirement HEAD controller maximum changed")
+
+    def head_source(candidate: dict[str, Any]) -> Any | None:
+        try:
+            return r2_client.head_object(
+                Bucket=r2_bucket, Key=str(candidate["source_key"])
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code") or "")
+            status = int(
+                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0
+            )
+            if code in {"404", "NoSuchKey", "NotFound"} or status == 404:
+                return None
+            raise
+
+    results, peak_concurrency = await _run_retirement_head_requests(
+        [partial(head_source, candidate) for candidate in candidates],
+        controller=active_controller,
+        retry_sleep=retry_sleep or asyncio.sleep,
+        executor=executor,
+    )
+    missing = sum(result is None for result in results)
+    print(
+        json.dumps(
+            {
+                "event": "retirement_head_phase_completed",
+                "phase": phase,
+                "object_count": len(candidates),
+                "request_count": len(candidates),
+                "source_missing_count": missing,
+                "concurrency": active_controller.current_concurrency,
+                "peak_concurrency": peak_concurrency,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            },
+            sort_keys=True,
+        )
+    )
+    results.clear()
+    return missing
+
+
 async def _delete_sources(
     candidates: list[dict[str, Any]],
     *,
     r2_client: Any,
     r2_bucket: str,
     concurrency: int,
+    retry_sleep: Callable[[float], Awaitable[None]] | None = None,
+    executor: ThreadPoolExecutor | None = None,
 ) -> int:
     started = time.monotonic()
     selected = [
@@ -1562,29 +1830,95 @@ async def _delete_sources(
     if not selected:
         return 0
     loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(
+    active_executor = executor or ThreadPoolExecutor(
         max_workers=concurrency, thread_name_prefix="history-r2-retirement-delete"
     )
+    sleep_func = retry_sleep or asyncio.sleep
+    pending = [str(candidate["source_key"]) for candidate in selected]
+    request_count = 0
     try:
-        await asyncio.gather(
-            *(
-                loop.run_in_executor(
-                    executor,
-                    partial(
-                        r2_client.delete_object,
-                        Bucket=r2_bucket,
-                        Key=str(candidate["source_key"]),
-                    ),
+        for attempt in range(1, RETIREMENT_DELETE_RETRY_ATTEMPTS + 1):
+            chunks = [
+                pending[offset : offset + RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE]
+                for offset in range(
+                    0, len(pending), RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE
                 )
-                for candidate in selected
-            )
-        )
+            ]
+            retry_keys: list[str] = []
+            for offset in range(0, len(chunks), concurrency):
+                wave = chunks[offset : offset + concurrency]
+                responses = await asyncio.gather(
+                    *(
+                        loop.run_in_executor(
+                            active_executor,
+                            partial(
+                                r2_client.delete_objects,
+                                Bucket=r2_bucket,
+                                Delete={
+                                    "Objects": [{"Key": key} for key in chunk],
+                                    "Quiet": False,
+                                },
+                            ),
+                        )
+                        for chunk in wave
+                    ),
+                    return_exceptions=True,
+                )
+                request_count += len(wave)
+                for chunk, response in zip(wave, responses):
+                    if isinstance(response, BaseException):
+                        if _retirement_head_error_kind(response) == "fatal":
+                            raise response
+                        retry_keys.extend(chunk)
+                        continue
+                    deleted_keys = {
+                        str(item.get("Key") or "")
+                        for item in response.get("Deleted", [])
+                    }
+                    errors = list(response.get("Errors", []))
+                    error_keys = {str(item.get("Key") or "") for item in errors}
+                    submitted = set(chunk)
+                    if (
+                        not deleted_keys.issubset(submitted)
+                        or not error_keys.issubset(submitted)
+                        or deleted_keys & error_keys
+                        or deleted_keys | error_keys != submitted
+                    ):
+                        raise RuntimeError(
+                            "retirement DeleteObjects response coverage changed"
+                        )
+                    for error in errors:
+                        code = str(error.get("Code") or "")
+                        if code not in {
+                            "429",
+                            "InternalError",
+                            "RequestTimeout",
+                            "RequestTimeoutException",
+                            "ServiceUnavailable",
+                            "SlowDown",
+                            "Throttling",
+                            "ThrottlingException",
+                            "TooManyRequestsException",
+                        }:
+                            raise RuntimeError(
+                                "retirement DeleteObjects returned a fatal error"
+                            )
+                    retry_keys.extend(error_keys)
+            if not retry_keys:
+                break
+            if attempt >= RETIREMENT_DELETE_RETRY_ATTEMPTS:
+                raise RuntimeError("retirement DeleteObjects retries exhausted")
+            pending = sorted(set(retry_keys))
+            delay = min(2 ** (attempt - 1), 16)
+            await sleep_func(delay + random.uniform(0, delay * 0.2))
         print(
             json.dumps(
                 {
                     "event": "retirement_delete_phase_completed",
                     "object_count": len(selected),
                     "concurrency": concurrency,
+                    "chunk_size": RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE,
+                    "request_count": request_count,
                     "elapsed_ms": round((time.monotonic() - started) * 1000),
                 },
                 sort_keys=True,
@@ -1592,7 +1926,8 @@ async def _delete_sources(
         )
         return len(selected)
     finally:
-        executor.shutdown(wait=True, cancel_futures=True)
+        if executor is None:
+            active_executor.shutdown(wait=True, cancel_futures=True)
 
 
 async def _plan_delete(args: argparse.Namespace) -> None:
@@ -2968,32 +3303,21 @@ async def _plan_bulk_delete(args: argparse.Namespace) -> None:
         await ledger.close()
 
 
-async def _execute_delete(args: argparse.Namespace) -> None:
-    ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
-    production = await _connect("PRODUCTION_DATABASE_URL")
-    r2_config = _load_secure_config(Path(args.config))
-    archive_config = _durability_archive_config(
-        args.durability_basis, args.archive_config
-    )
-    clear_proxy_environment()
-    validate_endpoint_route(r2_config["target"])
-    if archive_config is not None:
-        validate_endpoint_route(archive_config["nas"])
-    head_concurrency = int(
-        getattr(args, "head_concurrency", args.delete_concurrency)
-    )
-    head_controller = _retirement_head_controller(
-        args, configured_concurrency=head_concurrency
-    )
-    connection_pool_size = max(head_concurrency, args.delete_concurrency)
-    r2_client = _s3_client(
-        r2_config["target"], max_connections=connection_pool_size
-    )
-    nas_client = (
-        _s3_client(archive_config["nas"], max_connections=connection_pool_size)
-        if archive_config is not None
-        else None
-    )
+async def _execute_delete(
+    args: argparse.Namespace,
+    *,
+    execution_context: RetirementExecutionContext | None = None,
+) -> None:
+    owns_context = execution_context is None
+    context = execution_context or await _open_retirement_execution_context(args)
+    ledger = context.ledger
+    r2_config = context.r2_config
+    archive_config = context.archive_config
+    head_concurrency = context.head_concurrency
+    head_controller = context.head_controller
+    r2_client = context.r2_client
+    nas_client = context.nas_client
+    batch_started = time.monotonic()
     try:
         await ledger.execute(RETIREMENT_DDL)
         missing_indexes = await _missing_retirement_blocker_indexes(ledger)
@@ -3126,13 +3450,28 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             args.plan_sha256,
             int(batch["batch_no"]),
         )
-        live_refs = await _live_reference_counts(
-            production, [str(item["source_key"]) for item in objects]
+        phase_started = time.monotonic()
+        batch_setup_and_rowset_ms = round(
+            (phase_started - batch_started) * 1000
         )
+        live_refs = await _live_reference_counts_with_retry(
+            context, [str(item["source_key"]) for item in objects]
+        )
+        phase_timings = {
+            "batch_setup_and_rowset_ms": batch_setup_and_rowset_ms,
+            "live_reference_gate_ms": round(
+                (time.monotonic() - phase_started) * 1000
+            )
+        }
         if live_refs:
             raise RuntimeError("retirement batch gained a live History reference")
+        phase_started = time.monotonic()
         if await _retirement_has_blockers(ledger, objects):
             raise RuntimeError("retirement batch gained a Copy or Switch blocker")
+        phase_timings["blocker_gate_ms"] = round(
+            (time.monotonic() - phase_started) * 1000
+        )
+        phase_started = time.monotonic()
         recovered_missing = await _head_candidates(
             objects,
             r2_client=r2_client,
@@ -3142,22 +3481,41 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             allow_source_missing=True,
             phase="pre_delete",
             controller=head_controller,
+            executor=context.requests.head_executor,
         )
+        phase_timings["pre_delete_head_ms"] = round(
+            (time.monotonic() - phase_started) * 1000
+        )
+        pre_delete_proof = _sha256_json(
+            [_retirement_object_identity(item) for item in objects]
+        )
+        if pre_delete_proof != str(batch["rowset_sha256"]):
+            raise RuntimeError("retirement pre-delete survivor proof changed")
+        phase_started = time.monotonic()
         await _delete_sources(
             objects,
             r2_client=r2_client,
             r2_bucket=str(r2_config["target"]["bucket"]),
             concurrency=args.delete_concurrency,
+            executor=context.requests.delete_executor,
         )
-        verified_missing = await _head_candidates(
+        phase_timings["delete_objects_ms"] = round(
+            (time.monotonic() - phase_started) * 1000
+        )
+        phase_started = time.monotonic()
+        verified_missing = await _head_source_candidates(
             objects,
             r2_client=r2_client,
             r2_bucket=str(r2_config["target"]["bucket"]),
-            nas_client=nas_client,
             concurrency=head_concurrency,
-            allow_source_missing=True,
+            pre_delete_proof=pre_delete_proof,
+            expected_pre_delete_proof=str(batch["rowset_sha256"]),
             phase="post_delete",
             controller=head_controller,
+            executor=context.requests.head_executor,
+        )
+        phase_timings["post_delete_source_head_ms"] = round(
+            (time.monotonic() - phase_started) * 1000
         )
         if verified_missing != len(objects):
             raise RuntimeError("old source still exists after delete")
@@ -3200,9 +3558,14 @@ async def _execute_delete(args: argparse.Namespace) -> None:
         print(
             json.dumps(
                 {
+                    "event": "retirement_batch_completed",
                     "deleted": len(objects),
                     "already_missing_recovered": recovered_missing,
                     "remaining_batches": remaining,
+                    "phase_timings_ms": phase_timings,
+                    "total_elapsed_ms": round(
+                        (time.monotonic() - batch_started) * 1000
+                    ),
                 }
             )
         )
@@ -3222,11 +3585,8 @@ async def _execute_delete(args: argparse.Namespace) -> None:
             )
         raise
     finally:
-        await production.close()
-        await ledger.close()
-        r2_client.close()
-        if nas_client is not None:
-            nas_client.close()
+        if owns_context:
+            await context.close()
 
 
 async def _bulk_plan_coverage_counts(
@@ -3464,49 +3824,45 @@ async def _finalize_bulk_delete(
 async def _execute_bulk_delete(args: argparse.Namespace) -> None:
     manifest = await _bulk_global_preflight(args)
     setattr(args, "_bulk_preflight_done", True)
+    context = await _open_retirement_execution_context(args)
     try:
         while True:
-            await _execute_delete(args)
-            ledger = await _connect("LOCAL_ANALYTICS_DATABASE_URL")
-            try:
-                state = await ledger.fetchrow(
-                    """select p.status,
-                              count(*) filter(where b.status<>'completed')
-                                remaining_batches
-                         from analytics_history_media_r2_retirement_plans p
-                         join analytics_history_media_r2_retirement_batches b
-                           using(plan_sha256)
-                        where p.plan_sha256=$1 group by p.status""",
-                    args.plan_sha256,
-                )
-                canary = await ledger.fetchrow(
-                    """select status,object_count,outcome_counts
-                         from analytics_history_media_r2_retirement_batches
-                        where plan_sha256=$1 and is_canary""",
-                    args.plan_sha256,
-                )
-                if state is None or canary is None:
-                    raise RuntimeError("bulk retirement plan disappeared")
-                canary_outcomes = (
-                    json.loads(canary["outcome_counts"])
-                    if isinstance(canary["outcome_counts"], str)
-                    else dict(canary["outcome_counts"])
-                )
-                if canary["status"] != "completed" or int(
-                    canary_outcomes.get("deleted") or 0
-                ) != int(canary["object_count"]):
-                    raise RuntimeError("bulk retirement canary did not complete")
-                if int(state["remaining_batches"]) == 0:
-                    await ledger.close()
-                    ledger = None
-                    await _finalize_bulk_delete(args.plan_sha256, manifest)
-                    return
-            finally:
-                if ledger is not None:
-                    await ledger.close()
+            await _execute_delete(args, execution_context=context)
+            state = await context.ledger.fetchrow(
+                """select p.status,
+                          count(*) filter(where b.status<>'completed')
+                            remaining_batches
+                     from analytics_history_media_r2_retirement_plans p
+                     join analytics_history_media_r2_retirement_batches b
+                       using(plan_sha256)
+                    where p.plan_sha256=$1 group by p.status""",
+                args.plan_sha256,
+            )
+            canary = await context.ledger.fetchrow(
+                """select status,object_count,outcome_counts
+                     from analytics_history_media_r2_retirement_batches
+                    where plan_sha256=$1 and is_canary""",
+                args.plan_sha256,
+            )
+            if state is None or canary is None:
+                raise RuntimeError("bulk retirement plan disappeared")
+            canary_outcomes = (
+                json.loads(canary["outcome_counts"])
+                if isinstance(canary["outcome_counts"], str)
+                else dict(canary["outcome_counts"])
+            )
+            if canary["status"] != "completed" or int(
+                canary_outcomes.get("deleted") or 0
+            ) != int(canary["object_count"]):
+                raise RuntimeError("bulk retirement canary did not complete")
+            if int(state["remaining_batches"]) == 0:
+                await _finalize_bulk_delete(args.plan_sha256, manifest)
+                return
     except Exception:
         await _mark_retirement_plan_paused(args.plan_sha256)
         raise
+    finally:
+        await context.close()
 
 
 def _bounded_delete_concurrency(value: str) -> int:

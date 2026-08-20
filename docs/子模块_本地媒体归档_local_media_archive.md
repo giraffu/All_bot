@@ -489,8 +489,8 @@ fail closed。Bulk v2 把全部旧源冻结为三个不相混合的 disposition�
 `DELETE_HISTORY_MEDIA_<global-plan-sha>` 同时授权 canary 和该 manifest 的全部内部批次，
 canary 完整提交后同一执行器自动续跑，不再逐批请求令牌；重启仍只恢复同一冻结计划的
 未完成批次。计划表记录全部 Switch 资产坐标覆盖，删除对象数则按旧来源去重，两者不得
-混为同一计数。冻结阶段不下载媒体正文，也不调用 ListObjects 或任何删除；完整来源与
-标准目标 HEAD 在每个内部批次实际删除前后复核。
+混为同一计数。冻结阶段不下载媒体正文，也不调用 ListObjects 或任何删除；实际删除前
+完整复核来源与全部标准目标，删除后以同一批次 rowset/目标存活证明只完整 HEAD 旧源。
 
 Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 ETag 时仍要求 HEAD
 精确匹配；历史账本 ETag 为空时，只能以冻结 size 加 R2 Last-Modified 的双重精确匹配
@@ -498,17 +498,21 @@ Bulk v2 的旧源身份策略固定为 `etag-or-size-last-modified`：账本有 
 计划，也不能放宽目标对象的 Copy marker、size 或 ETag 门禁。
 
 真实删除只接受新的 `DELETE_HISTORY_MEDIA_<retirement-plan-sha>`；不能复用 COPY、
-SWITCH、临时清理或通用冷归档令牌。Bulk v3 把每批调度为三个阶段：删前 HEAD、DELETE、
-删后 HEAD。计划身份固定 `request-phases-adaptive-v2`；只读 HEAD 默认及硬上限为
-128，按 `128→64→32` 运行，真实 DELETE 默认及硬上限仍为 8。每个 HEAD
+SWITCH、临时清理或通用冷归档令牌。Bulk v4 把每批调度为三个阶段：删前 HEAD、批量
+DELETE、删后源 HEAD。计划身份固定 `persistent-context-bulk-delete-v3`；只读 HEAD
+默认及硬上限为 128，按 `128→64→32` 运行。DELETE 使用每块 250 个 key 的
+`DeleteObjects`，默认最多 4 块并发，每个响应必须逐 key 被 `Deleted` 或 `Errors` 完整
+覆盖；瞬时失败只重试失败 key，最多 5 次，未知错误或响应覆盖漂移 fail closed。每个 HEAD
 请求最多尝试 5 次，只重试失败请求：429/SlowDown 立即降一档；至少
 200 个当前档位样本中 timeout/5xx 错误率超过 0.5% 才降档，低于 0.2%
 的两个健康窗口可回升，系统性错误率达到 10% 则打开 circuit breaker 并暂停
 计划。单个长尾不单独触发降档。R2/NAS 连接池必须覆盖配置的 HEAD 最高并发。
-删前仍重新扫描生产 History
-与迁移账本并复核旧源身份和全部耐久目标，删后仍确认旧源缺失且目标 marker/size/ETag
-未变；NAS 模式另外复核 NAS SHA。每阶段使用生命周期受控的专用线程池并输出对象数、
-请求数、实际/峰值并发与耗时等低基数指标，不输出 key。系统性网络、数据库、身份或行集变化把
+删前仍重新扫描生产 History 与迁移账本并复核旧源身份和全部耐久目标；成功的删前
+survivor proof 绑定批次 rowset，删后只 HEAD 计划内旧源并要求全部 404，不重复请求目标。
+NAS 模式的目标和 NAS SHA 同样必须在删前通过。R2/NAS 客户端、连接池、HEAD controller
+和专用线程池在一个 Bulk 计划内跨批次复用，退出时统一关闭；生产引用连接短暂断开时在
+同一计划内限次重连，持续不可用仍暂停。每阶段输出对象数、请求数、实际/峰值并发和耗时
+等低基数指标，不输出 key。系统性网络、数据库、身份或行集变化把
 计划置为 paused；旧源已经因本计划提交窗口消失时，也只有冻结的耐久副本仍完整才可
 幂等收口。R2 持久目标模式不等于完成 NAS 归档；待持久目录迁移验收后，从该目录到 NAS
 的备份必须使用独立归档计划。退役 plans/batches/objects 与其它迁移事实表一起跨 shadow
@@ -535,7 +539,7 @@ SHA-256，再分块写入生产会话专属临时表；临时表建立唯一索�
 重检生产引用。查询关闭并行且以会话级 256 MB `work_mem` 约束单次哈希，避免把数百万条
 长 key 的哈希表落盘；不得创建生产永久索引或持久辅助表。
 
-Bulk 执行只对计划内 `eligible` 或已解除 blocker 的 `deferred` 来源调用单对象 DELETE；
+Bulk 执行只把计划内 `eligible` 或已解除 blocker 的 `deferred` 旧来源放入批量 DELETE；
 标准持久 `target_key` 和 `retained_target` 永远是生存
 副本，不得进入删除集合，也不提供 bucket/prefix 清理入口。任一批次异常把全局计划及
 运行中批次置为 `paused`，已完成批次和已删除对象回执保留；相同 artifact、runtime 和

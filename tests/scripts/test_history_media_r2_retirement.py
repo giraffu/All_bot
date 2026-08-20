@@ -18,12 +18,15 @@ from scripts.history_media_r2_retirement import (
     RETIREMENT_BLOCKER_SQL,
     RETIREMENT_BLOCKER_TIMEOUT_SECONDS,
     RETIREMENT_DDL,
+    RetirementRequestExecutors,
     RetirementHeadConcurrencyController,
     _durability_archive_config,
     _delete_sources,
     _ensure_retirement_blocker_indexes,
     _expected_switch_counts,
     _head_candidates,
+    _head_source_candidates,
+    _live_reference_counts_with_retry,
     _parser,
     _mark_retirement_plan_paused,
     _missing_retirement_blocker_indexes,
@@ -32,6 +35,7 @@ from scripts.history_media_r2_retirement import (
     _retirement_object_identity,
     _retirement_runtime_identity,
     _s3_client,
+    _sha256_json,
     _validate_retirement_execution_policy,
     build_bulk_retirement_plan,
     build_bulk_retirement_successor_manifest,
@@ -318,7 +322,7 @@ def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
     )
     assert identity["durability_basis"] == DURABILITY_R2_PERSISTENT_TARGET
     assert identity["retirement_execution_policy"] == {
-        "scheduler": "request-phases-adaptive-v2",
+        "scheduler": "persistent-context-bulk-delete-v3",
         "head_concurrency": 128,
         "head_concurrency_levels": [128, 64, 32],
         "head_retry_attempts": 5,
@@ -326,18 +330,24 @@ def test_durability_config_is_fail_closed_and_runtime_identity_binds_mode():
         "head_raise_error_rate": 0.002,
         "head_systemic_error_rate": 0.1,
         "head_healthy_windows_to_raise": 2,
-        "delete_concurrency": 8,
+        "delete_concurrency": 4,
+        "delete_api": "DeleteObjects",
+        "delete_chunk_size": 250,
+        "delete_retry_attempts": 5,
+        "post_delete_verification": "source-head-only-full-batch",
+        "request_context_lifecycle": "one-per-bulk-plan",
+        "production_reference_retry_attempts": 3,
     }
     assert "nas_bucket" not in identity
     assert "nas_endpoint_sha256" not in identity
 
     manifest = {"runtime_identity": identity}
     _validate_retirement_execution_policy(
-        manifest, Namespace(head_concurrency=128, delete_concurrency=8)
+        manifest, Namespace(head_concurrency=128, delete_concurrency=4)
     )
     with pytest.raises(RuntimeError, match="execution policy"):
         _validate_retirement_execution_policy(
-            manifest, Namespace(head_concurrency=32, delete_concurrency=8)
+            manifest, Namespace(head_concurrency=32, delete_concurrency=4)
         )
 
 
@@ -669,8 +679,8 @@ async def test_retirement_delete_pool_stays_bounded_and_is_released():
             self.peak = 0
             self.lock = threading.Lock()
 
-        def delete_object(self, *, Bucket, Key):
-            del Bucket, Key
+        def delete_objects(self, *, Bucket, Delete):
+            del Bucket
             with self.lock:
                 self.active += 1
                 self.peak = max(self.peak, self.active)
@@ -679,6 +689,7 @@ async def test_retirement_delete_pool_stays_bounded_and_is_released():
             finally:
                 with self.lock:
                     self.active -= 1
+            return {"Deleted": list(Delete["Objects"]), "Errors": []}
 
     r2 = R2()
     await _delete_sources(
@@ -691,11 +702,185 @@ async def test_retirement_delete_pool_stays_bounded_and_is_released():
         concurrency=8,
     )
 
-    assert r2.peak == 8
+    assert r2.peak <= 4
     assert not any(
         thread.name.startswith("history-r2-retirement-delete")
         for thread in threading.enumerate()
     )
+
+
+@pytest.mark.asyncio
+async def test_retirement_delete_uses_250_object_chunks_and_retries_only_errors():
+    calls = []
+
+    class R2:
+        def delete_objects(self, *, Bucket, Delete):
+            del Bucket
+            keys = [item["Key"] for item in Delete["Objects"]]
+            calls.append(keys)
+            if len(calls) == 1:
+                return {
+                    "Deleted": [{"Key": key} for key in keys[1:]],
+                    "Errors": [{"Key": keys[0], "Code": "InternalError"}],
+                }
+            return {"Deleted": [{"Key": key} for key in keys], "Errors": []}
+
+    async def no_sleep(_delay):
+        return None
+
+    objects = [
+        {"source_key": f"private/source-{index}.png"}
+        for index in range(501)
+    ]
+    deleted = await _delete_sources(
+        objects,
+        r2_client=R2(),
+        r2_bucket="persistent",
+        concurrency=1,
+        retry_sleep=no_sleep,
+    )
+
+    assert deleted == 501
+    assert [len(call) for call in calls] == [250, 250, 1, 1]
+    assert calls[-1] == [calls[0][0]]
+
+
+@pytest.mark.asyncio
+async def test_post_delete_head_checks_sources_only_and_requires_pre_delete_proof():
+    candidates = [
+        _candidate(
+            source_key=f"private/source-{index}.png",
+            durability_basis=DURABILITY_R2_PERSISTENT_TARGET,
+            targets=[
+                {
+                    "target_key": f"task-results/task-{index}/primary.png",
+                    "copy_plan_sha256": "c" * 64,
+                    "target_etag": "source-etag",
+                }
+            ],
+        )
+        for index in range(4)
+    ]
+
+    class R2:
+        def __init__(self):
+            self.keys = []
+
+        def head_object(self, *, Bucket, Key):
+            del Bucket
+            self.keys.append(Key)
+            raise ClientError(
+                {
+                    "Error": {"Code": "NoSuchKey"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "HeadObject",
+            )
+
+    r2 = R2()
+    proof = _sha256_json(
+        [_retirement_object_identity(candidate) for candidate in candidates]
+    )
+    missing = await _head_source_candidates(
+        candidates,
+        r2_client=r2,
+        r2_bucket="persistent",
+        concurrency=4,
+        pre_delete_proof=proof,
+        expected_pre_delete_proof=proof,
+    )
+
+    assert missing == len(candidates)
+    assert set(r2.keys) == {candidate["source_key"] for candidate in candidates}
+    assert not any(key.startswith("task-results/") for key in r2.keys)
+    with pytest.raises(RuntimeError, match="pre-delete survivor proof"):
+        await _head_source_candidates(
+            candidates,
+            r2_client=r2,
+            r2_bucket="persistent",
+            concurrency=4,
+            pre_delete_proof="changed",
+            expected_pre_delete_proof=proof,
+        )
+
+
+def test_retirement_request_executors_are_reused_and_shutdown_once():
+    resources = RetirementRequestExecutors(
+        head_concurrency=128, delete_concurrency=4
+    )
+
+    assert resources.head_executor is resources.head_executor
+    assert resources.delete_executor is resources.delete_executor
+    resources.close()
+    resources.close()
+
+    with pytest.raises(RuntimeError):
+        resources.head_executor.submit(lambda: None)
+    assert not any(
+        thread.name.startswith("history-r2-retirement-")
+        for thread in threading.enumerate()
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_reference_gate_reconnects_after_transient_failure(monkeypatch):
+    calls = []
+
+    async def fake_live_refs(connection, keys):
+        calls.append((connection, keys))
+        if len(calls) == 1:
+            raise OSError("transient tunnel failure")
+        return {}
+
+    class Context:
+        def __init__(self):
+            self.production = "first"
+            self.reconnects = 0
+
+        async def reconnect_production(self):
+            self.reconnects += 1
+            self.production = "second"
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_retirement._live_reference_counts",
+        fake_live_refs,
+    )
+    context = Context()
+    assert await _live_reference_counts_with_retry(
+        context, ["opaque-source"], retry_sleep=no_sleep
+    ) == {}
+    assert context.reconnects == 1
+    assert [call[0] for call in calls] == ["first", "second"]
+
+
+@pytest.mark.asyncio
+async def test_live_reference_gate_fails_closed_after_retry_budget(monkeypatch):
+    async def unavailable(_connection, _keys):
+        raise TimeoutError("still unavailable")
+
+    class Context:
+        production = "connection"
+        reconnects = 0
+
+        async def reconnect_production(self):
+            self.reconnects += 1
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(
+        "scripts.history_media_r2_retirement._live_reference_counts",
+        unavailable,
+    )
+    context = Context()
+    with pytest.raises(RuntimeError, match="reference gate unavailable"):
+        await _live_reference_counts_with_retry(
+            context, ["opaque-source"], retry_sleep=no_sleep, attempts=3
+        )
+    assert context.reconnects == 2
 
 
 def test_retirement_plan_is_object_deduplicated_and_does_not_leak_keys():
@@ -1045,12 +1230,12 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     for forbidden in ("get_object", "list_objects", "copy_object"):
         assert forbidden not in source
     assert "_delete_sources" in source
-    assert source.count("_head_candidates") == 2
+    assert source.count("_head_candidates") == 1
+    assert source.count("_head_source_candidates") == 1
     delete_source = inspect.getsource(module._delete_sources)
-    assert "delete_object" in delete_source
-    assert delete_source.count("delete_object") == 1
-    delete_call = delete_source[delete_source.index("delete_object") :]
-    assert 'Key=str(candidate["source_key"])' in delete_call[:400]
+    assert "delete_objects" in delete_source
+    assert "RETIREMENT_DELETE_OBJECTS_CHUNK_SIZE" in delete_source
+    assert '"Objects": [{"Key": key} for key in chunk]' in delete_source
     assert "validate_delete_gate" in source
     assert "_retirement_has_blockers" in source
     assert "target_key" in inspect.getsource(module._head_candidates)
@@ -1059,7 +1244,8 @@ def test_retirement_execute_surface_only_heads_and_deletes():
     assert "switch_completed_at" in blocker_source
 
     bulk_source = inspect.getsource(module._execute_bulk_delete)
-    assert "_execute_delete" in bulk_source
+    assert "_execute_delete(args, execution_context=context)" in bulk_source
+    assert "_open_retirement_execution_context" in bulk_source
     assert "_bulk_global_preflight" in bulk_source
     assert "while True" in bulk_source
     assert "confirm" not in bulk_source.replace("args.confirm", "")
@@ -1356,7 +1542,7 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert execute.archive_config is None
     assert execute.durability_basis == DURABILITY_R2_PERSISTENT_TARGET
     assert execute.head_concurrency == 128
-    assert execute.delete_concurrency == 8
+    assert execute.delete_concurrency == 4
     assert bulk_plan.switch_plan_sha256 == ["a" * 64, "b" * 64]
     assert bulk_plan.expected_switch_asset_count == [
         "a" * 64 + "=1828075",
@@ -1366,7 +1552,7 @@ def test_retirement_cli_and_local_ledger_tables_are_explicit():
     assert bulk_execute.command == "execute-bulk-delete"
     assert bulk_execute.confirm == "DELETE_HISTORY_MEDIA_" + "a" * 64
     assert bulk_execute.head_concurrency == 128
-    assert bulk_execute.delete_concurrency == 8
+    assert bulk_execute.delete_concurrency == 4
     with pytest.raises(SystemExit):
         _parser().parse_args(
             [
