@@ -131,6 +131,106 @@ async def test_quality_retry_waits_for_a_free_comfy_slot(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_finalizer_retries_history_when_completion_precedes_video_output(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-video",
+        task_type="minimax_h3_i2v",
+        prompt_id="prompt-video",
+    )
+    history_reads = 0
+
+    async def fake_get_history(prompt_id):
+        nonlocal history_reads
+        history_reads += 1
+        outputs = {}
+        if history_reads >= 2:
+            outputs = {
+                "save-video": {
+                    "gifs": [
+                        {
+                            "filename": "result-audio.mp4",
+                            "subfolder": "",
+                            "type": "output",
+                        }
+                    ]
+                }
+            }
+        return {prompt_id: {"outputs": outputs}}
+
+    async def fake_materialize_task_outputs(**kwargs):
+        assert kwargs["execution"].task_result == "task-video__result-audio.mp4"
+        return SimpleNamespace(primary=SimpleNamespace(), extra_outputs={})
+
+    async def fake_assess_materialized_output_quality(**kwargs):
+        return None
+
+    agent.comfy_client.get_history = fake_get_history
+
+    outputs = await agent._finalizer.materialize_outputs_with_quality_retry(
+        execution=execution,
+        task_type="minimax_h3_i2v",
+        quality_retry_attempts=0,
+        agent_id="agent-video",
+        submit_task_workflow_func=mock.AsyncMock(),
+        wait_for_task_completion_func=mock.AsyncMock(),
+        resolve_execution_result_from_history_func=(
+            module.resolve_execution_result_from_history
+        ),
+        materialize_task_outputs_func=fake_materialize_task_outputs,
+        assess_materialized_output_quality_func=(
+            fake_assess_materialized_output_quality
+        ),
+        result_history_timeout_seconds=1.0,
+        result_history_poll_seconds=0.0,
+    )
+
+    assert outputs.primary is not None
+    assert history_reads == 2
+
+
+@pytest.mark.asyncio
+async def test_finalizer_stops_history_reads_at_the_bounded_timeout(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-video",
+        task_type="minimax_h3_i2v",
+        prompt_id="prompt-video",
+    )
+    history_reads = 0
+
+    async def fake_get_history(prompt_id):
+        nonlocal history_reads
+        history_reads += 1
+        return {prompt_id: {"outputs": {}}}
+
+    agent.comfy_client.get_history = fake_get_history
+
+    with pytest.raises(TimeoutError, match="within 0.0s"):
+        await agent._finalizer.materialize_outputs_with_quality_retry(
+            execution=execution,
+            task_type="minimax_h3_i2v",
+            quality_retry_attempts=0,
+            agent_id="agent-video",
+            submit_task_workflow_func=mock.AsyncMock(),
+            wait_for_task_completion_func=mock.AsyncMock(),
+            resolve_execution_result_from_history_func=(
+                module.resolve_execution_result_from_history
+            ),
+            materialize_task_outputs_func=mock.AsyncMock(),
+            assess_materialized_output_quality_func=mock.AsyncMock(),
+            result_history_timeout_seconds=0.0,
+            result_history_poll_seconds=0.0,
+        )
+
+    assert history_reads == 1
+
+
+@pytest.mark.asyncio
 async def test_runpod_worker_promotes_reserved_claim_without_exceeding_limit(
     monkeypatch,
 ):
