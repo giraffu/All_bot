@@ -147,8 +147,8 @@ async def prepare_task_inputs(
     ):
         images_list = params["images"]
         tasks = []
-        keys = ["image", "image2", "image3", "image4"]
-        for i, img_filename in enumerate(images_list[:4]):
+        keys = ["image", "image2", "image3", "image4", "image5"]
+        for i, img_filename in enumerate(images_list[:5]):
             tasks.append(
                 process_single_input_asset_func(
                     params=params,
